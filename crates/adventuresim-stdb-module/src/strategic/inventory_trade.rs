@@ -1793,26 +1793,23 @@ pub fn purchase_personal_storefront_with_party_stake(
     let total = current_unit_price
         .checked_mul(u64::from(quantity))
         .ok_or("Merchant purchase total overflow")?;
-    let (personal_payment, stake_payment) = personal_storefront_payment(
-        total,
-        maximum_personal_payment,
-        maximum_stake_payment,
-    )
-    .ok_or("Current storefront payment exceeds the authorized stake maximum")?;
+    let (personal_payment, stake_payment) =
+        personal_storefront_payment(total, maximum_personal_payment, maximum_stake_payment)
+            .ok_or("Current storefront payment exceeds the authorized stake maximum")?;
     if crate::item::personal_currency_total(ctx, character_id) < personal_payment {
         return Err("Not enough personal coin".into());
     }
-    let mut stake = ctx
-        .db
-        .party_stake()
-        .party_id()
-        .filter(&party_id)
-        .find(|stake| stake.character_id == character_id)
-        .ok_or("Character has no earned party stake")?;
-    if stake.value < stake_payment || party_currency_total(ctx, &party_id) < stake_payment {
-        return Err("Earned party stake cannot fund this purchase".into());
-    }
     if stake_payment > 0 {
+        let mut stake = ctx
+            .db
+            .party_stake()
+            .party_id()
+            .filter(&party_id)
+            .find(|stake| stake.character_id == character_id)
+            .ok_or("Character has no earned party stake")?;
+        if stake.value < stake_payment || party_currency_total(ctx, &party_id) < stake_payment {
+            return Err("Earned party stake cannot fund this purchase".into());
+        }
         transfer_party_currency_to_personal(ctx, &party_id, character_id, stake_payment)?;
         stake.value -= stake_payment;
         ctx.db.party_stake().id().update(stake);
@@ -1868,20 +1865,23 @@ fn validate_personal_storefront_purchase(
         .id()
         .find(&item_id.to_string())
         .ok_or("Merchant item not found")?;
-    if matches!(item.kind, crate::ItemKind::Currency | crate::ItemKind::Medication)
-        || !adventuresim_core::settlement_economy::storefront_stocks(
-            &settlement.economy,
-            storefront,
-            item_id,
-            crate::item::economy_catalog_kind(item.kind),
-        )
-        || (storefront == adventuresim_core::settlement_economy::Storefront::Books
-            && adventuresim_core::item_catalog::definition(item_id)
-                .and_then(|definition| definition.capabilities.book.as_ref())
-                .is_none_or(|book| {
-                    !book.settlement_allowlist.is_empty()
-                        && !book.settlement_allowlist.contains(&settlement_id.to_string())
-                }))
+    if matches!(
+        item.kind,
+        crate::ItemKind::Currency | crate::ItemKind::Medication
+    ) || !adventuresim_core::settlement_economy::storefront_stocks(
+        &settlement.economy,
+        storefront,
+        item_id,
+        crate::item::economy_catalog_kind(item.kind),
+    ) || (storefront == adventuresim_core::settlement_economy::Storefront::Books
+        && adventuresim_core::item_catalog::definition(item_id)
+            .and_then(|definition| definition.capabilities.book.as_ref())
+            .is_none_or(|book| {
+                !book.settlement_allowlist.is_empty()
+                    && !book
+                        .settlement_allowlist
+                        .contains(&settlement_id.to_string())
+            }))
     {
         return Err("This settlement does not stock that merchant item".into());
     }

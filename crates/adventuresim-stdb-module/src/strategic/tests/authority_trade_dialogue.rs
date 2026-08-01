@@ -573,6 +573,20 @@ fn atomic_personal_storefront_payment_never_exceeds_authorized_stake() {
 }
 
 #[test]
+fn fully_personal_storefront_purchase_does_not_require_a_stake_row() {
+    assert_eq!(personal_storefront_payment(8, 8, 0), Some((8, 0)));
+    let body = STRATEGIC_SOURCE
+        .split("pub fn purchase_personal_storefront_with_party_stake")
+        .nth(1)
+        .and_then(|tail| tail.split("fn personal_storefront_payment").next())
+        .expect("atomic personal storefront reducer");
+    let stake_branch = body.find("if stake_payment > 0").unwrap();
+    let stake_lookup = body.find(".party_stake()").unwrap();
+    let purchase = body.find("finalize_storefront_trade_impl").unwrap();
+    assert!(stake_branch < stake_lookup && stake_lookup < purchase);
+}
+
+#[test]
 fn dialogue_objectives_are_knowledge_bound_and_replay_safe() {
     let source = STRATEGIC_SOURCE;
     let issuer = source
