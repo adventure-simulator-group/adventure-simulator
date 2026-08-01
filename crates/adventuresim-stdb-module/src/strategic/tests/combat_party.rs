@@ -70,6 +70,20 @@ fn quest_encounter_influence_is_scoped_to_outbound_case_site_destinations() {
         name: "Test Settlement".into(),
     });
     assert_eq!(quest_influence_case_site_id(&returning), None);
+    assert_eq!(
+        quest_influence_case_site_id(&JourneyEndpoint::Camp("camp:test".into())),
+        None
+    );
+
+    let multi_site_groups = [
+        ("group:first", "case-site:other", "skeleton"),
+        ("group:destination", "case-site:test", "bandit"),
+        ("group:last", "case-site:test", "skeleton"),
+    ];
+    assert_eq!(
+        destination_hostile_archetype("case-site:test", multi_site_groups),
+        Some(EncounterArchetype::Bandits)
+    );
 
     let interrupt = STRATEGIC_SOURCE
         .split("fn maybe_interrupt_travel")
