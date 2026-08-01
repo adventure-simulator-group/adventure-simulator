@@ -18,7 +18,7 @@ pub mod prelude {
     #[cfg(feature = "client")]
     pub use crate::client::AdventureSimulatorClient;
     pub use crate::message::{
-        AttackRequest, AttackStartedRequest, DefendRequest, JoinRequest, PlayerInputRequest,
+        DefendRequest, JoinRequest, MeleeActionPhase, MeleeActionRequest, PlayerInputRequest,
     };
     #[cfg(feature = "server")]
     pub use crate::server::AdventureSimulatorServer;

@@ -764,6 +764,14 @@ pub(crate) fn load_combatant(
     let combat_equipment = equipment.combat_equipment();
     let initial_ammunition = combat_equipment.ammunition;
 
+    let (starting_incapacitation, starting_blood_fraction) = derive_combat_starting_condition(
+        strategic_incapacitation,
+        strategic_pain,
+        strategic_blood_loss,
+        condition.current_blood_ml,
+        condition.maximum_blood_ml,
+    );
+
     Ok(Combatant {
         id: character_id,
         attributes: CombatAttributes {
@@ -827,13 +835,8 @@ pub(crate) fn load_combatant(
             tailoring_hours: skills.tailoring_hours,
             smithing_hours: skills.smithing_hours,
         },
-        starting_incapacitation: (strategic_incapacitation - strategic_pain - strategic_blood_loss)
-            .max(0.0),
-        starting_blood_fraction: if condition.maximum_blood_ml > 0.0 {
-            (condition.current_blood_ml / condition.maximum_blood_ml).clamp(0.0, 1.0)
-        } else {
-            1.0
-        },
+        starting_incapacitation,
+        starting_blood_fraction,
         initial_ammunition,
         ..Combatant::new(character_id)
     })

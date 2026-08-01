@@ -82,9 +82,35 @@ impl PlayerEssentials for Stats {
     }
 }
 
+/// Live, server-authoritative combat effects. This component is replicated for
+/// presentation but remains transient and is never written to SpacetimeDB.
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
+pub struct TacticalCombatState {
+    pub starting_incapacitation: f32,
+    pub starting_blood_fraction: f32,
+    pub blood_loss_fraction: f32,
+    pub imbalance: f32,
+    pub incapacitation: f32,
+    pub incapacitated: bool,
+}
+
+impl Default for TacticalCombatState {
+    fn default() -> Self {
+        Self {
+            starting_incapacitation: 0.0,
+            starting_blood_fraction: 1.0,
+            blood_loss_fraction: 0.0,
+            imbalance: 0.0,
+            incapacitation: 0.0,
+            incapacitated: false,
+        }
+    }
+}
+
 /// Limb health status.
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
 pub struct Limbs {
+    pub body_weight_kg: f32,
     pub left_arm: f32,
     pub right_arm: f32,
     pub left_leg: f32,
@@ -97,6 +123,7 @@ pub struct Limbs {
 impl Default for Limbs {
     fn default() -> Self {
         Self {
+            body_weight_kg: 70.0,
             left_arm: 1.0,
             right_arm: 1.0,
             left_leg: 1.0,
@@ -105,6 +132,35 @@ impl Default for Limbs {
             stomach: 1.0,
             head: 1.0,
         }
+    }
+}
+
+impl Limbs {
+    pub fn health_mut(&mut self, part: BodyPart) -> &mut f32 {
+        match part {
+            BodyPart::LeftArm => &mut self.left_arm,
+            BodyPart::RightArm => &mut self.right_arm,
+            BodyPart::LeftLeg => &mut self.left_leg,
+            BodyPart::RightLeg => &mut self.right_leg,
+            BodyPart::Chest => &mut self.chest,
+            BodyPart::Stomach => &mut self.stomach,
+            BodyPart::Head => &mut self.head,
+        }
+    }
+
+    pub fn total_damage(&self) -> f32 {
+        [
+            self.left_arm,
+            self.right_arm,
+            self.left_leg,
+            self.right_leg,
+            self.chest,
+            self.stomach,
+            self.head,
+        ]
+        .into_iter()
+        .map(|health| (1.0 - health).max(0.0))
+        .sum()
     }
 }
 
@@ -122,8 +178,7 @@ impl PlayerBody for Limbs {
     }
 
     fn body_weight(&self) -> f32 {
-        // TODO: this should be stored in DB ?
-        10.0
+        self.body_weight_kg
     }
 
     fn primary_side(&self) -> BodySide {
