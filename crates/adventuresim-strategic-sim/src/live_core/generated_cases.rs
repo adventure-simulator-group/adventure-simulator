@@ -109,6 +109,143 @@ impl LiveRunner {
         }
     }
 
+    fn emit_generated_case_no_progress(
+        &mut self,
+        character_id: u64,
+        agent: u32,
+        cycle: u32,
+        case_id: &str,
+        actions: &[BackendInvestigationAction],
+    ) -> Result<(), String> {
+        let available_actions = actions.iter().filter(|row| row.available).count();
+        let travel_actions = actions
+            .iter()
+            .filter(|row| row.can_travel_to_required_site)
+            .count();
+        let wait_actions = actions
+            .iter()
+            .filter(|row| {
+                projected_investigation_wait_minutes(
+                    &row.unavailable_reason_code,
+                    row.wait_minutes,
+                )
+                .is_some()
+            })
+            .count();
+        let mut action_versions = actions
+            .iter()
+            .map(|row| format!("{}@{}", row.action_id, row.expected_version))
+            .collect::<Vec<_>>();
+        action_versions.sort();
+        action_versions.truncate(8);
+        let action_versions = if action_versions.is_empty() {
+            "none".to_owned()
+        } else {
+            bounded_event_field(&action_versions.join(","))
+        };
+        let leads = self
+            .connection
+            .db
+            .backend_investigation_leads()
+            .iter()
+            .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
+            .collect::<Vec<_>>();
+        let uncorrected_witness_leads = leads
+            .iter()
+            .filter(|row| !row.witness_name.is_empty() && row.corrected_by.is_empty())
+            .count();
+        let visible_witness_leads = leads
+            .iter()
+            .filter(|lead| !lead.witness_name.is_empty() && lead.corrected_by.is_empty())
+            .filter(|lead| {
+                let location = if lead.current_learned_location.is_empty() {
+                    &lead.expected_location
+                } else {
+                    &lead.current_learned_location
+                };
+                !self
+                    .visible_npc_candidates(
+                        character_id,
+                        Some(&lead.witness_name),
+                        Some(location),
+                    )
+                    .is_empty()
+            })
+            .count();
+        let referred_topic_options = self
+            .connection
+            .db
+            .backend_dialogue_topic_options()
+            .iter()
+            .filter(|row| {
+                row.owner_character_id == character_id
+                    && row.public_case_id == case_id
+                    && row.topic_id == "referred-testimony"
+            })
+            .count();
+        let dialogue_sessions = self
+            .connection
+            .db
+            .backend_dialogue_sessions()
+            .iter()
+            .filter(|row| row.owner_character_id == character_id)
+            .count();
+        let latest_lead_at = leads.iter().map(|row| row.recorded_at).max().unwrap_or(0);
+        let outcomes = self
+            .connection
+            .db
+            .backend_investigation_action_outcomes()
+            .iter()
+            .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
+            .collect::<Vec<_>>();
+        let latest_outcome_at = outcomes.iter().map(|row| row.recorded_at).max().unwrap_or(0);
+        let pins = self
+            .connection
+            .db
+            .backend_case_site_pins()
+            .iter()
+            .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
+            .collect::<Vec<_>>();
+        let combat_pins = pins.iter().filter(|row| row.combat_available).count();
+        let case_updated_at = self
+            .connection
+            .db
+            .backend_investigation_cases()
+            .iter()
+            .find(|row| row.owner_character_id == character_id && row.case_id == case_id)
+            .map_or(0, |row| row.latest_update_at);
+        let party = self.party_for(character_id)?;
+        let location = if let Some(settlement_id) = party.current_settlement_id {
+            format!("settlement:{settlement_id}")
+        } else if let Some(site_id) = party.current_case_site_id {
+            format!("case_site:{}", site_id.value)
+        } else if party.camp_destination.is_some() {
+            "camp".to_owned()
+        } else {
+            "unknown".to_owned()
+        };
+        self.metrics.generated_investigation_replans = self
+            .metrics
+            .generated_investigation_replans
+            .saturating_add(1);
+        self.event(
+            agent,
+            CoreLoopEventKind::GeneratedInvestigationReplan,
+            format!(
+                "case={};cycle={cycle};reason=no_public_transition;location={};actions={};available={available_actions};travel={travel_actions};wait={wait_actions};action_versions={action_versions};leads={};uncorrected_witness_leads={uncorrected_witness_leads};visible_witness_leads={visible_witness_leads};referred_topic_options={};dialogue_sessions={};latest_lead_at={latest_lead_at};outcomes={};latest_outcome_at={latest_outcome_at};pins={};combat_pins={combat_pins};case_updated_at={case_updated_at}",
+                bounded_event_field(case_id),
+                bounded_event_field(&location),
+                actions.len().min(64),
+                leads.len().min(64),
+                referred_topic_options.min(64),
+                dialogue_sessions.min(64),
+                outcomes.len().min(64),
+                pins.len().min(64),
+            ),
+        );
+        Ok(())
+    }
+
     pub(super) fn generated_case_status(&self, character_id: u64, case_id: &str) -> Option<String> {
         self.connection
             .db
@@ -883,6 +1020,52 @@ impl LiveRunner {
         if current_leader != owner_character_id {
             return Ok(false);
         }
+        let at_case_site = self.party_by_id(party_id)?.current_case_site_id.is_some();
+        if at_case_site {
+            let current_site = self
+                .party_by_id(party_id)?
+                .current_case_site_id
+                .ok_or("case-site synchronization lost its public location")?;
+            let Some(pin) = self
+                .connection
+                .db
+                .backend_case_site_pins()
+                .iter()
+                .find(|pin| {
+                    pin.owner_character_id == owner_character_id
+                        && pin.case_id == case_id
+                        && pin.case_site_id == current_site.value
+                })
+            else {
+                return Ok(false);
+            };
+            let medically_critical = self.living_party_member_ids(party_id).into_iter().any(
+                |character_id| {
+                    self.connection
+                        .db
+                        .character_illness_status()
+                        .iter()
+                        .any(|row| row.character_id == character_id && row.critical)
+                },
+            );
+            if medically_critical {
+                if self.generated_action_return_thermal_decision(party_id, &pin, 0)
+                    == OnSiteActionDecision::ReturnNow
+                {
+                    self.evacuate_generated_party_to_origin(
+                        party_id,
+                        owner_character_id,
+                        leader_agent,
+                        case_id,
+                        &pin,
+                    )?;
+                }
+                return Ok(false);
+            }
+            if !self.generated_case_site_sync_safe(party_id, &pin) {
+                return Ok(false);
+            }
+        }
         let result = reducer_call!(self, "synchronize_party_for_activity", |cb| self
             .connection
             .reducers
@@ -912,6 +1095,28 @@ impl LiveRunner {
         // Recovery and maintenance advance individual clocks. Re-align after
         // those actions so the preflight does not reject its own care work as
         // persistent party clock skew.
+        if at_case_site {
+            let current_site = self
+                .party_by_id(party_id)?
+                .current_case_site_id
+                .ok_or("case-site resynchronization lost its public location")?;
+            let Some(pin) = self
+                .connection
+                .db
+                .backend_case_site_pins()
+                .iter()
+                .find(|pin| {
+                    pin.owner_character_id == owner_character_id
+                        && pin.case_id == case_id
+                        && pin.case_site_id == current_site.value
+                })
+            else {
+                return Ok(false);
+            };
+            if !self.generated_case_site_sync_safe(party_id, &pin) {
+                return Ok(false);
+            }
+        }
         let result = reducer_call!(self, "resynchronize_party_after_generated_preflight", |cb| self
             .connection
             .reducers
@@ -1191,7 +1396,69 @@ impl LiveRunner {
         Ok(journey_outcome == JourneyTravelOutcome::Completed)
     }
 
+    fn evacuate_generated_party_to_origin(
+        &mut self,
+        party_id: &str,
+        owner_character_id: u64,
+        _agent: u32,
+        case_id: &str,
+        pin: &BackendCaseSitePin,
+    ) -> Result<bool, String> {
+        let Some((evacuation_actor_id, evacuation_actor_agent)) = self.current_leader(party_id)
+        else {
+            return Ok(false);
+        };
+        let settlement_id = pin.origin_settlement_id.clone();
+        let result = reducer_call!(self, "evacuate_generated_case_site", |cb| self
+            .connection
+            .reducers
+            .travel_to_settlement_then(evacuation_actor_id, settlement_id.clone(), cb));
+        self.call(result)?;
+        self.event(
+            evacuation_actor_agent,
+            CoreLoopEventKind::Travel,
+            format!(
+                "generated_case={};action=incapacitation_reserve_evacuation;return_started={settlement_id}",
+                bounded_event_field(case_id),
+            ),
+        );
+        let completed = self.travel_camps(party_id)? == JourneyTravelOutcome::Completed;
+        self.observe_deaths();
+        self.generated_case_site_recoveries
+            .retain(|(owner, stored_case, _)| {
+                *owner != owner_character_id || stored_case != case_id
+            });
+        Ok(completed)
+    }
+
     pub(super) fn advance_generated_case(
+        &mut self,
+        party_id: &str,
+        character_id: u64,
+        agent: u32,
+        cycle: u32,
+        case_id: &str,
+        subject: &str,
+    ) -> Result<GeneratedAdvanceResult, String> {
+        let elapsed_before = self.public_party_elapsed_max(party_id);
+        let public_before = self.public_dialogue_progress_fingerprint(character_id, case_id);
+        let progressed = self.advance_generated_case_inner(
+            party_id,
+            character_id,
+            agent,
+            cycle,
+            case_id,
+            subject,
+        )?;
+        let public_progressed =
+            self.public_dialogue_progress_fingerprint(character_id, case_id) != public_before;
+        Ok(classify_generated_advance(
+            progressed || public_progressed,
+            self.public_party_elapsed_max(party_id) > elapsed_before,
+        ))
+    }
+
+    fn advance_generated_case_inner(
         &mut self,
         party_id: &str,
         character_id: u64,
@@ -1253,7 +1520,165 @@ impl LiveRunner {
                 .collect::<Vec<_>>();
             let profile = &self.profiles[agent as usize];
             sort_generated_actions(profile, &mut actions);
+            if !at_settlement {
+            let ready_action_index = actions.iter().position(|action| {
+                    if !action.available {
+                        return false;
+                    }
+                    self.connection
+                        .db
+                        .backend_case_site_pins()
+                        .iter()
+                        .find(|pin| {
+                            pin.owner_character_id == character_id
+                                && pin.case_id == case_id
+                                && pin.case_site_id == action.required_case_site_id
+                        })
+                        .is_some_and(|pin| {
+                            self.generated_action_return_thermal_decision(
+                                party_id,
+                                &pin,
+                                u64::from(action.duration_max_minutes),
+                            ) == OnSiteActionDecision::Ready
+                        })
+                });
+                let recovery_action_index = ready_action_index.or_else(|| {
+                    actions.iter().position(|action| {
+                        action.available
+                            && self.connection
+                                .db
+                                .backend_case_site_pins()
+                                .iter()
+                                .find(|pin| {
+                                    pin.owner_character_id == character_id
+                                        && pin.case_id == case_id
+                                        && pin.case_site_id == action.required_case_site_id
+                                })
+                                .is_some_and(|pin| {
+                                    matches!(
+                                        self.generated_action_return_thermal_decision(
+                                            party_id,
+                                            &pin,
+                                            u64::from(action.duration_max_minutes),
+                                        ),
+                                        OnSiteActionDecision::RestThenRetry(_)
+                                    )
+                                })
+                    })
+                });
+                if let Some(index) = recovery_action_index {
+                    actions.swap(0, index);
+                }
+            }
             if let Some(action) = actions.iter().find(|row| row.available).cloned() {
+                if !at_settlement {
+                    let pin = self
+                        .connection
+                        .db
+                        .backend_case_site_pins()
+                        .iter()
+                        .find(|pin| {
+                            pin.owner_character_id == character_id
+                                && pin.case_id == case_id
+                                && pin.case_site_id == action.required_case_site_id
+                        })
+                        .ok_or("available on-site action has no exact owner-scoped site pin")?;
+                    match self.generated_action_return_thermal_decision(
+                        party_id,
+                        &pin,
+                        u64::from(action.duration_max_minutes),
+                    ) {
+                        OnSiteActionDecision::Ready => {}
+                        OnSiteActionDecision::RestThenRetry(minutes) => {
+                            if !(1..=1_440).contains(&minutes) {
+                                return Ok(false);
+                            }
+                            let recovery_key = (
+                                character_id,
+                                case_id.to_owned(),
+                                action.action_id.clone(),
+                            );
+                            if self.generated_case_site_recoveries.contains(&recovery_key) {
+                                self.event(
+                                    agent,
+                                    CoreLoopEventKind::QuestSuppressed,
+                                    format!(
+                                        "generated_case={};action={};reason=planned_case_site_recovery_exhausted",
+                                        bounded_event_field(case_id),
+                                        bounded_event_field(&action.action_id),
+                                    ),
+                                );
+                                return Ok(false);
+                            }
+                            let shelter = self.rest_at_camp_with_party_shelter(
+                                character_id,
+                                minutes,
+                                "generated_case_site_planned_recovery",
+                            )?;
+                            self.generated_case_site_recoveries.insert(recovery_key);
+                            let post_recovery = self.generated_action_return_thermal_decision(
+                                party_id,
+                                &pin,
+                                u64::from(action.duration_max_minutes),
+                            );
+                            self.event(
+                                agent,
+                                CoreLoopEventKind::ExpeditionRecovery,
+                                format!(
+                                    "generated_case={};action={};recovery=planned_case_site;minutes={minutes};shelter={shelter:?};post_recovery={post_recovery:?}",
+                                    bounded_event_field(case_id),
+                                    bounded_event_field(&action.action_id),
+                                ),
+                            );
+                            match post_recovery {
+                                OnSiteActionDecision::Ready => {}
+                                OnSiteActionDecision::ReturnNow => {
+                                    self.evacuate_generated_party_to_origin(
+                                        party_id,
+                                        character_id,
+                                        agent,
+                                        case_id,
+                                        &pin,
+                                    )?;
+                                    return Ok(false);
+                                }
+                                OnSiteActionDecision::RestThenRetry(_)
+                                | OnSiteActionDecision::Hold => return Ok(false),
+                            }
+                        }
+                        OnSiteActionDecision::ReturnNow => {
+                            self.event(
+                                agent,
+                                CoreLoopEventKind::QuestSuppressed,
+                                format!(
+                                    "generated_case={};action={};reason=preserve_safe_return_reserve",
+                                    bounded_event_field(case_id),
+                                    bounded_event_field(&action.action_id),
+                                ),
+                            );
+                            self.evacuate_generated_party_to_origin(
+                                party_id,
+                                character_id,
+                                agent,
+                                case_id,
+                                &pin,
+                            )?;
+                            return Ok(false);
+                        }
+                        OnSiteActionDecision::Hold => {
+                            self.event(
+                                agent,
+                                CoreLoopEventKind::QuestSuppressed,
+                                format!(
+                                    "generated_case={};action={};reason=action_and_return_thermal_reserve_unavailable",
+                                    bounded_event_field(case_id),
+                                    bounded_event_field(&action.action_id),
+                                ),
+                            );
+                            return Ok(false);
+                        }
+                    }
+                }
                 let known_outcomes = self
                     .connection
                     .db
@@ -1320,10 +1745,56 @@ impl LiveRunner {
                         case_id,
                     );
                 }
-                if !self.generated_actor_ready_after_time(party_id, character_id, case_id)? {
-                    return Ok(false);
+                let occupied_site_id = self
+                    .party_by_id(party_id)?
+                    .current_case_site_id
+                    .map(|site| site.value)
+                    .ok_or("nonterminal generated action lost its occupied case site")?;
+                let return_pin = self
+                    .connection
+                    .db
+                    .backend_case_site_pins()
+                    .iter()
+                    .find(|pin| {
+                        pin.owner_character_id == character_id
+                            && pin.case_id == case_id
+                            && pin.case_site_id == occupied_site_id
+                    })
+                    .ok_or("nonterminal generated action has no return site pin")?;
+                let return_decision =
+                    self.generated_action_return_thermal_decision(party_id, &return_pin, 0);
+                if !matches!(
+                    return_decision,
+                    OnSiteActionDecision::Ready | OnSiteActionDecision::ReturnNow
+                ) {
+                    self.event(
+                        agent,
+                        CoreLoopEventKind::QuestSuppressed,
+                        format!(
+                            "generated_case={};action={};reason=reserved_return_no_longer_safe;decision={return_decision:?}",
+                            bounded_event_field(case_id),
+                            bounded_event_field(&action.action_id),
+                        ),
+                    );
+                    return Ok(true);
                 }
-                continue;
+                let return_completed = self.evacuate_generated_party_to_origin(
+                    party_id,
+                    character_id,
+                    agent,
+                    case_id,
+                    &return_pin,
+                )?;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::QuestDecision,
+                    format!(
+                        "generated_case={};action={};plan=one_attempt_then_reserved_return;return_completed={return_completed}",
+                        bounded_event_field(case_id),
+                        bounded_event_field(&action.action_id),
+                    ),
+                );
+                return Ok(true);
             }
             if let Some(action) = actions.iter().find(|row| row.can_travel_to_required_site) {
                 let funnel_key = (character_id, case_id.to_owned());
@@ -1363,6 +1834,56 @@ impl LiveRunner {
                     );
                     return Ok(false);
                 }
+                let route_origin = self.party_for(character_id)?;
+                let mut planned_case_site_recovery_minutes = 0;
+                if route_origin.current_settlement_id.is_some()
+                    ^ route_origin.current_case_site_id.is_some()
+                {
+                    match self.validate_case_site_thermal_readiness(party_id, agent, &pin) {
+                        DepartureReadiness::Ready => {}
+                        DepartureReadiness::ReadyWithItinerary {
+                            walking_minutes_per_day,
+                            travel_at_night,
+                            case_site_recovery_minutes,
+                        } => {
+                            planned_case_site_recovery_minutes = case_site_recovery_minutes;
+                            self.configure_safe_departure_itinerary(
+                                character_id,
+                                walking_minutes_per_day,
+                                travel_at_night,
+                            )?;
+                        }
+                        DepartureReadiness::WaitForSafeDeparture {
+                            wait_minutes,
+                            walking_minutes_per_day,
+                            travel_at_night,
+                            ..
+                        } => {
+                            if route_origin.current_settlement_id.is_some() {
+                                self.wait_for_safe_departure_at_settlement(
+                                    character_id,
+                                    agent,
+                                    case_id,
+                                    wait_minutes,
+                                    walking_minutes_per_day,
+                                    travel_at_night,
+                                )?;
+                            }
+                            return Ok(false);
+                        }
+                        DepartureReadiness::Deferred(reason) => {
+                            self.event(
+                                agent,
+                                CoreLoopEventKind::QuestSuppressed,
+                                format!(
+                                    "generated_case={};reason={reason};phase=route_thermal_readiness",
+                                    bounded_event_field(case_id)
+                                ),
+                            );
+                            return Ok(false);
+                        }
+                    }
+                }
                 if matches!(
                     self.provision_case_site_journey(
                         party_id,
@@ -1370,6 +1891,8 @@ impl LiveRunner {
                         agent,
                         case_id,
                         distance_m,
+                        planned_case_site_recovery_minutes
+                            .saturating_add(u64::from(action.duration_max_minutes)),
                     )?,
                     TravelProvisionDecision::Deferred(_)
                 ) {
@@ -1397,6 +1920,52 @@ impl LiveRunner {
                 }
                 if self.generated_traveled_cases.insert(funnel_key) {
                     self.metrics.generated_case_site_traveled += 1;
+                }
+                if planned_case_site_recovery_minutes > 0 {
+                    let recovery_key = (
+                        character_id,
+                        case_id.to_owned(),
+                        action.action_id.clone(),
+                    );
+                    if self.generated_case_site_recoveries.contains(&recovery_key) {
+                        return Ok(false);
+                    }
+                    let shelter = self.rest_at_camp_with_party_shelter(
+                        character_id,
+                        planned_case_site_recovery_minutes,
+                        "generated_case_site_planned_recovery",
+                    )?;
+                    self.generated_case_site_recoveries.insert(recovery_key);
+                    let post_recovery = self.generated_action_return_thermal_decision(
+                        party_id,
+                        &pin,
+                        u64::from(action.duration_max_minutes),
+                    );
+                    self.event(
+                        agent,
+                        CoreLoopEventKind::ExpeditionRecovery,
+                        format!(
+                            "generated_case={};action={};recovery=planned_case_site;minutes={planned_case_site_recovery_minutes};shelter={shelter:?};post_recovery={post_recovery:?}",
+                            bounded_event_field(case_id),
+                            bounded_event_field(&action.action_id),
+                        ),
+                    );
+                    match post_recovery {
+                        OnSiteActionDecision::Ready => {}
+                        OnSiteActionDecision::ReturnNow => {
+                            self.evacuate_generated_party_to_origin(
+                                party_id,
+                                character_id,
+                                agent,
+                                case_id,
+                                &pin,
+                            )?;
+                            return Ok(false);
+                        }
+                        OnSiteActionDecision::RestThenRetry(_) | OnSiteActionDecision::Hold => {
+                            return Ok(false);
+                        }
+                    }
                 }
                 if !self.generated_actor_ready_after_time(party_id, character_id, case_id)? {
                     return Ok(false);
@@ -1426,7 +1995,7 @@ impl LiveRunner {
                 continue;
             }
             if at_settlement {
-                let witness = self
+                let mut witnesses = self
                     .connection
                     .db
                     .backend_investigation_leads()
@@ -1437,9 +2006,26 @@ impl LiveRunner {
                             && !row.witness_name.is_empty()
                             && row.corrected_by.is_empty()
                     })
-                    .max_by_key(|row| (row.recorded_at, row.lead_id.clone()));
-                if let Some(witness) = witness
-                    && self.try_generated_dialogue_topic(
+                    .collect::<Vec<_>>();
+                witnesses.sort_by_key(|row| (row.recorded_at, row.lead_id.clone()));
+                witnesses.reverse();
+                let mut attempted_witnesses = HashSet::new();
+                let mut witness_progressed = false;
+                for witness in witnesses {
+                    let location = if witness.current_learned_location.is_empty() {
+                        witness.expected_location.clone()
+                    } else {
+                        witness.current_learned_location.clone()
+                    };
+                    let witness_key = (witness.witness_name.to_ascii_lowercase(), location.clone());
+                    if attempted_witnesses.contains(&witness_key) {
+                        continue;
+                    }
+                    if attempted_witnesses.len() >= 8 {
+                        break;
+                    }
+                    attempted_witnesses.insert(witness_key);
+                    if self.try_generated_dialogue_topic(
                         character_id,
                         agent,
                         cycle,
@@ -1447,13 +2033,14 @@ impl LiveRunner {
                         subject,
                         &["referred-testimony"],
                         Some(&witness.witness_name),
-                        Some(if witness.current_learned_location.is_empty() {
-                            &witness.expected_location
-                        } else {
-                            &witness.current_learned_location
-                        }),
+                        Some(&location),
                     )?
-                {
+                    {
+                        witness_progressed = true;
+                        break;
+                    }
+                }
+                if witness_progressed {
                     continue;
                 }
                 if self.try_generated_dialogue_topic(
@@ -1489,6 +2076,30 @@ impl LiveRunner {
             });
             if let Some(pin) = pin {
                 if pin.combat_available {
+                    let first_assessment =
+                        self.public_generated_case_site_assessment(party_id, &pin);
+                    if !first_assessment.eligible {
+                        self.event(
+                            agent,
+                            CoreLoopEventKind::QuestSuppressed,
+                            format!(
+                                "generated_case={};reason=unsafe_first_generated_combat;assessment={};ready_combatants={};party_power_milli={};enemy_power_milli={}",
+                                bounded_event_field(case_id),
+                                first_assessment.reason,
+                                first_assessment.ready_combatants,
+                                first_assessment.party_power_milli,
+                                first_assessment.enemy_power_milli,
+                            ),
+                        );
+                        let settlement_id = pin.origin_settlement_id.clone();
+                        let result = reducer_call!(self, "generated_unsafe_combat_retreat", |cb| self
+                            .connection
+                            .reducers
+                            .travel_to_settlement_then(character_id, settlement_id.clone(), cb));
+                        self.call(result)?;
+                        let _ = self.travel_camps(party_id)?;
+                        return Ok(false);
+                    }
                     let defeat_key = (character_id, case_id.to_owned());
                     let combat_fingerprint = self.public_party_combat_fingerprint(party_id);
                     if generated_defeat_decision(
@@ -1527,6 +2138,20 @@ impl LiveRunner {
                         pin.case_site_id, self.sequence
                     );
                     let battle_id = format!("battle:{mission_id}");
+                    let final_assessment =
+                        self.public_generated_case_site_assessment(party_id, &pin);
+                    if !final_assessment.eligible {
+                        self.event(
+                            agent,
+                            CoreLoopEventKind::QuestSuppressed,
+                            format!(
+                                "generated_case={};reason=generated_combat_revalidation_failed;assessment={}",
+                                bounded_event_field(case_id),
+                                final_assessment.reason,
+                            ),
+                        );
+                        return Ok(false);
+                    }
                     let result = reducer_call!(self, "autoresolve_generated_mission", |cb| self
                         .connection
                         .reducers
@@ -1629,6 +2254,7 @@ impl LiveRunner {
                 }
                 continue;
             }
+            self.emit_generated_case_no_progress(character_id, agent, cycle, case_id, &actions)?;
             return Ok(false);
         }
         Ok(false)

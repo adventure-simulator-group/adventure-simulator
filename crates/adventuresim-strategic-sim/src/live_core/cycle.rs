@@ -57,7 +57,12 @@ impl LiveRunner {
         Ok(())
     }
 
-    pub(super) fn cycle(&mut self, party_id: &str, cycle: u32) -> Result<(), String> {
+    pub(super) fn cycle(
+        &mut self,
+        party_id: &str,
+        cycle: u32,
+        reserved_contract_id: Option<&str>,
+    ) -> Result<(), String> {
         let Some((quest_owner, _)) = self.current_leader(party_id) else {
             self.observe_deaths();
             return Ok(());
@@ -104,7 +109,26 @@ impl LiveRunner {
         let active_contract = self.active_direct_contract(&party);
         let resuming_contract = active_contract.is_some();
         let quest = active_contract
-            .or_else(|| self.choose_quest(&party, &self.profiles[leader_agent as usize]))
+            .or_else(|| {
+                reserved_contract_id.and_then(|contract_id| {
+                    self.connection
+                        .db
+                        .backend_contracts()
+                        .iter()
+                        .find(|contract| {
+                            contract.id == contract_id
+                                && contract.settlement_id
+                                    == party.current_settlement_id.clone().unwrap_or_default()
+                                && contract.status == ContractStatus::Offered
+                        })
+                })
+            })
+            .or_else(|| {
+                reserved_contract_id
+                    .is_none()
+                    .then(|| self.choose_quest(&party, &self.profiles[leader_agent as usize]))
+                    .flatten()
+            })
             .ok_or("no suitable available or accepted quest")?;
         if quest.status == ContractStatus::ReadyToReport {
             return self.turn_in_ready_direct_contract(party_id, leader, leader_agent, &quest);
@@ -112,12 +136,7 @@ impl LiveRunner {
         let assessment = self.public_party_contract_assessment(party_id, &quest);
         if !assessment.eligible {
             if resuming_contract {
-                self.abandon_unsafe_active_contract(
-                    party_id,
-                    quest_owner,
-                    &quest,
-                    assessment,
-                )?;
+                self.abandon_unsafe_active_contract(party_id, quest_owner, &quest, assessment)?;
             } else {
                 self.event(
                     leader_agent,
@@ -138,6 +157,7 @@ impl LiveRunner {
                 leader_agent,
                 &quest.case_id,
                 quest.distance_m,
+                0,
             )? {
                 self.event(
                     leader_agent,
@@ -181,6 +201,50 @@ impl LiveRunner {
             .as_ref()
             .is_some_and(|site| site.value == case_site.case_site_id);
         if !already_at_case_site {
+            if party.current_settlement_id.is_some() ^ party.current_case_site_id.is_some() {
+                match self.validate_case_site_thermal_readiness(party_id, leader_agent, &case_site)
+                {
+                    DepartureReadiness::Ready => {}
+                    DepartureReadiness::ReadyWithItinerary {
+                        walking_minutes_per_day,
+                        travel_at_night,
+                        ..
+                    } => self.configure_safe_departure_itinerary(
+                        leader,
+                        walking_minutes_per_day,
+                        travel_at_night,
+                    )?,
+                    DepartureReadiness::WaitForSafeDeparture {
+                        wait_minutes,
+                        walking_minutes_per_day,
+                        travel_at_night,
+                        ..
+                    } => {
+                        if party.current_settlement_id.is_some() {
+                            self.wait_for_safe_departure_at_settlement(
+                                leader,
+                                leader_agent,
+                                &quest.case_id,
+                                wait_minutes,
+                                walking_minutes_per_day,
+                                travel_at_night,
+                            )?;
+                        }
+                        return Ok(());
+                    }
+                    DepartureReadiness::Deferred(reason) => {
+                        self.event(
+                            leader_agent,
+                            CoreLoopEventKind::QuestSuppressed,
+                            format!(
+                                "quest={};reason={reason};phase=route_thermal_readiness",
+                                bounded_event_field(&quest.id)
+                            ),
+                        );
+                        return Ok(());
+                    }
+                }
+            }
             if matches!(
                 self.provision_case_site_journey(
                     party_id,
@@ -188,6 +252,7 @@ impl LiveRunner {
                     leader_agent,
                     &quest.case_id,
                     case_site.distance_m,
+                    0,
                 )?,
                 TravelProvisionDecision::Deferred(_)
             ) {
@@ -347,10 +412,18 @@ impl LiveRunner {
         };
         leader = current;
         leader_agent = current_agent;
-        let report = self.connection.db.autoresolve_report().iter()
+        let report = self
+            .connection
+            .db
+            .autoresolve_report()
+            .iter()
             .find(|report| report.battle_id == battle_id)
             .ok_or("autoresolve completed without a report")?;
-        let victory = self.connection.db.battle_result().iter()
+        let victory = self
+            .connection
+            .db
+            .battle_result()
+            .iter()
             .any(|result| result.battle_id == battle_id);
         let winning_battle_id = victory.then_some(battle_id);
         self.event(
@@ -406,7 +479,10 @@ impl LiveRunner {
             self.event(
                 leader_agent,
                 CoreLoopEventKind::AbandonQuest,
-                format!("quest={};reason=unchanged_defeated_threat", bounded_event_field(&quest.id)),
+                format!(
+                    "quest={};reason=unchanged_defeated_threat",
+                    bounded_event_field(&quest.id)
+                ),
             );
             let result = reducer_call!(self, "replenish_quests_after_abandon", |cb| self
                 .connection
@@ -593,8 +669,7 @@ impl LiveRunner {
             .iter()
             .find(|row| row.party_id == party_id && row.character_id == character_id)
             .map_or(0, |row| row.value);
-        let (party_load_kg, party_capacity_kg, _) =
-            self.public_party_load_and_capacity(&party_id);
+        let (party_load_kg, party_capacity_kg, _) = self.public_party_load_and_capacity(&party_id);
         let mut candidates = definitions
             .iter()
             .filter_map(|candidate| {
@@ -615,8 +690,8 @@ impl LiveRunner {
                         equipment_utility(&profile, item).map(|utility| utility * *condition)
                     })
                     .fold(0.0, f32::max);
-                let (service_id, provider_id, quoted_cost) = self
-                    .public_equipment_storefront_offer(character_id, settlement, candidate)?;
+                let (service_id, provider_id, quoted_cost) =
+                    self.public_equipment_storefront_offer(character_id, settlement, candidate)?;
                 let medical_reserve = self
                     .observable_medical_reserve(character_id, settlement)
                     .unwrap_or(0);
@@ -676,21 +751,25 @@ impl LiveRunner {
             .find(|row| row.party_id == party_id && row.character_id == character_id)
             .map_or(0, |row| row.value);
         let maximum_personal_payment = quoted_cost.saturating_sub(earned_shortfall);
-        let result = reducer_call!(self, "purchase_personal_storefront_with_party_stake", |cb| self
-            .connection
-            .reducers
-            .purchase_personal_storefront_with_party_stake_then(
-                character_id,
-                settlement.to_string(),
-                service_id.clone(),
-                provider_id,
-                candidate.id.clone(),
-                1,
-                quoted_cost,
-                maximum_personal_payment,
-                earned_shortfall,
-                cb,
-            ));
+        let result = reducer_call!(
+            self,
+            "purchase_personal_storefront_with_party_stake",
+            |cb| self
+                .connection
+                .reducers
+                .purchase_personal_storefront_with_party_stake_then(
+                    character_id,
+                    settlement.to_string(),
+                    service_id.clone(),
+                    provider_id,
+                    candidate.id.clone(),
+                    1,
+                    quoted_cost,
+                    maximum_personal_payment,
+                    earned_shortfall,
+                    cb,
+                )
+        );
         self.call(result)?;
         let purse_after_trade = self.personal_gold(character_id);
         let stake_after_trade = self

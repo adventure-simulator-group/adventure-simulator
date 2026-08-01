@@ -290,6 +290,61 @@ fn generated_defeat_policy_suppresses_work_until_public_capability_changes() {
 }
 
 #[test]
+fn departure_preflights_the_selected_travel_action_not_a_longer_alternative() {
+    let profile = generate_profile(42, 0);
+    let mut selected = projected_action("selected-62", "search");
+    selected.available = false;
+    selected.can_travel_to_required_site = true;
+    selected.required_case_site_id = "site".into();
+    selected.duration_max_minutes = 62;
+    let mut alternative = selected.clone();
+    alternative.action_id = "alternative-67".into();
+    alternative.duration_max_minutes = 67;
+    let mut actions = vec![alternative, selected];
+    let next = select_generated_travel_action(&profile, &mut actions, |action| {
+        action.duration_max_minutes == 62
+    })
+    .expect("safe fallback travel action");
+    assert_eq!(next.action_id, "selected-62");
+    assert_eq!(next.duration_max_minutes, 62);
+    assert!(projected_action_ready(0.1, 3_000.0, 6_000.0));
+    assert!(!projected_action_ready(0.1, 5_400.0, 6_000.0));
+    assert!(
+        select_generated_travel_action(&profile, &mut actions, |_| false).is_none(),
+        "all unsafe candidates must fail closed"
+    );
+}
+
+#[test]
+fn first_generated_combat_uses_the_same_checked_public_margin() {
+    let members = [PublicPartyCombatant {
+        capability: capability(1, true, false, false, false),
+        ready: true,
+    }];
+    let unsafe_assessment = public_contract_assessment(1, "one", u64::MAX, &members);
+    assert!(!unsafe_assessment.eligible);
+    assert!(matches!(
+        unsafe_assessment.reason,
+        "public_combat_margin_overflow" | "public_matchup_below_safety_margin"
+    ));
+    let missing = public_contract_assessment(1, "one", 0, &members);
+    assert!(!missing.eligible);
+    assert_eq!(missing.reason, "missing_authoritative_opposition_power");
+
+    let source = LIVE_CORE_SOURCE;
+    let generated = source
+        .split("pub(super) fn advance_generated_case")
+        .nth(1)
+        .expect("generated case loop");
+    let first = generated.find("unsafe_first_generated_combat").unwrap();
+    let revalidated = generated
+        .find("generated_combat_revalidation_failed")
+        .unwrap();
+    let reducer = generated.find("autoresolve_generated_mission").unwrap();
+    assert!(first < revalidated && revalidated < reducer);
+}
+
+#[test]
 fn public_quest_fixture_selection_is_bounded_and_validates_provenance() {
     let fixture = SimulationQuestFixture {
         id: 0,
@@ -327,4 +382,78 @@ fn public_quest_fixture_selection_is_bounded_and_validates_provenance() {
     let mut wrong_party = fixture;
     wrong_party.direct_party_id = "party-c".into();
     assert!(select_public_quest_fixture([wrong_party], 17, &expected).is_err());
+
+    assert_eq!(
+        select_public_quest_fixture_if_present([], 17, &expected),
+        Ok(None)
+    );
+    let bootstrap = include_str!("../bootstrap.rs");
+    assert!(bootstrap.contains("std::time::Instant::now() + ACTION_TIMEOUT"));
+    assert!(bootstrap.contains("std::thread::sleep(Duration::from_millis(5))"));
+    assert!(bootstrap.contains("wait_for_new_public_direct_contract"));
+    assert!(bootstrap.contains("generated_case_id: None"));
+    assert!(bootstrap.contains("select_public_quest_fixture_if_present"));
+    assert!(!bootstrap.contains("wait_for_public_quest_fixture("));
+}
+
+#[test]
+fn quest_fixture_designates_the_strongest_publicly_safe_party_stably() {
+    let assessment = |power, eligible| PublicContractAssessment {
+        eligible,
+        reason: if eligible { "safe" } else { "unsafe" },
+        enemy_count: Some(1),
+        ready_combatants: 1,
+        party_power_milli: power,
+        enemy_power_milli: 100,
+    };
+    let selected = select_strongest_fixture_party(vec![
+        (10, "party-z".into(), assessment(200, true)),
+        (20, "party-a".into(), assessment(300, true)),
+    ])
+    .unwrap();
+    assert_eq!(selected.0, (20, "party-a".into()));
+    assert_eq!(selected.1, (10, "party-z".into()));
+
+    let tied = select_strongest_fixture_party(vec![
+        (20, "party-z".into(), assessment(300, true)),
+        (10, "party-a".into(), assessment(300, true)),
+    ])
+    .unwrap();
+    assert_eq!(tied.0, (10, "party-a".into()));
+    assert!(
+        select_strongest_fixture_party(vec![
+            (10, "party-a".into(), assessment(0, false)),
+            (20, "party-b".into(), assessment(0, false)),
+        ])
+        .is_err()
+    );
+}
+
+#[test]
+fn quest_fixture_lane_plan_is_exact_and_order_independent() {
+    let fixture = FixtureLanePlan {
+        direct_contract_id: "contract:reserved".into(),
+        generated_case_id: Some("case:reserved".into()),
+        direct_leader_id: 20,
+        generated_leader_id: 10,
+        direct_party_id: "party:z".into(),
+        generated_party_id: "party:a".into(),
+    };
+    // Formation/scheduler order and agent propensity are deliberately absent:
+    // the authoritative fixture provenance alone assigns each lane.
+    assert_eq!(
+        fixture_quest_lane(Some(&fixture), 10, "party:a"),
+        Some(FixtureQuestLane::Generated)
+    );
+    assert_eq!(
+        fixture_quest_lane(Some(&fixture), 20, "party:z"),
+        Some(FixtureQuestLane::Direct)
+    );
+    assert_eq!(fixture_quest_lane(Some(&fixture), 10, "party:z"), None);
+    assert_eq!(fixture_quest_lane(None, 20, "party:z"), None);
+
+    let bootstrap = include_str!("../bootstrap.rs");
+    assert!(bootstrap.contains("contract.id == fixture.direct_contract_id"));
+    assert!(bootstrap.contains("Some(FixtureQuestLane::Generated) => None"));
+    assert!(bootstrap.contains("None => runner.choose_quest(&party, &profile)"));
 }

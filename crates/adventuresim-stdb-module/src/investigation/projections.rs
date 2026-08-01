@@ -201,6 +201,10 @@ pub struct BackendCaseSitePin {
     pub case_resolved: bool,
     /// This reveals only that combat is currently a permitted onsite action.
     pub combat_available: bool,
+    /// Present only with `combat_available`; aggregate observer-safe strength
+    /// of the exact generated hostile group, never hostile identity.
+    pub opposition_count: Option<u32>,
+    pub opposition_combat_power: Option<u64>,
 }
 
 #[derive(Clone, Debug, SpacetimeType)]
@@ -904,6 +908,27 @@ fn generated_authority_reducer(
     )
 }
 
+fn reducer_action_public_case_id(
+    ctx: &ReducerContext,
+    capability: &InvestigationActionCapability,
+) -> Option<String> {
+    match capability.provenance_kind.as_str() {
+        "manual" if capability.generated_case_id.is_empty() => Some(capability.case_id.clone()),
+        "generated" if !capability.generated_case_id.is_empty() => {
+            let (manifest_json, _) = generated_authority_reducer(ctx, capability).ok()??;
+            let manifest = serde_json::from_str::<
+                adventuresim_core::quest_generation::GeneratedCase,
+            >(&manifest_json)
+            .ok()?;
+            (manifest.canonical_case_id == capability.generated_case_id
+                && (capability.case_id == manifest.canonical_case_id
+                    || capability.case_id == manifest.public_case_id))
+                .then_some(manifest.public_case_id)
+        }
+        _ => None,
+    }
+}
+
 fn generated_investigability(
     ctx: &ReducerContext,
     capability: &InvestigationActionCapability,
@@ -954,6 +979,9 @@ fn capability_has_live_pattern_support_view(
     ctx: &ViewContext,
     capability: &InvestigationActionCapability,
 ) -> bool {
+    let Some(observer_case_id) = projected_action_public_case_id(ctx, capability) else {
+        return false;
+    };
     let output = ctx
         .db
         .investigation_generated_action_output()
@@ -977,7 +1005,7 @@ fn capability_has_live_pattern_support_view(
     };
     observer_pattern_route_has_live_corroborated_clue(
         capability.owner_character_id,
-        &capability.case_id,
+        &observer_case_id,
         &evidence_id,
         ctx.db
             .investigation_evidence_knowledge()
@@ -1052,6 +1080,9 @@ fn capability_has_live_support_view(
     capability: &InvestigationActionCapability,
     kind: action::InvestigationActionKind,
 ) -> bool {
+    let Some(observer_case_id) = projected_action_public_case_id(ctx, capability) else {
+        return false;
+    };
     if !tracking_capability_chain_is_coherent(
         capability,
         kind,
@@ -1090,7 +1121,7 @@ fn capability_has_live_support_view(
                 lead_is_live_contact_referral(
                     &lead,
                     capability.owner_character_id,
-                    &capability.case_id,
+                    &observer_case_id,
                 )
             })
     {
@@ -1104,7 +1135,7 @@ fn capability_has_live_support_view(
             .owner_character_id()
             .filter(capability.owner_character_id)
             .any(|lead| {
-                lead.case_id == capability.case_id
+                lead.case_id == observer_case_id
                     && lead.destination_stage == "approximate_area"
                     && lead.corrected_by.is_empty()
             })

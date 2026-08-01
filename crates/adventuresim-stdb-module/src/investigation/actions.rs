@@ -465,9 +465,11 @@ fn validate_generated_pattern_condition(
             return Err("Generated action output authority is invalid".into());
         }
     };
+    let observer_case_id = reducer_action_public_case_id(ctx, capability)
+        .ok_or("Generated action has no observer-safe case binding")?;
     if !observer_pattern_route_has_live_corroborated_clue(
         capability.owner_character_id,
-        &capability.case_id,
+        &observer_case_id,
         &evidence_id,
         ctx.db
             .investigation_evidence_knowledge()
@@ -661,13 +663,15 @@ fn validate_live_action_prerequisites(
         }
     }
     let prereqs = action::prerequisites(kind);
+    let observer_case_id = reducer_action_public_case_id(ctx, capability)
+        .ok_or("Investigation action has no observer-safe case binding")?;
     if prereqs.requires_contact_referral
         && !ctx
             .db
             .investigation_lead()
             .owner_character_id()
             .filter(actor.id)
-            .any(|lead| lead_is_live_contact_referral(&lead, actor.id, &capability.case_id))
+            .any(|lead| lead_is_live_contact_referral(&lead, actor.id, &observer_case_id))
     {
         return Err("No live witness referral supports this action".into());
     }
@@ -679,7 +683,7 @@ fn validate_live_action_prerequisites(
             .owner_character_id()
             .filter(actor.id)
             .any(|lead| {
-                lead.case_id == capability.case_id
+                lead.case_id == observer_case_id
                     && lead.destination_stage == "approximate_area"
                     && lead.corrected_by.is_empty()
             })
@@ -1225,7 +1229,9 @@ pub(crate) fn perform_investigation_action_authorized(
     let target_terrain = parse_action_terrain(&capability.target_terrain)?;
     validate_action_route_graph(ctx, actor_id, &capability.case_id)?;
     let members = validate_live_action_prerequisites(ctx, &actor, &party_id, &capability, kind)?;
-    let started_at = synchronize_party_activity_time(ctx, &members, party.leader_id)?;
+    let Some(started_at) = synchronize_party_activity_time(ctx, &members, party.leader_id)? else {
+        return Ok(());
+    };
     validate_generated_pattern_condition(ctx, &capability, kind, started_at)?;
     let mut route_skills = party_action_skills(ctx, &party_id, actor_id, target_terrain)?;
     if let Some(investigability) = generated_investigability(ctx, &capability) {
@@ -1268,22 +1274,37 @@ pub(crate) fn perform_investigation_action_authorized(
     // party votes are UX; only this transaction authorizes the shared time.
     validate_live_action_prerequisites(ctx, &actor, &party_id, &capability, kind)?;
     validate_generated_pattern_condition(ctx, &capability, kind, started_at)?;
+    let mut interval_completed = true;
     for member_id in &members {
-        if !advance_investigation_time(ctx, *member_id, u64::from(resolution.cost.minutes))? {
-            return Err("Every living party member must survive the investigation interval".into());
-        }
+        interval_completed &=
+            advance_investigation_time(ctx, *member_id, u64::from(resolution.cost.minutes))?;
     }
+    if !interval_completed {
+        // Time, exposure, and death are already authoritative writes. Never
+        // roll them back merely because the planned action interval clipped.
+        let _ = crate::strategic::normalize_and_elect_party_leader(ctx, &party_id);
+        let _ = crate::strategic::reconcile_party_objective_continuity(ctx, &party_id);
+        return Ok(());
+    }
+    crate::strategic::normalize_and_elect_party_leader(ctx, &party_id)?;
     crate::strategic::reconcile_party_objective_continuity(ctx, &party_id)?;
     if resolution.success {
         commit_action_consequence(ctx, &capability, &party_id, &attempt_id)?;
         commit_generated_remediation(ctx, &capability, &party_id, &attempt_id)?;
     }
     persist_action_result_lead(ctx, &capability, &attempt_id, &resolution)?;
+    let normalized_party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id)
+        .ok_or("Party disappeared after investigation interval")?;
+    crate::character::require_living_character(ctx, normalized_party.leader_id)?;
     let completed_at = ctx
         .db
         .character_time()
         .character_id()
-        .find(party.leader_id)
+        .find(normalized_party.leader_id)
         .ok_or("Party leader strategic clock disappeared")?
         .minutes;
     ctx.db

@@ -30,6 +30,7 @@ use adventuresim_stdb_client::{
     backend_character_deaths_table::BackendCharacterDeathsTableAccess,
     backend_character_limbs_table::BackendCharacterLimbsTableAccess,
     backend_character_needs_table::BackendCharacterNeedsTableAccess,
+    backend_character_stats_table::BackendCharacterStatsTableAccess,
     backend_character_strategic_conditions_table::BackendCharacterStrategicConditionsTableAccess,
     backend_character_times_table::BackendCharacterTimesTableAccess,
     backend_character_training_schedules_table::BackendCharacterTrainingSchedulesTableAccess,
@@ -52,10 +53,10 @@ use adventuresim_stdb_client::{
     claim_simulation_run_reducer::claim_simulation_run,
     configure_simulation_character_reducer::configure_simulation_character,
     continue_camp_travel_reducer::continue_camp_travel,
-    deposit_party_inventory_item_reducer::deposit_party_inventory_item,
     contract_interaction_stage_type::ContractInteractionStage,
     contract_status_type::ContractStatus,
     create_named_character_with_id_reducer::create_named_character_with_id,
+    deposit_party_inventory_item_reducer::deposit_party_inventory_item,
     ensure_settlement_activity_reducer::ensure_settlement_activity,
     equip_item_at_placement_reducer::equip_item_at_placement, equip_item_reducer::equip_item,
     equipment_occupancy_table::EquipmentOccupancyTableAccess, field_shelter_type::FieldShelter,
@@ -82,6 +83,7 @@ use adventuresim_stdb_client::{
     seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage,
     seed_simulation_quest_fixture_reducer::seed_simulation_quest_fixture,
     seed_simulation_world_reducer::seed_simulation_world,
+    set_party_travel_itinerary_reducer::set_party_travel_itinerary,
     settlement_resident_presence_table::SettlementResidentPresenceTableAccess,
     settlement_service_type::SettlementService, settlement_smith_table::SettlementSmithTableAccess,
     settlement_table::SettlementTableAccess,
@@ -91,10 +93,10 @@ use adventuresim_stdb_client::{
     sponsor_party_member_inn_rest_reducer::sponsor_party_member_inn_rest,
     start_dialogue_reducer::start_dialogue, store_battle_loot_reducer::store_battle_loot,
     strategic_encounter_table::StrategicEncounterTableAccess,
-    submit_item_for_repair_reducer::submit_item_for_repair, treat_limb_reducer::treat_limb,
+    submit_item_for_repair_reducer::submit_item_for_repair,
     synchronize_party_for_activity_reducer::synchronize_party_for_activity,
     travel_to_case_site_reducer::travel_to_case_site,
-    travel_to_settlement_reducer::travel_to_settlement,
+    travel_to_settlement_reducer::travel_to_settlement, treat_limb_reducer::treat_limb,
     update_training_schedule_reducer::update_training_schedule,
     withdraw_party_inventory_item_reducer::withdraw_party_inventory_item,
     world_clock_table::WorldClockTableAccess, world_data_import_table::WorldDataImportTableAccess,
@@ -131,6 +133,10 @@ const RANGED_AMMUNITION_FLOOR: u32 = 20;
 const MIN_DEPARTURE_ENCUMBRANCE_REMAINING_BPS: u32 = 2_000;
 const MAX_DEPARTURE_WETNESS_BPS: u16 = 8_000;
 const MAX_DEPARTURE_ABS_THERMAL_STRAIN: u32 = 2_500;
+/// Keep the public minute-by-minute weather projection bounded. A route beyond
+/// sixty days is not a credible case-site leg and fails closed instead of
+/// consuming unbounded simulator work.
+const MAX_CASE_SITE_THERMAL_FORECAST_MINUTES: u64 = 60 * 1_440;
 const MIN_ACTIONABLE_PHYSIOLOGY_CONFIDENCE_BPS: u16 = 3_000;
 /// Older observations can describe a materially different disease stage.
 /// One strategic day permits ordinary asynchronous party observation without
@@ -400,6 +406,7 @@ pub enum CoreLoopEventKind {
     QuestSuppressed,
     Death,
     QuestDecision,
+    SafeDepartureWait,
     GeneratedDiscoveryAttempt,
     GeneratedDiscoveryResult,
     GeneratedCaseIntake,
@@ -719,7 +726,249 @@ struct PublicSurvivalObservation {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DepartureReadiness {
     Ready,
+    ReadyWithItinerary {
+        walking_minutes_per_day: u16,
+        travel_at_night: bool,
+        case_site_recovery_minutes: u64,
+    },
+    WaitForSafeDeparture {
+        wait_minutes: u64,
+        walking_minutes_per_day: u16,
+        travel_at_night: bool,
+        case_site_recovery_minutes: u64,
+    },
     Deferred(&'static str),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct SelectedCaseSitePlan {
+    walking_minutes_per_day: u16,
+    travel_at_night: bool,
+    departure_wait_minutes: u64,
+    outbound: adventuresim_core::strategic_time::ItineraryForecast,
+    returned: adventuresim_core::strategic_time::ItineraryForecast,
+    minimum_insulation_bps: u16,
+    case_site_recovery_minutes: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OnSiteActionDecision {
+    Ready,
+    RestThenRetry(u64),
+    ReturnNow,
+    Hold,
+}
+
+fn classify_on_site_action_decision(
+    action_return_safe: bool,
+    rest_action_return_safe: bool,
+    recovery_minutes: u64,
+    return_now_safe: bool,
+) -> OnSiteActionDecision {
+    if action_return_safe {
+        OnSiteActionDecision::Ready
+    } else if rest_action_return_safe && (1..=1_440).contains(&recovery_minutes) {
+        OnSiteActionDecision::RestThenRetry(recovery_minutes)
+    } else if return_now_safe {
+        OnSiteActionDecision::ReturnNow
+    } else {
+        OnSiteActionDecision::Hold
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GeneratedAdvanceResult {
+    Progressed,
+    RecoveryCommitted,
+    NoProgress,
+}
+
+fn classify_generated_advance(
+    public_progressed: bool,
+    elapsed_advanced: bool,
+) -> GeneratedAdvanceResult {
+    if public_progressed {
+        GeneratedAdvanceResult::Progressed
+    } else if elapsed_advanced {
+        GeneratedAdvanceResult::RecoveryCommitted
+    } else {
+        GeneratedAdvanceResult::NoProgress
+    }
+}
+
+fn calories_after_strenuous_action(calories_used: f32, action_minutes: u64) -> f32 {
+    calories_used
+        + action_minutes as f32 / 1_440.0
+            * adventuresim_core::provisioning::STRATEGIC_TRAVEL_KCAL_PER_DAY
+}
+
+fn projected_action_ready(
+    nonfatigue_incapacitation: f32,
+    calories_after_action: f32,
+    fatigue_capacity: f32,
+) -> bool {
+    projected_action_status(
+        nonfatigue_incapacitation,
+        calories_after_action,
+        fatigue_capacity,
+    ) == adventuresim_core::morale::IncapacitationStatus::Ready
+}
+
+fn projected_action_survivable(
+    nonfatigue_incapacitation: f32,
+    calories_after_action: f32,
+    fatigue_capacity: f32,
+) -> bool {
+    projected_action_status(
+        nonfatigue_incapacitation,
+        calories_after_action,
+        fatigue_capacity,
+    ) != adventuresim_core::morale::IncapacitationStatus::Incapacitated
+}
+
+fn projected_itinerary_survivable(
+    nonfatigue_incapacitation: f32,
+    itinerary: &adventuresim_core::strategic_time::ItineraryForecast,
+    member_index: usize,
+    fatigue_capacity: f32,
+) -> bool {
+    itinerary
+        .member_maximum_fatigue
+        .get(member_index)
+        .is_some_and(|fatigue| {
+            projected_action_survivable(
+                nonfatigue_incapacitation,
+                fatigue * fatigue_capacity,
+                fatigue_capacity,
+            )
+        })
+}
+
+fn projected_action_status(
+    nonfatigue_incapacitation: f32,
+    calories_after_action: f32,
+    fatigue_capacity: f32,
+) -> adventuresim_core::morale::IncapacitationStatus {
+    adventuresim_core::morale::StrategicIncapacitation {
+        pain: nonfatigue_incapacitation.max(0.0),
+        fatigue: adventuresim_core::morale::fatigue_incapacitation(
+            calories_after_action / fatigue_capacity.max(0.01),
+        ),
+        ..Default::default()
+    }
+    .status()
+}
+
+fn round_trip_walking_window_minutes(
+    current_walking_minutes: u16,
+    movement_minutes: u64,
+    action_minutes: u64,
+) -> Option<u16> {
+    let required = movement_minutes
+        .checked_mul(2)?
+        .checked_add(action_minutes)?;
+    let required_breakpoint = required.checked_add(59)?.checked_div(60)?.checked_mul(60)?;
+    u16::try_from(required_breakpoint.max(u64::from(current_walking_minutes)))
+        .ok()
+        .filter(|minutes| *minutes <= 1_440)
+}
+
+fn generated_action_walking_windows(
+    current_walking_minutes: u16,
+    movement_minutes: u64,
+    action_minutes: u64,
+) -> Vec<u16> {
+    let mut windows = Vec::new();
+    let mut push = |minutes: u64| {
+        if let Ok(minutes) = u16::try_from(minutes)
+            && (adventuresim_core::strategic_time::MIN_WALKING_MINUTES_PER_DAY
+                ..=adventuresim_core::strategic_time::MAX_WALKING_MINUTES_PER_DAY)
+                .contains(&minutes)
+            && !windows.contains(&minutes)
+        {
+            windows.push(minutes);
+        }
+    };
+    push(u64::from(current_walking_minutes));
+    if let Some(widened) =
+        round_trip_walking_window_minutes(current_walking_minutes, movement_minutes, action_minutes)
+    {
+        push(u64::from(widened));
+    }
+    let exact_action_breakpoint = movement_minutes.saturating_add(action_minutes);
+    push(exact_action_breakpoint);
+    push(movement_minutes);
+    let descent_start = exact_action_breakpoint.min(u64::from(
+        adventuresim_core::strategic_time::MAX_WALKING_MINUTES_PER_DAY,
+    ));
+    for minutes in (u64::from(adventuresim_core::strategic_time::MIN_WALKING_MINUTES_PER_DAY)
+        ..descent_start)
+        .rev()
+    {
+        push(minutes);
+    }
+    windows
+}
+
+fn select_generated_case_site_plan<T>(
+    current_walking_minutes: u16,
+    movement_minutes: u64,
+    action_minutes: u64,
+    current_travel_at_night: bool,
+    starting_minute: u64,
+    mut evaluate: impl FnMut(u16, bool, u64) -> Option<T>,
+) -> Option<T> {
+    let windows =
+        generated_action_walking_windows(current_walking_minutes, movement_minutes, action_minutes);
+    for travel_at_night in [current_travel_at_night, !current_travel_at_night] {
+        for &walking_minutes in &windows {
+            if adventuresim_core::strategic_time::is_walking_time(
+                starting_minute,
+                walking_minutes,
+                travel_at_night,
+            ) && let Some(plan) = evaluate(walking_minutes, travel_at_night, 0)
+            {
+                return Some(plan);
+            }
+            if let Some(wait_minutes) =
+                adventuresim_core::strategic_time::minutes_until_next_walking_start(
+                    starting_minute,
+                    walking_minutes,
+                    travel_at_night,
+                )
+                .and_then(representable_safe_departure_wait_minutes)
+                && let Some(plan) = evaluate(walking_minutes, travel_at_night, wait_minutes)
+            {
+                return Some(plan);
+            }
+        }
+    }
+    None
+}
+
+fn joint_case_site_plan_failure_reason(
+    candidate_complete_projection: bool,
+    candidate_projection_unavailable: bool,
+) -> &'static str {
+    if candidate_complete_projection || !candidate_projection_unavailable {
+        "route_action_plan_intrinsic"
+    } else {
+        "route_weather_projection_unavailable"
+    }
+}
+
+fn safe_departure_wait_minutes(
+    immediate_safe: bool,
+    delayed_safe: bool,
+    wait_minutes: Option<u64>,
+) -> Option<u64> {
+    (!immediate_safe && delayed_safe)
+        .then_some(wait_minutes?)
+        .filter(|minutes| (60..=1_440).contains(minutes))
+}
+
+fn representable_safe_departure_wait_minutes(next_walking_start: u64) -> Option<u64> {
+    (next_walking_start <= 1_440).then_some(next_walking_start.max(60))
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -948,6 +1197,365 @@ enum PostEncounterJourneyAction {
     HoldForRecovery,
     HandleActiveCamp,
     ContinueTravel,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PublicRoutePoint {
+    latitude_microdegrees: i32,
+    longitude_microdegrees: i32,
+    elevation_m: i16,
+}
+
+fn public_straight_line_distance_m(
+    origin: PublicRoutePoint,
+    destination: PublicRoutePoint,
+    geographic: bool,
+) -> u64 {
+    let longitude_delta = (i64::from(destination.longitude_microdegrees)
+        - i64::from(origin.longitude_microdegrees)) as f64
+        / 1_000_000.0;
+    let latitude_delta = (i64::from(destination.latitude_microdegrees)
+        - i64::from(origin.latitude_microdegrees)) as f64
+        / 1_000_000.0;
+    let distance_m = if geographic {
+        let origin_latitude = f64::from(origin.latitude_microdegrees) / 1_000_000.0;
+        let destination_latitude = f64::from(destination.latitude_microdegrees) / 1_000_000.0;
+        let lat1 = origin_latitude.to_radians();
+        let lat2 = destination_latitude.to_radians();
+        let delta_lat = latitude_delta.to_radians();
+        let delta_lon = longitude_delta.to_radians();
+        let a = ((delta_lat / 2.0).sin().powi(2)
+            + lat1.cos() * lat2.cos() * (delta_lon / 2.0).sin().powi(2))
+        .clamp(0.0, 1.0);
+        6_371_000.0 * 2.0 * a.sqrt().atan2((1.0 - a).sqrt())
+    } else {
+        longitude_delta.hypot(latitude_delta) * 1_000.0
+    };
+    distance_m.round().max(1.0) as u64
+}
+
+fn case_site_movement_minutes(distance_m: u64) -> Option<u64> {
+    (distance_m > 0).then(|| ((distance_m as f64 / 1_250.0) * 60.0).ceil() as u64)
+}
+
+#[allow(dead_code)]
+fn projected_route_thermal_safe(
+    starting_minute: u64,
+    elapsed_minutes: u64,
+    origin: PublicRoutePoint,
+    destination: PublicRoutePoint,
+    starting_state: adventuresim_core::survival::SurvivalState,
+    insulation_bps: u16,
+) -> Option<bool> {
+    let itinerary = adventuresim_core::strategic_time::ItineraryForecast {
+        segments: vec![adventuresim_core::strategic_time::ItinerarySegment {
+            kind: adventuresim_core::strategic_time::ItinerarySegmentKind::Walking,
+            elapsed_start: 0,
+            elapsed_minutes,
+            movement_start: 0,
+            movement_minutes: elapsed_minutes,
+            average_fatigue_start: 0.0,
+            average_fatigue_end: 0.0,
+            maximum_fatigue_end: 0.0,
+            required_rest_minutes: 0,
+        }],
+        member_final_fatigue: vec![0.0],
+        member_maximum_fatigue: vec![0.0],
+        total_elapsed_minutes: elapsed_minutes,
+        total_movement_minutes: elapsed_minutes,
+        truncated: false,
+    };
+    projected_itinerary_thermal_safe(
+        starting_minute,
+        &itinerary,
+        origin,
+        destination,
+        starting_state,
+        insulation_bps,
+        false,
+    )
+}
+
+#[allow(dead_code)]
+fn projected_itinerary_thermal_safe(
+    starting_minute: u64,
+    itinerary: &adventuresim_core::strategic_time::ItineraryForecast,
+    origin: PublicRoutePoint,
+    destination: PublicRoutePoint,
+    starting_state: adventuresim_core::survival::SurvivalState,
+    insulation_bps: u16,
+    has_tent: bool,
+) -> Option<bool> {
+    projected_itinerary_thermal_state(
+        starting_minute,
+        itinerary,
+        origin,
+        destination,
+        starting_state,
+        insulation_bps,
+        has_tent,
+    )
+    .map(|projection| projection.safe)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct PublicThermalProjection {
+    state: adventuresim_core::survival::SurvivalState,
+    safe: bool,
+}
+
+fn projected_itinerary_thermal_state(
+    starting_minute: u64,
+    itinerary: &adventuresim_core::strategic_time::ItineraryForecast,
+    origin: PublicRoutePoint,
+    destination: PublicRoutePoint,
+    starting_state: adventuresim_core::survival::SurvivalState,
+    insulation_bps: u16,
+    has_tent: bool,
+) -> Option<PublicThermalProjection> {
+    if itinerary.truncated
+        || itinerary.total_elapsed_minutes == 0
+        || itinerary.total_elapsed_minutes > MAX_CASE_SITE_THERMAL_FORECAST_MINUTES
+        || itinerary.total_movement_minutes == 0
+    {
+        return None;
+    }
+    let clothing = adventuresim_core::survival::ClothingExposure {
+        insulation_bps,
+        // Public equipped definitions are sufficient to reproduce insulation.
+        // Layer ordering is not projected here, so rain protection deliberately
+        // fails safe at zero rather than assuming an advantageous outer shell.
+        weatherproofing_bps: 0,
+        peripheral_protection_bps: [0; 4],
+    };
+    let mut state = starting_state;
+    for segment in &itinerary.segments {
+        for local_offset in 0..segment.elapsed_minutes {
+            let offset = segment.elapsed_start.saturating_add(local_offset);
+            let movement_offset = segment.movement_start.saturating_add(
+                if segment.kind == adventuresim_core::strategic_time::ItinerarySegmentKind::Walking
+                {
+                    local_offset.min(segment.movement_minutes)
+                } else {
+                    0
+                },
+            );
+            let interpolate = |start: i32, end: i32| {
+                let delta = i64::from(end) - i64::from(start);
+                (i64::from(start)
+                    + delta.saturating_mul(movement_offset as i64)
+                        / itinerary.total_movement_minutes as i64)
+                    .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+            };
+            let elevation = interpolate(
+                i32::from(origin.elevation_m),
+                i32::from(destination.elevation_m),
+            )
+            .clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+            let weather = adventuresim_core::weather::weather_at(
+                adventuresim_core::weather::WORLD_WEATHER_SEED,
+                starting_minute.saturating_add(offset),
+                interpolate(
+                    origin.latitude_microdegrees,
+                    destination.latitude_microdegrees,
+                ),
+                interpolate(
+                    origin.longitude_microdegrees,
+                    destination.longitude_microdegrees,
+                ),
+                elevation,
+            );
+            let shelter = if segment.kind
+                == adventuresim_core::strategic_time::ItinerarySegmentKind::Camp
+                && has_tent
+            {
+                adventuresim_core::survival::FieldShelter::Tent
+            } else {
+                adventuresim_core::survival::FieldShelter::Bivouac
+            };
+            state = adventuresim_core::survival::advance_exposure(
+                state,
+                std::iter::once(weather),
+                clothing,
+                shelter,
+            )
+            .state;
+            if state.thermal_strain <= adventuresim_core::survival::COLD_STAGGER_STRAIN
+                || state.thermal_strain >= adventuresim_core::survival::HEAT_STAGGER_STRAIN
+            {
+                return Some(PublicThermalProjection { state, safe: false });
+            }
+        }
+    }
+    Some(PublicThermalProjection { state, safe: true })
+}
+
+fn projected_stationary_outdoor_thermal_state(
+    starting_minute: u64,
+    duration_minutes: u64,
+    location: PublicRoutePoint,
+    starting_state: adventuresim_core::survival::SurvivalState,
+    insulation_bps: u16,
+) -> Option<PublicThermalProjection> {
+    projected_stationary_field_thermal_state(
+        starting_minute,
+        duration_minutes,
+        location,
+        starting_state,
+        insulation_bps,
+        false,
+    )
+}
+
+fn projected_stationary_field_thermal_state(
+    starting_minute: u64,
+    duration_minutes: u64,
+    location: PublicRoutePoint,
+    starting_state: adventuresim_core::survival::SurvivalState,
+    insulation_bps: u16,
+    has_tent: bool,
+) -> Option<PublicThermalProjection> {
+    if duration_minutes == 0 {
+        return Some(PublicThermalProjection {
+            state: starting_state,
+            safe: true,
+        });
+    }
+    let itinerary = adventuresim_core::strategic_time::ItineraryForecast {
+        segments: vec![adventuresim_core::strategic_time::ItinerarySegment {
+            kind: adventuresim_core::strategic_time::ItinerarySegmentKind::Camp,
+            elapsed_start: 0,
+            elapsed_minutes: duration_minutes,
+            movement_start: 0,
+            movement_minutes: 0,
+            average_fatigue_start: 0.0,
+            average_fatigue_end: 0.0,
+            maximum_fatigue_end: 0.0,
+            required_rest_minutes: 0,
+        }],
+        member_final_fatigue: vec![0.0],
+        member_maximum_fatigue: vec![0.0],
+        total_elapsed_minutes: duration_minutes,
+        // The shared itinerary projector requires a nonzero movement bound;
+        // identical endpoints keep this stationary despite that sentinel.
+        total_movement_minutes: 1,
+        truncated: false,
+    };
+    projected_itinerary_thermal_state(
+        starting_minute,
+        &itinerary,
+        location,
+        location,
+        starting_state,
+        insulation_bps,
+        has_tent,
+    )
+}
+
+fn projected_round_trip_thermal_safe(
+    starting_minute: u64,
+    outbound_itinerary: &adventuresim_core::strategic_time::ItineraryForecast,
+    return_itinerary: &adventuresim_core::strategic_time::ItineraryForecast,
+    action_minutes: u64,
+    origin: PublicRoutePoint,
+    destination: PublicRoutePoint,
+    starting_state: adventuresim_core::survival::SurvivalState,
+    insulation_bps: u16,
+    has_tent: bool,
+) -> Option<bool> {
+    let outbound = projected_itinerary_thermal_state(
+        starting_minute,
+        outbound_itinerary,
+        origin,
+        destination,
+        starting_state,
+        insulation_bps,
+        has_tent,
+    )?;
+    let action_start = starting_minute.saturating_add(outbound_itinerary.total_elapsed_minutes);
+    let action = projected_stationary_outdoor_thermal_state(
+        action_start,
+        action_minutes,
+        destination,
+        outbound.state,
+        insulation_bps,
+    )?;
+    let returned = projected_itinerary_thermal_state(
+        action_start.saturating_add(action_minutes),
+        return_itinerary,
+        destination,
+        origin,
+        action.state,
+        insulation_bps,
+        has_tent,
+    )?;
+    Some(outbound.safe && action.safe && returned.safe)
+}
+
+fn projected_recovery_round_trip_thermal_safe(
+    starting_minute: u64,
+    outbound_itinerary: &adventuresim_core::strategic_time::ItineraryForecast,
+    recovery_minutes: u64,
+    return_itinerary: &adventuresim_core::strategic_time::ItineraryForecast,
+    action_minutes: u64,
+    origin: PublicRoutePoint,
+    destination: PublicRoutePoint,
+    starting_state: adventuresim_core::survival::SurvivalState,
+    insulation_bps: u16,
+    has_tent: bool,
+) -> Option<bool> {
+    let outbound = projected_itinerary_thermal_state(
+        starting_minute,
+        outbound_itinerary,
+        origin,
+        destination,
+        starting_state,
+        insulation_bps,
+        has_tent,
+    )?;
+    let recovery_start = starting_minute.saturating_add(outbound_itinerary.total_elapsed_minutes);
+    let recovery = projected_stationary_field_thermal_state(
+        recovery_start,
+        recovery_minutes,
+        destination,
+        outbound.state,
+        insulation_bps,
+        has_tent,
+    )?;
+    let action_start = recovery_start.saturating_add(recovery_minutes);
+    let action = projected_stationary_outdoor_thermal_state(
+        action_start,
+        action_minutes,
+        destination,
+        recovery.state,
+        insulation_bps,
+    )?;
+    let returned = projected_itinerary_thermal_state(
+        action_start.saturating_add(action_minutes),
+        return_itinerary,
+        destination,
+        origin,
+        action.state,
+        insulation_bps,
+        has_tent,
+    )?;
+    Some(outbound.safe && recovery.safe && action.safe && returned.safe)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PublicJourneyCampState {
+    BetweenCamps,
+    ActiveCamp,
+}
+
+fn classify_public_journey_camp_state(
+    active_interval_count: usize,
+) -> Result<PublicJourneyCampState, &'static str> {
+    match active_interval_count {
+        0 => Ok(PublicJourneyCampState::BetweenCamps),
+        1 => Ok(PublicJourneyCampState::ActiveCamp),
+        _ => Err("overlapping_active_public_camps"),
+    }
 }
 
 fn classify_post_encounter_journey(
@@ -1312,6 +1920,70 @@ fn select_settlement_activity_venue(
         return Some(SettlementActivityVenue::Inn);
     }
     None
+}
+
+fn select_generated_travel_action<'a>(
+    profile: &AgentProfile,
+    actions: &'a mut [BackendInvestigationAction],
+    mut action_safe: impl FnMut(&BackendInvestigationAction) -> bool,
+) -> Option<&'a BackendInvestigationAction> {
+    sort_generated_actions(profile, actions);
+    actions
+        .iter()
+        .find(|action| action.can_travel_to_required_site && action_safe(action))
+}
+
+fn select_strongest_fixture_party(
+    mut candidates: Vec<(u64, String, PublicContractAssessment)>,
+) -> Result<((u64, String), (u64, String)), String> {
+    if candidates.len() != 2 {
+        return Err("quest fixture designation requires exactly two parties".into());
+    }
+    candidates.sort_by(|left, right| {
+        right
+            .2
+            .party_power_milli
+            .cmp(&left.2.party_power_milli)
+            .then_with(|| left.1.cmp(&right.1))
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    if !candidates[0].2.eligible {
+        return Err("quest fixture has no publicly safe direct party".into());
+    }
+    let direct = (candidates[0].0, candidates[0].1.clone());
+    let generated = (candidates[1].0, candidates[1].1.clone());
+    Ok((direct, generated))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FixtureQuestLane {
+    Direct,
+    Generated,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FixtureLanePlan {
+    direct_contract_id: String,
+    generated_case_id: Option<String>,
+    direct_leader_id: u64,
+    generated_leader_id: u64,
+    direct_party_id: String,
+    generated_party_id: String,
+}
+
+fn fixture_quest_lane(
+    fixture: Option<&FixtureLanePlan>,
+    leader_id: u64,
+    party_id: &str,
+) -> Option<FixtureQuestLane> {
+    let fixture = fixture?;
+    if fixture.direct_leader_id == leader_id && fixture.direct_party_id == party_id {
+        Some(FixtureQuestLane::Direct)
+    } else if fixture.generated_leader_id == leader_id && fixture.generated_party_id == party_id {
+        Some(FixtureQuestLane::Generated)
+    } else {
+        None
+    }
 }
 
 fn visible_activity_committed_reserve(
@@ -1838,7 +2510,7 @@ fn projected_case_site_journey_minutes(
     if distance_m == 0 || walking_minutes_per_day == 0 || walking_minutes_per_day > 1_440 {
         return None;
     }
-    let movement_minutes = ((distance_m as f64 / 1_250.0) * 60.0).ceil() as u64;
+    let movement_minutes = case_site_movement_minutes(distance_m)?;
     let walking_minutes = u64::from(walking_minutes_per_day);
     let completed_walking_days = movement_minutes.saturating_sub(1) / walking_minutes;
     Some(

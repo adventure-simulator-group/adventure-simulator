@@ -95,7 +95,10 @@ impl LiveRunner {
                             && row.alive
                             && row.current_settlement_id == settlement_id
                     })?;
-                    let agent_id = self.character_ids.iter().position(|id| *id == character.id)?;
+                    let agent_id = self
+                        .character_ids
+                        .iter()
+                        .position(|id| *id == character.id)?;
                     let profile = &self.profiles[agent_id];
                     Some((
                         character.id,
@@ -1027,9 +1030,8 @@ impl LiveRunner {
                     let sponsor = rest_sponsor
                         .as_ref()
                         .expect("unaffordable inn venue requires a selected sponsor");
-                    let sponsor_personal_spendable = sponsor
-                        .purse
-                        .saturating_sub(sponsor.medical_reserve);
+                    let sponsor_personal_spendable =
+                        sponsor.purse.saturating_sub(sponsor.medical_reserve);
                     let stake_shortfall = sponsor
                         .sponsor_quote
                         .saturating_sub(sponsor_personal_spendable);
@@ -1509,6 +1511,77 @@ impl LiveRunner {
             self.metrics.activity_days += 1;
             self.ensure_medically_safe(agent)?;
         }
+        Ok(())
+    }
+
+    pub(super) fn wait_for_safe_departure_at_settlement(
+        &mut self,
+        character_id: u64,
+        agent: u32,
+        case_id: &str,
+        wait_minutes: u64,
+        walking_minutes_per_day: u16,
+        travel_at_night: bool,
+    ) -> Result<bool, String> {
+        if !(60..=1_440).contains(&wait_minutes)
+            || self
+                .party_for(character_id)?
+                .current_settlement_id
+                .is_none()
+        {
+            return Ok(false);
+        }
+        let Ok(Some(venue)) = self.settlement_activity_venue(character_id, 0) else {
+            self.event(
+                agent,
+                CoreLoopEventKind::QuestSuppressed,
+                format!(
+                    "case={};reason=safe_departure_wait_unavailable;wait_minutes={wait_minutes}",
+                    bounded_event_field(case_id),
+                ),
+            );
+            return Ok(false);
+        };
+        self.configure_safe_departure_itinerary(
+            character_id,
+            walking_minutes_per_day,
+            travel_at_night,
+        )?;
+        let result = reducer_call!(self, "wait_for_safe_departure", |cb| self
+            .connection
+            .reducers
+            .rest_at_settlement_hours_then(character_id, wait_minutes, venue.at_inn(), cb));
+        self.call(result)?;
+        self.event(
+            agent,
+            CoreLoopEventKind::SafeDepartureWait,
+            format!(
+                "case={};reason=complete_round_trip_walking_window;wait_minutes={wait_minutes};walking_minutes_per_day={walking_minutes_per_day};mode={}",
+                bounded_event_field(case_id),
+                venue.label(),
+            ),
+        );
+        Ok(true)
+    }
+
+    pub(super) fn configure_safe_departure_itinerary(
+        &mut self,
+        character_id: u64,
+        walking_minutes_per_day: u16,
+        travel_at_night: bool,
+    ) -> Result<(), String> {
+        let result = reducer_call!(self, "configure_safe_departure_window", |cb| self
+            .connection
+            .reducers
+            .set_party_travel_itinerary_then(
+                character_id,
+                walking_minutes_per_day,
+                travel_at_night,
+                false,
+                0,
+                cb,
+            ));
+        self.call(result)?;
         Ok(())
     }
 

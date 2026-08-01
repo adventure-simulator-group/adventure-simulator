@@ -552,6 +552,8 @@ mod tests {
             generated_case: true,
             case_resolved: false,
             combat_available: true,
+            opposition_count: None,
+            opposition_combat_power: None,
         };
         let action = BackendInvestigationAction {
             owner_character_id: 7,
@@ -620,6 +622,8 @@ mod tests {
             generated_case: true,
             case_resolved: false,
             combat_available: false,
+            opposition_count: None,
+            opposition_combat_power: None,
         };
         let markup = quest_location_center(
             &presentation,
@@ -671,6 +675,8 @@ mod tests {
             generated_case: true,
             case_resolved: true,
             combat_available: false,
+            opposition_count: None,
+            opposition_combat_power: None,
         };
 
         let markup = quest_location_center(
@@ -723,6 +729,8 @@ mod tests {
             generated_case: true,
             case_resolved: false,
             combat_available: false,
+            opposition_count: None,
+            opposition_combat_power: None,
         };
         let notice = CaseSiteRecoveryNotice {
             member_names: "Lukas".into(),

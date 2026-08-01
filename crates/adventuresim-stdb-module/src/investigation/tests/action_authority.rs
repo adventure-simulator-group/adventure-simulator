@@ -67,6 +67,133 @@ fn action_graph_covers_all_methods_and_enforces_authoritative_boundaries() {
         .expect("lead write");
     assert!(position_check < time_advance);
     assert!(position_check < lead_write);
+    assert!(reducer.contains("let Some(started_at) = synchronize_party_activity_time"));
+    assert!(reducer.contains("let mut interval_completed = true"));
+    assert!(reducer.contains("interval_completed &="));
+    assert!(reducer.contains("advance_investigation_time"));
+    let terminal_gate = reducer
+        .find("if !interval_completed")
+        .expect("terminal interval gate");
+    let consequence = reducer
+        .find("commit_action_consequence")
+        .expect("action consequence");
+    let result_lead = reducer
+        .find("persist_action_result_lead")
+        .expect("result lead");
+    assert!(terminal_gate < consequence && terminal_gate < result_lead);
+    let incomplete = reducer
+        .split("if !interval_completed")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("crate::strategic::normalize_and_elect_party_leader")
+                .next()
+        })
+        .expect("incomplete interval branch");
+    assert!(incomplete.contains("authoritative writes"));
+    let terminal_branch = reducer
+        .split("if !interval_completed")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("crate::strategic::normalize_and_elect_party_leader(ctx, &party_id)?")
+                .next()
+        })
+        .expect("terminal branch before completed-interval path");
+    assert!(terminal_branch.contains("let _ = crate::strategic::normalize_and_elect_party_leader"));
+    assert!(
+        terminal_branch.contains("let _ = crate::strategic::reconcile_party_objective_continuity")
+    );
+    assert!(terminal_branch.contains("return Ok(())"));
+    assert!(!terminal_branch.contains("commit_action_consequence"));
+    assert!(!terminal_branch.contains("persist_action_result_lead"));
+    assert!(!terminal_branch.contains("investigation_action_attempt()"));
+    assert!(reducer.contains("require_living_character(ctx, normalized_party.leader_id)"));
+    assert!(reducer.contains(".find(normalized_party.leader_id)"));
+}
+
+#[test]
+fn referred_contact_completion_materializes_its_authored_outputs() {
+    use adventuresim_core::investigation_action::ActionResultKind;
+
+    let resolution = successful_referred_contact_resolution(4_321);
+    assert!(resolution.success);
+    assert_eq!(resolution.result, ActionResultKind::ContactLocated);
+    assert_eq!(resolution.resulting_uncertainty_bps, 4_321);
+    assert_eq!(resolution.cost.minutes, 0);
+    assert_eq!(resolution.cost.fatigue, 0);
+    assert_eq!(resolution.cost.food_units, 0);
+    assert_eq!(resolution.cost.water_units, 0);
+    assert_eq!(resolution.risk_bps, 0);
+    assert!(!resolution.risk_triggered);
+
+    let completion = INVESTIGATION_SOURCE
+        .split("fn complete_referred_contact_action")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("fn successful_referred_contact_resolution")
+                .next()
+        })
+        .expect("referred-contact completion");
+    assert!(completion.contains("if attempt_success"));
+    assert!(completion.contains("persist_action_result_lead("));
+    assert!(
+        completion.find("investigation_action_attempt()").unwrap()
+            < completion.find("persist_action_result_lead(").unwrap()
+    );
+    assert!(
+        completion.find("persist_action_result_lead(").unwrap()
+            < completion.find("capability.active = false").unwrap()
+    );
+}
+
+#[test]
+fn generated_graph_issues_owner_scoped_initial_site_knowledge() {
+    use adventuresim_core::{
+        local_problem::Scope,
+        quest_generation::{GenerationContext, TemplateFamily, generate, test_witnesses},
+    };
+
+    let manifest = generate(&GenerationContext {
+        seed: 7,
+        observer_entropy_hi: 11,
+        observer_entropy_lo: 13,
+        settlement_id: "lubeck".into(),
+        settlement_name: "Lubeck".into(),
+        scope: Scope::Settlement {
+            settlement_id: "lubeck".into(),
+        },
+        ordinal: 0,
+        now_minute: 50_000,
+        incident_weather: adventuresim_core::weather::Precipitation::Clear,
+        requested_family: Some(TemplateFamily::Outbreak),
+        witness_candidates: test_witnesses(),
+    })
+    .unwrap();
+    let initially_known = generated_initially_known_site_ids(&manifest).collect::<Vec<_>>();
+    assert!(!initially_known.is_empty());
+    assert!(manifest.sites.iter().all(|site| {
+        initially_known.contains(&site.id.0.as_str()) == site.exact_location_initially_known
+    }));
+
+    let graph = INVESTIGATION_SOURCE
+        .split("fn issue_rumor_action_graph")
+        .nth(1)
+        .and_then(|tail| tail.split("fn skill_bps").next())
+        .expect("generated action graph issuance");
+    assert_eq!(
+        graph
+            .matches("disclose_generated_initial_site_knowledge(")
+            .count(),
+        2,
+        "initial knowledge must be restored for both existing and newly issued graphs"
+    );
+    let disclosure = INVESTIGATION_SOURCE
+        .split("fn disclose_generated_initial_site_knowledge")
+        .nth(1)
+        .and_then(|tail| tail.split("fn issue_rumor_action_graph").next())
+        .expect("generated initial-site disclosure");
+    assert!(disclosure.contains("owner_character_id"));
+    assert!(disclosure.contains("&manifest.public_case_id"));
+    assert!(disclosure.contains("disclose_exact_case_site("));
 }
 
 #[test]
@@ -621,6 +748,7 @@ fn generated_testimony_persists_every_proposition_and_corrections_gate_pins() {
     assert!(preflight.contains("!root.required_action_id.is_empty()"));
     assert!(preflight.contains("validate_capability_blueprint_reducer(ctx, root)"));
     assert!(preflight.contains("expected_successors"));
+    assert!(!preflight.contains("Generated contact root has no authored successors"));
     assert!(preflight.contains("Generated contact successor is missing"));
     assert!(preflight.contains("validate_capability_blueprint_reducer(ctx, &successor)"));
     let completion = source

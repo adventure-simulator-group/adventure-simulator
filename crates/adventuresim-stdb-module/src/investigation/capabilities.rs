@@ -484,6 +484,9 @@ fn capability_has_live_support_reducer(
     capability: &InvestigationActionCapability,
     kind: action::InvestigationActionKind,
 ) -> bool {
+    let Some(observer_case_id) = reducer_action_public_case_id(ctx, capability) else {
+        return false;
+    };
     if !tracking_capability_chain_is_coherent(
         capability,
         kind,
@@ -549,7 +552,7 @@ fn capability_has_live_support_reducer(
                 lead_is_live_contact_referral(
                     &lead,
                     capability.owner_character_id,
-                    &capability.case_id,
+                    &observer_case_id,
                 )
             })
     {
@@ -563,7 +566,7 @@ fn capability_has_live_support_reducer(
             .owner_character_id()
             .filter(capability.owner_character_id)
             .any(|lead| {
-                lead.case_id == capability.case_id
+                lead.case_id == observer_case_id
                     && lead.destination_stage == "approximate_area"
                     && lead.corrected_by.is_empty()
             })
@@ -577,6 +580,9 @@ fn capability_has_live_pattern_support_reducer(
     ctx: &ReducerContext,
     capability: &InvestigationActionCapability,
 ) -> bool {
+    let Some(observer_case_id) = reducer_action_public_case_id(ctx, capability) else {
+        return false;
+    };
     let output = ctx
         .db
         .investigation_generated_action_output()
@@ -600,7 +606,7 @@ fn capability_has_live_pattern_support_reducer(
     };
     observer_pattern_route_has_live_corroborated_clue(
         capability.owner_character_id,
-        &capability.case_id,
+        &observer_case_id,
         &evidence_id,
         ctx.db
             .investigation_evidence_knowledge()
@@ -693,9 +699,6 @@ fn validate_referred_contact_authority(
         .iter()
         .filter(|action| action.prerequisite.as_ref() == Some(&generated_root.id))
         .collect::<Vec<_>>();
-    if expected_successors.is_empty() {
-        return Err("Generated contact root has no authored successors".into());
-    }
     let expected_successor_ids = expected_successors
         .into_iter()
         .map(|generated| {
@@ -830,6 +833,10 @@ fn complete_referred_contact_action(
             })
             .to_string(),
         });
+    if attempt_success {
+        let resolution = successful_referred_contact_resolution(capability.uncertainty_bps);
+        persist_action_result_lead(ctx, &capability, &attempt_id, &resolution)?;
+    }
     capability.active = false;
     capability.version = next_version;
     ctx.db
@@ -880,6 +887,23 @@ fn complete_referred_contact_action(
     Ok(())
 }
 
+fn successful_referred_contact_resolution(uncertainty_bps: u16) -> action::Resolution {
+    action::Resolution {
+        result: action::ActionResultKind::ContactLocated,
+        success: true,
+        cost: action::StrategicCost {
+            minutes: 0,
+            fatigue: 0,
+            food_units: 0,
+            water_units: 0,
+        },
+        resulting_uncertainty_bps: uncertainty_bps,
+        risk_bps: 0,
+        risk_triggered: false,
+        effective_skill_bps: 0,
+    }
+}
+
 fn generated_action_graph_is_complete(
     expected_ids: &[String],
     existing: &[InvestigationActionCapability],
@@ -895,6 +919,39 @@ fn generated_action_graph_is_complete(
         return Err("Generated investigation action graph is partial".into());
     }
     Ok(true)
+}
+
+fn generated_initially_known_site_ids(
+    manifest: &adventuresim_core::quest_generation::GeneratedCase,
+) -> impl Iterator<Item = &str> {
+    manifest
+        .sites
+        .iter()
+        .filter(|site| site.exact_location_initially_known)
+        .map(|site| site.id.0.as_str())
+}
+
+fn disclose_generated_initial_site_knowledge(
+    ctx: &ReducerContext,
+    owner_character_id: u64,
+    manifest: &adventuresim_core::quest_generation::GeneratedCase,
+) -> Result<(), String> {
+    for site_id in generated_initially_known_site_ids(manifest) {
+        let site = ctx
+            .db
+            .case_site_authority()
+            .id_key()
+            .find(&site_id.to_owned())
+            .ok_or("Initially known generated case site is missing")?;
+        disclose_exact_case_site(
+            ctx,
+            owner_character_id,
+            &manifest.public_case_id,
+            &site,
+            "known when the case was accepted",
+        )?;
+    }
+    Ok(())
 }
 
 fn issue_rumor_action_graph(
@@ -931,6 +988,7 @@ fn issue_rumor_action_graph(
             for capability in &existing_capabilities {
                 validate_capability_blueprint_reducer(ctx, capability)?;
             }
+            disclose_generated_initial_site_knowledge(ctx, owner_character_id, &manifest)?;
             return validate_action_route_graph(ctx, owner_character_id, case_id);
         }
         for target in &manifest.pattern_targets {
@@ -1060,6 +1118,7 @@ fn issue_rumor_action_graph(
                 true,
             )?;
         }
+        disclose_generated_initial_site_knowledge(ctx, owner_character_id, &manifest)?;
         return validate_newly_issued_action_route_graph(ctx, owner_character_id, case_id);
     }
     let area_id = inv::compound_id(&["area", lead_id]);

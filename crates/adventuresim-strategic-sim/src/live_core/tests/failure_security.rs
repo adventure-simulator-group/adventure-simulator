@@ -404,9 +404,9 @@ fn generated_action_trace_uses_subject_and_public_attempt_evidence() {
         .next()
         .expect("production live core");
     let advance = source
-        .split("fn advance_generated_case")
+        .split("fn advance_generated_case_inner")
         .nth(1)
-        .and_then(|tail| tail.split("fn cycle").next())
+        .and_then(|tail| tail.split("pub(super) fn turn_in_ready_direct_contract").next())
         .expect("generated case driver");
     assert!(advance.contains("emit_generated_investigation_attempt"));
     assert!(source.contains(

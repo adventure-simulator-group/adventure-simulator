@@ -162,6 +162,36 @@ fn secondary_testimony_without_a_contact_root_mutates_no_route() {
 }
 
 #[test]
+fn terminal_referred_contact_completes_without_authored_successors() {
+    let mut states = vec![ReferredContactActionState {
+        id: "terminal-contact".into(),
+        owner_character_id: 7,
+        case_id: "case".into(),
+        method: "locate_contact".into(),
+        target_kind: "contact".into(),
+        target_id: "42".into(),
+        required_action_id: String::new(),
+        active: true,
+        version: 0,
+        successful_attempt: false,
+    }];
+    let transition = transition_referred_contact_action(&mut states, 7, "case", 42).unwrap();
+    let ReferredContactTransition::Applied {
+        activated_successor_ids,
+        attempt_success,
+        ..
+    } = transition
+    else {
+        panic!("terminal contact should complete its authored root")
+    };
+    assert!(activated_successor_ids.is_empty());
+    assert!(attempt_success);
+    assert!(!states[0].active);
+    assert!(states[0].successful_attempt);
+    assert_eq!(states[0].version, 1);
+}
+
+#[test]
 fn failed_route_does_not_revive_a_completed_contact_alternate() {
     let mut states = vec![
         ReferredContactActionState {

@@ -95,7 +95,7 @@ fn all_nonterminal_encounters_follow_authoritative_public_post_state() {
     let encounter = travel
         .split("if let Some(encounter) = pending_encounter")
         .nth(1)
-        .and_then(|tail| tail.split("let camp = self").next())
+        .and_then(|tail| tail.split("if self.public_journey_camp_state").next())
         .expect("encounter branch");
     let resolve = encounter
         .find(".resolve_strategic_encounter_then(")
@@ -155,6 +155,68 @@ fn all_nonterminal_encounters_follow_authoritative_public_post_state() {
     ] {
         assert!(resume_projection.contains(public_state), "{public_state}");
     }
+}
+
+#[test]
+fn between_camp_movement_is_validated_and_continues_until_a_recovery_boundary() {
+    assert_eq!(
+        classify_public_journey_camp_state(0),
+        Ok(PublicJourneyCampState::BetweenCamps)
+    );
+    assert_eq!(
+        classify_public_journey_camp_state(1),
+        Ok(PublicJourneyCampState::ActiveCamp)
+    );
+    assert_eq!(
+        classify_public_journey_camp_state(2),
+        Err("overlapping_active_public_camps")
+    );
+
+    let source = LIVE_CORE_SOURCE;
+    let projection = source
+        .split("fn public_journey_camp_state")
+        .nth(1)
+        .and_then(|tail| tail.split("fn public_camp_coherence_error").next())
+        .expect("public journey camp state");
+    for fail_closed_boundary in [
+        "let [journey] = journeys.as_slice()",
+        "let [itinerary] = itineraries.as_slice()",
+        "&journey.destination != destination",
+        "journey.completed_elapsed_minutes >= journey.total_elapsed_minutes",
+        "party.camp_remaining_minutes == 0",
+    ] {
+        assert!(projection.contains(fail_closed_boundary), "{fail_closed_boundary}");
+    }
+    assert!(projection.contains("classify_public_journey_camp_state("));
+
+    let travel = source
+        .split("fn travel_camps")
+        .nth(1)
+        .and_then(|tail| tail.split("fn continue_public_active_journey").next())
+        .expect("travel camp driver");
+    let between = travel
+        .split("== PublicJourneyCampState::BetweenCamps")
+        .nth(1)
+        .and_then(|tail| tail.split("let camp = self").next())
+        .expect("between-camps continuation");
+    assert!(between.contains(".continue_camp_travel_then("));
+    assert!(between.contains("continue_between_forecast_camps"));
+    assert!(between.contains("continue;"));
+    assert!(travel.contains("for _ in 0..MAX_CAMPS_PER_LEG"));
+
+    let recovery = source
+        .split("fn recover_or_evacuate_off_settlement")
+        .nth(1)
+        .and_then(|tail| tail.split("fn generated_case_status").next())
+        .expect("off-settlement recovery");
+    assert!(
+        recovery.contains(
+            "let can_attempt_field_recovery = (camp_state.is_some() || at_case_site)"
+        )
+    );
+    assert!(recovery.contains("let at_case_site = party.current_case_site_id.is_some()"));
+    assert!(recovery.contains("self.expedition_recovery_rest_actor(party_id)"));
+    assert!(recovery.contains("self.perform_expedition_recovery_rest(rest_actor)"));
 }
 
 #[test]
@@ -260,10 +322,9 @@ fn travel_driver_uses_public_itinerary_and_observer_safe_provisioning() {
     );
     assert!(coherent_camp.contains("&itinerary.forecast_camp_intervals"));
     assert!(coherent_camp.contains("projected_camp_rest_minutes("));
-    assert!(
-        travel
-            .contains("let Some((travel_actor, _, _)) = self.expedition_recovery_actor(party_id)")
-    );
+    assert!(travel.contains("let Some((travel_actor, travel_agent, _)) ="));
+    assert!(travel.contains("self.expedition_recovery_actor(party_id)"));
+    assert!(travel.contains("self.event(\n                    travel_agent,"));
     assert!(travel.contains("rest_at_camp_with_party_shelter"));
     assert!(!travel.contains("rest_at_camp_with_party_shelter(\n                travel_actor,\n                1_440"));
     assert!(source.contains(
@@ -372,9 +433,9 @@ fn journey_holds_are_publicly_diagnosable_and_block_arrival_assumptions() {
     assert!(!hold.contains("disease"));
 
     let generated = source
-        .split("fn advance_generated_case")
+        .split("fn advance_generated_case_inner")
         .nth(1)
-        .and_then(|tail| tail.split("fn cycle").next())
+        .and_then(|tail| tail.split("pub(super) fn turn_in_ready_direct_contract").next())
         .expect("generated case driver");
     let travel_guard = generated
         .find("journey_outcome != JourneyTravelOutcome::Completed")

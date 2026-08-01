@@ -369,7 +369,10 @@ impl LiveRunner {
         Ok(JourneyTravelOutcome::HeldNoActionableActor)
     }
 
-    pub(super) fn expedition_recovery_actor(&self, party_id: &str) -> Option<(u64, u32, &'static str)> {
+    pub(super) fn expedition_recovery_actor(
+        &self,
+        party_id: &str,
+    ) -> Option<(u64, u32, &'static str)> {
         let party = self
             .connection
             .db
@@ -412,7 +415,9 @@ impl LiveRunner {
         let members = self.expedition_member_observations(party_id).ok()?;
         let supplies = self.expedition_supplies(party_id);
         if self.party_has_unresolved_public_encounter(party_id)
-            || self.public_active_camp_observation(party_id).is_none()
+            || (party.camp_destination.is_some()
+                && self.public_journey_camp_state(party_id).is_err())
+            || (party.camp_destination.is_none() && party.current_case_site_id.is_none())
         {
             return None;
         }
@@ -574,8 +579,25 @@ impl LiveRunner {
             return Ok(ExpeditionRecoveryOutcome::Held);
         }
         let actionable_actor = self.expedition_recovery_actor(party_id);
-        let coherent_camp = self.public_active_camp_observation(party_id);
-        if party.camp_destination.is_some() && coherent_camp.is_none() {
+        let camp_state = if party.camp_destination.is_some() {
+            match self.public_journey_camp_state(party_id) {
+                Ok(state) => Some(state),
+                Err(_) => {
+                    self.record_journey_hold(
+                        party_id,
+                        "recovery_plan",
+                        "journey_held_incoherent_public_camp",
+                    )?;
+                    return Ok(ExpeditionRecoveryOutcome::Held);
+                }
+            }
+        } else {
+            None
+        };
+        let coherent_camp = (camp_state == Some(PublicJourneyCampState::ActiveCamp))
+            .then(|| self.public_active_camp_observation(party_id))
+            .flatten();
+        if camp_state == Some(PublicJourneyCampState::ActiveCamp) && coherent_camp.is_none() {
             self.record_journey_hold(
                 party_id,
                 "recovery_plan",
@@ -583,8 +605,10 @@ impl LiveRunner {
             )?;
             return Ok(ExpeditionRecoveryOutcome::Held);
         }
-        let plan_actor = coherent_camp
-            .and_then(|_| self.expedition_recovery_rest_actor(party_id))
+        let at_case_site = party.current_case_site_id.is_some();
+        let plan_actor = (camp_state.is_some() || at_case_site)
+            .then(|| self.expedition_recovery_rest_actor(party_id))
+            .flatten()
             .or_else(|| {
                 actionable_actor.map(|(character_id, agent_id, role)| {
                     ExpeditionRecoveryRestActor::Actionable(ActionableRecoveryRestActor {
@@ -629,11 +653,12 @@ impl LiveRunner {
             ),
         );
 
-        let can_attempt_field_recovery = coherent_camp.is_some()
+        let can_attempt_field_recovery = (camp_state.is_some() || at_case_site)
             && before
                 .iter()
                 .all(|member| !member.alive || !member.critical)
-            && expedition_supplies_cover_one_rest_day(&before, supplies_before);
+            && expedition_supplies_cover_one_rest_day(&before, supplies_before)
+            && self.field_recovery_rest_thermal_safe(party_id, EXPEDITION_RECOVERY_REST_MINUTES);
         if can_attempt_field_recovery {
             for rest_ordinal in 1..=MAX_EXPEDITION_RECOVERY_RESTS {
                 if self.party_has_unresolved_public_encounter(party_id) {
@@ -646,7 +671,7 @@ impl LiveRunner {
                 }
                 let party_before_rest = self.party_by_id(party_id)?;
                 if party_before_rest.camp_destination.is_some()
-                    && self.public_active_camp_observation(party_id).is_none()
+                    && self.public_journey_camp_state(party_id).is_err()
                 {
                     self.record_journey_hold(
                         party_id,
@@ -665,6 +690,11 @@ impl LiveRunner {
                 };
                 let rest_before = self.expedition_member_observations(party_id)?;
                 let rest_supplies_before = self.expedition_supplies(party_id);
+                if !self
+                    .field_recovery_rest_thermal_safe(party_id, EXPEDITION_RECOVERY_REST_MINUTES)
+                {
+                    break;
+                }
                 if rest_actor.is_passive() {
                     self.metrics.expedition_passive_rest_attempts = self
                         .metrics
@@ -748,8 +778,40 @@ impl LiveRunner {
         };
         let evacuation_before = self.expedition_member_observations(party_id)?;
         let evacuation_supplies_before = self.expedition_supplies(party_id);
-        let Some((evacuation_actor_id, evacuation_actor_agent, evacuation_actor_role)) =
-            self.expedition_recovery_actor(party_id)
+        let evacuation_party = self.party_by_id(party_id)?;
+        let continuing_public_journey = evacuation_party.camp_destination.is_some()
+            && self.public_journey_camp_state(party_id).is_ok();
+        let evacuation_safe = continuing_public_journey
+            || evacuation_party
+                .current_case_site_id
+                .as_ref()
+                .and_then(|site| {
+                    self.connection
+                        .db
+                        .backend_case_site_pins()
+                        .iter()
+                        .find(|pin| {
+                            pin.case_site_id == site.value
+                                && pin.origin_settlement_id == return_settlement
+                        })
+                })
+                .is_some_and(|pin| {
+                    matches!(
+                        self.generated_action_return_thermal_decision(party_id, &pin, 0),
+                        OnSiteActionDecision::Ready | OnSiteActionDecision::ReturnNow
+                    )
+                });
+        if !evacuation_safe {
+            self.record_journey_hold(
+                party_id,
+                "evacuation_plan",
+                "journey_held_unsafe_return_forecast",
+            )?;
+            return Ok(ExpeditionRecoveryOutcome::Held);
+        }
+        let Some((evacuation_actor_id, evacuation_actor_agent, evacuation_actor_role)) = self
+            .current_leader(party_id)
+            .map(|(character_id, agent_id)| (character_id, agent_id, "living_leader"))
         else {
             self.record_journey_hold(
                 party_id,
@@ -768,11 +830,13 @@ impl LiveRunner {
             evacuation_supplies_before,
             evacuation_supplies_before,
         );
-        let result = reducer_call!(self, "expedition_health_evacuation", |cb| self
-            .connection
-            .reducers
-            .travel_to_settlement_then(evacuation_actor_id, return_settlement.clone(), cb));
-        self.call(result)?;
+        if !self.public_journey_is_evacuation(party_id) {
+            let result = reducer_call!(self, "expedition_health_evacuation", |cb| self
+                .connection
+                .reducers
+                .travel_to_settlement_then(evacuation_actor_id, return_settlement.clone(), cb));
+            self.call(result)?;
+        }
         if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
             return Ok(ExpeditionRecoveryOutcome::Held);
         }
@@ -819,5 +883,4 @@ impl LiveRunner {
         );
         Ok(ExpeditionRecoveryOutcome::Evacuated)
     }
-
 }

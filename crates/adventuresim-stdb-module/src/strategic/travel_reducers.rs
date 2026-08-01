@@ -19,6 +19,81 @@ pub fn travel_to_case_site_planned(
     travel_to_case_site_impl(ctx, character_id, case_site_id.value, Some(route))
 }
 
+fn authoritative_straight_line_case_route(
+    departure_minute: u64,
+    origin: (f64, f64),
+    destination: (f64, f64),
+    distance_m: u64,
+    minutes: u64,
+) -> JourneyRoutePlan {
+    let points = vec![
+        JourneyRoutePoint {
+            latitude_e7: (origin.1 * 10_000_000.0).round() as i32,
+            longitude_e7: (origin.0 * 10_000_000.0).round() as i32,
+        },
+        JourneyRoutePoint {
+            latitude_e7: (destination.1 * 10_000_000.0).round() as i32,
+            longitude_e7: (destination.0 * 10_000_000.0).round() as i32,
+        },
+    ];
+    let weather = adventuresim_core::weather::weather_at(
+        adventuresim_core::weather::WORLD_WEATHER_SEED,
+        departure_minute,
+        points[0].latitude_e7 / 10,
+        points[0].longitude_e7 / 10,
+        0,
+    );
+    let precipitation = match weather.precipitation {
+        adventuresim_core::weather::Precipitation::Clear => JourneyPrecipitation::Clear,
+        adventuresim_core::weather::Precipitation::Rain => JourneyPrecipitation::Rain,
+        adventuresim_core::weather::Precipitation::Snow => JourneyPrecipitation::Snow,
+    };
+    let digest_domain = format!(
+        "authoritative-straight-line-v1:{departure_minute}:{:?}:{:?}:{distance_m}:{minutes}",
+        points[0], points[1]
+    );
+    let package_digest = format!(
+        "{:016x}{:016x}{:016x}{:016x}",
+        adventuresim_core::settlement_population::stable_hash(&digest_domain),
+        adventuresim_core::settlement_population::stable_hash(&(digest_domain.clone() + ":1")),
+        adventuresim_core::settlement_population::stable_hash(&(digest_domain.clone() + ":2")),
+        adventuresim_core::settlement_population::stable_hash(&(digest_domain + ":3")),
+    );
+    let span = JourneyTerrainSpan {
+        kind: JourneyTerrainKind::Open,
+        terrain: JourneyTerrainWeights {
+            plains: 1_000,
+            forest: 0,
+            hills: 0,
+            wetlands: 0,
+            urban: 0,
+        },
+        training_multiplier_permille: 1_000,
+        check_millirank: 0,
+        start_minute: 0,
+        duration_minutes: minutes,
+    };
+    JourneyRoutePlan {
+        package_digest,
+        weather_rules_version: weather.rules_version,
+        weather_interval_start: weather.interval_start_minute,
+        precipitation,
+        intensity_bps: weather.intensity_bps,
+        ground_moisture_bps: weather.ground_moisture_bps,
+        snow_cover_bps: weather.snow_cover_bps,
+        distance_m,
+        minutes,
+        points: points.clone(),
+        spans: vec![span.clone()],
+        return_route: Some(JourneyRouteLeg {
+            distance_m,
+            minutes,
+            points: points.into_iter().rev().collect(),
+            spans: vec![span],
+        }),
+    }
+}
+
 fn travel_to_case_site_impl(
     ctx: &ReducerContext,
     character_id: u64,
@@ -63,7 +138,10 @@ fn travel_to_case_site_impl(
     }
     require_party_ready(ctx, &party_id)?;
     let traveler_ids = living_party_member_ids(ctx, &party_id);
-    let departure_minute = crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?;
+    let Some(departure_minute) = crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?
+    else {
+        return Ok(());
+    };
     party = revalidate_party_after_departure_sync(
         ctx,
         &party_id,
@@ -136,6 +214,15 @@ fn travel_to_case_site_impl(
     let travel_minutes = route
         .as_ref()
         .map_or_else(|| quest_journey_minutes(distance_m), |route| route.minutes);
+    let route = route.unwrap_or_else(|| {
+        authoritative_straight_line_case_route(
+            departure_minute,
+            origin_coordinates,
+            destination,
+            distance_m,
+            travel_minutes,
+        )
+    });
     start_party_journey(
         ctx,
         &party,
@@ -148,7 +235,7 @@ fn travel_to_case_site_impl(
         }),
         travel_minutes,
         departure_minute,
-        route.as_ref(),
+        Some(&route),
     )?;
     crate::condition::prepare_party_waterskins(ctx, &party_id, departing_settlement)?;
     for member_id in traveler_ids.iter().copied() {
@@ -391,7 +478,10 @@ fn travel_to_settlement_impl(
     } else {
         vec![character_id]
     };
-    let departure_minute = crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?;
+    let Some(departure_minute) = crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?
+    else {
+        return Ok(());
+    };
     if let Some(route) = route.as_ref() {
         validate_route_departure_weather_interval(route, departure_minute)?;
     }

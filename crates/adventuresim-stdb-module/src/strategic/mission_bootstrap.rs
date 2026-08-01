@@ -1461,6 +1461,77 @@ fn materialize_preferred_outbreak(
     Ok(generated.canonical_case_id)
 }
 
+fn ordinary_generated_site_distance_m(seed: u64, index: usize) -> u64 {
+    4_000 + (seed.rotate_left(index as u32) % 17_000)
+}
+
+fn materialize_simulation_acceptance_outbreak(
+    ctx: &ReducerContext,
+    character_id: u64,
+    policy_seed: u64,
+) -> Result<String, String> {
+    use adventuresim_core::quest_generation as qg;
+
+    const MAX_CANDIDATES: u16 = 32_768;
+    const MAX_REQUIRED_ROUTE_DISTANCE_M: u64 = 5_500;
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    let settlement_id = character
+        .current_settlement_id
+        .clone()
+        .ok_or("Quest acceptance outbreak leader must be in a settlement")?;
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&settlement_id)
+        .ok_or("Quest acceptance outbreak settlement not found")?;
+    let now_minute = crate::time::refresh_clock(ctx)?.max(4_000);
+    let entropy = character_id ^ policy_seed ^ 0x4143_4345_5054_414e;
+    for candidate in 0..MAX_CANDIDATES {
+        let candidate_entropy = entropy ^ u64::from(candidate).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        let context = qg::GenerationContext {
+            seed: candidate_entropy.rotate_left(11),
+            observer_entropy_hi: candidate_entropy.rotate_left(23),
+            observer_entropy_lo: candidate_entropy.rotate_right(17),
+            settlement_id: settlement_id.clone(),
+            settlement_name: settlement.name.clone(),
+            scope: adventuresim_core::local_problem::Scope::Settlement {
+                settlement_id: settlement_id.clone(),
+            },
+            ordinal: candidate,
+            now_minute,
+            incident_weather: adventuresim_core::weather::Precipitation::Clear,
+            requested_family: Some(qg::TemplateFamily::Outbreak),
+            witness_candidates: generated_witness_candidates(ctx, &settlement_id),
+        };
+        let generated = qg::generate(&context)
+            .map_err(|error| format!("Acceptance outbreak generation failed: {error:?}"))?;
+        if generated.sites.is_empty()
+            || generated.sites.iter().enumerate().any(|(index, _)| {
+                ordinary_generated_site_distance_m(context.seed, index)
+                    > MAX_REQUIRED_ROUTE_DISTANCE_M
+            })
+        {
+            continue;
+        }
+        qg::validate(&generated).map_err(|errors| {
+            format!(
+                "Acceptance outbreak manifest is invalid: {}",
+                errors.join("; ")
+            )
+        })?;
+        materialize_generated_quest(ctx, &settlement, &context, &generated, None)?;
+        crate::local_problem::prefer_next_rumor(
+            ctx,
+            character_id,
+            &settlement_id,
+            &generated.problem_id,
+        );
+        return Ok(generated.canonical_case_id);
+    }
+    Err("No ordinary generated outbreak met the bounded acceptance route constraint".into())
+}
+
 fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
     let mut skills = ctx
         .db
@@ -1514,7 +1585,6 @@ pub(crate) struct SimulationQuestFixtureSeed {
 const SIMULATION_QUEST_ENEMY_TYPE: &str = "cultist";
 const SIMULATION_QUEST_ENEMY_DIFFICULTY: i32 = 1;
 const SIMULATION_QUEST_ENEMY_COMBAT_SCALE_BPS: u32 = 10_000;
-
 pub(crate) fn simulation_quest_fixture_enemy_power() -> Result<u64, String> {
     autoresolve_enemy(
         u64::MAX,
@@ -1663,7 +1733,8 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
     // Generate and privately materialize the second party's local problem
     // before publishing the direct contract marker. No skill or item boosts
     // are part of this acceptance fixture.
-    let generated_canonical_case_id = materialize_preferred_outbreak(ctx, generated_leader_id)?;
+    let generated_canonical_case_id =
+        materialize_simulation_acceptance_outbreak(ctx, generated_leader_id, policy_seed)?;
     let direct_party_id = ctx
         .db
         .character()
@@ -1835,7 +1906,7 @@ fn materialize_generated_quest(
     let geographic = settlement.source_node_id.is_some();
     let mut site_rows = BTreeMap::new();
     for (index, site) in generated.sites.iter().enumerate() {
-        let distance_m = 4_000 + (seed.rotate_left(index as u32) % 17_000);
+        let distance_m = ordinary_generated_site_distance_m(seed, index);
         let angle_seed = seed.rotate_left((index as u32).saturating_mul(11));
         let angle = (angle_seed as f64 / u64::MAX as f64) * std::f64::consts::TAU;
         let distance_km = distance_m as f64 / 1_000.0;

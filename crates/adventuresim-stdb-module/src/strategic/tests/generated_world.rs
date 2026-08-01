@@ -87,6 +87,39 @@ fn simulation_quest_fixture_exposes_ordinary_provisioning_to_both_paths() {
 }
 
 #[test]
+fn acceptance_fixture_selects_before_materialization_without_rewriting_sites() {
+    let source = STRATEGIC_SOURCE;
+    let fixture = source
+        .split("pub(crate) fn seed_simulation_quest_fixture_inner")
+        .nth(1)
+        .and_then(|tail| tail.split("fn materialize_generated_quest").next())
+        .expect("simulation acceptance fixture");
+    assert!(fixture.contains("materialize_simulation_acceptance_outbreak"));
+    assert!(!source.contains("bound_simulation_acceptance_generated_case_sites"));
+    assert!(!source.contains("site.distance_m = distance_m"));
+
+    let ordinary_generation = source
+        .split("fn materialize_generated_quest")
+        .nth(1)
+        .expect("ordinary generated quest materialization");
+    assert!(ordinary_generation.contains("ordinary_generated_site_distance_m(seed, index)"));
+    assert_eq!(ordinary_generated_site_distance_m(0, 0), 4_000);
+    assert!((0..64).all(|index| {
+        (4_000..21_000).contains(&ordinary_generated_site_distance_m(u64::MAX, index))
+    }));
+    let selector = source
+        .split("fn materialize_simulation_acceptance_outbreak")
+        .nth(1)
+        .and_then(|tail| tail.split("fn seed_outbreak_demo").next())
+        .expect("acceptance outbreak selector");
+    let selection = selector
+        .find("generated.sites.iter().enumerate().any")
+        .unwrap();
+    let materialization = selector.find("materialize_generated_quest").unwrap();
+    assert!(selection < materialization);
+}
+
+#[test]
 fn generated_return_and_expose_bind_only_the_authored_case_and_recipient() {
     use adventuresim_core::quest_generation::{
         CanonicalCause, GeneratedDialogueAction, TemplateFamily,

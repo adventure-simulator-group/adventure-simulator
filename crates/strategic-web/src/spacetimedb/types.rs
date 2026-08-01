@@ -207,6 +207,10 @@ pub struct BackendCaseSitePin {
     pub generated_case: bool,
     pub case_resolved: bool,
     pub combat_available: bool,
+    #[serde(default)]
+    pub opposition_count: Option<u32>,
+    #[serde(default)]
+    pub opposition_combat_power: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

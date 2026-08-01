@@ -23,6 +23,7 @@ fn startup_registers_and_resubscribes_gateway_before_seeding() {
         ".backend_characters()",
         ".backend_character_capabilities()",
         ".backend_character_needs()",
+        ".backend_character_stats()",
         ".backend_character_strategic_conditions()",
         ".backend_character_times()",
         ".backend_character_training_schedules()",
@@ -40,8 +41,19 @@ fn startup_registers_and_resubscribes_gateway_before_seeding() {
         .nth(1)
         .and_then(|tail| tail.split("\"claim_simulation_run\"").next())
         .expect("pre-registration subscription");
+    assert!(initial_subscription.contains(".backend_character_stats()"));
     assert!(!initial_subscription.contains("backend_physiology_charts"));
-    assert!(!source.contains(".infection_episode()"));
+    for forbidden in [
+        ".infection_episode()",
+        ".character_stats()",
+        ".character_attribute()",
+    ] {
+        assert!(
+            !initial_subscription.contains(forbidden)
+                && !gateway_surface[..subscribe].contains(forbidden),
+            "subscription must not expose private table {forbidden}"
+        );
+    }
 }
 
 #[test]
@@ -348,7 +360,7 @@ fn generated_case_selection_is_public_chronological_and_shared_by_both_paths() {
     assert!(stable.contains("latest_update_at"));
     assert!(!stable.contains("fixture"));
     let bootstrap = source
-        .split("let open_generated_cases = runner.owned_open_generated_cases")
+        .split("let mut open_generated_cases = runner.owned_open_generated_cases")
         .nth(1)
         .expect("core-loop case selection");
     assert_eq!(
@@ -358,6 +370,53 @@ fn generated_case_selection_is_public_chronological_and_shared_by_both_paths() {
     );
     assert!(!bootstrap.contains("open_generated_cases[0]"));
     assert!(!bootstrap.contains("owned_open_generated_cases(leader).into_iter().next()"));
+}
+
+#[test]
+fn generated_case_no_progress_is_bounded_and_publicly_diagnosable() {
+    let diagnostic = LIVE_CORE_SOURCE
+        .split("fn emit_generated_case_no_progress")
+        .nth(1)
+        .and_then(|tail| tail.split("pub(super) fn generated_case_status").next())
+        .expect("generated-case no-progress diagnostic");
+    assert!(diagnostic.contains("row.owner_character_id == character_id"));
+    assert!(diagnostic.contains("row.case_id == case_id"));
+    assert!(diagnostic.contains("visible_npc_candidates"));
+    assert!(diagnostic.contains("action_versions.truncate(8)"));
+    assert!(diagnostic.contains("len().min(64)"));
+    assert!(diagnostic.contains("CoreLoopEventKind::GeneratedInvestigationReplan"));
+    assert!(!diagnostic.contains("fixture"));
+    assert!(!diagnostic.contains("canonical_case"));
+    let driver = LIVE_CORE_SOURCE
+        .split("pub(super) fn advance_generated_case")
+        .nth(1)
+        .and_then(|tail| tail.split("pub(super) fn turn_in_ready_direct_contract").next())
+        .expect("generated-case driver");
+    assert!(driver.contains(
+        "emit_generated_case_no_progress(character_id, agent, cycle, case_id, &actions)"
+    ));
+}
+
+#[test]
+fn generated_case_tries_bounded_distinct_public_witnesses_before_stalling() {
+    let driver = LIVE_CORE_SOURCE
+        .split("pub(super) fn advance_generated_case")
+        .nth(1)
+        .and_then(|tail| tail.split("pub(super) fn turn_in_ready_direct_contract").next())
+        .expect("generated-case driver");
+    let witness_pass = driver
+        .split("let mut witnesses")
+        .nth(1)
+        .and_then(|tail| tail.split("if witness_progressed").next())
+        .expect("bounded public witness pass");
+    assert!(witness_pass.contains("row.owner_character_id == character_id"));
+    assert!(witness_pass.contains("row.case_id == case_id"));
+    assert!(witness_pass.contains("row.corrected_by.is_empty()"));
+    assert!(witness_pass.contains("witnesses.sort_by_key"));
+    assert!(witness_pass.contains("attempted_witnesses.len() >= 8"));
+    assert!(witness_pass.contains("try_generated_dialogue_topic"));
+    assert!(!witness_pass.contains("max_by_key"));
+    assert!(!witness_pass.contains("fixture"));
 }
 
 #[test]

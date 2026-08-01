@@ -508,6 +508,17 @@ impl Combatant {
 /// weapon accuracy, trained weapon/dodge/block/balance/will checks, armor,
 /// current limb health, fatigue/encumbrance, and strategic incapacitation.
 /// It is a conservative decision aid, not an outcome oracle.
+fn finite_log_component(value: f32, weight: f64) -> f64 {
+    let bounded = if value.is_nan() || value <= 0.0 {
+        0.0
+    } else if value.is_infinite() {
+        f32::MAX
+    } else {
+        value
+    };
+    f64::from(bounded).ln_1p() * weight
+}
+
 pub fn autoresolve_combat_power(combatant: &Combatant) -> u64 {
     let attack_check = |equipment: &CombatEquipment, weights: LimbWeights| {
         equipment
@@ -601,17 +612,33 @@ pub fn autoresolve_combat_power(combatant: &Combatant) -> u64 {
                 .min(5.0)
         }
     });
-    let raw = melee_check.max(ranged_check) * 2_000.0
-        + dodge * 900.0
-        + block * 900.0
-        + balance * 500.0
-        + will * 500.0
-        + combatant.attributes.endurance.max(0.0) * 500.0
-        + armor * 40.0
-        + health.clamp(0.0, 1.0) * 1_000.0
-        + ranged_opening * 500.0;
-    let readiness = (1.0 - combatant.incapacitation()).clamp(0.0, 1.0);
-    (raw.max(0.0) * readiness).round().min(u64::MAX as f32) as u64
+    // Skill checks can span many orders of magnitude. Compress each positive
+    // component before combining them so one huge term cannot saturate the
+    // aggregate or erase monotonic equipment differences in f32 precision.
+    let raw = finite_log_component(melee_check.max(ranged_check), 2_000_000.0)
+        + finite_log_component(dodge, 900_000.0)
+        + finite_log_component(block, 900_000.0)
+        + finite_log_component(balance, 500_000.0)
+        + finite_log_component(will, 500_000.0)
+        + finite_log_component(combatant.attributes.endurance, 500_000.0)
+        // Armor is a complete defensive channel, not a small accessory to
+        // mobility-dependent skill checks. Its weight is comparable to the
+        // combined physical-performance channel so meaningful protection can
+        // outweigh (but does not erase) its range-of-motion penalties above.
+        + finite_log_component(armor, 4_000_000.0)
+        + if health.is_finite() {
+            f64::from(health.clamp(0.0, 1.0)) * 1_000_000.0
+        } else {
+            0.0
+        }
+        + finite_log_component(ranged_opening, 500_000.0);
+    let incapacitation = combatant.incapacitation();
+    let readiness = if incapacitation.is_finite() {
+        f64::from((1.0 - incapacitation).clamp(0.0, 1.0))
+    } else {
+        0.0
+    };
+    (raw * readiness).round().clamp(0.0, u64::MAX as f64) as u64
 }
 
 /// The quest policy's conservative 5:4 party-to-opposition margin. Overflow
@@ -1849,6 +1876,26 @@ mod tests {
             ..CombatArmor::default()
         };
         assert!(autoresolve_combat_power(&chest_only) > autoresolve_combat_power(&novice));
+    }
+
+    #[test]
+    fn combat_power_bounds_non_finite_components_without_saturating() {
+        assert_eq!(finite_log_component(f32::NAN, 1.0), 0.0);
+        assert_eq!(finite_log_component(f32::NEG_INFINITY, 1.0), 0.0);
+        let infinite = finite_log_component(f32::INFINITY, 4_000_000.0);
+        assert!(infinite.is_finite());
+
+        let mut extreme = fighter(1, 1.0, false);
+        extreme.equipment.armor.fill(CombatArmor {
+            resistance: f32::INFINITY,
+            padding: f32::MAX,
+            coverage: 1.0,
+            range_of_motion: 0.5,
+            ..CombatArmor::default()
+        });
+        let power = autoresolve_combat_power(&extreme);
+        assert!(power > 0);
+        assert!(power < u64::MAX);
     }
 
     #[test]
