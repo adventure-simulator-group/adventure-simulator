@@ -55,11 +55,25 @@ fn finite_rank(rank: f32) -> f32 {
 
 pub(super) fn skill_rank_tier(rank: f32) -> u8 {
     let rank = finite_rank(rank);
-    if rank <= 0.0 {
-        0
-    } else {
-        rank.ceil().clamp(1.0, 5.0) as u8
+    match rank {
+        rank if rank <= 1.0 => 1,
+        rank if rank <= 2.0 => 2,
+        rank if rank <= 3.0 => 3,
+        rank if rank <= 4.0 => 4,
+        _ => 5,
     }
+}
+
+fn skill_icon_cell_class(rank: f32, extra: &str) -> String {
+    format!(
+        "party-skill-name party-skill-icon-cell skill-rank-tier-{}{}",
+        skill_rank_tier(rank),
+        if extra.is_empty() {
+            String::new()
+        } else {
+            format!(" {extra}")
+        }
+    )
 }
 
 fn social_family_rank(skills: &CharacterSkills, aptitude: f32) -> f32 {
@@ -1275,7 +1289,7 @@ fn terrain_skill_rows(
         / 5.0;
     html! {
         tr class="party-skill-row terrain-primary-row" data-terrain-primary {
-            th scope="row" class="party-skill-name party-skill-icon-cell" {
+            th scope="row" class=(skill_icon_cell_class(rank, "")) {
                 @if let Some(action) = action {
                     (skill_action_icon("Terrain", "terrain", action, false))
                 } @else {
@@ -1288,7 +1302,7 @@ fn terrain_skill_rows(
                     rank,
                     &SkillTooltip::aggregate(
                         "Terrain",
-                        "Intelligence",
+                        "Instinct",
                         average_hours,
                         average_effective_hours,
                     ),
@@ -1302,14 +1316,14 @@ fn terrain_skill_rows(
             }
         }
         @for (name, icon, skill, _hours) in entries {
+            @let effective_hours = CharacterSkillHours(skills).effective_skill_hours(skill);
+            @let uncapped = skill.training_rank(effective_hours);
+            @let sub_rank = skill.capped_rank_for_aptitude(effective_hours, aptitude);
             tr class="party-skill-row terrain-detail-row" data-terrain-detail hidden {
-                th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
+                th scope="row" class=(skill_icon_cell_class(sub_rank, "religion-subskill-name")) {
                     (stat_icon(name, "terrain", icon, false))
                 }
                 td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
-                    @let effective_hours = CharacterSkillHours(skills).effective_skill_hours(skill);
-                    @let uncapped = skill.training_rank(effective_hours);
-                    @let sub_rank = skill.capped_rank_for_aptitude(effective_hours, aptitude);
                     (skill_rank_bar_with_tooltip(uncapped, sub_rank, &SkillTooltip::ordinary(skills, skill), skill_rail_bar_options()))
                 }
                 td class="religion-expand-cell" {}
@@ -1336,18 +1350,20 @@ fn language_skill_rows(
     html! {
         @for (family, effective, kind) in [("Oral",oral_effective,"oral"),("Written",written_effective,"written")] {
             @if effective.is_finite() && effective > 0.0 {
+                @let aptitude = if kind == "oral" { oral_aptitude } else { written_aptitude };
+                @let current_rank = (effective / 1000.0).clamp(0.0, 5.0).min(aptitude.clamp(0.0, 5.0));
                 tr class=(format!("party-skill-row language-primary-row language-{kind}")) {
-                    th scope="row" class="party-skill-name party-skill-icon-cell" { span class=(format!("language-monogram language-{kind}")) title=(format!("{family} languages")) aria-hidden="true" { (if kind=="oral" {"O"} else {"W"}) } span class="sr-only" { (family) } }
+                    th scope="row" class=(skill_icon_cell_class(current_rank, "")) { span class=(format!("language-monogram language-{kind}")) title=(format!("{family} languages")) aria-hidden="true" { (if kind=="oral" {"O"} else {"W"}) } span class="sr-only" { (family) } }
                     td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let aptitude=if kind=="oral" {oral_aptitude} else {written_aptitude}; @let tooltip=if kind=="oral" { oral_language_family_tooltip(skills) } else { written_language_family_tooltip(skills) }; @let rank=(effective/1000.0).clamp(0.0,5.0); (skill_rank_bar_with_tooltip(rank,rank.min(aptitude.clamp(0.0,5.0)),&tooltip,skill_rail_bar_options())) }
                     td class="religion-expand-cell" { button type="button" class="religion-expand-button" data-language-expand=(kind) aria-expanded="false" aria-label=(format!("Expand {family} languages")) { span class="religion-expand-chevron" aria-hidden="true" { "›" } } }
                 }
                 @if kind=="oral" { @for language in OralLanguage::ALL { @let descriptor=language.descriptor(); @let effective=skills.oral_languages.effective(language);
                     @if effective.is_finite() && effective > 0.0 {
-                        tr class="party-skill-row language-detail-row" data-language-detail="oral" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-oral language-blackletter"} else {"language-monogram language-oral"}) title=(format!("{} — {}",descriptor.english,descriptor.native)) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let rank=(effective/1000.0).clamp(0.0,5.0); (skill_rank_bar_with_tooltip(rank,rank.min(oral_aptitude.clamp(0.0,5.0)),&oral_language_tooltip(skills, language),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
+                        tr class="party-skill-row language-detail-row" data-language-detail="oral" hidden { th scope="row" class=(skill_icon_cell_class((effective / 1000.0).clamp(0.0, 5.0).min(oral_aptitude.clamp(0.0, 5.0)), "religion-subskill-name")) { span class=(if descriptor.germanic_style {"language-monogram language-oral language-blackletter"} else {"language-monogram language-oral"}) title=(format!("{} — {}",descriptor.english,descriptor.native)) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let rank=(effective/1000.0).clamp(0.0,5.0); (skill_rank_bar_with_tooltip(rank,rank.min(oral_aptitude.clamp(0.0,5.0)),&oral_language_tooltip(skills, language),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
                     }
                 }} @else { @for language in WrittenLanguage::ALL { @let descriptor=language.descriptor(); @let effective=skills.written_languages.effective(language);
                     @if effective.is_finite() && effective > 0.0 {
-                        tr class="party-skill-row language-detail-row" data-language-detail="written" hidden { th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" { span class=(if descriptor.germanic_style {"language-monogram language-written language-blackletter"} else {"language-monogram language-written"}) title=(format!("{} — {}",descriptor.english,descriptor.native)) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let rank=(effective/1000.0).clamp(0.0,5.0); (skill_rank_bar_with_tooltip(rank,rank.min(written_aptitude.clamp(0.0,5.0)),&written_language_tooltip(skills, language),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
+                        tr class="party-skill-row language-detail-row" data-language-detail="written" hidden { th scope="row" class=(skill_icon_cell_class((effective / 1000.0).clamp(0.0, 5.0).min(written_aptitude.clamp(0.0, 5.0)), "religion-subskill-name")) { span class=(if descriptor.germanic_style {"language-monogram language-written language-blackletter"} else {"language-monogram language-written"}) title=(format!("{} — {}",descriptor.english,descriptor.native)) aria-hidden="true" { (descriptor.monogram) } span class="sr-only" { (descriptor.english) } } td class="party-skill-meter" colspan=[schedule_context.then_some("7")] { @let rank=(effective/1000.0).clamp(0.0,5.0); (skill_rank_bar_with_tooltip(rank,rank.min(written_aptitude.clamp(0.0,5.0)),&written_language_tooltip(skills, language),skill_rail_bar_options())) } td class="religion-expand-cell" {} }
                     }
                 }}
             }
@@ -1419,13 +1435,15 @@ fn religion_skill_rows(
     let primary = primary_religion(skills, training_religion);
     let primary_id = primary.religion_id();
     let primary_effective = skills.religion_hours.effective(primary);
+    let primary_rank = Skill::Religion.capped_rank_for_aptitude(primary_effective, aptitude)
+        * health.clamp(0.0, 1.0);
     let has_details = OfficialReligion::ALL.into_iter().any(|religion| {
         let direct = skills.religion_hours.direct(religion);
         religion != primary && direct.is_finite() && direct > 0.0
     });
     html! {
         tr class="party-skill-row religion-primary-row" data-religion-primary=(primary_id) {
-            th scope="row" class="party-skill-name party-skill-icon-cell" {
+            th scope="row" class=(skill_icon_cell_class(primary_rank, "")) {
                 span class="religion-tradition-icon" title=(primary.label()) {
                     (religion_icon(primary.label(), Some(primary_id), false))
                 }
@@ -1433,7 +1451,7 @@ fn religion_skill_rows(
             td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
                 (skill_rank_bar_with_tooltip(
                     Skill::Religion.training_rank(primary_effective),
-                    Skill::Religion.capped_rank_for_aptitude(primary_effective, aptitude) * health.clamp(0.0, 1.0),
+                    primary_rank,
                     &religion_tooltip(skills, primary),
                     skill_rail_bar_options(),
                 ))
@@ -1449,8 +1467,9 @@ fn religion_skill_rows(
           @if religion != primary && direct.is_finite() && direct > 0.0 {
             @let id = religion.religion_id();
             @let effective = skills.religion_hours.effective(religion);
+            @let current_rank = Skill::Religion.capped_rank_for_aptitude(effective, aptitude) * health.clamp(0.0, 1.0);
             tr class="party-skill-row religion-detail-row" data-religion-detail hidden {
-                th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
+                th scope="row" class=(skill_icon_cell_class(current_rank, "religion-subskill-name")) {
                     span class="religion-tradition-icon" {
                         (religion_icon(religion.label(), Some(id), false))
                     }
@@ -1458,7 +1477,7 @@ fn religion_skill_rows(
                 td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
                     (skill_rank_bar_with_tooltip(
                         Skill::Religion.training_rank(effective),
-                        Skill::Religion.capped_rank_for_aptitude(effective, aptitude) * health.clamp(0.0, 1.0),
+                        current_rank,
                         &religion_tooltip(skills, religion),
                         skill_rail_bar_options(),
                     ))
@@ -1527,16 +1546,18 @@ fn bestiary_skill_rows(
         return html! {};
     }
     let aggregate_effective = skills.bestiary_hours.aggregate_effective();
+    let aggregate_rank = Skill::Bestiary.capped_rank_for_aptitude(aggregate_effective, aptitude)
+        * health.clamp(0.0, 1.0);
     html! {
         tr class="party-skill-row skill-family-primary-row bestiary-primary-row"
             data-skill-family="bestiary" data-bestiary-primary {
-            th scope="row" class="party-skill-name party-skill-icon-cell" {
+            th scope="row" class=(skill_icon_cell_class(aggregate_rank, "")) {
                 (stat_icon("Bestiary", "bestiary", "bestiary", false))
             }
             td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
                 (skill_rank_bar_with_tooltip(
                     Skill::Bestiary.training_rank(aggregate_effective),
-                    Skill::Bestiary.capped_rank_for_aptitude(aggregate_effective, aptitude) * health.clamp(0.0, 1.0),
+                    aggregate_rank,
                     &bestiary_family_tooltip(skills),
                     skill_rail_bar_options(),
                 ))
@@ -1552,8 +1573,9 @@ fn bestiary_skill_rows(
             @let effective = skills.bestiary_hours.effective(category);
             @if effective.is_finite() && effective > 0.0 {
                 @let (enemies, applies_to) = bestiary_category_enemies(category);
+                @let current_rank = Skill::Bestiary.capped_rank_for_aptitude(effective, aptitude) * health.clamp(0.0, 1.0);
                 tr class="party-skill-row bestiary-detail-row" data-bestiary-detail hidden {
-                    th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
+                    th scope="row" class=(skill_icon_cell_class(current_rank, "religion-subskill-name")) {
                         span class="bestiary-lore-trigger" data-strategic-tooltip=(category.label())
                             data-tooltip-pinnable data-bestiary-enemies=(&enemies)
                             tabindex="0" role="button" aria-pressed="false"
@@ -1566,7 +1588,7 @@ fn bestiary_skill_rows(
                     td class="party-skill-meter" colspan=[schedule_context.then_some("7")] {
                         (skill_rank_bar_with_tooltip(
                             Skill::Bestiary.training_rank(effective),
-                            Skill::Bestiary.capped_rank_for_aptitude(effective, aptitude) * health.clamp(0.0, 1.0),
+                            current_rank,
                             &bestiary_tooltip(skills, category),
                             skill_rail_bar_options(),
                         ))
@@ -1629,7 +1651,7 @@ fn social_skill_rows(
         / entries.len() as f32;
     html! {
         tr class="party-skill-row social-primary-row" data-social-primary {
-            th scope="row" class="party-skill-name party-skill-icon-cell" {
+            th scope="row" class=(skill_icon_cell_class(effective_rank, "")) {
                 (stat_icon("Social", "skills", "social", false))
             }
             td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
@@ -1653,14 +1675,15 @@ fn social_skill_rows(
             }
         }
         @for (name, icon, skill, hours) in entries {
+            @let uncapped = skill.training_rank(hours);
+            @let sub_rank = skill.capped_rank_for_aptitude(hours, aptitude);
+            @let current_rank = sub_rank * health.clamp(0.0, 1.0);
             tr class="party-skill-row social-detail-row" data-social-detail hidden {
-                th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
+                th scope="row" class=(skill_icon_cell_class(current_rank, "religion-subskill-name")) {
                     (stat_icon(name, "skills", icon, false))
                 }
                 td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
-                    @let uncapped = skill.training_rank(hours);
-                    @let sub_rank = skill.capped_rank_for_aptitude(hours, aptitude);
-                    (skill_rank_bar_with_tooltip(uncapped, sub_rank * health.clamp(0.0, 1.0), &SkillTooltip::direct(skill, hours), skill_rail_bar_options()))
+                    (skill_rank_bar_with_tooltip(uncapped, current_rank, &SkillTooltip::direct(skill, hours), skill_rail_bar_options()))
                 }
                 td class="religion-expand-cell" {}
             }
@@ -1751,7 +1774,7 @@ fn combat_meta_group(
     };
     html! {
         tr class="party-skill-row combat-primary-row" data-combat-primary=(name.to_ascii_lowercase()) {
-            th scope="row" class="party-skill-name party-skill-icon-cell" {
+            th scope="row" class=(skill_icon_cell_class(effective_rank, "")) {
                 (stat_icon(name, "skills", icon, false))
             }
             td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
@@ -1775,17 +1798,18 @@ fn combat_meta_group(
             }
         }
         @for &(leaf_name, leaf_icon, skill, _hours, aptitude, health, weight) in entries {
+            @let effective_hours = CharacterSkillHours(skills).effective_skill_hours(skill);
+            @let uncapped = skill.training_rank(effective_hours);
+            @let sub_rank = skill.capped_rank_for_aptitude(effective_hours, aptitude);
+            @let current_rank = sub_rank * health.clamp(0.0, 1.0);
             tr class="party-skill-row combat-detail-row" data-combat-detail=(name.to_ascii_lowercase()) data-combat-weight=(weight) hidden {
-                th scope="row" class="party-skill-name party-skill-icon-cell religion-subskill-name" {
+                th scope="row" class=(skill_icon_cell_class(current_rank, "religion-subskill-name")) {
                     span title=[(skill == Skill::Knife).then_some("Knife means short weapons: knives, daggers, and short blades.")] {
                         (stat_icon(leaf_name, "skills", leaf_icon, false))
                     }
                 }
                 td class="party-skill-meter" colspan=[schedule.map(|_| "7")] {
-                    @let effective_hours = CharacterSkillHours(skills).effective_skill_hours(skill);
-                    @let uncapped = skill.training_rank(effective_hours);
-                    @let sub_rank = skill.capped_rank_for_aptitude(effective_hours, aptitude);
-                    (skill_rank_bar_with_tooltip(uncapped, sub_rank * health.clamp(0.0, 1.0), &SkillTooltip::ordinary(skills, skill), skill_rail_bar_options()))
+                    (skill_rank_bar_with_tooltip(uncapped, current_rank, &SkillTooltip::ordinary(skills, skill), skill_rail_bar_options()))
                 }
                 td class="religion-expand-cell" {}
             }
@@ -1825,7 +1849,7 @@ fn party_skill_row(
     let effective_rank = rank * health.clamp(0.0, 1.0);
     html! {
         tr class="party-skill-row" {
-            th scope="row" class="party-skill-name party-skill-icon-cell" {
+            th scope="row" class=(skill_icon_cell_class(effective_rank, "")) {
                 @if let Some(action) = action {
                     (skill_action_icon(name, icon, action, schedule_context))
                 } @else {
@@ -2804,6 +2828,61 @@ mod tests {
         assert!(!allocation.contains("data-schedule-step"));
         assert!(!allocation.contains("type=\"range\""));
         assert!(!allocation.contains("schedule-handle"));
+    }
+
+    #[test]
+    fn skill_icons_use_the_current_bar_band_without_rounding() {
+        for (rank, tier) in [
+            (f32::NAN, 1),
+            (0.0, 1),
+            (0.99, 1),
+            (1.0, 1),
+            (1.01, 2),
+            (2.0, 2),
+            (2.01, 3),
+            (3.0, 3),
+            (3.01, 4),
+            (4.0, 4),
+            (4.01, 5),
+            (5.0, 5),
+        ] {
+            assert_eq!(skill_rank_tier(rank), tier, "rank {rank}");
+        }
+
+        let skills = CharacterSkills {
+            cooking_hours: Skill::Cooking.hours_for_rank(1.5),
+            ..Default::default()
+        };
+        let healthy = party_skill_row(
+            &skills,
+            "Cooking",
+            "cooking",
+            Skill::Cooking,
+            5.0,
+            1.0,
+            false,
+            None,
+        )
+        .into_string();
+        assert!(healthy.contains("skill-rank-tier-2"));
+
+        let injured = party_skill_row(
+            &skills,
+            "Cooking",
+            "cooking",
+            Skill::Cooking,
+            5.0,
+            0.5,
+            false,
+            None,
+        )
+        .into_string();
+        assert!(injured.contains("skill-rank-tier-1"));
+
+        let css = include_str!("../../../static/css/strategic.css");
+        assert!(css.contains("--skill-icon-color: var(--rank-tier-1)"));
+        assert!(css.contains("--stat-icon-color: var(--skill-icon-color)"));
+        assert!(css.contains(":is(.religion-tradition-icon, .language-monogram)"));
     }
 
     #[test]
