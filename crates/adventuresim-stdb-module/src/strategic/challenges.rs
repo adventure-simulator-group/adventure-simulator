@@ -228,6 +228,35 @@ pub struct NarrativeEncounterInformation {
     pub learned_at_minute: u64,
 }
 
+/// Private outcome contract for a catalog-authored transition into the normal
+/// strategic combat flow. Rewards remain inert until that combat resolves in
+/// victory and are applied once through the receipt below.
+#[derive(Clone, Debug)]
+#[table(accessor = narrative_combat_followup_authority)]
+pub struct NarrativeCombatFollowupAuthority {
+    #[primary_key]
+    pub encounter_id: String,
+    pub occurrence_id: String,
+    pub party_id: String,
+    pub victory_result: String,
+    pub defeat_result: String,
+    pub escape_result: String,
+    pub victory_effects_json: String,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = narrative_combat_followup_receipt)]
+pub struct NarrativeCombatFollowupReceipt {
+    #[primary_key]
+    pub encounter_id: String,
+    pub occurrence_id: String,
+    pub party_id: String,
+    pub outcome: String,
+    pub result_transcript: String,
+    pub applied_effects_json: String,
+    pub resolved_at_minute: u64,
+}
+
 #[derive(Clone, Debug, SpacetimeType)]
 pub struct BackendRoadChallenge {
     pub id: String,
@@ -650,6 +679,142 @@ pub(crate) fn materialize_chance_narrative_encounter(
     Ok(())
 }
 
+fn narrative_combat_roll(seed: u64, occurrence_id: &str) -> u64 {
+    occurrence_id.bytes().fold(seed ^ 0x6e61_7272_636f_6d62, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x1000_0000_01b3)
+    })
+}
+
+fn materialize_narrative_combat(
+    ctx: &ReducerContext,
+    challenge: &RoadChallengeAuthority,
+    party: &Party,
+    archetype: adventuresim_core::road_encounter_catalog::RoadCombatArchetype,
+    count: u16,
+    victory_result: &str,
+    defeat_result: &str,
+    escape_result: &str,
+    victory_effects: &[adventuresim_core::road_encounter_catalog::Effect],
+) -> Result<(), String> {
+    use adventuresim_core::encounter::{Awareness, EncounterArchetype};
+    let encounter_id = format!("narrative-combat:{}", challenge.id);
+    if let Some(existing) = ctx.db.strategic_encounter().party_id().find(&party.id) {
+        if existing.status == "awaiting_choice" {
+            if existing.encounter_id == encounter_id
+                && ctx.db.narrative_combat_followup_authority().encounter_id().find(&encounter_id)
+                    .is_some_and(|followup| followup.occurrence_id == challenge.id)
+            { return Ok(()); }
+            return Err("Resolve the pending strategic encounter before starting another".into());
+        }
+    }
+    let _journey = ctx.db.party_journey_authority().party_id().find(&party.id)
+        .ok_or("Narrative combat requires a durable journey")?;
+    let encounter_authority = ctx.db.party_journey_encounter_authority().party_id().find(&party.id)
+        .ok_or("Narrative combat requires durable encounter entropy")?;
+    let roll_index = narrative_combat_roll(encounter_authority.seed, &challenge.id);
+    let core_archetype = match archetype {
+        adventuresim_core::road_encounter_catalog::RoadCombatArchetype::Bandits => EncounterArchetype::Bandits,
+    };
+    let archetype_name = match core_archetype { EncounterArchetype::Bandits => "bandit", _ => unreachable!() };
+    let member_ids = living_party_member_ids(ctx, &party.id);
+    if member_ids.is_empty() { return Err("A party with no living members cannot enter combat".into()); }
+    let route = ctx.db.party_journey_route_authority().party_id().find(&party.id);
+    let terrain_kind = encounter_terrain_at(route.as_ref(), challenge.camp_movement_minute);
+    let terrain = core_encounter_terrain(terrain_kind);
+    let party_speed = adventuresim_core::encounter::sustainable_speed_m_per_minute(
+        current_party_fatigue_percent(ctx, &member_ids),
+        party_encumbrance_remaining_basis_points(ctx, &party.id, &member_ids),
+        member_ids.len().min(u16::MAX as usize) as u16,
+        terrain,
+    );
+    let enemy_speed = core_archetype.enemy_speed_m_per_minute();
+    let choices = adventuresim_core::encounter::available_choices(Awareness::Both, core_archetype, party_speed)
+        .into_iter().map(|choice| match choice {
+            adventuresim_core::encounter::EncounterChoice::Sneak => "sneak",
+            adventuresim_core::encounter::EncounterChoice::Detour => "detour",
+            adventuresim_core::encounter::EncounterChoice::Attack => "attack",
+            adventuresim_core::encounter::EncounterChoice::Run => "run",
+            adventuresim_core::encounter::EncounterChoice::Surrender => "surrender",
+        }).map(str::to_string).collect::<Vec<_>>();
+    let run_eligible = adventuresim_core::encounter::run_is_eligible(party_speed, core_archetype);
+    let mut encounter = StrategicEncounter {
+        party_id: party.id.clone(), encounter_id: encounter_id.clone(), archetype: archetype_name.into(),
+        enemy_count: count, roll_index, journey_movement_minute: challenge.camp_movement_minute,
+        journey_elapsed_minute: challenge.available_at_elapsed_minute,
+        absolute_minute: challenge.absolute_minute, longitude_e7: challenge.longitude_e7,
+        latitude_e7: challenge.latitude_e7, terrain: format!("{terrain_kind:?}").to_ascii_lowercase(),
+        party_aware: true, enemy_aware: true, available_choices: choices,
+        status: "awaiting_choice".into(), selected_choice: None,
+        selection_explanation: "A catalog-authored roadside challenge openly became combat".into(),
+        party_speed_m_per_minute: party_speed, enemy_speed_m_per_minute: enemy_speed,
+        run_ineligibility: (!run_eligible).then(|| format!("Party speed {party_speed} m/min does not exceed enemy speed {enemy_speed} m/min")),
+        penalty_minutes: 0, loss_preview: Vec::new(), outcome: None,
+    };
+    if encounter.available_choices.iter().any(|choice| choice == "surrender") {
+        encounter.loss_preview = encounter_loss_preview(ctx, &party.id);
+    }
+    let victory_effects_json = serde_json::to_string(victory_effects)
+        .map_err(|_| "Could not encode narrative combat victory effects")?;
+    if let Some(existing) = ctx.db.narrative_combat_followup_authority().encounter_id().find(&encounter_id) {
+        if existing.occurrence_id != challenge.id || existing.party_id != party.id
+            || existing.victory_effects_json != victory_effects_json {
+            return Err("Narrative combat follow-up identity collision".into());
+        }
+    } else {
+        ctx.db.narrative_combat_followup_authority().insert(NarrativeCombatFollowupAuthority {
+            encounter_id: encounter_id.clone(), occurrence_id: challenge.id.clone(), party_id: party.id.clone(),
+            victory_result: victory_result.into(), defeat_result: defeat_result.into(),
+            escape_result: escape_result.into(), victory_effects_json,
+        });
+    }
+    if ctx.db.strategic_encounter().party_id().find(&party.id).is_some() {
+        ctx.db.strategic_encounter().party_id().update(encounter);
+    } else {
+        ctx.db.strategic_encounter().insert(encounter);
+    }
+    Ok(())
+}
+
+pub(crate) fn resolve_narrative_combat_followup(
+    ctx: &ReducerContext,
+    encounter: &StrategicEncounter,
+) -> Result<(), String> {
+    let Some(followup) = ctx.db.narrative_combat_followup_authority()
+        .encounter_id().find(&encounter.encounter_id) else { return Ok(()); };
+    let outcome = encounter.outcome.as_deref().ok_or("Narrative combat resolved without an outcome")?;
+    if let Some(receipt) = ctx.db.narrative_combat_followup_receipt()
+        .encounter_id().find(&encounter.encounter_id) {
+        return if receipt.occurrence_id == followup.occurrence_id && receipt.party_id == encounter.party_id
+            && receipt.outcome == outcome { Ok(()) } else { Err("Conflicting narrative combat follow-up retry".into()) };
+    }
+    let (result, effects) = if outcome == "victory" {
+        let effects = serde_json::from_str::<Vec<adventuresim_core::road_encounter_catalog::Effect>>(
+            &followup.victory_effects_json).map_err(|_| "Narrative combat victory effects are invalid")?;
+        (followup.victory_result.as_str(), effects)
+    } else if outcome == "avoided" {
+        (followup.escape_result.as_str(), Vec::new())
+    } else {
+        (followup.defeat_result.as_str(), Vec::new())
+    };
+    let now = crate::time::refresh_clock(ctx)?;
+    for effect in &effects {
+        apply_narrative_effect(ctx, &followup.occurrence_id, &encounter.party_id, now, effect)?;
+    }
+    let mut challenge = ctx.db.road_challenge_authority().id().find(&followup.occurrence_id)
+        .ok_or("Narrative combat source occurrence is missing")?;
+    let transcript = challenge.result_transcript.as_deref().map_or_else(
+        || result.to_string(), |opening| format!("{opening}\n\n{result}"));
+    challenge.result_transcript = Some(transcript.clone());
+    ctx.db.road_challenge_authority().id().update(challenge);
+    ctx.db.narrative_combat_followup_receipt().insert(NarrativeCombatFollowupReceipt {
+        encounter_id: encounter.encounter_id.clone(), occurrence_id: followup.occurrence_id,
+        party_id: encounter.party_id.clone(), outcome: outcome.into(), result_transcript: transcript,
+        applied_effects_json: serde_json::to_string(&effects).map_err(|_| "Could not encode applied combat effects")?,
+        resolved_at_minute: now,
+    });
+    Ok(())
+}
+
 /// Bind optional preliminary trials to the first real camp reached on their
 /// accepted finale journey. Issuance never predicts camp coordinates.
 pub(crate) fn bind_errantry_trials_to_current_camp(
@@ -1062,9 +1227,6 @@ pub fn resolve_errantry_road_challenge(
     }
     let selected = definition.choices.iter().find(|candidate| candidate.id == choice)
         .ok_or("Road challenge choice is invalid")?;
-    if !matches!(selected.transition, None | Some(adventuresim_core::road_encounter_catalog::EncounterTransition::Noop)) {
-        return Err("This encounter transition is not supported by the strategic runtime".into());
-    }
     let now = crate::time::refresh_clock(ctx)?;
     for requirement in &selected.requirements {
         match requirement {
@@ -1127,6 +1289,17 @@ pub fn resolve_errantry_road_challenge(
             virtue,
             now,
         )?;
+    }
+    if let Some(transition) = &selected.transition {
+        match transition {
+            adventuresim_core::road_encounter_catalog::EncounterTransition::Noop => {}
+            adventuresim_core::road_encounter_catalog::EncounterTransition::StartCombat {
+                archetype, count, victory_result, defeat_result, escape_result, victory_effects,
+            } => materialize_narrative_combat(
+                ctx, &challenge, &party, *archetype, *count, victory_result,
+                defeat_result, escape_result, victory_effects,
+            )?,
+        }
     }
     // Origin is private. Only a bound errantry may append reward context, and
     // it does so after generic effects and personality have succeeded.
@@ -1786,7 +1959,7 @@ fn materialize_order_errantry(
 mod challenge_source_boundary_tests {
     use super::{
         ChallengeAttemptReceipt, ERRANTRY_FINALE_THREAT_ID,
-        puzzle_demo_suffix, validate_challenge_retry,
+        narrative_combat_roll, puzzle_demo_suffix, validate_challenge_retry,
     };
 
     #[test]
@@ -1901,6 +2074,41 @@ mod challenge_source_boundary_tests {
         assert!(loader.contains("materialize_chance_narrative_encounter"));
         assert!(loader.contains("NarrativeEncounterOrigin::DeveloperDemo"));
         assert!(!loader.contains("provenance"));
+    }
+
+    #[test]
+    fn authored_combat_dispatch_is_generic_deterministic_and_single_pending() {
+        assert_eq!(narrative_combat_roll(7, "occurrence:a"), narrative_combat_roll(7, "occurrence:a"));
+        assert_ne!(narrative_combat_roll(7, "occurrence:a"), narrative_combat_roll(7, "occurrence:b"));
+        let source = include_str!("challenges.rs");
+        let dispatch = source.split("fn materialize_narrative_combat").nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn resolve_narrative_combat_followup").next()).unwrap();
+        assert!(dispatch.contains("existing.status == \"awaiting_choice\""));
+        assert!(dispatch.contains("narrative_combat_followup_authority"));
+        assert!(dispatch.contains("available_choices(Awareness::Both"));
+        assert!(dispatch.contains("StrategicEncounter"));
+        assert!(dispatch.contains("existing.encounter_id == encounter_id"));
+        assert!(!dispatch.contains("unlawful_bridge_custom_v1"));
+        let reducer = source.split("pub fn resolve_errantry_road_challenge").nth(1)
+            .and_then(|tail| tail.split("fn puzzle_demo_enabled").next()).unwrap();
+        assert!(reducer.find("road_challenge_resolution_receipt()").unwrap()
+            < reducer.find("materialize_narrative_combat(").unwrap());
+    }
+
+    #[test]
+    fn authored_combat_followup_is_victory_only_and_receipted() {
+        let source = include_str!("challenges.rs");
+        let followup = source.split("pub(crate) fn resolve_narrative_combat_followup").nth(1)
+            .and_then(|tail| tail.split("/// Bind optional preliminary trials").next()).unwrap();
+        assert!(followup.contains("narrative_combat_followup_receipt"));
+        assert!(followup.contains("outcome == \"victory\""));
+        assert!(followup.contains("outcome == \"avoided\""));
+        assert!(followup.contains("apply_narrative_effect"));
+        assert!(followup.find("outcome == \"victory\"").unwrap()
+            < followup.find("apply_narrative_effect").unwrap());
+        let resolver = include_str!("encounters.rs");
+        assert!(resolver.contains("resolve_narrative_combat_followup(ctx, &encounter)"));
+        assert!(resolver.contains("!authored_followup"));
     }
 
     #[test]

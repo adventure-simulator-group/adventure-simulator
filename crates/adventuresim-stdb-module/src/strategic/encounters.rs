@@ -951,7 +951,10 @@ fn resolve_random_encounter_battle(
         &outcome,
     )?;
     if outcome.victor == BattleVictor::Allies {
-        if let Some(item_id) = autoresolve_drop(&encounter.archetype)? {
+        let authored_followup = ctx.db.narrative_combat_followup_authority()
+            .encounter_id().find(&encounter.encounter_id).is_some();
+        if !authored_followup
+            && let Some(item_id) = autoresolve_drop(&encounter.archetype)? {
             add_to_party_inventory(
                 ctx,
                 &encounter.party_id,
@@ -1079,6 +1082,7 @@ pub fn resolve_strategic_encounter(
         }
     }
     encounter.status = "resolved".into();
+    resolve_narrative_combat_followup(ctx, &encounter)?;
     ctx.db.strategic_encounter().party_id().update(encounter);
     Ok(())
 }

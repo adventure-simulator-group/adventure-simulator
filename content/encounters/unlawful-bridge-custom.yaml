@@ -1,0 +1,89 @@
+{
+  "encounters": [
+    {
+      "id": "unlawful_bridge_custom_v1",
+      "version": 1,
+      "weight": 75,
+      "triggers": { "travel": true, "rest": false },
+      "provenance": {
+        "works": ["Wigalois", "Lanzelet", "Le Morte d'Arthur"],
+        "motifs": ["bridge_custom", "false_toll", "armed_keeper", "corrupt_service"],
+        "adaptation_note": "An original synthesis of unlawful bridge and ford customs common in chivalric romance; it does not reproduce a particular episode."
+      },
+      "cast": [
+        { "id": "bridge_keeper", "name": "Bridge keeper", "nature": "mortal" }
+      ],
+      "opening": [
+        {
+          "speaker": "bridge_keeper",
+          "text": "Stand, travelers. No soul shall cross this bridge until twelve groschen lie within my coffer. My lord's charter granteth me the custom, and this armed fellow shall help me keep it.",
+          "reviewed_shakespearean": true
+        }
+      ],
+      "choices": [
+        {
+          "id": "pay_toll",
+          "label": "Pay the twelve groschen and cross",
+          "response": [{ "speaker": "bridge_keeper", "text": "Thou hast more prudence than proud stomach. Pass, and trouble not the custom further.", "reviewed_shakespearean": true }],
+          "result": "Thou payest the disputed toll and crossest without bloodshed.",
+          "deed": "pay_disputed_bridge_toll",
+          "outcome_tags": ["prudence", "peaceful_passage"],
+          "requirements": [{ "kind": "item", "item_id": "brandenburg_groschen", "minimum_quantity": 12 }],
+          "effects": [{ "kind": "currency", "currency_id": "brandenburg_groschen", "amount": -12 }],
+          "personality": [{ "axis": "drive", "delta": 50, "virtue": "prudence" }]
+        },
+        {
+          "id": "expose_charter",
+          "label": "Examine his charter and expose the false seal",
+          "response": [{ "speaker": "bridge_keeper", "text": "Thou readest wax too closely. Speak no more of seals, and take the road whilst I yet suffer it.", "reviewed_shakespearean": true }],
+          "result": "Thou showest the travelers how the false seal and altered witness line betray the unlawful charter.",
+          "deed": "expose_false_bridge_charter",
+          "outcome_tags": ["justice", "fraud_exposed", "information_gained"],
+          "checks": [{ "kind": "skill", "skill": "insight", "difficulty_milli": 1200 }],
+          "effects": [{ "kind": "information", "information_id": "unlawful_bridge_false_charter_marks" }],
+          "personality": [{ "axis": "conscience", "delta": 110, "virtue": "justice" }],
+          "quest_reward_tags": ["false_authority_marks"]
+        },
+        {
+          "id": "challenge_to_arms",
+          "label": "Challenge the keeper and his men to arms",
+          "response": [{ "speaker": "bridge_keeper", "text": "Then steel shall judge the custom of this span. My fellow, draw, and let no challenger pass.", "reviewed_shakespearean": true }],
+          "result": "Steel shall judge the custom: thou appealest to arms, and the keeper with his armed fellow make ready upon the bridge.",
+          "deed": "challenge_unlawful_bridge_keepers",
+          "outcome_tags": ["open_challenge", "combat_pending"],
+          "transition": {
+            "kind": "start_combat",
+            "archetype": "bandits",
+            "count": 2,
+            "victory_result": "Thou prevailest upon the bridge. In the broken toll coffer lie twelve groschen and notes describing the keepers' close fighting method.",
+            "defeat_result": "The bridge keepers prevail, and the unlawful custom endureth.",
+            "escape_result": "Thou breakest from the bridge keepers and leavest the unlawful crossing behind.",
+            "victory_effects": [
+              { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 12 },
+              { "kind": "information", "information_id": "unlawful_bridge_keeper_fighting_method" }
+            ]
+          }
+        },
+        {
+          "id": "join_watch",
+          "label": "Join the watch and share its next exaction",
+          "response": [{ "speaker": "bridge_keeper", "text": "A hard heart knoweth profitable law. Stand beside us awhile, and forty groschen of the next purses shall be thine.", "reviewed_shakespearean": true }],
+          "result": "Thou aidest the unlawful watch in cowing later travelers and takest the largest share of its coin.",
+          "deed": "aid_unlawful_bridge_extortion",
+          "outcome_tags": ["cruelty", "extortion", "corruption"],
+          "effects": [{ "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 40 }],
+          "personality": [{ "axis": "conscience", "delta": -180, "virtue": "justice" }]
+        },
+        {
+          "id": "ignore",
+          "label": "Turn aside and seek another crossing",
+          "response": [],
+          "result": "Thou turnest from the bridge and seekest another road.",
+          "deed": "turn_aside_from_unlawful_bridge",
+          "outcome_tags": []
+        }
+      ],
+      "quest_reward_eligibility": ["physical_tactical_information"]
+    }
+  ]
+}

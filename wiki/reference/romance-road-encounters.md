@@ -104,6 +104,16 @@ reward, or pass by without consequence. Its provenance deliberately does not
 claim that the scene reproduces a particular episode from *Parzival* or
 Malory.
 
+`unlawful_bridge_custom_v1` implements the bridge-custom commonplace as a
+travel-only mortal encounter. The party may pay, expose the forged charter,
+join the extortion watch for the richest immediate payment, turn aside, or
+openly challenge two keepers. That challenge creates one ordinary pending
+bandit encounter; attack, flight, surrender, injuries, and defeat remain owned
+by the existing strategic combat flow. A private generic follow-up receipt
+suppresses random drops and grants the authored recovered toll and fighting-
+method information exactly once, and only after victory. No catalog ID is
+special-cased by the transition dispatcher.
+
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,
