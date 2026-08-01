@@ -92,6 +92,10 @@ compiled core catalogs plus dialogue, or `just content-check items` while iterat
 `content/items/*.yaml`; see
 [Item definition authoring](item-authoring.md).
 
+Road/rest encounter YAML is also compiled and validated at build time. Run
+`cargo run -p adventuresim-core --bin content-check -- encounters` for its
+focused provenance, digest, and semantic checks.
+
 ## Organization content
 
 Organization YAML is validated during `adventuresim-core` builds. Validate its

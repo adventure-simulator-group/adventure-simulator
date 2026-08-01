@@ -289,6 +289,7 @@ fn start_party_journey(
             party_id: party.id.clone(),
             seed: ctx.random(),
             next_roll: 1,
+            narrative_rest_elapsed_minutes: 0,
         });
     ctx.db
         .party_journey_itinerary()
@@ -903,7 +904,12 @@ pub(crate) fn require_no_unresolved_encounter(
     ctx: &ReducerContext,
     party_id: &str,
 ) -> Result<(), String> {
-    if unresolved_encounter(ctx, party_id).is_some() {
+    let party = ctx.db.party_authority().id().find(&party_id.to_string());
+    let narrative_pending = party.as_ref().is_some_and(|party| {
+        ctx.db.road_challenge_authority().party_id().filter(&party_id.to_string())
+            .any(|occurrence| occurrence.open && party_at_bound_road_challenge(ctx, party, &occurrence))
+    });
+    if unresolved_encounter(ctx, party_id).is_some() || narrative_pending {
         Err("Resolve the strategic encounter before changing or continuing travel".into())
     } else {
         Ok(())

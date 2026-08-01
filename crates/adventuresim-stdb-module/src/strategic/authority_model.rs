@@ -600,6 +600,7 @@ pub struct PartyJourneyEncounterAuthority {
     pub party_id: String,
     pub seed: u64,
     pub next_roll: u64,
+    pub narrative_rest_elapsed_minutes: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, SpacetimeType)]

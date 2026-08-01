@@ -1,0 +1,84 @@
+{
+  "encounters": [
+    {
+      "id": "wounded_order_courier_v1",
+      "version": 1,
+      "weight": 100,
+      "triggers": { "travel": true, "rest": true },
+      "provenance": {
+        "works": ["romance_commonplace"],
+        "motifs": ["wounded_messenger", "roadside_courtesy", "contested_crossing"],
+        "adaptation_note": "Infrastructure fixture combining common romance motifs; not a direct adaptation of a named episode."
+      },
+      "cast": [
+        { "id": "courier", "name": "Wounded courier", "nature": "mortal" }
+      ],
+      "opening": [
+        {
+          "speaker": "courier",
+          "text": "Good travelers, stay, if charity yet dwell within your breasts. I am sore wounded, and the ford behind me swarmeth with armed knaves.",
+          "reviewed_shakespearean": true
+        }
+      ],
+      "choices": [
+        {
+          "id": "aid",
+          "label": "Bind his wound and bear his dispatch onward",
+          "response": [{ "speaker": "courier", "text": "Gramercy. Take this dispatch; its warning may yet preserve good folk from those knaves.", "reviewed_shakespearean": true }],
+          "result": "Thou bindest the courier's wound and receivest the captured dispatch.",
+          "deed": "tend_courier_and_carry_warning",
+          "outcome_tags": ["mercy", "information_gained"],
+          "checks": [],
+          "effects": [{ "kind": "grant_item", "item_id": "captured_black_knight_dispatch", "quantity": 1 }],
+          "personality": [{ "axis": "conscience", "delta": 100, "virtue": "mercy" }],
+          "quest_reward_tags": ["enemy_reinforcements_warning"]
+        },
+        {
+          "id": "rally",
+          "label": "Rally him and escort him through the ford",
+          "response": [{ "speaker": "courier", "text": "Thy courage kindleth mine. Take thou this token, for I shall stand beside thee at the crossing.", "reviewed_shakespearean": true }],
+          "result": "Thou rallyest the courier, who yieldeth thee his oath token after the crossing.",
+          "deed": "rally_and_escort_courier",
+          "outcome_tags": ["courage", "ally_rescued"],
+          "requirements": [{ "kind": "skill", "skill": "command", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "command", "difficulty_milli": 1000 }],
+          "effects": [{ "kind": "grant_item", "item_id": "order_courier_oath_token", "quantity": 1 }],
+          "personality": [{ "axis": "nerve", "delta": 100, "virtue": "courage" }],
+          "quest_reward_tags": ["rescued_ally"]
+        },
+        {
+          "id": "consecrate",
+          "label": "Hear his oath and bless his sword-knot",
+          "response": [{ "speaker": "courier", "text": "Amen. Bear thou this sword-knot; it showeth that a faithful witness hath marked thy deed.", "reviewed_shakespearean": true }],
+          "result": "Thou hearest his oath and receivest the sword-knot as material witness of the rite.",
+          "deed": "consecrate_courier_oath",
+          "outcome_tags": ["faith", "witness_token"],
+          "requirements": [{ "kind": "religion", "religion": "roman_catholic" }],
+          "checks": [{ "kind": "religion", "religion": "roman_catholic", "difficulty_milli": 1000 }],
+          "effects": [{ "kind": "grant_item", "item_id": "blessed_sword_knot", "quantity": 1 }],
+          "personality": [{ "axis": "conviction", "delta": 100, "virtue": "faith" }],
+          "quest_reward_tags": ["witnessed_rite"]
+        },
+        {
+          "id": "rob",
+          "label": "Take his purse and leave him to his fortune",
+          "response": [{ "speaker": "courier", "text": "Fie on thee. Take what thou wilt; yet shall this shame outlive the silver.", "reviewed_shakespearean": true }],
+          "result": "Thou takest the helpless courier's coin and leavest him beside the road.",
+          "deed": "rob_wounded_courier",
+          "outcome_tags": ["cruelty", "robbery"],
+          "effects": [{ "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 24 }],
+          "personality": [{ "axis": "conscience", "delta": -150, "virtue": "mercy" }]
+        },
+        {
+          "id": "ignore",
+          "label": "Pass by without answer",
+          "response": [],
+          "result": "Thou passest by, and the courier's plea fadeth behind thee.",
+          "deed": "ignore_wounded_courier",
+          "outcome_tags": ["ignored"]
+        }
+      ],
+      "quest_reward_eligibility": ["physical_tactical_information"]
+    }
+  ]
+}

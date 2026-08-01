@@ -5,8 +5,6 @@
 use super::backend_road_challenge_type::BackendRoadChallenge;
 use super::chivalric_virtue_type::ChivalricVirtue;
 use super::errantry_finale_defense_kind_type::ErrantryFinaleDefenseKind;
-use super::road_challenge_catalog_id_type::RoadChallengeCatalogId;
-use super::road_challenge_deed_type::RoadChallengeDeed;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_road_challenges`.

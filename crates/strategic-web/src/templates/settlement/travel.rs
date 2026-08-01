@@ -19,7 +19,7 @@ use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
     BackendRoadChallenge, ChallengePresenterCatalogId, Character, ContractPresentation,
     JourneyPrecipitation, JourneyTerrainKind, Party, PartyJourney, PartyJourneyItinerary,
-    PartyJourneyRoute, RoadChallengeCatalogId, Settlement, StrategicEncounter,
+    PartyJourneyRoute, Settlement, StrategicEncounter,
 };
 use crate::templates::{
     camp_location_layout_with_session, decorative_game_icon, empty_state, game_icon,
@@ -910,79 +910,17 @@ pub fn camp_page(
                 }
             }
             @if let Some(road_trial) = road_trial {
-                @match road_trial.catalog_id {
-                    RoadChallengeCatalogId::WoundedOrderCourierV1 => {
-                        section class="settlement-chat challenge-chat-invitation" aria-label="Roadside conversation" {
-                            div class="settlement-chat-layout" {
-                                div class="settlement-chat-conversation" {
-                                    div class="settlement-chat-messages" aria-live="polite" {
-                                        p { strong { "Wounded Order courier: " }
-                                            "Sir knight, I fled the Black Knight's men. Their sealed dispatch names the reinforcements waiting at the ford."
-                                        }
-                                        p { strong { "Wounded Order courier: " }
-                                            "Bind my wound and bear this warning onward."
-                                        }
-                                        div class="dialogue-actions" {
-                                            @for (choice, label, available, requirement) in [
-                                                ("aid", "Bind his wound and carry the dispatch", true, "Always available"),
-                                                ("rally", "Rally him, then escort him through the threatened ford", road_trial.command_route_available, "Requires Command training"),
-                                                ("consecrate", "Consecrate his oath and sword-knot", road_trial.faith_route_available, "Requires direct study of Roman Catholicism"),
-                                                ("leave", "Leave him by the road", true, "No boon"),
-                                            ] {
-                                                form action="/camp/errantry-road-challenge" method="post" {
-                                                    input type="hidden" name="challenge_id" value=(&road_trial.id);
-                                                    input type="hidden" name="expected_revision" value=(road_trial.revision);
-                                                    input type="hidden" name="choice" value=(choice);
-                                                    input type="hidden" name="action_id"
-                                                        value=(format!("road-choice:{}:{}:{choice}", road_trial.id, road_trial.revision));
-                                                    button type="submit" class="btn btn-primary"
-                                                        disabled[!available]
-                                                        title=(requirement) { (label) }
-                                                    span class="text-muted small-copy" { (requirement) }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                (generic_road_encounter(road_trial))
             }
-            @if let Some(result) = road_result {
+            @if let Some(_result) = road_result {
                 section class="settlement-chat challenge-chat-invitation" aria-label="Roadside conversation result" {
                     div class="settlement-chat-layout" {
                         div class="settlement-chat-conversation" {
                             div class="settlement-chat-messages" aria-live="polite" {
-                                @match result {
-                                    "aid" => {
-                                        p { strong { "Wounded Order courier: " }
-                                            "My thanks. Take the captured dispatch; it reveals where the Black Knight's reinforcements wait."
-                                        }
-                                        p class="text-muted" { "Captured Black Knight dispatch added to the party inventory." }
-                                        p { strong { "Virtue exemplified: Mercy." } " Your compassionate disposition has grown." }
-                                    }
-                                    "rally" => {
-                                        p { strong { "Wounded Order courier: " }
-                                            "Your courage recalls me to my oath. Take my token, and let us ride together through the threatened ford."
-                                        }
-                                        p class="text-muted" { "Order courier's oath token added to the party inventory." }
-                                        p { strong { "Virtue exemplified: Courage." } " Your brave disposition has grown." }
-                                    }
-                                    "consecrate" => {
-                                        p { strong { "Wounded Order courier: " }
-                                            "Your prayer renews my vow. Bind this blessed knot upon your sword against the Black Knight's armor."
-                                        }
-                                        p class="text-muted" { "Blessed sword-knot added to the party inventory." }
-                                        p { strong { "Virtue exemplified: Faith." } " Your zealous disposition has grown." }
-                                    }
-                                    "leave" => {
-                                        p { strong { "Wounded Order courier: " }
-                                            "Then ride on, sir knight. I shall keep the dispatch if strength permits."
-                                        }
-                                    }
-                                    _ => {}
-                                }
+                                @if let Some(challenge) = road_trial.or_else(|| road_result.and_then(|_| None)) {
+                                    @if let Some(transcript) = challenge.result_transcript.as_deref() { p { (transcript) } }
+                                    @if let Some(addendum) = challenge.quest_reward_addendum.as_deref() { p class="text-muted" { (addendum) } }
+                                } @else { p { "The encounter hath ended." } }
                             }
                         }
                     }
@@ -1034,6 +972,59 @@ fn camp_continue_control(block_reason: Option<&str>) -> Markup {
         }
         @if let Some(reason) = block_reason {
             p class="travel-action-status" data-travel-action-status role="alert" { (reason) }
+        }
+    }
+}
+
+fn generic_road_encounter(challenge: &BackendRoadChallenge) -> Markup {
+    let Ok(definition) = serde_json::from_str::<
+        adventuresim_core::road_encounter_catalog::EncounterDefinition,
+    >(&challenge.projection_json) else {
+        return html! { p class="encounter-warning" { "This encounter's authored record is unavailable." } };
+    };
+    let speaker_name = |id: &str| {
+        definition
+            .cast
+            .iter()
+            .find(|speaker| speaker.id == id)
+            .map_or("Traveler", |speaker| speaker.name.as_str())
+    };
+    html! {
+        section class="settlement-chat challenge-chat-invitation" aria-label="Roadside conversation" {
+            div class="settlement-chat-layout" { div class="settlement-chat-conversation" {
+                div class="settlement-chat-messages" aria-live="polite" {
+                    @for line in &definition.opening {
+                        p class=(if line.reviewed_iambic_pentameter { "supernatural-spoken-line" } else { "" }) {
+                            strong { (speaker_name(&line.speaker)) ": " } (line.text.as_str())
+                        }
+                    }
+                    @if challenge.open {
+                        div class="dialogue-actions" {
+                            @for choice in &definition.choices {
+                                form action="/camp/errantry-road-challenge" method="post" {
+                                    input type="hidden" name="challenge_id" value=(&challenge.id);
+                                    input type="hidden" name="expected_revision" value=(challenge.revision);
+                                    input type="hidden" name="choice" value=(&choice.id);
+                                    input type="hidden" name="action_id" value=(format!("road-choice:{}:{}:{}", challenge.id, challenge.revision, choice.id));
+                                    button type="submit" class="btn btn-primary" { (choice.label.as_str()) }
+                                    @if !choice.requirements.is_empty() { span class="text-muted small-copy" { "Requirements are checked when chosen." } }
+                                }
+                            }
+                        }
+                    } @else {
+                        @if let Some(choice) = challenge.resolved_choice.as_deref()
+                            .and_then(|id| definition.choices.iter().find(|choice| choice.id == id)) {
+                            @for line in &choice.response {
+                                p class=(if line.reviewed_iambic_pentameter { "supernatural-spoken-line" } else { "" }) {
+                                    strong { (speaker_name(&line.speaker)) ": " } (line.text.as_str())
+                                }
+                            }
+                        }
+                        @if let Some(transcript) = challenge.result_transcript.as_deref() { p { (transcript) } }
+                        @if let Some(addendum) = challenge.quest_reward_addendum.as_deref() { p class="text-muted" { (addendum) } }
+                    }
+                }
+            } }
         }
     }
 }
