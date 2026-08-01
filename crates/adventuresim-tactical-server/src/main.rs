@@ -5,7 +5,7 @@ mod combat;
 mod stdb;
 mod terrain;
 
-use std::{net::SocketAddr, num::NonZeroU32};
+use std::{collections::HashSet, net::SocketAddr, num::NonZeroU32, time::Duration};
 
 use adventuresim_stdb_client::*;
 use adventuresim_tactical_core::{
@@ -30,6 +30,10 @@ use input::AccumulatedInput;
 
 /// Default [`Args::timeout`] time.
 const MISSION_TIMEOUT_SECS: f32 = 300.0;
+/// Retry interval after a synchronous terminal reducer submission error.
+const TERMINAL_RETRY_BACKOFF: Duration = Duration::from_secs(1);
+/// Time a sealed, empty Party has to reconnect before the mission is abandoned.
+const PARTY_RECONNECT_GRACE: Duration = Duration::from_secs(10);
 
 /// Level map size.
 const TERRAIN_SIZE: usize = 100;
@@ -65,6 +69,10 @@ struct Args {
     /// Authoritative number of quest enemies that must be defeated.
     #[arg(long)]
     required_enemy_kills: u32,
+
+    /// Living Party members bound by strategic authority for this mission.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+    expected_party_members: u32,
 
     /// Observer-safe combat scale copied from the trusted mission request.
     /// The strategic reducer independently derives the authoritative value.
@@ -117,15 +125,25 @@ fn main() {
             timeout: (!args.no_timeout)
                 .then_some(args.timeout)
                 .map(|duration| Timer::from_seconds(duration, TimerMode::Once)),
-            enemies_killed: 0,
-            required_enemy_kills: args.required_enemy_kills,
+            enemies_defeated: 0,
+            required_enemy_defeats: args.required_enemy_kills,
+            expected_party_members: args.expected_party_members,
+            seen_party_members: HashSet::new(),
+            enrollment_begun: false,
+            enrollment_sealed: false,
+            abandonment_elapsed: Duration::ZERO,
+            terminal_retry_not_before: Duration::ZERO,
+            pending_resolution: None,
             committed: false,
         })
         .insert_resource(args)
         .add_systems(
             Update,
             (
-                check_mission_timeout,
+                (check_terminal_combat_outcome, check_mission_timeout)
+                    .chain()
+                    .after(combat::update_tactical_combat_state)
+                    .after(spawn_connected_players),
                 spawn_connected_players.after(stdb::update_spacetimedb),
                 (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDb>),
             ),
@@ -145,9 +163,87 @@ struct LoadingPlayer {
 #[derive(Resource)]
 pub struct MissionState {
     timeout: Option<Timer>,
-    pub enemies_killed: u32,
-    required_enemy_kills: u32,
+    pub enemies_defeated: u32,
+    required_enemy_defeats: u32,
+    expected_party_members: u32,
+    seen_party_members: HashSet<u64>,
+    enrollment_begun: bool,
+    enrollment_sealed: bool,
+    abandonment_elapsed: Duration,
+    terminal_retry_not_before: Duration,
+    pending_resolution: Option<TacticalMissionResolution>,
     committed: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TerminalCombatSnapshot {
+    pub required_enemies: u32,
+    pub loaded_enemies: u32,
+    pub defeated_enemies: u32,
+    pub loaded_party: u32,
+    pub incapacitated_party: u32,
+    pub enrollment_sealed: bool,
+}
+
+pub(crate) fn terminal_resolution(
+    snapshot: TerminalCombatSnapshot,
+) -> Option<TacticalMissionResolution> {
+    if snapshot.required_enemies == 0
+        || snapshot.loaded_enemies < snapshot.required_enemies
+        || !snapshot.enrollment_sealed
+        || snapshot.loaded_party == 0
+    {
+        return None;
+    }
+    let enemies_defeated = snapshot.defeated_enemies >= snapshot.required_enemies;
+    let party_defeated = snapshot.incapacitated_party >= snapshot.loaded_party;
+    match (enemies_defeated, party_defeated) {
+        // Simultaneous defeat fails closed, matching autoresolve's lack of an
+        // allied victory when both sides are unable to continue.
+        (_, true) => Some(TacticalMissionResolution::Failed),
+        (true, false) => Some(TacticalMissionResolution::Defeated),
+        (false, false) => None,
+    }
+}
+
+fn abandonment_due(
+    elapsed: &mut Duration,
+    enrollment_begun: bool,
+    loaded_party: u32,
+    has_loading_player: bool,
+    delta: Duration,
+) -> bool {
+    if enrollment_begun && loaded_party == 0 && !has_loading_player {
+        *elapsed = elapsed.saturating_add(delta);
+    } else {
+        *elapsed = Duration::ZERO;
+    }
+    *elapsed >= PARTY_RECONNECT_GRACE
+}
+
+fn enrollment_ready(expected: u32, seen: usize, has_loading_player: bool) -> bool {
+    expected > 0 && seen >= expected as usize && !has_loading_player
+}
+
+impl MissionState {
+    fn submit_terminal<E>(
+        &mut self,
+        resolution: TacticalMissionResolution,
+        now: Duration,
+        mut send: impl FnMut(TacticalMissionResolution) -> Result<(), E>,
+    ) -> Result<bool, E> {
+        if self.committed || now < self.terminal_retry_not_before {
+            return Ok(false);
+        }
+        let resolution = *self.pending_resolution.get_or_insert(resolution);
+        if let Err(error) = send(resolution) {
+            self.terminal_retry_not_before = now.saturating_add(TERMINAL_RETRY_BACKOFF);
+            return Err(error);
+        }
+        self.committed = true;
+        self.pending_resolution = None;
+        Ok(true)
+    }
 }
 
 fn setup_server(mut commands: Commands, args: Res<Args>) {
@@ -480,11 +576,114 @@ fn spawn_connected_player(
     );
 }
 
+fn commit_terminal_resolution(
+    resolution: TacticalMissionResolution,
+    now: Duration,
+    conn: Res<SpacetimeDb>,
+    mut state: ResMut<MissionState>,
+    mut exit: MessageWriter<AppExit>,
+) -> Result {
+    let submitted = match state.submit_terminal(resolution, now, |resolution| {
+        // Strategic authority ignores this observer-supplied XP value and
+        // derives durable consequences from the bound mission.
+        conn.reducers().end_tactical_server(resolution, 0)
+    }) {
+        Ok(submitted) => submitted,
+        Err(error) => {
+            warn!(
+                "Terminal result submission failed; retrying in {}s: {error}",
+                TERMINAL_RETRY_BACKOFF.as_secs()
+            );
+            return Ok(());
+        }
+    };
+    if !submitted {
+        return Ok(());
+    }
+    info!(
+        ?resolution,
+        "Mission terminal result committed; shutting down"
+    );
+    exit.write(AppExit::Success);
+    Ok(())
+}
+
+fn check_terminal_combat_outcome(
+    time: Res<Time>,
+    conn: Res<SpacetimeDb>,
+    mut state: ResMut<MissionState>,
+    exit: MessageWriter<AppExit>,
+    enemies: Query<(), (With<bot::MissionEnemy>, With<Player>)>,
+    combatants: Query<(&TacticalCombatSide, &TacticalCombatState, &PlayerId), With<Player>>,
+    loading_players: Query<(), With<LoadingPlayer>>,
+) -> Result {
+    if state.committed {
+        return Ok(());
+    }
+    // A result whose first submission failed is already decided. Retry it
+    // before observing recoveries, disconnects, or any newly terminal state.
+    if let Some(resolution) = state.pending_resolution {
+        return commit_terminal_resolution(resolution, time.elapsed(), conn, state, exit);
+    }
+    let mut loaded_party = 0;
+    let mut incapacitated_party = 0;
+    for (side, combat_state, player_id) in &combatants {
+        if *side == TacticalCombatSide::Party {
+            loaded_party += 1;
+            incapacitated_party += u32::from(combat_state.incapacitated);
+            state.seen_party_members.insert(player_id.0);
+        }
+    }
+    let has_loading_player = !loading_players.is_empty();
+    state.enrollment_begun |= has_loading_player || !state.seen_party_members.is_empty();
+    if !state.enrollment_sealed
+        && enrollment_ready(
+            state.expected_party_members,
+            state.seen_party_members.len(),
+            has_loading_player,
+        )
+    {
+        state.enrollment_sealed = true;
+        info!(
+            expected = state.expected_party_members,
+            "Party enrollment sealed"
+        );
+    }
+    let enrollment_begun = state.enrollment_begun;
+    if abandonment_due(
+        &mut state.abandonment_elapsed,
+        enrollment_begun,
+        loaded_party,
+        has_loading_player,
+        time.delta(),
+    ) {
+        return commit_terminal_resolution(
+            TacticalMissionResolution::Failed,
+            time.elapsed(),
+            conn,
+            state,
+            exit,
+        );
+    }
+    let snapshot = TerminalCombatSnapshot {
+        required_enemies: state.required_enemy_defeats,
+        loaded_enemies: enemies.iter().count() as u32,
+        defeated_enemies: state.enemies_defeated,
+        loaded_party,
+        incapacitated_party,
+        enrollment_sealed: state.enrollment_sealed && !has_loading_player,
+    };
+    let Some(resolution) = terminal_resolution(snapshot) else {
+        return Ok(());
+    };
+    commit_terminal_resolution(resolution, time.elapsed(), conn, state, exit)
+}
+
 fn check_mission_timeout(
     time: Res<Time>,
     conn: Res<SpacetimeDb>,
     mut state: ResMut<MissionState>,
-    mut exit: MessageWriter<AppExit>,
+    exit: MessageWriter<AppExit>,
 ) -> Result {
     let is_timeout = match state.timeout {
         Some(ref mut timer) => {
@@ -498,24 +697,14 @@ fn check_mission_timeout(
         return Ok(());
     }
 
-    info!("Mission timeout, committing results...");
-    state.committed = true;
-
-    let success =
-        bot::mission_objective_satisfied(state.required_enemy_kills, state.enemies_killed);
-    let xp_gained = (state.enemies_killed * 25) as i32;
-
-    let resolution = if success {
-        TacticalMissionResolution::Defeated
-    } else {
-        TacticalMissionResolution::Failed
-    };
-    conn.reducers().end_tactical_server(resolution, xp_gained)?;
-
-    info!("Mission ended successfully");
-    info!("Shutting down");
-    exit.write(AppExit::Success);
-    Ok(())
+    info!("Mission timeout, committing bounded failure fallback");
+    commit_terminal_resolution(
+        TacticalMissionResolution::Failed,
+        time.elapsed(),
+        conn,
+        state,
+        exit,
+    )
 }
 
 fn on_server_started(
@@ -600,6 +789,7 @@ fn on_server_started(
 fn on_join_request(
     join: On<FromClient<JoinRequest>>,
     mut commands: Commands,
+    mut state: ResMut<MissionState>,
     loading_players: Query<(), With<LoadingPlayer>>,
     players: Query<(), With<Player>>,
     conn: Res<SpacetimeDb>,
@@ -620,6 +810,7 @@ fn on_join_request(
     conn.reducers()
         .enter_mission(join.player_id, conn.identity())?;
 
+    state.enrollment_begun = true;
     commands.entity(client).insert(LoadingPlayer {
         requested_player_id: join.player_id,
     });
@@ -706,4 +897,259 @@ fn player_collider() -> Collider {
 
 fn player_spawn_offset(collider: &Collider) -> f32 {
     -collider.aabb(default(), Rotation::default()).min.y
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn snapshot() -> TerminalCombatSnapshot {
+        TerminalCombatSnapshot {
+            required_enemies: 2,
+            loaded_enemies: 2,
+            defeated_enemies: 0,
+            loaded_party: 2,
+            incapacitated_party: 0,
+            enrollment_sealed: true,
+        }
+    }
+
+    #[test]
+    fn terminal_resolution_waits_for_both_sides_to_load() {
+        assert_eq!(
+            terminal_resolution(TerminalCombatSnapshot {
+                loaded_enemies: 1,
+                ..snapshot()
+            }),
+            None
+        );
+        assert_eq!(
+            terminal_resolution(TerminalCombatSnapshot {
+                loaded_party: 0,
+                ..snapshot()
+            }),
+            None
+        );
+        assert_eq!(
+            terminal_resolution(TerminalCombatSnapshot {
+                enrollment_sealed: false,
+                ..snapshot()
+            }),
+            None
+        );
+        assert_eq!(
+            terminal_resolution(TerminalCombatSnapshot {
+                required_enemies: 0,
+                loaded_enemies: 0,
+                ..snapshot()
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn terminal_resolution_reports_immediate_victory() {
+        assert_eq!(
+            terminal_resolution(TerminalCombatSnapshot {
+                defeated_enemies: 2,
+                ..snapshot()
+            }),
+            Some(TacticalMissionResolution::Defeated)
+        );
+    }
+
+    #[test]
+    fn terminal_resolution_reports_immediate_party_defeat() {
+        assert_eq!(
+            terminal_resolution(TerminalCombatSnapshot {
+                incapacitated_party: 2,
+                ..snapshot()
+            }),
+            Some(TacticalMissionResolution::Failed)
+        );
+    }
+
+    #[test]
+    fn simultaneous_defeat_deterministically_fails() {
+        assert_eq!(
+            terminal_resolution(TerminalCombatSnapshot {
+                defeated_enemies: 2,
+                incapacitated_party: 2,
+                ..snapshot()
+            }),
+            Some(TacticalMissionResolution::Failed)
+        );
+    }
+
+    #[test]
+    fn no_timeout_mission_can_claim_exactly_one_terminal_result() {
+        let mut state = MissionState {
+            timeout: None,
+            enemies_defeated: 2,
+            required_enemy_defeats: 2,
+            expected_party_members: 1,
+            seen_party_members: HashSet::from([7]),
+            enrollment_begun: true,
+            enrollment_sealed: true,
+            abandonment_elapsed: Duration::ZERO,
+            terminal_retry_not_before: Duration::ZERO,
+            pending_resolution: None,
+            committed: false,
+        };
+        let resolution = terminal_resolution(TerminalCombatSnapshot {
+            defeated_enemies: state.enemies_defeated,
+            ..snapshot()
+        })
+        .unwrap();
+
+        assert_eq!(
+            state.submit_terminal(resolution, Duration::ZERO, |_| Ok::<_, ()>(())),
+            Ok(true)
+        );
+        assert_eq!(
+            state.submit_terminal(resolution, Duration::ZERO, |_| Ok::<_, ()>(())),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn failed_submission_retries_frozen_result_after_predicate_clears() {
+        let mut state = MissionState {
+            timeout: None,
+            enemies_defeated: 1,
+            required_enemy_defeats: 1,
+            expected_party_members: 1,
+            seen_party_members: HashSet::from([7]),
+            enrollment_begun: true,
+            enrollment_sealed: true,
+            abandonment_elapsed: Duration::ZERO,
+            terminal_retry_not_before: Duration::ZERO,
+            pending_resolution: None,
+            committed: false,
+        };
+        let mut attempts = 0;
+        let mut reports = Vec::new();
+        let mut sender = |resolution| {
+            attempts += 1;
+            reports.push(resolution);
+            (attempts > 1).then_some(()).ok_or("offline")
+        };
+
+        assert_eq!(
+            state.submit_terminal(
+                TacticalMissionResolution::Defeated,
+                Duration::ZERO,
+                &mut sender
+            ),
+            Err("offline")
+        );
+        let current_resolution = terminal_resolution(TerminalCombatSnapshot {
+            defeated_enemies: 0,
+            ..snapshot()
+        });
+        assert_eq!(current_resolution, None, "the original predicate recovered");
+        let retry_resolution = state
+            .pending_resolution
+            .or(current_resolution)
+            .expect("failed submission remains pending");
+        assert_eq!(
+            state.submit_terminal(retry_resolution, Duration::from_millis(999), &mut sender),
+            Ok(false)
+        );
+        assert_eq!(
+            state.submit_terminal(retry_resolution, Duration::from_secs(1), &mut sender),
+            Ok(true)
+        );
+        assert_eq!(
+            state.submit_terminal(
+                TacticalMissionResolution::Defeated,
+                Duration::from_secs(2),
+                &mut sender
+            ),
+            Ok(false)
+        );
+        assert_eq!(attempts, 2);
+        assert_eq!(
+            reports,
+            vec![
+                TacticalMissionResolution::Defeated,
+                TacticalMissionResolution::Defeated
+            ]
+        );
+    }
+
+    #[test]
+    fn sealed_empty_party_fails_only_after_reconnection_grace() {
+        let mut elapsed = Duration::ZERO;
+        assert!(!abandonment_due(
+            &mut elapsed,
+            true,
+            0,
+            false,
+            Duration::from_secs(9)
+        ));
+        assert!(!abandonment_due(
+            &mut elapsed,
+            true,
+            0,
+            true,
+            Duration::from_secs(1)
+        ));
+        assert_eq!(elapsed, Duration::ZERO);
+        assert!(abandonment_due(
+            &mut elapsed,
+            true,
+            0,
+            false,
+            PARTY_RECONNECT_GRACE
+        ));
+    }
+
+    #[test]
+    fn pending_second_party_member_prevents_enrollment_seal() {
+        assert!(!enrollment_ready(2, 1, false));
+        assert!(!enrollment_ready(2, 2, true));
+        assert!(enrollment_ready(2, 2, false));
+    }
+
+    #[test]
+    fn partially_enrolled_party_abandons_after_every_client_disconnects() {
+        let expected = 2;
+        let seen = HashSet::from([7]);
+        assert!(!enrollment_ready(expected, seen.len(), true));
+
+        let enrollment_begun = !seen.is_empty();
+        let mut elapsed = Duration::ZERO;
+        // B is still represented by LoadingPlayer, so its disconnect resets
+        // rather than advances the grace period.
+        assert!(!abandonment_due(
+            &mut elapsed,
+            enrollment_begun,
+            1,
+            true,
+            Duration::from_secs(5)
+        ));
+        // B's LoadingPlayer and then A's loaded entity disappear. Enrollment
+        // was already begun, so the same bounded abandonment policy applies.
+        assert!(abandonment_due(
+            &mut elapsed,
+            enrollment_begun,
+            0,
+            false,
+            PARTY_RECONNECT_GRACE
+        ));
+    }
+
+    #[test]
+    fn never_joined_timeout_disabled_server_does_not_abandon() {
+        let mut elapsed = Duration::ZERO;
+        assert!(!abandonment_due(
+            &mut elapsed,
+            false,
+            0,
+            false,
+            PARTY_RECONNECT_GRACE.saturating_mul(2)
+        ));
+        assert_eq!(elapsed, Duration::ZERO);
+    }
 }

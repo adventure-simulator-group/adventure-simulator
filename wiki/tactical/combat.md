@@ -56,10 +56,24 @@ selected by offensive AI; an imbalance-only incapacitation can recover and
 return the actor to combat. Limb and live combat-state replication provide
 basic client feedback, but all of this remains transient server memory.
 
+An enemy's first transition into incapacitation counts as its defeat, even if
+temporary imbalance later lets it recover. The server immediately ends the
+mission as `Defeated` after all required enemies have been defeated, or as
+`Failed` after all loaded Party combatants are incapacitated. Simultaneous
+defeat is a failure. Strategic authority binds the expected living Party size;
+the decision waits until every expected adventurer has loaded at least once,
+no player is still loading, and all required enemies are loaded. After that
+enrollment begins, an empty Party has a ten-second reconnection grace before the
+mission fails as abandoned, even if everyone disconnects before the seal. A
+timeout-disabled development server where nobody ever joins stays available.
+Terminal submission freezes the decided result and retries synchronous failures
+at one-second intervals before reevaluating combat, commits only after successful
+submission, and does not depend on the optional mission timeout; a configured
+timeout is only a bounded failure fallback.
+
 This is still an iteration harness rather than complete enemy decision-making.
 It does not pathfind around terrain or other combatants, handle ranged weapons,
-finish missions from incapacitation, persist injuries, or create strategic
-outcome receipts.
+persist injuries, or create strategic outcome receipts.
 
 ### Skill check algorithm
 Broadly speaking, the flow goes like this:
