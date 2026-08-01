@@ -203,7 +203,7 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
                     ctx.db
                         .hostile_group_authority()
                         .case_site_id()
-                        .find(&site.id)
+                        .find(site.id.clone())
                 })
                 .map(|group| {
                     autoresolve_enemy(

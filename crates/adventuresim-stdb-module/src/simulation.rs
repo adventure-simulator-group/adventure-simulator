@@ -5,14 +5,16 @@ use spacetimedb::{
 };
 
 use crate::character::character;
+use crate::investigation::{
+    case_authority__view, investigation_witness_referral__view, quest_generation_authority__view,
+};
+use crate::local_problem::local_problem_receipt__view;
 use crate::personality::character_personality;
 use crate::time::{character_time, world_clock};
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterTrainingSchedule, DeathCause, DeathSource,
-    ScheduleAllocation, case_authority, character_attributes, character_capability,
-    character_skills, character_training_schedule, infection_episode,
-    investigation_witness_referral, local_problem_receipt, party_authority, party_member,
-    quest_generation_authority, settlement, world_data_import,
+    ScheduleAllocation, character_attributes, character_skills, character_training_schedule,
+    infection_episode, party_authority, settlement, world_data_import,
 };
 
 /// Ordinary module builds deliberately contain no simulation capability. The
