@@ -12,6 +12,32 @@ field changes real-time behavior; tactical enemy state remains transient.
 ## Attacking
 When the player clicks the [Attack button](../client/controls.md#direct-controls), initiating an attack animation, we run a shapecast in front of the player character. If there is an intersection between the attacker's hitreg and some other actor's hitbox, we calculate [input precision](../client/controls.md#direct-controls). Then comes the skill check algorithm.
 
+Client melee requests and server-controlled melee AI feed one internal server
+attack-intent path. Client-reported input precision is preserved: reproducing
+full animation and secondary physics on the headless server is not an intended
+authority boundary, while character and equipment statistics still bound the
+combat calculation.
+
+### Current offensive AI
+
+Each AI melee combatant has an explicit Party or Enemy allegiance and chooses
+the nearest opposing combatant, breaking exact distance ties by stable Bevy
+entity identity. It faces that target, walks directly toward it using the
+normal character-controller input, stops once the target is within the shared
+body-and-arms plus equipped-weapon interaction range, and attacks after a
+server-owned windup followed by a cooldown.
+Its provisional deterministic attack aims at the chest with full input
+precision. Targeted AI windups notify only their intended defender; because
+the existing client windup message does not yet identify a target, that legacy
+path offers a defensive reaction only to the nearest opposing AI instead of
+every frontal AI.
+
+This is an iteration harness rather than complete enemy decision-making. It
+does not pathfind around terrain or other combatants, handle ranged weapons,
+apply damage, recognize incapacitation, validate every attack condition, or
+persist tactical state. Targets therefore remain viable until they despawn or
+change allegiance.
+
 ### Skill check algorithm
 Broadly speaking, the flow goes like this:
 1. Calculate accuracy based on:

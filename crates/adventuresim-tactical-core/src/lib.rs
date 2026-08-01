@@ -16,7 +16,7 @@ pub use avian3d;
 
 pub mod prelude {
     pub use crate::AdventureSimulatorCorePlugins;
-    pub use crate::combat::{Attack, Dodge, Parry};
+    pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
     pub use crate::inventory::{
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentTopology, EquipmentTopologyOccupancy,
         InventoryItems, ItemOf, ItemProperties, ItemQuantity, ShieldItem, WeaponItem,

@@ -21,7 +21,8 @@ use bevy::time::Stopwatch;
 use clap::{ArgAction, Parser};
 
 use crate::{
-    bot::MissionEnemy,
+    bot::{MissionEnemy, OffensiveMeleeAi},
+    combat::TacticalCombatSide,
     stdb::{SpacetimeDb, SpacetimeDbReady},
     terrain::TerrainGenerator,
 };
@@ -218,7 +219,12 @@ fn spawn_connected_player(
     q_scene: &Query<&SceneTerrain>,
 ) {
     let entity = if player.mission_side == TacticalMissionSide::Enemy {
-        cmd.spawn(MissionEnemy).id()
+        cmd.spawn((
+            MissionEnemy,
+            OffensiveMeleeAi::default(),
+            TacticalCombatSide::Enemy,
+        ))
+        .id()
     } else {
         let Some((entity, _)) = q_loading
             .iter()
@@ -397,6 +403,11 @@ fn spawn_connected_player(
         stats,
         MissionOpeningAwareness {
             party_has_surprise: player.party_has_surprise,
+        },
+        if player.mission_side == TacticalMissionSide::Enemy {
+            TacticalCombatSide::Enemy
+        } else {
+            TacticalCombatSide::Party
         },
         Transform::from_xyz(spawn_position.x, spawn_height, spawn_position.y),
         (
