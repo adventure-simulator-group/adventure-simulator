@@ -660,6 +660,13 @@ impl LiveRunner {
         else {
             return Ok(());
         };
+        let selected_offer = (service_id.clone(), provider_id, quoted_cost);
+        if !storefront_offer_unchanged(
+            &selected_offer,
+            self.public_equipment_storefront_offer(character_id, settlement, &candidate),
+        ) {
+            return Ok(());
+        }
         if !self.withdraw_stake_for_personal_purchase(
             character_id,
             &party_id,

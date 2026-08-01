@@ -111,12 +111,62 @@ fn preparation_is_party_wide_and_rejects_overweight_upgrades() {
         .and_then(|tail| tail.split("fn withdraw_stake_for_personal_purchase").next())
         .expect("equipment storefront routing");
     for route in [
-        "ItemKind::Weapon | ItemKind::Shield => (\"weapons\", \"forge\")",
-        "ItemKind::Armor => (\"armor\", \"armoury\")",
-        "ItemKind::Clothing => (\"clothing\", \"tailor\")",
+        "Storefront::Weapons",
+        "Storefront::Armor",
+        "Storefront::Clothing",
     ] {
-        assert!(storefront.contains(route), "missing storefront route {route}");
+        assert!(
+            storefront.contains(route),
+            "missing storefront route {route}"
+        );
     }
+    assert!(storefront.contains("public_storefront_available"));
+    assert!(upgrades.contains("storefront_offer_unchanged"));
+    assert!(
+        upgrades.find("storefront_offer_unchanged").unwrap()
+            < upgrades
+                .find("withdraw_stake_for_personal_purchase")
+                .unwrap()
+    );
+}
+
+#[test]
+fn resident_presence_cannot_create_an_unavailable_equipment_storefront() {
+    let canonical = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+    let profile = SettlementEconomyProfile {
+        rules_version: canonical.rules_version,
+        prosperity_score: 0,
+        prosperity_tier: ProsperityTier::Subsistence,
+        services: vec![SettlementService::Inn],
+        specializations: vec![],
+        stock: vec![],
+    };
+    assert!(!public_storefront_available(
+        &profile,
+        adventuresim_core::settlement_economy::Storefront::Weapons,
+    ));
+}
+
+#[test]
+fn equipment_quote_revalidation_is_fail_closed() {
+    let selected = ("weapons".to_string(), 7, 12);
+    assert!(storefront_offer_unchanged(
+        &selected,
+        Some(selected.clone())
+    ));
+    assert!(!storefront_offer_unchanged(&selected, None));
+    assert!(!storefront_offer_unchanged(
+        &selected,
+        Some(("armor".into(), 7, 12)),
+    ));
+    assert!(!storefront_offer_unchanged(
+        &selected,
+        Some(("weapons".into(), 8, 12)),
+    ));
+    assert!(!storefront_offer_unchanged(
+        &selected,
+        Some(("weapons".into(), 7, 13)),
+    ));
 }
 
 #[test]

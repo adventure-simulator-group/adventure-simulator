@@ -142,6 +142,22 @@ fn failed_activity_error_classification_never_echoes_raw_backend_text() {
 }
 
 #[test]
+fn equipment_trade_failure_is_classified_without_backend_text() {
+    let raw = "finalize_storefront_trade failed: hidden provider authority changed";
+    let (category, message) = safe_core_loop_failure(raw);
+    assert_eq!(category, "equipment_purchase_failed");
+    assert_eq!(
+        safe_failure_operation(raw),
+        Some("finalize_storefront_trade")
+    );
+    assert_eq!(
+        safe_failure_reason_code(raw, category),
+        "equipment_storefront_trade_failed"
+    );
+    assert!(!message.contains("hidden provider authority"));
+}
+
+#[test]
 fn failure_artifact_version_nine_serializes_safe_operation_context() {
     let artifact = CoreLoopFailureArtifact {
         schema_version: CORE_LOOP_FAILURE_SCHEMA_VERSION,

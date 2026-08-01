@@ -411,12 +411,33 @@ impl LiveRunner {
         settlement_id: &str,
         item: &Item,
     ) -> Option<(String, u64, u64)> {
-        let (service_id, location_id) = match item.kind {
-            ItemKind::Weapon | ItemKind::Shield => ("weapons", "forge"),
-            ItemKind::Armor => ("armor", "armoury"),
-            ItemKind::Clothing => ("clothing", "tailor"),
+        let (storefront, service_id, location_id) = match item.kind {
+            ItemKind::Weapon | ItemKind::Shield => (
+                adventuresim_core::settlement_economy::Storefront::Weapons,
+                "weapons",
+                "forge",
+            ),
+            ItemKind::Armor => (
+                adventuresim_core::settlement_economy::Storefront::Armor,
+                "armor",
+                "armoury",
+            ),
+            ItemKind::Clothing => (
+                adventuresim_core::settlement_economy::Storefront::Clothing,
+                "clothing",
+                "tailor",
+            ),
             _ => return None,
         };
+        let settlement = self
+            .connection
+            .db
+            .settlement()
+            .iter()
+            .find(|settlement| settlement.id == settlement_id)?;
+        if !public_storefront_available(&settlement.economy, storefront) {
+            return None;
+        }
         let provider = self.public_default_storefront_provider(
             character_id,
             settlement_id,

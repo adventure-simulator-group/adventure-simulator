@@ -1323,6 +1323,22 @@ fn public_settlement_economy_profile(
         .map(|()| navigability_profile)
 }
 
+fn public_storefront_available(
+    profile: &SettlementEconomyProfile,
+    storefront: adventuresim_core::settlement_economy::Storefront,
+) -> bool {
+    public_settlement_economy_profile(profile).is_some_and(|profile| {
+        adventuresim_core::settlement_economy::storefront_available(&profile, storefront)
+    })
+}
+
+fn storefront_offer_unchanged(
+    selected: &(String, u64, u64),
+    current: Option<(String, u64, u64)>,
+) -> bool {
+    current.as_ref() == Some(selected)
+}
+
 fn retain_navigable_public_npc_candidates(
     candidates: Vec<PublicNpcCandidate>,
     profile: &adventuresim_world_schema::SettlementEconomyProfile,
@@ -1811,6 +1827,7 @@ fn safe_failure_operation(error: &str) -> Option<&'static str> {
         "purchase_ammunition",
         "withdraw_purchase_coin",
         "purchase_from_herbalist",
+        "finalize_storefront_trade",
         "administer_preparation",
     ]
     .into_iter()
@@ -1841,6 +1858,8 @@ fn safe_failure_reason_code(error: &str, category: &str) -> &'static str {
         "ammunition_purchase_failed"
     } else if error.contains("purchase_from_herbalist") {
         "medical_purchase_failed"
+    } else if error.contains("finalize_storefront_trade") {
+        "equipment_storefront_trade_failed"
     } else if error.contains("administer_preparation") {
         "medical_intervention_failed"
     } else if error.contains("journey camp projection is incoherent")
@@ -1909,6 +1928,11 @@ fn safe_core_loop_failure(error: &str) -> (&'static str, &'static str) {
         (
             "medical_purchase_failed",
             "The selected public herbalist preparation could not be purchased.",
+        )
+    } else if error.contains("finalize_storefront_trade") {
+        (
+            "equipment_purchase_failed",
+            "The revalidated public equipment purchase was rejected by authoritative storefront rules.",
         )
     } else if error.contains("administer_preparation") {
         (
