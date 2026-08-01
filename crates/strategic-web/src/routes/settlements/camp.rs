@@ -409,6 +409,8 @@ pub(super) async fn resolve_errantry_road_challenge(
     {
         Ok(()) => Redirect::to(match form.choice.as_str() {
             "aid" => "/camp?road_result=aid",
+            "rally" => "/camp?road_result=rally",
+            "consecrate" => "/camp?road_result=consecrate",
             "leave" => "/camp?road_result=leave",
             _ => "/camp",
         })
@@ -514,7 +516,12 @@ mod road_challenge_route_tests {
         assert!(route.contains("\"resolve_errantry_road_challenge\""));
         assert!(router.contains("/camp/errantry-road-challenge"));
         assert!(template.contains("aria-label=\"Roadside conversation\""));
-        assert!(template.contains("Give aid and take the dispatch"));
+        assert!(template.contains("Bind his wound and carry the dispatch"));
+        assert!(template.contains("escort him through the threatened ford"));
+        assert!(template.contains("Consecrate his oath and sword-knot"));
+        assert!(template.contains("Virtue exemplified: Mercy"));
+        assert!(template.contains("Virtue exemplified: Courage"));
+        assert!(template.contains("Virtue exemplified: Faith"));
         assert!(template.contains("Leave him by the road"));
         assert!(!template.contains("supernatural-spoken-line\" {\n                                    strong { \"Wounded Order courier"));
     }

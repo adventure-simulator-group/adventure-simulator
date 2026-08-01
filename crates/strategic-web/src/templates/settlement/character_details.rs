@@ -835,29 +835,29 @@ fn personality_tags(
     };
     let mut tags = Vec::new();
     match personality.nerve {
-        Brave => tags.push(("Brave", "Morale loss from being outmatched ×0.5.")),
-        Fearful => tags.push(("Fearful", "Morale loss from being outmatched ×2.")),
+        Brave => tags.push(("Brave", "Softens morale loss against a stronger threat; potency follows the hidden disposition.")),
+        Fearful => tags.push(("Fearful", "Deepens morale loss against a stronger threat; potency follows the hidden disposition.")),
         _ => {}
     }
     match personality.drive {
-        Ambitious => tags.push(("Ambitious", "Morale from victories and defeats ×1.5.")),
-        Content => tags.push(("Content", "Morale from victories and defeats ×0.5.")),
+        Ambitious => tags.push(("Ambitious", "Feels victories and defeats more keenly.")),
+        Content => tags.push(("Content", "Takes victories and defeats more evenly.")),
         _ => {}
     }
     match personality.outlook {
         Sanguine => tags.push((
             "Sanguine",
-            "Positive morale ×1.25; negative morale ×0.75; negative-event duration ×0.5.",
+            "Dwells more on encouragement and recovers sooner from discouragement.",
         )),
         Brooding => tags.push((
             "Brooding",
-            "Positive morale ×0.75; negative morale ×1.25; negative-event duration ×2.",
+            "Dwells more on discouragement and carries it longer.",
         )),
         _ => {}
     }
     match personality.sociability {
-        Gregarious => tags.push(("Gregarious", "Morale restored by allies ×1.5.")),
-        Solitary => tags.push(("Solitary", "Morale restored by allies ×0.5.")),
+        Gregarious => tags.push(("Gregarious", "Draws greater comfort from allies.")),
+        Solitary => tags.push(("Solitary", "Draws less comfort from allies.")),
         _ => {}
     }
     match personality.conscience {
@@ -876,34 +876,37 @@ fn personality_tags(
         _ => {}
     }
     match personality.self_regard {
-        Proud => tags.push(("Proud", "Morale from victory ×1.5; morale from defeat ×3.")),
-        Humble => tags.push(("Humble", "Morale from victories and defeats ×0.75.")),
-        _ => {}
-    }
-    match personality.conviction {
-        Zealous => tags.push(("Zealous", "Morale from religious sources and events ×1.5.")),
-        Irreverent => tags.push((
-            "Irreverent",
-            "Morale from religious sources and events ×0.5.",
+        Proud => tags.push(("Proud", "Takes victory deeply and defeat harder still.")),
+        Humble => tags.push((
+            "Humble",
+            "Takes victories and defeats with greater equanimity.",
         )),
         _ => {}
     }
+    match personality.conviction {
+        Zealous => tags.push(("Zealous", "Responds more strongly to religious events.")),
+        Irreverent => tags.push(("Irreverent", "Responds less strongly to religious events.")),
+        _ => {}
+    }
     match personality.hygiene {
-        Slovenly => tags.push(("Slovenly", "Filth morale penalty ×0.")),
+        Slovenly => tags.push((
+            "Slovenly",
+            "Is increasingly untroubled by filth as this hidden disposition deepens.",
+        )),
         Cleanly => tags.push((
             "Cleanly",
-            "Filth morale penalty ×2.5; +2 morale while completely clean.",
+            "Cares increasingly about cleanliness as this hidden disposition deepens.",
         )),
         _ => {}
     }
     match personality.temperance {
         Temperate => tags.push((
             "Temperate",
-            "Automatic alcohol morale bonus +0; missed-drink morale penalty -0.",
+            "Does not seek a nightly drink; lesser hidden movement toward temperance can already soften alcohol reactions.",
         )),
         Drunkard => tags.push((
             "Drunkard",
-            "Wants a heavy drink every evening: +5 morale when satisfied, -5 when missed.",
+            "Seeks a heavy nightly drink; the strength of the morale reaction follows the hidden disposition.",
         )),
         _ => {}
     }

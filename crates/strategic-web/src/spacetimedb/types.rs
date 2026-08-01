@@ -33,8 +33,27 @@ pub struct BackendRoadChallenge {
     pub open: bool,
     pub active: bool,
     pub resolved_choice: Option<String>,
+    pub resolved_deed: Option<RoadChallengeDeed>,
+    pub virtue_exemplified: Option<ChivalricVirtue>,
+    pub command_route_available: bool,
+    pub faith_route_available: bool,
     pub boon_item_id: Option<String>,
     pub counters_defense: Option<ErrantryFinaleDefenseKind>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub enum RoadChallengeDeed {
+    TendCourierAndCarryWarning,
+    RallyAndEscortCourierThroughFord,
+    ConsecrateCourierOath,
+    LeaveCourier,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub enum ChivalricVirtue {
+    Courage,
+    Mercy,
+    Faith,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]

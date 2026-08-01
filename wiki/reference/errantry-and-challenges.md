@@ -71,18 +71,35 @@ A pending random encounter hides and blocks trial actions. The trial is not a
 
 After at least one hour of rest at that same camp, an optional wounded Order
 courier can interrupt the rest. This is a mortal, ordinary-prose conversation
-inside the camp chat window. Aiding him yields his physical captured dispatch;
-leaving him, ignoring him, or continuing the journey remains valid. Neither
+inside the camp chat window. The deed, not a virtue-labelled button, determines
+which virtue the outcome recognizes. Binding his wound is always available,
+exemplifies Mercy, and yields the physical captured dispatch. A trained
+Command route rallies him and commits the knight to escorting him back through
+the threatened ford, exemplifies Courage, and yields his physical Order oath
+token. Direct study of his Roman Catholic tradition opens
+a Religion route that consecrates his oath, exemplifies Faith, and yields a
+blessed sword-knot. Each successful source-idempotent resolution raises only
+the acting knight's matching Conscience, Nerve, or Conviction score by up to
+6,000; the requested change is clamped at the score boundary.
+Leaving him closes the conversation without a boon or personality judgment;
+ignoring him or continuing the journey does not mutate it. Neither
 preliminary challenge is a quest objective: defeating the finale's four armed
 retainers resolves the errantry normally.
 
-The finale authors typed defenses. This first frame uses **Unnatural Prowess**
-and **Reinforcements**. Each material boon is a typed, source-idempotent
+The finale authors typed defenses. This first frame uses **Unnatural Prowess**,
+**Reinforcements**, and **Supernatural Armor**. Each material boon is a typed, source-idempotent
 countermeasure bound to its party, case, finale site, and hostile group. The
 Favor of the Thorn Lady counters Unnatural Prowess, reducing enemy scale by
 25% and applying a 75% enemy-capability multiplier. The captured dispatch
-counters Reinforcements, reducing scale by 15% and applying an 85%
-enemy-capability multiplier.
+counters Reinforcements. The oath token also counters Reinforcements as a
+rescued-ally countermeasure, while the blessed sword-knot counters
+Supernatural Armor. Because the road trial closes after one deed, only one of
+these route-specific material advantages can be earned from it.
+
+This vertical slice deliberately does not add Courtesy, Loyalty, Justice,
+Generosity, Prudence, or a second Temperance axis. A new virtue axis should be
+added only with authored morale stimuli, observation contexts, and systemic
+effects rather than as decorative quest bookkeeping.
 
 When the finale mission first binds, a deterministic resolver chooses the
 strongest applicable countermeasure for each authored defense and records the

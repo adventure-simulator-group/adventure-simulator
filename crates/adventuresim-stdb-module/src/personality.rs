@@ -99,7 +99,9 @@ pub enum Sex {
     Male,
 }
 
-/// Immutable strategic temperament. Each field is one mutually-exclusive axis.
+/// Gateway-safe, derived visibility of strategic temperament. Behavioral
+/// fields are a cache projected from the private continuous score row; raw
+/// scores never cross the gateway boundary.
 #[derive(Clone, Debug)]
 #[table(accessor = character_personality)]
 pub struct CharacterPersonality {
@@ -127,6 +129,205 @@ pub struct CharacterPersonality {
     pub presentation: Presentation,
     /// Always assigned private preference.
     pub inclination: Inclination,
+}
+
+pub const PERSONALITY_SCORE_LIMIT: i16 = 10_000;
+pub const PERSONALITY_VISIBLE_THRESHOLD: i16 = 5_000;
+pub const CONSCIENCE_CRUEL_THRESHOLD: i16 = -8_000;
+pub const CHIVALRIC_DEED_DELTA: i16 = 6_000;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum PersonalityAxis {
+    Nerve,
+    Drive,
+    Outlook,
+    Sociability,
+    Conscience,
+    SelfRegard,
+    Conviction,
+    Hygiene,
+    Temperance,
+    Mirth,
+    Courtship,
+    Transparency,
+    SelfKnowledge,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum ChivalricVirtue {
+    Courage,
+    Mercy,
+    Faith,
+}
+
+/// Sole durable authority for the thirteen mutable behavioral axes. Values
+/// are signed fixed point in `-10_000..=10_000`; zero is dispositionally
+/// neutral and the endpoints preserve the legacy trait potency.
+#[derive(Clone, Debug)]
+#[table(accessor = character_personality_scores)]
+pub struct CharacterPersonalityScores {
+    #[primary_key]
+    pub character_id: u64,
+    pub nerve: i16,
+    pub drive: i16,
+    pub outlook: i16,
+    pub sociability: i16,
+    pub conscience: i16,
+    pub self_regard: i16,
+    pub conviction: i16,
+    pub hygiene: i16,
+    pub temperance: i16,
+    pub mirth: i16,
+    pub courtship: i16,
+    pub transparency: i16,
+    pub self_knowledge: i16,
+}
+
+/// Immutable audit entry for a personality-changing deed. `source_id` is
+/// derived from authoritative gameplay state, making exact reducer retries a
+/// no-op and conflicting reuse fail closed.
+#[derive(Clone, Debug)]
+#[table(accessor = personality_development_event)]
+pub struct PersonalityDevelopmentEvent {
+    #[primary_key]
+    pub source_id: String,
+    #[index(btree)]
+    pub character_id: u64,
+    pub axis: PersonalityAxis,
+    pub delta: i16,
+    pub resulting_score: i16,
+    pub deed: String,
+    pub virtue: ChivalricVirtue,
+    pub occurred_at_minute: u64,
+}
+
+impl CharacterPersonalityScores {
+    pub fn neutral(character_id: u64) -> Self {
+        Self {
+            character_id,
+            nerve: 0,
+            drive: 0,
+            outlook: 0,
+            sociability: 0,
+            conscience: 0,
+            self_regard: 0,
+            conviction: 0,
+            hygiene: 0,
+            temperance: 0,
+            mirth: 0,
+            courtship: 0,
+            transparency: 0,
+            self_knowledge: 0,
+        }
+    }
+
+    pub fn score(&self, axis: PersonalityAxis) -> i16 {
+        match axis {
+            PersonalityAxis::Nerve => self.nerve,
+            PersonalityAxis::Drive => self.drive,
+            PersonalityAxis::Outlook => self.outlook,
+            PersonalityAxis::Sociability => self.sociability,
+            PersonalityAxis::Conscience => self.conscience,
+            PersonalityAxis::SelfRegard => self.self_regard,
+            PersonalityAxis::Conviction => self.conviction,
+            PersonalityAxis::Hygiene => self.hygiene,
+            PersonalityAxis::Temperance => self.temperance,
+            PersonalityAxis::Mirth => self.mirth,
+            PersonalityAxis::Courtship => self.courtship,
+            PersonalityAxis::Transparency => self.transparency,
+            PersonalityAxis::SelfKnowledge => self.self_knowledge,
+        }
+    }
+
+    pub fn set_score(&mut self, axis: PersonalityAxis, value: i16) {
+        let target = match axis {
+            PersonalityAxis::Nerve => &mut self.nerve,
+            PersonalityAxis::Drive => &mut self.drive,
+            PersonalityAxis::Outlook => &mut self.outlook,
+            PersonalityAxis::Sociability => &mut self.sociability,
+            PersonalityAxis::Conscience => &mut self.conscience,
+            PersonalityAxis::SelfRegard => &mut self.self_regard,
+            PersonalityAxis::Conviction => &mut self.conviction,
+            PersonalityAxis::Hygiene => &mut self.hygiene,
+            PersonalityAxis::Temperance => &mut self.temperance,
+            PersonalityAxis::Mirth => &mut self.mirth,
+            PersonalityAxis::Courtship => &mut self.courtship,
+            PersonalityAxis::Transparency => &mut self.transparency,
+            PersonalityAxis::SelfKnowledge => &mut self.self_knowledge,
+        };
+        *target = value.clamp(-PERSONALITY_SCORE_LIMIT, PERSONALITY_SCORE_LIMIT);
+    }
+
+    pub fn from_visible(value: &CharacterPersonality) -> Self {
+        let mut scores = Self::neutral(value.character_id);
+        scores.nerve = match value.nerve {
+            Nerve::Brave => PERSONALITY_SCORE_LIMIT,
+            Nerve::Fearful => -PERSONALITY_SCORE_LIMIT,
+            Nerve::Neutral => 0,
+        };
+        scores.drive = match value.drive {
+            Drive::Ambitious => PERSONALITY_SCORE_LIMIT,
+            Drive::Content => -PERSONALITY_SCORE_LIMIT,
+            Drive::Neutral => 0,
+        };
+        scores.outlook = match value.outlook {
+            Outlook::Sanguine => PERSONALITY_SCORE_LIMIT,
+            Outlook::Brooding => -PERSONALITY_SCORE_LIMIT,
+            Outlook::Neutral => 0,
+        };
+        scores.sociability = match value.sociability {
+            Sociability::Gregarious => PERSONALITY_SCORE_LIMIT,
+            Sociability::Solitary => -PERSONALITY_SCORE_LIMIT,
+            Sociability::Neutral => 0,
+        };
+        scores.conscience = match value.conscience {
+            Conscience::Compassionate => PERSONALITY_SCORE_LIMIT,
+            Conscience::Callous => -PERSONALITY_VISIBLE_THRESHOLD,
+            Conscience::Cruel => -PERSONALITY_SCORE_LIMIT,
+            Conscience::Neutral => 0,
+        };
+        scores.self_regard = match value.self_regard {
+            SelfRegard::Proud => PERSONALITY_SCORE_LIMIT,
+            SelfRegard::Humble => -PERSONALITY_SCORE_LIMIT,
+            SelfRegard::Neutral => 0,
+        };
+        scores.conviction = match value.conviction {
+            Conviction::Zealous => PERSONALITY_SCORE_LIMIT,
+            Conviction::Irreverent => -PERSONALITY_SCORE_LIMIT,
+            Conviction::Neutral => 0,
+        };
+        scores.hygiene = match value.hygiene {
+            Hygiene::Cleanly => PERSONALITY_SCORE_LIMIT,
+            Hygiene::Slovenly => -PERSONALITY_SCORE_LIMIT,
+            Hygiene::Neutral => 0,
+        };
+        scores.temperance = match value.temperance {
+            Temperance::Temperate => PERSONALITY_SCORE_LIMIT,
+            Temperance::Drunkard => -PERSONALITY_SCORE_LIMIT,
+            Temperance::Neutral => 0,
+        };
+        scores.mirth = match value.mirth {
+            Mirth::Merry => PERSONALITY_SCORE_LIMIT,
+            Mirth::Grave => -PERSONALITY_SCORE_LIMIT,
+            Mirth::Neutral => 0,
+        };
+        scores.courtship = match value.courtship {
+            Courtship::Amorous => PERSONALITY_SCORE_LIMIT,
+            Courtship::Proper => -PERSONALITY_SCORE_LIMIT,
+            Courtship::Neutral => 0,
+        };
+        scores.transparency = match value.transparency {
+            Transparency::Open => PERSONALITY_SCORE_LIMIT,
+            Transparency::Guarded => -PERSONALITY_SCORE_LIMIT,
+            Transparency::Neutral => 0,
+        };
+        scores.self_knowledge = match value.self_knowledge {
+            SelfKnowledge::Introspective => PERSONALITY_SCORE_LIMIT,
+            SelfKnowledge::SelfDeceiving => -PERSONALITY_SCORE_LIMIT,
+            SelfKnowledge::Neutral => 0,
+        };
+        scores
+    }
 }
 
 /// Fail-closed truth projection for trusted SSR. Browser subscriptions never
@@ -190,6 +391,290 @@ impl CharacterPersonality {
     }
 }
 
+fn bipolar<T: Copy>(score: i16, positive: T, neutral: T, negative: T) -> T {
+    if score >= PERSONALITY_VISIBLE_THRESHOLD {
+        positive
+    } else if score <= -PERSONALITY_VISIBLE_THRESHOLD {
+        negative
+    } else {
+        neutral
+    }
+}
+
+pub fn project_scores(
+    scores: &CharacterPersonalityScores,
+    demographics: &CharacterPersonality,
+) -> CharacterPersonality {
+    CharacterPersonality {
+        character_id: scores.character_id,
+        projection_character_id: scores.character_id,
+        nerve: bipolar(scores.nerve, Nerve::Brave, Nerve::Neutral, Nerve::Fearful),
+        drive: bipolar(
+            scores.drive,
+            Drive::Ambitious,
+            Drive::Neutral,
+            Drive::Content,
+        ),
+        outlook: bipolar(
+            scores.outlook,
+            Outlook::Sanguine,
+            Outlook::Neutral,
+            Outlook::Brooding,
+        ),
+        sociability: bipolar(
+            scores.sociability,
+            Sociability::Gregarious,
+            Sociability::Neutral,
+            Sociability::Solitary,
+        ),
+        conscience: if scores.conscience >= PERSONALITY_VISIBLE_THRESHOLD {
+            Conscience::Compassionate
+        } else if scores.conscience <= CONSCIENCE_CRUEL_THRESHOLD {
+            Conscience::Cruel
+        } else if scores.conscience <= -PERSONALITY_VISIBLE_THRESHOLD {
+            Conscience::Callous
+        } else {
+            Conscience::Neutral
+        },
+        self_regard: bipolar(
+            scores.self_regard,
+            SelfRegard::Proud,
+            SelfRegard::Neutral,
+            SelfRegard::Humble,
+        ),
+        conviction: bipolar(
+            scores.conviction,
+            Conviction::Zealous,
+            Conviction::Neutral,
+            Conviction::Irreverent,
+        ),
+        hygiene: bipolar(
+            scores.hygiene,
+            Hygiene::Cleanly,
+            Hygiene::Neutral,
+            Hygiene::Slovenly,
+        ),
+        temperance: bipolar(
+            scores.temperance,
+            Temperance::Temperate,
+            Temperance::Neutral,
+            Temperance::Drunkard,
+        ),
+        mirth: bipolar(scores.mirth, Mirth::Merry, Mirth::Neutral, Mirth::Grave),
+        courtship: bipolar(
+            scores.courtship,
+            Courtship::Amorous,
+            Courtship::Neutral,
+            Courtship::Proper,
+        ),
+        transparency: bipolar(
+            scores.transparency,
+            Transparency::Open,
+            Transparency::Neutral,
+            Transparency::Guarded,
+        ),
+        self_knowledge: bipolar(
+            scores.self_knowledge,
+            SelfKnowledge::Introspective,
+            SelfKnowledge::Neutral,
+            SelfKnowledge::SelfDeceiving,
+        ),
+        sex: demographics.sex,
+        presentation: demographics.presentation,
+        inclination: demographics.inclination,
+    }
+}
+
+fn write_projection(ctx: &ReducerContext, visible: CharacterPersonality) {
+    if ctx
+        .db
+        .character_personality()
+        .character_id()
+        .find(visible.character_id)
+        .is_some()
+    {
+        ctx.db
+            .character_personality()
+            .character_id()
+            .update(visible);
+    } else {
+        ctx.db.character_personality().insert(visible);
+    }
+}
+
+/// Initialize authority from an external discrete profile. If authority is
+/// already present, its continuous scores win and only demographics are
+/// refreshed. This prevents a lossy projection from erasing hidden progress.
+pub fn initialize_personality_from_visible(ctx: &ReducerContext, visible: CharacterPersonality) {
+    let scores = if let Some(existing) = ctx
+        .db
+        .character_personality_scores()
+        .character_id()
+        .find(visible.character_id)
+    {
+        existing
+    } else {
+        ctx.db
+            .character_personality_scores()
+            .insert(CharacterPersonalityScores::from_visible(&visible))
+    };
+    write_projection(ctx, project_scores(&scores, &visible));
+}
+
+/// Deliberately replace all behavioral scores from a discrete fixture/import.
+/// Ordinary personality updates must use a narrow score or demographic helper.
+pub fn reset_personality_from_visible(ctx: &ReducerContext, visible: CharacterPersonality) {
+    let scores = CharacterPersonalityScores::from_visible(&visible);
+    if ctx
+        .db
+        .character_personality_scores()
+        .character_id()
+        .find(visible.character_id)
+        .is_some()
+    {
+        ctx.db
+            .character_personality_scores()
+            .character_id()
+            .update(scores.clone());
+    } else {
+        ctx.db.character_personality_scores().insert(scores.clone());
+    }
+    write_projection(ctx, project_scores(&scores, &visible));
+}
+
+pub fn set_personality_axis_score(
+    ctx: &ReducerContext,
+    character_id: u64,
+    axis: PersonalityAxis,
+    score: i16,
+) -> Result<(), String> {
+    let mut scores = ctx
+        .db
+        .character_personality_scores()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character personality scores not found")?;
+    scores.set_score(axis, score);
+    ctx.db
+        .character_personality_scores()
+        .character_id()
+        .update(scores.clone());
+    let demographics = personality_or_neutral(ctx, character_id);
+    write_projection(ctx, project_scores(&scores, &demographics));
+    Ok(())
+}
+
+pub fn update_personality_demographics(
+    ctx: &ReducerContext,
+    character_id: u64,
+    sex: Sex,
+    presentation: Presentation,
+    inclination: Inclination,
+) -> Result<(), String> {
+    let scores = ctx
+        .db
+        .character_personality_scores()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character personality scores not found")?;
+    let mut demographics = personality_or_neutral(ctx, character_id);
+    demographics.sex = sex;
+    demographics.presentation = presentation;
+    demographics.inclination = inclination;
+    write_projection(ctx, project_scores(&scores, &demographics));
+    Ok(())
+}
+
+pub fn personality_scores_or_neutral(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> CharacterPersonalityScores {
+    ctx.db
+        .character_personality_scores()
+        .character_id()
+        .find(character_id)
+        .unwrap_or_else(|| CharacterPersonalityScores::neutral(character_id))
+}
+
+/// Apply one authoritative deed. The caller supplies a source identity bound
+/// to durable gameplay truth, never a free-standing client mutation token.
+pub fn apply_personality_development(
+    ctx: &ReducerContext,
+    source_id: &str,
+    character_id: u64,
+    axis: PersonalityAxis,
+    delta: i16,
+    deed: &str,
+    virtue: ChivalricVirtue,
+    occurred_at_minute: u64,
+) -> Result<(), String> {
+    if let Some(existing) = ctx
+        .db
+        .personality_development_event()
+        .source_id()
+        .find(source_id.to_string())
+    {
+        return if development_replay_matches(&existing, character_id, axis, delta, deed, virtue) {
+            Ok(())
+        } else {
+            Err("Conflicting personality development source".into())
+        };
+    }
+    let mut scores = ctx
+        .db
+        .character_personality_scores()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character personality scores not found")?;
+    let resulting = scores
+        .score(axis)
+        .saturating_add(delta)
+        .clamp(-PERSONALITY_SCORE_LIMIT, PERSONALITY_SCORE_LIMIT);
+    scores.set_score(axis, resulting);
+    ctx.db
+        .character_personality_scores()
+        .character_id()
+        .update(scores.clone());
+    let demographics = ctx
+        .db
+        .character_personality()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character personality projection not found")?;
+    ctx.db
+        .character_personality()
+        .character_id()
+        .update(project_scores(&scores, &demographics));
+    ctx.db
+        .personality_development_event()
+        .insert(PersonalityDevelopmentEvent {
+            source_id: source_id.into(),
+            character_id,
+            axis,
+            delta,
+            resulting_score: resulting,
+            deed: deed.into(),
+            virtue,
+            occurred_at_minute,
+        });
+    Ok(())
+}
+
+fn development_replay_matches(
+    existing: &PersonalityDevelopmentEvent,
+    character_id: u64,
+    axis: PersonalityAxis,
+    delta: i16,
+    deed: &str,
+    virtue: ChivalricVirtue,
+) -> bool {
+    existing.character_id == character_id
+        && existing.axis == axis
+        && existing.delta == delta
+        && existing.deed == deed
+        && existing.virtue == virtue
+}
+
 impl Conviction {
     /// Ardor is a personality property, independent of religious knowledge.
     pub const fn strength(self) -> f32 {
@@ -199,6 +684,11 @@ impl Conviction {
             Self::Irreverent => 0.0,
         }
     }
+}
+
+pub fn conviction_strength_for_character(ctx: &ReducerContext, character_id: u64) -> f32 {
+    2.5 + 2.5 * f32::from(personality_scores_or_neutral(ctx, character_id).conviction)
+        / f32::from(PERSONALITY_SCORE_LIMIT)
 }
 
 /// Generate a sparse profile with exactly two through four distinct axes.
@@ -370,9 +860,10 @@ pub fn initialize_npc_personality(ctx: &ReducerContext, character_id: u64, stabl
         .find(character_id)
         .is_none()
     {
-        ctx.db
-            .character_personality()
-            .insert(personality_from_stable_seed(character_id, stable_seed));
+        initialize_personality_from_visible(
+            ctx,
+            personality_from_stable_seed(character_id, stable_seed),
+        );
     }
 }
 
@@ -396,7 +887,7 @@ pub fn initialize_personality(ctx: &ReducerContext, character_id: u64, npc: bool
             neutral.inclination = generated.inclination;
             neutral
         };
-        ctx.db.character_personality().insert(row);
+        initialize_personality_from_visible(ctx, row);
     }
 }
 
@@ -409,9 +900,9 @@ pub fn assign_random_personality(ctx: &ReducerContext, character_id: u64) {
         .find(character_id)
         .is_some()
     {
-        ctx.db.character_personality().character_id().update(row);
+        reset_personality_from_visible(ctx, row);
     } else {
-        ctx.db.character_personality().insert(row);
+        reset_personality_from_visible(ctx, row);
     }
 }
 
@@ -443,75 +934,115 @@ pub fn morale_event_stimulus(kind: &str) -> MoraleStimulus {
 pub fn react_raw(
     personality: &CharacterPersonality,
     stimulus: MoraleStimulus,
+    magnitude: f32,
+) -> (f32, Vec<&'static str>) {
+    react_raw_with_scores(
+        personality,
+        &CharacterPersonalityScores::from_visible(personality),
+        stimulus,
+        magnitude,
+    )
+}
+
+pub fn continuous_axis_multiplier(
+    score: i16,
+    positive_endpoint: f32,
+    negative_endpoint: f32,
+) -> f32 {
+    let bounded = score.clamp(-PERSONALITY_SCORE_LIMIT, PERSONALITY_SCORE_LIMIT);
+    let ratio = f32::from(bounded.unsigned_abs()) / f32::from(PERSONALITY_SCORE_LIMIT as u16);
+    let endpoint = if bounded >= 0 {
+        positive_endpoint
+    } else {
+        negative_endpoint
+    };
+    1.0 + (endpoint - 1.0) * ratio
+}
+
+/// Scale one nightly alcohol reaction from neutral preference at score zero
+/// to the legacy Temperate (zero) or Drunkard (+/-5) endpoint. Seeking and
+/// consumption remain governed by the derived discrete preference.
+pub fn temperance_morale_magnitude(score: i16, neutral_magnitude: f32, satisfied: bool) -> f32 {
+    let bounded = score.clamp(-PERSONALITY_SCORE_LIMIT, PERSONALITY_SCORE_LIMIT);
+    let ratio = f32::from(bounded.unsigned_abs()) / f32::from(PERSONALITY_SCORE_LIMIT as u16);
+    let endpoint = if bounded >= 0 {
+        0.0
+    } else if satisfied {
+        5.0
+    } else {
+        -5.0
+    };
+    neutral_magnitude + (endpoint - neutral_magnitude) * ratio
+}
+
+pub fn react_raw_with_scores(
+    personality: &CharacterPersonality,
+    scores: &CharacterPersonalityScores,
+    stimulus: MoraleStimulus,
     mut magnitude: f32,
 ) -> (f32, Vec<&'static str>) {
     let mut names = Vec::new();
     if stimulus == MoraleStimulus::Threat && magnitude < 0.0 {
+        magnitude *= continuous_axis_multiplier(scores.nerve, 0.5, 2.0);
         match personality.nerve {
-            Nerve::Brave => {
-                magnitude *= 0.5;
-                names.push("Brave");
-            }
-            Nerve::Fearful => {
-                magnitude *= 2.0;
-                names.push("Fearful");
-            }
+            Nerve::Brave => names.push("Brave"),
+            Nerve::Fearful => names.push("Fearful"),
             Nerve::Neutral => {}
         }
     }
     if matches!(stimulus, MoraleStimulus::Victory | MoraleStimulus::Defeat) {
+        magnitude *= continuous_axis_multiplier(scores.drive, 1.5, 0.5);
         match personality.drive {
-            Drive::Ambitious => {
-                magnitude *= 1.5;
-                names.push("Ambitious");
-            }
-            Drive::Content => {
-                magnitude *= 0.5;
-                names.push("Content");
-            }
+            Drive::Ambitious => names.push("Ambitious"),
+            Drive::Content => names.push("Content"),
             Drive::Neutral => {}
         }
+        let proud_endpoint = if stimulus == MoraleStimulus::Victory {
+            1.5
+        } else {
+            3.0
+        };
+        magnitude *= continuous_axis_multiplier(scores.self_regard, proud_endpoint, 0.75);
         match personality.self_regard {
-            SelfRegard::Proud => {
-                magnitude *= if stimulus == MoraleStimulus::Victory {
-                    1.5
-                } else {
-                    3.0
-                };
-                names.push("Proud");
-            }
-            SelfRegard::Humble => {
-                magnitude *= 0.75;
-                names.push("Humble");
-            }
+            SelfRegard::Proud => names.push("Proud"),
+            SelfRegard::Humble => names.push("Humble"),
             SelfRegard::Neutral => {}
         }
     }
     if stimulus == MoraleStimulus::Religious {
+        magnitude *= continuous_axis_multiplier(scores.conviction, 1.5, 0.5);
         match personality.conviction {
-            Conviction::Zealous => {
-                magnitude *= 1.5;
-                names.push("Zealous");
-            }
-            Conviction::Irreverent => {
-                magnitude *= 0.5;
-                names.push("Irreverent");
-            }
+            Conviction::Zealous => names.push("Zealous"),
+            Conviction::Irreverent => names.push("Irreverent"),
             Conviction::Neutral => {}
         }
     }
+    let outlook_multiplier = if magnitude > 0.0 {
+        continuous_axis_multiplier(scores.outlook, 1.25, 0.75)
+    } else {
+        continuous_axis_multiplier(scores.outlook, 0.75, 1.25)
+    };
+    magnitude *= outlook_multiplier;
     match personality.outlook {
-        Outlook::Sanguine => {
-            magnitude *= if magnitude > 0.0 { 1.25 } else { 0.75 };
-            names.push("Sanguine");
-        }
-        Outlook::Brooding => {
-            magnitude *= if magnitude > 0.0 { 0.75 } else { 1.25 };
-            names.push("Brooding");
-        }
+        Outlook::Sanguine => names.push("Sanguine"),
+        Outlook::Brooding => names.push("Brooding"),
         Outlook::Neutral => {}
     }
     (magnitude, names)
+}
+
+pub fn react_raw_for_character(
+    ctx: &ReducerContext,
+    character_id: u64,
+    stimulus: MoraleStimulus,
+    magnitude: f32,
+) -> (f32, Vec<&'static str>) {
+    react_raw_with_scores(
+        &personality_or_neutral(ctx, character_id),
+        &personality_scores_or_neutral(ctx, character_id),
+        stimulus,
+        magnitude,
+    )
 }
 
 pub fn negative_event_duration(personality: &CharacterPersonality, duration: u64) -> u64 {
@@ -519,6 +1050,32 @@ pub fn negative_event_duration(personality: &CharacterPersonality, duration: u64
         Outlook::Sanguine => duration / 2,
         Outlook::Brooding => duration.saturating_mul(2),
         Outlook::Neutral => duration,
+    }
+}
+
+pub fn negative_event_duration_for_character(
+    ctx: &ReducerContext,
+    character_id: u64,
+    duration: u64,
+) -> u64 {
+    let score = personality_scores_or_neutral(ctx, character_id).outlook;
+    negative_event_duration_with_score(score, duration)
+}
+
+pub fn negative_event_duration_with_score(score: i16, duration: u64) -> u64 {
+    let bounded = score.clamp(-PERSONALITY_SCORE_LIMIT, PERSONALITY_SCORE_LIMIT);
+    if bounded >= 0 {
+        let endpoint = duration / 2;
+        let total_reduction = duration - endpoint;
+        let reduction = (u128::from(total_reduction) * u128::from(bounded as u16)
+            / u128::from(PERSONALITY_SCORE_LIMIT as u16)) as u64;
+        duration - reduction
+    } else {
+        let endpoint = duration.saturating_mul(2);
+        let total_increase = endpoint - duration;
+        let increase = (u128::from(total_increase) * u128::from(bounded.unsigned_abs())
+            / u128::from(PERSONALITY_SCORE_LIMIT as u16)) as u64;
+        duration.saturating_add(increase)
     }
 }
 
@@ -530,6 +1087,24 @@ pub fn ally_restoration_multiplier(
         Sociability::Solitary => (0.5, Some("Solitary")),
         Sociability::Neutral => (1.0, None),
     }
+}
+
+pub fn ally_restoration_multiplier_for_character(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> (f32, Option<&'static str>) {
+    let visible = personality_or_neutral(ctx, character_id);
+    let multiplier = continuous_axis_multiplier(
+        personality_scores_or_neutral(ctx, character_id).sociability,
+        1.5,
+        0.5,
+    );
+    let name = match visible.sociability {
+        Sociability::Gregarious => Some("Gregarious"),
+        Sociability::Solitary => Some("Solitary"),
+        Sociability::Neutral => None,
+    };
+    (multiplier, name)
 }
 
 #[cfg(test)]
@@ -545,6 +1120,12 @@ mod tests {
                 value
             });
             assert!((2..=4).contains(&personality.non_neutral_count()));
+            let scores = CharacterPersonalityScores::from_visible(&personality);
+            let projected = project_scores(&scores, &personality);
+            assert_eq!(
+                projected.non_neutral_count(),
+                personality.non_neutral_count()
+            );
         }
     }
 
@@ -648,5 +1229,179 @@ mod tests {
         let (magnitude, annotations) = react_raw(&p, stimulus, 2.0);
         assert_eq!(magnitude, 3.0);
         assert_eq!(annotations, ["Zealous"]);
+    }
+
+    #[test]
+    fn scores_clamp_and_project_only_after_visibility_thresholds() {
+        let demographics = CharacterPersonality::neutral(7);
+        let mut scores = CharacterPersonalityScores::neutral(7);
+        scores.set_score(PersonalityAxis::Nerve, 25_000);
+        assert_eq!(scores.nerve, PERSONALITY_SCORE_LIMIT);
+        assert_eq!(project_scores(&scores, &demographics).nerve, Nerve::Brave);
+        scores.set_score(PersonalityAxis::Nerve, -4_999);
+        assert_eq!(project_scores(&scores, &demographics).nerve, Nerve::Neutral);
+        scores.set_score(PersonalityAxis::Nerve, -5_000);
+        assert_eq!(project_scores(&scores, &demographics).nerve, Nerve::Fearful);
+    }
+
+    #[test]
+    fn conscience_has_compassionate_callous_and_cruel_bands() {
+        let demographics = CharacterPersonality::neutral(8);
+        let mut scores = CharacterPersonalityScores::neutral(8);
+        for (score, expected) in [
+            (4_999, Conscience::Neutral),
+            (5_000, Conscience::Compassionate),
+            (-4_999, Conscience::Neutral),
+            (-5_000, Conscience::Callous),
+            (-7_999, Conscience::Callous),
+            (-8_000, Conscience::Cruel),
+        ] {
+            scores.set_score(PersonalityAxis::Conscience, score);
+            assert_eq!(project_scores(&scores, &demographics).conscience, expected);
+        }
+    }
+
+    #[test]
+    fn continuous_multipliers_are_monotonic_bounded_and_preserve_endpoints() {
+        assert_eq!(continuous_axis_multiplier(0, 0.5, 2.0), 1.0);
+        assert_eq!(
+            continuous_axis_multiplier(PERSONALITY_SCORE_LIMIT, 0.5, 2.0),
+            0.5
+        );
+        assert_eq!(
+            continuous_axis_multiplier(-PERSONALITY_SCORE_LIMIT, 0.5, 2.0),
+            2.0
+        );
+        let quarter = continuous_axis_multiplier(2_500, 0.5, 2.0);
+        let half = continuous_axis_multiplier(5_000, 0.5, 2.0);
+        assert!(quarter > half && half > 0.5);
+        assert_eq!(continuous_axis_multiplier(30_000, 0.5, 2.0), 0.5);
+    }
+
+    #[test]
+    fn demographic_projection_preserves_hidden_unrelated_scores_and_forces_key() {
+        let mut scores = CharacterPersonalityScores::neutral(42);
+        scores.nerve = 3_750;
+        scores.conviction = -2_250;
+        let mut demographics = CharacterPersonality::neutral(999);
+        demographics.sex = Sex::Female;
+        demographics.presentation = Presentation::Woman;
+        demographics.inclination = Inclination::Either;
+        let projected = project_scores(&scores, &demographics);
+        assert_eq!((scores.nerve, scores.conviction), (3_750, -2_250));
+        assert_eq!(
+            (projected.character_id, projected.projection_character_id),
+            (42, 42)
+        );
+        assert_eq!(
+            (projected.nerve, projected.conviction),
+            (Nerve::Neutral, Conviction::Neutral)
+        );
+        assert_eq!(
+            (projected.sex, projected.presentation, projected.inclination),
+            (Sex::Female, Presentation::Woman, Inclination::Either)
+        );
+    }
+
+    #[test]
+    fn temperance_morale_moves_continuously_and_preserves_legacy_endpoints() {
+        assert_eq!(temperance_morale_magnitude(0, 1.0, true), 1.0);
+        assert_eq!(temperance_morale_magnitude(2_500, 1.0, true), 0.75);
+        assert_eq!(temperance_morale_magnitude(-2_500, 1.0, true), 2.0);
+        assert_eq!(temperance_morale_magnitude(2_500, -1.0, false), -0.75);
+        assert_eq!(temperance_morale_magnitude(-2_500, -1.0, false), -2.0);
+        assert_eq!(
+            temperance_morale_magnitude(PERSONALITY_SCORE_LIMIT, 3.0, true),
+            0.0
+        );
+        assert_eq!(
+            temperance_morale_magnitude(-PERSONALITY_SCORE_LIMIT, 1.0, true),
+            5.0
+        );
+        assert_eq!(
+            temperance_morale_magnitude(-PERSONALITY_SCORE_LIMIT, -1.0, false),
+            -5.0
+        );
+    }
+
+    #[test]
+    fn continuous_event_duration_preserves_integer_endpoints_and_saturates() {
+        assert_eq!(
+            negative_event_duration_with_score(PERSONALITY_SCORE_LIMIT, 7),
+            3
+        );
+        assert_eq!(
+            negative_event_duration_with_score(-PERSONALITY_SCORE_LIMIT, 7),
+            14
+        );
+        assert_eq!(negative_event_duration_with_score(0, 7), 7);
+        assert_eq!(negative_event_duration_with_score(2_500, 7), 6);
+        assert_eq!(negative_event_duration_with_score(5_000, 7), 5);
+        assert_eq!(negative_event_duration_with_score(-2_500, 7), 8);
+        assert_eq!(negative_event_duration_with_score(-5_000, 7), 10);
+        assert_eq!(
+            negative_event_duration_with_score(-PERSONALITY_SCORE_LIMIT, u64::MAX),
+            u64::MAX
+        );
+    }
+
+    #[test]
+    fn score_and_development_tables_have_no_public_views_and_delete_with_character() {
+        let personality_source = include_str!("personality.rs");
+        assert!(!personality_source.contains("#[view(accessor = character_personality_scores"));
+        assert!(!personality_source.contains("#[view(accessor = personality_development_event"));
+        let deletion = include_str!("character.rs");
+        assert!(deletion.contains("character_personality_scores()"));
+        assert!(deletion.contains("personality_development_event()"));
+        assert!(deletion.contains(".character_id()\n        .filter(character.id)"));
+    }
+
+    #[test]
+    fn hidden_subthreshold_scores_already_change_morale_without_leaking_annotation() {
+        let visible = CharacterPersonality::neutral(9);
+        let mut scores = CharacterPersonalityScores::neutral(9);
+        scores.nerve = 2_500;
+        let (magnitude, annotations) =
+            react_raw_with_scores(&visible, &scores, MoraleStimulus::Threat, -8.0);
+        assert_eq!(magnitude, -7.0);
+        assert!(annotations.is_empty());
+    }
+
+    #[test]
+    fn development_source_accepts_exact_replay_and_rejects_conflicts() {
+        let event = PersonalityDevelopmentEvent {
+            source_id: "road-challenge:one".into(),
+            character_id: 9,
+            axis: PersonalityAxis::Nerve,
+            delta: CHIVALRIC_DEED_DELTA,
+            resulting_score: CHIVALRIC_DEED_DELTA,
+            deed: "RallyAndEscortCourierThroughFord".into(),
+            virtue: ChivalricVirtue::Courage,
+            occurred_at_minute: 60,
+        };
+        assert!(development_replay_matches(
+            &event,
+            9,
+            PersonalityAxis::Nerve,
+            CHIVALRIC_DEED_DELTA,
+            "RallyAndEscortCourierThroughFord",
+            ChivalricVirtue::Courage,
+        ));
+        assert!(!development_replay_matches(
+            &event,
+            10,
+            PersonalityAxis::Nerve,
+            CHIVALRIC_DEED_DELTA,
+            "RallyAndEscortCourierThroughFord",
+            ChivalricVirtue::Courage,
+        ));
+        assert!(!development_replay_matches(
+            &event,
+            9,
+            PersonalityAxis::Conscience,
+            CHIVALRIC_DEED_DELTA,
+            "TendCourierAndCarryWarning",
+            ChivalricVirtue::Mercy,
+        ));
     }
 }

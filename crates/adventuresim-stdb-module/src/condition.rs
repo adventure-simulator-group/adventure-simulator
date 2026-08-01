@@ -922,7 +922,8 @@ fn base_morale(
                           stimulus: crate::personality::MoraleStimulus| {
         // True personality changes the authoritative magnitude, but labels are
         // public presentation data and must never reveal that private truth.
-        let (magnitude, _) = crate::personality::react_raw(&personality, stimulus, magnitude);
+        let (magnitude, _) =
+            crate::personality::react_raw_for_character(ctx, character_id, stimulus, magnitude);
         raw_sources.push(ProjectedMoraleSource {
             key,
             kind,
@@ -951,12 +952,22 @@ fn base_morale(
         .sum::<f32>()
         .min(f32::from(adventuresim_core::filth::MAX_FILTH));
     let filth_fraction = filth_total / f32::from(adventuresim_core::filth::MAX_FILTH);
-    let hygiene_morale = match personality.hygiene {
-        crate::personality::Hygiene::Slovenly => 0.0,
-        crate::personality::Hygiene::Neutral => -8.0 * filth_fraction,
-        crate::personality::Hygiene::Cleanly if filth_total == 0.0 => 2.0,
-        crate::personality::Hygiene::Cleanly => -20.0 * filth_fraction,
+    let hygiene_score =
+        crate::personality::personality_scores_or_neutral(ctx, character_id).hygiene;
+    let baseline_hygiene_morale = -8.0 * filth_fraction;
+    let hygiene_endpoint = if hygiene_score >= 0 {
+        if filth_total == 0.0 {
+            2.0
+        } else {
+            -20.0 * filth_fraction
+        }
+    } else {
+        0.0
     };
+    let hygiene_ratio = f32::from(hygiene_score.unsigned_abs())
+        / f32::from(crate::personality::PERSONALITY_SCORE_LIMIT as u16);
+    let hygiene_morale =
+        baseline_hygiene_morale + (hygiene_endpoint - baseline_hygiene_morale) * hygiene_ratio;
     if hygiene_morale != 0.0 {
         add_source(
             "cleanliness".into(),
@@ -1012,7 +1023,7 @@ fn base_morale(
             );
         }
         let prayer_fervor = fervor_fraction(
-            personality.conviction.strength(),
+            crate::personality::conviction_strength_for_character(ctx, character_id),
             religion.own_cohort,
             0.0,
             religion.party_command,
@@ -1259,8 +1270,9 @@ fn evaluate_strategic_condition(
                     .find(member_id)
                     .ok_or("Party member not found")?;
                 let (social_multiplier, social_trait) =
-                    crate::personality::ally_restoration_multiplier(
-                        &crate::personality::personality_or_neutral(ctx, character_id),
+                    crate::personality::ally_restoration_multiplier_for_character(
+                        ctx,
+                        character_id,
                     );
                 ally_lifts.push((
                     member_id,
@@ -1777,8 +1789,9 @@ fn insert_morale_event_without_refresh(
 
 fn stored_morale_event_duration(ctx: &ReducerContext, character_id: u64, magnitude: f32) -> u64 {
     if magnitude < 0.0 {
-        crate::personality::negative_event_duration(
-            &crate::personality::personality_or_neutral(ctx, character_id),
+        crate::personality::negative_event_duration_for_character(
+            ctx,
+            character_id,
             RECENT_MORALE_DURATION_MINUTES,
         )
     } else {

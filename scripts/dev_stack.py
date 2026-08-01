@@ -816,6 +816,7 @@ def run_profile(
             environment.update({
                 "SPACETIMEDB_HOST": server, "SPACETIMEDB_DATABASE": database,
                 "SPACETIMEDB_TOKEN": gateway_token,
+                "STRATEGIC_SESSION_SECRET": secrets.token_urlsafe(32),
                 "BIND_ADDRESS": f"127.0.0.1:{values['web_port']}",
                 "STATIC_DIR": str(ROOT / "crates" / "strategic-web" / "static"),
                 "TACTICAL_STATIC_DIR": str(ROOT / "crates" / "adventuresim-stdb-module" / "static"),

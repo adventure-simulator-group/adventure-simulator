@@ -4,7 +4,9 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::chivalric_virtue_type::ChivalricVirtue;
 use super::road_challenge_catalog_id_type::RoadChallengeCatalogId;
+use super::road_challenge_deed_type::RoadChallengeDeed;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,6 +24,8 @@ pub struct RoadChallengeAuthority {
     pub revision: u32,
     pub open: bool,
     pub resolved_choice: Option<String>,
+    pub resolved_deed: Option<RoadChallengeDeed>,
+    pub virtue_exemplified: Option<ChivalricVirtue>,
 }
 
 impl __sdk::InModule for RoadChallengeAuthority {
@@ -45,6 +49,10 @@ pub struct RoadChallengeAuthorityCols {
     pub revision: __sdk::__query_builder::Col<RoadChallengeAuthority, u32>,
     pub open: __sdk::__query_builder::Col<RoadChallengeAuthority, bool>,
     pub resolved_choice: __sdk::__query_builder::Col<RoadChallengeAuthority, Option<String>>,
+    pub resolved_deed:
+        __sdk::__query_builder::Col<RoadChallengeAuthority, Option<RoadChallengeDeed>>,
+    pub virtue_exemplified:
+        __sdk::__query_builder::Col<RoadChallengeAuthority, Option<ChivalricVirtue>>,
 }
 
 impl __sdk::__query_builder::HasCols for RoadChallengeAuthority {
@@ -79,6 +87,8 @@ impl __sdk::__query_builder::HasCols for RoadChallengeAuthority {
             revision: __sdk::__query_builder::Col::new(table_name, "revision"),
             open: __sdk::__query_builder::Col::new(table_name, "open"),
             resolved_choice: __sdk::__query_builder::Col::new(table_name, "resolved_choice"),
+            resolved_deed: __sdk::__query_builder::Col::new(table_name, "resolved_deed"),
+            virtue_exemplified: __sdk::__query_builder::Col::new(table_name, "virtue_exemplified"),
         }
     }
 }
