@@ -402,6 +402,59 @@ more than six times the honest reward. Sleepers, sleep, blossom boundary,
 stake, and watch cart remain occurrence-local prose and never become strategic
 state or effect IDs.
 
+`halted_ransom_convoy_v1` is an original roadside synthesis of Malory's
+captivity and release motifs in [*Le Morte d'Arthur*, Volume I, Book IV,
+Chapters VII and XII](https://www.gutenberg.org/files/1251/1251-h/1251-h.htm).
+Chapter VII gives Damas's sworn combat covenant and the release of twenty
+prisoners; Chapter XII supplies Arthur's judgment, restoration, and imposed
+terms of future conduct. This is not presented as an adaptation of an exact
+convoy episode. Here a washed culvert has sprung a prison wagon's axle. A sealed
+field-surrender roll establishes lawful custody of a knight and two retainers
+while deliberately leaving the feud's moral merits unresolved.
+
+Authority is explicit and non-interchangeable. The ransom clerk alone owns
+identities, the roll, ransom and parole terms, and lawful release. The veteran
+custody sergeant alone owns restraints, keys, guard positions, axle repair,
+and bodily movement. Seven active routes read a dry repair shoulder, identify
+binding injuries, negotiate immediate authenticated parole, coordinate repair
+labor, hold a neutral line during a temporary prisoner lift, keep a mundane
+cross-sworn work truce, or betray the officers. Matched Saint Leonard badges
+among guard and captives give the religion route specific knowledge: the
+character recognizes their confraternity's familiar oath form, the clerk
+drafts and validates its narrow covenant, and the sergeant still controls every
+chain. The cadence is ordinary oath, attention, and witness; it neither compels
+nor buffs anyone.
+Every honest route ends immediately with the repaired convoy departing or the
+clerk-authenticated parolees leaving, after which the officers finish their
+ordinary repair and depart. No route creates a later obligation.
+
+The opening exposes dented mail and flattened rings without explaining them;
+ignoring the convoy grants nothing. Every active route first earns trust or
+resolution through real aid, after which captive and sergeant give the physical
+capture account: sword edges skated on worn mail where the whole blow of a
+flanged mace crushed ring and padding together. Routes vary the moment and
+reason for that concise debrief without staging a contrived weapon strike.
+Every active route grants the real `flanged_mace` and records only that grounded
+preparation. The item is worth ten groschen, is melee-only and non-ranged, and
+deals pure blunt damage; the fixed `armed_retainer` profile is armored,
+blade-armed, and non-ranged.
+
+The betrayal uses a difficult physical-work deception to become a credible
+tool-runner and signaler, not a trusted custodian. A necessary synchronized lift
+puts the clerk and sergeant at opposite load and axle stations. The sergeant
+keeps the ring secured upon her belt even after slackening a prisoner's
+work-chain. High Deception puts the signaler close beside her, misdirects every
+witness toward a plausible load shift, and permits the player to unhook and palm
+the belt ring only while both her hands and full attention necessarily hold the
+lever. The player then opens the nearby chest and steals the separately declared
+forty-eight-groschen custody purse and mace before releasing all prisoners solely
+as escape cover. Neither chest nor keys were voluntarily entrusted, and the
+bulky mace leaves visibly amid the confusion.
+The prisoners scatter off-road unharmed, and the player leaves with fifty-eight
+groschen of persistent value, more than five times the honest reward. Prisoners,
+chains, keys, axle, wagon, and surrender roll remain occurrence-local prose and
+never become strategic state or effect IDs.
+
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,
