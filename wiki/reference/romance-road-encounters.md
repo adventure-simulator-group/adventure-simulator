@@ -200,6 +200,44 @@ it. Waiting for both companies to clear costs an hour but nothing else. The
 encounter is travel-only, goal-neutral, entirely mortal, and requires no runtime
 catalog special case.
 
+`insulting_damsel_and_dwarf_v1` places a sharp-tongued mortal damsel and her
+mortal dwarf steward beside a washed hollow while carrying Saint Michael's
+candles to a chapel. Her taunts concern judgment, courage, and status only;
+they never target stature or identity. She explicitly claims that her candle
+vow licenses her to demand a private shortcut and pridefully refuses the longer
+public way. The competent steward identifies fresh signs, weathered private
+toll cuts, and the genuinely public lower path, and asks that his terrain
+judgment be heard before anyone enters the private shelf. The party may use
+Will to endure the taunt and verify the crossing under cover, answer with
+courtesy, prove caution from ordinary marks, lend the steward authority to
+execute his route plan, or rebuke the actual misuse of the religious vow.
+
+Each active route observes a light forester or road warden holding the opposite
+side of the washed gap with a prepared bow, while visibly sword-and-spear-only
+mailed retainers cannot answer by melee; the public lower path avoids that
+private shelf. The four straight arrows are household-store equipment that the
+competent steward personally planted by hand in soft turf as inert sight-line
+and range markers before the player arrived. They were never loosed, imply no
+available household archer, and do not belong to the far-shelf warden. Each
+solution recovers them through its own causality: the steward identifies or
+offers them, Insight finds them as evidence, Command organizes their
+collection, Faith receives them after the rebuke, or the thief pockets them
+before absconding. No arrow is loosed during the scene. Thus every successful
+route grants four real `arrow` items alongside the portable bow-lane
+information, while the ignore route grants neither.
+
+For the evil route, visible old toll cuts support a plausible lie while the
+far-shelf forester remains beyond immediate hearing. The player accuses only
+that distant forester of privately collecting forty-eight groschen for
+immediate passage. The steward cautions that old cuts declare no present toll,
+but cannot speak for the absent forester's private demand. After pocketing the
+household arrows, the player takes the entrusted purse and absconds. The
+forester later denies any toll or private passage, exposing the lie; the
+steward then leads the unconfined, unharmed household by the public path. The
+theft lowers Honesty without publicly exemplifying it and causes no physical
+injury or captivity. The encounter is travel-only, goal-neutral, entirely
+mortal, and requires no runtime catalog special case.
+
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,

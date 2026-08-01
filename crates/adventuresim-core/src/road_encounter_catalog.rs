@@ -1633,10 +1633,7 @@ mod tests {
                 Effect::Information { information_id }
                     if information_id == "melee_only_opposition_cannot_answer_prepared_bow_lane"
             )));
-            assert_eq!(
-                route.quest_reward_tags,
-                ["prepare_bows_against_melee_only_opposition"]
-            );
+            assert!(route.quest_reward_tags == ["prepare_bows_against_melee_only_opposition"]);
             assert!(route.result.contains("prepared bow"));
             assert!(route.result.contains("cannot answer across the gap"));
             assert!(route.result.contains("yield"));
@@ -1700,6 +1697,66 @@ mod tests {
         ));
         assert!(ignore.response.is_empty() && ignore.effects.is_empty());
         assert!(ignore.outcome_tags.is_empty() && ignore.personality.is_empty());
+    }
+
+    #[test]
+    fn damsel_and_steward_routes_reward_grounded_counsel_without_identity_abuse() {
+        let definition = encounter("insulting_damsel_and_dwarf_v1").unwrap();
+        let choice = |id| {
+            definition
+                .choices
+                .iter()
+                .find(|choice| choice.id == id)
+                .unwrap()
+        };
+        let active = definition
+            .choices
+            .iter()
+            .filter(|choice| choice.id != "ignore")
+            .collect::<Vec<_>>();
+        for route in &active {
+            assert!(route.effects.iter().any(|effect| matches!(
+                effect,
+                Effect::Information { information_id }
+                    if information_id == "melee_only_opposition_cannot_answer_prepared_bow_lane"
+            )));
+            assert!(route.effects.iter().any(|effect| matches!(
+                effect,
+                Effect::GrantItem { item_id, quantity: 4 } if item_id == "arrow"
+            )));
+            assert!(route.quest_reward_tags == ["prepare_bows_against_melee_only_opposition"]);
+            assert!(route.result.contains("steward") && route.result.contains("planted by hand"));
+        }
+        assert!(
+            !serde_json::to_string(definition)
+                .unwrap()
+                .contains("household archers")
+        );
+
+        assert!(matches!(
+            choice("endure_and_verify").checks[0],
+            Check::Skill {
+                skill: SkillId::Will,
+                difficulty_milli: 1200
+            }
+        ));
+        let command = choice("lend_steward_authority");
+        assert!(
+            command
+                .result
+                .contains("beneath the steward's own terrain plan")
+        );
+        let theft = choice("invent_forester_toll_and_keep_purse");
+        assert!(matches!(
+            theft.effects[0],
+            Effect::Currency { amount: 48, .. }
+        ));
+        assert!(theft.personality.iter().all(|change| change.delta < 0));
+        assert_eq!(exemplified_virtue(&theft.personality), None);
+
+        let ignore = choice("ignore");
+        assert!(ignore.transition.is_none());
+        assert!(ignore.effects.is_empty() && ignore.personality.is_empty());
     }
 
     #[test]
