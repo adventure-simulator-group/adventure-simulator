@@ -155,8 +155,6 @@ pub(super) async fn camp(
         .active_contract_id
         .as_deref()
         .is_some_and(|id| id.starts_with(&direct_demo_contract_prefix));
-    let direct_demo_challenge_prefix =
-        format!("challenge:ordered-sigils:demo:{}:", character.id);
     let mut challenges = Vec::new();
     for attempt in 0..4 {
         match state
@@ -177,7 +175,7 @@ pub(super) async fn camp(
         if !expects_direct_demo
             || challenges
                 .iter()
-                .any(|challenge| challenge.id.starts_with(&direct_demo_challenge_prefix))
+                .any(|challenge| is_direct_demo_challenge_id(&challenge.id, character.id))
             || attempt == 3
         {
             break;
@@ -426,13 +424,12 @@ fn direct_demo_challenge_redirect(
     challenges: &[BackendChallenge],
     character_id: u64,
 ) -> Option<String> {
-    let expected_prefix = format!("challenge:ordered-sigils:demo:{character_id}:");
     let mut playable = challenges.iter().filter(|challenge| {
         challenge.owner_character_id == character_id
             && challenge.active
             && challenge.open
             && !challenge.solved
-            && challenge.id.starts_with(&expected_prefix)
+            && is_direct_demo_challenge_id(&challenge.id, character_id)
     });
     let challenge = playable.next()?;
     playable.next().is_none().then(|| {
@@ -441,6 +438,11 @@ fn direct_demo_challenge_redirect(
             challenge.case_id, challenge.id
         )
     })
+}
+
+fn is_direct_demo_challenge_id(challenge_id: &str, character_id: u64) -> bool {
+    challenge_id.starts_with("challenge:")
+        && challenge_id.contains(&format!(":demo:{character_id}:"))
 }
 
 pub(super) fn camp_continue_block_reason(
@@ -498,6 +500,14 @@ mod direct_demo_redirect_tests {
 
         let another = challenge("challenge:ordered-sigils:demo:7:1", true, true, false);
         assert_eq!(direct_demo_challenge_redirect(&[demo, another], 7), None);
+
+        let witnesses = challenge("challenge:truthful-witnesses:demo:7:2", true, true, false);
+        assert_eq!(
+            direct_demo_challenge_redirect(&[witnesses], 7).as_deref(),
+            Some(
+                "/quests/case:errantry-puzzle:demo:7:0/challenges/challenge:truthful-witnesses:demo:7:2"
+            )
+        );
     }
 }
 

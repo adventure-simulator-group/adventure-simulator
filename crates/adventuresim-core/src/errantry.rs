@@ -6,6 +6,9 @@
 
 use serde::{Deserialize, Serialize};
 
+mod puzzles;
+pub use puzzles::*;
+
 pub const ORDERED_SIGIL_RULES_VERSION: u16 = 2;
 pub const ORDERED_SIGIL_COUNT: usize = 5;
 pub const MAX_MINIMIZATION_SUBSETS: usize = 100_000;
@@ -573,6 +576,20 @@ pub enum FeySpeechPart {
 pub const FEY_PRESENTER_NAME: &str = "The Lady Beneath the Thorn";
 pub const FEY_PRESENTER_TITLE: &str = "Now Hear the Lady Crowned with Briar Thorn";
 
+impl FeyPresenterCatalogId {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::LadyBeneathThornV1 => FEY_PRESENTER_NAME,
+        }
+    }
+
+    pub const fn slug(self) -> &'static str {
+        match self {
+            Self::LadyBeneathThornV1 => "lady-beneath-thorn-v1",
+        }
+    }
+}
+
 /// Closed server-owned speech selected by typed catalog identity. No persisted
 /// prose can become a supernatural utterance.
 pub fn fey_speech(catalog: FeyPresenterCatalogId, part: FeySpeechPart) -> &'static [&'static str] {
@@ -593,6 +610,55 @@ pub fn fey_speech(catalog: FeyPresenterCatalogId, part: FeySpeechPart) -> &'stat
             "Thy wit hath won the passage through my wood.",
             "Go forth with honor; none shall bar thy road.",
         ],
+    }
+}
+
+/// Puzzle-specific closed speech for the same supernatural presenter. Formal
+/// observations remain in the puzzle projection; this catalog can change the
+/// asking entity without changing puzzle truth.
+pub fn fey_puzzle_speech(
+    catalog: FeyPresenterCatalogId,
+    kind: PuzzleKind,
+    part: FeySpeechPart,
+) -> &'static [&'static str] {
+    match kind {
+        PuzzleKind::OrderedSigils => fey_speech(catalog, part),
+        PuzzleKind::TruthfulWitnesses => match (catalog, part) {
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Introduction) => &[
+                "Three travelers wait beneath my briar.",
+                "One tongue speaks false; the other two speak true.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Instruction) => &[
+                "Judge not the tongue, but choose the path made safe.",
+                "Mark each sworn word, then name the road thou'lt take.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Wrong) => &[
+                "Thy chosen road would lead thee far astray.",
+                "Weigh every oath, and choose thy path anew.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Correct) => &[
+                "Thy judgment parts the falsehood from the true.",
+                "The guarded road lies open to thy tread.",
+            ],
+        },
+        PuzzleKind::RuneTransformation => match (catalog, part) {
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Introduction) => &[
+                "The runes pass changed beneath my silver hand.",
+                "Learn thou the law their altered faces keep.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Instruction) => &[
+                "Mark what went in, and what returned anew.",
+                "Then name the sign my final gate shall yield.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Wrong) => &[
+                "The hidden rule denies thy chosen sign.",
+                "Review each change, and try the gate anew.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Correct) => &[
+                "Thou hast discerned the law beneath each change.",
+                "My woodland path now opens at thy word.",
+            ],
+        },
     }
 }
 
@@ -1179,6 +1245,21 @@ mod tests {
             all.iter()
                 .all(|line| line.ends_with('.') && !line.contains('{'))
         );
+        for kind in PuzzleKind::ALL {
+            let lines = [
+                FeySpeechPart::Introduction,
+                FeySpeechPart::Instruction,
+                FeySpeechPart::Wrong,
+                FeySpeechPart::Correct,
+            ]
+            .into_iter()
+            .flat_map(|part| fey_puzzle_speech(catalog, kind, part))
+            .collect::<Vec<_>>();
+            assert_eq!(lines.len(), 8);
+            assert!(lines.iter().all(|line| {
+                line.ends_with('.') && !line.contains('{') && !line.contains("{}")
+            }));
+        }
 
         let mut clue_lines = Vec::new();
         for sigil in Sigil::ALL {

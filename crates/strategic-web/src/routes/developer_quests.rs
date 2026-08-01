@@ -18,7 +18,7 @@ use adventuresim_core::{
 };
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -398,7 +398,16 @@ async fn load_outbreak_demo(State(state): State<AppState>, session: Session) -> 
     }
 }
 
-async fn load_puzzle_demo(State(state): State<AppState>, session: Session) -> Response {
+#[derive(Deserialize)]
+struct PuzzleDemoQuery {
+    kind: String,
+}
+
+async fn load_puzzle_demo(
+    State(state): State<AppState>,
+    session: Session,
+    Query(query): Query<PuzzleDemoQuery>,
+) -> Response {
     let Some(character_id) = session.character_id_u64() else {
         return (
             StatusCode::UNAUTHORIZED,
@@ -424,13 +433,21 @@ async fn load_puzzle_demo(State(state): State<AppState>, session: Session) -> Re
         )
             .into_response();
     };
+    let Some(puzzle_kind) = adventuresim_core::errantry::PuzzleKind::from_slug(&query.kind) else {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"message":"Unknown puzzle demo kind"})),
+        )
+            .into_response();
+    };
+    let reducer_kind = puzzle_kind_argument(puzzle_kind);
     match state
         .db
-        .call("load_puzzle_demo", &[json!(character_id)])
+        .call("load_puzzle_demo", &[json!(character_id), reducer_kind])
         .await
     {
         Ok(()) => {
-            let demo_prefix = format!("challenge:ordered-sigils:demo:{character_id}:");
+            let demo_prefix = format!("challenge:{}:demo:{character_id}:", puzzle_kind.slug());
             let sql = format!(
                 "SELECT * FROM backend_challenges WHERE owner_character_id = {character_id}"
             );
@@ -475,8 +492,24 @@ async fn load_puzzle_demo(State(state): State<AppState>, session: Session) -> Re
     }
 }
 
+fn puzzle_kind_argument(kind: adventuresim_core::errantry::PuzzleKind) -> Value {
+    match kind {
+        adventuresim_core::errantry::PuzzleKind::OrderedSigils => {
+            json!({ "orderedSigils": {} })
+        }
+        adventuresim_core::errantry::PuzzleKind::TruthfulWitnesses => {
+            json!({ "truthfulWitnesses": {} })
+        }
+        adventuresim_core::errantry::PuzzleKind::RuneTransformation => {
+            json!({ "runeTransformation": {} })
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn endpoint_contract_does_not_accept_a_settlement_id() {
         let source = include_str!("developer_quests.rs");
@@ -530,7 +563,8 @@ mod tests {
     fn puzzle_demo_redirects_directly_to_the_playable_challenge() {
         let source = include_str!("developer_quests.rs");
         assert!(source.contains("/api/developer/puzzle-demo"));
-        assert!(source.contains("\"load_puzzle_demo\", &[json!(character_id)]"));
+        assert!(source.contains("\"load_puzzle_demo\""));
+        assert!(source.contains("json!(character_id), reducer_kind"));
         assert!(source.contains("query::<BackendChallenge>"));
         assert!(source.contains("row.id.starts_with(&demo_prefix)"));
         assert!(source.contains("challenge.case_id, challenge.id"));
@@ -542,5 +576,23 @@ mod tests {
             .next()
             .unwrap();
         assert!(!loader.contains("rumor"));
+    }
+
+    #[test]
+    fn puzzle_demo_kinds_use_spacetime_sum_encoding() {
+        use adventuresim_core::errantry::PuzzleKind;
+
+        assert_eq!(
+            puzzle_kind_argument(PuzzleKind::OrderedSigils),
+            json!({ "orderedSigils": {} })
+        );
+        assert_eq!(
+            puzzle_kind_argument(PuzzleKind::TruthfulWitnesses),
+            json!({ "truthfulWitnesses": {} })
+        );
+        assert_eq!(
+            puzzle_kind_argument(PuzzleKind::RuneTransformation),
+            json!({ "runeTransformation": {} })
+        );
     }
 }

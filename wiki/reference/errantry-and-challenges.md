@@ -12,6 +12,23 @@ utterance from that closed catalog. No arbitrary persisted supernatural prose
 reaches the client. Future speakers or physical presenters can be new typed
 catalogs without changing puzzle truth.
 
+## Puzzle authority and projections
+
+Puzzle challenges use a tagged, presenter-independent envelope with three
+variants: ordered sigils, truthful witnesses, and rune transformation. Private
+authority contains the versioned seed and canonical truth. The observer-safe
+projection contains only formal observations and the legal answer domain. A
+typed submission must match the projected engine before the authoritative
+reducer will check it. The shared revision and immutable attempt receipt make
+wrong answers retryable and exact lost-response retries idempotent for every
+engine.
+
+The presenter catalog is a separate boundary. The Lady Beneath the Thorn has
+closed introduction, instruction, failure, and success verse for every engine.
+Formal testimony and transformation examples remain data owned by the puzzle
+engine; changing the presenter cannot alter them. All of the Lady's spoken
+lines use authored modern-spelling Shakespearean English in iambic pentameter.
+
 ## Ordered-sigil puzzle
 
 The first challenge engine orders five distinct sigils. Rules version 2:
@@ -35,6 +52,34 @@ A correct answer closes the challenge and emits the source-idempotent
 The observer projection contains only formal clues, allowed sigils, a typed
 presenter catalog ID, revision, and safe attempt feedback. It never contains
 the private seed or canonical solution.
+
+## Truthful-witness puzzle
+
+Three badge-named witnesses each make one statement compiled from formal
+predicates about the safe path or another witness's truthfulness. Exactly one
+witness lies. Generation chooses private canonical safe-path and liar values,
+derives only statements whose truth values agree with that authority, and then
+exhaustively evaluates all nine legal `(safe path, liar)` assignments. A puzzle
+is accepted only when every remaining assignment proves the same safe path.
+
+Every statement is necessary: removing any one must cease to prove a unique
+safe path. The player answers the meaningful conclusion—which road is safe—
+rather than being required to identify a hidden liar when that identity is not
+needed. The public projection omits both the canonical path and liar.
+
+## Rune-transformation puzzle
+
+The rune engine chooses one of five typed operations over the same bounded
+five-sigil domain: advance or retreat by one or two places in the canonical
+cycle, or mirror the cycle. It shows one or two input/output examples and asks
+which sigil one new input must produce.
+
+Generation exhaustively compares every operation consistent with the examples.
+An instance is accepted only when all remaining operations produce the same
+answer to the question. If two examples are retained, removing either must
+make that conclusion ambiguous. The projection contains examples, query, and
+answer choices but not the operation or result. Icons may later decorate the
+sigils, but mechanically relevant names are always present as text.
 
 ## Supernatural speech and chat
 
@@ -112,7 +157,7 @@ alter it. Existing missions and hostile-group authority are never mutated.
 ## Direct development demo
 
 Run `just puzzle-demo`, select a character in a settlement, enable developer
-mode, and choose **Puzzle demo**. The development-only reducer creates or
+mode, and choose **Sigil puzzle**, **Witness puzzle**, or **Rune puzzle**. The development-only reducer creates or
 reuses a deterministic Order-sourced case, accepted contract, finale site and
 hostile group, active journey, persisted camp, and observer-bound challenge.
 The isolated development bootstrap seeds an authored Order chapter and its

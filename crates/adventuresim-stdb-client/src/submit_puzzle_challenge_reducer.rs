@@ -6,72 +6,72 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct SubmitOrderedSigilChallengeArgs {
+pub(super) struct SubmitPuzzleChallengeArgs {
     pub character_id: u64,
     pub case_id: String,
     pub challenge_id: String,
     pub expected_revision: u32,
-    pub ordering_json: String,
+    pub submission_json: String,
 }
 
-impl From<SubmitOrderedSigilChallengeArgs> for super::Reducer {
-    fn from(args: SubmitOrderedSigilChallengeArgs) -> Self {
-        Self::SubmitOrderedSigilChallenge {
+impl From<SubmitPuzzleChallengeArgs> for super::Reducer {
+    fn from(args: SubmitPuzzleChallengeArgs) -> Self {
+        Self::SubmitPuzzleChallenge {
             character_id: args.character_id,
             case_id: args.case_id,
             challenge_id: args.challenge_id,
             expected_revision: args.expected_revision,
-            ordering_json: args.ordering_json,
+            submission_json: args.submission_json,
         }
     }
 }
 
-impl __sdk::InModule for SubmitOrderedSigilChallengeArgs {
+impl __sdk::InModule for SubmitPuzzleChallengeArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `submit_ordered_sigil_challenge`.
+/// Extension trait for access to the reducer `submit_puzzle_challenge`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait submit_ordered_sigil_challenge {
-    /// Request that the remote module invoke the reducer `submit_ordered_sigil_challenge` to run as soon as possible.
+pub trait submit_puzzle_challenge {
+    /// Request that the remote module invoke the reducer `submit_puzzle_challenge` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`submit_ordered_sigil_challenge:submit_ordered_sigil_challenge_then`] to run a callback after the reducer completes.
-    fn submit_ordered_sigil_challenge(
+    /// /// Use [`submit_puzzle_challenge:submit_puzzle_challenge_then`] to run a callback after the reducer completes.
+    fn submit_puzzle_challenge(
         &self,
         character_id: u64,
         case_id: String,
         challenge_id: String,
         expected_revision: u32,
-        ordering_json: String,
+        submission_json: String,
     ) -> __sdk::Result<()> {
-        self.submit_ordered_sigil_challenge_then(
+        self.submit_puzzle_challenge_then(
             character_id,
             case_id,
             challenge_id,
             expected_revision,
-            ordering_json,
+            submission_json,
             |_, _| {},
         )
     }
 
-    /// Request that the remote module invoke the reducer `submit_ordered_sigil_challenge` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `submit_puzzle_challenge` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn submit_ordered_sigil_challenge_then(
+    fn submit_puzzle_challenge_then(
         &self,
         character_id: u64,
         case_id: String,
         challenge_id: String,
         expected_revision: u32,
-        ordering_json: String,
+        submission_json: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -81,14 +81,14 @@ pub trait submit_ordered_sigil_challenge {
     ) -> __sdk::Result<()>;
 }
 
-impl submit_ordered_sigil_challenge for super::RemoteReducers {
-    fn submit_ordered_sigil_challenge_then(
+impl submit_puzzle_challenge for super::RemoteReducers {
+    fn submit_puzzle_challenge_then(
         &self,
         character_id: u64,
         case_id: String,
         challenge_id: String,
         expected_revision: u32,
-        ordering_json: String,
+        submission_json: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -97,12 +97,12 @@ impl submit_ordered_sigil_challenge for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            SubmitOrderedSigilChallengeArgs {
+            SubmitPuzzleChallengeArgs {
                 character_id,
                 case_id,
                 challenge_id,
                 expected_revision,
-                ordering_json,
+                submission_json,
             },
             callback,
         )

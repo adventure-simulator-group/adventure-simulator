@@ -15,6 +15,23 @@ pub enum ChallengePresenterCatalogId {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum ErrantryPuzzleKind {
+    OrderedSigils,
+    TruthfulWitnesses,
+    RuneTransformation,
+}
+
+impl ErrantryPuzzleKind {
+    fn core(self) -> adventuresim_core::errantry::PuzzleKind {
+        match self {
+            Self::OrderedSigils => adventuresim_core::errantry::PuzzleKind::OrderedSigils,
+            Self::TruthfulWitnesses => adventuresim_core::errantry::PuzzleKind::TruthfulWitnesses,
+            Self::RuneTransformation => adventuresim_core::errantry::PuzzleKind::RuneTransformation,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum ErrantryFinaleDefenseKind {
     UnnaturalProwess,
     Reinforcements,
@@ -225,7 +242,7 @@ pub struct OrderErrantryAcceptanceReceipt {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ErrantryLaunch {
     NormalTravel,
-    DirectDemoCamp,
+    DirectDemoCamp(ErrantryPuzzleKind),
 }
 
 struct MaterializedErrantry {
@@ -272,7 +289,7 @@ pub struct ChallengeAttemptReceipt {
     pub party_id: String,
     pub character_id: u64,
     pub submitted_revision: u32,
-    pub ordering_json: String,
+    pub submission_json: String,
     pub correct: bool,
     pub resulting_revision: u32,
     pub attempted_at_minute: u64,
@@ -309,7 +326,7 @@ pub fn backend_challenges(ctx: &ViewContext) -> Vec<BackendChallenge> {
         .filter(0u8)
         .filter_map(|challenge| {
             let party = ctx.db.party_authority().id().find(&challenge.party_id)?;
-            let puzzle: adventuresim_core::errantry::OrderedSigilPuzzle =
+            let puzzle: adventuresim_core::errantry::PuzzleAuthority =
                 serde_json::from_str(&challenge.puzzle_json).ok()?;
             puzzle.validate().ok()?;
             let projection = serde_json::to_string(&puzzle.projection()).ok()?;
@@ -786,30 +803,19 @@ fn core_countermeasure_kind(
     }
 }
 
-fn parse_ordered_sigils(
-    ordering_json: &str,
-) -> Result<[adventuresim_core::errantry::Sigil; adventuresim_core::errantry::ORDERED_SIGIL_COUNT], String>
-{
-    let ordering: Vec<adventuresim_core::errantry::Sigil> =
-        serde_json::from_str(ordering_json).map_err(|_| "Malformed sigil ordering")?;
-    ordering
-        .try_into()
-        .map_err(|_| "Submit exactly five sigils".into())
-}
-
 fn validate_challenge_retry(
     existing: &ChallengeAttemptReceipt,
     case_id: &str,
     challenge_id: &str,
     party_id: &str,
     character_id: u64,
-    normalized_ordering: &str,
+    normalized_submission: &str,
 ) -> Result<(), String> {
     if existing.case_id == case_id
         && existing.challenge_id == challenge_id
         && existing.party_id == party_id
         && existing.character_id == character_id
-        && existing.ordering_json == normalized_ordering
+        && existing.submission_json == normalized_submission
     {
         Ok(())
     } else {
@@ -817,18 +823,18 @@ fn validate_challenge_retry(
     }
 }
 
-/// Submit one complete ordering. Every authority coordinate is derived again:
+/// Submit one complete puzzle answer. Every authority coordinate is derived again:
 /// selected character, party leadership, active accepted contract, case,
 /// challenge, exact journey camp coordinates, pending encounter state, open
 /// state, and expected revision.
 #[reducer]
-pub fn submit_ordered_sigil_challenge(
+pub fn submit_puzzle_challenge(
     ctx: &ReducerContext,
     character_id: u64,
     case_id: String,
     challenge_id: String,
     expected_revision: u32,
-    ordering_json: String,
+    submission_json: String,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
     let character = crate::character::require_living_character(ctx, character_id)?;
@@ -851,9 +857,10 @@ pub fn submit_ordered_sigil_challenge(
     if challenge.case_id != case_id || challenge.party_id != party_id {
         return Err("Challenge authority does not match this party and case".into());
     }
-    let ordering = parse_ordered_sigils(&ordering_json)?;
-    let normalized_ordering =
-        serde_json::to_string(&ordering).map_err(|_| "Could not encode sigil ordering")?;
+    let submission: adventuresim_core::errantry::PuzzleSubmission =
+        serde_json::from_str(&submission_json).map_err(|_| "Malformed puzzle answer")?;
+    let normalized_submission =
+        serde_json::to_string(&submission).map_err(|_| "Could not encode puzzle answer")?;
     let receipt_id = format!(
         "challenge-attempt:{}:{}:{}",
         challenge.id, party_id, expected_revision
@@ -869,7 +876,7 @@ pub fn submit_ordered_sigil_challenge(
             &challenge_id,
             &party_id,
             character_id,
-            &normalized_ordering,
+            &normalized_submission,
         );
     }
     let active_contract_id = party
@@ -945,7 +952,7 @@ pub fn submit_ordered_sigil_challenge(
     if challenge.revision != expected_revision {
         return Err("Challenge revision is stale".into());
     }
-    let puzzle: adventuresim_core::errantry::OrderedSigilPuzzle =
+    let puzzle: adventuresim_core::errantry::PuzzleAuthority =
         serde_json::from_str(&challenge.puzzle_json)
             .map_err(|_| "Challenge authority is invalid")?;
     let frame: adventuresim_core::errantry::ErrantryFrame =
@@ -968,21 +975,13 @@ pub fn submit_ordered_sigil_challenge(
     puzzle
         .validate()
         .map_err(|_| "Challenge authority failed deterministic replay")?;
-    let replay = adventuresim_core::errantry::OrderedSigilPuzzle::generate_versioned(
-        puzzle.rules_version,
-        puzzle.seed,
-    )
-    .map_err(str::to_string)?;
+    let replay = puzzle.replay().map_err(str::to_string)?;
     if replay != puzzle {
         return Err("Challenge deterministic replay does not match authority".into());
     }
-    let submission = adventuresim_core::errantry::OrderedSigilSubmission {
-        expected_revision,
-        ordering,
-    };
     let correct = puzzle
         .check(&submission)
-        .map_err(|_| "Sigil ordering must contain each sigil exactly once")?;
+        .map_err(|_| "Puzzle answer does not match this challenge")?;
     let now = crate::time::refresh_clock(ctx)?;
     let resulting_revision = expected_revision.saturating_add(1);
     ctx.db
@@ -994,7 +993,7 @@ pub fn submit_ordered_sigil_challenge(
             party_id: party_id.clone(),
             character_id,
             submitted_revision: expected_revision,
-            ordering_json: normalized_ordering,
+            submission_json: normalized_submission,
             correct,
             resulting_revision,
             attempted_at_minute: now,
@@ -1222,9 +1221,10 @@ fn active_puzzle_demo(
     ctx: &ReducerContext,
     party_id: &str,
     character_id: u64,
+    puzzle_kind: ErrantryPuzzleKind,
 ) -> Option<(ChallengeAuthority, Contract)> {
     let party_key = party_id.to_string();
-    let demo_prefix = format!("challenge:ordered-sigils:demo:{character_id}:");
+    let demo_prefix = format!("challenge:{}:demo:{character_id}:", puzzle_kind.core().slug());
     let mut challenges = ctx
         .db
         .challenge_authority()
@@ -1258,7 +1258,7 @@ fn puzzle_demo_suffix(character_id: u64, ordinal: u64) -> String {
 
 fn errantry_suffix(character_id: u64, ordinal: u64, launch: ErrantryLaunch) -> String {
     match launch {
-        ErrantryLaunch::DirectDemoCamp => puzzle_demo_suffix(character_id, ordinal),
+        ErrantryLaunch::DirectDemoCamp(_) => puzzle_demo_suffix(character_id, ordinal),
         ErrantryLaunch::NormalTravel => format!("order:{character_id}:{ordinal}"),
     }
 }
@@ -1303,12 +1303,22 @@ fn order_errantry_issuer(
 
 /// Creates or reuses an accepted, immediately playable errantry quest.
 #[reducer]
-pub fn load_puzzle_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+pub fn load_puzzle_demo(
+    ctx: &ReducerContext,
+    character_id: u64,
+    puzzle_kind: ErrantryPuzzleKind,
+) -> Result<(), String> {
     require_strategic_character_authority(ctx, character_id)?;
     if !puzzle_demo_enabled() {
         return Err("Puzzle demo loading is disabled in this module build".into());
     }
-    materialize_order_errantry(ctx, character_id, None, ErrantryLaunch::DirectDemoCamp).map(|_| ())
+    materialize_order_errantry(
+        ctx,
+        character_id,
+        None,
+        ErrantryLaunch::DirectDemoCamp(puzzle_kind),
+    )
+    .map(|_| ())
 }
 
 /// Narrow production issuance seam: the client identifies only its live
@@ -1411,8 +1421,9 @@ fn materialize_order_errantry(
     if party.leader_id != character_id {
         return Err("Only the party leader can accept or load this errantry".into());
     }
-    if launch == ErrantryLaunch::DirectDemoCamp
-        && let Some((challenge, contract)) = active_puzzle_demo(ctx, &party_id, character_id)
+    if let ErrantryLaunch::DirectDemoCamp(puzzle_kind) = launch
+        && let Some((challenge, contract)) =
+            active_puzzle_demo(ctx, &party_id, character_id, puzzle_kind)
     {
         if let Some(active) = party.active_contract_id.as_deref()
             && active != contract.id
@@ -1452,21 +1463,34 @@ fn materialize_order_errantry(
         ));
     }
     let namespace = match launch {
-        ErrantryLaunch::DirectDemoCamp => "demo",
+        ErrantryLaunch::DirectDemoCamp(_) => "demo",
         ErrantryLaunch::NormalTravel => "order",
     };
-    let demo_prefix = format!("challenge:ordered-sigils:{namespace}:{character_id}:");
+    let puzzle_kind = match launch {
+        ErrantryLaunch::NormalTravel => adventuresim_core::errantry::PuzzleKind::OrderedSigils,
+        ErrantryLaunch::DirectDemoCamp(kind) => kind.core(),
+    };
+    let challenge_prefix = format!(
+        "challenge:{}:{namespace}:{character_id}:",
+        puzzle_kind.slug()
+    );
     let ordinal = ctx
         .db
         .challenge_authority()
         .party_id()
         .filter(&party_id)
-        .filter(|challenge| challenge.id.starts_with(&demo_prefix))
+        .filter(|challenge| match launch {
+            ErrantryLaunch::NormalTravel => challenge.id.starts_with(&challenge_prefix),
+            ErrantryLaunch::DirectDemoCamp(_) => {
+                challenge.id.starts_with("challenge:")
+                    && challenge.id.contains(&format!(":demo:{character_id}:"))
+            }
+        })
         .count() as u64;
     let suffix = errantry_suffix(character_id, ordinal, launch);
     let case_id = format!("case:errantry-puzzle:{suffix}");
     let contract_id = format!("contract:errantry-puzzle:{suffix}");
-    let challenge_id = format!("challenge:ordered-sigils:{suffix}");
+    let challenge_id = format!("challenge:{}:{suffix}", puzzle_kind.slug());
     let courier_challenge_id = format!("challenge:wounded-order-courier:{suffix}");
     let case_site_id = format!("case-site:errantry-finale:{suffix}");
     let hostile_group_id = format!("hostile-group:errantry-finale:{suffix}");
@@ -1499,12 +1523,32 @@ fn materialize_order_errantry(
         resolution_status: CaseResolutionStatus::Open,
         resolved_by_party_id: None,
     });
+    let (title, description, frame_name, charge) = match puzzle_kind {
+        adventuresim_core::errantry::PuzzleKind::OrderedSigils => (
+            "The Trial of Five Signs",
+            "A knightly errand leads directly to a trial of ordered signs.",
+            "five-signs",
+            "Keep faith upon the road and answer the trial with discernment.",
+        ),
+        adventuresim_core::errantry::PuzzleKind::TruthfulWitnesses => (
+            "The Trial of Three Witnesses",
+            "A knightly errand leads directly to a trial of testimony and judgment.",
+            "three-witnesses",
+            "Hear each witness upon the road and judge the one safe path.",
+        ),
+        adventuresim_core::errantry::PuzzleKind::RuneTransformation => (
+            "The Trial of the Changing Runes",
+            "A knightly errand leads directly to a trial of a hidden rune law.",
+            "changing-runes",
+            "Study what enters and emerges, then name the rune the law must yield.",
+        ),
+    };
     ctx.db.contract_authority().insert(Contract {
         id: contract_id.clone(),
         gateway_bucket: 0,
         case_id: case_id.clone(),
-        title: "The Trial of Five Signs".into(),
-        description: "A knightly errand leads directly to a trial of discernment.".into(),
+        title: title.into(),
+        description: description.into(),
         difficulty: 1,
         gold_reward: 0,
         xp_reward: 0,
@@ -1519,7 +1563,7 @@ fn materialize_order_errantry(
         paid_at_minute: None,
     });
     let seed = 0x4b4e_4947_4854_4c59 ^ character_id ^ ordinal.rotate_left(23);
-    let puzzle = adventuresim_core::errantry::OrderedSigilPuzzle::generate(seed);
+    let puzzle = adventuresim_core::errantry::PuzzleAuthority::generate(puzzle_kind, seed);
     let now = crate::time::refresh_clock(ctx)?;
     let site = CaseSiteAuthority {
         id_key: case_site_id.clone(),
@@ -1544,13 +1588,13 @@ fn materialize_order_errantry(
         6,
     )?;
     let frame = adventuresim_core::errantry::ErrantryFrame {
-        id: format!("errantry:five-signs:{suffix}"),
+        id: format!("errantry:{frame_name}:{suffix}"),
         purpose: adventuresim_core::errantry::ErrantryPurpose::ProveWorth,
-        charge: "Keep faith upon the road and answer the trial with discernment.".into(),
+        charge: charge.into(),
         trials: vec![
             adventuresim_core::errantry::TrialBinding {
                 order: 0,
-                trial_id: format!("trial:five-signs:{suffix}"),
+                trial_id: format!("trial:{frame_name}:{suffix}"),
                 challenge_id: Some(challenge_id.clone()),
                 site_id: "journey-camp:unbound".into(),
                 kind: adventuresim_core::errantry::TrialKind::Puzzle,
@@ -1632,7 +1676,7 @@ fn materialize_order_errantry(
         name: site.name.clone(),
     });
     party.active_contract_id = Some(contract_id.clone());
-    if launch == ErrantryLaunch::DirectDemoCamp {
+    if matches!(launch, ErrantryLaunch::DirectDemoCamp(_)) {
         let camp_movement_minute = 60;
         let camp_elapsed_minute = 60;
         ctx.db.party_journey_authority().insert(PartyJourney {
@@ -1725,7 +1769,7 @@ mod challenge_source_boundary_tests {
             party_id: "party:test".into(),
             character_id: 7,
             submitted_revision: 0,
-            ordering_json: "[\"Crown\",\"Hart\",\"Moon\",\"Rose\",\"Sword\"]".into(),
+            submission_json: r#"{"kind":"ordered_sigils","answer":{"ordering":["Crown","Hart","Moon","Rose","Sword"]}}"#.into(),
             correct: true,
             resulting_revision: 1,
             attempted_at_minute: 42,
@@ -1736,7 +1780,7 @@ mod challenge_source_boundary_tests {
             "challenge:test",
             "party:test",
             7,
-            "[\"Crown\",\"Hart\",\"Moon\",\"Rose\",\"Sword\"]",
+            r#"{"kind":"ordered_sigils","answer":{"ordering":["Crown","Hart","Moon","Rose","Sword"]}}"#,
         )
         .unwrap();
         assert!(
@@ -1746,7 +1790,7 @@ mod challenge_source_boundary_tests {
                 "challenge:test",
                 "party:test",
                 7,
-                "[\"Sword\",\"Hart\",\"Moon\",\"Rose\",\"Crown\"]",
+                r#"{"kind":"ordered_sigils","answer":{"ordering":["Sword","Hart","Moon","Rose","Crown"]}}"#,
             )
             .unwrap_err()
             .contains("Conflicting retry")
@@ -1781,10 +1825,7 @@ mod challenge_source_boundary_tests {
             .split("fn puzzle_demo_suffix")
             .next()
             .unwrap();
-        assert!(
-            reuse_lookup
-                .contains("challenge:ordered-sigils:demo:{character_id}:")
-        );
+        assert!(reuse_lookup.contains("puzzle_kind.core().slug()"));
         assert!(loader.contains("PartyJourney"));
         assert!(loader.contains("camp_destination = Some(destination)"));
         assert!(loader.contains("ErrantryAuthority"));

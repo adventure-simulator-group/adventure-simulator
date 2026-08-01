@@ -199,7 +199,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
                     script src="/static/dialogue-client.js?v=contextual-social-topics-1-errantry-retry-1" defer {}
                     script src="/static/physical-evidence.js?v=deterministic-inspection-1" defer {}
-                    script src="/static/developer-quest-editor.js?v=typed-editor-1" defer {}
+                    script src="/static/developer-quest-editor.js?v=puzzle-kinds-1" defer {}
                     script src="/static/chat-resize.js?v=counterparty-portraits-1" defer {}
                     script src="/static/local-chat.js?v=local-chat-location-authority-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-4" defer {}
@@ -362,10 +362,22 @@ fn settlement_top_bar(
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
                     button type="button" class="btn btn-small developer-puzzle-demo-button"
-                        data-developer-puzzle-demo data-developer-only
+                        data-developer-puzzle-demo data-puzzle-kind="ordered-sigils" data-developer-only
                         aria-label="Load the ordered sigil puzzle demo"
                         title="Create an accepted errantry quest and open its puzzle immediately" {
-                        "Puzzle demo"
+                        "Sigil puzzle"
+                    }
+                    button type="button" class="btn btn-small developer-puzzle-demo-button"
+                        data-developer-puzzle-demo data-puzzle-kind="truthful-witnesses" data-developer-only
+                        aria-label="Load the truthful witnesses puzzle demo"
+                        title="Create an accepted errantry quest and open its puzzle immediately" {
+                        "Witness puzzle"
+                    }
+                    button type="button" class="btn btn-small developer-puzzle-demo-button"
+                        data-developer-puzzle-demo data-puzzle-kind="rune-transformation" data-developer-only
+                        aria-label="Load the rune transformation puzzle demo"
+                        title="Create an accepted errantry quest and open its puzzle immediately" {
+                        "Rune puzzle"
                     }
                     button type="button" class="btn btn-small developer-outbreak-demo-button"
                         data-developer-outbreak-demo data-developer-only
@@ -1082,7 +1094,7 @@ mod tests {
         assert!(markup.contains("aria-pressed=\"false\""));
         assert!(markup.contains("data-developer-outbreak-demo data-developer-only"));
         assert!(markup.contains("data-developer-autopsy-demo data-developer-only"));
-        assert!(markup.contains("data-developer-puzzle-demo data-developer-only"));
+        assert_eq!(markup.matches("data-developer-puzzle-demo").count(), 3);
         let layout_css = include_str!("../../static/css/layout.css");
         assert!(
             layout_css.contains(

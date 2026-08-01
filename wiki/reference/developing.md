@@ -4,9 +4,10 @@
 
 Start a disposable strategic-only stack with `just puzzle-demo`. Create or
 select an adventurer in a settlement, enable browser-local developer mode, and
-choose **Puzzle demo**. It creates or reuses a deterministic Order-sourced
-quest, active journey, persisted road camp, finale hostile, and ordered-sigil
-trial, then redirects immediately to the playable chat challenge. This skips
+choose **Sigil puzzle**, **Witness puzzle**, or **Rune puzzle**. It creates or
+reuses a deterministic Order-sourced quest, active journey, persisted road
+camp, finale hostile, and selected puzzle trial, then redirects immediately to
+the playable chat challenge. This skips
 ordinary dialogue acceptance and travel setup. The no-JavaScript form uses
 POST/redirect/GET and preserves safe wrong/correct feedback. Solving awards
 the Favor of the Thorn Lady and returns to camp; the optional trial never
