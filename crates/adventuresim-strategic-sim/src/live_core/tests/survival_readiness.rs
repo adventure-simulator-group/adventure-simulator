@@ -62,6 +62,10 @@ fn readiness_buys_shared_tent_and_personal_ammunition_through_ordinary_trade() {
     assert!(tent.contains("PARTY_TENT_ITEM_ID.to_owned()"));
     assert!(tent.contains("party tent purchase completed without party custody"));
     assert!(tent.contains("true,"), "tent purchase must use party scope");
+    assert!(tent.contains("public_general_storefront_exists"));
+    assert!(tent.contains("tent_provider_unavailable_bivouac"));
+    assert!(tent.contains("shelter=bivouac"));
+    assert!(tent.contains("return Ok(DepartureReadiness::Ready)"));
 
     let ammo = source
         .split("fn ensure_ranged_ammunition")
@@ -96,6 +100,41 @@ fn preparation_is_party_wide_and_rejects_overweight_upgrades() {
         .expect("upgrade policy");
     assert!(upgrades.contains("public_party_load_and_capacity"));
     assert!(upgrades.contains("MIN_DEPARTURE_ENCUMBRANCE_REMAINING_BPS"));
+    assert!(upgrades.contains("public_equipment_storefront_offer"));
+    assert!(upgrades.contains("finalize_storefront_trade_then"));
+    assert!(upgrades.contains("earned_shortfall"));
+    assert!(upgrades.contains("medical_reserve"));
+
+    let storefront = source
+        .split("fn public_equipment_storefront_offer")
+        .nth(1)
+        .and_then(|tail| tail.split("fn withdraw_stake_for_personal_purchase").next())
+        .expect("equipment storefront routing");
+    for route in [
+        "ItemKind::Weapon | ItemKind::Shield => (\"weapons\", \"forge\")",
+        "ItemKind::Armor => (\"armor\", \"armoury\")",
+        "ItemKind::Clothing => (\"clothing\", \"tailor\")",
+    ] {
+        assert!(storefront.contains(route), "missing storefront route {route}");
+    }
+}
+
+#[test]
+fn departure_checks_only_living_members_and_records_public_weather_boundary() {
+    let source = LIVE_CORE_SOURCE;
+    let living = source
+        .split("fn living_party_member_ids")
+        .nth(1)
+        .and_then(|tail| tail.split("fn item_definition").next())
+        .expect("living party projection");
+    assert!(living.contains("row.id == membership.character_id && row.alive"));
+
+    for helper in ["ensure_party_tent", "ensure_ranged_ammunition", "validate_party_departure_readiness"] {
+        let body = source.split(&format!("fn {helper}")).nth(1).expect(helper);
+        assert!(body.contains("living_party_member_ids"), "{helper} must exclude dead members");
+    }
+    assert!(source.contains("route_weather_projection=unavailable"));
+    assert!(source.contains("weather_gate=current_public_condition_only"));
 }
 
 #[test]
@@ -107,6 +146,9 @@ fn survival_report_schema_has_per_agent_aggregate_and_failure_context() {
         "tent_field_rest_failures",
         "ammunition_units_purchased",
         "ammunition_shortage_suppressions",
+        "tent_provider_unavailable_bivouac_departures",
+        "current_condition_readiness_suppressions",
+        "route_weather_projection_unavailable_departures",
         "survival_observations",
         "max_party_carried_load_grams",
         "max_party_carry_capacity_grams",
@@ -122,7 +164,10 @@ fn survival_report_schema_has_per_agent_aggregate_and_failure_context() {
         .nth(1)
         .expect("death telemetry");
     for field in [
+        "cause=",
         "source=",
+        "source_id=",
+        "strategic_minute=",
         "thermal=",
         "wetness_bps=",
         "ammo=",

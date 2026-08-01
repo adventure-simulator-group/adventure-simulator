@@ -594,64 +594,70 @@ impl LiveRunner {
                         equipment_utility(&profile, item).map(|utility| utility * *condition)
                     })
                     .fold(0.0, f32::max);
-                let cost = adventuresim_core::strategic_economy::merchant_buy_price(
-                    candidate.base_value.unwrap_or(1),
-                );
+                let (service_id, provider_id, quoted_cost) = self
+                    .public_equipment_storefront_offer(character_id, settlement, candidate)?;
+                let medical_reserve = self
+                    .observable_medical_reserve(character_id, settlement)
+                    .unwrap_or(0);
+                let personal_spendable = self
+                    .personal_gold(character_id)
+                    .saturating_sub(medical_reserve);
+                let earned_shortfall = quoted_cost.saturating_sub(personal_spendable);
                 let projected_remaining = public_encumbrance_remaining_bps(
                     party_load_kg + candidate.weight.max(0.0),
                     party_capacity_kg,
                 );
                 (utility > current
-                    && u64::from(cost) <= stake
+                    && earned_shortfall <= stake
                     && projected_remaining >= MIN_DEPARTURE_ENCUMBRANCE_REMAINING_BPS)
-                    .then_some((utility - current, cost, candidate.clone()))
+                    .then_some((
+                        utility - current,
+                        quoted_cost,
+                        earned_shortfall,
+                        medical_reserve,
+                        service_id,
+                        provider_id,
+                        candidate.clone(),
+                    ))
             })
             .collect::<Vec<_>>();
         candidates.sort_by(|left, right| {
             right
                 .0
                 .total_cmp(&left.0)
-                .then_with(|| left.2.id.cmp(&right.2.id))
+                .then_with(|| left.6.id.cmp(&right.6.id))
         });
-        let Some((improvement, cost, candidate)) = candidates.into_iter().next() else {
+        let Some((
+            improvement,
+            quoted_cost,
+            earned_shortfall,
+            medical_reserve,
+            service_id,
+            provider_id,
+            candidate,
+        )) = candidates.into_iter().next()
+        else {
             return Ok(());
         };
-        let mut treasury: Vec<_> = self
-            .connection
-            .db
-            .party_inventory_item()
-            .iter()
-            .filter(|row| row.party_id == party_id && is_currency_id(&row.item_id))
-            .collect();
-        treasury.sort_by_key(|row| (row.item_id.clone(), row.id));
-        if treasury
-            .iter()
-            .map(|row| u64::from(row.quantity))
-            .sum::<u64>()
-            < u64::from(cost)
-        {
+        if !self.withdraw_stake_for_personal_purchase(
+            character_id,
+            &party_id,
+            earned_shortfall,
+        )? {
             return Ok(());
         }
-        let mut remaining = cost;
-        for stack in treasury {
-            let quantity = remaining.min(stack.quantity);
-            let result = reducer_call!(self, "withdraw_earned_upgrade_coin", |cb| self
-                .connection
-                .reducers
-                .withdraw_party_inventory_item_then(character_id, stack.id, quantity, cb));
-            self.call(result)?;
-            remaining -= quantity;
-            if remaining == 0 {
-                break;
-            }
+        let purse_before_trade = self.personal_gold(character_id);
+        if purse_before_trade.saturating_sub(medical_reserve) < quoted_cost {
+            return Ok(());
         }
-        self.metrics.earned_gold_withdrawn += u64::from(cost);
-        let result = reducer_call!(self, "finalize_merchant_trade", |cb| self
+        let result = reducer_call!(self, "finalize_storefront_trade", |cb| self
             .connection
             .reducers
-            .finalize_merchant_trade_then(
+            .finalize_storefront_trade_then(
                 character_id,
                 settlement.to_string(),
+                service_id.clone(),
+                provider_id,
                 vec![candidate.id.clone()],
                 vec![1],
                 vec![],
@@ -660,13 +666,14 @@ impl LiveRunner {
                 cb,
             ));
         self.call(result)?;
+        let actual_cost = purse_before_trade.saturating_sub(self.personal_gold(character_id));
         self.metrics.equipment_purchases += 1;
         self.event(
             agent,
             CoreLoopEventKind::Purchase,
             format!(
-                "item={};earned_cost={cost};utility_gain={improvement:.3}",
-                candidate.id
+                "item={};storefront={service_id};provider={provider_id};upper_bound_quote={quoted_cost};actual_cost={actual_cost};earned_shortfall={earned_shortfall};medical_reserve={medical_reserve};utility_gain={improvement:.3}",
+                candidate.id,
             ),
         );
         let inventory = self

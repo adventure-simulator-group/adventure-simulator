@@ -29,6 +29,26 @@ fn survival_equipment_ready(
 }
 
 impl LiveRunner {
+    fn living_party_member_ids(&self, party_id: &str) -> Vec<u64> {
+        let mut ids = self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .filter(|row| row.party_id == party_id)
+            .filter_map(|row| {
+                self.connection
+                    .db
+                    .backend_characters()
+                    .iter()
+                    .find(|character| character.id == row.character_id && character.alive)
+                    .map(|character| character.id)
+            })
+            .collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids
+    }
+
     fn item_definition(&self, item_id: &str) -> Option<Item> {
         self.connection
             .db
@@ -143,21 +163,7 @@ impl LiveRunner {
     }
 
     fn public_party_load_and_capacity(&self, party_id: &str) -> (f32, f32, u32) {
-        let living_ids = self
-            .connection
-            .db
-            .party_member()
-            .iter()
-            .filter(|row| row.party_id == party_id)
-            .filter_map(|row| {
-                self.connection
-                    .db
-                    .backend_characters()
-                    .iter()
-                    .find(|character| character.id == row.character_id && character.alive)
-                    .map(|character| character.id)
-            })
-            .collect::<Vec<_>>();
+        let living_ids = self.living_party_member_ids(party_id);
         let personal_load = living_ids
             .iter()
             .map(|id| self.public_personal_load_kg(*id))
@@ -259,14 +265,7 @@ impl LiveRunner {
         }
         self.metrics.survival_observations =
             self.metrics.survival_observations.saturating_add(1);
-        let member_ids = self
-            .connection
-            .db
-            .party_member()
-            .iter()
-            .filter(|row| row.party_id == party_id)
-            .map(|row| row.character_id)
-            .collect::<Vec<_>>();
+        let member_ids = self.living_party_member_ids(party_id);
         for character_id in member_ids {
             if let Some(condition) = self
                 .connection
@@ -311,42 +310,13 @@ impl LiveRunner {
         }) {
             return None;
         }
-        let minute = self
-            .connection
-            .db
-            .backend_character_times()
-            .iter()
-            .find(|row| row.character_id == character_id)?
-            .minutes;
-        let provider_count = self
-            .connection
-            .db
-            .backend_settlement_residents()
-            .iter()
-            .filter(|npc| {
-                npc.home_settlement_id == settlement_id && npc.service_id == "merchants"
-            })
-            .filter(|npc| {
-                self.connection
-                    .db
-                    .settlement_resident_presence()
-                    .iter()
-                    .any(|presence| {
-                        presence.character_id == npc.character_id
-                            && presence.settlement_id == settlement_id
-                            && presence.location_id == "market"
-                            && presence.is_default
-                            && npc_is_publicly_present(
-                                presence.start_minute,
-                                presence.end_minute,
-                                minute,
-                            )
-                    })
-            })
-            .count();
-        if provider_count != 1 {
-            return None;
-        }
+        let provider = self.public_default_storefront_provider(
+            character_id,
+            settlement_id,
+            "merchants",
+            "market",
+        )?;
+        let _ = provider;
         let buy_bps = self
             .connection
             .db
@@ -365,6 +335,113 @@ impl LiveRunner {
             language_bound,
             buy_bps,
         )))
+    }
+
+    fn public_general_storefront_exists(&self, character_id: u64, settlement_id: &str) -> bool {
+        self.connection
+            .db
+            .settlement()
+            .iter()
+            .find(|row| row.id == settlement_id)
+            .is_some_and(|settlement| {
+                settlement.economy.services.iter().any(|service| {
+                    matches!(service, SettlementService::Market | SettlementService::GeneralStore)
+                })
+            })
+            && self
+                .public_default_storefront_provider(
+                    character_id,
+                    settlement_id,
+                    "merchants",
+                    "market",
+                )
+                .is_some()
+    }
+
+    fn public_default_storefront_provider(
+        &self,
+        character_id: u64,
+        settlement_id: &str,
+        service_id: &str,
+        location_id: &str,
+    ) -> Option<u64> {
+        let minute = self
+            .connection
+            .db
+            .backend_character_times()
+            .iter()
+            .find(|row| row.character_id == character_id)?
+            .minutes;
+        let providers = self
+            .connection
+            .db
+            .backend_settlement_residents()
+            .iter()
+            .filter(|npc| {
+                npc.home_settlement_id == settlement_id && npc.service_id == service_id
+            })
+            .filter(|npc| {
+                self.connection
+                    .db
+                    .settlement_resident_presence()
+                    .iter()
+                    .any(|presence| {
+                        presence.character_id == npc.character_id
+                            && presence.settlement_id == settlement_id
+                            && presence.location_id == location_id
+                            && presence.is_default
+                            && npc_is_publicly_present(
+                                presence.start_minute,
+                                presence.end_minute,
+                                minute,
+                            )
+                    })
+            })
+            .map(|npc| npc.character_id)
+            .collect::<Vec<_>>();
+        match providers.as_slice() {
+            [provider] => Some(*provider),
+            _ => None,
+        }
+    }
+
+    pub(super) fn public_equipment_storefront_offer(
+        &self,
+        character_id: u64,
+        settlement_id: &str,
+        item: &Item,
+    ) -> Option<(String, u64, u64)> {
+        let (service_id, location_id) = match item.kind {
+            ItemKind::Weapon | ItemKind::Shield => ("weapons", "forge"),
+            ItemKind::Armor => ("armor", "armoury"),
+            ItemKind::Clothing => ("clothing", "tailor"),
+            _ => return None,
+        };
+        let provider = self.public_default_storefront_provider(
+            character_id,
+            settlement_id,
+            service_id,
+            location_id,
+        )?;
+        let buy_bps = self
+            .connection
+            .db
+            .backend_local_problem_trade_effects()
+            .iter()
+            .find(|row| {
+                row.character_id == character_id && row.settlement_id == settlement_id
+            })?
+            .buy_bps;
+        let base = adventuresim_core::strategic_economy::merchant_buy_price(
+            item.base_value.unwrap_or(1),
+        );
+        let language_upper_bound =
+            adventuresim_core::strategic_economy::language_adjusted_buy_price(base, 0.0);
+        let quote = adventuresim_core::local_problem::adjust_price(
+            language_upper_bound,
+            buy_bps,
+        );
+        Some((service_id.to_owned(), provider, u64::from(quote)))
     }
 
     fn withdraw_stake_for_personal_purchase(
@@ -400,7 +477,7 @@ impl LiveRunner {
         let mut remaining = needed;
         for stack in treasury {
             let quantity = remaining.min(u64::from(stack.quantity)) as u32;
-            let result = reducer_call!(self, "withdraw_ammunition_coin", |cb| self
+            let result = reducer_call!(self, "withdraw_purchase_coin", |cb| self
                 .connection
                 .reducers
                 .withdraw_party_inventory_item_then(character_id, stack.id, quantity, cb));
@@ -443,14 +520,7 @@ impl LiveRunner {
             .filter(|row| row.party_id == party_id && is_currency_id(&row.item_id))
             .map(|row| u64::from(row.quantity))
             .sum::<u64>();
-        let member_ids = self
-            .connection
-            .db
-            .party_member()
-            .iter()
-            .filter(|row| row.party_id == party_id)
-            .map(|row| row.character_id)
-            .collect::<Vec<_>>();
+        let member_ids = self.living_party_member_ids(party_id);
         let mut payers = member_ids
             .into_iter()
             .filter_map(|character_id| {
@@ -467,9 +537,24 @@ impl LiveRunner {
             .collect::<Vec<_>>();
         payers.sort_by_key(|payer| (payer.0, payer.1, payer.2));
         let Some((affordable, _, payer, purse_before, reserve, quote)) = payers.pop() else {
-            return Ok(DepartureReadiness::Deferred(
-                "party_tent_provider_projection_unavailable",
-            ));
+            let public_provider_exists = self.living_party_member_ids(party_id).into_iter().any(
+                |character_id| {
+                    self.public_general_storefront_exists(character_id, settlement_id)
+                },
+            );
+            if !public_provider_exists {
+                self.metrics.tent_provider_unavailable_bivouac_departures = self
+                    .metrics
+                    .tent_provider_unavailable_bivouac_departures
+                    .saturating_add(1);
+                self.event(
+                    event_agent,
+                    CoreLoopEventKind::QuestDecision,
+                    "survival_readiness=tent_provider_unavailable_bivouac;shelter=bivouac",
+                );
+                return Ok(DepartureReadiness::Ready);
+            }
+            return Ok(DepartureReadiness::Deferred("party_tent_quote_unavailable"));
         };
         if !affordable {
             return Ok(DepartureReadiness::Deferred("party_tent_unaffordable"));
@@ -523,14 +608,7 @@ impl LiveRunner {
         let arrow = self
             .item_definition(RANGED_AMMUNITION_ITEM_ID)
             .ok_or("public ammunition definition is unavailable")?;
-        let member_ids = self
-            .connection
-            .db
-            .party_member()
-            .iter()
-            .filter(|row| row.party_id == party_id)
-            .map(|row| row.character_id)
-            .collect::<Vec<_>>();
+        let member_ids = self.living_party_member_ids(party_id);
         for character_id in member_ids {
             let ranged = self
                 .connection
@@ -641,21 +719,11 @@ impl LiveRunner {
         &self,
         party_id: &str,
     ) -> DepartureReadiness {
-        if self.party_item_quantity(party_id, PARTY_TENT_ITEM_ID) == 0 {
-            return DepartureReadiness::Deferred("party_tent_unavailable");
-        }
         let (_, _, remaining_bps) = self.public_party_load_and_capacity(party_id);
         if remaining_bps < MIN_DEPARTURE_ENCUMBRANCE_REMAINING_BPS {
             return DepartureReadiness::Deferred("party_load_unsafe");
         }
-        let member_ids = self
-            .connection
-            .db
-            .party_member()
-            .iter()
-            .filter(|row| row.party_id == party_id)
-            .map(|row| row.character_id)
-            .collect::<Vec<_>>();
+        let member_ids = self.living_party_member_ids(party_id);
         for character_id in member_ids {
             let Some(observation) = self.public_survival_observation(character_id) else {
                 return DepartureReadiness::Deferred("survival_projection_unavailable");
@@ -709,18 +777,22 @@ impl LiveRunner {
                     self.metrics.load_readiness_suppressions.saturating_add(1);
             }
             if reason == "thermal_recovery_required" {
-                self.metrics.thermal_readiness_suppressions = self
+                self.metrics.current_condition_readiness_suppressions = self
                     .metrics
-                    .thermal_readiness_suppressions
+                    .current_condition_readiness_suppressions
                     .saturating_add(1);
             }
             return Ok(DepartureReadiness::Deferred(reason));
         }
+        self.metrics.route_weather_projection_unavailable_departures = self
+            .metrics
+            .route_weather_projection_unavailable_departures
+            .saturating_add(1);
         self.event(
             leader_agent,
             CoreLoopEventKind::QuestDecision,
             format!(
-                "survival_readiness=ready;party={};tent_quantity={};load_kg={load:.3};capacity_kg={capacity:.3};encumbrance_remaining_bps={remaining_bps};ammo_floor={RANGED_AMMUNITION_FLOOR}",
+                "survival_readiness=ready;party={};tent_quantity={};load_kg={load:.3};capacity_kg={capacity:.3};encumbrance_remaining_bps={remaining_bps};ammo_floor={RANGED_AMMUNITION_FLOOR};route_weather_projection=unavailable;weather_gate=current_public_condition_only",
                 bounded_event_field(party_id),
                 self.party_item_quantity(party_id, PARTY_TENT_ITEM_ID),
             ),

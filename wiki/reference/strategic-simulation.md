@@ -428,14 +428,21 @@ condition, and outstanding orders; deterministic simulation setup seeds damage t
 guarded to registered simulation characters.
 
 Before any settlement departure, the driver now prepares every living party member rather than only
-the leader. It buys a single general-market field tent directly into ordinary party custody, equips
+the leader. Where a public general-market storefront and provider exist, it buys a single field tent
+directly into ordinary party custody; a settlement with no such public provider authorizes a tracked
+bivouac fallback instead of trapping the party in settlement forever. It equips
 only upgrades that preserve at least 20 percent of the public linear carrying margin, and maintains
 twenty personally owned arrows for each member whose public equipped capability is ranged. Shared
 earned stake may be withdrawn through the ordinary custody reducer to fund a member's arrows, while
-the same visible medical reserve used elsewhere remains protected. If shelter, ammunition, public
-merchant projection, or carrying margin cannot be made safe, the party performs settlement activity
+the same visible medical reserve used elsewhere remains protected. Equipment replacements route
+through their matching public forge, armoury, or tailor provider and use the ordinary storefront
+trade reducer with a conservative observer-safe quote. If a visible provider exists but shelter,
+ammunition, quote, or carrying margin cannot be made safe, the party performs settlement activity
 instead of departing. Current wetness above 80 percent or absolute thermal strain above 2,500 also
-requires indoor recovery before departure; the driver does not inspect future or private weather.
+requires indoor recovery before departure. The SDK exposes neither route-weather forecasts nor
+item insulation/weatherproofing to this simulator, so route-weather readiness is explicitly recorded
+as unavailable and only the current public condition can gate departure; this is a projection gap,
+not a claim that future exposure is safe.
 Every field-rest path selects a party-owned tent when present, including forecast camps, bounded
 expedition recovery, passive/evacuation recovery, and field investigation waits. The authoritative
 rest reducer still validates custody and applies the actual exposure mechanics.
@@ -443,9 +450,14 @@ rest reducer still validates custody and applies the actual exposure mechanics.
 Core-loop reports expose per-agent thermal state, wetness, thermal strain, personal ammunition,
 carried load, carrying capacity, equipment readiness, and party-tent quantity. Aggregate metrics
 record tent purchases and uses, tent-rest failures, ammunition purchases and shortages, readiness
-suppressions, peak load/capacity, minimum carrying margin, and peak exposure. Death events and the
+suppressions, provider-unavailable bivouac departures, route-projection gaps, peak load/capacity,
+minimum carrying margin, and peak exposure. Death events include the authoritative cause, source,
+source ID, and strategic minute, and the
 structured failure artifact carry the same observer-safe survival context so a policy mistake can be
 distinguished from an authoritative reducer or mechanics failure without importing private state.
+The current simulator subscriptions also omit measured personal/party inventory-amount projections;
+load accounting therefore uses the public stack/item rows and cannot yet reproduce fractional
+contents mass for every non-food measured container.
 
 Medical needs are evaluated before repairs, and repairs before equipment upgrades. The disposable
 fixture seeds one deterministic influenza episode behind the same claimed-run capability boundary as

@@ -59,6 +59,7 @@ use adventuresim_stdb_client::{
     equip_item_at_placement_reducer::equip_item_at_placement, equip_item_reducer::equip_item,
     equipment_occupancy_table::EquipmentOccupancyTableAccess, field_shelter_type::FieldShelter,
     finalize_merchant_trade_reducer::finalize_merchant_trade, food_lot_table::FoodLotTableAccess,
+    finalize_storefront_trade_reducer::finalize_storefront_trade,
     inventory_item_table::InventoryItemTableAccess, item_condition_table::ItemConditionTableAccess,
     item_table::ItemTableAccess, liquidate_party_inventory_reducer::liquidate_party_inventory,
     local_problem_symptom_table::LocalProblemSymptomTableAccess,
@@ -275,6 +276,7 @@ pub struct CoreLoopMetrics {
     pub equipment_upgrades: u32,
     pub party_tents_purchased: u32,
     pub party_tent_gold_spent: u64,
+    pub tent_provider_unavailable_bivouac_departures: u32,
     pub tent_field_rests: u32,
     pub tent_field_rest_failures: u32,
     pub bivouac_field_rests: u32,
@@ -283,7 +285,8 @@ pub struct CoreLoopMetrics {
     pub ammunition_gold_spent: u64,
     pub ammunition_shortage_suppressions: u32,
     pub load_readiness_suppressions: u32,
-    pub thermal_readiness_suppressions: u32,
+    pub current_condition_readiness_suppressions: u32,
+    pub route_weather_projection_unavailable_departures: u32,
     pub survival_observations: u32,
     pub max_party_carried_load_grams: u64,
     pub max_party_carry_capacity_grams: u64,
@@ -1606,7 +1609,7 @@ fn safe_failure_operation(error: &str) -> Option<&'static str> {
         "purchase_journey_provisions",
         "purchase_party_tent",
         "purchase_ammunition",
-        "withdraw_ammunition_coin",
+        "withdraw_purchase_coin",
     ]
     .into_iter()
     .find(|operation| {
@@ -1631,7 +1634,7 @@ fn safe_failure_reason_code(error: &str, category: &str) -> &'static str {
     } else if error.contains("purchase_party_tent") {
         "party_tent_purchase_failed"
     } else if error.contains("purchase_ammunition")
-        || error.contains("withdraw_ammunition_coin")
+        || error.contains("withdraw_purchase_coin")
     {
         "ammunition_purchase_failed"
     } else if error.contains("journey camp projection is incoherent")
@@ -1690,7 +1693,7 @@ fn safe_core_loop_failure(error: &str) -> (&'static str, &'static str) {
             "The public party-shelter purchase could not be completed.",
         )
     } else if error.contains("purchase_ammunition")
-        || error.contains("withdraw_ammunition_coin")
+        || error.contains("withdraw_purchase_coin")
     {
         (
             "survival_purchase_failed",

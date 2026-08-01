@@ -305,16 +305,26 @@ impl LiveRunner {
         newly_dead.sort_unstable();
         for character_id in newly_dead {
             if let Some(agent) = self.character_ids.iter().position(|id| *id == character_id) {
-                let source = self
+                let death = self
                     .connection
                     .db
                     .backend_character_deaths()
                     .iter()
-                    .find(|row| row.character_id == character_id)
-                    .map(|row| row.source);
+                    .find(|row| row.character_id == character_id);
+                let source = death.as_ref().map(|row| row.source);
                 if source == Some(DeathSource::Disease) {
                     self.metrics.disease_deaths += 1;
                 }
+                let cause = death
+                    .as_ref()
+                    .map_or_else(|| "unavailable".to_owned(), |row| format!("{:?}", row.cause));
+                let source_id = death
+                    .as_ref()
+                    .and_then(|row| row.source_id.as_deref())
+                    .map_or_else(|| "none".to_owned(), bounded_event_field);
+                let strategic_minute = death
+                    .as_ref()
+                    .map_or_else(|| "unavailable".to_owned(), |row| row.strategic_minute.to_string());
                 let survival = self.public_survival_observation(character_id);
                 let condition = self
                     .connection
@@ -326,7 +336,7 @@ impl LiveRunner {
                     agent as u32,
                     CoreLoopEventKind::Death,
                     format!(
-                        "terminal=authoritative;source={source:?};condition={};thermal={:.3};wetness_bps={};thermal_strain={};ammo={};carried_load_kg={:.3};carry_capacity_kg={:.3};encumbrance_remaining_bps={};equipment_ready={};party_tent_quantity={}",
+                        "terminal=authoritative;cause={cause};source={source:?};source_id={source_id};strategic_minute={strategic_minute};condition={};thermal={:.3};wetness_bps={};thermal_strain={};ammo={};carried_load_kg={:.3};carry_capacity_kg={:.3};encumbrance_remaining_bps={};equipment_ready={};party_tent_quantity={}",
                         condition.as_ref().map_or("unavailable", |row| row.status.as_str()),
                         survival.map_or(0.0, |row| row.thermal),
                         survival.map_or(0, |row| row.wetness_bps),
