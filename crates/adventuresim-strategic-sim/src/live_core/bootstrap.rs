@@ -64,6 +64,34 @@ pub(super) fn root_requirement_matches_slot(
     }
 }
 
+pub(super) fn select_public_quest_fixture(
+    rows: impl IntoIterator<Item = SimulationQuestFixture>,
+    expected_run_id: u64,
+    expected_parties: &[(u64, String); 2],
+) -> Result<SimulationQuestFixture, String> {
+    let mut rows = rows.into_iter().take(2);
+    let fixture = rows
+        .next()
+        .ok_or("required quest fixture completed without receipt-backed public provenance")?;
+    if rows.next().is_some() {
+        return Err("required quest fixture public provenance is ambiguous".into());
+    }
+    if fixture.id != 0 || fixture.run_id != expected_run_id {
+        return Err("required quest fixture public provenance identifies the wrong run".into());
+    }
+    let direct = (fixture.direct_leader_id, fixture.direct_party_id.as_str());
+    let generated = (
+        fixture.generated_leader_id,
+        fixture.generated_party_id.as_str(),
+    );
+    let first = (expected_parties[0].0, expected_parties[0].1.as_str());
+    let second = (expected_parties[1].0, expected_parties[1].1.as_str());
+    if !((direct == first && generated == second) || (direct == second && generated == first)) {
+        return Err("required quest fixture public provenance identifies the wrong parties".into());
+    }
+    Ok(fixture)
+}
+
 pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
     let failure_recorder = FailureRecorder::new(
         config.failure_output.clone(),
@@ -240,6 +268,20 @@ fn run_core_loop_inner(
             cb,
         ));
     runner.call(result)?;
+    let mut claimed_runs = runner
+        .connection
+        .db
+        .simulation_run()
+        .iter()
+        .filter(|run| run.nonce == config.run_nonce)
+        .take(2);
+    let claimed_run_id = claimed_runs
+        .next()
+        .ok_or("claim reducer completed without a coherent simulation run")?
+        .id;
+    if claimed_runs.next().is_some() {
+        return Err("claim reducer completed with ambiguous simulation runs".into());
+    }
     // The disposable simulation owns this otherwise-empty database, so its
     // authenticated connection is also the trusted strategic gateway.
     let result = reducer_call!(runner, "register_strategic_gateway", |cb| runner
@@ -424,7 +466,7 @@ fn run_core_loop_inner(
             );
         }
     }
-    let mut quest_fixture = None;
+    let mut expected_quest_fixture_parties = None;
     if config.require_quest_coverage {
         if party_ids.len() < 2 {
             return Err("quest coverage fixture requires two formed parties".into());
@@ -447,7 +489,10 @@ fn run_core_loop_inner(
                 cb,
             ));
         runner.call(result)?;
-        quest_fixture = Some(());
+        expected_quest_fixture_parties = Some([
+            (direct_leader, party_ids[0].clone()),
+            (generated_leader, party_ids[1].clone()),
+        ]);
     }
     let result = reducer_call!(runner, "ensure_settlement_activity", |cb| runner
         .connection
@@ -544,8 +589,8 @@ fn run_core_loop_inner(
                 ^ u64::from(cycle).wrapping_mul(0xbf58_476d_1ce4_e5b9);
             let selector = (mixed >> 11) as f64 / ((1_u64 << 53) as f64);
             let quest_propensity = profile.activity_vs_quest_propensity;
-            let wants_quest = !profile.build.activity_only
-                && selector < f64::from(quest_propensity);
+            let wants_quest =
+                !profile.build.activity_only && selector < f64::from(quest_propensity);
             let party = runner.party_for(leader)?;
             let settlement_id = party.current_settlement_id.as_deref();
             let offered_contracts = settlement_id.map_or(0, |settlement_id| {
@@ -561,11 +606,19 @@ fn run_core_loop_inner(
                     .count()
             });
             let safe_offered_contracts = settlement_id.map_or(0, |settlement_id| {
-                runner.connection.db.backend_contracts().iter().filter(|contract| {
-                    contract.settlement_id == settlement_id
-                        && contract.status == ContractStatus::Offered
-                        && runner.public_party_contract_assessment(&party.id, contract).eligible
-                }).count()
+                runner
+                    .connection
+                    .db
+                    .backend_contracts()
+                    .iter()
+                    .filter(|contract| {
+                        contract.settlement_id == settlement_id
+                            && contract.status == ContractStatus::Offered
+                            && runner
+                                .public_party_contract_assessment(&party.id, contract)
+                                .eligible
+                    })
+                    .count()
             });
             let open_generated_cases = runner.owned_open_generated_cases(leader);
             for (case_id, title) in &open_generated_cases {
@@ -888,18 +941,12 @@ fn run_core_loop_inner(
         .unwrap_or(0);
     let total_event_count = runner.sequence;
     let trace_truncated = total_event_count > runner.trace.len() as u64;
-    let quest_fixture = if quest_fixture.is_some() {
-        Some(
-            runner
-                .connection
-                .db
-                .simulation_quest_fixture()
-                .id()
-                .find(&0)
-                .ok_or(
-                    "required quest fixture completed without receipt-backed public provenance",
-                )?,
-        )
+    let quest_fixture = if let Some(expected_parties) = expected_quest_fixture_parties.as_ref() {
+        Some(select_public_quest_fixture(
+            runner.connection.db.simulation_quest_fixture().iter(),
+            claimed_run_id,
+            expected_parties,
+        )?)
     } else {
         None
     };

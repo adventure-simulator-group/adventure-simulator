@@ -288,3 +288,43 @@ fn generated_defeat_policy_suppresses_work_until_public_capability_changes() {
         GeneratedDefeatDecision::Proceed,
     );
 }
+
+#[test]
+fn public_quest_fixture_selection_is_bounded_and_validates_provenance() {
+    let fixture = SimulationQuestFixture {
+        id: 0,
+        run_id: 17,
+        direct_contract_id: "contract".into(),
+        generated_case_id: "case".into(),
+        direct_leader_id: 202,
+        generated_leader_id: 101,
+        direct_party_id: "party-b".into(),
+        generated_party_id: "party-a".into(),
+    };
+    let expected = [(101, "party-a".into()), (202, "party-b".into())];
+
+    assert_eq!(
+        select_public_quest_fixture([fixture.clone()], 17, &expected),
+        Ok(fixture.clone())
+    );
+    assert!(select_public_quest_fixture([], 17, &expected).is_err());
+    assert!(
+        select_public_quest_fixture([fixture.clone(), fixture.clone()], 17, &expected).is_err()
+    );
+
+    let mut wrong_id = fixture.clone();
+    wrong_id.id = 1;
+    assert!(select_public_quest_fixture([wrong_id], 17, &expected).is_err());
+
+    let mut wrong_run = fixture.clone();
+    wrong_run.run_id = 18;
+    assert!(select_public_quest_fixture([wrong_run], 17, &expected).is_err());
+
+    let mut wrong_leader = fixture.clone();
+    wrong_leader.direct_leader_id = 303;
+    assert!(select_public_quest_fixture([wrong_leader], 17, &expected).is_err());
+
+    let mut wrong_party = fixture;
+    wrong_party.direct_party_id = "party-c".into();
+    assert!(select_public_quest_fixture([wrong_party], 17, &expected).is_err());
+}
