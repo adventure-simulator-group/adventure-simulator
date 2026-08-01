@@ -608,6 +608,19 @@ fn dialogue_topics_suppress_no_progress_and_reenable_after_public_change() {
 }
 
 #[test]
+fn generated_action_preflight_suppresses_public_party_clock_skew() {
+    assert!(public_party_clocks_aligned(
+        &[7, 8],
+        [(7, 340_929), (8, 340_929)]
+    ));
+    assert!(!public_party_clocks_aligned(
+        &[7, 8],
+        [(7, 339_489), (8, 340_929)]
+    ));
+    assert!(!public_party_clocks_aligned(&[7, 8], [(7, 340_929)]));
+}
+
+#[test]
 fn public_symptom_diagnostics_are_coarse() {
     assert_eq!(public_count_bucket(0), "0");
     assert_eq!(public_count_bucket(1), "1");
@@ -722,14 +735,6 @@ fn generated_site_selection_requires_the_exact_occupied_pin() {
     assert!(!occupied_case_pin_matches(
         7, "public-a", "site-2", 7, "public-a", "site-1"
     ));
-}
-
-#[test]
-fn generated_time_gate_stops_leader_changes_and_incapacitation() {
-    assert!(generated_actor_can_continue(7, Some(7), 0));
-    assert!(!generated_actor_can_continue(7, Some(8), 0));
-    assert!(!generated_actor_can_continue(7, Some(7), 1));
-    assert!(!generated_actor_can_continue(7, None, 0));
 }
 
 #[test]

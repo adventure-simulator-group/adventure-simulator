@@ -791,6 +791,7 @@ pub mod surface_lithology_type;
 pub mod surrender_to_authority_reducer;
 pub mod sync_development_clock_to_character_reducer;
 pub mod synchronize_character_time_reducer;
+pub mod synchronize_party_for_activity_reducer;
 pub mod tactical_mission_resolution_type;
 pub mod tactical_server_claim_type;
 pub mod tactical_server_request_table;
@@ -1624,6 +1625,7 @@ pub use surface_lithology_type::SurfaceLithology;
 pub use surrender_to_authority_reducer::surrender_to_authority;
 pub use sync_development_clock_to_character_reducer::sync_development_clock_to_character;
 pub use synchronize_character_time_reducer::synchronize_character_time;
+pub use synchronize_party_for_activity_reducer::synchronize_party_for_activity;
 pub use tactical_mission_resolution_type::TacticalMissionResolution;
 pub use tactical_server_claim_type::TacticalServerClaim;
 pub use tactical_server_request_table::*;
@@ -2435,6 +2437,9 @@ pub enum Reducer {
     SynchronizeCharacterTime {
         character_id: u64,
     },
+    SynchronizePartyForActivity {
+        leader_id: u64,
+    },
     TrackCaseSite {
         character_id: u64,
         case_site_id: CaseSiteId,
@@ -2679,6 +2684,7 @@ impl __sdk::Reducer for Reducer {
                 "sync_development_clock_to_character"
             }
             Reducer::SynchronizeCharacterTime { .. } => "synchronize_character_time",
+            Reducer::SynchronizePartyForActivity { .. } => "synchronize_party_for_activity",
             Reducer::TrackCaseSite { .. } => "track_case_site",
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
             Reducer::TravelToCaseSite { .. } => "travel_to_case_site",
@@ -4059,6 +4065,11 @@ Reducer::BeginFormalCourtship{
                 character_id,
 }             => __sats::bsatn::to_vec(&synchronize_character_time_reducer::SynchronizeCharacterTimeArgs {
                 character_id: character_id.clone(),
+}),
+            Reducer::SynchronizePartyForActivity{
+                leader_id,
+}             => __sats::bsatn::to_vec(&synchronize_party_for_activity_reducer::SynchronizePartyForActivityArgs {
+                leader_id: leader_id.clone(),
 }),
             Reducer::TrackCaseSite{
                 character_id,

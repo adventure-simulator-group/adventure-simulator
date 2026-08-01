@@ -778,6 +778,86 @@ pub(crate) fn synchronize_party_activity_time(
     Ok(start)
 }
 
+/// Commit ordinary catch-up to a co-located party's furthest personal clock
+/// before a shared strategic action performs its atomic readiness check.
+/// Terminal consequences are intentionally committed here: callers observe
+/// and recover from them instead of repeatedly rolling them back with the
+/// attempted action.
+#[reducer]
+pub fn synchronize_party_for_activity(ctx: &ReducerContext, leader_id: u64) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, leader_id)?;
+    let leader = crate::character::require_living_character(ctx, leader_id)?;
+    let party_id = leader
+        .party_id
+        .clone()
+        .ok_or("Activity synchronization requires a party")?;
+    let party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != leader_id {
+        return Err("Only the current party leader can synchronize party activity".into());
+    }
+    let member_ids = crate::strategic::living_party_member_ids(ctx, &party_id);
+    if member_ids.is_empty() || !member_ids.contains(&leader_id) {
+        return Err("Party has no living leader for activity synchronization".into());
+    }
+    let leader_case_site = crate::investigation::character_case_site_id(ctx, leader_id);
+    for member_id in &member_ids {
+        let member = ctx
+            .db
+            .character()
+            .id()
+            .find(*member_id)
+            .ok_or("Party member not found")?;
+        if member.party_id.as_deref() != Some(party_id.as_str())
+            || member.current_settlement_id != leader.current_settlement_id
+            || member.current_settlement_id != party.current_settlement_id
+            || crate::investigation::character_case_site_id(ctx, *member_id) != leader_case_site
+        {
+            return Err("Party members must be co-located before activity synchronization".into());
+        }
+    }
+    for member_id in &member_ids {
+        synchronize_character_time(ctx, *member_id)?;
+    }
+    let target = member_ids
+        .iter()
+        .map(|member_id| {
+            ctx.db
+                .character_time()
+                .character_id()
+                .find(*member_id)
+                .map(|time| time.minutes)
+                .ok_or("Party member has no strategic clock")
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .max()
+        .ok_or("Party has no strategic clock")?;
+    for member_id in &member_ids {
+        let minute = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(*member_id)
+            .ok_or("Party member has no strategic clock")?
+            .minutes;
+        if minute < target {
+            let _survived =
+                advance_character_wait_time(ctx, *member_id, target.saturating_sub(minute))?;
+        }
+    }
+    let _ = crate::strategic::normalize_and_elect_party_leader(ctx, &party_id);
+    for member_id in crate::strategic::living_party_member_ids(ctx, &party_id) {
+        let _ = crate::condition::refresh_character_strategic_condition(ctx, member_id);
+        let _ = crate::capability::refresh_character_capability(ctx, member_id);
+    }
+    Ok(())
+}
+
 /// Neutral/location-appropriate personal time for waiting and procedures. It
 /// advances disease, wounds, blood, and ordinary recovery without applying
 /// travel fatigue or travel needs.
@@ -3403,6 +3483,33 @@ mod tests {
             .expect("explicit stationary advancement");
         assert!(advance.contains("if target_minutes < character_time.minutes"));
         assert!(advance.contains("Character time cannot be advanced retroactively"));
+    }
+
+    #[test]
+    fn party_activity_preflight_commits_terminal_clock_catch_up() {
+        let source = include_str!("time.rs");
+        let reducer = source
+            .split("pub fn synchronize_party_for_activity")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn advance_character_wait_time").next())
+            .expect("party activity synchronization reducer");
+        let authority = reducer
+            .find("require_strategic_character_authority")
+            .unwrap();
+        let leadership = reducer.find("party.leader_id != leader_id").unwrap();
+        let co_location = reducer.find("member.current_settlement_id").unwrap();
+        let case_site = reducer.find("character_case_site_id").unwrap();
+        let official_sync = reducer.find("synchronize_character_time").unwrap();
+        let party_target = reducer.find("let target =").unwrap();
+        let catch_up = reducer.find("advance_character_wait_time").unwrap();
+        assert!(authority < leadership);
+        assert!(leadership < co_location);
+        assert!(leadership < case_site);
+        assert!(co_location < official_sync);
+        assert!(official_sync < party_target);
+        assert!(party_target < catch_up);
+        assert!(reducer.contains("let _survived ="));
+        assert!(!reducer.contains("Every party member must survive clock synchronization"));
     }
 
     #[test]

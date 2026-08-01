@@ -768,27 +768,89 @@ impl LiveRunner {
         owner_character_id: u64,
         case_id: &str,
     ) -> Result<bool, String> {
-        self.observe_deaths();
-        let current_leader = self.current_leader(party_id).map(|(leader, _)| leader);
-        if current_leader != Some(owner_character_id) {
+        self.synchronize_generated_party_for_action(party_id, owner_character_id, case_id, 0)
+    }
+
+    pub(super) fn synchronize_generated_party_for_action(
+        &mut self,
+        party_id: &str,
+        owner_character_id: u64,
+        case_id: &str,
+        cycle: u32,
+    ) -> Result<bool, String> {
+        let Some((current_leader, leader_agent)) = self.current_leader(party_id) else {
+            return Ok(false);
+        };
+        if current_leader != owner_character_id {
             return Ok(false);
         }
-        let current_leader = current_leader.expect("owner is the current leader");
-        let party_agents = self.party_agents(current_leader)?;
-        let unsafe_agents = self.unsafe_party_agents(&party_agents);
-        for unsafe_agent in &unsafe_agents {
-            self.metrics.quests_suppressed_for_health += 1;
+        let result = reducer_call!(self, "synchronize_party_for_activity", |cb| self
+            .connection
+            .reducers
+            .synchronize_party_for_activity_then(owner_character_id, cb));
+        self.call(result)?;
+        self.observe_deaths();
+        if self.current_leader(party_id).map(|(leader, _)| leader) != Some(owner_character_id) {
+            return Ok(false);
+        }
+        for party_agent in self.party_agents(owner_character_id)? {
+            if !self.ensure_medically_safe(party_agent)? {
+                self.metrics.quests_suppressed_for_health += 1;
+                self.event(
+                    party_agent,
+                    CoreLoopEventKind::QuestSuppressed,
+                    format!(
+                        "generated_case={};cycle={cycle};reason=not_ready_after_party_clock_sync",
+                        bounded_event_field(case_id)
+                    ),
+                );
+                return Ok(false);
+            }
+            self.maintain_equipment(party_agent)?;
+        }
+        self.observe_deaths();
+        if self
+            .refreshed_safe_party_for_owner(party_id, owner_character_id)?
+            .is_none()
+        {
+            return Ok(false);
+        }
+        let mut living_member_ids = self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .filter(|member| member.party_id == party_id)
+            .filter(|member| {
+                self.connection
+                    .db
+                    .backend_characters()
+                    .iter()
+                    .find(|character| character.id == member.character_id)
+                    .is_some_and(|character| character.alive)
+            })
+            .map(|member| member.character_id)
+            .collect::<Vec<_>>();
+        living_member_ids.sort_unstable();
+        let aligned = public_party_clocks_aligned(
+            &living_member_ids,
+            self.connection
+                .db
+                .backend_character_times()
+                .iter()
+                .map(|time| (time.character_id, time.minutes)),
+        );
+        if !aligned {
             self.event(
-                *unsafe_agent,
+                leader_agent,
                 CoreLoopEventKind::QuestSuppressed,
-                format!("generated_case={case_id};after_time_advance"),
+                format!(
+                    "generated_case={};cycle={cycle};reason=public_party_clock_skew",
+                    bounded_event_field(case_id)
+                ),
             );
         }
-        Ok(generated_actor_can_continue(
-            owner_character_id,
-            Some(current_leader),
-            unsafe_agents.len(),
-        ))
+        Ok(aligned)
     }
 
     pub(super) fn refreshed_safe_party_for_owner(
@@ -1012,22 +1074,7 @@ impl LiveRunner {
         case_id: &str,
         subject: &str,
     ) -> Result<bool, String> {
-        for party_agent in self.party_agents(character_id)? {
-            if !self.ensure_medically_safe(party_agent)? {
-                self.metrics.quests_suppressed_for_health += 1;
-                self.event(
-                    party_agent,
-                    CoreLoopEventKind::QuestSuppressed,
-                    format!("generated_case={case_id};cycle={cycle}"),
-                );
-                return Ok(false);
-            }
-            self.maintain_equipment(party_agent)?;
-        }
-        if self
-            .refreshed_safe_party_for_owner(party_id, character_id)?
-            .is_none()
-        {
+        if !self.synchronize_generated_party_for_action(party_id, character_id, case_id, cycle)? {
             return Ok(false);
         }
         let defeat_key = (character_id, case_id.to_owned());
@@ -1108,70 +1155,7 @@ impl LiveRunner {
                         action.expected_version,
                         cb,
                     ));
-                if let Err(error) = self.call(result) {
-                    if !victim_cohort_state_changed_failure(&error) {
-                        return Err(error);
-                    }
-                    self.metrics.generated_investigation_replans = self
-                        .metrics
-                        .generated_investigation_replans
-                        .saturating_add(1);
-                    let refreshed = self
-                        .connection
-                        .db
-                        .backend_investigation_actions()
-                        .iter()
-                        .find(|row| {
-                            row.owner_character_id == character_id
-                                && row.case_id == case_id
-                                && row.action_id == action.action_id
-                        });
-                    let refreshed_version = refreshed
-                        .as_ref()
-                        .map_or_else(|| "none".into(), |row| row.expected_version.to_string());
-                    let refreshed_available = refreshed
-                        .as_ref()
-                        .map_or_else(|| "none".into(), |row| row.available.to_string());
-                    let refreshed_wait_minutes = refreshed
-                        .as_ref()
-                        .map_or_else(|| "none".into(), |row| row.wait_minutes.to_string());
-                    let refreshed_reason = refreshed.as_ref().map_or("removed", |row| {
-                        if row.unavailable_reason_code.is_empty() {
-                            "none"
-                        } else {
-                            row.unavailable_reason_code.as_str()
-                        }
-                    });
-                    let refresh_label = match refreshed.as_ref() {
-                        None => "removed",
-                        Some(row) if !row.available => "unavailable",
-                        Some(row)
-                            if row.expected_version != action.expected_version
-                                || row.method != action.method =>
-                        {
-                            "changed"
-                        }
-                        Some(_) => "identical_pending_subscription",
-                    };
-                    self.event(
-                        agent,
-                        CoreLoopEventKind::GeneratedInvestigationReplan,
-                        format!(
-                            "case={};action={};reason=investigation_victim_cohort_state_changed;refresh={refresh_label};previous_version={};refreshed_version={};refreshed_available={};refreshed_reason_code={};refreshed_wait_minutes={}",
-                            bounded_event_field(case_id),
-                            bounded_event_field(&action.action_id),
-                            action.expected_version,
-                            bounded_event_field(&refreshed_version),
-                            bounded_event_field(&refreshed_available),
-                            bounded_event_field(refreshed_reason),
-                            bounded_event_field(&refreshed_wait_minutes),
-                        ),
-                    );
-                    // A failed reducer transaction cannot provide a subscription
-                    // update barrier. Defer once so the next cycle chooses from
-                    // a freshly applied public projection.
-                    return Ok(false);
-                }
+                self.call(result)?;
                 let mut outcomes = self
                     .connection
                     .db

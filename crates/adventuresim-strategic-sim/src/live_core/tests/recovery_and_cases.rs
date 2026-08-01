@@ -479,12 +479,56 @@
         assert!(helper.contains("self.unsafe_party_agents(&party_agents)"));
         assert!(helper.contains("party.id != party_id"));
 
+        let preflight = source
+            .split("fn synchronize_generated_party_for_action")
+            .nth(1)
+            .and_then(|tail| tail.split("fn refreshed_safe_party_for_owner").next())
+            .expect("generated case preflight");
+        assert!(preflight.contains(
+            "refreshed_safe_party_for_owner(party_id, owner_character_id)"
+        ));
+
         let generated = source
             .split("fn advance_generated_case")
             .nth(1)
             .and_then(|tail| tail.split("fn cycle").next())
             .expect("generated case driver");
-        assert!(generated.contains("refreshed_safe_party_for_owner(party_id, character_id)"));
+        assert!(generated.contains("synchronize_generated_party_for_action"));
+    }
+
+    #[test]
+    fn generated_actions_sync_then_recover_then_revalidate_public_clocks() {
+        let source = LIVE_CORE_SOURCE;
+        let preflight = source
+            .split("fn synchronize_generated_party_for_action")
+            .nth(1)
+            .and_then(|tail| tail.split("fn refreshed_safe_party_for_owner").next())
+            .expect("generated party action preflight");
+        let sync = preflight
+            .find("synchronize_party_for_activity_then")
+            .unwrap();
+        let deaths = preflight.find("self.observe_deaths()").unwrap();
+        let medical = preflight.find("self.ensure_medically_safe").unwrap();
+        let safe = preflight.find("refreshed_safe_party_for_owner").unwrap();
+        let clocks = preflight.find("public_party_clocks_aligned").unwrap();
+        assert!(sync < deaths);
+        assert!(deaths < medical);
+        assert!(medical < safe);
+        assert!(safe < clocks);
+
+        let driver = source
+            .split("fn advance_generated_case")
+            .nth(1)
+            .and_then(|tail| tail.split("fn cycle").next())
+            .expect("generated case driver");
+        let initial_sync = driver
+            .find("synchronize_generated_party_for_action")
+            .unwrap();
+        let action_projection = driver.find("backend_investigation_actions()").unwrap();
+        let action_reducer = driver.find("perform_investigation_action_then").unwrap();
+        assert!(initial_sync < action_projection);
+        assert!(action_projection < action_reducer);
+        assert!(!driver.contains("investigation_victim_cohort_state_changed"));
     }
 
     #[test]

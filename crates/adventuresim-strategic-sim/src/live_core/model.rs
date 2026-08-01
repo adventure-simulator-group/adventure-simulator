@@ -91,6 +91,7 @@ use adventuresim_stdb_client::{
     start_dialogue_reducer::start_dialogue, store_battle_loot_reducer::store_battle_loot,
     strategic_encounter_table::StrategicEncounterTableAccess,
     submit_item_for_repair_reducer::submit_item_for_repair,
+    synchronize_party_for_activity_reducer::synchronize_party_for_activity,
     travel_to_case_site_reducer::travel_to_case_site,
     travel_to_settlement_reducer::travel_to_settlement,
     update_training_schedule_reducer::update_training_schedule,
@@ -1679,6 +1680,25 @@ fn public_dialogue_topic_made_progress(
     before != after
 }
 
+fn public_party_clocks_aligned(
+    member_ids: &[u64],
+    rows: impl IntoIterator<Item = (u64, u64)>,
+) -> bool {
+    let members = member_ids.iter().copied().collect::<HashSet<_>>();
+    if members.is_empty() || members.len() != member_ids.len() {
+        return false;
+    }
+    let observed = rows
+        .into_iter()
+        .filter(|(character_id, _)| members.contains(character_id))
+        .collect::<HashMap<_, _>>();
+    observed.len() == members.len()
+        && observed
+            .values()
+            .next()
+            .is_some_and(|first| observed.values().all(|minutes| minutes == first))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GeneratedDiscoveryOutcome {
     Discovered,
@@ -1782,14 +1802,6 @@ fn occupied_case_pin_matches(
         pin_owner_character_id,
         pin_public_case_id,
     ) && pin_site_id == occupied_site_id
-}
-
-fn generated_actor_can_continue(
-    owner_character_id: u64,
-    current_leader_id: Option<u64>,
-    unsafe_party_members: usize,
-) -> bool {
-    current_leader_id == Some(owner_character_id) && unsafe_party_members == 0
 }
 
 fn projected_investigation_wait_minutes(reason_code: &str, wait_minutes: u32) -> Option<u32> {

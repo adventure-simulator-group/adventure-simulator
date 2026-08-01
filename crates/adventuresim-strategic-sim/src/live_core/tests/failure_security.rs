@@ -414,8 +414,8 @@ fn generated_action_trace_uses_subject_and_public_attempt_evidence() {
     ));
     assert!(advance.contains("\"case={};subject={};action={};method={};summary={};outcome={}\""));
     assert!(!advance.contains("\"case={};title={};action={};method={};summary={};outcome={}\""));
-    assert!(advance.contains("identical_pending_subscription"));
-    assert!(advance.contains("Defer once so the next cycle chooses"));
+    assert!(advance.contains("self.call(result)?"));
+    assert!(!advance.contains("victim_cohort_state_changed_failure"));
     assert!(!advance.contains("bounded_retry"));
     assert!(!production.contains("generated_investigation_retries"));
 }
