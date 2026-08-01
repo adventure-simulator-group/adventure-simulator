@@ -1984,6 +1984,83 @@ mod tests {
     }
 
     #[test]
+    fn brachet_routes_share_grounded_doublet_preparation_and_real_loot() {
+        let definition = encounter("brachet_leads_to_slain_knight_v1").unwrap();
+        assert!(definition.triggers.travel && definition.triggers.rest);
+        assert_eq!(definition.cast.len(), 1);
+        assert_eq!(definition.cast[0].nature, SpeakerNature::Mortal);
+        let authored = serde_json::to_string(definition).unwrap();
+        assert!(!authored.contains(r#""reviewed_shakespearean":false"#));
+        assert!(!authored.contains(r#""reviewed_iambic_pentameter":true"#));
+        let choice = |id| {
+            definition
+                .choices
+                .iter()
+                .find(|choice| choice.id == id)
+                .unwrap()
+        };
+        let active = definition
+            .choices
+            .iter()
+            .filter(|choice| choice.id != "ignore")
+            .collect::<Vec<_>>();
+        for route in &active {
+            let effects = serde_json::to_string(&route.effects).unwrap();
+            assert!(effects.contains(r#""item_id":"arming_doublet","quantity":1"#));
+            assert!(effects.contains("arming_doublet_resists_close_blade_hits_on_covered_chest"));
+            assert!(
+                !["dog", "brachet", "corpse", "body"]
+                    .iter()
+                    .any(|id| effects.contains(id))
+            );
+            assert_eq!(
+                route.quest_reward_tags,
+                ["prepare_arming_doublet_against_blade_only_opposition"]
+            );
+        }
+        let doublet = crate::item_catalog::definition("arming_doublet").unwrap();
+        assert_eq!(doublet.base_value, 12);
+        assert!(matches!(&doublet.kind,
+            crate::item_catalog::ItemKind::Armor { coverage, resistance, padding, .. }
+                if *coverage > 0.0 && *resistance > 0.0 && *padding > 0.0));
+        let topology = serde_json::to_string(&doublet.equipment).unwrap();
+        assert!(topology.contains(r#""location":"chest","channel":"padding"#));
+        assert!(topology.contains(r#""protection":["chest"]"#));
+        let retainer = crate::bestiary::ThreatId::ArmedRetainer.profile();
+        assert_eq!(retainer.combat.attack, crate::bestiary::AttackStyle::Blade);
+        assert!(!retainer.combat.ranged);
+        let command = choice("rally_orderly_recovery");
+        assert!(command.response[0].text.contains("I alone shall choose"));
+        let faith = choice("keep_ordinary_christian_vigil");
+        assert_eq!(faith.effects.len(), 2);
+        assert!(
+            faith
+                .outcome_tags
+                .iter()
+                .any(|tag| tag == "ordinary_body_office")
+        );
+        let evil = choice("misdirect_master_and_strip_dead");
+        assert!(matches!(
+            evil.effects[0],
+            Effect::Currency { amount: 96, .. }
+        ));
+        let evil_effects = serde_json::to_string(&evil.effects).unwrap();
+        assert!(evil_effects.contains("mail_shirt") && evil_effects.contains("war_hammer"));
+        assert!(evil.personality.len() == 1 && evil.personality[0].delta < 0);
+        assert_eq!(exemplified_virtue(&evil.personality), None);
+        let mail = crate::item_catalog::definition("mail_shirt").unwrap();
+        let hammer = crate::item_catalog::definition("war_hammer").unwrap();
+        assert_eq!(
+            96 + mail.base_value + hammer.base_value + doublet.base_value,
+            177
+        );
+        assert!(177 > 14 * doublet.base_value);
+        let ignore = choice("ignore");
+        assert!(ignore.transition.is_none());
+        assert!(ignore.effects.is_empty() && ignore.personality.is_empty());
+    }
+
+    #[test]
     fn combat_transition_rejects_unsafe_counts() {
         let mut definition = encounter("unlawful_bridge_custom_v1").unwrap().clone();
         let choice = definition
