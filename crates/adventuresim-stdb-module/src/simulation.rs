@@ -9,8 +9,9 @@ use crate::personality::character_personality;
 use crate::time::{character_time, world_clock};
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterTrainingSchedule, DeathCause, DeathSource,
-    ScheduleAllocation, character_attributes, character_skills, character_training_schedule,
-    infection_episode, investigation_witness_referral, local_problem_receipt, party_authority,
+    ScheduleAllocation, case_authority, character_attributes, character_capability,
+    character_skills, character_training_schedule, infection_episode,
+    investigation_witness_referral, local_problem_receipt, party_authority, party_member,
     quest_generation_authority, settlement, world_data_import,
 };
 
@@ -115,6 +116,24 @@ pub fn simulation_quest_fixture(ctx: &ViewContext) -> Vec<SimulationQuestFixture
     else {
         return Vec::new();
     };
+    let Some(case) = ctx
+        .db
+        .case_authority()
+        .id()
+        .find(&fixture.generated_canonical_case_id)
+    else {
+        return Vec::new();
+    };
+    let Some(manifest) =
+        crate::strategic::validated_generated_dialogue_manifest(&case, Some(&authority))
+            .ok()
+            .flatten()
+    else {
+        return Vec::new();
+    };
+    let Some(witness) = manifest.witnesses.first() else {
+        return Vec::new();
+    };
     let referral = ctx
         .db
         .investigation_witness_referral()
@@ -122,10 +141,16 @@ pub fn simulation_quest_fixture(ctx: &ViewContext) -> Vec<SimulationQuestFixture
         .filter(fixture.generated_leader_id)
         .find(|referral| {
             referral.canonical_case_id == fixture.generated_canonical_case_id
-                && referral.public_case_id == authority.public_case_id
+                && referral.public_case_id == manifest.public_case_id
                 && referral.catalog_revision == authority.catalog_revision
                 && referral.grant_kind == "initial_rumor"
                 && !referral.source_receipt_id.is_empty()
+                && referral.witness_resident_character_id == witness.resident_character_id
+                && referral.expected_settlement_id == authority.settlement_id
+                && referral.expected_location_id == witness.expected_location
+                && referral.source_witness_id.is_empty()
+                && referral.source_testimony_index == 0
+                && referral.source_proposition_id.is_empty()
         });
     let Some(referral) = referral else {
         return Vec::new();
@@ -138,6 +163,12 @@ pub fn simulation_quest_fixture(ctx: &ViewContext) -> Vec<SimulationQuestFixture
         .is_some_and(|receipt| {
             receipt.character_id == fixture.generated_leader_id
                 && receipt.opaque_case_ref == fixture.generated_canonical_case_id
+                && receipt.problem_id == manifest.problem_id
+                && receipt.settlement_id == authority.settlement_id
+                && receipt.contact_resident_character_id == witness.resident_character_id
+                && receipt.expected_location_id == witness.expected_location
+                && referral.source_witness_resident_character_id
+                    == receipt.source_resident_character_id
         })
     {
         return Vec::new();
@@ -284,13 +315,50 @@ pub fn seed_simulation_quest_fixture(
     }
     if let Some(existing) = ctx.db.simulation_quest_fixture_authority().id().find(0) {
         return if existing.run_id == run.id
-            && existing.direct_leader_id == direct_leader_id
-            && existing.generated_leader_id == generated_leader_id
+            && ((existing.direct_leader_id == direct_leader_id
+                && existing.generated_leader_id == generated_leader_id)
+                || (existing.direct_leader_id == generated_leader_id
+                    && existing.generated_leader_id == direct_leader_id))
         {
             Ok(())
         } else {
             Err("Simulation quest fixture is already bound to different leaders".into())
         };
+    }
+    let party_power = |leader_id| -> Result<u64, String> {
+        let party_id = ctx
+            .db
+            .character()
+            .id()
+            .find(leader_id)
+            .and_then(|character| character.party_id)
+            .ok_or("Quest coverage leader has no party")?;
+        ctx.db
+            .party_member()
+            .party_id()
+            .filter(&party_id)
+            .map(|member| {
+                ctx.db
+                    .character_capability()
+                    .character_id()
+                    .find(member.character_id)
+                    .map(|capability| capability.autoresolve_combat_power)
+                    .ok_or_else(|| "Quest coverage party member has no combat assessment".into())
+            })
+            .try_fold(0u64, |total, power| {
+                power.map(|power| total.saturating_add(power))
+            })
+    };
+    let first_power = party_power(direct_leader_id)?;
+    let second_power = party_power(generated_leader_id)?;
+    let (direct_leader_id, generated_leader_id, direct_power) = if second_power > first_power {
+        (generated_leader_id, direct_leader_id, second_power)
+    } else {
+        (direct_leader_id, generated_leader_id, first_power)
+    };
+    let fixture_enemy_power = crate::strategic::simulation_quest_fixture_enemy_power()?;
+    if direct_power == 0 || direct_power.saturating_mul(4) < fixture_enemy_power.saturating_mul(5) {
+        return Err("Quest coverage has no party safe for its ordinary fixture opponent".into());
     }
     let seeded = crate::strategic::seed_simulation_quest_fixture_inner(
         ctx,
@@ -650,9 +718,12 @@ mod tests {
             .next()
             .unwrap();
         assert!(projection.contains("investigation_witness_referral()"));
+        assert!(projection.contains("validated_generated_dialogue_manifest("));
         assert!(projection.contains("referral.grant_kind == \"initial_rumor\""));
         assert!(projection.contains("!referral.source_receipt_id.is_empty()"));
         assert!(projection.contains("local_problem_receipt()"));
+        assert!(projection.contains("receipt.problem_id == manifest.problem_id"));
+        assert!(projection.contains("receipt.expected_location_id == witness.expected_location"));
         assert!(projection.contains("generated_case_id: referral.public_case_id"));
     }
 

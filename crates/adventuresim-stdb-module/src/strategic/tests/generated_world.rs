@@ -81,7 +81,8 @@ fn simulation_quest_fixture_exposes_ordinary_provisioning_to_both_paths() {
         fixture
             .contains("ensure_simulation_quest_provisioning_environment(ctx, generated_leader_id)")
     );
-    assert!(fixture.contains("\"cultist\".into(), 1, 1"));
+    assert!(fixture.contains("SIMULATION_QUEST_ENEMY_TYPE.into()"));
+    assert!(fixture.contains("SIMULATION_QUEST_ENEMY_DIFFICULTY"));
     assert!(!fixture.contains("\"bandit\".into(), 1, 1"));
 }
 

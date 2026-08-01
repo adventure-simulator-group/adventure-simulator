@@ -1512,6 +1512,20 @@ pub(crate) struct SimulationQuestFixtureSeed {
     pub generated_party_id: String,
 }
 
+const SIMULATION_QUEST_ENEMY_TYPE: &str = "cultist";
+const SIMULATION_QUEST_ENEMY_DIFFICULTY: i32 = 1;
+const SIMULATION_QUEST_ENEMY_COMBAT_SCALE_BPS: u32 = 10_000;
+
+pub(crate) fn simulation_quest_fixture_enemy_power() -> Result<u64, String> {
+    autoresolve_enemy(
+        u64::MAX,
+        SIMULATION_QUEST_ENEMY_TYPE,
+        SIMULATION_QUEST_ENEMY_DIFFICULTY,
+        SIMULATION_QUEST_ENEMY_COMBAT_SCALE_BPS,
+    )
+    .map(|enemy| adventuresim_core::autoresolve::autoresolve_combat_power(&enemy))
+}
+
 fn simulation_quest_provisioning_economy(
     mut economy: SettlementEconomyProfile,
 ) -> Result<SettlementEconomyProfile, String> {
@@ -1715,13 +1729,21 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
     // It still uses ordinary hostile materialization and autoresolve; unlike an
     // armored bandit, it does not silently turn a difficulty-one fixture into
     // a shield-and-armor proficiency check for starting adventurers.
-    materialize_hostile_group(ctx, &hostile_group_id, &site, "cultist".into(), 1, 1)?;
+    materialize_hostile_group(
+        ctx,
+        &hostile_group_id,
+        &site,
+        SIMULATION_QUEST_ENEMY_TYPE.into(),
+        1,
+        SIMULATION_QUEST_ENEMY_DIFFICULTY,
+    )?;
     ctx.db.contract_authority().insert(Contract {
         id: contract_id.clone(),
         gateway_bucket: 0,
         case_id,
         title: "Trouble on the Near Road".into(),
-        description: "Drive one knife-wielding troublemaker from a camp near the settlement.".into(),
+        description: "Drive one knife-wielding troublemaker from a camp near the settlement."
+            .into(),
         difficulty: 1,
         gold_reward: 12,
         xp_reward: 20,

@@ -8,7 +8,7 @@ mod healing_tests {
         MissionAttemptStatus, MissionAuthority, MissionOutcomeCandidate, QuestGenerationAuthority,
         RecruitmentOffer, RecruitmentOfferBindingFields, RecruitmentOfferId,
         RecruitmentOfferStatus, RecruitmentSourceId, STRATEGIC_SOURCE, activity_incident_source_id,
-        autoresolve_drop, carrying_capacity_multiplier_for_condition,
+        autoresolve_drop, autoresolve_enemy, carrying_capacity_multiplier_for_condition,
         case_refs_have_exact_dialogue_provenance, destination_hostile_archetype,
         generated_case_site_combat_eligible, generated_dialogue_action_matches,
         generated_dialogue_producer_recipient, generated_scene_key,

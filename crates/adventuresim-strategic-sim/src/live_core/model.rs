@@ -998,7 +998,7 @@ fn select_expedition_encounter_choice(
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct PublicCombatFingerprint {
-    members: Vec<(u64, bool, bool, bool, bool, u32, u32, u32)>,
+    members: Vec<(u64, bool, bool, bool, bool, u32, u32, u32, u64)>,
 }
 
 #[derive(Clone, Debug)]
@@ -1085,35 +1085,8 @@ fn public_contract_assessment(
         .collect::<Vec<_>>();
     let party_power_milli = ready
         .iter()
-        .map(|member| {
-            let capability = &member.capability;
-            let physical =
-                (capability.endurance.max(0.0).min(10.0) * 1_000.0).round() as u64;
-            let technique = ((capability.athletics.max(0.0).min(10.0)
-                + capability.weapon_precision.max(0.0).min(10.0))
-                * 250.0)
-                .round() as u64;
-            let equipment = 250 * u64::from(capability.precise)
-                + 500
-                    * u64::from(
-                        capability.heavy
-                            || capability.half_armor
-                            || capability.three_quarter_armor
-                            || capability.full_armor,
-                    );
-            // A ready ranged weapon materially changes the real autoresolve:
-            // it receives a bounded opening volley before melee closes.
-            let opening = 1_500 * u64::from(capability.ranged);
-            physical
-                .saturating_add(technique)
-                .saturating_add(equipment)
-                .saturating_add(opening)
-        })
-        .sum::<u64>()
-        // Public capability checks use a 0..5 scale; normalize the aggregate
-        // to the same approximately-10k-per-trained-humanoid units as hostile
-        // authority rather than comparing it to raw attribute rating.
-        .saturating_mul(2);
+        .map(|member| member.capability.autoresolve_combat_power)
+        .sum::<u64>();
     let enemy_power_milli = opposition_combat_power;
     let eligible = !ready.is_empty()
         && party_power_milli.saturating_mul(4) >= enemy_power_milli.saturating_mul(5);
@@ -1121,6 +1094,8 @@ fn public_contract_assessment(
         eligible,
         reason: if ready.is_empty() {
             "no_ready_public_combatants"
+        } else if party_power_milli == 0 {
+            "missing_authoritative_party_power"
         } else if eligible {
             "public_matchup_with_safety_margin"
         } else {
@@ -1141,6 +1116,7 @@ fn public_combat_fingerprint(mut capabilities: Vec<CharacterCapability>) -> Publ
             (row.endurance.max(0.0) * 100.0).round() as u32,
             (row.athletics.max(0.0) * 100.0).round() as u32,
             (row.weapon_precision.max(0.0) * 100.0).round() as u32,
+            row.autoresolve_combat_power,
         )).collect(),
     }
 }

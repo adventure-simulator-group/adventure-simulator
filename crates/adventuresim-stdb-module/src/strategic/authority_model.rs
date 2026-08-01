@@ -168,8 +168,9 @@ pub struct BackendContract {
     pub accepted_by: Option<String>,
     pub opposition_wording: String,
     pub opposition_count_wording: String,
-    /// Observer-safe authoritative hostile power after threat-profile and
-    /// incident scaling. This discloses matchup magnitude, not hidden identity.
+    /// Observer-safe aggregate built from the exact enemy Combatants that
+    /// autoresolve will construct: authored profile, base difficulty, incident
+    /// scale, equipment, training, and current enemy count.
     pub opposition_combat_power: u64,
     pub accepted_at_minute: Option<u64>,
     pub paid_at_minute: Option<u64>,
@@ -204,7 +205,21 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
                         .case_site_id()
                         .find(&site.id)
                 })
-                .map(|group| u64::from(group.normalized_combat_power))
+                .map(|group| {
+                    autoresolve_enemy(
+                        u64::MAX,
+                        &group.enemy_type,
+                        group.base_difficulty,
+                        group.combat_scale_bps,
+                    )
+                    .map(|enemy| {
+                        adventuresim_core::autoresolve::autoresolve_combat_power(&enemy)
+                            .saturating_mul(u64::from(group.enemy_count))
+                    })
+                    .ok()
+                })
+                .collect::<Option<Vec<_>>>()?
+                .into_iter()
                 .sum();
             Some(BackendContract {
                 id: row.id,

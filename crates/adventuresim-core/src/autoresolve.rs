@@ -503,6 +503,85 @@ impl Combatant {
     }
 }
 
+/// Observer-safe aggregate strength derived from the same complete combatant
+/// snapshot consumed by autoresolve. This intentionally includes equipped
+/// weapon accuracy, trained weapon/dodge/block/balance/will checks, armor,
+/// current limb health, fatigue/encumbrance, and strategic incapacitation.
+/// It is a conservative decision aid, not an outcome oracle.
+pub fn autoresolve_combat_power(combatant: &Combatant) -> u64 {
+    let attack_check = |equipment: &CombatEquipment, weights: LimbWeights| {
+        equipment
+            .weapon_skill_distribution()
+            .weighted_check(|skill| {
+                combatant.skills.skill_check_by_parts(
+                    skill,
+                    &combatant.attributes,
+                    &combatant.body,
+                    &combatant.essentials,
+                    equipment,
+                    weights,
+                )
+            })
+            * equipment.weapon_accuracy().max(0.0)
+    };
+    let melee = combatant.equipment.for_melee();
+    let ranged = combatant.equipment.for_ranged();
+    let melee_check = combatant
+        .equipment
+        .melee_weapon
+        .map_or(0.0, |_| attack_check(&melee, LimbWeights::both_arms()));
+    let ranged_check = combatant
+        .equipment
+        .ranged_weapon
+        .filter(|_| combatant.equipment.ammunition > 0)
+        .map_or(0.0, |_| attack_check(&ranged, LimbWeights::both_arms()));
+    let skill_check = |skill, weights| {
+        combatant.skills.skill_check_by_parts(
+            skill,
+            &combatant.attributes,
+            &combatant.body,
+            &combatant.essentials,
+            &combatant.equipment,
+            weights,
+        )
+    };
+    let dodge = skill_check(Skill::Dodge, LimbWeights::all_equal());
+    let block = skill_check(Skill::Block, LimbWeights::all_equal())
+        * (1.0 + combatant.equipment.shield_block_bonus.max(0.0));
+    let balance = skill_check(Skill::Balance, LimbWeights::both_legs());
+    let will = skill_check(Skill::Will, LimbWeights::all_equal());
+    let armor = BodyPart::FULL_BODY
+        .iter()
+        .map(|part| {
+            let armor = combatant.equipment.armor[body_part_index(part)];
+            (armor.resistance + armor.padding).max(0.0) * armor.coverage.clamp(0.0, 1.0)
+        })
+        .sum::<f32>()
+        / 7.0;
+    let health =
+        combatant.body.health.iter().copied().sum::<f32>() / combatant.body.health.len() as f32;
+    let ranged_opening = combatant.equipment.ranged_weapon.map_or(0.0, |weapon| {
+        if combatant.equipment.ammunition == 0 {
+            0.0
+        } else {
+            (weapon.ranged_range.max(0.0) / weapon.attack_interval_seconds.max(0.1))
+                .sqrt()
+                .min(5.0)
+        }
+    });
+    let raw = melee_check.max(ranged_check) * 2_000.0
+        + dodge * 900.0
+        + block * 900.0
+        + balance * 500.0
+        + will * 500.0
+        + combatant.attributes.endurance.max(0.0) * 500.0
+        + armor * 40.0
+        + health.clamp(0.0, 1.0) * 1_000.0
+        + ranged_opening * 500.0;
+    let readiness = (1.0 - combatant.incapacitation()).clamp(0.0, 1.0);
+    (raw.max(0.0) * readiness).round().min(u64::MAX as f32) as u64
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BattleVictor {
     Allies,
@@ -1533,6 +1612,28 @@ mod tests {
             fighter.equipment.melee_weapon = Some(weapon);
         }
         fighter
+    }
+
+    #[test]
+    fn combat_power_tracks_training_equipment_and_condition() {
+        let novice = fighter(1, 1.0, false);
+        let mut trained = novice.clone();
+        trained.id = 2;
+        trained.skills = fighter(2, 4.0, false).skills;
+        assert!(autoresolve_combat_power(&trained) > autoresolve_combat_power(&novice));
+
+        let mut armored = novice.clone();
+        armored.equipment.armor.fill(CombatArmor {
+            resistance: 25.0,
+            padding: 15.0,
+            coverage: 0.8,
+            ..CombatArmor::default()
+        });
+        assert!(autoresolve_combat_power(&armored) > autoresolve_combat_power(&novice));
+
+        let mut impaired = trained.clone();
+        impaired.starting_incapacitation = 0.75;
+        assert!(autoresolve_combat_power(&impaired) < autoresolve_combat_power(&trained));
     }
 
     #[test]

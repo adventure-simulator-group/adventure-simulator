@@ -655,6 +655,7 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
                 spec.attributes.intelligence,
             ),
             weapon_precision,
+            autoresolve_combat_power: 0,
         };
         let organization_memberships = spec
             .organization

@@ -10,7 +10,7 @@ use crate::repair::item_condition as _;
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, InventoryItem, Item,
     ItemKind, character_attributes, character_limbs, character_skills, character_stats,
-    inventory_item,
+    character_strategic_condition, inventory_item,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -39,6 +39,8 @@ pub struct CharacterCapability {
     pub religion: f32,
     #[default(0.0)]
     pub weapon_precision: f32,
+    #[default(0)]
+    pub autoresolve_combat_power: u64,
 }
 
 impl From<(u64, CharacterCapabilities)> for CharacterCapability {
@@ -66,6 +68,7 @@ impl From<(u64, CharacterCapabilities)> for CharacterCapability {
             command: value.command,
             religion: value.religion,
             weapon_precision: value.weapon_precision,
+            autoresolve_combat_power: 0,
         }
     }
 }
@@ -114,7 +117,21 @@ pub fn refresh_character_capability(
     character_id: u64,
 ) -> Result<CharacterCapabilities, String> {
     let capabilities = evaluate_character(ctx, character_id)?;
-    let row = CharacterCapability::from((character_id, capabilities));
+    let mut row = CharacterCapability::from((character_id, capabilities));
+    let condition = ctx
+        .db
+        .character_strategic_condition()
+        .character_id()
+        .find(character_id);
+    let combatant = load_combatant(
+        ctx,
+        character_id,
+        condition.as_ref().map_or(0.0, |row| row.incapacitation),
+        condition.as_ref().map_or(0.0, |row| row.pain),
+        condition.as_ref().map_or(0.0, |row| row.blood_loss),
+    )?;
+    row.autoresolve_combat_power =
+        adventuresim_core::autoresolve::autoresolve_combat_power(&combatant);
     if let Some(existing) = ctx
         .db
         .character_capability()

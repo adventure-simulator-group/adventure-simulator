@@ -21,6 +21,7 @@ fn capability(character_id: u64, melee: bool, ranged: bool, precise: bool, heavy
         command: 0.0,
         religion: 0.0,
         weapon_precision: if precise { 1.0 } else { 0.0 },
+        autoresolve_combat_power: 7_000,
     }
 }
 
