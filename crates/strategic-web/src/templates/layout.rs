@@ -391,12 +391,6 @@ fn settlement_top_bar(
                         title="Create an accepted errantry quest and open its puzzle immediately" {
                         "Provision puzzle"
                     }
-                    button type="button" class="btn btn-small developer-road-encounter-demo-button"
-                        data-developer-road-encounter-demo data-catalog-id="wounded_knight_linden_v1" data-developer-only
-                        aria-label="Load the wounded knight road encounter demo"
-                        title="Load this compiled road encounter at the current journey camp" {
-                        "Wounded knight"
-                    }
                     button type="button" class="btn btn-small developer-outbreak-demo-button"
                         data-developer-outbreak-demo data-developer-only
                         aria-label="Load the outbreak demo"

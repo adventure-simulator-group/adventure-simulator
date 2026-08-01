@@ -482,7 +482,8 @@
     button.disabled = true;
     button.textContent = "Loading...";
     try {
-      const catalogId = button.dataset.catalogId;
+      const catalogId = document.querySelector("[data-developer-road-encounter-catalog]")?.value;
+      if (!catalogId) throw new Error("Choose a compiled road encounter.");
       const response = await fetch(`/api/developer/road-encounter-demo?catalog_id=${encodeURIComponent(catalogId)}`, {
         method: "POST",
         headers: { Accept: "application/json" },

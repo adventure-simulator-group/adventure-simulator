@@ -24,15 +24,16 @@
         {
           "id": "treat",
           "label": "Spend a bandage and dress the knight's wound",
-          "response": [{ "speaker": "wounded_knight", "text": "Thy hands have stayed the blood. Take these few groschen from my saddle-purse, and bear my thanks beside them.", "reviewed_shakespearean": true }],
-          "result": "Thou spendest a clean bandage, dressest the wound, and acceptest a modest purse in thanks.",
+          "response": [{ "speaker": "wounded_knight", "text": "Thy hands have stayed the blood. Mark this: they hid within the thorn brake and rushed me only when I drew near. Take these few groschen with my thanks.", "reviewed_shakespearean": true }],
+          "result": "Thou spendest a clean bandage, dressest the wound, learnest the assailants' close-ambush method, and acceptest a modest purse in thanks.",
           "deed": "treat_wounded_knight_beneath_linden",
           "outcome_tags": ["mercy", "field_treatment"],
           "requirements": [{ "kind": "item", "item_id": "bandage", "minimum_quantity": 1 }],
           "checks": [{ "kind": "skill", "skill": "physiology", "difficulty_milli": 1000 }],
           "effects": [
             { "kind": "consume_item", "item_id": "bandage", "quantity": 1 },
-            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 8 }
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 8 },
+            { "kind": "information", "information_id": "linden_assailants_close_ambush_method" }
           ],
           "personality": [{ "axis": "conscience", "delta": 100, "virtue": "mercy" }],
           "quest_reward_tags": ["assailants_favor_close_ambush"]
@@ -45,7 +46,10 @@
           "deed": "track_linden_assailants_and_recover_dispatch",
           "outcome_tags": ["prudence", "tracking", "information_gained"],
           "checks": [{ "kind": "skill", "skill": "terrain_forest", "difficulty_milli": 1100 }],
-          "effects": [{ "kind": "information", "information_id": "linden_robbers_close_ambush_route" }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "captured_black_knight_dispatch", "quantity": 1 },
+            { "kind": "information", "information_id": "linden_robbers_close_ambush_route" }
+          ],
           "personality": [{ "axis": "drive", "delta": 90, "virtue": "prudence" }],
           "quest_reward_tags": ["enemy_ambush_route_warning"]
         },

@@ -1135,7 +1135,13 @@ pub fn resolve_errantry_road_challenge(
         && overlay.origin == NarrativeEncounterOrigin::Errantry && overlay.reward_eligible
         && !selected.quest_reward_tags.is_empty()
     {
-        overlay.reward_addendum = Some("Thy deed hath also yielded practical knowledge for the danger ahead; consult the material token before battle.".into());
+        let has_material_token = selected.effects.iter().any(|effect| matches!(effect,
+            adventuresim_core::road_encounter_catalog::Effect::GrantItem { .. }));
+        overlay.reward_addendum = Some(if has_material_token {
+            "Thy deed hath also yielded practical knowledge for the danger ahead; consult the material token before battle."
+        } else {
+            "Thy deed hath also yielded practical knowledge for the danger ahead; remember this observation when preparing for battle."
+        }.into());
         ctx.db.narrative_encounter_private_authority().occurrence_id().update(overlay);
     }
     challenge.open = false;
