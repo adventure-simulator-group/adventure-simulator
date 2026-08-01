@@ -47,6 +47,65 @@ fn sampler_fixture() -> (MissionAuthority, Vec<MissionOutcomeCandidate>) {
 }
 
 #[test]
+fn quest_encounter_influence_is_scoped_to_outbound_case_site_destinations() {
+    let outbound = JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
+        id: CaseSiteId::from("case-site:test".to_string()),
+        name: "Test Site".into(),
+    });
+    assert_eq!(
+        quest_influence_case_site_id(&outbound),
+        Some("case-site:test")
+    );
+    assert_eq!(
+        quest_encounter_archetype("bandit"),
+        Some(EncounterArchetype::Bandits)
+    );
+
+    let returning = JourneyEndpoint::Settlement(JourneySettlementEndpoint {
+        id: "settlement:test".into(),
+        name: "Test Settlement".into(),
+    });
+    assert_eq!(quest_influence_case_site_id(&returning), None);
+    assert_eq!(
+        quest_influence_case_site_id(&JourneyEndpoint::Camp("camp:test".into())),
+        None
+    );
+
+    let multi_site_groups = [
+        (
+            "group:first".into(),
+            "case-site:other".into(),
+            "skeleton".into(),
+        ),
+        (
+            "group:destination".into(),
+            "case-site:test".into(),
+            "bandit".into(),
+        ),
+        (
+            "group:last".into(),
+            "case-site:test".into(),
+            "skeleton".into(),
+        ),
+    ];
+    assert_eq!(
+        destination_hostile_archetype("case-site:test", multi_site_groups),
+        Some(EncounterArchetype::Bandits)
+    );
+
+    let interrupt = STRATEGIC_SOURCE
+        .split("fn maybe_interrupt_travel")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("fn advance_party_movement_until_encounter")
+                .next()
+        })
+        .unwrap();
+    assert!(interrupt.contains("quest_influence_case_site_id(&journey.destination)"));
+    assert!(!interrupt.contains("case_site_id().unwrap()"));
+}
+
+#[test]
 fn persistent_npc_chat_authority_accepts_generated_ids_without_trusting_their_prefix() {
     assert!(npc_conversation_authority_matches(
         "riverdale",
@@ -376,7 +435,10 @@ fn random_and_authored_encounters_share_the_only_constructor_literal() {
     let random = encounters
         .split("fn maybe_interrupt_travel")
         .nth(1)
-        .and_then(|tail| tail.split("fn advance_party_movement_until_encounter").next())
+        .and_then(|tail| {
+            tail.split("fn advance_party_movement_until_encounter")
+                .next()
+        })
         .expect("random encounter materialization");
     assert!(random.contains("build_strategic_encounter("));
     let authored = include_str!("../challenges.rs");
@@ -725,5 +787,14 @@ fn join_entry_points_reject_an_all_dead_target_before_creating_state() {
     assert!(
         general.find("require_living_recruitment_target").unwrap()
             < general.find(".insert(PartyRecruitmentRole").unwrap()
+    );
+}
+#[test]
+fn authoritative_combat_power_tracks_enemy_difficulty() {
+    let novice = autoresolve_enemy(1, "cultist", 1, 10_000).unwrap();
+    let veteran = autoresolve_enemy(2, "cultist", 6, 10_000).unwrap();
+    assert!(
+        adventuresim_core::autoresolve::autoresolve_combat_power(&veteran)
+            > adventuresim_core::autoresolve::autoresolve_combat_power(&novice)
     );
 }

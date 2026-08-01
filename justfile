@@ -380,7 +380,7 @@ quest-web-eval output_dir base_url="http://127.0.0.1:24301" start_path="/charact
 # Own one nonce-named local database for the duration of the command. There is
 # intentionally no database or server override.
 strategic-sim-core-loop output_dir seed="42" population="4" cycles="100" duration_days="365" party_size="2": spacetime-version-check spacetime-start
-    @{{ python_bin }} scripts/just_tasks.py strategic-sim-core-loop {{ seed }} {{ population }} {{ cycles }} {{ duration_days }} {{ party_size }} {{ quote(output_dir) }} --spacetime-url {{ spacetime_url }} --module-dir {{ quote(strategic_dir) }}
+    @{{ python_bin }} scripts/just_tasks.py strategic-sim-core-loop {{ seed }} {{ population }} {{ cycles }} {{ duration_days }} {{ party_size }} {{ quote(output_dir) }} --spacetime-url {{ spacetime_url }} --module-dir {{ quote(strategic_dir) }} --require-quest-coverage
 
 # Run the authoritative core loop against the pinned compiled 1544 world.
 # output_dir must not exist; the launcher always deletes its nonce database.

@@ -4,7 +4,8 @@ mod tests {
         PersistedBestiaryLoreResult, PhysicalEvidenceInspectionActionReceipt,
         PhysicalEvidenceInspectionAttempt, augment_physical_evidence_inspection,
         derive_bestiary_deductions, inspection_action_receipt_matches, parse_bestiary_lore_results,
-        successful_bestiary_lore_results,
+        generated_initially_known_site_ids, successful_bestiary_lore_results,
+        successful_referred_contact_resolution,
     };
     use adventuresim_core::quest_generation::BestiaryEvidenceImplication;
     use adventuresim_world_schema::BestiaryCategory;

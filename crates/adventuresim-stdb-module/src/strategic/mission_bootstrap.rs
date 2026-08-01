@@ -463,6 +463,7 @@ pub fn seed_standalone_tactical_mission(
             .hostile_group_authority()
             .insert(HostileGroupAuthority {
                 id: hostile_group_id.clone(),
+                case_site_id_key: case_site.id.value.clone(),
                 case_site_id: case_site.id.clone(),
                 enemy_type: "bandit".into(),
                 base_enemy_count: required_enemy_kills
@@ -719,13 +720,12 @@ pub(crate) fn seed_world(
         ),
     ];
     if include_errantry_demo_chapter {
-        let errantry_chapter_settlement_id = adventuresim_core::organization::organization(
-            ERRANTRY_ISSUER_ORGANIZATION_ID,
-        )
-        .filter(|organization| organization.errantry_issuance)
-        .and_then(|organization| organization.chapters.first())
-        .map(|chapter| chapter.settlement_id.as_str())
-        .ok_or("Order errantry demo has no canonical authored chapter")?;
+        let errantry_chapter_settlement_id =
+            adventuresim_core::organization::organization(ERRANTRY_ISSUER_ORGANIZATION_ID)
+                .filter(|organization| organization.errantry_issuance)
+                .and_then(|organization| organization.chapters.first())
+                .map(|chapter| chapter.settlement_id.as_str())
+                .ok_or("Order errantry demo has no canonical authored chapter")?;
         settlements.push((
             errantry_chapter_settlement_id,
             "St. George Chapter (Development Demo)",
@@ -1132,7 +1132,7 @@ fn generated_witness_candidates(
 ) -> Vec<adventuresim_core::quest_generation::WitnessCandidate> {
     use adventuresim_core::{
         quest_generation::{
-            Circumstance, WitnessCandidate, WitnessDemographic, retain_navigable_witnesses,
+            retain_navigable_witnesses, Circumstance, WitnessCandidate, WitnessDemographic,
         },
         settlement_economy::player_visible_npc_tabs,
     };
@@ -1250,7 +1250,7 @@ pub(crate) fn developer_npc_witness_candidate(
     presence: &crate::settlement_population::SettlementResidentPresence,
 ) -> Option<adventuresim_core::quest_generation::WitnessCandidate> {
     use adventuresim_core::quest_generation::{
-        VisibleWitnessCandidateInput, visible_witness_candidate,
+        visible_witness_candidate, VisibleWitnessCandidateInput,
     };
     let age_band = format!("{:?}", npc.age_band);
     let presentation = format!("{:?}", npc.presentation);
@@ -1372,7 +1372,10 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
     materialize_generated_quest(ctx, &settlement, &context, &generated, None)
 }
 
-fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+fn materialize_preferred_outbreak(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<String, String> {
     use adventuresim_core::quest_generation as qg;
 
     let character = crate::character::require_living_character(ctx, character_id)?;
@@ -1387,6 +1390,129 @@ fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), Str
         .find(&settlement_id)
         .ok_or("Current settlement not found")?;
 
+    let now_minute = crate::time::refresh_clock(ctx)?.max(4_000);
+    let entropy = character_id ^ 0x4f55_5442_5245_414b;
+    let context = qg::GenerationContext {
+        seed: entropy.rotate_left(11),
+        observer_entropy_hi: entropy.rotate_left(23),
+        observer_entropy_lo: entropy.rotate_right(17),
+        settlement_id: settlement_id.clone(),
+        settlement_name: settlement.name.clone(),
+        scope: adventuresim_core::local_problem::Scope::Settlement {
+            settlement_id: settlement_id.clone(),
+        },
+        ordinal: u16::MAX,
+        now_minute,
+        incident_weather: adventuresim_core::weather::Precipitation::Clear,
+        requested_family: Some(qg::TemplateFamily::Outbreak),
+        witness_candidates: generated_witness_candidates(ctx, &settlement_id),
+    };
+    let generated = qg::generate(&context)
+        .map_err(|error| format!("Outbreak demo generation failed: {error:?}"))?;
+    let witness = generated
+        .witnesses
+        .first()
+        .ok_or("Generated quest fixture has no first witness")?;
+    if !context
+        .witness_candidates
+        .iter()
+        .any(|candidate| candidate.resident_character_id == witness.resident_character_id)
+    {
+        return Err("Generated quest fixture first witness is not navigable".into());
+    }
+    if ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&generated.canonical_case_id)
+        .is_none()
+    {
+        qg::validate(&generated).map_err(|errors| {
+            format!("Outbreak demo manifest is invalid: {}", errors.join("; "))
+        })?;
+        materialize_generated_quest(ctx, &settlement, &context, &generated, None)?;
+    }
+    crate::local_problem::prefer_next_rumor(
+        ctx,
+        character_id,
+        &settlement_id,
+        &generated.problem_id,
+    );
+    Ok(generated.canonical_case_id)
+}
+
+fn ordinary_generated_site_distance_m(seed: u64, index: usize) -> u64 {
+    4_000 + (seed.rotate_left(index as u32) % 17_000)
+}
+
+fn materialize_simulation_acceptance_outbreak(
+    ctx: &ReducerContext,
+    character_id: u64,
+    policy_seed: u64,
+) -> Result<String, String> {
+    use adventuresim_core::quest_generation as qg;
+
+    const MAX_CANDIDATES: u16 = 32_768;
+    const MAX_REQUIRED_ROUTE_DISTANCE_M: u64 = 5_500;
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    let settlement_id = character
+        .current_settlement_id
+        .clone()
+        .ok_or("Quest acceptance outbreak leader must be in a settlement")?;
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&settlement_id)
+        .ok_or("Quest acceptance outbreak settlement not found")?;
+    let now_minute = crate::time::refresh_clock(ctx)?.max(4_000);
+    let entropy = character_id ^ policy_seed ^ 0x4143_4345_5054_414e;
+    for candidate in 0..MAX_CANDIDATES {
+        let candidate_entropy = entropy ^ u64::from(candidate).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        let context = qg::GenerationContext {
+            seed: candidate_entropy.rotate_left(11),
+            observer_entropy_hi: candidate_entropy.rotate_left(23),
+            observer_entropy_lo: candidate_entropy.rotate_right(17),
+            settlement_id: settlement_id.clone(),
+            settlement_name: settlement.name.clone(),
+            scope: adventuresim_core::local_problem::Scope::Settlement {
+                settlement_id: settlement_id.clone(),
+            },
+            ordinal: candidate,
+            now_minute,
+            incident_weather: adventuresim_core::weather::Precipitation::Clear,
+            requested_family: Some(qg::TemplateFamily::Outbreak),
+            witness_candidates: generated_witness_candidates(ctx, &settlement_id),
+        };
+        let generated = qg::generate(&context)
+            .map_err(|error| format!("Acceptance outbreak generation failed: {error:?}"))?;
+        if generated.sites.is_empty()
+            || generated.sites.iter().enumerate().any(|(index, _)| {
+                ordinary_generated_site_distance_m(context.seed, index)
+                    > MAX_REQUIRED_ROUTE_DISTANCE_M
+            })
+        {
+            continue;
+        }
+        qg::validate(&generated).map_err(|errors| {
+            format!(
+                "Acceptance outbreak manifest is invalid: {}",
+                errors.join("; ")
+            )
+        })?;
+        materialize_generated_quest(ctx, &settlement, &context, &generated, None)?;
+        crate::local_problem::prefer_next_rumor(
+            ctx,
+            character_id,
+            &settlement_id,
+            &generated.problem_id,
+        );
+        return Ok(generated.canonical_case_id);
+    }
+    Err("No ordinary generated outbreak met the bounded acceptance route constraint".into())
+}
+
+fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
     let mut skills = ctx
         .db
         .character_skills()
@@ -1426,50 +1552,267 @@ fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), Str
         crate::add_inventory_item(ctx, character_id, "surgery_kit", 1);
     }
 
-    let now_minute = crate::time::refresh_clock(ctx)?.max(4_000);
-    let entropy = character_id ^ 0x4f55_5442_5245_414b;
-    let context = qg::GenerationContext {
-        seed: entropy.rotate_left(11),
-        observer_entropy_hi: entropy.rotate_left(23),
-        observer_entropy_lo: entropy.rotate_right(17),
-        settlement_id: settlement_id.clone(),
-        settlement_name: settlement.name.clone(),
-        scope: adventuresim_core::local_problem::Scope::Settlement {
-            settlement_id: settlement_id.clone(),
-        },
-        ordinal: u16::MAX,
-        now_minute,
-        incident_weather: adventuresim_core::weather::Precipitation::Clear,
-        requested_family: Some(qg::TemplateFamily::Outbreak),
-        witness_candidates: generated_witness_candidates(ctx, &settlement_id),
+    materialize_preferred_outbreak(ctx, character_id).map(|_| ())
+}
+
+pub(crate) struct SimulationQuestFixtureSeed {
+    pub direct_contract_id: String,
+    pub generated_canonical_case_id: String,
+    pub direct_party_id: String,
+    pub generated_party_id: String,
+}
+
+const SIMULATION_QUEST_ENEMY_TYPE: &str = "cultist";
+const SIMULATION_QUEST_ENEMY_DIFFICULTY: i32 = 1;
+const SIMULATION_QUEST_ENEMY_COMBAT_SCALE_BPS: u32 = 10_000;
+pub(crate) fn simulation_quest_fixture_enemy_power() -> Result<u64, String> {
+    autoresolve_enemy(
+        u64::MAX,
+        SIMULATION_QUEST_ENEMY_TYPE,
+        SIMULATION_QUEST_ENEMY_DIFFICULTY,
+        SIMULATION_QUEST_ENEMY_COMBAT_SCALE_BPS,
+    )
+    .map(|enemy| adventuresim_core::autoresolve::autoresolve_combat_power(&enemy))
+}
+
+fn simulation_quest_provisioning_economy(
+    mut economy: SettlementEconomyProfile,
+) -> Result<SettlementEconomyProfile, String> {
+    use adventuresim_world_schema::{
+        ProfileFactProvenance, SettlementService, SettlementStock, StockCategory,
     };
-    let generated = qg::generate(&context)
-        .map_err(|error| format!("Outbreak demo generation failed: {error:?}"))?;
+
+    if !economy.services.contains(&SettlementService::GeneralStore) {
+        economy.services.push(SettlementService::GeneralStore);
+        economy.services.sort();
+    }
+    if !economy
+        .stock
+        .iter()
+        .any(|stock| stock.category == StockCategory::GeneralGoods)
+    {
+        economy.stock.push(SettlementStock {
+            category: StockCategory::GeneralGoods,
+            abundance: 1,
+            provenance: ProfileFactProvenance::DeterministicGapFill,
+        });
+        economy.stock.sort_by_key(|stock| stock.category);
+    }
+    economy.validate()?;
+    Ok(economy)
+}
+
+fn ensure_simulation_quest_provisioning_environment(
+    ctx: &ReducerContext,
+    leader_id: u64,
+) -> Result<String, String> {
+    let character = crate::character::require_living_character(ctx, leader_id)?;
+    let settlement_id = character
+        .current_settlement_id
+        .ok_or("Quest fixture leader must be in a settlement")?;
+    let mut settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&settlement_id)
+        .ok_or("Quest fixture settlement is unavailable")?;
+    settlement.economy = simulation_quest_provisioning_economy(settlement.economy)?;
+    ctx.db.settlement().id().update(settlement);
+
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(leader_id)
+        .map_or(720, |time| time.minutes);
+    let provider_id = default_merchant_provider(ctx, &settlement_id, "merchants", "market")?;
+    let provider = ctx
+        .db
+        .settlement_resident_presence()
+        .character_id()
+        .find(provider_id)
+        .ok_or("Quest fixture general merchant has no presence")?;
+    if !crate::settlement_population::npc_is_present(&provider, minute) {
+        return Err("Quest fixture general merchant is not presently available".into());
+    }
+    Ok(settlement_id)
+}
+
+pub(crate) fn seed_simulation_quest_fixture_inner(
+    ctx: &ReducerContext,
+    policy_seed: u64,
+    direct_leader_id: u64,
+    generated_leader_id: u64,
+) -> Result<SimulationQuestFixtureSeed, String> {
+    use adventuresim_core::case::{
+        Objective, ObjectiveExpression, ObjectiveId, ObjectivePath, ObjectiveRequirement,
+    };
+    use adventuresim_core::settlement_economy::npc_location_is_navigable;
+
+    let suffix = format!("{policy_seed:016x}");
+    let contract_id = format!("contract:simulation-acceptance-direct:{suffix}");
     if ctx
         .db
-        .quest_generation_authority()
-        .case_id()
-        .find(&generated.canonical_case_id)
+        .contract_authority()
+        .id()
+        .find(&contract_id)
         .is_some()
     {
-        crate::local_problem::prefer_next_rumor(
-            ctx,
-            character_id,
-            &settlement_id,
-            &generated.problem_id,
-        );
-        return Ok(());
+        return Err("Simulation direct quest fixture ID is already in use".into());
     }
-    qg::validate(&generated)
-        .map_err(|errors| format!("Outbreak demo manifest is invalid: {}", errors.join("; ")))?;
-    materialize_generated_quest(ctx, &settlement, &context, &generated, None)?;
-    crate::local_problem::prefer_next_rumor(
-        ctx,
-        character_id,
-        &settlement_id,
-        &generated.problem_id,
+
+    let settlement_id = ensure_simulation_quest_provisioning_environment(ctx, direct_leader_id)?;
+    ensure_simulation_quest_provisioning_environment(ctx, generated_leader_id)?;
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&settlement_id)
+        .ok_or("Direct quest fixture settlement is unavailable")?;
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(direct_leader_id)
+        .map_or(720, |time| time.minutes);
+    let has_keep = matches!(
+        settlement.category,
+        SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital
     );
-    Ok(())
+    let mut issuers = ctx
+        .db
+        .settlement_resident_profile()
+        .home_settlement_id()
+        .filter(&settlement_id)
+        .filter(|profile| {
+            !profile.service_id.is_empty()
+                && crate::settlement_population::resident_is_dialogue_capable(profile)
+                && ctx
+                    .db
+                    .settlement_resident_presence()
+                    .character_id()
+                    .find(profile.character_id)
+                    .is_some_and(|presence| {
+                        presence.settlement_id == settlement_id
+                            && crate::settlement_population::npc_is_present(&presence, minute)
+                            && npc_location_is_navigable(
+                                &settlement.economy,
+                                has_keep,
+                                &settlement_id,
+                                &presence.location_id,
+                            )
+                    })
+        })
+        .collect::<Vec<_>>();
+    issuers.sort_by_key(|profile| profile.character_id);
+    let issuer = issuers
+        .into_iter()
+        .next()
+        .ok_or("Direct quest fixture has no present navigable dialogue-capable issuer")?;
+
+    // Generate and privately materialize the second party's local problem
+    // before publishing the direct contract marker. No skill or item boosts
+    // are part of this acceptance fixture.
+    let generated_canonical_case_id =
+        materialize_simulation_acceptance_outbreak(ctx, generated_leader_id, policy_seed)?;
+    let direct_party_id = ctx
+        .db
+        .character()
+        .id()
+        .find(direct_leader_id)
+        .and_then(|character| character.party_id)
+        .ok_or("Direct quest fixture leader has no party")?;
+    let generated_party_id = ctx
+        .db
+        .character()
+        .id()
+        .find(generated_leader_id)
+        .and_then(|character| character.party_id)
+        .ok_or("Generated quest fixture leader has no party")?;
+
+    let case_id = format!("case:simulation-acceptance-direct:{suffix}");
+    let case_site_id = format!("case-site:simulation-acceptance-direct:{suffix}");
+    let hostile_group_id = format!("hostile-group:simulation-acceptance-direct:{suffix}");
+    let objective = ObjectiveExpression::new(vec![ObjectivePath {
+        objectives: vec![Objective {
+            id: ObjectiveId::new(format!("objective:simulation-acceptance-direct:{suffix}"))
+                .map_err(|_| "Direct quest fixture objective ID is invalid")?,
+            requirement: ObjectiveRequirement::Defeat {
+                hostile_group_id: hostile_group_id.clone(),
+                count: 1,
+            },
+        }],
+    }])
+    .map_err(|_| "Direct quest fixture objective is invalid")?;
+    ctx.db.case_authority().insert(CaseAuthority {
+        id: case_id.clone(),
+        investigation_case_id: format!("investigation:simulation-acceptance-direct:{suffix}"),
+        provenance_kind: "manual".into(),
+        generated_case_id: String::new(),
+        local_problem_id: None,
+        objective_expression_json: serde_json::to_string(&objective)
+            .map_err(|_| "Could not encode direct quest fixture objective")?,
+        resolution_status: CaseResolutionStatus::Open,
+        resolved_by_party_id: None,
+    });
+    let geographic = settlement.source_node_id.is_some();
+    let (offset_x, offset_y) = if geographic {
+        (0.0, 2.0 / 111.0)
+    } else {
+        (0.0, 2.0)
+    };
+    let site = CaseSiteAuthority {
+        id_key: case_site_id.clone(),
+        id: CaseSiteId::from(case_site_id),
+        case_id: case_id.clone(),
+        origin_settlement_id: settlement_id.clone(),
+        name: "A Nearby Robbers' Camp".into(),
+        description: "A small bandit camp lies a short march from the settlement.".into(),
+        scene_key: "forest-clearing".into(),
+        longitude_e7: ((settlement.coord_x + offset_x) * 10_000_000.0).round() as i32,
+        latitude_e7: ((settlement.coord_y + offset_y) * 10_000_000.0).round() as i32,
+        coordinates_are_geographic: geographic,
+        distance_m: 2_000,
+    };
+    ctx.db.case_site_authority().insert(site.clone());
+    // The acceptance opponent is a normal, authored, unarmored novice threat.
+    // It still uses ordinary hostile materialization and autoresolve; unlike an
+    // armored bandit, it does not silently turn a difficulty-one fixture into
+    // a shield-and-armor proficiency check for starting adventurers.
+    materialize_hostile_group(
+        ctx,
+        &hostile_group_id,
+        &site,
+        SIMULATION_QUEST_ENEMY_TYPE.into(),
+        1,
+        SIMULATION_QUEST_ENEMY_DIFFICULTY,
+    )?;
+    ctx.db.contract_authority().insert(Contract {
+        id: contract_id.clone(),
+        gateway_bucket: 0,
+        case_id,
+        title: "Trouble on the Near Road".into(),
+        description: "Drive one knife-wielding troublemaker from a camp near the settlement."
+            .into(),
+        difficulty: 1,
+        gold_reward: 12,
+        xp_reward: 20,
+        settlement_id,
+        service_id: issuer.service_id,
+        issuer_resident_character_id: issuer.character_id,
+        status: ContractStatus::Offered,
+        accepted_by: None,
+        opposition_wording: "unarmored troublemaker".into(),
+        opposition_count_wording: "one".into(),
+        accepted_at_minute: None,
+        paid_at_minute: None,
+    });
+    Ok(SimulationQuestFixtureSeed {
+        direct_contract_id: contract_id,
+        generated_canonical_case_id,
+        direct_party_id,
+        generated_party_id,
+    })
 }
 
 fn materialize_generated_quest(
@@ -1543,7 +1886,7 @@ fn materialize_generated_quest(
     let geographic = settlement.source_node_id.is_some();
     let mut site_rows = BTreeMap::new();
     for (index, site) in generated.sites.iter().enumerate() {
-        let distance_m = 4_000 + (seed.rotate_left(index as u32) % 17_000);
+        let distance_m = ordinary_generated_site_distance_m(seed, index);
         let angle_seed = seed.rotate_left((index as u32).saturating_mul(11));
         let angle = (angle_seed as f64 / u64::MAX as f64) * std::f64::consts::TAU;
         let distance_km = distance_m as f64 / 1_000.0;
@@ -1819,10 +2162,8 @@ mod developer_quest_source_tests {
 
     #[test]
     fn fresh_development_world_seeds_an_exact_order_errantry_issuer() {
-        let order = adventuresim_core::organization::organization(
-            ERRANTRY_ISSUER_ORGANIZATION_ID,
-        )
-        .expect("Order catalog entry");
+        let order = adventuresim_core::organization::organization(ERRANTRY_ISSUER_ORGANIZATION_ID)
+            .expect("Order catalog entry");
         assert!(order.errantry_issuance);
         let chapter = order.chapters.first().expect("authored Order chapter");
         let expected_representative =
@@ -1909,9 +2250,9 @@ mod developer_quest_source_tests {
             .next()
             .unwrap();
         assert!(materializer.contains("order_errantry_issuer(ctx)"));
-        assert!(materializer.contains(
-            "issuer_organization_id: ERRANTRY_ISSUER_ORGANIZATION_ID.into()"
-        ));
+        assert!(
+            materializer.contains("issuer_organization_id: ERRANTRY_ISSUER_ORGANIZATION_ID.into()")
+        );
     }
 
     #[test]
@@ -1966,7 +2307,7 @@ mod developer_quest_source_tests {
             SettlementResidentProfile,
         };
         use adventuresim_core::quest_generation::{
-            VisibleWitnessCandidateInput, visible_witness_candidate,
+            visible_witness_candidate, VisibleWitnessCandidateInput,
         };
 
         let presence = SettlementResidentPresence {

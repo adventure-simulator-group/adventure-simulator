@@ -63,6 +63,8 @@ pub fn backend_case_site_pins(ctx: &ViewContext) -> Vec<BackendCaseSitePin> {
                 generated_case: presentation.generated_case,
                 case_resolved: presentation.case_resolved,
                 combat_available: presentation.combat_available,
+                opposition_count: presentation.opposition_count,
+                opposition_combat_power: presentation.opposition_combat_power,
             })
         })
     {
@@ -83,6 +85,13 @@ struct CaseSitePresentationView {
     generated_case: bool,
     case_resolved: bool,
     combat_available: bool,
+    opposition_count: Option<u32>,
+    opposition_combat_power: Option<u64>,
+}
+
+fn checked_generated_opposition(count: u32, unit_power: u64) -> Option<(u32, u64)> {
+    let power = unit_power.checked_mul(u64::from(count))?;
+    (count > 0 && power > 0).then_some((count, power))
 }
 
 fn case_site_presentation_view(
@@ -97,6 +106,8 @@ fn case_site_presentation_view(
             generated_case: false,
             case_resolved: false,
             combat_available: false,
+            opposition_count: None,
+            opposition_combat_power: None,
         });
     };
     let authority = ctx
@@ -143,27 +154,41 @@ fn case_site_presentation_view(
         .map(|row| serde_json::from_str(&row.fact_json))
         .collect::<Result<Vec<adventuresim_core::case::OutcomeFact>, _>>()
         .ok();
-    let combat_available =
-        party_id
-            .as_deref()
-            .zip(facts.as_deref())
-            .is_some_and(|(party_id, facts)| {
-                generated_case_site_combat_eligible(
-                    &validated.manifest,
-                    &case,
-                    site,
-                    &hostile_groups,
-                    &finales,
-                    facts,
-                    party_id,
-                )
-                .is_some()
-            });
+    let combat_group = party_id
+        .as_deref()
+        .zip(facts.as_deref())
+        .and_then(|(party_id, facts)| {
+            generated_case_site_combat_eligible(
+                &validated.manifest,
+                &case,
+                site,
+                &hostile_groups,
+                &finales,
+                facts,
+                party_id,
+            )
+        });
+    let combat_available = combat_group.is_some();
+    let opposition = combat_group.and_then(|group| {
+        let enemy = crate::autoresolve_enemy(
+            u64::MAX,
+            &group.enemy_type,
+            group.base_difficulty,
+            group.combat_scale_bps,
+        )
+        .ok()?;
+        checked_generated_opposition(
+            group.enemy_count,
+            adventuresim_core::autoresolve::autoresolve_combat_power(&enemy),
+        )
+    });
     Some(CaseSitePresentationView {
         display_title: validated.manifest.consequence.public_summary,
         generated_case: true,
         case_resolved: case.resolution_status != crate::strategic::CaseResolutionStatus::Open,
         combat_available,
+        opposition_count: opposition.map(|value| value.0),
+        opposition_combat_power: opposition.map(|value| value.1),
     })
 }
 

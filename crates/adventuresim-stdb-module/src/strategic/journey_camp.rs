@@ -239,15 +239,10 @@ fn start_party_journey(
     let fatigue_percent = party.camp_fatigue_percent;
     let forecast_camp_stop_minutes =
         forecast_camp_stop_minutes(ctx, &party.id, total_minutes, 0, fatigue_percent)?;
-    let planned_movement = if matches!(destination, JourneyEndpoint::CaseSite(_)) {
-        total_minutes.saturating_add(
-            route
-                .and_then(|route| route.return_route.as_ref())
-                .map_or(total_minutes, |return_route| return_route.minutes),
-        )
-    } else {
-        total_minutes
-    };
+    // This authority describes the active leg only. A later return starts its
+    // own journey and itinerary; including a speculative return here doubles
+    // camp exposure and disagrees with `total_minutes` progress.
+    let planned_movement = total_minutes;
     let itinerary = forecast_itinerary(
         departure_minute,
         planned_movement,
@@ -654,11 +649,9 @@ pub(crate) fn refresh_party_journey_forecast(
     let start = journey
         .departure_minute
         .saturating_add(journey.completed_elapsed_minutes);
-    let planned_movement = if journey.destination.case_site_id().is_some() {
-        journey.total_minutes.saturating_mul(2)
-    } else {
-        journey.total_minutes
-    };
+    // A persisted journey always describes its active leg. A return trip is a
+    // new journey and must not be folded into a refreshed outbound forecast.
+    let planned_movement = journey.total_minutes;
     let remaining = planned_movement.saturating_sub(journey.completed_minutes);
     let itinerary = forecast_itinerary(
         start,

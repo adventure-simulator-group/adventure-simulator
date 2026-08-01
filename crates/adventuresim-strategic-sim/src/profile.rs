@@ -675,6 +675,12 @@ fn set_activity(profile: &mut AgentProfile, preference: ActivityPreference) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use adventuresim_core::autoresolve::{
+        BattleOpening, BattleVictor, CombatArmor, CombatAttributes, CombatEquipment, CombatSkills,
+        CombatWeapon, Combatant, authored_threat_combatant, autoresolve_combat_power,
+        combat_power_meets_safety_margin, resolve_battle,
+    };
+    use adventuresim_core::equipment::WeaponSkillDistribution;
 
     fn attributes(endurance: f32, arm_strength: f32) -> Attributes {
         Attributes {
@@ -726,6 +732,192 @@ mod tests {
             let b = generate_profile(42, id);
             assert_eq!(a, b);
             assert!((2..=4).contains(&a.personality.non_neutral_count()));
+        }
+    }
+
+    /// Load-equivalent combatant for a freshly configured simulator agent:
+    /// generated attributes/skills plus the ordinary default katzbalger,
+    /// buckler, and region-specific padded equipment created for every adult.
+    fn configured_fixture_combatant(profile: &AgentProfile, id: u64) -> Combatant {
+        let a = &profile.attributes;
+        let s = profile.initial_skills;
+        let mut combatant = Combatant::new(id);
+        combatant.attributes = CombatAttributes {
+            endurance: a.endurance,
+            immunity: a.immunity,
+            gut: a.gut,
+            intelligence: a.intelligence,
+            instinct: a.instinct,
+            eyesight: a.eyesight,
+            hearing: a.hearing,
+            left_arm_strength: a.left_arm_strength,
+            right_arm_strength: a.right_arm_strength,
+            left_leg_strength: a.left_leg_strength,
+            right_leg_strength: a.right_leg_strength,
+            left_arm_agility: a.left_arm_agility,
+            right_arm_agility: a.right_arm_agility,
+            left_leg_agility: a.left_leg_agility,
+            right_leg_agility: a.right_leg_agility,
+        };
+        combatant.skills = CombatSkills {
+            polearm_hours: s.polearm,
+            axe_hours: s.axe,
+            bludgeon_hours: s.bludgeon,
+            sword_hours: s.sword,
+            knife_hours: s.knife,
+            dodge_hours: s.dodge,
+            block_hours: s.block,
+            bow_hours: s.bow,
+            crossbow_hours: s.crossbow,
+            firearm_hours: s.firearm,
+            throw_hours: s.throw,
+            will_hours: s.will,
+            insight_hours: s.insight,
+            charm_hours: s.charm,
+            command_hours: s.command,
+            deception_hours: s.deception,
+            physiology_hours: s.physiology,
+            religion_hours: s.religion.total_direct(),
+            stealth_hours: s.stealth,
+            balance_hours: s.balance,
+            bestiary_hours: s.bestiary,
+            surgery_hours: s.surgery,
+            tailoring_hours: s.tailoring,
+            smithing_hours: s.smithing,
+        };
+        let weapon = CombatWeapon {
+            skills: WeaponSkillDistribution {
+                knife: 0.5,
+                sword: 0.5,
+                ..Default::default()
+            },
+            melee: true,
+            slash: true,
+            pierce: true,
+            accuracy: 1.5,
+            weight: 1.1,
+            penetration: 1.0,
+            melee_reach: 0.8,
+            attack_interval_seconds: 0.675,
+            balance: 0.55,
+            ..CombatWeapon::default()
+        };
+        let armor = |resistance, padding, coverage, flexibility, range_of_motion| CombatArmor {
+            resistance,
+            padding,
+            coverage,
+            flexibility,
+            range_of_motion,
+        };
+        combatant.equipment = CombatEquipment {
+            weapon: Some(weapon),
+            melee_weapon: Some(weapon),
+            // Bootstrap damages the first durable combat item, the buckler:
+            // 1.5 * (1 - (0.08 + 0.24) * 0.5) = 1.26.
+            shield_block_bonus: 1.26,
+            armor: [
+                armor(50.0, 40.0, 0.45, 0.35, 0.9),
+                armor(50.0, 40.0, 0.45, 0.35, 0.9),
+                armor(50.0, 40.0, 0.45, 0.35, 0.9),
+                armor(50.0, 40.0, 0.45, 0.35, 0.9),
+                armor(60.0, 45.0, 0.60, 0.30, 0.88),
+                armor(50.0, 40.0, 0.45, 0.35, 0.92),
+                armor(20.0, 35.0, 0.15, 0.40, 0.95),
+            ],
+            // Exact equipped kit plus the ordinary torch/bandages, rounded up
+            // to conservatively model the loader's dry inventory weight.
+            inventory_weight: 11.0,
+            ..CombatEquipment::default()
+        };
+        combatant
+    }
+
+    #[test]
+    fn generated_fixture_party_is_safe_across_broad_autoresolve_entropy() {
+        let adult_fixture = include_str!("../../adventuresim-stdb-module/src/character.rs");
+        for item_id in [
+            "buckler",
+            "katzbalger",
+            "quilted_sleeve",
+            "arming_cap",
+            "arming_doublet",
+            "padded_skirt",
+            "padded_chausses",
+        ] {
+            assert!(adult_fixture.contains(&format!("\"{item_id}\"")));
+        }
+        let item_catalog = include_str!("../../../content/items/catalog.yaml");
+        for authored_stat in [
+            "\"id\": \"katzbalger\"",
+            "\"weight_kg\": 1.1",
+            "\"accuracy\": 1.5",
+            "\"reach_m\": 0.8",
+            "\"balance\": 0.55",
+            "\"id\": \"buckler\"",
+            "\"block\": 1.5",
+        ] {
+            assert!(item_catalog.contains(authored_stat));
+        }
+        let profiles = (0..4)
+            .map(|agent_id| generate_profile(42, agent_id))
+            .collect::<Vec<_>>();
+        let groups = crate::live_core::balanced_party_groups(&profiles, 2);
+        assert_eq!(groups.len(), 2);
+        let mut parties = groups
+            .iter()
+            .map(|group| {
+                group
+                    .iter()
+                    // The live bootstrap deliberately makes agent zero
+                    // symptomatic before quest selection; the shared public
+                    // readiness filter therefore excludes it.
+                    .filter(|&&index| profiles[index].agent_id != 0)
+                    .map(|&index| {
+                        let agent_id = profiles[index].agent_id;
+                        configured_fixture_combatant(&profiles[index], u64::from(agent_id) + 1)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        parties.sort_by_key(|party| {
+            party
+                .iter()
+                .map(autoresolve_combat_power)
+                .try_fold(0u64, |total, power| total.checked_add(power))
+                .unwrap()
+        });
+        let allies = parties.pop().unwrap();
+        let enemy = authored_threat_combatant(10_000, "cultist", 1, 10_000, 10_000).unwrap();
+        let party_power = allies
+            .iter()
+            .try_fold(0u64, |total, ally| {
+                total.checked_add(autoresolve_combat_power(ally))
+            })
+            .unwrap();
+        let enemy_power = autoresolve_combat_power(&enemy);
+        assert_eq!(
+            combat_power_meets_safety_margin(party_power, enemy_power),
+            Some(true)
+        );
+
+        for seed in 0..256 {
+            let outcome = resolve_battle(
+                allies.clone(),
+                vec![enemy.clone()],
+                seed,
+                BattleOpening::Normal,
+            );
+            assert_eq!(outcome.victor, BattleVictor::Allies, "seed {seed}");
+            assert!(
+                outcome.log.iter().any(|entry| entry.contact_stress > 0.0),
+                "seed {seed} resolved without combat contact"
+            );
+            assert!(
+                outcome.allies.iter().all(|ally| {
+                    !ally.incapacitated && !adventuresim_core::autopsy::is_lethal_body(ally)
+                }),
+                "seed {seed} killed or incapacitated an accepted ally"
+            );
         }
     }
 }

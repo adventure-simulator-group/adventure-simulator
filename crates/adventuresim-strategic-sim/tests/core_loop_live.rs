@@ -25,6 +25,8 @@ fn authoritative_core_loop_is_isolated_and_branch_tolerant() {
         party_size: 2,
         run_nonce: std::env::var("ADVENTURESIM_SIM_NONCE")
             .expect("set ADVENTURESIM_SIM_NONCE to the launcher's nonce"),
+        fixture_disease: "influenza".into(),
+        require_quest_coverage: true,
         use_imported_world: false,
         expected_world_manifest_digest: None,
         failure_output: None,

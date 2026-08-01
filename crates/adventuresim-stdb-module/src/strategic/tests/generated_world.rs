@@ -23,6 +23,103 @@ fn generated_case(
 }
 
 #[test]
+fn simulation_quest_fixture_exposes_ordinary_provisioning_to_both_paths() {
+    use adventuresim_core::settlement_economy::{CatalogKind, Storefront, storefront_stocks};
+    use adventuresim_world_schema::{SettlementEconomyProfile, SettlementService, StockCategory};
+
+    let economy =
+        simulation_quest_provisioning_economy(SettlementEconomyProfile::stage_placeholder())
+            .unwrap();
+    assert!(economy.services.contains(&SettlementService::GeneralStore));
+    assert!(
+        economy
+            .stock
+            .iter()
+            .any(|stock| stock.category == StockCategory::GeneralGoods)
+    );
+    for (item_id, kind) in [
+        (
+            adventuresim_core::provisioning::STANDARD_TRAVEL_RATION_ID,
+            CatalogKind::Food,
+        ),
+        (
+            adventuresim_core::provisioning::STANDARD_WATERSKIN_ID,
+            CatalogKind::Simple,
+        ),
+    ] {
+        assert!(storefront_stocks(
+            &economy,
+            Storefront::General,
+            item_id,
+            kind
+        ));
+    }
+
+    let environment = STRATEGIC_SOURCE
+        .split("fn ensure_simulation_quest_provisioning_environment")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("pub(crate) fn seed_simulation_quest_fixture_inner")
+                .next()
+        })
+        .unwrap();
+    assert!(
+        environment
+            .contains("default_merchant_provider(ctx, &settlement_id, \"merchants\", \"market\")")
+    );
+    assert!(environment.contains("npc_is_present(&provider, minute)"));
+
+    let fixture = STRATEGIC_SOURCE
+        .split("pub(crate) fn seed_simulation_quest_fixture_inner")
+        .nth(1)
+        .and_then(|tail| tail.split("fn materialize_generated_quest").next())
+        .unwrap();
+    assert!(
+        fixture.contains("ensure_simulation_quest_provisioning_environment(ctx, direct_leader_id)")
+    );
+    assert!(
+        fixture
+            .contains("ensure_simulation_quest_provisioning_environment(ctx, generated_leader_id)")
+    );
+    assert!(fixture.contains("SIMULATION_QUEST_ENEMY_TYPE.into()"));
+    assert!(fixture.contains("SIMULATION_QUEST_ENEMY_DIFFICULTY"));
+    assert!(!fixture.contains("\"bandit\".into(), 1, 1"));
+}
+
+#[test]
+fn acceptance_fixture_selects_before_materialization_without_rewriting_sites() {
+    let source = STRATEGIC_SOURCE;
+    let fixture = source
+        .split("pub(crate) fn seed_simulation_quest_fixture_inner")
+        .nth(1)
+        .and_then(|tail| tail.split("fn materialize_generated_quest").next())
+        .expect("simulation acceptance fixture");
+    assert!(fixture.contains("materialize_simulation_acceptance_outbreak"));
+    assert!(!source.contains("bound_simulation_acceptance_generated_case_sites"));
+    assert!(!source.contains("site.distance_m = distance_m"));
+
+    let ordinary_generation = source
+        .split("fn materialize_generated_quest")
+        .nth(1)
+        .expect("ordinary generated quest materialization");
+    assert!(ordinary_generation.contains("ordinary_generated_site_distance_m(seed, index)"));
+    assert_eq!(ordinary_generated_site_distance_m(0, 0), 4_000);
+    assert!((0..64).all(|index| {
+        (4_000..21_000).contains(&ordinary_generated_site_distance_m(u64::MAX, index))
+    }));
+    let selector = source
+        .split("fn materialize_simulation_acceptance_outbreak")
+        .nth(1)
+        .and_then(|tail| tail.split("fn seed_outbreak_demo").next())
+        .expect("acceptance outbreak selector");
+    let selection = selector
+        .find("generated.sites.iter().enumerate().any")
+        .unwrap();
+    let materialization = selector.find("materialize_generated_quest").unwrap();
+    assert!(selection < materialization);
+}
+
+#[test]
 fn generated_return_and_expose_bind_only_the_authored_case_and_recipient() {
     use adventuresim_core::quest_generation::{
         CanonicalCause, GeneratedDialogueAction, TemplateFamily,
@@ -360,6 +457,7 @@ fn generated_hostile_materialization_preserves_manifest_identity_across_links() 
             hostile_group_authority_row(hostile_group_id, &site, threat.as_str().into(), *count, 2)
                 .expect("canonical hostile-group row materializes");
         assert_eq!(group.id, *hostile_group_id);
+        assert_eq!(group.case_site_id_key, site.id.value);
         assert_eq!(group.case_site_id, site.id);
 
         let linked_finales: Vec<_> = generated
@@ -476,6 +574,7 @@ fn generated_combat_eligibility_fails_closed_across_site_group_and_finale_author
     };
     let group = HostileGroupAuthority {
         id: hostile_group_id.clone(),
+        case_site_id_key: site.id.value.clone(),
         case_site_id: site.id.clone(),
         enemy_type: "test-hostile".into(),
         base_enemy_count: 1,
@@ -622,6 +721,7 @@ fn hostile_group_authority_enforces_one_group_per_case_site() {
         .and_then(|tail| tail.split("fn materialize_hostile_group").next())
         .expect("hostile-group authority declaration");
     assert!(authority.contains("#[unique]"));
+    assert!(authority.contains("pub case_site_id_key: String"));
     assert!(authority.contains("pub case_site_id: CaseSiteId"));
 }
 

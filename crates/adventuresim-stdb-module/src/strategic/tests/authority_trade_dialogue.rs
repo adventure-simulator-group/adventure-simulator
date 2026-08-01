@@ -548,6 +548,45 @@ fn merchant_provider_selection_rejects_ambiguous_defaults() {
 }
 
 #[test]
+fn atomic_personal_storefront_purchase_validates_before_funding() {
+    let source = STRATEGIC_SOURCE;
+    let body = source
+        .split("pub fn purchase_personal_storefront_with_party_stake")
+        .nth(1)
+        .and_then(|tail| tail.split("fn personal_storefront_payment").next())
+        .expect("atomic personal storefront reducer");
+    let validation = body.find("validate_personal_storefront_purchase").unwrap();
+    let transfer = body.find("transfer_party_currency_to_personal").unwrap();
+    let stake_update = body.find("party_stake().id().update").unwrap();
+    let purchase = body.find("finalize_storefront_trade_impl").unwrap();
+    assert!(validation < transfer);
+    assert!(transfer < stake_update && stake_update < purchase);
+    assert!(source.contains("Any later validation failure"));
+    assert!(source.contains("rolls back the stake, party currency, personal currency"));
+}
+
+#[test]
+fn atomic_personal_storefront_payment_never_exceeds_authorized_stake() {
+    assert_eq!(personal_storefront_payment(12, 10, 2), Some((10, 2)));
+    assert_eq!(personal_storefront_payment(8, 10, 0), Some((8, 0)));
+    assert_eq!(personal_storefront_payment(12, 10, 1), None);
+}
+
+#[test]
+fn fully_personal_storefront_purchase_does_not_require_a_stake_row() {
+    assert_eq!(personal_storefront_payment(8, 8, 0), Some((8, 0)));
+    let body = STRATEGIC_SOURCE
+        .split("pub fn purchase_personal_storefront_with_party_stake")
+        .nth(1)
+        .and_then(|tail| tail.split("fn personal_storefront_payment").next())
+        .expect("atomic personal storefront reducer");
+    let stake_branch = body.find("if stake_payment > 0").unwrap();
+    let stake_lookup = body.find(".party_stake()").unwrap();
+    let purchase = body.find("finalize_storefront_trade_impl").unwrap();
+    assert!(stake_branch < stake_lookup && stake_lookup < purchase);
+}
+
+#[test]
 fn dialogue_objectives_are_knowledge_bound_and_replay_safe() {
     let source = STRATEGIC_SOURCE;
     let issuer = source

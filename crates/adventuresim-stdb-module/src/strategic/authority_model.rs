@@ -168,6 +168,10 @@ pub struct BackendContract {
     pub accepted_by: Option<String>,
     pub opposition_wording: String,
     pub opposition_count_wording: String,
+    /// Observer-safe aggregate built from the exact enemy Combatants that
+    /// autoresolve will construct: authored profile, base difficulty, incident
+    /// scale, equipment, training, and current enemy count.
+    pub opposition_combat_power: u64,
     pub accepted_at_minute: Option<u64>,
     pub paid_at_minute: Option<u64>,
     /// Conservative public one-way preflight distance: the greatest distance
@@ -186,13 +190,39 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
         .gateway_bucket()
         .filter(0u8)
         .filter_map(|row| {
-            let distance_m = ctx
+            let sites = ctx
                 .db
                 .case_site_authority()
                 .case_id()
                 .filter(&row.case_id)
-                .map(|site| site.distance_m)
-                .max()?;
+                .collect::<Vec<_>>();
+            let distance_m = sites.iter().map(|site| site.distance_m).max()?;
+            let opposition_combat_power = sites
+                .iter()
+                .filter_map(|site| {
+                    ctx.db
+                        .hostile_group_authority()
+                        .case_site_id_key()
+                        .find(&site.id.value)
+                        .filter(|group| {
+                            group.case_site_id_key == group.case_site_id.value
+                                && group.case_site_id == site.id
+                        })
+                })
+                .map(|group| {
+                    autoresolve_enemy(
+                        u64::MAX,
+                        &group.enemy_type,
+                        group.base_difficulty,
+                        group.combat_scale_bps,
+                    )
+                    .ok()
+                    .and_then(|enemy| {
+                        adventuresim_core::autoresolve::autoresolve_combat_power(&enemy)
+                            .checked_mul(u64::from(group.enemy_count))
+                    })
+                })
+                .try_fold(0u64, |total, power| total.checked_add(power?))?;
             Some(BackendContract {
                 id: row.id,
                 case_id: row.case_id,
@@ -208,6 +238,7 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
                 accepted_by: row.accepted_by,
                 opposition_wording: row.opposition_wording,
                 opposition_count_wording: row.opposition_count_wording,
+                opposition_combat_power,
                 accepted_at_minute: row.accepted_at_minute,
                 paid_at_minute: row.paid_at_minute,
                 distance_m,
@@ -1236,6 +1267,10 @@ fn validate_hostile_resolution_contract(
 pub struct HostileGroupAuthority {
     #[primary_key]
     pub id: String,
+    /// Primitive query key for view contexts; it must exactly mirror the typed
+    /// authority ID below.
+    #[unique]
+    pub case_site_id_key: String,
     #[unique]
     pub case_site_id: CaseSiteId,
     pub enemy_type: String,
@@ -1267,6 +1302,8 @@ fn materialize_hostile_group(
         hostile_group_authority_row(hostile_group_id, site, enemy_type, enemy_count, difficulty)?;
     if let Some(existing) = ctx.db.hostile_group_authority().id().find(&group.id) {
         return if existing.case_site_id == group.case_site_id
+            && existing.case_site_id_key == group.case_site_id_key
+            && existing.case_site_id_key == existing.case_site_id.value
             && existing.enemy_type == group.enemy_type
             && existing.base_enemy_count == group.base_enemy_count
             && existing.base_difficulty == group.base_difficulty
@@ -1305,6 +1342,7 @@ fn hostile_group_authority_row(
     );
     Ok(HostileGroupAuthority {
         id: hostile_group_id.to_string(),
+        case_site_id_key: site.id.value.clone(),
         case_site_id: site.id.clone(),
         drop_item_id: autoresolve_drop(&enemy_type)?.map(str::to_string),
         drop_quantity: base_enemy_count,

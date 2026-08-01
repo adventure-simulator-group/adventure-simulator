@@ -609,6 +609,7 @@ pub mod promote_organization_membership_reducer;
 pub mod prosperity_tier_type;
 pub mod public_threat_disclosure_type;
 pub mod purchase_from_herbalist_reducer;
+pub mod purchase_personal_storefront_with_party_stake_reducer;
 pub mod quarry_commodity_type;
 pub mod quarrying_industry_type;
 pub mod quest_generation_authority_type;
@@ -698,6 +699,7 @@ pub mod sedimentary_rock_type;
 pub mod seed_npc_policy_for_development_reducer;
 pub mod seed_simulation_disease_reducer;
 pub mod seed_simulation_equipment_damage_reducer;
+pub mod seed_simulation_quest_fixture_reducer;
 pub mod seed_simulation_world_reducer;
 pub mod seed_standalone_tactical_mission_reducer;
 pub mod select_browser_character_reducer;
@@ -742,6 +744,9 @@ pub mod share_investigation_lead_reducer;
 pub mod simulate_contract_issuer_interaction_reducer;
 pub mod simulation_character_table;
 pub mod simulation_character_type;
+pub mod simulation_quest_fixture_authority_type;
+pub mod simulation_quest_fixture_table;
+pub mod simulation_quest_fixture_type;
 pub mod simulation_run_table;
 pub mod simulation_run_type;
 pub mod sociability_type;
@@ -795,6 +800,7 @@ pub mod surface_lithology_type;
 pub mod surrender_to_authority_reducer;
 pub mod sync_development_clock_to_character_reducer;
 pub mod synchronize_character_time_reducer;
+pub mod synchronize_party_for_activity_reducer;
 pub mod tactical_mission_resolution_type;
 pub mod tactical_server_claim_type;
 pub mod tactical_server_request_table;
@@ -1446,6 +1452,7 @@ pub use promote_organization_membership_reducer::promote_organization_membership
 pub use prosperity_tier_type::ProsperityTier;
 pub use public_threat_disclosure_type::PublicThreatDisclosure;
 pub use purchase_from_herbalist_reducer::purchase_from_herbalist;
+pub use purchase_personal_storefront_with_party_stake_reducer::purchase_personal_storefront_with_party_stake;
 pub use quarry_commodity_type::QuarryCommodity;
 pub use quarrying_industry_type::QuarryingIndustry;
 pub use quest_generation_authority_type::QuestGenerationAuthority;
@@ -1535,6 +1542,7 @@ pub use sedimentary_rock_type::SedimentaryRock;
 pub use seed_npc_policy_for_development_reducer::seed_npc_policy_for_development;
 pub use seed_simulation_disease_reducer::seed_simulation_disease;
 pub use seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage;
+pub use seed_simulation_quest_fixture_reducer::seed_simulation_quest_fixture;
 pub use seed_simulation_world_reducer::seed_simulation_world;
 pub use seed_standalone_tactical_mission_reducer::seed_standalone_tactical_mission;
 pub use select_browser_character_reducer::select_browser_character;
@@ -1579,6 +1587,9 @@ pub use share_investigation_lead_reducer::share_investigation_lead;
 pub use simulate_contract_issuer_interaction_reducer::simulate_contract_issuer_interaction;
 pub use simulation_character_table::*;
 pub use simulation_character_type::SimulationCharacter;
+pub use simulation_quest_fixture_authority_type::SimulationQuestFixtureAuthority;
+pub use simulation_quest_fixture_table::*;
+pub use simulation_quest_fixture_type::SimulationQuestFixture;
 pub use simulation_run_table::*;
 pub use simulation_run_type::SimulationRun;
 pub use sociability_type::Sociability;
@@ -1632,6 +1643,7 @@ pub use surface_lithology_type::SurfaceLithology;
 pub use surrender_to_authority_reducer::surrender_to_authority;
 pub use sync_development_clock_to_character_reducer::sync_development_clock_to_character;
 pub use synchronize_character_time_reducer::synchronize_character_time;
+pub use synchronize_party_for_activity_reducer::synchronize_party_for_activity;
 pub use tactical_mission_resolution_type::TacticalMissionResolution;
 pub use tactical_server_claim_type::TacticalServerClaim;
 pub use tactical_server_request_table::*;
@@ -2132,6 +2144,17 @@ pub enum Reducer {
         item_ids: Vec<String>,
         quantities: Vec<u32>,
     },
+    PurchasePersonalStorefrontWithPartyStake {
+        character_id: u64,
+        settlement_id: String,
+        service_id: String,
+        provider_resident_character_id: u64,
+        item_id: String,
+        quantity: u32,
+        maximum_unit_price: u64,
+        maximum_personal_payment: u64,
+        maximum_stake_payment: u64,
+    },
     ReceiveInvestigationClaim {
         character_id: u64,
         action_id: String,
@@ -2285,11 +2308,17 @@ pub enum Reducer {
     SeedSimulationDisease {
         nonce: String,
         character_id: u64,
+        disease_id: String,
     },
     SeedSimulationEquipmentDamage {
         nonce: String,
         character_id: u64,
         inventory_item_id: u64,
+    },
+    SeedSimulationQuestFixture {
+        nonce: String,
+        direct_leader_id: u64,
+        generated_leader_id: u64,
     },
     SeedSimulationWorld {
         nonce: String,
@@ -2433,6 +2462,9 @@ pub enum Reducer {
     },
     SynchronizeCharacterTime {
         character_id: u64,
+    },
+    SynchronizePartyForActivity {
+        leader_id: u64,
     },
     TrackCaseSite {
         character_id: u64,
@@ -2610,6 +2642,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::PresentOrganization { .. } => "present_organization",
             Reducer::PromoteOrganizationMembership { .. } => "promote_organization_membership",
             Reducer::PurchaseFromHerbalist { .. } => "purchase_from_herbalist",
+            Reducer::PurchasePersonalStorefrontWithPartyStake { .. } => {
+                "purchase_personal_storefront_with_party_stake"
+            }
             Reducer::ReceiveInvestigationClaim { .. } => "receive_investigation_claim",
             Reducer::ReceiveLocalProblemRumor { .. } => "receive_local_problem_rumor",
             Reducer::RecoverOwnedResidence { .. } => "recover_owned_residence",
@@ -2644,6 +2679,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SeedNpcPolicyForDevelopment { .. } => "seed_npc_policy_for_development",
             Reducer::SeedSimulationDisease { .. } => "seed_simulation_disease",
             Reducer::SeedSimulationEquipmentDamage { .. } => "seed_simulation_equipment_damage",
+            Reducer::SeedSimulationQuestFixture { .. } => "seed_simulation_quest_fixture",
             Reducer::SeedSimulationWorld { .. } => "seed_simulation_world",
             Reducer::SeedStandaloneTacticalMission { .. } => "seed_standalone_tactical_mission",
             Reducer::SelectBrowserCharacter { .. } => "select_browser_character",
@@ -2675,6 +2711,7 @@ impl __sdk::Reducer for Reducer {
                 "sync_development_clock_to_character"
             }
             Reducer::SynchronizeCharacterTime { .. } => "synchronize_character_time",
+            Reducer::SynchronizePartyForActivity { .. } => "synchronize_party_for_activity",
             Reducer::TrackCaseSite { .. } => "track_case_site",
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
             Reducer::TravelToCaseSite { .. } => "travel_to_case_site",
@@ -3494,6 +3531,27 @@ Reducer::BeginFormalCourtship{
                 item_ids: item_ids.clone(),
                 quantities: quantities.clone(),
 }),
+            Reducer::PurchasePersonalStorefrontWithPartyStake{
+                character_id,
+                settlement_id,
+                service_id,
+                provider_resident_character_id,
+                item_id,
+                quantity,
+                maximum_unit_price,
+                maximum_personal_payment,
+                maximum_stake_payment,
+}             => __sats::bsatn::to_vec(&purchase_personal_storefront_with_party_stake_reducer::PurchasePersonalStorefrontWithPartyStakeArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                service_id: service_id.clone(),
+                provider_resident_character_id: provider_resident_character_id.clone(),
+                item_id: item_id.clone(),
+                quantity: quantity.clone(),
+                maximum_unit_price: maximum_unit_price.clone(),
+                maximum_personal_payment: maximum_personal_payment.clone(),
+                maximum_stake_payment: maximum_stake_payment.clone(),
+}),
             Reducer::ReceiveInvestigationClaim{
                 character_id,
                 action_id,
@@ -3765,9 +3823,11 @@ Reducer::BeginFormalCourtship{
             Reducer::SeedSimulationDisease{
                 nonce,
                 character_id,
+                disease_id,
 }             => __sats::bsatn::to_vec(&seed_simulation_disease_reducer::SeedSimulationDiseaseArgs {
                 nonce: nonce.clone(),
                 character_id: character_id.clone(),
+                disease_id: disease_id.clone(),
 }),
             Reducer::SeedSimulationEquipmentDamage{
                 nonce,
@@ -3777,6 +3837,15 @@ Reducer::BeginFormalCourtship{
                 nonce: nonce.clone(),
                 character_id: character_id.clone(),
                 inventory_item_id: inventory_item_id.clone(),
+}),
+            Reducer::SeedSimulationQuestFixture{
+                nonce,
+                direct_leader_id,
+                generated_leader_id,
+}             => __sats::bsatn::to_vec(&seed_simulation_quest_fixture_reducer::SeedSimulationQuestFixtureArgs {
+                nonce: nonce.clone(),
+                direct_leader_id: direct_leader_id.clone(),
+                generated_leader_id: generated_leader_id.clone(),
 }),
             Reducer::SeedSimulationWorld{
                 nonce,
@@ -4039,6 +4108,11 @@ Reducer::BeginFormalCourtship{
 }             => __sats::bsatn::to_vec(&synchronize_character_time_reducer::SynchronizeCharacterTimeArgs {
                 character_id: character_id.clone(),
 }),
+            Reducer::SynchronizePartyForActivity{
+                leader_id,
+}             => __sats::bsatn::to_vec(&synchronize_party_for_activity_reducer::SynchronizePartyForActivityArgs {
+                leader_id: leader_id.clone(),
+}),
             Reducer::TrackCaseSite{
                 character_id,
                 case_site_id,
@@ -4281,6 +4355,7 @@ pub struct DbUpdate {
     settlement_resident_presence: __sdk::TableUpdate<SettlementResidentPresence>,
     settlement_smith: __sdk::TableUpdate<SettlementSmith>,
     simulation_character: __sdk::TableUpdate<SimulationCharacter>,
+    simulation_quest_fixture: __sdk::TableUpdate<SimulationQuestFixture>,
     simulation_run: __sdk::TableUpdate<SimulationRun>,
     strategic_encounter: __sdk::TableUpdate<StrategicEncounter>,
     strategic_gateway_authority: __sdk::TableUpdate<StrategicGatewayAuthority>,
@@ -4674,6 +4749,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                     .append(settlement_smith_table::parse_table_update(table_update)?),
                 "simulation_character" => db_update.simulation_character.append(
                     simulation_character_table::parse_table_update(table_update)?,
+                ),
+                "simulation_quest_fixture" => db_update.simulation_quest_fixture.append(
+                    simulation_quest_fixture_table::parse_table_update(table_update)?,
                 ),
                 "simulation_run" => db_update
                     .simulation_run
@@ -5216,6 +5294,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "party_journey_route",
             &self.party_journey_route,
         );
+        diff.simulation_quest_fixture = cache.apply_diff_to_table::<SimulationQuestFixture>(
+            "simulation_quest_fixture",
+            &self.simulation_quest_fixture,
+        );
         diff.tactical_server =
             cache.apply_diff_to_table::<TacticalServer>("tactical_server", &self.tactical_server);
         diff.tactical_server_request = cache.apply_diff_to_table::<TacticalServerRequest>(
@@ -5549,6 +5631,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "simulation_character" => db_update
                     .simulation_character
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "simulation_quest_fixture" => db_update
+                    .simulation_quest_fixture
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "simulation_run" => db_update
                     .simulation_run
@@ -5911,6 +5996,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "simulation_character" => db_update
                     .simulation_character
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "simulation_quest_fixture" => db_update
+                    .simulation_quest_fixture
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "simulation_run" => db_update
                     .simulation_run
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -6069,6 +6157,7 @@ pub struct AppliedDiff<'r> {
     settlement_resident_presence: __sdk::TableAppliedDiff<'r, SettlementResidentPresence>,
     settlement_smith: __sdk::TableAppliedDiff<'r, SettlementSmith>,
     simulation_character: __sdk::TableAppliedDiff<'r, SimulationCharacter>,
+    simulation_quest_fixture: __sdk::TableAppliedDiff<'r, SimulationQuestFixture>,
     simulation_run: __sdk::TableAppliedDiff<'r, SimulationRun>,
     strategic_encounter: __sdk::TableAppliedDiff<'r, StrategicEncounter>,
     strategic_gateway_authority: __sdk::TableAppliedDiff<'r, StrategicGatewayAuthority>,
@@ -6600,6 +6689,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<SimulationCharacter>(
             "simulation_character",
             &self.simulation_character,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<SimulationQuestFixture>(
+            "simulation_quest_fixture",
+            &self.simulation_quest_fixture,
             event,
         );
         callbacks.invoke_table_row_callbacks::<SimulationRun>(
@@ -7402,6 +7496,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         settlement_resident_presence_table::register_table(client_cache);
         settlement_smith_table::register_table(client_cache);
         simulation_character_table::register_table(client_cache);
+        simulation_quest_fixture_table::register_table(client_cache);
         simulation_run_table::register_table(client_cache);
         strategic_encounter_table::register_table(client_cache);
         strategic_gateway_authority_table::register_table(client_cache);
@@ -7520,6 +7615,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "settlement_resident_presence",
         "settlement_smith",
         "simulation_character",
+        "simulation_quest_fixture",
         "simulation_run",
         "strategic_encounter",
         "strategic_gateway_authority",

@@ -6,57 +6,62 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct SeedSimulationDiseaseArgs {
+pub(super) struct SeedSimulationQuestFixtureArgs {
     pub nonce: String,
-    pub character_id: u64,
-    pub disease_id: String,
+    pub direct_leader_id: u64,
+    pub generated_leader_id: u64,
 }
 
-impl From<SeedSimulationDiseaseArgs> for super::Reducer {
-    fn from(args: SeedSimulationDiseaseArgs) -> Self {
-        Self::SeedSimulationDisease {
+impl From<SeedSimulationQuestFixtureArgs> for super::Reducer {
+    fn from(args: SeedSimulationQuestFixtureArgs) -> Self {
+        Self::SeedSimulationQuestFixture {
             nonce: args.nonce,
-            character_id: args.character_id,
-            disease_id: args.disease_id,
+            direct_leader_id: args.direct_leader_id,
+            generated_leader_id: args.generated_leader_id,
         }
     }
 }
 
-impl __sdk::InModule for SeedSimulationDiseaseArgs {
+impl __sdk::InModule for SeedSimulationQuestFixtureArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `seed_simulation_disease`.
+/// Extension trait for access to the reducer `seed_simulation_quest_fixture`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait seed_simulation_disease {
-    /// Request that the remote module invoke the reducer `seed_simulation_disease` to run as soon as possible.
+pub trait seed_simulation_quest_fixture {
+    /// Request that the remote module invoke the reducer `seed_simulation_quest_fixture` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`seed_simulation_disease:seed_simulation_disease_then`] to run a callback after the reducer completes.
-    fn seed_simulation_disease(
+    /// /// Use [`seed_simulation_quest_fixture:seed_simulation_quest_fixture_then`] to run a callback after the reducer completes.
+    fn seed_simulation_quest_fixture(
         &self,
         nonce: String,
-        character_id: u64,
-        disease_id: String,
+        direct_leader_id: u64,
+        generated_leader_id: u64,
     ) -> __sdk::Result<()> {
-        self.seed_simulation_disease_then(nonce, character_id, disease_id, |_, _| {})
+        self.seed_simulation_quest_fixture_then(
+            nonce,
+            direct_leader_id,
+            generated_leader_id,
+            |_, _| {},
+        )
     }
 
-    /// Request that the remote module invoke the reducer `seed_simulation_disease` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `seed_simulation_quest_fixture` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn seed_simulation_disease_then(
+    fn seed_simulation_quest_fixture_then(
         &self,
         nonce: String,
-        character_id: u64,
-        disease_id: String,
+        direct_leader_id: u64,
+        generated_leader_id: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -66,12 +71,12 @@ pub trait seed_simulation_disease {
     ) -> __sdk::Result<()>;
 }
 
-impl seed_simulation_disease for super::RemoteReducers {
-    fn seed_simulation_disease_then(
+impl seed_simulation_quest_fixture for super::RemoteReducers {
+    fn seed_simulation_quest_fixture_then(
         &self,
         nonce: String,
-        character_id: u64,
-        disease_id: String,
+        direct_leader_id: u64,
+        generated_leader_id: u64,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -80,10 +85,10 @@ impl seed_simulation_disease for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            SeedSimulationDiseaseArgs {
+            SeedSimulationQuestFixtureArgs {
                 nonce,
-                character_id,
-                disease_id,
+                direct_leader_id,
+                generated_leader_id,
             },
             callback,
         )

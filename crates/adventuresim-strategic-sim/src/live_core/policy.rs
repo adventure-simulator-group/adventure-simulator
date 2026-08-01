@@ -13,8 +13,14 @@ struct LiveRunner {
     generated_terminal_cases: HashSet<(u64, String)>,
     generated_exact_site_cases: HashSet<(u64, String)>,
     generated_traveled_cases: HashSet<(u64, String)>,
+    generated_case_site_recoveries: HashSet<(u64, String, String)>,
+    generated_active_cases: HashMap<u64, String>,
+    generated_case_cursors: HashMap<u64, String>,
     generated_finance_blocks: HashMap<(String, u64, String), (u64, u64)>,
     generated_discovery_backoff: HashMap<u64, PublicDiscoveryBackoff>,
+    generated_dialogue_no_progress:
+        HashMap<PublicDialogueAttemptKey, PublicDialogueProgressFingerprint>,
+    generated_defeat_fingerprints: HashMap<(u64, String), PublicCombatFingerprint>,
     failure_recorder: FailureRecorder,
 }
 
@@ -32,11 +38,122 @@ enum MedicalChoice {
     BuyAndRest,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PublicInterventionOffer {
+    preparation_id: String,
+    profile_version: u16,
+    route: String,
+    public_score_micropoints: i64,
+    storefront_quote: Option<u64>,
+    inventory_item_id: Option<u64>,
+}
+
+fn public_chart_is_fresh(patient_minute: u64, observed_at: u64) -> bool {
+    observed_at <= patient_minute
+        && patient_minute.saturating_sub(observed_at) <= MAX_ACTIONABLE_PHYSIOLOGY_CHART_AGE_MINUTES
+}
+
+#[allow(clippy::too_many_arguments)]
+fn compare_public_chart_rank(
+    left_confidence: u16,
+    left_observed_at: u64,
+    left_observer_id: u64,
+    left_id: &str,
+    right_confidence: u16,
+    right_observed_at: u64,
+    right_observer_id: u64,
+    right_id: &str,
+) -> std::cmp::Ordering {
+    right_confidence
+        .cmp(&left_confidence)
+        .then_with(|| right_observed_at.cmp(&left_observed_at))
+        .then_with(|| left_observer_id.cmp(&right_observer_id))
+        .then_with(|| left_id.cmp(right_id))
+}
+
+fn public_disease_id(value: &str) -> Option<adventuresim_core::disease::DiseaseId> {
+    use adventuresim_core::disease::DiseaseId;
+    match value {
+        "influenza" => Some(DiseaseId::Influenza),
+        "dysentery" => Some(DiseaseId::Dysentery),
+        "typhus" => Some(DiseaseId::Typhus),
+        "tetanus" => Some(DiseaseId::Tetanus),
+        "erysipelas" => Some(DiseaseId::Erysipelas),
+        "smallpox" => Some(DiseaseId::Smallpox),
+        "plague" => Some(DiseaseId::Plague),
+        "consumption" => Some(DiseaseId::Consumption),
+        "mahrdruck" => Some(DiseaseId::Mahrdruck),
+        "shroud_fever" => Some(DiseaseId::ShroudFever),
+        "bilwisschuss" => Some(DiseaseId::Bilwisschuss),
+        "kobeldunst" => Some(DiseaseId::Kobeldunst),
+        _ => None,
+    }
+}
+
+/// Score only the observer-safe weighted differential and public generic
+/// preparation profiles. Positive values mean expected meter relief exceeds
+/// direct and adverse meter burden. Quantization makes tie-breaking replayable.
+fn public_intervention_score(
+    differential: &[BackendPhysiologyDifferential],
+    profile: &adventuresim_core::physiology::InterventionProfile,
+) -> i64 {
+    use adventuresim_core::physiology::{METER_COUNT, Meter};
+    let total_likelihood = differential
+        .iter()
+        .filter(|row| public_disease_id(&row.disease_id).is_some())
+        .map(|row| u64::from(row.likelihood_bps))
+        .sum::<u64>();
+    if total_likelihood == 0 {
+        return 0;
+    }
+    let mut expected_loss = [0.0_f64; METER_COUNT];
+    for row in differential {
+        let Some(disease_id) = public_disease_id(&row.disease_id) else {
+            continue;
+        };
+        let weight = f64::from(row.likelihood_bps) / total_likelihood as f64;
+        for (meter, peak_loss) in adventuresim_core::disease::disease_peak_meters(disease_id) {
+            expected_loss[meter.index()] += weight * f64::from(*peak_loss).max(0.0);
+        }
+    }
+    let mut benefit = 0.0_f64;
+    let mut burden = 0.0_f64;
+    for meter in Meter::ALL {
+        let expected = expected_loss[meter.index()];
+        let direct = f64::from(profile.loss_delta_per_unit.get(meter));
+        benefit += expected * (-direct).max(0.0);
+        burden += expected * direct.max(0.0);
+        let adverse = f64::from(profile.adverse_delta_per_unit.get(meter)).max(0.0);
+        burden += adverse * (0.5 + expected);
+    }
+    ((benefit - burden) * 1_000_000.0).round() as i64
+}
+
+fn intervention_route_name(
+    route: adventuresim_core::physiology::InterventionRoute,
+) -> &'static str {
+    use adventuresim_core::physiology::InterventionRoute;
+    match route {
+        InterventionRoute::Oral => "oral",
+        InterventionRoute::Topical => "topical",
+        InterventionRoute::Inhaled => "inhaled",
+        InterventionRoute::Injected => "injected",
+    }
+}
+
+fn public_confidence_band(confidence_bps: u16) -> &'static str {
+    match confidence_bps {
+        0..=2_999 => "low",
+        3_000..=6_999 => "moderate",
+        _ => "high",
+    }
+}
+
 fn choose_medical_action(
     condition_status: &str,
     symptomatic: bool,
     at_settlement: bool,
-    herbalist_available: bool,
+    intervention_available: bool,
     purse: u64,
     observable_quote: Option<u64>,
     natural_rest_venue: Option<bool>,
@@ -60,8 +177,8 @@ fn choose_medical_action(
             "convalescing_without_symptoms",
         );
     }
-    if !herbalist_available {
-        return (MedicalChoice::RestNaturally, "herbalist_unavailable");
+    if !intervention_available {
+        return (MedicalChoice::RestNaturally, "intervention_unavailable");
     }
     let Some(quote) = observable_quote else {
         return (MedicalChoice::RestNaturally, "observable_quote_unavailable");

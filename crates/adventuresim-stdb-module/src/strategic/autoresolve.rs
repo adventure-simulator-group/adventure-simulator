@@ -51,7 +51,8 @@ use crate::{
     organization::organization_presentation,
     repair::{item_condition, settlement_smith},
     settlement_population::{
-        settlement_resident_profile, settlement_resident_presence, settlement_resident_seed_explanation,
+        settlement_resident_presence, settlement_resident_profile,
+        settlement_resident_seed_explanation,
     },
     tactical::{
         tactical_server_authority, tactical_server_claim, tactical_server_request_authority,
@@ -128,137 +129,13 @@ pub(crate) fn autoresolve_enemy_with_countermeasure(
     combat_scale_bps: u32,
     countermeasure_multiplier_bps: u32,
 ) -> Result<Combatant, String> {
-    use adventuresim_core::bestiary::{AttackStyle, Protection};
-    let (physical_scale, training_scale) =
-        adventuresim_core::threat_escalation::combat_scaling_multipliers(
-            combat_scale_bps,
-            countermeasure_multiplier_bps,
-        );
-    let base_rating = 1.2 + difficulty.max(1) as f32 * 0.35;
-    let physical_rating = base_rating * physical_scale;
-    let threat_profile = parse_threat(enemy_type)?.profile();
-    let profile = threat_profile.combat;
-    let mut combatant = Combatant::new(id);
-    combatant.bestiary_categories = threat_profile.categories().collect();
-    combatant.attributes = CombatAttributes {
-        endurance: physical_rating,
-        immunity: physical_rating,
-        gut: physical_rating,
-        intelligence: physical_rating * 0.7,
-        instinct: physical_rating,
-        eyesight: physical_rating,
-        hearing: physical_rating,
-        left_arm_strength: physical_rating,
-        right_arm_strength: physical_rating,
-        left_leg_strength: physical_rating,
-        right_leg_strength: physical_rating,
-        left_arm_agility: physical_rating,
-        right_arm_agility: physical_rating,
-        left_leg_agility: physical_rating,
-        right_leg_agility: physical_rating,
-    };
-    let training = base_rating * 1_500.0 * profile.training_multiplier * training_scale;
-    combatant.skills = CombatSkills {
-        sword_hours: training,
-        bow_hours: if profile.ranged { training * 2.0 } else { 0.0 },
-        dodge_hours: training,
-        block_hours: if matches!(
-            profile.protection,
-            Protection::Shielded | Protection::Armored
-        ) {
-            training
-        } else {
-            training * 0.4
-        },
-        will_hours: training * (0.5 + f32::from(profile.morale) / 50.0),
-        balance_hours: training,
-        ..CombatSkills::default()
-    };
-    combatant.body.weight_kg = profile.weight_kg;
-    let (blunt, slash, pierce) = match profile.attack {
-        AttackStyle::Blunt => (true, false, false),
-        AttackStyle::Blade => (false, true, false),
-        AttackStyle::Knife
-        | AttackStyle::Spear
-        | AttackStyle::Bow
-        | AttackStyle::Bite
-        | AttackStyle::Claw => (false, false, true),
-    };
-    let weapon = CombatWeapon {
-        skills: if profile.ranged {
-            adventuresim_core::equipment::WeaponSkillDistribution {
-                bow: 1.0,
-                ..Default::default()
-            }
-        } else {
-            adventuresim_core::equipment::WeaponSkillDistribution {
-                sword: 1.0,
-                ..Default::default()
-            }
-        },
-        melee: !profile.ranged,
-        ranged: profile.ranged,
-        blunt,
-        slash,
-        pierce,
-        accuracy: 0.8 + profile.precision_bonus,
-        weight: if profile.rig == adventuresim_core::bestiary::RigTopology::Quadruped {
-            1.0
-        } else {
-            1.5
-        },
-        penetration: if matches!(profile.attack, AttackStyle::Spear | AttackStyle::Claw) {
-            1.5
-        } else {
-            0.8
-        },
-        melee_reach: if profile.ranged { 0.0 } else { 0.8 },
-        ranged_range: if profile.ranged { 20.0 } else { 0.0 },
-        attack_interval_seconds: if profile.ranged { 1.0 } else { 0.75 },
-        precise: profile.precision_bonus > 0.0,
-        balance: 0.3,
-        ranged_force_joules: if profile.ranged { 40.0 } else { 0.0 },
-    };
-    combatant.equipment.weapon = Some(weapon);
-    if profile.ranged {
-        combatant.equipment.ranged_weapon = Some(weapon);
-        combatant.equipment.ranged_projectile_kind =
-            Some(adventuresim_core::autoresolve::CombatProjectileKind::Arrowhead);
-        combatant.equipment.melee_weapon = Some(CombatWeapon {
-            melee: true,
-            slash: true,
-            pierce: true,
-            accuracy: 1.0,
-            weight: 0.5,
-            penetration: 0.5,
-            melee_reach: 0.5,
-            attack_interval_seconds: 0.6,
-            balance: 0.5,
-            ..CombatWeapon::default()
-        });
-        combatant.equipment.ammunition = 12;
-        combatant.initial_ammunition = 12;
-    } else {
-        combatant.equipment.melee_weapon = Some(weapon);
-    }
-    let innate = profile.innate_protection;
-    if innate.resistance_joules > 0.0 || innate.padding_joules > 0.0 {
-        combatant.equipment.armor.fill(CombatArmor::innate(
-            innate.resistance_joules,
-            innate.padding_joules,
-        ));
-    }
-    if matches!(profile.protection, Protection::Armored) {
-        combatant.equipment.shield_block_bonus = 1.0;
-        combatant.equipment.armor.fill(CombatArmor {
-            resistance: 25.0,
-            padding: 15.0,
-            flexibility: 0.8,
-            range_of_motion: 0.9,
-            coverage: 0.5,
-        });
-    }
-    Ok(combatant)
+    adventuresim_core::autoresolve::authored_threat_combatant(
+        id,
+        enemy_type,
+        difficulty,
+        combat_scale_bps,
+        countermeasure_multiplier_bps,
+    )
 }
 
 fn autoresolve_drop(enemy_type: &str) -> Result<Option<&'static str>, String> {

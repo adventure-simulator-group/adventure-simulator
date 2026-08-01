@@ -648,6 +648,7 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             religion: Skill::Religion
                 .capped_training_rank(spec.skills.religion.maximum_effective(), &spec.attributes),
             weapon_precision,
+            autoresolve_combat_power: 0,
         };
         let organization_memberships = spec
             .organization

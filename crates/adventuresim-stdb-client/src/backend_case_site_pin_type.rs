@@ -24,6 +24,8 @@ pub struct BackendCaseSitePin {
     pub generated_case: bool,
     pub case_resolved: bool,
     pub combat_available: bool,
+    pub opposition_count: Option<u32>,
+    pub opposition_combat_power: Option<u64>,
 }
 
 impl __sdk::InModule for BackendCaseSitePin {
@@ -51,6 +53,8 @@ pub struct BackendCaseSitePinCols {
     pub generated_case: __sdk::__query_builder::Col<BackendCaseSitePin, bool>,
     pub case_resolved: __sdk::__query_builder::Col<BackendCaseSitePin, bool>,
     pub combat_available: __sdk::__query_builder::Col<BackendCaseSitePin, bool>,
+    pub opposition_count: __sdk::__query_builder::Col<BackendCaseSitePin, Option<u32>>,
+    pub opposition_combat_power: __sdk::__query_builder::Col<BackendCaseSitePin, Option<u64>>,
 }
 
 impl __sdk::__query_builder::HasCols for BackendCaseSitePin {
@@ -80,6 +84,11 @@ impl __sdk::__query_builder::HasCols for BackendCaseSitePin {
             generated_case: __sdk::__query_builder::Col::new(table_name, "generated_case"),
             case_resolved: __sdk::__query_builder::Col::new(table_name, "case_resolved"),
             combat_available: __sdk::__query_builder::Col::new(table_name, "combat_available"),
+            opposition_count: __sdk::__query_builder::Col::new(table_name, "opposition_count"),
+            opposition_combat_power: __sdk::__query_builder::Col::new(
+                table_name,
+                "opposition_combat_power",
+            ),
         }
     }
 }

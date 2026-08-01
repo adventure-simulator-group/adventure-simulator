@@ -64,8 +64,87 @@ pub(super) fn root_requirement_matches_slot(
     }
 }
 
+pub(super) fn select_public_quest_fixture(
+    rows: impl IntoIterator<Item = SimulationQuestFixture>,
+    expected_run_id: u64,
+    expected_parties: &[(u64, String); 2],
+) -> Result<SimulationQuestFixture, String> {
+    let mut rows = rows.into_iter().take(2);
+    let fixture = rows
+        .next()
+        .ok_or("required quest fixture completed without receipt-backed public provenance")?;
+    if rows.next().is_some() {
+        return Err("required quest fixture public provenance is ambiguous".into());
+    }
+    if fixture.id != 0 || fixture.run_id != expected_run_id {
+        return Err("required quest fixture public provenance identifies the wrong run".into());
+    }
+    let direct = (fixture.direct_leader_id, fixture.direct_party_id.as_str());
+    let generated = (
+        fixture.generated_leader_id,
+        fixture.generated_party_id.as_str(),
+    );
+    let first = (expected_parties[0].0, expected_parties[0].1.as_str());
+    let second = (expected_parties[1].0, expected_parties[1].1.as_str());
+    if !((direct == first && generated == second) || (direct == second && generated == first)) {
+        return Err("required quest fixture public provenance identifies the wrong parties".into());
+    }
+    Ok(fixture)
+}
+
+pub(super) fn select_public_quest_fixture_if_present(
+    rows: impl IntoIterator<Item = SimulationQuestFixture>,
+    expected_run_id: u64,
+    expected_parties: &[(u64, String); 2],
+) -> Result<Option<SimulationQuestFixture>, String> {
+    let rows = rows.into_iter().take(2).collect::<Vec<_>>();
+    if rows.is_empty() {
+        return Ok(None);
+    }
+    select_public_quest_fixture(rows, expected_run_id, expected_parties).map(Some)
+}
+
+fn wait_for_new_public_direct_contract(
+    runner: &LiveRunner,
+    existing_contract_ids: &HashSet<String>,
+    settlement_id: &str,
+    direct_party_id: &str,
+) -> Result<String, String> {
+    let deadline = std::time::Instant::now() + ACTION_TIMEOUT;
+    loop {
+        let mut candidates = runner
+            .connection
+            .db
+            .backend_contracts()
+            .iter()
+            .filter(|contract| {
+                !existing_contract_ids.contains(&contract.id)
+                    && contract.settlement_id == settlement_id
+                    && contract.status == ContractStatus::Offered
+                    && runner
+                        .public_party_contract_assessment(direct_party_id, contract)
+                        .eligible
+            })
+            .map(|contract| contract.id)
+            .collect::<Vec<_>>();
+        candidates.sort();
+        candidates.dedup();
+        match candidates.as_slice() {
+            [contract_id] => return Ok(contract_id.clone()),
+            [] if std::time::Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            [] => return Err("required direct fixture contract was not publicly projected".into()),
+            _ => return Err("required direct fixture contract projection is ambiguous".into()),
+        }
+    }
+}
+
 pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
-    let failure_recorder = FailureRecorder::new(config.failure_output.clone());
+    let failure_recorder = FailureRecorder::new(
+        config.failure_output.clone(),
+        config.fixture_disease.clone(),
+    );
     let result = run_core_loop_inner(config, failure_recorder.clone());
     if let Err(error) = &result
         && let Err(diagnostic_error) = failure_recorder.write(error)
@@ -122,8 +201,12 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.battle_loot_item())
         .add_query(|query| query.from.battle_result())
         .add_query(|query| query.from.backend_characters())
+        .add_query(|query| query.from.backend_character_attributes())
         .add_query(|query| query.from.backend_character_capabilities())
+        .add_query(|query| query.from.backend_character_conditions())
         .add_query(|query| query.from.backend_character_deaths())
+        .add_query(|query| query.from.backend_character_limbs())
+        .add_query(|query| query.from.backend_character_stats())
         .add_query(|query| query.from.character_equipped_item())
         .add_query(|query| query.from.equipment_occupancy())
         .add_query(|query| query.from.character_illness_status())
@@ -135,6 +218,7 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.food_lot())
         .add_query(|query| query.from.item())
         .add_query(|query| query.from.item_condition())
+        .add_query(|query| query.from.limb_injury())
         .add_query(|query| query.from.local_problem_symptom())
         .add_query(|query| query.from.party())
         .add_query(|query| query.from.party_inventory_item())
@@ -144,6 +228,7 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.party_member())
         .add_query(|query| query.from.party_stake())
         .add_query(|query| query.from.backend_contracts())
+        .add_query(|query| query.from.backend_road_challenges())
         .add_query(|query| query.from.backend_settlement_residents())
         .add_query(|query| query.from.strategic_encounter())
         .add_query(|query| query.from.repair_order())
@@ -151,6 +236,7 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.settlement_resident_presence())
         .add_query(|query| query.from.settlement_smith())
         .add_query(|query| query.from.simulation_run())
+        .add_query(|query| query.from.simulation_quest_fixture())
         .add_query(|query| query.from.world_clock())
         .add_query(|query| query.from.world_data_import())
         .subscribe();
@@ -184,8 +270,13 @@ fn run_core_loop_inner(
         generated_terminal_cases: HashSet::new(),
         generated_exact_site_cases: HashSet::new(),
         generated_traveled_cases: HashSet::new(),
+        generated_case_site_recoveries: HashSet::new(),
+        generated_active_cases: HashMap::new(),
+        generated_case_cursors: HashMap::new(),
         generated_finance_blocks: HashMap::new(),
         generated_discovery_backoff: HashMap::new(),
+        generated_dialogue_no_progress: HashMap::new(),
+        generated_defeat_fingerprints: HashMap::new(),
         failure_recorder,
     };
     if runner
@@ -232,6 +323,20 @@ fn run_core_loop_inner(
             cb,
         ));
     runner.call(result)?;
+    let claimed_run_ids = runner
+        .connection
+        .db
+        .simulation_run()
+        .iter()
+        .filter(|run| run.nonce == config.run_nonce)
+        .map(|run| run.id)
+        .take(2)
+        .collect::<Vec<_>>();
+    let claimed_run_id = match claimed_run_ids.as_slice() {
+        [run_id] => *run_id,
+        [] => return Err("claim reducer completed without a coherent simulation run".into()),
+        _ => return Err("claim reducer completed with ambiguous simulation runs".into()),
+    };
     // The disposable simulation owns this otherwise-empty database, so its
     // authenticated connection is also the trusted strategic gateway.
     let result = reducer_call!(runner, "register_strategic_gateway", |cb| runner
@@ -264,9 +369,11 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.backend_investigation_journal())
         .add_query(|query| query.from.backend_investigation_leads())
         .add_query(|query| query.from.backend_local_problem_trade_effects())
+        .add_query(|query| query.from.backend_physiology_charts())
         .add_query(|query| query.from.backend_characters())
         .add_query(|query| query.from.backend_character_capabilities())
         .add_query(|query| query.from.backend_character_needs())
+        .add_query(|query| query.from.backend_character_stats())
         .add_query(|query| query.from.backend_character_strategic_conditions())
         .add_query(|query| query.from.backend_character_times())
         .add_query(|query| query.from.backend_character_training_schedules())
@@ -355,7 +462,12 @@ fn run_core_loop_inner(
             let result = reducer_call!(runner, "seed_simulation_disease", |cb| runner
                 .connection
                 .reducers
-                .seed_simulation_disease_then(config.run_nonce.clone(), character_id, cb));
+                .seed_simulation_disease_then(
+                    config.run_nonce.clone(),
+                    character_id,
+                    config.fixture_disease.clone(),
+                    cb,
+                ));
             runner.call(result)?;
         }
         runner.metrics.parties_formed += 1;
@@ -371,12 +483,13 @@ fn run_core_loop_inner(
         .clone()
         .ok_or("leader not at settlement")?;
     let mut party_ids = Vec::new();
-    for first in (0..runner.character_ids.len()).step_by(config.party_size as usize) {
+    let party_groups = balanced_party_groups(&runner.profiles, config.party_size as usize);
+    for group in party_groups {
+        let first = group[0];
         let leader = runner.character_ids[first];
         let leader_party = runner.party_for(leader)?;
         party_ids.push(leader_party.id.clone());
-        let end = (first + config.party_size as usize).min(runner.character_ids.len());
-        for agent in first + 1..end {
+        for agent in group.into_iter().skip(1) {
             let member = runner.character_ids[agent];
             let result = reducer_call!(runner, "request_general_party_join", |cb| runner
                 .connection
@@ -409,6 +522,81 @@ fn run_core_loop_inner(
             );
         }
     }
+    let mut expected_quest_fixture_parties = None;
+    let mut quest_lane_plan = None;
+    if config.require_quest_coverage {
+        if party_ids.len() < 2 {
+            return Err("quest coverage fixture requires two formed parties".into());
+        }
+        let fixture_enemy = adventuresim_core::autoresolve::authored_threat_combatant(
+            u64::MAX,
+            "cultist",
+            1,
+            10_000,
+            10_000,
+        )?;
+        let fixture_enemy_power =
+            adventuresim_core::autoresolve::autoresolve_combat_power(&fixture_enemy);
+        let mut candidates = Vec::new();
+        for party_id in party_ids.iter().take(2) {
+            let leader = runner
+                .current_leader(party_id)
+                .map(|(leader, _)| leader)
+                .ok_or("quest coverage party has no leader")?;
+            let assessment = runner.public_party_matchup_assessment(
+                party_id,
+                1,
+                "one",
+                fixture_enemy_power,
+            );
+            candidates.push((leader, party_id.clone(), assessment));
+        }
+        let ((direct_leader, direct_party), (generated_leader, generated_party)) =
+            select_strongest_fixture_party(candidates)?;
+        let existing_contract_ids = runner
+            .connection
+            .db
+            .backend_contracts()
+            .iter()
+            .map(|contract| contract.id)
+            .collect::<HashSet<_>>();
+        let direct_settlement_id = runner
+            .party_by_id(&direct_party)?
+            .current_settlement_id
+            .clone()
+            .ok_or("quest coverage direct party is not in a settlement")?;
+        let result = reducer_call!(runner, "seed_simulation_quest_fixture", |cb| runner
+            .connection
+            .reducers
+            .seed_simulation_quest_fixture_then(
+                config.run_nonce.clone(),
+                direct_leader,
+                generated_leader,
+                cb,
+            ));
+        runner.call(result)?;
+        expected_quest_fixture_parties = Some([
+            (direct_leader, direct_party),
+            (generated_leader, generated_party),
+        ]);
+        let direct_contract_id = wait_for_new_public_direct_contract(
+            &runner,
+            &existing_contract_ids,
+            &direct_settlement_id,
+            &expected_quest_fixture_parties
+                .as_ref()
+                .expect("quest fixture parties were just designated")[0]
+                .1,
+        )?;
+        quest_lane_plan = Some(FixtureLanePlan {
+            direct_contract_id,
+            generated_case_id: None,
+            direct_leader_id: expected_quest_fixture_parties.as_ref().unwrap()[0].0,
+            generated_leader_id: expected_quest_fixture_parties.as_ref().unwrap()[1].0,
+            direct_party_id: expected_quest_fixture_parties.as_ref().unwrap()[0].1.clone(),
+            generated_party_id: expected_quest_fixture_parties.as_ref().unwrap()[1].1.clone(),
+        });
+    }
     let result = reducer_call!(runner, "ensure_settlement_activity", |cb| runner
         .connection
         .reducers
@@ -422,6 +610,29 @@ fn run_core_loop_inner(
         for party_id in &party_ids {
             runner.observe_deaths();
             runner.observe_external_generated_closures();
+            if quest_lane_plan
+                .as_ref()
+                .is_some_and(|plan| plan.generated_case_id.is_none())
+            {
+                if let Some(fixture) = select_public_quest_fixture_if_present(
+                    runner.connection.db.simulation_quest_fixture().iter(),
+                    claimed_run_id,
+                    expected_quest_fixture_parties
+                        .as_ref()
+                        .expect("fixture lane plan requires designated parties"),
+                )? {
+                    let plan = quest_lane_plan
+                        .as_mut()
+                        .expect("fixture projection appeared for an active lane plan");
+                    if fixture.direct_contract_id != plan.direct_contract_id {
+                        return Err(
+                            "required quest fixture public provenance identifies the wrong direct contract"
+                                .into(),
+                        );
+                    }
+                    plan.generated_case_id = Some(fixture.generated_case_id);
+                }
+            }
             let party_time_before = runner.public_party_elapsed_max(party_id);
             let Some((pre_recovery_leader, _)) = runner.current_leader(party_id) else {
                 continue;
@@ -499,12 +710,14 @@ fn run_core_loop_inner(
             };
             active = true;
             let profile = runner.profiles[leader_agent as usize].clone();
+            let fixture_lane = fixture_quest_lane(quest_lane_plan.as_ref(), leader, party_id);
             let mixed = config.seed
                 ^ u64::from(leader_agent).wrapping_mul(0x9e37_79b9_7f4a_7c15)
                 ^ u64::from(cycle).wrapping_mul(0xbf58_476d_1ce4_e5b9);
             let selector = (mixed >> 11) as f64 / ((1_u64 << 53) as f64);
             let quest_propensity = profile.activity_vs_quest_propensity;
-            let wants_quest = selector < f64::from(quest_propensity);
+            let wants_quest = fixture_lane.is_some()
+                || (!profile.build.activity_only && selector < f64::from(quest_propensity));
             let party = runner.party_for(leader)?;
             let settlement_id = party.current_settlement_id.as_deref();
             let offered_contracts = settlement_id.map_or(0, |settlement_id| {
@@ -519,7 +732,32 @@ fn run_core_loop_inner(
                     })
                     .count()
             });
-            let open_generated_cases = runner.owned_open_generated_cases(leader);
+            let safe_offered_contracts = settlement_id.map_or(0, |settlement_id| {
+                runner
+                    .connection
+                    .db
+                    .backend_contracts()
+                    .iter()
+                    .filter(|contract| {
+                        contract.settlement_id == settlement_id
+                            && contract.status == ContractStatus::Offered
+                            && runner
+                                .public_party_contract_assessment(&party.id, contract)
+                                .eligible
+                    })
+                    .count()
+            });
+            let mut open_generated_cases = runner.owned_open_generated_cases(leader);
+            if fixture_lane == Some(FixtureQuestLane::Generated) {
+                let generated_case_id = quest_lane_plan
+                    .as_ref()
+                    .expect("generated fixture lane has a plan")
+                    .generated_case_id
+                    .as_deref();
+                open_generated_cases.retain(|(case_id, _)| {
+                    generated_case_id.is_some_and(|expected| case_id == expected)
+                });
+            }
             for (case_id, title) in &open_generated_cases {
                 runner.observe_generated_case_intake(
                     leader_agent,
@@ -541,10 +779,45 @@ fn run_core_loop_inner(
                             .any(|(case_id, _)| case_id == &row.case_id)
                 })
                 .count();
-            let direct_quest_chosen =
-                wants_quest && runner.choose_quest(&party, &profile).is_some();
-            let active_direct_contract = runner.active_direct_contract(&party);
-            let quest_path = if active_direct_contract.is_some() {
+            let safe_direct_quest = match fixture_lane {
+                Some(FixtureQuestLane::Direct) => quest_lane_plan.as_ref().and_then(|fixture| {
+                    runner.connection.db.backend_contracts().iter().find(|contract| {
+                        contract.id == fixture.direct_contract_id
+                            && contract.settlement_id
+                                == party.current_settlement_id.clone().unwrap_or_default()
+                            && contract.status == ContractStatus::Offered
+                            && runner
+                                .public_party_contract_assessment(&party.id, contract)
+                                .eligible
+                    })
+                }),
+                Some(FixtureQuestLane::Generated) => None,
+                None => runner.choose_quest(&party, &profile),
+            };
+            let direct_quest_chosen = wants_quest && safe_direct_quest.is_some();
+            let active_direct_contract = runner.active_direct_contract(&party).filter(|contract| {
+                fixture_lane != Some(FixtureQuestLane::Direct)
+                    || quest_lane_plan.as_ref().is_some_and(|fixture| {
+                        contract.id == fixture.direct_contract_id
+                    })
+            });
+            let quest_path = if fixture_lane == Some(FixtureQuestLane::Direct) {
+                if active_direct_contract.is_some() {
+                    "direct_contract_continuation"
+                } else if safe_direct_quest.is_some() {
+                    "direct_contract"
+                } else {
+                    "activity"
+                }
+            } else if fixture_lane == Some(FixtureQuestLane::Generated) {
+                if !open_generated_cases.is_empty() {
+                    "generated_open_case"
+                } else {
+                    "generated_discovery"
+                }
+            } else if profile.build.activity_only {
+                "activity"
+            } else if active_direct_contract.is_some() {
                 "direct_contract_continuation"
             } else if !open_generated_cases.is_empty() {
                 "generated_open_case"
@@ -566,12 +839,15 @@ fn run_core_loop_inner(
                     quest_propensity,
                     settlement_id,
                     offered_contracts,
+                    safe_offered_contracts,
                     open_generated_cases.len(),
                     projected_investigation_actions,
                     quest_path,
                     wants_quest,
                     quest_selected,
-                    if quest_selected {
+                    if wants_quest && offered_contracts > 0 && safe_direct_quest.is_none() {
+                        "no_safe_contract"
+                    } else if quest_selected {
                         "none"
                     } else {
                         "policy_prefers_activity"
@@ -580,8 +856,14 @@ fn run_core_loop_inner(
             );
             match quest_path {
                 "generated_open_case" => {
-                    let (case_id, title) = open_generated_cases[0].clone();
-                    let progressed = runner.advance_generated_case(
+                    let selected = if fixture_lane == Some(FixtureQuestLane::Generated) {
+                        open_generated_cases.first().cloned()
+                    } else {
+                        runner.select_owned_open_generated_case(leader)
+                    };
+                    let Some((case_id, title)) = selected else { continue };
+                    let before = runner.public_dialogue_progress_fingerprint(leader, &case_id);
+                    let advance_result = runner.advance_generated_case(
                         party_id,
                         leader,
                         leader_agent,
@@ -589,22 +871,46 @@ fn run_core_loop_inner(
                         &case_id,
                         &title,
                     )?;
-                    if !progressed && runner.party_for(leader)?.current_settlement_id.is_some() {
+                    runner.record_generated_case_attempt(leader, &case_id, &before);
+                    if advance_result == GeneratedAdvanceResult::NoProgress
+                        && runner.party_for(leader)?.current_settlement_id.is_some()
+                    {
                         runner.settlement_activity_day(leader_agent)?;
                     }
                 }
                 "direct_contract" | "direct_contract_continuation" => {
-                    runner.cycle(party_id, cycle)?
+                    let reserved = (fixture_lane == Some(FixtureQuestLane::Direct))
+                        .then(|| {
+                            quest_lane_plan
+                                .as_ref()
+                                .expect("direct fixture lane has a plan")
+                                .direct_contract_id
+                                .as_str()
+                        });
+                    runner.cycle(party_id, cycle, reserved)?
                 }
                 "generated_discovery" => {
                     let discovery = runner.discover_generated_case(leader, leader_agent, cycle)?;
                     if discovery.case_discovered() {
-                        let Some((case_id, title)) =
-                            runner.owned_open_generated_cases(leader).into_iter().next()
-                        else {
-                            continue;
+                        let selected = if fixture_lane == Some(FixtureQuestLane::Generated) {
+                            let generated_case_id = quest_lane_plan
+                                .as_ref()
+                                .expect("generated fixture lane has a plan")
+                                .generated_case_id
+                                .as_deref();
+                            runner
+                                .owned_open_generated_cases(leader)
+                                .into_iter()
+                                .find(|(case_id, _)| {
+                                    generated_case_id.is_some_and(|expected| case_id == expected)
+                                })
+                        } else {
+                            runner.select_owned_open_generated_case(leader)
                         };
-                        let progressed = runner.advance_generated_case(
+                        let Some((case_id, title)) = selected else { continue };
+                        let before =
+                            runner.public_dialogue_progress_fingerprint(leader, &case_id);
+                        let advance_result = runner.advance_generated_case(
                             party_id,
                             leader,
                             leader_agent,
@@ -612,7 +918,9 @@ fn run_core_loop_inner(
                             &case_id,
                             &title,
                         )?;
-                        if !progressed && runner.party_for(leader)?.current_settlement_id.is_some()
+                        runner.record_generated_case_attempt(leader, &case_id, &before);
+                        if advance_result == GeneratedAdvanceResult::NoProgress
+                            && runner.party_for(leader)?.current_settlement_id.is_some()
                         {
                             runner.settlement_activity_day(leader_agent)?;
                         }
@@ -673,6 +981,9 @@ fn run_core_loop_inner(
         }
     }
     runner.observe_deaths();
+    for party_id in &party_ids {
+        runner.observe_survival_telemetry(party_id);
+    }
 
     let final_agents = runner
         .character_ids
@@ -775,6 +1086,9 @@ fn run_core_loop_inner(
             let public = runner
                 .public_failure_agent(agent as u32, *character_id)
                 .ok_or("missing final public diagnostic state")?;
+            let survival = runner
+                .public_survival_observation(*character_id)
+                .ok_or("missing final public survival state")?;
             Ok(FinalAgentState {
                 agent_id: agent as u32,
                 character_id: *character_id,
@@ -789,6 +1103,15 @@ fn run_core_loop_inner(
                     capability.endurance
                 ),
                 condition_status: condition.status,
+                thermal: survival.thermal,
+                wetness_bps: survival.wetness_bps,
+                thermal_strain: survival.thermal_strain,
+                ammunition: survival.ammunition,
+                carried_load_kg: survival.carried_load_kg,
+                carry_capacity_kg: survival.carry_capacity_kg,
+                encumbrance_remaining_bps: survival.encumbrance_remaining_bps,
+                equipment_ready: survival.equipment_ready,
+                party_tent_quantity: survival.party_tent_quantity,
                 worst_equipment_condition,
                 outstanding_repair_orders,
                 alive: character.alive,
@@ -820,12 +1143,83 @@ fn run_core_loop_inner(
         .unwrap_or(0);
     let total_event_count = runner.sequence;
     let trace_truncated = total_event_count > runner.trace.len() as u64;
+    let quest_fixture = if let Some(expected_parties) = expected_quest_fixture_parties.as_ref() {
+        Some(select_public_quest_fixture(
+            runner.connection.db.simulation_quest_fixture().iter(),
+            claimed_run_id,
+            expected_parties,
+        )?)
+    } else {
+        None
+    };
+    let quest_coverage = quest_fixture.map(|fixture| {
+        let direct_agent = runner
+            .character_ids
+            .iter()
+            .position(|id| *id == fixture.direct_leader_id)
+            .map(|agent| agent as u32);
+        let generated_agent = runner
+            .character_ids
+            .iter()
+            .position(|id| *id == fixture.generated_leader_id)
+            .map(|agent| agent as u32);
+        let direct_event = |kind: CoreLoopEventKind, token: &str| {
+            direct_agent.is_some_and(|agent| {
+                runner.trace.iter().any(|event| {
+                    event.agent_id == agent
+                        && event.kind == kind
+                        && event.detail.contains(token)
+                        && event.detail.contains(&fixture.direct_party_id)
+                })
+            })
+        };
+        let generated_event = |kind: CoreLoopEventKind| {
+            generated_agent.is_some_and(|agent| {
+                runner.trace.iter().any(|event| {
+                    event.agent_id == agent
+                        && event.kind == kind
+                        && event.detail.contains(&fixture.generated_case_id)
+                        && event.detail.contains(&fixture.generated_party_id)
+                })
+            })
+        };
+        QuestCoverageEvidence {
+            direct_contract_id: fixture.direct_contract_id.clone(),
+            generated_case_id: fixture.generated_case_id.clone(),
+            direct_leader_id: fixture.direct_leader_id,
+            generated_leader_id: fixture.generated_leader_id,
+            direct_party_id: fixture.direct_party_id.clone(),
+            generated_party_id: fixture.generated_party_id.clone(),
+            direct_accepted: direct_event(
+                CoreLoopEventKind::AcceptContract,
+                &fixture.direct_contract_id,
+            ),
+            direct_traveled: direct_event(CoreLoopEventKind::Travel, &fixture.direct_contract_id),
+            direct_encountered: direct_event(
+                CoreLoopEventKind::AutoresolveVictory,
+                &fixture.direct_contract_id,
+            ) || direct_event(
+                CoreLoopEventKind::AutoresolveDefeat,
+                &fixture.direct_contract_id,
+            ),
+            direct_reported: direct_event(CoreLoopEventKind::TurnIn, &fixture.direct_contract_id),
+            direct_safely_abandoned: direct_event(
+                CoreLoopEventKind::AbandonQuest,
+                &fixture.direct_contract_id,
+            ),
+            generated_intake: generated_event(CoreLoopEventKind::GeneratedCaseIntake),
+            generated_discovered: generated_event(CoreLoopEventKind::GeneratedQuestDiscovered),
+            generated_completed: generated_event(CoreLoopEventKind::GeneratedQuestCompleted),
+        }
+    });
     Ok(CoreLoopReport {
+        format_version: crate::FORMAT_VERSION,
         backend_kind: "spacetimedb_authoritative_core_loop".into(),
         seed: config.seed,
         server_origin: config.host.clone(),
         database: config.database,
         run_nonce: config.run_nonce,
+        fixture_disease: config.fixture_disease,
         deployment_identity_note: "server origin, database, and claimed run nonce identify this deployment; the SDK does not expose a deployed module binary digest".into(),
         world_artifact_id: world_import.as_ref().map(|import| import.artifact_id.clone()),
         world_manifest_digest: world_import
@@ -834,6 +1228,7 @@ fn run_core_loop_inner(
         starting_settlement_id,
         profiles: runner.profiles,
         metrics: runner.metrics,
+        quest_coverage,
         trace: runner.trace,
         trace_truncated,
         total_event_count,

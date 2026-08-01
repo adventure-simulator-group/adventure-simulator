@@ -1,8 +1,13 @@
 //! Enforceable isolation for reducer-backed balance simulations.
 
-use spacetimedb::{Identity, ReducerContext, Table, reducer, table};
+use spacetimedb::{
+    Identity, ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view,
+};
 
 use crate::character::character;
+use crate::investigation::investigation_witness_referral__view;
+use crate::local_problem::local_problem_receipt__view;
+use crate::strategic::{case_authority__view, quest_generation_authority__view};
 use crate::time::{character_time, world_clock};
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterTrainingSchedule, DeathCause, DeathSource,
@@ -52,6 +57,132 @@ pub struct SimulationCharacter {
     pub character_id: u64,
     pub run_id: u64,
     pub agent_id: u32,
+}
+
+/// Private fixture authority. The generated identifier is canonical quest
+/// authority and must not be published before ordinary rumor intake creates
+/// the owner's public journal case.
+#[derive(Clone, Debug)]
+#[table(accessor = simulation_quest_fixture_authority)]
+pub struct SimulationQuestFixtureAuthority {
+    #[primary_key]
+    pub id: u64,
+    pub run_id: u64,
+    pub direct_contract_id: String,
+    pub generated_canonical_case_id: String,
+    pub direct_leader_id: u64,
+    pub generated_leader_id: u64,
+    pub direct_party_id: String,
+    pub generated_party_id: String,
+}
+
+/// Gateway-only provenance for the deterministic quest acceptance fixture.
+/// The generated case ID is projected only from a validated initial-rumor
+/// referral, so it is the exact owner-visible journal ID observed by agents.
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct SimulationQuestFixture {
+    pub id: u64,
+    pub run_id: u64,
+    pub direct_contract_id: String,
+    pub generated_case_id: String,
+    pub direct_leader_id: u64,
+    pub generated_leader_id: u64,
+    pub direct_party_id: String,
+    pub generated_party_id: String,
+}
+
+#[view(accessor = simulation_quest_fixture, public)]
+pub fn simulation_quest_fixture(ctx: &ViewContext) -> Vec<SimulationQuestFixture> {
+    let Some(run) = ctx
+        .db
+        .simulation_run()
+        .id()
+        .find(0)
+        .filter(|run| run.owner == ctx.sender())
+    else {
+        return Vec::new();
+    };
+    let Some(fixture) = ctx.db.simulation_quest_fixture_authority().id().find(0) else {
+        return Vec::new();
+    };
+    if fixture.run_id != run.id {
+        return Vec::new();
+    }
+    let Some(authority) = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&fixture.generated_canonical_case_id)
+    else {
+        return Vec::new();
+    };
+    let Some(case) = ctx
+        .db
+        .case_authority()
+        .id()
+        .find(&fixture.generated_canonical_case_id)
+    else {
+        return Vec::new();
+    };
+    let Some(manifest) =
+        crate::strategic::validated_generated_dialogue_manifest(&case, Some(&authority))
+            .ok()
+            .flatten()
+    else {
+        return Vec::new();
+    };
+    let Some(witness) = manifest.witnesses.first() else {
+        return Vec::new();
+    };
+    let referral = ctx
+        .db
+        .investigation_witness_referral()
+        .owner_character_id()
+        .filter(fixture.generated_leader_id)
+        .find(|referral| {
+            referral.canonical_case_id == fixture.generated_canonical_case_id
+                && referral.public_case_id == manifest.public_case_id
+                && referral.catalog_revision == authority.catalog_revision
+                && referral.grant_kind == "initial_rumor"
+                && !referral.source_receipt_id.is_empty()
+                && referral.witness_resident_character_id == witness.resident_character_id
+                && referral.expected_settlement_id == authority.settlement_id
+                && referral.expected_location_id == witness.expected_location
+                && referral.source_witness_id.is_empty()
+                && referral.source_testimony_index == 0
+                && referral.source_proposition_id.is_empty()
+        });
+    let Some(referral) = referral else {
+        return Vec::new();
+    };
+    if !ctx
+        .db
+        .local_problem_receipt()
+        .id()
+        .find(&referral.source_receipt_id)
+        .is_some_and(|receipt| {
+            receipt.character_id == fixture.generated_leader_id
+                && receipt.opaque_case_ref == fixture.generated_canonical_case_id
+                && receipt.problem_id == manifest.problem_id
+                && receipt.settlement_id == authority.settlement_id
+                && receipt.contact_resident_character_id == witness.resident_character_id
+                && receipt.expected_location_id == witness.expected_location
+                && referral.source_witness_resident_character_id
+                    == receipt.source_resident_character_id
+        })
+    {
+        return Vec::new();
+    }
+    vec![SimulationQuestFixture {
+        id: fixture.id,
+        run_id: run.id,
+        direct_contract_id: fixture.direct_contract_id,
+        generated_case_id: referral.public_case_id,
+        direct_leader_id: fixture.direct_leader_id,
+        generated_leader_id: fixture.generated_leader_id,
+        direct_party_id: fixture.direct_party_id,
+        generated_party_id: fixture.generated_party_id,
+    }]
 }
 
 fn valid_nonce(nonce: &str) -> bool {
@@ -141,6 +272,107 @@ pub(crate) fn sender_owns_simulation_character(ctx: &ReducerContext, character_i
 pub fn seed_simulation_world(ctx: &ReducerContext, nonce: String) -> Result<(), String> {
     owned_run(ctx, &nonce)?;
     crate::strategic::seed_world(ctx, false)
+}
+
+/// Install deterministic quest coverage through private authority only. The
+/// simulator must still discover, accept, travel, fight, and report through
+/// the same public surfaces and ordinary reducers as a player.
+#[reducer]
+pub fn seed_simulation_quest_fixture(
+    ctx: &ReducerContext,
+    nonce: String,
+    direct_leader_id: u64,
+    generated_leader_id: u64,
+) -> Result<(), String> {
+    let run = owned_run(ctx, &nonce)?;
+    if direct_leader_id == generated_leader_id {
+        return Err("Quest coverage requires two distinct party leaders".into());
+    }
+    for character_id in [direct_leader_id, generated_leader_id] {
+        let simulation_character = ctx
+            .db
+            .simulation_character()
+            .character_id()
+            .find(character_id)
+            .ok_or("Quest coverage leader is not owned by this simulation run")?;
+        if simulation_character.run_id != run.id {
+            return Err("Quest coverage leader belongs to another simulation run".into());
+        }
+        let character = ctx
+            .db
+            .character()
+            .id()
+            .find(character_id)
+            .ok_or("Quest coverage leader does not exist")?;
+        let party = character
+            .party_id
+            .as_deref()
+            .and_then(|party_id| ctx.db.party_authority().id().find(party_id.to_owned()))
+            .ok_or("Quest coverage leader is not in a party")?;
+        if party.leader_id != character_id {
+            return Err("Quest coverage character is not its party leader".into());
+        }
+    }
+    if let Some(existing) = ctx.db.simulation_quest_fixture_authority().id().find(0) {
+        return if existing.run_id == run.id
+            && existing.direct_leader_id == direct_leader_id
+            && existing.generated_leader_id == generated_leader_id
+        {
+            Ok(())
+        } else {
+            Err("Simulation quest fixture is already bound to different leaders".into())
+        };
+    }
+    let party_power = |leader_id| -> Result<u64, String> {
+        let party_id = ctx
+            .db
+            .character()
+            .id()
+            .find(leader_id)
+            .and_then(|character| character.party_id)
+            .ok_or("Quest coverage leader has no party")?;
+        let party = ctx
+            .db
+            .party_authority()
+            .id()
+            .find(&party_id)
+            .ok_or("Quest coverage party does not exist")?;
+        crate::condition::refresh_character_strategic_condition(ctx, leader_id)?;
+        for member_id in crate::strategic::living_party_member_ids(ctx, &party_id) {
+            crate::capability::refresh_character_capability(ctx, member_id)?;
+        }
+        crate::strategic::publicly_ready_party_combat_power(ctx, &party).map(|(_, power)| power)
+    };
+    let direct_power = party_power(direct_leader_id)?;
+    let fixture_enemy_power = crate::strategic::simulation_quest_fixture_enemy_power()?;
+    if direct_power == 0
+        || !adventuresim_core::autoresolve::combat_power_meets_safety_margin(
+            direct_power,
+            fixture_enemy_power,
+        )
+        .unwrap_or(false)
+    {
+        return Err("Quest coverage has no party safe for its ordinary fixture opponent".into());
+    }
+    let seeded = crate::strategic::seed_simulation_quest_fixture_inner(
+        ctx,
+        run.policy_seed,
+        direct_leader_id,
+        generated_leader_id,
+    )?;
+    ctx.db
+        .simulation_quest_fixture_authority()
+        .insert(SimulationQuestFixtureAuthority {
+            id: 0,
+            run_id: run.id,
+            direct_contract_id: seeded.direct_contract_id,
+            generated_canonical_case_id: seeded.generated_canonical_case_id,
+            direct_leader_id,
+            generated_leader_id,
+            direct_party_id: seeded.direct_party_id,
+            generated_party_id: seeded.generated_party_id,
+        });
+    Ok(())
 }
 
 /// Advance authoritative world time only in a capability-owned disposable
@@ -345,8 +577,8 @@ pub fn configure_simulation_character(
         &settlement_id,
         SIMULATION_STARTING_COIN,
     )?;
-    crate::capability::refresh_character_capability(ctx, character_id)?;
     crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
+    crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
 }
 
@@ -358,6 +590,7 @@ pub fn seed_simulation_disease(
     ctx: &ReducerContext,
     nonce: String,
     character_id: u64,
+    disease_id: String,
 ) -> Result<(), String> {
     let run = owned_run(ctx, &nonce)?;
     let sim = ctx
@@ -380,20 +613,21 @@ pub fn seed_simulation_disease(
     {
         return Err("Simulation disease fixture may only be seeded once".into());
     }
+    let disease = crate::disease::parse_id(&disease_id)
+        .map_err(|_| "Unknown simulation fixture disease".to_owned())?;
     ctx.db
         .infection_episode()
         .insert(crate::disease::InfectionEpisodeRow {
             id: 0,
             character_id,
-            disease_id: "influenza".into(),
+            disease_id,
             contracted_at: 0,
             ruleset_version: adventuresim_core::physiology::PHYSIOLOGY_RULESET_VERSION,
             phenotype_key_version: adventuresim_core::physiology::PHENOTYPE_KEY_VERSION,
         });
-    let requested =
-        adventuresim_core::disease::definition(adventuresim_core::disease::DiseaseId::Influenza)
-            .incubation_minutes
-            .saturating_add(60);
+    let requested = adventuresim_core::disease::definition(disease)
+        .incubation_minutes
+        .saturating_add(60);
     // Advance through the same disease interval hooks as ordinary gameplay so
     // the simulator observes symptom onset instead of receiving hidden fixture
     // knowledge from the private infection row.
@@ -416,8 +650,8 @@ pub fn seed_simulation_disease(
     if terminal.is_some() || !settled.alive {
         return Ok(());
     }
-    crate::capability::refresh_character_capability(ctx, character_id)?;
     crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
+    crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
 }
 
@@ -454,6 +688,54 @@ mod tests {
         let imported_world_guard = claim.find("world_data_import()").unwrap();
         assert!(authorization < character_guard);
         assert!(authorization < imported_world_guard);
+    }
+
+    #[test]
+    fn quest_fixture_public_provenance_requires_an_initial_rumor_receipt() {
+        let source = include_str!("simulation.rs");
+        let authority = source
+            .split("pub struct SimulationQuestFixtureAuthority")
+            .nth(1)
+            .unwrap()
+            .split("pub struct SimulationQuestFixture")
+            .next()
+            .unwrap();
+        assert!(authority.contains("generated_canonical_case_id"));
+        let projection = source
+            .split("pub fn simulation_quest_fixture")
+            .nth(1)
+            .unwrap()
+            .split("fn valid_nonce")
+            .next()
+            .unwrap();
+        assert!(projection.contains("investigation_witness_referral()"));
+        assert!(projection.contains("validated_generated_dialogue_manifest("));
+        assert!(projection.contains("referral.grant_kind == \"initial_rumor\""));
+        assert!(projection.contains("!referral.source_receipt_id.is_empty()"));
+        assert!(projection.contains("local_problem_receipt()"));
+        assert!(projection.contains("receipt.problem_id == manifest.problem_id"));
+        assert!(projection.contains("receipt.expected_location_id == witness.expected_location"));
+        assert!(projection.contains("generated_case_id: referral.public_case_id"));
+    }
+
+    #[test]
+    fn quest_fixture_preserves_designated_direct_and_generated_leaders() {
+        let source = include_str!("simulation.rs");
+        let reducer = source
+            .split("pub fn seed_simulation_quest_fixture")
+            .nth(1)
+            .unwrap()
+            .split("pub fn advance_simulation_world_time")
+            .next()
+            .unwrap();
+        assert!(reducer.contains("let direct_power = party_power(direct_leader_id)?"));
+        assert!(!reducer.contains("second_power"));
+        assert!(!reducer.contains("(generated_leader_id, direct_leader_id"));
+        assert!(reducer.contains(
+            "seed_simulation_quest_fixture_inner(\n        ctx,\n        run.policy_seed,\n        direct_leader_id,\n        generated_leader_id"
+        ));
+        assert!(reducer.contains("existing.direct_leader_id == direct_leader_id"));
+        assert!(reducer.contains("existing.generated_leader_id == generated_leader_id"));
     }
 
     #[test]

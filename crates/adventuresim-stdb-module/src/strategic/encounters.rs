@@ -195,10 +195,16 @@ pub(crate) fn advance_party_journey_delay(
 ) -> Result<(), String> {
     for member_id in living_party_member_ids(ctx, party_id) {
         if !advance_travel_time(ctx, member_id, minutes)? {
-            return Err("Every living party member must be able to complete the travel delay".into());
+            return Err(
+                "Every living party member must be able to complete the travel delay".into(),
+            );
         }
     }
-    let mut journey = ctx.db.party_journey_authority().party_id().find(&party_id.to_string())
+    let mut journey = ctx
+        .db
+        .party_journey_authority()
+        .party_id()
+        .find(&party_id.to_string())
         .ok_or("Travel delay requires a durable journey")?;
     journey.completed_elapsed_minutes = journey.completed_elapsed_minutes.saturating_add(minutes);
     ctx.db.party_journey_authority().party_id().update(journey);
@@ -223,7 +229,9 @@ pub(crate) fn build_strategic_encounter(
     explanation: String,
 ) -> Result<StrategicEncounter, String> {
     let member_ids = living_party_member_ids(ctx, party_id);
-    if member_ids.is_empty() { return Err("A party with no living members cannot enter an encounter".into()); }
+    if member_ids.is_empty() {
+        return Err("A party with no living members cannot enter an encounter".into());
+    }
     let terrain = core_encounter_terrain(terrain_kind);
     let party_speed = adventuresim_core::encounter::sustainable_speed_m_per_minute(
         fatigue_percent,
@@ -232,34 +240,66 @@ pub(crate) fn build_strategic_encounter(
         terrain,
     );
     let enemy_speed = archetype.enemy_speed_m_per_minute();
-    let choices = adventuresim_core::encounter::available_choices(awareness, archetype, party_speed)
-        .into_iter().map(|choice| match choice {
-            adventuresim_core::encounter::EncounterChoice::Sneak => "sneak",
-            adventuresim_core::encounter::EncounterChoice::Detour => "detour",
-            adventuresim_core::encounter::EncounterChoice::Attack => "attack",
-            adventuresim_core::encounter::EncounterChoice::Run => "run",
-            adventuresim_core::encounter::EncounterChoice::Surrender => "surrender",
-        }).map(str::to_string).collect::<Vec<_>>();
+    let choices =
+        adventuresim_core::encounter::available_choices(awareness, archetype, party_speed)
+            .into_iter()
+            .map(|choice| match choice {
+                adventuresim_core::encounter::EncounterChoice::Sneak => "sneak",
+                adventuresim_core::encounter::EncounterChoice::Detour => "detour",
+                adventuresim_core::encounter::EncounterChoice::Attack => "attack",
+                adventuresim_core::encounter::EncounterChoice::Run => "run",
+                adventuresim_core::encounter::EncounterChoice::Surrender => "surrender",
+            })
+            .map(str::to_string)
+            .collect::<Vec<_>>();
     let archetype_name = match archetype {
         adventuresim_core::encounter::EncounterArchetype::Bandits => "bandit",
         adventuresim_core::encounter::EncounterArchetype::Goblins => "goblin",
         adventuresim_core::encounter::EncounterArchetype::Undead => "skeleton",
     };
     let mut encounter = StrategicEncounter {
-        party_id: party_id.into(), encounter_id, archetype: archetype_name.into(), enemy_count,
-        roll_index, journey_movement_minute: movement_minute, journey_elapsed_minute: elapsed_minute,
-        absolute_minute, longitude_e7, latitude_e7,
+        party_id: party_id.into(),
+        encounter_id,
+        archetype: archetype_name.into(),
+        enemy_count,
+        roll_index,
+        journey_movement_minute: movement_minute,
+        journey_elapsed_minute: elapsed_minute,
+        absolute_minute,
+        longitude_e7,
+        latitude_e7,
         terrain: format!("{terrain_kind:?}").to_ascii_lowercase(),
-        party_aware: matches!(awareness, adventuresim_core::encounter::Awareness::PartyOnly | adventuresim_core::encounter::Awareness::Both),
-        enemy_aware: matches!(awareness, adventuresim_core::encounter::Awareness::EnemyOnly | adventuresim_core::encounter::Awareness::Both),
-        available_choices: choices, status: "awaiting_choice".into(), revision: 1,
+        party_aware: matches!(
+            awareness,
+            adventuresim_core::encounter::Awareness::PartyOnly
+                | adventuresim_core::encounter::Awareness::Both
+        ),
+        enemy_aware: matches!(
+            awareness,
+            adventuresim_core::encounter::Awareness::EnemyOnly
+                | adventuresim_core::encounter::Awareness::Both
+        ),
+        available_choices: choices,
+        status: "awaiting_choice".into(),
+        revision: 1,
         selected_choice: None,
-        selection_explanation: explanation, party_speed_m_per_minute: party_speed,
+        selection_explanation: explanation,
+        party_speed_m_per_minute: party_speed,
         enemy_speed_m_per_minute: enemy_speed,
-        run_ineligibility: (party_speed <= enemy_speed).then(|| format!("Party speed {party_speed} m/min does not exceed enemy speed {enemy_speed} m/min")),
-        penalty_minutes: 0, loss_preview: Vec::new(), outcome: None,
+        run_ineligibility: (party_speed <= enemy_speed).then(|| {
+            format!(
+                "Party speed {party_speed} m/min does not exceed enemy speed {enemy_speed} m/min"
+            )
+        }),
+        penalty_minutes: 0,
+        loss_preview: Vec::new(),
+        outcome: None,
     };
-    if encounter.available_choices.iter().any(|choice| choice == "surrender") {
+    if encounter
+        .available_choices
+        .iter()
+        .any(|choice| choice == "surrender")
+    {
         encounter.loss_preview = encounter_loss_preview(ctx, party_id);
     }
     Ok(encounter)
@@ -283,13 +323,36 @@ fn whole_party_sneak_score(ctx: &ReducerContext, member_ids: &[u64]) -> u16 {
         .unwrap_or(0)
 }
 
+fn quest_influence_case_site_id(destination: &JourneyEndpoint) -> Option<&str> {
+    destination.case_site_id()
+}
+
+fn destination_hostile_archetype(
+    destination_case_site_id: &str,
+    groups: impl IntoIterator<Item = (String, String, String)>,
+) -> Option<adventuresim_core::encounter::EncounterArchetype> {
+    groups
+        .into_iter()
+        .filter(|(_, case_site_id, _)| case_site_id == destination_case_site_id)
+        .min_by(|(left_id, _, _), (right_id, _, _)| left_id.cmp(right_id))
+        .and_then(|(_, _, enemy_type)| quest_encounter_archetype(&enemy_type))
+}
+
 /// Truncates a walking leg at its first canonical random-encounter boundary.
 /// The caller advances ordinary time/needs/fatigue by the returned duration.
 fn maybe_interrupt_travel(
     ctx: &ReducerContext,
     party_id: &str,
     requested_minutes: u64,
-) -> Result<(u64, Option<StrategicEncounter>, Option<adventuresim_core::encounter::NarrativeSelection>, u64), String> {
+) -> Result<
+    (
+        u64,
+        Option<StrategicEncounter>,
+        Option<adventuresim_core::encounter::NarrativeSelection>,
+        u64,
+    ),
+    String,
+> {
     require_no_unresolved_encounter(ctx, party_id)?;
     let Some(journey) = ctx
         .db
@@ -319,33 +382,31 @@ fn maybe_interrupt_travel(
         .party_journey_route_authority()
         .party_id()
         .find(&party_id.to_string());
-    let active_contract_archetype = ctx
-        .db
-        .party_authority()
-        .id()
-        .find(&party_id.to_string())
-        .and_then(|party| party.active_contract_id)
-        .and_then(|contract_id| ctx.db.contract_authority().id().find(&contract_id))
-        .filter(|contract| {
-            ctx.db
+    let active_contract_archetype =
+        quest_influence_case_site_id(&journey.destination).and_then(|destination_case_site_id| {
+            let contract = ctx
+                .db
+                .party_authority()
+                .id()
+                .find(&party_id.to_string())
+                .and_then(|party| party.active_contract_id)
+                .and_then(|contract_id| ctx.db.contract_authority().id().find(&contract_id))?;
+            let destination_site = ctx
+                .db
                 .case_site_authority()
                 .id_key()
-                .find(&journey.destination.case_site_id().unwrap().to_string())
-                .is_some_and(|site| site.case_id == contract.case_id)
-        })
-        .and_then(|contract| {
-            ctx.db
-                .case_site_authority()
-                .case_id()
-                .filter(&contract.case_id)
-                .find_map(|site| {
-                    ctx.db
-                        .hostile_group_authority()
-                        .iter()
-                        .find(|group| group.case_site_id == site.id)
-                })
-        })
-        .and_then(|group| quest_encounter_archetype(&group.enemy_type));
+                .find(&destination_case_site_id.to_string())?;
+            if destination_site.case_id != contract.case_id {
+                return None;
+            }
+            destination_hostile_archetype(
+                destination_case_site_id,
+                ctx.db
+                    .hostile_group_authority()
+                    .iter()
+                    .map(|group| (group.id, group.case_site_id.value, group.enemy_type)),
+            )
+        });
     let member_ids = living_party_member_ids(ctx, party_id);
     let capable = member_ids
         .iter()
@@ -419,12 +480,20 @@ fn maybe_interrupt_travel(
     let crossed_end = completed.saturating_add(requested_minutes);
     let next_roll = crossed_end / adventuresim_core::encounter::ENCOUNTER_ROLL_INTERVAL_MINUTES + 1;
     if let Some(narrative) = narrative
-        && selection.as_ref().is_none_or(|combat| narrative.boundary_minute <= combat.boundary_minute)
+        && selection
+            .as_ref()
+            .is_none_or(|combat| narrative.boundary_minute <= combat.boundary_minute)
     {
-        let reached_next_roll = adventuresim_core::encounter::next_combat_roll_after_reached_boundary(
-            narrative.boundary_minute,
-        );
-        return Ok((narrative.boundary_minute.saturating_sub(completed), None, Some(narrative), reached_next_roll));
+        let reached_next_roll =
+            adventuresim_core::encounter::next_combat_roll_after_reached_boundary(
+                narrative.boundary_minute,
+            );
+        return Ok((
+            narrative.boundary_minute.saturating_sub(completed),
+            None,
+            Some(narrative),
+            reached_next_roll,
+        ));
     }
     let Some(selection) = selection else {
         return Ok((requested_minutes, None, None, next_roll));
@@ -449,8 +518,7 @@ fn maybe_interrupt_travel(
         journey
             .completed_elapsed_minutes
             .saturating_add(selection.boundary_minute.saturating_sub(completed)),
-        absolute_start
-            .saturating_add(selection.boundary_minute.saturating_sub(completed)),
+        absolute_start.saturating_add(selection.boundary_minute.saturating_sub(completed)),
         (position.0 * 10_000_000.0).round() as i32,
         (position.1 * 10_000_000.0).round() as i32,
         journey.fatigue_percent,
@@ -474,7 +542,15 @@ fn advance_party_movement_until_encounter(
     party_id: &str,
     traveler_ids: &[u64],
     proposed_leg_minutes: u64,
-) -> Result<(u64, Option<StrategicEncounter>, Option<adventuresim_core::encounter::NarrativeSelection>, u64), String> {
+) -> Result<
+    (
+        u64,
+        Option<StrategicEncounter>,
+        Option<adventuresim_core::encounter::NarrativeSelection>,
+        u64,
+    ),
+    String,
+> {
     let (requested_leg_minutes, mut encounter, mut narrative, mut next_roll) =
         maybe_interrupt_travel(ctx, party_id, proposed_leg_minutes)?;
     let (actual_minutes, _) =
@@ -514,7 +590,10 @@ fn commit_encounter_scan(
 
     if let Some(selection) = narrative {
         return materialize_chance_narrative_encounter(
-            ctx, party_id, &selection, NarrativeEncounterOrigin::ChanceTravel,
+            ctx,
+            party_id,
+            &selection,
+            NarrativeEncounterOrigin::ChanceTravel,
         );
     }
 
@@ -960,10 +1039,13 @@ fn resolve_random_encounter_battle(
         &outcome,
     )?;
     if outcome.victor == BattleVictor::Allies {
-        let authored_followup = ctx.db.narrative_combat_followup_authority()
-            .encounter_id().find(&encounter.encounter_id).is_some();
-        if !authored_followup
-            && let Some(item_id) = autoresolve_drop(&encounter.archetype)? {
+        let authored_followup = ctx
+            .db
+            .narrative_combat_followup_authority()
+            .encounter_id()
+            .find(&encounter.encounter_id)
+            .is_some();
+        if !authored_followup && let Some(item_id) = autoresolve_drop(&encounter.archetype)? {
             add_to_party_inventory(
                 ctx,
                 &encounter.party_id,
@@ -1119,11 +1201,19 @@ pub fn resolve_strategic_encounter(
                 encounter.loss_preview = current;
                 encounter.revision = encounter.revision.saturating_add(1);
                 ctx.db.strategic_encounter().party_id().update(encounter);
-                ctx.db.strategic_encounter_resolution_receipt().insert(StrategicEncounterResolutionReceipt {
-                    id: receipt_id, encounter_id, party_id, character_id, action_id, choice,
-                    expected_revision, resulting_revision: expected_revision.saturating_add(1),
-                    outcome: "preview_refreshed".into(),
-                });
+                ctx.db.strategic_encounter_resolution_receipt().insert(
+                    StrategicEncounterResolutionReceipt {
+                        id: receipt_id,
+                        encounter_id,
+                        party_id,
+                        character_id,
+                        action_id,
+                        choice,
+                        expected_revision,
+                        resulting_revision: expected_revision.saturating_add(1),
+                        outcome: "preview_refreshed".into(),
+                    },
+                );
                 return Ok(());
             }
             commit_encounter_surrender(ctx, &party_id, &current)?;
@@ -1133,12 +1223,23 @@ pub fn resolve_strategic_encounter(
     encounter.status = "resolved".into();
     encounter.revision = encounter.revision.saturating_add(1);
     resolve_narrative_combat_followup(ctx, &encounter)?;
-    ctx.db.strategic_encounter().party_id().update(encounter.clone());
-    ctx.db.strategic_encounter_resolution_receipt().insert(StrategicEncounterResolutionReceipt {
-        id: receipt_id, encounter_id, party_id, character_id, action_id, choice,
-        expected_revision, resulting_revision: encounter.revision,
-        outcome: encounter.outcome.unwrap_or_else(|| "resolved".into()),
-    });
+    ctx.db
+        .strategic_encounter()
+        .party_id()
+        .update(encounter.clone());
+    ctx.db
+        .strategic_encounter_resolution_receipt()
+        .insert(StrategicEncounterResolutionReceipt {
+            id: receipt_id,
+            encounter_id,
+            party_id,
+            character_id,
+            action_id,
+            choice,
+            expected_revision,
+            resulting_revision: encounter.revision,
+            outcome: encounter.outcome.unwrap_or_else(|| "resolved".into()),
+        });
     Ok(())
 }
 

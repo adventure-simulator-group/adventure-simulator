@@ -1,4 +1,183 @@
 impl LiveRunner {
+    fn acquire_first_aid_material(
+        &mut self,
+        actor_id: u64,
+        party_id: &str,
+        settlement_id: &str,
+        item_id: &str,
+        agent: u32,
+    ) -> Result<bool, String> {
+        let Some(item) = self.item_definition(item_id) else {
+            return Ok(false);
+        };
+        let Some(quote) = self.public_general_store_quote(actor_id, settlement_id, &item) else {
+            return Ok(false);
+        };
+        let reserve = self
+            .observable_medical_reserve(actor_id, settlement_id)
+            .unwrap_or(0);
+        let personal_spendable = self.personal_gold(actor_id).saturating_sub(reserve);
+        let shortfall = quote.saturating_sub(personal_spendable);
+        if !self.withdraw_stake_for_personal_purchase(actor_id, party_id, shortfall)?
+            || self.personal_gold(actor_id).saturating_sub(reserve) < quote
+        {
+            return Ok(false);
+        }
+        let quantity_before = self.personal_item_quantity(actor_id, item_id);
+        let result = reducer_call!(self, "purchase_first_aid_material", |cb| self
+            .connection
+            .reducers
+            .finalize_merchant_trade_then(
+                actor_id,
+                settlement_id.to_owned(),
+                vec![item_id.to_owned()],
+                vec![1],
+                vec![],
+                vec![],
+                false,
+                cb,
+            ));
+        self.call(result)?;
+        let purchased = self.personal_item_quantity(actor_id, item_id) > quantity_before;
+        if purchased {
+            self.event(
+                agent,
+                CoreLoopEventKind::Purchase,
+                format!(
+                    "first_aid_material={item_id};actor={actor_id};public_quote={quote};medical_reserve={reserve}"
+                ),
+            );
+        }
+        Ok(purchased)
+    }
+
+    /// Apply ordinary visible first aid before paying for convalescence. Open
+    /// cuts and unsplinted fractures do not heal through rest alone.
+    fn apply_visible_first_aid(&mut self, patient_id: u64, agent: u32) -> Result<(), String> {
+        let patient = self
+            .connection
+            .db
+            .backend_characters()
+            .iter()
+            .find(|row| row.id == patient_id && row.alive)
+            .ok_or("missing first-aid patient")?;
+        let Some(party_id) = patient.party_id.clone() else {
+            return Ok(());
+        };
+        let settlement_id = patient.current_settlement_id.clone();
+        let injuries = self
+            .connection
+            .db
+            .limb_injury()
+            .iter()
+            .filter(|row| row.character_id == patient_id)
+            .collect::<Vec<_>>();
+        for injury in injuries {
+            let procedure = if injury.cut_damage > 0.0 && !injury.bandaged {
+                Some(("bandage", "bandage"))
+            } else if injury.fracture_damage > 0.0 && injury.splint_inventory_item_id.is_none() {
+                Some(("splint", "splint"))
+            } else {
+                None
+            };
+            let Some((procedure, item_id)) = procedure else {
+                continue;
+            };
+            let mut candidates = self
+                .connection
+                .db
+                .party_member()
+                .iter()
+                .filter(|member| member.party_id == party_id)
+                .filter_map(|member| {
+                    let character = self.connection.db.backend_characters().iter().find(|row| {
+                        row.id == member.character_id
+                            && row.alive
+                            && row.current_settlement_id == settlement_id
+                    })?;
+                    let agent_id = self
+                        .character_ids
+                        .iter()
+                        .position(|id| *id == character.id)?;
+                    let profile = &self.profiles[agent_id];
+                    Some((
+                        character.id,
+                        profile.build.role == BuildRole::Healer,
+                        profile.initial_skills.surgery,
+                        character.id != patient_id,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            candidates.sort_by(|left, right| {
+                right
+                    .1
+                    .cmp(&left.1)
+                    .then_with(|| right.2.total_cmp(&left.2))
+                    .then_with(|| right.3.cmp(&left.3))
+                    .then_with(|| left.0.cmp(&right.0))
+            });
+            let mut actor = candidates
+                .iter()
+                .find(|candidate| self.personal_item_quantity(candidate.0, item_id) > 0)
+                .map(|candidate| candidate.0);
+            if actor.is_none() {
+                if let (Some(candidate), Some(settlement_id)) =
+                    (candidates.first(), settlement_id.as_deref())
+                {
+                    if self.acquire_first_aid_material(
+                        candidate.0,
+                        &party_id,
+                        settlement_id,
+                        item_id,
+                        agent,
+                    )? {
+                        actor = Some(candidate.0);
+                    }
+                }
+            }
+            let Some(actor_id) = actor else {
+                self.event(
+                    agent,
+                    CoreLoopEventKind::MedicalDecision,
+                    format!(
+                        "first_aid=deferred;patient={patient_id};procedure={procedure};reason=material_unavailable"
+                    ),
+                );
+                continue;
+            };
+            let limb_slug = match injury.limb {
+                LimbRegion::LeftArm => "left-arm",
+                LimbRegion::RightArm => "right-arm",
+                LimbRegion::LeftLeg => "left-leg",
+                LimbRegion::RightLeg => "right-leg",
+                LimbRegion::Chest => "chest",
+                LimbRegion::Stomach => "stomach",
+                LimbRegion::Head => "head",
+            };
+            let result = reducer_call!(self, "visible_first_aid", |cb| self
+                .connection
+                .reducers
+                .treat_limb_then(
+                    actor_id,
+                    patient_id,
+                    limb_slug.to_owned(),
+                    procedure.to_owned(),
+                    None,
+                    false,
+                    cb,
+                ));
+            self.call(result)?;
+            self.event(
+                agent,
+                CoreLoopEventKind::Recover,
+                format!(
+                    "first_aid=completed;actor={actor_id};patient={patient_id};limb={limb_slug};procedure={procedure};authority=public_limb_injury"
+                ),
+            );
+        }
+        Ok(())
+    }
+
     pub(super) fn personal_gold(&self, character_id: u64) -> u64 {
         self.connection
             .db
@@ -53,23 +232,27 @@ impl LiveRunner {
             .iter()
             .filter(|member| member.party_id == party_id && member.character_id != patient_id)
             .filter_map(|member| {
-                let payer = self
-                    .connection
-                    .db
-                    .backend_characters()
-                    .iter()
-                    .find(|row| {
+                let payer = self.connection.db.backend_characters().iter().find(|row| {
                     row.id == member.character_id
                         && row.alive
                         && row.current_settlement_id.as_deref() == Some(settlement_id)
-                    })?;
+                })?;
                 let payer_agent_id =
                     self.character_ids.iter().position(|id| *id == payer.id)? as u32;
                 let purse = self.personal_gold(payer.id);
                 let medical_reserve = self
                     .observable_medical_reserve(payer.id, settlement_id)
                     .unwrap_or(0);
-                let spendable = purse.saturating_sub(medical_reserve);
+                let party_stake = self
+                    .connection
+                    .db
+                    .party_stake()
+                    .iter()
+                    .find(|stake| stake.party_id == party_id && stake.character_id == payer.id)
+                    .map_or(0, |stake| stake.value);
+                let spendable = purse
+                    .saturating_add(party_stake.min(party_treasury))
+                    .saturating_sub(medical_reserve);
                 (spendable >= sponsor_quote).then(|| SettlementRestSponsor {
                     payer_id: payer.id,
                     payer_agent_id,
@@ -79,13 +262,7 @@ impl LiveRunner {
                     patient_contribution,
                     sponsor_quote,
                     party_treasury,
-                    party_stake: self
-                        .connection
-                        .db
-                        .party_stake()
-                        .iter()
-                        .find(|stake| stake.party_id == party_id && stake.character_id == payer.id)
-                        .map_or(0, |stake| stake.value),
+                    party_stake,
                 })
             })
             .collect::<Vec<_>>();
@@ -99,7 +276,10 @@ impl LiveRunner {
         options.into_iter().next()
     }
 
-    pub(super) fn activity_observation(&self, character_id: u64) -> Result<ActivityObservation, String> {
+    pub(super) fn activity_observation(
+        &self,
+        character_id: u64,
+    ) -> Result<ActivityObservation, String> {
         let condition = self
             .connection
             .db
@@ -203,7 +383,12 @@ impl LiveRunner {
     /// Reproduce the herbalist storefront/reducer quote from the same item
     /// definition and gateway-projected local-problem modifier visible to a
     /// player. No local-problem authority or infection state is transported.
-    pub(super) fn observable_medical_quote(&self, character_id: u64, settlement_id: &str) -> Option<u64> {
+    fn observable_preparation_quote(
+        &self,
+        character_id: u64,
+        settlement_id: &str,
+        preparation_id: &str,
+    ) -> Option<u64> {
         let settlement = self
             .connection
             .db
@@ -222,7 +407,7 @@ impl LiveRunner {
             .db
             .item()
             .iter()
-            .find(|row| row.id == "oral_rehydration_draught")?;
+            .find(|row| row.id == preparation_id)?;
         // This is the generated-client equivalent of the public
         // `storefront_stocks(..., Herbalist, ..., Medication)` predicate:
         // the service must exist and the medication's Herbs category must be
@@ -253,7 +438,151 @@ impl LiveRunner {
         )))
     }
 
-    pub(super) fn observable_medical_reserve(&self, character_id: u64, settlement_id: &str) -> Option<u64> {
+    pub(super) fn observable_medical_quote(
+        &self,
+        character_id: u64,
+        settlement_id: &str,
+    ) -> Option<u64> {
+        self.observable_preparation_quote(character_id, settlement_id, "oral_rehydration_draught")
+    }
+
+    fn public_physician_chart(&self, patient_id: u64) -> Option<BackendPhysiologyChart> {
+        let patient = self
+            .connection
+            .db
+            .backend_characters()
+            .iter()
+            .find(|row| row.id == patient_id && row.alive)?;
+        let party_id = patient.party_id.as_deref()?;
+        let settlement_id = patient.current_settlement_id.as_deref()?;
+        if !self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .any(|member| member.party_id == party_id && member.character_id == patient_id)
+        {
+            return None;
+        }
+        let patient_minute = self
+            .connection
+            .db
+            .backend_character_times()
+            .iter()
+            .find(|row| row.character_id == patient_id)?
+            .minutes;
+        let mut charts = self
+            .connection
+            .db
+            .backend_physiology_charts()
+            .iter()
+            .filter(|chart| {
+                chart.patient_id == patient_id
+                    && public_chart_is_fresh(patient_minute, chart.observed_at)
+                    && chart.confidence_bps >= MIN_ACTIONABLE_PHYSIOLOGY_CONFIDENCE_BPS
+                    && chart.gap_from.is_none()
+                    && chart.gap_to.is_none()
+                    && !chart.possible_diseases.is_empty()
+            })
+            .filter(|chart| self.character_ids.contains(&chart.observer_id))
+            .filter(|chart| {
+                self.connection
+                    .db
+                    .backend_characters()
+                    .iter()
+                    .find(|observer| observer.id == chart.observer_id)
+                    .is_some_and(|observer| {
+                        observer.alive
+                            && observer.party_id.as_deref() == Some(party_id)
+                            && observer.current_settlement_id.as_deref() == Some(settlement_id)
+                            && self.connection.db.party_member().iter().any(|member| {
+                                member.party_id == party_id && member.character_id == observer.id
+                            })
+                    })
+            })
+            .collect::<Vec<_>>();
+        charts.sort_by(|left, right| {
+            compare_public_chart_rank(
+                left.confidence_bps,
+                left.observed_at,
+                left.observer_id,
+                &left.id,
+                right.confidence_bps,
+                right.observed_at,
+                right.observer_id,
+                &right.id,
+            )
+        });
+        charts.into_iter().next()
+    }
+
+    fn public_intervention_offers(
+        &self,
+        patient_id: u64,
+        settlement_id: &str,
+        chart: &BackendPhysiologyChart,
+    ) -> Vec<PublicInterventionOffer> {
+        if !chart.known_interventions.is_empty() {
+            return Vec::new();
+        }
+        let mut offers = adventuresim_core::physiology::INTERVENTION_PROFILES
+            .iter()
+            .filter_map(|profile| {
+                let score = public_intervention_score(&chart.possible_diseases, profile);
+                if score <= 0 {
+                    return None;
+                }
+                let inventory_item_id = self
+                    .connection
+                    .db
+                    .inventory_item()
+                    .iter()
+                    .filter(|row| {
+                        row.character_id == patient_id
+                            && row.item_id == profile.preparation_id
+                            && row.quantity == 1
+                    })
+                    .map(|row| row.id)
+                    .min();
+                let storefront_quote = self.observable_preparation_quote(
+                    patient_id,
+                    settlement_id,
+                    profile.preparation_id,
+                );
+                if inventory_item_id.is_none() && storefront_quote.is_none() {
+                    return None;
+                }
+                Some(PublicInterventionOffer {
+                    preparation_id: profile.preparation_id.to_owned(),
+                    profile_version: profile.version,
+                    route: intervention_route_name(profile.route).to_owned(),
+                    public_score_micropoints: score,
+                    storefront_quote,
+                    inventory_item_id,
+                })
+            })
+            .collect::<Vec<_>>();
+        offers.sort_by(|left, right| {
+            right
+                .inventory_item_id
+                .is_some()
+                .cmp(&left.inventory_item_id.is_some())
+                .then_with(|| {
+                    right
+                        .public_score_micropoints
+                        .cmp(&left.public_score_micropoints)
+                })
+                .then_with(|| left.storefront_quote.cmp(&right.storefront_quote))
+                .then_with(|| left.preparation_id.cmp(&right.preparation_id))
+        });
+        offers
+    }
+
+    pub(super) fn observable_medical_reserve(
+        &self,
+        character_id: u64,
+        settlement_id: &str,
+    ) -> Option<u64> {
         let quote = self.observable_medical_quote(character_id, settlement_id)?;
         let settlement = self
             .connection
@@ -386,8 +715,11 @@ impl LiveRunner {
     /// Private infection episodes are deliberately absent from this policy.
     pub(super) fn ensure_medically_safe(&mut self, agent: u32) -> Result<bool, String> {
         let character_id = self.character_ids[agent as usize];
+        self.apply_visible_first_aid(character_id, agent)?;
+        let mut last_natural_rest_burden = None;
+        let mut nonprogressing_natural_rests = 0_u8;
         for _ in 0..MAX_RECOVERY_ACTIONS {
-            let character = self
+            let mut character = self
                 .connection
                 .db
                 .backend_characters()
@@ -415,20 +747,54 @@ impl LiveRunner {
                 }
                 return Ok(false);
             }
-            let condition = self
+            let mut condition = self
                 .connection
                 .db
                 .backend_character_strategic_conditions()
                 .iter()
                 .find(|row| row.character_id == character_id)
                 .ok_or("missing medical condition")?;
-            let symptomatic = self
+            let mut symptomatic = self
                 .connection
                 .db
                 .character_illness_status()
                 .iter()
                 .find(|row| row.character_id == character_id)
                 .is_some_and(|row| row.symptomatic);
+            if (condition.status != "ready" || symptomatic)
+                && character.current_settlement_id.is_some()
+            {
+                // Installing the medical schedule may synchronize a lagging
+                // character clock. Nothing clinical is selected or purchased
+                // until every public input is re-read after that authority call.
+                self.set_medical_rest_schedule(agent)?;
+                self.observe_deaths();
+                character = self
+                    .connection
+                    .db
+                    .backend_characters()
+                    .iter()
+                    .find(|row| row.id == character_id)
+                    .ok_or("missing medical character after schedule synchronization")?;
+                if !character.alive {
+                    self.medically_paused_schedules.remove(&character_id);
+                    return Ok(false);
+                }
+                condition = self
+                    .connection
+                    .db
+                    .backend_character_strategic_conditions()
+                    .iter()
+                    .find(|row| row.character_id == character_id)
+                    .ok_or("missing medical condition after schedule synchronization")?;
+                symptomatic = self
+                    .connection
+                    .db
+                    .character_illness_status()
+                    .iter()
+                    .find(|row| row.character_id == character_id)
+                    .is_some_and(|row| row.symptomatic);
+            }
             let settlement = character.current_settlement_id.clone();
             let herbalist_available = settlement.as_ref().is_some_and(|settlement| {
                 self.connection
@@ -439,9 +805,13 @@ impl LiveRunner {
                     .is_some_and(|row| row.economy.services.contains(&SettlementService::Herbalist))
             });
             let purse = self.personal_gold(character_id);
-            let observable_quote = settlement
-                .as_deref()
-                .and_then(|settlement| self.observable_medical_quote(character_id, settlement));
+            let chart = self.public_physician_chart(character_id);
+            let intervention_offers = settlement.as_deref().zip(chart.as_ref()).map_or_else(
+                Vec::new,
+                |(settlement, chart)| {
+                    self.public_intervention_offers(character_id, settlement, chart)
+                },
+            );
             let (inn_available, temple_available) =
                 settlement.as_ref().map_or((false, false), |settlement_id| {
                     self.connection
@@ -481,6 +851,36 @@ impl LiveRunner {
             let natural_rest_venue = self_funded_natural_rest_venue
                 .or_else(|| rest_sponsor.as_ref().map(|_| true))
                 .or_else(|| emergency_temple_rest.then_some(false));
+            let selected_intervention = intervention_offers
+                .iter()
+                .find(|offer| {
+                    let purchase_cost = if offer.inventory_item_id.is_some() {
+                        0
+                    } else {
+                        let Some(quote) = offer.storefront_quote else {
+                            return false;
+                        };
+                        quote
+                    };
+                    affordable_medical_rest_venue(
+                        inn_available,
+                        temple_available,
+                        temple_food_covers_day,
+                        purse,
+                        purchase_cost,
+                    )
+                    .is_some()
+                })
+                .cloned();
+            let observable_quote = selected_intervention.as_ref().map(|offer| {
+                if offer.inventory_item_id.is_some() {
+                    0
+                } else {
+                    offer
+                        .storefront_quote
+                        .expect("purchased intervention requires a public quote")
+                }
+            });
             let medicated_rest_venue = observable_quote.and_then(|quote| {
                 affordable_medical_rest_venue(
                     inn_available,
@@ -511,15 +911,54 @@ impl LiveRunner {
                         };
                         quote.checked_add(rest)
                     });
-            let (choice, reason) = choose_medical_action(
+            let (choice, base_reason) = choose_medical_action(
                 &condition.status,
                 symptomatic,
                 settlement.is_some(),
-                herbalist_available,
+                herbalist_available
+                    || selected_intervention
+                        .as_ref()
+                        .is_some_and(|offer| offer.inventory_item_id.is_some()),
                 purse,
                 observable_quote,
                 natural_rest_venue,
                 medicated_rest_venue,
+            );
+            let reason = if symptomatic && choice == MedicalChoice::RestNaturally {
+                if chart.is_none() {
+                    "chart_unavailable_or_low_confidence"
+                } else if chart
+                    .as_ref()
+                    .is_some_and(|chart| !chart.known_interventions.is_empty())
+                {
+                    "active_public_intervention_supportive_rest"
+                } else if intervention_offers.is_empty() {
+                    "no_positive_stocked_public_intervention"
+                } else if selected_intervention.is_none() {
+                    "useful_public_intervention_unaffordable"
+                } else {
+                    base_reason
+                }
+            } else {
+                base_reason
+            };
+            let chart_differential = chart.as_ref().map_or_else(
+                || "none".to_owned(),
+                |chart| {
+                    chart
+                        .possible_diseases
+                        .iter()
+                        .take(3)
+                        .map(|row| {
+                            format!(
+                                "{}:{}",
+                                bounded_event_field(&row.disease_id),
+                                row.likelihood_bps
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",")
+                },
             );
             let selected_rest_venue = match choice {
                 MedicalChoice::RestNaturally => natural_rest_venue,
@@ -530,9 +969,17 @@ impl LiveRunner {
                 agent,
                 CoreLoopEventKind::MedicalDecision,
                 format!(
-                    "status={};symptomatic={symptomatic};settlement={};purse={purse};observable_quote={};rest_cost={};care_total={};rest_venue={};temple_food_kcal={visible_food_kcal:.0};temple_water_ml={visible_water_ml:.0};temple_food_covers_day={temple_food_covers_day};emergency_temple_rest={emergency_temple_rest};sponsor={};sponsor_purse={};sponsor_medical_reserve={};sponsor_spendable={};patient_contribution_quote={};sponsor_quote={};party_treasury={};sponsor_stake={};care_affordable={};action={choice:?};reason={reason}",
+                    "status={};symptomatic={symptomatic};settlement={};purse={purse};clinician={};chart_confidence_band={};chart_confidence_bps={};public_differential={};preparation={};public_score_micropoints={};route={};storefront_quote={};purchase_cost={};rest_cost={};care_total={};rest_venue={};temple_food_kcal={visible_food_kcal:.0};temple_water_ml={visible_water_ml:.0};temple_food_covers_day={temple_food_covers_day};emergency_temple_rest={emergency_temple_rest};sponsor={};sponsor_purse={};sponsor_medical_reserve={};sponsor_spendable={};patient_contribution_quote={};sponsor_quote={};party_treasury={};sponsor_stake={};care_affordable={};action={choice:?};reason={reason}",
                     condition.status,
                     settlement.as_deref().unwrap_or("none"),
+                    chart.as_ref().map_or_else(|| "none".into(), |chart| chart.observer_id.to_string()),
+                    chart.as_ref().map_or("none", |chart| public_confidence_band(chart.confidence_bps)),
+                    chart.as_ref().map_or_else(|| "none".into(), |chart| chart.confidence_bps.to_string()),
+                    chart_differential,
+                    selected_intervention.as_ref().map_or("none", |offer| offer.preparation_id.as_str()),
+                    selected_intervention.as_ref().map_or_else(|| "none".into(), |offer| offer.public_score_micropoints.to_string()),
+                    selected_intervention.as_ref().map_or("none", |offer| offer.route.as_str()),
+                    selected_intervention.as_ref().and_then(|offer| offer.storefront_quote).map_or_else(|| "unavailable".into(), |quote| quote.to_string()),
                     observable_quote.map_or_else(|| "unavailable".into(), |quote| quote.to_string()),
                     required_rest_cost.map_or_else(|| "unavailable".into(), |cost| cost.to_string()),
                     observable_care_total.map_or_else(|| "unavailable".into(), |cost| cost.to_string()),
@@ -564,7 +1011,9 @@ impl LiveRunner {
             let Some(settlement) = settlement else {
                 unreachable!("a missing settlement is handled as quest suppression");
             };
-            self.set_medical_rest_schedule(agent)?;
+            let survival_before = self
+                .public_survival_observation(character_id)
+                .unwrap_or_default();
             if choice == MedicalChoice::RestNaturally {
                 let at_inn = natural_rest_venue.expect("natural rest choice requires a venue");
                 let rest_started_at = self
@@ -581,7 +1030,23 @@ impl LiveRunner {
                     let sponsor = rest_sponsor
                         .as_ref()
                         .expect("unaffordable inn venue requires a selected sponsor");
-                    let payer_purse_before = sponsor.purse;
+                    let sponsor_personal_spendable =
+                        sponsor.purse.saturating_sub(sponsor.medical_reserve);
+                    let stake_shortfall = sponsor
+                        .sponsor_quote
+                        .saturating_sub(sponsor_personal_spendable);
+                    let party_id = character
+                        .party_id
+                        .as_deref()
+                        .expect("sponsored rest requires a party");
+                    if !self.withdraw_stake_for_personal_purchase(
+                        sponsor.payer_id,
+                        party_id,
+                        stake_shortfall,
+                    )? {
+                        return Err("selected rest sponsor could not withdraw its own stake".into());
+                    }
+                    let payer_purse_before = self.personal_gold(sponsor.payer_id);
                     let patient_purse_before = purse;
                     let condition_before = condition.status.clone();
                     let public_quote = inn_cost.expect("sponsored inn rest requires a quote");
@@ -639,7 +1104,7 @@ impl LiveRunner {
                         sponsor.payer_agent_id,
                         CoreLoopEventKind::Recover,
                         format!(
-                            "sponsored_settlement_rest=completed;payer={};patient={character_id};settlement={};venue=inn;public_quote={public_quote};patient_contribution_quote={};sponsor_quote={};payer_medical_reserve={};payer_spendable={};party_treasury={};payer_party_stake={};patient_spend={patient_spend};sponsor_spend={sponsor_spend};actual_spend={actual_spend};payer_purse_before={payer_purse_before};payer_purse_after={payer_purse_after};patient_purse_before={patient_purse_before};patient_purse_after={patient_purse_after};condition_before={};condition_after={};symptomatic={symptomatic};exposure=not_publicly_projected;requested_minutes=1440;actual_elapsed_minutes={actual_rest_minutes}",
+                            "sponsored_settlement_rest=completed;payer={};patient={character_id};settlement={};venue=inn;public_quote={public_quote};patient_contribution_quote={};sponsor_quote={};payer_medical_reserve={};payer_spendable={};party_treasury={};payer_party_stake={};patient_spend={patient_spend};sponsor_spend={sponsor_spend};actual_spend={actual_spend};payer_purse_before={payer_purse_before};payer_purse_after={payer_purse_after};patient_purse_before={patient_purse_before};patient_purse_after={patient_purse_after};condition_before={};condition_after={};symptomatic={symptomatic};exposure=public_transition_recorded_in_patient_recovery_event;requested_minutes=1440;actual_elapsed_minutes={actual_rest_minutes}",
                             sponsor.payer_id,
                             bounded_event_field(&settlement),
                             sponsor.patient_contribution,
@@ -674,86 +1139,240 @@ impl LiveRunner {
                     .treatment_rest_minutes
                     .saturating_add(actual_rest_minutes);
                 self.metrics.recovery_rests += 1;
+                let survival_after = self
+                    .public_survival_observation(character_id)
+                    .unwrap_or_default();
+                if let Some(party_id) = character.party_id.as_deref() {
+                    self.observe_survival_telemetry(party_id);
+                }
                 self.event(
                     agent,
                     CoreLoopEventKind::Recover,
                     format!(
-                        "natural_recovery_requested_minutes=1440;natural_recovery_actual_minutes={actual_rest_minutes};venue={};emergency_free_rest={emergency_temple_rest};reason={reason}",
-                        if at_inn { "inn" } else { "temple" }
+                        "natural_recovery_requested_minutes=1440;natural_recovery_actual_minutes={actual_rest_minutes};venue={};emergency_free_rest={emergency_temple_rest};reason={reason};thermal_before={:.3};thermal_after={:.3};wetness_bps_before={};wetness_bps_after={};thermal_strain_before={};thermal_strain_after={};ammo_before={};ammo_after={};carried_load_kg_before={:.3};carried_load_kg_after={:.3};carry_capacity_kg_before={:.3};carry_capacity_kg_after={:.3};encumbrance_remaining_bps_before={};encumbrance_remaining_bps_after={};equipment_ready_before={};equipment_ready_after={};party_tent_quantity_before={};party_tent_quantity_after={}",
+                        if at_inn { "inn" } else { "temple" },
+                        survival_before.thermal,
+                        survival_after.thermal,
+                        survival_before.wetness_bps,
+                        survival_after.wetness_bps,
+                        survival_before.thermal_strain,
+                        survival_after.thermal_strain,
+                        survival_before.ammunition,
+                        survival_after.ammunition,
+                        survival_before.carried_load_kg,
+                        survival_after.carried_load_kg,
+                        survival_before.carry_capacity_kg,
+                        survival_after.carry_capacity_kg,
+                        survival_before.encumbrance_remaining_bps,
+                        survival_after.encumbrance_remaining_bps,
+                        survival_before.equipment_ready,
+                        survival_after.equipment_ready,
+                        survival_before.party_tent_quantity,
+                        survival_after.party_tent_quantity,
                     ),
                 );
+                let condition_after = self
+                    .connection
+                    .db
+                    .backend_character_strategic_conditions()
+                    .iter()
+                    .find(|row| row.character_id == character_id)
+                    .ok_or("missing medical condition after natural recovery rest")?;
+                let burden_after = condition_after.pain
+                    + condition_after.blood_loss
+                    + condition_after.fear
+                    + condition_after.fatigue
+                    + condition_after.hunger
+                    + condition_after.thirst
+                    + condition_after.thermal;
+                if !symptomatic
+                    && last_natural_rest_burden
+                        .is_some_and(|before| burden_after >= before - 0.000_1)
+                {
+                    nonprogressing_natural_rests = nonprogressing_natural_rests.saturating_add(1);
+                } else {
+                    nonprogressing_natural_rests = 0;
+                }
+                last_natural_rest_burden = Some(burden_after);
+                if nonprogressing_natural_rests >= 2 {
+                    self.metrics.quests_suppressed_for_health += 1;
+                    self.event(
+                        agent,
+                        CoreLoopEventKind::QuestSuppressed,
+                        format!(
+                            "status={};reason=natural_rest_not_improving_public_condition;burden={burden_after:.4};rests_without_progress={nonprogressing_natural_rests}",
+                            condition_after.status
+                        ),
+                    );
+                    return Ok(false);
+                }
                 continue;
             }
 
-            // NPCs react only to the public illness status. They may purchase a
-            // pre-existing preparation and administer its versioned profile;
-            // Physiology never diagnoses or crafts it.
+            // The chosen preparation comes only from the observer-safe chart,
+            // public generic profiles, and visible herbalist stock. The
+            // authoritative reducer owns private response and adverse effects.
             debug_assert_eq!(choice, MedicalChoice::BuyAndRest);
             let gold_before = purse;
-            let preparation_id = "oral_rehydration_draught";
-            let result = reducer_call!(self, "purchase_from_herbalist", |cb| self
-                .connection
-                .reducers
-                .purchase_from_herbalist_then(
-                    character_id,
-                    settlement.clone(),
-                    vec![preparation_id.into()],
-                    vec![1],
-                    cb
-                ));
-            self.call(result)?;
-            self.metrics.preparations_purchased += 1;
-            self.event(
-                agent,
-                CoreLoopEventKind::BuyMedication,
-                format!(
-                    "item={preparation_id};observable_quote={}",
-                    observable_quote.expect("purchase choice requires a quote")
-                ),
-            );
-            let preparation = self
-                .connection
-                .db
-                .inventory_item()
-                .iter()
-                .find(|row| row.character_id == character_id && row.item_id == preparation_id)
-                .ok_or("preparation purchase produced no concrete item")?;
+            let intervention =
+                selected_intervention.expect("purchase choice requires a public intervention");
+            let clinician_id = chart
+                .as_ref()
+                .expect("purchase choice requires a public chart")
+                .observer_id;
+            let preparation_id = intervention.preparation_id.as_str();
+            let preparation_inventory_id = if let Some(inventory_item_id) =
+                intervention.inventory_item_id
+            {
+                inventory_item_id
+            } else {
+                let result = reducer_call!(self, "purchase_from_herbalist", |cb| self
+                    .connection
+                    .reducers
+                    .purchase_from_herbalist_then(
+                        character_id,
+                        settlement.clone(),
+                        vec![preparation_id.into()],
+                        vec![1],
+                        cb
+                    ));
+                self.call(result)?;
+                self.metrics.preparations_purchased += 1;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::BuyMedication,
+                    format!(
+                        "observer={clinician_id};item={preparation_id};route={};public_score_micropoints={};storefront_quote={}",
+                        intervention.route,
+                        intervention.public_score_micropoints,
+                        intervention.storefront_quote.expect("purchase requires a public quote"),
+                    ),
+                );
+                self.connection
+                    .db
+                    .inventory_item()
+                    .iter()
+                    .filter(|row| row.character_id == character_id && row.item_id == preparation_id)
+                    .map(|row| row.id)
+                    .min()
+                    .ok_or("preparation purchase produced no concrete patient item")?
+            };
             let result = reducer_call!(self, "administer_preparation", |cb| self
                 .connection
                 .reducers
                 .administer_preparation_then(
+                    clinician_id,
                     character_id,
-                    character_id,
-                    preparation.id,
-                    1,
-                    "oral".into(),
+                    preparation_inventory_id,
+                    intervention.profile_version,
+                    intervention.route.clone(),
                     1_000,
                     None,
                     cb
                 ));
             self.call(result)?;
             self.metrics.interventions_administered += 1;
+            let actual_treatment_spend =
+                gold_before.saturating_sub(self.personal_gold(character_id));
+            self.metrics.treatment_gold_spent = self
+                .metrics
+                .treatment_gold_spent
+                .saturating_add(actual_treatment_spend);
+            self.observe_deaths();
+            let post_administration = self
+                .connection
+                .db
+                .backend_characters()
+                .iter()
+                .find(|row| row.id == character_id)
+                .ok_or("missing patient after authoritative intervention")?;
+            let post_administration_condition = self
+                .connection
+                .db
+                .backend_character_strategic_conditions()
+                .iter()
+                .find(|row| row.character_id == character_id)
+                .map_or_else(|| "unavailable".to_owned(), |row| row.status);
             self.event(
                 agent,
                 CoreLoopEventKind::AdministerPreparation,
-                format!("administered={preparation_id};profile=1;route=oral"),
+                format!(
+                    "observer={clinician_id};administered={preparation_id};profile={};route={};public_score_micropoints={};storefront_quote={};actual_spend={actual_treatment_spend};alive_after={};condition_after={};outcome={}",
+                    intervention.profile_version,
+                    intervention.route,
+                    intervention.public_score_micropoints,
+                    intervention.storefront_quote.map_or_else(|| "not_required".to_owned(), |quote| quote.to_string()),
+                    post_administration.alive,
+                    bounded_event_field(&post_administration_condition),
+                    if post_administration.alive { "authoritative_reducer_accepted" } else { "authoritative_terminal_boundary" },
+                ),
             );
-            self.metrics.treatment_gold_spent +=
-                gold_before.saturating_sub(self.personal_gold(character_id));
+            if !post_administration.alive {
+                self.medically_paused_schedules.remove(&character_id);
+                return Ok(false);
+            }
 
             let at_inn =
                 medicated_rest_venue.expect("purchase choice requires an affordable venue");
+            let medical_rest_started_at = self
+                .connection
+                .db
+                .backend_character_times()
+                .iter()
+                .find(|row| row.character_id == character_id)
+                .ok_or("missing patient clock before medical recovery rest")?
+                .minutes;
             let result = reducer_call!(self, "medical_recovery_rest", |cb| self
                 .connection
                 .reducers
                 .rest_at_settlement_hours_then(character_id, 1_440, at_inn, cb));
             self.call(result)?;
-            self.metrics.treatment_rest_minutes += 1_440;
+            let medical_rest_ended_at = self
+                .connection
+                .db
+                .backend_character_times()
+                .iter()
+                .find(|row| row.character_id == character_id)
+                .ok_or("missing patient clock after medical recovery rest")?
+                .minutes;
+            let actual_medical_rest_minutes =
+                medical_rest_ended_at.saturating_sub(medical_rest_started_at);
+            self.metrics.treatment_rest_minutes = self
+                .metrics
+                .treatment_rest_minutes
+                .saturating_add(actual_medical_rest_minutes);
             self.metrics.recovery_rests += 1;
+            self.observe_deaths();
+            let survival_after = self
+                .public_survival_observation(character_id)
+                .unwrap_or_default();
+            if let Some(party_id) = character.party_id.as_deref() {
+                self.observe_survival_telemetry(party_id);
+            }
             self.event(
                 agent,
                 CoreLoopEventKind::Recover,
-                "medical_rest_minutes=1440",
+                format!(
+                    "medical_rest_requested_minutes=1440;medical_rest_actual_minutes={actual_medical_rest_minutes};thermal_before={:.3};thermal_after={:.3};wetness_bps_before={};wetness_bps_after={};thermal_strain_before={};thermal_strain_after={};ammo_before={};ammo_after={};carried_load_kg_before={:.3};carried_load_kg_after={:.3};carry_capacity_kg_before={:.3};carry_capacity_kg_after={:.3};encumbrance_remaining_bps_before={};encumbrance_remaining_bps_after={};equipment_ready_before={};equipment_ready_after={};party_tent_quantity_before={};party_tent_quantity_after={}",
+                    survival_before.thermal,
+                    survival_after.thermal,
+                    survival_before.wetness_bps,
+                    survival_after.wetness_bps,
+                    survival_before.thermal_strain,
+                    survival_after.thermal_strain,
+                    survival_before.ammunition,
+                    survival_after.ammunition,
+                    survival_before.carried_load_kg,
+                    survival_after.carried_load_kg,
+                    survival_before.carry_capacity_kg,
+                    survival_after.carry_capacity_kg,
+                    survival_before.encumbrance_remaining_bps,
+                    survival_after.encumbrance_remaining_bps,
+                    survival_before.equipment_ready,
+                    survival_after.equipment_ready,
+                    survival_before.party_tent_quantity,
+                    survival_after.party_tent_quantity,
+                ),
             );
             let after = self
                 .connection
@@ -835,8 +1454,23 @@ impl LiveRunner {
                 inn_cost,
             );
             self.install_activity_schedule(character_id, &schedule)?;
-            let venue = self.settlement_activity_venue(character_id, committed_reserve)?;
             let preferred_activity = format!("{:?}", profile.preferred_activity);
+            let Some(venue) = self.settlement_activity_venue(character_id, committed_reserve)?
+            else {
+                self.event(
+                    agent,
+                    CoreLoopEventKind::Activity,
+                    format_deferred_activity_detail(
+                        &preferred_activity,
+                        effective_activity,
+                        &schedule,
+                        fallback_reason,
+                        committed_reserve,
+                        &before,
+                    ),
+                );
+                continue;
+            };
             let result = reducer_call!(self, "settlement_activity_rest", |cb| self
                 .connection
                 .reducers
@@ -877,6 +1511,77 @@ impl LiveRunner {
             self.metrics.activity_days += 1;
             self.ensure_medically_safe(agent)?;
         }
+        Ok(())
+    }
+
+    pub(super) fn wait_for_safe_departure_at_settlement(
+        &mut self,
+        character_id: u64,
+        agent: u32,
+        case_id: &str,
+        wait_minutes: u64,
+        walking_minutes_per_day: u16,
+        travel_at_night: bool,
+    ) -> Result<bool, String> {
+        if !(60..=1_440).contains(&wait_minutes)
+            || self
+                .party_for(character_id)?
+                .current_settlement_id
+                .is_none()
+        {
+            return Ok(false);
+        }
+        let Ok(Some(venue)) = self.settlement_activity_venue(character_id, 0) else {
+            self.event(
+                agent,
+                CoreLoopEventKind::QuestSuppressed,
+                format!(
+                    "case={};reason=safe_departure_wait_unavailable;wait_minutes={wait_minutes}",
+                    bounded_event_field(case_id),
+                ),
+            );
+            return Ok(false);
+        };
+        self.configure_safe_departure_itinerary(
+            character_id,
+            walking_minutes_per_day,
+            travel_at_night,
+        )?;
+        let result = reducer_call!(self, "wait_for_safe_departure", |cb| self
+            .connection
+            .reducers
+            .rest_at_settlement_hours_then(character_id, wait_minutes, venue.at_inn(), cb));
+        self.call(result)?;
+        self.event(
+            agent,
+            CoreLoopEventKind::SafeDepartureWait,
+            format!(
+                "case={};reason=complete_round_trip_walking_window;wait_minutes={wait_minutes};walking_minutes_per_day={walking_minutes_per_day};mode={}",
+                bounded_event_field(case_id),
+                venue.label(),
+            ),
+        );
+        Ok(true)
+    }
+
+    pub(super) fn configure_safe_departure_itinerary(
+        &mut self,
+        character_id: u64,
+        walking_minutes_per_day: u16,
+        travel_at_night: bool,
+    ) -> Result<(), String> {
+        let result = reducer_call!(self, "configure_safe_departure_window", |cb| self
+            .connection
+            .reducers
+            .set_party_travel_itinerary_then(
+                character_id,
+                walking_minutes_per_day,
+                travel_at_night,
+                false,
+                0,
+                cb,
+            ));
+        self.call(result)?;
         Ok(())
     }
 
@@ -1193,5 +1898,4 @@ impl LiveRunner {
         }
         Ok(())
     }
-
 }

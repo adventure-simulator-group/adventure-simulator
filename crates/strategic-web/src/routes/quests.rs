@@ -1382,6 +1382,8 @@ mod quest_route_tests {
             generated_case,
             case_resolved: false,
             combat_available,
+            opposition_count: None,
+            opposition_combat_power: None,
         }
     }
 

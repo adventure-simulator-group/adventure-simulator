@@ -84,6 +84,41 @@ mod departure_invariant_tests {
         assert_eq!(reconstruct_legacy_journey_coordinates(300, 600), (0, 600));
     }
 
+    #[test]
+    fn unplanned_case_route_persists_coherent_disclosed_straight_line_geometry() {
+        let route = authoritative_straight_line_case_route(
+            332_661,
+            (10.0, 53.0),
+            (10.01, 53.01),
+            1_300,
+            63,
+        );
+        assert_eq!(route.distance_m, 1_300);
+        assert_eq!(route.minutes, 63);
+        assert_eq!(route.package_digest.len(), 64);
+        assert!(route.package_digest.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_eq!(route.points.len(), 2);
+        assert_eq!(route.points[0].longitude_e7, 100_000_000);
+        assert_eq!(route.points[0].latitude_e7, 530_000_000);
+        assert_eq!(route.points[1].longitude_e7, 100_100_000);
+        assert_eq!(route.points[1].latitude_e7, 530_100_000);
+        assert_eq!(route.spans[0].duration_minutes, route.minutes);
+        let return_route = route.return_route.unwrap();
+        assert_eq!(return_route.points[0].longitude_e7, 100_100_000);
+        assert_eq!(return_route.points[1].longitude_e7, 100_000_000);
+    }
+
+    #[test]
+    fn journey_refresh_keeps_case_site_forecast_to_the_active_leg() {
+        let source = include_str!("journey_camp.rs");
+        let refresh = source
+            .split("pub(crate) fn refresh_party_journey_forecast")
+            .nth(1)
+            .expect("journey refresh");
+        assert!(refresh.contains("let planned_movement = journey.total_minutes"));
+        assert!(!refresh.contains("journey.total_minutes.saturating_mul(2)"));
+    }
+
     fn route_fixture() -> JourneyRoutePlan {
         let origin = (10.0, 53.0);
         let destination = (10.01, 53.0);
@@ -408,5 +443,15 @@ mod departure_invariant_tests {
         let midpoint = route_position_at_minute(&persisted, persisted.minutes / 2).unwrap();
         assert!((midpoint.0 - 10.005).abs() < 0.000_1);
         assert!((midpoint.1 - 53.0).abs() < 0.000_1);
+    }
+
+    #[test]
+    fn terminal_departure_sync_commits_and_stops_before_creating_a_journey() {
+        let source = include_str!("travel_reducers.rs");
+        assert_eq!(
+            source.matches("let Some(departure_minute) = crate::time::synchronize_party_departure_time").count(),
+            2,
+        );
+        assert_eq!(source.matches("else {\n        return Ok(());\n    };").count(), 2);
     }
 }

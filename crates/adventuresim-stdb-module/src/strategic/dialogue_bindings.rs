@@ -303,7 +303,7 @@ fn generated_dialogue_recipient(
     ))
 }
 
-fn validated_generated_dialogue_manifest(
+pub(crate) fn validated_generated_dialogue_manifest(
     case: &CaseAuthority,
     authority: Option<&QuestGenerationAuthority>,
 ) -> Result<Option<adventuresim_core::quest_generation::GeneratedCase>, String> {

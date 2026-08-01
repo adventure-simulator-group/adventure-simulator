@@ -192,6 +192,10 @@ pub struct BackendCaseSitePin {
     pub generated_case: bool,
     pub case_resolved: bool,
     pub combat_available: bool,
+    #[serde(default)]
+    pub opposition_count: Option<u32>,
+    #[serde(default)]
+    pub opposition_combat_power: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1293,6 +1297,8 @@ pub struct PartyRecruitmentRole {
     pub requirements: RecruitmentRequirements,
     pub quantity: u32,
     pub weapon_precision: f32,
+    #[serde(default)]
+    pub autoresolve_combat_power: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1350,6 +1356,8 @@ pub struct CharacterCapability {
     pub command: f32,
     pub religion: f32,
     pub weapon_precision: f32,
+    #[serde(default)]
+    pub autoresolve_combat_power: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

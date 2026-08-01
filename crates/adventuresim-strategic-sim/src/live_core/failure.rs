@@ -1,5 +1,10 @@
 impl LiveRunner {
-    pub(super) fn event(&mut self, agent_id: u32, kind: CoreLoopEventKind, detail: impl Into<String>) {
+    pub(super) fn event(
+        &mut self,
+        agent_id: u32,
+        kind: CoreLoopEventKind,
+        detail: impl Into<String>,
+    ) {
         self.sequence += 1;
         let detail = detail.into();
         let semantic = format!("{agent_id}:{kind:?}:{detail}");
@@ -115,11 +120,21 @@ impl LiveRunner {
             .is_some_and(|row| row.economy.services.contains(&SettlementService::Inn))
             .then(|| adventuresim_core::strategic_economy::inn_full_board_cost(1_440))
             .flatten();
+        let survival = self.public_survival_observation(character_id)?;
         Some(CoreLoopFailureAgent {
             agent_id,
             character_id,
             alive: character.alive,
             condition_status: condition.status,
+            thermal: survival.thermal,
+            wetness_bps: survival.wetness_bps,
+            thermal_strain: survival.thermal_strain,
+            ammunition: survival.ammunition,
+            carried_load_kg: survival.carried_load_kg,
+            carry_capacity_kg: survival.carry_capacity_kg,
+            encumbrance_remaining_bps: survival.encumbrance_remaining_bps,
+            equipment_ready: survival.equipment_ready,
+            party_tent_quantity: survival.party_tent_quantity,
             hunger: condition.hunger,
             thirst: condition.thirst,
             food_days: condition.food_days,
@@ -142,7 +157,7 @@ impl LiveRunner {
         &self,
         character_id: u64,
         committed_reserve: u64,
-    ) -> Result<SettlementActivityVenue, String> {
+    ) -> Result<Option<SettlementActivityVenue>, String> {
         let settlement_id = self
             .connection
             .db
@@ -170,18 +185,14 @@ impl LiveRunner {
             return Err("simulation settlement offers neither an Inn nor a Temple".to_string());
         }
         let (visible_food_kcal, _) = self.visible_rest_supplies(character_id);
-        select_settlement_activity_venue(
+        Ok(select_settlement_activity_venue(
             inn_available,
             temple_available,
             temple_food_covers_one_day(visible_food_kcal),
             self.personal_gold(character_id),
             committed_reserve,
             adventuresim_core::strategic_economy::inn_full_board_cost(1_440),
-        )
-        .ok_or_else(|| {
-            "simulation character cannot afford an Inn while preserving visible reserves"
-                .to_string()
-        })
+        ))
     }
 
     /// Non-activity waits retain the ordinary public-service preference. Their
@@ -295,23 +306,53 @@ impl LiveRunner {
         newly_dead.sort_unstable();
         for character_id in newly_dead {
             if let Some(agent) = self.character_ids.iter().position(|id| *id == character_id) {
-                let source = self
+                let death = self
                     .connection
                     .db
                     .backend_character_deaths()
                     .iter()
-                    .find(|row| row.character_id == character_id)
-                    .map(|row| row.source);
+                    .find(|row| row.character_id == character_id);
+                let source = death.as_ref().map(|row| row.source);
                 if source == Some(DeathSource::Disease) {
                     self.metrics.disease_deaths += 1;
                 }
+                let cause = death.as_ref().map_or_else(
+                    || "unavailable".to_owned(),
+                    |row| format!("{:?}", row.cause),
+                );
+                let source_id = death
+                    .as_ref()
+                    .and_then(|row| row.source_id.as_deref())
+                    .map_or_else(|| "none".to_owned(), bounded_event_field);
+                let strategic_minute = death.as_ref().map_or_else(
+                    || "unavailable".to_owned(),
+                    |row| row.strategic_minute.to_string(),
+                );
+                let survival = self.public_survival_observation(character_id);
+                let condition = self
+                    .connection
+                    .db
+                    .backend_character_strategic_conditions()
+                    .iter()
+                    .find(|row| row.character_id == character_id);
                 self.event(
                     agent as u32,
                     CoreLoopEventKind::Death,
-                    format!("authoritative terminal state;source={source:?}"),
+                    format!(
+                        "terminal=authoritative;cause={cause};source={source:?};source_id={source_id};strategic_minute={strategic_minute};condition={};thermal={:.3};wetness_bps={};thermal_strain={};ammo={};carried_load_kg={:.3};carry_capacity_kg={:.3};encumbrance_remaining_bps={};equipment_ready={};party_tent_quantity={}",
+                        condition.as_ref().map_or("unavailable", |row| row.status.as_str()),
+                        survival.map_or(0.0, |row| row.thermal),
+                        survival.map_or(0, |row| row.wetness_bps),
+                        survival.map_or(0, |row| row.thermal_strain),
+                        survival.map_or(0, |row| row.ammunition),
+                        survival.map_or(0.0, |row| row.carried_load_kg),
+                        survival.map_or(0.0, |row| row.carry_capacity_kg),
+                        survival.map_or(0, |row| row.encumbrance_remaining_bps),
+                        survival.is_some_and(|row| row.equipment_ready),
+                        survival.map_or(0, |row| row.party_tent_quantity),
+                    ),
                 );
             }
         }
     }
-
 }

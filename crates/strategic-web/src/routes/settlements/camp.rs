@@ -333,11 +333,23 @@ pub(super) async fn camp(
     let active_road_trial = road_challenges
         .iter()
         .find(|challenge| challenge.active && challenge.open);
-    let mut road_history = road_challenges.iter().filter(|challenge| !challenge.open).collect::<Vec<_>>();
-    road_history.sort_by(|left, right| right.absolute_minute.cmp(&left.absolute_minute).then_with(|| right.id.cmp(&left.id)));
+    let mut road_history = road_challenges
+        .iter()
+        .filter(|challenge| !challenge.open)
+        .collect::<Vec<_>>();
+    road_history.sort_by(|left, right| {
+        right
+            .absolute_minute
+            .cmp(&left.absolute_minute)
+            .then_with(|| right.id.cmp(&left.id))
+    });
     if let Some(requested) = query.road_occurrence.as_deref()
-        && let Some(index) = road_history.iter().position(|challenge| challenge.id == requested)
-    { road_history.swap(0, index); }
+        && let Some(index) = road_history
+            .iter()
+            .position(|challenge| challenge.id == requested)
+    {
+        road_history.swap(0, index);
+    }
     road_history.truncate(10);
     let foraging_dialog = if query.forage.unwrap_or(false) {
         Some(
@@ -417,10 +429,10 @@ pub(super) async fn resolve_errantry_road_challenge(
         )
         .await
     {
-        Ok(()) => Redirect::to(&format!("/camp?road_occurrence={}", form.challenge_id)).into_response(),
-        Err(error) if error.to_string().contains("stale") => {
-            StatusCode::CONFLICT.into_response()
+        Ok(()) => {
+            Redirect::to(&format!("/camp?road_occurrence={}", form.challenge_id)).into_response()
         }
+        Err(error) if error.to_string().contains("stale") => StatusCode::CONFLICT.into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }
@@ -437,12 +449,10 @@ fn direct_demo_challenge_redirect(
             && is_direct_demo_challenge_id(&challenge.id, character_id)
     });
     let challenge = playable.next()?;
-    playable.next().is_none().then(|| {
-        format!(
-            "/quests/{}/challenges/{}",
-            challenge.case_id, challenge.id
-        )
-    })
+    playable
+        .next()
+        .is_none()
+        .then(|| format!("/quests/{}/challenges/{}", challenge.case_id, challenge.id))
 }
 
 fn is_direct_demo_challenge_id(challenge_id: &str, character_id: u64) -> bool {
@@ -658,7 +668,10 @@ pub(super) async fn rest_at_camp(
             if form.advance_development_clock {
                 let _ = state
                     .db
-                    .call("sync_development_clock_to_character", &[json!(character_id)])
+                    .call(
+                        "sync_development_clock_to_character",
+                        &[json!(character_id)],
+                    )
                     .await;
             }
             Redirect::to("/camp").into_response()
@@ -667,7 +680,10 @@ pub(super) async fn rest_at_camp(
     }
 }
 
-pub(super) async fn continue_camp_travel(State(state): State<AppState>, session: Session) -> Response {
+pub(super) async fn continue_camp_travel(
+    State(state): State<AppState>,
+    session: Session,
+) -> Response {
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
     };
@@ -812,7 +828,8 @@ pub(super) async fn travel_provision_forecast_for_minutes(
                 });
             }
         }
-        let time = query_single::<CharacterTime>(state, "backend_character_times", traveler.id).await;
+        let time =
+            query_single::<CharacterTime>(state, "backend_character_times", traveler.id).await;
         let personality = query_single::<CharacterPersonality>(
             state,
             "backend_character_personalities",

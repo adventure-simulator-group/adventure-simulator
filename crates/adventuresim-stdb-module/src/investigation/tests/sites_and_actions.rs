@@ -468,6 +468,74 @@ fn corrected_contact_referral_is_not_live_at_any_action_boundary() {
 }
 
 #[test]
+fn generated_opposition_projection_is_checked_and_fail_closed() {
+    assert_eq!(checked_generated_opposition(2, 125), Some((2, 250)));
+    assert_eq!(checked_generated_opposition(0, 125), None);
+    assert_eq!(checked_generated_opposition(2, 0), None);
+    assert_eq!(checked_generated_opposition(u32::MAX, u64::MAX), None);
+    let projection = include_str!("../sites.rs");
+    assert!(projection.contains("combat_available: false"));
+    assert!(projection.contains("opposition_count: None"));
+    assert!(projection.contains("opposition_combat_power: None"));
+}
+
+#[test]
+fn generated_live_support_uses_the_observer_safe_case_alias_at_every_boundary() {
+    let source = INVESTIGATION_SOURCE;
+    let projection = source
+        .split("fn capability_has_live_support_view")
+        .nth(1)
+        .and_then(|tail| tail.split("fn exact_action_site_for_observer").next())
+        .expect("projection live support");
+    assert!(projection.contains("projected_action_public_case_id(ctx, capability)"));
+    assert!(projection.contains("&observer_case_id"));
+    assert!(projection.contains("lead.case_id == observer_case_id"));
+
+    let recovery = source
+        .split("fn capability_has_live_support_reducer")
+        .nth(1)
+        .and_then(|tail| tail.split("fn capability_has_live_pattern_support_reducer").next())
+        .expect("reducer live support");
+    assert!(recovery.contains("reducer_action_public_case_id(ctx, capability)"));
+    assert!(recovery.contains("&observer_case_id"));
+    assert!(recovery.contains("lead.case_id == observer_case_id"));
+
+    let execution = source
+        .split("fn validate_live_action_prerequisites")
+        .nth(1)
+        .and_then(|tail| tail.split("fn case_objective_contains_custody_target").next())
+        .expect("action execution prerequisites");
+    assert!(execution.contains("reducer_action_public_case_id(ctx, capability)"));
+    assert!(execution.contains("&observer_case_id"));
+    assert!(execution.contains("lead.case_id == observer_case_id"));
+
+    let pattern_projection = source
+        .split("fn capability_has_live_pattern_support_view")
+        .nth(1)
+        .and_then(|tail| tail.split("fn tracking_capability_chain_is_coherent").next())
+        .expect("pattern projection support");
+    assert!(pattern_projection.contains("projected_action_public_case_id(ctx, capability)"));
+    assert!(pattern_projection.contains("&observer_case_id"));
+    let pattern_recovery = source
+        .split("fn capability_has_live_pattern_support_reducer")
+        .nth(1)
+        .and_then(|tail| tail.split("fn validate_capability_blueprint_reducer").next())
+        .expect("pattern reducer support");
+    assert!(pattern_recovery.contains("reducer_action_public_case_id(ctx, capability)"));
+    assert!(pattern_recovery.contains("&observer_case_id"));
+    let pattern_execution = source
+        .split("fn validate_generated_pattern_condition")
+        .nth(1)
+        .and_then(|tail| tail.split("fn validate_live_action_prerequisites").next())
+        .expect("pattern execution support");
+    assert!(pattern_execution.contains("reducer_action_public_case_id(ctx, capability)"));
+    assert!(pattern_execution.contains("&observer_case_id"));
+    assert!(!projection.contains("fixture"));
+    assert!(!recovery.contains("fixture"));
+    assert!(!execution.contains("fixture"));
+}
+
+#[test]
 fn inspect_site_travel_requires_ready_off_site_party() {
     let ready_off_site = projected_action_availability(true, "site", false, 0);
     assert!(ready_off_site.unavailable_reason.is_some());

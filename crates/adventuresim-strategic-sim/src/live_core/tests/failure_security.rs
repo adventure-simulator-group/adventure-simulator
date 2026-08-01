@@ -142,7 +142,24 @@ fn failed_activity_error_classification_never_echoes_raw_backend_text() {
 }
 
 #[test]
-fn failure_artifact_version_five_serializes_safe_operation_context() {
+fn equipment_trade_failure_is_classified_without_backend_text() {
+    let raw =
+        "purchase_personal_storefront_with_party_stake failed: hidden provider authority changed";
+    let (category, message) = safe_core_loop_failure(raw);
+    assert_eq!(category, "equipment_purchase_failed");
+    assert_eq!(
+        safe_failure_operation(raw),
+        Some("purchase_personal_storefront_with_party_stake")
+    );
+    assert_eq!(
+        safe_failure_reason_code(raw, category),
+        "equipment_storefront_trade_failed"
+    );
+    assert!(!message.contains("hidden provider authority"));
+}
+
+#[test]
+fn failure_artifact_version_nine_serializes_safe_operation_context() {
     let artifact = CoreLoopFailureArtifact {
         schema_version: CORE_LOOP_FAILURE_SCHEMA_VERSION,
         category: "investigation_temporally_unavailable".into(),
@@ -150,7 +167,9 @@ fn failure_artifact_version_five_serializes_safe_operation_context() {
             .into(),
         operation: Some("perform_investigation_action".into()),
         reason_code: "investigation_night_window".into(),
+        fixture_disease: DEFAULT_SIMULATION_DISEASE.into(),
         metrics: CoreLoopMetrics::default(),
+        quest_coverage: None,
         total_event_count: 1,
         trace_truncated: false,
         trace: vec![CoreLoopEvent {
@@ -162,7 +181,11 @@ fn failure_artifact_version_five_serializes_safe_operation_context() {
         final_agents: Vec::new(),
     };
     let value = serde_json::to_value(artifact).unwrap();
-    assert_eq!(value["schema_version"], serde_json::json!(5));
+    assert_eq!(value["schema_version"], serde_json::json!(9));
+    assert_eq!(
+        value["fixture_disease"],
+        serde_json::json!(DEFAULT_SIMULATION_DISEASE)
+    );
     assert_eq!(
         value["operation"],
         serde_json::json!("perform_investigation_action")
@@ -172,6 +195,148 @@ fn failure_artifact_version_five_serializes_safe_operation_context() {
         serde_json::json!("investigation_night_window")
     );
     assert_eq!(value["trace"][0]["kind"], "quest_decision");
+}
+
+fn quest_coverage_report() -> CoreLoopReport {
+    let mut metrics = CoreLoopMetrics::default();
+    metrics.quests_attempted = 2;
+    metrics.direct_contracts_attempted = 1;
+    metrics.direct_contracts_completed = 1;
+    metrics.generated_case_intakes = 1;
+    metrics.generated_discovery_actions_fruitful = 1;
+    metrics.generated_quests_discovered = 1;
+    CoreLoopReport {
+        format_version: crate::FORMAT_VERSION,
+        backend_kind: "spacetimedb".into(),
+        seed: 42,
+        server_origin: "http://127.0.0.1:3000".into(),
+        database: "adventuresim-sim-test".into(),
+        run_nonce: "quest-coverage-test-0001".into(),
+        fixture_disease: DEFAULT_SIMULATION_DISEASE.into(),
+        deployment_identity_note: "test".into(),
+        world_artifact_id: None,
+        world_manifest_digest: None,
+        starting_settlement_id: "settlement:test".into(),
+        profiles: Vec::new(),
+        metrics,
+        quest_coverage: Some(QuestCoverageEvidence {
+            direct_contract_id: "contract:fixture".into(),
+            generated_case_id: "case:fixture".into(),
+            direct_leader_id: 1,
+            generated_leader_id: 2,
+            direct_party_id: "party:direct".into(),
+            generated_party_id: "party:generated".into(),
+            direct_accepted: true,
+            direct_traveled: true,
+            direct_encountered: true,
+            direct_reported: true,
+            direct_safely_abandoned: false,
+            generated_intake: true,
+            generated_discovered: true,
+            generated_completed: true,
+        }),
+        trace: Vec::new(),
+        trace_truncated: false,
+        total_event_count: 0,
+        final_agents: vec![FinalAgentState {
+            agent_id: 0,
+            character_id: 1,
+            gold: 0,
+            equipment_item_ids: Vec::new(),
+            capability_summary: "ready".into(),
+            condition_status: "ready".into(),
+            thermal: 0.0,
+            wetness_bps: 0,
+            thermal_strain: 0,
+            ammunition: 20,
+            carried_load_kg: 0.0,
+            carry_capacity_kg: 20.0,
+            encumbrance_remaining_bps: 10_000,
+            equipment_ready: true,
+            party_tent_quantity: 1,
+            worst_equipment_condition: 1.0,
+            outstanding_repair_orders: 0,
+            alive: true,
+            elapsed_minutes: 0,
+            personal_gold_coin: 0,
+            party_treasury: 0,
+            party_stake: 0,
+            hunger: 0.0,
+            thirst: 0.0,
+            food_days: 1.0,
+            water_days: 1.0,
+            visible_food_kcal: 2_000.0,
+            visible_water_ml: 2_000.0,
+            settlement_id: Some("settlement:test".into()),
+            current_case_site_id: None,
+            journey_destination: None,
+            symptomatic: false,
+            critical: false,
+            settlement_services: vec!["Inn".into()],
+            visible_herbalist_quote: None,
+            visible_inn_full_board_cost: Some(1),
+        }],
+        elapsed_game_minutes: 0,
+        policy_seed_note: "test".into(),
+    }
+}
+
+#[test]
+fn quest_coverage_gate_requires_both_paths_and_safe_final_state() {
+    let mut report = quest_coverage_report();
+    assert_eq!(validate_quest_coverage(&report), Ok(()));
+
+    report.metrics.quests_attempted = 1;
+    assert_eq!(
+        validate_quest_coverage(&report).unwrap_err(),
+        "quest coverage acceptance failed: metric=quests_attempted"
+    );
+    report.metrics.quests_attempted = 2;
+    report.quest_coverage.as_mut().unwrap().generated_completed = false;
+    assert_eq!(
+        validate_quest_coverage(&report).unwrap_err(),
+        "quest coverage acceptance failed: metric=fixture_generated_completed"
+    );
+    report.quest_coverage.as_mut().unwrap().generated_completed = true;
+    report.final_agents[0].journey_destination = Some("case-site:test".into());
+    assert_eq!(
+        validate_quest_coverage(&report).unwrap_err(),
+        "quest coverage acceptance failed: metric=final_agents_not_stranded"
+    );
+}
+
+#[test]
+fn aggregate_progress_and_safe_abandonment_cannot_impersonate_fixture_completion() {
+    let mut report = quest_coverage_report();
+    report.metrics.direct_contracts_completed = 10;
+    report.metrics.generated_quests_completed = 10;
+    let coverage = report.quest_coverage.as_mut().unwrap();
+    coverage.direct_reported = false;
+    coverage.direct_safely_abandoned = true;
+    assert_eq!(
+        validate_quest_coverage(&report).unwrap_err(),
+        "quest coverage acceptance failed: metric=fixture_direct_reported"
+    );
+}
+
+#[test]
+fn quest_coverage_failure_artifact_names_unmet_metric() {
+    let report = quest_coverage_report();
+    let path = std::env::temp_dir().join(format!(
+        "adventuresim-quest-coverage-{}-{}.json",
+        std::process::id(),
+        report.seed
+    ));
+    let _ = std::fs::remove_file(&path);
+    let error = "quest coverage acceptance failed: metric=generated_case_intakes";
+    write_quest_coverage_failure(&report, &path, error).unwrap();
+    let artifact: CoreLoopFailureArtifact =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    std::fs::remove_file(path).unwrap();
+    assert_eq!(artifact.category, "quest_coverage_acceptance");
+    assert_eq!(artifact.reason_code, "generated_case_intakes");
+    assert_eq!(artifact.message, error);
+    assert_eq!(artifact.metrics, report.metrics);
 }
 
 #[test]
@@ -239,9 +404,9 @@ fn generated_action_trace_uses_subject_and_public_attempt_evidence() {
         .next()
         .expect("production live core");
     let advance = source
-        .split("fn advance_generated_case")
+        .split("fn advance_generated_case_inner")
         .nth(1)
-        .and_then(|tail| tail.split("fn cycle").next())
+        .and_then(|tail| tail.split("pub(super) fn turn_in_ready_direct_contract").next())
         .expect("generated case driver");
     assert!(advance.contains("emit_generated_investigation_attempt"));
     assert!(source.contains(
@@ -249,8 +414,8 @@ fn generated_action_trace_uses_subject_and_public_attempt_evidence() {
     ));
     assert!(advance.contains("\"case={};subject={};action={};method={};summary={};outcome={}\""));
     assert!(!advance.contains("\"case={};title={};action={};method={};summary={};outcome={}\""));
-    assert!(advance.contains("identical_pending_subscription"));
-    assert!(advance.contains("Defer once so the next cycle chooses"));
+    assert!(advance.contains("self.call(result)?"));
+    assert!(!advance.contains("victim_cohort_state_changed_failure"));
     assert!(!advance.contains("bounded_retry"));
     assert!(!production.contains("generated_investigation_retries"));
 }
@@ -323,6 +488,16 @@ fn journey_camp_failures_are_allowlisted_without_raw_text() {
         "journey_held_no_actionable_actor"
     );
     assert!(!message.contains("hidden health authority"));
+
+    let travel = "return_to_settlement failed: hidden journey authority panic";
+    let (category, message) = safe_core_loop_failure(travel);
+    assert_eq!(category, "journey_travel_failed");
+    assert_eq!(safe_failure_operation(travel), Some("return_to_settlement"));
+    assert_eq!(
+        safe_failure_reason_code(travel, category),
+        "journey_travel_reducer_failed"
+    );
+    assert!(!message.contains("hidden journey authority panic"));
 }
 
 #[test]

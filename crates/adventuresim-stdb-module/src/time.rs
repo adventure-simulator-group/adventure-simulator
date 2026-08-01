@@ -531,6 +531,7 @@ pub fn advance_character_time(
         return Ok(false);
     }
     crate::condition::apply_travel_condition(ctx, character_id, starting_minute, elapsed, 0)?;
+    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(true)
 }
@@ -596,6 +597,7 @@ fn advance_character_time_in_plan(
         return Ok(false);
     }
     crate::condition::apply_travel_condition(ctx, character_id, starting_minute, elapsed, 0)?;
+    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(true)
 }
@@ -742,12 +744,30 @@ pub(crate) fn synchronize_party_activity_time(
     ctx: &ReducerContext,
     member_ids: &[u64],
     leader_id: u64,
-) -> Result<u64, String> {
+) -> Result<Option<u64>, String> {
     if !member_ids.contains(&leader_id) {
         return Err("Party leader is not a living activity participant".into());
     }
     for member_id in member_ids {
         synchronize_character_time(ctx, *member_id)?;
+    }
+    if member_ids.iter().any(|member_id| {
+        ctx.db
+            .character()
+            .id()
+            .find(*member_id)
+            .is_none_or(|character| !character.alive)
+    }) {
+        if let Some(party_id) = ctx
+            .db
+            .character()
+            .id()
+            .find(leader_id)
+            .and_then(|character| character.party_id)
+        {
+            let _ = crate::strategic::normalize_and_elect_party_leader(ctx, &party_id);
+        }
+        return Ok(None);
     }
     let start = member_ids
         .iter()
@@ -761,6 +781,12 @@ pub(crate) fn synchronize_party_activity_time(
         .max()
         .ok_or("Party has no strategic clock")?;
     for member_id in member_ids {
+        let alive = ctx
+            .db
+            .character()
+            .id()
+            .find(*member_id)
+            .is_some_and(|character| character.alive);
         let minute = ctx
             .db
             .character_time()
@@ -768,13 +794,116 @@ pub(crate) fn synchronize_party_activity_time(
             .find(*member_id)
             .ok_or("Party member has no strategic clock")?
             .minutes;
-        if minute < start
-            && !advance_character_wait_time(ctx, *member_id, start.saturating_sub(minute))?
-        {
-            return Err("Every party member must survive clock synchronization".into());
+        let Some(catch_up) = terminal_catch_up_minutes(alive, minute, start) else {
+            continue;
+        };
+        if !advance_character_wait_time(ctx, *member_id, catch_up)? {
+            if let Some(party_id) = ctx
+                .db
+                .character()
+                .id()
+                .find(leader_id)
+                .and_then(|character| character.party_id)
+            {
+                let _ = crate::strategic::normalize_and_elect_party_leader(ctx, &party_id);
+            }
+            return Ok(None);
         }
     }
-    Ok(start)
+    Ok(Some(start))
+}
+
+fn terminal_catch_up_minutes(
+    alive_after_official_sync: bool,
+    minute: u64,
+    target: u64,
+) -> Option<u64> {
+    (alive_after_official_sync && minute < target).then(|| target.saturating_sub(minute))
+}
+
+/// Commit ordinary catch-up to a co-located party's furthest personal clock
+/// before a shared strategic action performs its atomic readiness check.
+/// Terminal consequences are intentionally committed here: callers observe
+/// and recover from them instead of repeatedly rolling them back with the
+/// attempted action.
+#[reducer]
+pub fn synchronize_party_for_activity(ctx: &ReducerContext, leader_id: u64) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, leader_id)?;
+    let leader = crate::character::require_living_character(ctx, leader_id)?;
+    let party_id = leader
+        .party_id
+        .clone()
+        .ok_or("Activity synchronization requires a party")?;
+    let party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != leader_id {
+        return Err("Only the current party leader can synchronize party activity".into());
+    }
+    let member_ids = crate::strategic::living_party_member_ids(ctx, &party_id);
+    if member_ids.is_empty() || !member_ids.contains(&leader_id) {
+        return Err("Party has no living leader for activity synchronization".into());
+    }
+    let leader_case_site = crate::investigation::character_case_site_id(ctx, leader_id);
+    for member_id in &member_ids {
+        let member = ctx
+            .db
+            .character()
+            .id()
+            .find(*member_id)
+            .ok_or("Party member not found")?;
+        if member.party_id.as_deref() != Some(party_id.as_str())
+            || member.current_settlement_id != leader.current_settlement_id
+            || member.current_settlement_id != party.current_settlement_id
+            || crate::investigation::character_case_site_id(ctx, *member_id) != leader_case_site
+        {
+            return Err("Party members must be co-located before activity synchronization".into());
+        }
+    }
+    for member_id in &member_ids {
+        synchronize_character_time(ctx, *member_id)?;
+    }
+    let target = member_ids
+        .iter()
+        .map(|member_id| {
+            ctx.db
+                .character_time()
+                .character_id()
+                .find(*member_id)
+                .map(|time| time.minutes)
+                .ok_or("Party member has no strategic clock")
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .max()
+        .ok_or("Party has no strategic clock")?;
+    for member_id in &member_ids {
+        let alive = ctx
+            .db
+            .character()
+            .id()
+            .find(*member_id)
+            .is_some_and(|character| character.alive);
+        let minute = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(*member_id)
+            .ok_or("Party member has no strategic clock")?
+            .minutes;
+        if let Some(catch_up) = terminal_catch_up_minutes(alive, minute, target) {
+            let _survived = advance_character_wait_time(ctx, *member_id, catch_up)?;
+        }
+    }
+    let _ = crate::strategic::normalize_and_elect_party_leader(ctx, &party_id);
+    for member_id in crate::strategic::living_party_member_ids(ctx, &party_id) {
+        let _ = crate::condition::refresh_character_strategic_condition(ctx, member_id);
+        let _ = crate::capability::refresh_character_capability(ctx, member_id);
+    }
+    Ok(())
 }
 
 /// Neutral/location-appropriate personal time for waiting and procedures. It
@@ -827,7 +956,7 @@ pub fn advance_character_wait_time(
         settled.elapsed,
         false,
         if at_settlement {
-            adventuresim_core::survival::FieldShelter::Tent
+            adventuresim_core::survival::FieldShelter::Indoor
         } else {
             adventuresim_core::survival::FieldShelter::Bivouac
         },
@@ -1872,13 +2001,23 @@ pub fn perform_immediate_activity(
         .character_time()
         .character_id()
         .update(character_time);
+    let at_settlement = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .is_some_and(|character| character.current_settlement_id.is_some());
     crate::condition::apply_weather_exposure(
         ctx,
         character_id,
         starting_minute,
         elapsed,
         false,
-        adventuresim_core::survival::FieldShelter::Tent,
+        if at_settlement {
+            adventuresim_core::survival::FieldShelter::Indoor
+        } else {
+            adventuresim_core::survival::FieldShelter::Bivouac
+        },
     )?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::condition::apply_elapsed_needs(ctx, character_id, elapsed)?;
@@ -2580,6 +2719,13 @@ fn spend_private_settlement_downtime_deferred_social(
     character_id: u64,
     requested_minutes: u64,
 ) -> Result<u64, String> {
+    if requested_minutes < MIN_SETTLEMENT_REST_MINUTES {
+        // Departure synchronization is not a player-selected rest. Advance an
+        // exact sub-hour skew through neutral wait authority rather than
+        // bypassing the public settlement-rest duration contract.
+        advance_character_wait_time(ctx, character_id, requested_minutes)?;
+        return Ok(0);
+    }
     rest_for_minutes(
         ctx,
         character_id,
@@ -2597,7 +2743,7 @@ fn spend_private_settlement_downtime_deferred_social(
 pub(crate) fn synchronize_party_departure_time(
     ctx: &ReducerContext,
     member_ids: &[u64],
-) -> Result<u64, String> {
+) -> Result<Option<u64>, String> {
     if member_ids.is_empty() {
         return Err("Party has no living members".into());
     }
@@ -2654,7 +2800,26 @@ pub(crate) fn synchronize_party_departure_time(
     for (member_id, downtime) in automatic_chat_downtime {
         crate::social::apply_automatic_social_chats(ctx, member_id, downtime)?;
     }
-    Ok(departure)
+    let all_survived = member_ids.iter().all(|member_id| {
+        ctx.db
+            .character()
+            .id()
+            .find(*member_id)
+            .is_some_and(|character| character.alive)
+    });
+    if !all_survived {
+        if let Some(party_id) = member_ids.iter().find_map(|member_id| {
+            ctx.db
+                .character()
+                .id()
+                .find(*member_id)
+                .and_then(|character| character.party_id)
+        }) {
+            let _ = crate::strategic::normalize_and_elect_party_leader(ctx, &party_id);
+        }
+        return Ok(None);
+    }
+    Ok(Some(departure))
 }
 
 pub(crate) fn allowed_camp_schedule(schedule: &ScheduleAllocation) -> ScheduleAllocation {
@@ -3276,7 +3441,7 @@ pub(crate) fn advance_stationary_character_to(
         elapsed,
         false,
         if at_settlement {
-            adventuresim_core::survival::FieldShelter::Tent
+            adventuresim_core::survival::FieldShelter::Indoor
         } else {
             adventuresim_core::survival::FieldShelter::Bivouac
         },
@@ -3348,6 +3513,22 @@ pub(crate) fn advance_stationary_character_to(
     Ok(())
 }
 
+fn official_synchronization_target(
+    official_minutes: u64,
+    current_minute: u64,
+) -> Option<(u64, bool)> {
+    if official_minutes <= current_minute {
+        return None;
+    }
+    let forced_catch_up = official_minutes.saturating_sub(current_minute) > MINUTES_PER_YEAR;
+    let target_minutes = if forced_catch_up {
+        official_minutes.saturating_sub(MINUTES_PER_YEAR)
+    } else {
+        official_minutes
+    };
+    Some((target_minutes, forced_catch_up))
+}
+
 /// Advance through elapsed wall-clock time. Returns true when a character was
 /// forced to catch up from more than a year behind; callers should skip their
 /// action.
@@ -3361,11 +3542,13 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         .find(character_id)
         .ok_or_else(|| "Character time record not found".to_string())?
         .minutes;
-    let forced_catch_up = official_minutes.saturating_sub(current_minute) > MINUTES_PER_YEAR;
-    let target_minutes = if forced_catch_up {
-        official_minutes.saturating_sub(MINUTES_PER_YEAR)
-    } else {
-        official_minutes
+    let Some((target_minutes, forced_catch_up)) =
+        official_synchronization_target(official_minutes, current_minute)
+    else {
+        // Explicit settlement downtime may legitimately put a personal clock
+        // ahead of official time. Synchronization only catches characters up;
+        // it must never ask the strict frontier helper to rewind one.
+        return Ok(false);
     };
     advance_stationary_character_to(ctx, character_id, target_minutes)?;
     Ok(forced_catch_up)
@@ -3410,6 +3593,95 @@ pub fn update_training_schedule(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn official_time_synchronization_never_rewinds_a_personal_clock() {
+        assert_eq!(official_synchronization_target(100, 101), None);
+        assert_eq!(official_synchronization_target(100, 100), None);
+    }
+
+    #[test]
+    fn official_time_synchronization_advances_behind_characters() {
+        assert_eq!(official_synchronization_target(100, 99), Some((100, false)));
+        assert_eq!(
+            official_synchronization_target(MINUTES_PER_YEAR, 0),
+            Some((MINUTES_PER_YEAR, false))
+        );
+        assert_eq!(
+            official_synchronization_target(MINUTES_PER_YEAR + 1, 0),
+            Some((1, true))
+        );
+    }
+
+    #[test]
+    fn terminal_official_catch_up_is_not_advanced_a_second_time() {
+        assert_eq!(terminal_catch_up_minutes(false, 10, 20), None);
+        assert_eq!(terminal_catch_up_minutes(true, 10, 20), Some(10));
+        assert_eq!(terminal_catch_up_minutes(true, 20, 20), None);
+    }
+
+    #[test]
+    fn activity_and_departure_sync_commit_terminal_outcomes_without_error_rollback() {
+        let source = include_str!("time.rs");
+        let activity = source
+            .split("pub(crate) fn synchronize_party_activity_time")
+            .nth(1)
+            .and_then(|tail| tail.split("fn terminal_catch_up_minutes").next())
+            .unwrap();
+        assert!(activity.contains("Result<Option<u64>, String>"));
+        assert!(activity.contains("normalize_and_elect_party_leader"));
+        assert!(activity.contains("return Ok(None)"));
+        assert!(!activity.contains("Every party member must survive clock synchronization"));
+
+        let departure = source
+            .split("pub(crate) fn synchronize_party_departure_time")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn allowed_camp_schedule").next())
+            .unwrap();
+        assert!(departure.contains("Result<Option<u64>, String>"));
+        assert!(departure.contains("let all_survived"));
+        assert!(departure.contains("normalize_and_elect_party_leader"));
+        assert!(departure.contains("return Ok(None)"));
+    }
+
+    #[test]
+    fn explicit_stationary_frontiers_still_reject_retroactive_targets() {
+        let source = include_str!("time.rs");
+        let advance = source
+            .split("pub(crate) fn advance_stationary_character_to(")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn synchronize_character(ctx").next())
+            .expect("explicit stationary advancement");
+        assert!(advance.contains("if target_minutes < character_time.minutes"));
+        assert!(advance.contains("Character time cannot be advanced retroactively"));
+    }
+
+    #[test]
+    fn party_activity_preflight_commits_terminal_clock_catch_up() {
+        let source = include_str!("time.rs");
+        let reducer = source
+            .split("pub fn synchronize_party_for_activity")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn advance_character_wait_time").next())
+            .expect("party activity synchronization reducer");
+        let authority = reducer
+            .find("require_strategic_character_authority")
+            .unwrap();
+        let leadership = reducer.find("party.leader_id != leader_id").unwrap();
+        let co_location = reducer.find("member.current_settlement_id").unwrap();
+        let case_site = reducer.find("character_case_site_id").unwrap();
+        let official_sync = reducer.find("synchronize_character_time").unwrap();
+        let party_target = reducer.find("let target =").unwrap();
+        let catch_up = reducer.find("advance_character_wait_time").unwrap();
+        assert!(authority < leadership);
+        assert!(leadership < co_location);
+        assert!(leadership < case_site);
+        assert!(co_location < official_sync);
+        assert!(official_sync < party_target);
+        assert!(party_target < catch_up);
+        assert!(reducer.contains("let _survived ="));
+        assert!(!reducer.contains("Every party member must survive clock synchronization"));
+    }
 
     #[test]
     fn every_authoritative_clock_commit_has_one_exposure_application() {
@@ -3477,6 +3749,30 @@ mod tests {
             .expect("settlement rest implementation");
         assert!(rest.contains("FieldShelter::Indoor"));
         assert!(!rest.contains("FieldShelter::Tent"));
+    }
+
+    #[test]
+    fn settlement_wait_and_downtime_use_indoor_exposure() {
+        let source = include_str!("time.rs");
+        for (start, end) in [
+            ("pub fn advance_character_wait_time", "fn default_schedule"),
+            (
+                "pub fn perform_immediate_activity",
+                "fn apply_organization_outcomes",
+            ),
+            (
+                "pub(crate) fn advance_stationary_character_to",
+                "pub fn synchronize_character",
+            ),
+        ] {
+            let body = source
+                .split(start)
+                .nth(1)
+                .and_then(|tail| tail.split(end).next())
+                .expect(start);
+            assert!(body.contains("FieldShelter::Indoor"), "{start}");
+            assert!(body.contains("FieldShelter::Bivouac"), "{start}");
+        }
     }
 
     #[test]
@@ -3703,6 +3999,27 @@ mod tests {
                 .contains("apply_automatic_social_chats(ctx, member_id, downtime)?")
         );
         assert!(!synchronization.contains("spend_private_settlement_downtime(ctx, member_id"));
+    }
+
+    #[test]
+    fn sub_hour_departure_clock_skew_uses_exact_wait_not_settlement_rest() {
+        let source = include_str!("time.rs");
+        let synchronization_wait = source
+            .split("fn spend_private_settlement_downtime_deferred_social")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub(crate) fn synchronize_party_departure_time")
+                    .next()
+            })
+            .expect("private settlement departure synchronization");
+        let sub_hour = synchronization_wait
+            .split("if requested_minutes < MIN_SETTLEMENT_REST_MINUTES")
+            .nth(1)
+            .and_then(|tail| tail.split("rest_for_minutes(").next())
+            .expect("sub-hour exact wait branch");
+        assert!(sub_hour.contains("advance_character_wait_time("));
+        assert!(sub_hour.contains("requested_minutes"));
+        assert!(sub_hour.contains("return Ok(0)"));
     }
 
     #[test]
