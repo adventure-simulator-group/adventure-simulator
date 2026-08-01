@@ -1503,16 +1503,34 @@ fn retain_navigable_public_npc_candidates(
 
 const PUBLIC_DISCOVERY_BACKOFF_MINUTES: u64 = 2 * 1_440;
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct PublicDiscoveryContactIdentity {
+    resident_character_id: u64,
+    conversation_id: String,
+    location_id: String,
+}
+
+fn public_discovery_contact_identity(
+    candidate: &PublicNpcCandidate,
+) -> PublicDiscoveryContactIdentity {
+    PublicDiscoveryContactIdentity {
+        resident_character_id: candidate.resident_character_id,
+        conversation_id: candidate.conversation_id.clone(),
+        location_id: candidate.location_id.clone(),
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PublicDiscoveryFingerprint {
     settlement_id: String,
-    contacts: Vec<(u64, String, String)>,
+    contacts: Vec<PublicDiscoveryContactIdentity>,
     active_symptoms: Vec<(String, String, u64, u64)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PublicDiscoveryBackoff {
     fingerprint: PublicDiscoveryFingerprint,
+    last_contact: PublicDiscoveryContactIdentity,
     retry_at: u64,
 }
 
@@ -1522,6 +1540,15 @@ fn public_discovery_backoff_active(
     official_minute: u64,
 ) -> bool {
     backoff.fingerprint == *fingerprint && official_minute < backoff.retry_at
+}
+
+fn public_discovery_previous_contact<'a>(
+    backoff: Option<&'a PublicDiscoveryBackoff>,
+    fingerprint: &PublicDiscoveryFingerprint,
+) -> Option<&'a PublicDiscoveryContactIdentity> {
+    backoff
+        .filter(|backoff| backoff.fingerprint == *fingerprint)
+        .map(|backoff| &backoff.last_contact)
 }
 
 fn public_symptom_age_bucket(oldest_age_minutes: Option<u64>) -> &'static str {
@@ -1554,6 +1581,7 @@ fn discovery_location_class(candidate: Option<&PublicNpcCandidate>) -> &'static 
 
 fn stable_discovery_action_candidate(
     candidates: Vec<PublicNpcCandidate>,
+    previous_contact: Option<&PublicDiscoveryContactIdentity>,
 ) -> Option<PublicNpcCandidate> {
     let mut candidates = stable_public_npc_candidates(candidates, None, Some("inn"));
     if candidates
@@ -1564,7 +1592,60 @@ fn stable_discovery_action_candidate(
     } else {
         candidates.retain(|candidate| candidate.location_id == "overview");
     }
-    candidates.into_iter().next()
+    let next_index = previous_contact
+        .and_then(|previous| {
+            candidates
+                .iter()
+                .position(|candidate| public_discovery_contact_identity(candidate) == *previous)
+        })
+        .map_or(0, |index| (index + 1) % candidates.len());
+    candidates.into_iter().nth(next_index)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PublicDiscoveryReferral {
+    owner_character_id: u64,
+    case_id: String,
+    lead_id: String,
+    summary: String,
+    witness_name: String,
+    expected_location: String,
+    current_learned_location: String,
+    corrected_by: String,
+    recorded_at: u64,
+}
+
+impl From<BackendInvestigationLead> for PublicDiscoveryReferral {
+    fn from(lead: BackendInvestigationLead) -> Self {
+        Self {
+            owner_character_id: lead.owner_character_id,
+            case_id: lead.case_id,
+            lead_id: lead.lead_id,
+            summary: lead.summary,
+            witness_name: lead.witness_name,
+            expected_location: lead.expected_location,
+            current_learned_location: lead.current_learned_location,
+            corrected_by: lead.corrected_by,
+            recorded_at: lead.recorded_at,
+        }
+    }
+}
+
+fn new_or_updated_public_discovery_referral(
+    owner_character_id: u64,
+    before: &HashMap<String, PublicDiscoveryReferral>,
+    after: impl IntoIterator<Item = PublicDiscoveryReferral>,
+) -> Option<PublicDiscoveryReferral> {
+    after
+        .into_iter()
+        .filter(|lead| {
+            lead.owner_character_id == owner_character_id
+                && !lead.case_id.is_empty()
+                && !lead.witness_name.is_empty()
+                && lead.corrected_by.is_empty()
+                && before.get(&lead.lead_id) != Some(lead)
+        })
+        .max_by_key(|lead| (lead.recorded_at, lead.lead_id.clone()))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

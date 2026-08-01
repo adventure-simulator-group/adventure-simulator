@@ -206,12 +206,8 @@ impl LiveRunner {
                     })
             })
             .collect();
-        let candidates = retain_navigable_public_npc_candidates(
-            candidates,
-            &economy,
-            has_keep,
-            &settlement_id,
-        );
+        let candidates =
+            retain_navigable_public_npc_candidates(candidates, &economy, has_keep, &settlement_id);
         stable_public_npc_candidates(candidates, preferred_name, preferred_location)
     }
 
@@ -278,13 +274,7 @@ impl LiveRunner {
             .unwrap_or_default();
         let mut contacts = candidates
             .iter()
-            .map(|candidate| {
-                (
-                    candidate.resident_character_id.clone(),
-                    candidate.conversation_id.clone(),
-                    candidate.location_id.clone(),
-                )
-            })
+            .map(public_discovery_contact_identity)
             .collect::<Vec<_>>();
         contacts.sort();
         let mut active_symptoms = self
@@ -337,12 +327,25 @@ impl LiveRunner {
             .filter(|row| row.owner_character_id == character_id && row.status == "open")
             .map(|row| row.case_id)
             .collect::<HashSet<_>>();
+        let before_referrals = self
+            .connection
+            .db
+            .backend_investigation_leads()
+            .iter()
+            .filter(|row| row.owner_character_id == character_id)
+            .map(PublicDiscoveryReferral::from)
+            .map(|lead| (lead.lead_id.clone(), lead))
+            .collect::<HashMap<_, _>>();
         let candidates = self.visible_npc_candidates(character_id, None, None);
         let visible_candidate_count = candidates.len();
         let official_minute = self.official_world_minute();
         let (public_fingerprint, active_symptom_count, oldest_symptom_age_bucket) =
             self.public_discovery_fingerprint(character_id, official_minute, &candidates);
-        let candidate = stable_discovery_action_candidate(candidates);
+        let previous_contact = public_discovery_previous_contact(
+            self.generated_discovery_backoff.get(&character_id),
+            &public_fingerprint,
+        );
+        let candidate = stable_discovery_action_candidate(candidates, previous_contact);
         let location_class = discovery_location_class(candidate.as_ref());
         let public_backoff = self
             .generated_discovery_backoff
@@ -430,12 +433,46 @@ impl LiveRunner {
         // The owner-scoped open-case projection is the public postcondition of
         // receiving a generated rumor. It avoids inspecting private delivery
         // receipts or generation eligibility.
-        let after = self.owned_open_generated_cases(character_id);
+        let mut after = self.owned_open_generated_cases(character_id);
         let mut discovered = after
             .iter()
             .filter(|(case_id, _)| !before.contains(case_id))
             .cloned()
             .collect::<Vec<_>>();
+        if discovered.is_empty()
+            && let Some(referral) = new_or_updated_public_discovery_referral(
+                character_id,
+                &before_referrals,
+                self.connection
+                    .db
+                    .backend_investigation_leads()
+                    .iter()
+                    .map(PublicDiscoveryReferral::from),
+            )
+        {
+            let preferred_location = if referral.current_learned_location.is_empty() {
+                &referral.expected_location
+            } else {
+                &referral.current_learned_location
+            };
+            if self.try_generated_dialogue_topic(
+                character_id,
+                agent,
+                cycle,
+                &referral.case_id,
+                &referral.summary,
+                &["referred-testimony"],
+                Some(&referral.witness_name),
+                Some(preferred_location),
+            )? {
+                after = self.owned_open_generated_cases(character_id);
+                discovered = after
+                    .iter()
+                    .filter(|(case_id, _)| !before.contains(case_id))
+                    .cloned()
+                    .collect();
+            }
+        }
         discovered.sort();
         let new_open_cases = discovered.len();
         if let Some((case_id, subject)) = discovered.into_iter().next() {
@@ -505,6 +542,7 @@ impl LiveRunner {
             character_id,
             PublicDiscoveryBackoff {
                 fingerprint: public_fingerprint,
+                last_contact: public_discovery_contact_identity(&candidate),
                 retry_at: official_minute.saturating_add(PUBLIC_DISCOVERY_BACKOFF_MINUTES),
             },
         );
@@ -871,11 +909,16 @@ impl LiveRunner {
         }
         let defeat_key = (character_id, case_id.to_owned());
         let preflight_fingerprint = self.public_party_combat_fingerprint(party_id);
-        let public_combat_available = self.connection.db.backend_case_site_pins().iter().any(|pin| {
-            pin.owner_character_id == character_id
-                && pin.case_id == case_id
-                && pin.combat_available
-        });
+        let public_combat_available =
+            self.connection
+                .db
+                .backend_case_site_pins()
+                .iter()
+                .any(|pin| {
+                    pin.owner_character_id == character_id
+                        && pin.case_id == case_id
+                        && pin.combat_available
+                });
         if generated_defeat_decision(
             public_combat_available,
             self.generated_defeat_fingerprints.get(&defeat_key),
@@ -1219,7 +1262,8 @@ impl LiveRunner {
                         true,
                         self.generated_defeat_fingerprints.get(&defeat_key),
                         &combat_fingerprint,
-                    ) == GeneratedDefeatDecision::SuppressUnchanged {
+                    ) == GeneratedDefeatDecision::SuppressUnchanged
+                    {
                         self.event(
                             agent,
                             CoreLoopEventKind::QuestSuppressed,
@@ -1230,10 +1274,15 @@ impl LiveRunner {
                             ),
                         );
                         let settlement_id = pin.origin_settlement_id.clone();
-                        let result = reducer_call!(self, "generated_unchanged_defeat_retreat", |cb| self
-                            .connection
-                            .reducers
-                            .travel_to_settlement_then(character_id, settlement_id.clone(), cb));
+                        let result =
+                            reducer_call!(self, "generated_unchanged_defeat_retreat", |cb| self
+                                .connection
+                                .reducers
+                                .travel_to_settlement_then(
+                                    character_id,
+                                    settlement_id.clone(),
+                                    cb
+                                ));
                         self.call(result)?;
                         if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
                             return Ok(false);
@@ -1306,7 +1355,8 @@ impl LiveRunner {
                         }
                         return Ok(false);
                     }
-                    self.generated_defeat_fingerprints.remove(&(character_id, case_id.to_owned()));
+                    self.generated_defeat_fingerprints
+                        .remove(&(character_id, case_id.to_owned()));
                     self.observe_generated_case_transition(
                         agent,
                         character_id,

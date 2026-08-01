@@ -307,11 +307,17 @@ fn inn_only_dialogue_candidates_exclude_hidden_service_locations() {
             provenance: ProfileFactProvenance::DeterministicGapFill,
         }],
     };
-    assert_eq!(public_settlement_economy_profile(&projected), Some(profile.clone()));
+    assert_eq!(
+        public_settlement_economy_profile(&projected),
+        Some(profile.clone())
+    );
 
     let mut unsupported_projection = projected.clone();
     unsupported_projection.rules_version = u32::MAX;
-    assert_eq!(public_settlement_economy_profile(&unsupported_projection), None);
+    assert_eq!(
+        public_settlement_economy_profile(&unsupported_projection),
+        None
+    );
     let candidate = |id: u64, location: &str| PublicNpcCandidate {
         resident_character_id: id,
         name: format!("Resident {id}"),
@@ -375,11 +381,8 @@ fn hidden_preferred_witness_cannot_reach_dialogue_selection() {
         false,
         "ironforge",
     );
-    let mut preferred = stable_public_npc_candidates(
-        candidates,
-        Some("Hidden Witness"),
-        Some("armoury"),
-    );
+    let mut preferred =
+        stable_public_npc_candidates(candidates, Some("Hidden Witness"), Some("armoury"));
     preferred.retain(|candidate| candidate.name.eq_ignore_ascii_case("Hidden Witness"));
     assert!(preferred.is_empty());
 }
@@ -410,7 +413,10 @@ fn dialogue_candidates_are_filtered_by_the_authoritative_public_navigation_rule(
     let case_dialogue = source
         .split("pub(super) fn try_generated_dialogue_topic")
         .nth(1)
-        .and_then(|tail| tail.split("pub(super) fn generated_actor_ready_after_time").next())
+        .and_then(|tail| {
+            tail.split("pub(super) fn generated_actor_ready_after_time")
+                .next()
+        })
         .expect("generated-case dialogue selection");
     assert!(case_dialogue.contains("self.visible_npc_candidates"));
     let preferred_filter = case_dialogue
@@ -421,7 +427,10 @@ fn dialogue_candidates_are_filtered_by_the_authoritative_public_navigation_rule(
         .expect("dialogue attempts iterate the filtered candidates");
     assert!(preferred_filter < candidate_loop);
 
-    let normalized = case_dialogue.split_whitespace().collect::<Vec<_>>().join(" ");
+    let normalized = case_dialogue
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     assert!(
         normalized.ends_with("Ok(false) }"),
         "no visible preferred witness must safely decline dialogue"
@@ -429,7 +438,7 @@ fn dialogue_candidates_are_filtered_by_the_authoritative_public_navigation_rule(
 }
 
 #[test]
-fn generated_discovery_uses_one_stable_representative_at_the_valid_public_location() {
+fn generated_discovery_cycles_stably_through_valid_public_contacts() {
     let candidate = |resident_character_id: u64, name: &str, location: &str| PublicNpcCandidate {
         resident_character_id,
         name: name.into(),
@@ -437,23 +446,35 @@ fn generated_discovery_uses_one_stable_representative_at_the_valid_public_locati
         conversation_id: "local-resident".into(),
         location_id: location.into(),
     };
-    let inn = stable_discovery_action_candidate(vec![
+    let inn_candidates = vec![
         candidate(9_007_199_254_741_100, "Zelda", "inn"),
         candidate(9_007_199_254_740_993, "Agnes", "inn"),
         candidate(9_007_199_254_741_050, "Otto", "overview"),
         candidate(9_007_199_254_741_025, "Marta", "market"),
-    ])
-    .expect("inn representative");
+    ];
+    let inn =
+        stable_discovery_action_candidate(inn_candidates.clone(), None).expect("first inn contact");
     assert_eq!(
         (inn.location_id.as_str(), inn.resident_character_id),
         ("inn", 9_007_199_254_740_993)
     );
+    let inn_identity = public_discovery_contact_identity(&inn);
+    let next_inn = stable_discovery_action_candidate(inn_candidates.clone(), Some(&inn_identity))
+        .expect("next inn contact");
+    assert_eq!(next_inn.resident_character_id, 9_007_199_254_741_100);
+    let next_inn_identity = public_discovery_contact_identity(&next_inn);
+    let wrapped_inn = stable_discovery_action_candidate(inn_candidates, Some(&next_inn_identity))
+        .expect("wrapped inn contact");
+    assert_eq!(wrapped_inn.resident_character_id, inn.resident_character_id);
 
-    let overview = stable_discovery_action_candidate(vec![
-        candidate(9_007_199_254_741_050, "Otto", "overview"),
-        candidate(9_007_199_254_741_000, "Bertha", "overview"),
-        candidate(9_007_199_254_741_025, "Marta", "market"),
-    ])
+    let overview = stable_discovery_action_candidate(
+        vec![
+            candidate(9_007_199_254_741_050, "Otto", "overview"),
+            candidate(9_007_199_254_741_000, "Bertha", "overview"),
+            candidate(9_007_199_254_741_025, "Marta", "market"),
+        ],
+        None,
+    )
     .expect("overview fallback representative");
     assert_eq!(
         (
@@ -464,11 +485,10 @@ fn generated_discovery_uses_one_stable_representative_at_the_valid_public_locati
     );
 
     assert!(
-        stable_discovery_action_candidate(vec![candidate(
-            9_007_199_254_741_025,
-            "Marta",
-            "market"
-        )])
+        stable_discovery_action_candidate(
+            vec![candidate(9_007_199_254_741_025, "Marta", "market")],
+            None
+        )
         .is_none()
     );
 }
@@ -485,7 +505,11 @@ fn generated_discovery_outcomes_do_not_conflate_selection_with_success() {
 fn public_discovery_backoff_expires_or_invalidates_on_public_change() {
     let initial = PublicDiscoveryFingerprint {
         settlement_id: "settlement-a".into(),
-        contacts: vec![(9_007_199_254_740_993, "conversation-a".into(), "inn".into())],
+        contacts: vec![PublicDiscoveryContactIdentity {
+            resident_character_id: 9_007_199_254_740_993,
+            conversation_id: "conversation-a".into(),
+            location_id: "inn".into(),
+        }],
         active_symptoms: vec![(
             "missing livestock".into(),
             "Several goats have vanished.".into(),
@@ -495,14 +519,60 @@ fn public_discovery_backoff_expires_or_invalidates_on_public_change() {
     };
     let backoff = PublicDiscoveryBackoff {
         fingerprint: initial.clone(),
+        last_contact: initial.contacts[0].clone(),
         retry_at: 3_880,
     };
     assert!(public_discovery_backoff_active(&backoff, &initial, 3_879));
     assert!(!public_discovery_backoff_active(&backoff, &initial, 3_880));
+    assert_eq!(
+        public_discovery_previous_contact(Some(&backoff), &initial),
+        Some(&backoff.last_contact)
+    );
 
     let mut changed = initial;
-    changed.contacts[0].2 = "overview".into();
+    changed.contacts[0].location_id = "overview".into();
     assert!(!public_discovery_backoff_active(&backoff, &changed, 2_000));
+    assert_eq!(
+        public_discovery_previous_contact(Some(&backoff), &changed),
+        None,
+        "a public fingerprint change resets exploration to the first stable contact"
+    );
+}
+
+#[test]
+fn discovery_follows_only_new_or_updated_public_witness_referrals() {
+    let referral = |recorded_at, corrected_by: &str| PublicDiscoveryReferral {
+        owner_character_id: 7,
+        case_id: "journal:case".into(),
+        lead_id: "lead:referral".into(),
+        summary: "A witness may know more.".into(),
+        witness_name: "Agnes".into(),
+        expected_location: "inn".into(),
+        current_learned_location: String::new(),
+        corrected_by: corrected_by.into(),
+        recorded_at,
+    };
+    let original = referral(10, "");
+    let before = HashMap::from([(original.lead_id.clone(), original.clone())]);
+
+    assert!(
+        new_or_updated_public_discovery_referral(7, &before, [original.clone()]).is_none(),
+        "an unchanged referral must not be treated as a new discovery"
+    );
+    let updated = referral(11, "");
+    assert_eq!(
+        new_or_updated_public_discovery_referral(7, &before, [updated.clone()]),
+        Some(updated)
+    );
+    assert!(
+        new_or_updated_public_discovery_referral(7, &HashMap::new(), [referral(12, "replacement")])
+            .is_none(),
+        "corrected referrals are not actionable"
+    );
+    assert!(
+        new_or_updated_public_discovery_referral(8, &HashMap::new(), [referral(12, "")]).is_none(),
+        "another owner's referral is not actionable"
+    );
 }
 
 #[test]
@@ -528,6 +598,26 @@ fn discovery_logging_uses_only_the_owner_visible_case_postcondition() {
         .expect("generated discovery policy");
     assert_eq!(discovery.matches("start_public_dialogue(").count(), 1);
     assert!(discovery.contains("owned_open_generated_cases(character_id)"));
+    assert!(discovery.contains("backend_investigation_leads()"));
+    assert!(discovery.contains("new_or_updated_public_discovery_referral"));
+    assert!(discovery.contains("&[\"referred-testimony\"]"));
+    let referral = discovery
+        .find("new_or_updated_public_discovery_referral")
+        .expect("public referral postcondition");
+    let testimony = discovery[referral..]
+        .find("try_generated_dialogue_topic")
+        .map(|offset| referral + offset)
+        .expect("referral testimony follow-through");
+    let journal_after_testimony = discovery[testimony..]
+        .find("owned_open_generated_cases(character_id)")
+        .map(|offset| testimony + offset)
+        .expect("journal postcondition after testimony");
+    let fruitful = discovery
+        .find("generated_discovery_actions_fruitful")
+        .expect("fruitful discovery metric");
+    assert!(referral < testimony);
+    assert!(testimony < journal_after_testimony);
+    assert!(journal_after_testimony < fruitful);
     assert!(discovery.contains("rumor_delivered=true"));
     assert!(discovery.contains("reason=rumor_delivered"));
     assert!(discovery.contains("reason=no_public_rumor_available"));
