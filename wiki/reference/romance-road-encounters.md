@@ -96,6 +96,14 @@ unknown-kinsman duel, chapel perilous, denounced ravisher, and dammed spring.
 
 ## Content and authority
 
+The implemented `wounded_knight_linden_v1` is an original scene built from
+this wounded-knight commonplace. Its grounded responses consume a bandage and
+treat him, track his assailants for practical route information, organize
+household aid, exploit his helplessness for the scene's richest material
+reward, or pass by without consequence. Its provenance deliberately does not
+claim that the scene reproduces a particular episode from *Parzival* or
+Malory.
+
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,
@@ -105,6 +113,14 @@ closed transition identifier, material
 rewards/costs, personality development, and optional reward tags. Rust owns
 selection, rolls, checks, all mutation, receipts, and private quest overlays.
 Run `cargo run -p adventuresim-core --bin content-check -- encounters`.
+
+Developer builds expose a generic road-encounter demo reducer and HTTP route
+that accept a validated compiled catalog ID. The selected party leader must be
+at a reached journey camp; the encounter is then persisted through the same
+authority and resolution path as a chance occurrence. The public response
+contains only the safe presentation projection and never catalog provenance.
+Camp alone renders the developer-only selector, populated from the compiled
+catalog, so adding encounters does not require shared navigation controls.
 
 The validator requires a consequence-free ignore choice plus at least two
 mechanically distinct non-ignore routes, rejects zero requirements/effects/

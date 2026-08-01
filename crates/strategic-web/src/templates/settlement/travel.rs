@@ -806,6 +806,14 @@ fn camp_forage_href(has_active_character: bool) -> Option<&'static str> {
     has_active_character.then_some("/camp?forage=true")
 }
 
+fn developer_road_encounter_label(id: &str) -> String {
+    let words = id.trim_end_matches("_v1").replace('_', " ");
+    let mut chars = words.chars();
+    chars.next().map_or(words.clone(), |first| {
+        first.to_uppercase().collect::<String>() + chars.as_str()
+    })
+}
+
 pub fn camp_page(
     party: &Party,
     journey: Option<&PartyJourney>,
@@ -858,6 +866,19 @@ pub fn camp_page(
                         }
                     }
                 }))
+            }
+            section class="sidebar-section" data-developer-only aria-label="Road encounter demo" {
+                h3 class="sidebar-header" { "Road encounter demo" }
+                label for="developer-road-encounter-catalog" { "Compiled encounter" }
+                select id="developer-road-encounter-catalog" data-developer-road-encounter-catalog {
+                    @for definition in adventuresim_core::road_encounter_catalog::definitions() {
+                        option value=(&definition.id) { (developer_road_encounter_label(&definition.id)) }
+                    }
+                }
+                button type="button" class="btn btn-small btn-block"
+                    data-developer-road-encounter-demo {
+                    "Load encounter"
+                }
             }
             }
             @if encounter.is_none_or(|encounter| encounter.status != "awaiting_choice") {
@@ -1358,6 +1379,27 @@ mod tests {
         assert!(markup.contains("data-travel-submit"));
         assert!(markup.contains("Begin journey"));
         assert!(!markup.contains("No direct route"));
+    }
+
+    #[test]
+    fn road_encounter_demo_selector_is_generic_and_camp_only() {
+        let source = include_str!("travel.rs");
+        let camp = source
+            .split("pub fn camp_page")
+            .nth(1)
+            .and_then(|tail| tail.split("fn camp_continue_control").next())
+            .unwrap();
+        assert!(camp.contains("data-developer-road-encounter-catalog"));
+        assert!(camp.contains("road_encounter_catalog::definitions()"));
+        assert!(camp.contains("data-developer-road-encounter-demo"));
+
+        let shared_layout = include_str!("../layout.rs");
+        assert!(!shared_layout.contains("data-developer-road-encounter-demo"));
+        assert!(!shared_layout.contains("wounded_knight_linden_v1"));
+        let script = include_str!("../../../static/developer-quest-editor.js");
+        assert!(script.contains("data-developer-road-encounter-catalog"));
+        assert!(!script.contains("wounded_knight_linden_v1"));
+        assert!(!script.contains("button.dataset.catalogId"));
     }
 
     #[test]

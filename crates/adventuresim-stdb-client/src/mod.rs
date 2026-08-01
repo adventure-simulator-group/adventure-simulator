@@ -478,6 +478,7 @@ pub mod liquidate_party_inventory_reducer;
 pub mod load_autopsy_demo_reducer;
 pub mod load_outbreak_demo_reducer;
 pub mod load_puzzle_demo_reducer;
+pub mod load_road_encounter_demo_reducer;
 pub mod local_chat_message_type;
 pub mod local_problem_authority_type;
 pub mod local_problem_generation_explanation_type;
@@ -1311,6 +1312,7 @@ pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
 pub use load_autopsy_demo_reducer::load_autopsy_demo;
 pub use load_outbreak_demo_reducer::load_outbreak_demo;
 pub use load_puzzle_demo_reducer::load_puzzle_demo;
+pub use load_road_encounter_demo_reducer::load_road_encounter_demo;
 pub use local_chat_message_type::LocalChatMessage;
 pub use local_problem_authority_type::LocalProblemAuthority;
 pub use local_problem_generation_explanation_type::LocalProblemGenerationExplanation;
@@ -2068,6 +2070,10 @@ pub enum Reducer {
         character_id: u64,
         puzzle_kind: ErrantryPuzzleKind,
     },
+    LoadRoadEncounterDemo {
+        character_id: u64,
+        catalog_id: String,
+    },
     OpenCorpse {
         actor_id: u64,
         corpse_id: String,
@@ -2584,6 +2590,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::LoadAutopsyDemo { .. } => "load_autopsy_demo",
             Reducer::LoadOutbreakDemo { .. } => "load_outbreak_demo",
             Reducer::LoadPuzzleDemo { .. } => "load_puzzle_demo",
+            Reducer::LoadRoadEncounterDemo { .. } => "load_road_encounter_demo",
             Reducer::OpenCorpse { .. } => "open_corpse",
             Reducer::PayOrganizationDues { .. } => "pay_organization_dues",
             Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
@@ -3376,6 +3383,13 @@ Reducer::BeginFormalCourtship{
 }             => __sats::bsatn::to_vec(&load_puzzle_demo_reducer::LoadPuzzleDemoArgs {
                 character_id: character_id.clone(),
                 puzzle_kind: puzzle_kind.clone(),
+}),
+            Reducer::LoadRoadEncounterDemo{
+                character_id,
+                catalog_id,
+}             => __sats::bsatn::to_vec(&load_road_encounter_demo_reducer::LoadRoadEncounterDemoArgs {
+                character_id: character_id.clone(),
+                catalog_id: catalog_id.clone(),
 }),
             Reducer::OpenCorpse{
                 actor_id,

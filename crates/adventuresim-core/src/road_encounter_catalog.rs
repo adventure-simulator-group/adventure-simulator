@@ -709,4 +709,95 @@ mod tests {
                 .contains("materially distinct")
         );
     }
+
+    #[test]
+    fn wounded_knight_routes_are_physical_distinct_and_mortal() {
+        let definition = encounter("wounded_knight_linden_v1").unwrap();
+        assert!(definition.triggers.travel && definition.triggers.rest);
+        assert!(
+            definition
+                .cast
+                .iter()
+                .all(|speaker| speaker.nature == SpeakerNature::Mortal)
+        );
+        assert!(
+            definition
+                .opening
+                .iter()
+                .chain(
+                    definition
+                        .choices
+                        .iter()
+                        .flat_map(|choice| &choice.response)
+                )
+                .all(|line| line.reviewed_shakespearean && !line.reviewed_iambic_pentameter)
+        );
+        let choice = |id| {
+            definition
+                .choices
+                .iter()
+                .find(|choice| choice.id == id)
+                .unwrap()
+        };
+        assert!(
+            matches!(choice("treat").requirements[0], Requirement::Item { ref item_id, minimum_quantity: 1 } if item_id == "bandage")
+        );
+        assert!(
+            matches!(choice("treat").effects[0], Effect::ConsumeItem { ref item_id, quantity: 1 } if item_id == "bandage")
+        );
+        assert!(choice("treat").effects.iter().any(|effect| matches!(effect,
+            Effect::Information { information_id } if information_id == "linden_assailants_close_ambush_method")));
+        assert!(choice("track").effects.iter().any(|effect| matches!(effect,
+            Effect::GrantItem { item_id, quantity: 1 } if item_id == "captured_black_knight_dispatch")));
+        assert!(
+            choice("track")
+                .effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Information { .. }))
+        );
+        assert!(matches!(
+            choice("organize_aid").checks[0],
+            Check::Skill {
+                skill: SkillId::Command,
+                ..
+            }
+        ));
+        assert!(matches!(
+            choice("plunder").effects[0],
+            Effect::Currency { amount: 48, .. }
+        ));
+        assert!(
+            choice("organize_aid")
+                .effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Currency { amount: 16, .. }))
+        );
+        assert!(
+            choice("plunder")
+                .effects
+                .iter()
+                .any(|effect| matches!(effect,
+            Effect::GrantItem { item_id, .. } if item_id == "arming_sword"))
+        );
+        assert!(
+            choice("plunder")
+                .effects
+                .iter()
+                .any(|effect| matches!(effect,
+            Effect::GrantItem { item_id, .. } if item_id == "heater_shield"))
+        );
+        assert!(
+            definition
+                .choices
+                .iter()
+                .filter(|choice| choice.id != "ignore")
+                .all(|choice| !choice.effects.is_empty())
+        );
+        assert!(
+            choice("ignore").requirements.is_empty()
+                && choice("ignore").checks.is_empty()
+                && choice("ignore").effects.is_empty()
+                && choice("ignore").personality.is_empty()
+        );
+    }
 }

@@ -199,7 +199,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
                     script src="/static/dialogue-client.js?v=contextual-social-topics-1-errantry-retry-1" defer {}
                     script src="/static/physical-evidence.js?v=deterministic-inspection-1" defer {}
-                    script src="/static/developer-quest-editor.js?v=puzzle-kinds-1" defer {}
+                    script src="/static/developer-quest-editor.js?v=road-encounter-demo-1" defer {}
                     script src="/static/chat-resize.js?v=counterparty-portraits-1" defer {}
                     script src="/static/local-chat.js?v=local-chat-location-authority-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-4" defer {}
