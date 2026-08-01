@@ -565,6 +565,9 @@ impl LiveRunner {
                 unreachable!("a missing settlement is handled as quest suppression");
             };
             self.set_medical_rest_schedule(agent)?;
+            let survival_before = self
+                .public_survival_observation(character_id)
+                .unwrap_or_default();
             if choice == MedicalChoice::RestNaturally {
                 let at_inn = natural_rest_venue.expect("natural rest choice requires a venue");
                 let rest_started_at = self
@@ -639,7 +642,7 @@ impl LiveRunner {
                         sponsor.payer_agent_id,
                         CoreLoopEventKind::Recover,
                         format!(
-                            "sponsored_settlement_rest=completed;payer={};patient={character_id};settlement={};venue=inn;public_quote={public_quote};patient_contribution_quote={};sponsor_quote={};payer_medical_reserve={};payer_spendable={};party_treasury={};payer_party_stake={};patient_spend={patient_spend};sponsor_spend={sponsor_spend};actual_spend={actual_spend};payer_purse_before={payer_purse_before};payer_purse_after={payer_purse_after};patient_purse_before={patient_purse_before};patient_purse_after={patient_purse_after};condition_before={};condition_after={};symptomatic={symptomatic};exposure=not_publicly_projected;requested_minutes=1440;actual_elapsed_minutes={actual_rest_minutes}",
+                            "sponsored_settlement_rest=completed;payer={};patient={character_id};settlement={};venue=inn;public_quote={public_quote};patient_contribution_quote={};sponsor_quote={};payer_medical_reserve={};payer_spendable={};party_treasury={};payer_party_stake={};patient_spend={patient_spend};sponsor_spend={sponsor_spend};actual_spend={actual_spend};payer_purse_before={payer_purse_before};payer_purse_after={payer_purse_after};patient_purse_before={patient_purse_before};patient_purse_after={patient_purse_after};condition_before={};condition_after={};symptomatic={symptomatic};exposure=public_transition_recorded_in_patient_recovery_event;requested_minutes=1440;actual_elapsed_minutes={actual_rest_minutes}",
                             sponsor.payer_id,
                             bounded_event_field(&settlement),
                             sponsor.patient_contribution,
@@ -674,12 +677,36 @@ impl LiveRunner {
                     .treatment_rest_minutes
                     .saturating_add(actual_rest_minutes);
                 self.metrics.recovery_rests += 1;
+                let survival_after = self
+                    .public_survival_observation(character_id)
+                    .unwrap_or_default();
+                if let Some(party_id) = character.party_id.as_deref() {
+                    self.observe_survival_telemetry(party_id);
+                }
                 self.event(
                     agent,
                     CoreLoopEventKind::Recover,
                     format!(
-                        "natural_recovery_requested_minutes=1440;natural_recovery_actual_minutes={actual_rest_minutes};venue={};emergency_free_rest={emergency_temple_rest};reason={reason}",
-                        if at_inn { "inn" } else { "temple" }
+                        "natural_recovery_requested_minutes=1440;natural_recovery_actual_minutes={actual_rest_minutes};venue={};emergency_free_rest={emergency_temple_rest};reason={reason};thermal_before={:.3};thermal_after={:.3};wetness_bps_before={};wetness_bps_after={};thermal_strain_before={};thermal_strain_after={};ammo_before={};ammo_after={};carried_load_kg_before={:.3};carried_load_kg_after={:.3};carry_capacity_kg_before={:.3};carry_capacity_kg_after={:.3};encumbrance_remaining_bps_before={};encumbrance_remaining_bps_after={};equipment_ready_before={};equipment_ready_after={};party_tent_quantity_before={};party_tent_quantity_after={}",
+                        if at_inn { "inn" } else { "temple" },
+                        survival_before.thermal,
+                        survival_after.thermal,
+                        survival_before.wetness_bps,
+                        survival_after.wetness_bps,
+                        survival_before.thermal_strain,
+                        survival_after.thermal_strain,
+                        survival_before.ammunition,
+                        survival_after.ammunition,
+                        survival_before.carried_load_kg,
+                        survival_after.carried_load_kg,
+                        survival_before.carry_capacity_kg,
+                        survival_after.carry_capacity_kg,
+                        survival_before.encumbrance_remaining_bps,
+                        survival_after.encumbrance_remaining_bps,
+                        survival_before.equipment_ready,
+                        survival_after.equipment_ready,
+                        survival_before.party_tent_quantity,
+                        survival_after.party_tent_quantity,
                     ),
                 );
                 continue;
@@ -750,10 +777,36 @@ impl LiveRunner {
             self.call(result)?;
             self.metrics.treatment_rest_minutes += 1_440;
             self.metrics.recovery_rests += 1;
+            let survival_after = self
+                .public_survival_observation(character_id)
+                .unwrap_or_default();
+            if let Some(party_id) = character.party_id.as_deref() {
+                self.observe_survival_telemetry(party_id);
+            }
             self.event(
                 agent,
                 CoreLoopEventKind::Recover,
-                "medical_rest_minutes=1440",
+                format!(
+                    "medical_rest_minutes=1440;thermal_before={:.3};thermal_after={:.3};wetness_bps_before={};wetness_bps_after={};thermal_strain_before={};thermal_strain_after={};ammo_before={};ammo_after={};carried_load_kg_before={:.3};carried_load_kg_after={:.3};carry_capacity_kg_before={:.3};carry_capacity_kg_after={:.3};encumbrance_remaining_bps_before={};encumbrance_remaining_bps_after={};equipment_ready_before={};equipment_ready_after={};party_tent_quantity_before={};party_tent_quantity_after={}",
+                    survival_before.thermal,
+                    survival_after.thermal,
+                    survival_before.wetness_bps,
+                    survival_after.wetness_bps,
+                    survival_before.thermal_strain,
+                    survival_after.thermal_strain,
+                    survival_before.ammunition,
+                    survival_after.ammunition,
+                    survival_before.carried_load_kg,
+                    survival_after.carried_load_kg,
+                    survival_before.carry_capacity_kg,
+                    survival_after.carry_capacity_kg,
+                    survival_before.encumbrance_remaining_bps,
+                    survival_after.encumbrance_remaining_bps,
+                    survival_before.equipment_ready,
+                    survival_after.equipment_ready,
+                    survival_before.party_tent_quantity,
+                    survival_after.party_tent_quantity,
+                ),
             );
             let after = self
                 .connection
