@@ -294,6 +294,43 @@ color, and steals both the same gear and their previously declared forty-eight-
 groschen wage purse; reeve and charges still emerge safely. Ignoring the event
 waits 180 minutes for the occurrence fog to thin and grants nothing.
 
+`maiden_roadside_court_v1` may interrupt travel or rest at a boundary oak and
+wayside cross. A toll sergeant accuses a young noble maiden of shifting the
+verge stone to evade toll and seeks her mule, wagon, alms chest, and load as
+pledge. Because the lawful bench is distant and their attendants nearly fought,
+both parties freely seal a traveling clerk's temporary arbitration compact and
+agree to his award. The clerk presides by consent rather than sovereign
+jurisdiction and exclusively owns the compact, elder verge record, seals,
+handwriting, boundary custom, and legal application. All disputed property and
+physical evidence remain narrative-only and never become items or persistent
+strategic state.
+
+Two mailed, sword-bearing toll men press the maiden's unarmed carters and
+inspectors from the opening while her veteran shield-bearer contains them.
+Different routes use that native pressure differently: his shield screens the
+verge inspection, protects separated witnesses, forms a weapon-custody barrier,
+guards clerk and maiden while the safe-conduct is applied, or passes to the
+player for a controlled blade test. The religious route invokes no miracle or
+divine judgment; the clerk authenticates an ordinary visible episcopal
+safe-conduct. Each active route witnesses a real `heater_shield` catch a blade
+shove or stroke without injury. The granted spare shield has positive block
+mechanics and prepares against the fixed `armed_retainer` profile's blade
+attack and lack of ranged capability. Honest routes therefore grant twelve
+groschen of material value rather than a magical buff or enemy weakening.
+
+For the betrayal, ongoing shield pressure lets only the player retrieve a
+decisive office-stamped iron wedge and torn sergeant's livery from beneath the
+freshly shifted stone. Only afterward does the sergeant draw the player beyond
+clerk and maiden hearing under an innocent comparison pretext and privately
+offer his visibly established personal forty-eight-groschen purse. The player
+conceals the evidence and falsifies the factual report; the competent clerk
+correctly applies law and compact to that corrupted record and condemns the
+maiden. Still deceived about the helper's neutrality, she honors the promised
+shield fee but loses her mule, transport, livelihood, and entrusted alms
+without bodily harm or present remedy. None of those persons or properties
+becomes an effect payload. This sixty-groschen outcome is five times the honest
+material reward and lowers Honesty alone.
+
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,
