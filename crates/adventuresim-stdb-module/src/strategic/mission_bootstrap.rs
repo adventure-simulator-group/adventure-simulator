@@ -1512,6 +1512,69 @@ pub(crate) struct SimulationQuestFixtureSeed {
     pub generated_party_id: String,
 }
 
+fn simulation_quest_provisioning_economy(
+    mut economy: SettlementEconomyProfile,
+) -> Result<SettlementEconomyProfile, String> {
+    use adventuresim_world_schema::{
+        ProfileFactProvenance, SettlementService, SettlementStock, StockCategory,
+    };
+
+    if !economy.services.contains(&SettlementService::GeneralStore) {
+        economy.services.push(SettlementService::GeneralStore);
+        economy.services.sort();
+    }
+    if !economy
+        .stock
+        .iter()
+        .any(|stock| stock.category == StockCategory::GeneralGoods)
+    {
+        economy.stock.push(SettlementStock {
+            category: StockCategory::GeneralGoods,
+            abundance: 1,
+            provenance: ProfileFactProvenance::DeterministicGapFill,
+        });
+        economy.stock.sort_by_key(|stock| stock.category);
+    }
+    economy.validate()?;
+    Ok(economy)
+}
+
+fn ensure_simulation_quest_provisioning_environment(
+    ctx: &ReducerContext,
+    leader_id: u64,
+) -> Result<String, String> {
+    let character = crate::character::require_living_character(ctx, leader_id)?;
+    let settlement_id = character
+        .current_settlement_id
+        .ok_or("Quest fixture leader must be in a settlement")?;
+    let mut settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&settlement_id)
+        .ok_or("Quest fixture settlement is unavailable")?;
+    settlement.economy = simulation_quest_provisioning_economy(settlement.economy)?;
+    ctx.db.settlement().id().update(settlement);
+
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(leader_id)
+        .map_or(720, |time| time.minutes);
+    let provider_id = default_merchant_provider(ctx, &settlement_id, "merchants", "market")?;
+    let provider = ctx
+        .db
+        .settlement_resident_presence()
+        .character_id()
+        .find(provider_id)
+        .ok_or("Quest fixture general merchant has no presence")?;
+    if !crate::settlement_population::npc_is_present(&provider, minute) {
+        return Err("Quest fixture general merchant is not presently available".into());
+    }
+    Ok(settlement_id)
+}
+
 pub(crate) fn seed_simulation_quest_fixture_inner(
     ctx: &ReducerContext,
     policy_seed: u64,
@@ -1535,10 +1598,8 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
         return Err("Simulation direct quest fixture ID is already in use".into());
     }
 
-    let character = crate::character::require_living_character(ctx, direct_leader_id)?;
-    let settlement_id = character
-        .current_settlement_id
-        .ok_or("Direct quest fixture leader must be in a settlement")?;
+    let settlement_id = ensure_simulation_quest_provisioning_environment(ctx, direct_leader_id)?;
+    ensure_simulation_quest_provisioning_environment(ctx, generated_leader_id)?;
     let settlement = ctx
         .db
         .settlement()

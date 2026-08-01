@@ -607,7 +607,12 @@ at least two ordinary parties. One leader receives a low-difficulty offered
 contract backed by private case, site, hostile-group, and real issuer
 authority. A different leader receives a generated local problem through the
 ordinary public rumor, dialogue, delivery, and intake flow. Neither path is
-auto-accepted or granted a successful outcome.
+auto-accepted or granted a successful outcome. The capability-owned fixture
+also makes each designated leader's starting settlement expose a valid general
+storefront with canonical general-goods stock and exactly one present default
+merchant. Parties still buy journey food and containers through ordinary
+merchant pricing, payment, and party-custody mechanics using their bounded
+working purses; the fixture does not grant provisions or purchase metrics.
 
 The report records the exact seeded contract and generated-case IDs together
 with their designated leaders and parties. Lifecycle milestones are attributed

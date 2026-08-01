@@ -23,6 +23,67 @@ fn generated_case(
 }
 
 #[test]
+fn simulation_quest_fixture_exposes_ordinary_provisioning_to_both_paths() {
+    use adventuresim_core::settlement_economy::{CatalogKind, Storefront, storefront_stocks};
+    use adventuresim_world_schema::{SettlementEconomyProfile, SettlementService, StockCategory};
+
+    let economy =
+        simulation_quest_provisioning_economy(SettlementEconomyProfile::stage_placeholder())
+            .unwrap();
+    assert!(economy.services.contains(&SettlementService::GeneralStore));
+    assert!(
+        economy
+            .stock
+            .iter()
+            .any(|stock| stock.category == StockCategory::GeneralGoods)
+    );
+    for (item_id, kind) in [
+        (
+            adventuresim_core::provisioning::STANDARD_TRAVEL_RATION_ID,
+            CatalogKind::Food,
+        ),
+        (
+            adventuresim_core::provisioning::STANDARD_WATERSKIN_ID,
+            CatalogKind::Simple,
+        ),
+    ] {
+        assert!(storefront_stocks(
+            &economy,
+            Storefront::General,
+            item_id,
+            kind
+        ));
+    }
+
+    let environment = STRATEGIC_SOURCE
+        .split("fn ensure_simulation_quest_provisioning_environment")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("pub(crate) fn seed_simulation_quest_fixture_inner")
+                .next()
+        })
+        .unwrap();
+    assert!(
+        environment
+            .contains("default_merchant_provider(ctx, &settlement_id, \"merchants\", \"market\")")
+    );
+    assert!(environment.contains("npc_is_present(&provider, minute)"));
+
+    let fixture = STRATEGIC_SOURCE
+        .split("pub(crate) fn seed_simulation_quest_fixture_inner")
+        .nth(1)
+        .and_then(|tail| tail.split("fn materialize_generated_quest").next())
+        .unwrap();
+    assert!(
+        fixture.contains("ensure_simulation_quest_provisioning_environment(ctx, direct_leader_id)")
+    );
+    assert!(
+        fixture
+            .contains("ensure_simulation_quest_provisioning_environment(ctx, generated_leader_id)")
+    );
+}
+
+#[test]
 fn generated_return_and_expose_bind_only_the_authored_case_and_recipient() {
     use adventuresim_core::quest_generation::{
         CanonicalCause, GeneratedDialogueAction, TemplateFamily,
