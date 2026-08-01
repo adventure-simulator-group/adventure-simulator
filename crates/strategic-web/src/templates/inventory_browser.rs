@@ -87,8 +87,8 @@ impl InventoryBrowser<'_> {
                         (sortable_icon_header("type", "inventory-column-type", "Item type", game_icon("Item type", "knapsack")))
                         (sortable_text_header("name", "Item", "inventory-column-item"))
                         @if self.show_quantities {
-                            (sortable_text_header("quantity", "#", "inventory-column-count"))
-                            (sortable_text_header("target", "#?", "inventory-column-target"))
+                            (sortable_icon_header("quantity", "inventory-column-count", "Quantity", game_icon("Quantity", "open-chest")))
+                            (sortable_icon_header("target", "inventory-column-target", "Target quantity", game_icon("Target quantity", "eye-target")))
                         }
                         @if self.show_equipped {
                             (sortable_icon_header("equipped", "inventory-column-equipped", "Equipped", game_icon("Equipped", "check-mark")))
@@ -140,6 +140,11 @@ mod tests {
         assert!(rendered.contains("data-inventory-browser=\"trade-left\""));
         assert!(rendered.contains("data-inventory-sort=\"quantity\""));
         assert!(rendered.contains("data-inventory-sort=\"target\""));
+        assert!(rendered.contains("aria-label=\"Sort by Quantity\""));
+        assert!(rendered.contains("open-chest.svg"));
+        assert!(rendered.contains("aria-label=\"Sort by Target quantity\""));
+        assert!(!rendered.contains(">#<"));
+        assert!(!rendered.contains(">#?<"));
         assert!(rendered.contains("accuracy,reach,penetration,damage,block"));
         assert!(rendered.contains("inventory-browser-table-frame"));
         assert!(rendered.contains("inventory-actions-header"));

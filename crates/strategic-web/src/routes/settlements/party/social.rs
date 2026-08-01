@@ -11,7 +11,7 @@ pub(super) async fn party_social(
             return Html("<h1>Strategic data is unavailable</h1>".into());
         }
     };
-    location.active_building = building.valid().map(str::to_owned);
+    location.active_building = building.valid_for(&location).map(str::to_owned);
     let Some((active, _)) = get_active_character(&state, session.character_id_u64()).await else {
         return Html("<h1>Choose a character first</h1>".into());
     };
@@ -320,7 +320,7 @@ pub(super) async fn set_automatic_social_chat(
     {
         tracing::warn!(%error, actor_id, target_id, "automatic social chat preference rejected");
     }
-    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{target_id}/social")))
+    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party/{target_id}/social")).await)
         .into_response()
 }
 
@@ -371,9 +371,9 @@ pub(super) async fn perform_social_action(
             social_action_error_feedback(&error.to_string())
         }
     };
-    Redirect::to(&building.append_to(format!(
+    Redirect::to(&building.append_to(&state, &kind, &id, format!(
         "/locations/{kind}/{id}/party/{target_id}/social?social_feedback={feedback}"
-    )))
+    )).await)
     .into_response()
 }
 
@@ -419,9 +419,9 @@ pub(super) async fn chat_with_party_member(
             "chat_unavailable"
         }
     };
-    Redirect::to(&building.append_to(format!(
+    Redirect::to(&building.append_to(&state, &kind, &id, format!(
         "/locations/{kind}/{id}/party/{target_id}/social?social_feedback={feedback}"
-    )))
+    )).await)
     .into_response()
 }
 

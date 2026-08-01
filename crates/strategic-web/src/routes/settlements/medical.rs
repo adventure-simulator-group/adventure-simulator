@@ -88,7 +88,7 @@ pub(super) async fn surgery(
             return Html("<h1>Strategic data is unavailable</h1>".into());
         }
     };
-    location.active_building = building.valid().map(str::to_owned);
+    location.active_building = building.valid_for(&location).map(str::to_owned);
     let Some((active, _)) = get_active_character(&state, Some(actor_id)).await else {
         return Html("<h1>Choose a character first</h1>".into());
     };
@@ -301,10 +301,10 @@ pub(super) async fn perform_surgery(
 ) -> Redirect {
     let destination = format!("/locations/{kind}/{id}/party/{patient_id}/surgery/{limb}");
     let Some(actor_id) = session.character_id_u64() else {
-        return Redirect::to(&building.append_to(destination));
+        return Redirect::to(&building.append_to(&state, &kind, &id, destination).await);
     };
     if parse_surgery_limb(&limb).is_none() {
-        return Redirect::to(&building.append_to(destination));
+        return Redirect::to(&building.append_to(&state, &kind, &id, destination).await);
     }
     if let Err(error) = state
         .db
@@ -323,7 +323,7 @@ pub(super) async fn perform_surgery(
     {
         tracing::warn!(?error, "Manual surgery procedure failed");
     }
-    Redirect::to(&building.append_to(destination))
+    Redirect::to(&building.append_to(&state, &kind, &id, destination).await)
 }
 
 pub(super) async fn alchemy(

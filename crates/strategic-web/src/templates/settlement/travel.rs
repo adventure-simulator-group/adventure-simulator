@@ -385,10 +385,6 @@ pub(crate) fn map_destination_detail(
                         }
                     }
                 }))
-            } @else {
-                (sidebar_section("Destination", html! {
-                    p class="text-muted small-copy" { "Select a destination to inspect it and plan travel." }
-                }))
             }
         }
     }
@@ -1358,6 +1354,15 @@ mod tests {
         assert!(markup.contains("No direct route."));
         assert!(!markup.contains("Begin journey"));
         assert!(!markup.contains("data-travel-submit"));
+    }
+
+    #[test]
+    fn unselected_map_omits_the_destination_frame() {
+        let markup = map_destination_detail(
+            None, None, false, true, None, None, None, false, None, "/map",
+        )
+        .into_string();
+        assert!(!markup.contains("sidebar-header\">Destination"));
     }
 
     #[test]

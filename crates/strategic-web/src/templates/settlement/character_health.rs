@@ -1665,13 +1665,14 @@ fn attribute_row(name: &str, icon: &str, value: f32, health: f32, show_label: bo
         div class=(if show_label { "party-attribute-row" } else { "party-attribute-row party-attribute-icon-only" }) {
             (stat_icon(name, "attributes", icon, show_label))
             @if show_label { span class="party-attribute-name" { (name) } }
-            div class="attribute-rank-bar" title=(format!("{effective_value:.1}"))
+            div class="attribute-rank-bar"
+                data-strategic-tooltip=(format!("{name}: {effective_value:.1} out of 5"))
+                tabindex="0"
                 role="meter" aria-valuemin="0" aria-valuemax="5" aria-valuenow=(format!("{effective_value:.1}"))
                 aria-label=(format!("{name}: {effective_value:.1} out of 5")) {
                 span class="rank-current" style=(format!("width:{current_width:.1}%")) {}
                 span class="rank-damage" style=(format!("left:{current_width:.1}%;width:{damage_width:.1}%")) {}
             }
-            span class="attribute-rank-value" aria-hidden="true" { (format!("{effective_value:.1}")) }
         }
     }
 }
@@ -2290,6 +2291,9 @@ mod tests {
         assert!(link_end < attribute_row);
         assert!(markup.contains("aria-label=\"Open surgery menu for Head\""));
         assert!(markup.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
+        assert!(markup.contains("data-strategic-tooltip=\"Intelligence: 2.2 out of 5\""));
+        assert!(markup.contains("class=\"attribute-rank-bar\" data-strategic-tooltip="));
+        assert!(!markup.contains("attribute-rank-value"));
     }
 
     #[test]

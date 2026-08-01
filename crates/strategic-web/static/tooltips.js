@@ -303,6 +303,13 @@
       if (event.pointerType === 'touch') return;
       show(tooltipTarget(event.target));
     });
+    documentRoot.addEventListener('mouseover', (event) => {
+      if (event.sourceCapabilities?.firesTouchEvents) return;
+      const target = tooltipTarget(event.target);
+      // Pointer-capable browsers normally emit pointerover first. In that case
+      // the shared target is already active and mouseover should be a no-op.
+      if (target && target !== activeTarget) show(target);
+    });
     documentRoot.addEventListener('pointerout', (event) => {
       if (pinnedTarget) return;
       if (!activeTarget || activeTarget.contains(event.relatedTarget)) return;

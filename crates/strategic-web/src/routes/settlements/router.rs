@@ -25,19 +25,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 
-const BUILDINGS: &[&str] = &[
-    "public-square",
-    "residences",
-    "keep",
-    "map",
-    "merchants",
-    "weapons",
-    "armor",
-    "clothing",
-    "inn",
-    "religion",
-];
-
 #[derive(Clone, Debug, Default, Deserialize)]
 struct BuildingQuery {
     building: Option<String>,
@@ -55,14 +42,14 @@ impl BuildingQuery {
     fn herbalism(&self) -> bool {
         self.herbalism.unwrap_or(false)
     }
-    fn valid(&self) -> Option<&str> {
+    fn valid_for<'a>(&'a self, location: &LocationView) -> Option<&'a str> {
         self.building
             .as_deref()
-            .filter(|value| BUILDINGS.contains(value))
+            .and_then(|building| location.valid_building(building))
     }
 
-    fn append_to(&self, path: String) -> String {
-        self.valid().map_or_else(
+    fn append_to_location(&self, location: &LocationView, path: String) -> String {
+        self.valid_for(location).map_or_else(
             || path.clone(),
             |building| {
                 format!(
@@ -71,6 +58,19 @@ impl BuildingQuery {
                 )
             },
         )
+    }
+
+    async fn append_to(
+        &self,
+        state: &AppState,
+        kind: &str,
+        id: &str,
+        path: String,
+    ) -> String {
+        match resolve_location(state, kind, id).await {
+            LocationLookup::Found(location) => self.append_to_location(&location, path),
+            LocationLookup::NotFound | LocationLookup::Unavailable => path,
+        }
     }
 
     fn cooking(&self) -> bool {
@@ -84,17 +84,66 @@ mod building_query_tests {
 
     #[test]
     fn building_query_is_closed_and_preserved_on_redirects() {
+        let economy = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+        let (_organization, chapter) = adventuresim_core::organization::catalog()
+            .organizations
+            .iter()
+            .find_map(|organization| {
+                organization.chapters.iter().find(|chapter| {
+                    adventuresim_core::organization::chapter_has_standalone_building(
+                        organization,
+                        chapter,
+                        &economy,
+                    )
+                }).map(|chapter| (organization, chapter))
+            })
+            .expect("standalone catalog chapter");
+        let location = crate::templates::settlement::LocationView {
+            kind: crate::templates::settlement::LocationKind::Settlement,
+            id: chapter.settlement_id.clone(),
+            name: "Place".into(),
+            religion_id: None,
+            category: Some(crate::spacetimedb::SettlementCategory::Village),
+            economy: Some(economy),
+            active_building: None,
+        };
         let valid = BuildingQuery {
             building: Some("inn".into()),
             ..Default::default()
         };
-        assert_eq!(valid.valid(), Some("inn"));
+        assert_eq!(valid.valid_for(&location), Some("inn"));
+        let unavailable = BuildingQuery { building: Some("books".into()), ..Default::default() };
+        assert_eq!(unavailable.valid_for(&location), None);
+        let organization_query = BuildingQuery {
+            building: Some(chapter.location_id.clone()),
+            ..Default::default()
+        };
+        assert_eq!(organization_query.valid_for(&location), Some(chapter.location_id.as_str()));
+        if let Some(foreign) = adventuresim_core::organization::catalog()
+            .organizations
+            .iter()
+            .flat_map(|organization| &organization.chapters)
+            .find(|foreign| {
+                foreign.settlement_id != location.id
+                    && adventuresim_core::organization::organization_chapter_at(
+                        &location.id,
+                        &foreign.location_id,
+                    )
+                    .is_none()
+            })
+        {
+            let foreign_query = BuildingQuery {
+                building: Some(foreign.location_id.clone()),
+                ..Default::default()
+            };
+            assert_eq!(foreign_query.valid_for(&location), None);
+        }
         assert_eq!(
-            valid.append_to("/locations/settlement/x/party/1".into()),
+            valid.append_to_location(&location, "/locations/settlement/x/party/1".into()),
             "/locations/settlement/x/party/1?building=inn"
         );
         assert_eq!(
-            valid.append_to("/locations/settlement/x/party/1?cook=true".into()),
+            valid.append_to_location(&location, "/locations/settlement/x/party/1?cook=true".into()),
             "/locations/settlement/x/party/1?cook=true&building=inn"
         );
         let non_service = BuildingQuery {
@@ -102,16 +151,16 @@ mod building_query_tests {
             ..Default::default()
         };
         assert_eq!(
-            non_service.append_to("/locations/settlement/x/party/1".into()),
+            non_service.append_to_location(&location, "/locations/settlement/x/party/1".into()),
             "/locations/settlement/x/party/1?building=public-square"
         );
         let invalid = BuildingQuery {
             building: Some("../religion".into()),
             ..Default::default()
         };
-        assert_eq!(invalid.valid(), None);
+        assert_eq!(invalid.valid_for(&location), None);
         assert_eq!(
-            invalid.append_to("/locations/settlement/x/party/1".into()),
+            invalid.append_to_location(&location, "/locations/settlement/x/party/1".into()),
             "/locations/settlement/x/party/1"
         );
     }

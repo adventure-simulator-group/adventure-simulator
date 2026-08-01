@@ -941,33 +941,17 @@
   font-variant-numeric: tabular-nums;
 }
 
-.encumbrance-values,
 .encumbrance-visual {
   box-sizing: border-box;
-  flex: 0 0 50%;
-  width: 50%;
+  flex: 1 1 100%;
+  width: 100%;
   min-width: 0;
-}
-
-.encumbrance-values {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding-right: 0.35rem;
-  font-size: clamp(0.55rem, 4cqi, 0.78rem);
-  line-height: 1.25;
 }
 
 .encumbrance-visual {
   display: flex;
   align-items: center;
-  padding-left: 0.35rem;
-}
-
-.encumbrance-weight,
-.encumbrance-penalty {
-  max-width: 100%;
-  white-space: nowrap;
+  padding-left: 0;
 }
 
 @container (max-width: 12rem) {
@@ -975,14 +959,8 @@
     padding-inline: 0.2rem;
   }
 
-  .encumbrance-values {
-    padding-right: 0.1rem;
-    font-size: 0.5rem;
-    line-height: 1.15;
-  }
-
   .encumbrance-visual {
-    padding-left: 0.1rem;
+    padding-left: 0;
   }
 }
 
@@ -991,13 +969,8 @@
     padding-inline: 0.1rem;
   }
 
-  .encumbrance-values {
-    padding-right: 0.05rem;
-    font-size: 0.43rem;
-  }
-
   .encumbrance-visual {
-    padding-left: 0.05rem;
+    padding-left: 0;
   }
 }
 
@@ -4588,7 +4561,7 @@ button.identity-control:disabled {
 
 .party-attribute-row {
   display: grid;
-  grid-template-columns: 1.15rem minmax(0, 1fr) minmax(3rem, 2fr) 2rem;
+  grid-template-columns: 1.15rem minmax(0, 1fr) minmax(3rem, 2fr);
   align-items: center;
   gap: 0.35rem;
   min-width: 0;
@@ -4597,7 +4570,7 @@ button.identity-control:disabled {
 }
 
 .party-attribute-icon-only {
-  grid-template-columns: 1.15rem minmax(0, 1fr) 2rem;
+  grid-template-columns: 1.15rem minmax(0, 1fr);
 }
 
 .party-attribute-row .stat-icon {
@@ -4611,7 +4584,6 @@ button.identity-control:disabled {
   white-space: nowrap;
 }
 
-.attribute-rank-value,
 .skill-rank-value { color: var(--text-primary); font-size: var(--font-size-xs); font-variant-numeric: tabular-nums; text-align: right; }
 
 .limb-attribute-pair {
@@ -5178,7 +5150,6 @@ body.chat-resizing {
   white-space: normal;
 }
 
-.prototype-disclaimer { margin: 0 0 1rem; padding: .8rem 1rem; border: 2px solid #d7aa48; background: #342b19; color: #fff2c9; font-weight: 700; text-align: center; }
 .main-grid:has(> .candidate-bootstrap) {
   grid-template-columns: minmax(0, 1fr);
   overflow-y: auto;
@@ -6190,6 +6161,17 @@ body.chat-resizing {
 .equipment-slot-empty {
   color: #b9aa8d;
   font-weight: 700;
+}
+
+.equipment-slot-unbound .game-icon {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.equipment-unavailable {
+  display: block;
+  width: 100%;
+  min-height: 1.55rem;
 }
 
 .equipment-slot-modal {

@@ -65,9 +65,9 @@ pub(super) async fn cook_food(
         tracing::warn!(%error, character_id, "cooking failed");
         return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
     }
-    Redirect::to(&building.append_to(format!(
+    Redirect::to(&building.append_to(&state, &kind, &id, format!(
         "/locations/{kind}/{id}/party/{character_id}?cook=true"
-    )))
+    )).await)
     .into_response()
 }
 

@@ -87,7 +87,7 @@ pub(super) async fn update_training_schedule(
         .await
     {
         Ok(()) => Redirect::to(
-            &building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")),
+            &building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party/{character_id}")).await,
         )
         .into_response(),
         Err(error) => {
@@ -189,7 +189,7 @@ pub(super) async fn perform_immediate_activity(
                     .into_response();
             }
             Redirect::to(
-                &building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")),
+                &building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party/{character_id}")).await,
             )
             .into_response()
         }
@@ -210,7 +210,7 @@ pub(super) async fn party_member(
             return Html("<h1>Strategic data is unavailable</h1>".to_string());
         }
     };
-    location.active_building = building.valid().map(str::to_owned);
+    location.active_building = building.valid_for(&location).map(str::to_owned);
 
     let Some((active_character, active_inventory)) =
         get_active_character(&state, session.character_id_u64()).await
@@ -345,7 +345,7 @@ pub(super) async fn party_pool_inventory(
             return Html("<h1>Strategic data is unavailable</h1>".into());
         }
     };
-    location.active_building = building.valid().map(str::to_owned);
+    location.active_building = building.valid_for(&location).map(str::to_owned);
     let Some((character, inventory)) =
         get_active_character(&state, session.character_id_u64()).await
     else {

@@ -49,9 +49,10 @@ with the selected quest's dry log; toggling it again or pressing Escape restores
 location rails.
 
 Public squares, residential areas, and, for towns and larger settlements, the keep appear
-as selectable building tabs alongside services in the settlement header. Until bespoke
-building art is available, non-service tabs reuse neutral building art and house/castle
-icons. These places use the same authoritative portrait, description, and chat surface;
+as selectable building tabs alongside services in the settlement header. Standalone
+organization chapters choose an existing facade by authored building kind and use their
+stable heraldic charge, while public places retain their house/castle vocabulary. These
+places use the same authoritative portrait, description, and chat surface;
 villages and hamlets cannot enter a keep that their population does not have.
 
 Resident presences and daily time windows are keyed by that character ID and
@@ -260,3 +261,8 @@ default operator and visitor, and do not add another Place Facade. If the
 mapped service is unavailable the chapter safely retains its standalone
 building. Physician and surgeon chapters, and organizations without a service,
 remain standalone. Organization-aware dialogue stays with the representative.
+Every rendered Place Facade exposes its exact building identity. Character and
+party inspection links preserve that identity only while it belongs to the
+current settlement's rendered set, including authored standalone organization
+chapters; unavailable services, non-standalone chapters, foreign chapter IDs,
+and unknown identities are discarded by both page state and redirects.
