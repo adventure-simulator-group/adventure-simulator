@@ -1384,8 +1384,11 @@ mod tests {
     #[test]
     fn road_encounter_demo_selector_is_generic_and_camp_only() {
         let source = include_str!("travel.rs");
-        let camp = source.split("pub fn camp_page").nth(1)
-            .and_then(|tail| tail.split("fn camp_continue_control").next()).unwrap();
+        let camp = source
+            .split("pub fn camp_page")
+            .nth(1)
+            .and_then(|tail| tail.split("fn camp_continue_control").next())
+            .unwrap();
         assert!(camp.contains("data-developer-road-encounter-catalog"));
         assert!(camp.contains("road_encounter_catalog::definitions()"));
         assert!(camp.contains("data-developer-road-encounter-demo"));

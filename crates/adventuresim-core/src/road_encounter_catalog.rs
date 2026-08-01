@@ -749,7 +749,12 @@ mod tests {
             Effect::Information { information_id } if information_id == "linden_assailants_close_ambush_method")));
         assert!(choice("track").effects.iter().any(|effect| matches!(effect,
             Effect::GrantItem { item_id, quantity: 1 } if item_id == "captured_black_knight_dispatch")));
-        assert!(choice("track").effects.iter().any(|effect| matches!(effect, Effect::Information { .. })));
+        assert!(
+            choice("track")
+                .effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Information { .. }))
+        );
         assert!(matches!(
             choice("organize_aid").checks[0],
             Check::Skill {
@@ -761,14 +766,33 @@ mod tests {
             choice("plunder").effects[0],
             Effect::Currency { amount: 48, .. }
         ));
-        assert!(choice("organize_aid").effects.iter().any(|effect| matches!(effect,
-            Effect::Currency { amount: 16, .. })));
-        assert!(choice("plunder").effects.iter().any(|effect| matches!(effect,
-            Effect::GrantItem { item_id, .. } if item_id == "arming_sword")));
-        assert!(choice("plunder").effects.iter().any(|effect| matches!(effect,
-            Effect::GrantItem { item_id, .. } if item_id == "heater_shield")));
-        assert!(definition.choices.iter().filter(|choice| choice.id != "ignore")
-            .all(|choice| !choice.effects.is_empty()));
+        assert!(
+            choice("organize_aid")
+                .effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Currency { amount: 16, .. }))
+        );
+        assert!(
+            choice("plunder")
+                .effects
+                .iter()
+                .any(|effect| matches!(effect,
+            Effect::GrantItem { item_id, .. } if item_id == "arming_sword"))
+        );
+        assert!(
+            choice("plunder")
+                .effects
+                .iter()
+                .any(|effect| matches!(effect,
+            Effect::GrantItem { item_id, .. } if item_id == "heater_shield"))
+        );
+        assert!(
+            definition
+                .choices
+                .iter()
+                .filter(|choice| choice.id != "ignore")
+                .all(|choice| !choice.effects.is_empty())
+        );
         assert!(
             choice("ignore").requirements.is_empty()
                 && choice("ignore").checks.is_empty()
