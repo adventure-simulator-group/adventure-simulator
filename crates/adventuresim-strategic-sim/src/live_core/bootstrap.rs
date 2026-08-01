@@ -453,7 +453,7 @@ fn run_core_loop_inner(
                 .db
                 .simulation_quest_fixture()
                 .id()
-                .find(0)
+                .find(&0)
                 .ok_or("quest fixture reducer completed without public provenance")?,
         );
     }
