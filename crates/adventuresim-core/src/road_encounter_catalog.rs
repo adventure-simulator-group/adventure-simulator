@@ -1266,6 +1266,222 @@ mod tests {
     }
 
     #[test]
+    fn ferryman_disputed_tribute_routes_are_grounded_distinct_and_balanced() {
+        let definition = encounter("ferryman_disputed_tribute_v1").unwrap();
+        assert!(definition.triggers.travel && !definition.triggers.rest);
+        assert_eq!(definition.weight, 70);
+        assert!(
+            definition
+                .cast
+                .iter()
+                .all(|speaker| speaker.nature == SpeakerNature::Mortal)
+        );
+        assert!(
+            definition
+                .opening
+                .iter()
+                .chain(
+                    definition
+                        .choices
+                        .iter()
+                        .flat_map(|choice| &choice.response)
+                )
+                .all(|line| line.reviewed_shakespearean && !line.reviewed_iambic_pentameter)
+        );
+        let opening = definition
+            .opening
+            .iter()
+            .map(|line| line.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase();
+        assert!(opening.contains("mixed company waiteth upon either bank"));
+        assert!(opening.contains("mail-clad riders"));
+        assert!(opening.contains("their horses"));
+        assert!(opening.contains("blade of my west oar lieth split"));
+        for withheld_observation in ["shallow", "gravel", "deep current", "forceth both back"] {
+            assert!(!opening.contains(withheld_observation));
+        }
+        assert!(opening.contains("twelve groschen"));
+        assert!(opening.contains("elder marks"));
+        let authored_prose = serde_json::to_string(definition).unwrap().to_lowercase();
+        assert!(!authored_prose.contains("spare oar"));
+        assert!(!authored_prose.contains("hidden oar"));
+
+        let choice = |id| {
+            definition
+                .choices
+                .iter()
+                .find(|choice| choice.id == id)
+                .unwrap()
+        };
+        let active = definition
+            .choices
+            .iter()
+            .filter(|choice| choice.id != "ignore")
+            .collect::<Vec<_>>();
+        assert_eq!(definition.choices.len(), 7);
+        let signatures = active
+            .iter()
+            .map(|choice| {
+                serde_json::to_string(&(
+                    &choice.requirements,
+                    &choice.checks,
+                    &choice.effects,
+                    &choice.personality,
+                    &choice.transition,
+                ))
+                .unwrap()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(signatures.len(), 6);
+        assert!(active.iter().all(|choice| {
+            choice.effects.iter().any(|effect| {
+                matches!(
+                    effect,
+                    Effect::Information { information_id }
+                        if information_id == "deep_current_confines_mail_riders_to_shallows"
+                )
+            }) && choice.quest_reward_tags == ["heavy_attackers_confined_to_shallow_gravel"]
+                && choice
+                    .outcome_tags
+                    .iter()
+                    .any(|tag| tag == "physical_observation")
+        }));
+        assert!(active.iter().all(|choice| {
+            choice.result.contains("witnessest a mail-clad rider")
+                && choice
+                    .result
+                    .contains("urge his horse into the deep current")
+                && choice.result.contains("forceth both back")
+                && choice.result.contains("shallow gravel margin")
+        }));
+
+        for (route, minutes) in [
+            ("pay_tribute", 15),
+            ("barter_provisions", 20),
+            ("row_in_lieu", 45),
+            ("expose_altered_tally", 30),
+            ("organize_repair", 60),
+            ("steal_till", 90),
+        ] {
+            assert!(matches!(
+                choice(route).transition.as_ref(),
+                Some(EncounterTransition::TravelDelay { minutes: actual }) if *actual == minutes
+            ));
+        }
+        assert!(matches!(
+            choice("ignore").transition.as_ref(),
+            Some(EncounterTransition::TravelDelay { minutes: 180 })
+        ));
+        assert!(choice("ignore").effects.is_empty());
+        assert!(choice("ignore").personality.is_empty());
+        assert!(choice("ignore").quest_reward_tags.is_empty());
+
+        assert!(matches!(
+            choice("pay_tribute").requirements[0],
+            Requirement::Currency { amount: 12 }
+        ));
+        assert!(matches!(
+            choice("pay_tribute").effects[0],
+            Effect::Currency { amount: -12, .. }
+        ));
+        assert!(matches!(
+            choice("barter_provisions").requirements[0],
+            Requirement::Item {
+                ref item_id,
+                minimum_quantity: 4
+            } if item_id == "travel_ration"
+        ));
+        assert_eq!(
+            crate::item_catalog::definition("travel_ration")
+                .unwrap()
+                .base_value
+                * 4,
+            12
+        );
+        assert!(matches!(
+            choice("row_in_lieu").checks[0],
+            Check::Attribute {
+                attribute: AttributeId::Endurance,
+                difficulty_milli: 1200
+            }
+        ));
+        assert!(choice("row_in_lieu").label.contains("sound sculling oar"));
+        assert!(
+            choice("row_in_lieu").response[0]
+                .text
+                .contains("tend the landing cable and call thy stroke")
+        );
+        for route in ["pay_tribute", "barter_provisions"] {
+            assert!(choice(route).result.contains("slow sculling"));
+        }
+        let lawful_fare = choice("expose_altered_tally");
+        assert!(lawful_fare.response[0].text.contains("Four groschen"));
+        assert!(lawful_fare.response[0].text.contains("witness-mark"));
+        assert!(matches!(
+            lawful_fare.requirements[0],
+            Requirement::Currency { amount: 4 }
+        ));
+        assert!(matches!(
+            lawful_fare.effects[0],
+            Effect::Currency { amount: -4, .. }
+        ));
+        assert!(matches!(
+            choice("organize_repair").checks[0],
+            Check::Skill {
+                skill: SkillId::Command,
+                difficulty_milli: 1000
+            }
+        ));
+        assert!(
+            choice("organize_repair").response[0]
+                .text
+                .contains("raw ash, cord, and iron")
+        );
+        assert!(
+            choice("organize_repair")
+                .result
+                .contains("temporary splint")
+        );
+        assert!(
+            choice("organize_repair")
+                .result
+                .contains("sufficient only for the immediate queued crossings")
+        );
+
+        for (route, virtue) in [
+            ("pay_tribute", VirtueId::Prudence),
+            ("barter_provisions", VirtueId::Courtesy),
+            ("row_in_lieu", VirtueId::Courage),
+            ("expose_altered_tally", VirtueId::Justice),
+            ("organize_repair", VirtueId::Prudence),
+        ] {
+            assert_eq!(exemplified_virtue(&choice(route).personality), Some(virtue));
+        }
+        let theft = choice("steal_till");
+        assert!(theft.response[0].text.contains("trust the charge"));
+        assert!(theft.response[0].text.contains("till ashore"));
+        assert!(theft.result.contains("keeping the shore tally"));
+        assert!(
+            theft
+                .result
+                .contains("repeatedly sculleth queued crossings")
+        );
+        assert!(
+            theft
+                .result
+                .contains("abscondest with forty-eight groschen")
+        );
+        assert!(matches!(
+            theft.effects[0],
+            Effect::Currency { amount: 48, .. }
+        ));
+        assert!(theft.personality[0].delta < 0);
+        assert_eq!(exemplified_virtue(&theft.personality), None);
+    }
+
+    #[test]
     fn combat_transition_rejects_unsafe_counts() {
         let mut definition = encounter("unlawful_bridge_custom_v1").unwrap().clone();
         let choice = definition
