@@ -178,14 +178,10 @@ mod tests {
     }
 }
 
-const PROTOTYPE_NOTICE: &str = "Early prototype: All text and images are placeholders. Features and saved progress may change or be reset during development.";
-
 pub fn character_candidates_bootstrap_page(version: u16) -> Markup {
     let content = html! {
         main class="center-content candidate-bootstrap" {
-            p class="prototype-disclaimer" role="note" { (PROTOTYPE_NOTICE) }
             h2 class="page-title" { "Choose a stage of life" }
-            p class="small-copy text-muted" { "Choose how established your adventurer is before meeting the candidates." }
             noscript { p role="alert" { "JavaScript is required to prepare a private candidate roster." } }
             div data-candidate-bootstrap data-generator-version=(version) {}
             nav class="candidate-age-options" aria-label="Starting age" {
@@ -259,10 +255,8 @@ pub fn character_candidates_page(
     let attributes_title = format!("{}'s attributes", candidate.character.name);
     let skills_title = format!("{}'s skills", candidate.character.name);
     let portraits = character_portrait_overlay("Candidate adventurers", None, &portraits);
-    let center_before = html! {
-            p class="prototype-disclaimer" role="note" { (PROTOTYPE_NOTICE) }
-            span data-candidate-roster data-age-tier=(age_tier.as_str()) hidden {}
-    };
+    let center_before =
+        html! { span data-candidate-roster data-age-tier=(age_tier.as_str()) hidden {} };
     let center_after = html! {
             @if show_inventory {
                 (candidate_inventory_view(spec))
@@ -782,7 +776,7 @@ fn candidate_personality(spec: &StartingCharacterSpec) -> CharacterPersonality {
 
 #[cfg(test)]
 mod creation_tests {
-    use super::{CandidatePresentation, PROTOTYPE_NOTICE, character_candidates_page};
+    use super::{CandidatePresentation, character_candidates_page};
     use adventuresim_core::organization::StartingProfession;
     use adventuresim_core::starting_character::{StartingAgeTier, StartingItem, roster};
 
@@ -804,7 +798,7 @@ mod creation_tests {
         )
         .into_string();
         assert_eq!(markup.matches("class=\"party-portrait\"").count(), 5);
-        assert!(markup.contains(PROTOTYPE_NOTICE));
+        assert!(!markup.contains("prototype-disclaimer"));
         assert!(!markup.contains("role=\"dialog\""));
         assert!(markup.contains("class=\"party-portrait-overlay\""));
         assert!(markup.contains("class=\"party-attributes-list\""));

@@ -22,6 +22,7 @@ pub(super) async fn resolve_location(state: &AppState, kind: &str, id: &str) -> 
                         settlement.name,
                         Some(settlement.category),
                         Some(settlement.religion_id),
+                        Some(settlement.economy),
                     )
                 })
             }),
@@ -32,9 +33,9 @@ pub(super) async fn resolve_location(state: &AppState, kind: &str, id: &str) -> 
                 sql_string_literal(id)
             ))
             .await
-            .map(|row| row.map(|site| (site.display_title, None, None))),
+            .map(|row| row.map(|site| (site.display_title, None, None, None))),
     };
-    let (name, category, religion_id) = match location {
+    let (name, category, religion_id, economy) = match location {
         Ok(Some(location)) => location,
         Ok(None) => return LocationLookup::NotFound,
         Err(error) => {
@@ -48,6 +49,7 @@ pub(super) async fn resolve_location(state: &AppState, kind: &str, id: &str) -> 
         name,
         religion_id,
         category,
+        economy,
         active_building: None,
     })
 }
@@ -102,7 +104,7 @@ pub(super) async fn render_party_personal(
             return Html("<h1>Strategic data is unavailable</h1>".to_string());
         }
     };
-    location.active_building = building.valid().map(str::to_owned);
+    location.active_building = building.valid_for(&location).map(str::to_owned);
     let Some((active_character, active_inventory)) =
         get_active_character(&state, session.character_id_u64()).await
     else {

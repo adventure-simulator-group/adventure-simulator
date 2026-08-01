@@ -877,6 +877,27 @@ html[data-developer-mode] .location-stat-list > div[data-developer-only] { displ
 .settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="religion"] { --service-building-image: url("/static/styles/timber-framed/building/city/religion.png"); }
 .settlement-top-bar[data-building-tier="city"] .nav-tab[data-service-id="organization"] { --service-building-image: url("/static/styles/timber-framed/building/city/residences.png"); }
 
+/* Standalone chapters share the scene vocabulary, but their authored building
+   kind chooses the closest facade instead of presenting every institution as a house. */
+.settlement-top-bar[data-building-tier="village"] .nav-tab[data-organization-building-kind="guildhall"],
+.settlement-top-bar[data-building-tier="village"] .nav-tab[data-organization-building-kind="college"] { --service-building-image: url("/static/styles/timber-framed/building/village/merchants.png?v=facade-2"); }
+.settlement-top-bar[data-building-tier="village"] .nav-tab[data-organization-building-kind="workshop"] { --service-building-image: url("/static/styles/timber-framed/building/village/weapons.png"); }
+.settlement-top-bar[data-building-tier="village"] .nav-tab[data-organization-building-kind="confraternity"] { --service-building-image: url("/static/styles/timber-framed/building/village/religion.png?v=facade-2"); }
+.settlement-top-bar[data-building-tier="village"] .nav-tab[data-organization-building-kind="commandery"] { --service-building-image: url("/static/styles/timber-framed/building/village/keep.png"); }
+.settlement-top-bar[data-building-tier="village"] .nav-tab[data-organization-building-kind="lodge"] { --service-building-image: url("/static/styles/timber-framed/building/village/inn.png?v=facade-2"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-organization-building-kind="guildhall"],
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-organization-building-kind="college"] { --service-building-image: url("/static/styles/timber-framed/building/town/merchants.png"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-organization-building-kind="workshop"] { --service-building-image: url("/static/styles/timber-framed/building/town/weapons.png"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-organization-building-kind="confraternity"] { --service-building-image: url("/static/styles/timber-framed/building/town/religion.png"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-organization-building-kind="commandery"] { --service-building-image: url("/static/styles/timber-framed/building/town/keep.png"); }
+.settlement-top-bar[data-building-tier="town"] .nav-tab[data-organization-building-kind="lodge"] { --service-building-image: url("/static/styles/timber-framed/building/town/inn.png"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-organization-building-kind="guildhall"],
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-organization-building-kind="college"] { --service-building-image: url("/static/styles/timber-framed/building/city/merchants.png"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-organization-building-kind="workshop"] { --service-building-image: url("/static/styles/timber-framed/building/city/weapons.png"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-organization-building-kind="confraternity"] { --service-building-image: url("/static/styles/timber-framed/building/city/religion.png"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-organization-building-kind="commandery"] { --service-building-image: url("/static/styles/timber-framed/building/city/keep.png"); }
+.settlement-top-bar[data-building-tier="city"] .nav-tab[data-organization-building-kind="lodge"] { --service-building-image: url("/static/styles/timber-framed/building/city/inn.png"); }
+
 .service-notification-badge {
   position: absolute;
   z-index: 3;
@@ -983,6 +1004,20 @@ html[data-developer-mode] .location-stat-list > div[data-developer-only] { displ
 .settlement-top-bar[data-environment="settlement"] .nav-tab:hover .service-tab-icon,
 .settlement-top-bar[data-environment="settlement"] .nav-tab.active .service-tab-icon {
   background-color: transparent;
+}
+
+.settlement-top-bar[data-environment="settlement"] .service-tab-icon-organization,
+.settlement-top-bar[data-environment="settlement"] .nav-tab:hover .service-tab-icon-organization,
+.settlement-top-bar[data-environment="settlement"] .nav-tab.active .service-tab-icon-organization {
+  border: 1px solid var(--organization-accent, #fff);
+  border-radius: 50%;
+  background-color: var(--organization-field, transparent);
+  box-shadow: 0 0 2px var(--organization-field, transparent);
+}
+
+.settlement-top-bar[data-environment="settlement"] .service-tab-icon-organization::after {
+  inset: 0.16rem;
+  background-color: var(--organization-accent, #fff);
 }
 
 .quest-location-top-bar[data-environment="wilderness"] .nav-tab:hover .service-tab-icon,

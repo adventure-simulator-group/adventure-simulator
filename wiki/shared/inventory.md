@@ -105,6 +105,12 @@ loot, and cooking:
 - keyboard-accessible item actions;
 - URL-backed search, sorting, and column preferences.
 
+Quantity and desired-target columns use accessible open-chest and target
+icons rather than punctuation. Equipped rows retain the compact QWERTY badges
+used by the tactical input map; their shared tooltip spells out each key's
+physical location and equipment layer. Non-equippable cells use accessible
+negative space instead of a visible placeholder glyph.
+
 Weaponsmith and armorer views can expose relevant combat statistics, while
 merchants whose goods do not use those fields retain a simpler table.
 

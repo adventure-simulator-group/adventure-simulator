@@ -396,7 +396,7 @@ pub(super) async fn deposit_party_inventory(
                 .await;
         }
     }
-    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party-inventory")))
+    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party-inventory")).await)
 }
 
 pub(super) async fn withdraw_party_inventory(
@@ -417,7 +417,7 @@ pub(super) async fn withdraw_party_inventory(
                 .await;
         }
     }
-    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party-inventory")))
+    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party-inventory")).await)
 }
 
 pub(super) fn transfer_entries(form: &PartyPoolTransferForm) -> Vec<(u64, u32)> {
@@ -457,7 +457,7 @@ pub(super) async fn liquidate_party_assets(
             )
             .await;
     }
-    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party-inventory")))
+    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party-inventory")).await)
 }
 
 pub(super) async fn remove_party_member(
@@ -488,7 +488,7 @@ pub(super) async fn remove_party_member(
             tracing::error!("Failed to remove party member: {error:?}");
         }
     }
-    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}")))
+    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}")).await)
 }
 
 pub(super) async fn party_stats(
@@ -530,7 +530,7 @@ pub(super) async fn render_party_stats(
             return Html("<h1>Strategic data is unavailable</h1>".to_string());
         }
     };
-    location.active_building = building.valid().map(str::to_owned);
+    location.active_building = building.valid_for(&location).map(str::to_owned);
     let Some((active_character, _)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
@@ -817,7 +817,7 @@ pub(super) async fn stop_preparation(
     {
         tracing::warn!(%error, actor_id, patient_id, administration_id, "preparation stop rejected");
     }
-    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{patient_id}")))
+    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party/{patient_id}")).await)
 }
 
 pub(super) async fn get_strategic_condition(

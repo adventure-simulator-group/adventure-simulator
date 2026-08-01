@@ -192,5 +192,5 @@ pub(super) async fn renounce_religion(
             tracing::warn!(%error, character_id, "failed to renounce character religion");
         }
     }
-    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")))
+    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party/{character_id}")).await)
 }

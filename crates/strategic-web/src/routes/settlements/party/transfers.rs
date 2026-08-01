@@ -30,9 +30,9 @@ pub(super) async fn discard_inventory_items(
             }
         }
     }
-    Redirect::to(&building.append_to(format!(
+    Redirect::to(&building.append_to(&state, &kind, &id, format!(
         "/locations/{kind}/{id}/party/{character_id}/inventory"
-    )))
+    )).await)
 }
 
 pub(super) async fn finalize_party_offer(
@@ -76,9 +76,9 @@ pub(super) async fn finalize_party_offer(
             }
         }
     }
-    Redirect::to(&building.append_to(format!(
+    Redirect::to(&building.append_to(&state, &kind, &id, format!(
         "/locations/{kind}/{id}/party/{character_id}/inventory"
-    )))
+    )).await)
 }
 
 pub(super) async fn transfer_party_item(
@@ -94,7 +94,7 @@ pub(super) async fn transfer_party_item(
         return Redirect::to("/characters");
     };
     if form.from_character_id != active_character.id && recipient_id != active_character.id {
-        return Redirect::to(&building.append_to(format!("/locations/{kind}/{id}")));
+        return Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}")).await);
     }
     let to_character_id = if form.from_character_id == active_character.id {
         recipient_id
@@ -121,9 +121,9 @@ pub(super) async fn transfer_party_item(
     } else {
         form.from_character_id
     };
-    Redirect::to(&building.append_to(format!(
+    Redirect::to(&building.append_to(&state, &kind, &id, format!(
         "/locations/{kind}/{id}/party/{comparison_character_id}/inventory"
-    )))
+    )).await)
 }
 
 pub(super) async fn merchants(

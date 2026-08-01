@@ -1,5 +1,4 @@
 (() => {
-  const services = new Set(["public-square", "residences", "keep", "map", "merchants", "weapons", "armor", "clothing", "herbalist", "inn", "religion"]);
   let observer;
   const mount = () => {
     observer?.disconnect();
@@ -8,16 +7,18 @@
     if (!nav) return;
     const current = new URL(location.href);
     const requested = current.searchParams.get("building");
-    const serverActive = nav.querySelector(".nav-tab.active")?.dataset.serviceId;
+    const tabs = [...nav.querySelectorAll("[data-building-id]")];
+    const buildings = new Set(tabs.map((tab) => tab.dataset.buildingId).filter(Boolean));
+    const serverActive = nav.querySelector(".nav-tab.active")?.dataset.buildingId;
     const partyInspection = current.pathname.startsWith("/locations/") && current.pathname.includes("/party");
-    const building = partyInspection && services.has(requested)
-      ? requested : (services.has(serverActive) ? serverActive : "map");
-    if (requested && (!services.has(requested) || !partyInspection)) {
+    const building = partyInspection && buildings.has(requested)
+      ? requested : (buildings.has(serverActive) ? serverActive : (buildings.has("map") ? "map" : tabs[0]?.dataset.buildingId));
+    if (requested && (!buildings.has(requested) || !partyInspection)) {
       current.searchParams.delete("building");
       history.replaceState(history.state, "", current);
     }
-    nav.querySelectorAll("[data-service-id]").forEach((tab) => {
-      const selected = tab.dataset.serviceId === building;
+    tabs.forEach((tab) => {
+      const selected = tab.dataset.buildingId === building;
       tab.classList.toggle("active", selected);
       tab.setAttribute("aria-current", selected ? "page" : "false");
       if (selected) document.documentElement.style.setProperty("--active-building-tint", tab.style.getPropertyValue("--building-tint"));

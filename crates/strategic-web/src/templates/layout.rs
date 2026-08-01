@@ -3,7 +3,7 @@
 use crate::spacetimedb::SettlementCategory;
 use maud::{DOCTYPE, Markup, html};
 
-use super::religion_icon_path;
+use super::{organization_charge, organization_colors, religion_icon_path};
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ScriptProfile {
     Entry,
@@ -167,16 +167,16 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
                 link rel="stylesheet" href="/static/css/reset.css";
-                link rel="stylesheet" href="/static/css/layout.css?v=developer-visibility-1";
+                link rel="stylesheet" href="/static/css/layout.css?v=organization-facades-1";
                 link rel="stylesheet" href="/static/css/components.css?v=lowercase-display-type-1";
-                link rel="stylesheet" href="/static/css/strategic.css?v=candidate-inventory-3-item-yaml-editor-1-claim-challenges-1-equipment-slots-7-weather-status-2-residences-1-continuity-1-puzzle-chat-2";
+                link rel="stylesheet" href="/static/css/strategic.css?v=visual-ui-audit-1";
                 link rel="stylesheet" href="/static/css/utilities.css?v=strategic-ui-overhaul-1";
 
                 // Datastar
                 script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js" {}
                 script src="/static/background-fetch.js?v=background-fetch-2" {}
                 script src="/static/developer-mode.js?v=development-clock-2" defer {}
-                script src="/static/tooltips.js?v=pinnable-lifecycle-3" defer {}
+                script src="/static/tooltips.js?v=delegated-mouseover-1" defer {}
                 script src="/static/character-action-dialog.js?v=character-actions-1" defer {}
                 @if scripts != ScriptProfile::Entry {
                     script src="/static/live-state.js?v=sse-4" defer {}
@@ -203,7 +203,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/chat-resize.js?v=counterparty-portraits-1" defer {}
                     script src="/static/local-chat.js?v=local-chat-location-authority-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-4" defer {}
-                    script src="/static/building-state.js?v=non-service-building-tabs-2" defer {}
+                    script src="/static/building-state.js?v=exact-place-facades-1" defer {}
                     script src="/static/travel-planner.js?v=travel-rails-1" defer {}
                     script src="/static/strategic-map.js?v=population-culling-3" defer {}
                     script src="/static/rest-duration.js?v=wake-time-4" defer {}
@@ -294,11 +294,7 @@ fn settlement_top_bar(
             nav class="top-bar-center settlement-services" aria-label="Settlement services"
                 data-settlement-id=(settlement_id) {
                 @for (path, service_id, label, icon) in services {
-                    @let available = match path {
-                        "" | "residences" => true,
-                        "keep" => settlement_has_keep(category),
-                        _ => economy.is_none_or(|profile| service_tab_available(profile, path)),
-                    };
+                    @let available = settlement_building_available(settlement_id, category, economy, service_id);
                     @if available {
                     @let href = if path == "map" {
                         format!("/locations/settlement/{}/map", settlement_id)
@@ -311,15 +307,17 @@ fn settlement_top_bar(
                     };
                     @let service_material = if service_id == "religion" || (service_id == "keep" && !matches!(category, SettlementCategory::Village)) { "stone" } else { material };
                     @let tint = building_tint(settlement_id, service_id, service_material);
+                    @let selected = active_service == path || (path.is_empty() && active_service == service_id);
                     a href=(href)
-                        class=(if active_service == path { "nav-tab active" } else { "nav-tab" })
+                        class=(if selected { "nav-tab active" } else { "nav-tab" })
                         style=(format!("--building-tint:{tint}"))
                         data-service-id=(service_id)
+                        data-building-id=(service_id)
                         data-building-material=(service_material)
                         data-service-label=(label)
                         aria-label=(label)
                         data-strategic-tooltip=(label)
-                        aria-current=(if active_service == path { "page" } else { "false" })
+                        aria-current=(if selected { "page" } else { "false" })
                     {
                         span class="service-tab-building" aria-hidden="true" {}
                         @if path == "weapons" {
@@ -340,11 +338,14 @@ fn settlement_top_bar(
                     @let standalone = economy.is_none_or(|profile| adventuresim_core::organization::chapter_has_standalone_building(organization, chapter, profile));
                     @if standalone {
                     @let kind = format!("{:?}", chapter.building_kind).to_ascii_lowercase();
+                    @let charge = organization_charge(organization);
+                    @let (field, accent) = organization_colors(&organization.id);
                     @let tint = building_tint(settlement_id, &chapter.location_id, material);
                     a href=(format!("/settlements/{}/places/{}", settlement_id, chapter.location_id))
                         class=(if active_service == chapter.location_id { "nav-tab active" } else { "nav-tab" })
                         style=(format!("--building-tint:{tint}"))
                         data-service-id="organization"
+                        data-building-id=(&chapter.location_id)
                         data-organization-building-kind=(kind)
                         data-building-material=(material)
                         data-service-label=(&chapter.building_name)
@@ -352,7 +353,9 @@ fn settlement_top_bar(
                         data-strategic-tooltip=(&chapter.building_name)
                         aria-current=(if active_service == chapter.location_id { "page" } else { "false" }) {
                         span class="service-tab-building" aria-hidden="true" {}
-                        span class="service-tab-icon service-tab-icon-organization" aria-hidden="true" {}
+                        span class="service-tab-icon service-tab-icon-organization"
+                            style=(format!("--service-tab-icon: url('/static/icons/game/{charge}.svg'); --organization-field: {field}; --organization-accent: {accent}"))
+                            aria-hidden="true" {}
                         span class="service-tab-label" aria-hidden="true" { (&chapter.building_name) }
                     }
                     }
@@ -453,6 +456,30 @@ fn settlement_has_keep(category: &SettlementCategory) -> bool {
         category,
         SettlementCategory::Town | SettlementCategory::City | SettlementCategory::Capital
     )
+}
+
+pub(crate) fn settlement_building_available(
+    settlement_id: &str,
+    category: &SettlementCategory,
+    economy: Option<&adventuresim_world_schema::SettlementEconomyProfile>,
+    building_id: &str,
+) -> bool {
+    match building_id {
+        "public-square" | "residences" | "map" => true,
+        "keep" => settlement_has_keep(category),
+        "merchants" | "weapons" | "armor" | "clothing" | "herbalist" | "books" | "inn"
+        | "religion" => economy.is_none_or(|profile| service_tab_available(profile, building_id)),
+        _ => adventuresim_core::organization::organization_chapter_at(settlement_id, building_id)
+            .is_some_and(|(organization, chapter)| {
+                economy.is_none_or(|profile| {
+                    adventuresim_core::organization::chapter_has_standalone_building(
+                        organization,
+                        chapter,
+                        profile,
+                    )
+                })
+            }),
+    }
 }
 
 fn service_tab_available(
@@ -897,6 +924,32 @@ mod tests {
     }
 
     #[test]
+    fn standalone_organization_facade_has_exact_identity_and_heraldry() {
+        let organization = adventuresim_core::organization::catalog()
+            .organizations
+            .iter()
+            .find(|organization| !organization.chapters.is_empty())
+            .expect("catalog organization with a chapter");
+        let chapter = &organization.chapters[0];
+        let markup = settlement_top_bar(
+            "Place",
+            &chapter.settlement_id,
+            &SettlementCategory::Town,
+            &chapter.location_id,
+            None,
+            None,
+            None,
+        )
+        .into_string();
+        assert!(markup.contains("data-service-id=\"organization\""));
+        assert!(markup.contains(&format!("data-building-id=\"{}\"", chapter.location_id)));
+        assert!(markup.contains(&format!(
+            "/static/icons/game/{}.svg",
+            super::organization_charge(organization)
+        )));
+    }
+
+    #[test]
     fn horizon_variants_are_stable_reachable_and_emitted() {
         assert_eq!(horizon_variant("lubeck"), horizon_variant("lubeck"));
         let variants = (0..128)
@@ -973,6 +1026,13 @@ mod tests {
         assert!(markup.contains("service-tab-icon-house"));
         assert!(!markup.contains("aria-label=\"Keep\""));
         assert!(markup.contains("aria-label=\"Church\""));
+        let inn = markup
+            .split("data-building-id=\"inn\"")
+            .nth(1)
+            .and_then(|tail| tail.split("</a>").next())
+            .expect("rendered Inn Place Facade");
+        assert!(inn.contains("aria-label=\"Inn\""));
+        assert!(inn.contains("data-strategic-tooltip=\"Inn\""));
         assert!(markup.contains("aria-current=\"page\""));
         assert!(markup.contains("--service-tab-icon: url("));
         assert!(markup.contains(religion_icon_path(Some("roman_catholic"))));
@@ -1001,6 +1061,17 @@ mod tests {
         assert!(css.contains("data-service-id=\"residences\"].active"));
         assert!(css.contains("data-service-id=\"keep\"].active"));
         assert!(css.contains(".nav-tab[data-service-id=\"books\"]"));
+        for kind in [
+            "guildhall",
+            "workshop",
+            "college",
+            "confraternity",
+            "commandery",
+            "lodge",
+        ] {
+            assert!(css.contains(&format!("data-organization-building-kind=\"{kind}\"")));
+        }
+        assert!(css.contains("var(--organization-accent, #fff)"));
 
         let town = settlement_top_bar(
             "Larger Place",
@@ -1016,7 +1087,9 @@ mod tests {
         assert!(town.contains("aria-label=\"Keep\""));
         assert!(town.contains("href=\"/settlements/t/places/keep\" class=\"nav-tab active\""));
         assert!(town.contains("service-tab-icon-castle"));
-        assert!(town.contains("data-service-id=\"keep\" data-building-material=\"stone\""));
+        assert!(town.contains(
+            "data-service-id=\"keep\" data-building-id=\"keep\" data-building-material=\"stone\""
+        ));
     }
 
     #[test]
@@ -1048,8 +1121,9 @@ mod tests {
         assert!(building.contains("searchParams.get(\"building\")"));
         assert!(building.contains("searchParams.set(\"building\", building)"));
         assert!(building.contains("pathname.includes(\"/party\")"));
-        assert!(building.contains("partyInspection && services.has(requested)"));
-        assert!(building.contains("!services.has(requested) || !partyInspection"));
+        assert!(building.contains("partyInspection && buildings.has(requested)"));
+        assert!(building.contains("!buildings.has(requested) || !partyInspection"));
+        assert!(building.contains("tab.dataset.buildingId === building"));
     }
 
     #[test]

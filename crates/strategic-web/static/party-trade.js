@@ -202,7 +202,7 @@ function ensureMerchantPlayerRow(itemId, sourceRow) {
   row.classList.remove("party-trade-changed");
   const equipped = document.createElement("td");
   equipped.className = "inventory-equipped";
-  equipped.innerHTML = '<button type="button" class="equipment-slot-control" disabled aria-label="Equipment availability updates after inventory refresh"><span class="equipment-slot-empty" aria-hidden="true">—</span></button>';
+  equipped.innerHTML = '<span class="equipment-unavailable" role="img" tabindex="0" aria-label="Equipment availability updates after inventory refresh" data-strategic-tooltip="Equipment availability updates after inventory refresh"></span>';
   (row.querySelector(".inventory-target") || count).after(equipped);
   row.querySelector(".inventory-gold").textContent = sourceRow.dataset.merchantSellPrice;
   row.dataset.generatedMerchantRow = "true";

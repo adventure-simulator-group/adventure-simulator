@@ -623,6 +623,7 @@ mod tests {
             name: "Lubeck".into(),
             religion_id: None,
             category: None,
+            economy: None,
             active_building: Some("inn".into()),
         };
         let social = SocialPresentation {
@@ -751,6 +752,7 @@ mod tests {
             name: "Lubeck".into(),
             religion_id: None,
             category: None,
+            economy: None,
             active_building: None,
         };
         let source = CharacterMoraleSource {

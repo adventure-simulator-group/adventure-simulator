@@ -26,8 +26,9 @@ use crate::spacetimedb::{
 };
 use crate::templates::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use crate::templates::{
-    empty_state, game_icon, item_display_name, item_icon_name, item_source_edit_url,
-    item_type_header, item_type_icon, settlement_layout_with_session, sidebar_section,
+    decorative_game_icon, empty_state, game_icon, item_display_name, item_icon_name,
+    item_source_edit_url, item_type_header, item_type_icon, settlement_layout_with_session,
+    sidebar_section,
 };
 
 /// The currently available merchant storefronts. They share trade mechanics,
@@ -1047,10 +1048,9 @@ pub fn live_merchant_shop_page(
                             td class="inventory-item-name" { (item_name_with_quality(&target.item_id, definition)) }
                             td class="inventory-count" { (quantity_target_control(0, target.quantity, &target.item_id, false)) }
                             td class="inventory-equipped" {
-                                button type="button" class="equipment-slot-control" disabled
-                                    aria-label="No equipment in this row" {
-                                    span class="equipment-slot-empty" aria-hidden="true" { "—" }
-                                }
+                                span class="equipment-unavailable" role="img" tabindex="0"
+                                    aria-label="No equipment in this row"
+                                    data-strategic-tooltip="No equipment is available in this row" {}
                             }
                             td class="inventory-durability" { "—" }
                             td class="inventory-weight" { (item_weight(definition)) }
@@ -1143,11 +1143,12 @@ pub fn party_pool_page(
         aside class="left-sidebar" {
             (sidebar_section("Party inventory", html! {
                 (encumbrance_inventory_rail(html! {
-                    div class="party-stake-summary" {
+                    div class="party-stake-summary" tabindex="0"
+                        data-strategic-tooltip="Withdrawals use your stake; personal coin covers an indivisible item's shortfall."
+                        aria-label=(format!("Your available stake: {stake} coin. Withdrawals use your stake; personal coin covers an indivisible item's shortfall.")) {
                         span { "Your available stake" }
                         strong { (stake) " coin" }
                     }
-                    p class="small-copy text-muted" { "Withdrawals use your stake. Personal coin automatically covers an indivisible item's shortfall." }
                     (trade_inventory_table("party-pool-left", InventoryColumnSet::All, true, false, false, html! {
                         @for item in pooled {
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
@@ -1180,7 +1181,6 @@ pub fn party_pool_page(
         aside class="right-sidebar" {
             (sidebar_section(&format!("{}'s inventory", character.name), html! {
                 (encumbrance_inventory_rail(html! {
-                    p class="small-copy text-muted" { "Add items at their objective coin value." }
                     (trade_inventory_table("party-pool-right", InventoryColumnSet::All, true, true, false, html! {
                         @for item in inventory {
                             @let definition = items.iter().find(|definition| definition.id == item.item_id);
@@ -1198,7 +1198,7 @@ pub fn party_pool_page(
                                         @if equipped {
                                             (disabled_transfer_button("left", "Equipped items cannot be deposited"))
                                         } @else {
-                                            button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode="one" data-count=(item.qty) data-current=(current) data-target=(target) data-label-one=(format!("Deposit one {item_name}")) data-label-target=(format!("Deposit {item_name} to target")) data-label-all=(format!("Deposit all {item_name}")) aria-label=(format!("Deposit one {item_name}")) title=(format!("Deposit one {item_name}")) { (transfer_glyph(1)) }
+                                            button type="button" class="trade-transfer trade-transfer-left" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="deposit" data-transfer-mode="one" data-count=(item.qty) data-current=(current) data-target=(target) data-label-one=(format!("Deposit one {item_name}")) data-label-target=(format!("Deposit {item_name} to target")) data-label-all=(format!("Deposit all {item_name}")) aria-label=(format!("Deposit one {item_name} at its objective coin value")) data-strategic-tooltip=(format!("Deposit one {item_name} at its objective coin value")) { (transfer_glyph(1)) }
                                         }
                                     }
                                 }
@@ -1267,20 +1267,16 @@ fn encumbrance_inventory_rail(
 
 fn encumbrance_meter(summary: EncumbranceSummary) -> Markup {
     let penalty_percent = summary.penalty_fraction() * 100.0;
-    let weight_text = format!("{:.1} / {:.1} kg", summary.burden_kg, summary.capacity_kg);
-    let penalty_text = format!("-{penalty_percent:.1}%");
     let accessible_text = format!(
         "Weight {:.1} / {:.1} kilograms; Penalty -{penalty_percent:.1}%",
         summary.burden_kg, summary.capacity_kg
     );
     html! {
         div class="encumbrance" {
-            div class="encumbrance-values" aria-hidden="true" {
-                span class="encumbrance-weight" { (weight_text) }
-                span class="encumbrance-penalty" { (penalty_text) }
-            }
             div class="encumbrance-visual" {
                 div class="encumbrance-meter"
+                    tabindex="0"
+                    data-strategic-tooltip=(&accessible_text)
                     role="meter"
                     aria-label="Encumbrance"
                     aria-valuemin="0"
@@ -1559,7 +1555,7 @@ fn equipment_occupant_json(
 fn equipped_input_badges(
     equip: Option<&CharacterEquipmentGraph>,
     inventory_item_id: u64,
-) -> Vec<(String, usize)> {
+) -> Vec<(String, usize, String)> {
     let Some(equip) = equip else {
         return Vec::new();
     };
@@ -1582,7 +1578,14 @@ fn equipped_input_badges(
                 .iter()
                 .position(|(_, item_id)| *item_id == inventory_item_id)
                 .unwrap_or_default();
-            Some((equipment_input_display(binding.input), depth))
+            let locations = binding
+                .locations
+                .iter()
+                .copied()
+                .map(equipment_location_display)
+                .collect::<Vec<_>>()
+                .join(" / ");
+            Some((equipment_input_display(binding.input), depth, locations))
         })
         .collect()
 }
@@ -1906,6 +1909,20 @@ fn equipment_control(
     if let Some(attachment) = &attachment_summary {
         equipped_context.push(attachment.clone());
     }
+    if !input_badges.is_empty() {
+        equipped_context.push(format!(
+            "Keyboard: {}",
+            input_badges
+                .iter()
+                .map(|(input, depth, locations)| {
+                    format!("{input} = {locations}, layer {}", depth + 1)
+                })
+                .collect::<Vec<_>>()
+                .join("; ")
+        ));
+    } else if equipped {
+        equipped_context.push("Equipped; no keyboard binding".into());
+    }
     let item_name = item_display_name(&inventory.item_id);
     let base_label = if medication && medication_is_self {
         format!("Administer {item_name}")
@@ -1948,10 +1965,9 @@ fn equipment_control(
                 aria-describedby=(format!("equipment-status-{}", inventory.id))
                 aria-label=(label)
                 title=(title);
-        } @else {
+        } @else if equippable {
             button type="button"
                 class="equipment-slot-control"
-                disabled[!equippable]
                 data-equipment-toggle
                 data-equipment-equipped=(equipped)
                 data-inventory-item-id=(inventory.id)
@@ -1959,29 +1975,33 @@ fn equipment_control(
                 data-wear-placements=(placement_labels)
                 data-equipment-input-map=(input_map_json)
                 data-equipment-placement-options=(placement_options_json)
-                aria-haspopup=[equippable.then_some("dialog")]
+                aria-haspopup="dialog"
                 aria-describedby=(format!("equipment-status-{}", inventory.id))
                 aria-label=(label)
-                title=(title) {
+                data-strategic-tooltip=(title) {
                 @if equipped {
                     @if input_badges.is_empty() {
-                        kbd class="equipment-slot-key" { "?" }
+                        span class="equipment-slot-unbound"
+                            aria-hidden="true" { (decorative_game_icon("check-mark")) }
                     } @else {
-                        @for (input, depth) in &input_badges {
+                        @for (input, depth, locations) in &input_badges {
                             @let lightness = 88usize.saturating_sub((*depth).min(5) * 9);
                             kbd class="equipment-slot-key"
                                 data-equipment-layer-depth=(depth)
+                                data-strategic-tooltip=(format!("{input}: {locations}, layer {}", depth + 1))
                                 style=(format!("--equipment-layer-lightness: {lightness}%")) {
                                 (input)
                             }
                         }
                     }
-                } @else if equippable {
-                    span class="equipment-slot-empty" aria-hidden="true" { "+" }
                 } @else {
-                    span class="equipment-slot-empty" aria-hidden="true" { "—" }
+                    span class="equipment-slot-empty" aria-hidden="true" { "+" }
                 }
             }
+        } @else {
+            span class="equipment-unavailable" role="img" tabindex="0"
+                aria-label="Not equippable"
+                data-strategic-tooltip="This item cannot be equipped" {}
         }
         span id=(format!("equipment-status-{}", inventory.id))
             class="equipment-toggle-status"
@@ -2433,7 +2453,7 @@ pub(super) fn trade_inventory_table_header(
     html! { thead { tr {
         (item_type_header())
         th scope="col" class="inventory-column-item" { "Item" }
-        th scope="col" class="inventory-column-count" { "#" }
+        th scope="col" class="inventory-column-count" title="Quantity" { (game_icon("Quantity", "open-chest")) }
         @if show_equipped { th scope="col" class="inventory-column-equipped" title="Equipped" { (game_icon("Equipped", "check-mark")) } }
         @if let Some(condition_header) = condition_header { th scope="col" class="inventory-column-durability" { (condition_header) } }
         th scope="col" class="inventory-column-weight" title="Weight" { (game_icon("Weight", "weight")) }
@@ -2578,20 +2598,16 @@ mod tests {
     #[test]
     fn encumbrance_meter_formats_exact_text_and_accessible_linear_position() {
         let markup = encumbrance_meter(EncumbranceSummary::new(85.36, 150.0)).into_string();
-        assert!(markup.contains(">85.4 / 150.0 kg<"));
-        assert!(markup.contains(">-56.9%<"));
-        assert!(!markup.contains(">Weight"));
-        assert!(!markup.contains(">Penalty"));
         assert!(markup.contains("Weight 85.4 / 150.0 kilograms; Penalty -56.9%"));
-        assert!(markup.contains("class=\"encumbrance-values\" aria-hidden=\"true\""));
-        assert!(markup.contains(
-            "<span class=\"encumbrance-weight\">85.4 / 150.0 kg</span><span class=\"encumbrance-penalty\">-56.9%</span>"
-        ));
+        assert!(!markup.contains("encumbrance-values"));
+        assert!(!markup.contains(">85.4 / 150.0 kg<"));
+        assert!(!markup.contains(">-56.9%<"));
         assert!(
             markup.contains(
-                "</div><div class=\"encumbrance-visual\"><div class=\"encumbrance-meter\""
+                "data-strategic-tooltip=\"Weight 85.4 / 150.0 kilograms; Penalty -56.9%\""
             )
         );
+        assert!(markup.contains("tabindex=\"0\""));
         assert!(markup.contains("role=\"meter\""));
         assert!(markup.contains("aria-valuenow=\"56.9\""));
         assert!(markup.contains("--encumbrance-position: 56.9067%"));
@@ -2600,8 +2616,8 @@ mod tests {
     #[test]
     fn overloaded_meter_keeps_burden_but_clamps_penalty_and_marker() {
         let markup = encumbrance_meter(EncumbranceSummary::new(185.4, 150.0)).into_string();
-        assert!(markup.contains(">185.4 / 150.0 kg<"));
-        assert!(markup.contains(">-100.0%<"));
+        assert!(markup.contains("Weight 185.4 / 150.0 kilograms; Penalty -100.0%"));
+        assert!(!markup.contains(">185.4 / 150.0 kg<"));
         assert!(markup.contains("--encumbrance-position: 100.0000%"));
     }
 
@@ -2646,19 +2662,16 @@ mod tests {
         assert!(css.contains("padding-left: 3.25rem"));
         assert!(css.contains("padding-right: 1.75rem"));
         assert!(css.contains("container-type: inline-size"));
-        assert!(css.contains("flex: 0 0 50%"));
-        assert!(css.contains("width: 50%"));
-        assert!(css.contains("font-size: clamp(0.55rem, 4cqi, 0.78rem)"));
+        assert!(css.contains("flex: 1 1 100%"));
+        assert!(css.contains("width: 100%"));
+        assert!(!markup.contains("encumbrance-values"));
         assert!(css.contains(".encumbrance-meter"));
         assert!(css.contains("width: 100%"));
         assert!(css.contains("@container (max-width: 12rem)"));
         assert!(css.contains("padding-inline: 0.2rem"));
-        assert!(css.contains("font-size: 0.5rem"));
         assert!(css.contains("@container (max-width: 10rem)"));
         assert!(css.contains("padding-inline: 0.1rem"));
-        assert!(css.contains("padding-right: 0.05rem"));
-        assert!(css.contains("padding-left: 0.05rem"));
-        assert!(css.contains("font-size: 0.43rem"));
+        assert!(!css.contains(".encumbrance-values"));
     }
 
     #[test]
@@ -2710,13 +2723,26 @@ mod tests {
         assert!(merchant.contains("data-hard-navigation"));
         assert!(merchant.contains("data-inventory-pane=\"player\""));
         assert!(merchant.contains("data-inventory-pane=\"party\""));
-        assert!(merchant.contains(">10.0 / 100.0 kg<"));
-        assert!(merchant.contains(">30.0 / 200.0 kg<"));
+        assert!(
+            merchant.contains(
+                "data-strategic-tooltip=\"Weight 10.0 / 100.0 kilograms; Penalty -10.0%\""
+            )
+        );
+        assert!(
+            merchant.contains(
+                "data-strategic-tooltip=\"Weight 30.0 / 200.0 kilograms; Penalty -15.0%\""
+            )
+        );
+        assert!(!merchant.contains(">10.0 / 100.0 kg<"));
+        assert!(!merchant.contains(">30.0 / 200.0 kg<"));
 
         let herbalist = render(MerchantShop::Herbalist);
-        assert!(herbalist.contains(">10.0 / 100.0 kg<"));
+        assert!(
+            herbalist.contains("aria-valuetext=\"Weight 10.0 / 100.0 kilograms; Penalty -10.0%\"")
+        );
+        assert!(!herbalist.contains(">10.0 / 100.0 kg<"));
         assert!(!herbalist.contains("data-inventory-pane=\"party\""));
-        assert!(!herbalist.contains(">30.0 / 200.0 kg<"));
+        assert!(!herbalist.contains("Weight 30.0 / 200.0 kilograms"));
 
         let inn = render(MerchantShop::Inn);
         assert!(inn.contains("Cooking supplies"));
@@ -3058,7 +3084,25 @@ mod tests {
         definition.equipment_placements.clear();
         let disabled =
             equipment_control(&inventory, Some(&definition), false, true, None).into_string();
-        assert!(disabled.contains(" disabled"));
+        assert!(disabled.contains("class=\"equipment-unavailable\""));
+        assert!(disabled.contains("aria-label=\"Not equippable\""));
+        assert!(!disabled.contains("equipment-slot-control"));
+
+        definition.equipment_placements.push(EquipmentPlacement {
+            id: "left_hand".into(),
+            occupancy: vec![EquipmentOccupancyRequirement {
+                location: EquipmentLocation::LeftHand,
+                channel: EquipmentChannel::Held,
+                order: 0,
+            }],
+            parents: Vec::new(),
+            protection: Vec::new(),
+        });
+        let unbound =
+            equipment_control(&inventory, Some(&definition), true, true, None).into_string();
+        assert!(unbound.contains("check-mark.svg"));
+        assert!(unbound.contains("Equipped; no keyboard binding"));
+        assert!(!unbound.contains(">?</kbd>"));
     }
 
     #[test]
@@ -3154,9 +3198,8 @@ mod tests {
         assert!(outer_control.contains(">G</kbd>"));
         assert!(outer_control.contains(">Y</kbd>"));
         assert!(outer_control.contains("--equipment-layer-lightness: 88%"));
-        assert!(outer_control.contains(
-            "aria-label=\"Unequip Cloak. Slots: Chest, Stomach. Protects Chest (80% coverage)\""
-        ));
+        assert!(outer_control.contains("aria-label=\"Unequip Cloak. Slots: Chest, Stomach. Protects Chest (80% coverage). Keyboard: G = Chest, layer 1; Y = Stomach, layer 1\""));
+        assert!(outer_control.contains("data-strategic-tooltip=\"G: Chest, layer 1\""));
         assert!(outer_control.contains("protects Chest (80% coverage)"));
 
         let inner_definition = crate::spacetimedb::ItemDefinition {
@@ -3249,8 +3292,9 @@ mod tests {
             equipment_control(&child, Some(&definition), true, true, Some(&graph)).into_string();
         assert!(rendered.contains(">F</kbd>"));
         assert!(rendered.contains(
-            "aria-label=\"Unequip Pouch. Slots: Front belt. Attached: Belt / front-loop\""
+            "aria-label=\"Unequip Pouch. Slots: Front belt. Attached: Belt / front-loop. Keyboard:"
         ));
+        assert!(rendered.contains("F = Front belt"));
         assert!(rendered.contains(
             "<span class=\"equipment-graph-summary\">Attached: Belt / front-loop</span>"
         ));
