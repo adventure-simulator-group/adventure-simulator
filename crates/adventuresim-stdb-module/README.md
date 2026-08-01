@@ -17,6 +17,10 @@ the headless tactical server.
 See the repository [architecture reference](../../wiki/reference/architecture.md)
 for the complete boundary.
 
+The current factoring, domain-typing, invalid-state, macro, and testing audit is
+recorded in the
+[strategic server code-quality review](../../wiki/reference/strategic-server-code-quality.md).
+
 ## Content and authority
 
 Generated cases retain private catalog revision, deterministic context,

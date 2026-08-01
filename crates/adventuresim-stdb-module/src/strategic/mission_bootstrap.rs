@@ -1625,7 +1625,9 @@ fn ensure_simulation_quest_provisioning_environment(
         .character_id()
         .find(leader_id)
         .map_or(720, |time| time.minutes);
-    let provider_id = default_merchant_provider(ctx, &settlement_id, "merchants", "market")?;
+    let provider_id = default_merchant_provider(ctx, &settlement_id, "merchants", "market")
+        .map_err(|error| error.to_string())?
+        .get();
     let provider = ctx
         .db
         .settlement_resident_presence()

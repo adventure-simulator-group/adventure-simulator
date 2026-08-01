@@ -487,18 +487,37 @@ fn case_blocker_authority_paths_remain_reachable_and_private() {
 
 #[test]
 fn merchant_trade_is_bound_to_a_closed_storefront_and_persistent_provider() {
-    use adventuresim_core::settlement_economy::Storefront;
+    use adventuresim_core::{
+        settlement_economy::Storefront,
+        strategic_inventory::MerchantStorefrontRoute,
+    };
 
     assert_eq!(
-        merchant_storefront("merchants").unwrap(),
-        (Storefront::General, "market")
+        MerchantStorefrontRoute::try_from("merchants")
+            .unwrap()
+            .storefront(),
+        Storefront::General
     );
     assert_eq!(
-        merchant_storefront("inn").unwrap(),
-        (Storefront::Inn, "inn")
+        MerchantStorefrontRoute::try_from("merchants")
+            .unwrap()
+            .location_id(),
+        "market"
     );
-    assert!(merchant_storefront("herbalist").is_err());
-    assert!(merchant_storefront("../inn").is_err());
+    assert_eq!(
+        MerchantStorefrontRoute::try_from("inn")
+            .unwrap()
+            .storefront(),
+        Storefront::Inn
+    );
+    assert_eq!(
+        MerchantStorefrontRoute::try_from("inn")
+            .unwrap()
+            .location_id(),
+        "inn"
+    );
+    assert!(MerchantStorefrontRoute::try_from("herbalist").is_err());
+    assert!(MerchantStorefrontRoute::try_from("../inn").is_err());
 
     let source = STRATEGIC_SOURCE;
     let trade = source
@@ -513,7 +532,7 @@ fn merchant_trade_is_bound_to_a_closed_storefront_and_persistent_provider() {
         "provider.service_id != service_id",
         "provider_presence.location_id != location_id",
         "npc_is_present(&provider_presence, problem_minute)",
-        "default_merchant_provider(ctx, &settlement_id, &service_id, location_id)?",
+        "default_merchant_provider(ctx, &settlement_id, &service_id, location_id)",
         "storefront_stocks(",
         "settlement_allowlist",
         "inventory_food_definition(Some(item.kind), item_id)?",
@@ -541,19 +560,12 @@ fn merchant_trade_is_bound_to_a_closed_storefront_and_persistent_provider() {
 }
 
 #[test]
-fn merchant_provider_selection_rejects_ambiguous_defaults() {
-    assert_eq!(unique_default_merchant_provider([41]).unwrap(), 41);
-    assert!(unique_default_merchant_provider(Vec::<u64>::new()).is_err());
-    assert!(unique_default_merchant_provider([41, 42]).is_err());
-}
-
-#[test]
 fn atomic_personal_storefront_purchase_validates_before_funding() {
     let source = STRATEGIC_SOURCE;
     let body = source
         .split("pub fn purchase_personal_storefront_with_party_stake")
         .nth(1)
-        .and_then(|tail| tail.split("fn personal_storefront_payment").next())
+        .and_then(|tail| tail.split("fn validate_personal_storefront_purchase").next())
         .expect("atomic personal storefront reducer");
     let validation = body.find("validate_personal_storefront_purchase").unwrap();
     let transfer = body.find("transfer_party_currency_to_personal").unwrap();
@@ -566,19 +578,11 @@ fn atomic_personal_storefront_purchase_validates_before_funding() {
 }
 
 #[test]
-fn atomic_personal_storefront_payment_never_exceeds_authorized_stake() {
-    assert_eq!(personal_storefront_payment(12, 10, 2), Some((10, 2)));
-    assert_eq!(personal_storefront_payment(8, 10, 0), Some((8, 0)));
-    assert_eq!(personal_storefront_payment(12, 10, 1), None);
-}
-
-#[test]
 fn fully_personal_storefront_purchase_does_not_require_a_stake_row() {
-    assert_eq!(personal_storefront_payment(8, 8, 0), Some((8, 0)));
     let body = STRATEGIC_SOURCE
         .split("pub fn purchase_personal_storefront_with_party_stake")
         .nth(1)
-        .and_then(|tail| tail.split("fn personal_storefront_payment").next())
+        .and_then(|tail| tail.split("fn validate_personal_storefront_purchase").next())
         .expect("atomic personal storefront reducer");
     let stake_branch = body.find("if stake_payment > 0").unwrap();
     let stake_lookup = body.find(".party_stake()").unwrap();

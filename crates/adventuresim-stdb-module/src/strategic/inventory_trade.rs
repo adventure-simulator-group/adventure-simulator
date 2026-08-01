@@ -1236,7 +1236,12 @@ pub fn deposit_party_inventory_item(
                     .filter(|row| row.item_id == inventory.item_id)
                     .max_by_key(|row| row.id)
             })
-            .expect("durable party row was just inserted");
+            .ok_or_else(|| {
+                format!(
+                    "Durable party inventory row was not found after depositing item {} into party {}",
+                    inventory.item_id, party_id
+                )
+            })?;
         ctx.db
             .party_item_condition()
             .party_inventory_item_id()
@@ -1719,7 +1724,8 @@ pub fn finalize_merchant_trade(
     party_scope: bool,
 ) -> Result<(), String> {
     let provider_resident_character_id =
-        default_merchant_provider(ctx, &settlement_id, "merchants", "market")?;
+        default_merchant_provider(ctx, &settlement_id, "merchants", "market")
+            .map_err(|error| error.to_string())?;
     finalize_storefront_trade_impl(
         ctx,
         character_id,
@@ -1747,6 +1753,11 @@ pub fn finalize_storefront_trade(
     sell_quantities: Vec<u32>,
     party_scope: bool,
 ) -> Result<(), String> {
+    let provider_resident_character_id =
+        adventuresim_core::strategic_inventory::MerchantProviderId::try_from(
+            provider_resident_character_id,
+        )
+        .map_err(|error| error.to_string())?;
     finalize_storefront_trade_impl(
         ctx,
         character_id,
@@ -1778,6 +1789,11 @@ pub fn purchase_personal_storefront_with_party_stake(
     maximum_stake_payment: u64,
 ) -> Result<(), String> {
     require_strategic_character_authority(ctx, character_id)?;
+    let provider_resident_character_id =
+        adventuresim_core::strategic_inventory::MerchantProviderId::try_from(
+            provider_resident_character_id,
+        )
+        .map_err(|error| error.to_string())?;
     let (party_id, current_unit_price) = validate_personal_storefront_purchase(
         ctx,
         character_id,
@@ -1793,9 +1809,14 @@ pub fn purchase_personal_storefront_with_party_stake(
     let total = current_unit_price
         .checked_mul(u64::from(quantity))
         .ok_or("Merchant purchase total overflow")?;
-    let (personal_payment, stake_payment) =
-        personal_storefront_payment(total, maximum_personal_payment, maximum_stake_payment)
-            .ok_or("Current storefront payment exceeds the authorized stake maximum")?;
+    let payment = adventuresim_core::strategic_inventory::StorefrontPaymentAuthorization::new(
+        maximum_personal_payment,
+        maximum_stake_payment,
+    )
+    .plan(total)
+    .map_err(|error| error.to_string())?;
+    let personal_payment = payment.personal_amount();
+    let stake_payment = payment.stake_amount();
     if crate::item::personal_currency_total(ctx, character_id) < personal_payment {
         return Err("Not enough personal coin".into());
     }
@@ -1828,22 +1849,12 @@ pub fn purchase_personal_storefront_with_party_stake(
     )
 }
 
-fn personal_storefront_payment(
-    total: u64,
-    maximum_personal_payment: u64,
-    maximum_stake_payment: u64,
-) -> Option<(u64, u64)> {
-    let personal = total.min(maximum_personal_payment);
-    let stake = total.saturating_sub(personal);
-    (stake <= maximum_stake_payment).then_some((personal, stake))
-}
-
 fn validate_personal_storefront_purchase(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: &str,
     service_id: &str,
-    provider_resident_character_id: u64,
+    provider_resident_character_id: adventuresim_core::strategic_inventory::MerchantProviderId,
     item_id: &str,
     quantity: u32,
 ) -> Result<(String, u64), String> {
@@ -1852,7 +1863,12 @@ fn validate_personal_storefront_purchase(
         return Err("Character must be at this settlement to purchase".into());
     }
     let party_id = character.party_id.ok_or("Character has no party")?;
-    let (storefront, location_id) = merchant_storefront(service_id)?;
+    let route = adventuresim_core::strategic_inventory::MerchantStorefrontRoute::try_from(
+        service_id,
+    )
+    .map_err(|error| error.to_string())?;
+    let storefront = route.storefront();
+    let location_id = route.location_id();
     let settlement = ctx
         .db
         .settlement()
@@ -1885,7 +1901,8 @@ fn validate_personal_storefront_purchase(
     {
         return Err("This settlement does not stock that merchant item".into());
     }
-    if default_merchant_provider(ctx, settlement_id, service_id, location_id)?
+    if default_merchant_provider(ctx, settlement_id, service_id, location_id)
+        .map_err(|error| error.to_string())?
         != provider_resident_character_id
     {
         return Err("Merchant service provider does not match this storefront".into());
@@ -1894,7 +1911,7 @@ fn validate_personal_storefront_purchase(
         .db
         .settlement_resident_presence()
         .character_id()
-        .find(provider_resident_character_id)
+        .find(provider_resident_character_id.get())
         .ok_or("Merchant service provider has no presence")?;
     let minute = ctx
         .db
@@ -1941,34 +1958,16 @@ fn validate_personal_storefront_purchase(
     ))
 }
 
-fn merchant_storefront(
-    service_id: &str,
-) -> Result<
-    (
-        adventuresim_core::settlement_economy::Storefront,
-        &'static str,
-    ),
-    String,
-> {
-    use adventuresim_core::settlement_economy::Storefront;
-    match service_id {
-        "merchants" => Ok((Storefront::General, "market")),
-        "weapons" => Ok((Storefront::Weapons, "forge")),
-        "armor" => Ok((Storefront::Armor, "armoury")),
-        "clothing" => Ok((Storefront::Clothing, "tailor")),
-        "inn" => Ok((Storefront::Inn, "inn")),
-        "books" => Ok((Storefront::Books, "bookstore")),
-        _ => Err("Unknown merchant storefront".into()),
-    }
-}
-
 fn default_merchant_provider(
     ctx: &ReducerContext,
     settlement_id: &str,
     service_id: &str,
     location_id: &str,
-) -> Result<u64, String> {
-    unique_default_merchant_provider(
+) -> Result<
+    adventuresim_core::strategic_inventory::MerchantProviderId,
+    adventuresim_core::strategic_inventory::MerchantProviderError,
+> {
+    adventuresim_core::strategic_inventory::unique_merchant_provider(
         ctx.db
             .settlement_resident_profile()
             .iter()
@@ -1988,24 +1987,13 @@ fn default_merchant_provider(
     )
 }
 
-fn unique_default_merchant_provider(
-    providers: impl IntoIterator<Item = u64>,
-) -> Result<u64, String> {
-    let providers = providers.into_iter().collect::<Vec<_>>();
-    match providers.as_slice() {
-        [provider] => Ok(*provider),
-        [] => Err("Merchant service provider not found".into()),
-        _ => Err("Merchant service provider is ambiguous".into()),
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 fn finalize_storefront_trade_impl(
     ctx: &ReducerContext,
     character_id: u64,
     settlement_id: String,
     service_id: String,
-    provider_resident_character_id: u64,
+    provider_resident_character_id: adventuresim_core::strategic_inventory::MerchantProviderId,
     buy_item_ids: Vec<String>,
     buy_quantities: Vec<u32>,
     sell_inventory_ids: Vec<u64>,
@@ -2016,10 +2004,15 @@ fn finalize_storefront_trade_impl(
     crate::relationship::enforce_temporal_scope(
         ctx,
         character_id,
-        Some(provider_resident_character_id),
+        Some(provider_resident_character_id.get()),
         crate::relationship::TemporalScope::PairwiseSoft,
     )?;
-    let (storefront, location_id) = merchant_storefront(&service_id)?;
+    let route = adventuresim_core::strategic_inventory::MerchantStorefrontRoute::try_from(
+        service_id.as_str(),
+    )
+    .map_err(|error| error.to_string())?;
+    let storefront = route.storefront();
+    let location_id = route.location_id();
     if buy_item_ids.len() != buy_quantities.len()
         || sell_inventory_ids.len() != sell_quantities.len()
     {
@@ -2046,13 +2039,13 @@ fn finalize_storefront_trade_impl(
         .db
         .settlement_resident_profile()
         .character_id()
-        .find(provider_resident_character_id)
+        .find(provider_resident_character_id.get())
         .ok_or("Merchant service provider not found")?;
     let provider_presence = ctx
         .db
         .settlement_resident_presence()
         .character_id()
-        .find(provider_resident_character_id)
+        .find(provider_resident_character_id.get())
         .ok_or("Merchant service provider has no presence")?;
     let problem_minute = ctx
         .db
@@ -2069,7 +2062,8 @@ fn finalize_storefront_trade_impl(
     {
         return Err("Merchant service provider is not available".into());
     }
-    if default_merchant_provider(ctx, &settlement_id, &service_id, location_id)?
+    if default_merchant_provider(ctx, &settlement_id, &service_id, location_id)
+        .map_err(|error| error.to_string())?
         != provider_resident_character_id
     {
         return Err("Merchant service provider does not match this storefront".into());
