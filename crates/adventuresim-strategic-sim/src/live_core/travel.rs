@@ -1187,26 +1187,47 @@ impl LiveRunner {
             let camp_members_before = self.expedition_member_observations(party_id)?;
             let camp_supplies_before = self.expedition_supplies(party_id);
             let before_completed_elapsed = camp.completed_elapsed_minutes;
+            let leader_before_rest = party.leader_id;
             let shelter =
                 self.rest_at_camp_with_party_shelter(travel_actor, rest_minutes, "rest_at_camp")?;
             self.observe_deaths();
-            let Some((continue_actor, agent, continue_actor_role)) =
-                self.expedition_recovery_actor(party_id)
-            else {
-                return self.record_journey_hold(
-                    party_id,
-                    "journey_stalled_after_rest",
-                    "journey_held_no_actionable_actor",
-                );
-            };
-            let unsafe_after_rest = self.unsafe_party_agents(&self.party_agents(continue_actor)?);
             let camp_members_after = self.expedition_member_observations(party_id)?;
+            let before_liveness = camp_members_before
+                .iter()
+                .map(|member| (member.character_id, member.alive))
+                .collect::<Vec<_>>();
+            let after_liveness = camp_members_after
+                .iter()
+                .map(|member| (member.character_id, member.alive))
+                .collect::<Vec<_>>();
+            let terminal_ids = public_alive_to_dead_ids(&before_liveness, &after_liveness);
+            let terminal_state_change = !terminal_ids.is_empty();
+            let before_member_elapsed = camp_members_before
+                .iter()
+                .map(|member| (member.character_id, member.elapsed_minutes))
+                .collect::<Vec<_>>();
+            let after_member_elapsed = camp_members_after
+                .iter()
+                .map(|member| (member.character_id, member.elapsed_minutes))
+                .collect::<Vec<_>>();
+            let terminal_rest_elapsed = public_terminal_rest_elapsed(
+                &terminal_ids,
+                &before_member_elapsed,
+                &after_member_elapsed,
+            );
+            let unsafe_after_rest = camp_members_after
+                .iter()
+                .filter(|member| expedition_member_needs_recovery(member))
+                .map(|member| member.agent_id)
+                .collect::<Vec<_>>();
             let camp_supplies_after = self.expedition_supplies(party_id);
             self.emit_expedition_diagnostics(
                 party_id,
                 "journey_camp",
                 "rest_at_camp",
-                if unsafe_after_rest.is_empty() {
+                if terminal_state_change {
+                    "journey_terminal_state_reclassified"
+                } else if unsafe_after_rest.is_empty() {
                     "quest_leg_rest_complete"
                 } else {
                     "quest_suppressed_member_not_ready_after_camp"
@@ -1231,37 +1252,45 @@ impl LiveRunner {
                 .iter()
                 .filter(|row| row.party_id == party_id)
                 .collect::<Vec<_>>();
-            let ([after_rest_journey], [after_rest_itinerary]) = (
+            let (after_completed_elapsed, after_total_elapsed) = match (
+                after_rest_party.camp_destination.as_ref(),
                 after_rest_journeys.as_slice(),
                 after_rest_itineraries.as_slice(),
-            ) else {
-                return Err(
-                    "journey camp projection is incoherent: rest did not preserve unique public journey projections"
-                        .into(),
-                );
+            ) {
+                (Some(after_rest_destination), [after_rest_journey], [after_rest_itinerary])
+                    if &after_rest_journey.destination == after_rest_destination
+                        && after_rest_itinerary.party_id == party_id =>
+                {
+                    (
+                        after_rest_journey.completed_elapsed_minutes,
+                        after_rest_journey.total_elapsed_minutes,
+                    )
+                }
+                (None, [], []) if terminal_state_change => {
+                    let terminal_rest_elapsed = terminal_rest_elapsed.ok_or(
+                        "journey camp projection is incoherent: terminal rest elapsed is unavailable",
+                    )?;
+                    let after_completed_elapsed = before_completed_elapsed
+                        .checked_add(terminal_rest_elapsed)
+                        .ok_or("journey camp projection is incoherent: terminal rest elapsed overflowed")?;
+                    (after_completed_elapsed, camp.total_elapsed_minutes)
+                }
+                _ => {
+                    return Err(
+                        "journey camp projection is incoherent: rest changed the active journey identity"
+                            .into(),
+                    );
+                }
             };
-            let Some(after_rest_destination) = after_rest_party.camp_destination.as_ref() else {
-                return Err(
-                    "journey camp projection is incoherent: rest removed the active destination"
-                        .into(),
-                );
-            };
-            if &after_rest_journey.destination != after_rest_destination
-                || after_rest_itinerary.party_id != party_id
-            {
-                return Err(
-                    "journey camp projection is incoherent: rest changed the active journey identity"
-                        .into(),
-                );
-            }
             let interrupted =
                 self.party_has_public_travel_interruption(party_id, after_rest_party.leader_id);
             let post_rest_progress = classify_post_rest_progress(
                 before_completed_elapsed,
                 rest_minutes,
-                after_rest_journey.completed_elapsed_minutes,
-                after_rest_journey.total_elapsed_minutes,
+                after_completed_elapsed,
+                after_total_elapsed,
                 interrupted,
+                terminal_state_change,
             )
             .map_err(|reason| {
                 format!(
@@ -1269,21 +1298,45 @@ impl LiveRunner {
                 )
             })?;
             let actual_rest_minutes = post_rest_progress.actual_rest_minutes();
+            let post_rest_agent = self
+                .current_leader(party_id)
+                .map_or(travel_agent, |(_, agent)| agent);
             self.event(
-                agent,
+                post_rest_agent,
                 CoreLoopEventKind::Camp,
                 format!(
-                    "phase=post_rest;party={};completed_elapsed={};total_elapsed={};requested_rest_minutes={rest_minutes};actual_rest_minutes={actual_rest_minutes};shelter={shelter:?};remaining_movement={}",
+                    "phase=post_rest;party={};completed_elapsed={after_completed_elapsed};total_elapsed={after_total_elapsed};requested_rest_minutes={rest_minutes};actual_rest_minutes={actual_rest_minutes};terminal_state_change={terminal_state_change};terminal_deaths={};leader_before={leader_before_rest};leader_after={};shelter={shelter:?};remaining_movement={}",
                     bounded_event_field(party_id),
-                    after_rest_journey.completed_elapsed_minutes,
-                    after_rest_journey.total_elapsed_minutes,
+                    terminal_ids.len(),
+                    after_rest_party.leader_id,
                     after_rest_party.camp_remaining_minutes,
                 ),
             );
-            self.metrics.camp_stops = self.metrics.camp_stops.saturating_add(1);
+            if actual_rest_minutes > 0 {
+                self.metrics.camp_stops = self.metrics.camp_stops.saturating_add(1);
+            }
+            if terminal_state_change {
+                if self.expedition_recovery_actor(party_id).is_none() {
+                    return self.record_journey_hold(
+                        party_id,
+                        "journey_stalled_after_terminal_rest",
+                        "journey_held_no_actionable_actor",
+                    );
+                }
+                continue;
+            }
             if interrupted {
                 continue;
             }
+            let Some((continue_actor, agent, continue_actor_role)) =
+                self.expedition_recovery_actor(party_id)
+            else {
+                return self.record_journey_hold(
+                    party_id,
+                    "journey_stalled_after_rest",
+                    "journey_held_no_actionable_actor",
+                );
+            };
             let evacuation_leg = matches!(
                 after_rest_party.camp_destination,
                 Some(JourneyEndpoint::Settlement(_))

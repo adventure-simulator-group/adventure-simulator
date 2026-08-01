@@ -207,34 +207,84 @@ fn narrative_encounter_policy_uses_the_first_available_public_choice() {
 }
 
 #[test]
-fn post_rest_progress_accepts_only_exact_or_interrupted_short_rest() {
+fn post_rest_progress_accepts_only_explained_boundaries() {
     assert_eq!(
-        classify_post_rest_progress(1_000, 469, 1_469, 2_000, false),
+        classify_post_rest_progress(1_000, 469, 1_469, 2_000, false, false),
         Ok(PostRestProgress::Exact {
             actual_rest_minutes: 469,
         })
     );
     assert_eq!(
-        classify_post_rest_progress(1_000, 469, 1_360, 2_000, true),
+        classify_post_rest_progress(1_000, 469, 1_360, 2_000, true, false),
         Ok(PostRestProgress::InterruptedShort {
             actual_rest_minutes: 360,
         })
     );
     assert_eq!(
-        classify_post_rest_progress(1_000, 469, 1_360, 2_000, false),
+        classify_post_rest_progress(1_000, 469, 1_360, 2_000, false, false),
         Err("post_rest_short_without_interruption")
     );
     assert_eq!(
-        classify_post_rest_progress(1_000, 469, 1_000, 2_000, true),
+        classify_post_rest_progress(1_000, 469, 1_000, 2_000, true, false),
         Err("post_rest_zero_progress")
     );
     assert_eq!(
-        classify_post_rest_progress(1_000, 469, 1_470, 2_000, true),
+        classify_post_rest_progress(1_000, 469, 1_470, 2_000, true, true),
         Err("post_rest_overshot_request")
     );
     assert_eq!(
-        classify_post_rest_progress(1_000, 469, 2_001, 2_000, true),
+        classify_post_rest_progress(1_000, 469, 2_001, 2_000, true, true),
         Err("post_rest_completed_after_total")
+    );
+}
+
+#[test]
+fn terminal_member_transitions_reclassify_short_and_zero_rest() {
+    let companion_death = public_alive_to_dead_ids(
+        &[(10, true), (20, true)],
+        &[(10, true), (20, false)],
+    );
+    assert_eq!(companion_death, vec![20]);
+    assert_eq!(
+        public_terminal_rest_elapsed(
+            &companion_death,
+            &[(10, 1_000), (20, 1_000)],
+            &[(10, 1_360), (20, 1_360)],
+        ),
+        Some(360)
+    );
+    assert_eq!(
+        classify_post_rest_progress(1_000, 469, 1_360, 2_000, false, true),
+        Ok(PostRestProgress::TerminalBoundary {
+            actual_rest_minutes: 360,
+        })
+    );
+
+    let leader_death_with_successor = public_alive_to_dead_ids(
+        &[(10, true), (20, true)],
+        &[(10, false), (20, true)],
+    );
+    assert_eq!(leader_death_with_successor, vec![10]);
+    assert_eq!(
+        classify_post_rest_progress(1_000, 469, 1_469, 2_000, false, true),
+        Ok(PostRestProgress::TerminalBoundary {
+            actual_rest_minutes: 469,
+        })
+    );
+    assert_eq!(
+        classify_post_rest_progress(1_000, 469, 1_000, 2_000, false, true),
+        Ok(PostRestProgress::TerminalBoundary {
+            actual_rest_minutes: 0,
+        })
+    );
+
+    assert_eq!(
+        classify_post_rest_progress(1_000, 469, 1_360, 2_000, false, false),
+        Err("post_rest_short_without_interruption")
+    );
+    assert_eq!(
+        classify_post_rest_progress(1_000, 469, 1_000, 2_000, false, false),
+        Err("post_rest_zero_progress")
     );
 }
 
@@ -285,7 +335,7 @@ fn travel_subscribes_resolves_and_rechecks_public_narrative_interruptions() {
         "after_rest_journeys.as_slice()",
         "after_rest_itineraries.as_slice()",
         "after_rest_party.camp_destination.as_ref()",
-        "&after_rest_journey.destination != after_rest_destination",
+        "&after_rest_journey.destination == after_rest_destination",
     ] {
         assert!(post_rest.contains(baseline_coherence), "{baseline_coherence}");
     }
@@ -293,6 +343,21 @@ fn travel_subscribes_resolves_and_rechecks_public_narrative_interruptions() {
     assert!(strict_progress < completed_camp && completed_camp < continuation);
     assert!(post_rest.contains("requested_rest_minutes={rest_minutes}"));
     assert!(post_rest.contains("actual_rest_minutes={actual_rest_minutes}"));
+    assert!(post_rest.contains("terminal_state_change={terminal_state_change}"));
+    assert!(post_rest.contains("leader_before={leader_before_rest}"));
+    assert!(post_rest.contains("leader_after={}"));
+
+    let terminal_reclassification = post_rest
+        .rfind("if terminal_state_change")
+        .expect("terminal reclassification branch");
+    assert!(terminal_reclassification < continuation);
+    let all_dead_teardown = post_rest
+        .find("(None, [], []) if terminal_state_change")
+        .expect("all-dead public teardown projection");
+    let all_dead_hold = post_rest
+        .find("journey_stalled_after_terminal_rest")
+        .expect("all-dead terminal hold");
+    assert!(all_dead_teardown < strict_progress && strict_progress < all_dead_hold);
 
     let classifier = source
         .split("fn classify_post_rest_progress")

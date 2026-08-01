@@ -1554,6 +1554,7 @@ enum PublicJourneyCampState {
 enum PostRestProgress {
     Exact { actual_rest_minutes: u64 },
     InterruptedShort { actual_rest_minutes: u64 },
+    TerminalBoundary { actual_rest_minutes: u64 },
 }
 
 impl PostRestProgress {
@@ -1563,6 +1564,9 @@ impl PostRestProgress {
                 actual_rest_minutes,
             }
             | Self::InterruptedShort {
+                actual_rest_minutes,
+            }
+            | Self::TerminalBoundary {
                 actual_rest_minutes,
             } => actual_rest_minutes,
         }
@@ -1575,6 +1579,7 @@ fn classify_post_rest_progress(
     after_completed_elapsed: u64,
     after_total_elapsed: u64,
     interrupted: bool,
+    terminal_state_change: bool,
 ) -> Result<PostRestProgress, &'static str> {
     if after_completed_elapsed > after_total_elapsed {
         return Err("post_rest_completed_after_total");
@@ -1582,11 +1587,16 @@ fn classify_post_rest_progress(
     let actual_rest_minutes = after_completed_elapsed
         .checked_sub(before_completed_elapsed)
         .ok_or("post_rest_progress_regressed")?;
-    if actual_rest_minutes == 0 {
-        return Err("post_rest_zero_progress");
-    }
     if actual_rest_minutes > requested_rest_minutes {
         return Err("post_rest_overshot_request");
+    }
+    if terminal_state_change {
+        return Ok(PostRestProgress::TerminalBoundary {
+            actual_rest_minutes,
+        });
+    }
+    if actual_rest_minutes == 0 {
+        return Err("post_rest_zero_progress");
     }
     if actual_rest_minutes < requested_rest_minutes {
         return if interrupted {
@@ -1600,6 +1610,45 @@ fn classify_post_rest_progress(
     Ok(PostRestProgress::Exact {
         actual_rest_minutes,
     })
+}
+
+fn public_alive_to_dead_ids(before: &[(u64, bool)], after: &[(u64, bool)]) -> Vec<u64> {
+    let mut deaths = before
+        .iter()
+        .filter(|(_, alive)| *alive)
+        .filter_map(|(character_id, _)| {
+            after
+                .iter()
+                .find(|(after_id, _)| after_id == character_id)
+                .is_some_and(|(_, alive)| !*alive)
+                .then_some(*character_id)
+        })
+        .collect::<Vec<_>>();
+    deaths.sort_unstable();
+    deaths
+}
+
+fn public_terminal_rest_elapsed(
+    terminal_ids: &[u64],
+    before: &[(u64, u64)],
+    after: &[(u64, u64)],
+) -> Option<u64> {
+    terminal_ids
+        .iter()
+        .map(|character_id| {
+            let before_elapsed = before
+                .iter()
+                .find(|(before_id, _)| before_id == character_id)?
+                .1;
+            let after_elapsed = after
+                .iter()
+                .find(|(after_id, _)| after_id == character_id)?
+                .1;
+            after_elapsed.checked_sub(before_elapsed)
+        })
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
+        .min()
 }
 
 fn classify_public_journey_camp_state(
