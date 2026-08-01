@@ -1366,6 +1366,8 @@ pub struct CharacterCapability {
     pub command: f32,
     pub religion: f32,
     pub weapon_precision: f32,
+    #[serde(default)]
+    pub autoresolve_combat_power: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
