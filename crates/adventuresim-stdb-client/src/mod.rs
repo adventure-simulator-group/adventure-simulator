@@ -330,6 +330,7 @@ pub mod errantry_authority_type;
 pub mod errantry_countermeasure_kind_type;
 pub mod errantry_countermeasure_type;
 pub mod errantry_finale_defense_kind_type;
+pub mod errantry_puzzle_kind_type;
 pub mod estate_disposition_status_type;
 pub mod estate_disposition_type;
 pub mod estate_heir_kind_type;
@@ -784,7 +785,7 @@ pub mod strategic_gateway_authority_type;
 pub mod strategic_incident_type;
 pub mod submit_all_repairable_items_reducer;
 pub mod submit_item_for_repair_reducer;
-pub mod submit_ordered_sigil_challenge_reducer;
+pub mod submit_puzzle_challenge_reducer;
 pub mod suitability_basis_points_type;
 pub mod surface_geology_type;
 pub mod surface_lithology_type;
@@ -1163,6 +1164,7 @@ pub use errantry_authority_type::ErrantryAuthority;
 pub use errantry_countermeasure_kind_type::ErrantryCountermeasureKind;
 pub use errantry_countermeasure_type::ErrantryCountermeasure;
 pub use errantry_finale_defense_kind_type::ErrantryFinaleDefenseKind;
+pub use errantry_puzzle_kind_type::ErrantryPuzzleKind;
 pub use estate_disposition_status_type::EstateDispositionStatus;
 pub use estate_disposition_type::EstateDisposition;
 pub use estate_heir_kind_type::EstateHeirKind;
@@ -1617,7 +1619,7 @@ pub use strategic_gateway_authority_type::StrategicGatewayAuthority;
 pub use strategic_incident_type::StrategicIncident;
 pub use submit_all_repairable_items_reducer::submit_all_repairable_items;
 pub use submit_item_for_repair_reducer::submit_item_for_repair;
-pub use submit_ordered_sigil_challenge_reducer::submit_ordered_sigil_challenge;
+pub use submit_puzzle_challenge_reducer::submit_puzzle_challenge;
 pub use suitability_basis_points_type::SuitabilityBasisPoints;
 pub use surface_geology_type::SurfaceGeology;
 pub use surface_lithology_type::SurfaceLithology;
@@ -2066,6 +2068,7 @@ pub enum Reducer {
     },
     LoadPuzzleDemo {
         character_id: u64,
+        puzzle_kind: ErrantryPuzzleKind,
     },
     OpenCorpse {
         actor_id: u64,
@@ -2401,12 +2404,12 @@ pub enum Reducer {
         service: String,
         inventory_item_id: u64,
     },
-    SubmitOrderedSigilChallenge {
+    SubmitPuzzleChallenge {
         character_id: u64,
         case_id: String,
         challenge_id: String,
         expected_revision: u32,
-        ordering_json: String,
+        submission_json: String,
     },
     SurrenderToAuthority {
         character_id: u64,
@@ -2652,7 +2655,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
             Reducer::SubmitAllRepairableItems { .. } => "submit_all_repairable_items",
             Reducer::SubmitItemForRepair { .. } => "submit_item_for_repair",
-            Reducer::SubmitOrderedSigilChallenge { .. } => "submit_ordered_sigil_challenge",
+            Reducer::SubmitPuzzleChallenge { .. } => "submit_puzzle_challenge",
             Reducer::SurrenderToAuthority { .. } => "surrender_to_authority",
             Reducer::SyncDevelopmentClockToCharacter { .. } => {
                 "sync_development_clock_to_character"
@@ -3371,8 +3374,10 @@ Reducer::BeginFormalCourtship{
 }),
             Reducer::LoadPuzzleDemo{
                 character_id,
+                puzzle_kind,
 }             => __sats::bsatn::to_vec(&load_puzzle_demo_reducer::LoadPuzzleDemoArgs {
                 character_id: character_id.clone(),
+                puzzle_kind: puzzle_kind.clone(),
 }),
             Reducer::OpenCorpse{
                 actor_id,
@@ -3977,18 +3982,18 @@ Reducer::BeginFormalCourtship{
                 service: service.clone(),
                 inventory_item_id: inventory_item_id.clone(),
 }),
-            Reducer::SubmitOrderedSigilChallenge{
+            Reducer::SubmitPuzzleChallenge{
                 character_id,
                 case_id,
                 challenge_id,
                 expected_revision,
-                ordering_json,
-}             => __sats::bsatn::to_vec(&submit_ordered_sigil_challenge_reducer::SubmitOrderedSigilChallengeArgs {
+                submission_json,
+}             => __sats::bsatn::to_vec(&submit_puzzle_challenge_reducer::SubmitPuzzleChallengeArgs {
                 character_id: character_id.clone(),
                 case_id: case_id.clone(),
                 challenge_id: challenge_id.clone(),
                 expected_revision: expected_revision.clone(),
-                ordering_json: ordering_json.clone(),
+                submission_json: submission_json.clone(),
 }),
             Reducer::SurrenderToAuthority{
                 character_id,

@@ -14,8 +14,9 @@ pub struct BackendChallenge {
     pub solved: bool,
     pub active: bool,
     pub last_attempt_correct: Option<bool>,
-    pub boon_item_id: Option<String>,
-    pub boon_combat_scale_reduction_bps: Option<u32>,
+    pub last_submission_json: Option<String>,
+    pub tactical_insight_text: Option<String>,
+    pub tactical_preparation_text: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]

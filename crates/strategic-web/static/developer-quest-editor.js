@@ -462,7 +462,8 @@
     button.disabled = true;
     button.textContent = "Loading...";
     try {
-      const response = await fetch("/api/developer/puzzle-demo", {
+      const kind = button.dataset.puzzleKind || "ordered-sigils";
+      const response = await fetch(`/api/developer/puzzle-demo?kind=${encodeURIComponent(kind)}`, {
         method: "POST",
         headers: { Accept: "application/json" },
       });

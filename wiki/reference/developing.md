@@ -1,15 +1,24 @@
 # Development Workflow
 
+For fast puzzle generation, interactive play, structural difficulty sweeps,
+and deterministic regression replay without starting SpacetimeDB or the web
+stack, use the dependency-light [`puzzle-lab`](puzzle-lab.md) CLI.
+
 ## Puzzle demo
 
 Start a disposable strategic-only stack with `just puzzle-demo`. Create or
 select an adventurer in a settlement, enable browser-local developer mode, and
-choose **Puzzle demo**. It creates or reuses a deterministic Order-sourced
-quest, active journey, persisted road camp, finale hostile, and ordered-sigil
-trial, then redirects immediately to the playable chat challenge. This skips
+choose **Sigil puzzle**, **Witness puzzle**, **Rune puzzle**,
+**Logic-grid puzzle**, or **Provision puzzle**. It creates or
+reuses a deterministic Order-sourced quest, active journey, persisted road
+camp, finale hostile, and selected puzzle trial, then redirects immediately to
+the playable chat challenge. This skips
 ordinary dialogue acceptance and travel setup. The no-JavaScript form uses
-POST/redirect/GET and preserves safe wrong/correct feedback. Solving awards
-the Favor of the Thorn Lady and returns to camp; the optional trial never
+POST/redirect/GET and preserves safe wrong/correct feedback. Background world
+updates do not replace the challenge page, and the solved transcript remains
+until **Return to camp** is selected. Solving reveals a combat-model-derived
+weakness and preparation recommendation without changing enemy statistics;
+the optional trial never
 blocks **Continue travel**. Rest for at least one hour at that bound camp to
 exercise the optional wounded-courier road trial. Aiding him adds his captured
 dispatch to party inventory; leaving him or continuing the journey remains

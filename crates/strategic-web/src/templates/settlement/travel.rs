@@ -822,6 +822,7 @@ pub fn camp_page(
     continue_block_reason: Option<&str>,
     encounter: Option<&StrategicEncounter>,
     trial: Option<(&str, &str, ChallengePresenterCatalogId)>,
+    tactical_insight: Option<(&str, &str)>,
     road_trial: Option<&BackendRoadChallenge>,
     road_result: Option<&str>,
     foraging_dialog: Option<Markup>,
@@ -876,6 +877,13 @@ pub fn camp_page(
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, "/camp", None, false))
             (visual_stage("camp", "Camp", "A resting place beside the party's onward route"))
+            @if let Some((finding, preparation)) = tactical_insight {
+                section class="strategic-notice" data-tactical-insight aria-label="Tactical insight" {
+                    h3 { "Tactical insight" }
+                    p { (finding) }
+                    p { strong { "Prepare accordingly: " } (preparation) }
+                }
+            }
             @if let Some((case_id, challenge_id, presenter_catalog_id)) = trial {
                 @let opening = match presenter_catalog_id {
                     ChallengePresenterCatalogId::LadyBeneathThornV1 =>

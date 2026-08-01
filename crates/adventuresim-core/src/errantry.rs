@@ -6,9 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const ORDERED_SIGIL_RULES_VERSION: u16 = 2;
-pub const ORDERED_SIGIL_COUNT: usize = 5;
-pub const MAX_MINIMIZATION_SUBSETS: usize = 100_000;
+mod puzzles;
+pub use puzzles::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrantryPurpose {
@@ -62,13 +61,51 @@ pub enum FinaleDefenseKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum CountermeasureKind {
-    FavorOfTheThornLady,
     CapturedDispatch,
     Antidote,
     TrapWarning,
     ColdIronCharm,
     BlessedWeapon,
     RescuedAlly,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TacticalInsightKind {
+    MustCloseToMelee,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TacticalInsight {
+    pub kind: TacticalInsightKind,
+    pub threat_id: String,
+    pub finding: String,
+    pub preparation: String,
+}
+
+/// Knowledge awarded by a trial must describe mechanics already consumed by
+/// combat. It never changes the threat profile or applies a hidden modifier.
+pub fn tactical_insight_for(threat_id: crate::bestiary::ThreatId) -> Option<TacticalInsight> {
+    let profile = threat_id.profile();
+    if profile.combat.ranged {
+        return None;
+    }
+    let modeled = crate::bestiary::implemented_combat_lore(profile);
+    if !modeled
+        .weaknesses
+        .iter()
+        .any(|fact| fact == "Must close to melee range before attacking")
+    {
+        return None;
+    }
+    Some(TacticalInsight {
+        kind: TacticalInsightKind::MustCloseToMelee,
+        threat_id: threat_id.as_str().into(),
+        finding: format!(
+            "The {} carry no missile weapons and must close to melee range before striking.",
+            profile.plural_name
+        ),
+        preparation: "Bring bows and arrows; archers can strike while these enemies close.".into(),
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -198,365 +235,6 @@ pub fn rested_road_trial_camp_matches(
     ) && completed_elapsed_minute >= available_at_elapsed_minute
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum Sigil {
-    Crown,
-    Hart,
-    Moon,
-    Rose,
-    Sword,
-}
-
-impl Sigil {
-    pub const ALL: [Self; ORDERED_SIGIL_COUNT] =
-        [Self::Crown, Self::Hart, Self::Moon, Self::Rose, Self::Sword];
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Crown => "Crown",
-            Self::Hart => "Hart",
-            Self::Moon => "Moon",
-            Self::Rose => "Rose",
-            Self::Sword => "Sword",
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum OrderedSigilClue {
-    Exact { sigil: Sigil, position: u8 },
-    Before { first: Sigil, second: Sigil },
-    Adjacent { first: Sigil, second: Sigil },
-    NotAt { sigil: Sigil, position: u8 },
-}
-
-impl OrderedSigilClue {
-    pub fn text(&self) -> String {
-        match self {
-            Self::Exact { sigil, position } => {
-                format!("The {} belongs in place {}.", sigil.label(), position + 1)
-            }
-            Self::Before { first, second } => format!(
-                "The {} stands somewhere before the {}.",
-                first.label(),
-                second.label()
-            ),
-            Self::Adjacent { first, second } => format!(
-                "The {} and {} stand beside one another.",
-                first.label(),
-                second.label()
-            ),
-            Self::NotAt { sigil, position } => {
-                format!(
-                    "The {} does not belong in place {}.",
-                    sigil.label(),
-                    position + 1
-                )
-            }
-        }
-    }
-}
-
-/// Private deterministic replay authority. Never project this type to clients.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OrderedSigilPuzzle {
-    pub rules_version: u16,
-    pub seed: u64,
-    pub solution: [Sigil; ORDERED_SIGIL_COUNT],
-    pub clues: Vec<OrderedSigilClue>,
-}
-
-/// Observer-safe challenge truth. It intentionally lacks seed and solution.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OrderedSigilProjection {
-    pub rules_version: u16,
-    pub sigils: [Sigil; ORDERED_SIGIL_COUNT],
-    pub clues: Vec<OrderedSigilClue>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OrderedSigilSubmission {
-    pub expected_revision: u32,
-    pub ordering: [Sigil; ORDERED_SIGIL_COUNT],
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SubmissionError {
-    DuplicateSigil,
-}
-
-impl OrderedSigilPuzzle {
-    pub fn generate(seed: u64) -> Self {
-        Self::generate_versioned(ORDERED_SIGIL_RULES_VERSION, seed)
-            .expect("current ordered-sigil rules are supported")
-    }
-
-    pub fn generate_versioned(rules_version: u16, seed: u64) -> Result<Self, &'static str> {
-        if rules_version != ORDERED_SIGIL_RULES_VERSION {
-            return Err("unsupported ordered-sigil rules version");
-        }
-        let mut rng = SplitMix64(seed ^ 0x6572_7261_6e74_7279);
-        let mut solution = Sigil::ALL;
-        for end in (1..solution.len()).rev() {
-            let selected = (rng.next() as usize) % (end + 1);
-            solution.swap(end, selected);
-        }
-
-        let (clues, _) = minimum_clues(&solution)?;
-        let puzzle = Self {
-            rules_version,
-            seed,
-            solution,
-            clues,
-        };
-        puzzle.validate()?;
-        Ok(puzzle)
-    }
-
-    pub fn projection(&self) -> OrderedSigilProjection {
-        OrderedSigilProjection {
-            rules_version: self.rules_version,
-            sigils: Sigil::ALL,
-            clues: self.clues.clone(),
-        }
-    }
-
-    pub fn validate(&self) -> Result<(), &'static str> {
-        if self.rules_version != ORDERED_SIGIL_RULES_VERSION {
-            return Err("unsupported ordered-sigil rules version");
-        }
-        if !is_permutation(&self.solution) {
-            return Err("ordered-sigil solution is malformed");
-        }
-        if self.clues.iter().any(|clue| match clue {
-            OrderedSigilClue::Exact { position, .. } | OrderedSigilClue::NotAt { position, .. } => {
-                usize::from(*position) >= ORDERED_SIGIL_COUNT
-            }
-            OrderedSigilClue::Before { first, second }
-            | OrderedSigilClue::Adjacent { first, second } => first == second,
-        }) {
-            return Err("ordered-sigil clue coordinates are malformed");
-        }
-        let found = solutions(&self.clues, 2);
-        if found.len() != 1 || found[0] != self.solution {
-            return Err("ordered-sigil clues do not prove the canonical solution");
-        }
-        Ok(())
-    }
-
-    pub fn check(&self, submission: &OrderedSigilSubmission) -> Result<bool, SubmissionError> {
-        if !is_permutation(&submission.ordering) {
-            return Err(SubmissionError::DuplicateSigil);
-        }
-        Ok(submission.ordering == self.solution)
-    }
-}
-
-fn true_clue_pool(solution: &[Sigil; ORDERED_SIGIL_COUNT]) -> Vec<OrderedSigilClue> {
-    let mut pool = Vec::with_capacity(39);
-    // Canonical relational-first order is also the final deterministic
-    // tie-break after cardinality, Exact count, and NotAt count.
-    for left in 0..ORDERED_SIGIL_COUNT {
-        for right in (left + 1)..ORDERED_SIGIL_COUNT {
-            pool.push(OrderedSigilClue::Before {
-                first: solution[left],
-                second: solution[right],
-            });
-        }
-    }
-    for left in 0..(ORDERED_SIGIL_COUNT - 1) {
-        pool.push(OrderedSigilClue::Adjacent {
-            first: solution[left],
-            second: solution[left + 1],
-        });
-    }
-    for (position, sigil) in solution.iter().copied().enumerate() {
-        for wrong in 0..ORDERED_SIGIL_COUNT {
-            if wrong != position {
-                pool.push(OrderedSigilClue::NotAt {
-                    sigil,
-                    position: wrong as u8,
-                });
-            }
-        }
-    }
-    for (position, sigil) in solution.iter().copied().enumerate() {
-        pool.push(OrderedSigilClue::Exact {
-            sigil,
-            position: position as u8,
-        });
-    }
-    pool
-}
-
-fn all_orderings() -> Vec<[Sigil; ORDERED_SIGIL_COUNT]> {
-    solutions(&[], usize::MAX)
-}
-
-fn minimum_clues(
-    solution: &[Sigil; ORDERED_SIGIL_COUNT],
-) -> Result<(Vec<OrderedSigilClue>, usize), &'static str> {
-    let pool = true_clue_pool(solution);
-    let orderings = all_orderings();
-    let solution_index = orderings
-        .iter()
-        .position(|candidate| candidate == solution)
-        .ok_or("ordered-sigil solution is absent from permutation space")?;
-    let target = 1_u128 << solution_index;
-    let full = (1_u128 << orderings.len()) - 1;
-    let masks = pool
-        .iter()
-        .map(|clue| {
-            orderings
-                .iter()
-                .enumerate()
-                .fold(0_u128, |mask, (index, candidate)| {
-                    mask | (u128::from(clue_holds(clue, candidate)) << index)
-                })
-        })
-        .collect::<Vec<_>>();
-    let mut evaluated = 0;
-    for cardinality in 1..=4 {
-        let mut chosen = Vec::with_capacity(cardinality);
-        let mut best: Option<(usize, usize, Vec<usize>)> = None;
-        search_minimum_subsets(
-            0,
-            cardinality,
-            full,
-            target,
-            &pool,
-            &masks,
-            &mut chosen,
-            &mut best,
-            &mut evaluated,
-        )?;
-        if let Some((_, _, indices)) = best {
-            return Ok((
-                indices
-                    .into_iter()
-                    .map(|index| pool[index].clone())
-                    .collect(),
-                evaluated,
-            ));
-        }
-    }
-    Err("ordered-sigil four-clue relational bound failed")
-}
-
-#[allow(clippy::too_many_arguments)]
-fn search_minimum_subsets(
-    start: usize,
-    remaining: usize,
-    intersection: u128,
-    target: u128,
-    pool: &[OrderedSigilClue],
-    masks: &[u128],
-    chosen: &mut Vec<usize>,
-    best: &mut Option<(usize, usize, Vec<usize>)>,
-    evaluated: &mut usize,
-) -> Result<(), &'static str> {
-    if remaining == 0 {
-        *evaluated += 1;
-        if *evaluated > MAX_MINIMIZATION_SUBSETS {
-            return Err("ordered-sigil minimization exceeded its subset bound");
-        }
-        if intersection == target {
-            let exact = chosen
-                .iter()
-                .filter(|index| matches!(pool[**index], OrderedSigilClue::Exact { .. }))
-                .count();
-            let not_at = chosen
-                .iter()
-                .filter(|index| matches!(pool[**index], OrderedSigilClue::NotAt { .. }))
-                .count();
-            let candidate = (exact, not_at, chosen.clone());
-            if best.as_ref().is_none_or(|current| candidate < *current) {
-                *best = Some(candidate);
-            }
-        }
-        return Ok(());
-    }
-    let last_start = pool.len().saturating_sub(remaining);
-    for index in start..=last_start {
-        chosen.push(index);
-        search_minimum_subsets(
-            index + 1,
-            remaining - 1,
-            intersection & masks[index],
-            target,
-            pool,
-            masks,
-            chosen,
-            best,
-            evaluated,
-        )?;
-        chosen.pop();
-    }
-    Ok(())
-}
-
-pub fn solutions(clues: &[OrderedSigilClue], limit: usize) -> Vec<[Sigil; ORDERED_SIGIL_COUNT]> {
-    fn visit(
-        at: usize,
-        current: &mut [Sigil; ORDERED_SIGIL_COUNT],
-        clues: &[OrderedSigilClue],
-        limit: usize,
-        found: &mut Vec<[Sigil; ORDERED_SIGIL_COUNT]>,
-    ) {
-        if found.len() >= limit {
-            return;
-        }
-        if at == current.len() {
-            if clues.iter().all(|clue| clue_holds(clue, current)) {
-                found.push(*current);
-            }
-            return;
-        }
-        for next in at..current.len() {
-            current.swap(at, next);
-            visit(at + 1, current, clues, limit, found);
-            current.swap(at, next);
-        }
-    }
-    let mut found = Vec::new();
-    let mut current = Sigil::ALL;
-    visit(0, &mut current, clues, limit, &mut found);
-    found
-}
-
-fn clue_holds(clue: &OrderedSigilClue, candidate: &[Sigil; ORDERED_SIGIL_COUNT]) -> bool {
-    let position = |wanted| candidate.iter().position(|sigil| *sigil == wanted).unwrap();
-    match *clue {
-        OrderedSigilClue::Exact { sigil, position: p } => position(sigil) == usize::from(p),
-        OrderedSigilClue::Before { first, second } => position(first) < position(second),
-        OrderedSigilClue::Adjacent { first, second } => {
-            position(first).abs_diff(position(second)) == 1
-        }
-        OrderedSigilClue::NotAt { sigil, position: p } => position(sigil) != usize::from(p),
-    }
-}
-
-fn is_permutation(ordering: &[Sigil; ORDERED_SIGIL_COUNT]) -> bool {
-    Sigil::ALL.iter().all(|sigil| {
-        ordering
-            .iter()
-            .filter(|candidate| *candidate == sigil)
-            .count()
-            == 1
-    })
-}
-
-struct SplitMix64(u64);
-impl SplitMix64 {
-    fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
-        let mut value = self.0;
-        value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        value ^ (value >> 31)
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FeyPresenterCatalogId {
     LadyBeneathThornV1,
@@ -572,6 +250,20 @@ pub enum FeySpeechPart {
 
 pub const FEY_PRESENTER_NAME: &str = "The Lady Beneath the Thorn";
 pub const FEY_PRESENTER_TITLE: &str = "Now Hear the Lady Crowned with Briar Thorn";
+
+impl FeyPresenterCatalogId {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::LadyBeneathThornV1 => FEY_PRESENTER_NAME,
+        }
+    }
+
+    pub const fn slug(self) -> &'static str {
+        match self {
+            Self::LadyBeneathThornV1 => "lady-beneath-thorn-v1",
+        }
+    }
+}
 
 /// Closed server-owned speech selected by typed catalog identity. No persisted
 /// prose can become a supernatural utterance.
@@ -593,6 +285,91 @@ pub fn fey_speech(catalog: FeyPresenterCatalogId, part: FeySpeechPart) -> &'stat
             "Thy wit hath won the passage through my wood.",
             "Go forth with honor; none shall bar thy road.",
         ],
+    }
+}
+
+/// Puzzle-specific closed speech for the same supernatural presenter. Formal
+/// observations remain in the puzzle projection; this catalog can change the
+/// asking entity without changing puzzle truth.
+pub fn fey_puzzle_speech(
+    catalog: FeyPresenterCatalogId,
+    kind: PuzzleKind,
+    part: FeySpeechPart,
+) -> &'static [&'static str] {
+    match kind {
+        PuzzleKind::OrderedSigils => fey_speech(catalog, part),
+        PuzzleKind::TruthfulWitnesses => match (catalog, part) {
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Introduction) => &[
+                "Three travelers wait beneath my briar.",
+                "One tongue speaks false; the other two speak true.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Instruction) => &[
+                "Judge not the tongue, but choose the path made safe.",
+                "Mark each sworn word, then name the road thou'lt take.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Wrong) => &[
+                "Thy chosen road would lead thee far astray.",
+                "Weigh every oath, and choose thy path anew.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Correct) => &[
+                "Thy judgment parts the falsehood from the true.",
+                "The guarded road lies open to thy tread.",
+            ],
+        },
+        PuzzleKind::RuneTransformation => match (catalog, part) {
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Introduction) => &[
+                "The runes pass changed beneath my silver hand.",
+                "Learn thou the law their altered faces keep.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Instruction) => &[
+                "Mark what went in, and what returned anew.",
+                "Then name the sign my final gate shall yield.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Wrong) => &[
+                "The hidden rule denies thy chosen sign.",
+                "Review each change, and try the gate anew.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Correct) => &[
+                "Thou hast discerned the law beneath each change.",
+                "My woodland path now opens at thy word.",
+            ],
+        },
+        PuzzleKind::LogicGrid => match (catalog, part) {
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Introduction) => &[
+                "The pilgrims passed beneath my thorny bough.",
+                "Their roads and tokens lie concealed from thee.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Instruction) => &[
+                "By every clue, restore the bonds I veiled.",
+                "Match each true road and token to its hand.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Wrong) => &[
+                "Thy woven bonds do not accord with truth.",
+                "Unweave thy work, then bind each thread anew.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Correct) => &[
+                "Each pilgrim bears the sign and road ordained.",
+                "Thy ordered wit hath earned the onward way.",
+            ],
+        },
+        PuzzleKind::ResourceAllocation => match (catalog, part) {
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Introduction) => &[
+                "Choose well the gear thy mortal hands may bear.",
+                "Each coming grief demands its fitting aid.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Instruction) => &[
+                "Keep thou beneath the burden I decree.",
+                "Let readiness decide the worthiest load.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Wrong) => &[
+                "Thy chosen load shall fail the road ahead.",
+                "Weigh need and worth, then choose thy gear anew.",
+            ],
+            (FeyPresenterCatalogId::LadyBeneathThornV1, FeySpeechPart::Correct) => &[
+                "Thy measured pack shall meet each coming grief.",
+                "Bear forth thy gear; the guarded way lies clear.",
+            ],
+        },
     }
 }
 
@@ -958,7 +735,7 @@ mod tests {
                     9_500,
                 ),
                 countermeasure(
-                    CountermeasureKind::FavorOfTheThornLady,
+                    CountermeasureKind::ColdIronCharm,
                     "challenge:fey",
                     "favor",
                     FinaleDefenseKind::UnnaturalProwess,
@@ -992,6 +769,19 @@ mod tests {
         assert!(resolution.unresolved_defenses.is_empty());
         assert_eq!(resolution.enemy_scale_reduction_bps, 4_000);
         assert_eq!(resolution.enemy_capability_multiplier_bps, 6_375);
+    }
+
+    #[test]
+    fn tactical_insight_reports_consumed_physical_mechanics_without_modifying_them() {
+        let threat = crate::bestiary::ThreatId::ArmedRetainer;
+        let before = threat.profile().combat;
+        let insight = tactical_insight_for(threat).expect("retainers must close to melee");
+        let after = threat.profile().combat;
+
+        assert_eq!(insight.kind, TacticalInsightKind::MustCloseToMelee);
+        assert!(insight.finding.contains("no missile weapons"));
+        assert!(insight.preparation.contains("bows and arrows"));
+        assert_eq!(format!("{before:?}"), format!("{after:?}"));
     }
 
     #[test]
@@ -1049,7 +839,7 @@ mod tests {
     #[test]
     fn every_solution_gets_a_globally_minimum_bounded_necessary_clue_set() {
         for solution in all_orderings() {
-            let (clues, evaluated) = minimum_clues(&solution).unwrap();
+            let (clues, evaluated) = minimum_clues(&solution, OrderedSigilSpec::default()).unwrap();
             assert!(clues.len() <= 4);
             assert!(evaluated <= MAX_MINIMIZATION_SUBSETS);
             assert_eq!(solutions(&clues, 2), vec![solution]);
@@ -1115,7 +905,7 @@ mod tests {
     #[test]
     fn tie_break_prefers_relations_then_not_at_then_exact() {
         for solution in all_orderings() {
-            let (chosen, _) = minimum_clues(&solution).unwrap();
+            let (chosen, _) = minimum_clues(&solution, OrderedSigilSpec::default()).unwrap();
             let pool = true_clue_pool(&solution);
             let chosen_indices = chosen
                 .iter()
@@ -1179,6 +969,21 @@ mod tests {
             all.iter()
                 .all(|line| line.ends_with('.') && !line.contains('{'))
         );
+        for kind in PuzzleKind::ALL {
+            let lines = [
+                FeySpeechPart::Introduction,
+                FeySpeechPart::Instruction,
+                FeySpeechPart::Wrong,
+                FeySpeechPart::Correct,
+            ]
+            .into_iter()
+            .flat_map(|part| fey_puzzle_speech(catalog, kind, part))
+            .collect::<Vec<_>>();
+            assert_eq!(lines.len(), 8);
+            assert!(lines.iter().all(|line| {
+                line.ends_with('.') && !line.contains('{') && !line.contains("{}")
+            }));
+        }
 
         let mut clue_lines = Vec::new();
         for sigil in Sigil::ALL {

@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn embedded_catalog_is_sorted_unique_complete_and_revisioned() {
-        assert_eq!(catalog().len(), 164);
+        assert_eq!(catalog().len(), 163);
         assert!(revision().len() == 64 && revision().bytes().all(|b| b.is_ascii_hexdigit()));
         assert!(
             catalog()
@@ -121,7 +121,7 @@ mod tests {
             + "\n";
         assert_eq!(
             format!("{:x}", Sha256::digest(stable_ids.as_bytes())),
-            "deef0f0ed4ca05ff620276aef8175c23ff7e955f5c36ad9612c9e408819f0836",
+            "0865326b5a3b97555d71e57a7d1a656c99c8ecec132a903b9d97da94194391d5",
             "stable-ID golden changed; review persistence and reseed impact"
         );
 
@@ -141,7 +141,7 @@ mod tests {
             counts[index] += 1;
             counts
         });
-        assert_eq!(counts, [43, 6, 20, 14, 1, 1, 5, 24, 29, 21]);
+        assert_eq!(counts, [42, 6, 20, 14, 1, 1, 5, 24, 29, 21]);
     }
 
     #[test]
@@ -152,15 +152,6 @@ mod tests {
         assert!(tent.tags.iter().any(|tag| tag == "general_goods"));
         assert!(tent.tags.iter().any(|tag| tag == "field_shelter"));
         assert!(matches!(tent.kind, super::ItemKind::Simple));
-    }
-
-    #[test]
-    fn fey_countermeasure_is_a_stable_non_tradeable_quest_token() {
-        let favor = definition(crate::item_references::FEY_COUNTERMEASURE_ITEM_ID)
-            .expect("fey countermeasure");
-        assert_eq!(favor.base_value, 0);
-        assert!(favor.tags.iter().any(|tag| tag == "quest_token"));
-        assert!(matches!(favor.kind, super::ItemKind::Simple));
     }
 
     #[test]

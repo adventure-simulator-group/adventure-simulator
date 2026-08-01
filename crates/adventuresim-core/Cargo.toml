@@ -16,6 +16,7 @@ serde_json.workspace = true
 sha2.workspace = true
 adventuresim-world-schema.workspace = true
 adventuresim-dialogue.workspace = true
+adventuresim-puzzles.workspace = true
 
 [build-dependencies]
 serde = { workspace = true, features = ["derive"] }

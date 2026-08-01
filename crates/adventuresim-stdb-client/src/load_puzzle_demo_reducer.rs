@@ -4,16 +4,20 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::errantry_puzzle_kind_type::ErrantryPuzzleKind;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct LoadPuzzleDemoArgs {
     pub character_id: u64,
+    pub puzzle_kind: ErrantryPuzzleKind,
 }
 
 impl From<LoadPuzzleDemoArgs> for super::Reducer {
     fn from(args: LoadPuzzleDemoArgs) -> Self {
         Self::LoadPuzzleDemo {
             character_id: args.character_id,
+            puzzle_kind: args.puzzle_kind,
         }
     }
 }
@@ -33,8 +37,12 @@ pub trait load_puzzle_demo {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`load_puzzle_demo:load_puzzle_demo_then`] to run a callback after the reducer completes.
-    fn load_puzzle_demo(&self, character_id: u64) -> __sdk::Result<()> {
-        self.load_puzzle_demo_then(character_id, |_, _| {})
+    fn load_puzzle_demo(
+        &self,
+        character_id: u64,
+        puzzle_kind: ErrantryPuzzleKind,
+    ) -> __sdk::Result<()> {
+        self.load_puzzle_demo_then(character_id, puzzle_kind, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `load_puzzle_demo` to run as soon as possible,
@@ -46,6 +54,7 @@ pub trait load_puzzle_demo {
     fn load_puzzle_demo_then(
         &self,
         character_id: u64,
+        puzzle_kind: ErrantryPuzzleKind,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -59,6 +68,7 @@ impl load_puzzle_demo for super::RemoteReducers {
     fn load_puzzle_demo_then(
         &self,
         character_id: u64,
+        puzzle_kind: ErrantryPuzzleKind,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -66,7 +76,12 @@ impl load_puzzle_demo for super::RemoteReducers {
         ) + Send
         + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(LoadPuzzleDemoArgs { character_id }, callback)
+        self.imp.invoke_reducer_with_callback(
+            LoadPuzzleDemoArgs {
+                character_id,
+                puzzle_kind,
+            },
+            callback,
+        )
     }
 }
