@@ -1907,6 +1907,83 @@ mod tests {
     }
 
     #[test]
+    fn maiden_roadside_court_routes_share_real_shield_preparation() {
+        let definition = encounter("maiden_roadside_court_v1").unwrap();
+        assert!(definition.triggers.travel && definition.triggers.rest);
+        assert!(definition.opening[0].text.contains("sergeant accuseth me"));
+        let choice = |id| {
+            definition
+                .choices
+                .iter()
+                .find(|choice| choice.id == id)
+                .unwrap()
+        };
+        let active = definition
+            .choices
+            .iter()
+            .filter(|choice| choice.id != "ignore")
+            .collect::<Vec<_>>();
+        for route in &active {
+            let effects = serde_json::to_string(&route.effects).unwrap();
+            assert!(effects.contains(r#""item_id":"heater_shield","quantity":1"#));
+            assert!(effects.contains("heater_shield_holds_blade_only_assault"));
+            assert_eq!(
+                route.quest_reward_tags,
+                ["prepare_heater_shield_against_blade_only_opposition"]
+            );
+        }
+        let shield = crate::item_catalog::definition("heater_shield").unwrap();
+        assert!(matches!(
+            &shield.kind,
+            crate::item_catalog::ItemKind::Shield { block, .. } if *block > 0.0
+        ));
+        assert_eq!(shield.base_value, 12);
+        let retainer = crate::bestiary::ThreatId::ArmedRetainer.profile();
+        assert_eq!(retainer.combat.attack, crate::bestiary::AttackStyle::Blade);
+        assert!(!retainer.combat.ranged);
+        let command = choice("order_hearing_under_clerks_judgment");
+        assert!(command.response[0].text.contains("I alone shall judge"));
+        let religion = choice("authenticate_maidens_alms_safe_conduct");
+        assert!(religion.result.contains("ordinary seal"));
+        assert_eq!(religion.effects.len(), 2);
+        let surety = choice("champion_maiden_in_controlled_blade_test");
+        assert!(matches!(
+            surety.checks[0],
+            Check::Skill {
+                skill: SkillId::Will,
+                difficulty_milli: 1200
+            }
+        ));
+        let evil = choice("suppress_verge_proof_against_maiden");
+        assert!(
+            evil.effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Currency { amount: 48, .. }))
+        );
+        assert!(evil.personality.len() == 1 && evil.personality[0].delta < 0);
+        assert_eq!(48 + shield.base_value, 5 * shield.base_value);
+        let response = evil.response[0].text.to_lowercase();
+        assert!(
+            !["wedge", "purse", "suppress", "under color"]
+                .iter()
+                .any(|term| response.contains(term))
+        );
+        for tag in [
+            "exclusive_physical_evidence",
+            "private_personal_bribe",
+            "clerk_applied_corrupted_record",
+            "material_harm_to_accused_maiden",
+        ] {
+            assert!(evil.outcome_tags.iter().any(|found| found == tag));
+        }
+        let evil_effects = serde_json::to_string(&evil.effects).unwrap();
+        assert!(!evil_effects.contains("wagon") && !evil_effects.contains("person"));
+        let ignore = choice("ignore");
+        assert!(ignore.transition.is_none());
+        assert!(ignore.effects.is_empty() && ignore.personality.is_empty());
+    }
+
+    #[test]
     fn combat_transition_rejects_unsafe_counts() {
         let mut definition = encounter("unlawful_bridge_custom_v1").unwrap().clone();
         let choice = definition
