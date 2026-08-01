@@ -63,6 +63,43 @@ impl MeleeActionRequest {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RangedActionPhase {
+    Start,
+    Complete,
+}
+
+/// Both ranged phases share one mapped ordered stream. A completion may omit
+/// a target when the client-fired shot missed, but it still consumes ammo.
+#[derive(Debug, Clone, Copy, Event, Serialize, Deserialize, MapEntities)]
+pub struct RangedActionRequest {
+    pub phase: RangedActionPhase,
+    #[entities]
+    pub target: Option<Entity>,
+    pub body_part: BodyPart,
+    pub hit_precision: f32,
+}
+
+impl RangedActionRequest {
+    pub fn start() -> Self {
+        Self {
+            phase: RangedActionPhase::Start,
+            target: None,
+            body_part: BodyPart::Chest,
+            hit_precision: 0.0,
+        }
+    }
+
+    pub fn complete(target: Option<Entity>, body_part: BodyPart, hit_precision: f32) -> Self {
+        Self {
+            phase: RangedActionPhase::Complete,
+            target,
+            body_part,
+            hit_precision,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Event, Serialize, Deserialize, MapEntities)]
 pub struct SuccessfulAttackResponse {
     #[entities]

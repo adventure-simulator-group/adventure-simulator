@@ -22,7 +22,10 @@ use clap::{ArgAction, Parser};
 
 use crate::{
     bot::{MissionEnemy, OffensiveMeleeAi},
-    combat::{MeleeAttackAuthority, TacticalCombatSide, TacticalConsequenceAccumulator},
+    combat::{
+        MeleeAttackAuthority, RangedAttackAuthority, TacticalCombatSide,
+        TacticalConsequenceAccumulator,
+    },
     stdb::{SpacetimeDb, SpacetimeDbReady},
     terrain::TerrainGenerator,
 };
@@ -524,6 +527,7 @@ fn spawn_connected_player(
             ..default()
         },
         MeleeAttackAuthority::default(),
+        RangedAttackAuthority::default(),
         if player.mission_side == TacticalMissionSide::Enemy {
             TacticalCombatSide::Enemy
         } else {
@@ -601,6 +605,11 @@ fn spawn_connected_player(
                     reach: item.item.reach,
                     balance: item.item.balance,
                     precise: item.item.precise,
+                    melee: item.item.melee,
+                    ranged: item.item.ranged,
+                    blunt: item.item.blunt,
+                    slash: item.item.slash,
+                    pierce: item.item.pierce,
                 });
             }
             ItemKind::Armor | ItemKind::Clothing => {}
@@ -713,7 +722,7 @@ fn tactical_consequence_receipt(
                 })
                 .collect(),
             blood_loss_fraction: consequence.blood_loss_fraction,
-            ammunition_used: 0,
+            ammunition_used: consequence.ammunition_used,
         })
         .collect();
     for contact in &accumulated.equipment_contacts {

@@ -389,6 +389,11 @@ mod tests {
             reach: KATZBALGER_REACH,
             balance: 0.0,
             precise: false,
+            melee: true,
+            ranged: false,
+            blunt: false,
+            slash: true,
+            pierce: false,
         });
         world.entity_mut(weapon).insert(EquipSlot::HoldingRight);
         actor
