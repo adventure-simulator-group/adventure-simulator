@@ -838,7 +838,6 @@ pub mod western_christian_arrangement_type;
 pub mod withdraw_party_inventory_item_reducer;
 pub mod witness_social_action_receipt_type;
 pub mod woodland_type;
-pub mod world_clock_schedule_type;
 pub mod world_clock_table;
 pub mod world_clock_type;
 pub mod world_data_import_table;
@@ -1681,7 +1680,6 @@ pub use western_christian_arrangement_type::WesternChristianArrangement;
 pub use withdraw_party_inventory_item_reducer::withdraw_party_inventory_item;
 pub use witness_social_action_receipt_type::WitnessSocialActionReceipt;
 pub use woodland_type::Woodland;
-pub use world_clock_schedule_type::WorldClockSchedule;
 pub use world_clock_table::*;
 pub use world_clock_type::WorldClock;
 pub use world_data_import_table::*;
@@ -2523,7 +2521,6 @@ pub enum Reducer {
     UpdateTrainingSchedule {
         character_id: u64,
         downtime: ScheduleAllocation,
-        travel: ScheduleAllocation,
     },
     UpgradeManualSurgery,
     VoteForPartyLeader {
@@ -4214,11 +4211,9 @@ Reducer::BeginFormalCourtship{
             Reducer::UpdateTrainingSchedule{
                 character_id,
                 downtime,
-                travel,
 }             => __sats::bsatn::to_vec(&update_training_schedule_reducer::UpdateTrainingScheduleArgs {
                 character_id: character_id.clone(),
                 downtime: downtime.clone(),
-                travel: travel.clone(),
 }),
             Reducer::UpgradeManualSurgery => __sats::bsatn::to_vec(&upgrade_manual_surgery_reducer::UpgradeManualSurgeryArgs {
                 }),

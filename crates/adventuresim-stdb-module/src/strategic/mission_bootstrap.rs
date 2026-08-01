@@ -28,6 +28,7 @@ pub fn report_contract(
         .id()
         .find(&contract_id)
         .ok_or("Quest not found")?;
+    quest.parsed_state()?;
     if quest.status != ContractStatus::ReadyToReport
         || quest.accepted_by.as_ref() != Some(&party_id)
     {
@@ -271,6 +272,7 @@ pub fn cancel_mission_request(
         .id()
         .find(&mission_id)
         .ok_or("Mission authority not found")?;
+    mission.parsed_state()?;
     if mission.party_id != party_id {
         return Err("Mission request belongs to another party".into());
     }
@@ -299,6 +301,7 @@ pub fn cancel_mission_request(
         .mission_id()
         .delete(&mission_id);
     mission.status = MissionAttemptStatus::Cancelled;
+    mission.parsed_state()?;
     ctx.db.mission_authority().id().update(mission);
     Ok(())
 }
@@ -576,6 +579,7 @@ pub fn seed_standalone_tactical_mission(
             status: MissionAttemptStatus::Bound,
             committed_resolution: None,
             committed_capture_subject_id: None,
+            committed_capture_custody_version: None,
             scene_key: scene_key.clone(),
             hostile_version: group.escalation_incident_ordinal,
             enemy_count: group.enemy_count,
@@ -1061,7 +1065,12 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
             true,
         )?;
         let party_id = leader.party_id.clone().ok_or("NPC leader has no party")?;
-        let mut party = ctx.db.party_authority().id().find(&party_id).unwrap();
+        let mut party = ctx
+            .db
+            .party_authority()
+            .id()
+            .find(&party_id)
+            .ok_or("NPC party disappeared after leader assignment")?;
         party.name = format!("{}'s company", leader_name);
         party.current_settlement_id = Some(settlement_id.to_string());
         party.physiology_target = 3.0 + (ctx.random::<u64>() % 3) as f32;

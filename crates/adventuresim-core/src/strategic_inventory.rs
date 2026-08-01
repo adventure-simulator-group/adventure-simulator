@@ -3,7 +3,10 @@
 //! Persistent identifiers and reducer arguments remain wire-compatible raw values. Reducers
 //! parse them into these types before applying authoritative database mutations.
 
-use std::{fmt, num::NonZeroU64};
+use std::{
+    fmt,
+    num::{NonZeroU32, NonZeroU64},
+};
 
 use crate::settlement_economy::Storefront;
 
@@ -192,6 +195,150 @@ impl fmt::Display for UnknownMerchantService {
 
 impl std::error::Error for UnknownMerchantService {}
 
+/// A non-zero quantity parsed once at a commerce reducer boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TradeQuantity(NonZeroU32);
+
+impl TradeQuantity {
+    pub fn get(self) -> u32 {
+        self.0.get()
+    }
+}
+
+impl TryFrom<u32> for TradeQuantity {
+    type Error = TradeRequestError;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        NonZeroU32::new(value)
+            .map(Self)
+            .ok_or(TradeRequestError::ZeroQuantity)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BuyLine {
+    pub item_id: String,
+    pub quantity: TradeQuantity,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SellLine {
+    pub inventory_item_id: u64,
+    pub quantity: TradeQuantity,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TradeScope {
+    Personal,
+    Party,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorefrontTradeRequest {
+    pub buys: Vec<BuyLine>,
+    pub sells: Vec<SellLine>,
+    pub scope: TradeScope,
+}
+
+impl StorefrontTradeRequest {
+    pub fn parse(
+        buy_item_ids: Vec<String>,
+        buy_quantities: Vec<u32>,
+        sell_inventory_ids: Vec<u64>,
+        sell_quantities: Vec<u32>,
+        party_scope: bool,
+    ) -> Result<Self, TradeRequestError> {
+        if buy_item_ids.len() != buy_quantities.len()
+            || sell_inventory_ids.len() != sell_quantities.len()
+        {
+            return Err(TradeRequestError::MisalignedLines);
+        }
+        let buys = buy_item_ids
+            .into_iter()
+            .zip(buy_quantities)
+            .map(|(item_id, quantity)| {
+                Ok(BuyLine {
+                    item_id,
+                    quantity: TradeQuantity::try_from(quantity)?,
+                })
+            })
+            .collect::<Result<_, _>>()?;
+        let sells = sell_inventory_ids
+            .into_iter()
+            .zip(sell_quantities)
+            .map(|(inventory_item_id, quantity)| {
+                Ok(SellLine {
+                    inventory_item_id,
+                    quantity: TradeQuantity::try_from(quantity)?,
+                })
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Self {
+            buys,
+            sells,
+            scope: if party_scope {
+                TradeScope::Party
+            } else {
+                TradeScope::Personal
+            },
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PartyOfferLine {
+    pub from_character_id: u64,
+    pub to_character_id: u64,
+    pub inventory_item_id: u64,
+    pub quantity: TradeQuantity,
+}
+
+pub fn parse_party_offer(
+    from: Vec<u64>,
+    to: Vec<u64>,
+    inventory: Vec<u64>,
+    quantities: Vec<u32>,
+) -> Result<Vec<PartyOfferLine>, TradeRequestError> {
+    let len = from.len();
+    if len == 0 {
+        return Err(TradeRequestError::EmptyOffer);
+    }
+    if to.len() != len || inventory.len() != len || quantities.len() != len {
+        return Err(TradeRequestError::MisalignedLines);
+    }
+    from.into_iter()
+        .zip(to)
+        .zip(inventory)
+        .zip(quantities)
+        .map(
+            |(((from_character_id, to_character_id), inventory_item_id), quantity)| {
+                Ok(PartyOfferLine {
+                    from_character_id,
+                    to_character_id,
+                    inventory_item_id,
+                    quantity: TradeQuantity::try_from(quantity)?,
+                })
+            },
+        )
+        .collect()
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TradeRequestError {
+    EmptyOffer,
+    MisalignedLines,
+    ZeroQuantity,
+}
+impl fmt::Display for TradeRequestError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::EmptyOffer => "Offer entries must be non-empty",
+            Self::MisalignedLines => "Trade entries must be aligned",
+            Self::ZeroQuantity => "Trade quantities must be positive",
+        })
+    }
+}
+impl std::error::Error for TradeRequestError {}
+
 impl TryFrom<&str> for MerchantStorefrontRoute {
     type Error = UnknownMerchantService;
 
@@ -290,5 +437,21 @@ mod tests {
         );
         assert!(MerchantStorefrontRoute::try_from("herbalist").is_err());
         assert!(MerchantStorefrontRoute::try_from("../inn").is_err());
+    }
+
+    #[test]
+    fn trade_requests_reject_parallel_vector_and_zero_quantity_states() {
+        assert_eq!(
+            StorefrontTradeRequest::parse(vec!["bread".into()], vec![], vec![], vec![], false),
+            Err(TradeRequestError::MisalignedLines)
+        );
+        assert_eq!(
+            StorefrontTradeRequest::parse(vec!["bread".into()], vec![0], vec![], vec![], false),
+            Err(TradeRequestError::ZeroQuantity)
+        );
+        assert_eq!(
+            parse_party_offer(vec![], vec![], vec![], vec![]),
+            Err(TradeRequestError::EmptyOffer)
+        );
     }
 }

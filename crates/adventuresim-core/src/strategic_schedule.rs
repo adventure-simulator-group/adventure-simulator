@@ -11,6 +11,132 @@ use crate::{
 };
 use adventuresim_world_schema::{BestiaryHours, OfficialReligion, ReligionHours};
 
+/// A parsed organization allocation: zero minutes cannot carry a stale
+/// organization and positive minutes cannot omit the organization that grants
+/// the activity.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum OrganizationAllocation {
+    None,
+    Scheduled {
+        minutes: ActivityMinutes,
+        organization_id: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ActivityMinutes(u16);
+
+impl ActivityMinutes {
+    pub fn get(self) -> u16 {
+        self.0
+    }
+}
+
+impl TryFrom<u16> for ActivityMinutes {
+    type Error = ScheduleParseError;
+
+    fn try_from(minutes: u16) -> Result<Self, Self::Error> {
+        (minutes % 15 == 0)
+            .then_some(Self(minutes))
+            .ok_or(ScheduleParseError::NotQuarterHour)
+    }
+}
+
+impl OrganizationAllocation {
+    pub fn parse(
+        minutes: u16,
+        organization_id: Option<String>,
+    ) -> Result<Self, ScheduleParseError> {
+        match (minutes, organization_id) {
+            (0, None) => Ok(Self::None),
+            (0, Some(_)) => Err(ScheduleParseError::OrganizationWithoutMinutes),
+            (_, Some(organization_id)) => {
+                let organization_id = organization_id.trim();
+                if organization_id.is_empty() {
+                    return Err(ScheduleParseError::EmptyOrganization);
+                }
+                Ok(Self::Scheduled {
+                    minutes: ActivityMinutes::try_from(minutes)?,
+                    organization_id: organization_id.to_owned(),
+                })
+            }
+            (_, None) => Err(ScheduleParseError::MinutesWithoutOrganization),
+        }
+    }
+
+    pub fn minutes(&self) -> u16 {
+        match self {
+            Self::None => 0,
+            Self::Scheduled { minutes, .. } => minutes.get(),
+        }
+    }
+
+    pub fn organization_id(&self) -> Option<String> {
+        match self {
+            Self::None => None,
+            Self::Scheduled {
+                organization_id, ..
+            } => Some(organization_id.clone()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScheduleParseError {
+    ExceedsDay,
+    NotQuarterHour,
+    OrganizationWithoutMinutes,
+    MinutesWithoutOrganization,
+    EmptyOrganization,
+}
+
+impl std::fmt::Display for ScheduleParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::ExceedsDay => "The downtime plan must fit within 24 hours",
+            Self::NotQuarterHour => "Schedule allocations must use 15-minute increments",
+            Self::OrganizationWithoutMinutes => {
+                "An organization cannot be selected without scheduled minutes"
+            }
+            Self::MinutesWithoutOrganization => {
+                "Scheduled organization activity requires an organization"
+            }
+            Self::EmptyOrganization => "Scheduled organization ID cannot be blank",
+        })
+    }
+}
+impl std::error::Error for ScheduleParseError {}
+
+/// Validates the cross-field invariants of a daily allocation at the reducer
+/// boundary. Organization policy/membership remains an authoritative DB check.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DailySchedulePlan {
+    pub activities: [ActivityMinutes; 10],
+    pub apprenticeship: OrganizationAllocation,
+    pub practice: OrganizationAllocation,
+}
+
+pub fn validate_daily_allocation(
+    minutes: [u16; 10],
+    apprenticeship: (u16, Option<String>),
+    practice: (u16, Option<String>),
+) -> Result<DailySchedulePlan, ScheduleParseError> {
+    if minutes.into_iter().map(u64::from).sum::<u64>() > MINUTES_PER_DAY {
+        return Err(ScheduleParseError::ExceedsDay);
+    }
+    let activities = minutes
+        .map(ActivityMinutes::try_from)
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?
+        .try_into()
+        .map_err(|_| ScheduleParseError::ExceedsDay)?;
+    Ok(DailySchedulePlan {
+        activities,
+        apprenticeship: OrganizationAllocation::parse(apprenticeship.0, apprenticeship.1)?,
+        practice: OrganizationAllocation::parse(practice.0, practice.1)?,
+    })
+}
+
 /// Stable order used by reports and schedule arrays.
 pub const SKILL_COUNT: usize = 32;
 /// Ordinary sleep pressure accumulated over a full day without tiring activity.
@@ -748,6 +874,46 @@ pub fn settlement_activity_outcome(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn daily_schedule_rejects_partial_organization_allocations() {
+        let minutes = [0; 10];
+        assert_eq!(
+            validate_daily_allocation(minutes, (0, Some("guild".into())), (0, None)),
+            Err(ScheduleParseError::OrganizationWithoutMinutes)
+        );
+        assert_eq!(
+            validate_daily_allocation(minutes, (15, None), (0, None)),
+            Err(ScheduleParseError::MinutesWithoutOrganization)
+        );
+        assert_eq!(
+            validate_daily_allocation(minutes, (15, Some("  ".into())), (0, None)),
+            Err(ScheduleParseError::EmptyOrganization)
+        );
+        assert_eq!(
+            validate_daily_allocation(minutes, (0, Some("".into())), (0, None)),
+            Err(ScheduleParseError::OrganizationWithoutMinutes)
+        );
+        assert_eq!(
+            validate_daily_allocation([1, 0, 0, 0, 0, 0, 0, 0, 0, 0], (0, None), (0, None)),
+            Err(ScheduleParseError::NotQuarterHour)
+        );
+        assert_eq!(
+            validate_daily_allocation([1_440, 15, 0, 0, 0, 0, 0, 0, 0, 0], (0, None), (0, None)),
+            Err(ScheduleParseError::ExceedsDay)
+        );
+        let plan = validate_daily_allocation(
+            [0, 0, 0, 0, 0, 0, 0, 15, 30, 0],
+            (15, Some(" guild:smiths ".into())),
+            (30, Some("guild:tailors".into())),
+        )
+        .unwrap();
+        assert_eq!(plan.apprenticeship.minutes(), 15);
+        assert_eq!(
+            plan.apprenticeship.organization_id().as_deref(),
+            Some("guild:smiths")
+        );
+    }
     use crate::body::BodyPart;
     use crate::prelude::{LimbAttribute, SimpleAttribute};
     use crate::strategic_time::MINUTES_PER_DAY;

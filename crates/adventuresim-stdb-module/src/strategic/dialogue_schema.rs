@@ -553,7 +553,7 @@ fn require_live_dialogue_presence(
         }
         primary.get_or_insert(npc);
     }
-    Ok(primary.expect("nonempty NPC participants"))
+    primary.ok_or_else(|| "Dialogue requires an NPC participant".into())
 }
 
 fn require_navigable_npc_location(

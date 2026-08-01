@@ -82,7 +82,6 @@ pub(super) async fn update_training_schedule(
             &[
                 json!(character_id),
                 schedule_allocation_reducer_arg(&downtime),
-                schedule_allocation_reducer_arg(&ScheduleAllocation::default()),
             ],
         )
         .await

@@ -2956,7 +2956,6 @@ mod tests {
                 prayer_minutes: 120,
                 ..Default::default()
             },
-            travel: crate::spacetimedb::ScheduleAllocation::default(),
         };
         let attributes = test_attributes(5.0);
         let rendered = skills_table(

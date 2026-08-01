@@ -658,6 +658,7 @@ pub(crate) fn complete_bound_mission_success(
         .id()
         .find(&mission_id.to_string())
         .ok_or("Mission authority not found")?;
+    mission.parsed_state()?;
     if mission.status == MissionAttemptStatus::Committed {
         return Ok(false);
     }
@@ -677,6 +678,7 @@ pub(crate) fn complete_bound_mission_success(
     }
     let Some(selected) = sample_mission_candidate(&mission, candidates) else {
         mission.status = MissionAttemptStatus::Failed;
+        mission.parsed_state()?;
         ctx.db.mission_authority().id().update(mission);
         return Ok(false);
     };
@@ -702,19 +704,23 @@ pub(crate) fn complete_bound_mission_success(
     let outcome_source_id = format!("outcome:{mission_id}");
     let committed = commit_hostile_battle_resolution(
         ctx,
-        &outcome_source_id,
-        &battle_id,
-        &mission.party_id,
-        Some(mission_id),
-        Some(&selected.hostile_group_id),
-        selected.resolution,
-        selected.capture_subject_id.as_deref(),
-        dropped_items,
-        selected.resolution == HostileResolutionKind::Defeated,
+        HostileBattleCommit {
+            outcome_source_id: &outcome_source_id,
+            battle_id: &battle_id,
+            party_id: &mission.party_id,
+            mission_id: Some(mission_id),
+            hostile_group_id: Some(&selected.hostile_group_id),
+            resolution: selected.resolution,
+            capture_subject_id: selected.capture_subject_id.as_deref(),
+            dropped_items,
+            include_random_gold: selected.resolution == HostileResolutionKind::Defeated,
+        },
     )?;
     mission.status = MissionAttemptStatus::Committed;
     mission.committed_resolution = Some(selected.resolution);
     mission.committed_capture_subject_id = selected.capture_subject_id;
+    mission.committed_capture_custody_version = selected.capture_custody_version;
+    mission.parsed_state()?;
     ctx.db.mission_authority().id().update(mission);
     for mut capability in ctx
         .db
@@ -745,9 +751,11 @@ pub(crate) fn fail_bound_mission_attempt(
     else {
         return Ok(());
     };
+    mission.parsed_state()?;
     match mission.status {
         MissionAttemptStatus::Bound => {
             mission.status = MissionAttemptStatus::Failed;
+            mission.parsed_state()?;
             ctx.db.mission_authority().id().update(mission);
             Ok(())
         }
@@ -758,19 +766,33 @@ pub(crate) fn fail_bound_mission_attempt(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn commit_hostile_battle_resolution(
-    ctx: &ReducerContext,
-    outcome_source_id: &str,
-    battle_id: &str,
-    party_id: &str,
-    mission_id: Option<&str>,
-    hostile_group_id: Option<&str>,
+struct HostileBattleCommit<'a> {
+    outcome_source_id: &'a str,
+    battle_id: &'a str,
+    party_id: &'a str,
+    mission_id: Option<&'a str>,
+    hostile_group_id: Option<&'a str>,
     resolution: HostileResolutionKind,
-    capture_subject_id: Option<&str>,
+    capture_subject_id: Option<&'a str>,
     dropped_items: Vec<(String, u32)>,
     include_random_gold: bool,
+}
+
+fn commit_hostile_battle_resolution(
+    ctx: &ReducerContext,
+    commit: HostileBattleCommit<'_>,
 ) -> Result<bool, String> {
+    let HostileBattleCommit {
+        outcome_source_id,
+        battle_id,
+        party_id,
+        mission_id,
+        hostile_group_id,
+        resolution,
+        capture_subject_id,
+        dropped_items,
+        include_random_gold,
+    } = commit;
     validate_hostile_resolution_contract(
         None,
         None,
@@ -1663,28 +1685,31 @@ pub fn finalize_party_offer(
     inventory_item_ids: Vec<u64>,
     quantities: Vec<u32>,
 ) -> Result<(), String> {
-    for character_id in from_character_ids.iter().chain(&to_character_ids) {
-        require_character_no_unresolved_encounter(ctx, *character_id)?;
-        crate::character::require_living_character(ctx, *character_id)?;
-    }
-    if from_character_ids.len() != to_character_ids.len()
-        || from_character_ids.len() != inventory_item_ids.len()
-        || from_character_ids.len() != quantities.len()
-        || from_character_ids.is_empty()
+    let offer = adventuresim_core::strategic_inventory::parse_party_offer(
+        from_character_ids,
+        to_character_ids,
+        inventory_item_ids,
+        quantities,
+    )
+    .map_err(|error| error.to_string())?;
+    for character_id in offer
+        .iter()
+        .flat_map(|line| [line.from_character_id, line.to_character_id])
     {
-        return Err("Offer entries must be non-empty and aligned".into());
+        require_character_no_unresolved_encounter(ctx, character_id)?;
+        crate::character::require_living_character(ctx, character_id)?;
     }
-    for index in 0..from_character_ids.len() {
-        let from_id = from_character_ids[index];
-        let to_id = to_character_ids[index];
-        let quantity = quantities[index];
+    for line in &offer {
+        let from_id = line.from_character_id;
+        let to_id = line.to_character_id;
+        let quantity = line.quantity.get();
         let Some(from) = ctx.db.character().id().find(from_id) else {
             return Err("Source character not found".into());
         };
         let Some(to) = ctx.db.character().id().find(to_id) else {
             return Err("Recipient character not found".into());
         };
-        let Some(item) = ctx.db.inventory_item().id().find(inventory_item_ids[index]) else {
+        let Some(item) = ctx.db.inventory_item().id().find(line.inventory_item_id) else {
             return Err("Inventory item not found".into());
         };
         if quantity == 0
@@ -1700,13 +1725,13 @@ pub fn finalize_party_offer(
             return Err("Unequip an item before offering it".into());
         }
     }
-    for index in 0..from_character_ids.len() {
+    for line in offer {
         transfer_party_item(
             ctx,
-            from_character_ids[index],
-            to_character_ids[index],
-            inventory_item_ids[index],
-            quantities[index],
+            line.from_character_id,
+            line.to_character_id,
+            line.inventory_item_id,
+            line.quantity.get(),
         )?;
     }
     Ok(())
@@ -1726,18 +1751,13 @@ pub fn finalize_merchant_trade(
     let provider_resident_character_id =
         default_merchant_provider(ctx, &settlement_id, "merchants", "market")
             .map_err(|error| error.to_string())?;
-    finalize_storefront_trade_impl(
-        ctx,
+    finalize_storefront_trade_impl(ctx, StorefrontTradeExecution {
         character_id,
         settlement_id,
-        "merchants".into(),
+        service_id: "merchants".into(),
         provider_resident_character_id,
-        buy_item_ids,
-        buy_quantities,
-        sell_inventory_ids,
-        sell_quantities,
-        party_scope,
-    )
+        request: adventuresim_core::strategic_inventory::StorefrontTradeRequest::parse(buy_item_ids, buy_quantities, sell_inventory_ids, sell_quantities, party_scope).map_err(|error| error.to_string())?,
+    })
 }
 
 #[reducer]
@@ -1758,18 +1778,13 @@ pub fn finalize_storefront_trade(
             provider_resident_character_id,
         )
         .map_err(|error| error.to_string())?;
-    finalize_storefront_trade_impl(
-        ctx,
+    finalize_storefront_trade_impl(ctx, StorefrontTradeExecution {
         character_id,
         settlement_id,
         service_id,
         provider_resident_character_id,
-        buy_item_ids,
-        buy_quantities,
-        sell_inventory_ids,
-        sell_quantities,
-        party_scope,
-    )
+        request: adventuresim_core::strategic_inventory::StorefrontTradeRequest::parse(buy_item_ids, buy_quantities, sell_inventory_ids, sell_quantities, party_scope).map_err(|error| error.to_string())?,
+    })
 }
 
 /// Buy one personal storefront line while atomically funding the declared
@@ -1835,18 +1850,13 @@ pub fn purchase_personal_storefront_with_party_stake(
         stake.value -= stake_payment;
         ctx.db.party_stake().id().update(stake);
     }
-    finalize_storefront_trade_impl(
-        ctx,
+    finalize_storefront_trade_impl(ctx, StorefrontTradeExecution {
         character_id,
         settlement_id,
         service_id,
         provider_resident_character_id,
-        vec![item_id],
-        vec![quantity],
-        Vec::new(),
-        Vec::new(),
-        false,
-    )
+        request: adventuresim_core::strategic_inventory::StorefrontTradeRequest::parse(vec![item_id], vec![quantity], Vec::new(), Vec::new(), false).map_err(|error| error.to_string())?,
+    })
 }
 
 fn validate_personal_storefront_purchase(
@@ -1970,8 +1980,9 @@ fn default_merchant_provider(
     adventuresim_core::strategic_inventory::unique_merchant_provider(
         ctx.db
             .settlement_resident_profile()
-            .iter()
-            .filter(|npc| npc.home_settlement_id == settlement_id && npc.service_id == service_id)
+            .home_settlement_id()
+            .filter(&settlement_id.to_string())
+            .filter(|npc| npc.service_id == service_id)
             .filter_map(|npc| {
                 ctx.db
                     .settlement_resident_presence()
@@ -1987,19 +1998,21 @@ fn default_merchant_provider(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
-fn finalize_storefront_trade_impl(
-    ctx: &ReducerContext,
+struct StorefrontTradeExecution {
     character_id: u64,
     settlement_id: String,
     service_id: String,
     provider_resident_character_id: adventuresim_core::strategic_inventory::MerchantProviderId,
-    buy_item_ids: Vec<String>,
-    buy_quantities: Vec<u32>,
-    sell_inventory_ids: Vec<u64>,
-    sell_quantities: Vec<u32>,
-    party_scope: bool,
-) -> Result<(), String> {
+    request: adventuresim_core::strategic_inventory::StorefrontTradeRequest,
+}
+
+fn finalize_storefront_trade_impl(ctx: &ReducerContext, execution: StorefrontTradeExecution) -> Result<(), String> {
+    let StorefrontTradeExecution { character_id, settlement_id, service_id, provider_resident_character_id, request } = execution;
+    let party_scope = matches!(request.scope, adventuresim_core::strategic_inventory::TradeScope::Party);
+    let buy_item_ids = request.buys.iter().map(|line| line.item_id.clone()).collect::<Vec<_>>();
+    let buy_quantities = request.buys.iter().map(|line| line.quantity.get()).collect::<Vec<_>>();
+    let sell_inventory_ids = request.sells.iter().map(|line| line.inventory_item_id).collect::<Vec<_>>();
+    let sell_quantities = request.sells.iter().map(|line| line.quantity.get()).collect::<Vec<_>>();
     crate::character::require_living_character(ctx, character_id)?;
     crate::relationship::enforce_temporal_scope(
         ctx,
@@ -2013,11 +2026,6 @@ fn finalize_storefront_trade_impl(
     .map_err(|error| error.to_string())?;
     let storefront = route.storefront();
     let location_id = route.location_id();
-    if buy_item_ids.len() != buy_quantities.len()
-        || sell_inventory_ids.len() != sell_quantities.len()
-    {
-        return Err("Trade entries must be aligned".into());
-    }
     let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
     };
@@ -2259,7 +2267,7 @@ fn finalize_storefront_trade_impl(
                 .party_inventory_item()
                 .id()
                 .find(*inventory_id)
-                .unwrap();
+                .ok_or("Party inventory item disappeared before trade application")?;
             if inventory.quantity == *quantity {
                 crate::food::delete_party_food_lot(ctx, *inventory_id);
                 ctx.db
@@ -2284,7 +2292,12 @@ fn finalize_storefront_trade_impl(
                 ctx.db.party_inventory_item().id().update(inventory);
             }
         } else {
-            let mut inventory = ctx.db.inventory_item().id().find(*inventory_id).unwrap();
+            let mut inventory = ctx
+                .db
+                .inventory_item()
+                .id()
+                .find(*inventory_id)
+                .ok_or("Inventory item disappeared before trade application")?;
             if inventory.quantity == *quantity {
                 crate::food::delete_personal_food_lot(ctx, *inventory_id);
                 ctx.db
@@ -2312,7 +2325,12 @@ fn finalize_storefront_trade_impl(
     }
     for (item_id, quantity) in buy_item_ids.iter().zip(&buy_quantities) {
         if party_scope {
-            add_to_party_inventory_checked(ctx, party_id.as_ref().unwrap(), item_id, *quantity)?;
+            add_to_party_inventory_checked(
+                ctx,
+                party_id.as_ref().ok_or("Character has no party")?,
+                item_id,
+                *quantity,
+            )?;
             continue;
         }
         // Never add purchases to an equipped stack. An equipped item must stay
@@ -2362,7 +2380,7 @@ fn finalize_storefront_trade_impl(
         (0, proceeds - cost)
     };
     if party_scope && receives > 0 {
-        let party_id = party_id.as_ref().unwrap();
+        let party_id = party_id.as_ref().ok_or("Character has no party")?;
         credit_party_currency(
             ctx,
             party_id,
@@ -2370,7 +2388,7 @@ fn finalize_storefront_trade_impl(
             u32::try_from(receives).map_err(|_| "Merchant proceeds exceed inventory capacity")?,
         )?;
     } else if party_scope && owes > 0 {
-        let party_id = party_id.as_ref().unwrap();
+        let party_id = party_id.as_ref().ok_or("Character has no party")?;
         let party_coins = party_currency_total(ctx, party_id);
         let personal_coins = crate::item::personal_currency_total(ctx, character_id);
         let (pooled, personal) =

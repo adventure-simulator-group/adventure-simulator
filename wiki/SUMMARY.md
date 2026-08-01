@@ -12,7 +12,6 @@
 - [Implementation](implementation.md)
 - [Networking](networking.md)
 - [Architecture reference](reference/architecture.md)
-- [Strategic server code-quality review](reference/strategic-server-code-quality.md)
 - [Development workflow](reference/developing.md)
 - [Strategic read cache](reference/strategic-read-cache.md)
 - [Strategic NPC simulation](reference/strategic-simulation.md)

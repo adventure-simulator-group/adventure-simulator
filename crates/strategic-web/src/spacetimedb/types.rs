@@ -2023,8 +2023,6 @@ pub struct ScheduleAllocation {
 pub struct CharacterTrainingSchedule {
     pub character_id: u64,
     pub downtime: ScheduleAllocation,
-    /// Legacy compatibility field; strategic travel no longer trains skills.
-    pub travel: ScheduleAllocation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

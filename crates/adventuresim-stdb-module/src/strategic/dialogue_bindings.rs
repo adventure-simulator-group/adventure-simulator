@@ -763,8 +763,10 @@ fn issue_dialogue_investigation_bindings(
         if matches.len() != 1 {
             return Err("Dialogue objective authority is ambiguous for this response".into());
         }
-        let (case_id, objective_id, intended_recipient_id, expected_custody_version) =
-            matches.pop().expect("exactly one binding candidate");
+        let (case_id, objective_id, intended_recipient_id, expected_custody_version) = matches
+            .into_iter()
+            .next()
+            .ok_or("Dialogue objective authority disappeared during binding")?;
         pending.push((
             action,
             case_id,
@@ -896,7 +898,9 @@ fn dialogue_public_case_id(
     }
     match public_case_ids.len() {
         0 => Ok(String::new()),
-        1 => Ok(public_case_ids.pop_first().expect("one public case ID")),
+        1 => public_case_ids
+            .pop_first()
+            .ok_or_else(|| "Dialogue public case authority disappeared".into()),
         _ => Err("Dialogue topic would advance more than one public case".into()),
     }
 }

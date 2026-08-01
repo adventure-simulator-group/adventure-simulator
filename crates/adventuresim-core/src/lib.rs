@@ -57,6 +57,7 @@ pub mod strategic_currency;
 pub mod strategic_economy;
 pub mod strategic_inventory;
 pub mod strategic_schedule;
+pub mod strategic_state;
 pub mod strategic_time;
 #[doc(hidden)]
 pub mod stub;

@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1674)
+## Files (1673)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -136,6 +136,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/strategic_economy.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_inventory.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_schedule.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/strategic_state.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_time.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/stub.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/surgery.rs` — Rust source module for this component.
@@ -992,7 +993,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/withdraw_party_inventory_item_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/witness_social_action_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/woodland_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/world_clock_schedule_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/world_clock_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/world_clock_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/world_data_import_table.rs` — Generated SpacetimeDB table interface.
@@ -1657,7 +1657,6 @@ development, or other wiki document before changing a subsystem.
 - `wiki/reference/source-manifests.md` — Project documentation.
 - `wiki/reference/spatial-grid.md` — Project documentation.
 - `wiki/reference/strategic-read-cache.md` — Project documentation.
-- `wiki/reference/strategic-server-code-quality.md` — Project documentation.
 - `wiki/reference/strategic-simulation.md` — Project documentation.
 - `wiki/reference/tree-species.md` — Project documentation.
 - `wiki/reference/viabundus.md` — Project documentation.

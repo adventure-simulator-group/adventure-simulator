@@ -23,7 +23,7 @@ fn referral_delivery_authority(
     ) {
         adventuresim_core::threat_escalation::ReferralDeliveryAuthorityKind::LocalProblem => {
             Ok(ReferralDeliveryAuthority::LocalProblem(
-                receipt.expect("classified local-problem receipt"),
+                receipt.ok_or("Classified local-problem receipt disappeared")?,
             ))
         }
         adventuresim_core::threat_escalation::ReferralDeliveryAuthorityKind::PublicThreat => {
@@ -623,7 +623,9 @@ fn dialogue_fact_context(
                 continue;
             };
             let definition = adventuresim_core::organization::organization(&organization_id)
-                .expect("bound organization was resolved");
+                .ok_or_else(|| {
+                    format!("Dialogue organization authority references unknown {organization_id}")
+                })?;
             let membership = crate::organization::membership(ctx, character_id, &organization_id);
             let minute = ctx
                 .db
