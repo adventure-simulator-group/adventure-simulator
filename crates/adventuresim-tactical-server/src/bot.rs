@@ -417,6 +417,7 @@ mod tests {
             abandonment_elapsed: Default::default(),
             terminal_retry_not_before: Default::default(),
             pending_resolution: None,
+            pending_receipt: None,
             committed: false,
         })
         .add_observer(on_tactical_combatant_defeated);

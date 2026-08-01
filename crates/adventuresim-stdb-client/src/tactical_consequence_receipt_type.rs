@@ -4,31 +4,16 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::tactical_character_consequence_type::TacticalCharacterConsequence;
+use super::tactical_equipment_contact_type::TacticalEquipmentContact;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-#[derive(Copy, Eq, Hash)]
-pub enum SettlementService {
-    GeneralStore,
-
-    Inn,
-
-    GeneralBlacksmith,
-
-    Market,
-
-    Weaponsmith,
-
-    Armorer,
-
-    Tailor,
-
-    Herbalist,
-
-    Temple,
-
-    Bookstore,
+pub struct TacticalConsequenceReceipt {
+    pub party: Vec<TacticalCharacterConsequence>,
+    pub equipment_contacts: Vec<TacticalEquipmentContact>,
 }
 
-impl __sdk::InModule for SettlementService {
+impl __sdk::InModule for TacticalConsequenceReceipt {
     type Module = super::RemoteModule;
 }

@@ -7,28 +7,12 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 #[derive(Copy, Eq, Hash)]
-pub enum SettlementService {
-    GeneralStore,
+pub enum TacticalEquipmentContactRole {
+    AttackerWeapon,
 
-    Inn,
-
-    GeneralBlacksmith,
-
-    Market,
-
-    Weaponsmith,
-
-    Armorer,
-
-    Tailor,
-
-    Herbalist,
-
-    Temple,
-
-    Bookstore,
+    DefenderEquipment,
 }
 
-impl __sdk::InModule for SettlementService {
+impl __sdk::InModule for TacticalEquipmentContactRole {
     type Module = super::RemoteModule;
 }

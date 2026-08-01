@@ -2,18 +2,20 @@ use sha2::{Digest, Sha256};
 use spacetimedb::{
     Identity, ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view,
 };
+use std::collections::HashSet;
 
 use crate::repair::{ItemCondition, item_condition__view};
 use crate::{
     Character, CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, Item,
-    ItemSlot,
-    character::character,
+    ItemKind, ItemSlot,
+    character::{character, character_equip},
     character__view, character_attributes__view, character_equip__view, character_limbs__view,
     character_skills__view, character_stats__view,
     condition::{character_condition__view, character_strategic_condition__view},
     inventory_item__view,
     investigation::case_site_authority,
-    item__view, party_authority,
+    item::{inventory_item, item, item__view},
+    party_authority,
     strategic::{
         autoresolve_report, complete_bound_mission_success, ensure_bound_mission_authority,
         fail_bound_mission_attempt, hostile_group_authority, mission_authority,
@@ -28,6 +30,55 @@ pub enum TacticalMissionResolution {
     DrivenOff,
     Captured,
     CaptureTargetKilled,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum TacticalReceiptBodyPart {
+    LeftArm,
+    RightArm,
+    LeftLeg,
+    RightLeg,
+    Chest,
+    Stomach,
+    Head,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum TacticalEquipmentContactRole {
+    AttackerWeapon,
+    DefenderEquipment,
+}
+
+#[derive(Clone, Debug, PartialEq, SpacetimeType)]
+pub struct TacticalHitInjury {
+    pub body_part: TacticalReceiptBodyPart,
+    pub cut_damage: f32,
+    pub blunt_damage: f32,
+    /// Largest individual blunt hit represented by this per-limb aggregate.
+    pub max_single_hit_blunt_damage: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, SpacetimeType)]
+pub struct TacticalCharacterConsequence {
+    pub character_id: u64,
+    pub injuries: Vec<TacticalHitInjury>,
+    /// Incremental fraction of maximum blood lost during this session.
+    pub blood_loss_fraction: f32,
+    pub ammunition_used: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, SpacetimeType)]
+pub struct TacticalEquipmentContact {
+    pub character_id: u64,
+    pub inventory_item_id: u64,
+    pub contact_stress: f32,
+    pub role: TacticalEquipmentContactRole,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, SpacetimeType)]
+pub struct TacticalConsequenceReceipt {
+    pub party: Vec<TacticalCharacterConsequence>,
+    pub equipment_contacts: Vec<TacticalEquipmentContact>,
 }
 
 fn tactical_session_succeeded(reported: TacticalMissionResolution) -> bool {
@@ -53,6 +104,8 @@ pub struct TacticalServerRequest {
     pub requested_by: u64,
     /// Living strategic party members bound when the mission is requested.
     pub expected_party_members: u32,
+    /// Immutable participant authority captured with the mission request.
+    pub authorized_party_member_ids: Vec<u64>,
     pub required_enemy_kills: u32,
     pub enemy_difficulty: i32,
     pub enemy_combat_scale_bps: u32,
@@ -75,6 +128,7 @@ pub struct TacticalServer {
     pub addr: String,
     pub cert_digest: String,
     pub expected_party_members: u32,
+    pub authorized_party_member_ids: Vec<u64>,
     pub required_enemy_kills: u32,
     pub enemy_difficulty: i32,
     pub enemy_combat_scale_bps: u32,
@@ -360,6 +414,11 @@ pub fn enter_mission(
         .ok_or_else(|| format!("Server {server} not found"))?;
 
     if !character.temporary {
+        if !server.authorized_party_member_ids.contains(&character_id) {
+            return Err(
+                "Character was not authorized when this tactical mission was requested".into(),
+            );
+        }
         let character_party = character
             .party_id
             .as_deref()
@@ -567,11 +626,16 @@ pub fn request_tactical_server(
     }
 
     log::info!("Tactical server for '{mission_id}' requested");
-    let expected_party_members =
-        u32::try_from(crate::strategic::living_party_member_ids(ctx, &party_id).len())
-            .map_err(|_| "Party is too large for tactical enrollment")?;
+    let authorized_party_member_ids = crate::strategic::living_party_member_ids(ctx, &party_id);
+    let expected_party_members = u32::try_from(authorized_party_member_ids.len())
+        .map_err(|_| "Party is too large for tactical enrollment")?;
     if expected_party_members == 0 {
         return Err("A tactical mission requires at least one living party member".into());
+    }
+    if expected_party_members as usize
+        > adventuresim_core::mission::MAX_TACTICAL_RECEIPT_PARTICIPANTS
+    {
+        return Err("Party exceeds the tactical receipt participant limit".into());
     }
     ctx.db
         .tactical_server_request_authority()
@@ -582,6 +646,7 @@ pub fn request_tactical_server(
             party_id,
             requested_by: character_id,
             expected_party_members,
+            authorized_party_member_ids,
             required_enemy_kills: mission.enemy_count,
             enemy_difficulty: mission.enemy_difficulty,
             enemy_combat_scale_bps: mission.enemy_combat_scale_bps,
@@ -647,6 +712,7 @@ pub fn create_tactical_server_for_request(
         request.scene_key,
         request.party_id,
         request.expected_party_members,
+        request.authorized_party_member_ids,
         request.required_enemy_kills,
         request.enemy_difficulty,
         request.enemy_combat_scale_bps,
@@ -666,6 +732,7 @@ fn insert_tactical_server(
     scene_key: String,
     party_id: String,
     expected_party_members: u32,
+    authorized_party_member_ids: Vec<u64>,
     required_enemy_kills: u32,
     enemy_difficulty: i32,
     enemy_combat_scale_bps: u32,
@@ -673,6 +740,16 @@ fn insert_tactical_server(
     addr: String,
     cert_digest: String,
 ) -> Result<(), String> {
+    if authorized_party_member_ids.len() != expected_party_members as usize
+        || authorized_party_member_ids
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>()
+            .len()
+            != authorized_party_member_ids.len()
+    {
+        return Err("Tactical participant authority is inconsistent".into());
+    }
     if let Some(_previous) = ctx
         .db
         .tactical_server_authority()
@@ -704,6 +781,7 @@ fn insert_tactical_server(
         addr,
         cert_digest,
         expected_party_members,
+        authorized_party_member_ids,
         required_enemy_kills,
         enemy_difficulty,
         enemy_combat_scale_bps,
@@ -718,7 +796,7 @@ fn insert_tactical_server(
 pub fn end_tactical_server(
     ctx: &ReducerContext,
     resolution: TacticalMissionResolution,
-    _reported_xp_gained: i32,
+    receipt: TacticalConsequenceReceipt,
 ) -> Result<(), String> {
     let Some(server) = ctx
         .db
@@ -732,9 +810,201 @@ pub fn end_tactical_server(
         ));
     };
 
-    // Persistent progression is derived from the authoritative quest reward
-    // in complete_quest. Tactical processes cannot mint arbitrary XP.
-    end_tactical_server_by_instance(ctx, server, resolution)
+    end_tactical_server_by_instance(ctx, server, resolution, receipt)
+}
+
+fn receipt_limb(body_part: TacticalReceiptBodyPart) -> crate::surgery::LimbRegion {
+    match body_part {
+        TacticalReceiptBodyPart::LeftArm => crate::surgery::LimbRegion::LeftArm,
+        TacticalReceiptBodyPart::RightArm => crate::surgery::LimbRegion::RightArm,
+        TacticalReceiptBodyPart::LeftLeg => crate::surgery::LimbRegion::LeftLeg,
+        TacticalReceiptBodyPart::RightLeg => crate::surgery::LimbRegion::RightLeg,
+        TacticalReceiptBodyPart::Chest => crate::surgery::LimbRegion::Chest,
+        TacticalReceiptBodyPart::Stomach => crate::surgery::LimbRegion::Stomach,
+        TacticalReceiptBodyPart::Head => crate::surgery::LimbRegion::Head,
+    }
+}
+
+fn validate_tactical_receipt(
+    ctx: &ReducerContext,
+    server: &TacticalServer,
+    receipt: &TacticalConsequenceReceipt,
+) -> Result<(), String> {
+    validate_tactical_receipt_bounds(receipt)?;
+    let characters: HashSet<_> = receipt.party.iter().map(|row| row.character_id).collect();
+    for consequence in &receipt.party {
+        let character = ctx
+            .db
+            .character()
+            .id()
+            .find(consequence.character_id)
+            .ok_or("Tactical receipt character not found")?;
+        let assigned_elsewhere_active = character.in_server
+            && character.server != server.identity
+            && ctx
+                .db
+                .tactical_server_authority()
+                .identity()
+                .find(character.server)
+                .is_some();
+        if !receipt_character_is_authorized(
+            character.temporary,
+            server
+                .authorized_party_member_ids
+                .contains(&consequence.character_id),
+            character.party_id.as_deref() == Some(server.party_id.as_str()),
+            assigned_elsewhere_active,
+        ) {
+            return Err("Tactical receipt character is not an authorized Party participant".into());
+        }
+    }
+    for contact in &receipt.equipment_contacts {
+        if !characters.contains(&contact.character_id) {
+            return Err("Tactical equipment contact is not bounded to a receipt member".into());
+        }
+        let item = ctx
+            .db
+            .inventory_item()
+            .id()
+            .find(contact.inventory_item_id)
+            .ok_or("Tactical equipment contact item not found")?;
+        if item.character_id != contact.character_id || item.quantity != 1 {
+            return Err("Tactical equipment contact has invalid custody".into());
+        }
+        let equip = ctx
+            .db
+            .character_equip()
+            .character_id()
+            .find(contact.character_id)
+            .ok_or("Tactical equipment contact owner has no equipment state")?;
+        let slot = equip
+            .is_equiped(contact.inventory_item_id)
+            .ok_or("Tactical equipment contact item is not equipped")?;
+        let definition = ctx
+            .db
+            .item()
+            .id()
+            .find(&item.item_id)
+            .ok_or("Tactical equipment contact item definition not found")?;
+        let valid_role = match contact.role {
+            TacticalEquipmentContactRole::AttackerWeapon => {
+                matches!(slot, ItemSlot::LeftHolding | ItemSlot::RightHolding)
+                    && definition.kind == ItemKind::Weapon
+            }
+            TacticalEquipmentContactRole::DefenderEquipment => match slot {
+                ItemSlot::LeftHolding | ItemSlot::RightHolding => {
+                    matches!(definition.kind, ItemKind::Weapon | ItemKind::Shield)
+                }
+                ItemSlot::LeftArm
+                | ItemSlot::RightArm
+                | ItemSlot::LeftLeg
+                | ItemSlot::RightLeg
+                | ItemSlot::Head
+                | ItemSlot::Chest
+                | ItemSlot::Stomach => definition.kind == ItemKind::Armor,
+                _ => false,
+            },
+        };
+        if !valid_role {
+            return Err(
+                "Tactical equipment contact role does not match equipped combat gear".into(),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn receipt_character_is_authorized(
+    temporary: bool,
+    in_authorized_roster: bool,
+    in_mission_party: bool,
+    assigned_elsewhere_active: bool,
+) -> bool {
+    !temporary && in_authorized_roster && in_mission_party && !assigned_elsewhere_active
+}
+
+fn validate_tactical_receipt_bounds(receipt: &TacticalConsequenceReceipt) -> Result<(), String> {
+    use adventuresim_core::mission::*;
+    if receipt.party.len() > MAX_TACTICAL_RECEIPT_PARTICIPANTS
+        || receipt.equipment_contacts.len() > MAX_TACTICAL_EQUIPMENT_CONTACTS
+    {
+        return Err("Tactical receipt exceeds record limits".into());
+    }
+    let mut characters = HashSet::new();
+    for consequence in &receipt.party {
+        if !characters.insert(consequence.character_id) {
+            return Err("Tactical receipt contains a duplicate character".into());
+        }
+        if consequence.injuries.len() > MAX_TACTICAL_INJURIES_PER_PARTICIPANT
+            || !consequence.blood_loss_fraction.is_finite()
+            || !(0.0..=1.0).contains(&consequence.blood_loss_fraction)
+            || consequence.ammunition_used > MAX_TACTICAL_AMMUNITION_USED
+            || consequence.injuries.iter().any(|injury| {
+                !injury.cut_damage.is_finite()
+                    || !injury.blunt_damage.is_finite()
+                    || !injury.max_single_hit_blunt_damage.is_finite()
+                    || !(0.0..=MAX_TACTICAL_DAMAGE_PER_HIT).contains(&injury.cut_damage)
+                    || !(0.0..=MAX_TACTICAL_DAMAGE_PER_HIT).contains(&injury.blunt_damage)
+                    || !(0.0..=injury.blunt_damage).contains(&injury.max_single_hit_blunt_damage)
+                    || injury.cut_damage + injury.blunt_damage > MAX_TACTICAL_DAMAGE_PER_HIT
+            })
+        {
+            return Err("Tactical receipt contains out-of-range consequences".into());
+        }
+    }
+    let mut contacted_items = HashSet::new();
+    for contact in &receipt.equipment_contacts {
+        if !contacted_items.insert(contact.inventory_item_id) {
+            return Err("Tactical receipt contains duplicate equipment contacts".into());
+        }
+        if !contact.contact_stress.is_finite()
+            || !(0.0..=MAX_TACTICAL_CONTACT_STRESS).contains(&contact.contact_stress)
+        {
+            return Err("Tactical equipment contact is not bounded to a receipt member".into());
+        }
+    }
+    Ok(())
+}
+
+fn apply_tactical_receipt(
+    ctx: &ReducerContext,
+    receipt: &TacticalConsequenceReceipt,
+) -> Result<(), String> {
+    for consequence in &receipt.party {
+        for injury in &consequence.injuries {
+            crate::surgery::commit_aggregated_hit_injury(
+                ctx,
+                consequence.character_id,
+                receipt_limb(injury.body_part),
+                injury.cut_damage,
+                injury.blunt_damage,
+                injury.max_single_hit_blunt_damage,
+                None,
+            )?;
+        }
+        crate::condition::apply_blood_loss(
+            ctx,
+            consequence.character_id,
+            consequence.blood_loss_fraction,
+        )?;
+        crate::strategic::consume_autoresolve_ammunition(
+            ctx,
+            consequence.character_id,
+            consequence.ammunition_used,
+        );
+        crate::capability::refresh_character_capability(ctx, consequence.character_id)?;
+        crate::filth::deposit_now(
+            ctx,
+            consequence.character_id,
+            crate::filth::FilthSubstance::Dirt,
+            None,
+            1,
+        )?;
+    }
+    for contact in &receipt.equipment_contacts {
+        crate::repair::apply_impact(ctx, contact.inventory_item_id, contact.contact_stress);
+    }
+    Ok(())
 }
 
 /// End a [`TacticallServer`].
@@ -742,6 +1012,7 @@ fn end_tactical_server_by_instance(
     ctx: &ReducerContext,
     server: TacticalServer,
     resolution: TacticalMissionResolution,
+    receipt: TacticalConsequenceReceipt,
 ) -> Result<(), String> {
     if ctx
         .db
@@ -756,6 +1027,7 @@ fn end_tactical_server_by_instance(
         ));
     }
 
+    validate_tactical_receipt(ctx, &server, &receipt)?;
     let connected: Vec<_> = ctx
         .db
         .character()
@@ -785,6 +1057,18 @@ fn end_tactical_server_by_instance(
         fail_bound_mission_attempt(ctx, &server.mission_id)?;
     }
 
+    apply_tactical_receipt(ctx, &receipt)?;
+    if !tactical_session_succeeded(resolution) {
+        for character in connected.iter().filter(|character| !character.temporary) {
+            crate::condition::record_morale_event(
+                ctx,
+                character.id,
+                "defeat",
+                -5.0,
+                Some(server.mission_id.clone()),
+            )?;
+        }
+    }
     // Apply persistent character progression. Loot is handled by the battle result.
     for character in connected {
         leave_mission_for_server(ctx, character, server.identity)?;
@@ -804,6 +1088,80 @@ fn end_tactical_server_by_instance(
 
 #[cfg(test)]
 mod authority_tests {
+    use super::*;
+
+    fn consequence(character_id: u64) -> TacticalCharacterConsequence {
+        TacticalCharacterConsequence {
+            character_id,
+            injuries: Vec::new(),
+            blood_loss_fraction: 0.0,
+            ammunition_used: 0,
+        }
+    }
+
+    #[test]
+    fn empty_tactical_receipt_is_bounded() {
+        assert!(validate_tactical_receipt_bounds(&TacticalConsequenceReceipt::default()).is_ok());
+    }
+
+    #[test]
+    fn tactical_receipt_rejects_duplicates_and_nonfinite_values() {
+        let duplicate = TacticalConsequenceReceipt {
+            party: vec![consequence(1), consequence(1)],
+            equipment_contacts: Vec::new(),
+        };
+        assert!(validate_tactical_receipt_bounds(&duplicate).is_err());
+
+        let mut invalid = consequence(1);
+        invalid.injuries.push(TacticalHitInjury {
+            body_part: TacticalReceiptBodyPart::Chest,
+            cut_damage: f32::NAN,
+            blunt_damage: 0.0,
+            max_single_hit_blunt_damage: 0.0,
+        });
+        assert!(
+            validate_tactical_receipt_bounds(&TacticalConsequenceReceipt {
+                party: vec![invalid],
+                equipment_contacts: Vec::new(),
+            })
+            .is_err()
+        );
+
+        let mut excessive_combined_damage = consequence(2);
+        excessive_combined_damage.injuries.push(TacticalHitInjury {
+            body_part: TacticalReceiptBodyPart::Chest,
+            cut_damage: 0.6,
+            blunt_damage: 0.6,
+            max_single_hit_blunt_damage: 0.6,
+        });
+        assert!(
+            validate_tactical_receipt_bounds(&TacticalConsequenceReceipt {
+                party: vec![excessive_combined_damage],
+                equipment_contacts: Vec::new(),
+            })
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn disconnected_roster_member_remains_authorized_but_foreign_assignment_does_not() {
+        assert!(receipt_character_is_authorized(false, true, true, false));
+        assert!(!receipt_character_is_authorized(false, false, true, false));
+        assert!(!receipt_character_is_authorized(false, true, false, false));
+        assert!(!receipt_character_is_authorized(false, true, true, true));
+        assert!(!receipt_character_is_authorized(true, true, true, false));
+    }
+
+    #[test]
+    fn tactical_receipt_validation_keeps_authority_and_custody_checks() {
+        let source = include_str!("tactical.rs");
+        assert!(source.contains("character.temporary"));
+        assert!(source.contains("character.server != server.identity"));
+        assert!(source.contains("character.party_id.as_deref()"));
+        assert!(source.contains("item.character_id != contact.character_id"));
+        assert!(source.contains("item.quantity != 1"));
+    }
+
     #[test]
     fn tactical_schema_has_no_quest_keyed_mission_authority() {
         let source = include_str!("tactical.rs");
@@ -895,6 +1253,7 @@ mod authority_tests {
                 .and_then(|tail| tail.split('}').next())
                 .expect("schema body");
             assert!(body.contains("pub expected_party_members: u32"));
+            assert!(body.contains("pub authorized_party_member_ids: Vec<u64>"));
         }
         let create = source
             .split("pub fn create_tactical_server_for_request")
@@ -902,6 +1261,7 @@ mod authority_tests {
             .and_then(|tail| tail.split("/// Creates a new").next())
             .expect("create reducer");
         assert!(create.contains("request.expected_party_members"));
+        assert!(create.contains("request.authorized_party_member_ids"));
     }
 
     #[test]

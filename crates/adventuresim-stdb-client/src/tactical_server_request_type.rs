@@ -13,6 +13,7 @@ pub struct TacticalServerRequest {
     pub party_id: String,
     pub requested_by: u64,
     pub expected_party_members: u32,
+    pub authorized_party_member_ids: Vec<u64>,
     pub required_enemy_kills: u32,
     pub enemy_difficulty: i32,
     pub enemy_combat_scale_bps: u32,
@@ -33,6 +34,7 @@ pub struct TacticalServerRequestCols {
     pub party_id: __sdk::__query_builder::Col<TacticalServerRequest, String>,
     pub requested_by: __sdk::__query_builder::Col<TacticalServerRequest, u64>,
     pub expected_party_members: __sdk::__query_builder::Col<TacticalServerRequest, u32>,
+    pub authorized_party_member_ids: __sdk::__query_builder::Col<TacticalServerRequest, Vec<u64>>,
     pub required_enemy_kills: __sdk::__query_builder::Col<TacticalServerRequest, u32>,
     pub enemy_difficulty: __sdk::__query_builder::Col<TacticalServerRequest, i32>,
     pub enemy_combat_scale_bps: __sdk::__query_builder::Col<TacticalServerRequest, u32>,
@@ -51,6 +53,10 @@ impl __sdk::__query_builder::HasCols for TacticalServerRequest {
             expected_party_members: __sdk::__query_builder::Col::new(
                 table_name,
                 "expected_party_members",
+            ),
+            authorized_party_member_ids: __sdk::__query_builder::Col::new(
+                table_name,
+                "authorized_party_member_ids",
             ),
             required_enemy_kills: __sdk::__query_builder::Col::new(
                 table_name,

@@ -197,6 +197,7 @@ dependencies = [
 name = "adventuresim-tactical-server"
 version = "0.1.0"
 dependencies = [
+ "adventuresim-core",
  "adventuresim-stdb-client",
  "adventuresim-tactical-core",
  "adventuresim-tactical-netcode",

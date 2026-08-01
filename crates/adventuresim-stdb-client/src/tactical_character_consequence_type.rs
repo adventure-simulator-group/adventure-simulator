@@ -4,31 +4,17 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::tactical_hit_injury_type::TacticalHitInjury;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-#[derive(Copy, Eq, Hash)]
-pub enum SettlementService {
-    GeneralStore,
-
-    Inn,
-
-    GeneralBlacksmith,
-
-    Market,
-
-    Weaponsmith,
-
-    Armorer,
-
-    Tailor,
-
-    Herbalist,
-
-    Temple,
-
-    Bookstore,
+pub struct TacticalCharacterConsequence {
+    pub character_id: u64,
+    pub injuries: Vec<TacticalHitInjury>,
+    pub blood_loss_fraction: f32,
+    pub ammunition_used: u32,
 }
 
-impl __sdk::InModule for SettlementService {
+impl __sdk::InModule for TacticalCharacterConsequence {
     type Module = super::RemoteModule;
 }

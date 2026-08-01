@@ -4,31 +4,17 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::tactical_receipt_body_part_type::TacticalReceiptBodyPart;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-#[derive(Copy, Eq, Hash)]
-pub enum SettlementService {
-    GeneralStore,
-
-    Inn,
-
-    GeneralBlacksmith,
-
-    Market,
-
-    Weaponsmith,
-
-    Armorer,
-
-    Tailor,
-
-    Herbalist,
-
-    Temple,
-
-    Bookstore,
+pub struct TacticalHitInjury {
+    pub body_part: TacticalReceiptBodyPart,
+    pub cut_damage: f32,
+    pub blunt_damage: f32,
+    pub max_single_hit_blunt_damage: f32,
 }
 
-impl __sdk::InModule for SettlementService {
+impl __sdk::InModule for TacticalHitInjury {
     type Module = super::RemoteModule;
 }

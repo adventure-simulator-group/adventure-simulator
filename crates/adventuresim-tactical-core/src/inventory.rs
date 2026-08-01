@@ -281,6 +281,16 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .unwrap_or_default()
     }
 
+    fn shield_holding_side(&self) -> Option<BodySide> {
+        self.equipped_shield()
+            .and_then(|item| item.slot)
+            .and_then(|slot| match slot {
+                EquipSlot::HoldingLeft => Some(BodySide::Left),
+                EquipSlot::HoldingRight => Some(BodySide::Right),
+                _ => None,
+            })
+    }
+
     fn weapon_weight(&self) -> f32 {
         self.equipped_weapon()
             .map(|item| item.properties.weight)

@@ -565,11 +565,16 @@ pub fn seed_standalone_tactical_mission(
                 capture_custody_version: None,
             });
     }
-    let expected_party_members =
-        u32::try_from(crate::strategic::living_party_member_ids(ctx, &party_id).len())
-            .map_err(|_| "Party is too large for tactical enrollment")?;
+    let authorized_party_member_ids = crate::strategic::living_party_member_ids(ctx, &party_id);
+    let expected_party_members = u32::try_from(authorized_party_member_ids.len())
+        .map_err(|_| "Party is too large for tactical enrollment")?;
     if expected_party_members == 0 {
         return Err("A tactical mission requires at least one living party member".into());
+    }
+    if expected_party_members as usize
+        > adventuresim_core::mission::MAX_TACTICAL_RECEIPT_PARTICIPANTS
+    {
+        return Err("Party exceeds the tactical receipt participant limit".into());
     }
     ctx.db
         .tactical_server_request_authority()
@@ -580,6 +585,7 @@ pub fn seed_standalone_tactical_mission(
             party_id,
             requested_by: character_id,
             expected_party_members,
+            authorized_party_member_ids,
             required_enemy_kills,
             enemy_difficulty: mission.enemy_difficulty,
             enemy_combat_scale_bps: mission.enemy_combat_scale_bps,

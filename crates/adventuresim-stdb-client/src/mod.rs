@@ -630,7 +630,13 @@ pub mod surface_geology_type;
 pub mod surface_lithology_type;
 pub mod surrender_to_authority_reducer;
 pub mod synchronize_character_time_reducer;
+pub mod tactical_character_consequence_type;
+pub mod tactical_consequence_receipt_type;
+pub mod tactical_equipment_contact_role_type;
+pub mod tactical_equipment_contact_type;
+pub mod tactical_hit_injury_type;
 pub mod tactical_mission_resolution_type;
+pub mod tactical_receipt_body_part_type;
 pub mod tactical_server_claim_type;
 pub mod tactical_server_request_table;
 pub mod tactical_server_request_type;
@@ -1302,7 +1308,13 @@ pub use surface_geology_type::SurfaceGeology;
 pub use surface_lithology_type::SurfaceLithology;
 pub use surrender_to_authority_reducer::surrender_to_authority;
 pub use synchronize_character_time_reducer::synchronize_character_time;
+pub use tactical_character_consequence_type::TacticalCharacterConsequence;
+pub use tactical_consequence_receipt_type::TacticalConsequenceReceipt;
+pub use tactical_equipment_contact_role_type::TacticalEquipmentContactRole;
+pub use tactical_equipment_contact_type::TacticalEquipmentContact;
+pub use tactical_hit_injury_type::TacticalHitInjury;
 pub use tactical_mission_resolution_type::TacticalMissionResolution;
+pub use tactical_receipt_body_part_type::TacticalReceiptBodyPart;
 pub use tactical_server_claim_type::TacticalServerClaim;
 pub use tactical_server_request_table::*;
 pub use tactical_server_request_type::TacticalServerRequest;
@@ -1549,7 +1561,7 @@ pub enum Reducer {
     },
     EndTacticalServer {
         resolution: TacticalMissionResolution,
-        reported_xp_gained: i32,
+        receipt: TacticalConsequenceReceipt,
     },
     EnsureSettlementActivity {
         settlement_id: String,
@@ -2494,10 +2506,10 @@ Reducer::BeginWorldDataImport{
 }),
             Reducer::EndTacticalServer{
                 resolution,
-                reported_xp_gained,
+                receipt,
 }             => __sats::bsatn::to_vec(&end_tactical_server_reducer::EndTacticalServerArgs {
                 resolution: resolution.clone(),
-                reported_xp_gained: reported_xp_gained.clone(),
+                receipt: receipt.clone(),
 }),
             Reducer::EnsureSettlementActivity{
                 settlement_id,

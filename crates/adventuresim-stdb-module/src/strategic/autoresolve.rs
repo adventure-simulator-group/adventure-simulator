@@ -250,7 +250,11 @@ fn autoresolve_drop(enemy_type: &str) -> Result<Option<&'static str>, String> {
     Ok(parse_threat(enemy_type)?.profile().combat.loot_item_id)
 }
 
-fn consume_autoresolve_ammunition(ctx: &ReducerContext, character_id: u64, mut quantity: u32) {
+pub(crate) fn consume_autoresolve_ammunition(
+    ctx: &ReducerContext,
+    character_id: u64,
+    mut quantity: u32,
+) {
     let stacks: Vec<_> = ctx
         .db
         .inventory_item()

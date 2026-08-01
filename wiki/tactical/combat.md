@@ -73,7 +73,12 @@ timeout is only a bounded failure fallback.
 
 This is still an iteration harness rather than complete enemy decision-making.
 It does not pathfind around terrain or other combatants, handle ranged weapons,
-persist injuries, or create strategic outcome receipts.
+or populate ranged ammunition/projectile consequences. Accepted melee attacks
+accumulate only clamped Party injury and blood consequences plus available
+weapon contact provenance in server memory. The frozen terminal receipt is
+strictly bounded and validated by strategic authority before injuries, blood,
+capability, filth, ammunition, equipment wear, and defeat morale commit
+transactionally; invalid receipts remain retryable.
 
 ### Skill check algorithm
 Broadly speaking, the flow goes like this:
