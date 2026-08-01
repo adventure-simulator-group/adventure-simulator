@@ -283,7 +283,7 @@ _spawner-stop:
 # (written by `tactical-isolated`) when present, otherwise from the canonical
 # stack - so a bare `just tactical` targets whichever is currently running.
 tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") scene_key=env_var_or_default("TACTICAL_SCENE_KEY", "hills") bots=env_var_or_default("TACTICAL_BOTS", "3") port=env_var_or_default("TACTICAL_PORT", tactical_port) url=env_var_or_default("TACTICAL_SPACETIMEDB_URL", spacetime_url) module=env_var_or_default("TACTICAL_SPACETIMEDB_MODULE", spacetime_module):
-    @cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --required-enemy-kills {{ bots }} --enemy-combat-scale-bps 10000 --no-timeout
+    @cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --expected-party-members 1 --required-enemy-kills {{ bots }} --enemy-combat-scale-bps 10000 --no-timeout
 
 # Run a native tactical client (for testing `just tactical`). Defaults come
 # from `.env.tactical` when present, same as `tactical` above.

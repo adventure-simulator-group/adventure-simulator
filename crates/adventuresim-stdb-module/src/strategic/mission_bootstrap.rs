@@ -604,6 +604,12 @@ pub fn seed_standalone_tactical_mission(
                 capture_custody_version: None,
             });
     }
+    let expected_party_members =
+        u32::try_from(crate::strategic::living_party_member_ids(ctx, &party_id).len())
+            .map_err(|_| "Party is too large for tactical enrollment")?;
+    if expected_party_members == 0 {
+        return Err("A tactical mission requires at least one living party member".into());
+    }
     ctx.db
         .tactical_server_request_authority()
         .insert(crate::tactical::TacticalServerRequest {
@@ -612,6 +618,7 @@ pub fn seed_standalone_tactical_mission(
             scene_key,
             party_id,
             requested_by: character_id,
+            expected_party_members,
             required_enemy_kills,
             enemy_difficulty: mission.enemy_difficulty,
             enemy_combat_scale_bps: mission.enemy_combat_scale_bps,
