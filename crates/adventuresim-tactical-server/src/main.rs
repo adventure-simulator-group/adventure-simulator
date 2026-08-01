@@ -5,7 +5,12 @@ mod combat;
 mod stdb;
 mod terrain;
 
-use std::{collections::HashSet, net::SocketAddr, num::NonZeroU32, time::Duration};
+use std::{
+    collections::HashSet,
+    net::SocketAddr,
+    num::{NonZeroU8, NonZeroU32},
+    time::Duration,
+};
 
 use adventuresim_stdb_client::*;
 use adventuresim_tactical_core::{
@@ -26,7 +31,7 @@ use crate::{
         MeleeAttackAuthority, RangedAttackAuthority, TacticalCombatSide,
         TacticalConsequenceAccumulator,
     },
-    stdb::SpacetimeDb,
+    stdb::{SpacetimeDb, TerminalSubmissionResult},
     terrain::TerrainGenerator,
 };
 use input::AccumulatedInput;
@@ -35,6 +40,12 @@ use input::AccumulatedInput;
 const MISSION_TIMEOUT_SECS: f32 = 300.0;
 /// Retry interval after a synchronous terminal reducer submission error.
 const TERMINAL_RETRY_BACKOFF: Duration = Duration::from_secs(1);
+/// Keeps the authoritative server observable just long enough for connected
+/// clients to render the committed outcome before the transport closes.
+const TERMINAL_PRESENTATION_DELAY: Duration = Duration::from_secs(3);
+/// An acknowledgement-ambiguous submission must fail closed rather than be
+/// retried blindly or strand a headless server forever.
+const TERMINAL_ACK_TIMEOUT: Duration = Duration::from_secs(10);
 /// Time a sealed, empty Party has to reconnect before the mission is abandoned.
 const PARTY_RECONNECT_GRACE: Duration = Duration::from_secs(10);
 
@@ -139,6 +150,10 @@ fn main() {
             pending_resolution: None,
             pending_receipt: None,
             committed: false,
+            terminal_in_flight: false,
+            terminal_ack_deadline: None,
+            terminal_transport_failed: false,
+            terminal_presentation: None,
         })
         .insert_resource(args)
         .add_systems(
@@ -147,7 +162,13 @@ fn main() {
                 (check_terminal_combat_outcome, check_mission_timeout)
                     .chain()
                     .after(combat::update_tactical_combat_state)
-                    .after(spawn_connected_players),
+                    .after(spawn_connected_players)
+                    .after(process_terminal_submission_results),
+                process_terminal_submission_results.after(stdb::update_spacetimedb),
+                fail_stalled_terminal_submission
+                    .after(process_terminal_submission_results)
+                    .before(check_terminal_combat_outcome),
+                finish_terminal_presentation.after(check_mission_timeout),
                 spawn_connected_players.after(stdb::update_spacetimedb),
                 (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDb>),
             ),
@@ -182,6 +203,30 @@ pub struct MissionState {
     pending_resolution: Option<TacticalMissionResolution>,
     pending_receipt: Option<TacticalConsequenceReceipt>,
     committed: bool,
+    terminal_in_flight: bool,
+    terminal_ack_deadline: Option<Duration>,
+    terminal_transport_failed: bool,
+    terminal_presentation: Option<TerminalPresentationState>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TerminalPresentationState {
+    outcome: TacticalOutcome,
+    remaining: Duration,
+}
+
+impl TerminalPresentationState {
+    fn begin(outcome: TacticalOutcome) -> Self {
+        Self {
+            outcome,
+            remaining: TERMINAL_PRESENTATION_DELAY,
+        }
+    }
+
+    fn advance(&mut self, delta: Duration) -> bool {
+        self.remaining = self.remaining.saturating_sub(delta);
+        self.remaining.is_zero()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -235,26 +280,83 @@ fn enrollment_ready(expected: u32, seen: usize, has_loading_player: bool) -> boo
 }
 
 impl MissionState {
-    fn submit_terminal<E>(
+    fn begin_terminal_submission(
         &mut self,
         resolution: TacticalMissionResolution,
         receipt: TacticalConsequenceReceipt,
         now: Duration,
-        mut send: impl FnMut(TacticalMissionResolution, TacticalConsequenceReceipt) -> Result<(), E>,
-    ) -> Result<bool, E> {
-        if self.committed || now < self.terminal_retry_not_before {
-            return Ok(false);
+    ) -> Option<(TacticalMissionResolution, TacticalConsequenceReceipt)> {
+        if self.committed
+            || self.terminal_in_flight
+            || self.terminal_transport_failed
+            || now < self.terminal_retry_not_before
+        {
+            return None;
         }
         let resolution = *self.pending_resolution.get_or_insert(resolution);
         let receipt = self.pending_receipt.get_or_insert(receipt).clone();
-        if let Err(error) = send(resolution, receipt) {
-            self.terminal_retry_not_before = now.saturating_add(TERMINAL_RETRY_BACKOFF);
-            return Err(error);
+        self.terminal_in_flight = true;
+        self.terminal_ack_deadline = Some(now.saturating_add(TERMINAL_ACK_TIMEOUT));
+        Some((resolution, receipt))
+    }
+
+    fn terminal_submission_failed(&mut self, now: Duration) {
+        if self.committed {
+            return;
         }
-        self.committed = true;
-        self.pending_resolution = None;
-        self.pending_receipt = None;
-        Ok(true)
+        self.terminal_in_flight = false;
+        self.terminal_ack_deadline = None;
+        self.terminal_retry_not_before = now.saturating_add(TERMINAL_RETRY_BACKOFF);
+    }
+
+    fn apply_terminal_submission_result(
+        &mut self,
+        result: TerminalSubmissionResult,
+        now: Duration,
+    ) -> Option<TacticalOutcome> {
+        if self.committed || !self.terminal_in_flight {
+            return None;
+        }
+        self.terminal_in_flight = false;
+        self.terminal_ack_deadline = None;
+        match result {
+            TerminalSubmissionResult::Accepted => {
+                let resolution = self.pending_resolution.take()?;
+                self.pending_receipt = None;
+                self.committed = true;
+                let outcome = presentation_outcome(resolution);
+                self.terminal_presentation = Some(TerminalPresentationState::begin(outcome));
+                Some(outcome)
+            }
+            TerminalSubmissionResult::Rejected(_) => {
+                self.terminal_retry_not_before = now.saturating_add(TERMINAL_RETRY_BACKOFF);
+                None
+            }
+        }
+    }
+
+    fn fail_if_terminal_ack_stalled(&mut self, now: Duration) -> bool {
+        let stalled = self.terminal_in_flight
+            && self
+                .terminal_ack_deadline
+                .is_some_and(|deadline| now >= deadline);
+        if stalled {
+            self.terminal_in_flight = false;
+            self.terminal_ack_deadline = None;
+            self.terminal_transport_failed = true;
+        }
+        stalled
+    }
+}
+
+fn presentation_outcome(resolution: TacticalMissionResolution) -> TacticalOutcome {
+    match resolution {
+        TacticalMissionResolution::Defeated
+        | TacticalMissionResolution::DrivenOff
+        | TacticalMissionResolution::Captured => TacticalOutcome::Victory,
+        TacticalMissionResolution::Failed | TacticalMissionResolution::CaptureTargetKilled => {
+            TacticalOutcome::Defeat
+        }
     }
 }
 
@@ -601,30 +703,84 @@ fn commit_terminal_resolution(
     conn: Res<SpacetimeDb>,
     consequences: Res<TacticalConsequenceAccumulator>,
     mut state: ResMut<MissionState>,
-    mut exit: MessageWriter<AppExit>,
 ) -> Result {
     let receipt = tactical_consequence_receipt(&consequences);
-    let submitted = match state.submit_terminal(resolution, receipt, now, |resolution, receipt| {
-        conn.reducers().end_tactical_server(resolution, receipt)
-    }) {
-        Ok(submitted) => submitted,
-        Err(error) => {
+    let Some((resolution, receipt)) = state.begin_terminal_submission(resolution, receipt, now)
+    else {
+        return Ok(());
+    };
+    if let Err(error) = conn.submit_terminal(resolution, receipt) {
+        state.terminal_submission_failed(now);
+        warn!(
+            "Terminal result enqueue failed; retrying in {}s: {error}",
+            TERMINAL_RETRY_BACKOFF.as_secs()
+        );
+    } else {
+        info!(
+            ?resolution,
+            "Terminal result queued; awaiting reducer acceptance"
+        );
+    }
+    Ok(())
+}
+
+fn process_terminal_submission_results(
+    time: Res<Time>,
+    conn: Res<SpacetimeDb>,
+    mut state: ResMut<MissionState>,
+    mut cmd: Commands,
+) {
+    for result in conn.take_terminal_results() {
+        let rejection = match &result {
+            TerminalSubmissionResult::Rejected(error) => Some(error.clone()),
+            TerminalSubmissionResult::Accepted => None,
+        };
+        if let Some(outcome) = state.apply_terminal_submission_result(result, time.elapsed()) {
+            cmd.server_trigger(ToClients {
+                mode: SendMode::CLIENTS_ONLY,
+                message: TacticalOutcomeResponse { outcome },
+            });
+            info!(
+                ?outcome,
+                "Mission terminal result accepted; presenting outcome"
+            );
+        } else if let Some(error) = rejection {
             warn!(
-                "Terminal result submission failed; retrying in {}s: {error}",
+                "Terminal reducer rejected submission; retrying in {}s: {error}",
                 TERMINAL_RETRY_BACKOFF.as_secs()
             );
-            return Ok(());
         }
-    };
-    if !submitted {
-        return Ok(());
     }
-    info!(
-        ?resolution,
-        "Mission terminal result committed; shutting down"
-    );
-    exit.write(AppExit::Success);
-    Ok(())
+}
+
+fn fail_stalled_terminal_submission(
+    time: Res<Time>,
+    mut state: ResMut<MissionState>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if state.fail_if_terminal_ack_stalled(time.elapsed()) {
+        error!(
+            timeout_seconds = TERMINAL_ACK_TIMEOUT.as_secs(),
+            "Terminal reducer acknowledgement timed out; exiting without presenting an outcome"
+        );
+        exit.write(AppExit::Error(NonZeroU8::new(1).expect("one is non-zero")));
+    }
+}
+
+fn finish_terminal_presentation(
+    time: Res<Time>,
+    mut state: ResMut<MissionState>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let Some(mut presentation) = state.terminal_presentation.take() else {
+        return;
+    };
+    if presentation.advance(time.delta()) {
+        info!(?presentation.outcome, "Terminal presentation complete; shutting down");
+        exit.write(AppExit::Success);
+    } else {
+        state.terminal_presentation = Some(presentation);
+    }
 }
 
 fn receipt_body_part(body_part: BodyPart) -> TacticalReceiptBodyPart {
@@ -707,7 +863,6 @@ fn check_terminal_combat_outcome(
     conn: Res<SpacetimeDb>,
     consequences: Res<TacticalConsequenceAccumulator>,
     mut state: ResMut<MissionState>,
-    exit: MessageWriter<AppExit>,
     enemies: Query<(), (With<bot::MissionEnemy>, With<Player>)>,
     combatants: Query<(&TacticalCombatSide, &TacticalCombatState, &PlayerId), With<Player>>,
     loading_players: Query<(), With<LoadingPlayer>>,
@@ -718,14 +873,7 @@ fn check_terminal_combat_outcome(
     // A result whose first submission failed is already decided. Retry it
     // before observing recoveries, disconnects, or any newly terminal state.
     if let Some(resolution) = state.pending_resolution {
-        return commit_terminal_resolution(
-            resolution,
-            time.elapsed(),
-            conn,
-            consequences,
-            state,
-            exit,
-        );
+        return commit_terminal_resolution(resolution, time.elapsed(), conn, consequences, state);
     }
     let mut loaded_party = 0;
     let mut incapacitated_party = 0;
@@ -765,7 +913,6 @@ fn check_terminal_combat_outcome(
             conn,
             consequences,
             state,
-            exit,
         );
     }
     let snapshot = TerminalCombatSnapshot {
@@ -779,7 +926,7 @@ fn check_terminal_combat_outcome(
     let Some(resolution) = terminal_resolution(snapshot) else {
         return Ok(());
     };
-    commit_terminal_resolution(resolution, time.elapsed(), conn, consequences, state, exit)
+    commit_terminal_resolution(resolution, time.elapsed(), conn, consequences, state)
 }
 
 fn check_mission_timeout(
@@ -787,7 +934,6 @@ fn check_mission_timeout(
     conn: Res<SpacetimeDb>,
     consequences: Res<TacticalConsequenceAccumulator>,
     mut state: ResMut<MissionState>,
-    exit: MessageWriter<AppExit>,
 ) -> Result {
     let is_timeout = match state.timeout {
         Some(ref mut timer) => {
@@ -808,7 +954,6 @@ fn check_mission_timeout(
         conn,
         consequences,
         state,
-        exit,
     )
 }
 
@@ -1087,50 +1232,36 @@ mod tests {
     }
 
     #[test]
-    fn no_timeout_mission_can_claim_exactly_one_terminal_result() {
-        let mut state = MissionState {
-            timeout: None,
-            enemies_defeated: 2,
-            required_enemy_defeats: 2,
-            expected_party_members: 1,
-            seen_party_members: HashSet::from([7]),
-            enrollment_begun: true,
-            enrollment_sealed: true,
-            abandonment_elapsed: Duration::ZERO,
-            terminal_retry_not_before: Duration::ZERO,
-            pending_resolution: None,
-            pending_receipt: None,
-            committed: false,
-        };
-        let resolution = terminal_resolution(TerminalCombatSnapshot {
-            defeated_enemies: state.enemies_defeated,
-            ..snapshot()
-        })
-        .unwrap();
-
+    fn committed_resolution_maps_to_one_client_outcome() {
         assert_eq!(
-            state.submit_terminal(
-                resolution,
-                empty_tactical_consequence_receipt(),
-                Duration::ZERO,
-                |_, _| Ok::<_, ()>(()),
-            ),
-            Ok(true)
+            presentation_outcome(TacticalMissionResolution::Defeated),
+            TacticalOutcome::Victory
         );
-        assert_eq!(
-            state.submit_terminal(
-                resolution,
-                empty_tactical_consequence_receipt(),
-                Duration::ZERO,
-                |_, _| Ok::<_, ()>(()),
-            ),
-            Ok(false)
-        );
+        for resolution in [
+            TacticalMissionResolution::DrivenOff,
+            TacticalMissionResolution::Captured,
+        ] {
+            assert_eq!(presentation_outcome(resolution), TacticalOutcome::Victory);
+        }
+        for resolution in [
+            TacticalMissionResolution::Failed,
+            TacticalMissionResolution::CaptureTargetKilled,
+        ] {
+            assert_eq!(presentation_outcome(resolution), TacticalOutcome::Defeat);
+        }
     }
 
     #[test]
-    fn failed_submission_retries_frozen_result_after_predicate_clears() {
-        let mut state = MissionState {
+    fn terminal_presentation_delay_is_exact_and_bounded() {
+        let mut presentation = TerminalPresentationState::begin(TacticalOutcome::Victory);
+        assert!(!presentation.advance(TERMINAL_PRESENTATION_DELAY - Duration::from_millis(1)));
+        assert_eq!(presentation.remaining, Duration::from_millis(1));
+        assert!(presentation.advance(Duration::from_millis(1)));
+        assert_eq!(presentation.remaining, Duration::ZERO);
+    }
+
+    fn terminal_test_state() -> MissionState {
+        MissionState {
             timeout: None,
             enemies_defeated: 1,
             required_enemy_defeats: 1,
@@ -1143,85 +1274,176 @@ mod tests {
             pending_resolution: None,
             pending_receipt: None,
             committed: false,
-        };
-        let mut attempts = 0;
-        let mut reports = Vec::new();
-        let mut receipts = Vec::new();
+            terminal_in_flight: false,
+            terminal_ack_deadline: None,
+            terminal_transport_failed: false,
+            terminal_presentation: None,
+        }
+    }
+
+    #[test]
+    fn stalled_terminal_ack_fails_closed_without_presentation() {
+        let mut state = terminal_test_state();
+        assert!(
+            state
+                .begin_terminal_submission(
+                    TacticalMissionResolution::Defeated,
+                    empty_tactical_consequence_receipt(),
+                    Duration::ZERO,
+                )
+                .is_some()
+        );
+
+        assert!(
+            !state.fail_if_terminal_ack_stalled(TERMINAL_ACK_TIMEOUT - Duration::from_millis(1))
+        );
+        assert!(state.fail_if_terminal_ack_stalled(TERMINAL_ACK_TIMEOUT));
+        assert!(state.terminal_transport_failed);
+        assert!(!state.committed);
+        assert!(state.terminal_presentation.is_none());
+        assert!(
+            state
+                .begin_terminal_submission(
+                    TacticalMissionResolution::Defeated,
+                    empty_tactical_consequence_receipt(),
+                    Duration::MAX,
+                )
+                .is_none(),
+            "an ambiguously acknowledged request must not be retried"
+        );
+    }
+
+    #[test]
+    fn queued_terminal_submission_is_not_committed_or_presented() {
+        let mut state = terminal_test_state();
+        let queued = state.begin_terminal_submission(
+            TacticalMissionResolution::Defeated,
+            empty_tactical_consequence_receipt(),
+            Duration::ZERO,
+        );
+        assert!(queued.is_some());
+        assert!(state.terminal_in_flight);
+        assert!(!state.committed);
+        assert!(state.terminal_presentation.is_none());
+        assert!(
+            state
+                .begin_terminal_submission(
+                    TacticalMissionResolution::Failed,
+                    empty_tactical_consequence_receipt(),
+                    Duration::ZERO,
+                )
+                .is_none(),
+            "an in-flight request cannot be duplicated"
+        );
+    }
+
+    #[test]
+    fn rejection_retries_frozen_data_then_acceptance_presents_exactly_once() {
+        let mut state = terminal_test_state();
         let frozen_receipt = TacticalConsequenceReceipt {
             party: vec![TacticalCharacterConsequence {
                 character_id: 7,
-                injuries: vec![TacticalHitInjury {
-                    body_part: TacticalReceiptBodyPart::Chest,
-                    cut_damage: 0.2,
-                    blunt_damage: 0.0,
-                    max_single_hit_blunt_damage: 0.0,
-                }],
+                injuries: Vec::new(),
                 blood_loss_fraction: 0.1,
-                ammunition_used: 0,
+                ammunition_used: 2,
             }],
             equipment_contacts: Vec::new(),
         };
-        let mut sender = |resolution, receipt| {
-            attempts += 1;
-            reports.push(resolution);
-            receipts.push(receipt);
-            (attempts > 1).then_some(()).ok_or("offline")
-        };
-
-        assert_eq!(
-            state.submit_terminal(
+        let first = state
+            .begin_terminal_submission(
                 TacticalMissionResolution::Defeated,
                 frozen_receipt.clone(),
                 Duration::ZERO,
-                &mut sender
-            ),
-            Err("offline")
-        );
-        let current_resolution = terminal_resolution(TerminalCombatSnapshot {
-            defeated_enemies: 0,
-            ..snapshot()
-        });
-        assert_eq!(current_resolution, None, "the original predicate recovered");
-        let retry_resolution = state
-            .pending_resolution
-            .or(current_resolution)
-            .expect("failed submission remains pending");
+            )
+            .unwrap();
         assert_eq!(
-            state.submit_terminal(
-                retry_resolution,
+            first,
+            (TacticalMissionResolution::Defeated, frozen_receipt.clone())
+        );
+
+        assert_eq!(
+            state.apply_terminal_submission_result(
+                TerminalSubmissionResult::Rejected("reducer rejected".into()),
+                Duration::ZERO,
+            ),
+            None
+        );
+        assert!(!state.terminal_in_flight);
+        assert!(!state.committed);
+        assert!(state.terminal_presentation.is_none());
+        assert!(
+            state
+                .begin_terminal_submission(
+                    TacticalMissionResolution::Failed,
+                    empty_tactical_consequence_receipt(),
+                    Duration::from_millis(999),
+                )
+                .is_none()
+        );
+
+        let retry = state
+            .begin_terminal_submission(
+                TacticalMissionResolution::Failed,
                 empty_tactical_consequence_receipt(),
-                Duration::from_millis(999),
-                &mut sender,
-            ),
-            Ok(false)
+                TERMINAL_RETRY_BACKOFF,
+            )
+            .unwrap();
+        assert_eq!(
+            retry, first,
+            "retry must preserve the original terminal payload"
         );
         assert_eq!(
-            state.submit_terminal(
-                retry_resolution,
+            state.apply_terminal_submission_result(
+                TerminalSubmissionResult::Accepted,
+                TERMINAL_RETRY_BACKOFF,
+            ),
+            Some(TacticalOutcome::Victory)
+        );
+        assert!(state.committed);
+        assert!(state.terminal_presentation.is_some());
+        assert_eq!(
+            state.apply_terminal_submission_result(
+                TerminalSubmissionResult::Accepted,
+                TERMINAL_RETRY_BACKOFF,
+            ),
+            None,
+            "a duplicate callback cannot present twice"
+        );
+    }
+
+    #[test]
+    fn synchronous_enqueue_failure_releases_in_flight_for_bounded_retry() {
+        let mut state = terminal_test_state();
+        let first = state
+            .begin_terminal_submission(
+                TacticalMissionResolution::Failed,
                 empty_tactical_consequence_receipt(),
-                Duration::from_secs(1),
-                &mut sender,
-            ),
-            Ok(true)
+                Duration::ZERO,
+            )
+            .unwrap();
+        state.terminal_submission_failed(Duration::ZERO);
+        assert!(!state.terminal_in_flight);
+        assert!(!state.committed);
+        assert!(state.terminal_presentation.is_none());
+        assert!(
+            state
+                .begin_terminal_submission(
+                    TacticalMissionResolution::Defeated,
+                    empty_tactical_consequence_receipt(),
+                    Duration::from_millis(999),
+                )
+                .is_none()
         );
         assert_eq!(
-            state.submit_terminal(
-                TacticalMissionResolution::Defeated,
-                empty_tactical_consequence_receipt(),
-                Duration::from_secs(2),
-                &mut sender
-            ),
-            Ok(false)
+            state
+                .begin_terminal_submission(
+                    TacticalMissionResolution::Defeated,
+                    empty_tactical_consequence_receipt(),
+                    TERMINAL_RETRY_BACKOFF,
+                )
+                .unwrap(),
+            first
         );
-        assert_eq!(attempts, 2);
-        assert_eq!(
-            reports,
-            vec![
-                TacticalMissionResolution::Defeated,
-                TacticalMissionResolution::Defeated
-            ]
-        );
-        assert_eq!(receipts, vec![frozen_receipt.clone(), frozen_receipt]);
     }
 
     #[test]

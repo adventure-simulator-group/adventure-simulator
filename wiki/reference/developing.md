@@ -448,6 +448,34 @@ For a self-contained tactical database and request, prefer
 `just tactical-isolated`; it writes `.env.tactical` so a subsequent bare
 `just tactical` and `just client` target the same isolated instance.
 
+To demonstrate tactical combat presentation without touching the canonical
+development database, use three terminals from the repository root. First,
+create and seed the disposable mission profile (leave it running):
+
+```bash
+just tactical-isolated presentation-demo 23200 mission:presentation-demo hills 0 1
+```
+
+Then start the seeded mission server using the generated `.env.tactical`:
+
+```bash
+just tactical
+```
+
+Finally connect the seeded Party character:
+
+```bash
+just client
+```
+
+Fight the single enemy or allow the Party character to become incapacitated.
+The client shows live blood-loss/imbalance/incapacitation status, then an
+authoritative `VICTORY` or `DEFEAT` banner after the reducer callback confirms
+strategic acceptance.
+The server remains connected for the bounded three-second presentation window
+and exits automatically. Stop the isolated profile with Ctrl+C in its first
+terminal when finished.
+
 ## Troubleshooting
 
 - **SpacetimeDB not running:** `just status`, then `just spacetime-start`

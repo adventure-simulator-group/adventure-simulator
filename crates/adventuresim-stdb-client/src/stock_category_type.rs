@@ -39,8 +39,6 @@ pub enum StockCategory {
     Herbs,
 
     GeneralGoods,
-
-    Books,
 }
 
 impl __sdk::InModule for StockCategory {

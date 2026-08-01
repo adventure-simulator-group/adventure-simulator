@@ -112,6 +112,19 @@ pub struct SuccessfulAttackResponse {
     pub defender_response: DefenderResponse,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TacticalOutcome {
+    Victory,
+    Defeat,
+}
+
+/// Broadcast only after strategic authority accepts the terminal tactical
+/// submission. It is presentation state, not a second outcome authority.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Event, Serialize, Deserialize)]
+pub struct TacticalOutcomeResponse {
+    pub outcome: TacticalOutcome,
+}
+
 impl SuccessfulAttackResponse {
     pub fn total_damage(&self) -> f32 {
         match self.result {

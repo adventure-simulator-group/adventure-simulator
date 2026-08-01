@@ -25,8 +25,6 @@ pub enum SettlementService {
     Herbalist,
 
     Temple,
-
-    Bookstore,
 }
 
 impl __sdk::InModule for SettlementService {
