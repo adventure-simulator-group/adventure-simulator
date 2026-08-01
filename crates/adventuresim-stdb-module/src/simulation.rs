@@ -177,7 +177,7 @@ pub fn seed_simulation_quest_fixture(
         let party = character
             .party_id
             .as_deref()
-            .and_then(|party_id| ctx.db.party_authority().id().find(party_id))
+            .and_then(|party_id| ctx.db.party_authority().id().find(party_id.to_owned()))
             .ok_or("Quest coverage leader is not in a party")?;
         if party.leader_id != character_id {
             return Err("Quest coverage character is not its party leader".into());
