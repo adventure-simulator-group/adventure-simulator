@@ -5,7 +5,6 @@ use adventuresim_world_schema::{BestiaryCategory, BestiaryHours};
 
 const MAX_COMBAT_ROUNDS: usize = 256;
 const MAX_RANGED_ATTACKS_PER_PHASE: usize = 64;
-const BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
 const FORMATION_SPACING_METERS: f32 = 2.0;
 const COMBAT_ROUND_SECONDS: f32 = 1.0;
 const REFERENCE_MELEE_ATTACK_SECONDS: f32 = 1.0;
@@ -82,9 +81,7 @@ impl CombatBody {
 
     pub fn apply_damage(&mut self, part: BodyPart, damage: f32) -> f32 {
         let health = &mut self.health[body_part_index(part)];
-        let applied = damage.max(0.0).min(health.max(0.0));
-        *health = (*health - applied).max(0.0);
-        applied
+        apply_clamped_limb_damage(health, damage)
     }
 
     pub fn total_damage(&self) -> f32 {
@@ -454,11 +451,14 @@ impl Combatant {
             &self.equipment,
             LimbWeights::all_equal(),
         );
-        let pain = pain_incapacitation(self.body.total_damage(), will);
-        let remaining_blood =
-            (self.starting_blood_fraction - self.blood_loss_fraction).clamp(0.0, 1.0);
-        let blood_loss = blood_loss_incapacitation(remaining_blood, 1.0);
-        self.starting_incapacitation + pain + blood_loss + self.imbalance
+        combat_incapacitation(
+            self.starting_incapacitation,
+            self.starting_blood_fraction,
+            self.blood_loss_fraction,
+            self.body.total_damage(),
+            will,
+            self.imbalance,
+        )
     }
 
     pub fn is_incapacitated(&self) -> bool {
@@ -474,7 +474,7 @@ impl Combatant {
             &self.equipment,
             LimbWeights::both_legs(),
         );
-        self.imbalance = (self.imbalance - 0.03 * balance.max(0.25)).max(0.0);
+        self.imbalance = recover_combat_imbalance(self.imbalance, balance, COMBAT_ROUND_SECONDS);
     }
 
     fn can_attack_ranged(&self) -> bool {

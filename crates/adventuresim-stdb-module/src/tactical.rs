@@ -9,7 +9,9 @@ use crate::{
     ItemSlot,
     character::character,
     character__view, character_attributes__view, character_equip__view, character_limbs__view,
-    character_skills__view, character_stats__view, inventory_item__view,
+    character_skills__view, character_stats__view,
+    condition::{character_condition__view, character_strategic_condition__view},
+    inventory_item__view,
     investigation::case_site_authority,
     item__view, party_authority,
     strategic::{
@@ -195,6 +197,12 @@ pub struct ConnectedPlayer {
     pub stats: CharacterStats,
     pub attrs: CharacterAttributes,
     pub limbs: CharacterLimbs,
+    pub body_weight_kg: f32,
+    pub current_blood_ml: f32,
+    pub maximum_blood_ml: f32,
+    pub strategic_incapacitation: f32,
+    pub strategic_pain: f32,
+    pub strategic_blood_loss: f32,
 }
 
 #[derive(SpacetimeType, Clone, Debug)]
@@ -226,6 +234,16 @@ pub fn connected_players(ctx: &ViewContext) -> Vec<ConnectedPlayer> {
                 .character_id()
                 .find(character.id)?;
             let stats = ctx.db.character_stats().character_id().find(character.id)?;
+            let condition = ctx
+                .db
+                .character_condition()
+                .character_id()
+                .find(character.id)?;
+            let strategic = ctx
+                .db
+                .character_strategic_condition()
+                .character_id()
+                .find(character.id)?;
             let items = connected_player_items(ctx, character.id).collect();
 
             Some(ConnectedPlayer {
@@ -235,6 +253,12 @@ pub fn connected_players(ctx: &ViewContext) -> Vec<ConnectedPlayer> {
                 limbs,
                 attrs,
                 stats,
+                body_weight_kg: condition.body_weight_kg,
+                current_blood_ml: condition.current_blood_ml,
+                maximum_blood_ml: condition.maximum_blood_ml,
+                strategic_incapacitation: strategic.incapacitation,
+                strategic_pain: strategic.pain,
+                strategic_blood_loss: strategic.blood_loss,
             })
         })
         .collect()

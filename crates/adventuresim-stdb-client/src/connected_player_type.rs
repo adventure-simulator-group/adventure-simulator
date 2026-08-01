@@ -20,6 +20,12 @@ pub struct ConnectedPlayer {
     pub stats: CharacterStats,
     pub attrs: CharacterAttributes,
     pub limbs: CharacterLimbs,
+    pub body_weight_kg: f32,
+    pub current_blood_ml: f32,
+    pub maximum_blood_ml: f32,
+    pub strategic_incapacitation: f32,
+    pub strategic_pain: f32,
+    pub strategic_blood_loss: f32,
 }
 
 impl __sdk::InModule for ConnectedPlayer {
@@ -36,6 +42,12 @@ pub struct ConnectedPlayerCols {
     pub stats: __sdk::__query_builder::Col<ConnectedPlayer, CharacterStats>,
     pub attrs: __sdk::__query_builder::Col<ConnectedPlayer, CharacterAttributes>,
     pub limbs: __sdk::__query_builder::Col<ConnectedPlayer, CharacterLimbs>,
+    pub body_weight_kg: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub current_blood_ml: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub maximum_blood_ml: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_incapacitation: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_pain: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_blood_loss: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
 }
 
 impl __sdk::__query_builder::HasCols for ConnectedPlayer {
@@ -48,6 +60,18 @@ impl __sdk::__query_builder::HasCols for ConnectedPlayer {
             stats: __sdk::__query_builder::Col::new(table_name, "stats"),
             attrs: __sdk::__query_builder::Col::new(table_name, "attrs"),
             limbs: __sdk::__query_builder::Col::new(table_name, "limbs"),
+            body_weight_kg: __sdk::__query_builder::Col::new(table_name, "body_weight_kg"),
+            current_blood_ml: __sdk::__query_builder::Col::new(table_name, "current_blood_ml"),
+            maximum_blood_ml: __sdk::__query_builder::Col::new(table_name, "maximum_blood_ml"),
+            strategic_incapacitation: __sdk::__query_builder::Col::new(
+                table_name,
+                "strategic_incapacitation",
+            ),
+            strategic_pain: __sdk::__query_builder::Col::new(table_name, "strategic_pain"),
+            strategic_blood_loss: __sdk::__query_builder::Col::new(
+                table_name,
+                "strategic_blood_loss",
+            ),
         }
     }
 }

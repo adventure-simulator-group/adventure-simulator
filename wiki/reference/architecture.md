@@ -160,11 +160,24 @@ uses a server-owned windup and cooldown to enter the same internal
 melee-resolution seam as client requests. This direct pursuit intentionally has
 no pathfinding yet.
 
-The current combat prototype calculates attacks but does not yet apply tactical
-damage or incapacitation, so no attack path can emit authoritative enemy deaths.
-Required-kill missions therefore fail closed unless the server's future combat
-pipeline emits the internal authoritative death event. Ranged AI and durable
-combat consequences also remain unimplemented.
+The client sends windup start and completion through one mapped ordered melee
+protocol. The tactical server validates melee allegiance, state, range, a fresh
+observed windup and cooldown, then authoritative physics line of sight before resolving an
+attack. Finite client-reported precision remains trusted because reconstructing
+animation and secondary physics is intentionally outside the headless server.
+Accepted results mutate replicated limb health plus transient blood loss and
+imbalance. Shared autoresolve rules derive pain, blood-loss, and imbalance
+incapacitation and recover balance over time. Tactical enrollment projects
+authoritative body weight, current/maximum blood, and strategic condition
+contributions; the same shared derivation as autoresolve excludes pain and blood
+from starting incapacitation before recomputing them live. Actors currently
+over the threshold stop moving, attacking, defending, and participating in
+offensive AI target selection; imbalance-only incapacitation can recover.
+
+These per-tick effects remain in memory only. Incapacitation does not yet emit a
+terminal mission result or persist strategic wounds; required-kill missions
+still await the outcome and receipt branches. Ranged AI and durable combat
+consequences also remain unimplemented.
 
 Mission, hostile-group, battle, and outcome-source identities are separate.
 Tactical success never chooses a case objective, capture subject, contract
