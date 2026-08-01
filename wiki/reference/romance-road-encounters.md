@@ -113,7 +113,8 @@ bandit encounter; attack, flight, surrender, injuries, and defeat remain owned
 by the existing strategic combat flow. A private generic follow-up receipt
 suppresses random drops and grants the authored recovered toll, Courage
 development, and fighting-method information exactly once, and only after
-victory. The practical information is the quest boon; the combatant is not
+victory. Personality development remains bound to the character who initiated
+the challenge even if combat changes party leadership. The practical information is the quest boon; the combatant is not
 arbitrarily weakened. No catalog ID is special-cased by the transition
 dispatcher.
 
@@ -151,7 +152,7 @@ cursors, so different journeys and travel/rest rolls cannot alias. Travel
 occurrences activate at the exact reached boundary; rest and errantry scenes
 activate only after the bound camp rest.
 Ordinary and authored strategic combats share one construction path and expose
-only an opaque deterministic encounter ID. Resolution submissions bind that ID
+only an opaque deterministic 128-bit encounter ID. Resolution submissions bind that ID
 to a caller-supplied action ID; exact retries succeed without repeating effects,
 while an action-ID collision or a stale encounter ID is rejected. Merely
 previewing surrender remains non-mutating and therefore creates no receipt.

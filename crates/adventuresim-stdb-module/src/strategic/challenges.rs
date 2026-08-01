@@ -238,6 +238,7 @@ pub struct NarrativeCombatFollowupAuthority {
     pub encounter_id: String,
     pub occurrence_id: String,
     pub party_id: String,
+    pub initiating_character_id: u64,
     pub victory_result: String,
     pub defeat_result: String,
     pub escape_result: String,
@@ -253,6 +254,7 @@ pub struct NarrativeCombatFollowupReceipt {
     pub encounter_id: String,
     pub occurrence_id: String,
     pub party_id: String,
+    pub initiating_character_id: u64,
     pub outcome: String,
     pub result_transcript: String,
     pub applied_effects_json: String,
@@ -698,6 +700,7 @@ fn materialize_narrative_combat(
     ctx: &ReducerContext,
     challenge: &RoadChallengeAuthority,
     party: &Party,
+    initiating_character_id: u64,
     archetype: adventuresim_core::road_encounter_catalog::RoadCombatArchetype,
     count: u16,
     victory_result: &str,
@@ -718,7 +721,8 @@ fn materialize_narrative_combat(
         if existing.status == "awaiting_choice" {
             if existing.encounter_id == encounter_id
                 && ctx.db.narrative_combat_followup_authority().encounter_id().find(&encounter_id)
-                    .is_some_and(|followup| followup.occurrence_id == challenge.id)
+                    .is_some_and(|followup| followup.occurrence_id == challenge.id
+                        && followup.initiating_character_id == initiating_character_id)
             { return Ok(()); }
             return Err("Resolve the pending strategic encounter before starting another".into());
         }
@@ -741,6 +745,7 @@ fn materialize_narrative_combat(
         .map_err(|_| "Could not encode narrative combat victory personality")?;
     if let Some(existing) = ctx.db.narrative_combat_followup_authority().encounter_id().find(&encounter_id) {
         if existing.occurrence_id != challenge.id || existing.party_id != party.id
+            || existing.initiating_character_id != initiating_character_id
             || existing.victory_effects_json != victory_effects_json
             || existing.victory_personality_json != victory_personality_json {
             return Err("Narrative combat follow-up identity collision".into());
@@ -748,6 +753,7 @@ fn materialize_narrative_combat(
     } else {
         ctx.db.narrative_combat_followup_authority().insert(NarrativeCombatFollowupAuthority {
             encounter_id: encounter_id.clone(), occurrence_id: challenge.id.clone(), party_id: party.id.clone(),
+            initiating_character_id,
             victory_result: victory_result.into(), defeat_result: defeat_result.into(),
             escape_result: escape_result.into(), victory_effects_json,
             victory_personality_json,
@@ -772,6 +778,7 @@ pub(crate) fn resolve_narrative_combat_followup(
     if let Some(receipt) = ctx.db.narrative_combat_followup_receipt()
         .encounter_id().find(&encounter.encounter_id) {
         return if receipt.occurrence_id == followup.occurrence_id && receipt.party_id == encounter.party_id
+            && receipt.initiating_character_id == followup.initiating_character_id
             && receipt.outcome == outcome { Ok(()) } else { Err("Conflicting narrative combat follow-up retry".into()) };
     }
     let (result, effects, personality) = if outcome == "victory" {
@@ -795,7 +802,7 @@ pub(crate) fn resolve_narrative_combat_followup(
         recognized_virtue = Some(virtue);
         crate::personality::apply_personality_development(
             ctx, &format!("narrative-combat:{}:{}", followup.encounter_id, development.axis as u8),
-            ctx.db.party_authority().id().find(&encounter.party_id).ok_or("Party not found")?.leader_id,
+            followup.initiating_character_id,
             narrative_axis(development.axis), development.delta,
             "prevail_in_authored_road_combat", virtue, now,
         )?;
@@ -816,7 +823,8 @@ pub(crate) fn resolve_narrative_combat_followup(
     }
     ctx.db.narrative_combat_followup_receipt().insert(NarrativeCombatFollowupReceipt {
         encounter_id: encounter.encounter_id.clone(), occurrence_id: followup.occurrence_id,
-        party_id: encounter.party_id.clone(), outcome: outcome.into(), result_transcript: transcript,
+        party_id: encounter.party_id.clone(), initiating_character_id: followup.initiating_character_id,
+        outcome: outcome.into(), result_transcript: transcript,
         applied_effects_json: serde_json::to_string(&effects).map_err(|_| "Could not encode applied combat effects")?,
         applied_personality_json: serde_json::to_string(&personality).map_err(|_| "Could not encode applied combat personality")?,
         virtue_exemplified: recognized_virtue,
@@ -1313,7 +1321,7 @@ pub fn resolve_errantry_road_challenge(
                 archetype, count, victory_result, defeat_result, escape_result, victory_effects,
                 victory_personality, victory_quest_reward_tags,
             } => materialize_narrative_combat(
-                ctx, &challenge, &party, *archetype, *count, victory_result,
+                ctx, &challenge, &party, character_id, *archetype, *count, victory_result,
                 defeat_result, escape_result, victory_effects, victory_personality,
                 victory_quest_reward_tags,
             )?,
@@ -2105,8 +2113,8 @@ mod challenge_source_boundary_tests {
             .and_then(|tail| tail.split("pub(crate) fn resolve_narrative_combat_followup").next()).unwrap();
         assert!(dispatch.contains("existing.status == \"awaiting_choice\""));
         assert!(dispatch.contains("narrative_combat_followup_authority"));
-        assert!(dispatch.contains("available_choices(Awareness::Both"));
-        assert!(dispatch.contains("StrategicEncounter"));
+        assert!(dispatch.contains("build_strategic_encounter"));
+        assert!(dispatch.contains("initiating_character_id"));
         assert!(dispatch.contains("existing.encounter_id == encounter_id"));
         assert!(!dispatch.contains("unlawful_bridge_custom_v1"));
         let reducer = source.split("pub fn resolve_errantry_road_challenge").nth(1)
@@ -2124,6 +2132,8 @@ mod challenge_source_boundary_tests {
         assert!(followup.contains("outcome == \"victory\""));
         assert!(followup.contains("outcome == \"avoided\""));
         assert!(followup.contains("apply_narrative_effect"));
+        assert!(followup.contains("followup.initiating_character_id"));
+        assert!(!followup.contains(".leader_id"));
         assert!(followup.find("outcome == \"victory\"").unwrap()
             < followup.find("apply_narrative_effect").unwrap());
         let resolver = include_str!("encounters.rs");

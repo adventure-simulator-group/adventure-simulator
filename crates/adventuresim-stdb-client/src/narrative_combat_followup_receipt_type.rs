@@ -12,6 +12,7 @@ pub struct NarrativeCombatFollowupReceipt {
     pub encounter_id: String,
     pub occurrence_id: String,
     pub party_id: String,
+    pub initiating_character_id: u64,
     pub outcome: String,
     pub result_transcript: String,
     pub applied_effects_json: String,
@@ -32,6 +33,7 @@ pub struct NarrativeCombatFollowupReceiptCols {
     pub encounter_id: __sdk::__query_builder::Col<NarrativeCombatFollowupReceipt, String>,
     pub occurrence_id: __sdk::__query_builder::Col<NarrativeCombatFollowupReceipt, String>,
     pub party_id: __sdk::__query_builder::Col<NarrativeCombatFollowupReceipt, String>,
+    pub initiating_character_id: __sdk::__query_builder::Col<NarrativeCombatFollowupReceipt, u64>,
     pub outcome: __sdk::__query_builder::Col<NarrativeCombatFollowupReceipt, String>,
     pub result_transcript: __sdk::__query_builder::Col<NarrativeCombatFollowupReceipt, String>,
     pub applied_effects_json: __sdk::__query_builder::Col<NarrativeCombatFollowupReceipt, String>,
@@ -50,6 +52,10 @@ impl __sdk::__query_builder::HasCols for NarrativeCombatFollowupReceipt {
             encounter_id: __sdk::__query_builder::Col::new(table_name, "encounter_id"),
             occurrence_id: __sdk::__query_builder::Col::new(table_name, "occurrence_id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
+            initiating_character_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "initiating_character_id",
+            ),
             outcome: __sdk::__query_builder::Col::new(table_name, "outcome"),
             result_transcript: __sdk::__query_builder::Col::new(table_name, "result_transcript"),
             applied_effects_json: __sdk::__query_builder::Col::new(

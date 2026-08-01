@@ -185,10 +185,7 @@ fn current_party_fatigue_percent(ctx: &ReducerContext, member_ids: &[u64]) -> u8
 }
 
 pub(crate) fn opaque_strategic_encounter_id(seed: u64, roll_index: u64) -> String {
-    let mut value = seed ^ roll_index.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ 0x656e_636f_756e_7465;
-    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    format!("enc:{:016x}", value ^ (value >> 31))
+    adventuresim_core::encounter::opaque_strategic_encounter_id(seed, roll_index)
 }
 
 pub(crate) fn advance_party_journey_delay(
