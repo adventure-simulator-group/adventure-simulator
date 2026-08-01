@@ -1,4 +1,86 @@
 impl LiveRunner {
+    fn contribute_party_journey_currency(
+        &mut self,
+        party_id: &str,
+        settlement_id: &str,
+        needed: u64,
+    ) -> Result<(u64, usize), String> {
+        let mut contributors = self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .filter(|member| member.party_id == party_id)
+            .filter_map(|member| {
+                let character = self.connection.db.backend_characters().iter().find(|row| {
+                    row.id == member.character_id
+                        && row.alive
+                        && row.current_settlement_id.as_deref() == Some(settlement_id)
+                })?;
+                let ready = self
+                    .connection
+                    .db
+                    .backend_character_strategic_conditions()
+                    .iter()
+                    .find(|row| row.character_id == character.id)
+                    .is_some_and(|row| row.status == "ready");
+                let illness_safe = self
+                    .connection
+                    .db
+                    .character_illness_status()
+                    .iter()
+                    .find(|row| row.character_id == character.id)
+                    .is_none_or(|row| !row.symptomatic && !row.critical);
+                (ready && illness_safe).then_some(character.id)
+            })
+            .collect::<Vec<_>>();
+        contributors.sort_unstable();
+        let mut remaining = needed;
+        let mut contributed = 0_u64;
+        let mut contributor_count = 0_usize;
+        for character_id in contributors {
+            if remaining == 0 {
+                break;
+            }
+            let reserve = self
+                .observable_medical_reserve(character_id, settlement_id)
+                .unwrap_or(0);
+            let available = self.personal_gold(character_id).saturating_sub(reserve);
+            let mut contribution = remaining.min(available);
+            if contribution == 0 {
+                continue;
+            }
+            let mut stacks = self
+                .connection
+                .db
+                .inventory_item()
+                .iter()
+                .filter(|row| row.character_id == character_id && is_currency_id(&row.item_id))
+                .collect::<Vec<_>>();
+            stacks.sort_by_key(|row| (row.item_id.clone(), row.id));
+            let planned = contribution;
+            for stack in stacks {
+                if contribution == 0 {
+                    break;
+                }
+                let quantity = contribution.min(u64::from(stack.quantity)) as u32;
+                let result = reducer_call!(self, "contribute_journey_currency", |cb| self
+                    .connection
+                    .reducers
+                    .deposit_party_inventory_item_then(character_id, stack.id, quantity, cb));
+                self.call(result)?;
+                contribution -= u64::from(quantity);
+            }
+            let deposited = planned.saturating_sub(contribution);
+            if deposited > 0 {
+                contributed = contributed.saturating_add(deposited);
+                remaining = remaining.saturating_sub(deposited);
+                contributor_count += 1;
+            }
+        }
+        Ok((contributed, contributor_count))
+    }
+
     pub(super) fn public_party_matchup_assessment(
         &self,
         party_id: &str,
@@ -274,6 +356,32 @@ impl LiveRunner {
             .filter(|row| is_currency_id(&row.item_id))
             .map(|row| u64::from(row.quantity))
             .sum::<u64>();
+        let party_personal_funds = members
+            .iter()
+            .filter(|member| member.current_settlement_id.as_deref() == Some(&settlement_id))
+            .filter(|member| {
+                self.connection
+                    .db
+                    .backend_character_strategic_conditions()
+                    .iter()
+                    .find(|row| row.character_id == member.id)
+                    .is_some_and(|row| row.status == "ready")
+                    && self
+                        .connection
+                        .db
+                        .character_illness_status()
+                        .iter()
+                        .find(|row| row.character_id == member.id)
+                        .is_none_or(|row| !row.symptomatic && !row.critical)
+            })
+            .map(|member| {
+                let reserve = self
+                    .observable_medical_reserve(member.id, &settlement_id)
+                    .unwrap_or(0);
+                self.personal_gold(member.id).saturating_sub(reserve)
+            })
+            .sum::<u64>();
+        let party_spendable = party_coin.saturating_add(party_personal_funds);
         let upper_bound_cost_for = |buy_bps: i32| -> Option<u64> {
             let unit_price = |item: &Item| {
                 let base = adventuresim_core::strategic_economy::merchant_buy_price(
@@ -343,9 +451,7 @@ impl LiveRunner {
                 let committed_reserve = self
                     .observable_medical_reserve(member.id, &settlement_id)
                     .unwrap_or(0);
-                let spendable = party_coin
-                    .saturating_add(personal)
-                    .saturating_sub(committed_reserve);
+                let spendable = party_spendable;
                 Some((
                     spendable >= upper_bound_cost,
                     spendable,
@@ -382,7 +488,7 @@ impl LiveRunner {
                     .generated_finance_blocked_cycles
                     .saturating_add(1);
             }
-            let public_funds = party_coin.saturating_add(personal);
+            let public_funds = party_spendable;
             let signature = (upper_bound_cost, public_funds);
             if self.generated_finance_blocks.get(&finance_cache_key) == Some(&signature) {
                 return Ok(TravelProvisionDecision::Deferred("journey_finance_backoff"));
@@ -402,6 +508,29 @@ impl LiveRunner {
             ));
         }
         self.generated_finance_blocks.remove(&finance_cache_key);
+        let total_personal_before = members
+            .iter()
+            .map(|member| self.personal_gold(member.id))
+            .sum::<u64>();
+        let contribution_needed = upper_bound_cost.saturating_sub(party_coin);
+        let (contributed, contributor_count) = self.contribute_party_journey_currency(
+            party_id,
+            &settlement_id,
+            contribution_needed,
+        )?;
+        let funded_party_coin = self
+            .connection
+            .db
+            .party_inventory_item()
+            .iter()
+            .filter(|row| row.party_id == party_id && is_currency_id(&row.item_id))
+            .map(|row| u64::from(row.quantity))
+            .sum::<u64>();
+        if funded_party_coin < upper_bound_cost {
+            return Ok(TravelProvisionDecision::Deferred(
+                "journey_contribution_revalidation_failed",
+            ));
+        }
         let mut item_ids = Vec::new();
         let mut quantities = Vec::new();
         if rations_to_buy > 0 {
@@ -434,9 +563,13 @@ impl LiveRunner {
             .filter(|row| row.party_id == party_id && is_currency_id(&row.item_id))
             .map(|row| u64::from(row.quantity))
             .sum::<u64>();
+        let total_personal_after = members
+            .iter()
+            .map(|member| self.personal_gold(member.id))
+            .sum::<u64>();
         let actual_spent = party_coin
-            .saturating_add(personal)
-            .saturating_sub(after_party_coin.saturating_add(self.personal_gold(payer)));
+            .saturating_add(total_personal_before)
+            .saturating_sub(after_party_coin.saturating_add(total_personal_after));
         self.metrics.journey_provision_purchases += 1;
         self.metrics.journey_provision_party_gold_spent = self
             .metrics
@@ -446,7 +579,7 @@ impl LiveRunner {
             agent,
             CoreLoopEventKind::Purchase,
             format!(
-                "journey_provisions=purchased;planning_minutes={planning_minutes};reserve_days={TRAVEL_PROVISION_RESERVE_DAYS:.1};payer={payer};treasury_before={party_coin};payer_purse_before={personal};claimable_stake={stake};upper_bound_cost={upper_bound_cost};actual_spent={actual_spent};rations={rations_to_buy};waterskins={waterskins_to_buy}"
+                "journey_provisions=purchased;planning_minutes={planning_minutes};reserve_days={TRAVEL_PROVISION_RESERVE_DAYS:.1};payer={payer};treasury_before={party_coin};payer_purse_before={personal};claimable_stake={stake};party_personal_spendable={party_personal_funds};contributed={contributed};contributors={contributor_count};upper_bound_cost={upper_bound_cost};actual_spent={actual_spent};rations={rations_to_buy};waterskins={waterskins_to_buy}"
             ),
         );
         Ok(TravelProvisionDecision::Ready)

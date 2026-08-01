@@ -52,6 +52,7 @@ use adventuresim_stdb_client::{
     claim_simulation_run_reducer::claim_simulation_run,
     configure_simulation_character_reducer::configure_simulation_character,
     continue_camp_travel_reducer::continue_camp_travel,
+    deposit_party_inventory_item_reducer::deposit_party_inventory_item,
     contract_interaction_stage_type::ContractInteractionStage,
     contract_status_type::ContractStatus,
     create_named_character_with_id_reducer::create_named_character_with_id,

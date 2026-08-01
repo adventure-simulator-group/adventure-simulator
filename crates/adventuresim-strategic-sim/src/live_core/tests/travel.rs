@@ -219,6 +219,16 @@ fn camp_coherence_diagnostic_distinguishes_missing_and_overlapping_intervals() {
 #[test]
 fn travel_driver_uses_public_itinerary_and_observer_safe_provisioning() {
     let source = LIVE_CORE_SOURCE;
+    let contributions = source
+        .split("fn contribute_party_journey_currency")
+        .nth(1)
+        .and_then(|tail| tail.split("pub(super) fn public_party_matchup_assessment").next())
+        .expect("party journey contribution policy");
+    assert!(contributions.contains("row.status == \"ready\""));
+    assert!(contributions.contains("!row.symptomatic && !row.critical"));
+    assert!(contributions.contains("observable_medical_reserve"));
+    assert!(contributions.contains("deposit_party_inventory_item_then"));
+    assert!(!contributions.contains("withdraw_party_inventory_item_then"));
     let travel = source
         .split("fn travel_camps")
         .nth(1)
@@ -318,6 +328,9 @@ fn travel_driver_uses_public_itinerary_and_observer_safe_provisioning() {
     }
     assert!(provisioning.contains("target_surplus_days: TRAVEL_PROVISION_RESERVE_DAYS"));
     assert!(provisioning.contains("payer_options"));
+    assert!(provisioning.contains("party_personal_funds"));
+    assert!(provisioning.contains("contribute_party_journey_currency"));
+    assert!(provisioning.contains("funded_party_coin < upper_bound_cost"));
     assert!(provisioning.contains("payer_minute"));
     assert!(provisioning.contains("merchant_count != 1"));
     assert!(provisioning.contains("journey_finance_backoff"));
