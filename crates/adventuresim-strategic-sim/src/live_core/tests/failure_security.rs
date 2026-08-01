@@ -142,7 +142,7 @@ fn failed_activity_error_classification_never_echoes_raw_backend_text() {
 }
 
 #[test]
-fn failure_artifact_version_eight_serializes_safe_operation_context() {
+fn failure_artifact_version_nine_serializes_safe_operation_context() {
     let artifact = CoreLoopFailureArtifact {
         schema_version: CORE_LOOP_FAILURE_SCHEMA_VERSION,
         category: "investigation_temporally_unavailable".into(),
@@ -152,6 +152,7 @@ fn failure_artifact_version_eight_serializes_safe_operation_context() {
         reason_code: "investigation_night_window".into(),
         fixture_disease: DEFAULT_SIMULATION_DISEASE.into(),
         metrics: CoreLoopMetrics::default(),
+        quest_coverage: None,
         total_event_count: 1,
         trace_truncated: false,
         trace: vec![CoreLoopEvent {
@@ -163,7 +164,7 @@ fn failure_artifact_version_eight_serializes_safe_operation_context() {
         final_agents: Vec::new(),
     };
     let value = serde_json::to_value(artifact).unwrap();
-    assert_eq!(value["schema_version"], serde_json::json!(8));
+    assert_eq!(value["schema_version"], serde_json::json!(9));
     assert_eq!(
         value["fixture_disease"],
         serde_json::json!(DEFAULT_SIMULATION_DISEASE)
@@ -201,6 +202,22 @@ fn quest_coverage_report() -> CoreLoopReport {
         starting_settlement_id: "settlement:test".into(),
         profiles: Vec::new(),
         metrics,
+        quest_coverage: Some(QuestCoverageEvidence {
+            direct_contract_id: "contract:fixture".into(),
+            generated_case_id: "case:fixture".into(),
+            direct_leader_id: 1,
+            generated_leader_id: 2,
+            direct_party_id: "party:direct".into(),
+            generated_party_id: "party:generated".into(),
+            direct_accepted: true,
+            direct_traveled: true,
+            direct_encountered: true,
+            direct_reported: true,
+            direct_safely_abandoned: false,
+            generated_intake: true,
+            generated_discovered: true,
+            generated_completed: true,
+        }),
         trace: Vec::new(),
         trace_truncated: false,
         total_event_count: 0,
@@ -258,10 +275,30 @@ fn quest_coverage_gate_requires_both_paths_and_safe_final_state() {
         "quest coverage acceptance failed: metric=quests_attempted"
     );
     report.metrics.quests_attempted = 2;
+    report.quest_coverage.as_mut().unwrap().generated_completed = false;
+    assert_eq!(
+        validate_quest_coverage(&report).unwrap_err(),
+        "quest coverage acceptance failed: metric=fixture_generated_completed"
+    );
+    report.quest_coverage.as_mut().unwrap().generated_completed = true;
     report.final_agents[0].journey_destination = Some("case-site:test".into());
     assert_eq!(
         validate_quest_coverage(&report).unwrap_err(),
         "quest coverage acceptance failed: metric=final_agents_not_stranded"
+    );
+}
+
+#[test]
+fn aggregate_progress_and_safe_abandonment_cannot_impersonate_fixture_completion() {
+    let mut report = quest_coverage_report();
+    report.metrics.direct_contracts_completed = 10;
+    report.metrics.generated_quests_completed = 10;
+    let coverage = report.quest_coverage.as_mut().unwrap();
+    coverage.direct_reported = false;
+    coverage.direct_safely_abandoned = true;
+    assert_eq!(
+        validate_quest_coverage(&report).unwrap_err(),
+        "quest coverage acceptance failed: metric=fixture_direct_reported"
     );
 }
 

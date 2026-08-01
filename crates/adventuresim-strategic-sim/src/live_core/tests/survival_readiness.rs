@@ -190,6 +190,6 @@ fn survival_report_schema_has_per_agent_aggregate_and_failure_context() {
     ] {
         assert!(death.contains(field), "missing death context {field}");
     }
-    assert_eq!(CORE_LOOP_FAILURE_SCHEMA_VERSION, 8);
-    assert_eq!(crate::FORMAT_VERSION, 8);
+    assert_eq!(CORE_LOOP_FAILURE_SCHEMA_VERSION, 9);
+    assert_eq!(crate::FORMAT_VERSION, 9);
 }

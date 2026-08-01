@@ -1396,7 +1396,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
 fn materialize_preferred_outbreak(
     ctx: &ReducerContext,
     character_id: u64,
-) -> Result<(), String> {
+) -> Result<String, String> {
     use adventuresim_core::quest_generation as qg;
 
     let character = crate::character::require_living_character(ctx, character_id)?;
@@ -1459,7 +1459,7 @@ fn materialize_preferred_outbreak(
         &settlement_id,
         &generated.problem_id,
     );
-    Ok(())
+    Ok(generated.canonical_case_id)
 }
 
 fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
@@ -1502,7 +1502,14 @@ fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), Str
         crate::add_inventory_item(ctx, character_id, "surgery_kit", 1);
     }
 
-    materialize_preferred_outbreak(ctx, character_id)
+    materialize_preferred_outbreak(ctx, character_id).map(|_| ())
+}
+
+pub(crate) struct SimulationQuestFixtureSeed {
+    pub direct_contract_id: String,
+    pub generated_case_id: String,
+    pub direct_party_id: String,
+    pub generated_party_id: String,
 }
 
 pub(crate) fn seed_simulation_quest_fixture_inner(
@@ -1510,7 +1517,7 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
     policy_seed: u64,
     direct_leader_id: u64,
     generated_leader_id: u64,
-) -> Result<(), String> {
+) -> Result<SimulationQuestFixtureSeed, String> {
     use adventuresim_core::case::{
         Objective, ObjectiveExpression, ObjectiveId, ObjectivePath, ObjectiveRequirement,
     };
@@ -1518,8 +1525,6 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
 
     let suffix = format!("{policy_seed:016x}");
     let contract_id = format!("contract:simulation-acceptance-direct:{suffix}");
-    // The direct row is inserted last, so it is also the transaction's
-    // idempotency marker. A retry must not recreate the private one-shot rumor.
     if ctx
         .db
         .contract_authority()
@@ -1527,7 +1532,7 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
         .find(&contract_id)
         .is_some()
     {
-        return Ok(());
+        return Err("Simulation direct quest fixture ID is already in use".into());
     }
 
     let character = crate::character::require_living_character(ctx, direct_leader_id)?;
@@ -1584,7 +1589,21 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
     // Generate and privately materialize the second party's local problem
     // before publishing the direct contract marker. No skill or item boosts
     // are part of this acceptance fixture.
-    materialize_preferred_outbreak(ctx, generated_leader_id)?;
+    let generated_case_id = materialize_preferred_outbreak(ctx, generated_leader_id)?;
+    let direct_party_id = ctx
+        .db
+        .character()
+        .id()
+        .find(direct_leader_id)
+        .and_then(|character| character.party_id)
+        .ok_or("Direct quest fixture leader has no party")?;
+    let generated_party_id = ctx
+        .db
+        .character()
+        .id()
+        .find(generated_leader_id)
+        .and_then(|character| character.party_id)
+        .ok_or("Generated quest fixture leader has no party")?;
 
     let case_id = format!("case:simulation-acceptance-direct:{suffix}");
     let case_site_id = format!("case-site:simulation-acceptance-direct:{suffix}");
@@ -1633,7 +1652,7 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
     ctx.db.case_site_authority().insert(site.clone());
     materialize_hostile_group(ctx, &hostile_group_id, &site, "bandit".into(), 1, 1)?;
     ctx.db.contract_authority().insert(Contract {
-        id: contract_id,
+        id: contract_id.clone(),
         gateway_bucket: 0,
         case_id,
         title: "Robbers on the Near Road".into(),
@@ -1651,7 +1670,12 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
         accepted_at_minute: None,
         paid_at_minute: None,
     });
-    Ok(())
+    Ok(SimulationQuestFixtureSeed {
+        direct_contract_id: contract_id,
+        generated_case_id,
+        direct_party_id,
+        generated_party_id,
+    })
 }
 
 fn materialize_generated_quest(

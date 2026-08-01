@@ -157,6 +157,7 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.settlement_resident_presence())
         .add_query(|query| query.from.settlement_smith())
         .add_query(|query| query.from.simulation_run())
+        .add_query(|query| query.from.simulation_quest_fixture())
         .add_query(|query| query.from.world_clock())
         .add_query(|query| query.from.world_data_import())
         .subscribe();
@@ -423,6 +424,7 @@ fn run_core_loop_inner(
             );
         }
     }
+    let mut quest_fixture = None;
     if config.require_quest_coverage {
         if party_ids.len() < 2 {
             return Err("quest coverage fixture requires two formed parties".into());
@@ -445,6 +447,15 @@ fn run_core_loop_inner(
                 cb,
             ));
         runner.call(result)?;
+        quest_fixture = Some(
+            runner
+                .connection
+                .db
+                .simulation_quest_fixture()
+                .id()
+                .find(0)
+                .ok_or("quest fixture reducer completed without public provenance")?,
+        );
     }
     let result = reducer_call!(runner, "ensure_settlement_activity", |cb| runner
         .connection
@@ -885,6 +896,62 @@ fn run_core_loop_inner(
         .unwrap_or(0);
     let total_event_count = runner.sequence;
     let trace_truncated = total_event_count > runner.trace.len() as u64;
+    let quest_coverage = quest_fixture.map(|fixture| {
+        let direct_agent = runner
+            .character_ids
+            .iter()
+            .position(|id| *id == fixture.direct_leader_id)
+            .map(|agent| agent as u32);
+        let generated_agent = runner
+            .character_ids
+            .iter()
+            .position(|id| *id == fixture.generated_leader_id)
+            .map(|agent| agent as u32);
+        let direct_event = |kind: CoreLoopEventKind, token: &str| {
+            direct_agent.is_some_and(|agent| {
+                runner.trace.iter().any(|event| {
+                    event.agent_id == agent && event.kind == kind && event.detail.contains(token)
+                })
+            })
+        };
+        let generated_event = |kind: CoreLoopEventKind| {
+            generated_agent.is_some_and(|agent| {
+                runner.trace.iter().any(|event| {
+                    event.agent_id == agent
+                        && event.kind == kind
+                        && event.detail.contains(&fixture.generated_case_id)
+                })
+            })
+        };
+        QuestCoverageEvidence {
+            direct_contract_id: fixture.direct_contract_id.clone(),
+            generated_case_id: fixture.generated_case_id.clone(),
+            direct_leader_id: fixture.direct_leader_id,
+            generated_leader_id: fixture.generated_leader_id,
+            direct_party_id: fixture.direct_party_id.clone(),
+            generated_party_id: fixture.generated_party_id.clone(),
+            direct_accepted: direct_event(
+                CoreLoopEventKind::AcceptContract,
+                &fixture.direct_contract_id,
+            ),
+            direct_traveled: direct_event(CoreLoopEventKind::Travel, &fixture.direct_contract_id),
+            direct_encountered: direct_event(
+                CoreLoopEventKind::AutoresolveVictory,
+                &fixture.direct_contract_id,
+            ) || direct_event(
+                CoreLoopEventKind::AutoresolveDefeat,
+                &fixture.direct_contract_id,
+            ),
+            direct_reported: direct_event(CoreLoopEventKind::TurnIn, &fixture.direct_contract_id),
+            direct_safely_abandoned: direct_event(
+                CoreLoopEventKind::AbandonQuest,
+                &fixture.direct_contract_id,
+            ),
+            generated_intake: generated_event(CoreLoopEventKind::GeneratedCaseIntake),
+            generated_discovered: generated_event(CoreLoopEventKind::GeneratedQuestDiscovered),
+            generated_completed: generated_event(CoreLoopEventKind::GeneratedQuestCompleted),
+        }
+    });
     Ok(CoreLoopReport {
         format_version: crate::FORMAT_VERSION,
         backend_kind: "spacetimedb_authoritative_core_loop".into(),
@@ -901,6 +968,7 @@ fn run_core_loop_inner(
         starting_settlement_id,
         profiles: runner.profiles,
         metrics: runner.metrics,
+        quest_coverage,
         trace: runner.trace,
         trace_truncated,
         total_event_count,

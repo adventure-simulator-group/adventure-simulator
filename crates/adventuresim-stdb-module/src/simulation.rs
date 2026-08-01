@@ -55,6 +55,22 @@ pub struct SimulationCharacter {
     pub agent_id: u32,
 }
 
+/// Public provenance for the deterministic quest acceptance fixture. It
+/// contains simulator-owned identifiers only, never hidden quest content.
+#[derive(Clone, Debug)]
+#[table(accessor = simulation_quest_fixture, public)]
+pub struct SimulationQuestFixture {
+    #[primary_key]
+    pub id: u64,
+    pub run_id: u64,
+    pub direct_contract_id: String,
+    pub generated_case_id: String,
+    pub direct_leader_id: u64,
+    pub generated_leader_id: u64,
+    pub direct_party_id: String,
+    pub generated_party_id: String,
+}
+
 fn valid_nonce(nonce: &str) -> bool {
     (16..=96).contains(&nonce.len())
         && nonce
@@ -183,12 +199,35 @@ pub fn seed_simulation_quest_fixture(
             return Err("Quest coverage character is not its party leader".into());
         }
     }
-    crate::strategic::seed_simulation_quest_fixture_inner(
+    if let Some(existing) = ctx.db.simulation_quest_fixture().id().find(0) {
+        return if existing.run_id == run.id
+            && existing.direct_leader_id == direct_leader_id
+            && existing.generated_leader_id == generated_leader_id
+        {
+            Ok(())
+        } else {
+            Err("Simulation quest fixture is already bound to different leaders".into())
+        };
+    }
+    let seeded = crate::strategic::seed_simulation_quest_fixture_inner(
         ctx,
         run.policy_seed,
         direct_leader_id,
         generated_leader_id,
-    )
+    )?;
+    ctx.db
+        .simulation_quest_fixture()
+        .insert(SimulationQuestFixture {
+            id: 0,
+            run_id: run.id,
+            direct_contract_id: seeded.direct_contract_id,
+            generated_case_id: seeded.generated_case_id,
+            direct_leader_id,
+            generated_leader_id,
+            direct_party_id: seeded.direct_party_id,
+            generated_party_id: seeded.generated_party_id,
+        });
+    Ok(())
 }
 
 /// Advance authoritative world time only in a capability-owned disposable

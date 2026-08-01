@@ -605,13 +605,21 @@ authority. A different leader receives a generated local problem through the
 ordinary public rumor, dialogue, delivery, and intake flow. Neither path is
 auto-accepted or granted a successful outcome.
 
+The report records the exact seeded contract and generated-case IDs together
+with their designated leaders and parties. Lifecycle milestones are attributed
+only when those IDs are observed on events from the designated leader; global
+quest counters cannot satisfy fixture coverage.
+
 Coverage succeeds only when reducer failures, duplicate semantic events,
 stuck detections, and encounter wipes remain zero; all final agents are alive,
 non-critical, and back in a settlement; both direct and generated intake paths
-were attempted; generated discovery was fruitful; attempt totals are
-consistent; and the direct contract was either completed or authoritatively
-abandoned after a safe retreat. Defeats are valid evidence, but deaths and
-wipes are not. The command writes `report.json` before evaluating these gates.
+were attempted; the exact generated case was discovered and completed; attempt
+totals are consistent; and the exact direct contract was accepted, traveled to,
+encountered, and reported successfully. A safe authoritative retreat and
+abandonment remains diagnostic evidence but never satisfies full coverage.
+Defeats are valid intermediate evidence only when the required successful
+lifecycles still complete; deaths and wipes are not. The command writes
+`report.json` before evaluating these gates.
 On failure it also writes `failure.json` with category
 `quest_coverage_acceptance` and the first unmet metric as `reason_code`.
 

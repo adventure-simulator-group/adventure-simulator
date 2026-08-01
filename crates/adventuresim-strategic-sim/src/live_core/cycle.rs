@@ -253,7 +253,11 @@ impl LiveRunner {
             self.event(
                 leader_agent,
                 CoreLoopEventKind::Travel,
-                format!("outbound={}", case_site.case_site_id),
+                format!(
+                    "direct_contract={};outbound={}",
+                    bounded_event_field(&quest.id),
+                    bounded_event_field(&case_site.case_site_id)
+                ),
             );
             if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
                 return Ok(());
@@ -349,8 +353,19 @@ impl LiveRunner {
         let winning_battle_id = victory.then_some(battle_id);
         self.event(
             leader_agent,
-            if victory { CoreLoopEventKind::AutoresolveVictory } else { CoreLoopEventKind::AutoresolveDefeat },
-            format!("seed={};rounds={};summary={};log={:?}", report.seed, report.rounds, report.summary, report.log),
+            if victory {
+                CoreLoopEventKind::AutoresolveVictory
+            } else {
+                CoreLoopEventKind::AutoresolveDefeat
+            },
+            format!(
+                "quest={};seed={};rounds={};summary={};log={:?}",
+                bounded_event_field(&quest.id),
+                report.seed,
+                report.rounds,
+                report.summary,
+                report.log
+            ),
         );
         if !victory {
             self.metrics.defeats += 1;

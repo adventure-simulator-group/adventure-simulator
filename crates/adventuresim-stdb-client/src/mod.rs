@@ -735,6 +735,8 @@ pub mod share_investigation_lead_reducer;
 pub mod simulate_contract_issuer_interaction_reducer;
 pub mod simulation_character_table;
 pub mod simulation_character_type;
+pub mod simulation_quest_fixture_table;
+pub mod simulation_quest_fixture_type;
 pub mod simulation_run_table;
 pub mod simulation_run_type;
 pub mod sociability_type;
@@ -1564,6 +1566,8 @@ pub use share_investigation_lead_reducer::share_investigation_lead;
 pub use simulate_contract_issuer_interaction_reducer::simulate_contract_issuer_interaction;
 pub use simulation_character_table::*;
 pub use simulation_character_type::SimulationCharacter;
+pub use simulation_quest_fixture_table::*;
+pub use simulation_quest_fixture_type::SimulationQuestFixture;
 pub use simulation_run_table::*;
 pub use simulation_run_type::SimulationRun;
 pub use sociability_type::Sociability;
@@ -4259,6 +4263,7 @@ pub struct DbUpdate {
     settlement_resident_presence: __sdk::TableUpdate<SettlementResidentPresence>,
     settlement_smith: __sdk::TableUpdate<SettlementSmith>,
     simulation_character: __sdk::TableUpdate<SimulationCharacter>,
+    simulation_quest_fixture: __sdk::TableUpdate<SimulationQuestFixture>,
     simulation_run: __sdk::TableUpdate<SimulationRun>,
     strategic_encounter: __sdk::TableUpdate<StrategicEncounter>,
     strategic_gateway_authority: __sdk::TableUpdate<StrategicGatewayAuthority>,
@@ -4653,6 +4658,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "simulation_character" => db_update.simulation_character.append(
                     simulation_character_table::parse_table_update(table_update)?,
                 ),
+                "simulation_quest_fixture" => db_update.simulation_quest_fixture.append(
+                    simulation_quest_fixture_table::parse_table_update(table_update)?,
+                ),
                 "simulation_run" => db_update
                     .simulation_run
                     .append(simulation_run_table::parse_table_update(table_update)?),
@@ -4910,6 +4918,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.simulation_character,
             )
             .with_updates_by_pk(|row| &row.character_id);
+        diff.simulation_quest_fixture = cache
+            .apply_diff_to_table::<SimulationQuestFixture>(
+                "simulation_quest_fixture",
+                &self.simulation_quest_fixture,
+            )
+            .with_updates_by_pk(|row| &row.id);
         diff.simulation_run = cache
             .apply_diff_to_table::<SimulationRun>("simulation_run", &self.simulation_run)
             .with_updates_by_pk(|row| &row.id);
@@ -5528,6 +5542,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "simulation_character" => db_update
                     .simulation_character
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "simulation_quest_fixture" => db_update
+                    .simulation_quest_fixture
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "simulation_run" => db_update
                     .simulation_run
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -5889,6 +5906,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "simulation_character" => db_update
                     .simulation_character
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "simulation_quest_fixture" => db_update
+                    .simulation_quest_fixture
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "simulation_run" => db_update
                     .simulation_run
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -6047,6 +6067,7 @@ pub struct AppliedDiff<'r> {
     settlement_resident_presence: __sdk::TableAppliedDiff<'r, SettlementResidentPresence>,
     settlement_smith: __sdk::TableAppliedDiff<'r, SettlementSmith>,
     simulation_character: __sdk::TableAppliedDiff<'r, SimulationCharacter>,
+    simulation_quest_fixture: __sdk::TableAppliedDiff<'r, SimulationQuestFixture>,
     simulation_run: __sdk::TableAppliedDiff<'r, SimulationRun>,
     strategic_encounter: __sdk::TableAppliedDiff<'r, StrategicEncounter>,
     strategic_gateway_authority: __sdk::TableAppliedDiff<'r, StrategicGatewayAuthority>,
@@ -6578,6 +6599,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<SimulationCharacter>(
             "simulation_character",
             &self.simulation_character,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<SimulationQuestFixture>(
+            "simulation_quest_fixture",
+            &self.simulation_quest_fixture,
             event,
         );
         callbacks.invoke_table_row_callbacks::<SimulationRun>(
@@ -7380,6 +7406,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         settlement_resident_presence_table::register_table(client_cache);
         settlement_smith_table::register_table(client_cache);
         simulation_character_table::register_table(client_cache);
+        simulation_quest_fixture_table::register_table(client_cache);
         simulation_run_table::register_table(client_cache);
         strategic_encounter_table::register_table(client_cache);
         strategic_gateway_authority_table::register_table(client_cache);
@@ -7498,6 +7525,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "settlement_resident_presence",
         "settlement_smith",
         "simulation_character",
+        "simulation_quest_fixture",
         "simulation_run",
         "strategic_encounter",
         "strategic_gateway_authority",

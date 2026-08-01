@@ -131,7 +131,10 @@ For deterministic multi-year NPC balance experiments and replay commands, see
 `just strategic-sim-core-loop <new-output-dir>` command installs deterministic
 direct-contract and generated-local-problem fixtures for two ordinary parties,
 then fails unless both public quest paths and the final survival/return gates
-complete. It writes `report.json` first and an actionable `failure.json` when a
+complete for the exact seeded IDs and designated leaders. Aggregate activity or
+a safe abandonment cannot substitute for direct accept/travel/encounter/report
+and generated discovery/intake/completion evidence. It writes `report.json`
+first and an actionable `failure.json` when a
 coverage metric is unmet. It also evaluates the authoritative strategic
 incident, escalation, recruitment, and quest systems. See
 [`strategic-simulation.md`](strategic-simulation.md#quest-evaluators).

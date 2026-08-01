@@ -85,6 +85,7 @@ use adventuresim_stdb_client::{
     settlement_service_type::SettlementService, settlement_smith_table::SettlementSmithTableAccess,
     settlement_table::SettlementTableAccess,
     simulate_contract_issuer_interaction_reducer::simulate_contract_issuer_interaction,
+    simulation_quest_fixture_table::SimulationQuestFixtureTableAccess,
     simulation_run_table::SimulationRunTableAccess,
     sponsor_party_member_inn_rest_reducer::sponsor_party_member_inn_rest,
     start_dialogue_reducer::start_dialogue, store_battle_loot_reducer::store_battle_loot,
@@ -479,6 +480,7 @@ pub struct CoreLoopReport {
     pub starting_settlement_id: String,
     pub profiles: Vec<AgentProfile>,
     pub metrics: CoreLoopMetrics,
+    pub quest_coverage: Option<QuestCoverageEvidence>,
     pub trace: Vec<CoreLoopEvent>,
     pub trace_truncated: bool,
     pub total_event_count: u64,
@@ -487,10 +489,33 @@ pub struct CoreLoopReport {
     pub policy_seed_note: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuestCoverageEvidence {
+    pub direct_contract_id: String,
+    pub generated_case_id: String,
+    pub direct_leader_id: u64,
+    pub generated_leader_id: u64,
+    pub direct_party_id: String,
+    pub generated_party_id: String,
+    pub direct_accepted: bool,
+    pub direct_traveled: bool,
+    pub direct_encountered: bool,
+    pub direct_reported: bool,
+    pub direct_safely_abandoned: bool,
+    pub generated_intake: bool,
+    pub generated_discovered: bool,
+    pub generated_completed: bool,
+}
+
 /// Strict acceptance contract for the deterministic two-party quest fixture.
 /// Each error names the first unmet metric so CI output is actionable.
 pub fn validate_quest_coverage(report: &CoreLoopReport) -> Result<(), String> {
     let metrics = &report.metrics;
+    let coverage = report
+        .quest_coverage
+        .as_ref()
+        .ok_or("quest coverage acceptance failed: metric=fixture_provenance")?;
     let checks = [
         ("reducer_failures", metrics.reducer_failures == 0),
         (
@@ -499,21 +524,19 @@ pub fn validate_quest_coverage(report: &CoreLoopReport) -> Result<(), String> {
         ),
         ("stuck_detections", metrics.stuck_detections == 0),
         ("encounter_wipes", metrics.encounter_wipes == 0),
+        ("fixture_direct_accepted", coverage.direct_accepted),
+        ("fixture_direct_traveled", coverage.direct_traveled),
+        ("fixture_direct_encountered", coverage.direct_encountered),
+        ("fixture_direct_reported", coverage.direct_reported),
+        ("fixture_generated_intake", coverage.generated_intake),
         (
-            "direct_contracts_attempted",
-            metrics.direct_contracts_attempted >= 1,
+            "fixture_generated_discovered",
+            coverage.generated_discovered,
         ),
+        ("fixture_generated_completed", coverage.generated_completed),
         (
-            "generated_case_intakes",
-            metrics.generated_case_intakes >= 1,
-        ),
-        (
-            "generated_discovery_actions_fruitful",
-            metrics.generated_discovery_actions_fruitful >= 1,
-        ),
-        (
-            "generated_quests_discovered",
-            metrics.generated_quests_discovered >= 1,
+            "fixture_successful_completion",
+            coverage.direct_reported || coverage.generated_completed,
         ),
         ("quests_attempted", metrics.quests_attempted >= 2),
         (
@@ -522,10 +545,6 @@ pub fn validate_quest_coverage(report: &CoreLoopReport) -> Result<(), String> {
                 == metrics
                     .direct_contracts_attempted
                     .saturating_add(metrics.generated_case_intakes),
-        ),
-        (
-            "direct_terminal_outcome",
-            metrics.direct_contracts_completed > 0 || metrics.direct_contracts_safely_abandoned > 0,
         ),
     ];
     if let Some((metric, _)) = checks.into_iter().find(|(_, passed)| !passed) {
@@ -600,6 +619,7 @@ pub fn write_quest_coverage_failure(
         reason_code: reason_code.into(),
         fixture_disease: report.fixture_disease.clone(),
         metrics: report.metrics.clone(),
+        quest_coverage: report.quest_coverage.clone(),
         total_event_count: report.total_event_count,
         trace_truncated,
         trace,
@@ -619,7 +639,7 @@ pub fn write_quest_coverage_failure(
 }
 
 const MAX_FAILURE_TRACE_EVENTS: usize = 64;
-const CORE_LOOP_FAILURE_SCHEMA_VERSION: u32 = 8;
+const CORE_LOOP_FAILURE_SCHEMA_VERSION: u32 = 9;
 const MAX_PROJECTED_INVESTIGATION_WAIT_MINUTES: u32 = 1_440;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -665,6 +685,7 @@ pub struct CoreLoopFailureArtifact {
     pub reason_code: String,
     pub fixture_disease: String,
     pub metrics: CoreLoopMetrics,
+    pub quest_coverage: Option<QuestCoverageEvidence>,
     pub total_event_count: u64,
     pub trace_truncated: bool,
     pub trace: Vec<CoreLoopEvent>,
@@ -1752,6 +1773,7 @@ impl FailureRecorder {
             reason_code: safe_failure_reason_code(error, category).into(),
             fixture_disease: self.fixture_disease.clone(),
             metrics: draft.metrics,
+            quest_coverage: None,
             total_event_count: draft.total_event_count,
             trace_truncated: draft.trace_truncated,
             trace: draft.trace,
