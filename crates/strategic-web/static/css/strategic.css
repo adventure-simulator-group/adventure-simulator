@@ -3997,11 +3997,11 @@ button.party-portrait-action {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--summary-rank-color) 55%, transparent);
 }
 
-.skill-rank-tier-1 { --summary-rank-color: var(--rank-tier-1); }
-.skill-rank-tier-2 { --summary-rank-color: var(--rank-tier-2); }
-.skill-rank-tier-3 { --summary-rank-color: var(--rank-tier-3); }
-.skill-rank-tier-4 { --summary-rank-color: var(--rank-tier-4); }
-.skill-rank-tier-5 { --summary-rank-color: var(--rank-tier-5); }
+.skill-rank-tier-1 { --summary-rank-color: var(--rank-tier-1); --skill-icon-color: var(--rank-tier-1); }
+.skill-rank-tier-2 { --summary-rank-color: var(--rank-tier-2); --skill-icon-color: var(--rank-tier-2); }
+.skill-rank-tier-3 { --summary-rank-color: var(--rank-tier-3); --skill-icon-color: var(--rank-tier-3); }
+.skill-rank-tier-4 { --summary-rank-color: var(--rank-tier-4); --skill-icon-color: var(--rank-tier-4); }
+.skill-rank-tier-5 { --summary-rank-color: var(--rank-tier-5); --skill-icon-color: var(--rank-tier-5); }
 
 .character-summary-icon-mask {
   width: 100%;
@@ -4343,6 +4343,24 @@ button.identity-control:disabled {
 }
 
 .party-skill-icon-cell { padding-inline: 0 !important; text-align: center; }
+.party-skill-icon-cell:is(
+  .skill-rank-tier-1,
+  .skill-rank-tier-2,
+  .skill-rank-tier-3,
+  .skill-rank-tier-4,
+  .skill-rank-tier-5
+) .stat-icon {
+  --stat-icon-color: var(--skill-icon-color);
+}
+.party-skill-icon-cell:is(
+  .skill-rank-tier-1,
+  .skill-rank-tier-2,
+  .skill-rank-tier-3,
+  .skill-rank-tier-4,
+  .skill-rank-tier-5
+) :is(.religion-tradition-icon, .language-monogram) {
+  color: var(--skill-icon-color);
+}
 
 .party-skill-name {
   overflow: hidden;

@@ -1122,6 +1122,19 @@ fn professional_personality(
     personality_with_demographics(traits, seed, tier, slot)
 }
 
+fn raise_governing_attributes_for_requirement(attributes: &mut StartingAttributes, skill: Skill) {
+    let governing = skill.governing_aptitudes();
+    if governing.intelligence_percent() > 0 {
+        attributes.intelligence = 5.0;
+    }
+    if governing.instinct_percent() > 0 {
+        attributes.instinct = 5.0;
+    }
+    if governing.agility_percent() > 0 {
+        attributes.agility = 5.0;
+    }
+}
+
 fn apply_professional_start(
     spec: &mut StartingCharacterSpec,
     seed: &str,
@@ -1219,17 +1232,7 @@ fn apply_professional_start(
             Requirement::ProfessedReligion { .. } => None,
         })
     {
-        match skill.governing_aptitude_kind() {
-            crate::skill::GoverningAptitude::Intelligence => {
-                spec.attributes.intelligence = 5.0;
-            }
-            crate::skill::GoverningAptitude::Instinct => {
-                spec.attributes.instinct = 5.0;
-            }
-            crate::skill::GoverningAptitude::Agility(_) => {
-                spec.attributes.agility = 5.0;
-            }
-        }
+        raise_governing_attributes_for_requirement(&mut spec.attributes, skill);
     }
     spec.background = format!(
         "{} {} of {}",
@@ -1502,6 +1505,27 @@ mod tests {
                 / 10.0;
         assert_eq!(candidate.attributes.instinct, expected_instinct);
         assert_eq!(candidate.attributes.agility, expected_agility);
+    }
+
+    #[test]
+    fn hybrid_skill_requirement_raises_every_governing_component() {
+        let mut attributes = StartingAttributes {
+            endurance: 1.1,
+            immunity: 1.2,
+            gut: 1.3,
+            intelligence: 1.4,
+            instinct: 2.6,
+            eyesight: 1.5,
+            hearing: 1.6,
+            strength: 1.7,
+            agility: 3.8,
+        };
+        raise_governing_attributes_for_requirement(&mut attributes, Skill::Surgery);
+        assert_eq!(attributes.intelligence, 5.0);
+        assert_eq!(attributes.instinct, 5.0);
+        assert_eq!(attributes.agility, 5.0);
+        assert_eq!(attributes.endurance, 1.1);
+        assert_eq!(attributes.strength, 1.7);
     }
 
     #[test]
