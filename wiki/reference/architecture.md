@@ -321,7 +321,13 @@ record caps before transactionally applying injuries, blood loss, capability,
 filth, ammunition, equipment wear, and defeat morale. Invalid receipts reject
 the whole terminal transaction and remain retryable; tactical data cannot
 choose outcomes, capture subjects, rewards, or XP. Positions, ticks, and enemy
-state remain transient. Ranged AI and ranged receipt population remain deferred.
+state remain transient. Player-fired ranged attacks use an ordered intent,
+server-validated weapon/range/line-of-sight/timing gate, and authoritative
+transient arrow consumption. Their bounded Party ammunition use is populated
+in the terminal receipt. Hit precision is the deliberate exception: the server
+rejects non-finite values but trusts finite client reports because authoritative
+skeletal animation and secondary physics are outside the headless simulation.
+Ranged AI remains deferred.
 
 Mission, hostile-group, battle, and outcome-source identities are separate.
 Tactical success never chooses a case objective, capture subject, contract

@@ -1,7 +1,7 @@
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::ClientTriggerExt,
-    message::{DefendRequest, MeleeActionRequest},
+    message::{DefendRequest, MeleeActionRequest, RangedActionRequest},
 };
 use bevy::prelude::*;
 
@@ -84,14 +84,16 @@ pub struct LimbHitbox(pub BodyPart);
 pub struct AttackState {
     pub pre_hit_timer: Timer,
     pub reach: f32,
+    pub ranged: bool,
 }
 
 impl AttackState {
-    pub fn new(pre_hit_delay: f32, reach: f32) -> Self {
+    pub fn new(pre_hit_delay: f32, reach: f32, ranged: bool) -> Self {
         let pre_hit_timer = Timer::from_seconds(pre_hit_delay, TimerMode::Once);
         Self {
             pre_hit_timer,
             reach,
+            ranged,
         }
     }
 
@@ -247,7 +249,11 @@ fn update_attack_state_system(
         let origin = camera_transform.translation;
         let direction = camera_transform.forward();
         let filter = SpatialQueryFilter::from_mask(HITBOX_LAYER);
-        let reach = melee_interaction_range(state.reach);
+        let reach = if state.ranged {
+            state.reach
+        } else {
+            melee_interaction_range(state.reach)
+        };
 
         if let Some(hit) = spatial.cast_ray(origin, direction, reach, true, &filter) {
             let Ok((target, body_part)) = q_collider.get(hit.entity).map(|(c, h)| (c.body, h.0))
@@ -255,11 +261,19 @@ fn update_attack_state_system(
                 break;
             };
 
-            cmd.client_trigger(MeleeActionRequest::complete(
-                target,
-                body_part,
-                HIT_PRECISION,
-            ));
+            if state.ranged {
+                cmd.client_trigger(RangedActionRequest::complete(
+                    Some(target),
+                    body_part,
+                    HIT_PRECISION,
+                ));
+            } else {
+                cmd.client_trigger(MeleeActionRequest::complete(
+                    target,
+                    body_part,
+                    HIT_PRECISION,
+                ));
+            }
             cmd.trigger(HitPerformed {
                 entity: attacker,
                 direction,
@@ -267,6 +281,13 @@ fn update_attack_state_system(
                 length: hit.distance,
             });
         } else {
+            if state.ranged {
+                cmd.client_trigger(RangedActionRequest::complete(
+                    None,
+                    BodyPart::Chest,
+                    HIT_PRECISION,
+                ));
+            }
             cmd.trigger(HitPerformed {
                 entity: attacker,
                 direction,
@@ -287,17 +308,28 @@ fn on_attack_fired_hook(
         // already in attack
         return;
     }
-    let Ok(reach) = viewer
-        .get(event.context)
-        .map(|character| character.weapon_reach())
-    else {
+    let Ok((reach, ranged, melee)) = viewer.get(event.context).map(|character| {
+        (
+            character.weapon_reach(),
+            character.weapon_is_ranged(),
+            character.weapon_is_melee(),
+        )
+    }) else {
         warn!("Trying to attack, but can't get weapon reach. Not holding any weapons ?");
         return;
     };
 
+    if reach <= 0.0 || (!ranged && !melee) {
+        warn!("Trying to attack without a usable equipped weapon");
+        return;
+    }
     cmd.entity(event.context)
-        .insert(AttackState::new(PRE_HIT_DELAY, reach));
-    cmd.client_trigger(MeleeActionRequest::start());
+        .insert(AttackState::new(PRE_HIT_DELAY, reach, ranged));
+    if ranged {
+        cmd.client_trigger(RangedActionRequest::start());
+    } else {
+        cmd.client_trigger(MeleeActionRequest::start());
+    }
 }
 
 fn update_character_look_rotation(
