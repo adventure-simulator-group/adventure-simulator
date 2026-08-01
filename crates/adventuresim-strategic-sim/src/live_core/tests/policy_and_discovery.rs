@@ -413,10 +413,7 @@ fn dialogue_candidates_are_filtered_by_the_authoritative_public_navigation_rule(
     let case_dialogue = source
         .split("pub(super) fn try_generated_dialogue_topic")
         .nth(1)
-        .and_then(|tail| {
-            tail.split("pub(super) fn generated_actor_ready_after_time")
-                .next()
-        })
+        .and_then(|tail| tail.split("fn public_dialogue_progress_fingerprint").next())
         .expect("generated-case dialogue selection");
     assert!(case_dialogue.contains("self.visible_npc_candidates"));
     let preferred_filter = case_dialogue
@@ -576,6 +573,41 @@ fn discovery_follows_only_new_or_updated_public_witness_referrals() {
 }
 
 #[test]
+fn dialogue_topics_suppress_no_progress_and_reenable_after_public_change() {
+    let initial = PublicDialogueProgressFingerprint {
+        cases: vec![("journal:case".into(), "open".into(), 10)],
+        leads: vec![(
+            "lead:witness".into(),
+            10,
+            "A witness may know more.".into(),
+            "Agnes".into(),
+            String::new(),
+            "inn".into(),
+            String::new(),
+        )],
+        actions: Vec::new(),
+        outcomes: Vec::new(),
+        sites: Vec::new(),
+    };
+    assert!(public_dialogue_topic_attempt_allowed(None, &initial));
+    assert!(!public_dialogue_topic_made_progress(&initial, &initial));
+    assert!(!public_dialogue_topic_attempt_allowed(
+        Some(&initial),
+        &initial
+    ));
+
+    let mut progressed = initial.clone();
+    progressed
+        .actions
+        .push(("action:inspect".into(), 1, true, true, String::new(), 0));
+    assert!(public_dialogue_topic_made_progress(&initial, &progressed));
+    assert!(public_dialogue_topic_attempt_allowed(
+        Some(&initial),
+        &progressed
+    ));
+}
+
+#[test]
 fn public_symptom_diagnostics_are_coarse() {
     assert_eq!(public_count_bucket(0), "0");
     assert_eq!(public_count_bucket(1), "1");
@@ -628,6 +660,35 @@ fn discovery_logging_uses_only_the_owner_visible_case_postcondition() {
     assert!(!discovery.contains("local_problem_receipt"));
     assert!(!discovery.contains("npc_intervention"));
     assert!(!discovery.contains("quest_generation_authority"));
+}
+
+#[test]
+fn dialogue_topic_policy_returns_progress_only_after_public_projection_change() {
+    let source = LIVE_CORE_SOURCE;
+    let dialogue = source
+        .split("pub(super) fn try_generated_dialogue_topic")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("pub(super) fn generated_actor_ready_after_time")
+                .next()
+        })
+        .expect("generated dialogue topic policy");
+    let before = dialogue
+        .find("let public_before = self.public_dialogue_progress_fingerprint")
+        .unwrap();
+    let reducer = dialogue.find("choose_dialogue_topic_then").unwrap();
+    let after = dialogue
+        .find("let public_after = self.public_dialogue_progress_fingerprint")
+        .unwrap();
+    let progress = dialogue
+        .find("public_dialogue_topic_made_progress")
+        .unwrap();
+    let success = dialogue.find("return Ok(true)").unwrap();
+    assert!(before < reducer);
+    assert!(reducer < after);
+    assert!(after < progress);
+    assert!(progress < success);
+    assert!(dialogue.contains("generated_dialogue_no_progress"));
 }
 
 #[test]

@@ -1503,7 +1503,7 @@ fn retain_navigable_public_npc_candidates(
 
 const PUBLIC_DISCOVERY_BACKOFF_MINUTES: u64 = 2 * 1_440;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct PublicDiscoveryContactIdentity {
     resident_character_id: u64,
     conversation_id: String,
@@ -1646,6 +1646,37 @@ fn new_or_updated_public_discovery_referral(
                 && before.get(&lead.lead_id) != Some(lead)
         })
         .max_by_key(|lead| (lead.recorded_at, lead.lead_id.clone()))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PublicDialogueProgressFingerprint {
+    cases: Vec<(String, String, u64)>,
+    leads: Vec<(String, u64, String, String, String, String, String)>,
+    actions: Vec<(String, u32, bool, bool, String, u32)>,
+    outcomes: Vec<(String, String, u64)>,
+    sites: Vec<(String, String, bool, bool, bool)>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct PublicDialogueAttemptKey {
+    owner_character_id: u64,
+    case_id: String,
+    topic_id: String,
+    contact: PublicDiscoveryContactIdentity,
+}
+
+fn public_dialogue_topic_attempt_allowed(
+    last_no_progress: Option<&PublicDialogueProgressFingerprint>,
+    current: &PublicDialogueProgressFingerprint,
+) -> bool {
+    last_no_progress != Some(current)
+}
+
+fn public_dialogue_topic_made_progress(
+    before: &PublicDialogueProgressFingerprint,
+    after: &PublicDialogueProgressFingerprint,
+) -> bool {
+    before != after
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -316,10 +316,8 @@ pub fn seed_simulation_quest_fixture(
     }
     if let Some(existing) = ctx.db.simulation_quest_fixture_authority().id().find(0) {
         return if existing.run_id == run.id
-            && ((existing.direct_leader_id == direct_leader_id
-                && existing.generated_leader_id == generated_leader_id)
-                || (existing.direct_leader_id == generated_leader_id
-                    && existing.generated_leader_id == direct_leader_id))
+            && existing.direct_leader_id == direct_leader_id
+            && existing.generated_leader_id == generated_leader_id
         {
             Ok(())
         } else {
@@ -346,13 +344,7 @@ pub fn seed_simulation_quest_fixture(
         }
         crate::strategic::publicly_ready_party_combat_power(ctx, &party).map(|(_, power)| power)
     };
-    let first_power = party_power(direct_leader_id)?;
-    let second_power = party_power(generated_leader_id)?;
-    let (direct_leader_id, generated_leader_id, direct_power) = if second_power > first_power {
-        (generated_leader_id, direct_leader_id, second_power)
-    } else {
-        (direct_leader_id, generated_leader_id, first_power)
-    };
+    let direct_power = party_power(direct_leader_id)?;
     let fixture_enemy_power = crate::strategic::simulation_quest_fixture_enemy_power()?;
     if direct_power == 0
         || !adventuresim_core::autoresolve::combat_power_meets_safety_margin(
@@ -728,6 +720,26 @@ mod tests {
         assert!(projection.contains("receipt.problem_id == manifest.problem_id"));
         assert!(projection.contains("receipt.expected_location_id == witness.expected_location"));
         assert!(projection.contains("generated_case_id: referral.public_case_id"));
+    }
+
+    #[test]
+    fn quest_fixture_preserves_designated_direct_and_generated_leaders() {
+        let source = include_str!("simulation.rs");
+        let reducer = source
+            .split("pub fn seed_simulation_quest_fixture")
+            .nth(1)
+            .unwrap()
+            .split("pub fn advance_simulation_world_time")
+            .next()
+            .unwrap();
+        assert!(reducer.contains("let direct_power = party_power(direct_leader_id)?"));
+        assert!(!reducer.contains("second_power"));
+        assert!(!reducer.contains("(generated_leader_id, direct_leader_id"));
+        assert!(reducer.contains(
+            "seed_simulation_quest_fixture_inner(\n        ctx,\n        run.policy_seed,\n        direct_leader_id,\n        generated_leader_id"
+        ));
+        assert!(reducer.contains("existing.direct_leader_id == direct_leader_id"));
+        assert!(reducer.contains("existing.generated_leader_id == generated_leader_id"));
     }
 
     #[test]

@@ -15,6 +15,8 @@ struct LiveRunner {
     generated_traveled_cases: HashSet<(u64, String)>,
     generated_finance_blocks: HashMap<(String, u64, String), (u64, u64)>,
     generated_discovery_backoff: HashMap<u64, PublicDiscoveryBackoff>,
+    generated_dialogue_no_progress:
+        HashMap<PublicDialogueAttemptKey, PublicDialogueProgressFingerprint>,
     generated_defeat_fingerprints: HashMap<(u64, String), PublicCombatFingerprint>,
     failure_recorder: FailureRecorder,
 }
@@ -45,8 +47,7 @@ struct PublicInterventionOffer {
 
 fn public_chart_is_fresh(patient_minute: u64, observed_at: u64) -> bool {
     observed_at <= patient_minute
-        && patient_minute.saturating_sub(observed_at)
-            <= MAX_ACTIONABLE_PHYSIOLOGY_CHART_AGE_MINUTES
+        && patient_minute.saturating_sub(observed_at) <= MAX_ACTIONABLE_PHYSIOLOGY_CHART_AGE_MINUTES
 }
 
 #[allow(clippy::too_many_arguments)]

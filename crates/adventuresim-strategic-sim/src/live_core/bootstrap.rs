@@ -221,6 +221,7 @@ fn run_core_loop_inner(
         generated_traveled_cases: HashSet::new(),
         generated_finance_blocks: HashMap::new(),
         generated_discovery_backoff: HashMap::new(),
+        generated_dialogue_no_progress: HashMap::new(),
         generated_defeat_fingerprints: HashMap::new(),
         failure_recorder,
     };

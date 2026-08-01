@@ -566,6 +566,23 @@ impl LiveRunner {
             candidates.retain(|candidate| candidate.name.eq_ignore_ascii_case(name));
         }
         for candidate in candidates.into_iter().take(8) {
+            let contact = public_discovery_contact_identity(&candidate);
+            let public_before_dialogue =
+                self.public_dialogue_progress_fingerprint(character_id, case_id);
+            if topics.iter().all(|topic_id| {
+                let key = PublicDialogueAttemptKey {
+                    owner_character_id: character_id,
+                    case_id: case_id.to_owned(),
+                    topic_id: (*topic_id).to_owned(),
+                    contact: contact.clone(),
+                };
+                !public_dialogue_topic_attempt_allowed(
+                    self.generated_dialogue_no_progress.get(&key),
+                    &public_before_dialogue,
+                )
+            }) {
+                continue;
+            }
             let session_id = self.start_public_dialogue(character_id, cycle, &candidate, "case")?;
             let mut options = self
                 .connection
@@ -592,6 +609,19 @@ impl LiveRunner {
                 .ok_or("projected dialogue session disappeared")?;
             let action_id = format!("sim-topic-{cycle}-{}", self.sequence.saturating_add(1));
             let topic_id = option.topic_id.clone();
+            let attempt_key = PublicDialogueAttemptKey {
+                owner_character_id: character_id,
+                case_id: case_id.to_owned(),
+                topic_id: topic_id.clone(),
+                contact,
+            };
+            let public_before = self.public_dialogue_progress_fingerprint(character_id, case_id);
+            if !public_dialogue_topic_attempt_allowed(
+                self.generated_dialogue_no_progress.get(&attempt_key),
+                &public_before,
+            ) {
+                continue;
+            }
             let result = reducer_call!(self, "choose_dialogue_topic", |cb| self
                 .connection
                 .reducers
@@ -605,6 +635,13 @@ impl LiveRunner {
                     cb,
                 ));
             self.call(result)?;
+            let public_after = self.public_dialogue_progress_fingerprint(character_id, case_id);
+            if !public_dialogue_topic_made_progress(&public_before, &public_after) {
+                self.generated_dialogue_no_progress
+                    .insert(attempt_key, public_before);
+                continue;
+            }
+            self.generated_dialogue_no_progress.remove(&attempt_key);
             if topic_id == "referred-testimony" {
                 self.metrics.generated_witness_dialogues += 1;
                 self.event(
@@ -637,6 +674,92 @@ impl LiveRunner {
             return Ok(true);
         }
         Ok(false)
+    }
+
+    fn public_dialogue_progress_fingerprint(
+        &self,
+        character_id: u64,
+        case_id: &str,
+    ) -> PublicDialogueProgressFingerprint {
+        let mut cases = self
+            .connection
+            .db
+            .backend_investigation_cases()
+            .iter()
+            .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
+            .map(|row| (row.case_id, row.status, row.latest_update_at))
+            .collect::<Vec<_>>();
+        cases.sort();
+        let mut leads = self
+            .connection
+            .db
+            .backend_investigation_leads()
+            .iter()
+            .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
+            .map(|row| {
+                (
+                    row.lead_id,
+                    row.recorded_at,
+                    row.summary,
+                    row.witness_name,
+                    row.corrected_by,
+                    row.expected_location,
+                    row.current_learned_location,
+                )
+            })
+            .collect::<Vec<_>>();
+        leads.sort();
+        let mut actions = self
+            .connection
+            .db
+            .backend_investigation_actions()
+            .iter()
+            .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
+            .map(|row| {
+                (
+                    row.action_id,
+                    row.expected_version,
+                    row.available,
+                    row.can_travel_to_required_site,
+                    row.unavailable_reason_code,
+                    row.wait_minutes,
+                )
+            })
+            .collect::<Vec<_>>();
+        actions.sort();
+        let mut outcomes = self
+            .connection
+            .db
+            .backend_investigation_action_outcomes()
+            .iter()
+            .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
+            .map(|row| (row.outcome_id, row.action_id, row.recorded_at))
+            .collect::<Vec<_>>();
+        outcomes.sort();
+        let mut sites = self
+            .connection
+            .db
+            .backend_case_site_pins()
+            .iter()
+            .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
+            .map(|row| {
+                (
+                    row.case_site_id,
+                    row.knowledge_stage,
+                    row.tracked,
+                    row.case_resolved,
+                    row.combat_available,
+                )
+            })
+            .collect::<Vec<_>>();
+        sites.sort();
+        PublicDialogueProgressFingerprint {
+            cases,
+            leads,
+            actions,
+            outcomes,
+            sites,
+        }
     }
 
     pub(super) fn generated_actor_ready_after_time(
