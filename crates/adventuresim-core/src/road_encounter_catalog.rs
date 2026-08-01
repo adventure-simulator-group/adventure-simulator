@@ -111,6 +111,13 @@ pub enum EncounterTransition {
         escape_result: String,
         #[serde(default)]
         victory_effects: Vec<Effect>,
+        #[serde(default)]
+        victory_personality: Vec<PersonalityDevelopment>,
+        #[serde(default)]
+        victory_quest_reward_tags: Vec<String>,
+    },
+    TravelDelay {
+        minutes: u16,
     },
 }
 
@@ -157,6 +164,9 @@ pub enum Requirement {
     Item {
         item_id: String,
         minimum_quantity: u16,
+    },
+    Currency {
+        amount: u32,
     },
 }
 
@@ -335,6 +345,12 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
                             ));
                         }
                     }
+                    Requirement::Currency { amount } if *amount == 0 => {
+                        return Err(format!(
+                            "{}:{} has a zero currency requirement",
+                            definition.id, choice.id
+                        ));
+                    }
                     _ => {}
                 }
             }
@@ -389,6 +405,7 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
                 defeat_result,
                 escape_result,
                 victory_effects,
+                victory_personality,
                 ..
             }) = &choice.transition
             {
@@ -410,12 +427,40 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
                 for effect in victory_effects {
                     validate_effect(effect)?;
                 }
+                let mut victory_axes = BTreeSet::new();
+                let mut victory_virtues = BTreeSet::new();
+                for development in victory_personality {
+                    if development.delta == 0
+                        || development.delta.unsigned_abs() > 10_000
+                        || !victory_axes.insert(development.axis)
+                    {
+                        return Err(format!(
+                            "{}:{} has invalid victory personality",
+                            definition.id, choice.id
+                        ));
+                    }
+                    victory_virtues.insert(development.virtue);
+                }
+                if victory_virtues.len() > 1 {
+                    return Err(format!(
+                        "{}:{} names multiple victory virtues",
+                        definition.id, choice.id
+                    ));
+                }
                 if !choice.effects.is_empty() || !choice.quest_reward_tags.is_empty() {
                     return Err(format!(
                         "{}:{} combat rewards must be victory-scoped",
                         definition.id, choice.id
                     ));
                 }
+            }
+            if let Some(EncounterTransition::TravelDelay { minutes }) = &choice.transition
+                && !(1..=720).contains(minutes)
+            {
+                return Err(format!(
+                    "{}:{} has an unsafe travel delay",
+                    definition.id, choice.id
+                ));
             }
             if choice.id == "ignore"
                 && (!choice.requirements.is_empty()
@@ -427,6 +472,7 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
                     || !matches!(
                         choice.transition.as_ref(),
                         None | Some(EncounterTransition::Noop)
+                            | Some(EncounterTransition::TravelDelay { .. })
                     ))
             {
                 return Err(format!(
@@ -887,6 +933,13 @@ mod tests {
             choice("pay_toll").effects[0],
             Effect::Currency { amount: -12, .. }
         ));
+        assert!(matches!(
+            choice("pay_toll").requirements[0],
+            Requirement::Currency { amount: 12 }
+        ));
+        assert!(
+            matches!(choice("barter_rations").effects[0], Effect::ConsumeItem { ref item_id, quantity: 4 } if item_id == "travel_ration")
+        );
         assert!(
             matches!(choice("expose_charter").effects[0], Effect::Information { ref information_id }
             if information_id == "unlawful_bridge_false_charter_marks")
@@ -899,6 +952,8 @@ mod tests {
             archetype,
             count,
             victory_effects,
+            victory_personality,
+            victory_quest_reward_tags,
             ..
         } = choice("challenge_to_arms").transition.as_ref().unwrap()
         else {
@@ -915,7 +970,15 @@ mod tests {
         );
         assert!(victory_effects.iter().any(|effect| matches!(effect,
             Effect::Information { information_id } if information_id == "unlawful_bridge_keeper_fighting_method")));
-        assert!(choice("ignore").effects.is_empty() && choice("ignore").transition.is_none());
+        assert_eq!(victory_personality[0].virtue, VirtueId::Courage);
+        assert_eq!(
+            victory_quest_reward_tags,
+            &["bridge_keeper_fighting_method"]
+        );
+        assert!(matches!(
+            choice("ignore").transition.as_ref(),
+            Some(EncounterTransition::TravelDelay { minutes: 120 })
+        ));
     }
 
     #[test]
@@ -934,6 +997,35 @@ mod tests {
             validate_definitions(&[definition])
                 .unwrap_err()
                 .contains("unsafe combat count")
+        );
+    }
+
+    #[test]
+    fn travel_delay_and_currency_requirements_are_bounded() {
+        let mut delayed = encounter("unlawful_bridge_custom_v1").unwrap().clone();
+        let ignore = delayed
+            .choices
+            .iter_mut()
+            .find(|choice| choice.id == "ignore")
+            .unwrap();
+        ignore.transition = Some(EncounterTransition::TravelDelay { minutes: 0 });
+        assert!(
+            validate_definitions(&[delayed])
+                .unwrap_err()
+                .contains("unsafe travel delay")
+        );
+
+        let mut unpaid = encounter("unlawful_bridge_custom_v1").unwrap().clone();
+        let toll = unpaid
+            .choices
+            .iter_mut()
+            .find(|choice| choice.id == "pay_toll")
+            .unwrap();
+        toll.requirements = vec![Requirement::Currency { amount: 0 }];
+        assert!(
+            validate_definitions(&[unpaid])
+                .unwrap_err()
+                .contains("zero currency requirement")
         );
     }
 }

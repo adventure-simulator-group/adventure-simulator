@@ -105,14 +105,17 @@ claim that the scene reproduces a particular episode from *Parzival* or
 Malory.
 
 `unlawful_bridge_custom_v1` implements the bridge-custom commonplace as a
-travel-only mortal encounter. The party may pay, expose the forged charter,
-join the extortion watch for the richest immediate payment, turn aside, or
-openly challenge two keepers. That challenge creates one ordinary pending
+travel-only mortal encounter. The party may pay from its aggregate currency,
+barter four travel rations, expose the forged charter, join the extortion
+watch for the richest immediate payment, turn aside at the cost of a two-hour
+detour, or openly challenge two keepers. That challenge creates one ordinary pending
 bandit encounter; attack, flight, surrender, injuries, and defeat remain owned
 by the existing strategic combat flow. A private generic follow-up receipt
-suppresses random drops and grants the authored recovered toll and fighting-
-method information exactly once, and only after victory. No catalog ID is
-special-cased by the transition dispatcher.
+suppresses random drops and grants the authored recovered toll, Courage
+development, and fighting-method information exactly once, and only after
+victory. The practical information is the quest boon; the combatant is not
+arbitrarily weakened. No catalog ID is special-cased by the transition
+dispatcher.
 
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
@@ -147,6 +150,11 @@ Chance occurrence identity includes journey entropy, origin, departure and both
 cursors, so different journeys and travel/rest rolls cannot alias. Travel
 occurrences activate at the exact reached boundary; rest and errantry scenes
 activate only after the bound camp rest.
+Ordinary and authored strategic combats share one construction path and expose
+only an opaque deterministic encounter ID. Resolution submissions bind that ID
+to a caller-supplied action ID; exact retries succeed without repeating effects,
+while an action-ID collision or a stale encounter ID is rejected. Merely
+previewing surrender remains non-mutating and therefore creates no receipt.
 Private authority alone records chance-versus-errantry origin and quest binding.
 The gateway exposes only an observer-safe presentation DTO: visible speaker
 name, text and supernatural styling, choice ID/label/availability, and the

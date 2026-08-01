@@ -8,14 +8,18 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub(super) struct ResolveStrategicEncounterArgs {
     pub character_id: u64,
+    pub encounter_id: String,
     pub choice: String,
+    pub action_id: String,
 }
 
 impl From<ResolveStrategicEncounterArgs> for super::Reducer {
     fn from(args: ResolveStrategicEncounterArgs) -> Self {
         Self::ResolveStrategicEncounter {
             character_id: args.character_id,
+            encounter_id: args.encounter_id,
             choice: args.choice,
+            action_id: args.action_id,
         }
     }
 }
@@ -35,8 +39,20 @@ pub trait resolve_strategic_encounter {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`resolve_strategic_encounter:resolve_strategic_encounter_then`] to run a callback after the reducer completes.
-    fn resolve_strategic_encounter(&self, character_id: u64, choice: String) -> __sdk::Result<()> {
-        self.resolve_strategic_encounter_then(character_id, choice, |_, _| {})
+    fn resolve_strategic_encounter(
+        &self,
+        character_id: u64,
+        encounter_id: String,
+        choice: String,
+        action_id: String,
+    ) -> __sdk::Result<()> {
+        self.resolve_strategic_encounter_then(
+            character_id,
+            encounter_id,
+            choice,
+            action_id,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `resolve_strategic_encounter` to run as soon as possible,
@@ -48,7 +64,9 @@ pub trait resolve_strategic_encounter {
     fn resolve_strategic_encounter_then(
         &self,
         character_id: u64,
+        encounter_id: String,
         choice: String,
+        action_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -62,7 +80,9 @@ impl resolve_strategic_encounter for super::RemoteReducers {
     fn resolve_strategic_encounter_then(
         &self,
         character_id: u64,
+        encounter_id: String,
         choice: String,
+        action_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -73,7 +93,9 @@ impl resolve_strategic_encounter for super::RemoteReducers {
         self.imp.invoke_reducer_with_callback(
             ResolveStrategicEncounterArgs {
                 character_id,
+                encounter_id,
                 choice,
+                action_id,
             },
             callback,
         )

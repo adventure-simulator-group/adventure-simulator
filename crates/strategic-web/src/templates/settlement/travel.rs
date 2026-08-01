@@ -1072,7 +1072,9 @@ fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
             div class="encounter-actions" {
                 @for choice in &encounter.available_choices {
                     form action="/camp/encounter" method="post" {
+                        input type="hidden" name="encounter_id" value=(&encounter.encounter_id);
                         input type="hidden" name="choice" value=(choice);
+                        input type="hidden" name="action_id" value=(format!("encounter-choice:{}:{}", encounter.encounter_id, choice));
                         button type="submit" class="btn btn-primary btn-small btn-block" {
                             (match choice.as_str() {
                                 "sneak" => "Sneak past",

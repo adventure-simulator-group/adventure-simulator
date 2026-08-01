@@ -644,6 +644,19 @@ pub struct StrategicEncounter {
     pub outcome: Option<String>,
 }
 
+#[derive(Clone, Debug)]
+#[table(accessor = strategic_encounter_resolution_receipt)]
+pub struct StrategicEncounterResolutionReceipt {
+    #[primary_key]
+    pub id: String,
+    pub encounter_id: String,
+    pub party_id: String,
+    pub character_id: u64,
+    pub action_id: String,
+    pub choice: String,
+    pub outcome: String,
+}
+
 /// Typed elapsed-time camp coordinates for the journey tracker. Keeping these
 /// in an additive table avoids changing the movement-coordinate legacy rows.
 #[derive(Clone, Debug)]

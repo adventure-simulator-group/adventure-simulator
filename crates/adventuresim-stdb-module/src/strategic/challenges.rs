@@ -150,8 +150,8 @@ pub struct ErrantryAuthority {
 }
 
 /// A chat-native, non-puzzle interruption that becomes available only after
-/// resting at its bound road camp. Ignoring it requires no mutation; choosing
-/// either response closes it without affecting the finale objective.
+/// resting at its bound road camp. Ignoring it grants nothing but may carry a
+/// bounded travel delay; choosing another response may affect the finale.
 #[derive(Clone, Debug)]
 #[table(accessor = road_challenge_authority)]
 pub struct RoadChallengeAuthority {
@@ -242,6 +242,8 @@ pub struct NarrativeCombatFollowupAuthority {
     pub defeat_result: String,
     pub escape_result: String,
     pub victory_effects_json: String,
+    pub victory_personality_json: String,
+    pub victory_quest_reward_tags: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -254,6 +256,9 @@ pub struct NarrativeCombatFollowupReceipt {
     pub outcome: String,
     pub result_transcript: String,
     pub applied_effects_json: String,
+    pub applied_personality_json: String,
+    pub virtue_exemplified: Option<crate::personality::ChivalricVirtue>,
+    pub quest_reward_tags: Vec<String>,
     pub resolved_at_minute: u64,
 }
 
@@ -465,6 +470,10 @@ pub fn backend_road_challenges(ctx: &ViewContext) -> Vec<BackendRoadChallenge> {
                     ctx.db.party_inventory_item().party_id().filter(&party.id)
                         .filter(|stack| stack.item_id == *item_id)
                         .map(|stack| stack.quantity).sum::<u32>() >= u32::from(*minimum_quantity),
+                adventuresim_core::road_encounter_catalog::Requirement::Currency { amount } =>
+                    ctx.db.party_inventory_item().party_id().filter(&party.id)
+                        .filter(|stack| adventuresim_core::strategic_currency::is_currency_id(&stack.item_id))
+                        .map(|stack| u64::from(stack.quantity)).sum::<u64>() >= u64::from(*amount),
             };
             let line = |line: &adventuresim_core::road_encounter_catalog::SpokenLine| {
                 let speaker = definition.cast.iter().find(|speaker| speaker.id == line.speaker)?;
@@ -695,9 +704,16 @@ fn materialize_narrative_combat(
     defeat_result: &str,
     escape_result: &str,
     victory_effects: &[adventuresim_core::road_encounter_catalog::Effect],
+    victory_personality: &[adventuresim_core::road_encounter_catalog::PersonalityDevelopment],
+    victory_quest_reward_tags: &[String],
 ) -> Result<(), String> {
     use adventuresim_core::encounter::{Awareness, EncounterArchetype};
-    let encounter_id = format!("narrative-combat:{}", challenge.id);
+    let _journey = ctx.db.party_journey_authority().party_id().find(&party.id)
+        .ok_or("Narrative combat requires a durable journey")?;
+    let encounter_authority = ctx.db.party_journey_encounter_authority().party_id().find(&party.id)
+        .ok_or("Narrative combat requires durable encounter entropy")?;
+    let roll_index = narrative_combat_roll(encounter_authority.seed, &challenge.id);
+    let encounter_id = opaque_strategic_encounter_id(encounter_authority.seed, roll_index);
     if let Some(existing) = ctx.db.strategic_encounter().party_id().find(&party.id) {
         if existing.status == "awaiting_choice" {
             if existing.encounter_id == encounter_id
@@ -707,57 +723,26 @@ fn materialize_narrative_combat(
             return Err("Resolve the pending strategic encounter before starting another".into());
         }
     }
-    let _journey = ctx.db.party_journey_authority().party_id().find(&party.id)
-        .ok_or("Narrative combat requires a durable journey")?;
-    let encounter_authority = ctx.db.party_journey_encounter_authority().party_id().find(&party.id)
-        .ok_or("Narrative combat requires durable encounter entropy")?;
-    let roll_index = narrative_combat_roll(encounter_authority.seed, &challenge.id);
     let core_archetype = match archetype {
         adventuresim_core::road_encounter_catalog::RoadCombatArchetype::Bandits => EncounterArchetype::Bandits,
     };
-    let archetype_name = match core_archetype { EncounterArchetype::Bandits => "bandit", _ => unreachable!() };
-    let member_ids = living_party_member_ids(ctx, &party.id);
-    if member_ids.is_empty() { return Err("A party with no living members cannot enter combat".into()); }
     let route = ctx.db.party_journey_route_authority().party_id().find(&party.id);
     let terrain_kind = encounter_terrain_at(route.as_ref(), challenge.camp_movement_minute);
-    let terrain = core_encounter_terrain(terrain_kind);
-    let party_speed = adventuresim_core::encounter::sustainable_speed_m_per_minute(
-        current_party_fatigue_percent(ctx, &member_ids),
-        party_encumbrance_remaining_basis_points(ctx, &party.id, &member_ids),
-        member_ids.len().min(u16::MAX as usize) as u16,
-        terrain,
-    );
-    let enemy_speed = core_archetype.enemy_speed_m_per_minute();
-    let choices = adventuresim_core::encounter::available_choices(Awareness::Both, core_archetype, party_speed)
-        .into_iter().map(|choice| match choice {
-            adventuresim_core::encounter::EncounterChoice::Sneak => "sneak",
-            adventuresim_core::encounter::EncounterChoice::Detour => "detour",
-            adventuresim_core::encounter::EncounterChoice::Attack => "attack",
-            adventuresim_core::encounter::EncounterChoice::Run => "run",
-            adventuresim_core::encounter::EncounterChoice::Surrender => "surrender",
-        }).map(str::to_string).collect::<Vec<_>>();
-    let run_eligible = adventuresim_core::encounter::run_is_eligible(party_speed, core_archetype);
-    let mut encounter = StrategicEncounter {
-        party_id: party.id.clone(), encounter_id: encounter_id.clone(), archetype: archetype_name.into(),
-        enemy_count: count, roll_index, journey_movement_minute: challenge.camp_movement_minute,
-        journey_elapsed_minute: challenge.available_at_elapsed_minute,
-        absolute_minute: challenge.absolute_minute, longitude_e7: challenge.longitude_e7,
-        latitude_e7: challenge.latitude_e7, terrain: format!("{terrain_kind:?}").to_ascii_lowercase(),
-        party_aware: true, enemy_aware: true, available_choices: choices,
-        status: "awaiting_choice".into(), selected_choice: None,
-        selection_explanation: "A catalog-authored roadside challenge openly became combat".into(),
-        party_speed_m_per_minute: party_speed, enemy_speed_m_per_minute: enemy_speed,
-        run_ineligibility: (!run_eligible).then(|| format!("Party speed {party_speed} m/min does not exceed enemy speed {enemy_speed} m/min")),
-        penalty_minutes: 0, loss_preview: Vec::new(), outcome: None,
-    };
-    if encounter.available_choices.iter().any(|choice| choice == "surrender") {
-        encounter.loss_preview = encounter_loss_preview(ctx, &party.id);
-    }
+    let encounter = build_strategic_encounter(
+        ctx, &party.id, encounter_id.clone(), core_archetype, count, roll_index,
+        challenge.camp_movement_minute, challenge.available_at_elapsed_minute,
+        challenge.absolute_minute, challenge.longitude_e7, challenge.latitude_e7,
+        terrain_kind, Awareness::Both,
+        "A catalog-authored roadside challenge openly became combat".into(),
+    )?;
     let victory_effects_json = serde_json::to_string(victory_effects)
         .map_err(|_| "Could not encode narrative combat victory effects")?;
+    let victory_personality_json = serde_json::to_string(victory_personality)
+        .map_err(|_| "Could not encode narrative combat victory personality")?;
     if let Some(existing) = ctx.db.narrative_combat_followup_authority().encounter_id().find(&encounter_id) {
         if existing.occurrence_id != challenge.id || existing.party_id != party.id
-            || existing.victory_effects_json != victory_effects_json {
+            || existing.victory_effects_json != victory_effects_json
+            || existing.victory_personality_json != victory_personality_json {
             return Err("Narrative combat follow-up identity collision".into());
         }
     } else {
@@ -765,6 +750,8 @@ fn materialize_narrative_combat(
             encounter_id: encounter_id.clone(), occurrence_id: challenge.id.clone(), party_id: party.id.clone(),
             victory_result: victory_result.into(), defeat_result: defeat_result.into(),
             escape_result: escape_result.into(), victory_effects_json,
+            victory_personality_json,
+            victory_quest_reward_tags: victory_quest_reward_tags.to_vec(),
         });
     }
     if ctx.db.strategic_encounter().party_id().find(&party.id).is_some() {
@@ -787,29 +774,53 @@ pub(crate) fn resolve_narrative_combat_followup(
         return if receipt.occurrence_id == followup.occurrence_id && receipt.party_id == encounter.party_id
             && receipt.outcome == outcome { Ok(()) } else { Err("Conflicting narrative combat follow-up retry".into()) };
     }
-    let (result, effects) = if outcome == "victory" {
+    let (result, effects, personality) = if outcome == "victory" {
         let effects = serde_json::from_str::<Vec<adventuresim_core::road_encounter_catalog::Effect>>(
             &followup.victory_effects_json).map_err(|_| "Narrative combat victory effects are invalid")?;
-        (followup.victory_result.as_str(), effects)
+        let personality = serde_json::from_str::<Vec<adventuresim_core::road_encounter_catalog::PersonalityDevelopment>>(
+            &followup.victory_personality_json).map_err(|_| "Narrative combat victory personality is invalid")?;
+        (followup.victory_result.as_str(), effects, personality)
     } else if outcome == "avoided" {
-        (followup.escape_result.as_str(), Vec::new())
+        (followup.escape_result.as_str(), Vec::new(), Vec::new())
     } else {
-        (followup.defeat_result.as_str(), Vec::new())
+        (followup.defeat_result.as_str(), Vec::new(), Vec::new())
     };
     let now = crate::time::refresh_clock(ctx)?;
     for effect in &effects {
         apply_narrative_effect(ctx, &followup.occurrence_id, &encounter.party_id, now, effect)?;
+    }
+    let mut recognized_virtue = None;
+    for development in &personality {
+        let virtue = narrative_virtue(development.virtue);
+        recognized_virtue = Some(virtue);
+        crate::personality::apply_personality_development(
+            ctx, &format!("narrative-combat:{}:{}", followup.encounter_id, development.axis as u8),
+            ctx.db.party_authority().id().find(&encounter.party_id).ok_or("Party not found")?.leader_id,
+            narrative_axis(development.axis), development.delta,
+            "prevail_in_authored_road_combat", virtue, now,
+        )?;
     }
     let mut challenge = ctx.db.road_challenge_authority().id().find(&followup.occurrence_id)
         .ok_or("Narrative combat source occurrence is missing")?;
     let transcript = challenge.result_transcript.as_deref().map_or_else(
         || result.to_string(), |opening| format!("{opening}\n\n{result}"));
     challenge.result_transcript = Some(transcript.clone());
+    if recognized_virtue.is_some() { challenge.virtue_exemplified = recognized_virtue; }
     ctx.db.road_challenge_authority().id().update(challenge);
+    if outcome == "victory" && !followup.victory_quest_reward_tags.is_empty()
+        && let Some(mut overlay) = ctx.db.narrative_encounter_private_authority().occurrence_id().find(&followup.occurrence_id)
+        && overlay.origin == NarrativeEncounterOrigin::Errantry && overlay.reward_eligible
+    {
+        overlay.reward_addendum = Some("Victory hath revealed a practical fighting method for the danger ahead; prepare according to the recovered information.".into());
+        ctx.db.narrative_encounter_private_authority().occurrence_id().update(overlay);
+    }
     ctx.db.narrative_combat_followup_receipt().insert(NarrativeCombatFollowupReceipt {
         encounter_id: encounter.encounter_id.clone(), occurrence_id: followup.occurrence_id,
         party_id: encounter.party_id.clone(), outcome: outcome.into(), result_transcript: transcript,
         applied_effects_json: serde_json::to_string(&effects).map_err(|_| "Could not encode applied combat effects")?,
+        applied_personality_json: serde_json::to_string(&personality).map_err(|_| "Could not encode applied combat personality")?,
+        virtue_exemplified: recognized_virtue,
+        quest_reward_tags: if outcome == "victory" { followup.victory_quest_reward_tags } else { Vec::new() },
         resolved_at_minute: now,
     });
     Ok(())
@@ -1258,6 +1269,11 @@ pub fn resolve_errantry_road_challenge(
                 .filter(|stack| stack.item_id == *item_id).map(|stack| stack.quantity).sum();
             if held < u32::from(*minimum_quantity) { return Err("The chosen encounter action requires an item the party lacks".into()); }
         }
+        adventuresim_core::road_encounter_catalog::Requirement::Currency { amount } => {
+            if party_currency_total(ctx, &party_id) < u64::from(*amount) {
+                return Err("The chosen encounter action requires more currency".into());
+            }
+        }
         }
     }
     for check in &selected.checks {
@@ -1295,10 +1311,14 @@ pub fn resolve_errantry_road_challenge(
             adventuresim_core::road_encounter_catalog::EncounterTransition::Noop => {}
             adventuresim_core::road_encounter_catalog::EncounterTransition::StartCombat {
                 archetype, count, victory_result, defeat_result, escape_result, victory_effects,
+                victory_personality, victory_quest_reward_tags,
             } => materialize_narrative_combat(
                 ctx, &challenge, &party, *archetype, *count, victory_result,
-                defeat_result, escape_result, victory_effects,
+                defeat_result, escape_result, victory_effects, victory_personality,
+                victory_quest_reward_tags,
             )?,
+            adventuresim_core::road_encounter_catalog::EncounterTransition::TravelDelay { minutes } =>
+                advance_party_journey_delay(ctx, &party_id, u64::from(*minutes))?,
         }
     }
     // Origin is private. Only a bound errantry may append reward context, and

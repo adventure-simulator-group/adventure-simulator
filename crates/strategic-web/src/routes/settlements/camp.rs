@@ -541,7 +541,9 @@ mod road_challenge_route_tests {
 
 #[derive(Debug, Deserialize)]
 pub(super) struct EncounterChoiceForm {
+    encounter_id: String,
     choice: String,
+    action_id: String,
 }
 
 pub(super) async fn resolve_camp_encounter(
@@ -556,7 +558,7 @@ pub(super) async fn resolve_camp_encounter(
         .db
         .call(
             "resolve_strategic_encounter",
-            &[json!(character_id), json!(form.choice)],
+            &[json!(character_id), json!(form.encounter_id), json!(form.choice), json!(form.action_id)],
         )
         .await
     {
