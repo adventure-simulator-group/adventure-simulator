@@ -22,11 +22,40 @@ pub struct PendingDefenderResponse {
     pub set_at: f32,
 }
 
+/// Transient allegiance used by the tactical server to identify opponents.
+///
+/// This is deliberately independent from player connectivity and bot control:
+/// tests and future mission types can put server-controlled combatants on
+/// either side.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TacticalCombatSide {
+    Party,
+    Enemy,
+}
+
+/// A server-internal melee request. Both network clients and server-owned AI
+/// enter combat resolution through this seam.
+#[derive(Event, Clone, Copy, Debug)]
+pub struct MeleeAttackIntent {
+    pub attacker: Entity,
+    pub target: Entity,
+    pub body_part: BodyPart,
+    pub hit_precision: f32,
+}
+
+/// Announces a targeted windup so the intended defender alone can react.
+#[derive(Event, Clone, Copy, Debug)]
+pub struct MeleeAttackStartedIntent {
+    pub attacker: Entity,
+    pub target: Entity,
+}
+
 pub struct CombatPlugin;
 
 impl Plugin for CombatPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(on_attack_action_triggered)
+            .add_observer(resolve_melee_attack)
             .add_observer(on_defender_response);
     }
 }
@@ -78,8 +107,28 @@ fn resolve_defender_response(
     }
 }
 
-fn on_attack_action_triggered(
-    event: On<FromClient<AttackRequest>>,
+fn on_attack_action_triggered(event: On<FromClient<AttackRequest>>, mut cmd: Commands) {
+    let Some(attacker) = event.client_id.entity() else {
+        warn!(
+            "Got attack request from an unknown client: {:?}",
+            event.client_id
+        );
+        return;
+    };
+
+    // `hit_precision` is intentionally accepted as reported by the client.
+    // Animation and secondary-physics fidelity belongs on the rendering
+    // client; character stats continue to bound the resolved exchange.
+    cmd.trigger(MeleeAttackIntent {
+        attacker,
+        target: event.target,
+        body_part: event.body_part,
+        hit_precision: event.hit_precision,
+    });
+}
+
+fn resolve_melee_attack(
+    event: On<MeleeAttackIntent>,
     mut cmd: Commands,
     viewer: TacticalPlayerViewer,
     q_character: Query<&CharacterLook>,
@@ -87,13 +136,7 @@ fn on_attack_action_triggered(
     q_pending: Query<&PendingDefenderResponse>,
     time: Res<Time<()>>,
 ) {
-    let Some(entity) = event.client_id.entity() else {
-        warn!(
-            "Got attack request from an unknown client: {:?}",
-            event.client_id
-        );
-        return;
-    };
+    let entity = event.attacker;
 
     let Ok(attacker_view) = viewer.get(entity).inspect_err(|err| {
         error!("Can't get a view for attacker {entity:?}: {err}",);

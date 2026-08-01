@@ -48,7 +48,6 @@ const BODY_PART_HITBOXES: &[(BodyPart, Vec3, Vec3)] = &[
 const HITBOX_LAYER: LayerMask = LayerMask(1 << 1);
 const PRE_HIT_DELAY: f32 = 0.3;
 const HIT_PRECISION: f32 = 1.0;
-const HANDS_REACH: f32 = 1.5;
 
 pub struct PlayerPlugin;
 
@@ -249,7 +248,7 @@ fn update_attack_state_system(
         let origin = camera_transform.translation;
         let direction = camera_transform.forward();
         let filter = SpatialQueryFilter::from_mask(HITBOX_LAYER);
-        let reach = state.reach + HANDS_REACH;
+        let reach = melee_interaction_range(state.reach);
 
         if let Some(hit) = spatial.cast_ray(origin, direction, reach, true, &filter) {
             let Ok((target, body_part)) = q_collider.get(hit.entity).map(|(c, h)| (c.body, h.0))
