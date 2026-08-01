@@ -1,5 +1,9 @@
 impl LiveRunner {
-    pub(super) fn public_party_contract_ceiling(&self, party_id: &str) -> i32 {
+    pub(super) fn public_party_contract_assessment(
+        &self,
+        party_id: &str,
+        contract: &BackendContract,
+    ) -> PublicContractAssessment {
         let living_ids = self.connection.db.backend_characters().iter()
             .filter(|character| character.alive)
             .map(|character| character.id)
@@ -9,10 +13,27 @@ impl LiveRunner {
             .map(|member| member.character_id)
             .filter(|character_id| living_ids.contains(character_id))
             .collect::<HashSet<_>>();
-        let capabilities = self.connection.db.backend_character_capabilities().iter()
+        let members = self.connection.db.backend_character_capabilities().iter()
             .filter(|row| member_ids.contains(&row.character_id))
+            .map(|capability| {
+                let condition_ready = self.connection.db.backend_character_strategic_conditions()
+                    .iter()
+                    .find(|row| row.character_id == capability.character_id)
+                    .is_some_and(|row| row.status == "ready");
+                let illness_safe = self.connection.db.character_illness_status().iter()
+                    .find(|row| row.character_id == capability.character_id)
+                    .map_or(true, |row| !row.symptomatic && !row.critical);
+                PublicPartyCombatant {
+                    capability,
+                    ready: condition_ready && illness_safe,
+                }
+            })
             .collect::<Vec<_>>();
-        public_contract_difficulty_ceiling(&capabilities)
+        public_contract_assessment(
+            contract.difficulty,
+            &contract.opposition_count_wording,
+            &members,
+        )
     }
 
     pub(super) fn public_party_combat_fingerprint(
@@ -1002,8 +1023,7 @@ impl LiveRunner {
             .iter()
             .filter(|q| q.settlement_id == *settlement && q.status == ContractStatus::Offered)
             .collect();
-        let ceiling = self.public_party_contract_ceiling(&party.id);
-        quests.retain(|quest| public_contract_is_eligible(quest.difficulty, ceiling));
+        quests.retain(|quest| self.public_party_contract_assessment(&party.id, quest).eligible);
         quests.sort_by_key(|q| {
             let risk_target = (profile.risk_tolerance * 10.0).round() as i32;
             ((q.difficulty - risk_target).abs(), q.id.clone())

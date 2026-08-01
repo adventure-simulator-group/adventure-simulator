@@ -1,4 +1,61 @@
 impl LiveRunner {
+    fn abandon_unsafe_active_contract(
+        &mut self,
+        party_id: &str,
+        quest_owner: u64,
+        quest: &BackendContract,
+        assessment: PublicContractAssessment,
+    ) -> Result<(), String> {
+        let agent = self.current_leader(party_id).map_or(0, |(_, agent)| agent);
+        self.event(
+            agent,
+            CoreLoopEventKind::QuestSuppressed,
+            format!(
+                "quest={};reason=active_contract_public_matchup_unsafe;assessment={};enemy_count={};ready_combatants={};party_power_milli={};enemy_power_milli={}",
+                bounded_event_field(&quest.id),
+                assessment.reason,
+                assessment.enemy_count.map_or_else(|| "unknown".into(), |count| count.to_string()),
+                assessment.ready_combatants,
+                assessment.party_power_milli,
+                assessment.enemy_power_milli,
+            ),
+        );
+        if self.party_by_id(party_id)?.current_settlement_id.is_none() {
+            let Some((leader, _)) = self.current_leader(party_id) else {
+                return Ok(());
+            };
+            let result = reducer_call!(self, "unsafe_contract_retreat_to_settlement", |cb| self
+                .connection
+                .reducers
+                .travel_to_settlement_then(leader, quest.settlement_id.clone(), cb));
+            self.call(result)?;
+            if self.travel_camps(party_id)? != JourneyTravelOutcome::Completed {
+                return Ok(());
+            }
+        }
+        self.observe_deaths();
+        let Some((leader, leader_agent)) = self.current_leader(party_id) else {
+            return Ok(());
+        };
+        if leader != quest_owner {
+            return Ok(());
+        }
+        let result = reducer_call!(self, "abandon_unsafe_active_contract", |cb| self
+            .connection
+            .reducers
+            .abandon_contract_then(leader, quest.id.clone(), cb));
+        self.call(result)?;
+        self.event(
+            leader_agent,
+            CoreLoopEventKind::AbandonQuest,
+            format!(
+                "quest={};reason=active_contract_public_matchup_unsafe",
+                bounded_event_field(&quest.id)
+            ),
+        );
+        Ok(())
+    }
+
     pub(super) fn cycle(&mut self, party_id: &str, cycle: u32) -> Result<(), String> {
         let Some((quest_owner, _)) = self.current_leader(party_id) else {
             self.observe_deaths();
@@ -30,6 +87,28 @@ impl LiveRunner {
             .ok_or("no suitable available or accepted quest")?;
         if quest.status == ContractStatus::ReadyToReport {
             return self.turn_in_ready_direct_contract(party_id, leader, leader_agent, &quest);
+        }
+        let assessment = self.public_party_contract_assessment(party_id, &quest);
+        if !assessment.eligible {
+            if resuming_contract {
+                self.abandon_unsafe_active_contract(
+                    party_id,
+                    quest_owner,
+                    &quest,
+                    assessment,
+                )?;
+            } else {
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::QuestSuppressed,
+                    format!(
+                        "quest={};reason=no_safe_contract;assessment={}",
+                        bounded_event_field(&quest.id),
+                        assessment.reason,
+                    ),
+                );
+            }
+            return Ok(());
         }
         if !resuming_contract {
             if let TravelProvisionDecision::Deferred(reason) = self.provision_case_site_journey(
@@ -210,6 +289,17 @@ impl LiveRunner {
                 .abandon_contract_then(leader, quest.id.clone(), cb));
             self.call(result)?;
             self.event(leader_agent, CoreLoopEventKind::AbandonQuest, quest.id);
+            return Ok(());
+        }
+
+        let assessment_after_travel = self.public_party_contract_assessment(party_id, &quest);
+        if !assessment_after_travel.eligible {
+            self.abandon_unsafe_active_contract(
+                party_id,
+                quest_owner,
+                &quest,
+                assessment_after_travel,
+            )?;
             return Ok(());
         }
 

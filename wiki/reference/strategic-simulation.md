@@ -107,12 +107,17 @@ roll against an unchanged threat. A generated-case finale records a bounded
 fingerprint made only from subscribed public party capability rows and will not
 reattempt the same defeated threat until that fingerprint materially changes.
 
-Direct contracts are eligible only when their disclosed difficulty is at or
-below a conservative ceiling derived from the party's public combat-capability
-projection. Risk tolerance ranks only this eligible set. When offered contracts
-exist but none meets the ceiling, the trace records `no_safe_contract` and the
-party uses generated discovery or settlement activity instead; contract wording
-and hidden hostile authority are not policy inputs.
+Direct contracts are eligible only when a conservative public matchup estimate
+accepts them. The estimate combines disclosed difficulty and an exact,
+allowlisted interpretation of the public opposition-count wording with living,
+ready members' public combat capabilities. It mirrors the authoritative enemy
+base-rating curve and requires a 25 percent party-power margin; unknown count
+wording fails closed. Risk tolerance ranks only the eligible set. Accepted
+contracts are revalidated before continuation and again after travel; an unsafe
+deterioration causes retreat and abandonment, while `ReadyToReport` contracts
+remain turn-in eligible. When offered contracts exist but none is safe, the trace
+records `no_safe_contract` and the party uses generated discovery or settlement
+activity instead. Hidden hostile authority is never a policy input.
 
 Core-loop reports are explicitly tagged `spacetimedb_authoritative_core_loop`
 and retain the server origin, disposable database, claimed run nonce, generated
@@ -168,6 +173,12 @@ projected availability and progress (perform, travel, or bounded wait), the
 owner profile's fit for the projected method, public uncertainty, public
 duration, and public wait. `action_id` is only the final tie-break. The policy
 reads no canonical generated-case rows or private hostile authority.
+Its skill-fit mirror uses Insight for inspect, search, locate, watch, patrol, and
+approach; averages Insight and Stealth for ambush; and gives tracking no claimed
+fit because the public projection does not disclose the governing terrain.
+After a generated-finale defeat, an unchanged owner/case public combat
+fingerprint suppresses the case before any further provisioning or travel, with
+the same guard retained at the site.
 
 Camp handling subscribes only
 to the public `party_journey` and `party_journey_itinerary` projections. At

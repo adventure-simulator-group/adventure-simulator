@@ -77,17 +77,40 @@ fn encounter_policy_is_permutation_invariant_and_never_attacks_during_evacuation
 }
 
 #[test]
-fn public_contract_ceiling_has_conservative_inclusive_boundaries() {
-    assert_eq!(public_contract_difficulty_ceiling(&[]), 0);
-    assert_eq!(public_contract_difficulty_ceiling(&[capability(1, false, false, false, false)]), 0);
-    assert_eq!(public_contract_difficulty_ceiling(&[capability(1, true, false, false, false)]), 1);
-    assert_eq!(public_contract_difficulty_ceiling(&[
-        capability(1, true, false, true, true),
-        capability(2, false, true, false, false),
-    ]), 4);
-    assert!(!public_contract_is_eligible(0, 4));
-    assert!(public_contract_is_eligible(4, 4));
-    assert!(!public_contract_is_eligible(5, 4));
+fn public_contract_matchup_uses_readiness_count_difficulty_and_fails_closed() {
+    let strong = |id, ready| {
+        let mut capability = capability(id, true, false, true, true);
+        capability.endurance = 2.0;
+        capability.athletics = 2.0;
+        PublicPartyCombatant { capability, ready }
+    };
+    assert_eq!(public_opposition_count("one"), Some(1));
+    assert_eq!(public_opposition_count("a pair"), Some(2));
+    assert_eq!(public_opposition_count("perhaps two"), Some(3));
+    assert_eq!(public_opposition_count("perhaps eleven"), Some(12));
+    assert_eq!(public_opposition_count("perhaps several"), None);
+    assert_eq!(public_opposition_count("a household guard"), None);
+
+    assert!(public_contract_assessment(1, "one", &[strong(1, true)]).eligible);
+    assert!(!public_contract_assessment(1, "two", &[strong(1, true)]).eligible);
+    assert!(public_contract_assessment(1, "two", &[strong(1, true), strong(2, true)]).eligible);
+    assert!(!public_contract_assessment(6, "two", &[strong(1, true), strong(2, true)]).eligible);
+    assert!(!public_contract_assessment(1, "one", &[strong(1, false)]).eligible);
+    assert!(!public_contract_assessment(1, "several", &[strong(1, true), strong(2, true)]).eligible);
+
+    let accepted = public_contract_assessment(
+        1,
+        "perhaps two",
+        &[strong(1, true), strong(2, true)],
+    );
+    let deteriorated = public_contract_assessment(
+        1,
+        "perhaps two",
+        &[strong(1, true), strong(2, false)],
+    );
+    assert!(accepted.eligible);
+    assert!(!deteriorated.eligible);
+    assert_eq!(deteriorated.reason, "public_matchup_below_safety_margin");
 }
 
 #[test]
@@ -95,7 +118,7 @@ fn generated_action_score_prefers_progress_then_fit_then_public_costs() {
     let mut profile = generate_profile(42, 0);
     profile.initial_skills.insight = 8_000.0;
     profile.initial_skills.stealth = 1_000.0;
-    let interview = projected_action("z", "interview");
+    let interview = projected_action("z", "inspect_site");
     let search = projected_action("a", "search_area");
     assert!(generated_action_score(&profile, &interview) > generated_action_score(&profile, &search));
 
@@ -114,6 +137,30 @@ fn generated_action_score_prefers_progress_then_fit_then_public_costs() {
     let mut tied = vec![tied_b, tied_a];
     sort_generated_actions(&profile, &mut tied);
     assert_eq!(tied.iter().map(|action| action.action_id.as_str()).collect::<Vec<_>>(), vec!["a", "b"]);
+}
+
+#[test]
+fn generated_skill_fit_exactly_mirrors_public_action_skill_mapping() {
+    let mut profile = generate_profile(42, 0);
+    profile.initial_skills.insight = 8_000.0;
+    profile.initial_skills.stealth = 2_000.0;
+    for method in [
+        "inspect_site",
+        "search_area",
+        "locate_contact",
+        "watch",
+        "patrol",
+        "approach_lead",
+    ] {
+        assert_eq!(generated_method_skill_fit(&profile, method), 8_000, "{method}");
+    }
+    assert_eq!(generated_method_skill_fit(&profile, "follow_tracks"), 0);
+    assert_eq!(generated_method_skill_fit(&profile, "reacquire_tracks"), 0);
+    assert_eq!(generated_method_skill_fit(&profile, "lay_ambush"), 5_000);
+    assert!(
+        generated_action_score(&profile, &projected_action("inspect", "inspect_site"))
+            > generated_action_score(&profile, &projected_action("tracks", "follow_tracks"))
+    );
 }
 
 #[test]
@@ -148,12 +195,24 @@ fn party_grouping_balances_roles_and_promotes_quest_capable_leaders() {
 }
 
 #[test]
-fn defeat_policy_has_no_rng_retry_and_generated_retries_need_public_change() {
-    let production = LIVE_CORE_SOURCE.split("#[cfg(test)]").next().unwrap();
-    assert!(!production.contains("MAX_DEFEAT_RETRIES"));
-    assert!(!production.contains("retry_travel_to_case_site"));
-    assert!(production.contains("reason=unchanged_defeated_threat"));
-    assert!(production.contains("generated_defeat_fingerprints"));
-    assert!(production.contains("public_party_combat_fingerprint"));
-    assert!(production.contains("no_safe_contract"));
+fn generated_defeat_policy_suppresses_work_until_public_capability_changes() {
+    let original = public_combat_fingerprint(vec![capability(1, true, false, false, false)]);
+    let unchanged = original.clone();
+    let improved = public_combat_fingerprint(vec![capability(1, true, false, true, true)]);
+    let planned_work = |decision| match decision {
+        GeneratedDefeatDecision::SuppressUnchanged => (0, 0, 0),
+        GeneratedDefeatDecision::Proceed => (1, 1, 1),
+    };
+    assert_eq!(
+        planned_work(generated_defeat_decision(true, Some(&original), &unchanged)),
+        (0, 0, 0),
+    );
+    assert_eq!(
+        planned_work(generated_defeat_decision(true, Some(&original), &improved)),
+        (1, 1, 1),
+    );
+    assert_eq!(
+        generated_defeat_decision(false, Some(&original), &unchanged),
+        GeneratedDefeatDecision::Proceed,
+    );
 }

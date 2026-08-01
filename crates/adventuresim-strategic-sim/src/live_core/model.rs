@@ -725,15 +725,118 @@ struct PublicCombatFingerprint {
     members: Vec<(u64, bool, bool, bool, bool, u32, u32, u32)>,
 }
 
-fn public_contract_difficulty_ceiling(capabilities: &[CharacterCapability]) -> i32 {
-    capabilities.iter().filter(|row| row.melee || row.ranged).map(|row| {
-        1 + i32::from(row.heavy || row.half_armor)
-            + i32::from(row.precise || row.weapon_precision >= 1.0)
-    }).sum()
+#[derive(Clone, Debug)]
+struct PublicPartyCombatant {
+    capability: CharacterCapability,
+    ready: bool,
 }
 
-fn public_contract_is_eligible(difficulty: i32, ceiling: i32) -> bool {
-    difficulty > 0 && difficulty <= ceiling
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PublicContractAssessment {
+    eligible: bool,
+    reason: &'static str,
+    enemy_count: Option<u32>,
+    ready_combatants: u32,
+    party_power_milli: u64,
+    enemy_power_milli: u64,
+}
+
+fn public_opposition_count(wording: &str) -> Option<u32> {
+    let normalized = wording
+        .trim()
+        .trim_end_matches(|character| character == '.' || character == ',')
+        .to_ascii_lowercase();
+    let (estimate, value) = normalized
+        .strip_prefix("perhaps ")
+        .map_or((false, normalized.as_str()), |value| (true, value));
+    let count = match value {
+        "one" | "a lone" | "a single" => 1,
+        "two" | "a pair" => 2,
+        "three" => 3,
+        "four" => 4,
+        "five" => 5,
+        "six" => 6,
+        "seven" => 7,
+        "eight" => 8,
+        "nine" => 9,
+        "ten" => 10,
+        "eleven" => 11,
+        "twelve" => 12,
+        value => value.parse::<u32>().ok()?,
+    };
+    (count > 0).then_some(if estimate { count.saturating_add(1) } else { count })
+}
+
+fn public_contract_assessment(
+    difficulty: i32,
+    opposition_count_wording: &str,
+    members: &[PublicPartyCombatant],
+) -> PublicContractAssessment {
+    let Some(enemy_count) = public_opposition_count(opposition_count_wording) else {
+        return PublicContractAssessment {
+            eligible: false,
+            reason: "unknown_public_opposition_count",
+            enemy_count: None,
+            ready_combatants: 0,
+            party_power_milli: 0,
+            enemy_power_milli: 0,
+        };
+    };
+    if difficulty <= 0 {
+        return PublicContractAssessment {
+            eligible: false,
+            reason: "invalid_public_difficulty",
+            enemy_count: Some(enemy_count),
+            ready_combatants: 0,
+            party_power_milli: 0,
+            enemy_power_milli: 0,
+        };
+    }
+    let ready = members
+        .iter()
+        .filter(|member| member.ready && (member.capability.melee || member.capability.ranged))
+        .collect::<Vec<_>>();
+    let party_power_milli = ready
+        .iter()
+        .map(|member| {
+            let capability = &member.capability;
+            let physical =
+                (capability.endurance.max(0.0).min(10.0) * 1_000.0).round() as u64;
+            let technique = ((capability.athletics.max(0.0).min(10.0)
+                + capability.weapon_precision.max(0.0).min(10.0))
+                * 250.0)
+                .round() as u64;
+            let equipment = 250 * u64::from(capability.precise)
+                + 500
+                    * u64::from(
+                        capability.heavy
+                            || capability.half_armor
+                            || capability.three_quarter_armor
+                            || capability.full_armor,
+                    );
+            physical.saturating_add(technique).saturating_add(equipment)
+        })
+        .sum::<u64>();
+    // Mirror the authoritative enemy base rating in milli-units and require
+    // a conservative 25% party advantage before accepting the disclosed fight.
+    let enemy_power_milli = u64::from(enemy_count)
+        .saturating_mul(1_200_u64.saturating_add((difficulty as u64).saturating_mul(350)));
+    let eligible = !ready.is_empty()
+        && party_power_milli.saturating_mul(4) >= enemy_power_milli.saturating_mul(5);
+    PublicContractAssessment {
+        eligible,
+        reason: if ready.is_empty() {
+            "no_ready_public_combatants"
+        } else if eligible {
+            "public_matchup_with_safety_margin"
+        } else {
+            "public_matchup_below_safety_margin"
+        },
+        enemy_count: Some(enemy_count),
+        ready_combatants: ready.len() as u32,
+        party_power_milli,
+        enemy_power_milli,
+    }
 }
 
 fn public_combat_fingerprint(mut capabilities: Vec<CharacterCapability>) -> PublicCombatFingerprint {
@@ -751,13 +854,32 @@ fn public_combat_fingerprint(mut capabilities: Vec<CharacterCapability>) -> Publ
 fn generated_method_skill_fit(profile: &AgentProfile, method: &str) -> u32 {
     let skills = &profile.initial_skills;
     let hours = match method {
-        "approach_lead" | "interview" | "locate_contact" => skills.insight.max(skills.charm).max(skills.command),
-        "inspect_site" | "examine" | "analyze" => skills.physiology.max(skills.herbalism),
-        "search_area" | "reacquire_tracks" | "follow_tracks" | "watch" => skills.stealth,
-        "patrol" | "confront" => skills.sword.max(skills.axe).max(skills.bow).max(skills.crossbow),
+        "inspect_site" | "search_area" | "locate_contact" | "watch" | "patrol"
+        | "approach_lead" => skills.insight,
+        // The public action projection does not expose target terrain.
+        "follow_tracks" | "reacquire_tracks" => 0.0,
+        "lay_ambush" => (skills.insight + skills.stealth) / 2.0,
         _ => 0.0,
     };
     hours.max(0.0).min(100_000.0).round() as u32
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GeneratedDefeatDecision {
+    Proceed,
+    SuppressUnchanged,
+}
+
+fn generated_defeat_decision(
+    combat_available: bool,
+    previous: Option<&PublicCombatFingerprint>,
+    current: &PublicCombatFingerprint,
+) -> GeneratedDefeatDecision {
+    if combat_available && previous.is_some_and(|previous| previous == current) {
+        GeneratedDefeatDecision::SuppressUnchanged
+    } else {
+        GeneratedDefeatDecision::Proceed
+    }
 }
 
 fn generated_action_score(profile: &AgentProfile, action: &BackendInvestigationAction) -> (u8, u32, u16, u32, u32) {
@@ -868,7 +990,6 @@ fn format_quest_decision_detail(
     settlement_id: Option<&str>,
     offered_contracts: usize,
     safe_offered_contracts: usize,
-    contract_difficulty_ceiling: i32,
     open_generated_cases: usize,
     projected_investigation_actions: usize,
     quest_path: &str,
@@ -877,7 +998,7 @@ fn format_quest_decision_detail(
     selection_reason: &str,
 ) -> String {
     format!(
-        "cycle={cycle};wants_quest={wants_quest};selector={selector:.6};quest_propensity={quest_propensity:.6};settlement={};offered_contracts={offered_contracts};safe_offered_contracts={safe_offered_contracts};contract_difficulty_ceiling={contract_difficulty_ceiling};open_generated_cases={open_generated_cases};projected_investigation_actions={projected_investigation_actions};quest_path={quest_path};quest_intended={quest_intended};quest_selected={quest_selected};selection_reason={}",
+        "cycle={cycle};wants_quest={wants_quest};selector={selector:.6};quest_propensity={quest_propensity:.6};settlement={};offered_contracts={offered_contracts};safe_offered_contracts={safe_offered_contracts};open_generated_cases={open_generated_cases};projected_investigation_actions={projected_investigation_actions};quest_path={quest_path};quest_intended={quest_intended};quest_selected={quest_selected};selection_reason={}",
         settlement_id.unwrap_or("none"),
         bounded_event_field(selection_reason),
     )

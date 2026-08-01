@@ -821,6 +821,30 @@ impl LiveRunner {
         {
             return Ok(false);
         }
+        let defeat_key = (character_id, case_id.to_owned());
+        let preflight_fingerprint = self.public_party_combat_fingerprint(party_id);
+        let public_combat_available = self.connection.db.backend_case_site_pins().iter().any(|pin| {
+            pin.owner_character_id == character_id
+                && pin.case_id == case_id
+                && pin.combat_available
+        });
+        if generated_defeat_decision(
+            public_combat_available,
+            self.generated_defeat_fingerprints.get(&defeat_key),
+            &preflight_fingerprint,
+        ) == GeneratedDefeatDecision::SuppressUnchanged
+        {
+            self.event(
+                agent,
+                CoreLoopEventKind::QuestSuppressed,
+                format!(
+                    "generated_case={};reason=unchanged_defeated_threat;phase=preflight;public_fingerprint_members={}",
+                    bounded_event_field(case_id),
+                    preflight_fingerprint.members.len(),
+                ),
+            );
+            return Ok(false);
+        }
         for _ in 0..MAX_GENERATED_CASE_STEPS_PER_CYCLE {
             if self.generated_case_status(character_id, case_id).as_deref() != Some("open") {
                 return self.return_completed_generated_party_to_origin(
@@ -1123,11 +1147,11 @@ impl LiveRunner {
                 if pin.combat_available {
                     let defeat_key = (character_id, case_id.to_owned());
                     let combat_fingerprint = self.public_party_combat_fingerprint(party_id);
-                    if self
-                        .generated_defeat_fingerprints
-                        .get(&defeat_key)
-                        .is_some_and(|previous| previous == &combat_fingerprint)
-                    {
+                    if generated_defeat_decision(
+                        true,
+                        self.generated_defeat_fingerprints.get(&defeat_key),
+                        &combat_fingerprint,
+                    ) == GeneratedDefeatDecision::SuppressUnchanged {
                         self.event(
                             agent,
                             CoreLoopEventKind::QuestSuppressed,

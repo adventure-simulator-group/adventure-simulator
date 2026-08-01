@@ -522,15 +522,11 @@ fn run_core_loop_inner(
                     })
                     .count()
             });
-            let contract_difficulty_ceiling = runner.public_party_contract_ceiling(&party.id);
             let safe_offered_contracts = settlement_id.map_or(0, |settlement_id| {
                 runner.connection.db.backend_contracts().iter().filter(|contract| {
                     contract.settlement_id == settlement_id
                         && contract.status == ContractStatus::Offered
-                        && public_contract_is_eligible(
-                            contract.difficulty,
-                            contract_difficulty_ceiling,
-                        )
+                        && runner.public_party_contract_assessment(&party.id, contract).eligible
                 }).count()
             });
             let open_generated_cases = runner.owned_open_generated_cases(leader);
@@ -583,7 +579,6 @@ fn run_core_loop_inner(
                     settlement_id,
                     offered_contracts,
                     safe_offered_contracts,
-                    contract_difficulty_ceiling,
                     open_generated_cases.len(),
                     projected_investigation_actions,
                     quest_path,
