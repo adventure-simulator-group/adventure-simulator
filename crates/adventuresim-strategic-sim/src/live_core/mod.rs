@@ -59,8 +59,7 @@ mod bootstrap {
 }
 
 pub use bootstrap::run_core_loop;
-use bootstrap::{
-    equipment_utility, leader_is_actionable, root_requirement_matches_slot,
-    select_public_quest_fixture,
-};
+#[cfg(test)]
+use bootstrap::select_public_quest_fixture;
+use bootstrap::{equipment_utility, leader_is_actionable, root_requirement_matches_slot};
 include!("tests.rs");

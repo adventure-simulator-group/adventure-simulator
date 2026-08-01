@@ -268,20 +268,20 @@ fn run_core_loop_inner(
             cb,
         ));
     runner.call(result)?;
-    let mut claimed_runs = runner
+    let claimed_run_ids = runner
         .connection
         .db
         .simulation_run()
         .iter()
         .filter(|run| run.nonce == config.run_nonce)
-        .take(2);
-    let claimed_run_id = claimed_runs
-        .next()
-        .ok_or("claim reducer completed without a coherent simulation run")?
-        .id;
-    if claimed_runs.next().is_some() {
-        return Err("claim reducer completed with ambiguous simulation runs".into());
-    }
+        .map(|run| run.id)
+        .take(2)
+        .collect::<Vec<_>>();
+    let claimed_run_id = match claimed_run_ids.as_slice() {
+        [run_id] => *run_id,
+        [] => return Err("claim reducer completed without a coherent simulation run".into()),
+        _ => return Err("claim reducer completed with ambiguous simulation runs".into()),
+    };
     // The disposable simulation owns this otherwise-empty database, so its
     // authenticated connection is also the trusted strategic gateway.
     let result = reducer_call!(runner, "register_strategic_gateway", |cb| runner
