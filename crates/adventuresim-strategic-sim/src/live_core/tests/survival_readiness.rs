@@ -154,7 +154,11 @@ fn equipment_storefront_requires_service_and_matching_stock_category() {
         prosperity_tier: ProsperityTier::Subsistence,
         services: vec![SettlementService::Weaponsmith],
         specializations: vec![],
-        stock: vec![],
+        stock: vec![SettlementStock {
+            category: StockCategory::GeneralGoods,
+            abundance: 1,
+            provenance: ProfileFactProvenance::DeterministicGapFill,
+        }],
     };
     let storefront = adventuresim_core::settlement_economy::Storefront::Weapons;
     let projected = public_settlement_economy_profile(&profile).unwrap();
@@ -164,11 +168,14 @@ fn equipment_storefront_requires_service_and_matching_stock_category() {
         "club",
         adventuresim_core::settlement_economy::CatalogKind::Weapon,
     ));
-    profile.stock.push(SettlementStock {
-        category: StockCategory::Weapons,
-        abundance: 1,
-        provenance: ProfileFactProvenance::DeterministicGapFill,
-    });
+    profile.stock.insert(
+        0,
+        SettlementStock {
+            category: StockCategory::Weapons,
+            abundance: 1,
+            provenance: ProfileFactProvenance::DeterministicGapFill,
+        },
+    );
     let projected = public_settlement_economy_profile(&profile).unwrap();
     assert!(adventuresim_core::settlement_economy::storefront_stocks(
         &projected,

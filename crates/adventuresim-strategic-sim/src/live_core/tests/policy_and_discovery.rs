@@ -301,7 +301,11 @@ fn inn_only_dialogue_candidates_exclude_hidden_service_locations() {
         prosperity_tier: ProsperityTier::Subsistence,
         services: vec![SettlementService::Inn],
         specializations: vec![],
-        stock: vec![],
+        stock: vec![SettlementStock {
+            category: StockCategory::GeneralGoods,
+            abundance: 1,
+            provenance: ProfileFactProvenance::DeterministicGapFill,
+        }],
     };
     assert_eq!(public_settlement_economy_profile(&projected), Some(profile.clone()));
 
