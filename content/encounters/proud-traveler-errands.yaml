@@ -1,0 +1,116 @@
+{
+  "encounters": [
+    {
+      "id": "proud_traveler_errands_v1",
+      "version": 1,
+      "weight": 70,
+      "triggers": { "travel": true, "rest": false },
+      "provenance": {
+        "works": ["Parzival", "Lanzelet", "Le Morte d'Arthur"],
+        "motifs": ["proud_traveler", "roadside_service", "mired_household", "entrusted_purse"],
+        "adaptation_note": "An original synthesis of proud travelers, testing errands, and compromised household journeys common in chivalric romance; it does not reproduce a particular episode."
+      },
+      "cast": [
+        { "id": "proud_traveler", "name": "Proud traveler", "nature": "mortal" }
+      ],
+      "opening": [
+        {
+          "speaker": "proud_traveler",
+          "text": "Good travelers, behold what service fortune sendeth you. My baggage cart standeth mired beyond this causeway, and my mail-clad riders have spent their strength in drawing it. Render me worthy aid, and I shall remember the hand that gave it.",
+          "reviewed_shakespearean": true
+        }
+      ],
+      "choices": [
+        {
+          "id": "render_service",
+          "label": "Render the requested service without bargaining",
+          "response": [{ "speaker": "proud_traveler", "text": "Thy courtesy hath done what pride alone could not. Take eight groschen, and mark how every mailed rider foundered where the soft ground held his feet.", "reviewed_shakespearean": true }],
+          "result": "Thou spendest an hour freeing the baggage cart, acceptest modest payment, and observest that mail-clad riders move slowly through soft ground.",
+          "deed": "render_service_to_proud_traveler",
+          "outcome_tags": ["courtesy", "service", "physical_observation"],
+          "effects": [
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 8 },
+            { "kind": "information", "information_id": "mired_mail_riders_move_slowly" }
+          ],
+          "personality": [{ "axis": "sociability", "delta": 80, "virtue": "courtesy" }],
+          "quest_reward_tags": ["heavy_attackers_slow_in_soft_ground"],
+          "transition": { "kind": "travel_delay", "minutes": 60 }
+        },
+        {
+          "id": "bargain_as_equals",
+          "label": "Bargain as an equal before lending aid",
+          "response": [{ "speaker": "proud_traveler", "text": "Thou speakest as one who knoweth the worth of labor. Sixteen groschen shall answer it; then help us where these heavy riders sink within the mire.", "reviewed_shakespearean": true }],
+          "result": "Thou bargainest for just payment, spendest half an hour directing the release, and observest the mail-clad riders' poor speed in soft ground.",
+          "deed": "bargain_as_equal_for_causeway_service",
+          "outcome_tags": ["justice", "bargain", "physical_observation"],
+          "requirements": [{ "kind": "skill", "skill": "charm", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "charm", "difficulty_milli": 1000 }],
+          "effects": [
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 16 },
+            { "kind": "information", "information_id": "mired_mail_riders_move_slowly" }
+          ],
+          "personality": [{ "axis": "conscience", "delta": 90, "virtue": "justice" }],
+          "quest_reward_tags": ["heavy_attackers_slow_in_soft_ground"],
+          "transition": { "kind": "travel_delay", "minutes": 30 }
+        },
+        {
+          "id": "order_household",
+          "label": "Order his household into an efficient hauling line",
+          "response": [{ "speaker": "proud_traveler", "text": "Thy command hath lent one purpose unto many weary hands. The cart is free, and thou hast seen how ill these armoured riders master yielding earth.", "reviewed_shakespearean": true }],
+          "result": "Thou orderest the household into a hauling line, freest the cart in twenty minutes, and observest how soft ground checks the mail-clad riders.",
+          "deed": "order_proud_travelers_household_at_causeway",
+          "outcome_tags": ["prudence", "command", "physical_observation"],
+          "requirements": [{ "kind": "skill", "skill": "command", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "command", "difficulty_milli": 1000 }],
+          "effects": [{ "kind": "information", "information_id": "mired_mail_riders_move_slowly" }],
+          "personality": [{ "axis": "drive", "delta": 90, "virtue": "prudence" }],
+          "quest_reward_tags": ["heavy_attackers_slow_in_soft_ground"],
+          "transition": { "kind": "travel_delay", "minutes": 20 }
+        },
+        {
+          "id": "rebuke_pride",
+          "label": "Rebuke his pride and remind him of Christian duty",
+          "response": [{ "speaker": "proud_traveler", "text": "Thy rebuke striketh home. A Christian master oweth duty unto the exhausted servant, not scorn. I shall take my share of the rope; accept two flasks of table wine, and heed how slowly mail fareth in this mire.", "reviewed_shakespearean": true }],
+          "result": "Thou recallest the traveler to his duty toward exhausted servants, helpest for forty minutes, receivest two flasks of wine, and observest the mail-clad riders' weakness in soft ground.",
+          "deed": "rebuke_proud_traveler_by_christian_duty",
+          "outcome_tags": ["faith", "duty", "physical_observation"],
+          "requirements": [{ "kind": "religion", "religion": "roman_catholic" }],
+          "checks": [{ "kind": "religion", "religion": "roman_catholic", "difficulty_milli": 1000 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "table_wine", "quantity": 2 },
+            { "kind": "information", "information_id": "mired_mail_riders_move_slowly" }
+          ],
+          "personality": [{ "axis": "conviction", "delta": 100, "virtue": "faith" }],
+          "quest_reward_tags": ["heavy_attackers_slow_in_soft_ground"],
+          "transition": { "kind": "travel_delay", "minutes": 40 }
+        },
+        {
+          "id": "keep_entrusted_purse",
+          "label": "Offer to carry his entrusted purse, then keep it",
+          "response": [{ "speaker": "proud_traveler", "text": "Thy hands are free whilst mine must take the rope. Keep this purse and road note safe until the cart standeth firm; I doubt not thy honest charge.", "reviewed_shakespearean": true }],
+          "result": "Thou readest upon the entrusted road note that mail-clad riders move slowly through soft ground, then concealest the note and stealest the forty-eight groschen purse whilst the household laboureth.",
+          "deed": "steal_proud_travelers_entrusted_purse",
+          "outcome_tags": ["deception", "theft", "physical_observation"],
+          "requirements": [{ "kind": "skill", "skill": "deception", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "deception", "difficulty_milli": 1100 }],
+          "effects": [
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 48 },
+            { "kind": "information", "information_id": "mired_mail_riders_move_slowly" }
+          ],
+          "personality": [{ "axis": "transparency", "delta": -220, "virtue": "honesty" }],
+          "quest_reward_tags": ["heavy_attackers_slow_in_soft_ground"],
+          "transition": { "kind": "travel_delay", "minutes": 20 }
+        },
+        {
+          "id": "ignore",
+          "label": "Continue along the open edge of the causeway",
+          "response": [],
+          "result": "Thou passest along the open edge of the causeway and leavest the proud traveler to his mired cart.",
+          "deed": "ignore_proud_traveler_at_causeway",
+          "outcome_tags": []
+        }
+      ],
+      "quest_reward_eligibility": ["physical_tactical_information"]
+    }
+  ]
+}

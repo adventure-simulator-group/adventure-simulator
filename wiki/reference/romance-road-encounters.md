@@ -120,6 +120,17 @@ development never publicly exemplifies Courage. The practical information is
 the quest boon; the combatant is not arbitrarily weakened. No catalog ID is
 special-cased by the transition dispatcher.
 
+`proud_traveler_errands_v1` places a proud mortal traveler and his exhausted
+household at a muddy causeway. The party may render unpriced service, bargain
+as equals, organize the household, rebuke the master through Christian duty,
+or steal an unsuspectingly entrusted purse; passing by remains free because
+the road is not blocked. Each active route consumes a bounded amount of travel
+time and yields the same physical observation that mail-clad riders are slow
+in soft ground. Honest routes express Courtesy, Justice, Prudence, or Faith,
+while the materially richest theft lowers Honesty without publicly exemplifying
+it. The encounter is travel-only, goal-neutral, entirely mortal, and requires
+no runtime catalog special case.
+
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,
