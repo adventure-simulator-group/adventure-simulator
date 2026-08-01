@@ -37,28 +37,6 @@ pub struct BackendRoadChallenge {
     pub quest_reward_addendum: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-pub enum ChivalricVirtue {
-    Courage,
-    Mercy,
-    Faith,
-    Justice,
-    Courtesy,
-    Loyalty,
-    Prudence,
-    Honesty,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-pub enum ErrantryFinaleDefenseKind {
-    UnnaturalProwess,
-    Reinforcements,
-    PoisonedArms,
-    ConcealedTrap,
-    Glamour,
-    SupernaturalArmor,
-}
-
 #[derive(Clone, Debug, Serialize)]
 pub struct BestiaryEnemyLoreView {
     pub id: String,

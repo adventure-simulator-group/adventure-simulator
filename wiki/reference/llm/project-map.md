@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1648)
+## Files (1646)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -465,9 +465,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/equipment_parent_requirement_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/equipment_placement_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/errantry_authority_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/errantry_countermeasure_kind_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/errantry_countermeasure_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/errantry_finale_defense_kind_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/errantry_puzzle_kind_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/estate_disposition_status_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/estate_disposition_type.rs` — Generated SpacetimeDB data type.
@@ -657,6 +654,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/narrative_encounter_information_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/narrative_encounter_origin_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/narrative_encounter_private_authority_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/narrative_encounter_trigger_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/native_range_evidence_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/nerve_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/npc_adventuring_party_authority_type.rs` — Generated SpacetimeDB data type.

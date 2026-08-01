@@ -526,15 +526,14 @@ mod road_challenge_route_tests {
         let template = include_str!("../../templates/settlement/travel.rs");
         assert!(route.contains("SELECT * FROM backend_road_challenges"));
         assert!(route.contains("challenge.active && challenge.open"));
-        assert!(route.contains(
-            "!challenge.open && challenge.resolved_choice.as_deref() == Some(*result)"
-        ));
+        assert!(route.contains("challenge.id == requested"));
         assert!(route.contains("\"resolve_errantry_road_challenge\""));
         assert!(router.contains("/camp/errantry-road-challenge"));
         assert!(template.contains("aria-label=\"Roadside conversation\""));
         assert!(template.contains("generic_road_encounter(road_trial)"));
-        assert!(template.contains("definition.choices"));
-        assert!(template.contains("definition.opening"));
+        assert!(template.contains("presentation.choices"));
+        assert!(template.contains("presentation.opening"));
+        assert!(!template.contains("EncounterDefinition"));
         assert!(!template.contains("WoundedOrderCourierV1"));
         assert!(!template.contains("Black Knight's men"));
     }

@@ -5,6 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::chivalric_virtue_type::ChivalricVirtue;
+use super::narrative_encounter_trigger_type::NarrativeEncounterTrigger;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -24,7 +25,7 @@ pub struct RoadChallengeAuthority {
     pub absolute_minute: u64,
     pub longitude_e_7: i32,
     pub latitude_e_7: i32,
-    pub context: String,
+    pub trigger: NarrativeEncounterTrigger,
     pub revision: u32,
     pub open: bool,
     pub resolved_choice: Option<String>,
@@ -56,7 +57,7 @@ pub struct RoadChallengeAuthorityCols {
     pub absolute_minute: __sdk::__query_builder::Col<RoadChallengeAuthority, u64>,
     pub longitude_e_7: __sdk::__query_builder::Col<RoadChallengeAuthority, i32>,
     pub latitude_e_7: __sdk::__query_builder::Col<RoadChallengeAuthority, i32>,
-    pub context: __sdk::__query_builder::Col<RoadChallengeAuthority, String>,
+    pub trigger: __sdk::__query_builder::Col<RoadChallengeAuthority, NarrativeEncounterTrigger>,
     pub revision: __sdk::__query_builder::Col<RoadChallengeAuthority, u32>,
     pub open: __sdk::__query_builder::Col<RoadChallengeAuthority, bool>,
     pub resolved_choice: __sdk::__query_builder::Col<RoadChallengeAuthority, Option<String>>,
@@ -100,7 +101,7 @@ impl __sdk::__query_builder::HasCols for RoadChallengeAuthority {
             absolute_minute: __sdk::__query_builder::Col::new(table_name, "absolute_minute"),
             longitude_e_7: __sdk::__query_builder::Col::new(table_name, "longitude_e_7"),
             latitude_e_7: __sdk::__query_builder::Col::new(table_name, "latitude_e_7"),
-            context: __sdk::__query_builder::Col::new(table_name, "context"),
+            trigger: __sdk::__query_builder::Col::new(table_name, "trigger"),
             revision: __sdk::__query_builder::Col::new(table_name, "revision"),
             open: __sdk::__query_builder::Col::new(table_name, "open"),
             resolved_choice: __sdk::__query_builder::Col::new(table_name, "resolved_choice"),

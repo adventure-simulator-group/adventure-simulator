@@ -546,7 +546,10 @@ mod tests {
     fn narrative_interruption_advances_only_past_its_reached_combat_boundary() {
         let requested_end = ENCOUNTER_ROLL_INTERVAL_MINUTES * 20;
         let narrative_boundary = ENCOUNTER_ROLL_INTERVAL_MINUTES * 3;
-        assert_eq!(next_combat_roll_after_reached_boundary(narrative_boundary), 4);
+        assert_eq!(
+            next_combat_roll_after_reached_boundary(narrative_boundary),
+            4
+        );
         assert_ne!(
             next_combat_roll_after_reached_boundary(narrative_boundary),
             next_combat_roll_after_reached_boundary(requested_end),
