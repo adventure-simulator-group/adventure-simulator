@@ -134,6 +134,21 @@ while the materially richest theft lowers Honesty without publicly exemplifying
 it. The encounter is travel-only, goal-neutral, entirely mortal, and requires
 no runtime catalog special case.
 
+`ferryman_disputed_tribute_v1` places a mortal ferryman beside a swollen river,
+a split oar, and a toll board cut over older marks. The party may pay the
+claimed twelve-groschen fare, barter four equally valued travel rations, row
+under the ferryman's direction, expose the lawful four-groschen tally, organize
+stranded travelers while the ferryman supplies the craft and materials, or win
+his trust and steal the entrusted till; the rough upper ford remains a costly
+way to ignore the encounter. Every active route earns the same grounded
+observation: the deep current confines mail-burdened riders to shallow gravel,
+which can inform later physical preparation without weakening any opponent.
+Honest routes express Prudence, Courtesy, Courage, or Justice, while the
+materially richest theft lowers Honesty without publicly exemplifying it. The
+opening discloses the dangerous crossing and disputed fare, but withholds that
+deeper tactical conclusion. The encounter is travel-only, goal-neutral,
+entirely mortal, and uses no runtime catalog special case.
+
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,
