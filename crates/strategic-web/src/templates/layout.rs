@@ -199,7 +199,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
                     script src="/static/dialogue-client.js?v=contextual-social-topics-1-errantry-retry-1" defer {}
                     script src="/static/physical-evidence.js?v=deterministic-inspection-1" defer {}
-                    script src="/static/developer-quest-editor.js?v=puzzle-kinds-1" defer {}
+                    script src="/static/developer-quest-editor.js?v=road-encounter-demo-1" defer {}
                     script src="/static/chat-resize.js?v=counterparty-portraits-1" defer {}
                     script src="/static/local-chat.js?v=local-chat-location-authority-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-4" defer {}
@@ -1106,7 +1106,19 @@ mod tests {
         assert!(markup.contains("aria-pressed=\"false\""));
         assert!(markup.contains("data-developer-outbreak-demo data-developer-only"));
         assert!(markup.contains("data-developer-autopsy-demo data-developer-only"));
-        assert_eq!(markup.matches("data-developer-puzzle-demo").count(), 3);
+        assert_eq!(markup.matches("data-developer-puzzle-demo").count(), 5);
+        for puzzle_kind in [
+            "ordered-sigils",
+            "truthful-witnesses",
+            "rune-transformation",
+            "logic-grid",
+            "resource-allocation",
+        ] {
+            assert!(
+                markup.contains(&format!("data-puzzle-kind=\"{puzzle_kind}\"")),
+                "developer header omits the {puzzle_kind} puzzle demo"
+            );
+        }
         let layout_css = include_str!("../../static/css/layout.css");
         assert!(
             layout_css.contains(

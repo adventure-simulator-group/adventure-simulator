@@ -13,6 +13,8 @@ pub enum NarrativeEncounterOrigin {
     ChanceRest,
 
     Errantry,
+
+    DeveloperDemo,
 }
 
 impl __sdk::InModule for NarrativeEncounterOrigin {

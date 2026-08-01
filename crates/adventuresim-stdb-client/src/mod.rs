@@ -478,6 +478,7 @@ pub mod liquidate_party_inventory_reducer;
 pub mod load_autopsy_demo_reducer;
 pub mod load_outbreak_demo_reducer;
 pub mod load_puzzle_demo_reducer;
+pub mod load_road_encounter_demo_reducer;
 pub mod local_chat_message_type;
 pub mod local_problem_authority_type;
 pub mod local_problem_generation_explanation_type;
@@ -511,6 +512,8 @@ pub mod modeled_tree_species_type;
 pub mod morale_band_type;
 pub mod morale_event_table;
 pub mod morale_event_type;
+pub mod narrative_combat_followup_authority_type;
+pub mod narrative_combat_followup_receipt_type;
 pub mod narrative_encounter_information_type;
 pub mod narrative_encounter_origin_type;
 pub mod narrative_encounter_private_authority_type;
@@ -782,6 +785,7 @@ pub mod store_battle_loot_reducer;
 pub mod strahler_order_type;
 pub mod strategic_corpse_type;
 pub mod strategic_encounter_loss_type;
+pub mod strategic_encounter_resolution_receipt_type;
 pub mod strategic_encounter_table;
 pub mod strategic_encounter_type;
 pub mod strategic_gateway_authority_table;
@@ -1317,6 +1321,7 @@ pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
 pub use load_autopsy_demo_reducer::load_autopsy_demo;
 pub use load_outbreak_demo_reducer::load_outbreak_demo;
 pub use load_puzzle_demo_reducer::load_puzzle_demo;
+pub use load_road_encounter_demo_reducer::load_road_encounter_demo;
 pub use local_chat_message_type::LocalChatMessage;
 pub use local_problem_authority_type::LocalProblemAuthority;
 pub use local_problem_generation_explanation_type::LocalProblemGenerationExplanation;
@@ -1350,6 +1355,8 @@ pub use modeled_tree_species_type::ModeledTreeSpecies;
 pub use morale_band_type::MoraleBand;
 pub use morale_event_table::*;
 pub use morale_event_type::MoraleEvent;
+pub use narrative_combat_followup_authority_type::NarrativeCombatFollowupAuthority;
+pub use narrative_combat_followup_receipt_type::NarrativeCombatFollowupReceipt;
 pub use narrative_encounter_information_type::NarrativeEncounterInformation;
 pub use narrative_encounter_origin_type::NarrativeEncounterOrigin;
 pub use narrative_encounter_private_authority_type::NarrativeEncounterPrivateAuthority;
@@ -1621,6 +1628,7 @@ pub use store_battle_loot_reducer::store_battle_loot;
 pub use strahler_order_type::StrahlerOrder;
 pub use strategic_corpse_type::StrategicCorpse;
 pub use strategic_encounter_loss_type::StrategicEncounterLoss;
+pub use strategic_encounter_resolution_receipt_type::StrategicEncounterResolutionReceipt;
 pub use strategic_encounter_table::*;
 pub use strategic_encounter_type::StrategicEncounter;
 pub use strategic_gateway_authority_table::*;
@@ -2080,6 +2088,10 @@ pub enum Reducer {
         character_id: u64,
         puzzle_kind: ErrantryPuzzleKind,
     },
+    LoadRoadEncounterDemo {
+        character_id: u64,
+        catalog_id: String,
+    },
     OpenCorpse {
         actor_id: u64,
         corpse_id: String,
@@ -2240,7 +2252,10 @@ pub enum Reducer {
     },
     ResolveStrategicEncounter {
         character_id: u64,
+        encounter_id: String,
         choice: String,
+        expected_revision: u32,
+        action_id: String,
     },
     RestAtCamp {
         character_id: u64,
@@ -2616,6 +2631,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::LoadAutopsyDemo { .. } => "load_autopsy_demo",
             Reducer::LoadOutbreakDemo { .. } => "load_outbreak_demo",
             Reducer::LoadPuzzleDemo { .. } => "load_puzzle_demo",
+            Reducer::LoadRoadEncounterDemo { .. } => "load_road_encounter_demo",
             Reducer::OpenCorpse { .. } => "open_corpse",
             Reducer::PayOrganizationDues { .. } => "pay_organization_dues",
             Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
@@ -3414,6 +3430,13 @@ Reducer::BeginFormalCourtship{
                 character_id: character_id.clone(),
                 puzzle_kind: puzzle_kind.clone(),
 }),
+            Reducer::LoadRoadEncounterDemo{
+                character_id,
+                catalog_id,
+}             => __sats::bsatn::to_vec(&load_road_encounter_demo_reducer::LoadRoadEncounterDemoArgs {
+                character_id: character_id.clone(),
+                catalog_id: catalog_id.clone(),
+}),
             Reducer::OpenCorpse{
                 actor_id,
                 corpse_id,
@@ -3700,10 +3723,16 @@ Reducer::BeginFormalCourtship{
 }),
             Reducer::ResolveStrategicEncounter{
                 character_id,
+                encounter_id,
                 choice,
+                expected_revision,
+                action_id,
 }             => __sats::bsatn::to_vec(&resolve_strategic_encounter_reducer::ResolveStrategicEncounterArgs {
                 character_id: character_id.clone(),
+                encounter_id: encounter_id.clone(),
                 choice: choice.clone(),
+                expected_revision: expected_revision.clone(),
+                action_id: action_id.clone(),
 }),
             Reducer::RestAtCamp{
                 character_id,

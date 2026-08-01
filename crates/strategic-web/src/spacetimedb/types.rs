@@ -1075,6 +1075,7 @@ pub struct StrategicEncounter {
     pub enemy_aware: bool,
     pub available_choices: Vec<String>,
     pub status: String,
+    pub revision: u32,
     pub selected_choice: Option<String>,
     pub selection_explanation: String,
     pub party_speed_m_per_minute: u32,
@@ -2509,6 +2510,7 @@ mod tests {
             "enemy_aware": true,
             "available_choices": ["attack", "surrender"],
             "status": "awaiting_choice",
+            "revision": 2,
             "selected_choice": null,
             "selection_explanation": "The enemy surprised the party.",
             "party_speed_m_per_minute": 60,
@@ -2523,6 +2525,7 @@ mod tests {
         assert_eq!(decoded.longitude_e7, 134_567_890);
         assert_eq!(decoded.latitude_e7, 521_234_567);
         assert_eq!(decoded.status, "awaiting_choice");
+        assert_eq!(decoded.revision, 2);
         assert_eq!(
             decoded.available_choices,
             vec!["attack".to_string(), "surrender".to_string()]

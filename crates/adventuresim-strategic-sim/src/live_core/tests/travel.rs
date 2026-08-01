@@ -114,6 +114,8 @@ fn all_nonterminal_encounters_follow_authoritative_public_post_state() {
         1
     );
     assert_eq!(encounter.matches(".continue_camp_travel_then(").count(), 1);
+    assert!(encounter.contains("let encounter_revision = encounter.revision"));
+    assert!(encounter.contains("strategic-sim:{encounter_id}:{encounter_revision}:{choice}"));
     assert!(!encounter.contains("self.metrics.camp_stops"));
     assert!(!encounter.contains("purchase_journey_provisions"));
     for observation in [

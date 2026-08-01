@@ -402,6 +402,50 @@ fn encounter_resolution_requires_character_authority_and_uses_private_entropy() 
 }
 
 #[test]
+fn surrender_preview_refresh_is_revisioned_receipted_and_retry_safe() {
+    let source = STRATEGIC_SOURCE;
+    let reducer = source
+        .split("pub fn resolve_strategic_encounter")
+        .nth(1)
+        .and_then(|tail| tail.split("pub fn complete_quest").next())
+        .expect("encounter resolution reducer");
+    let receipt_replay = reducer
+        .find("strategic_encounter_retry_matches")
+        .expect("receipt replay gate");
+    let unresolved = reducer
+        .find("unresolved_encounter")
+        .expect("unresolved encounter read");
+    assert!(receipt_replay < unresolved);
+    let refresh = reducer
+        .split("if current != encounter.loss_preview")
+        .nth(1)
+        .and_then(|tail| tail.split("commit_encounter_surrender").next())
+        .expect("surrender preview refresh branch");
+    assert!(refresh.contains("encounter.revision.saturating_add(1)"));
+    assert!(refresh.contains("StrategicEncounterResolutionReceipt"));
+    assert!(refresh.contains("preview_refreshed"));
+    assert!(refresh.contains("return Ok(())"));
+    assert!(reducer.contains("encounter.revision != expected_revision"));
+}
+
+#[test]
+fn random_and_authored_encounters_share_the_only_constructor_literal() {
+    let encounters = include_str!("../encounters.rs");
+    assert_eq!(encounters.matches("StrategicEncounter {").count(), 1);
+    let random = encounters
+        .split("fn maybe_interrupt_travel")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("fn advance_party_movement_until_encounter")
+                .next()
+        })
+        .expect("random encounter materialization");
+    assert!(random.contains("build_strategic_encounter("));
+    let authored = include_str!("../challenges.rs");
+    assert!(authored.contains("build_strategic_encounter("));
+}
+
+#[test]
 fn recovery_direction_is_delegated_only_to_a_ready_member_for_an_unready_leader() {
     let source = STRATEGIC_SOURCE;
     let direction = source
