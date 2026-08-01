@@ -355,6 +355,8 @@ pub fn process_rest_evenings(
 ) -> Result<(), String> {
     use crate::personality::Temperance;
     let temperament = crate::personality::personality_or_neutral(ctx, character_id).temperance;
+    let temperance_score =
+        crate::personality::personality_scores_or_neutral(ctx, character_id).temperance;
     if temperament == Temperance::Temperate {
         return Ok(());
     }
@@ -434,11 +436,23 @@ pub fn process_rest_evenings(
         let effect =
             nightly_morale_effect(evening, preference, had_recent_heavy, consumed >= target)
                 .ok_or("Alcohol morale effect unexpectedly absent")?;
+        let neutral_effect = nightly_morale_effect(
+            evening,
+            TemperancePreference::Neutral,
+            had_recent_heavy,
+            consumed >= target,
+        )
+        .ok_or("Neutral alcohol morale effect unexpectedly absent")?;
+        let magnitude = crate::personality::temperance_morale_magnitude(
+            temperance_score,
+            f32::from(neutral_effect.magnitude),
+            consumed >= target,
+        );
         crate::condition::upsert_refreshable_morale_event_at_without_refresh(
             ctx,
             character_id,
             effect.kind,
-            f32::from(effect.magnitude),
+            magnitude,
             effect.occurred_at_minute,
             NIGHTLY_MORALE_SOURCE_ID,
         )?;

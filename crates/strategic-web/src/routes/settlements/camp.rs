@@ -55,7 +55,7 @@ pub(super) struct CampQuery {
     forage: Option<bool>,
     forage_receipt: Option<String>,
     forage_error: Option<String>,
-    road_result: Option<String>,
+    road_occurrence: Option<String>,
 }
 
 pub(super) async fn camp(
@@ -155,8 +155,6 @@ pub(super) async fn camp(
         .active_contract_id
         .as_deref()
         .is_some_and(|id| id.starts_with(&direct_demo_contract_prefix));
-    let direct_demo_challenge_prefix =
-        format!("challenge:ordered-sigils:demo:{}:", character.id);
     let mut challenges = Vec::new();
     for attempt in 0..4 {
         match state
@@ -177,7 +175,7 @@ pub(super) async fn camp(
         if !expects_direct_demo
             || challenges
                 .iter()
-                .any(|challenge| challenge.id.starts_with(&direct_demo_challenge_prefix))
+                .any(|challenge| is_direct_demo_challenge_id(&challenge.id, character.id))
             || attempt == 3
         {
             break;
@@ -304,6 +302,16 @@ pub(super) async fn camp(
     let trial = challenges
         .iter()
         .find(|challenge| challenge.active && challenge.open && !challenge.solved);
+    let tactical_insight = challenges.iter().find_map(|challenge| {
+        (challenge.active && challenge.solved)
+            .then(|| {
+                Some((
+                    challenge.tactical_insight_text.as_deref()?,
+                    challenge.tactical_preparation_text.as_deref()?,
+                ))
+            })
+            .flatten()
+    });
     let road_challenges = match state
         .db
         .query::<BackendRoadChallenge>(&format!(
@@ -322,14 +330,15 @@ pub(super) async fn camp(
             Vec::new()
         }
     };
-    let road_trial = road_challenges
+    let active_road_trial = road_challenges
         .iter()
         .find(|challenge| challenge.active && challenge.open);
-    let road_result = query.road_result.as_deref().filter(|result| {
-        road_challenges.iter().any(|challenge| {
-            !challenge.open && challenge.resolved_choice.as_deref() == Some(*result)
-        })
-    });
+    let mut road_history = road_challenges.iter().filter(|challenge| !challenge.open).collect::<Vec<_>>();
+    road_history.sort_by(|left, right| right.absolute_minute.cmp(&left.absolute_minute).then_with(|| right.id.cmp(&left.id)));
+    if let Some(requested) = query.road_occurrence.as_deref()
+        && let Some(index) = road_history.iter().position(|challenge| challenge.id == requested)
+    { road_history.swap(0, index); }
+    road_history.truncate(10);
     let foraging_dialog = if query.forage.unwrap_or(false) {
         Some(
             crate::routes::foraging::activity_dialog(
@@ -367,8 +376,9 @@ pub(super) async fn camp(
                     trial.presenter_catalog_id,
                 )
             }),
-            road_trial,
-            road_result,
+            tactical_insight,
+            active_road_trial,
+            &road_history,
             foraging_dialog,
             Some(&character.name),
         )
@@ -399,7 +409,7 @@ pub(super) async fn resolve_errantry_road_challenge(
             "resolve_errantry_road_challenge",
             &[
                 json!(character_id),
-                json!(form.challenge_id),
+                json!(&form.challenge_id),
                 json!(form.expected_revision),
                 json!(form.choice),
                 json!(form.action_id),
@@ -407,12 +417,7 @@ pub(super) async fn resolve_errantry_road_challenge(
         )
         .await
     {
-        Ok(()) => Redirect::to(match form.choice.as_str() {
-            "aid" => "/camp?road_result=aid",
-            "leave" => "/camp?road_result=leave",
-            _ => "/camp",
-        })
-        .into_response(),
+        Ok(()) => Redirect::to(&format!("/camp?road_occurrence={}", form.challenge_id)).into_response(),
         Err(error) if error.to_string().contains("stale") => {
             StatusCode::CONFLICT.into_response()
         }
@@ -424,13 +429,12 @@ fn direct_demo_challenge_redirect(
     challenges: &[BackendChallenge],
     character_id: u64,
 ) -> Option<String> {
-    let expected_prefix = format!("challenge:ordered-sigils:demo:{character_id}:");
     let mut playable = challenges.iter().filter(|challenge| {
         challenge.owner_character_id == character_id
             && challenge.active
             && challenge.open
             && !challenge.solved
-            && challenge.id.starts_with(&expected_prefix)
+            && is_direct_demo_challenge_id(&challenge.id, character_id)
     });
     let challenge = playable.next()?;
     playable.next().is_none().then(|| {
@@ -439,6 +443,11 @@ fn direct_demo_challenge_redirect(
             challenge.case_id, challenge.id
         )
     })
+}
+
+fn is_direct_demo_challenge_id(challenge_id: &str, character_id: u64) -> bool {
+    challenge_id.starts_with("challenge:")
+        && challenge_id.contains(&format!(":demo:{character_id}:"))
 }
 
 pub(super) fn camp_continue_block_reason(
@@ -473,8 +482,9 @@ mod direct_demo_redirect_tests {
             solved,
             active,
             last_attempt_correct: None,
-            boon_item_id: None,
-            boon_combat_scale_reduction_bps: None,
+            last_submission_json: None,
+            tactical_insight_text: None,
+            tactical_preparation_text: None,
         }
     }
 
@@ -496,27 +506,36 @@ mod direct_demo_redirect_tests {
 
         let another = challenge("challenge:ordered-sigils:demo:7:1", true, true, false);
         assert_eq!(direct_demo_challenge_redirect(&[demo, another], 7), None);
+
+        let witnesses = challenge("challenge:truthful-witnesses:demo:7:2", true, true, false);
+        assert_eq!(
+            direct_demo_challenge_redirect(&[witnesses], 7).as_deref(),
+            Some(
+                "/quests/case:errantry-puzzle:demo:7:0/challenges/challenge:truthful-witnesses:demo:7:2"
+            )
+        );
     }
 }
 
 #[cfg(test)]
 mod road_challenge_route_tests {
     #[test]
-    fn courier_is_chat_native_optional_and_server_authoritative() {
+    fn narrative_encounters_are_generic_chat_native_and_server_authoritative() {
         let route = include_str!("camp.rs");
         let router = include_str!("router.rs");
         let template = include_str!("../../templates/settlement/travel.rs");
         assert!(route.contains("SELECT * FROM backend_road_challenges"));
         assert!(route.contains("challenge.active && challenge.open"));
-        assert!(route.contains(
-            "!challenge.open && challenge.resolved_choice.as_deref() == Some(*result)"
-        ));
+        assert!(route.contains("challenge.id == requested"));
         assert!(route.contains("\"resolve_errantry_road_challenge\""));
         assert!(router.contains("/camp/errantry-road-challenge"));
         assert!(template.contains("aria-label=\"Roadside conversation\""));
-        assert!(template.contains("Give aid and take the dispatch"));
-        assert!(template.contains("Leave him by the road"));
-        assert!(!template.contains("supernatural-spoken-line\" {\n                                    strong { \"Wounded Order courier"));
+        assert!(template.contains("generic_road_encounter(road_trial)"));
+        assert!(template.contains("presentation.choices"));
+        assert!(template.contains("presentation.opening"));
+        assert!(!template.contains("EncounterDefinition"));
+        assert!(!template.contains("WoundedOrderCourierV1"));
+        assert!(!template.contains("Black Knight's men"));
     }
 }
 

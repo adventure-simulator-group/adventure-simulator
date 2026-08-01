@@ -252,7 +252,7 @@ fn travel_to_case_site_impl(
         .ok_or("Party changed while its waterskins were filled")?;
     let proposed_leg_minutes =
         travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
-    let (leg_minutes, encounter, next_roll) = advance_party_movement_until_encounter(
+    let (leg_minutes, encounter, narrative, next_roll) = advance_party_movement_until_encounter(
         ctx,
         &party_id,
         &traveler_ids,
@@ -264,7 +264,7 @@ fn travel_to_case_site_impl(
         .id()
         .find(&party_id)
         .ok_or("Party changed during travel")?;
-    let interrupted = encounter.is_some();
+    let interrupted = encounter.is_some() || narrative.is_some();
     if interrupted || leg_minutes < travel_minutes {
         for member_id in living_party_member_ids(ctx, &party_id) {
             let mut member = ctx
@@ -290,12 +290,12 @@ fn travel_to_case_site_impl(
         ctx.db.party_authority().id().update(party);
         if interrupted {
             record_party_journey_interruption(ctx, &party_id, leg_minutes);
-            commit_encounter_scan(ctx, &party_id, next_roll, encounter)?;
+            commit_encounter_scan(ctx, &party_id, next_roll, encounter, narrative)?;
         } else {
             if leg_minutes > 0 {
                 record_party_journey_camp(ctx, &party_id, leg_minutes)?;
             }
-            commit_encounter_scan(ctx, &party_id, next_roll, None)?;
+            commit_encounter_scan(ctx, &party_id, next_roll, None, None)?;
         }
         return Ok(());
     }
@@ -549,7 +549,7 @@ fn travel_to_settlement_impl(
         let party_id = current_party.id.clone();
         let proposed_leg_minutes =
             travel_minutes.min(party_next_walking_minutes(ctx, &party_id, travel_minutes)?);
-        let (leg_minutes, encounter, next_roll) = advance_party_movement_until_encounter(
+        let (leg_minutes, encounter, narrative, next_roll) = advance_party_movement_until_encounter(
             ctx,
             &party_id,
             &traveler_ids,
@@ -563,7 +563,7 @@ fn travel_to_settlement_impl(
                 .ok_or("Party changed during travel")?,
         );
         party_movement_committed = true;
-        let interrupted = encounter.is_some();
+        let interrupted = encounter.is_some() || narrative.is_some();
         if interrupted || leg_minutes < travel_minutes {
             for traveler_id in living_party_member_ids(ctx, &party_id) {
                 let mut traveler = ctx
@@ -590,12 +590,12 @@ fn travel_to_settlement_impl(
             ctx.db.party_authority().id().update(party.clone());
             if interrupted {
                 record_party_journey_interruption(ctx, &party.id, leg_minutes);
-                commit_encounter_scan(ctx, &party.id, next_roll, encounter)?;
+                commit_encounter_scan(ctx, &party.id, next_roll, encounter, narrative)?;
             } else {
                 if leg_minutes > 0 {
                     record_party_journey_camp(ctx, &party.id, leg_minutes)?;
                 }
-                commit_encounter_scan(ctx, &party.id, next_roll, None)?;
+                commit_encounter_scan(ctx, &party.id, next_roll, None, None)?;
             }
             return Ok(());
         }
@@ -796,7 +796,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         return Err("Rest until the party reaches its next daylight walking window".into());
     }
     let traveler_ids = living_party_member_ids(ctx, &party_id);
-    let (leg_minutes, encounter, next_roll) = advance_party_movement_until_encounter(
+    let (leg_minutes, encounter, narrative, next_roll) = advance_party_movement_until_encounter(
         ctx,
         &party_id,
         &traveler_ids,
@@ -808,18 +808,18 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         .id()
         .find(&party_id)
         .ok_or("Party changed during travel")?;
-    let interrupted = encounter.is_some();
+    let interrupted = encounter.is_some() || narrative.is_some();
     party.camp_remaining_minutes = party.camp_remaining_minutes.saturating_sub(leg_minutes);
     if interrupted || party.camp_remaining_minutes > 0 {
         ctx.db.party_authority().id().update(party);
         if interrupted {
             record_party_journey_interruption(ctx, &party_id, leg_minutes);
-            commit_encounter_scan(ctx, &party_id, next_roll, encounter)?;
+            commit_encounter_scan(ctx, &party_id, next_roll, encounter, narrative)?;
         } else {
             if leg_minutes > 0 {
                 record_party_journey_camp(ctx, &party_id, leg_minutes)?;
             }
-            commit_encounter_scan(ctx, &party_id, next_roll, None)?;
+            commit_encounter_scan(ctx, &party_id, next_roll, None, None)?;
         }
         return Ok(());
     }

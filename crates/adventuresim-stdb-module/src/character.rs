@@ -24,7 +24,9 @@ use crate::{
     enter_mission, inventory_item,
     item::item,
     organization::{organization_membership, organization_presentation},
-    personality::character_personality,
+    personality::{
+        character_personality, character_personality_scores, personality_development_event,
+    },
     relationship::{child_identity_reservation, npc_policy},
     repair::{item_condition, repair_order},
     strategic::{
@@ -1158,6 +1160,25 @@ fn delete_character_data(
         .character_personality()
         .character_id()
         .delete(character.id);
+    ctx.db
+        .character_personality_scores()
+        .character_id()
+        .delete(character.id);
+    // Development is character-owned audit history in this pre-launch model;
+    // canonical deletion removes it so a reused development source cannot
+    // point at a character that no longer exists.
+    for event in ctx
+        .db
+        .personality_development_event()
+        .character_id()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db
+            .personality_development_event()
+            .source_id()
+            .delete(&event.source_id);
+    }
     if ctx
         .db
         .npc_policy()
@@ -2376,7 +2397,9 @@ pub(crate) fn insert_character_with_origin(
             StartingInclination::Women => crate::personality::Inclination::Women,
             StartingInclination::Neither => crate::personality::Inclination::Neither,
         };
-        ctx.db.character_personality().insert(personality);
+        // Starting-character preview traits become score endpoints; the
+        // gateway row is only their derived visible projection.
+        crate::personality::initialize_personality_from_visible(ctx, personality);
     } else {
         if npc {
             crate::personality::initialize_npc_personality(ctx, id, options.stable_seed);

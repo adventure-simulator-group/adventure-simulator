@@ -15,13 +15,19 @@ mod item_references;
 mod organization_catalog_validation;
 #[path = "src/quest_catalog_validation.rs"]
 mod quest_catalog_validation;
+#[allow(unexpected_cfgs, dead_code, unused_imports)]
+#[path = "src/road_encounter_catalog.rs"]
+mod road_encounter_catalog;
 #[path = "src/threat_escalation_limits.rs"]
 mod threat_escalation_limits;
 
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(runtime_catalog)");
+    println!("cargo:rustc-cfg=runtime_catalog");
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("../..");
     compile_organizations(&root);
     compile_items(&root);
+    compile_road_encounters(&root);
     let content = root.join("content/quests");
     println!("cargo:rerun-if-changed={}", content.display());
     let mut files: Vec<_> = fs::read_dir(&content)
@@ -74,6 +80,89 @@ fn main() {
              pub const QUEST_DIALOGUE_VARIANT_SOURCE_MAP_JSON: &str = {sources:?};\n\
              pub const QUEST_CATALOG_DIGEST: &str = {digest:?};\n",
             sources = serde_json::to_string(&dialogue_variant_sources).unwrap(),
+        ),
+    )
+    .unwrap();
+}
+
+fn compile_road_encounters(root: &Path) {
+    let content = root.join("content/encounters");
+    println!("cargo:rerun-if-changed={}", content.display());
+    let mut files: Vec<_> = fs::read_dir(&content)
+        .expect("content/encounters must exist")
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "yaml")
+        })
+        .collect();
+    files.sort();
+    let mut definitions = Vec::new();
+    let mut sources = Vec::new();
+    let mut digest = Sha256::new();
+    for file in files {
+        let relative = file
+            .strip_prefix(root)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        let text = fs::read_to_string(&file).unwrap();
+        digest.update(relative.as_bytes());
+        digest.update([0]);
+        digest.update(text.as_bytes());
+        let document: road_encounter_catalog::CatalogDocument =
+            serde_json::from_str(&text).unwrap_or_else(|error| panic!("{relative}: {error}"));
+        for definition in document.encounters {
+            let encoded_id = serde_json::to_string(&definition.id).unwrap();
+            let offset = text
+                .find(&encoded_id)
+                .unwrap_or_else(|| panic!("{relative}: cannot locate encounter ID"));
+            sources.push(road_encounter_catalog::EncounterSource {
+                id: definition.id.clone(),
+                file: relative.clone(),
+                line: (text[..offset].bytes().filter(|byte| *byte == b'\n').count() + 1) as u32,
+            });
+            definitions.push(definition);
+        }
+    }
+    assert!(
+        !definitions.is_empty(),
+        "content/encounters contains no encounters"
+    );
+    road_encounter_catalog::validate_definitions(&definitions)
+        .unwrap_or_else(|error| panic!("road encounter catalog: {error}"));
+    let item_content = root.join("content/items");
+    let mut item_ids = std::collections::BTreeSet::new();
+    for file in fs::read_dir(item_content)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "yaml")
+        })
+    {
+        let value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(file).unwrap()).unwrap();
+        if let Some(items) = value.get("items").and_then(serde_json::Value::as_array) {
+            item_ids.extend(
+                items
+                    .iter()
+                    .filter_map(|item| item.get("id").and_then(serde_json::Value::as_str))
+                    .map(str::to_owned),
+            );
+        }
+    }
+    road_encounter_catalog::validate_item_references(&definitions, |id| item_ids.contains(id))
+        .unwrap_or_else(|error| panic!("road encounter catalog: {error}"));
+    let json = serde_json::to_string(&definitions).unwrap();
+    let sources = serde_json::to_string(&sources).unwrap();
+    let digest = format!("{:x}", digest.finalize());
+    fs::write(
+        Path::new(&env::var("OUT_DIR").unwrap()).join("road_encounter_catalog.rs"),
+        format!(
+            "pub const ROAD_ENCOUNTER_CATALOG_JSON: &str = {json:?};\n\
+             pub const ROAD_ENCOUNTER_SOURCE_MAP_JSON: &str = {sources:?};\n\
+             pub const ROAD_ENCOUNTER_CATALOG_DIGEST: &str = {digest:?};\n"
         ),
     )
     .unwrap();

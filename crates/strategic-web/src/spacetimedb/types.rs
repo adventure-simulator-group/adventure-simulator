@@ -14,8 +14,9 @@ pub struct BackendChallenge {
     pub solved: bool,
     pub active: bool,
     pub last_attempt_correct: Option<bool>,
-    pub boon_item_id: Option<String>,
-    pub boon_combat_scale_reduction_bps: Option<u32>,
+    pub last_submission_json: Option<String>,
+    pub tactical_insight_text: Option<String>,
+    pub tactical_preparation_text: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -26,30 +27,14 @@ pub enum ChallengePresenterCatalogId {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BackendRoadChallenge {
     pub id: String,
-    pub case_id: String,
     pub owner_character_id: u64,
-    pub catalog_id: RoadChallengeCatalogId,
+    pub absolute_minute: u64,
+    pub presentation_json: String,
     pub revision: u32,
     pub open: bool,
     pub active: bool,
-    pub resolved_choice: Option<String>,
-    pub boon_item_id: Option<String>,
-    pub counters_defense: Option<ErrantryFinaleDefenseKind>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-pub enum RoadChallengeCatalogId {
-    WoundedOrderCourierV1,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-pub enum ErrantryFinaleDefenseKind {
-    UnnaturalProwess,
-    Reinforcements,
-    PoisonedArms,
-    ConcealedTrap,
-    Glamour,
-    SupernaturalArmor,
+    pub result_transcript: Option<String>,
+    pub quest_reward_addendum: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

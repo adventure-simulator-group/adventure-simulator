@@ -196,6 +196,7 @@ pub mod character_limbs_type;
 pub mod character_morale_source_type;
 pub mod character_needs_type;
 pub mod character_organization_role_type;
+pub mod character_personality_scores_type;
 pub mod character_personality_type;
 pub mod character_settlement_reputation_table;
 pub mod character_settlement_reputation_type;
@@ -212,6 +213,7 @@ pub mod child_activity_focus_type;
 pub mod child_development_type;
 pub mod child_identity_reservation_type;
 pub mod child_stage_type;
+pub mod chivalric_virtue_type;
 pub mod choose_dialogue_topic_reducer;
 pub mod claim_simulation_run_reducer;
 pub mod clear_browser_character_selection_reducer;
@@ -325,9 +327,7 @@ pub mod equipment_occupancy_type;
 pub mod equipment_parent_requirement_type;
 pub mod equipment_placement_type;
 pub mod errantry_authority_type;
-pub mod errantry_countermeasure_kind_type;
-pub mod errantry_countermeasure_type;
-pub mod errantry_finale_defense_kind_type;
+pub mod errantry_puzzle_kind_type;
 pub mod estate_disposition_status_type;
 pub mod estate_disposition_type;
 pub mod estate_heir_kind_type;
@@ -511,6 +511,10 @@ pub mod modeled_tree_species_type;
 pub mod morale_band_type;
 pub mod morale_event_table;
 pub mod morale_event_type;
+pub mod narrative_encounter_information_type;
+pub mod narrative_encounter_origin_type;
+pub mod narrative_encounter_private_authority_type;
+pub mod narrative_encounter_trigger_type;
 pub mod native_range_evidence_type;
 pub mod nerve_type;
 pub mod npc_adventuring_party_authority_type;
@@ -576,6 +580,8 @@ pub mod peat_cutting_industry_type;
 pub mod perform_immediate_activity_reducer;
 pub mod perform_investigation_action_reducer;
 pub mod perform_social_action_reducer;
+pub mod personality_axis_type;
+pub mod personality_development_event_type;
 pub mod physical_evidence_inspection_action_receipt_type;
 pub mod physical_evidence_inspection_attempt_type;
 pub mod physiology_administration_type;
@@ -661,7 +667,6 @@ pub mod river_access_type;
 pub mod river_and_canal_access_type;
 pub mod river_watercourse_type;
 pub mod road_challenge_authority_type;
-pub mod road_challenge_catalog_id_type;
 pub mod road_challenge_resolution_receipt_type;
 pub mod rock_outcrop_soil_type;
 pub mod route_elevation_profile_type;
@@ -784,7 +789,7 @@ pub mod strategic_gateway_authority_type;
 pub mod strategic_incident_type;
 pub mod submit_all_repairable_items_reducer;
 pub mod submit_item_for_repair_reducer;
-pub mod submit_ordered_sigil_challenge_reducer;
+pub mod submit_puzzle_challenge_reducer;
 pub mod suitability_basis_points_type;
 pub mod surface_geology_type;
 pub mod surface_lithology_type;
@@ -1030,6 +1035,7 @@ pub use character_limbs_type::CharacterLimbs;
 pub use character_morale_source_type::CharacterMoraleSource;
 pub use character_needs_type::CharacterNeeds;
 pub use character_organization_role_type::CharacterOrganizationRole;
+pub use character_personality_scores_type::CharacterPersonalityScores;
 pub use character_personality_type::CharacterPersonality;
 pub use character_settlement_reputation_table::*;
 pub use character_settlement_reputation_type::CharacterSettlementReputation;
@@ -1046,6 +1052,7 @@ pub use child_activity_focus_type::ChildActivityFocus;
 pub use child_development_type::ChildDevelopment;
 pub use child_identity_reservation_type::ChildIdentityReservation;
 pub use child_stage_type::ChildStage;
+pub use chivalric_virtue_type::ChivalricVirtue;
 pub use choose_dialogue_topic_reducer::choose_dialogue_topic;
 pub use claim_simulation_run_reducer::claim_simulation_run;
 pub use clear_browser_character_selection_reducer::clear_browser_character_selection;
@@ -1159,9 +1166,7 @@ pub use equipment_occupancy_type::EquipmentOccupancy;
 pub use equipment_parent_requirement_type::EquipmentParentRequirement;
 pub use equipment_placement_type::EquipmentPlacement;
 pub use errantry_authority_type::ErrantryAuthority;
-pub use errantry_countermeasure_kind_type::ErrantryCountermeasureKind;
-pub use errantry_countermeasure_type::ErrantryCountermeasure;
-pub use errantry_finale_defense_kind_type::ErrantryFinaleDefenseKind;
+pub use errantry_puzzle_kind_type::ErrantryPuzzleKind;
 pub use estate_disposition_status_type::EstateDispositionStatus;
 pub use estate_disposition_type::EstateDisposition;
 pub use estate_heir_kind_type::EstateHeirKind;
@@ -1345,6 +1350,10 @@ pub use modeled_tree_species_type::ModeledTreeSpecies;
 pub use morale_band_type::MoraleBand;
 pub use morale_event_table::*;
 pub use morale_event_type::MoraleEvent;
+pub use narrative_encounter_information_type::NarrativeEncounterInformation;
+pub use narrative_encounter_origin_type::NarrativeEncounterOrigin;
+pub use narrative_encounter_private_authority_type::NarrativeEncounterPrivateAuthority;
+pub use narrative_encounter_trigger_type::NarrativeEncounterTrigger;
 pub use native_range_evidence_type::NativeRangeEvidence;
 pub use nerve_type::Nerve;
 pub use npc_adventuring_party_authority_type::NpcAdventuringPartyAuthority;
@@ -1410,6 +1419,8 @@ pub use peat_cutting_industry_type::PeatCuttingIndustry;
 pub use perform_immediate_activity_reducer::perform_immediate_activity;
 pub use perform_investigation_action_reducer::perform_investigation_action;
 pub use perform_social_action_reducer::perform_social_action;
+pub use personality_axis_type::PersonalityAxis;
+pub use personality_development_event_type::PersonalityDevelopmentEvent;
 pub use physical_evidence_inspection_action_receipt_type::PhysicalEvidenceInspectionActionReceipt;
 pub use physical_evidence_inspection_attempt_type::PhysicalEvidenceInspectionAttempt;
 pub use physiology_administration_type::PhysiologyAdministration;
@@ -1495,7 +1506,6 @@ pub use river_access_type::RiverAccess;
 pub use river_and_canal_access_type::RiverAndCanalAccess;
 pub use river_watercourse_type::RiverWatercourse;
 pub use road_challenge_authority_type::RoadChallengeAuthority;
-pub use road_challenge_catalog_id_type::RoadChallengeCatalogId;
 pub use road_challenge_resolution_receipt_type::RoadChallengeResolutionReceipt;
 pub use rock_outcrop_soil_type::RockOutcropSoil;
 pub use route_elevation_profile_type::RouteElevationProfile;
@@ -1618,7 +1628,7 @@ pub use strategic_gateway_authority_type::StrategicGatewayAuthority;
 pub use strategic_incident_type::StrategicIncident;
 pub use submit_all_repairable_items_reducer::submit_all_repairable_items;
 pub use submit_item_for_repair_reducer::submit_item_for_repair;
-pub use submit_ordered_sigil_challenge_reducer::submit_ordered_sigil_challenge;
+pub use submit_puzzle_challenge_reducer::submit_puzzle_challenge;
 pub use suitability_basis_points_type::SuitabilityBasisPoints;
 pub use surface_geology_type::SurfaceGeology;
 pub use surface_lithology_type::SurfaceLithology;
@@ -2068,6 +2078,7 @@ pub enum Reducer {
     },
     LoadPuzzleDemo {
         character_id: u64,
+        puzzle_kind: ErrantryPuzzleKind,
     },
     OpenCorpse {
         actor_id: u64,
@@ -2420,12 +2431,12 @@ pub enum Reducer {
         service: String,
         inventory_item_id: u64,
     },
-    SubmitOrderedSigilChallenge {
+    SubmitPuzzleChallenge {
         character_id: u64,
         case_id: String,
         challenge_id: String,
         expected_revision: u32,
-        ordering_json: String,
+        submission_json: String,
     },
     SurrenderToAuthority {
         character_id: u64,
@@ -2678,7 +2689,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
             Reducer::SubmitAllRepairableItems { .. } => "submit_all_repairable_items",
             Reducer::SubmitItemForRepair { .. } => "submit_item_for_repair",
-            Reducer::SubmitOrderedSigilChallenge { .. } => "submit_ordered_sigil_challenge",
+            Reducer::SubmitPuzzleChallenge { .. } => "submit_puzzle_challenge",
             Reducer::SurrenderToAuthority { .. } => "surrender_to_authority",
             Reducer::SyncDevelopmentClockToCharacter { .. } => {
                 "sync_development_clock_to_character"
@@ -3398,8 +3409,10 @@ Reducer::BeginFormalCourtship{
 }),
             Reducer::LoadPuzzleDemo{
                 character_id,
+                puzzle_kind,
 }             => __sats::bsatn::to_vec(&load_puzzle_demo_reducer::LoadPuzzleDemoArgs {
                 character_id: character_id.clone(),
+                puzzle_kind: puzzle_kind.clone(),
 }),
             Reducer::OpenCorpse{
                 actor_id,
@@ -4036,18 +4049,18 @@ Reducer::BeginFormalCourtship{
                 service: service.clone(),
                 inventory_item_id: inventory_item_id.clone(),
 }),
-            Reducer::SubmitOrderedSigilChallenge{
+            Reducer::SubmitPuzzleChallenge{
                 character_id,
                 case_id,
                 challenge_id,
                 expected_revision,
-                ordering_json,
-}             => __sats::bsatn::to_vec(&submit_ordered_sigil_challenge_reducer::SubmitOrderedSigilChallengeArgs {
+                submission_json,
+}             => __sats::bsatn::to_vec(&submit_puzzle_challenge_reducer::SubmitPuzzleChallengeArgs {
                 character_id: character_id.clone(),
                 case_id: case_id.clone(),
                 challenge_id: challenge_id.clone(),
                 expected_revision: expected_revision.clone(),
-                ordering_json: ordering_json.clone(),
+                submission_json: submission_json.clone(),
 }),
             Reducer::SurrenderToAuthority{
                 character_id,

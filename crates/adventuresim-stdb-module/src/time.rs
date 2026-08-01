@@ -27,7 +27,8 @@ use crate::relationship::{
     socializing_receipt as _,
 };
 use crate::strategic::{
-    party_authority, party_inventory_item as _, party_member as _, strategic_incident as _,
+    party_authority, party_inventory_item as _, party_journey_encounter_authority as _,
+    party_member as _, road_challenge_authority as _, strategic_incident as _,
 };
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterStats, character_attributes, character_limbs,
@@ -3034,6 +3035,42 @@ pub fn rest_at_camp(
     {
         return Err("The party is not at a field rest location".into());
     }
+    let narrative_authority = ctx
+        .db
+        .party_journey_encounter_authority()
+        .party_id()
+        .find(&party_id);
+    let pending_narrative =
+        if party.current_settlement_id.is_none() && party.camp_destination.is_some() {
+            narrative_authority.as_ref().and_then(|authority| {
+                adventuresim_core::encounter::first_narrative_encounter(
+                    authority.seed,
+                    authority.narrative_rest_elapsed_minutes,
+                    requested_minutes,
+                    adventuresim_core::encounter::NarrativeContext {
+                        kind: adventuresim_core::encounter::NarrativeBoundaryKind::Rest,
+                        in_settlement: false,
+                        another_interruption_pending: ctx
+                            .db
+                            .road_challenge_authority()
+                            .party_id()
+                            .filter(&party_id)
+                            .any(|occurrence| occurrence.open),
+                    },
+                )
+            })
+        } else {
+            None
+        };
+    let requested_minutes = pending_narrative
+        .as_ref()
+        .map_or(requested_minutes, |selection| {
+            selection.boundary_minute.saturating_sub(
+                narrative_authority
+                    .as_ref()
+                    .map_or(0, |authority| authority.narrative_rest_elapsed_minutes),
+            )
+        });
     let members = crate::strategic::living_party_member_ids(ctx, &party_id);
     // This reducer is an explicit player-chosen rest. Washing precedes disease
     // and injury interval clipping, and dead members were excluded above.
@@ -3231,6 +3268,26 @@ pub fn rest_at_camp(
         fatigue_after.0,
         fatigue_after.1,
     )?;
+    if let Some(mut authority) = narrative_authority {
+        authority.narrative_rest_elapsed_minutes = authority
+            .narrative_rest_elapsed_minutes
+            .saturating_add(elapsed);
+        let reached = pending_narrative.as_ref().is_some_and(|selection| {
+            selection.boundary_minute == authority.narrative_rest_elapsed_minutes
+        });
+        ctx.db
+            .party_journey_encounter_authority()
+            .party_id()
+            .update(authority);
+        if reached {
+            crate::strategic::materialize_chance_narrative_encounter(
+                ctx,
+                &party_id,
+                pending_narrative.as_ref().unwrap(),
+                crate::strategic::NarrativeEncounterOrigin::ChanceRest,
+            )?;
+        }
+    }
     // Reforecast the untravelled part from the fatigue that this particular
     // rest actually removed. The journey record retains all reached camps.
     crate::strategic::refresh_party_journey_forecast(ctx, &party_id)?;

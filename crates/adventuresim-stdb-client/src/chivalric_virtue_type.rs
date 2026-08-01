@@ -7,20 +7,24 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 #[derive(Copy, Eq, Hash)]
-pub enum ErrantryFinaleDefenseKind {
-    UnnaturalProwess,
+pub enum ChivalricVirtue {
+    Courage,
 
-    Reinforcements,
+    Mercy,
 
-    PoisonedArms,
+    Faith,
 
-    ConcealedTrap,
+    Justice,
 
-    Glamour,
+    Courtesy,
 
-    SupernaturalArmor,
+    Loyalty,
+
+    Prudence,
+
+    Honesty,
 }
 
-impl __sdk::InModule for ErrantryFinaleDefenseKind {
+impl __sdk::InModule for ChivalricVirtue {
     type Module = super::RemoteModule;
 }

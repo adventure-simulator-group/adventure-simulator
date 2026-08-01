@@ -207,7 +207,7 @@ pub fn autoresolve_mission(
                 &hostile_group.enemy_type,
                 mission.enemy_difficulty,
                 mission.enemy_combat_scale_bps,
-                mission.countermeasure_multiplier_bps,
+                10_000,
             )
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -563,24 +563,8 @@ pub fn seed_standalone_tactical_mission(
     let mission = if let Some(existing) = ctx.db.mission_authority().id().find(&mission_id) {
         existing
     } else {
-        let (
-            enemy_combat_scale_bps,
-            countermeasure_multiplier_bps,
-            countermeasure_source_challenge_id,
-            errantry_approach_snapshot_json,
-        ) = errantry_mission_scale_snapshot(
-            ctx,
-            &party_id,
-            &case_id,
-            case_site.id.as_str(),
-            &hostile_group_id,
-            group.combat_scale_bps,
-        );
-        let normalized_combat_power = u64::from(group.normalized_combat_power)
-            .saturating_mul(u64::from(enemy_combat_scale_bps))
-            .checked_div(u64::from(group.combat_scale_bps.max(1)))
-            .unwrap_or_default()
-            .min(u64::from(u32::MAX)) as u32;
+        let enemy_combat_scale_bps = group.combat_scale_bps;
+        let normalized_combat_power = group.normalized_combat_power;
         ctx.db.mission_authority().insert(MissionAuthority {
             id: mission_id.clone(),
             party_id: party_id.clone(),
@@ -596,11 +580,7 @@ pub fn seed_standalone_tactical_mission(
             hostile_version: group.escalation_incident_ordinal,
             enemy_count: group.enemy_count,
             enemy_difficulty: group.base_difficulty,
-            base_enemy_combat_scale_bps: group.combat_scale_bps,
             enemy_combat_scale_bps,
-            countermeasure_multiplier_bps,
-            countermeasure_source_challenge_id,
-            errantry_approach_snapshot_json,
             normalized_combat_power,
             drop_item_id: group.drop_item_id.clone(),
             drop_quantity: group.drop_quantity,
@@ -645,7 +625,7 @@ pub fn seed_standalone_tactical_mission(
             required_enemy_kills,
             enemy_difficulty: mission.enemy_difficulty,
             enemy_combat_scale_bps: mission.enemy_combat_scale_bps,
-            countermeasure_multiplier_bps: mission.countermeasure_multiplier_bps,
+            countermeasure_multiplier_bps: 10_000,
             normalized_combat_power: mission.normalized_combat_power,
         });
     ctx.db
@@ -1152,7 +1132,7 @@ fn generated_witness_candidates(
 ) -> Vec<adventuresim_core::quest_generation::WitnessCandidate> {
     use adventuresim_core::{
         quest_generation::{
-            Circumstance, WitnessCandidate, WitnessDemographic, retain_navigable_witnesses,
+            retain_navigable_witnesses, Circumstance, WitnessCandidate, WitnessDemographic,
         },
         settlement_economy::player_visible_npc_tabs,
     };
@@ -1270,7 +1250,7 @@ pub(crate) fn developer_npc_witness_candidate(
     presence: &crate::settlement_population::SettlementResidentPresence,
 ) -> Option<adventuresim_core::quest_generation::WitnessCandidate> {
     use adventuresim_core::quest_generation::{
-        VisibleWitnessCandidateInput, visible_witness_candidate,
+        visible_witness_candidate, VisibleWitnessCandidateInput,
     };
     let age_band = format!("{:?}", npc.age_band);
     let presentation = format!("{:?}", npc.presentation);
@@ -2327,7 +2307,7 @@ mod developer_quest_source_tests {
             SettlementResidentProfile,
         };
         use adventuresim_core::quest_generation::{
-            VisibleWitnessCandidateInput, visible_witness_candidate,
+            visible_witness_candidate, VisibleWitnessCandidateInput,
         };
 
         let presence = SettlementResidentPresence {

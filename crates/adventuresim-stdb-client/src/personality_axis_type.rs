@@ -7,22 +7,34 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 #[derive(Copy, Eq, Hash)]
-pub enum ErrantryCountermeasureKind {
-    FavorOfTheThornLady,
+pub enum PersonalityAxis {
+    Nerve,
 
-    CapturedDispatch,
+    Drive,
 
-    Antidote,
+    Outlook,
 
-    TrapWarning,
+    Sociability,
 
-    ColdIronCharm,
+    Conscience,
 
-    BlessedWeapon,
+    SelfRegard,
 
-    RescuedAlly,
+    Conviction,
+
+    Hygiene,
+
+    Temperance,
+
+    Mirth,
+
+    Courtship,
+
+    Transparency,
+
+    SelfKnowledge,
 }
 
-impl __sdk::InModule for ErrantryCountermeasureKind {
+impl __sdk::InModule for PersonalityAxis {
     type Module = super::RemoteModule;
 }

@@ -90,6 +90,7 @@ name = "adventuresim-core"
 version = "0.1.0"
 dependencies = [
  "adventuresim-dialogue",
+ "adventuresim-puzzles",
  "adventuresim-world-schema",
  "ambassador",
  "blanket",
@@ -107,6 +108,15 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "adventuresim-puzzles"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

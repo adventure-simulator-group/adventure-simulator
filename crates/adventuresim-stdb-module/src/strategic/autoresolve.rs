@@ -28,7 +28,8 @@ use crate::{
     capability::character_capability,
     character::{
         character, character_attributes, character_equipped_item, character_limbs,
-        character_skills, character_stats, equipment_occupancy, starting_character_claim,
+        character_skills, character_skills__view, character_stats, equipment_occupancy,
+        starting_character_claim,
     },
     condition::{character_condition, character_strategic_condition},
     disease::character_illness_status,

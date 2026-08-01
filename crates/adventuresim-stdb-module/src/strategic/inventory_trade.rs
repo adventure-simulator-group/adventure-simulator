@@ -327,7 +327,7 @@ pub(crate) fn add_to_party_inventory(
     let _ = add_to_party_inventory_checked(ctx, party_id, item_id, quantity);
 }
 
-fn add_to_party_inventory_checked(
+pub(crate) fn add_to_party_inventory_checked(
     ctx: &ReducerContext,
     party_id: &str,
     item_id: &str,

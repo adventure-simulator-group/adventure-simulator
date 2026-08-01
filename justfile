@@ -83,6 +83,14 @@ outbreak-demo base_port="23100": preflight verify-db-client
 puzzle-demo base_port="23100": preflight verify-db-client
     @{{ python_bin }} scripts/dev_stack.py run-profile --mode bare-strategic puzzle-demo {{ quote(base_port) }}
 
+# Run the dependency-light puzzle laboratory without building the game stack.
+puzzle-lab args="--help":
+    @cargo run -q -p adventuresim-puzzles --bin puzzle-lab -- {{ args }}
+
+# Exercise deterministic generation, replay, and solver invariants quickly.
+puzzle-check:
+    @cargo test -p adventuresim-puzzles
+
 # Canonical database deletion is deliberately unavailable. Use web-isolated.
 web-reset:
     @{{ python_bin }} scripts/just_tasks.py refuse "Refusing to reset the canonical database. Use: just web-isolated renderer-demo 23100"

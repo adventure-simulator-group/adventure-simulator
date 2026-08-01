@@ -21,8 +21,9 @@ pub struct BackendChallenge {
     pub solved: bool,
     pub active: bool,
     pub last_attempt_correct: Option<bool>,
-    pub boon_item_id: Option<String>,
-    pub boon_combat_scale_reduction_bps: Option<u32>,
+    pub last_submission_json: Option<String>,
+    pub tactical_insight_text: Option<String>,
+    pub tactical_preparation_text: Option<String>,
 }
 
 impl __sdk::InModule for BackendChallenge {
@@ -46,8 +47,9 @@ pub struct BackendChallengeCols {
     pub solved: __sdk::__query_builder::Col<BackendChallenge, bool>,
     pub active: __sdk::__query_builder::Col<BackendChallenge, bool>,
     pub last_attempt_correct: __sdk::__query_builder::Col<BackendChallenge, Option<bool>>,
-    pub boon_item_id: __sdk::__query_builder::Col<BackendChallenge, Option<String>>,
-    pub boon_combat_scale_reduction_bps: __sdk::__query_builder::Col<BackendChallenge, Option<u32>>,
+    pub last_submission_json: __sdk::__query_builder::Col<BackendChallenge, Option<String>>,
+    pub tactical_insight_text: __sdk::__query_builder::Col<BackendChallenge, Option<String>>,
+    pub tactical_preparation_text: __sdk::__query_builder::Col<BackendChallenge, Option<String>>,
 }
 
 impl __sdk::__query_builder::HasCols for BackendChallenge {
@@ -78,10 +80,17 @@ impl __sdk::__query_builder::HasCols for BackendChallenge {
                 table_name,
                 "last_attempt_correct",
             ),
-            boon_item_id: __sdk::__query_builder::Col::new(table_name, "boon_item_id"),
-            boon_combat_scale_reduction_bps: __sdk::__query_builder::Col::new(
+            last_submission_json: __sdk::__query_builder::Col::new(
                 table_name,
-                "boon_combat_scale_reduction_bps",
+                "last_submission_json",
+            ),
+            tactical_insight_text: __sdk::__query_builder::Col::new(
+                table_name,
+                "tactical_insight_text",
+            ),
+            tactical_preparation_text: __sdk::__query_builder::Col::new(
+                table_name,
+                "tactical_preparation_text",
             ),
         }
     }
