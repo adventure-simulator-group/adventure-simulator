@@ -118,18 +118,18 @@ fn generated_action_score_prefers_progress_then_fit_then_public_costs() {
     let mut profile = generate_profile(42, 0);
     profile.initial_skills.insight = 8_000.0;
     profile.initial_skills.stealth = 1_000.0;
-    let interview = projected_action("z", "inspect_site");
-    let search = projected_action("a", "search_area");
-    assert!(generated_action_score(&profile, &interview) > generated_action_score(&profile, &search));
+    let inspect = projected_action("z", "inspect_site");
+    let ambush = projected_action("a", "lay_ambush");
+    assert!(generated_action_score(&profile, &inspect) > generated_action_score(&profile, &ambush));
 
-    let mut travel = interview.clone();
+    let mut travel = inspect.clone();
     travel.available = false;
     travel.can_travel_to_required_site = true;
-    assert!(generated_action_score(&profile, &interview) > generated_action_score(&profile, &travel));
+    assert!(generated_action_score(&profile, &inspect) > generated_action_score(&profile, &travel));
 
-    let mut uncertain = interview.clone();
+    let mut uncertain = inspect.clone();
     uncertain.uncertainty_bps = 9_000;
-    assert!(generated_action_score(&profile, &interview) > generated_action_score(&profile, &uncertain));
+    assert!(generated_action_score(&profile, &inspect) > generated_action_score(&profile, &uncertain));
 
     let tied_a = projected_action("a", "unknown");
     let tied_b = projected_action("b", "unknown");
