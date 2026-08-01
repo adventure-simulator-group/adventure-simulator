@@ -1,7 +1,7 @@
 //! Enforceable isolation for reducer-backed balance simulations.
 
 use spacetimedb::{
-    reducer, table, view, Identity, ReducerContext, SpacetimeType, Table, ViewContext,
+    Identity, ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view,
 };
 
 use crate::character::character;
@@ -10,9 +10,9 @@ use crate::local_problem::local_problem_receipt__view;
 use crate::strategic::{case_authority__view, quest_generation_authority__view};
 use crate::time::{character_time, world_clock};
 use crate::{
-    character_attributes, character_skills, character_training_schedule, infection_episode,
-    party_authority, settlement, world_data_import, CharacterAttributes, CharacterSkills,
-    CharacterTrainingSchedule, DeathCause, DeathSource, ScheduleAllocation,
+    CharacterAttributes, CharacterSkills, CharacterTrainingSchedule, DeathCause, DeathSource,
+    ScheduleAllocation, character_attributes, character_skills, character_training_schedule,
+    infection_episode, party_authority, settlement, world_data_import,
 };
 
 /// Ordinary module builds deliberately contain no simulation capability. The
@@ -668,8 +668,8 @@ pub(crate) fn same_simulation_scope(ctx: &ReducerContext, left: u64, right: u64)
 #[cfg(test)]
 mod tests {
     use super::{
-        simulation_epoch_shift_micros, simulation_religion_hours_valid,
-        valid_simulation_clock_advance, MAX_SIMULATION_CLOCK_ADVANCE_MINUTES,
+        MAX_SIMULATION_CLOCK_ADVANCE_MINUTES, simulation_epoch_shift_micros,
+        simulation_religion_hours_valid, valid_simulation_clock_advance,
     };
     use adventuresim_world_schema::ReligionHours;
 
