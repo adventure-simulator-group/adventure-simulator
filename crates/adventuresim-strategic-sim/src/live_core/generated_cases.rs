@@ -963,9 +963,23 @@ impl LiveRunner {
             .party_for(owner_character_id)?
             .current_settlement_id
             .is_some();
-        let settlement_venue = (at_settlement && wait_minutes >= 60)
-            .then(|| self.settlement_activity_venue(owner_character_id, 0).ok())
-            .flatten();
+        let settlement_venue = if at_settlement && wait_minutes >= 60 {
+            self.settlement_activity_venue(owner_character_id, 0)?
+        } else {
+            None
+        };
+        if at_settlement && wait_minutes >= 60 && settlement_venue.is_none() {
+            self.event(
+                agent,
+                CoreLoopEventKind::QuestSuppressed,
+                format!(
+                    "generated_case={};action={};reason=insufficient_visible_resources;wait_minutes={wait_minutes}",
+                    bounded_event_field(case_id),
+                    bounded_event_field(action_id),
+                ),
+            );
+            return Ok(false);
+        }
         let wait_mode = if let Some(venue) = settlement_venue {
             let result = reducer_call!(self, "wait_for_investigation_window_settlement", |cb| {
                 self.connection.reducers.rest_at_settlement_hours_then(

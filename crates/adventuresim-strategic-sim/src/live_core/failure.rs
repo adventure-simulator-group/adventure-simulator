@@ -1,5 +1,10 @@
 impl LiveRunner {
-    pub(super) fn event(&mut self, agent_id: u32, kind: CoreLoopEventKind, detail: impl Into<String>) {
+    pub(super) fn event(
+        &mut self,
+        agent_id: u32,
+        kind: CoreLoopEventKind,
+        detail: impl Into<String>,
+    ) {
         self.sequence += 1;
         let detail = detail.into();
         let semantic = format!("{agent_id}:{kind:?}:{detail}");
@@ -152,7 +157,7 @@ impl LiveRunner {
         &self,
         character_id: u64,
         committed_reserve: u64,
-    ) -> Result<SettlementActivityVenue, String> {
+    ) -> Result<Option<SettlementActivityVenue>, String> {
         let settlement_id = self
             .connection
             .db
@@ -180,18 +185,14 @@ impl LiveRunner {
             return Err("simulation settlement offers neither an Inn nor a Temple".to_string());
         }
         let (visible_food_kcal, _) = self.visible_rest_supplies(character_id);
-        select_settlement_activity_venue(
+        Ok(select_settlement_activity_venue(
             inn_available,
             temple_available,
             temple_food_covers_one_day(visible_food_kcal),
             self.personal_gold(character_id),
             committed_reserve,
             adventuresim_core::strategic_economy::inn_full_board_cost(1_440),
-        )
-        .ok_or_else(|| {
-            "simulation character cannot afford an Inn while preserving visible reserves"
-                .to_string()
-        })
+        ))
     }
 
     /// Non-activity waits retain the ordinary public-service preference. Their
@@ -315,16 +316,18 @@ impl LiveRunner {
                 if source == Some(DeathSource::Disease) {
                     self.metrics.disease_deaths += 1;
                 }
-                let cause = death
-                    .as_ref()
-                    .map_or_else(|| "unavailable".to_owned(), |row| format!("{:?}", row.cause));
+                let cause = death.as_ref().map_or_else(
+                    || "unavailable".to_owned(),
+                    |row| format!("{:?}", row.cause),
+                );
                 let source_id = death
                     .as_ref()
                     .and_then(|row| row.source_id.as_deref())
                     .map_or_else(|| "none".to_owned(), bounded_event_field);
-                let strategic_minute = death
-                    .as_ref()
-                    .map_or_else(|| "unavailable".to_owned(), |row| row.strategic_minute.to_string());
+                let strategic_minute = death.as_ref().map_or_else(
+                    || "unavailable".to_owned(),
+                    |row| row.strategic_minute.to_string(),
+                );
                 let survival = self.public_survival_observation(character_id);
                 let condition = self
                     .connection
@@ -352,5 +355,4 @@ impl LiveRunner {
             }
         }
     }
-
 }

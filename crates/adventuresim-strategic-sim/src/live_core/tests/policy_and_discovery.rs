@@ -87,16 +87,70 @@ fn settlement_activity_venue_prefers_fed_temple_then_reserve_aware_inn() {
     );
     assert_eq!(
         select_settlement_activity_venue(false, true, false, 0, 0, Some(2)),
-        Some(SettlementActivityVenue::Temple)
+        None
     );
     assert_eq!(
         select_settlement_activity_venue(true, true, false, 3, 2, Some(2)),
-        Some(SettlementActivityVenue::Temple)
+        None
     );
     assert_eq!(
         select_settlement_activity_venue(true, false, false, 3, 2, Some(2)),
         None
     );
+    assert_eq!(
+        select_settlement_activity_venue(true, false, false, 4, 2, Some(2)),
+        Some(SettlementActivityVenue::Inn)
+    );
+}
+
+#[test]
+fn insufficient_settlement_resources_defer_to_installed_labor_without_free_service() {
+    let source = LIVE_CORE_SOURCE;
+    let activity = source
+        .split("fn settlement_activity_day")
+        .nth(1)
+        .and_then(|tail| tail.split("/// NPCs use the same custody").next())
+        .expect("settlement activity policy");
+    let install = activity.find("install_activity_schedule").unwrap();
+    let venue = activity.find("settlement_activity_venue").unwrap();
+    let deferred = activity.find("format_deferred_activity_detail").unwrap();
+    let rest = activity.find("rest_at_settlement_hours_then").unwrap();
+    assert!(install < venue);
+    assert!(venue < deferred);
+    assert!(deferred < rest);
+    let no_venue = activity
+        .split("let Some(venue)")
+        .nth(1)
+        .and_then(|tail| tail.split("let result = reducer_call!").next())
+        .expect("no-venue deferral branch");
+    assert!(no_venue.contains("format_deferred_activity_detail"));
+    assert!(no_venue.contains("continue;"));
+    assert!(!no_venue.contains("rest_at_settlement_hours_then"));
+    assert!(source.contains("outcome=deferred;reason=insufficient_visible_resources"));
+
+    let loop_source = source
+        .split("for cycle in 0..config.cycles")
+        .nth(1)
+        .expect("bounded live loop");
+    assert!(loop_source.contains("advance_simulation_world_time_then"));
+    assert!(!activity.contains("spend_private_settlement_downtime"));
+}
+
+#[test]
+fn unaffordable_generated_window_wait_defers_without_camp_or_reducer_error_allowlist() {
+    let source = LIVE_CORE_SOURCE;
+    let wait = source
+        .split("fn wait_for_generated_investigation_window")
+        .nth(1)
+        .and_then(|tail| tail.split("fn return_completed_generated_party_to_origin").next())
+        .expect("generated night-window wait");
+    let unavailable = wait.find("settlement_venue.is_none()").unwrap();
+    let suppressed = wait.find("reason=insufficient_visible_resources").unwrap();
+    let field_rest = wait.find("rest_at_camp_with_party_shelter").unwrap();
+    assert!(unavailable < suppressed);
+    assert!(suppressed < field_rest);
+    assert!(wait[unavailable..field_rest].contains("return Ok(false)"));
+    assert!(!wait.contains("safe_core_loop_failure"));
 }
 
 #[test]

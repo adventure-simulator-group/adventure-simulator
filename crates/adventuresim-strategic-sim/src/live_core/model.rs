@@ -1310,7 +1310,7 @@ fn select_settlement_activity_venue(
     {
         return Some(SettlementActivityVenue::Inn);
     }
-    temple_available.then_some(SettlementActivityVenue::Temple)
+    None
 }
 
 fn visible_activity_committed_reserve(
@@ -1970,6 +1970,34 @@ fn format_failed_activity_detail(
     format!(
         "outcome=failed;stage=rest_at_settlement;error_category={error_category};preferred={preferred_activity};effective={effective_activity};fallback={fallback_reason};venue={};committed_reserve={committed_reserve};schedule=combat:{},carousing:{},apprenticeship:{},profession:{},labor:{},prayer:{},thievery:{},raiding:{};requested_minutes=1440;purse_before={};condition_before={};hunger_before={:.3};thirst_before={:.3};food_kcal_before={:.0};water_ml_before={:.0};elapsed_before={}",
         venue.label(),
+        schedule.combat_training_minutes,
+        schedule.carousing_minutes,
+        schedule.apprenticeship_minutes,
+        schedule.profession_practice_minutes,
+        schedule.labor_minutes,
+        schedule.prayer_minutes,
+        schedule.thievery_minutes,
+        schedule.raiding_minutes,
+        before.personal_gold_coin,
+        before.condition_status,
+        before.hunger,
+        before.thirst,
+        before.visible_food_kcal,
+        before.visible_water_ml,
+        before.elapsed_minutes,
+    )
+}
+
+fn format_deferred_activity_detail(
+    preferred_activity: &str,
+    effective_activity: &str,
+    schedule: &ScheduleAllocation,
+    fallback_reason: &str,
+    committed_reserve: u64,
+    before: &ActivityObservation,
+) -> String {
+    format!(
+        "outcome=deferred;reason=insufficient_visible_resources;preferred={preferred_activity};effective={effective_activity};fallback={fallback_reason};venue=unavailable;committed_reserve={committed_reserve};schedule=combat:{},carousing:{},apprenticeship:{},profession:{},labor:{},prayer:{},thievery:{},raiding:{};purse_before={};condition_before={};hunger_before={:.3};thirst_before={:.3};food_kcal_before={:.0};water_ml_before={:.0};elapsed_before={}",
         schedule.combat_training_minutes,
         schedule.carousing_minutes,
         schedule.apprenticeship_minutes,

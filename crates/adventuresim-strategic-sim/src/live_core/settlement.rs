@@ -53,16 +53,11 @@ impl LiveRunner {
             .iter()
             .filter(|member| member.party_id == party_id && member.character_id != patient_id)
             .filter_map(|member| {
-                let payer = self
-                    .connection
-                    .db
-                    .backend_characters()
-                    .iter()
-                    .find(|row| {
+                let payer = self.connection.db.backend_characters().iter().find(|row| {
                     row.id == member.character_id
                         && row.alive
                         && row.current_settlement_id.as_deref() == Some(settlement_id)
-                    })?;
+                })?;
                 let payer_agent_id =
                     self.character_ids.iter().position(|id| *id == payer.id)? as u32;
                 let purse = self.personal_gold(payer.id);
@@ -99,7 +94,10 @@ impl LiveRunner {
         options.into_iter().next()
     }
 
-    pub(super) fn activity_observation(&self, character_id: u64) -> Result<ActivityObservation, String> {
+    pub(super) fn activity_observation(
+        &self,
+        character_id: u64,
+    ) -> Result<ActivityObservation, String> {
         let condition = self
             .connection
             .db
@@ -263,11 +261,7 @@ impl LiveRunner {
         character_id: u64,
         settlement_id: &str,
     ) -> Option<u64> {
-        self.observable_preparation_quote(
-            character_id,
-            settlement_id,
-            "oral_rehydration_draught",
-        )
+        self.observable_preparation_quote(character_id, settlement_id, "oral_rehydration_draught")
     }
 
     fn public_physician_chart(&self, patient_id: u64) -> Option<BackendPhysiologyChart> {
@@ -279,9 +273,13 @@ impl LiveRunner {
             .find(|row| row.id == patient_id && row.alive)?;
         let party_id = patient.party_id.as_deref()?;
         let settlement_id = patient.current_settlement_id.as_deref()?;
-        if !self.connection.db.party_member().iter().any(|member| {
-            member.party_id == party_id && member.character_id == patient_id
-        }) {
+        if !self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .any(|member| member.party_id == party_id && member.character_id == patient_id)
+        {
             return None;
         }
         let patient_minute = self
@@ -316,8 +314,7 @@ impl LiveRunner {
                             && observer.party_id.as_deref() == Some(party_id)
                             && observer.current_settlement_id.as_deref() == Some(settlement_id)
                             && self.connection.db.party_member().iter().any(|member| {
-                                member.party_id == party_id
-                                    && member.character_id == observer.id
+                                member.party_id == party_id && member.character_id == observer.id
                             })
                     })
             })
@@ -399,7 +396,11 @@ impl LiveRunner {
         offers
     }
 
-    pub(super) fn observable_medical_reserve(&self, character_id: u64, settlement_id: &str) -> Option<u64> {
+    pub(super) fn observable_medical_reserve(
+        &self,
+        character_id: u64,
+        settlement_id: &str,
+    ) -> Option<u64> {
         let quote = self.observable_medical_quote(character_id, settlement_id)?;
         let settlement = self
             .connection
@@ -620,12 +621,12 @@ impl LiveRunner {
             });
             let purse = self.personal_gold(character_id);
             let chart = self.public_physician_chart(character_id);
-            let intervention_offers = settlement
-                .as_deref()
-                .zip(chart.as_ref())
-                .map_or_else(Vec::new, |(settlement, chart)| {
+            let intervention_offers = settlement.as_deref().zip(chart.as_ref()).map_or_else(
+                Vec::new,
+                |(settlement, chart)| {
                     self.public_intervention_offers(character_id, settlement, chart)
-                });
+                },
+            );
             let (inn_available, temple_available) =
                 settlement.as_ref().map_or((false, false), |settlement_id| {
                     self.connection
@@ -665,24 +666,27 @@ impl LiveRunner {
             let natural_rest_venue = self_funded_natural_rest_venue
                 .or_else(|| rest_sponsor.as_ref().map(|_| true))
                 .or_else(|| emergency_temple_rest.then_some(false));
-            let selected_intervention = intervention_offers.iter().find(|offer| {
-                let purchase_cost = if offer.inventory_item_id.is_some() {
-                    0
-                } else {
-                    let Some(quote) = offer.storefront_quote else {
-                        return false;
+            let selected_intervention = intervention_offers
+                .iter()
+                .find(|offer| {
+                    let purchase_cost = if offer.inventory_item_id.is_some() {
+                        0
+                    } else {
+                        let Some(quote) = offer.storefront_quote else {
+                            return false;
+                        };
+                        quote
                     };
-                    quote
-                };
-                affordable_medical_rest_venue(
-                    inn_available,
-                    temple_available,
-                    temple_food_covers_day,
-                    purse,
-                    purchase_cost,
-                )
-                .is_some()
-            }).cloned();
+                    affordable_medical_rest_venue(
+                        inn_available,
+                        temple_available,
+                        temple_food_covers_day,
+                        purse,
+                        purchase_cost,
+                    )
+                    .is_some()
+                })
+                .cloned();
             let observable_quote = selected_intervention.as_ref().map(|offer| {
                 if offer.inventory_item_id.is_some() {
                     0
@@ -760,7 +764,13 @@ impl LiveRunner {
                         .possible_diseases
                         .iter()
                         .take(3)
-                        .map(|row| format!("{}:{}", bounded_event_field(&row.disease_id), row.likelihood_bps))
+                        .map(|row| {
+                            format!(
+                                "{}:{}",
+                                bounded_event_field(&row.disease_id),
+                                row.likelihood_bps
+                            )
+                        })
                         .collect::<Vec<_>>()
                         .join(",")
                 },
@@ -968,14 +978,16 @@ impl LiveRunner {
             // authoritative reducer owns private response and adverse effects.
             debug_assert_eq!(choice, MedicalChoice::BuyAndRest);
             let gold_before = purse;
-            let intervention = selected_intervention
-                .expect("purchase choice requires a public intervention");
+            let intervention =
+                selected_intervention.expect("purchase choice requires a public intervention");
             let clinician_id = chart
                 .as_ref()
                 .expect("purchase choice requires a public chart")
                 .observer_id;
             let preparation_id = intervention.preparation_id.as_str();
-            let preparation_inventory_id = if let Some(inventory_item_id) = intervention.inventory_item_id {
+            let preparation_inventory_id = if let Some(inventory_item_id) =
+                intervention.inventory_item_id
+            {
                 inventory_item_id
             } else {
                 let result = reducer_call!(self, "purchase_from_herbalist", |cb| self
@@ -1004,9 +1016,7 @@ impl LiveRunner {
                     .db
                     .inventory_item()
                     .iter()
-                    .filter(|row| {
-                        row.character_id == character_id && row.item_id == preparation_id
-                    })
+                    .filter(|row| row.character_id == character_id && row.item_id == preparation_id)
                     .map(|row| row.id)
                     .min()
                     .ok_or("preparation purchase produced no concrete patient item")?
@@ -1023,7 +1033,7 @@ impl LiveRunner {
                     1_000,
                     None,
                     cb
-            ));
+                ));
             self.call(result)?;
             self.metrics.interventions_administered += 1;
             let actual_treatment_spend =
@@ -1208,8 +1218,23 @@ impl LiveRunner {
                 inn_cost,
             );
             self.install_activity_schedule(character_id, &schedule)?;
-            let venue = self.settlement_activity_venue(character_id, committed_reserve)?;
             let preferred_activity = format!("{:?}", profile.preferred_activity);
+            let Some(venue) = self.settlement_activity_venue(character_id, committed_reserve)?
+            else {
+                self.event(
+                    agent,
+                    CoreLoopEventKind::Activity,
+                    format_deferred_activity_detail(
+                        &preferred_activity,
+                        effective_activity,
+                        &schedule,
+                        fallback_reason,
+                        committed_reserve,
+                        &before,
+                    ),
+                );
+                continue;
+            };
             let result = reducer_call!(self, "settlement_activity_rest", |cb| self
                 .connection
                 .reducers
@@ -1566,5 +1591,4 @@ impl LiveRunner {
         }
         Ok(())
     }
-
 }
