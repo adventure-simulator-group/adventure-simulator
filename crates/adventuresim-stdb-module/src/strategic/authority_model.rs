@@ -202,8 +202,8 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
                 .filter_map(|site| {
                     ctx.db
                         .hostile_group_authority()
-                        .case_site_id()
-                        .find(site.id.clone())
+                        .iter()
+                        .find(|group| group.case_site_id == site.id)
                 })
                 .map(|group| {
                     autoresolve_enemy(
