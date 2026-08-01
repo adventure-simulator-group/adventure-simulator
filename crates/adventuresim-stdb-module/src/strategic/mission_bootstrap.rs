@@ -1507,7 +1507,7 @@ fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), Str
 
 pub(crate) struct SimulationQuestFixtureSeed {
     pub direct_contract_id: String,
-    pub generated_case_id: String,
+    pub generated_canonical_case_id: String,
     pub direct_party_id: String,
     pub generated_party_id: String,
 }
@@ -1650,7 +1650,7 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
     // Generate and privately materialize the second party's local problem
     // before publishing the direct contract marker. No skill or item boosts
     // are part of this acceptance fixture.
-    let generated_case_id = materialize_preferred_outbreak(ctx, generated_leader_id)?;
+    let generated_canonical_case_id = materialize_preferred_outbreak(ctx, generated_leader_id)?;
     let direct_party_id = ctx
         .db
         .character()
@@ -1711,13 +1711,17 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
         distance_m: 2_000,
     };
     ctx.db.case_site_authority().insert(site.clone());
-    materialize_hostile_group(ctx, &hostile_group_id, &site, "bandit".into(), 1, 1)?;
+    // The acceptance opponent is a normal, authored, unarmored novice threat.
+    // It still uses ordinary hostile materialization and autoresolve; unlike an
+    // armored bandit, it does not silently turn a difficulty-one fixture into
+    // a shield-and-armor proficiency check for starting adventurers.
+    materialize_hostile_group(ctx, &hostile_group_id, &site, "cultist".into(), 1, 1)?;
     ctx.db.contract_authority().insert(Contract {
         id: contract_id.clone(),
         gateway_bucket: 0,
         case_id,
-        title: "Robbers on the Near Road".into(),
-        description: "Drive one bandit from a camp near the settlement.".into(),
+        title: "Trouble on the Near Road".into(),
+        description: "Drive one knife-wielding troublemaker from a camp near the settlement.".into(),
         difficulty: 1,
         gold_reward: 12,
         xp_reward: 20,
@@ -1726,14 +1730,14 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
         issuer_resident_character_id: issuer.character_id,
         status: ContractStatus::Offered,
         accepted_by: None,
-        opposition_wording: "bandit".into(),
+        opposition_wording: "unarmored troublemaker".into(),
         opposition_count_wording: "one".into(),
         accepted_at_minute: None,
         paid_at_minute: None,
     });
     Ok(SimulationQuestFixtureSeed {
         direct_contract_id: contract_id,
-        generated_case_id,
+        generated_canonical_case_id,
         direct_party_id,
         generated_party_id,
     })

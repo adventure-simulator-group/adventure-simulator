@@ -91,22 +91,30 @@ fn public_contract_matchup_uses_readiness_count_difficulty_and_fails_closed() {
     assert_eq!(public_opposition_count("perhaps several"), None);
     assert_eq!(public_opposition_count("a household guard"), None);
 
-    assert!(public_contract_assessment(1, "one", &[strong(1, true)]).eligible);
-    assert!(!public_contract_assessment(1, "two", &[strong(1, true)]).eligible);
-    assert!(public_contract_assessment(1, "two", &[strong(1, true), strong(2, true)]).eligible);
-    assert!(!public_contract_assessment(6, "two", &[strong(1, true), strong(2, true)]).eligible);
-    assert!(!public_contract_assessment(1, "one", &[strong(1, false)]).eligible);
-    assert!(!public_contract_assessment(1, "several", &[strong(1, true), strong(2, true)]).eligible);
+    // One superficially strong novice is not enough: the authoritative enemy
+    // also owns weapon, dodge, block, balance, and protection mechanics.
+    assert!(!public_contract_assessment(1, "one", 10_000, &[strong(1, true)]).eligible);
+    assert!(!public_contract_assessment(1, "two", 20_000, &[strong(1, true)]).eligible);
+    assert!(!public_contract_assessment(1, "two", 20_000, &[strong(1, true), strong(2, true)]).eligible);
+    assert!(!public_contract_assessment(6, "two", 20_000, &[strong(1, true), strong(2, true)]).eligible);
+    assert!(!public_contract_assessment(1, "one", 10_000, &[strong(1, false)]).eligible);
+    assert!(!public_contract_assessment(1, "several", 20_000, &[strong(1, true), strong(2, true)]).eligible);
+    assert_eq!(
+        public_contract_assessment(1, "one", 0, &[strong(1, true)]).reason,
+        "missing_authoritative_opposition_power"
+    );
 
     let accepted = public_contract_assessment(
         1,
         "perhaps two",
-        &[strong(1, true), strong(2, true)],
+        18_000,
+        &[strong(1, true), strong(2, true), strong(3, true), strong(4, true)],
     );
     let deteriorated = public_contract_assessment(
         1,
         "perhaps two",
-        &[strong(1, true), strong(2, false)],
+        18_000,
+        &[strong(1, true), strong(2, true), strong(3, false), strong(4, false)],
     );
     assert!(accepted.eligible);
     assert!(!deteriorated.eligible);

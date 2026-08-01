@@ -429,6 +429,23 @@ fn run_core_loop_inner(
         if party_ids.len() < 2 {
             return Err("quest coverage fixture requires two formed parties".into());
         }
+        let direct_party_index = party_ids
+            .iter()
+            .enumerate()
+            .filter_map(|(index, party_id)| {
+                // Cultist authority has an authored baseline power of 8,000;
+                // pass the same value the contract projection publishes after
+                // the fixture is materialized.
+                let assessment =
+                    runner.public_party_matchup_assessment(party_id, 1, "one", 8_000);
+                assessment
+                    .eligible
+                    .then_some((assessment.party_power_milli, std::cmp::Reverse(index)))
+            })
+            .max()
+            .map(|(_, std::cmp::Reverse(index))| index)
+            .ok_or("quest coverage fixture has no party safe for its novice opponent")?;
+        party_ids.swap(0, direct_party_index);
         let direct_leader = runner
             .current_leader(&party_ids[0])
             .map(|(leader, _)| leader)
@@ -447,15 +464,7 @@ fn run_core_loop_inner(
                 cb,
             ));
         runner.call(result)?;
-        quest_fixture = Some(
-            runner
-                .connection
-                .db
-                .simulation_quest_fixture()
-                .id()
-                .find(&0)
-                .ok_or("quest fixture reducer completed without public provenance")?,
-        );
+        quest_fixture = Some(());
     }
     let result = reducer_call!(runner, "ensure_settlement_activity", |cb| runner
         .connection
@@ -896,6 +905,21 @@ fn run_core_loop_inner(
         .unwrap_or(0);
     let total_event_count = runner.sequence;
     let trace_truncated = total_event_count > runner.trace.len() as u64;
+    let quest_fixture = if quest_fixture.is_some() {
+        Some(
+            runner
+                .connection
+                .db
+                .simulation_quest_fixture()
+                .id()
+                .find(&0)
+                .ok_or(
+                    "required quest fixture completed without receipt-backed public provenance",
+                )?,
+        )
+    } else {
+        None
+    };
     let quest_coverage = quest_fixture.map(|fixture| {
         let direct_agent = runner
             .character_ids

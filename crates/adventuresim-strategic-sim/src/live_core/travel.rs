@@ -1,8 +1,10 @@
 impl LiveRunner {
-    pub(super) fn public_party_contract_assessment(
+    pub(super) fn public_party_matchup_assessment(
         &self,
         party_id: &str,
-        contract: &BackendContract,
+        difficulty: i32,
+        opposition_count_wording: &str,
+        opposition_combat_power: u64,
     ) -> PublicContractAssessment {
         let living_ids = self.connection.db.backend_characters().iter()
             .filter(|character| character.alive)
@@ -30,9 +32,23 @@ impl LiveRunner {
             })
             .collect::<Vec<_>>();
         public_contract_assessment(
+            difficulty,
+            opposition_count_wording,
+            opposition_combat_power,
+            &members,
+        )
+    }
+
+    pub(super) fn public_party_contract_assessment(
+        &self,
+        party_id: &str,
+        contract: &BackendContract,
+    ) -> PublicContractAssessment {
+        self.public_party_matchup_assessment(
+            party_id,
             contract.difficulty,
             &contract.opposition_count_wording,
-            &members,
+            contract.opposition_combat_power,
         )
     }
 

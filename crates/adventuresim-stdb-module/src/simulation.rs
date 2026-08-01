@@ -1,6 +1,8 @@
 //! Enforceable isolation for reducer-backed balance simulations.
 
-use spacetimedb::{Identity, ReducerContext, Table, reducer, table};
+use spacetimedb::{
+    Identity, ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view,
+};
 
 use crate::character::character;
 use crate::personality::character_personality;
@@ -8,7 +10,8 @@ use crate::time::{character_time, world_clock};
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterTrainingSchedule, DeathCause, DeathSource,
     ScheduleAllocation, character_attributes, character_skills, character_training_schedule,
-    infection_episode, party_authority, settlement, world_data_import,
+    infection_episode, investigation_witness_referral, local_problem_receipt, party_authority,
+    quest_generation_authority, settlement, world_data_import,
 };
 
 /// Ordinary module builds deliberately contain no simulation capability. The
@@ -55,12 +58,28 @@ pub struct SimulationCharacter {
     pub agent_id: u32,
 }
 
-/// Public provenance for the deterministic quest acceptance fixture. It
-/// contains simulator-owned identifiers only, never hidden quest content.
+/// Private fixture authority. The generated identifier is canonical quest
+/// authority and must not be published before ordinary rumor intake creates
+/// the owner's public journal case.
 #[derive(Clone, Debug)]
-#[table(accessor = simulation_quest_fixture, public)]
-pub struct SimulationQuestFixture {
+#[table(accessor = simulation_quest_fixture_authority)]
+pub struct SimulationQuestFixtureAuthority {
     #[primary_key]
+    pub id: u64,
+    pub run_id: u64,
+    pub direct_contract_id: String,
+    pub generated_canonical_case_id: String,
+    pub direct_leader_id: u64,
+    pub generated_leader_id: u64,
+    pub direct_party_id: String,
+    pub generated_party_id: String,
+}
+
+/// Gateway-only provenance for the deterministic quest acceptance fixture.
+/// The generated case ID is projected only from a validated initial-rumor
+/// referral, so it is the exact owner-visible journal ID observed by agents.
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct SimulationQuestFixture {
     pub id: u64,
     pub run_id: u64,
     pub direct_contract_id: String,
@@ -69,6 +88,70 @@ pub struct SimulationQuestFixture {
     pub generated_leader_id: u64,
     pub direct_party_id: String,
     pub generated_party_id: String,
+}
+
+#[view(accessor = simulation_quest_fixture, public)]
+pub fn simulation_quest_fixture(ctx: &ViewContext) -> Vec<SimulationQuestFixture> {
+    let Some(run) = ctx
+        .db
+        .simulation_run()
+        .id()
+        .find(0)
+        .filter(|run| run.owner == ctx.sender())
+    else {
+        return Vec::new();
+    };
+    let Some(fixture) = ctx.db.simulation_quest_fixture_authority().id().find(0) else {
+        return Vec::new();
+    };
+    if fixture.run_id != run.id {
+        return Vec::new();
+    }
+    let Some(authority) = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&fixture.generated_canonical_case_id)
+    else {
+        return Vec::new();
+    };
+    let referral = ctx
+        .db
+        .investigation_witness_referral()
+        .owner_character_id()
+        .filter(fixture.generated_leader_id)
+        .find(|referral| {
+            referral.canonical_case_id == fixture.generated_canonical_case_id
+                && referral.public_case_id == authority.public_case_id
+                && referral.catalog_revision == authority.catalog_revision
+                && referral.grant_kind == "initial_rumor"
+                && !referral.source_receipt_id.is_empty()
+        });
+    let Some(referral) = referral else {
+        return Vec::new();
+    };
+    if !ctx
+        .db
+        .local_problem_receipt()
+        .id()
+        .find(&referral.source_receipt_id)
+        .is_some_and(|receipt| {
+            receipt.character_id == fixture.generated_leader_id
+                && receipt.opaque_case_ref == fixture.generated_canonical_case_id
+        })
+    {
+        return Vec::new();
+    }
+    vec![SimulationQuestFixture {
+        id: fixture.id,
+        run_id: run.id,
+        direct_contract_id: fixture.direct_contract_id,
+        generated_case_id: referral.public_case_id,
+        direct_leader_id: fixture.direct_leader_id,
+        generated_leader_id: fixture.generated_leader_id,
+        direct_party_id: fixture.direct_party_id,
+        generated_party_id: fixture.generated_party_id,
+    }]
 }
 
 fn valid_nonce(nonce: &str) -> bool {
@@ -199,7 +282,7 @@ pub fn seed_simulation_quest_fixture(
             return Err("Quest coverage character is not its party leader".into());
         }
     }
-    if let Some(existing) = ctx.db.simulation_quest_fixture().id().find(0) {
+    if let Some(existing) = ctx.db.simulation_quest_fixture_authority().id().find(0) {
         return if existing.run_id == run.id
             && existing.direct_leader_id == direct_leader_id
             && existing.generated_leader_id == generated_leader_id
@@ -216,12 +299,12 @@ pub fn seed_simulation_quest_fixture(
         generated_leader_id,
     )?;
     ctx.db
-        .simulation_quest_fixture()
-        .insert(SimulationQuestFixture {
+        .simulation_quest_fixture_authority()
+        .insert(SimulationQuestFixtureAuthority {
             id: 0,
             run_id: run.id,
             direct_contract_id: seeded.direct_contract_id,
-            generated_case_id: seeded.generated_case_id,
+            generated_canonical_case_id: seeded.generated_canonical_case_id,
             direct_leader_id,
             generated_leader_id,
             direct_party_id: seeded.direct_party_id,
@@ -546,6 +629,31 @@ mod tests {
         let imported_world_guard = claim.find("world_data_import()").unwrap();
         assert!(authorization < character_guard);
         assert!(authorization < imported_world_guard);
+    }
+
+    #[test]
+    fn quest_fixture_public_provenance_requires_an_initial_rumor_receipt() {
+        let source = include_str!("simulation.rs");
+        let authority = source
+            .split("pub struct SimulationQuestFixtureAuthority")
+            .nth(1)
+            .unwrap()
+            .split("pub struct SimulationQuestFixture")
+            .next()
+            .unwrap();
+        assert!(authority.contains("generated_canonical_case_id"));
+        let projection = source
+            .split("pub fn simulation_quest_fixture")
+            .nth(1)
+            .unwrap()
+            .split("fn valid_nonce")
+            .next()
+            .unwrap();
+        assert!(projection.contains("investigation_witness_referral()"));
+        assert!(projection.contains("referral.grant_kind == \"initial_rumor\""));
+        assert!(projection.contains("!referral.source_receipt_id.is_empty()"));
+        assert!(projection.contains("local_problem_receipt()"));
+        assert!(projection.contains("generated_case_id: referral.public_case_id"));
     }
 
     #[test]

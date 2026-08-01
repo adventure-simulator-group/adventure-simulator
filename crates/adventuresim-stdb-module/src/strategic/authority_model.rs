@@ -168,6 +168,9 @@ pub struct BackendContract {
     pub accepted_by: Option<String>,
     pub opposition_wording: String,
     pub opposition_count_wording: String,
+    /// Observer-safe authoritative hostile power after threat-profile and
+    /// incident scaling. This discloses matchup magnitude, not hidden identity.
+    pub opposition_combat_power: u64,
     pub accepted_at_minute: Option<u64>,
     pub paid_at_minute: Option<u64>,
     /// Conservative public one-way preflight distance: the greatest distance
@@ -186,13 +189,23 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
         .gateway_bucket()
         .filter(0u8)
         .filter_map(|row| {
-            let distance_m = ctx
+            let sites = ctx
                 .db
                 .case_site_authority()
                 .case_id()
                 .filter(&row.case_id)
-                .map(|site| site.distance_m)
-                .max()?;
+                .collect::<Vec<_>>();
+            let distance_m = sites.iter().map(|site| site.distance_m).max()?;
+            let opposition_combat_power = sites
+                .iter()
+                .filter_map(|site| {
+                    ctx.db
+                        .hostile_group_authority()
+                        .case_site_id()
+                        .find(&site.id)
+                })
+                .map(|group| u64::from(group.normalized_combat_power))
+                .sum();
             Some(BackendContract {
                 id: row.id,
                 case_id: row.case_id,
@@ -208,6 +221,7 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
                 accepted_by: row.accepted_by,
                 opposition_wording: row.opposition_wording,
                 opposition_count_wording: row.opposition_count_wording,
+                opposition_combat_power,
                 accepted_at_minute: row.accepted_at_minute,
                 paid_at_minute: row.paid_at_minute,
                 distance_m,

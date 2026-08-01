@@ -1046,6 +1046,7 @@ fn public_opposition_count(wording: &str) -> Option<u32> {
 fn public_contract_assessment(
     difficulty: i32,
     opposition_count_wording: &str,
+    opposition_combat_power: u64,
     members: &[PublicPartyCombatant],
 ) -> PublicContractAssessment {
     let Some(enemy_count) = public_opposition_count(opposition_count_wording) else {
@@ -1062,6 +1063,16 @@ fn public_contract_assessment(
         return PublicContractAssessment {
             eligible: false,
             reason: "invalid_public_difficulty",
+            enemy_count: Some(enemy_count),
+            ready_combatants: 0,
+            party_power_milli: 0,
+            enemy_power_milli: 0,
+        };
+    }
+    if opposition_combat_power == 0 {
+        return PublicContractAssessment {
+            eligible: false,
+            reason: "missing_authoritative_opposition_power",
             enemy_count: Some(enemy_count),
             ready_combatants: 0,
             party_power_milli: 0,
@@ -1090,13 +1101,20 @@ fn public_contract_assessment(
                             || capability.three_quarter_armor
                             || capability.full_armor,
                     );
-            physical.saturating_add(technique).saturating_add(equipment)
+            // A ready ranged weapon materially changes the real autoresolve:
+            // it receives a bounded opening volley before melee closes.
+            let opening = 1_500 * u64::from(capability.ranged);
+            physical
+                .saturating_add(technique)
+                .saturating_add(equipment)
+                .saturating_add(opening)
         })
-        .sum::<u64>();
-    // Mirror the authoritative enemy base rating in milli-units and require
-    // a conservative 25% party advantage before accepting the disclosed fight.
-    let enemy_power_milli = u64::from(enemy_count)
-        .saturating_mul(1_200_u64.saturating_add((difficulty as u64).saturating_mul(350)));
+        .sum::<u64>()
+        // Public capability checks use a 0..5 scale; normalize the aggregate
+        // to the same approximately-10k-per-trained-humanoid units as hostile
+        // authority rather than comparing it to raw attribute rating.
+        .saturating_mul(2);
+    let enemy_power_milli = opposition_combat_power;
     let eligible = !ready.is_empty()
         && party_power_milli.saturating_mul(4) >= enemy_power_milli.saturating_mul(5);
     PublicContractAssessment {
