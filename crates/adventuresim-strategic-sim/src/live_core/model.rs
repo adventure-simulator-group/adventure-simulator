@@ -1016,12 +1016,35 @@ struct PublicNpcCandidate {
 fn public_settlement_economy_profile(
     profile: &SettlementEconomyProfile,
 ) -> Option<adventuresim_world_schema::SettlementEconomyProfile> {
-    // SpacetimeDB generates client-side mirrors of the shared world-schema
-    // types. Convert the public projection without reimplementing the
-    // settlement-navigation rules in the simulator.
-    serde_json::to_value(profile)
+    use adventuresim_world_schema as world;
+
+    // NPC tab visibility depends only on the canonical service set. Build the
+    // smallest shared profile that preserves those inputs instead of trying to
+    // serde-bridge SpacetimeDB's SATS-only generated client types.
+    let mut navigability_profile = world::SettlementEconomyProfile::stage_placeholder();
+    navigability_profile.rules_version = profile.rules_version;
+    navigability_profile.prosperity_score = profile.prosperity_score;
+    navigability_profile.services = profile
+        .services
+        .iter()
+        .map(|service| match service {
+            SettlementService::GeneralStore => world::SettlementService::GeneralStore,
+            SettlementService::Inn => world::SettlementService::Inn,
+            SettlementService::GeneralBlacksmith => world::SettlementService::GeneralBlacksmith,
+            SettlementService::Market => world::SettlementService::Market,
+            SettlementService::Weaponsmith => world::SettlementService::Weaponsmith,
+            SettlementService::Armorer => world::SettlementService::Armorer,
+            SettlementService::Tailor => world::SettlementService::Tailor,
+            SettlementService::Herbalist => world::SettlementService::Herbalist,
+            SettlementService::Temple => world::SettlementService::Temple,
+            SettlementService::Bookstore => world::SettlementService::Bookstore,
+        })
+        .collect();
+
+    navigability_profile
+        .validate()
         .ok()
-        .and_then(|value| serde_json::from_value(value).ok())
+        .map(|()| navigability_profile)
 }
 
 fn retain_navigable_public_npc_candidates(

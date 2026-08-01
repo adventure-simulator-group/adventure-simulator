@@ -287,9 +287,19 @@ fn ambiguous_public_npc_candidates_remain_bounded_and_stable() {
 #[test]
 fn inn_only_dialogue_candidates_exclude_hidden_service_locations() {
     let profile = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
-    let projected: SettlementEconomyProfile =
-        serde_json::from_value(serde_json::to_value(&profile).unwrap()).unwrap();
+    let projected = SettlementEconomyProfile {
+        rules_version: profile.rules_version,
+        prosperity_score: profile.prosperity_score,
+        prosperity_tier: ProsperityTier::Subsistence,
+        services: vec![SettlementService::Inn],
+        specializations: vec![],
+        stock: vec![],
+    };
     assert_eq!(public_settlement_economy_profile(&projected), Some(profile.clone()));
+
+    let mut unsupported_projection = projected.clone();
+    unsupported_projection.rules_version = u32::MAX;
+    assert_eq!(public_settlement_economy_profile(&unsupported_projection), None);
     let candidate = |id: u64, location: &str| PublicNpcCandidate {
         resident_character_id: id,
         name: format!("Resident {id}"),
