@@ -127,11 +127,24 @@ fn departure_checks_only_living_members_and_records_public_weather_boundary() {
         .nth(1)
         .and_then(|tail| tail.split("fn item_definition").next())
         .expect("living party projection");
-    assert!(living.contains("row.id == membership.character_id && row.alive"));
+    assert!(living.contains(".filter(|row| row.party_id == party_id)"));
+    assert!(living.contains("character.id == row.character_id"));
+    assert!(living.contains("character.alive"));
 
-    for helper in ["ensure_party_tent", "ensure_ranged_ammunition", "validate_party_departure_readiness"] {
-        let body = source.split(&format!("fn {helper}")).nth(1).expect(helper);
-        assert!(body.contains("living_party_member_ids"), "{helper} must exclude dead members");
+    for (helper, next_helper) in [
+        ("ensure_party_tent", "ensure_ranged_ammunition"),
+        ("ensure_ranged_ammunition", "validate_party_departure_readiness"),
+        ("validate_party_departure_readiness", "prepare_party_for_departure"),
+    ] {
+        let body = source
+            .split(&format!("fn {helper}"))
+            .nth(1)
+            .and_then(|tail| tail.split(&format!("fn {next_helper}")).next())
+            .expect(helper);
+        assert!(
+            body.contains("living_party_member_ids"),
+            "{helper} must exclude dead members"
+        );
     }
     assert!(source.contains("route_weather_projection=unavailable"));
     assert!(source.contains("weather_gate=current_public_condition_only"));
