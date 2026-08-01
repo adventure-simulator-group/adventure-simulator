@@ -2136,6 +2136,114 @@ mod tests {
     }
 
     #[test]
+    fn ransom_convoy_routes_gate_mace_lesson_and_preserve_expert_authority() {
+        let definition = encounter("halted_ransom_convoy_v1").unwrap();
+        assert!(definition.triggers.travel && definition.triggers.rest);
+        assert!(
+            definition
+                .provenance
+                .works
+                .iter()
+                .any(|work| work.contains("Book IV") && work.contains("Chapter VII"))
+        );
+        assert!(
+            definition
+                .provenance
+                .works
+                .iter()
+                .any(|work| work.contains("Book IV") && work.contains("Chapter XII"))
+        );
+        assert!(
+            definition
+                .cast
+                .iter()
+                .all(|speaker| speaker.nature == SpeakerNature::Mortal)
+        );
+        let mut dialogue = definition.opening.iter().chain(
+            definition
+                .choices
+                .iter()
+                .flat_map(|choice| &choice.response),
+        );
+        assert!(
+            dialogue.all(|line| line.reviewed_shakespearean && !line.reviewed_iambic_pentameter)
+        );
+        let choice = |id| {
+            definition
+                .choices
+                .iter()
+                .find(|choice| choice.id == id)
+                .unwrap()
+        };
+        let active = definition
+            .choices
+            .iter()
+            .filter(|choice| choice.id != "ignore")
+            .collect::<Vec<_>>();
+        assert!(active.len() == 7 && active.iter().all(|route| route.checks.len() == 1));
+        for route in &active {
+            let effects = serde_json::to_string(&route.effects).unwrap();
+            assert!(effects.contains(r#""item_id":"flanged_mace","quantity":1"#));
+            assert!(effects.contains("pure_blunt_mace_bypasses_worn_armor_edge_resistance"));
+            assert_eq!(
+                route.quest_reward_tags,
+                ["prepare_blunt_weapon_against_armored_blade_opposition"]
+            );
+            assert!(
+                !["prisoner", "chain", "axle", "wagon", "roll", "key"]
+                    .iter()
+                    .any(|id| effects.contains(id))
+            );
+        }
+        let mace = crate::item_catalog::definition("flanged_mace").unwrap();
+        let weapon = serde_json::to_string(&mace.kind).unwrap();
+        assert!(mace.base_value == 10 && weapon.contains(r#""damage_types":["blunt"]"#));
+        assert!(weapon.contains(r#""melee":true"#) && weapon.contains(r#""ranged":false"#));
+        let retainer = crate::bestiary::ThreatId::ArmedRetainer.profile();
+        assert!(retainer.combat.protection == crate::bestiary::Protection::Armored);
+        assert!(
+            retainer.combat.attack == crate::bestiary::AttackStyle::Blade
+                && !retainer.combat.ranged
+        );
+        let tagged = |route: &EncounterChoice, tag: &str| {
+            route.outcome_tags.iter().any(|found| found == tag)
+        };
+        for spec in [
+            "choose_dry_repair_shoulder terrain_plains sergeant_owned_repair ordinary_repair_completed",
+            "identify_dangerous_binding_swelling physiology sergeant_owned_custody ordinary_repair_completed",
+            "negotiate_immediate_sworn_parole charm clerk_owned_release_terms immediate_parole",
+            "coordinate_guarded_axle_turns command clerk_owned_release_terms sergeant_owned_repair",
+            "hold_neutral_line_for_prisoner_lift will sergeant_owned_custody ordinary_repair_completed",
+            "swear_cross_marked_work_truce roman_catholic shared_confraternity_oath temporary_work_truce",
+            "steal_custody_pay_and_release_escape deception stolen_custody_pay necessary_work_created_custody_gap",
+        ] {
+            let mut fields = spec.split_ascii_whitespace();
+            let route = choice(fields.next().unwrap());
+            assert!(
+                serde_json::to_string(&route.checks)
+                    .unwrap()
+                    .contains(fields.next().unwrap())
+            );
+            assert!(fields.all(|tag| tagged(route, tag)));
+        }
+        let faith = choice("swear_cross_marked_work_truce");
+        assert!(faith.effects.len() == 2 && tagged(faith, "clerk_owned_release_terms"));
+        assert!(tagged(faith, "sergeant_owned_custody"));
+        let evil = choice("steal_custody_pay_and_release_escape");
+        let evil_effects = serde_json::to_string(&evil.effects).unwrap();
+        assert!(
+            evil_effects.contains(r#""amount":48"#) && 48 + mace.base_value > 5 * mace.base_value
+        );
+        assert!(evil.personality.len() == 1 && evil.personality[0].delta < 0);
+        assert!(exemplified_virtue(&evil.personality).is_none());
+        assert!(tagged(evil, "scene_local_prisoner_escape"));
+        let ignore = choice("ignore");
+        assert!(ignore.transition.is_none() && ignore.effects.is_empty());
+        assert!(ignore.personality.is_empty() && ignore.outcome_tags.is_empty());
+        assert!(ignore.quest_reward_tags.is_empty());
+    }
+
+    #[test]
     fn combat_transition_rejects_unsafe_counts() {
         let mut definition = encounter("unlawful_bridge_custom_v1").unwrap().clone();
         let choice = definition
