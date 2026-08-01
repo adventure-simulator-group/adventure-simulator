@@ -127,9 +127,13 @@ The complete authoring and validation contract is documented in
 
 For deterministic multi-year NPC balance experiments and replay commands, see
 [`strategic-simulation.md`](strategic-simulation.md), `just strategic-sim`, and
-`just test-strategic-sim`. The isolated `just strategic-sim-core-loop <new-output-dir>` command
-also evaluates the authoritative strategic incident, escalation, recruitment,
-and quest systems. See
+`just test-strategic-sim`. The isolated
+`just strategic-sim-core-loop <new-output-dir>` command installs deterministic
+direct-contract and generated-local-problem fixtures for two ordinary parties,
+then fails unless both public quest paths and the final survival/return gates
+complete. It writes `report.json` first and an actionable `failure.json` when a
+coverage metric is unmet. It also evaluates the authoritative strategic
+incident, escalation, recruitment, and quest systems. See
 [`strategic-simulation.md`](strategic-simulation.md#quest-evaluators).
 The separate end-to-end web evaluator is LLM-only and drives the same visible
 controls as a player. With a local strategic server running, invoke
@@ -140,7 +144,8 @@ model credential from `OPENAI_API_KEY` by default.
 The opt-in authoritative integration driver is
 `just strategic-sim-core-loop-world <new-output-dir>` loads the pinned
 `target/world-1544.json` rather than sample/renderer data and is preferred for
-gameplay evaluation. Both recipes create, claim, and delete their own
+exploratory imported-world gameplay evaluation; it deliberately does not force
+the deterministic quest fixture. Both recipes create, claim, and delete their own
   nonce-named loopback database, compile a one-run bootstrap capability in
   memory, and accepts no host, database, or capability override.
 

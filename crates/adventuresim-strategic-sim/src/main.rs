@@ -302,6 +302,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         failure_output,
     } = command
     {
+        let acceptance_failure_output = failure_output.clone();
         if let Some(json_output) = &output {
             let mut paths = vec![json_output.as_path()];
             if let Some(failure_output) = &failure_output {
@@ -336,7 +337,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", String::from_utf8(json)?);
         }
         if require_quest_coverage {
-            validate_quest_coverage(&report)?;
+            if let Err(error) = validate_quest_coverage(&report) {
+                if let Some(path) = acceptance_failure_output.as_deref() {
+                    write_quest_coverage_failure(&report, path, &error)?;
+                }
+                return Err(error.into());
+            }
         }
         eprintln!(
             "authoritative core loop: {} completed / {} owner-scoped quest intakes or direct-contract attempts (direct {}/{}, generated {}/{}), {} quest defeats, {} encounters ({} encounter defeats, {} wipes), {} camps, {} upgrades",

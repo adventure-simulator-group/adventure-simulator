@@ -8,7 +8,7 @@ use adventuresim_stdb_client::*;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::mpsc,
     time::Duration,
 };
@@ -503,7 +503,10 @@ pub fn validate_quest_coverage(report: &CoreLoopReport) -> Result<(), String> {
             "direct_contracts_attempted",
             metrics.direct_contracts_attempted >= 1,
         ),
-        ("generated_case_intakes", metrics.generated_case_intakes >= 1),
+        (
+            "generated_case_intakes",
+            metrics.generated_case_intakes >= 1,
+        ),
         (
             "generated_discovery_actions_fruitful",
             metrics.generated_discovery_actions_fruitful >= 1,
@@ -522,8 +525,7 @@ pub fn validate_quest_coverage(report: &CoreLoopReport) -> Result<(), String> {
         ),
         (
             "direct_terminal_outcome",
-            metrics.direct_contracts_completed > 0
-                || metrics.direct_contracts_safely_abandoned > 0,
+            metrics.direct_contracts_completed > 0 || metrics.direct_contracts_safely_abandoned > 0,
         ),
     ];
     if let Some((metric, _)) = checks.into_iter().find(|(_, passed)| !passed) {
@@ -543,6 +545,77 @@ pub fn validate_quest_coverage(report: &CoreLoopReport) -> Result<(), String> {
         return Err("quest coverage acceptance failed: metric=final_agents_not_stranded".into());
     }
     Ok(())
+}
+
+/// Persist the same public-safe diagnostic shape used by reducer failures
+/// when the completed report fails the stricter quest-coverage contract.
+pub fn write_quest_coverage_failure(
+    report: &CoreLoopReport,
+    path: &Path,
+    error: &str,
+) -> Result<(), String> {
+    let reason_code = error
+        .strip_prefix("quest coverage acceptance failed: metric=")
+        .unwrap_or("unknown_metric");
+    let (trace, trace_truncated) = bounded_failure_trace(&report.trace, report.total_event_count);
+    let final_agents = report
+        .final_agents
+        .iter()
+        .map(|agent| CoreLoopFailureAgent {
+            agent_id: agent.agent_id,
+            character_id: agent.character_id,
+            alive: agent.alive,
+            condition_status: agent.condition_status.clone(),
+            thermal: agent.thermal,
+            wetness_bps: agent.wetness_bps,
+            thermal_strain: agent.thermal_strain,
+            ammunition: agent.ammunition,
+            carried_load_kg: agent.carried_load_kg,
+            carry_capacity_kg: agent.carry_capacity_kg,
+            encumbrance_remaining_bps: agent.encumbrance_remaining_bps,
+            equipment_ready: agent.equipment_ready,
+            party_tent_quantity: agent.party_tent_quantity,
+            hunger: agent.hunger,
+            thirst: agent.thirst,
+            food_days: agent.food_days,
+            water_days: agent.water_days,
+            visible_food_kcal: agent.visible_food_kcal,
+            visible_water_ml: agent.visible_water_ml,
+            personal_gold_coin: agent.personal_gold_coin,
+            settlement_id: agent.settlement_id.clone(),
+            current_case_site_id: agent.current_case_site_id.clone(),
+            journey_destination: agent.journey_destination.clone(),
+            symptomatic: agent.symptomatic,
+            critical: agent.critical,
+            settlement_services: agent.settlement_services.clone(),
+            visible_herbalist_quote: agent.visible_herbalist_quote,
+            visible_inn_full_board_cost: agent.visible_inn_full_board_cost,
+        })
+        .collect();
+    let artifact = CoreLoopFailureArtifact {
+        schema_version: CORE_LOOP_FAILURE_SCHEMA_VERSION,
+        category: "quest_coverage_acceptance".into(),
+        message: error.into(),
+        operation: None,
+        reason_code: reason_code.into(),
+        fixture_disease: report.fixture_disease.clone(),
+        metrics: report.metrics.clone(),
+        total_event_count: report.total_event_count,
+        trace_truncated,
+        trace,
+        final_agents,
+    };
+    let bytes = serde_json::to_vec_pretty(&artifact).map_err(|error| error.to_string())?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    use std::io::Write as _;
+    options
+        .open(path)
+        .and_then(|mut file| {
+            file.write_all(&bytes)?;
+            file.write_all(b"\n")
+        })
+        .map_err(|error| format!("could not write quest coverage diagnostic: {error}"))
 }
 
 const MAX_FAILURE_TRACE_EVENTS: usize = 64;

@@ -598,6 +598,28 @@ just strategic-sim-core-loop target/sim-runs/fixture-001 42 8 20 30 2
 just strategic-sim-core-loop-world target/sim-runs/world-001 42 8 20 30 2
 ```
 
+The default fixture recipe enables deterministic quest coverage after forming
+at least two ordinary parties. One leader receives a low-difficulty offered
+contract backed by private case, site, hostile-group, and real issuer
+authority. A different leader receives a generated local problem through the
+ordinary public rumor, dialogue, delivery, and intake flow. Neither path is
+auto-accepted or granted a successful outcome.
+
+Coverage succeeds only when reducer failures, duplicate semantic events,
+stuck detections, and encounter wipes remain zero; all final agents are alive,
+non-critical, and back in a settlement; both direct and generated intake paths
+were attempted; generated discovery was fruitful; attempt totals are
+consistent; and the direct contract was either completed or authoritatively
+abandoned after a safe retreat. Defeats are valid evidence, but deaths and
+wipes are not. The command writes `report.json` before evaluating these gates.
+On failure it also writes `failure.json` with category
+`quest_coverage_acceptance` and the first unmet metric as `reason_code`.
+
+`strategic-sim-core-loop-world` remains an exploratory imported-world run. It
+does not install or require the deterministic coverage fixture because doing
+so would replace evidence about imported-world availability with seeded
+authority.
+
 ## Lifecycle acceptance tier
 
 `strategic-sim-lifecycle` is a credential-free offline acceptance scenario for
