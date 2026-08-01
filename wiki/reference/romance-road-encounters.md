@@ -331,6 +331,39 @@ without bodily harm or present remedy. None of those persons or properties
 becomes an effect payload. This sixty-groschen outcome is five times the honest
 material reward and lowers Honesty alone.
 
+`brachet_leads_to_slain_knight_v1` directly adapts the initiating image from
+Malory's [*Le Morte d'Arthur*, Volume I, Book VI, Chapter
+XIV](https://www.gutenberg.org/files/1251/1251-h/1251-h.htm): Launcelot follows
+a black brachet along a blood trail and finds a dead knight. The encounter
+relocates that image to a goal-neutral alder-hollow recovery: the black brachet
+meets master and player upon the road and leads both along the inward blood
+trail, which remains distinct from untouched spoor departing the corpse. A
+veteran kennel master who trained the brachet for nine years replaces Malory's
+subsequent supernatural adventure and alone owns the hound's leash and cast,
+the bier, and all handling of the slain body.
+
+Seven active routes read departing spoor, examine wounds, hold perimeter
+watch, coordinate hands beneath the master's plan, restore his composure, keep
+an ordinary Christian vigil, or betray his trust. Each route physically
+distinguishes close blade cuts stopped across the lord's mail and layered,
+covered chest from the lethal cut entering his uncovered neck. Every active
+route grants the already-declared spare `arming_doublet` from the master's
+pack, plus practical information that its real chest coverage, resistance, and
+padding oppose the fixed blade-only, non-ranged `armed_retainer` profile. The
+vigil works no miracle and creates no magical state.
+
+The perimeter watcher sees the wounds only after securing the rim and being
+called inward by the master. The thief instead discovers the same physical
+lesson while lifting the mail to strip it after master and hound have departed.
+
+The evil route sends master and leashed brachet briefly down plausible false
+spoor, then strips the declared ninety-six-groschen household pay-purse,
+`mail_shirt`, `war_hammer`, and common spare doublet from corpse and entrusted
+pack. Those items total 177 groschen against twelve for an honest route, while
+master and hound may return physically unharmed to a materially desecrated
+body. Dog and body remain narrative-only property and never become items,
+effects, or persistent strategic state.
+
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,
