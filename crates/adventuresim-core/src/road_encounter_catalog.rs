@@ -950,6 +950,10 @@ mod tests {
                 )
                 .all(|line| line.reviewed_shakespearean && !line.reviewed_iambic_pentameter)
         );
+        let opening = definition.opening[0].text.to_ascii_lowercase();
+        for withheld_fact in ["mail", "mid-shin", "lightly burdened", "movement"] {
+            assert!(!opening.contains(withheld_fact));
+        }
         let choice = |id| {
             definition
                 .choices
@@ -1097,6 +1101,168 @@ mod tests {
             choice("ignore").transition.as_ref(),
             Some(EncounterTransition::TravelDelay { minutes: 120 })
         ));
+    }
+
+    #[test]
+    fn proud_traveler_routes_are_mortal_distinct_grounded_and_balanced() {
+        let definition = encounter("proud_traveler_errands_v1").unwrap();
+        assert!(definition.triggers.travel && !definition.triggers.rest);
+        assert_eq!(definition.weight, 70);
+        assert!(
+            definition
+                .cast
+                .iter()
+                .all(|speaker| speaker.nature == SpeakerNature::Mortal)
+        );
+        assert!(
+            definition
+                .opening
+                .iter()
+                .chain(
+                    definition
+                        .choices
+                        .iter()
+                        .flat_map(|choice| &choice.response)
+                )
+                .all(|line| line.reviewed_shakespearean && !line.reviewed_iambic_pentameter)
+        );
+        let choice = |id| {
+            definition
+                .choices
+                .iter()
+                .find(|choice| choice.id == id)
+                .unwrap()
+        };
+        let non_ignore = definition
+            .choices
+            .iter()
+            .filter(|choice| choice.id != "ignore")
+            .collect::<Vec<_>>();
+        assert_eq!(non_ignore.len(), 5);
+        let route_signatures = non_ignore
+            .iter()
+            .map(|choice| {
+                serde_json::to_string(&(
+                    &choice.requirements,
+                    &choice.checks,
+                    &choice.effects,
+                    &choice.personality,
+                    &choice.transition,
+                ))
+                .unwrap()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(route_signatures.len(), 5);
+        assert!(non_ignore.iter().all(|choice| {
+            choice.effects.iter().any(|effect| {
+                matches!(
+                    effect,
+                    Effect::Information { information_id }
+                        if information_id == "mid_shin_mud_checks_mail_burdened_movement"
+                )
+            }) && choice.quest_reward_tags == ["heavy_attackers_slow_in_mid_shin_mud"]
+                && choice
+                    .outcome_tags
+                    .iter()
+                    .any(|tag| tag == "physical_observation")
+        }));
+        let delays = non_ignore
+            .iter()
+            .map(|choice| match choice.transition.as_ref() {
+                Some(EncounterTransition::TravelDelay { minutes }) => *minutes,
+                _ => panic!("non-ignore route lacks a travel delay"),
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(delays, BTreeSet::from([20, 30, 40, 60]));
+        for (route, expected_minutes) in [
+            ("render_service", 60),
+            ("bargain_as_equals", 30),
+            ("order_household", 20),
+            ("rebuke_pride", 40),
+            ("keep_entrusted_purse", 20),
+        ] {
+            assert!(matches!(
+                choice(route).transition.as_ref(),
+                Some(EncounterTransition::TravelDelay { minutes })
+                    if *minutes == expected_minutes
+            ));
+        }
+        assert!(matches!(
+            choice("bargain_as_equals").checks[0],
+            Check::Skill {
+                skill: SkillId::Charm,
+                difficulty_milli: 1000
+            }
+        ));
+        assert!(matches!(
+            choice("order_household").checks[0],
+            Check::Skill {
+                skill: SkillId::Command,
+                difficulty_milli: 1000
+            }
+        ));
+        assert!(matches!(
+            choice("rebuke_pride").requirements[0],
+            Requirement::Religion {
+                religion: ReligionId::RomanCatholic
+            }
+        ));
+        assert!(
+            choice("rebuke_pride").response[0]
+                .text
+                .contains("duty unto the exhausted servant")
+        );
+        assert!(choice("rebuke_pride").effects.iter().any(|effect| matches!(
+            effect,
+            Effect::GrantItem { item_id, quantity: 2 } if item_id == "table_wine"
+        )));
+        assert!(
+            choice("render_service")
+                .effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Currency { amount: 8, .. }))
+        );
+        assert!(
+            choice("bargain_as_equals")
+                .effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Currency { amount: 16, .. }))
+        );
+        for (route, virtue) in [
+            ("render_service", VirtueId::Courtesy),
+            ("bargain_as_equals", VirtueId::Justice),
+            ("order_household", VirtueId::Prudence),
+            ("rebuke_pride", VirtueId::Faith),
+        ] {
+            assert_eq!(exemplified_virtue(&choice(route).personality), Some(virtue));
+        }
+        let theft = choice("keep_entrusted_purse");
+        assert!(theft.response[0].text.contains("served a noble household"));
+        assert!(theft.response[0].text.contains("forty-eight groschen"));
+        assert!(!theft.response[0].text.contains("road note"));
+        assert!(theft.result.contains("twenty minutes staging haulers"));
+        assert!(theft.result.contains("mid-shin mud"));
+        assert!(theft.result.contains("abscondest"));
+        assert!(matches!(
+            theft.effects[0],
+            Effect::Currency { amount: 48, .. }
+        ));
+        assert!(theft.personality[0].delta < 0);
+        assert_eq!(exemplified_virtue(&theft.personality), None);
+        let largest_honest_coin = non_ignore
+            .iter()
+            .filter(|choice| choice.id != "keep_entrusted_purse")
+            .flat_map(|choice| &choice.effects)
+            .filter_map(|effect| match effect {
+                Effect::Currency { amount, .. } if *amount > 0 => Some(*amount),
+                _ => None,
+            })
+            .max()
+            .unwrap();
+        assert!(48 > largest_honest_coin);
+        assert!(choice("ignore").transition.is_none());
+        assert!(choice("ignore").effects.is_empty());
+        assert!(choice("ignore").personality.is_empty());
     }
 
     #[test]
