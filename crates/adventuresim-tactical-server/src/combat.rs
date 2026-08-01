@@ -1,10 +1,13 @@
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::{FromClient, SendMode, ServerTriggerExt, ToClients},
-    message::{DefendRequest, MeleeActionPhase, MeleeActionRequest, SuccessfulAttackResponse},
+    message::{
+        DefendRequest, MeleeActionPhase, MeleeActionRequest, RangedActionPhase,
+        RangedActionRequest, SuccessfulAttackResponse,
+    },
 };
 use bevy::prelude::*;
-use std::collections::HashMap;
+use std::{collections::HashMap, num::NonZeroU32};
 
 #[derive(Clone, Debug)]
 pub(crate) struct AppliedTacticalInjury {
@@ -18,6 +21,7 @@ pub(crate) struct AppliedTacticalInjury {
 pub(crate) struct AccumulatedPartyConsequence {
     pub injuries: Vec<AppliedTacticalInjury>,
     pub blood_loss_fraction: f32,
+    pub ammunition_used: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -46,6 +50,14 @@ const MELEE_WINDUP_NETWORK_ALLOWANCE_SECS: f32 = 1.0;
 /// Allows bounded movement between the authoritative physics snapshot and an
 /// ordered attack request arriving at the server.
 const MELEE_RANGE_LATENCY_TOLERANCE: f32 = 0.25;
+const CLIENT_RANGED_WINDUP_SECS: f32 = 0.3;
+const RANGED_COOLDOWN_SECS: f32 = 0.6;
+const RANGED_NETWORK_ALLOWANCE_SECS: f32 = 1.0;
+const RANGED_RANGE_LATENCY_TOLERANCE: f32 = 0.5;
+/// The server owns yaw but not full skeletal/secondary animation. Permit a
+/// small network/input cone while still rejecting targets behind the shooter.
+const RANGED_AIM_CONE_DEGREES: f32 = 20.0;
+const ARROW_ITEM_ID: &str = "arrow";
 
 /// Stores the defender's most recent dodge/parry choice along with the
 /// server timestamp when it was received. Consumed on each attack resolution.
@@ -80,6 +92,33 @@ struct ObservedMeleeWindup {
 pub(crate) struct MeleeAttackAuthority {
     windup: Option<ObservedMeleeWindup>,
     cooldown_until: f32,
+}
+
+#[derive(Debug)]
+struct ObservedRangedWindup {
+    ready_at: f32,
+    expires_at: f32,
+}
+
+#[derive(Component, Debug, Default)]
+pub(crate) struct RangedAttackAuthority {
+    windup: Option<ObservedRangedWindup>,
+    cooldown_until: f32,
+}
+
+fn consume_ranged_authority(authority: &mut RangedAttackAuthority, now: f32) -> bool {
+    let valid = authority.windup.as_ref().is_some_and(|windup| {
+        now >= windup.ready_at && now <= windup.expires_at && now >= authority.cooldown_until
+    });
+    if valid {
+        authority.windup = None;
+        authority.cooldown_until = now + RANGED_COOLDOWN_SECS;
+    }
+    valid
+}
+
+fn remaining_ammo_after_shot(quantity: NonZeroU32) -> Option<NonZeroU32> {
+    NonZeroU32::new(quantity.get() - 1)
 }
 
 fn consume_melee_authority(authority: &mut MeleeAttackAuthority, target: Entity, now: f32) -> bool {
@@ -123,6 +162,16 @@ pub struct MeleeAttackStartedIntent {
     pub windup_secs: f32,
 }
 
+/// A server-internal fired shot. `target == None` is an authoritative miss
+/// that still consumes one projectile after the firing gate succeeds.
+#[derive(Event, Clone, Copy, Debug)]
+pub struct RangedAttackIntent {
+    pub attacker: Entity,
+    pub target: Option<Entity>,
+    pub body_part: BodyPart,
+    pub hit_precision: f32,
+}
+
 #[derive(Event, Clone, Copy, Debug)]
 struct ApplyMeleeAttackResult {
     attacker: Entity,
@@ -131,6 +180,100 @@ struct ApplyMeleeAttackResult {
     result: AttackResult,
     attacker_weapon_slot: EquipSlot,
     defender_parry_slot: Option<EquipSlot>,
+    attacker_weapon_contact: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RangedIntentRejection {
+    SelfTarget,
+    MissingSide,
+    MissingCombatState,
+    FriendlyTarget,
+    Incapacitated,
+    NonFinitePrecision,
+    NotRanged,
+    OutOfRange,
+    OutsideAimCone,
+    Windup,
+    Cooldown,
+    BlockedLineOfSight,
+}
+
+#[derive(Clone, Copy)]
+struct RangedIntentFacts {
+    attacker: Entity,
+    target: Option<Entity>,
+    attacker_side: Option<TacticalCombatSide>,
+    target_side: Option<TacticalCombatSide>,
+    attacker_incapacitated: Option<bool>,
+    target_incapacitated: Option<bool>,
+    hit_precision: f32,
+    weapon_is_ranged: bool,
+    weapon_range: f32,
+    separation: Option<f32>,
+    target_in_aim_cone: Option<bool>,
+    windup_ready: bool,
+    windup_unexpired: bool,
+    cooldown_ready: bool,
+}
+
+fn validate_ranged_intent(facts: RangedIntentFacts) -> Result<(), RangedIntentRejection> {
+    if facts.target == Some(facts.attacker) {
+        return Err(RangedIntentRejection::SelfTarget);
+    }
+    let Some(attacker_side) = facts.attacker_side else {
+        return Err(RangedIntentRejection::MissingSide);
+    };
+    let Some(attacker_incapacitated) = facts.attacker_incapacitated else {
+        return Err(RangedIntentRejection::MissingCombatState);
+    };
+    if attacker_incapacitated {
+        return Err(RangedIntentRejection::Incapacitated);
+    }
+    if !facts.hit_precision.is_finite() {
+        return Err(RangedIntentRejection::NonFinitePrecision);
+    }
+    if !facts.weapon_is_ranged || !facts.weapon_range.is_finite() || facts.weapon_range <= 0.0 {
+        return Err(RangedIntentRejection::NotRanged);
+    }
+    if let Some(_) = facts.target {
+        let Some(target_side) = facts.target_side else {
+            return Err(RangedIntentRejection::MissingSide);
+        };
+        let Some(target_incapacitated) = facts.target_incapacitated else {
+            return Err(RangedIntentRejection::MissingCombatState);
+        };
+        if attacker_side == target_side {
+            return Err(RangedIntentRejection::FriendlyTarget);
+        }
+        if target_incapacitated {
+            return Err(RangedIntentRejection::Incapacitated);
+        }
+        if !facts.separation.is_some_and(|distance| {
+            distance.is_finite() && distance <= facts.weapon_range + RANGED_RANGE_LATENCY_TOLERANCE
+        }) {
+            return Err(RangedIntentRejection::OutOfRange);
+        }
+        if facts.target_in_aim_cone != Some(true) {
+            return Err(RangedIntentRejection::OutsideAimCone);
+        }
+    }
+    if !facts.windup_ready || !facts.windup_unexpired {
+        return Err(RangedIntentRejection::Windup);
+    }
+    if !facts.cooldown_ready {
+        return Err(RangedIntentRejection::Cooldown);
+    }
+    Ok(())
+}
+
+fn ranged_target_in_aim_cone(yaw: f32, attacker: Vec3, target: Vec3) -> bool {
+    let offset = target.xz() - attacker.xz();
+    let Some(direction) = offset.try_normalize() else {
+        return false;
+    };
+    let forward = Vec2::new(-yaw.sin(), -yaw.cos());
+    direction.dot(forward) >= RANGED_AIM_CONE_DEGREES.to_radians().cos()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -222,8 +365,10 @@ impl Plugin for CombatPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<TacticalConsequenceAccumulator>()
             .add_observer(on_melee_action_request)
+            .add_observer(on_ranged_action_request)
             .add_observer(on_melee_attack_started)
             .add_observer(resolve_melee_attack)
+            .add_observer(resolve_ranged_attack)
             .add_observer(apply_melee_attack_result)
             .add_observer(on_defender_response)
             .add_systems(Update, update_tactical_combat_state);
@@ -334,6 +479,43 @@ fn on_melee_action_request(
             cmd.trigger(MeleeAttackIntent {
                 attacker,
                 target,
+                body_part: event.body_part,
+                hit_precision: event.hit_precision,
+            });
+        }
+    }
+}
+
+fn on_ranged_action_request(
+    event: On<FromClient<RangedActionRequest>>,
+    mut cmd: Commands,
+    time: Res<Time<()>>,
+    mut authorities: Query<&mut RangedAttackAuthority>,
+) {
+    let Some(attacker) = event.client_id.entity() else {
+        debug!(
+            "Ignoring ranged action from unknown client: {:?}",
+            event.client_id
+        );
+        return;
+    };
+    match event.phase {
+        RangedActionPhase::Start => {
+            let Ok(mut authority) = authorities.get_mut(attacker) else {
+                return;
+            };
+            let ready_at = time.elapsed_secs() + CLIENT_RANGED_WINDUP_SECS;
+            authority.windup = Some(ObservedRangedWindup {
+                ready_at,
+                expires_at: ready_at + RANGED_NETWORK_ALLOWANCE_SECS,
+            });
+        }
+        RangedActionPhase::Complete => {
+            // Finite precision is deliberately trusted. Animation and
+            // secondary physics remain client-owned and non-deterministic.
+            cmd.trigger(RangedAttackIntent {
+                attacker,
+                target: event.target,
                 body_part: event.body_part,
                 hit_precision: event.hit_precision,
             });
@@ -500,6 +682,7 @@ fn resolve_melee_attack(
         result,
         attacker_weapon_slot,
         defender_parry_slot,
+        attacker_weapon_contact: true,
     });
 
     match result {
@@ -529,6 +712,177 @@ fn resolve_melee_attack(
         message: SuccessfulAttackResponse {
             attacker: entity,
             hit: vec![event.target],
+            body_part: event.body_part,
+            result,
+            flanking,
+            defender_response,
+        },
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve_ranged_attack(
+    event: On<RangedAttackIntent>,
+    mut cmd: Commands,
+    viewer: TacticalPlayerViewer,
+    spatial: SpatialQuery,
+    q_character: Query<(&CharacterLook, &Transform)>,
+    q_sides: Query<&TacticalCombatSide>,
+    q_states: Query<&TacticalCombatState>,
+    mut q_authorities: Query<&mut RangedAttackAuthority>,
+    q_bestiary_categories: Query<&BestiaryCategories>,
+    q_pending: Query<&PendingDefenderResponse>,
+    q_ammo: Query<(Entity, &ItemOf, &ItemProperties, &ItemQuantity)>,
+    q_ids: Query<&PlayerId>,
+    mut consequences: ResMut<TacticalConsequenceAccumulator>,
+    time: Res<Time<()>>,
+) {
+    let attacker = event.attacker;
+    let Ok(attacker_view) = viewer.get(attacker) else {
+        return;
+    };
+    let Ok((attacker_look, attacker_transform)) = q_character.get(attacker) else {
+        return;
+    };
+    let target_character = event.target.and_then(|target| q_character.get(target).ok());
+    let now = time.elapsed_secs();
+    let Ok(mut authority) = q_authorities.get_mut(attacker) else {
+        return;
+    };
+    let windup = authority.windup.as_ref();
+    let facts = RangedIntentFacts {
+        attacker,
+        target: event.target,
+        attacker_side: q_sides.get(attacker).ok().copied(),
+        target_side: event
+            .target
+            .and_then(|target| q_sides.get(target).ok().copied()),
+        attacker_incapacitated: q_states.get(attacker).ok().map(|state| state.incapacitated),
+        target_incapacitated: event
+            .target
+            .and_then(|target| q_states.get(target).ok().map(|state| state.incapacitated)),
+        hit_precision: event.hit_precision,
+        weapon_is_ranged: attacker_view.weapon_is_ranged(),
+        weapon_range: attacker_view.weapon_reach(),
+        separation: target_character.map(|(_, transform)| {
+            attacker_transform
+                .translation
+                .distance(transform.translation)
+        }),
+        target_in_aim_cone: target_character.map(|(_, transform)| {
+            ranged_target_in_aim_cone(
+                attacker_look.yaw,
+                attacker_transform.translation,
+                transform.translation,
+            )
+        }),
+        windup_ready: windup.is_some_and(|windup| now >= windup.ready_at),
+        windup_unexpired: windup.is_some_and(|windup| now <= windup.expires_at),
+        cooldown_ready: now >= authority.cooldown_until,
+    };
+    if let Err(reason) = validate_ranged_intent(facts) {
+        if !matches!(
+            reason,
+            RangedIntentRejection::Windup | RangedIntentRejection::Cooldown
+        ) {
+            debug!("Rejected ranged intent from {attacker:?}: {reason:?}");
+        }
+        return;
+    }
+    if let (Some(target), Some((_, target_transform))) = (event.target, target_character) {
+        let line_of_sight = authoritative_line_of_sight(
+            &spatial,
+            attacker,
+            target,
+            attacker_transform.translation,
+            target_transform.translation,
+        );
+        if !line_of_sight {
+            debug!(
+                "Rejected ranged intent from {attacker:?}: {:?}",
+                RangedIntentRejection::BlockedLineOfSight
+            );
+            return;
+        }
+    }
+    if !consume_ranged_authority(&mut authority, now) {
+        return;
+    }
+
+    // Only an otherwise-authorized shot reaches the global inventory scan.
+    // A dry fire still consumes its windup/cooldown, bounding repeated scans.
+    let ammo = q_ammo.iter().find(|(_, owner, properties, quantity)| {
+        owner.0 == attacker && properties.id == ARROW_ITEM_ID && quantity.0.get() > 0
+    });
+    let Some((ammo_entity, _, _, quantity)) = ammo else {
+        return;
+    };
+    if let Some(remaining) = remaining_ammo_after_shot(quantity.0) {
+        cmd.entity(ammo_entity).insert(ItemQuantity(remaining));
+    } else {
+        cmd.entity(ammo_entity).despawn();
+    }
+    if q_sides
+        .get(attacker)
+        .is_ok_and(|side| *side == TacticalCombatSide::Party)
+        && let Ok(player_id) = q_ids.get(attacker)
+    {
+        record_party_ammunition_use(&mut consequences, player_id.0);
+    }
+
+    let Some(target) = event.target else {
+        return;
+    };
+    let Ok(defender_view) = viewer.get(target) else {
+        return;
+    };
+    let Some((defender_look, _)) = target_character else {
+        return;
+    };
+    let (a2, a1) = attacker_look.yaw.sin_cos();
+    let (d2, d1) = defender_look.yaw.sin_cos();
+    let flanking = flanking_from_dir((a1, a2), (d1, d2));
+    let defender_response =
+        resolve_defender_response(q_pending.get(target).ok(), &time, &defender_view);
+    cmd.entity(target).remove::<PendingDefenderResponse>();
+    let fallback_categories = BestiaryCategories::default();
+    let defender_categories = q_bestiary_categories
+        .get(target)
+        .unwrap_or(&fallback_categories);
+    let result = attacker_view.resolve_ranged_attack(
+        &defender_view,
+        &defender_categories.0,
+        defender_response,
+        event.hit_precision,
+        flanking,
+        event.body_part,
+    );
+    let defender_parry_slot = matches!(defender_response, DefenderResponse::Parry { .. })
+        .then(|| defender_view.shield_holding_side())
+        .flatten()
+        .and_then(|side| match side {
+            BodySide::Left => Some(EquipSlot::HoldingLeft),
+            BodySide::Right => Some(EquipSlot::HoldingRight),
+            BodySide::Both => None,
+        });
+    let attacker_weapon_slot = match attacker_view.weapon_holding_side() {
+        Some(BodySide::Left) => EquipSlot::HoldingLeft,
+        _ => EquipSlot::HoldingRight,
+    };
+    cmd.trigger(ApplyMeleeAttackResult {
+        attacker,
+        target,
+        body_part: event.body_part,
+        result,
+        attacker_weapon_slot,
+        defender_parry_slot,
+        attacker_weapon_contact: false,
+    });
+    cmd.server_trigger(ToClients {
+        mode: SendMode::CLIENTS_ONLY,
+        message: SuccessfulAttackResponse {
+            attacker,
+            hit: vec![target],
             body_part: event.body_part,
             result,
             flanking,
@@ -583,7 +937,8 @@ fn apply_melee_attack_result(
             AttackResult::ToAttacker { contact_force, .. }
             | AttackResult::ToDefender { contact_force, .. } => contact_force.max(0.0),
         };
-        if contact_stress > 0.0
+        if event.attacker_weapon_contact
+            && contact_stress > 0.0
             && let Some((_, _, provenance, _, _, _)) = items.iter().find(|row| {
                 let (owner, slot, _, weapon, _, _) = row;
                 attacker_weapon_contact_matches(
@@ -682,6 +1037,17 @@ fn record_party_injury(
     consequence.blood_loss_fraction = (consequence.blood_loss_fraction
         + (cut_damage + blunt_damage) * BLOOD_LOSS_PER_HEALTH_DAMAGE)
         .clamp(0.0, 1.0);
+}
+
+fn record_party_ammunition_use(
+    consequences: &mut TacticalConsequenceAccumulator,
+    character_id: u64,
+) {
+    let consequence = consequences.party.entry(character_id).or_default();
+    consequence.ammunition_used = consequence
+        .ammunition_used
+        .saturating_add(1)
+        .min(adventuresim_core::mission::MAX_TACTICAL_AMMUNITION_USED);
 }
 
 fn attacker_weapon_contact_matches(
@@ -886,6 +1252,25 @@ mod tests {
         }
     }
 
+    fn valid_ranged_facts(world: &mut World) -> RangedIntentFacts {
+        RangedIntentFacts {
+            attacker: world.spawn_empty().id(),
+            target: Some(world.spawn_empty().id()),
+            attacker_side: Some(TacticalCombatSide::Party),
+            target_side: Some(TacticalCombatSide::Enemy),
+            attacker_incapacitated: Some(false),
+            target_incapacitated: Some(false),
+            hit_precision: 1.0,
+            weapon_is_ranged: true,
+            weapon_range: 120.0,
+            separation: Some(30.0),
+            target_in_aim_cone: Some(true),
+            windup_ready: true,
+            windup_unexpired: true,
+            cooldown_ready: true,
+        }
+    }
+
     #[test]
     fn authoritative_gate_rejects_invalid_relationship_state_and_geometry() {
         let mut world = World::new();
@@ -979,6 +1364,147 @@ mod tests {
         for (facts, expected) in cases {
             assert_eq!(validate_melee_intent_cheap(facts), Err(expected));
         }
+    }
+
+    #[test]
+    fn ranged_gate_validates_authority_equipment_ammo_and_target() {
+        let mut world = World::new();
+        let valid = valid_ranged_facts(&mut world);
+        assert_eq!(validate_ranged_intent(valid), Ok(()));
+        assert_eq!(
+            validate_ranged_intent(RangedIntentFacts {
+                hit_precision: 99.0,
+                ..valid
+            }),
+            Ok(()),
+            "finite client precision is intentionally trusted and core-clamped"
+        );
+        let cases = [
+            (
+                RangedIntentFacts {
+                    target: Some(valid.attacker),
+                    ..valid
+                },
+                RangedIntentRejection::SelfTarget,
+            ),
+            (
+                RangedIntentFacts {
+                    target_side: valid.attacker_side,
+                    ..valid
+                },
+                RangedIntentRejection::FriendlyTarget,
+            ),
+            (
+                RangedIntentFacts {
+                    attacker_incapacitated: Some(true),
+                    ..valid
+                },
+                RangedIntentRejection::Incapacitated,
+            ),
+            (
+                RangedIntentFacts {
+                    hit_precision: f32::NAN,
+                    ..valid
+                },
+                RangedIntentRejection::NonFinitePrecision,
+            ),
+            (
+                RangedIntentFacts {
+                    weapon_is_ranged: false,
+                    ..valid
+                },
+                RangedIntentRejection::NotRanged,
+            ),
+            (
+                RangedIntentFacts {
+                    separation: Some(121.0),
+                    ..valid
+                },
+                RangedIntentRejection::OutOfRange,
+            ),
+            (
+                RangedIntentFacts {
+                    windup_ready: false,
+                    ..valid
+                },
+                RangedIntentRejection::Windup,
+            ),
+            (
+                RangedIntentFacts {
+                    cooldown_ready: false,
+                    ..valid
+                },
+                RangedIntentRejection::Cooldown,
+            ),
+        ];
+        for (facts, expected) in cases {
+            assert_eq!(validate_ranged_intent(facts), Err(expected));
+        }
+
+        assert_eq!(
+            validate_ranged_intent(RangedIntentFacts {
+                target: None,
+                target_side: None,
+                target_incapacitated: None,
+                separation: None,
+                ..valid
+            }),
+            Ok(()),
+            "a fired miss still passes the firing gate and consumes ammo"
+        );
+    }
+
+    #[test]
+    fn ranged_aim_cone_accepts_forward_and_rejects_behind() {
+        let origin = Vec3::ZERO;
+        assert!(ranged_target_in_aim_cone(0.0, origin, Vec3::NEG_Z));
+        assert!(!ranged_target_in_aim_cone(0.0, origin, Vec3::Z));
+
+        let mut world = World::new();
+        let valid = valid_ranged_facts(&mut world);
+        assert_eq!(validate_ranged_intent(valid), Ok(()));
+        assert_eq!(
+            validate_ranged_intent(RangedIntentFacts {
+                target_in_aim_cone: Some(false),
+                ..valid
+            }),
+            Err(RangedIntentRejection::OutsideAimCone)
+        );
+    }
+
+    #[test]
+    fn ranged_rejections_happen_before_ammo_scan() {
+        let source = include_str!("combat.rs");
+        let resolver = source
+            .split("fn resolve_ranged_attack(")
+            .nth(1)
+            .and_then(|tail| tail.split("fn apply_melee_attack_result(").next())
+            .expect("ranged resolver body");
+        let validation = resolver
+            .find("validate_ranged_intent(facts)")
+            .expect("cheap validation");
+        let authorization = resolver
+            .find("consume_ranged_authority")
+            .expect("one-shot authorization");
+        let ammo_scan = resolver.find("q_ammo.iter().find").expect("ammo scan");
+        assert!(validation < authorization && authorization < ammo_scan);
+    }
+
+    #[test]
+    fn ranged_ammo_consumption_and_receipt_are_bounded() {
+        assert_eq!(remaining_ammo_after_shot(NonZeroU32::new(1).unwrap()), None);
+        assert_eq!(
+            remaining_ammo_after_shot(NonZeroU32::new(3).unwrap()).map(NonZeroU32::get),
+            Some(2)
+        );
+        let mut consequences = TacticalConsequenceAccumulator::default();
+        for _ in 0..=adventuresim_core::mission::MAX_TACTICAL_AMMUNITION_USED {
+            record_party_ammunition_use(&mut consequences, 7);
+        }
+        assert_eq!(
+            consequences.party[&7].ammunition_used,
+            adventuresim_core::mission::MAX_TACTICAL_AMMUNITION_USED
+        );
     }
 
     #[test]
