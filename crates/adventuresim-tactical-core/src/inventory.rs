@@ -201,6 +201,13 @@ impl InventoryView<'_, '_, '_> {
         self.q_item.iter_many(items)
     }
 
+    /// Returns whether this actor owns a non-empty stack of the requested
+    /// tactical item without scanning other actors' inventories.
+    pub fn has_item_id(&self, item_id: &str) -> bool {
+        self.iter()
+            .any(|item| item.properties.id == item_id && item.quantity.0.get() > 0)
+    }
+
     fn equipped_weapon(&self) -> Option<ItemQueryItem<'_, '_>> {
         self.q_inventory
             .get(self.entity)

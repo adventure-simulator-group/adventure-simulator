@@ -10,7 +10,8 @@ use crate::{
     MissionState,
     combat::{
         Incapacitated, MeleeAttackIntent, MeleeAttackStartedIntent, PendingDefenderResponse,
-        TacticalCombatSide, TacticalCombatantDefeated,
+        RangedAttackIntent, RangedAttackStartedIntent, TacticalCombatSide,
+        TacticalCombatantDefeated,
     },
 };
 
@@ -32,13 +33,22 @@ const AI_HIT_PRECISION: f32 = 1.0;
 const AI_BODY_PART: BodyPart = BodyPart::Chest;
 const AI_WINDUP_SECS: f32 = 0.5;
 const AI_COOLDOWN_SECS: f32 = 1.0;
+const AI_RANGED_MIN_STANDOFF: f32 = 1.5;
+const AI_RANGED_MAX_STANDOFF: f32 = 12.0;
+const AI_RANGED_STANDOFF_SLOP: f32 = 0.5;
+const ARROW_ITEM_ID: &str = "arrow";
+
+fn ranged_weapon_needs_ammo_lookup(weapon_is_ranged: bool, weapon_reach: f32) -> bool {
+    weapon_is_ranged && weapon_reach.is_finite() && weapon_reach > 0.0
+}
 
 /// Marks a server-controlled bot filling in for a temporary (non-connected)
 /// mission character.
 #[derive(Component)]
 pub struct MissionEnemy;
 
-/// Enables server-owned, direct-pursuit melee control for a combatant.
+/// Enables server-owned offensive control, preferring ranged fire while a
+/// usable ranged weapon and arrows are available and otherwise using melee.
 #[derive(Component, Debug)]
 pub struct OffensiveMeleeAi {
     target: Option<Entity>,
@@ -57,7 +67,8 @@ impl Default for OffensiveMeleeAi {
 #[derive(Debug)]
 enum OffensiveMeleePhase {
     Pursuing,
-    Windup(Timer),
+    MeleeWindup(Timer),
+    RangedWindup(Timer),
     Cooldown(Timer),
 }
 
@@ -80,6 +91,7 @@ impl Plugin for BotPlugin {
         app.add_observer(on_tactical_combatant_defeated)
             .add_observer(on_attack_started)
             .add_observer(on_targeted_attack_started)
+            .add_observer(on_targeted_ranged_attack_started)
             .add_systems(Update, (drive_offensive_melee_ai, tick_bot_reactions));
     }
 }
@@ -147,6 +159,23 @@ fn on_targeted_attack_started(
     };
     if q_ai.get(event.target).is_ok() {
         try_start_reaction(&mut cmd, event.target, attacker_look, defender_look);
+    }
+}
+
+fn on_targeted_ranged_attack_started(
+    event: On<RangedAttackStartedIntent>,
+    mut cmd: Commands,
+    q_character: Query<&CharacterLook>,
+    q_ai: Query<&CharacterLook, (With<OffensiveMeleeAi>, Without<Incapacitated>)>,
+) {
+    let Some(target) = event.target else {
+        return;
+    };
+    let Ok([attacker_look, defender_look]) = q_character.get_many([event.attacker, target]) else {
+        return;
+    };
+    if q_ai.get(target).is_ok() {
+        try_start_reaction(&mut cmd, target, attacker_look, defender_look);
     }
 }
 
@@ -238,21 +267,57 @@ fn drive_offensive_melee_ai(
         if distance > f32::EPSILON {
             look.yaw = (-offset.x).atan2(-offset.y);
         }
-        let weapon_reach = viewer
+        let (weapon_reach, weapon_is_melee, weapon_is_ranged) = viewer
             .get(entity)
-            .map(|view| view.weapon_reach())
+            .map(|view| {
+                (
+                    view.weapon_reach(),
+                    view.weapon_is_melee(),
+                    view.weapon_is_ranged(),
+                )
+            })
             .unwrap_or_default();
+        let has_ammo = ranged_weapon_needs_ammo_lookup(weapon_is_ranged, weapon_reach)
+            && viewer.inventory.get(entity).has_item_id(ARROW_ITEM_ID);
+        let use_ranged = weapon_is_ranged && weapon_reach > 0.0 && has_ammo;
         let interaction_range = melee_interaction_range(weapon_reach);
 
-        if !matches!(&controller.phase, OffensiveMeleePhase::Pursuing)
-            && (weapon_reach <= 0.0 || distance > interaction_range)
-        {
+        let abort_windup = matches!(
+            &controller.phase,
+            OffensiveMeleePhase::MeleeWindup(_)
+                if !weapon_is_melee || weapon_reach <= 0.0 || distance > interaction_range
+        ) || matches!(
+            &controller.phase,
+            OffensiveMeleePhase::RangedWindup(_) if !use_ranged || distance > weapon_reach
+        );
+        if abort_windup {
             controller.phase = OffensiveMeleePhase::Pursuing;
         }
 
         match &mut controller.phase {
+            OffensiveMeleePhase::Pursuing if use_ranged => {
+                let standoff = (weapon_reach * 0.5)
+                    .clamp(AI_RANGED_MIN_STANDOFF, AI_RANGED_MAX_STANDOFF)
+                    .min(weapon_reach);
+                if distance > weapon_reach || distance > standoff + AI_RANGED_STANDOFF_SLOP {
+                    input.last_movement = Some(Vec2::Y);
+                } else if distance + AI_RANGED_STANDOFF_SLOP < standoff {
+                    input.last_movement = Some(-Vec2::Y);
+                } else {
+                    input.last_movement = None;
+                    cmd.trigger(RangedAttackStartedIntent {
+                        attacker: entity,
+                        target: Some(target),
+                        windup_secs: AI_WINDUP_SECS,
+                    });
+                    controller.phase = OffensiveMeleePhase::RangedWindup(Timer::from_seconds(
+                        AI_WINDUP_SECS,
+                        TimerMode::Once,
+                    ));
+                }
+            }
             OffensiveMeleePhase::Pursuing
-                if weapon_reach > 0.0 && distance <= interaction_range =>
+                if weapon_is_melee && weapon_reach > 0.0 && distance <= interaction_range =>
             {
                 input.last_movement = None;
                 cmd.trigger(MeleeAttackStartedIntent {
@@ -260,7 +325,7 @@ fn drive_offensive_melee_ai(
                     target,
                     windup_secs: AI_WINDUP_SECS,
                 });
-                controller.phase = OffensiveMeleePhase::Windup(Timer::from_seconds(
+                controller.phase = OffensiveMeleePhase::MeleeWindup(Timer::from_seconds(
                     AI_WINDUP_SECS,
                     TimerMode::Once,
                 ));
@@ -268,13 +333,29 @@ fn drive_offensive_melee_ai(
             OffensiveMeleePhase::Pursuing => {
                 input.last_movement = Some(Vec2::Y);
             }
-            OffensiveMeleePhase::Windup(timer) => {
+            OffensiveMeleePhase::MeleeWindup(timer) => {
                 input.last_movement = None;
                 timer.tick(time.delta());
                 if timer.is_finished() {
                     cmd.trigger(MeleeAttackIntent {
                         attacker: entity,
                         target,
+                        body_part: AI_BODY_PART,
+                        hit_precision: AI_HIT_PRECISION,
+                    });
+                    controller.phase = OffensiveMeleePhase::Cooldown(Timer::from_seconds(
+                        AI_COOLDOWN_SECS,
+                        TimerMode::Once,
+                    ));
+                }
+            }
+            OffensiveMeleePhase::RangedWindup(timer) => {
+                input.last_movement = None;
+                timer.tick(time.delta());
+                if timer.is_finished() {
+                    cmd.trigger(RangedAttackIntent {
+                        attacker: entity,
+                        target: Some(target),
                         body_part: AI_BODY_PART,
                         hit_precision: AI_HIT_PRECISION,
                     });
@@ -328,15 +409,27 @@ fn tick_bot_reactions(
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{num::NonZeroU32, time::Duration};
 
     use super::*;
 
     #[derive(Resource, Default)]
     struct RecordedAttacks(Vec<(Entity, Entity)>);
 
+    #[derive(Resource, Default)]
+    struct RecordedRangedAttacks(Vec<(Entity, Entity)>);
+
     fn record_attack(event: On<MeleeAttackIntent>, mut attacks: ResMut<RecordedAttacks>) {
         attacks.0.push((event.attacker, event.target));
+    }
+
+    fn record_ranged_attack(
+        event: On<RangedAttackIntent>,
+        mut attacks: ResMut<RecordedRangedAttacks>,
+    ) {
+        if let Some(target) = event.target {
+            attacks.0.push((event.attacker, target));
+        }
     }
 
     fn apply_deterministic_test_hit(
@@ -399,13 +492,121 @@ mod tests {
         actor
     }
 
+    fn spawn_test_ranged_ai(
+        world: &mut World,
+        side: TacticalCombatSide,
+        position: Vec3,
+    ) -> (Entity, Entity) {
+        const TEST_WEAPON_REACH: f32 = 8.0;
+        let actor = world
+            .spawn((
+                Player::default(),
+                Transform::from_translation(position),
+                side,
+                CharacterLook::default(),
+                input::AccumulatedInput::default(),
+                OffensiveMeleeAi::default(),
+                TacticalCombatState::default(),
+            ))
+            .id();
+        let weapon = world.spawn(ItemOf(actor)).id();
+        world.entity_mut(weapon).insert(WeaponItem {
+            skill_weights: [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+            accuracy: 1.0,
+            penetration: 1.0,
+            reach: TEST_WEAPON_REACH,
+            balance: 0.0,
+            precise: false,
+            melee: true,
+            ranged: true,
+            blunt: false,
+            slash: false,
+            pierce: true,
+        });
+        world.entity_mut(weapon).insert(EquipSlot::HoldingRight);
+        let ammo = world
+            .spawn((
+                ItemOf(actor),
+                ItemProperties {
+                    id: ARROW_ITEM_ID.to_owned(),
+                    weight: 0.05,
+                },
+                ItemQuantity(NonZeroU32::new(1).unwrap()),
+            ))
+            .id();
+        (actor, ammo)
+    }
+
+    fn spawn_test_target(world: &mut World, side: TacticalCombatSide, position: Vec3) -> Entity {
+        world
+            .spawn((
+                Player::default(),
+                Transform::from_translation(position),
+                side,
+                CharacterLook::default(),
+                TacticalCombatState::default(),
+            ))
+            .id()
+    }
+
     fn test_app() -> App {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())
             .init_resource::<RecordedAttacks>()
+            .init_resource::<RecordedRangedAttacks>()
             .add_observer(record_attack)
+            .add_observer(record_ranged_attack)
             .add_systems(Update, drive_offensive_melee_ai);
         app
+    }
+
+    #[test]
+    fn ranged_ai_fires_then_falls_back_to_melee_when_ammo_is_exhausted() {
+        assert!(!ranged_weapon_needs_ammo_lookup(false, 1.0));
+        assert!(!ranged_weapon_needs_ammo_lookup(true, 0.0));
+        assert!(ranged_weapon_needs_ammo_lookup(true, 8.0));
+        let mut app = test_app();
+        let (actor, ammo) = spawn_test_ranged_ai(
+            app.world_mut(),
+            TacticalCombatSide::Enemy,
+            Vec3::new(0.0, 0.0, 2.0),
+        );
+        let target = spawn_test_target(
+            app.world_mut(),
+            TacticalCombatSide::Party,
+            Vec3::new(0.0, 0.0, -2.0),
+        );
+
+        for _ in 0..7 {
+            app.world_mut()
+                .resource_mut::<Time<()>>()
+                .advance_by(Duration::from_millis(100));
+            app.update();
+        }
+        assert_eq!(
+            app.world().resource::<RecordedRangedAttacks>().0,
+            vec![(actor, target)]
+        );
+        assert!(app.world().resource::<RecordedAttacks>().0.is_empty());
+
+        // Production consumes this through `resolve_ranged_attack`; removing
+        // it here isolates deterministic controller selection from physics.
+        app.world_mut().despawn(ammo);
+        for _ in 0..20 {
+            app.world_mut()
+                .resource_mut::<Time<()>>()
+                .advance_by(Duration::from_millis(100));
+            app.update();
+        }
+
+        assert!(
+            app.world()
+                .resource::<RecordedAttacks>()
+                .0
+                .contains(&(actor, target)),
+            "ammo exhaustion should return a melee-capable weapon to melee cadence"
+        );
+        assert_eq!(app.world().resource::<RecordedRangedAttacks>().0.len(), 1);
     }
 
     #[test]

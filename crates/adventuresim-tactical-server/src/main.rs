@@ -506,41 +506,43 @@ fn spawn_connected_player(
         player.maximum_blood_ml,
     );
 
-    cmd.entity(entity).remove::<LoadingPlayer>().insert((
-        Name::new(name),
-        Replicated,
-        Player {
-            name: player.character.name.clone(),
-        },
-        PlayerId(player.character.id),
-        BestiaryCategories::default(),
-        skills,
-        limbs,
-        attributes,
-        stats,
-        MissionOpeningAwareness {
-            party_has_surprise: player.party_has_surprise,
-        },
-        TacticalCombatState {
-            starting_incapacitation,
-            starting_blood_fraction,
-            ..default()
-        },
-        MeleeAttackAuthority::default(),
-        RangedAttackAuthority::default(),
-        if player.mission_side == TacticalMissionSide::Enemy {
-            TacticalCombatSide::Enemy
-        } else {
-            TacticalCombatSide::Party
-        },
-        Transform::from_xyz(spawn_position.x, spawn_height, spawn_position.y),
-        (
+    cmd.entity(entity)
+        .remove::<LoadingPlayer>()
+        .insert((
+            Name::new(name),
+            Replicated,
+            Player {
+                name: player.character.name.clone(),
+            },
+            PlayerId(player.character.id),
+            BestiaryCategories::default(),
+            skills,
+            limbs,
+            attributes,
+            stats,
+            MissionOpeningAwareness {
+                party_has_surprise: player.party_has_surprise,
+            },
+            TacticalCombatState {
+                starting_incapacitation,
+                starting_blood_fraction,
+                ..default()
+            },
+            MeleeAttackAuthority::default(),
+            RangedAttackAuthority::default(),
+            if player.mission_side == TacticalMissionSide::Enemy {
+                TacticalCombatSide::Enemy
+            } else {
+                TacticalCombatSide::Party
+            },
+            Transform::from_xyz(spawn_position.x, spawn_height, spawn_position.y),
+        ))
+        .insert((
             player_collider.clone(),
             CollisionMargin(0.01),
             CharacterController::default(),
             CharacterLook::default(),
-        ),
-    ));
+        ));
 
     for item in &player.items {
         let Some(quantity) = NonZeroU32::new(item.quantity) else {
