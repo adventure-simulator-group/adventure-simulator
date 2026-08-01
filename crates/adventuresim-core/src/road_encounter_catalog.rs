@@ -950,6 +950,10 @@ mod tests {
                 )
                 .all(|line| line.reviewed_shakespearean && !line.reviewed_iambic_pentameter)
         );
+        let opening = definition.opening[0].text.to_ascii_lowercase();
+        for withheld_fact in ["mail", "mid-shin", "lightly burdened", "movement"] {
+            assert!(!opening.contains(withheld_fact));
+        }
         let choice = |id| {
             definition
                 .choices
@@ -1154,9 +1158,9 @@ mod tests {
                 matches!(
                     effect,
                     Effect::Information { information_id }
-                        if information_id == "mired_mail_riders_move_slowly"
+                        if information_id == "mid_shin_mud_checks_mail_burdened_movement"
                 )
-            }) && choice.quest_reward_tags == ["heavy_attackers_slow_in_soft_ground"]
+            }) && choice.quest_reward_tags == ["heavy_attackers_slow_in_mid_shin_mud"]
                 && choice
                     .outcome_tags
                     .iter()
@@ -1233,6 +1237,12 @@ mod tests {
             assert_eq!(exemplified_virtue(&choice(route).personality), Some(virtue));
         }
         let theft = choice("keep_entrusted_purse");
+        assert!(theft.response[0].text.contains("served a noble household"));
+        assert!(theft.response[0].text.contains("forty-eight groschen"));
+        assert!(!theft.response[0].text.contains("road note"));
+        assert!(theft.result.contains("twenty minutes staging haulers"));
+        assert!(theft.result.contains("mid-shin mud"));
+        assert!(theft.result.contains("abscondest"));
         assert!(matches!(
             theft.effects[0],
             Effect::Currency { amount: 48, .. }

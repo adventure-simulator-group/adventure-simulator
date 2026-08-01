@@ -123,10 +123,13 @@ special-cased by the transition dispatcher.
 `proud_traveler_errands_v1` places a proud mortal traveler and his exhausted
 household at a muddy causeway. The party may render unpriced service, bargain
 as equals, organize the household, rebuke the master through Christian duty,
-or steal an unsuspectingly entrusted purse; passing by remains free because
-the road is not blocked. Each active route consumes a bounded amount of travel
-time and yields the same physical observation that mail-clad riders are slow
-in soft ground. Honest routes express Courtesy, Justice, Prudence, or Faith,
+or falsely claim household experience and abscond with the haulers' entrusted
+wage purse; passing by remains free because the road is not blocked. The
+opening discloses only a mired cart and exhausted workers. Each active route
+consumes a bounded amount of travel time and earns the deeper physical
+observation that mid-shin mud arrests effective movement by mail-burdened
+riders and horses while lightly burdened haulers remain mobile. Honest routes
+express Courtesy, Justice, Prudence, or Faith,
 while the materially richest theft lowers Honesty without publicly exemplifying
 it. The encounter is travel-only, goal-neutral, entirely mortal, and requires
 no runtime catalog special case.
@@ -181,7 +184,9 @@ name, text and supernatural styling, choice ID/label/availability, and the
 chosen response after resolution. Catalog provenance, review flags, hidden
 effects, personality changes, reward tags and quest bindings never cross it.
 Only after generic effects and personality development may it append a quest
-reward. Rewards are real items, currency, or information; generic boss BPS and
+reward. The addendum tells the player to consult what was learned or recovered
+without guessing whether a granted item is itself the tactical carrier.
+Rewards are real items, currency, or information; generic boss BPS and
 magical buffs are forbidden. Physical application of finale information is
 deferred to each finale's tactical implementation; tactical tick state never
 belongs in SpacetimeDB.

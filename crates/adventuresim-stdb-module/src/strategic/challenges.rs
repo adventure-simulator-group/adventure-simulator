@@ -1313,13 +1313,10 @@ pub fn resolve_errantry_road_challenge(
         && overlay.origin == NarrativeEncounterOrigin::Errantry && overlay.reward_eligible
         && !selected.quest_reward_tags.is_empty()
     {
-        let has_material_token = selected.effects.iter().any(|effect| matches!(effect,
-            adventuresim_core::road_encounter_catalog::Effect::GrantItem { .. }));
-        overlay.reward_addendum = Some(if has_material_token {
-            "Thy deed hath also yielded practical knowledge for the danger ahead; consult the material token before battle."
-        } else {
-            "Thy deed hath also yielded practical knowledge for the danger ahead; remember this observation when preparing for battle."
-        }.into());
+        overlay.reward_addendum = Some(
+            "Thy deed hath also yielded practical knowledge for the danger ahead; consult what thou hast learned or recovered before battle."
+                .into(),
+        );
         ctx.db.narrative_encounter_private_authority().occurrence_id().update(overlay);
     }
     challenge.open = false;
@@ -2179,6 +2176,9 @@ mod challenge_source_boundary_tests {
         assert!(source.contains("finale_defenses_json"));
         assert!(reducer.contains("overlay.origin == NarrativeEncounterOrigin::Errantry"));
         assert!(reducer.contains("apply_narrative_effect"));
+        assert!(reducer.contains("consult what thou hast learned or recovered before battle"));
+        assert!(!reducer.contains("has_material_token"));
+        assert!(!reducer.contains("consult the material token"));
         assert!(reducer.find("apply_narrative_effect").unwrap() < reducer.find("reward_addendum").unwrap());
         assert!(reducer.find("road_challenge_resolution_receipt()").unwrap()
             < reducer.find("apply_narrative_effect").unwrap());
