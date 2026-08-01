@@ -861,7 +861,7 @@ mod tests {
         let profiles = (0..4)
             .map(|agent_id| generate_profile(42, agent_id))
             .collect::<Vec<_>>();
-        let groups = crate::live_core::model::balanced_party_groups(&profiles, 2);
+        let groups = crate::live_core::balanced_party_groups(&profiles, 2);
         assert_eq!(groups.len(), 2);
         let mut parties = groups
             .iter()
