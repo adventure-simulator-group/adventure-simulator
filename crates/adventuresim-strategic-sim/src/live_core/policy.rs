@@ -33,6 +33,94 @@ enum MedicalChoice {
     BuyAndRest,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PublicInterventionOffer {
+    preparation_id: String,
+    profile_version: u16,
+    route: String,
+    public_score_micropoints: i64,
+    storefront_quote: u64,
+    inventory_item_id: Option<u64>,
+}
+
+fn public_disease_id(value: &str) -> Option<adventuresim_core::disease::DiseaseId> {
+    use adventuresim_core::disease::DiseaseId;
+    match value {
+        "influenza" => Some(DiseaseId::Influenza),
+        "dysentery" => Some(DiseaseId::Dysentery),
+        "typhus" => Some(DiseaseId::Typhus),
+        "tetanus" => Some(DiseaseId::Tetanus),
+        "erysipelas" => Some(DiseaseId::Erysipelas),
+        "smallpox" => Some(DiseaseId::Smallpox),
+        "plague" => Some(DiseaseId::Plague),
+        "consumption" => Some(DiseaseId::Consumption),
+        "mahrdruck" => Some(DiseaseId::Mahrdruck),
+        "shroud_fever" => Some(DiseaseId::ShroudFever),
+        "bilwisschuss" => Some(DiseaseId::Bilwisschuss),
+        "kobeldunst" => Some(DiseaseId::Kobeldunst),
+        _ => None,
+    }
+}
+
+/// Score only the observer-safe weighted differential and public generic
+/// preparation profiles. Positive values mean expected meter relief exceeds
+/// direct and adverse meter burden. Quantization makes tie-breaking replayable.
+fn public_intervention_score(
+    differential: &[BackendPhysiologyDifferential],
+    profile: &adventuresim_core::physiology::InterventionProfile,
+) -> i64 {
+    use adventuresim_core::physiology::{METER_COUNT, Meter};
+    let total_likelihood = differential
+        .iter()
+        .filter(|row| public_disease_id(&row.disease_id).is_some())
+        .map(|row| u64::from(row.likelihood_bps))
+        .sum::<u64>();
+    if total_likelihood == 0 {
+        return 0;
+    }
+    let mut expected_loss = [0.0_f64; METER_COUNT];
+    for row in differential {
+        let Some(disease_id) = public_disease_id(&row.disease_id) else {
+            continue;
+        };
+        let weight = f64::from(row.likelihood_bps) / total_likelihood as f64;
+        for (meter, peak_loss) in adventuresim_core::disease::disease_peak_meters(disease_id) {
+            expected_loss[meter.index()] += weight * f64::from(*peak_loss).max(0.0);
+        }
+    }
+    let mut benefit = 0.0_f64;
+    let mut burden = 0.0_f64;
+    for meter in Meter::ALL {
+        let expected = expected_loss[meter.index()];
+        let direct = f64::from(profile.loss_delta_per_unit.get(meter));
+        benefit += expected * (-direct).max(0.0);
+        burden += expected * direct.max(0.0);
+        let adverse = f64::from(profile.adverse_delta_per_unit.get(meter)).max(0.0);
+        burden += adverse * (0.5 + expected);
+    }
+    ((benefit - burden) * 1_000_000.0).round() as i64
+}
+
+fn intervention_route_name(
+    route: adventuresim_core::physiology::InterventionRoute,
+) -> &'static str {
+    use adventuresim_core::physiology::InterventionRoute;
+    match route {
+        InterventionRoute::Oral => "oral",
+        InterventionRoute::Topical => "topical",
+        InterventionRoute::Inhaled => "inhaled",
+        InterventionRoute::Injected => "injected",
+    }
+}
+
+fn public_confidence_band(confidence_bps: u16) -> &'static str {
+    match confidence_bps {
+        0..=2_999 => "low",
+        3_000..=6_999 => "moderate",
+        _ => "high",
+    }
+}
+
 fn choose_medical_action(
     condition_status: &str,
     symptomatic: bool,

@@ -9,6 +9,7 @@
             duration_days: 1,
             party_size: 2,
             run_nonce: "unit-test-nonce-0001".into(),
+            fixture_disease: DEFAULT_SIMULATION_DISEASE.into(),
             use_imported_world: false,
             expected_world_manifest_digest: None,
             failure_output: None,
@@ -18,6 +19,13 @@
         assert!(config.validate().is_err());
         config.database = "adventuresim-sim-test-1".into();
         assert!(config.validate().is_ok());
+        for disease in SIMULATION_DISEASE_SCENARIOS {
+            config.fixture_disease = disease.into();
+            assert!(config.validate().is_ok(), "rejected scenario {disease}");
+        }
+        config.fixture_disease = "private-episode-spoof".into();
+        assert!(config.validate().is_err());
+        config.fixture_disease = DEFAULT_SIMULATION_DISEASE.into();
         for spoofed in [
             "http://localhost.example.com:3000",
             "http://127.0.0.1@evil.example:3000",
@@ -117,6 +125,91 @@
             ),
             (MedicalChoice::BuyAndRest, "symptomatic_and_affordable")
         );
+    }
+
+    #[test]
+    fn public_intervention_score_is_deterministic_and_penalizes_adverse_effects() {
+        use adventuresim_core::physiology::{
+            InterventionProfile, InterventionRoute, Meter, MeterVector,
+        };
+        let differential = vec![BackendPhysiologyDifferential {
+            disease_id: "dysentery".into(),
+            label: "bloody flux".into(),
+            likelihood_bps: 8_000,
+        }];
+        let helpful = InterventionProfile {
+            preparation_id: "helpful",
+            version: 1,
+            route: InterventionRoute::Oral,
+            duration_minutes: 60,
+            loss_delta_per_unit: MeterVector::from_entries(&[(Meter::Hydration, -0.2)]),
+            adverse_delta_per_unit: MeterVector::ZERO,
+        };
+        let adverse = InterventionProfile {
+            preparation_id: "adverse",
+            adverse_delta_per_unit: MeterVector::from_entries(&[(Meter::Hydration, 0.3)]),
+            ..helpful
+        };
+        let first = public_intervention_score(&differential, &helpful);
+        assert_eq!(first, public_intervention_score(&differential, &helpful));
+        assert!(first > 0);
+        assert!(public_intervention_score(&differential, &adverse) < first);
+    }
+
+    #[test]
+    fn medical_policy_uses_only_authorized_public_chart_and_patient_inventory() {
+        let source = LIVE_CORE_SOURCE;
+        let chart = source
+            .split("fn public_physician_chart")
+            .nth(1)
+            .and_then(|tail| tail.split("fn public_intervention_offers").next())
+            .expect("public chart selector");
+        for boundary in [
+            "row.id == patient_id && row.alive",
+            "party_member()",
+            "self.character_ids.contains(&chart.observer_id)",
+            "observer.alive",
+            "observer.party_id.as_deref() == Some(party_id)",
+            "observer.current_settlement_id.as_deref() == Some(settlement_id)",
+            "chart.confidence_bps >= MIN_ACTIONABLE_PHYSIOLOGY_CONFIDENCE_BPS",
+        ] {
+            assert!(chart.contains(boundary), "missing chart boundary {boundary}");
+        }
+        assert!(!chart.contains("infection_episode"));
+
+        let recovery = source
+            .split("fn ensure_medically_safe")
+            .nth(1)
+            .and_then(|tail| tail.split("fn settlement_activity_day").next())
+            .expect("medical recovery driver");
+        for public_trace in [
+            "clinician=",
+            "chart_confidence_band=",
+            "public_differential=",
+            "public_score_micropoints=",
+            "storefront_quote=",
+            "outcome=authoritative_reducer_accepted",
+        ] {
+            assert!(recovery.contains(public_trace), "missing trace {public_trace}");
+        }
+        assert!(recovery.contains("clinician_id,"));
+        assert!(recovery.contains("character_id,"));
+        assert!(recovery.contains("preparation_inventory_id"));
+        assert!(recovery.contains("chart_unavailable_or_low_confidence"));
+        assert!(!recovery.contains("infection_episode"));
+    }
+
+    #[test]
+    fn disposable_disease_fixture_is_validated_and_parameterized() {
+        let source = include_str!("../../../../adventuresim-stdb-module/src/simulation.rs");
+        let fixture = source
+            .split("pub fn seed_simulation_disease")
+            .nth(1)
+            .expect("disease fixture");
+        assert!(fixture.contains("disease_id: String"));
+        assert!(fixture.contains("parse_id(&disease_id)"));
+        assert!(fixture.contains("definition(disease)"));
+        assert!(!fixture.contains("DiseaseId::Influenza"));
     }
 
     #[test]

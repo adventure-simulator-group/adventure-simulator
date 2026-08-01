@@ -65,7 +65,10 @@ pub(super) fn root_requirement_matches_slot(
 }
 
 pub fn run_core_loop(config: CoreLoopConfig) -> Result<CoreLoopReport, String> {
-    let failure_recorder = FailureRecorder::new(config.failure_output.clone());
+    let failure_recorder = FailureRecorder::new(
+        config.failure_output.clone(),
+        config.fixture_disease.clone(),
+    );
     let result = run_core_loop_inner(config, failure_recorder.clone());
     if let Err(error) = &result
         && let Err(diagnostic_error) = failure_recorder.write(error)
@@ -268,6 +271,7 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.backend_investigation_journal())
         .add_query(|query| query.from.backend_investigation_leads())
         .add_query(|query| query.from.backend_local_problem_trade_effects())
+        .add_query(|query| query.from.backend_physiology_charts())
         .add_query(|query| query.from.backend_characters())
         .add_query(|query| query.from.backend_character_capabilities())
         .add_query(|query| query.from.backend_character_needs())
@@ -359,7 +363,12 @@ fn run_core_loop_inner(
             let result = reducer_call!(runner, "seed_simulation_disease", |cb| runner
                 .connection
                 .reducers
-                .seed_simulation_disease_then(config.run_nonce.clone(), character_id, cb));
+                .seed_simulation_disease_then(
+                    config.run_nonce.clone(),
+                    character_id,
+                    config.fixture_disease.clone(),
+                    cb,
+                ));
             runner.call(result)?;
         }
         runner.metrics.parties_formed += 1;
@@ -860,6 +869,7 @@ fn run_core_loop_inner(
         server_origin: config.host.clone(),
         database: config.database,
         run_nonce: config.run_nonce,
+        fixture_disease: config.fixture_disease,
         deployment_identity_note: "server origin, database, and claimed run nonce identify this deployment; the SDK does not expose a deployed module binary digest".into(),
         world_artifact_id: world_import.as_ref().map(|import| import.artifact_id.clone()),
         world_manifest_digest: world_import

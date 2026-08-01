@@ -33,6 +33,7 @@ use adventuresim_stdb_client::{
     backend_investigation_cases_table::BackendInvestigationCasesTableAccess,
     backend_investigation_leads_table::BackendInvestigationLeadsTableAccess,
     backend_local_problem_trade_effects_table::BackendLocalProblemTradeEffectsTableAccess,
+    backend_physiology_charts_table::BackendPhysiologyChartsTableAccess,
     backend_settlement_residents_table::BackendSettlementResidentsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_result_table::BattleResultTableAccess,
@@ -126,6 +127,23 @@ const RANGED_AMMUNITION_FLOOR: u32 = 20;
 const MIN_DEPARTURE_ENCUMBRANCE_REMAINING_BPS: u32 = 2_000;
 const MAX_DEPARTURE_WETNESS_BPS: u16 = 8_000;
 const MAX_DEPARTURE_ABS_THERMAL_STRAIN: u32 = 2_500;
+const MIN_ACTIONABLE_PHYSIOLOGY_CONFIDENCE_BPS: u16 = 3_000;
+const DEFAULT_SIMULATION_DISEASE: &str = "influenza";
+const SIMULATION_DISEASE_SCENARIOS: [&str; 9] = [
+    "influenza",
+    "dysentery",
+    "tetanus",
+    "erysipelas",
+    "consumption",
+    "mahrdruck",
+    "shroud_fever",
+    "bilwisschuss",
+    "kobeldunst",
+];
+
+fn default_simulation_disease() -> String {
+    DEFAULT_SIMULATION_DISEASE.to_owned()
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -138,6 +156,9 @@ pub struct CoreLoopConfig {
     pub duration_days: u32,
     pub party_size: u32,
     pub run_nonce: String,
+    /// Validated disease identity used only by the disposable fixture.
+    #[serde(default = "default_simulation_disease")]
+    pub fixture_disease: String,
     pub use_imported_world: bool,
     pub expected_world_manifest_digest: Option<String>,
     /// Immutable, public-safe diagnostic artifact written if the run fails.
@@ -178,6 +199,12 @@ impl CoreLoopConfig {
                 .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
         {
             return Err("run_nonce must be 16..=96 ASCII alphanumeric/dash characters".into());
+        }
+        if !SIMULATION_DISEASE_SCENARIOS.contains(&self.fixture_disease.as_str()) {
+            return Err(format!(
+                "fixture_disease must be one of {}",
+                SIMULATION_DISEASE_SCENARIOS.join(", ")
+            ));
         }
         if self.use_imported_world {
             let digest = self
@@ -430,6 +457,7 @@ pub struct CoreLoopReport {
     pub server_origin: String,
     pub database: String,
     pub run_nonce: String,
+    pub fixture_disease: String,
     pub deployment_identity_note: String,
     pub world_artifact_id: Option<String>,
     pub world_manifest_digest: Option<String>,
@@ -445,7 +473,7 @@ pub struct CoreLoopReport {
 }
 
 const MAX_FAILURE_TRACE_EVENTS: usize = 64;
-const CORE_LOOP_FAILURE_SCHEMA_VERSION: u32 = 6;
+const CORE_LOOP_FAILURE_SCHEMA_VERSION: u32 = 7;
 const MAX_PROJECTED_INVESTIGATION_WAIT_MINUTES: u32 = 1_440;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -489,6 +517,7 @@ pub struct CoreLoopFailureArtifact {
     pub message: String,
     pub operation: Option<String>,
     pub reason_code: String,
+    pub fixture_disease: String,
     pub metrics: CoreLoopMetrics,
     pub total_event_count: u64,
     pub trace_truncated: bool,
@@ -1540,13 +1569,15 @@ fn victim_cohort_state_changed_failure(error: &str) -> bool {
 #[derive(Clone)]
 struct FailureRecorder {
     output: Option<PathBuf>,
+    fixture_disease: String,
     draft: std::sync::Arc<std::sync::Mutex<FailureDraft>>,
 }
 
 impl FailureRecorder {
-    fn new(output: Option<PathBuf>) -> Self {
+    fn new(output: Option<PathBuf>, fixture_disease: String) -> Self {
         Self {
             output,
+            fixture_disease,
             draft: Default::default(),
         }
     }
@@ -1573,6 +1604,7 @@ impl FailureRecorder {
             message: message.into(),
             operation: safe_failure_operation(error).map(str::to_owned),
             reason_code: safe_failure_reason_code(error, category).into(),
+            fixture_disease: self.fixture_disease.clone(),
             metrics: draft.metrics,
             total_event_count: draft.total_event_count,
             trace_truncated: draft.trace_truncated,
@@ -1610,6 +1642,8 @@ fn safe_failure_operation(error: &str) -> Option<&'static str> {
         "purchase_party_tent",
         "purchase_ammunition",
         "withdraw_purchase_coin",
+        "purchase_from_herbalist",
+        "administer_preparation",
     ]
     .into_iter()
     .find(|operation| {
@@ -1637,6 +1671,10 @@ fn safe_failure_reason_code(error: &str, category: &str) -> &'static str {
         || error.contains("withdraw_purchase_coin")
     {
         "ammunition_purchase_failed"
+    } else if error.contains("purchase_from_herbalist") {
+        "medical_purchase_failed"
+    } else if error.contains("administer_preparation") {
+        "medical_intervention_failed"
     } else if error.contains("journey camp projection is incoherent")
         || error.contains("journey provisioning projection is incoherent")
     {
@@ -1698,6 +1736,16 @@ fn safe_core_loop_failure(error: &str) -> (&'static str, &'static str) {
         (
             "survival_purchase_failed",
             "The public ammunition preparation could not be completed.",
+        )
+    } else if error.contains("purchase_from_herbalist") {
+        (
+            "medical_purchase_failed",
+            "The selected public herbalist preparation could not be purchased.",
+        )
+    } else if error.contains("administer_preparation") {
+        (
+            "medical_intervention_failed",
+            "The selected public preparation was rejected by authoritative intervention rules.",
         )
     } else if error.contains("journey camp projection is incoherent")
         || error.contains("journey provisioning projection is incoherent")

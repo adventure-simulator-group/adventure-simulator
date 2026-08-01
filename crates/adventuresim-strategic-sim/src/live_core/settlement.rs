@@ -203,7 +203,12 @@ impl LiveRunner {
     /// Reproduce the herbalist storefront/reducer quote from the same item
     /// definition and gateway-projected local-problem modifier visible to a
     /// player. No local-problem authority or infection state is transported.
-    pub(super) fn observable_medical_quote(&self, character_id: u64, settlement_id: &str) -> Option<u64> {
+    fn observable_preparation_quote(
+        &self,
+        character_id: u64,
+        settlement_id: &str,
+        preparation_id: &str,
+    ) -> Option<u64> {
         let settlement = self
             .connection
             .db
@@ -222,7 +227,7 @@ impl LiveRunner {
             .db
             .item()
             .iter()
-            .find(|row| row.id == "oral_rehydration_draught")?;
+            .find(|row| row.id == preparation_id)?;
         // This is the generated-client equivalent of the public
         // `storefront_stocks(..., Herbalist, ..., Medication)` predicate:
         // the service must exist and the medication's Herbs category must be
@@ -251,6 +256,136 @@ impl LiveRunner {
         Some(u64::from(adventuresim_core::local_problem::adjust_price(
             base, buy_bps,
         )))
+    }
+
+    pub(super) fn observable_medical_quote(
+        &self,
+        character_id: u64,
+        settlement_id: &str,
+    ) -> Option<u64> {
+        self.observable_preparation_quote(
+            character_id,
+            settlement_id,
+            "oral_rehydration_draught",
+        )
+    }
+
+    fn public_physician_chart(&self, patient_id: u64) -> Option<BackendPhysiologyChart> {
+        let patient = self
+            .connection
+            .db
+            .backend_characters()
+            .iter()
+            .find(|row| row.id == patient_id && row.alive)?;
+        let party_id = patient.party_id.as_deref()?;
+        let settlement_id = patient.current_settlement_id.as_deref()?;
+        if !self.connection.db.party_member().iter().any(|member| {
+            member.party_id == party_id && member.character_id == patient_id
+        }) {
+            return None;
+        }
+        let patient_minute = self
+            .connection
+            .db
+            .backend_character_times()
+            .iter()
+            .find(|row| row.character_id == patient_id)?
+            .minutes;
+        let mut charts = self
+            .connection
+            .db
+            .backend_physiology_charts()
+            .iter()
+            .filter(|chart| {
+                chart.patient_id == patient_id
+                    && chart.observed_at <= patient_minute
+                    && chart.confidence_bps >= MIN_ACTIONABLE_PHYSIOLOGY_CONFIDENCE_BPS
+                    && chart.gap_from.is_none()
+                    && chart.gap_to.is_none()
+                    && !chart.possible_diseases.is_empty()
+            })
+            .filter(|chart| self.character_ids.contains(&chart.observer_id))
+            .filter(|chart| {
+                self.connection
+                    .db
+                    .backend_characters()
+                    .iter()
+                    .find(|observer| observer.id == chart.observer_id)
+                    .is_some_and(|observer| {
+                        observer.alive
+                            && observer.party_id.as_deref() == Some(party_id)
+                            && observer.current_settlement_id.as_deref() == Some(settlement_id)
+                            && self.connection.db.party_member().iter().any(|member| {
+                                member.party_id == party_id
+                                    && member.character_id == observer.id
+                            })
+                    })
+            })
+            .collect::<Vec<_>>();
+        charts.sort_by(|left, right| {
+            right
+                .observed_at
+                .cmp(&left.observed_at)
+                .then_with(|| right.confidence_bps.cmp(&left.confidence_bps))
+                .then_with(|| left.observer_id.cmp(&right.observer_id))
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        charts.into_iter().next()
+    }
+
+    fn public_intervention_offers(
+        &self,
+        patient_id: u64,
+        settlement_id: &str,
+        chart: &BackendPhysiologyChart,
+    ) -> Vec<PublicInterventionOffer> {
+        let mut offers = adventuresim_core::physiology::INTERVENTION_PROFILES
+            .iter()
+            .filter(|profile| {
+                !chart.known_interventions.iter().any(|known| {
+                    known.split_whitespace().next() == Some(profile.preparation_id)
+                })
+            })
+            .filter_map(|profile| {
+                let score = public_intervention_score(&chart.possible_diseases, profile);
+                if score <= 0 {
+                    return None;
+                }
+                let quote = self.observable_preparation_quote(
+                    patient_id,
+                    settlement_id,
+                    profile.preparation_id,
+                )?;
+                let inventory_item_id = self
+                    .connection
+                    .db
+                    .inventory_item()
+                    .iter()
+                    .filter(|row| {
+                        row.character_id == patient_id
+                            && row.item_id == profile.preparation_id
+                            && row.quantity == 1
+                    })
+                    .map(|row| row.id)
+                    .min();
+                Some(PublicInterventionOffer {
+                    preparation_id: profile.preparation_id.to_owned(),
+                    profile_version: profile.version,
+                    route: intervention_route_name(profile.route).to_owned(),
+                    public_score_micropoints: score,
+                    storefront_quote: quote,
+                    inventory_item_id,
+                })
+            })
+            .collect::<Vec<_>>();
+        offers.sort_by(|left, right| {
+            right
+                .public_score_micropoints
+                .cmp(&left.public_score_micropoints)
+                .then_with(|| left.storefront_quote.cmp(&right.storefront_quote))
+                .then_with(|| left.preparation_id.cmp(&right.preparation_id))
+        });
+        offers
     }
 
     pub(super) fn observable_medical_reserve(&self, character_id: u64, settlement_id: &str) -> Option<u64> {
@@ -439,9 +574,13 @@ impl LiveRunner {
                     .is_some_and(|row| row.economy.services.contains(&SettlementService::Herbalist))
             });
             let purse = self.personal_gold(character_id);
-            let observable_quote = settlement
+            let chart = self.public_physician_chart(character_id);
+            let intervention_offers = settlement
                 .as_deref()
-                .and_then(|settlement| self.observable_medical_quote(character_id, settlement));
+                .zip(chart.as_ref())
+                .map_or_else(Vec::new, |(settlement, chart)| {
+                    self.public_intervention_offers(character_id, settlement, chart)
+                });
             let (inn_available, temple_available) =
                 settlement.as_ref().map_or((false, false), |settlement_id| {
                     self.connection
@@ -481,6 +620,28 @@ impl LiveRunner {
             let natural_rest_venue = self_funded_natural_rest_venue
                 .or_else(|| rest_sponsor.as_ref().map(|_| true))
                 .or_else(|| emergency_temple_rest.then_some(false));
+            let selected_intervention = intervention_offers.iter().find(|offer| {
+                let purchase_cost = if offer.inventory_item_id.is_some() {
+                    0
+                } else {
+                    offer.storefront_quote
+                };
+                affordable_medical_rest_venue(
+                    inn_available,
+                    temple_available,
+                    temple_food_covers_day,
+                    purse,
+                    purchase_cost,
+                )
+                .is_some()
+            }).cloned();
+            let observable_quote = selected_intervention.as_ref().map(|offer| {
+                if offer.inventory_item_id.is_some() {
+                    0
+                } else {
+                    offer.storefront_quote
+                }
+            });
             let medicated_rest_venue = observable_quote.and_then(|quote| {
                 affordable_medical_rest_venue(
                     inn_available,
@@ -511,7 +672,7 @@ impl LiveRunner {
                         };
                         quote.checked_add(rest)
                     });
-            let (choice, reason) = choose_medical_action(
+            let (choice, base_reason) = choose_medical_action(
                 &condition.status,
                 symptomatic,
                 settlement.is_some(),
@@ -520,6 +681,31 @@ impl LiveRunner {
                 observable_quote,
                 natural_rest_venue,
                 medicated_rest_venue,
+            );
+            let reason = if symptomatic && choice == MedicalChoice::RestNaturally {
+                if chart.is_none() {
+                    "chart_unavailable_or_low_confidence"
+                } else if intervention_offers.is_empty() {
+                    "no_positive_stocked_public_intervention"
+                } else if selected_intervention.is_none() {
+                    "useful_public_intervention_unaffordable"
+                } else {
+                    base_reason
+                }
+            } else {
+                base_reason
+            };
+            let chart_differential = chart.as_ref().map_or_else(
+                || "none".to_owned(),
+                |chart| {
+                    chart
+                        .possible_diseases
+                        .iter()
+                        .take(3)
+                        .map(|row| format!("{}:{}", bounded_event_field(&row.disease_id), row.likelihood_bps))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                },
             );
             let selected_rest_venue = match choice {
                 MedicalChoice::RestNaturally => natural_rest_venue,
@@ -530,9 +716,17 @@ impl LiveRunner {
                 agent,
                 CoreLoopEventKind::MedicalDecision,
                 format!(
-                    "status={};symptomatic={symptomatic};settlement={};purse={purse};observable_quote={};rest_cost={};care_total={};rest_venue={};temple_food_kcal={visible_food_kcal:.0};temple_water_ml={visible_water_ml:.0};temple_food_covers_day={temple_food_covers_day};emergency_temple_rest={emergency_temple_rest};sponsor={};sponsor_purse={};sponsor_medical_reserve={};sponsor_spendable={};patient_contribution_quote={};sponsor_quote={};party_treasury={};sponsor_stake={};care_affordable={};action={choice:?};reason={reason}",
+                    "status={};symptomatic={symptomatic};settlement={};purse={purse};clinician={};chart_confidence_band={};chart_confidence_bps={};public_differential={};preparation={};public_score_micropoints={};route={};storefront_quote={};purchase_cost={};rest_cost={};care_total={};rest_venue={};temple_food_kcal={visible_food_kcal:.0};temple_water_ml={visible_water_ml:.0};temple_food_covers_day={temple_food_covers_day};emergency_temple_rest={emergency_temple_rest};sponsor={};sponsor_purse={};sponsor_medical_reserve={};sponsor_spendable={};patient_contribution_quote={};sponsor_quote={};party_treasury={};sponsor_stake={};care_affordable={};action={choice:?};reason={reason}",
                     condition.status,
                     settlement.as_deref().unwrap_or("none"),
+                    chart.as_ref().map_or_else(|| "none".into(), |chart| chart.observer_id.to_string()),
+                    chart.as_ref().map_or("none", |chart| public_confidence_band(chart.confidence_bps)),
+                    chart.as_ref().map_or_else(|| "none".into(), |chart| chart.confidence_bps.to_string()),
+                    chart_differential,
+                    selected_intervention.as_ref().map_or("none", |offer| offer.preparation_id.as_str()),
+                    selected_intervention.as_ref().map_or_else(|| "none".into(), |offer| offer.public_score_micropoints.to_string()),
+                    selected_intervention.as_ref().map_or("none", |offer| offer.route.as_str()),
+                    selected_intervention.as_ref().map_or_else(|| "unavailable".into(), |offer| offer.storefront_quote.to_string()),
                     observable_quote.map_or_else(|| "unavailable".into(), |quote| quote.to_string()),
                     required_rest_cost.map_or_else(|| "unavailable".into(), |cost| cost.to_string()),
                     observable_care_total.map_or_else(|| "unavailable".into(), |cost| cost.to_string()),
@@ -712,48 +906,63 @@ impl LiveRunner {
                 continue;
             }
 
-            // NPCs react only to the public illness status. They may purchase a
-            // pre-existing preparation and administer its versioned profile;
-            // Physiology never diagnoses or crafts it.
+            // The chosen preparation comes only from the observer-safe chart,
+            // public generic profiles, and visible herbalist stock. The
+            // authoritative reducer owns private response and adverse effects.
             debug_assert_eq!(choice, MedicalChoice::BuyAndRest);
             let gold_before = purse;
-            let preparation_id = "oral_rehydration_draught";
-            let result = reducer_call!(self, "purchase_from_herbalist", |cb| self
-                .connection
-                .reducers
-                .purchase_from_herbalist_then(
-                    character_id,
-                    settlement.clone(),
-                    vec![preparation_id.into()],
-                    vec![1],
-                    cb
-                ));
-            self.call(result)?;
-            self.metrics.preparations_purchased += 1;
-            self.event(
-                agent,
-                CoreLoopEventKind::BuyMedication,
-                format!(
-                    "item={preparation_id};observable_quote={}",
-                    observable_quote.expect("purchase choice requires a quote")
-                ),
-            );
-            let preparation = self
-                .connection
-                .db
-                .inventory_item()
-                .iter()
-                .find(|row| row.character_id == character_id && row.item_id == preparation_id)
-                .ok_or("preparation purchase produced no concrete item")?;
+            let intervention = selected_intervention
+                .expect("purchase choice requires a public intervention");
+            let clinician_id = chart
+                .as_ref()
+                .expect("purchase choice requires a public chart")
+                .observer_id;
+            let preparation_id = intervention.preparation_id.as_str();
+            let preparation_inventory_id = if let Some(inventory_item_id) = intervention.inventory_item_id {
+                inventory_item_id
+            } else {
+                let result = reducer_call!(self, "purchase_from_herbalist", |cb| self
+                    .connection
+                    .reducers
+                    .purchase_from_herbalist_then(
+                        character_id,
+                        settlement.clone(),
+                        vec![preparation_id.into()],
+                        vec![1],
+                        cb
+                    ));
+                self.call(result)?;
+                self.metrics.preparations_purchased += 1;
+                self.event(
+                    agent,
+                    CoreLoopEventKind::BuyMedication,
+                    format!(
+                        "observer={clinician_id};item={preparation_id};route={};public_score_micropoints={};storefront_quote={}",
+                        intervention.route,
+                        intervention.public_score_micropoints,
+                        intervention.storefront_quote,
+                    ),
+                );
+                self.connection
+                    .db
+                    .inventory_item()
+                    .iter()
+                    .filter(|row| {
+                        row.character_id == character_id && row.item_id == preparation_id
+                    })
+                    .map(|row| row.id)
+                    .min()
+                    .ok_or("preparation purchase produced no concrete patient item")?
+            };
             let result = reducer_call!(self, "administer_preparation", |cb| self
                 .connection
                 .reducers
                 .administer_preparation_then(
+                    clinician_id,
                     character_id,
-                    character_id,
-                    preparation.id,
-                    1,
-                    "oral".into(),
+                    preparation_inventory_id,
+                    intervention.profile_version,
+                    intervention.route.clone(),
                     1_000,
                     None,
                     cb
@@ -763,7 +972,13 @@ impl LiveRunner {
             self.event(
                 agent,
                 CoreLoopEventKind::AdministerPreparation,
-                format!("administered={preparation_id};profile=1;route=oral"),
+                format!(
+                    "observer={clinician_id};administered={preparation_id};profile={};route={};public_score_micropoints={};storefront_quote={};outcome=authoritative_reducer_accepted",
+                    intervention.profile_version,
+                    intervention.route,
+                    intervention.public_score_micropoints,
+                    intervention.storefront_quote,
+                ),
             );
             self.metrics.treatment_gold_spent +=
                 gold_before.saturating_sub(self.personal_gold(character_id));

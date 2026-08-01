@@ -18,7 +18,7 @@ pub use profile::*;
 pub use runner::*;
 
 /// Native simulator config, manifest, report, trace, and replay format.
-pub const FORMAT_VERSION: u32 = 6;
+pub const FORMAT_VERSION: u32 = 7;
 /// Maximum accepted config or report JSON input.
 pub const MAX_INPUT_BYTES: u64 = 64 * 1024 * 1024;
 

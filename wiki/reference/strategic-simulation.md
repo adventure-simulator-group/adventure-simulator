@@ -292,7 +292,7 @@ step holds.
 Successful final-agent rows carry the same public needs, visible food and water,
 remote location, journey destination, illness flags, settlement services,
 herbalist quote, and inn full-board cost used by failure diagnostics. Failure
-artifacts use schema version 6. In addition to the strict
+artifacts use schema version 7. In addition to the strict
 event vocabulary and activity-detail semantics, they retain only an allowlisted
 operation name and stable reason code for expected investigation and camp
 failures. `travel_camps`, `rest_at_camp`, and `continue_camp_travel` are
@@ -460,19 +460,32 @@ load accounting therefore uses the public stack/item rows and cannot yet reprodu
 contents mass for every non-food measured container.
 
 Medical needs are evaluated before repairs, and repairs before equipment upgrades. The disposable
-fixture seeds one deterministic influenza episode behind the same claimed-run capability boundary as
-other simulator-only setup. Policy observes only public condition and the narrow public
-symptomatic/critical signal, buys a fixed concrete preparation, and invokes the generic administration
-reducer without reading infection identity, crafting, diagnosing, or selecting an effect by disease.
-The policy reproduces the player-visible herbalist quote from the public item definition, visible
-storefront stock, and the gateway-projected local-problem trade modifier. Affordability includes the
+fixture accepts a validated disease scenario ID, defaulting to influenza, behind the same claimed-run
+capability boundary as other simulator-only setup. Policy observes only public condition, the narrow
+public symptomatic/critical signal, and the gateway-authorized physiology chart. It never subscribes
+to infection episodes or reconstructs hidden disease truth. A usable chart must belong to the patient,
+name a simulator-controlled living observer who is a co-located member of the patient's current party,
+and meet the public confidence floor. Freshness, then confidence, then stable observer/chart identity
+selects among eligible rows; that observer performs the ordinary intervention reducer as clinician.
+
+For every positively scored preparation that the visible herbalist stocks, the policy reproduces the
+authoritative public quote and scores its public generic meter deltas against the chart's public weighted
+differential and disease meter definitions. Expected relief is reduced by direct worsening and adverse
+meter effects. Scores are quantized and ties break by quote then preparation ID, so identical chart,
+inventory, and storefront state yields the same choice. The course is bought into (or reused from) the
+patient's inventory and consumed through the ordinary administration reducer; private sensitivity and
+outcome remain authoritative. Low/no confidence, an active matching intervention, no positive profile,
+missing stock, or an unaffordable course falls back to supportive/natural rest. ORS remains the concrete
+conservative reserve course used by discretionary-spending policy; the medical selector may choose a
+different publicly supported preparation. Affordability includes the
 visible cost of the required one-day rest venue, preferring a free temple to a paid inn. An affordable symptomatic character buys a course;
 an unaffordable character, a settlement without an herbalist, or a nonsymptomatic convalescent
 instead takes bounded one-day natural recovery. Equipment maintenance retains one locally quoted
 course as an emergency reserve rather than consuming every coin before a later symptom becomes
 visible. It rests in bounded one-day steps until ready. Before each choice, the
-trace records public condition, symptomatic status, settlement, purse, quote,
-affordability, action, and reason. Recovery completion records
+trace records only public condition, symptomatic status, settlement, purse, observer ID, confidence
+band, a bounded differential summary, preparation, public score, route, quote, authoritative reducer
+outcome, affordability, action, and reason. Recovery completion records
 `recovery_context=public_symptoms` and keeps the pre-rest symptomatic
 observation separate from the newly read post-rest observation; it does not
 claim a private physiological cause.
@@ -509,8 +522,9 @@ derive `rest_venue` from the selected action: natural, sponsored, and emergency
 recovery use the natural venue, while buy-and-rest uses the medicated venue.
 While recovery is active it authoritatively replaces the saved
 personality schedule with pure rest, then restores that profile schedule after recovery so labor or
-thievery cannot interrupt convalescence with an incident. Quests remain suppressed while a member is unsafe. Reports audit
-diagnosis attempts/results, crafting or purchases, medication equips, treatment gold and time,
+thievery cannot interrupt convalescence with an incident. Passive party Physiology observation remains
+automatic and authoritative; the simulator does not invoke a diagnosis shortcut. Quests remain suppressed while a member is unsafe. Reports audit
+purchases, administrations, treatment gold and time,
 recoveries, suppression, and terminal deaths.
 Because preparation and treatment can advance time, both generated-case and
 direct-contract drivers re-read the public current leader, owner relationship,
@@ -709,9 +723,20 @@ Direct expert invocation needs no NPC policy options:
 cargo run -p adventuresim-strategic-sim -- core-loop `
   --host http://127.0.0.1:3000 --database adventuresim-sim-UNIQUE `
   --run-nonce UNIQUE-NONCE `
+  --fixture-disease influenza `
   --imported-world --expected-world-manifest-digest PINNED-DIGEST `
   --output report.json
 ```
+
+Medical capability evaluation uses a fresh disposable database/output pair for
+each `--fixture-disease` scenario. The ordinary matrix is `influenza`,
+`dysentery`, `tetanus`, `erysipelas`, and `consumption`; the fantastic matrix is
+`mahrdruck`, `shroud_fever`, `bilwisschuss`, and `kobeldunst`. A scenario need
+not recover or survive. Its acceptance condition is bounded completion without
+a reducer failure or stuck loop, plus a report/failure artifact whose
+`fixture_disease` and authoritative death/recovery events attribute the outcome.
+The option defaults safely to `influenza`; arbitrary or hidden disease IDs are
+rejected before connecting.
 
 ### End-to-end browser quest evaluator
 

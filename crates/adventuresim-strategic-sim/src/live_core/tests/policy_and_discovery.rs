@@ -26,6 +26,7 @@ fn startup_registers_and_resubscribes_gateway_before_seeding() {
         ".backend_character_strategic_conditions()",
         ".backend_character_times()",
         ".backend_character_training_schedules()",
+        ".backend_physiology_charts()",
     ] {
         assert!(
             gateway_surface
@@ -34,6 +35,13 @@ fn startup_registers_and_resubscribes_gateway_before_seeding() {
             "post-registration subscription must include {component}"
         );
     }
+    let initial_subscription = source
+        .split("subscription_builder()")
+        .nth(1)
+        .and_then(|tail| tail.split("\"claim_simulation_run\"").next())
+        .expect("pre-registration subscription");
+    assert!(!initial_subscription.contains("backend_physiology_charts"));
+    assert!(!source.contains(".infection_episode()"));
 }
 
 #[test]

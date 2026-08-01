@@ -362,6 +362,7 @@ pub fn seed_simulation_disease(
     ctx: &ReducerContext,
     nonce: String,
     character_id: u64,
+    disease_id: String,
 ) -> Result<(), String> {
     let run = owned_run(ctx, &nonce)?;
     let sim = ctx
@@ -384,20 +385,21 @@ pub fn seed_simulation_disease(
     {
         return Err("Simulation disease fixture may only be seeded once".into());
     }
+    let disease = crate::disease::parse_id(&disease_id)
+        .map_err(|_| "Unknown simulation fixture disease".to_owned())?;
     ctx.db
         .infection_episode()
         .insert(crate::disease::InfectionEpisodeRow {
             id: 0,
             character_id,
-            disease_id: "influenza".into(),
+            disease_id,
             contracted_at: 0,
             ruleset_version: adventuresim_core::physiology::PHYSIOLOGY_RULESET_VERSION,
             phenotype_key_version: adventuresim_core::physiology::PHENOTYPE_KEY_VERSION,
         });
-    let requested =
-        adventuresim_core::disease::definition(adventuresim_core::disease::DiseaseId::Influenza)
-            .incubation_minutes
-            .saturating_add(60);
+    let requested = adventuresim_core::disease::definition(disease)
+        .incubation_minutes
+        .saturating_add(60);
     // Advance through the same disease interval hooks as ordinary gameplay so
     // the simulator observes symptom onset instead of receiving hidden fixture
     // knowledge from the private infection row.

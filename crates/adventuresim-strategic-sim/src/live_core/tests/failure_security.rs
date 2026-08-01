@@ -142,7 +142,7 @@ fn failed_activity_error_classification_never_echoes_raw_backend_text() {
 }
 
 #[test]
-fn failure_artifact_version_six_serializes_safe_operation_context() {
+fn failure_artifact_version_seven_serializes_safe_operation_context() {
     let artifact = CoreLoopFailureArtifact {
         schema_version: CORE_LOOP_FAILURE_SCHEMA_VERSION,
         category: "investigation_temporally_unavailable".into(),
@@ -150,6 +150,7 @@ fn failure_artifact_version_six_serializes_safe_operation_context() {
             .into(),
         operation: Some("perform_investigation_action".into()),
         reason_code: "investigation_night_window".into(),
+        fixture_disease: DEFAULT_SIMULATION_DISEASE.into(),
         metrics: CoreLoopMetrics::default(),
         total_event_count: 1,
         trace_truncated: false,
@@ -162,7 +163,8 @@ fn failure_artifact_version_six_serializes_safe_operation_context() {
         final_agents: Vec::new(),
     };
     let value = serde_json::to_value(artifact).unwrap();
-    assert_eq!(value["schema_version"], serde_json::json!(6));
+    assert_eq!(value["schema_version"], serde_json::json!(7));
+    assert_eq!(value["fixture_disease"], serde_json::json!(DEFAULT_SIMULATION_DISEASE));
     assert_eq!(
         value["operation"],
         serde_json::json!("perform_investigation_action")
