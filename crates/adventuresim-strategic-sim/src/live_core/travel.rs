@@ -603,7 +603,10 @@ impl LiveRunner {
                     _ => return Err("encounter exposed an unknown choice".into()),
                 }
                 let encounter_id = encounter.encounter_id.clone();
-                let action_id = format!("strategic-sim:{encounter_id}:{choice}");
+                let encounter_revision = encounter.revision;
+                let action_id = format!(
+                    "strategic-sim:{encounter_id}:{encounter_revision}:{choice}"
+                );
                 let result = reducer_call!(self, "resolve_strategic_encounter", |cb| self
                     .connection
                     .reducers
@@ -611,6 +614,7 @@ impl LiveRunner {
                         travel_actor,
                         encounter_id.clone(),
                         choice.clone(),
+                        encounter_revision,
                         action_id,
                         cb,
                     ));

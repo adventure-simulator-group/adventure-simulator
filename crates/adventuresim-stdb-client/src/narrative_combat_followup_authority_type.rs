@@ -11,12 +11,7 @@ pub struct NarrativeCombatFollowupAuthority {
     pub occurrence_id: String,
     pub party_id: String,
     pub initiating_character_id: u64,
-    pub victory_result: String,
-    pub defeat_result: String,
-    pub escape_result: String,
-    pub victory_effects_json: String,
-    pub victory_personality_json: String,
-    pub victory_quest_reward_tags: Vec<String>,
+    pub outcome_payloads_json: String,
 }
 
 impl __sdk::InModule for NarrativeCombatFollowupAuthority {
@@ -31,14 +26,8 @@ pub struct NarrativeCombatFollowupAuthorityCols {
     pub occurrence_id: __sdk::__query_builder::Col<NarrativeCombatFollowupAuthority, String>,
     pub party_id: __sdk::__query_builder::Col<NarrativeCombatFollowupAuthority, String>,
     pub initiating_character_id: __sdk::__query_builder::Col<NarrativeCombatFollowupAuthority, u64>,
-    pub victory_result: __sdk::__query_builder::Col<NarrativeCombatFollowupAuthority, String>,
-    pub defeat_result: __sdk::__query_builder::Col<NarrativeCombatFollowupAuthority, String>,
-    pub escape_result: __sdk::__query_builder::Col<NarrativeCombatFollowupAuthority, String>,
-    pub victory_effects_json: __sdk::__query_builder::Col<NarrativeCombatFollowupAuthority, String>,
-    pub victory_personality_json:
+    pub outcome_payloads_json:
         __sdk::__query_builder::Col<NarrativeCombatFollowupAuthority, String>,
-    pub victory_quest_reward_tags:
-        __sdk::__query_builder::Col<NarrativeCombatFollowupAuthority, Vec<String>>,
 }
 
 impl __sdk::__query_builder::HasCols for NarrativeCombatFollowupAuthority {
@@ -52,20 +41,9 @@ impl __sdk::__query_builder::HasCols for NarrativeCombatFollowupAuthority {
                 table_name,
                 "initiating_character_id",
             ),
-            victory_result: __sdk::__query_builder::Col::new(table_name, "victory_result"),
-            defeat_result: __sdk::__query_builder::Col::new(table_name, "defeat_result"),
-            escape_result: __sdk::__query_builder::Col::new(table_name, "escape_result"),
-            victory_effects_json: __sdk::__query_builder::Col::new(
+            outcome_payloads_json: __sdk::__query_builder::Col::new(
                 table_name,
-                "victory_effects_json",
-            ),
-            victory_personality_json: __sdk::__query_builder::Col::new(
-                table_name,
-                "victory_personality_json",
-            ),
-            victory_quest_reward_tags: __sdk::__query_builder::Col::new(
-                table_name,
-                "victory_quest_reward_tags",
+                "outcome_payloads_json",
             ),
         }
     }

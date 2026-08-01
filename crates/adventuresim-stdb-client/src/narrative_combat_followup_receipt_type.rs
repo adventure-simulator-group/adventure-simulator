@@ -15,10 +15,8 @@ pub struct NarrativeCombatFollowupReceipt {
     pub initiating_character_id: u64,
     pub outcome: String,
     pub result_transcript: String,
-    pub applied_effects_json: String,
-    pub applied_personality_json: String,
+    pub applied_payload_json: String,
     pub virtue_exemplified: Option<ChivalricVirtue>,
-    pub quest_reward_tags: Vec<String>,
     pub resolved_at_minute: u64,
 }
 
@@ -36,12 +34,9 @@ pub struct NarrativeCombatFollowupReceiptCols {
     pub initiating_character_id: __sdk::__query_builder::Col<NarrativeCombatFollowupReceipt, u64>,
     pub outcome: __sdk::__query_builder::Col<NarrativeCombatFollowupReceipt, String>,
     pub result_transcript: __sdk::__query_builder::Col<NarrativeCombatFollowupReceipt, String>,
-    pub applied_effects_json: __sdk::__query_builder::Col<NarrativeCombatFollowupReceipt, String>,
-    pub applied_personality_json:
-        __sdk::__query_builder::Col<NarrativeCombatFollowupReceipt, String>,
+    pub applied_payload_json: __sdk::__query_builder::Col<NarrativeCombatFollowupReceipt, String>,
     pub virtue_exemplified:
         __sdk::__query_builder::Col<NarrativeCombatFollowupReceipt, Option<ChivalricVirtue>>,
-    pub quest_reward_tags: __sdk::__query_builder::Col<NarrativeCombatFollowupReceipt, Vec<String>>,
     pub resolved_at_minute: __sdk::__query_builder::Col<NarrativeCombatFollowupReceipt, u64>,
 }
 
@@ -58,16 +53,11 @@ impl __sdk::__query_builder::HasCols for NarrativeCombatFollowupReceipt {
             ),
             outcome: __sdk::__query_builder::Col::new(table_name, "outcome"),
             result_transcript: __sdk::__query_builder::Col::new(table_name, "result_transcript"),
-            applied_effects_json: __sdk::__query_builder::Col::new(
+            applied_payload_json: __sdk::__query_builder::Col::new(
                 table_name,
-                "applied_effects_json",
-            ),
-            applied_personality_json: __sdk::__query_builder::Col::new(
-                table_name,
-                "applied_personality_json",
+                "applied_payload_json",
             ),
             virtue_exemplified: __sdk::__query_builder::Col::new(table_name, "virtue_exemplified"),
-            quest_reward_tags: __sdk::__query_builder::Col::new(table_name, "quest_reward_tags"),
             resolved_at_minute: __sdk::__query_builder::Col::new(table_name, "resolved_at_minute"),
         }
     }

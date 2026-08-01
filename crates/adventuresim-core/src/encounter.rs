@@ -40,6 +40,22 @@ pub fn opaque_strategic_encounter_id(seed: u64, roll_index: u64) -> String {
     format!("enc:{high:016x}{low:016x}")
 }
 
+pub fn strategic_encounter_retry_matches(
+    receipt_encounter_id: &str,
+    receipt_character_id: u64,
+    receipt_choice: &str,
+    receipt_expected_revision: u32,
+    encounter_id: &str,
+    character_id: u64,
+    choice: &str,
+    expected_revision: u32,
+) -> bool {
+    receipt_encounter_id == encounter_id
+        && receipt_character_id == character_id
+        && receipt_choice == choice
+        && receipt_expected_revision == expected_revision
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EncounterTerrain {
     Road,
@@ -530,6 +546,40 @@ mod tests {
         assert_eq!(id.len(), 36);
         assert!(id.starts_with("enc:"));
         assert!(id[4..].bytes().all(|byte| byte.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn preview_receipt_retry_matches_only_the_lost_response_request() {
+        assert!(strategic_encounter_retry_matches(
+            "enc:abc",
+            7,
+            "surrender",
+            3,
+            "enc:abc",
+            7,
+            "surrender",
+            3,
+        ));
+        assert!(!strategic_encounter_retry_matches(
+            "enc:abc",
+            7,
+            "surrender",
+            3,
+            "enc:abc",
+            7,
+            "surrender",
+            4,
+        ));
+        assert!(!strategic_encounter_retry_matches(
+            "enc:abc",
+            7,
+            "surrender",
+            3,
+            "enc:abc",
+            7,
+            "attack",
+            3,
+        ));
     }
     fn context() -> EncounterContext {
         EncounterContext {

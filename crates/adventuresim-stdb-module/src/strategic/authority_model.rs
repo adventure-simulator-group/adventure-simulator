@@ -634,6 +634,7 @@ pub struct StrategicEncounter {
     pub enemy_aware: bool,
     pub available_choices: Vec<String>,
     pub status: String,
+    pub revision: u32,
     pub selected_choice: Option<String>,
     pub selection_explanation: String,
     pub party_speed_m_per_minute: u32,
@@ -654,6 +655,8 @@ pub struct StrategicEncounterResolutionReceipt {
     pub character_id: u64,
     pub action_id: String,
     pub choice: String,
+    pub expected_revision: u32,
+    pub resulting_revision: u32,
     pub outcome: String,
 }
 

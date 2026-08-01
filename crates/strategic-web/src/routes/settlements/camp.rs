@@ -543,6 +543,7 @@ mod road_challenge_route_tests {
 pub(super) struct EncounterChoiceForm {
     encounter_id: String,
     choice: String,
+    expected_revision: u32,
     action_id: String,
 }
 
@@ -558,7 +559,13 @@ pub(super) async fn resolve_camp_encounter(
         .db
         .call(
             "resolve_strategic_encounter",
-            &[json!(character_id), json!(form.encounter_id), json!(form.choice), json!(form.action_id)],
+            &[
+                json!(character_id),
+                json!(form.encounter_id),
+                json!(form.choice),
+                json!(form.expected_revision),
+                json!(form.action_id),
+            ],
         )
         .await
     {

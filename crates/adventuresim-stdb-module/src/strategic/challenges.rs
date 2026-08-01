@@ -239,12 +239,7 @@ pub struct NarrativeCombatFollowupAuthority {
     pub occurrence_id: String,
     pub party_id: String,
     pub initiating_character_id: u64,
-    pub victory_result: String,
-    pub defeat_result: String,
-    pub escape_result: String,
-    pub victory_effects_json: String,
-    pub victory_personality_json: String,
-    pub victory_quest_reward_tags: Vec<String>,
+    pub outcome_payloads_json: String,
 }
 
 #[derive(Clone, Debug)]
@@ -257,10 +252,8 @@ pub struct NarrativeCombatFollowupReceipt {
     pub initiating_character_id: u64,
     pub outcome: String,
     pub result_transcript: String,
-    pub applied_effects_json: String,
-    pub applied_personality_json: String,
+    pub applied_payload_json: String,
     pub virtue_exemplified: Option<crate::personality::ChivalricVirtue>,
-    pub quest_reward_tags: Vec<String>,
     pub resolved_at_minute: u64,
 }
 
@@ -703,12 +696,7 @@ fn materialize_narrative_combat(
     initiating_character_id: u64,
     archetype: adventuresim_core::road_encounter_catalog::RoadCombatArchetype,
     count: u16,
-    victory_result: &str,
-    defeat_result: &str,
-    escape_result: &str,
-    victory_effects: &[adventuresim_core::road_encounter_catalog::Effect],
-    victory_personality: &[adventuresim_core::road_encounter_catalog::PersonalityDevelopment],
-    victory_quest_reward_tags: &[String],
+    outcomes: &adventuresim_core::road_encounter_catalog::CombatOutcomeSet,
 ) -> Result<(), String> {
     use adventuresim_core::encounter::{Awareness, EncounterArchetype};
     let _journey = ctx.db.party_journey_authority().party_id().find(&party.id)
@@ -736,28 +724,23 @@ fn materialize_narrative_combat(
         ctx, &party.id, encounter_id.clone(), core_archetype, count, roll_index,
         challenge.camp_movement_minute, challenge.available_at_elapsed_minute,
         challenge.absolute_minute, challenge.longitude_e7, challenge.latitude_e7,
+        current_party_fatigue_percent(ctx, &living_party_member_ids(ctx, &party.id)),
         terrain_kind, Awareness::Both,
         "A catalog-authored roadside challenge openly became combat".into(),
     )?;
-    let victory_effects_json = serde_json::to_string(victory_effects)
-        .map_err(|_| "Could not encode narrative combat victory effects")?;
-    let victory_personality_json = serde_json::to_string(victory_personality)
-        .map_err(|_| "Could not encode narrative combat victory personality")?;
+    let outcome_payloads_json = serde_json::to_string(outcomes)
+        .map_err(|_| "Could not encode narrative combat outcome payloads")?;
     if let Some(existing) = ctx.db.narrative_combat_followup_authority().encounter_id().find(&encounter_id) {
         if existing.occurrence_id != challenge.id || existing.party_id != party.id
             || existing.initiating_character_id != initiating_character_id
-            || existing.victory_effects_json != victory_effects_json
-            || existing.victory_personality_json != victory_personality_json {
+            || existing.outcome_payloads_json != outcome_payloads_json {
             return Err("Narrative combat follow-up identity collision".into());
         }
     } else {
         ctx.db.narrative_combat_followup_authority().insert(NarrativeCombatFollowupAuthority {
             encounter_id: encounter_id.clone(), occurrence_id: challenge.id.clone(), party_id: party.id.clone(),
             initiating_character_id,
-            victory_result: victory_result.into(), defeat_result: defeat_result.into(),
-            escape_result: escape_result.into(), victory_effects_json,
-            victory_personality_json,
-            victory_quest_reward_tags: victory_quest_reward_tags.to_vec(),
+            outcome_payloads_json,
         });
     }
     if ctx.db.strategic_encounter().party_id().find(&party.id).is_some() {
@@ -781,25 +764,21 @@ pub(crate) fn resolve_narrative_combat_followup(
             && receipt.initiating_character_id == followup.initiating_character_id
             && receipt.outcome == outcome { Ok(()) } else { Err("Conflicting narrative combat follow-up retry".into()) };
     }
-    let (result, effects, personality) = if outcome == "victory" {
-        let effects = serde_json::from_str::<Vec<adventuresim_core::road_encounter_catalog::Effect>>(
-            &followup.victory_effects_json).map_err(|_| "Narrative combat victory effects are invalid")?;
-        let personality = serde_json::from_str::<Vec<adventuresim_core::road_encounter_catalog::PersonalityDevelopment>>(
-            &followup.victory_personality_json).map_err(|_| "Narrative combat victory personality is invalid")?;
-        (followup.victory_result.as_str(), effects, personality)
-    } else if outcome == "avoided" {
-        (followup.escape_result.as_str(), Vec::new(), Vec::new())
-    } else {
-        (followup.defeat_result.as_str(), Vec::new(), Vec::new())
-    };
+    let outcomes = serde_json::from_str::<adventuresim_core::road_encounter_catalog::CombatOutcomeSet>(
+        &followup.outcome_payloads_json,
+    ).map_err(|_| "Narrative combat outcome payloads are invalid")?;
+    let outcome_kind = adventuresim_core::road_encounter_catalog::resolved_combat_outcome(outcome)?;
+    let payload = outcomes.payload(outcome_kind).clone();
     let now = crate::time::refresh_clock(ctx)?;
-    for effect in &effects {
+    for effect in &payload.effects {
         apply_narrative_effect(ctx, &followup.occurrence_id, &encounter.party_id, now, effect)?;
     }
-    let mut recognized_virtue = None;
-    for development in &personality {
+    let recognized_virtue = adventuresim_core::road_encounter_catalog::exemplified_virtue(
+        &payload.personality,
+    )
+    .map(narrative_virtue);
+    for development in &payload.personality {
         let virtue = narrative_virtue(development.virtue);
-        recognized_virtue = Some(virtue);
         crate::personality::apply_personality_development(
             ctx, &format!("narrative-combat:{}:{}", followup.encounter_id, development.axis as u8),
             followup.initiating_character_id,
@@ -810,11 +789,12 @@ pub(crate) fn resolve_narrative_combat_followup(
     let mut challenge = ctx.db.road_challenge_authority().id().find(&followup.occurrence_id)
         .ok_or("Narrative combat source occurrence is missing")?;
     let transcript = challenge.result_transcript.as_deref().map_or_else(
-        || result.to_string(), |opening| format!("{opening}\n\n{result}"));
+        || payload.result.clone(), |opening| format!("{opening}\n\n{}", payload.result));
     challenge.result_transcript = Some(transcript.clone());
     if recognized_virtue.is_some() { challenge.virtue_exemplified = recognized_virtue; }
     ctx.db.road_challenge_authority().id().update(challenge);
-    if outcome == "victory" && !followup.victory_quest_reward_tags.is_empty()
+    if outcome_kind == adventuresim_core::road_encounter_catalog::CombatOutcomeKind::Victory
+        && !payload.quest_reward_tags.is_empty()
         && let Some(mut overlay) = ctx.db.narrative_encounter_private_authority().occurrence_id().find(&followup.occurrence_id)
         && overlay.origin == NarrativeEncounterOrigin::Errantry && overlay.reward_eligible
     {
@@ -825,10 +805,8 @@ pub(crate) fn resolve_narrative_combat_followup(
         encounter_id: encounter.encounter_id.clone(), occurrence_id: followup.occurrence_id,
         party_id: encounter.party_id.clone(), initiating_character_id: followup.initiating_character_id,
         outcome: outcome.into(), result_transcript: transcript,
-        applied_effects_json: serde_json::to_string(&effects).map_err(|_| "Could not encode applied combat effects")?,
-        applied_personality_json: serde_json::to_string(&personality).map_err(|_| "Could not encode applied combat personality")?,
+        applied_payload_json: serde_json::to_string(&payload).map_err(|_| "Could not encode applied combat payload")?,
         virtue_exemplified: recognized_virtue,
-        quest_reward_tags: if outcome == "victory" { followup.victory_quest_reward_tags } else { Vec::new() },
         resolved_at_minute: now,
     });
     Ok(())
@@ -1299,10 +1277,12 @@ pub fn resolve_errantry_road_challenge(
     }
     let effects_json = serde_json::to_string(&selected.effects).map_err(|_| "Could not encode encounter effects")?;
     for effect in &selected.effects { apply_narrative_effect(ctx, &challenge.id, &party_id, now, effect)?; }
-    let mut recognized_virtue = None;
+    let recognized_virtue = adventuresim_core::road_encounter_catalog::exemplified_virtue(
+        &selected.personality,
+    )
+    .map(narrative_virtue);
     for development in &selected.personality {
         let virtue = narrative_virtue(development.virtue);
-        recognized_virtue = Some(virtue);
         crate::personality::apply_personality_development(
             ctx,
             &format!("road-challenge:{}:{}", challenge.id, development.axis as u8),
@@ -1318,12 +1298,9 @@ pub fn resolve_errantry_road_challenge(
         match transition {
             adventuresim_core::road_encounter_catalog::EncounterTransition::Noop => {}
             adventuresim_core::road_encounter_catalog::EncounterTransition::StartCombat {
-                archetype, count, victory_result, defeat_result, escape_result, victory_effects,
-                victory_personality, victory_quest_reward_tags,
+                archetype, count, outcomes,
             } => materialize_narrative_combat(
-                ctx, &challenge, &party, character_id, *archetype, *count, victory_result,
-                defeat_result, escape_result, victory_effects, victory_personality,
-                victory_quest_reward_tags,
+                ctx, &challenge, &party, character_id, *archetype, *count, outcomes,
             )?,
             adventuresim_core::road_encounter_catalog::EncounterTransition::TravelDelay { minutes } =>
                 advance_party_journey_delay(ctx, &party_id, u64::from(*minutes))?,
@@ -2124,17 +2101,20 @@ mod challenge_source_boundary_tests {
     }
 
     #[test]
-    fn authored_combat_followup_is_victory_only_and_receipted() {
+    fn authored_combat_followup_is_closed_actor_bound_and_receipted() {
         let source = include_str!("challenges.rs");
         let followup = source.split("pub(crate) fn resolve_narrative_combat_followup").nth(1)
             .and_then(|tail| tail.split("/// Bind optional preliminary trials").next()).unwrap();
         assert!(followup.contains("narrative_combat_followup_receipt"));
-        assert!(followup.contains("outcome == \"victory\""));
-        assert!(followup.contains("outcome == \"avoided\""));
+        assert!(followup.contains("resolved_combat_outcome(outcome)"));
+        assert!(followup.contains("applied_payload_json"));
         assert!(followup.contains("apply_narrative_effect"));
+        assert!(followup.contains("exemplified_virtue"));
         assert!(followup.contains("followup.initiating_character_id"));
         assert!(!followup.contains(".leader_id"));
-        assert!(followup.find("outcome == \"victory\"").unwrap()
+        assert!(followup.find("narrative_combat_followup_receipt()").unwrap()
+            < followup.find("apply_personality_development").unwrap());
+        assert!(followup.find("resolved_combat_outcome(outcome)").unwrap()
             < followup.find("apply_narrative_effect").unwrap());
         let resolver = include_str!("encounters.rs");
         assert!(resolver.contains("resolve_narrative_combat_followup(ctx, &encounter)"));

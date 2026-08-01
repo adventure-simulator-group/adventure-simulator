@@ -10,6 +10,7 @@ pub(super) struct ResolveStrategicEncounterArgs {
     pub character_id: u64,
     pub encounter_id: String,
     pub choice: String,
+    pub expected_revision: u32,
     pub action_id: String,
 }
 
@@ -19,6 +20,7 @@ impl From<ResolveStrategicEncounterArgs> for super::Reducer {
             character_id: args.character_id,
             encounter_id: args.encounter_id,
             choice: args.choice,
+            expected_revision: args.expected_revision,
             action_id: args.action_id,
         }
     }
@@ -44,12 +46,14 @@ pub trait resolve_strategic_encounter {
         character_id: u64,
         encounter_id: String,
         choice: String,
+        expected_revision: u32,
         action_id: String,
     ) -> __sdk::Result<()> {
         self.resolve_strategic_encounter_then(
             character_id,
             encounter_id,
             choice,
+            expected_revision,
             action_id,
             |_, _| {},
         )
@@ -66,6 +70,7 @@ pub trait resolve_strategic_encounter {
         character_id: u64,
         encounter_id: String,
         choice: String,
+        expected_revision: u32,
         action_id: String,
 
         callback: impl FnOnce(
@@ -82,6 +87,7 @@ impl resolve_strategic_encounter for super::RemoteReducers {
         character_id: u64,
         encounter_id: String,
         choice: String,
+        expected_revision: u32,
         action_id: String,
 
         callback: impl FnOnce(
@@ -95,6 +101,7 @@ impl resolve_strategic_encounter for super::RemoteReducers {
                 character_id,
                 encounter_id,
                 choice,
+                expected_revision,
                 action_id,
             },
             callback,

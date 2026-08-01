@@ -13,6 +13,8 @@ pub struct StrategicEncounterResolutionReceipt {
     pub character_id: u64,
     pub action_id: String,
     pub choice: String,
+    pub expected_revision: u32,
+    pub resulting_revision: u32,
     pub outcome: String,
 }
 
@@ -30,6 +32,8 @@ pub struct StrategicEncounterResolutionReceiptCols {
     pub character_id: __sdk::__query_builder::Col<StrategicEncounterResolutionReceipt, u64>,
     pub action_id: __sdk::__query_builder::Col<StrategicEncounterResolutionReceipt, String>,
     pub choice: __sdk::__query_builder::Col<StrategicEncounterResolutionReceipt, String>,
+    pub expected_revision: __sdk::__query_builder::Col<StrategicEncounterResolutionReceipt, u32>,
+    pub resulting_revision: __sdk::__query_builder::Col<StrategicEncounterResolutionReceipt, u32>,
     pub outcome: __sdk::__query_builder::Col<StrategicEncounterResolutionReceipt, String>,
 }
 
@@ -43,6 +47,8 @@ impl __sdk::__query_builder::HasCols for StrategicEncounterResolutionReceipt {
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             action_id: __sdk::__query_builder::Col::new(table_name, "action_id"),
             choice: __sdk::__query_builder::Col::new(table_name, "choice"),
+            expected_revision: __sdk::__query_builder::Col::new(table_name, "expected_revision"),
+            resulting_revision: __sdk::__query_builder::Col::new(table_name, "resulting_revision"),
             outcome: __sdk::__query_builder::Col::new(table_name, "outcome"),
         }
     }

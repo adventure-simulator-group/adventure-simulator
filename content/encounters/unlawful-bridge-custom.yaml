@@ -66,15 +66,28 @@
             "kind": "start_combat",
             "archetype": "bandits",
             "count": 2,
-            "victory_result": "Thou prevailest upon the bridge. In the broken toll coffer lie twelve groschen and notes describing the keepers' close fighting method.",
-            "defeat_result": "The bridge keepers prevail, and the unlawful custom endureth.",
-            "escape_result": "Thou breakest from the bridge keepers and leavest the unlawful crossing behind.",
-            "victory_effects": [
-              { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 12 },
-              { "kind": "information", "information_id": "unlawful_bridge_keeper_fighting_method" }
-            ],
-            "victory_personality": [{ "axis": "nerve", "delta": 120, "virtue": "courage" }],
-            "victory_quest_reward_tags": ["bridge_keeper_fighting_method"]
+            "outcomes": {
+              "victory": {
+                "result": "Thou prevailest upon the bridge. In the broken toll coffer lie twelve groschen and notes describing the keepers' close fighting method.",
+                "effects": [
+                  { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 12 },
+                  { "kind": "information", "information_id": "unlawful_bridge_keeper_fighting_method" }
+                ],
+                "personality": [{ "axis": "nerve", "delta": 120, "virtue": "courage" }],
+                "quest_reward_tags": ["bridge_keeper_fighting_method"]
+              },
+              "defeat": {
+                "result": "The bridge keepers prevail, and the unlawful custom endureth."
+              },
+              "escape": {
+                "result": "Thou breakest from the bridge keepers and leavest the unlawful crossing behind.",
+                "personality": [{ "axis": "nerve", "delta": -60, "virtue": "courage" }]
+              },
+              "surrender": {
+                "result": "Thy company yieldeth arms and goods unto the bridge keepers, and the unlawful custom endureth.",
+                "personality": [{ "axis": "nerve", "delta": -90, "virtue": "courage" }]
+              }
+            }
           }
         },
         {

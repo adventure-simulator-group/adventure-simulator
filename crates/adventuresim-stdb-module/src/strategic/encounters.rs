@@ -217,6 +217,7 @@ pub(crate) fn build_strategic_encounter(
     absolute_minute: u64,
     longitude_e7: i32,
     latitude_e7: i32,
+    fatigue_percent: u8,
     terrain_kind: JourneyTerrainKind,
     awareness: adventuresim_core::encounter::Awareness,
     explanation: String,
@@ -225,7 +226,7 @@ pub(crate) fn build_strategic_encounter(
     if member_ids.is_empty() { return Err("A party with no living members cannot enter an encounter".into()); }
     let terrain = core_encounter_terrain(terrain_kind);
     let party_speed = adventuresim_core::encounter::sustainable_speed_m_per_minute(
-        current_party_fatigue_percent(ctx, &member_ids),
+        fatigue_percent,
         party_encumbrance_remaining_basis_points(ctx, party_id, &member_ids),
         member_ids.len().min(u16::MAX as usize) as u16,
         terrain,
@@ -251,7 +252,8 @@ pub(crate) fn build_strategic_encounter(
         terrain: format!("{terrain_kind:?}").to_ascii_lowercase(),
         party_aware: matches!(awareness, adventuresim_core::encounter::Awareness::PartyOnly | adventuresim_core::encounter::Awareness::Both),
         enemy_aware: matches!(awareness, adventuresim_core::encounter::Awareness::EnemyOnly | adventuresim_core::encounter::Awareness::Both),
-        available_choices: choices, status: "awaiting_choice".into(), selected_choice: None,
+        available_choices: choices, status: "awaiting_choice".into(), revision: 1,
+        selected_choice: None,
         selection_explanation: explanation, party_speed_m_per_minute: party_speed,
         enemy_speed_m_per_minute: enemy_speed,
         run_ineligibility: (party_speed <= enemy_speed).then(|| format!("Party speed {party_speed} m/min does not exceed enemy speed {enemy_speed} m/min")),
@@ -428,93 +430,37 @@ fn maybe_interrupt_travel(
         return Ok((requested_minutes, None, None, next_roll));
     };
 
-    use adventuresim_core::encounter::{Awareness, EncounterArchetype};
-    let (party_aware, enemy_aware) = match selection.awareness {
-        Awareness::PartyOnly => (true, false),
-        Awareness::EnemyOnly => (false, true),
-        Awareness::Both => (true, true),
-        Awareness::Neither => return Ok((requested_minutes, None, None, next_roll)),
-    };
-    let archetype = match selection.archetype {
-        EncounterArchetype::Bandits => "bandit",
-        EncounterArchetype::Goblins => "goblin",
-        EncounterArchetype::Undead => "skeleton",
-    };
-    let encounter_terrain = core_encounter_terrain(encounter_terrain_at(
-        route.as_ref(),
-        selection.boundary_minute,
-    ));
-    let party_speed = adventuresim_core::encounter::sustainable_speed_m_per_minute(
-        journey.fatigue_percent,
-        party_encumbrance_remaining_basis_points(ctx, party_id, &member_ids),
-        member_ids.len().min(u16::MAX as usize) as u16,
-        encounter_terrain,
-    );
-    let enemy_speed = selection.archetype.enemy_speed_m_per_minute();
-    let run_eligible =
-        adventuresim_core::encounter::run_is_eligible(party_speed, selection.archetype);
-    let choices = adventuresim_core::encounter::available_choices(
-        selection.awareness,
-        selection.archetype,
-        party_speed,
-    )
-    .into_iter()
-    .map(|choice| match choice {
-        adventuresim_core::encounter::EncounterChoice::Sneak => "sneak",
-        adventuresim_core::encounter::EncounterChoice::Detour => "detour",
-        adventuresim_core::encounter::EncounterChoice::Attack => "attack",
-        adventuresim_core::encounter::EncounterChoice::Run => "run",
-        adventuresim_core::encounter::EncounterChoice::Surrender => "surrender",
-    })
-    .map(str::to_string)
-    .collect();
+    if selection.awareness == adventuresim_core::encounter::Awareness::Neither {
+        return Ok((requested_minutes, None, None, next_roll));
+    }
     let position = route
         .as_ref()
         .and_then(|route| route_position_at_minute(route, selection.boundary_minute))
         .unwrap_or_else(|| journey_fallback_position(ctx, &journey, selection.boundary_minute));
     let terrain = encounter_terrain_at(route.as_ref(), selection.boundary_minute);
-    let mut encounter = StrategicEncounter {
-        party_id: party_id.into(),
-        encounter_id: opaque_strategic_encounter_id(authority.seed, selection.roll_index),
-        archetype: archetype.into(),
-        enemy_count: selection.count,
-        roll_index: selection.roll_index,
-        journey_movement_minute: selection.boundary_minute,
-        journey_elapsed_minute: journey
+    let encounter = build_strategic_encounter(
+        ctx,
+        party_id,
+        opaque_strategic_encounter_id(authority.seed, selection.roll_index),
+        selection.archetype,
+        selection.count,
+        selection.roll_index,
+        selection.boundary_minute,
+        journey
             .completed_elapsed_minutes
             .saturating_add(selection.boundary_minute.saturating_sub(completed)),
-        absolute_minute: absolute_start
+        absolute_start
             .saturating_add(selection.boundary_minute.saturating_sub(completed)),
-        longitude_e7: (position.0 * 10_000_000.0).round() as i32,
-        latitude_e7: (position.1 * 10_000_000.0).round() as i32,
-        terrain: format!("{terrain:?}").to_ascii_lowercase(),
-        party_aware,
-        enemy_aware,
-        available_choices: choices,
-        status: "awaiting_choice".into(),
-        selected_choice: None,
-        selection_explanation: format!(
+        (position.0 * 10_000_000.0).round() as i32,
+        (position.1 * 10_000_000.0).round() as i32,
+        journey.fatigue_percent,
+        terrain,
+        selection.awareness,
+        format!(
             "Canonical journey roll {} in {:?}; party awareness {} vs enemy awareness {}",
             selection.roll_index, terrain, selection.party_roll, selection.enemy_roll
         ),
-        party_speed_m_per_minute: party_speed,
-        enemy_speed_m_per_minute: enemy_speed,
-        run_ineligibility: (!run_eligible).then(|| {
-            format!(
-                "Party speed {party_speed} m/min does not exceed enemy speed {enemy_speed} m/min"
-            )
-        }),
-        penalty_minutes: 0,
-        loss_preview: Vec::new(),
-        outcome: None,
-    };
-    if encounter
-        .available_choices
-        .iter()
-        .any(|choice| choice == "surrender")
-    {
-        encounter.loss_preview = encounter_loss_preview(ctx, party_id);
-    }
+    )?;
     Ok((
         selection.boundary_minute.saturating_sub(completed),
         Some(encounter),
@@ -1049,6 +995,7 @@ pub fn resolve_strategic_encounter(
     character_id: u64,
     encounter_id: String,
     choice: String,
+    expected_revision: u32,
     action_id: String,
 ) -> Result<(), String> {
     require_strategic_character_authority(ctx, character_id)?;
@@ -1062,10 +1009,16 @@ pub fn resolve_strategic_encounter(
         .id()
         .find(&receipt_id)
     {
-        return if receipt.encounter_id == encounter_id
-            && receipt.character_id == character_id
-            && receipt.choice == choice
-        {
+        return if adventuresim_core::encounter::strategic_encounter_retry_matches(
+            &receipt.encounter_id,
+            receipt.character_id,
+            &receipt.choice,
+            receipt.expected_revision,
+            &encounter_id,
+            character_id,
+            &choice,
+            expected_revision,
+        ) {
             Ok(())
         } else {
             Err("Conflicting strategic encounter retry".into())
@@ -1101,6 +1054,9 @@ pub fn resolve_strategic_encounter(
     let mut encounter = unresolved_encounter(ctx, &party_id).ok_or("No unresolved encounter")?;
     if encounter.encounter_id != encounter_id {
         return Err("Strategic encounter identity is stale".into());
+    }
+    if encounter.revision != expected_revision {
+        return Err("Strategic encounter revision is stale".into());
     }
     let seed = ctx
         .db
@@ -1161,7 +1117,13 @@ pub fn resolve_strategic_encounter(
             if current != encounter.loss_preview {
                 encounter.selected_choice = None;
                 encounter.loss_preview = current;
+                encounter.revision = encounter.revision.saturating_add(1);
                 ctx.db.strategic_encounter().party_id().update(encounter);
+                ctx.db.strategic_encounter_resolution_receipt().insert(StrategicEncounterResolutionReceipt {
+                    id: receipt_id, encounter_id, party_id, character_id, action_id, choice,
+                    expected_revision, resulting_revision: expected_revision.saturating_add(1),
+                    outcome: "preview_refreshed".into(),
+                });
                 return Ok(());
             }
             commit_encounter_surrender(ctx, &party_id, &current)?;
@@ -1169,10 +1131,12 @@ pub fn resolve_strategic_encounter(
         }
     }
     encounter.status = "resolved".into();
+    encounter.revision = encounter.revision.saturating_add(1);
     resolve_narrative_combat_followup(ctx, &encounter)?;
     ctx.db.strategic_encounter().party_id().update(encounter.clone());
     ctx.db.strategic_encounter_resolution_receipt().insert(StrategicEncounterResolutionReceipt {
         id: receipt_id, encounter_id, party_id, character_id, action_id, choice,
+        expected_revision, resulting_revision: encounter.revision,
         outcome: encounter.outcome.unwrap_or_else(|| "resolved".into()),
     });
     Ok(())

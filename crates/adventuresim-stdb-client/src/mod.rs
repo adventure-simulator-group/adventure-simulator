@@ -2231,6 +2231,7 @@ pub enum Reducer {
         character_id: u64,
         encounter_id: String,
         choice: String,
+        expected_revision: u32,
         action_id: String,
     },
     RestAtCamp {
@@ -3666,11 +3667,13 @@ Reducer::BeginFormalCourtship{
                 character_id,
                 encounter_id,
                 choice,
+                expected_revision,
                 action_id,
 }             => __sats::bsatn::to_vec(&resolve_strategic_encounter_reducer::ResolveStrategicEncounterArgs {
                 character_id: character_id.clone(),
                 encounter_id: encounter_id.clone(),
                 choice: choice.clone(),
+                expected_revision: expected_revision.clone(),
                 action_id: action_id.clone(),
 }),
             Reducer::RestAtCamp{
