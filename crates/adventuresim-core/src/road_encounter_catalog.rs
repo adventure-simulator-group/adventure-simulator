@@ -384,20 +384,37 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
                 ));
             }
             if let Some(EncounterTransition::StartCombat {
-                count, victory_result, defeat_result, escape_result, victory_effects, ..
-            }) = &choice.transition {
+                count,
+                victory_result,
+                defeat_result,
+                escape_result,
+                victory_effects,
+                ..
+            }) = &choice.transition
+            {
                 if !(1..=8).contains(count) {
-                    return Err(format!("{}:{} has an unsafe combat count", definition.id, choice.id));
+                    return Err(format!(
+                        "{}:{} has an unsafe combat count",
+                        definition.id, choice.id
+                    ));
                 }
                 for text in [victory_result, defeat_result, escape_result] {
                     if text.trim().is_empty() || text.len() > MAX_TEXT_BYTES {
-                        return Err(format!("{}:{} has invalid combat outcome text", definition.id, choice.id));
+                        return Err(format!(
+                            "{}:{} has invalid combat outcome text",
+                            definition.id, choice.id
+                        ));
                     }
                     validate_goal_neutral(text)?;
                 }
-                for effect in victory_effects { validate_effect(effect)?; }
+                for effect in victory_effects {
+                    validate_effect(effect)?;
+                }
                 if !choice.effects.is_empty() || !choice.quest_reward_tags.is_empty() {
-                    return Err(format!("{}:{} combat rewards must be victory-scoped", definition.id, choice.id));
+                    return Err(format!(
+                        "{}:{} combat rewards must be victory-scoped",
+                        definition.id, choice.id
+                    ));
                 }
             }
             if choice.id == "ignore"
@@ -407,7 +424,10 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
                     || !choice.personality.is_empty()
                     || !choice.quest_reward_tags.is_empty()
                     || !choice.outcome_tags.is_empty()
-                    || !matches!(choice.transition.as_ref(), None | Some(EncounterTransition::Noop)))
+                    || !matches!(
+                        choice.transition.as_ref(),
+                        None | Some(EncounterTransition::Noop)
+                    ))
             {
                 return Err(format!(
                     "{}: ignore choice must be consequence-free",
@@ -449,13 +469,22 @@ fn validate_effect(effect: &Effect) -> Result<(), String> {
     match effect {
         Effect::GrantItem { item_id, quantity } | Effect::ConsumeItem { item_id, quantity } => {
             validate_id(item_id, "effect.item_id")?;
-            if *quantity == 0 { return Err("zero item quantity".into()); }
+            if *quantity == 0 {
+                return Err("zero item quantity".into());
+            }
         }
-        Effect::Currency { currency_id, amount } => {
+        Effect::Currency {
+            currency_id,
+            amount,
+        } => {
             validate_id(currency_id, "effect.currency_id")?;
-            if *amount == 0 { return Err("zero currency effect".into()); }
+            if *amount == 0 {
+                return Err("zero currency effect".into());
+            }
         }
-        Effect::Information { information_id } => validate_id(information_id, "effect.information_id")?,
+        Effect::Information { information_id } => {
+            validate_id(information_id, "effect.information_id")?
+        }
     }
     Ok(())
 }
@@ -488,14 +517,22 @@ pub fn validate_item_references(
                     ));
                 }
             }
-            if let Some(EncounterTransition::StartCombat { victory_effects, .. }) = &choice.transition {
+            if let Some(EncounterTransition::StartCombat {
+                victory_effects, ..
+            }) = &choice.transition
+            {
                 for item_id in victory_effects.iter().filter_map(|effect| match effect {
-                    Effect::GrantItem { item_id, .. } | Effect::ConsumeItem { item_id, .. } => Some(item_id.as_str()),
+                    Effect::GrantItem { item_id, .. } | Effect::ConsumeItem { item_id, .. } => {
+                        Some(item_id.as_str())
+                    }
                     Effect::Currency { currency_id, .. } => Some(currency_id.as_str()),
                     Effect::Information { .. } => None,
                 }) {
                     if !exists(item_id) {
-                        return Err(format!("{}:{} references unknown item {item_id}", definition.id, choice.id));
+                        return Err(format!(
+                            "{}:{} references unknown item {item_id}",
+                            definition.id, choice.id
+                        ));
                     }
                 }
             }
@@ -695,7 +732,7 @@ mod tests {
 
     #[test]
     fn validator_rejects_dirty_ignore_and_non_mechanical_route_variants() {
-        let mut dirty = definitions()[0].clone();
+        let mut dirty = encounter("wounded_order_courier_v1").unwrap().clone();
         dirty
             .choices
             .iter_mut()
@@ -713,7 +750,7 @@ mod tests {
                 .contains("consequence-free")
         );
 
-        let mut duplicate = definitions()[0].clone();
+        let mut duplicate = encounter("wounded_order_courier_v1").unwrap().clone();
         let first = duplicate
             .choices
             .iter()
@@ -833,20 +870,49 @@ mod tests {
     fn unlawful_bridge_uses_bounded_authored_combat_and_honest_rewards() {
         let definition = encounter("unlawful_bridge_custom_v1").unwrap();
         assert!(definition.triggers.travel && !definition.triggers.rest);
-        assert!(definition.cast.iter().all(|speaker| speaker.nature == SpeakerNature::Mortal));
-        let choice = |id| definition.choices.iter().find(|choice| choice.id == id).unwrap();
-        assert!(matches!(choice("pay_toll").effects[0], Effect::Currency { amount: -12, .. }));
-        assert!(matches!(choice("expose_charter").effects[0], Effect::Information { ref information_id }
-            if information_id == "unlawful_bridge_false_charter_marks"));
-        assert!(matches!(choice("join_watch").effects[0], Effect::Currency { amount: 40, .. }));
-        let EncounterTransition::StartCombat { archetype, count, victory_effects, .. } =
-            choice("challenge_to_arms").transition.as_ref().unwrap() else { panic!("combat transition") };
+        assert!(
+            definition
+                .cast
+                .iter()
+                .all(|speaker| speaker.nature == SpeakerNature::Mortal)
+        );
+        let choice = |id| {
+            definition
+                .choices
+                .iter()
+                .find(|choice| choice.id == id)
+                .unwrap()
+        };
+        assert!(matches!(
+            choice("pay_toll").effects[0],
+            Effect::Currency { amount: -12, .. }
+        ));
+        assert!(
+            matches!(choice("expose_charter").effects[0], Effect::Information { ref information_id }
+            if information_id == "unlawful_bridge_false_charter_marks")
+        );
+        assert!(matches!(
+            choice("join_watch").effects[0],
+            Effect::Currency { amount: 40, .. }
+        ));
+        let EncounterTransition::StartCombat {
+            archetype,
+            count,
+            victory_effects,
+            ..
+        } = choice("challenge_to_arms").transition.as_ref().unwrap()
+        else {
+            panic!("combat transition")
+        };
         assert_eq!(*archetype, RoadCombatArchetype::Bandits);
         assert_eq!(*count, 2);
         assert!(choice("challenge_to_arms").effects.is_empty());
         assert!(choice("challenge_to_arms").quest_reward_tags.is_empty());
-        assert!(victory_effects.iter().any(|effect| matches!(effect,
-            Effect::Currency { amount: 12, .. })));
+        assert!(
+            victory_effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::Currency { amount: 12, .. }))
+        );
         assert!(victory_effects.iter().any(|effect| matches!(effect,
             Effect::Information { information_id } if information_id == "unlawful_bridge_keeper_fighting_method")));
         assert!(choice("ignore").effects.is_empty() && choice("ignore").transition.is_none());
@@ -855,9 +921,19 @@ mod tests {
     #[test]
     fn combat_transition_rejects_unsafe_counts() {
         let mut definition = encounter("unlawful_bridge_custom_v1").unwrap().clone();
-        let choice = definition.choices.iter_mut().find(|choice| choice.id == "challenge_to_arms").unwrap();
-        let Some(EncounterTransition::StartCombat { count, .. }) = &mut choice.transition else { panic!("combat transition") };
+        let choice = definition
+            .choices
+            .iter_mut()
+            .find(|choice| choice.id == "challenge_to_arms")
+            .unwrap();
+        let Some(EncounterTransition::StartCombat { count, .. }) = &mut choice.transition else {
+            panic!("combat transition")
+        };
         *count = 0;
-        assert!(validate_definitions(&[definition]).unwrap_err().contains("unsafe combat count"));
+        assert!(
+            validate_definitions(&[definition])
+                .unwrap_err()
+                .contains("unsafe combat count")
+        );
     }
 }
