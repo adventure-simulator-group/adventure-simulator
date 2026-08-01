@@ -3291,6 +3291,22 @@ pub(crate) fn advance_stationary_character_to(
     Ok(())
 }
 
+fn official_synchronization_target(
+    official_minutes: u64,
+    current_minute: u64,
+) -> Option<(u64, bool)> {
+    if official_minutes <= current_minute {
+        return None;
+    }
+    let forced_catch_up = official_minutes.saturating_sub(current_minute) > MINUTES_PER_YEAR;
+    let target_minutes = if forced_catch_up {
+        official_minutes.saturating_sub(MINUTES_PER_YEAR)
+    } else {
+        official_minutes
+    };
+    Some((target_minutes, forced_catch_up))
+}
+
 /// Advance through elapsed wall-clock time. Returns true when a character was
 /// forced to catch up from more than a year behind; callers should skip their
 /// action.
@@ -3304,11 +3320,13 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         .find(character_id)
         .ok_or_else(|| "Character time record not found".to_string())?
         .minutes;
-    let forced_catch_up = official_minutes.saturating_sub(current_minute) > MINUTES_PER_YEAR;
-    let target_minutes = if forced_catch_up {
-        official_minutes.saturating_sub(MINUTES_PER_YEAR)
-    } else {
-        official_minutes
+    let Some((target_minutes, forced_catch_up)) =
+        official_synchronization_target(official_minutes, current_minute)
+    else {
+        // Explicit settlement downtime may legitimately put a personal clock
+        // ahead of official time. Synchronization only catches characters up;
+        // it must never ask the strict frontier helper to rewind one.
+        return Ok(false);
     };
     advance_stationary_character_to(ctx, character_id, target_minutes)?;
     Ok(forced_catch_up)
@@ -3353,6 +3371,37 @@ pub fn update_training_schedule(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn official_time_synchronization_never_rewinds_a_personal_clock() {
+        assert_eq!(official_synchronization_target(100, 101), None);
+        assert_eq!(official_synchronization_target(100, 100), None);
+    }
+
+    #[test]
+    fn official_time_synchronization_advances_behind_characters() {
+        assert_eq!(official_synchronization_target(100, 99), Some((100, false)));
+        assert_eq!(
+            official_synchronization_target(MINUTES_PER_YEAR, 0),
+            Some((MINUTES_PER_YEAR, false))
+        );
+        assert_eq!(
+            official_synchronization_target(MINUTES_PER_YEAR + 1, 0),
+            Some((1, true))
+        );
+    }
+
+    #[test]
+    fn explicit_stationary_frontiers_still_reject_retroactive_targets() {
+        let source = include_str!("time.rs");
+        let advance = source
+            .split("pub(crate) fn advance_stationary_character_to(")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn synchronize_character(ctx").next())
+            .expect("explicit stationary advancement");
+        assert!(advance.contains("if target_minutes < character_time.minutes"));
+        assert!(advance.contains("Character time cannot be advanced retroactively"));
+    }
 
     #[test]
     fn every_authoritative_clock_commit_has_one_exposure_application() {
