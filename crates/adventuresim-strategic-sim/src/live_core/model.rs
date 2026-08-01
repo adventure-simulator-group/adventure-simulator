@@ -25,7 +25,17 @@ use adventuresim_stdb_client::{
     autoresolve_report_table::AutoresolveReportTableAccess,
     backend_case_battles_table::BackendCaseBattlesTableAccess,
     backend_case_site_pins_table::BackendCaseSitePinsTableAccess,
-    backend_contract_type::BackendContract, backend_contracts_table::BackendContractsTableAccess,
+    backend_character_attributes_table::BackendCharacterAttributesTableAccess,
+    backend_character_capabilities_table::BackendCharacterCapabilitiesTableAccess,
+    backend_character_conditions_table::BackendCharacterConditionsTableAccess,
+    backend_character_deaths_table::BackendCharacterDeathsTableAccess,
+    backend_character_limbs_table::BackendCharacterLimbsTableAccess,
+    backend_character_needs_table::BackendCharacterNeedsTableAccess,
+    backend_character_strategic_conditions_table::BackendCharacterStrategicConditionsTableAccess,
+    backend_character_times_table::BackendCharacterTimesTableAccess,
+    backend_character_training_schedules_table::BackendCharacterTrainingSchedulesTableAccess,
+    backend_characters_table::BackendCharactersTableAccess, backend_contract_type::BackendContract,
+    backend_contracts_table::BackendContractsTableAccess,
     backend_dialogue_sessions_table::BackendDialogueSessionsTableAccess,
     backend_dialogue_topic_options_table::BackendDialogueTopicOptionsTableAccess,
     backend_investigation_action_outcomes_table::BackendInvestigationActionOutcomesTableAccess,
@@ -37,18 +47,8 @@ use adventuresim_stdb_client::{
     backend_settlement_residents_table::BackendSettlementResidentsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_result_table::BattleResultTableAccess,
-    backend_character_capabilities_table::BackendCharacterCapabilitiesTableAccess,
-    backend_character_attributes_table::BackendCharacterAttributesTableAccess,
-    backend_character_conditions_table::BackendCharacterConditionsTableAccess,
-    backend_character_deaths_table::BackendCharacterDeathsTableAccess,
-    backend_character_limbs_table::BackendCharacterLimbsTableAccess,
     character_equipped_item_table::CharacterEquippedItemTableAccess,
     character_illness_status_table::CharacterIllnessStatusTableAccess,
-    backend_character_needs_table::BackendCharacterNeedsTableAccess,
-    backend_character_strategic_conditions_table::BackendCharacterStrategicConditionsTableAccess,
-    backend_characters_table::BackendCharactersTableAccess,
-    backend_character_times_table::BackendCharacterTimesTableAccess,
-    backend_character_training_schedules_table::BackendCharacterTrainingSchedulesTableAccess,
     choose_dialogue_topic_reducer::choose_dialogue_topic,
     claim_simulation_run_reducer::claim_simulation_run,
     configure_simulation_character_reducer::configure_simulation_character,
@@ -982,13 +982,22 @@ fn select_expedition_encounter_choice(
 ) -> Option<EncounterPolicyChoice> {
     let has = |candidate: &str| available_choices.iter().any(|choice| choice == candidate);
     if has("detour") {
-        return Some(EncounterPolicyChoice { choice: "detour".into(), reason: "guaranteed_party_aware_detour" });
+        return Some(EncounterPolicyChoice {
+            choice: "detour".into(),
+            reason: "guaranteed_party_aware_detour",
+        });
     }
     if has("run") {
-        return Some(EncounterPolicyChoice { choice: "run".into(), reason: "public_speed_check_allows_escape" });
+        return Some(EncounterPolicyChoice {
+            choice: "run".into(),
+            reason: "public_speed_check_allows_escape",
+        });
     }
     if has("surrender") {
-        return Some(EncounterPolicyChoice { choice: "surrender".into(), reason: "bandit_surrender_is_only_protective_choice" });
+        return Some(EncounterPolicyChoice {
+            choice: "surrender".into(),
+            reason: "bandit_surrender_is_only_protective_choice",
+        });
     }
     (!evacuation && has("attack")).then(|| EncounterPolicyChoice {
         choice: "attack".into(),
@@ -1040,7 +1049,11 @@ fn public_opposition_count(wording: &str) -> Option<u32> {
         "twelve" => 12,
         value => value.parse::<u32>().ok()?,
     };
-    (count > 0).then_some(if estimate { count.saturating_add(1) } else { count })
+    (count > 0).then_some(if estimate {
+        count.saturating_add(1)
+    } else {
+        count
+    })
 }
 
 fn public_contract_assessment(
@@ -1083,19 +1096,32 @@ fn public_contract_assessment(
         .iter()
         .filter(|member| member.ready && (member.capability.melee || member.capability.ranged))
         .collect::<Vec<_>>();
-    let party_power_milli = ready
-        .iter()
-        .map(|member| member.capability.autoresolve_combat_power)
-        .sum::<u64>();
+    let Some(party_power_milli) = ready.iter().try_fold(0u64, |total, member| {
+        total.checked_add(member.capability.autoresolve_combat_power)
+    }) else {
+        return PublicContractAssessment {
+            eligible: false,
+            reason: "public_party_power_overflow",
+            enemy_count: Some(enemy_count),
+            ready_combatants: ready.len().min(u32::MAX as usize) as u32,
+            party_power_milli: 0,
+            enemy_power_milli: opposition_combat_power,
+        };
+    };
     let enemy_power_milli = opposition_combat_power;
-    let eligible = !ready.is_empty()
-        && party_power_milli.saturating_mul(4) >= enemy_power_milli.saturating_mul(5);
+    let margin = adventuresim_core::autoresolve::combat_power_meets_safety_margin(
+        party_power_milli,
+        enemy_power_milli,
+    );
+    let eligible = !ready.is_empty() && margin == Some(true);
     PublicContractAssessment {
         eligible,
         reason: if ready.is_empty() {
             "no_ready_public_combatants"
         } else if party_power_milli == 0 {
             "missing_authoritative_party_power"
+        } else if margin.is_none() {
+            "public_combat_margin_overflow"
         } else if eligible {
             "public_matchup_with_safety_margin"
         } else {
@@ -1108,16 +1134,27 @@ fn public_contract_assessment(
     }
 }
 
-fn public_combat_fingerprint(mut capabilities: Vec<CharacterCapability>) -> PublicCombatFingerprint {
+fn public_combat_fingerprint(
+    mut capabilities: Vec<CharacterCapability>,
+) -> PublicCombatFingerprint {
     capabilities.sort_by_key(|row| row.character_id);
     PublicCombatFingerprint {
-        members: capabilities.into_iter().map(|row| (
-            row.character_id, row.melee, row.ranged, row.heavy || row.half_armor, row.precise,
-            (row.endurance.max(0.0) * 100.0).round() as u32,
-            (row.athletics.max(0.0) * 100.0).round() as u32,
-            (row.weapon_precision.max(0.0) * 100.0).round() as u32,
-            row.autoresolve_combat_power,
-        )).collect(),
+        members: capabilities
+            .into_iter()
+            .map(|row| {
+                (
+                    row.character_id,
+                    row.melee,
+                    row.ranged,
+                    row.heavy || row.half_armor,
+                    row.precise,
+                    (row.endurance.max(0.0) * 100.0).round() as u32,
+                    (row.athletics.max(0.0) * 100.0).round() as u32,
+                    (row.weapon_precision.max(0.0) * 100.0).round() as u32,
+                    row.autoresolve_combat_power,
+                )
+            })
+            .collect(),
     }
 }
 
@@ -1152,11 +1189,24 @@ fn generated_defeat_decision(
     }
 }
 
-fn generated_action_score(profile: &AgentProfile, action: &BackendInvestigationAction) -> (u8, u32, u16, u32, u32) {
-    let progress = if action.available { 3 }
-        else if action.can_travel_to_required_site { 2 }
-        else if projected_investigation_wait_minutes(&action.unavailable_reason_code, action.wait_minutes).is_some() { 1 }
-        else { 0 };
+fn generated_action_score(
+    profile: &AgentProfile,
+    action: &BackendInvestigationAction,
+) -> (u8, u32, u16, u32, u32) {
+    let progress = if action.available {
+        3
+    } else if action.can_travel_to_required_site {
+        2
+    } else if projected_investigation_wait_minutes(
+        &action.unavailable_reason_code,
+        action.wait_minutes,
+    )
+    .is_some()
+    {
+        1
+    } else {
+        0
+    };
     (
         progress,
         generated_method_skill_fit(profile, &action.method),
@@ -1176,29 +1226,51 @@ fn sort_generated_actions(profile: &AgentProfile, actions: &mut [BackendInvestig
 
 fn role_rank(role: BuildRole) -> u8 {
     match role {
-        BuildRole::FrontLine => 0, BuildRole::Skirmisher => 1, BuildRole::Ranged => 2,
-        BuildRole::Healer => 3, BuildRole::Devout => 4, BuildRole::Civilian => 5,
+        BuildRole::FrontLine => 0,
+        BuildRole::Skirmisher => 1,
+        BuildRole::Ranged => 2,
+        BuildRole::Healer => 3,
+        BuildRole::Devout => 4,
+        BuildRole::Civilian => 5,
     }
 }
 
-fn balanced_party_groups(profiles: &[AgentProfile], party_size: usize) -> Vec<Vec<usize>> {
+pub(crate) fn balanced_party_groups(
+    profiles: &[AgentProfile],
+    party_size: usize,
+) -> Vec<Vec<usize>> {
     let group_count = profiles.len().div_ceil(party_size);
-    if group_count == 0 { return Vec::new(); }
+    if group_count == 0 {
+        return Vec::new();
+    }
     let mut targets = vec![profiles.len() / group_count; group_count];
-    for target in targets.iter_mut().take(profiles.len() % group_count) { *target += 1; }
+    for target in targets.iter_mut().take(profiles.len() % group_count) {
+        *target += 1;
+    }
     let mut order = (0..profiles.len()).collect::<Vec<_>>();
-    order.sort_by_key(|&index| (role_rank(profiles[index].build.role), profiles[index].agent_id));
+    order.sort_by_key(|&index| {
+        (
+            role_rank(profiles[index].build.role),
+            profiles[index].agent_id,
+        )
+    });
     let mut groups = vec![Vec::new(); group_count];
     let mut cursor = 0;
     for index in order {
-        let group = (0..group_count).map(|offset| (cursor + offset) % group_count)
+        let group = (0..group_count)
+            .map(|offset| (cursor + offset) % group_count)
             .find(|&group| groups[group].len() < targets[group])
             .expect("party target capacity covers every profile");
         groups[group].push(index);
         cursor = (group + 1) % group_count;
     }
     for group in &mut groups {
-        group.sort_by_key(|&index| (profiles[index].build.activity_only, profiles[index].agent_id));
+        group.sort_by_key(|&index| {
+            (
+                profiles[index].build.activity_only,
+                profiles[index].agent_id,
+            )
+        });
     }
     groups
 }
@@ -1403,10 +1475,7 @@ fn storefront_offer_unchanged(
     current.as_ref() == Some(selected)
 }
 
-fn visible_unique_default_provider(
-    providers: &[(u64, u16, u16)],
-    minute: u64,
-) -> Option<u64> {
+fn visible_unique_default_provider(providers: &[(u64, u16, u16)], minute: u64) -> Option<u64> {
     let [(provider, start_minute, end_minute)] = providers else {
         return None;
     };
@@ -1948,9 +2017,7 @@ fn safe_failure_reason_code(error: &str, category: &str) -> &'static str {
         "journey_provision_purchase_failed"
     } else if error.contains("purchase_party_tent") {
         "party_tent_purchase_failed"
-    } else if error.contains("purchase_ammunition")
-        || error.contains("withdraw_purchase_coin")
-    {
+    } else if error.contains("purchase_ammunition") || error.contains("withdraw_purchase_coin") {
         "ammunition_purchase_failed"
     } else if error.contains("purchase_from_herbalist") {
         "medical_purchase_failed"
@@ -2020,9 +2087,7 @@ fn safe_core_loop_failure(error: &str) -> (&'static str, &'static str) {
             "survival_purchase_failed",
             "The public party-shelter purchase could not be completed.",
         )
-    } else if error.contains("purchase_ammunition")
-        || error.contains("withdraw_purchase_coin")
-    {
+    } else if error.contains("purchase_ammunition") || error.contains("withdraw_purchase_coin") {
         (
             "survival_purchase_failed",
             "The public ammunition preparation could not be completed.",

@@ -530,6 +530,7 @@ pub fn advance_character_time(
         return Ok(false);
     }
     crate::condition::apply_travel_condition(ctx, character_id, starting_minute, elapsed, 0)?;
+    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(true)
 }
@@ -595,6 +596,7 @@ fn advance_character_time_in_plan(
         return Ok(false);
     }
     crate::condition::apply_travel_condition(ctx, character_id, starting_minute, elapsed, 0)?;
+    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(true)
 }

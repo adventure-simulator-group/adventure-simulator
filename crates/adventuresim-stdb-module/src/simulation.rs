@@ -333,21 +333,17 @@ pub fn seed_simulation_quest_fixture(
             .find(leader_id)
             .and_then(|character| character.party_id)
             .ok_or("Quest coverage leader has no party")?;
-        ctx.db
-            .party_member()
-            .party_id()
-            .filter(&party_id)
-            .map(|member| {
-                ctx.db
-                    .character_capability()
-                    .character_id()
-                    .find(member.character_id)
-                    .map(|capability| capability.autoresolve_combat_power)
-                    .ok_or_else(|| "Quest coverage party member has no combat assessment".into())
-            })
-            .try_fold(0u64, |total, power| {
-                power.map(|power| total.saturating_add(power))
-            })
+        let party = ctx
+            .db
+            .party_authority()
+            .id()
+            .find(&party_id)
+            .ok_or("Quest coverage party does not exist")?;
+        crate::condition::refresh_character_strategic_condition(ctx, leader_id)?;
+        for member_id in crate::strategic::living_party_member_ids(ctx, &party_id) {
+            crate::capability::refresh_character_capability(ctx, member_id)?;
+        }
+        crate::strategic::publicly_ready_party_combat_power(ctx, &party).map(|(_, power)| power)
     };
     let first_power = party_power(direct_leader_id)?;
     let second_power = party_power(generated_leader_id)?;
@@ -357,7 +353,13 @@ pub fn seed_simulation_quest_fixture(
         (direct_leader_id, generated_leader_id, first_power)
     };
     let fixture_enemy_power = crate::strategic::simulation_quest_fixture_enemy_power()?;
-    if direct_power == 0 || direct_power.saturating_mul(4) < fixture_enemy_power.saturating_mul(5) {
+    if direct_power == 0
+        || !adventuresim_core::autoresolve::combat_power_meets_safety_margin(
+            direct_power,
+            fixture_enemy_power,
+        )
+        .unwrap_or(false)
+    {
         return Err("Quest coverage has no party safe for its ordinary fixture opponent".into());
     }
     let seeded = crate::strategic::seed_simulation_quest_fixture_inner(
@@ -586,8 +588,8 @@ pub fn configure_simulation_character(
         &settlement_id,
         SIMULATION_STARTING_COIN,
     )?;
-    crate::capability::refresh_character_capability(ctx, character_id)?;
     crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
+    crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
 }
 
@@ -659,8 +661,8 @@ pub fn seed_simulation_disease(
     if terminal.is_some() || !settled.alive {
         return Ok(());
     }
-    crate::capability::refresh_character_capability(ctx, character_id)?;
     crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
+    crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(())
 }
 

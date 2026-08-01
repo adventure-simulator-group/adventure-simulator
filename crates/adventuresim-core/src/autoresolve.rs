@@ -526,15 +526,42 @@ pub fn autoresolve_combat_power(combatant: &Combatant) -> u64 {
     };
     let melee = combatant.equipment.for_melee();
     let ranged = combatant.equipment.for_ranged();
-    let melee_check = combatant
-        .equipment
-        .melee_weapon
-        .map_or(0.0, |_| attack_check(&melee, LimbWeights::both_arms()));
+    let arm_strength = combatant.attributes.limb_attr_by_weight_by_parts(
+        LimbAttribute::Strength,
+        &combatant.body,
+        LimbWeights::both_arms(),
+    );
+    let weapon_output = |weapon: CombatWeapon, check: f32| {
+        let tempo = weapon.attack_interval_seconds.max(0.1).sqrt().recip();
+        let contact = if weapon.ranged {
+            weapon.ranged_force_joules.max(0.0).sqrt() / 5.0
+        } else {
+            let striking_mass = weapon.weight.max(0.0)
+                * (1.0 + weapon.balance.max(0.0) * weapon.melee_reach.max(0.0));
+            (arm_strength.max(0.0) * (1.0 + striking_mass)).sqrt()
+        };
+        let penetration = if weapon.slash || weapon.pierce {
+            1.0 + weapon.penetration.max(0.0).sqrt() * 0.25
+        } else {
+            1.0
+        };
+        let reach = if weapon.melee {
+            1.0 + weapon.melee_reach.max(0.0).sqrt() * 0.15
+        } else {
+            1.0
+        };
+        check * tempo * contact.max(0.25) * penetration * reach
+    };
+    let melee_check = combatant.equipment.melee_weapon.map_or(0.0, |weapon| {
+        weapon_output(weapon, attack_check(&melee, LimbWeights::both_arms()))
+    });
     let ranged_check = combatant
         .equipment
         .ranged_weapon
         .filter(|_| combatant.equipment.ammunition > 0)
-        .map_or(0.0, |_| attack_check(&ranged, LimbWeights::both_arms()));
+        .map_or(0.0, |weapon| {
+            weapon_output(weapon, attack_check(&ranged, LimbWeights::both_arms()))
+        });
     let skill_check = |skill, weights| {
         combatant.skills.skill_check_by_parts(
             skill,
@@ -550,11 +577,16 @@ pub fn autoresolve_combat_power(combatant: &Combatant) -> u64 {
         * (1.0 + combatant.equipment.shield_block_bonus.max(0.0));
     let balance = skill_check(Skill::Balance, LimbWeights::both_legs());
     let will = skill_check(Skill::Will, LimbWeights::all_equal());
+    // Autoresolve chooses a concrete body region for every contact. Preserve
+    // that regional model here rather than flattening the equipment first.
     let armor = BodyPart::FULL_BODY
         .iter()
         .map(|part| {
             let armor = combatant.equipment.armor[body_part_index(part)];
-            (armor.resistance + armor.padding).max(0.0) * armor.coverage.clamp(0.0, 1.0)
+            let covered = armor.coverage.clamp(0.0, 1.0);
+            let edge_resistance =
+                armor.resistance.max(0.0) * (1.0 - 0.5 * armor.flexibility.clamp(0.0, 1.0));
+            (edge_resistance + armor.padding.max(0.0)) * covered
         })
         .sum::<f32>()
         / 7.0;
@@ -580,6 +612,155 @@ pub fn autoresolve_combat_power(combatant: &Combatant) -> u64 {
         + ranged_opening * 500.0;
     let readiness = (1.0 - combatant.incapacitation()).clamp(0.0, 1.0);
     (raw.max(0.0) * readiness).round().min(u64::MAX as f32) as u64
+}
+
+/// The quest policy's conservative 5:4 party-to-opposition margin. Overflow
+/// is an invalid assessment, not implicit permission to fight.
+pub fn combat_power_meets_safety_margin(party_power: u64, enemy_power: u64) -> Option<bool> {
+    Some(party_power.checked_mul(4)? >= enemy_power.checked_mul(5)?)
+}
+
+/// Build the same authored threat combatant used by strategic autoresolve and
+/// observer-safe contract assessment.
+pub fn authored_threat_combatant(
+    id: u64,
+    enemy_type: &str,
+    difficulty: i32,
+    combat_scale_bps: u32,
+    countermeasure_multiplier_bps: u32,
+) -> Result<Combatant, String> {
+    use crate::bestiary::{AttackStyle, Protection, RigTopology, ThreatId};
+    let threat: ThreatId = enemy_type
+        .parse()
+        .map_err(|_| format!("Unknown threat ID: {enemy_type}"))?;
+    let (physical_scale, training_scale) = crate::threat_escalation::combat_scaling_multipliers(
+        combat_scale_bps,
+        countermeasure_multiplier_bps,
+    );
+    let base_rating = 1.2 + difficulty.max(1) as f32 * 0.35;
+    let physical_rating = base_rating * physical_scale;
+    let threat_profile = threat.profile();
+    let profile = threat_profile.combat;
+    let mut combatant = Combatant::new(id);
+    combatant.bestiary_categories = threat_profile.categories().collect();
+    combatant.attributes = CombatAttributes {
+        endurance: physical_rating,
+        immunity: physical_rating,
+        gut: physical_rating,
+        intelligence: physical_rating * 0.7,
+        instinct: physical_rating,
+        eyesight: physical_rating,
+        hearing: physical_rating,
+        left_arm_strength: physical_rating,
+        right_arm_strength: physical_rating,
+        left_leg_strength: physical_rating,
+        right_leg_strength: physical_rating,
+        left_arm_agility: physical_rating,
+        right_arm_agility: physical_rating,
+        left_leg_agility: physical_rating,
+        right_leg_agility: physical_rating,
+    };
+    let training = base_rating * 1_500.0 * profile.training_multiplier * training_scale;
+    combatant.skills = CombatSkills {
+        sword_hours: training,
+        bow_hours: if profile.ranged { training * 2.0 } else { 0.0 },
+        dodge_hours: training,
+        block_hours: if matches!(
+            profile.protection,
+            Protection::Shielded | Protection::Armored
+        ) {
+            training
+        } else {
+            training * 0.4
+        },
+        will_hours: training * (0.5 + f32::from(profile.morale) / 50.0),
+        balance_hours: training,
+        ..CombatSkills::default()
+    };
+    combatant.body.weight_kg = profile.weight_kg;
+    let (blunt, slash, pierce) = match profile.attack {
+        AttackStyle::Blunt => (true, false, false),
+        AttackStyle::Blade => (false, true, false),
+        AttackStyle::Knife
+        | AttackStyle::Spear
+        | AttackStyle::Bow
+        | AttackStyle::Bite
+        | AttackStyle::Claw => (false, false, true),
+    };
+    let weapon = CombatWeapon {
+        skills: if profile.ranged {
+            crate::equipment::WeaponSkillDistribution {
+                bow: 1.0,
+                ..Default::default()
+            }
+        } else {
+            crate::equipment::WeaponSkillDistribution {
+                sword: 1.0,
+                ..Default::default()
+            }
+        },
+        melee: !profile.ranged,
+        ranged: profile.ranged,
+        blunt,
+        slash,
+        pierce,
+        accuracy: 0.8 + profile.precision_bonus,
+        weight: if profile.rig == RigTopology::Quadruped {
+            1.0
+        } else {
+            1.5
+        },
+        penetration: if matches!(profile.attack, AttackStyle::Spear | AttackStyle::Claw) {
+            1.5
+        } else {
+            0.8
+        },
+        melee_reach: if profile.ranged { 0.0 } else { 0.8 },
+        ranged_range: if profile.ranged { 20.0 } else { 0.0 },
+        attack_interval_seconds: if profile.ranged { 1.0 } else { 0.75 },
+        precise: profile.precision_bonus > 0.0,
+        balance: 0.3,
+        ranged_force_joules: if profile.ranged { 40.0 } else { 0.0 },
+    };
+    combatant.equipment.weapon = Some(weapon);
+    if profile.ranged {
+        combatant.equipment.ranged_weapon = Some(weapon);
+        combatant.equipment.ranged_projectile_kind = Some(CombatProjectileKind::Arrowhead);
+        combatant.equipment.melee_weapon = Some(CombatWeapon {
+            melee: true,
+            slash: true,
+            pierce: true,
+            accuracy: 1.0,
+            weight: 0.5,
+            penetration: 0.5,
+            melee_reach: 0.5,
+            attack_interval_seconds: 0.6,
+            balance: 0.5,
+            ..CombatWeapon::default()
+        });
+        combatant.equipment.ammunition = 12;
+        combatant.initial_ammunition = 12;
+    } else {
+        combatant.equipment.melee_weapon = Some(weapon);
+    }
+    let innate = profile.innate_protection;
+    if innate.resistance_joules > 0.0 || innate.padding_joules > 0.0 {
+        combatant.equipment.armor.fill(CombatArmor::innate(
+            innate.resistance_joules,
+            innate.padding_joules,
+        ));
+    }
+    if matches!(profile.protection, Protection::Armored) {
+        combatant.equipment.shield_block_bonus = 1.0;
+        combatant.equipment.armor.fill(CombatArmor {
+            resistance: 25.0,
+            padding: 15.0,
+            flexibility: 0.8,
+            range_of_motion: 0.9,
+            coverage: 0.5,
+        });
+    }
+    Ok(combatant)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1634,6 +1815,50 @@ mod tests {
         let mut impaired = trained.clone();
         impaired.starting_incapacitation = 0.75;
         assert!(autoresolve_combat_power(&impaired) < autoresolve_combat_power(&trained));
+
+        let mut heavier = novice.clone();
+        let weapon = heavier.equipment.melee_weapon.as_mut().unwrap();
+        weapon.weight *= 2.0;
+        heavier.equipment.weapon = heavier.equipment.melee_weapon;
+        assert!(autoresolve_combat_power(&heavier) > autoresolve_combat_power(&novice));
+
+        let mut penetrating = novice.clone();
+        let weapon = penetrating.equipment.melee_weapon.as_mut().unwrap();
+        weapon.penetration *= 2.0;
+        penetrating.equipment.weapon = penetrating.equipment.melee_weapon;
+        assert!(autoresolve_combat_power(&penetrating) > autoresolve_combat_power(&novice));
+
+        let mut longer = novice.clone();
+        let weapon = longer.equipment.melee_weapon.as_mut().unwrap();
+        weapon.melee_reach *= 2.0;
+        longer.equipment.weapon = longer.equipment.melee_weapon;
+        assert!(autoresolve_combat_power(&longer) > autoresolve_combat_power(&novice));
+
+        let mut slower = novice.clone();
+        let weapon = slower.equipment.melee_weapon.as_mut().unwrap();
+        weapon.attack_interval_seconds *= 2.0;
+        slower.equipment.weapon = slower.equipment.melee_weapon;
+        assert!(autoresolve_combat_power(&slower) < autoresolve_combat_power(&novice));
+
+        let mut chest_only = novice.clone();
+        chest_only.equipment.armor[body_part_index(BodyPart::Chest)] = CombatArmor {
+            resistance: 25.0,
+            padding: 15.0,
+            coverage: 0.8,
+            flexibility: 0.8,
+            ..CombatArmor::default()
+        };
+        assert!(autoresolve_combat_power(&chest_only) > autoresolve_combat_power(&novice));
+    }
+
+    #[test]
+    fn combat_power_orders_authored_cross_profiles_and_margin_boundaries() {
+        let cultist = authored_threat_combatant(1, "cultist", 1, 10_000, 10_000).unwrap();
+        let veteran = authored_threat_combatant(2, "cultist", 6, 10_000, 10_000).unwrap();
+        assert!(autoresolve_combat_power(&veteran) > autoresolve_combat_power(&cultist));
+        assert_eq!(combat_power_meets_safety_margin(125, 100), Some(true));
+        assert_eq!(combat_power_meets_safety_margin(124, 100), Some(false));
+        assert_eq!(combat_power_meets_safety_margin(u64::MAX, 1), None);
     }
 
     #[test]

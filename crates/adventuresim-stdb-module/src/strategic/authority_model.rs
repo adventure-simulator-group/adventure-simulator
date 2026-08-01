@@ -212,15 +212,13 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
                         group.base_difficulty,
                         group.combat_scale_bps,
                     )
-                    .map(|enemy| {
-                        adventuresim_core::autoresolve::autoresolve_combat_power(&enemy)
-                            .saturating_mul(u64::from(group.enemy_count))
-                    })
                     .ok()
+                    .and_then(|enemy| {
+                        adventuresim_core::autoresolve::autoresolve_combat_power(&enemy)
+                            .checked_mul(u64::from(group.enemy_count))
+                    })
                 })
-                .collect::<Option<Vec<_>>>()?
-                .into_iter()
-                .sum();
+                .try_fold(0u64, |total, power| total.checked_add(power?))?;
             Some(BackendContract {
                 id: row.id,
                 case_id: row.case_id,

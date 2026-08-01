@@ -1494,13 +1494,20 @@ fn refresh_party_strategic_condition_projection(
     party_members: &[u64],
 ) -> Result<Vec<CharacterStrategicCondition>, String> {
     let (morale_bonus_cap, morale_bonus_shares) = party_morale_support(ctx, party_members)?;
-    party_members
+    let rows = party_members
         .iter()
         .copied()
         .map(|member_id| {
             refresh_one_strategic_condition(ctx, member_id, morale_bonus_cap, &morale_bonus_shares)
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    // Combat power consumes this projection. Keep its public aggregate in the
+    // same transaction as the condition rows so disease, time, and recovery
+    // changes cannot leave a stale readiness snapshot behind.
+    for row in &rows {
+        crate::capability::refresh_character_capability(ctx, row.character_id)?;
+    }
+    Ok(rows)
 }
 
 pub fn refresh_character_strategic_condition(

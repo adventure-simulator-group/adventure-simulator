@@ -1,4 +1,10 @@
-fn capability(character_id: u64, melee: bool, ranged: bool, precise: bool, heavy: bool) -> CharacterCapability {
+fn capability(
+    character_id: u64,
+    melee: bool,
+    ranged: bool,
+    precise: bool,
+    heavy: bool,
+) -> CharacterCapability {
     CharacterCapability {
         character_id,
         melee,
@@ -71,7 +77,9 @@ fn encounter_policy_is_permutation_invariant_and_never_attacks_during_evacuation
         "surrender"
     );
     assert_eq!(
-        select_expedition_encounter_choice(&["attack".into()], false).unwrap().choice,
+        select_expedition_encounter_choice(&["attack".into()], false)
+            .unwrap()
+            .choice,
         "attack"
     );
     assert!(select_expedition_encounter_choice(&["attack".into()], true).is_none());
@@ -96,10 +104,17 @@ fn public_contract_matchup_uses_readiness_count_difficulty_and_fails_closed() {
     // also owns weapon, dodge, block, balance, and protection mechanics.
     assert!(!public_contract_assessment(1, "one", 10_000, &[strong(1, true)]).eligible);
     assert!(!public_contract_assessment(1, "two", 20_000, &[strong(1, true)]).eligible);
-    assert!(!public_contract_assessment(1, "two", 20_000, &[strong(1, true), strong(2, true)]).eligible);
-    assert!(!public_contract_assessment(6, "two", 20_000, &[strong(1, true), strong(2, true)]).eligible);
+    assert!(
+        !public_contract_assessment(1, "two", 20_000, &[strong(1, true), strong(2, true)]).eligible
+    );
+    assert!(
+        !public_contract_assessment(6, "two", 20_000, &[strong(1, true), strong(2, true)]).eligible
+    );
     assert!(!public_contract_assessment(1, "one", 10_000, &[strong(1, false)]).eligible);
-    assert!(!public_contract_assessment(1, "several", 20_000, &[strong(1, true), strong(2, true)]).eligible);
+    assert!(
+        !public_contract_assessment(1, "several", 20_000, &[strong(1, true), strong(2, true)])
+            .eligible
+    );
     assert_eq!(
         public_contract_assessment(1, "one", 0, &[strong(1, true)]).reason,
         "missing_authoritative_opposition_power"
@@ -109,17 +124,38 @@ fn public_contract_matchup_uses_readiness_count_difficulty_and_fails_closed() {
         1,
         "perhaps two",
         18_000,
-        &[strong(1, true), strong(2, true), strong(3, true), strong(4, true)],
+        &[
+            strong(1, true),
+            strong(2, true),
+            strong(3, true),
+            strong(4, true),
+        ],
     );
     let deteriorated = public_contract_assessment(
         1,
         "perhaps two",
         18_000,
-        &[strong(1, true), strong(2, true), strong(3, false), strong(4, false)],
+        &[
+            strong(1, true),
+            strong(2, true),
+            strong(3, false),
+            strong(4, false),
+        ],
     );
     assert!(accepted.eligible);
     assert!(!deteriorated.eligible);
     assert_eq!(deteriorated.reason, "public_matchup_below_safety_margin");
+
+    let mut overflow = strong(9, true);
+    overflow.capability.autoresolve_combat_power = u64::MAX;
+    assert_eq!(
+        public_contract_assessment(1, "one", 1, &[overflow.clone()]).reason,
+        "public_combat_margin_overflow"
+    );
+    assert_eq!(
+        public_contract_assessment(1, "one", 1, &[overflow.clone(), overflow]).reason,
+        "public_party_power_overflow"
+    );
 }
 
 #[test]
@@ -138,14 +174,24 @@ fn generated_action_score_prefers_progress_then_fit_then_public_costs() {
 
     let mut uncertain = inspect.clone();
     uncertain.uncertainty_bps = 9_000;
-    assert!(generated_action_score(&profile, &inspect) > generated_action_score(&profile, &uncertain));
+    assert!(
+        generated_action_score(&profile, &inspect) > generated_action_score(&profile, &uncertain)
+    );
 
     let tied_a = projected_action("a", "unknown");
     let tied_b = projected_action("b", "unknown");
-    assert_eq!(generated_action_score(&profile, &tied_a), generated_action_score(&profile, &tied_b));
+    assert_eq!(
+        generated_action_score(&profile, &tied_a),
+        generated_action_score(&profile, &tied_b)
+    );
     let mut tied = vec![tied_b, tied_a];
     sort_generated_actions(&profile, &mut tied);
-    assert_eq!(tied.iter().map(|action| action.action_id.as_str()).collect::<Vec<_>>(), vec!["a", "b"]);
+    assert_eq!(
+        tied.iter()
+            .map(|action| action.action_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["a", "b"]
+    );
 }
 
 #[test]
@@ -161,7 +207,11 @@ fn generated_skill_fit_exactly_mirrors_public_action_skill_mapping() {
         "patrol",
         "approach_lead",
     ] {
-        assert_eq!(generated_method_skill_fit(&profile, method), 8_000, "{method}");
+        assert_eq!(
+            generated_method_skill_fit(&profile, method),
+            8_000,
+            "{method}"
+        );
     }
     assert_eq!(generated_method_skill_fit(&profile, "follow_tracks"), 0);
     assert_eq!(generated_method_skill_fit(&profile, "reacquire_tracks"), 0);
@@ -190,17 +240,30 @@ fn party_grouping_balances_roles_and_promotes_quest_capable_leaders() {
     }
     let groups = balanced_party_groups(&profiles, 3);
     assert_eq!(groups.iter().map(Vec::len).collect::<Vec<_>>(), vec![3, 3]);
-    assert!(groups.iter().all(|group| !profiles[group[0]].build.activity_only));
+    assert!(
+        groups
+            .iter()
+            .all(|group| !profiles[group[0]].build.activity_only)
+    );
     assert!(groups.iter().all(|group| {
-        let mut ranks = group.iter().map(|&index| role_rank(profiles[index].build.role)).collect::<Vec<_>>();
+        let mut ranks = group
+            .iter()
+            .map(|&index| role_rank(profiles[index].build.role))
+            .collect::<Vec<_>>();
         ranks.sort_unstable();
         ranks.dedup();
         ranks.len() == group.len()
     }));
 
-    for profile in &mut profiles { profile.build.activity_only = true; }
+    for profile in &mut profiles {
+        profile.build.activity_only = true;
+    }
     let all_content = balanced_party_groups(&profiles, 3);
-    assert!(all_content.iter().all(|group| profiles[group[0]].build.activity_only));
+    assert!(
+        all_content
+            .iter()
+            .all(|group| profiles[group[0]].build.activity_only)
+    );
 }
 
 #[test]
