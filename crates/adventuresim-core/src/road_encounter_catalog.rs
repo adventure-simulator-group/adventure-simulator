@@ -1601,6 +1601,108 @@ mod tests {
     }
 
     #[test]
+    fn envious_captain_routes_ground_oath_trust_and_portable_bow_lesson() {
+        let definition = encounter("envious_captain_false_directions_v1").unwrap();
+        let opening = format!(
+            "{} {}",
+            definition.opening[0].text, definition.opening[1].text
+        )
+        .to_lowercase();
+        assert!(opening.contains("ridge-wise advance guard"));
+        assert!(opening.contains("hold first passage"));
+        assert!(opening.contains("saint christopher's road-brotherhood mark"));
+        for withheld in ["bow", "missile", "sword", "spear", "cannot answer"] {
+            assert!(!opening.contains(withheld));
+        }
+
+        let choice = |id| {
+            definition
+                .choices
+                .iter()
+                .find(|choice| choice.id == id)
+                .unwrap()
+        };
+        let active = definition
+            .choices
+            .iter()
+            .filter(|choice| choice.id != "ignore")
+            .collect::<Vec<_>>();
+        for route in &active {
+            assert!(route.effects.iter().any(|effect| matches!(
+                effect,
+                Effect::Information { information_id }
+                    if information_id == "melee_only_opposition_cannot_answer_prepared_bow_lane"
+            )));
+            assert_eq!(
+                route.quest_reward_tags,
+                ["prepare_bows_against_melee_only_opposition"]
+            );
+            assert!(route.result.contains("prepared bow"));
+            assert!(route.result.contains("cannot answer across the gap"));
+            assert!(route.result.contains("yield"));
+        }
+
+        for id in [
+            "read_false_waymarks",
+            "scout_both_roads",
+            "expose_before_companies",
+            "organize_ridge_passage",
+        ] {
+            let route = choice(id);
+            assert_eq!(route.response[0].speaker, "merchant_factor");
+            assert!(route.result.contains("factor payeth"));
+        }
+        let oath = choice("demand_oath_at_cross");
+        let oath_prose = format!("{} {}", oath.response[0].text, oath.result).to_lowercase();
+        for mortal_consequence in [
+            "road-brotherhood rule",
+            "wages and standing",
+            "publicly recant",
+            "without supernatural judgment",
+        ] {
+            assert!(oath_prose.contains(mortal_consequence));
+        }
+
+        let theft = choice("collude_and_split_payroll");
+        let mut cursor = 0;
+        for event in [
+            "advance guard scouteth ahead",
+            "abandoning direct seizure",
+            "lower-road deceit",
+            "boggeth upright without overturn or injury",
+            "stealest its ninety-six-groschen purse",
+        ] {
+            let found = theft.result[cursor..].find(event).unwrap();
+            cursor += found + event.len();
+        }
+        assert!(matches!(
+            theft.effects[0],
+            Effect::Currency { amount: 48, .. }
+        ));
+        let honest_max = active
+            .iter()
+            .filter(|choice| choice.id != theft.id)
+            .flat_map(|choice| &choice.effects)
+            .filter_map(|effect| match effect {
+                Effect::Currency { amount, .. } if *amount > 0 => Some(*amount),
+                _ => None,
+            })
+            .max()
+            .unwrap();
+        assert!(48 > honest_max);
+        assert!(theft.personality.iter().all(|change| change.delta < 0));
+        assert_eq!(exemplified_virtue(&theft.personality), None);
+
+        let ignore = choice("ignore");
+        assert!(matches!(
+            ignore.transition.as_ref(),
+            Some(EncounterTransition::TravelDelay { minutes: 60 })
+        ));
+        assert!(ignore.response.is_empty() && ignore.effects.is_empty());
+        assert!(ignore.outcome_tags.is_empty() && ignore.personality.is_empty());
+    }
+
+    #[test]
     fn combat_transition_rejects_unsafe_counts() {
         let mut definition = encounter("unlawful_bridge_custom_v1").unwrap().clone();
         let choice = definition

@@ -171,6 +171,35 @@ damaging equipment, or weakening any opponent. The materially richest theft
 lowers Honesty without publicly exemplifying it. The encounter is travel-only,
 goal-neutral, entirely mortal, and requires no runtime catalog special case.
 
+`envious_captain_false_directions_v1` places a mortal escort captain and mortal
+merchant factor at a fork, where the captain's Holy Rood oath favors the lower
+road despite an elder ridge-pointing stone and fresh ridge chalk on his escort's
+boots. The approaching train carries the quarrymen's payroll behind a known
+light, ridge-wise advance guard. A Saint Christopher road-brotherhood mark
+binds the wayside cross and escort contract, while the captain declares that
+his men will claim first passage at the washed ridge cleft if his counsel is
+contested. The party may read chalk, stone, and flood marks together, scout both
+roads, expose the contradiction before both companies, marshal the convoy
+beneath the factor and advance guard's own route expertise, enforce public
+recantation and penance under the mortal road contract, or collude after the
+captain privately confesseth envy. The threatened factor or train pays every
+honest coin reward; the captain never purchases silence or exposure.
+
+After each honest intervention, the captain's envy or pride makes him order his
+mailed escort to obstruct the merchant train and claim precedence. The advance
+guard then gains the opposite shelf and reveals a prepared bow: the escort's
+melee-only swords and spears cannot answer across the gap, so it yields the
+lane. In the evil route that same failure occurs first and causes the captain
+and player to abandon direct seizure. Only then do they redirect the lead wagon
+into lower-road mire under false color of aid; it bogs upright without injury,
+and they split the stolen ninety-six-groschen payroll equally. The observation
+concerns melee-only equipment, not armor in general, and reinforces preparation
+of bows and arrows without weakening an opponent. The theft pays more than
+twice the richest honest route and lowers Honesty without publicly exemplifying
+it. Waiting for both companies to clear costs an hour but nothing else. The
+encounter is travel-only, goal-neutral, entirely mortal, and requires no runtime
+catalog special case.
+
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,
