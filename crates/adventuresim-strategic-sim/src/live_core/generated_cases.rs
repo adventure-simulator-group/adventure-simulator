@@ -793,8 +793,10 @@ impl LiveRunner {
         if self.current_leader(party_id).map(|(leader, _)| leader) != Some(owner_character_id) {
             return Ok(false);
         }
+        let mut party_medically_ready = true;
         for party_agent in self.party_agents(owner_character_id)? {
             if !self.ensure_medically_safe(party_agent)? {
+                party_medically_ready = false;
                 self.metrics.quests_suppressed_for_health += 1;
                 self.event(
                     party_agent,
@@ -804,7 +806,7 @@ impl LiveRunner {
                         bounded_event_field(case_id)
                     ),
                 );
-                return Ok(false);
+                continue;
             }
             self.maintain_equipment(party_agent)?;
         }
@@ -817,6 +819,9 @@ impl LiveRunner {
             .synchronize_party_for_activity_then(owner_character_id, cb));
         self.call(result)?;
         self.observe_deaths();
+        if !party_medically_ready {
+            return Ok(false);
+        }
         if self
             .refreshed_safe_party_for_owner(party_id, owner_character_id)?
             .is_none()

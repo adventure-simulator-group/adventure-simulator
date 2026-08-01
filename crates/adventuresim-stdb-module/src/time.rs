@@ -908,7 +908,7 @@ pub fn advance_character_wait_time(
         settled.elapsed,
         false,
         if at_settlement {
-            adventuresim_core::survival::FieldShelter::Tent
+            adventuresim_core::survival::FieldShelter::Indoor
         } else {
             adventuresim_core::survival::FieldShelter::Bivouac
         },
@@ -1953,13 +1953,23 @@ pub fn perform_immediate_activity(
         .character_time()
         .character_id()
         .update(character_time);
+    let at_settlement = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .is_some_and(|character| character.current_settlement_id.is_some());
     crate::condition::apply_weather_exposure(
         ctx,
         character_id,
         starting_minute,
         elapsed,
         false,
-        adventuresim_core::survival::FieldShelter::Tent,
+        if at_settlement {
+            adventuresim_core::survival::FieldShelter::Indoor
+        } else {
+            adventuresim_core::survival::FieldShelter::Bivouac
+        },
     )?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::condition::apply_elapsed_needs(ctx, character_id, elapsed)?;
@@ -3301,7 +3311,7 @@ pub(crate) fn advance_stationary_character_to(
         elapsed,
         false,
         if at_settlement {
-            adventuresim_core::survival::FieldShelter::Tent
+            adventuresim_core::survival::FieldShelter::Indoor
         } else {
             adventuresim_core::survival::FieldShelter::Bivouac
         },
@@ -3578,6 +3588,30 @@ mod tests {
             .expect("settlement rest implementation");
         assert!(rest.contains("FieldShelter::Indoor"));
         assert!(!rest.contains("FieldShelter::Tent"));
+    }
+
+    #[test]
+    fn settlement_wait_and_downtime_use_indoor_exposure() {
+        let source = include_str!("time.rs");
+        for (start, end) in [
+            ("pub fn advance_character_wait_time", "fn default_schedule"),
+            (
+                "pub fn perform_immediate_activity",
+                "fn apply_organization_outcomes",
+            ),
+            (
+                "pub(crate) fn advance_stationary_character_to",
+                "pub fn synchronize_character",
+            ),
+        ] {
+            let body = source
+                .split(start)
+                .nth(1)
+                .and_then(|tail| tail.split(end).next())
+                .expect(start);
+            assert!(body.contains("FieldShelter::Indoor"), "{start}");
+            assert!(body.contains("FieldShelter::Bivouac"), "{start}");
+        }
     }
 
     #[test]

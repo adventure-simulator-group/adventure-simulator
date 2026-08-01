@@ -518,6 +518,9 @@
         assert!(deaths < medical);
         assert!(medical < resync);
         assert!(resync < safe);
+        assert!(preflight.contains("let mut party_medically_ready = true"));
+        assert!(preflight.contains("party_medically_ready = false"));
+        assert!(preflight.contains("if !party_medically_ready"));
         assert!(medical < safe);
         assert!(safe < clocks);
 
