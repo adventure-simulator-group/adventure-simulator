@@ -364,6 +364,44 @@ master and hound may return physically unharmed to a materially desecrated
 body. Dog and body remain narrative-only property and never become items,
 effects, or persistent strategic state.
 
+`enchanted_sleep_beneath_hawthorn_v1` directly adapts Malory's [*Le Morte
+d'Arthur*, Volume I, Book VI, Chapter
+III](https://www.gutenberg.org/files/1251/1251-h/1251-h.htm), where Morgan le
+Fay enchants the sleeping Launcelot for six hours and has him borne away. The
+encounter relocates enchanted sleep to a reusable roadside company rescue and
+omits the source episode's abduction and coercion.
+
+A veteran caravan mistress, also the company's herb-wife and quartermistress,
+returns to find even-breathing sleepers within a sharp hawthorn blossom line
+after one drove an iron tent stake into the root. She alone owns pulse and
+breath observation, triage, safe lifting, and the watch cart. The Lady of the
+Hawthorn speaks exactly three reviewed verse lines: her present song binds the
+offending company, and rescuers attract its attention when entering or
+interfering. Routes therefore answer exposure through sustained hauling,
+willpower, an acoustic lee, covered-ear relays, shared litany cadence, a brief
+restitution pause, or an already-rigged outside mechanism. The litany neither
+dispels nor modifies the enchantment.
+
+Every active route natively uses the mistress's real `halberd` to set or draw
+rope, cloth, or relay straps across the blossom boundary. Its typed 2.0 m reach
+lets a rescuer manipulate the stake rig, coverings, and other boundary objects
+while remaining outside the song. The information and preparation tag claim
+only this demonstrated general-purpose working reach, not an enemy weakness.
+The item itself is worth twenty-four groschen, has reach 2, penetration 2, and
+blunt, slashing, and piercing damage.
+
+For the betrayal, the mistress first establishes receiving places and rigs a
+safe cart-hauling line. The player sends her beyond the ring under a credible
+triage pretext, secures the declared ninety-six-groschen wage coffer and folded
+`jack_of_plates` for carriage, and takes the halberd before doing anything that
+would wake witnesses. As a final act from beyond the boundary, the player uses
+the halberd to trip her already-established brake, then departs immediately as
+the line removes the stake and the company begins safely waking. The mistress
+can return to tend them, but the caravan loses 155 groschen of real property,
+more than six times the honest reward. Sleepers, sleep, blossom boundary,
+stake, and watch cart remain occurrence-local prose and never become strategic
+state or effect IDs.
+
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,
