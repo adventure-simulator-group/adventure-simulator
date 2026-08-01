@@ -30,6 +30,20 @@ fn departure_readiness_applies_continuous_load_thermal_and_ammo_floors() {
 }
 
 #[test]
+fn public_encumbrance_counts_carried_mass_but_not_body_mass() {
+    let production = LIVE_CORE_SOURCE.split("#[cfg(test)]").next().unwrap();
+    let load = production
+        .split("fn public_personal_load_kg")
+        .nth(1)
+        .and_then(|tail| tail.split("fn public_character_capacity_kg").next())
+        .expect("public personal-load projection");
+    assert!(load.contains("carried_water_ml"));
+    assert!(load.contains("inventory_weight"));
+    assert!(load.contains("water_weight + inventory_weight"));
+    assert!(!load.contains("body_weight_kg"));
+}
+
+#[test]
 fn every_field_rest_uses_the_single_party_shelter_boundary() {
     let production = LIVE_CORE_SOURCE.split("#[cfg(test)]").next().unwrap();
     assert_eq!(production.matches(".rest_at_camp_then(").count(), 1);

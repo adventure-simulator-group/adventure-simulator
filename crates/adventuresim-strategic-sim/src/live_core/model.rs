@@ -27,7 +27,6 @@ use adventuresim_stdb_client::{
     backend_case_site_pins_table::BackendCaseSitePinsTableAccess,
     backend_character_attributes_table::BackendCharacterAttributesTableAccess,
     backend_character_capabilities_table::BackendCharacterCapabilitiesTableAccess,
-    backend_character_conditions_table::BackendCharacterConditionsTableAccess,
     backend_character_deaths_table::BackendCharacterDeathsTableAccess,
     backend_character_limbs_table::BackendCharacterLimbsTableAccess,
     backend_character_needs_table::BackendCharacterNeedsTableAccess,

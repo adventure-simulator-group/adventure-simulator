@@ -509,10 +509,15 @@
             .unwrap();
         let deaths = preflight.find("self.observe_deaths()").unwrap();
         let medical = preflight.find("self.ensure_medically_safe").unwrap();
+        let resync = preflight
+            .find("resynchronize_party_after_generated_preflight")
+            .unwrap();
         let safe = preflight.find("refreshed_safe_party_for_owner").unwrap();
         let clocks = preflight.find("public_party_clocks_aligned").unwrap();
         assert!(sync < deaths);
         assert!(deaths < medical);
+        assert!(medical < resync);
+        assert!(resync < safe);
         assert!(medical < safe);
         assert!(safe < clocks);
 

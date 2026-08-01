@@ -808,6 +808,14 @@ impl LiveRunner {
             }
             self.maintain_equipment(party_agent)?;
         }
+        // Recovery and maintenance advance individual clocks. Re-align after
+        // those actions so the preflight does not reject its own care work as
+        // persistent party clock skew.
+        let result = reducer_call!(self, "resynchronize_party_after_generated_preflight", |cb| self
+            .connection
+            .reducers
+            .synchronize_party_for_activity_then(owner_character_id, cb));
+        self.call(result)?;
         self.observe_deaths();
         if self
             .refreshed_safe_party_for_owner(party_id, owner_character_id)?

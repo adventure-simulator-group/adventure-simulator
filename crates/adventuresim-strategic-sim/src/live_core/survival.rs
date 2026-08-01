@@ -83,19 +83,6 @@ impl LiveRunner {
     }
 
     fn public_personal_load_kg(&self, character_id: u64) -> f32 {
-        let body_weight = self
-            .connection
-            .db
-            .backend_character_conditions()
-            .iter()
-            .find(|row| row.character_id == character_id)
-            .map_or(70.0, |row| {
-                if row.body_weight_kg.is_finite() && (20.0..=300.0).contains(&row.body_weight_kg) {
-                    row.body_weight_kg
-                } else {
-                    70.0
-                }
-            });
         let water_weight = self
             .connection
             .db
@@ -121,7 +108,11 @@ impl LiveRunner {
                     )
             })
             .sum::<f32>();
-        body_weight + water_weight + inventory_weight
+        // Match StrategicEquipment::load: encumbrance is carried inventory
+        // plus carried water. A character's own body mass is combat data, not
+        // cargo, and including it creates a false overweight feedback loop
+        // when a staggered condition temporarily halves carrying capacity.
+        water_weight + inventory_weight
     }
 
     fn public_character_capacity_kg(&self, character_id: u64) -> f32 {
