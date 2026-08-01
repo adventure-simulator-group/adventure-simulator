@@ -6,7 +6,7 @@
 use super::{AppState, BackendSettlementResidentRow as NpcRow};
 use crate::{
     session::Session,
-    spacetimedb::{BackendChallenge, Character, CharacterTime, Settlement, sql_string_literal},
+    spacetimedb::{BackendChallenge, BackendRoadChallenge, Character, CharacterTime, Settlement, sql_string_literal},
 };
 use adventuresim_core::{
     developer_quest::{self as dq, DeveloperGenerationContext, DeveloperQuestDefinition},
@@ -50,6 +50,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/developer/autopsy-demo", post(load_autopsy_demo))
         .route("/api/developer/outbreak-demo", post(load_outbreak_demo))
         .route("/api/developer/puzzle-demo", post(load_puzzle_demo))
+        .route("/api/developer/road-encounter-demo", post(load_road_encounter_demo))
 }
 
 async fn active_context(
@@ -403,6 +404,55 @@ struct PuzzleDemoQuery {
     kind: String,
 }
 
+#[derive(Deserialize)]
+struct RoadEncounterDemoQuery {
+    catalog_id: String,
+}
+
+async fn load_road_encounter_demo(
+    State(state): State<AppState>,
+    session: Session,
+    Query(query): Query<RoadEncounterDemoQuery>,
+) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"message":"Select a character before loading a road encounter demo"})),
+        ).into_response();
+    };
+    if adventuresim_core::road_encounter_catalog::encounter(&query.catalog_id).is_none() {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"message":"Unknown road encounter catalog ID"})),
+        ).into_response();
+    }
+    match state.db.call(
+        "load_road_encounter_demo",
+        &[json!(character_id), json!(&query.catalog_id)],
+    ).await {
+        Ok(()) => {
+            let sql = format!(
+                "SELECT * FROM backend_road_challenges WHERE owner_character_id = {character_id}"
+            );
+            let active = match state.db.query::<BackendRoadChallenge>(&sql).await {
+                Ok(rows) => rows.into_iter().filter(|row| row.active && row.open).collect::<Vec<_>>(),
+                Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+            };
+            if active.len() != 1 {
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+            (
+                StatusCode::CREATED,
+                Json(json!({"status":"loaded", "redirect_to":"/camp"})),
+            ).into_response()
+        }
+        Err(error) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"message":error.to_string()})),
+        ).into_response(),
+    }
+}
+
 async fn load_puzzle_demo(
     State(state): State<AppState>,
     session: Session,
@@ -580,6 +630,18 @@ mod tests {
             .next()
             .unwrap();
         assert!(!loader.contains("rumor"));
+    }
+
+    #[test]
+    fn road_encounter_demo_accepts_only_a_compiled_catalog_id() {
+        let source = include_str!("developer_quests.rs");
+        let loader = source.split("async fn load_road_encounter_demo").nth(1)
+            .and_then(|tail| tail.split("async fn load_puzzle_demo").next()).unwrap();
+        assert!(source.contains("/api/developer/road-encounter-demo"));
+        assert!(loader.contains("road_encounter_catalog::encounter(&query.catalog_id)"));
+        assert!(loader.contains("\"load_road_encounter_demo\""));
+        assert!(loader.contains("query::<BackendRoadChallenge>"));
+        assert!(!loader.contains("provenance"));
     }
 
     #[test]

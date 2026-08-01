@@ -36,6 +36,7 @@ development, or other wiki document before changing a subsystem.
 - `content/dialogue/organizations.yaml` — Repository support file.
 - `content/dialogue/services.yaml` — Repository support file.
 - `content/encounters/wounded-courier.yaml` — Repository support file.
+- `content/encounters/wounded-knight-linden.yaml` — Repository support file.
 - `content/items/catalog.yaml` — Repository support file.
 - `content/organizations/catalog.yaml` — Repository support file.
 - `content/organizations/social-estates.yaml` — Repository support file.

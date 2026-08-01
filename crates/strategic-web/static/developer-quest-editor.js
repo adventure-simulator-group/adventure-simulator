@@ -476,9 +476,31 @@
       button.textContent = original;
     }
   }
+  async function loadRoadEncounterDemo(button) {
+    if (!document.documentElement.hasAttribute("data-developer-mode")) return;
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = "Loading...";
+    try {
+      const catalogId = button.dataset.catalogId;
+      const response = await fetch(`/api/developer/road-encounter-demo?catalog_id=${encodeURIComponent(catalogId)}`, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.message || `Road encounter demo failed (${response.status})`);
+      window.location.assign(body.redirect_to || "/camp");
+    } catch (error) {
+      window.alert(error.message);
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
   document.addEventListener("click", (event) => {
     const puzzleDemo = event.target.closest("[data-developer-puzzle-demo]");
     if (puzzleDemo) loadPuzzleDemo(puzzleDemo);
+    const roadEncounterDemo = event.target.closest("[data-developer-road-encounter-demo]");
+    if (roadEncounterDemo) loadRoadEncounterDemo(roadEncounterDemo);
     const outbreakDemo = event.target.closest("[data-developer-outbreak-demo]");
     if (outbreakDemo) loadOutbreakDemo(outbreakDemo);
     const autopsyDemo = event.target.closest("[data-developer-autopsy-demo]");
