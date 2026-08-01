@@ -10,6 +10,7 @@
             party_size: 2,
             run_nonce: "unit-test-nonce-0001".into(),
             fixture_disease: DEFAULT_SIMULATION_DISEASE.into(),
+            require_quest_coverage: false,
             use_imported_world: false,
             expected_world_manifest_digest: None,
             failure_output: None,

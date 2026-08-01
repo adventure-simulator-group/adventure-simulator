@@ -354,6 +354,7 @@ def strategic_sim(
     seed: str, population: str, cycles: str, duration_days: str, party_size: str,
     spacetime_url: str, module_dir: Path, output_dir: Path,
     world_input: Path | None = None,
+    require_quest_coverage: bool = False,
 ) -> int:
     output_dir = output_dir.resolve()
     if output_dir.exists():
@@ -434,6 +435,8 @@ def strategic_sim(
                 "--party-size", party_size, "--output", str(output_dir / "report.json"),
                 "--failure-output", str(output_dir / "failure.json"),
             ]
+            if require_quest_coverage:
+                command.append("--require-quest-coverage")
             result_code = run(command, env=environment)
             metadata["status"] = "completed" if result_code == 0 else "simulator_failed"
         failure_path = output_dir / "failure.json"
@@ -591,6 +594,7 @@ def parser() -> argparse.ArgumentParser:
     simulation.add_argument("--spacetime-url", default=SPACETIME_URL)
     simulation.add_argument("--module-dir", default=str(MODULE_DIR))
     simulation.add_argument("--world-input")
+    simulation.add_argument("--require-quest-coverage", action="store_true")
     commands.add_parser("win-dev")
     return result
 
@@ -629,6 +633,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.seed, args.population, args.cycles, args.duration_days, args.party_size,
                 args.spacetime_url, Path(args.module_dir), Path(args.output_dir),
                 Path(args.world_input) if args.world_input else None,
+                args.require_quest_coverage,
             )
         if args.command == "win-dev":
             return win_dev()

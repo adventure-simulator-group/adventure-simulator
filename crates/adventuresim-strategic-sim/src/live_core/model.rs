@@ -79,6 +79,7 @@ use adventuresim_stdb_client::{
     retrieve_repaired_item_reducer::retrieve_repaired_item,
     seed_simulation_disease_reducer::seed_simulation_disease,
     seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage,
+    seed_simulation_quest_fixture_reducer::seed_simulation_quest_fixture,
     seed_simulation_world_reducer::seed_simulation_world,
     settlement_resident_presence_table::SettlementResidentPresenceTableAccess,
     settlement_service_type::SettlementService, settlement_smith_table::SettlementSmithTableAccess,
@@ -163,6 +164,9 @@ pub struct CoreLoopConfig {
     /// Validated disease identity used only by the disposable fixture.
     #[serde(default = "default_simulation_disease")]
     pub fixture_disease: String,
+    /// Install and require the deterministic two-party quest acceptance fixture.
+    #[serde(default)]
+    pub require_quest_coverage: bool,
     pub use_imported_world: bool,
     pub expected_world_manifest_digest: Option<String>,
     /// Immutable, public-safe diagnostic artifact written if the run fails.
@@ -211,6 +215,9 @@ impl CoreLoopConfig {
             ));
         }
         if self.use_imported_world {
+            if self.require_quest_coverage {
+                return Err("quest coverage fixture cannot use an imported world".into());
+            }
             let digest = self
                 .expected_world_manifest_digest
                 .as_deref()
@@ -224,6 +231,9 @@ impl CoreLoopConfig {
             }
         } else if self.expected_world_manifest_digest.is_some() {
             return Err("fixture mode cannot claim an expected world manifest".into());
+        }
+        if self.require_quest_coverage && self.population <= self.party_size {
+            return Err("quest coverage fixture requires at least two parties".into());
         }
         Ok(())
     }
@@ -269,6 +279,7 @@ pub struct CoreLoopMetrics {
     pub quests_completed: u32,
     pub direct_contracts_attempted: u32,
     pub direct_contracts_completed: u32,
+    pub direct_contracts_safely_abandoned: u32,
     pub generated_case_intakes: u32,
     pub generated_case_continuations: u32,
     pub generated_quests_discovered: u32,
@@ -476,8 +487,66 @@ pub struct CoreLoopReport {
     pub policy_seed_note: String,
 }
 
+/// Strict acceptance contract for the deterministic two-party quest fixture.
+/// Each error names the first unmet metric so CI output is actionable.
+pub fn validate_quest_coverage(report: &CoreLoopReport) -> Result<(), String> {
+    let metrics = &report.metrics;
+    let checks = [
+        ("reducer_failures", metrics.reducer_failures == 0),
+        (
+            "duplicate_semantic_events",
+            metrics.duplicate_semantic_events == 0,
+        ),
+        ("stuck_detections", metrics.stuck_detections == 0),
+        ("encounter_wipes", metrics.encounter_wipes == 0),
+        (
+            "direct_contracts_attempted",
+            metrics.direct_contracts_attempted >= 1,
+        ),
+        ("generated_case_intakes", metrics.generated_case_intakes >= 1),
+        (
+            "generated_discovery_actions_fruitful",
+            metrics.generated_discovery_actions_fruitful >= 1,
+        ),
+        (
+            "generated_quests_discovered",
+            metrics.generated_quests_discovered >= 1,
+        ),
+        ("quests_attempted", metrics.quests_attempted >= 2),
+        (
+            "quests_attempted_consistency",
+            metrics.quests_attempted
+                == metrics
+                    .direct_contracts_attempted
+                    .saturating_add(metrics.generated_case_intakes),
+        ),
+        (
+            "direct_terminal_outcome",
+            metrics.direct_contracts_completed > 0
+                || metrics.direct_contracts_safely_abandoned > 0,
+        ),
+    ];
+    if let Some((metric, _)) = checks.into_iter().find(|(_, passed)| !passed) {
+        return Err(format!("quest coverage acceptance failed: metric={metric}"));
+    }
+    if report.final_agents.iter().any(|agent| !agent.alive) {
+        return Err("quest coverage acceptance failed: metric=final_agents_alive".into());
+    }
+    if report.final_agents.iter().any(|agent| agent.critical) {
+        return Err("quest coverage acceptance failed: metric=final_agents_not_critical".into());
+    }
+    if report.final_agents.iter().any(|agent| {
+        agent.settlement_id.is_none()
+            || agent.current_case_site_id.is_some()
+            || agent.journey_destination.is_some()
+    }) {
+        return Err("quest coverage acceptance failed: metric=final_agents_not_stranded".into());
+    }
+    Ok(())
+}
+
 const MAX_FAILURE_TRACE_EVENTS: usize = 64;
-const CORE_LOOP_FAILURE_SCHEMA_VERSION: u32 = 7;
+const CORE_LOOP_FAILURE_SCHEMA_VERSION: u32 = 8;
 const MAX_PROJECTED_INVESTIGATION_WAIT_MINUTES: u32 = 1_440;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

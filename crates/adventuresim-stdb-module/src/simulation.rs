@@ -144,6 +144,53 @@ pub fn seed_simulation_world(ctx: &ReducerContext, nonce: String) -> Result<(), 
     crate::strategic::seed_world(ctx, false)
 }
 
+/// Install deterministic quest coverage through private authority only. The
+/// simulator must still discover, accept, travel, fight, and report through
+/// the same public surfaces and ordinary reducers as a player.
+#[reducer]
+pub fn seed_simulation_quest_fixture(
+    ctx: &ReducerContext,
+    nonce: String,
+    direct_leader_id: u64,
+    generated_leader_id: u64,
+) -> Result<(), String> {
+    let run = owned_run(ctx, &nonce)?;
+    if direct_leader_id == generated_leader_id {
+        return Err("Quest coverage requires two distinct party leaders".into());
+    }
+    for character_id in [direct_leader_id, generated_leader_id] {
+        let simulation_character = ctx
+            .db
+            .simulation_character()
+            .character_id()
+            .find(character_id)
+            .ok_or("Quest coverage leader is not owned by this simulation run")?;
+        if simulation_character.run_id != run.id {
+            return Err("Quest coverage leader belongs to another simulation run".into());
+        }
+        let character = ctx
+            .db
+            .character()
+            .id()
+            .find(character_id)
+            .ok_or("Quest coverage leader does not exist")?;
+        let party = character
+            .party_id
+            .as_deref()
+            .and_then(|party_id| ctx.db.party_authority().id().find(party_id))
+            .ok_or("Quest coverage leader is not in a party")?;
+        if party.leader_id != character_id {
+            return Err("Quest coverage character is not its party leader".into());
+        }
+    }
+    crate::strategic::seed_simulation_quest_fixture_inner(
+        ctx,
+        run.policy_seed,
+        direct_leader_id,
+        generated_leader_id,
+    )
+}
+
 /// Advance authoritative world time only in a capability-owned disposable
 /// simulation. Production time remains derived exclusively from wall time.
 #[reducer]

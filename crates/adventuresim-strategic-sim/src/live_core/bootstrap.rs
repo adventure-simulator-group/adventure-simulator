@@ -423,6 +423,29 @@ fn run_core_loop_inner(
             );
         }
     }
+    if config.require_quest_coverage {
+        if party_ids.len() < 2 {
+            return Err("quest coverage fixture requires two formed parties".into());
+        }
+        let direct_leader = runner
+            .current_leader(&party_ids[0])
+            .map(|(leader, _)| leader)
+            .ok_or("quest coverage direct party has no leader")?;
+        let generated_leader = runner
+            .current_leader(&party_ids[1])
+            .map(|(leader, _)| leader)
+            .ok_or("quest coverage generated party has no leader")?;
+        let result = reducer_call!(runner, "seed_simulation_quest_fixture", |cb| runner
+            .connection
+            .reducers
+            .seed_simulation_quest_fixture_then(
+                config.run_nonce.clone(),
+                direct_leader,
+                generated_leader,
+                cb,
+            ));
+        runner.call(result)?;
+    }
     let result = reducer_call!(runner, "ensure_settlement_activity", |cb| runner
         .connection
         .reducers

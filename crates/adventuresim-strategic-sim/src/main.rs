@@ -115,6 +115,9 @@ enum Command {
         /// Require a completed authoritative world import and skip fixture seeding.
         #[arg(long, default_value_t = false)]
         imported_world: bool,
+        /// Install and require deterministic direct and generated quest coverage.
+        #[arg(long, default_value_t = false)]
+        require_quest_coverage: bool,
         /// Exact manifest digest read from the verified pinned world artifact.
         #[arg(long, requires = "imported_world")]
         expected_world_manifest_digest: Option<String>,
@@ -293,6 +296,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         run_nonce,
         fixture_disease,
         imported_world,
+        require_quest_coverage,
         expected_world_manifest_digest,
         output,
         failure_output,
@@ -320,6 +324,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             party_size,
             run_nonce,
             fixture_disease,
+            require_quest_coverage,
             use_imported_world: imported_world,
             expected_world_manifest_digest,
             failure_output,
@@ -329,6 +334,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             write_output(&path, &json, false)?;
         } else {
             println!("{}", String::from_utf8(json)?);
+        }
+        if require_quest_coverage {
+            validate_quest_coverage(&report)?;
         }
         eprintln!(
             "authoritative core loop: {} completed / {} owner-scoped quest intakes or direct-contract attempts (direct {}/{}, generated {}/{}), {} quest defeats, {} encounters ({} encounter defeats, {} wipes), {} camps, {} upgrades",

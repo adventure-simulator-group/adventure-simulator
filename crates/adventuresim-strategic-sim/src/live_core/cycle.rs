@@ -45,6 +45,7 @@ impl LiveRunner {
             .reducers
             .abandon_contract_then(leader, quest.id.clone(), cb));
         self.call(result)?;
+        self.metrics.direct_contracts_safely_abandoned += 1;
         self.event(
             leader_agent,
             CoreLoopEventKind::AbandonQuest,
@@ -308,6 +309,7 @@ impl LiveRunner {
                 .reducers
                 .abandon_contract_then(leader, quest.id.clone(), cb));
             self.call(result)?;
+            self.metrics.direct_contracts_safely_abandoned += 1;
             self.event(leader_agent, CoreLoopEventKind::AbandonQuest, quest.id);
             return Ok(());
         }
@@ -382,6 +384,7 @@ impl LiveRunner {
                 .reducers
                 .abandon_contract_then(leader, quest.id.clone(), cb));
             self.call(result)?;
+            self.metrics.direct_contracts_safely_abandoned += 1;
             self.event(
                 leader_agent,
                 CoreLoopEventKind::AbandonQuest,
