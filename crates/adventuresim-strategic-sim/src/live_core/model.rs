@@ -1550,6 +1550,58 @@ enum PublicJourneyCampState {
     ActiveCamp,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PostRestProgress {
+    Exact { actual_rest_minutes: u64 },
+    InterruptedShort { actual_rest_minutes: u64 },
+}
+
+impl PostRestProgress {
+    fn actual_rest_minutes(self) -> u64 {
+        match self {
+            Self::Exact {
+                actual_rest_minutes,
+            }
+            | Self::InterruptedShort {
+                actual_rest_minutes,
+            } => actual_rest_minutes,
+        }
+    }
+}
+
+fn classify_post_rest_progress(
+    before_completed_elapsed: u64,
+    requested_rest_minutes: u64,
+    after_completed_elapsed: u64,
+    after_total_elapsed: u64,
+    interrupted: bool,
+) -> Result<PostRestProgress, &'static str> {
+    if after_completed_elapsed > after_total_elapsed {
+        return Err("post_rest_completed_after_total");
+    }
+    let actual_rest_minutes = after_completed_elapsed
+        .checked_sub(before_completed_elapsed)
+        .ok_or("post_rest_progress_regressed")?;
+    if actual_rest_minutes == 0 {
+        return Err("post_rest_zero_progress");
+    }
+    if actual_rest_minutes > requested_rest_minutes {
+        return Err("post_rest_overshot_request");
+    }
+    if actual_rest_minutes < requested_rest_minutes {
+        return if interrupted {
+            Ok(PostRestProgress::InterruptedShort {
+                actual_rest_minutes,
+            })
+        } else {
+            Err("post_rest_short_without_interruption")
+        };
+    }
+    Ok(PostRestProgress::Exact {
+        actual_rest_minutes,
+    })
+}
+
 fn classify_public_journey_camp_state(
     active_interval_count: usize,
 ) -> Result<PublicJourneyCampState, &'static str> {

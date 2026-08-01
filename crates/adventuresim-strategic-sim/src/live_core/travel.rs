@@ -1186,7 +1186,7 @@ impl LiveRunner {
             );
             let camp_members_before = self.expedition_member_observations(party_id)?;
             let camp_supplies_before = self.expedition_supplies(party_id);
-            let expected_completed_elapsed = camp_start.saturating_add(rest_minutes);
+            let before_completed_elapsed = camp.completed_elapsed_minutes;
             let shelter =
                 self.rest_at_camp_with_party_shelter(travel_actor, rest_minutes, "rest_at_camp")?;
             self.observe_deaths();
@@ -1217,36 +1217,63 @@ impl LiveRunner {
                 camp_supplies_after,
             );
             let after_rest_party = self.party_by_id(party_id)?;
-            let after_rest_journey = self
+            let after_rest_journeys = self
                 .connection
                 .db
                 .party_journey()
                 .iter()
-                .find(|row| row.party_id == party_id)
-                .ok_or("journey camp projection is incoherent: journey disappeared after rest")?;
-            let after_rest_itinerary = self
+                .filter(|row| row.party_id == party_id)
+                .collect::<Vec<_>>();
+            let after_rest_itineraries = self
                 .connection
                 .db
                 .party_journey_itinerary()
                 .iter()
-                .find(|row| row.party_id == party_id)
-                .ok_or("journey camp projection is incoherent: itinerary disappeared after rest")?;
-            if after_rest_party.camp_destination.is_none()
-                || after_rest_journey.completed_elapsed_minutes != expected_completed_elapsed
-                || after_rest_journey.completed_elapsed_minutes
-                    > after_rest_journey.total_elapsed_minutes
+                .filter(|row| row.party_id == party_id)
+                .collect::<Vec<_>>();
+            let ([after_rest_journey], [after_rest_itinerary]) = (
+                after_rest_journeys.as_slice(),
+                after_rest_itineraries.as_slice(),
+            ) else {
+                return Err(
+                    "journey camp projection is incoherent: rest did not preserve unique public journey projections"
+                        .into(),
+                );
+            };
+            let Some(after_rest_destination) = after_rest_party.camp_destination.as_ref() else {
+                return Err(
+                    "journey camp projection is incoherent: rest removed the active destination"
+                        .into(),
+                );
+            };
+            if &after_rest_journey.destination != after_rest_destination
                 || after_rest_itinerary.party_id != party_id
             {
                 return Err(
-                    "journey camp projection is incoherent: rest did not produce a safe forecast boundary"
+                    "journey camp projection is incoherent: rest changed the active journey identity"
                         .into(),
                 );
             }
+            let interrupted =
+                self.party_has_public_travel_interruption(party_id, after_rest_party.leader_id);
+            let post_rest_progress = classify_post_rest_progress(
+                before_completed_elapsed,
+                rest_minutes,
+                after_rest_journey.completed_elapsed_minutes,
+                after_rest_journey.total_elapsed_minutes,
+                interrupted,
+            )
+            .map_err(|reason| {
+                format!(
+                    "journey camp projection is incoherent: rest did not produce a safe forecast boundary: reason={reason}"
+                )
+            })?;
+            let actual_rest_minutes = post_rest_progress.actual_rest_minutes();
             self.event(
                 agent,
                 CoreLoopEventKind::Camp,
                 format!(
-                    "phase=post_rest;party={};completed_elapsed={};total_elapsed={};rest_minutes={rest_minutes};shelter={shelter:?};remaining_movement={}",
+                    "phase=post_rest;party={};completed_elapsed={};total_elapsed={};requested_rest_minutes={rest_minutes};actual_rest_minutes={actual_rest_minutes};shelter={shelter:?};remaining_movement={}",
                     bounded_event_field(party_id),
                     after_rest_journey.completed_elapsed_minutes,
                     after_rest_journey.total_elapsed_minutes,
@@ -1254,7 +1281,7 @@ impl LiveRunner {
                 ),
             );
             self.metrics.camp_stops = self.metrics.camp_stops.saturating_add(1);
-            if self.party_has_public_travel_interruption(party_id, after_rest_party.leader_id) {
+            if interrupted {
                 continue;
             }
             let evacuation_leg = matches!(

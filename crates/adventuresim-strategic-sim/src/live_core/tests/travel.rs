@@ -207,6 +207,38 @@ fn narrative_encounter_policy_uses_the_first_available_public_choice() {
 }
 
 #[test]
+fn post_rest_progress_accepts_only_exact_or_interrupted_short_rest() {
+    assert_eq!(
+        classify_post_rest_progress(1_000, 469, 1_469, 2_000, false),
+        Ok(PostRestProgress::Exact {
+            actual_rest_minutes: 469,
+        })
+    );
+    assert_eq!(
+        classify_post_rest_progress(1_000, 469, 1_360, 2_000, true),
+        Ok(PostRestProgress::InterruptedShort {
+            actual_rest_minutes: 360,
+        })
+    );
+    assert_eq!(
+        classify_post_rest_progress(1_000, 469, 1_360, 2_000, false),
+        Err("post_rest_short_without_interruption")
+    );
+    assert_eq!(
+        classify_post_rest_progress(1_000, 469, 1_000, 2_000, true),
+        Err("post_rest_zero_progress")
+    );
+    assert_eq!(
+        classify_post_rest_progress(1_000, 469, 1_470, 2_000, true),
+        Err("post_rest_overshot_request")
+    );
+    assert_eq!(
+        classify_post_rest_progress(1_000, 469, 2_001, 2_000, true),
+        Err("post_rest_completed_after_total")
+    );
+}
+
+#[test]
 fn travel_subscribes_resolves_and_rechecks_public_narrative_interruptions() {
     let source = LIVE_CORE_SOURCE;
     let subscription = source
@@ -233,7 +265,7 @@ fn travel_subscribes_resolves_and_rechecks_public_narrative_interruptions() {
     assert!(travel.contains("continue;"));
 
     let post_rest = travel
-        .split("phase=post_rest")
+        .split("let after_rest_party")
         .nth(1)
         .and_then(|tail| tail.split("phase=post_continue").next())
         .expect("post-rest continuation boundary");
@@ -241,12 +273,39 @@ fn travel_subscribes_resolves_and_rechecks_public_narrative_interruptions() {
         .find("self.metrics.camp_stops")
         .expect("completed camp accounting");
     let interruption = post_rest
-        .find("party_has_public_travel_interruption")
+        .find("let interrupted")
         .expect("post-rest public interruption recheck");
+    let strict_progress = post_rest
+        .find("classify_post_rest_progress")
+        .expect("strict post-rest progress classification");
     let continuation = post_rest
         .find(".continue_camp_travel_then(")
         .expect("post-rest continuation");
-    assert!(completed_camp < interruption && interruption < continuation);
+    for baseline_coherence in [
+        "after_rest_journeys.as_slice()",
+        "after_rest_itineraries.as_slice()",
+        "after_rest_party.camp_destination.as_ref()",
+        "&after_rest_journey.destination != after_rest_destination",
+    ] {
+        assert!(post_rest.contains(baseline_coherence), "{baseline_coherence}");
+    }
+    assert!(interruption < strict_progress);
+    assert!(strict_progress < completed_camp && completed_camp < continuation);
+    assert!(post_rest.contains("requested_rest_minutes={rest_minutes}"));
+    assert!(post_rest.contains("actual_rest_minutes={actual_rest_minutes}"));
+
+    let classifier = source
+        .split("fn classify_post_rest_progress")
+        .nth(1)
+        .and_then(|tail| tail.split("fn classify_public_journey_camp_state").next())
+        .expect("post-rest progress classifier");
+    let interrupted_short = classifier
+        .find("if interrupted")
+        .expect("interrupted short-rest branch");
+    let unexplained_short = classifier
+        .find("post_rest_short_without_interruption")
+        .expect("strict unexplained-short failure");
+    assert!(interrupted_short < unexplained_short);
 }
 
 #[test]
