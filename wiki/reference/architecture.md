@@ -265,6 +265,12 @@ The current tactical stack uses Bevy Replicon over Aeronet WebSockets:
    compatible private strategic outcome, and commits durable consequences
    idempotently.
 
+The SpacetimeDB SDK connection is asynchronous: constructing it does not mean
+the server identity has arrived. The child pumps that connection until the
+identity is available, then installs reducer subscriptions and opens the
+tactical WebSocket listener. Bot creation and player joins use that cached
+ready identity and never call the SDK's panicking pre-handshake accessor.
+
 The current combat prototype calculates attacks but does not yet apply tactical
 damage, so no client-controlled path can emit authoritative enemy deaths.
 Required-kill missions therefore fail closed unless the server's future combat

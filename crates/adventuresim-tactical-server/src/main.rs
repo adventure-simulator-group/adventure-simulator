@@ -20,7 +20,11 @@ use bevy::prelude::*;
 use bevy::time::Stopwatch;
 use clap::{ArgAction, Parser};
 
-use crate::{bot::MissionEnemy, stdb::SpacetimeDb, terrain::TerrainGenerator};
+use crate::{
+    bot::MissionEnemy,
+    stdb::{SpacetimeDb, SpacetimeDbReady},
+    terrain::TerrainGenerator,
+};
 use input::AccumulatedInput;
 
 /// Default [`Args::timeout`] time.
@@ -151,7 +155,7 @@ fn main() {
             (
                 check_mission_timeout,
                 spawn_connected_players.after(stdb::update_spacetimedb),
-                (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDb>),
+                (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDbReady>),
             ),
         )
         .add_systems(OnEnter(ServerState::Running), on_server_started)
@@ -555,6 +559,7 @@ fn check_mission_timeout(
 fn on_server_started(
     args: Res<Args>,
     conn: Res<SpacetimeDb>,
+    ready: Res<SpacetimeDbReady>,
     mut commands: Commands,
     server_addr: Single<&LocalAddr, With<AdventureSimulatorServer>>,
 ) -> Result {
@@ -629,6 +634,7 @@ fn on_join_request(
     loading_players: Query<(), With<LoadingPlayer>>,
     players: Query<(), With<Player>>,
     conn: Res<SpacetimeDb>,
+    ready: Res<SpacetimeDbReady>,
 ) -> Result {
     let Some(client) = join.client_id.entity() else {
         return Ok(());
@@ -644,7 +650,7 @@ fn on_join_request(
     // Until the netcode authenticates character ownership, deployments must
     // keep tactical clients within the trusted mission boundary.
     conn.reducers()
-        .enter_mission(join.player_id, conn.identity())?;
+        .enter_mission(join.player_id, ready.identity())?;
 
     commands.entity(client).insert(LoadingPlayer {
         requested_player_id: join.player_id,
