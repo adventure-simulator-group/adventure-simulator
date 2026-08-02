@@ -26,6 +26,7 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .replicate::<Skills>()
             .replicate::<Stats>()
             .replicate::<TacticalCombatState>()
+            .replicate::<SkeletonState>()
             .replicate::<Attributes>()
             .replicate::<Transform>()
             .replicate::<CharacterLook>()
