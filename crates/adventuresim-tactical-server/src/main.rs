@@ -151,6 +151,7 @@ fn main() {
             (
                 check_mission_timeout,
                 spawn_connected_players.after(stdb::update_spacetimedb),
+                exclude_surrendered_participants.after(stdb::update_spacetimedb),
                 (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDb>),
             ),
         )
@@ -204,6 +205,25 @@ fn spawn_connected_players(
 ) {
     for player in conn.take_connected_players() {
         spawn_connected_player(&player, &mut cmd, &q_loading, &q_scene);
+    }
+}
+
+fn exclude_surrendered_participants(
+    conn: Res<SpacetimeDb>,
+    mut cmd: Commands,
+    participants: Query<(Entity, &PlayerId), With<MissionEnemy>>,
+) {
+    for exclusion in conn.take_participant_exclusions() {
+        if let Some((entity, _)) = participants
+            .iter()
+            .find(|(_, id)| id.0 == exclusion.character_id)
+        {
+            info!(
+                "Removing surrendered tactical participant {}",
+                exclusion.character_id
+            );
+            cmd.entity(entity).despawn();
+        }
     }
 }
 

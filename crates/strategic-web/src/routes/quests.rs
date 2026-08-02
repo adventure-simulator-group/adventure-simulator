@@ -26,11 +26,11 @@ use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BackendContextCharacter,
-    BackendCorpse, BackendInvestigationAction, BattleLootItem, BattleResult, Character,
-    CharacterAttributes, CharacterLimbs, CharacterStats, CharacterStrategicCondition,
-    CharacterTime, CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
-    FoodLot, InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyStake,
-    Settlement,
+    BackendContextDisposition, BackendCorpse, BackendInvestigationAction, BattleLootItem,
+    BattleResult, Character, CharacterAttributes, CharacterLimbs, CharacterStats,
+    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, ContractPresentation,
+    ContractPresentationStatus, FoodLot, InventoryQuantityTarget, ItemDefinition, Party,
+    PartyInventoryItem, PartyStake, Settlement,
 };
 use crate::templates::quest::{
     CaseSitePagePresentation, CaseSiteRecoveryNotice, quest_location_enemy_page,
@@ -54,6 +54,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/case-site/{id}/counterparty/bandage",
             post(bandage_quest_counterparty),
+        )
+        .route(
+            "/locations/case-site/{id}/counterparty/surrender",
+            post(surrender_quest_counterparty),
         )
         .route("/corpses/{corpse_id}/action", post(perform_corpse_action))
         .route(
@@ -1120,6 +1124,7 @@ async fn render_quest_location(
     let counterparty_contact = context_memberships
         .first()
         .map(|row| (row.contact_ref.clone(), row.revision));
+    let dispositions:Vec<BackendContextDisposition>=state.db.query(&format!("SELECT * FROM backend_context_dispositions WHERE observer_party_id = {} AND contact_ref = {}",sql_string_literal(party.as_ref().map_or("",|party|party.id.as_str())),sql_string_literal(counterparty_contact.as_ref().map_or(&site.case_site_id,|(contact_ref,_)|contact_ref)))).await.unwrap_or_default();
     let mut counterparties = Vec::new();
     for membership in context_memberships.into_iter().filter(|row| row.alive) {
         if let Ok(Some(counterparty)) =
@@ -1204,6 +1209,7 @@ async fn render_quest_location(
             character.as_ref(),
             &party_members,
             &counterparties,
+            &dispositions,
             counterparty_contact
                 .as_ref()
                 .map(|(contact_ref, _)| contact_ref.as_str()),
@@ -1360,6 +1366,50 @@ async fn contact_quest_counterparty(
         .await
     {
         Ok(()) => Redirect::to(&return_to).into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct QuestCounterpartySurrenderForm {
+    target_id: u64,
+    contact_ref: String,
+    expected_revision: u32,
+    action: String,
+    source_id: String,
+}
+async fn surrender_quest_counterparty(
+    State(state): State<AppState>,
+    Path(case_site_id): Path<String>,
+    session: Session,
+    Form(form): Form<QuestCounterpartySurrenderForm>,
+) -> Response {
+    let Some(actor_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    let action = match form.action.as_str() {
+        "offer" => json!({"Offer": []}),
+        "demand" => json!({"Demand": []}),
+        _ => return (StatusCode::BAD_REQUEST, "Unsupported surrender action").into_response(),
+    };
+    match state
+        .db
+        .call(
+            "resolve_context_surrender",
+            &[
+                json!(actor_id),
+                json!(form.target_id),
+                json!(form.contact_ref),
+                action,
+                json!(form.expected_revision),
+                json!(form.source_id),
+            ],
+        )
+        .await
+    {
+        Ok(()) => {
+            Redirect::to(&format!("/locations/case-site/{case_site_id}/enemy")).into_response()
+        }
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }

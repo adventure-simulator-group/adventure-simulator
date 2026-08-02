@@ -830,7 +830,8 @@ fn validate_references(
                     }
                 },
                 qg::GeneratedActionOutput::AmbushReady
-                | qg::GeneratedActionOutput::Remediation { .. } => {}
+                | qg::GeneratedActionOutput::Remediation { .. }
+                | qg::GeneratedActionOutput::SystemicOutcome { .. } => {}
             }
         }
     }
@@ -1311,6 +1312,35 @@ fn namespace_definition(
                 qg::GeneratedActionOutput::Remediation { remediation_id } => {
                     remap(remediation_id, &replacements);
                 }
+                qg::GeneratedActionOutput::SystemicOutcome { outcome } => match outcome {
+                    qg::GeneratedSystemicOutcome::Surrender { context_id, .. } => {
+                        remap(context_id, &replacements)
+                    }
+                    qg::GeneratedSystemicOutcome::RecruitOrDefect { party_id, .. } => {
+                        remap(party_id, &replacements)
+                    }
+                    qg::GeneratedSystemicOutcome::Ransom { recipient_id, .. } => {
+                        remap(recipient_id, &replacements)
+                    }
+                    qg::GeneratedSystemicOutcome::CustodyHandoff { custodian_id, .. } => {
+                        remap(custodian_id, &replacements)
+                    }
+                    qg::GeneratedSystemicOutcome::EscapeCustody { .. } => {}
+                    qg::GeneratedSystemicOutcome::TransferOwnership {
+                        property_id,
+                        owner_id,
+                    } => {
+                        remap(property_id, &replacements);
+                        remap(owner_id, &replacements);
+                    }
+                    qg::GeneratedSystemicOutcome::Theft {
+                        property_id,
+                        victim_id,
+                    } => {
+                        remap(property_id, &replacements);
+                        remap(victim_id, &replacements);
+                    }
+                },
             }
         }
     }
@@ -1396,6 +1426,33 @@ fn namespace_definition(
                     remap(witness_id, &replacements);
                 }
                 ObjectiveRequirement::ReportToIssuer { .. } => {}
+                ObjectiveRequirement::Surrender { context_id, .. } => {
+                    remap(context_id, &replacements)
+                }
+                ObjectiveRequirement::RecruitOrDefect { party_id, .. } => {
+                    remap(party_id, &replacements)
+                }
+                ObjectiveRequirement::Ransom { recipient_id, .. } => {
+                    remap(recipient_id, &replacements)
+                }
+                ObjectiveRequirement::CustodyHandoff { custodian_id, .. } => {
+                    remap(custodian_id, &replacements)
+                }
+                ObjectiveRequirement::EscapeCustody { .. } => {}
+                ObjectiveRequirement::TransferOwnership {
+                    property_id,
+                    owner_id,
+                } => {
+                    remap(property_id, &replacements);
+                    remap(owner_id, &replacements);
+                }
+                ObjectiveRequirement::CommitTheft {
+                    property_id,
+                    victim_id,
+                } => {
+                    remap(property_id, &replacements);
+                    remap(victim_id, &replacements);
+                }
             }
         }
     }

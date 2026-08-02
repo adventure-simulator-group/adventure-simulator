@@ -11,6 +11,8 @@ pub enum BrowserCharacterGrantOrigin {
     StartingCandidate,
 
     AdultDescendant,
+
+    Recruitment,
 }
 
 impl __sdk::InModule for BrowserCharacterGrantOrigin {

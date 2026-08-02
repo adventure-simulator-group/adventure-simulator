@@ -25,6 +25,7 @@ use spacetimedb::{
 };
 
 use crate::{
+    browser_session::browser_character_grant,
     capability::character_capability,
     character::{
         character, character_attributes, character_equipped_item, character_limbs,
@@ -55,13 +56,18 @@ use crate::{
         settlement_resident_seed_explanation,
     },
     surgery::limb_injury__view,
+    social::character_familiarity,
     tactical::{
-        tactical_server_authority, tactical_server_claim, tactical_server_request_authority,
+        tactical_server_authority, tactical_server_authority__view, tactical_server_claim,
+        tactical_server_request_authority,
     },
     time::{
         advance_travel_time, character_time, character_training_schedule, settle_travel_boundary,
     },
-    world_actor::character_context_membership__view,
+    world_actor::{
+        character_context_membership, character_context_membership__view,
+        party_context_contact_authority, party_context_contact_authority__view,
+    },
 };
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 

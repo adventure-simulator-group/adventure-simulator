@@ -17,9 +17,9 @@ use super::{
 };
 use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
-    BackendRoadChallenge, ChallengePresenterCatalogId, Character, ContractPresentation,
-    JourneyPrecipitation, JourneyTerrainKind, Party, PartyJourney, PartyJourneyItinerary,
-    PartyJourneyRoute, Settlement, StrategicEncounter,
+    BackendContextDisposition, BackendRoadChallenge, ChallengePresenterCatalogId, Character,
+    ContractPresentation, JourneyPrecipitation, JourneyTerrainKind, Party, PartyJourney,
+    PartyJourneyItinerary, PartyJourneyRoute, Settlement, StrategicEncounter,
 };
 use crate::templates::{
     camp_location_layout_with_session, decorative_game_icon, empty_state, game_icon,
@@ -826,6 +826,7 @@ pub fn camp_page(
     continue_block_reason: Option<&str>,
     encounter: Option<&StrategicEncounter>,
     counterparties: &[Character],
+    dispositions: &[BackendContextDisposition],
     trial: Option<(&str, &str, ChallengePresenterCatalogId)>,
     tactical_insight: Option<(&str, &str)>,
     road_trial: Option<&BackendRoadChallenge>,
@@ -938,8 +939,13 @@ pub fn camp_page(
             }
         }
         aside class="right-sidebar camp-journey-sidebar" {
+            @for disposition in dispositions.iter().filter(|row|matches!(row.disposition,crate::spacetimedb::DispositionKind::Surrendered|crate::spacetimedb::DispositionKind::Refused)) {
+                section class="sidebar-section systemic-outcome" aria-label="Encounter outcome" {
+                    p { "Character " (disposition.character_id) ": " (format!("{:?}",disposition.disposition)) }
+                }
+            }
             @if let Some(encounter) = encounter.filter(|encounter| encounter.status == "awaiting_choice") {
-                (strategic_encounter_panel(encounter, counterparties))
+                (strategic_encounter_panel(encounter, counterparties, dispositions))
             }
             div class="sidebar-section camp-journey-section" {
                 h3 class="sidebar-header" { "Journey" }
@@ -1053,6 +1059,7 @@ fn generic_road_encounter(challenge: &BackendRoadChallenge) -> Markup {
 fn strategic_encounter_panel(
     encounter: &StrategicEncounter,
     counterparties: &[Character],
+    dispositions: &[BackendContextDisposition],
 ) -> Markup {
     let threat = encounter.archetype.parse::<ThreatId>().ok();
     let threat_name = threat
@@ -1081,6 +1088,7 @@ fn strategic_encounter_panel(
             @if !counterparties.is_empty() {
                 nav class="settlement-npc-strip counterparty-strip" aria-label="Counterparty" {
                     @for character in counterparties {
+                        @let disposition=dispositions.iter().find(|row|row.character_id==character.id);
                         div class="npc-portrait counterparty-portrait" {
                             span class="npc-portrait-image" aria-hidden="true" { "?" }
                             span class="npc-portrait-name" { (&character.name) }
@@ -1090,6 +1098,19 @@ fn strategic_encounter_panel(
                                 input type="hidden" name="expected_revision" value=(encounter.revision);
                                 input type="hidden" name="action_id" value=(format!("contact:{}:{}:{}", encounter.encounter_id, encounter.revision, character.id));
                                 button type="submit" class="btn btn-secondary btn-small" { "Talk" }
+                            }
+                            @if let Some(disposition)=disposition {
+                                span class="text-muted small-copy" { (format!("{:?}",disposition.disposition)) }
+                                @if matches!(disposition.disposition,crate::spacetimedb::DispositionKind::Hostile|crate::spacetimedb::DispositionKind::Refused) {
+                                    form action="/camp/counterparty/surrender" method="post" {
+                                        input type="hidden" name="target_id" value=(character.id);
+                                        input type="hidden" name="contact_ref" value=(&disposition.contact_ref);
+                                        input type="hidden" name="expected_revision" value=(disposition.revision);
+                                        input type="hidden" name="action" value="offer";
+                                        input type="hidden" name="source_id" value=(format!("surrender:offer:{}:{}:{}",encounter.encounter_id,character.id,disposition.revision));
+                                        button type="submit" class="btn btn-secondary btn-small" { "Offer surrender" }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1268,7 +1289,7 @@ mod tests {
             }],
             outcome: None,
         };
-        let rendered = strategic_encounter_panel(&encounter, &[]).into_string();
+        let rendered = strategic_encounter_panel(&encounter, &[], &[]).into_string();
         assert!(rendered.contains("The enemy surprised your party"));
         assert!(rendered.contains("Cannot run: too slow"));
         assert!(rendered.contains("12 × gold_coin"));
@@ -1278,6 +1299,9 @@ mod tests {
         assert!(rendered.contains("encounter-choice:party:3:4:surrender"));
         assert!(!rendered.contains("value=\"run\""));
         assert!(!rendered.contains("value=\"sneak\""));
+        let source = include_str!("travel.rs");
+        assert!(source.contains("/camp/counterparty/surrender"));
+        assert!(source.contains("disposition.revision"));
     }
 
     #[test]

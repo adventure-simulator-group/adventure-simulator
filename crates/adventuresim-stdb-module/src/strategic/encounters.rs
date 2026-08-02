@@ -807,9 +807,47 @@ fn encounter_loss_preview(ctx: &ReducerContext, party_id: &str) -> Vec<Strategic
 fn commit_encounter_surrender(
     ctx: &ReducerContext,
     party_id: &str,
+    encounter_id: &str,
     current: &[StrategicEncounterLoss],
 ) -> Result<(), String> {
     for loss in current {
+        let property_id = format!(
+            "property:surrender:{encounter_id}:{}:{}",
+            loss.owner_id, loss.inventory_id
+        );
+        if ctx.db.legal_property().id().find(&property_id).is_none() {
+            let escrow_id = format!(
+                "surrender:{encounter_id}:{}:{}",
+                loss.owner_id, loss.inventory_id
+            );
+            let owner_id = format!("counterparty:{encounter_id}");
+            ctx.db.systemic_escrow_lot().insert(SystemicEscrowLot {
+                id: escrow_id.clone(),
+                holder_id: owner_id.clone(),
+                context_id: encounter_id.into(),
+                item_id: loss.item_id.clone(),
+                quantity: u64::from(loss.quantity),
+            });
+            ctx.db.legal_property().insert(LegalProperty {
+                id: property_id,
+                scope_owner_key: format!("faction:{owner_id}"),
+                kind: if crate::item::is_currency(ctx, &loss.item_id) {
+                    PropertyKind::Currency
+                } else {
+                    PropertyKind::Item
+                },
+                item_id: loss.item_id.clone(),
+                quantity: u64::from(loss.quantity),
+                owner_kind: LegalOwnerKind::Faction,
+                owner_id: owner_id.clone(),
+                physical_holder_id: owner_id,
+                physical_binding_id: format!("escrow:{escrow_id}"),
+                version: 0,
+                provenance: format!("surrender:{party_id}:{}", loss.inventory_id),
+                metadata: format!("value_each={}", loss.value_each),
+                case_id: None,
+            });
+        }
         if loss.owner_kind == "party" {
             ctx.db
                 .party_item_condition()
@@ -1040,14 +1078,7 @@ fn resolve_random_encounter_battle(
     }
     let enemies = enemy_ids
         .into_iter()
-        .map(|enemy_id| {
-            autoresolve_enemy(
-                enemy_id,
-                &encounter.archetype,
-                difficulty,
-                10_000,
-            )
-        })
+        .map(|enemy_id| autoresolve_enemy(enemy_id, &encounter.archetype, difficulty, 10_000))
         .collect::<Result<Vec<_>, String>>()?;
     let outcome = resolve_battle(allies, enemies, seed ^ encounter.roll_index, opening);
     commit_autoresolve_outcome(
@@ -1245,7 +1276,7 @@ pub fn resolve_strategic_encounter(
                 );
                 return Ok(());
             }
-            commit_encounter_surrender(ctx, &party_id, &current)?;
+            commit_encounter_surrender(ctx, &party_id, &encounter.encounter_id, &current)?;
             encounter.outcome = Some("surrendered".into());
         }
     }

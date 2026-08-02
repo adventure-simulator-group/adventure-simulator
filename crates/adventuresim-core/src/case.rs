@@ -183,6 +183,33 @@ pub enum ObjectiveRequirement {
     ReportToIssuer {
         issuer_id: String,
     },
+    Surrender {
+        character_id: u64,
+        context_id: String,
+    },
+    RecruitOrDefect {
+        character_id: u64,
+        party_id: String,
+    },
+    Ransom {
+        character_id: u64,
+        recipient_id: String,
+    },
+    CustodyHandoff {
+        character_id: u64,
+        custodian_id: String,
+    },
+    EscapeCustody {
+        character_id: u64,
+    },
+    TransferOwnership {
+        property_id: String,
+        owner_id: String,
+    },
+    CommitTheft {
+        property_id: String,
+        victim_id: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -265,6 +292,33 @@ pub enum OutcomeFactKind {
     },
     Reported {
         issuer_id: String,
+    },
+    CharacterSurrendered {
+        character_id: u64,
+        context_id: String,
+    },
+    CharacterRecruited {
+        character_id: u64,
+        party_id: String,
+    },
+    RansomPaid {
+        character_id: u64,
+        recipient_id: String,
+    },
+    CustodyHandedOff {
+        character_id: u64,
+        custodian_id: String,
+    },
+    CharacterEscaped {
+        character_id: u64,
+    },
+    OwnershipTransferred {
+        property_id: String,
+        owner_id: String,
+    },
+    TheftCommitted {
+        property_id: String,
+        victim_id: String,
     },
     /// Authoritative failure can make a leaf impossible. It is deliberately
     /// objective-specific so one failed route does not poison an alternative.
@@ -522,6 +576,71 @@ fn match_fact(requirement: &ObjectiveRequirement, fact: &OutcomeFactKind) -> Opt
             },
         ) if a == b && ra == rb => true,
         (R::ReportToIssuer { issuer_id: a }, F::Reported { issuer_id: b }) if a == b => true,
+        (
+            R::Surrender {
+                character_id: a,
+                context_id: ca,
+            },
+            F::CharacterSurrendered {
+                character_id: b,
+                context_id: cb,
+            },
+        ) if a == b && ca == cb => true,
+        (
+            R::RecruitOrDefect {
+                character_id: a,
+                party_id: pa,
+            },
+            F::CharacterRecruited {
+                character_id: b,
+                party_id: pb,
+            },
+        ) if a == b && pa == pb => true,
+        (
+            R::Ransom {
+                character_id: a,
+                recipient_id: ra,
+            },
+            F::RansomPaid {
+                character_id: b,
+                recipient_id: rb,
+            },
+        ) if a == b && ra == rb => true,
+        (
+            R::CustodyHandoff {
+                character_id: a,
+                custodian_id: ca,
+            },
+            F::CustodyHandedOff {
+                character_id: b,
+                custodian_id: cb,
+            },
+        ) if a == b && ca == cb => true,
+        (R::EscapeCustody { character_id: a }, F::CharacterEscaped { character_id: b })
+            if a == b =>
+        {
+            true
+        }
+        (
+            R::TransferOwnership {
+                property_id: a,
+                owner_id: oa,
+            },
+            F::OwnershipTransferred {
+                property_id: b,
+                owner_id: ob,
+            },
+        ) if a == b && oa == ob => true,
+        (
+            R::CommitTheft {
+                property_id: a,
+                victim_id: va,
+            },
+            F::TheftCommitted {
+                property_id: b,
+                victim_id: vb,
+            },
+        ) if a == b && va == vb => true,
         _ => false,
     };
     yes.then_some(1)
@@ -861,5 +980,49 @@ mod tests {
             .unwrap()
         );
         assert_eq!(records.len(), 1);
+    }
+
+    #[test]
+    fn systemic_character_fact_satisfies_only_exact_typed_objective() {
+        let expression = ObjectiveExpression::new(vec![ObjectivePath {
+            objectives: vec![Objective {
+                id: ObjectiveId::new("objective:surrender").unwrap(),
+                requirement: ObjectiveRequirement::Surrender {
+                    character_id: 42,
+                    context_id: "hostile:test".into(),
+                },
+            }],
+        }])
+        .unwrap();
+        let matching = fact(
+            "fact:surrender",
+            "case:test",
+            "party:a",
+            OutcomeFactKind::CharacterSurrendered {
+                character_id: 42,
+                context_id: "hostile:test".into(),
+            },
+        );
+        let wrong = fact(
+            "fact:wrong-surrender",
+            "case:test",
+            "party:a",
+            OutcomeFactKind::CharacterSurrendered {
+                character_id: 41,
+                context_id: "hostile:test".into(),
+            },
+        );
+        assert_eq!(
+            expression
+                .evaluate(&cid("case:test"), "party:a", &[wrong])
+                .state,
+            EvaluationState::Pending
+        );
+        assert_eq!(
+            expression
+                .evaluate(&cid("case:test"), "party:a", &[matching])
+                .state,
+            EvaluationState::Satisfied
+        );
     }
 }

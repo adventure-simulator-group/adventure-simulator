@@ -25,6 +25,7 @@ impl Plugin for SpacetimeDbPlugin {
 pub struct SpacetimeDb {
     conn: DbConnection,
     connected_players: Arc<Mutex<Vec<ConnectedPlayer>>>,
+    participant_exclusions: Arc<Mutex<Vec<TacticalParticipantExclusion>>>,
 }
 
 impl SpacetimeDb {
@@ -44,12 +45,17 @@ impl SpacetimeDb {
     pub fn subscribe_connected_players(&self) -> SubscriptionHandle {
         // This is the callback handler. Standard Arc<Mutex<>> pattern for sharing state between threads.
         let connected_players = self.connected_players.clone();
+        let participant_exclusions = self.participant_exclusions.clone();
         self.conn
             .db
             .connected_players()
             .on_insert(move |_ctx, row| {
                 connected_players.lock().unwrap().push(row.clone());
             });
+        self.conn
+            .db
+            .tactical_participant_exclusions()
+            .on_insert(move |_ctx, row| participant_exclusions.lock().unwrap().push(row.clone()));
 
         self.conn
             .subscription_builder()
@@ -60,12 +66,17 @@ impl SpacetimeDb {
                 );
             })
             .add_query(|query| query.from.connected_players())
+            .add_query(|query| query.from.tactical_participant_exclusions())
             .subscribe()
     }
 
     /// Take every `connected_players` row inserted since the last call.
     pub fn take_connected_players(&self) -> Vec<ConnectedPlayer> {
         std::mem::take(&mut *self.connected_players.lock().unwrap())
+    }
+
+    pub fn take_participant_exclusions(&self) -> Vec<TacticalParticipantExclusion> {
+        std::mem::take(&mut *self.participant_exclusions.lock().unwrap())
     }
 }
 
@@ -115,6 +126,7 @@ fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
     commands.insert_resource(SpacetimeDb {
         conn,
         connected_players: default(),
+        participant_exclusions: default(),
     });
 
     Ok(())

@@ -398,6 +398,19 @@ impl InvestigationEnvironment {
                                 "The supported intervention removes the outbreak source.".into(),
                             );
                         }
+                        GeneratedActionOutput::SystemicOutcome { outcome } => match outcome {
+                            // These values declare the typed systemic producer that can
+                            // satisfy an objective. Completing an investigation action is
+                            // not itself authority to fabricate that surrender, custody,
+                            // recruitment, property, or theft fact in the evaluator.
+                            qg::GeneratedSystemicOutcome::Surrender { .. }
+                            | qg::GeneratedSystemicOutcome::RecruitOrDefect { .. }
+                            | qg::GeneratedSystemicOutcome::Ransom { .. }
+                            | qg::GeneratedSystemicOutcome::CustodyHandoff { .. }
+                            | qg::GeneratedSystemicOutcome::EscapeCustody { .. }
+                            | qg::GeneratedSystemicOutcome::TransferOwnership { .. }
+                            | qg::GeneratedSystemicOutcome::Theft { .. } => {}
+                        },
                     }
                 }
                 (format!("Completed: {}", action.safe_summary), 60, 1)

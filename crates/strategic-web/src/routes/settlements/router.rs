@@ -219,7 +219,7 @@ use crate::spacetimedb::{
     BackendCharacterRelationshipStatus, BackendCharacterResidenceStatus, BackendCorpse,
     BackendFamilyChild,
     BackendLocalProblemTradeEffect, BackendPhysiologyAdministration, BackendPhysiologyChart,
-    BackendRoadChallenge, BackendContextCharacter, Character, CharacterAffinity, CharacterAttributes, CharacterCapability,
+    BackendRoadChallenge, BackendContextCharacter, BackendContextDisposition, Character, CharacterAffinity, CharacterAttributes, CharacterCapability,
     CharacterCondition, CharacterEquipmentGraph, CharacterEquippedItem, CharacterFamiliarity,
     CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterPersonality,
     CharacterSettlementReputation, CharacterSkills, CharacterStats, CharacterStrategicCondition,
@@ -282,6 +282,7 @@ pub fn routes() -> Router<AppState> {
         .route("/camp/continue", post(continue_camp_travel))
         .route("/camp/encounter", post(resolve_camp_encounter))
         .route("/camp/counterparty/contact", post(contact_camp_counterparty))
+        .route("/camp/counterparty/surrender",post(surrender_camp_counterparty))
         .route("/camp/counterparty/bandage", post(bandage_camp_counterparty))
         .route("/camp/destination/{id}", post(change_camp_destination))
         .route(

@@ -303,4 +303,5 @@ Tactical positions, health, damage, and tick state remain transient.
 Each hostile group owns one exact stable Character roster through contextual
 membership. Mission binding snapshots those IDs; autoresolve and tactical
 servers consume the snapshot instead of fabricating anonymous combatants.
-Nonviolent quest completion remains a follow-up.
+Surrender and other nonviolent Character-system outcomes now enter cases only
+through trusted typed fact adapters. See [Systemic Character interactions](systemic-character-interactions.md).

@@ -75,6 +75,8 @@ pub struct PartyContextContactAuthority {
     #[primary_key]
     pub id: String,
     #[index(btree)]
+    pub scan_id: u8,
+    #[index(btree)]
     pub party_id: String,
     pub context_id: String,
     pub location_id: String,
@@ -302,7 +304,14 @@ pub(crate) fn materialize_context_roster(
             return Err("Context roster conflicts with its immutable materialization".into());
         }
         if existing.len() == expected as usize {
-            return Ok(existing.into_iter().map(|row| row.character_id).collect());
+            let ids = existing
+                .into_iter()
+                .map(|row| row.character_id)
+                .collect::<Vec<_>>();
+            for character_id in &ids {
+                crate::strategic::ensure_context_disposition(ctx, context_id, *character_id, true)?;
+            }
+            return Ok(ids);
         }
     }
     let mut ids = Vec::with_capacity(expected as usize);
@@ -335,6 +344,9 @@ pub(crate) fn materialize_context_roster(
                 treatment_consent: false,
             });
         ids.push(id);
+    }
+    for character_id in &ids {
+        crate::strategic::ensure_context_disposition(ctx, context_id, *character_id, true)?;
     }
     Ok(ids)
 }
@@ -390,6 +402,12 @@ pub(crate) fn rebind_road_cast_to_strategic_encounter(
         } else {
             ctx.db.character_context_membership().insert(rebound);
         }
+        crate::strategic::ensure_context_disposition(
+            ctx,
+            encounter_id,
+            road_membership.character_id,
+            true,
+        )?;
     }
     materialize_context_roster(
         ctx,
@@ -757,6 +775,7 @@ pub fn contact_context_character(
     }
     let contact = PartyContextContactAuthority {
         id: contact_id,
+        scan_id: 0,
         party_id,
         context_id: membership.context_id.clone(),
         location_id: membership.location_id.clone(),

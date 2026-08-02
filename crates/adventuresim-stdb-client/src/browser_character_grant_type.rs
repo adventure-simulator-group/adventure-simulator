@@ -15,6 +15,7 @@ pub struct BrowserCharacterGrant {
     pub origin: BrowserCharacterGrantOrigin,
     pub starting_claim_request_key: Option<String>,
     pub lineage_source_parent_id: Option<u64>,
+    pub recruitment_source_id: Option<String>,
     pub granted_micros: i64,
 }
 
@@ -33,6 +34,7 @@ pub struct BrowserCharacterGrantCols {
     pub starting_claim_request_key:
         __sdk::__query_builder::Col<BrowserCharacterGrant, Option<String>>,
     pub lineage_source_parent_id: __sdk::__query_builder::Col<BrowserCharacterGrant, Option<u64>>,
+    pub recruitment_source_id: __sdk::__query_builder::Col<BrowserCharacterGrant, Option<String>>,
     pub granted_micros: __sdk::__query_builder::Col<BrowserCharacterGrant, i64>,
 }
 
@@ -51,6 +53,10 @@ impl __sdk::__query_builder::HasCols for BrowserCharacterGrant {
             lineage_source_parent_id: __sdk::__query_builder::Col::new(
                 table_name,
                 "lineage_source_parent_id",
+            ),
+            recruitment_source_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "recruitment_source_id",
             ),
             granted_micros: __sdk::__query_builder::Col::new(table_name, "granted_micros"),
         }

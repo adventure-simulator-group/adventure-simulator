@@ -1009,6 +1009,21 @@ pub enum GeneratedActionOutput {
     Consequence {
         consequence: GeneratedActionConsequence,
     },
+    /// Declares which owning systemic adapter can emit a typed objective fact.
+    /// This is producer wiring, never permission for the browser to post truth.
+    SystemicOutcome { outcome: GeneratedSystemicOutcome },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum GeneratedSystemicOutcome {
+    Surrender { character_id: u64, context_id: String },
+    RecruitOrDefect { character_id: u64, party_id: String },
+    Ransom { character_id: u64, recipient_id: String },
+    CustodyHandoff { character_id: u64, custodian_id: String },
+    EscapeCustody { character_id: u64 },
+    TransferOwnership { property_id: String, owner_id: String },
+    Theft { property_id: String, victim_id: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

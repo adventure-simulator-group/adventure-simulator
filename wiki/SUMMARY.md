@@ -59,6 +59,7 @@
 - [Organizations](reference/organizations.md)
 - [Quest generation and investigation](reference/quest-generation-and-investigation.md)
 - [Quest authority](reference/quest-authority.md)
+- [Systemic Character interactions](reference/systemic-character-interactions.md)
 - [Errantry and modular challenges](reference/errantry-and-challenges.md)
 - [Romance road encounters](reference/romance-road-encounters.md)
 

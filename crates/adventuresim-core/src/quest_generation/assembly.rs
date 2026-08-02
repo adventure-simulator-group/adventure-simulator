@@ -503,7 +503,12 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         .resident_character_id
         .clone();
     let (objectives, finales, custody, dialogue_producers) = match family {
-        TemplateFamily::RecurringDepredation => (
+        TemplateFamily::RecurringDepredation => {
+            let hostile_character_id = crate::settlement_population::stable_hash(&format!("field-character:{hostile_id}:0")) | (1u64 << 63);
+            let inspect_finale=ActionId::new(scoped_id(&prefix,"action","inspect_finale"));
+            let ambush=ActionId::new(scoped_id(&prefix,"action","ambush"));
+            for action in actions.iter_mut().filter(|a|a.id==inspect_finale||a.id==ambush){action.outputs.push(GeneratedActionOutput::SystemicOutcome{outcome:GeneratedSystemicOutcome::Surrender{character_id:hostile_character_id,context_id:hostile_id.clone()}});}
+            (
             ObjectiveExpression::new(vec![
                 ObjectivePath {
                     objectives: vec![Objective {
@@ -514,6 +519,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                         },
                     }],
                 },
+                ObjectivePath { objectives: vec![Objective { id: ObjectiveId::new(scoped_id(&prefix,"objective","surrender")).unwrap(), requirement: ObjectiveRequirement::Surrender { character_id: hostile_character_id, context_id: hostile_id.clone() } }] },
                 ObjectivePath {
                     objectives: vec![Objective {
                         id: ObjectiveId::new(scoped_id(&prefix, "objective", "driveoff")).unwrap(),
@@ -546,7 +552,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             ],
             vec![],
             vec![],
-        ),
+        )},
         TemplateFamily::DisappearanceOrLoss => match cause {
             CanonicalCause::Hostile(_) | CanonicalCause::ConcealmentByWitness => {
                 let objective_id =

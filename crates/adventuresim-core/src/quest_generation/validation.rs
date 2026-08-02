@@ -1077,6 +1077,13 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     }),
                 })
             }
+            ObjectiveRequirement::Surrender { character_id, context_id } => case.actions.iter().any(|action| action.outputs.iter().any(|output| matches!(output, GeneratedActionOutput::SystemicOutcome { outcome: GeneratedSystemicOutcome::Surrender { character_id: produced, context_id: produced_context } } if produced == character_id && produced_context == context_id))),
+            ObjectiveRequirement::RecruitOrDefect { character_id, party_id } => case.actions.iter().any(|action| action.outputs.iter().any(|output| matches!(output, GeneratedActionOutput::SystemicOutcome { outcome: GeneratedSystemicOutcome::RecruitOrDefect { character_id: produced, party_id: produced_party } } if produced == character_id && produced_party == party_id))),
+            ObjectiveRequirement::Ransom { character_id, recipient_id } => case.actions.iter().any(|action| action.outputs.iter().any(|output| matches!(output, GeneratedActionOutput::SystemicOutcome { outcome: GeneratedSystemicOutcome::Ransom { character_id: produced, recipient_id: produced_recipient } } if produced == character_id && produced_recipient == recipient_id))),
+            ObjectiveRequirement::CustodyHandoff { character_id, custodian_id } => case.actions.iter().any(|action| action.outputs.iter().any(|output| matches!(output, GeneratedActionOutput::SystemicOutcome { outcome: GeneratedSystemicOutcome::CustodyHandoff { character_id: produced, custodian_id: produced_custodian } } if produced == character_id && produced_custodian == custodian_id))),
+            ObjectiveRequirement::EscapeCustody { character_id } => case.actions.iter().any(|action| action.outputs.iter().any(|output| matches!(output, GeneratedActionOutput::SystemicOutcome { outcome: GeneratedSystemicOutcome::EscapeCustody { character_id: produced } } if produced == character_id))),
+            ObjectiveRequirement::TransferOwnership { property_id, owner_id } => case.actions.iter().any(|action| action.outputs.iter().any(|output| matches!(output, GeneratedActionOutput::SystemicOutcome { outcome: GeneratedSystemicOutcome::TransferOwnership { property_id: produced, owner_id: produced_owner } } if produced == property_id && produced_owner == owner_id))),
+            ObjectiveRequirement::CommitTheft { property_id, victim_id } => case.actions.iter().any(|action| action.outputs.iter().any(|output| matches!(output, GeneratedActionOutput::SystemicOutcome { outcome: GeneratedSystemicOutcome::Theft { property_id: produced, victim_id: produced_victim } } if produced == property_id && produced_victim == victim_id))),
             _ => false,
         };
         if !produced {

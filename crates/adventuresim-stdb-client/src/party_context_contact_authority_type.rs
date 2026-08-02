@@ -8,6 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct PartyContextContactAuthority {
     pub id: String,
+    pub scan_id: u8,
     pub party_id: String,
     pub context_id: String,
     pub location_id: String,
@@ -25,6 +26,7 @@ impl __sdk::InModule for PartyContextContactAuthority {
 /// Provides typed access to columns for query building.
 pub struct PartyContextContactAuthorityCols {
     pub id: __sdk::__query_builder::Col<PartyContextContactAuthority, String>,
+    pub scan_id: __sdk::__query_builder::Col<PartyContextContactAuthority, u8>,
     pub party_id: __sdk::__query_builder::Col<PartyContextContactAuthority, String>,
     pub context_id: __sdk::__query_builder::Col<PartyContextContactAuthority, String>,
     pub location_id: __sdk::__query_builder::Col<PartyContextContactAuthority, String>,
@@ -38,6 +40,7 @@ impl __sdk::__query_builder::HasCols for PartyContextContactAuthority {
     fn cols(table_name: &'static str) -> Self::Cols {
         PartyContextContactAuthorityCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
+            scan_id: __sdk::__query_builder::Col::new(table_name, "scan_id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             context_id: __sdk::__query_builder::Col::new(table_name, "context_id"),
             location_id: __sdk::__query_builder::Col::new(table_name, "location_id"),
@@ -54,6 +57,7 @@ impl __sdk::__query_builder::HasCols for PartyContextContactAuthority {
 pub struct PartyContextContactAuthorityIxCols {
     pub id: __sdk::__query_builder::IxCol<PartyContextContactAuthority, String>,
     pub party_id: __sdk::__query_builder::IxCol<PartyContextContactAuthority, String>,
+    pub scan_id: __sdk::__query_builder::IxCol<PartyContextContactAuthority, u8>,
 }
 
 impl __sdk::__query_builder::HasIxCols for PartyContextContactAuthority {
@@ -62,6 +66,7 @@ impl __sdk::__query_builder::HasIxCols for PartyContextContactAuthority {
         PartyContextContactAuthorityIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             party_id: __sdk::__query_builder::IxCol::new(table_name, "party_id"),
+            scan_id: __sdk::__query_builder::IxCol::new(table_name, "scan_id"),
         }
     }
 }

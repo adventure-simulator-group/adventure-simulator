@@ -226,6 +226,8 @@ pub(super) async fn camp(
         }
     };
     let mut counterparties = Vec::new();
+    let mut dispositions:Vec<BackendContextDisposition>=Vec::new();
+    if let Some(encounter)=encounter.as_ref(){dispositions=state.db.query(&format!("SELECT * FROM backend_context_dispositions WHERE observer_party_id = {} AND contact_ref = {}",sql_string_literal(&party.id),sql_string_literal(&encounter.encounter_id))).await.unwrap_or_default();}
     if let Some(encounter) = encounter.as_ref().filter(|row| row.status == "awaiting_choice") {
         let memberships: Vec<BackendContextCharacter> = state
             .db
@@ -406,6 +408,7 @@ pub(super) async fn camp(
             continue_block_reason,
             encounter.as_ref(),
             &counterparties,
+            &dispositions,
             trial.map(|trial| {
                 (
                     trial.case_id.as_str(),
@@ -647,6 +650,14 @@ pub(super) async fn contact_camp_counterparty(
         Ok(()) => Redirect::to("/camp").into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
+}
+
+#[derive(Debug,Deserialize)]
+pub(super) struct CounterpartySurrenderForm{target_id:u64,contact_ref:String,expected_revision:u32,action:String,source_id:String}
+pub(super) async fn surrender_camp_counterparty(State(state):State<AppState>,session:Session,Form(form):Form<CounterpartySurrenderForm>)->Response{
+    let Some(actor_id)=session.character_id_u64() else{return Redirect::to("/characters").into_response();};
+    let action=match form.action.as_str(){"offer"=>json!({"Offer":[]}),"demand"=>json!({"Demand":[]}),_=>return (StatusCode::BAD_REQUEST,"Unsupported surrender action").into_response()};
+    match state.db.call("resolve_context_surrender",&[json!(actor_id),json!(form.target_id),json!(form.contact_ref),action,json!(form.expected_revision),json!(form.source_id)]).await{Ok(())=>Redirect::to("/camp").into_response(),Err(error)=>(StatusCode::BAD_REQUEST,error.to_string()).into_response()}
 }
 
 #[derive(Debug, Deserialize)]

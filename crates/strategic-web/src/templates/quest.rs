@@ -6,8 +6,9 @@ use super::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use super::{empty_state, item_display_name, item_type_icon, sidebar_section};
 use crate::routes::travel::TravelDestination;
 use crate::spacetimedb::{
-    AutoresolveReport, BackendCaseSitePin, BackendCorpse, BackendInvestigationAction,
-    BattleLootItem, FoodLot, InventoryQuantityTarget, ItemDefinition, PartyInventoryItem,
+    AutoresolveReport, BackendCaseSitePin, BackendContextDisposition, BackendCorpse,
+    BackendInvestigationAction, BattleLootItem, FoodLot, InventoryQuantityTarget, ItemDefinition,
+    PartyInventoryItem,
 };
 use crate::{
     spacetimedb::Character,
@@ -281,6 +282,7 @@ pub fn quest_location_enemy_page(
     active_character: Option<&Character>,
     party_members: &[Character],
     counterparties: &[Character],
+    dispositions: &[BackendContextDisposition],
     counterparty_contact_ref: Option<&str>,
     counterparty_contact_revision: u32,
     can_fight: bool,
@@ -303,10 +305,11 @@ pub fn quest_location_enemy_page(
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
-            @if !resolved && !counterparties.is_empty() {
+            @if !resolved && (!counterparties.is_empty() || !dispositions.is_empty()) {
                 (sidebar_section("Counterparty", html! {
                     nav class="settlement-npc-strip counterparty-strip" aria-label="Counterparty" {
                         @for counterparty in counterparties {
+                            @let disposition=dispositions.iter().find(|row|row.character_id==counterparty.id);
                             div class="npc-portrait counterparty-portrait" {
                                 span class="npc-portrait-image" aria-hidden="true" { "?" }
                                 span class="npc-portrait-name" { (&counterparty.name) }
@@ -317,6 +320,19 @@ pub fn quest_location_enemy_page(
                                     input type="hidden" name="action_id" value=(format!("quest-contact:{}:{}:{}", site.case_site_id, counterparty_contact_revision, counterparty.id));
                                     button type="submit" class="btn btn-secondary btn-small" { "Talk" }
                                 }
+                                @if let Some(disposition)=disposition {
+                                    span class="text-muted small-copy" { (format!("{:?}",disposition.disposition)) }
+                                    @if matches!(disposition.disposition,crate::spacetimedb::DispositionKind::Hostile|crate::spacetimedb::DispositionKind::Refused) {
+                                        form method="post" action=(format!("/locations/case-site/{}/counterparty/surrender", site.case_site_id)) {
+                                            input type="hidden" name="target_id" value=(counterparty.id);
+                                            input type="hidden" name="contact_ref" value=(&disposition.contact_ref);
+                                            input type="hidden" name="expected_revision" value=(disposition.revision);
+                                            input type="hidden" name="action" value="demand";
+                                            input type="hidden" name="source_id" value=(format!("surrender:demand:{}:{}:{}",site.case_site_id,counterparty.id,disposition.revision));
+                                            button type="submit" class="btn btn-secondary btn-small" { "Demand surrender" }
+                                        }
+                                    }
+                                }
                                 @if counterparty.alive {
                                     form method="post" action=(format!("/locations/case-site/{}/counterparty/bandage", site.case_site_id)) {
                                         input type="hidden" name="patient_id" value=(counterparty.id);
@@ -325,6 +341,9 @@ pub fn quest_location_enemy_page(
                                 }
                             }
                         }
+                    }
+                    @for disposition in dispositions.iter().filter(|row|!counterparties.iter().any(|c|c.id==row.character_id)) {
+                        p class="text-muted small-copy" { "Character " (disposition.character_id) ": " (format!("{:?}",disposition.disposition)) }
                     }
                 }))
             }
@@ -475,7 +494,10 @@ mod tests {
         let routes = include_str!("../routes/quests.rs");
         assert!(template.contains("/counterparty/contact"));
         assert!(template.contains("/counterparty/bandage"));
+        assert!(template.contains("/counterparty/surrender"));
+        assert!(template.contains("disposition.revision"));
         assert!(routes.contains("\"treat_limb\""));
+        assert!(routes.contains("\"resolve_context_surrender\""));
         assert!(!template.contains("examine_outbreak_patient"));
         assert!(!template.contains("outbreak_patient_examination"));
     }

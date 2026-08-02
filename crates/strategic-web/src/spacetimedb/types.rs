@@ -330,6 +330,23 @@ where
     }
 }
 
+pub(crate) fn deserialize_disposition_kind<'de, D>(
+    deserializer: D,
+) -> Result<DispositionKind, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match unit_variant_name::<D::Error>(Value::deserialize(deserializer)?)?.as_str() {
+        "Neutral" => Ok(DispositionKind::Neutral),
+        "Hostile" => Ok(DispositionKind::Hostile),
+        "OfferPending" => Ok(DispositionKind::OfferPending),
+        "DemandPending" => Ok(DispositionKind::DemandPending),
+        "Refused" => Ok(DispositionKind::Refused),
+        "Surrendered" => Ok(DispositionKind::Surrendered),
+        _ => Err(D::Error::custom("unknown disposition kind")),
+    }
+}
+
 pub(crate) fn deserialize_optional_courtship_kind<'de, D>(
     deserializer: D,
 ) -> Result<Option<CourtshipKind>, D::Error>
@@ -1100,6 +1117,29 @@ pub struct BackendContextCharacter {
     pub alive: bool,
     pub revision: u32,
     pub treatment_consent: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DispositionKind {
+    Neutral,
+    Hostile,
+    OfferPending,
+    DemandPending,
+    Refused,
+    Surrendered,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendContextDisposition {
+    pub observer_party_id: String,
+    pub contact_ref: String,
+    pub character_id: u64,
+    #[serde(deserialize_with = "deserialize_disposition_kind")]
+    pub disposition: DispositionKind,
+    pub revision: u32,
+    /// Terms are opaque to the web tier until it needs to render individual
+    /// obligation kinds; retaining their JSON preserves forward compatibility.
+    pub offered_terms: Vec<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

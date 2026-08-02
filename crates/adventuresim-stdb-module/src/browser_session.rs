@@ -18,6 +18,7 @@ use crate::{
 pub enum BrowserCharacterGrantOrigin {
     StartingCandidate,
     AdultDescendant,
+    Recruitment,
 }
 
 #[derive(Clone, Debug)]
@@ -38,16 +39,26 @@ pub struct BrowserCharacterGrant {
     /// out of ad-hoc strings.
     pub starting_claim_request_key: Option<String>,
     pub lineage_source_parent_id: Option<u64>,
+    pub recruitment_source_id: Option<String>,
     pub granted_micros: i64,
 }
 
 fn valid_grant_provenance(grant: &BrowserCharacterGrant) -> bool {
     match grant.origin {
         BrowserCharacterGrantOrigin::StartingCandidate => {
-            grant.starting_claim_request_key.is_some() && grant.lineage_source_parent_id.is_none()
+            grant.starting_claim_request_key.is_some()
+                && grant.lineage_source_parent_id.is_none()
+                && grant.recruitment_source_id.is_none()
         }
         BrowserCharacterGrantOrigin::AdultDescendant => {
-            grant.starting_claim_request_key.is_none() && grant.lineage_source_parent_id.is_some()
+            grant.starting_claim_request_key.is_none()
+                && grant.lineage_source_parent_id.is_some()
+                && grant.recruitment_source_id.is_none()
+        }
+        BrowserCharacterGrantOrigin::Recruitment => {
+            grant.starting_claim_request_key.is_none()
+                && grant.lineage_source_parent_id.is_none()
+                && grant.recruitment_source_id.is_some()
         }
     }
 }
@@ -131,6 +142,7 @@ pub(crate) fn grant_browser_character_internal(
             origin: BrowserCharacterGrantOrigin::StartingCandidate,
             starting_claim_request_key: Some(starting_request_key.to_owned()),
             lineage_source_parent_id: None,
+            recruitment_source_id: None,
             granted_micros: ctx.timestamp.to_micros_since_unix_epoch(),
         });
     Ok(())
@@ -210,6 +222,58 @@ pub(crate) fn grant_adult_descendant_internal(
             origin: BrowserCharacterGrantOrigin::AdultDescendant,
             starting_claim_request_key: None,
             lineage_source_parent_id: Some(source_parent_id),
+            recruitment_source_id: None,
+            granted_micros: ctx.timestamp.to_micros_since_unix_epoch(),
+        });
+    Ok(())
+}
+
+/// Canonical exclusive browser ownership grant for systemic recruitment.
+/// The caller derives `owner_key` from the recruiting actor's existing grant.
+pub(crate) fn grant_recruited_character_internal(
+    ctx: &ReducerContext,
+    owner_key: &str,
+    character_id: u64,
+    source_id: &str,
+) -> Result<(), String> {
+    if !valid_owner_key(owner_key) || source_id.is_empty() {
+        return Err("Recruitment grant provenance is malformed".into());
+    }
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    if character.temporary || !character.alive {
+        return Err("Only a living persistent character can be recruited".into());
+    }
+    if let Some(existing) = ctx
+        .db
+        .browser_character_grant()
+        .character_id()
+        .find(character_id)
+    {
+        return if existing.owner_key == owner_key
+            && existing.origin == BrowserCharacterGrantOrigin::Recruitment
+            && existing.recruitment_source_id.as_deref() == Some(source_id)
+            && valid_grant_provenance(&existing)
+        {
+            Ok(())
+        } else {
+            Err("Character already has an exclusive browser owner".into())
+        };
+    }
+    ctx.db
+        .browser_character_grant()
+        .insert(BrowserCharacterGrant {
+            character_id,
+            character_scan_id: character_id,
+            owner_key: owner_key.to_owned(),
+            origin: BrowserCharacterGrantOrigin::Recruitment,
+            starting_claim_request_key: None,
+            lineage_source_parent_id: None,
+            recruitment_source_id: Some(source_id.to_owned()),
             granted_micros: ctx.timestamp.to_micros_since_unix_epoch(),
         });
     Ok(())
@@ -480,6 +544,7 @@ mod tests {
             origin: BrowserCharacterGrantOrigin::StartingCandidate,
             starting_claim_request_key: Some("claim".into()),
             lineage_source_parent_id: None,
+            recruitment_source_id: None,
             granted_micros: 0,
         };
         assert!(valid_grant_provenance(&grant));
@@ -487,6 +552,10 @@ mod tests {
         assert!(!valid_grant_provenance(&grant));
         grant.origin = BrowserCharacterGrantOrigin::AdultDescendant;
         grant.starting_claim_request_key = None;
+        assert!(valid_grant_provenance(&grant));
+        grant.origin = BrowserCharacterGrantOrigin::Recruitment;
+        grant.lineage_source_parent_id = None;
+        grant.recruitment_source_id = Some("recruit:1".into());
         assert!(valid_grant_provenance(&grant));
     }
 

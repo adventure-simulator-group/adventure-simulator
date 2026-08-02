@@ -21,6 +21,7 @@ use adventuresim_stdb_client::{
     backend_character_attributes_table::BackendCharacterAttributesTableAccess,
     backend_character_capabilities_table::BackendCharacterCapabilitiesTableAccess,
     backend_character_conditions_table::BackendCharacterConditionsTableAccess,
+    backend_character_custodies_table::BackendCharacterCustodiesTableAccess,
     backend_character_deaths_table::BackendCharacterDeathsTableAccess,
     backend_character_limbs_table::BackendCharacterLimbsTableAccess,
     backend_character_morale_sources_table::BackendCharacterMoraleSourcesTableAccess,
@@ -31,6 +32,7 @@ use adventuresim_stdb_client::{
     backend_character_training_schedules_table::BackendCharacterTrainingSchedulesTableAccess,
     backend_characters_table::BackendCharactersTableAccess,
     backend_context_characters_table::BackendContextCharactersTableAccess,
+    backend_context_dispositions_table::BackendContextDispositionsTableAccess,
     backend_contracts_table::BackendContractsTableAccess,
     backend_dialogue_events_table::BackendDialogueEventsTableAccess,
     backend_dialogue_participants_table::BackendDialogueParticipantsTableAccess,
@@ -38,7 +40,9 @@ use adventuresim_stdb_client::{
     backend_dialogue_sessions_table::BackendDialogueSessionsTableAccess,
     backend_dialogue_topic_options_table::BackendDialogueTopicOptionsTableAccess,
     backend_dialogue_witness_claims_table::BackendDialogueWitnessClaimsTableAccess,
+    backend_legal_properties_table::BackendLegalPropertiesTableAccess,
     backend_local_chat_messages_table::BackendLocalChatMessagesTableAccess,
+    backend_property_events_table::BackendPropertyEventsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_participant_table::BattleParticipantTableAccess,
     battle_result_table::BattleResultTableAccess,
@@ -101,6 +105,10 @@ use crate::{
 pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "backend_characters",
     "backend_context_characters",
+    "backend_context_dispositions",
+    "backend_character_custodies",
+    "backend_legal_properties",
+    "backend_property_events",
     "backend_character_case_site_locations",
     "backend_character_attributes",
     "backend_character_stats",
@@ -273,6 +281,10 @@ impl LiveState {
         // recruitment, quest state, local conversations, and mission readiness.
         invalidate_on_view_changes!(state.0._connection.db.backend_characters());
         invalidate_on_view_changes!(state.0._connection.db.backend_context_characters());
+        invalidate_on_view_changes!(state.0._connection.db.backend_context_dispositions());
+        invalidate_on_view_changes!(state.0._connection.db.backend_character_custodies());
+        invalidate_on_view_changes!(state.0._connection.db.backend_legal_properties());
+        invalidate_on_view_changes!(state.0._connection.db.backend_property_events());
         invalidate_on_view_changes!(
             state
                 .0
@@ -392,6 +404,10 @@ impl LiveState {
             .add_query(|query| query.from.strategic_encounter())
             .add_query(|query| query.from.backend_characters())
             .add_query(|query| query.from.backend_context_characters())
+            .add_query(|query| query.from.backend_context_dispositions())
+            .add_query(|query| query.from.backend_character_custodies())
+            .add_query(|query| query.from.backend_legal_properties())
+            .add_query(|query| query.from.backend_property_events())
             .add_query(|query| query.from.backend_character_case_site_locations())
             .add_query(|query| query.from.backend_character_attributes())
             .add_query(|query| query.from.backend_character_capabilities())
