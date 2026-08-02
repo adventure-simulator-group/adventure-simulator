@@ -17,6 +17,8 @@ pub struct TacticalServerRequest {
     pub enemy_combat_scale_bps: u32,
     pub countermeasure_multiplier_bps: u32,
     pub normalized_combat_power: u32,
+    pub enemy_character_ids: Vec<u64>,
+    pub party_has_surprise: bool,
 }
 
 impl __sdk::InModule for TacticalServerRequest {
@@ -37,6 +39,8 @@ pub struct TacticalServerRequestCols {
     pub enemy_combat_scale_bps: __sdk::__query_builder::Col<TacticalServerRequest, u32>,
     pub countermeasure_multiplier_bps: __sdk::__query_builder::Col<TacticalServerRequest, u32>,
     pub normalized_combat_power: __sdk::__query_builder::Col<TacticalServerRequest, u32>,
+    pub enemy_character_ids: __sdk::__query_builder::Col<TacticalServerRequest, Vec<u64>>,
+    pub party_has_surprise: __sdk::__query_builder::Col<TacticalServerRequest, bool>,
 }
 
 impl __sdk::__query_builder::HasCols for TacticalServerRequest {
@@ -65,6 +69,11 @@ impl __sdk::__query_builder::HasCols for TacticalServerRequest {
                 table_name,
                 "normalized_combat_power",
             ),
+            enemy_character_ids: __sdk::__query_builder::Col::new(
+                table_name,
+                "enemy_character_ids",
+            ),
+            party_has_surprise: __sdk::__query_builder::Col::new(table_name, "party_has_surprise"),
         }
     }
 }

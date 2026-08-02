@@ -142,3 +142,9 @@ interventions. Four starter diseases deliberately project to the four
 element/Humour correspondences used by Paracelsian scholars, but the underlying
 causes remain organisms, toxins, and environmental exposure rather than
 Humours. See [Fantastic diseases](../reference/fantastic-diseases.md).
+
+The ordinary limb-treatment reducer accepts any co-present full Character, not
+only party members, when the patient explicitly consents or is incapacitated.
+It revalidates presence and authorization after elapsed procedure time.
+Wounded road actors carry real `LimbInjury` state and use ordinary bandages,
+time, infection, and skill rules.

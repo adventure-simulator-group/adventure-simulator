@@ -171,6 +171,22 @@ fn store_injury(ctx: &ReducerContext, injury: LimbInjury) {
     }
 }
 
+/// Idempotently seed a real untreated cut for an authored field patient.
+pub(crate) fn seed_field_cut(
+    ctx: &ReducerContext,
+    character_id: u64,
+    limb: LimbRegion,
+    damage: f32,
+    origin_minute: u64,
+) {
+    let mut injury = injury_for(ctx, character_id, limb);
+    if injury.cut_damage <= 0.0 {
+        injury.cut_damage = damage.clamp(0.01, 1.0);
+        injury.infection_origin_minute = Some(origin_minute);
+        store_injury(ctx, injury);
+    }
+}
+
 fn health_mut(limbs: &mut CharacterLimbs, limb: LimbRegion) -> &mut f32 {
     match limb {
         LimbRegion::LeftArm => &mut limbs.left_arm_health,
@@ -809,12 +825,16 @@ fn require_together(ctx: &ReducerContext, actor_id: u64, patient_id: u64) -> Res
     let patient_site = crate::investigation::character_case_site_id(ctx, patient.id);
     let same_place = actor.current_settlement_id.is_some()
         && actor.current_settlement_id == patient.current_settlement_id
-        || actor_site.is_some() && actor_site == patient_site;
+        || actor_site.is_some() && actor_site == patient_site
+        || crate::world_actor::characters_are_contextually_present(ctx, actor_id, patient_id);
     if !same_place {
         return Err("Surgeon and patient must be together".into());
     }
-    if actor_id != patient_id && (actor.party_id.is_none() || actor.party_id != patient.party_id) {
-        return Err("A surgeon may treat only themselves or a member of their party".into());
+    if actor_id != patient_id
+        && (actor.party_id.is_none() || actor.party_id != patient.party_id)
+        && !crate::world_actor::treatment_is_authorized(ctx, patient_id)
+    {
+        return Err("Treatment requires the co-present patient's consent or incapacitation".into());
     }
     Ok(())
 }

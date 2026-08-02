@@ -69,6 +69,8 @@ pub mod backend_character_times_table;
 pub mod backend_character_training_schedules_table;
 pub mod backend_characters_table;
 pub mod backend_committed_cuts_table;
+pub mod backend_context_character_type;
+pub mod backend_context_characters_table;
 pub mod backend_contract_type;
 pub mod backend_contracts_table;
 pub mod backend_corpse_type;
@@ -181,6 +183,9 @@ pub mod character_birth_type;
 pub mod character_capability_type;
 pub mod character_case_site_occupancy_type;
 pub mod character_condition_type;
+pub mod character_context_kind_type;
+pub mod character_context_membership_type;
+pub mod character_context_role_type;
 pub mod character_death_type;
 pub mod character_equipped_item_table;
 pub mod character_equipped_item_type;
@@ -232,6 +237,8 @@ pub mod connected_players_table;
 pub mod conscience_type;
 pub mod construction_commodity_type;
 pub mod construction_industry_type;
+pub mod contact_context_character_reducer;
+pub mod contextual_contact_receipt_type;
 pub mod continue_camp_travel_reducer;
 pub mod contract_interaction_stage_type;
 pub mod contract_issuer_interaction_receipt_type;
@@ -550,6 +557,7 @@ pub mod palmer_drought_severity_index_type;
 pub mod party_action_request_table;
 pub mod party_action_request_type;
 pub mod party_case_site_tracking_type;
+pub mod party_context_contact_authority_type;
 pub mod party_inventory_item_table;
 pub mod party_inventory_item_type;
 pub mod party_inventory_state_table;
@@ -802,6 +810,7 @@ pub mod sync_development_clock_to_character_reducer;
 pub mod synchronize_character_time_reducer;
 pub mod synchronize_party_for_activity_reducer;
 pub mod tactical_mission_resolution_type;
+pub mod tactical_mission_side_type;
 pub mod tactical_server_claim_type;
 pub mod tactical_server_request_table;
 pub mod tactical_server_request_type;
@@ -911,6 +920,8 @@ pub use backend_character_times_table::*;
 pub use backend_character_training_schedules_table::*;
 pub use backend_characters_table::*;
 pub use backend_committed_cuts_table::*;
+pub use backend_context_character_type::BackendContextCharacter;
+pub use backend_context_characters_table::*;
 pub use backend_contract_type::BackendContract;
 pub use backend_contracts_table::*;
 pub use backend_corpse_type::BackendCorpse;
@@ -1023,6 +1034,9 @@ pub use character_birth_type::CharacterBirth;
 pub use character_capability_type::CharacterCapability;
 pub use character_case_site_occupancy_type::CharacterCaseSiteOccupancy;
 pub use character_condition_type::CharacterCondition;
+pub use character_context_kind_type::CharacterContextKind;
+pub use character_context_membership_type::CharacterContextMembership;
+pub use character_context_role_type::CharacterContextRole;
 pub use character_death_type::CharacterDeath;
 pub use character_equipped_item_table::*;
 pub use character_equipped_item_type::CharacterEquippedItem;
@@ -1074,6 +1088,8 @@ pub use connected_players_table::*;
 pub use conscience_type::Conscience;
 pub use construction_commodity_type::ConstructionCommodity;
 pub use construction_industry_type::ConstructionIndustry;
+pub use contact_context_character_reducer::contact_context_character;
+pub use contextual_contact_receipt_type::ContextualContactReceipt;
 pub use continue_camp_travel_reducer::continue_camp_travel;
 pub use contract_interaction_stage_type::ContractInteractionStage;
 pub use contract_issuer_interaction_receipt_type::ContractIssuerInteractionReceipt;
@@ -1392,6 +1408,7 @@ pub use palmer_drought_severity_index_type::PalmerDroughtSeverityIndex;
 pub use party_action_request_table::*;
 pub use party_action_request_type::PartyActionRequest;
 pub use party_case_site_tracking_type::PartyCaseSiteTracking;
+pub use party_context_contact_authority_type::PartyContextContactAuthority;
 pub use party_inventory_item_table::*;
 pub use party_inventory_item_type::PartyInventoryItem;
 pub use party_inventory_state_table::*;
@@ -1644,6 +1661,7 @@ pub use sync_development_clock_to_character_reducer::sync_development_clock_to_c
 pub use synchronize_character_time_reducer::synchronize_character_time;
 pub use synchronize_party_for_activity_reducer::synchronize_party_for_activity;
 pub use tactical_mission_resolution_type::TacticalMissionResolution;
+pub use tactical_mission_side_type::TacticalMissionSide;
 pub use tactical_server_claim_type::TacticalServerClaim;
 pub use tactical_server_request_table::*;
 pub use tactical_server_request_type::TacticalServerRequest;
@@ -1858,6 +1876,13 @@ pub enum Reducer {
         skills: CharacterSkills,
         downtime: ScheduleAllocation,
         personality: CharacterPersonality,
+    },
+    ContactContextCharacter {
+        actor_id: u64,
+        target_id: u64,
+        contact_ref: String,
+        expected_revision: u32,
+        action_id: String,
     },
     ContinueCampTravel {
         character_id: u64,
@@ -2580,6 +2605,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::ClearBrowserCharacterSelection { .. } => "clear_browser_character_selection",
             Reducer::ClearOrganizationPresentation { .. } => "clear_organization_presentation",
             Reducer::ConfigureSimulationCharacter { .. } => "configure_simulation_character",
+            Reducer::ContactContextCharacter { .. } => "contact_context_character",
             Reducer::ContinueCampTravel { .. } => "continue_camp_travel",
             Reducer::CookFood { .. } => "cook_food",
             Reducer::CreateCharacter { .. } => "create_character",
@@ -3020,6 +3046,19 @@ Reducer::BeginFormalCourtship{
                 skills: skills.clone(),
                 downtime: downtime.clone(),
                 personality: personality.clone(),
+}),
+            Reducer::ContactContextCharacter{
+                actor_id,
+                target_id,
+                contact_ref,
+                expected_revision,
+                action_id,
+}             => __sats::bsatn::to_vec(&contact_context_character_reducer::ContactContextCharacterArgs {
+                actor_id: actor_id.clone(),
+                target_id: target_id.clone(),
+                contact_ref: contact_ref.clone(),
+                expected_revision: expected_revision.clone(),
+                action_id: action_id.clone(),
 }),
             Reducer::ContinueCampTravel{
                 character_id,
@@ -4271,6 +4310,7 @@ pub struct DbUpdate {
     backend_character_training_schedules: __sdk::TableUpdate<CharacterTrainingSchedule>,
     backend_characters: __sdk::TableUpdate<Character>,
     backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
+    backend_context_characters: __sdk::TableUpdate<BackendContextCharacter>,
     backend_contracts: __sdk::TableUpdate<BackendContract>,
     backend_corpses: __sdk::TableUpdate<BackendCorpse>,
     backend_courtship_discoveries: __sdk::TableUpdate<BackendCourtshipDiscoveryStatus>,
@@ -4486,6 +4526,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                     .append(backend_characters_table::parse_table_update(table_update)?),
                 "backend_committed_cuts" => db_update.backend_committed_cuts.append(
                     backend_committed_cuts_table::parse_table_update(table_update)?,
+                ),
+                "backend_context_characters" => db_update.backend_context_characters.append(
+                    backend_context_characters_table::parse_table_update(table_update)?,
                 ),
                 "backend_contracts" => db_update
                     .backend_contracts
@@ -5144,6 +5187,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_committed_cuts",
             &self.backend_committed_cuts,
         );
+        diff.backend_context_characters = cache.apply_diff_to_table::<BackendContextCharacter>(
+            "backend_context_characters",
+            &self.backend_context_characters,
+        );
         diff.backend_contracts = cache
             .apply_diff_to_table::<BackendContract>("backend_contracts", &self.backend_contracts);
         diff.backend_corpses =
@@ -5392,6 +5439,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_committed_cuts" => db_update
                     .backend_committed_cuts
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_context_characters" => db_update
+                    .backend_context_characters
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_contracts" => db_update
                     .backend_contracts
@@ -5757,6 +5807,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_committed_cuts" => db_update
                     .backend_committed_cuts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_context_characters" => db_update
+                    .backend_context_characters
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_contracts" => db_update
                     .backend_contracts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -6069,6 +6122,7 @@ pub struct AppliedDiff<'r> {
     backend_character_training_schedules: __sdk::TableAppliedDiff<'r, CharacterTrainingSchedule>,
     backend_characters: __sdk::TableAppliedDiff<'r, Character>,
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
+    backend_context_characters: __sdk::TableAppliedDiff<'r, BackendContextCharacter>,
     backend_contracts: __sdk::TableAppliedDiff<'r, BackendContract>,
     backend_corpses: __sdk::TableAppliedDiff<'r, BackendCorpse>,
     backend_courtship_discoveries: __sdk::TableAppliedDiff<'r, BackendCourtshipDiscoveryStatus>,
@@ -6318,6 +6372,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<CommittedCut>(
             "backend_committed_cuts",
             &self.backend_committed_cuts,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendContextCharacter>(
+            "backend_context_characters",
+            &self.backend_context_characters,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendContract>(
@@ -7413,6 +7472,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_character_training_schedules_table::register_table(client_cache);
         backend_characters_table::register_table(client_cache);
         backend_committed_cuts_table::register_table(client_cache);
+        backend_context_characters_table::register_table(client_cache);
         backend_contracts_table::register_table(client_cache);
         backend_corpses_table::register_table(client_cache);
         backend_courtship_discoveries_table::register_table(client_cache);
@@ -7532,6 +7592,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_character_training_schedules",
         "backend_characters",
         "backend_committed_cuts",
+        "backend_context_characters",
         "backend_contracts",
         "backend_corpses",
         "backend_courtship_discoveries",

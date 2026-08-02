@@ -225,6 +225,30 @@ pub(super) async fn camp(
                 .into_response();
         }
     };
+    let mut counterparties = Vec::new();
+    if let Some(encounter) = encounter.as_ref().filter(|row| row.status == "awaiting_choice") {
+        let memberships: Vec<BackendContextCharacter> = state
+            .db
+            .query(&format!(
+                "SELECT * FROM backend_context_characters WHERE contact_ref = {} AND party_id = {}",
+                sql_string_literal(&encounter.encounter_id),
+                sql_string_literal(&party.id)
+            ))
+            .await
+            .unwrap_or_default();
+        for membership in memberships.into_iter().filter(|row| row.alive) {
+            if let Ok(Some(character)) = state
+                .db
+                .query_one::<Character>(&format!(
+                    "SELECT * FROM backend_characters WHERE id = {}",
+                    membership.character_id
+                ))
+                .await
+            {
+                counterparties.push(character);
+            }
+        }
+    }
     let stats: Vec<CharacterStats> = state
         .db
         .query("SELECT * FROM backend_character_stats")
@@ -381,6 +405,7 @@ pub(super) async fn camp(
             planned_wake_minute,
             continue_block_reason,
             encounter.as_ref(),
+            &counterparties,
             trial.map(|trial| {
                 (
                     trial.case_id.as_str(),
@@ -575,6 +600,74 @@ pub(super) async fn resolve_camp_encounter(
                 json!(form.choice),
                 json!(form.expected_revision),
                 json!(form.action_id),
+            ],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to("/camp").into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct CounterpartyContactForm {
+    target_id: u64,
+    contact_ref: String,
+    expected_revision: u32,
+    action_id: String,
+}
+
+pub(super) async fn contact_camp_counterparty(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<CounterpartyContactForm>,
+) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call(
+            "contact_context_character",
+            &[
+                json!(character_id),
+                json!(form.target_id),
+                json!(form.contact_ref),
+                json!(form.expected_revision),
+                json!(form.action_id),
+            ],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to("/camp").into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct CounterpartyBandageForm {
+    patient_id: u64,
+}
+
+pub(super) async fn bandage_camp_counterparty(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<CounterpartyBandageForm>,
+) -> Response {
+    let Some(actor_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call(
+            "treat_limb",
+            &[
+                json!(actor_id),
+                json!(form.patient_id),
+                json!("left-arm"),
+                json!("bandage"),
+                crate::spacetimedb::sats_option(None::<u64>),
+                json!(false),
             ],
         )
         .await

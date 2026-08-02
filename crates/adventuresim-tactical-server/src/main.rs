@@ -29,6 +29,18 @@ const MISSION_TIMEOUT_SECS: f32 = 300.0;
 /// Level map size.
 const TERRAIN_SIZE: usize = 100;
 
+/// Transient mission projection: durable Characters keep their strategic
+/// baseline while tactical combat receives mission difficulty/escalation.
+fn mission_enemy_scale(difficulty: i32, combat_scale_bps: u32, countermeasure_bps: u32) -> f32 {
+    let difficulty_scale = 1.0 + (difficulty.saturating_sub(1).max(0) as f32 * 0.05);
+    difficulty_scale * (combat_scale_bps as f32 / 10_000.0) * (countermeasure_bps as f32 / 10_000.0)
+}
+
+#[derive(Component)]
+struct MissionOpeningAwareness {
+    party_has_surprise: bool,
+}
+
 fn tactical_covered_parts(parts: &[EquipmentBodyPart]) -> [bool; 7] {
     let mut covered = [false; 7];
     for part in parts {
@@ -201,7 +213,7 @@ fn spawn_connected_player(
     q_loading: &Query<(Entity, &LoadingPlayer)>,
     q_scene: &Query<&SceneTerrain>,
 ) {
-    let entity = if player.character.temporary {
+    let entity = if player.mission_side == TacticalMissionSide::Enemy {
         cmd.spawn(MissionEnemy).id()
     } else {
         let Some((entity, _)) = q_loading
@@ -217,7 +229,7 @@ fn spawn_connected_player(
         entity
     };
 
-    let skills = Skills {
+    let mut skills = Skills {
         polearm_hours: player.skills.polearm_hours,
         axe_hours: player.skills.axe_hours,
         bludgeon_hours: player.skills.bludgeon_hours,
@@ -270,7 +282,7 @@ fn spawn_connected_player(
         tailoring_hours: player.skills.tailoring_hours,
         smithing_hours: player.skills.smithing_hours,
     };
-    let limbs = Limbs {
+    let mut limbs = Limbs {
         left_arm: player.limbs.left_arm_health,
         right_arm: player.limbs.right_arm_health,
         left_leg: player.limbs.left_leg_health,
@@ -279,7 +291,7 @@ fn spawn_connected_player(
         stomach: player.limbs.stomach_health,
         head: player.limbs.head_health,
     };
-    let attributes = Attributes {
+    let mut attributes = Attributes {
         endurance: player.attrs.endurance,
         immunity: player.attrs.immunity,
         gut: player.attrs.gut,
@@ -296,6 +308,56 @@ fn spawn_connected_player(
         left_leg_agility: player.attrs.left_leg_agility,
         right_leg_agility: player.attrs.right_leg_agility,
     };
+    if player.mission_side == TacticalMissionSide::Enemy {
+        let scale = mission_enemy_scale(
+            player.enemy_difficulty,
+            player.enemy_combat_scale_bps,
+            player.countermeasure_multiplier_bps,
+        );
+        for hours in [
+            &mut skills.polearm_hours,
+            &mut skills.axe_hours,
+            &mut skills.bludgeon_hours,
+            &mut skills.sword_hours,
+            &mut skills.knife_hours,
+            &mut skills.dodge_hours,
+            &mut skills.block_hours,
+            &mut skills.bow_hours,
+            &mut skills.crossbow_hours,
+            &mut skills.firearm_hours,
+            &mut skills.throw_hours,
+        ] {
+            *hours *= scale;
+        }
+        for attribute in [
+            &mut attributes.endurance,
+            &mut attributes.gut,
+            &mut attributes.instinct,
+            &mut attributes.eyesight,
+            &mut attributes.hearing,
+            &mut attributes.left_arm_strength,
+            &mut attributes.right_arm_strength,
+            &mut attributes.left_leg_strength,
+            &mut attributes.right_leg_strength,
+            &mut attributes.left_arm_agility,
+            &mut attributes.right_arm_agility,
+            &mut attributes.left_leg_agility,
+            &mut attributes.right_leg_agility,
+        ] {
+            *attribute *= scale;
+        }
+        for health in [
+            &mut limbs.left_arm,
+            &mut limbs.right_arm,
+            &mut limbs.left_leg,
+            &mut limbs.right_leg,
+            &mut limbs.chest,
+            &mut limbs.stomach,
+            &mut limbs.head,
+        ] {
+            *health *= scale;
+        }
+    }
     let stats = Stats {
         calories_used: player.stats.calories_used,
         focus: player.stats.focus,
@@ -329,6 +391,9 @@ fn spawn_connected_player(
         limbs,
         attributes,
         stats,
+        MissionOpeningAwareness {
+            party_has_surprise: player.party_has_surprise,
+        },
         Transform::from_xyz(spawn_position.x, spawn_height, spawn_position.y),
         (
             player_collider.clone(),
@@ -552,16 +617,8 @@ fn on_server_started(
         default(),
     )?;
 
-    if args.required_enemy_kills > 0 {
-        info!(
-            "Requesting {} mission enemies...",
-            args.required_enemy_kills
-        );
-        for _ in 0..args.required_enemy_kills {
-            conn.reducers()
-                .create_temporary_character(conn.identity())?;
-        }
-    }
+    // Strategic authority enrolls the mission's exact durable enemy roster as
+    // part of server creation. ConnectedPlayer delivery spawns those rows.
 
     Ok(())
 }
@@ -663,4 +720,19 @@ fn player_collider() -> Collider {
 
 fn player_spawn_offset(collider: &Collider) -> f32 {
     -collider.aabb(default(), Rotation::default()).min.y
+}
+
+#[cfg(test)]
+mod mission_projection_tests {
+    use super::mission_enemy_scale;
+
+    #[test]
+    fn same_durable_enemy_identity_projects_different_mission_strength() {
+        let baseline = mission_enemy_scale(1, 10_000, 10_000);
+        let escalated = mission_enemy_scale(4, 13_000, 10_000);
+        let countered = mission_enemy_scale(4, 13_000, 7_500);
+        assert_eq!(baseline, 1.0);
+        assert!(escalated > baseline);
+        assert!(countered < escalated);
+    }
 }

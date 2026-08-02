@@ -54,6 +54,8 @@ pub struct TacticalServerRequest {
     pub enemy_combat_scale_bps: u32,
     pub countermeasure_multiplier_bps: u32,
     pub normalized_combat_power: u32,
+    pub enemy_character_ids: Vec<u64>,
+    pub party_has_surprise: bool,
 }
 
 /// Active tactical server instance
@@ -76,6 +78,8 @@ pub struct TacticalServer {
     pub enemy_combat_scale_bps: u32,
     pub countermeasure_multiplier_bps: u32,
     pub normalized_combat_power: u32,
+    pub enemy_character_ids: Vec<u64>,
+    pub party_has_surprise: bool,
 }
 
 #[view(accessor = tactical_server_request, public)]
@@ -192,11 +196,22 @@ pub fn revoke_tactical_server_claim(
 #[derive(SpacetimeType, Clone, Debug)]
 pub struct ConnectedPlayer {
     pub character: Character,
+    pub mission_side: TacticalMissionSide,
     pub items: Vec<ConnectedPlayerItem>,
     pub skills: CharacterSkills,
     pub stats: CharacterStats,
     pub attrs: CharacterAttributes,
     pub limbs: CharacterLimbs,
+    pub enemy_difficulty: i32,
+    pub enemy_combat_scale_bps: u32,
+    pub countermeasure_multiplier_bps: u32,
+    pub party_has_surprise: bool,
+}
+
+#[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TacticalMissionSide {
+    Party,
+    Enemy,
 }
 
 #[derive(SpacetimeType, Clone, Debug)]
@@ -245,13 +260,33 @@ pub fn connected_players(ctx: &ViewContext) -> Vec<ConnectedPlayer> {
             let stats = ctx.db.character_stats().character_id().find(character.id)?;
             let items = connected_player_items(ctx, character.id).collect();
 
+            let server = ctx
+                .db
+                .tactical_server_authority()
+                .identity()
+                .find(ctx.sender());
+            let mission_side = server
+                .as_ref()
+                .filter(|server| server.enemy_character_ids.contains(&character.id))
+                .map_or(TacticalMissionSide::Party, |_| TacticalMissionSide::Enemy);
             Some(ConnectedPlayer {
                 character,
+                mission_side,
                 items,
                 skills,
                 limbs,
                 attrs,
                 stats,
+                enemy_difficulty: server.as_ref().map_or(1, |server| server.enemy_difficulty),
+                enemy_combat_scale_bps: server
+                    .as_ref()
+                    .map_or(10_000, |server| server.enemy_combat_scale_bps),
+                countermeasure_multiplier_bps: server
+                    .as_ref()
+                    .map_or(10_000, |server| server.countermeasure_multiplier_bps),
+                party_has_surprise: server
+                    .as_ref()
+                    .is_some_and(|server| server.party_has_surprise),
             })
         })
         .collect()
@@ -378,12 +413,12 @@ pub fn enter_mission(
         .ok_or_else(|| format!("Server {server} not found"))?;
 
     if !character.temporary {
-        let character_party = character
-            .party_id
-            .as_deref()
-            .ok_or("Character has no party")?;
-        if character_party != server.party_id {
-            return Err("Character is not a member of this mission's party".into());
+        let enemy = server.enemy_character_ids.contains(&character_id);
+        let character_party = character.party_id.as_deref();
+        if !enemy && character_party != Some(server.party_id.as_str()) {
+            return Err(
+                "Character is neither a party member nor an authorized mission enemy".into(),
+            );
         }
         let party = ctx
             .db
@@ -584,6 +619,10 @@ pub fn request_tactical_server(
         return Err("Party quest already has a pending or active tactical server".into());
     }
 
+    let enemy_character_ids = mission.enemy_character_ids.clone();
+    if enemy_character_ids.len() != mission.enemy_count as usize {
+        return Err("Tactical mission roster does not match bound mission authority".into());
+    }
     log::info!("Tactical server for '{mission_id}' requested");
     ctx.db
         .tactical_server_request_authority()
@@ -598,6 +637,8 @@ pub fn request_tactical_server(
             enemy_combat_scale_bps: mission.enemy_combat_scale_bps,
             countermeasure_multiplier_bps: 10_000,
             normalized_combat_power: mission.normalized_combat_power,
+            enemy_character_ids,
+            party_has_surprise: !mission.contacted_before_combat,
         });
 
     Ok(())
@@ -663,6 +704,8 @@ pub fn create_tactical_server_for_request(
         request.enemy_combat_scale_bps,
         request.countermeasure_multiplier_bps,
         request.normalized_combat_power,
+        request.enemy_character_ids,
+        request.party_has_surprise,
         addr,
         cert_digest,
     )
@@ -682,6 +725,8 @@ fn insert_tactical_server(
     enemy_combat_scale_bps: u32,
     countermeasure_multiplier_bps: u32,
     normalized_combat_power: u32,
+    enemy_character_ids: Vec<u64>,
+    party_has_surprise: bool,
     addr: String,
     cert_digest: String,
 ) -> Result<(), String> {
@@ -720,8 +765,13 @@ fn insert_tactical_server(
         enemy_combat_scale_bps,
         countermeasure_multiplier_bps,
         normalized_combat_power,
+        enemy_character_ids: enemy_character_ids.clone(),
+        party_has_surprise,
     };
     ctx.db.tactical_server_authority().insert(server);
+    for enemy_id in enemy_character_ids {
+        enter_mission(ctx, enemy_id, ctx.sender())?;
+    }
     Ok(())
 }
 
@@ -784,12 +834,11 @@ fn end_tactical_server_by_instance(
         if mission.party_id != server.party_id {
             return Err("Mission authority changed before completion".into());
         }
-        if let Some(adventurer) = connected.iter().find(|character| !character.temporary) {
-            if adventurer.party_id.as_deref() == Some(server.party_id.as_str()) {
-                complete_bound_mission_success(ctx, &server.mission_id)?;
-            } else {
-                fail_bound_mission_attempt(ctx, &server.mission_id)?;
-            }
+        if connected
+            .iter()
+            .any(|character| character.party_id.as_deref() == Some(server.party_id.as_str()))
+        {
+            complete_bound_mission_success(ctx, &server.mission_id)?;
         } else {
             fail_bound_mission_attempt(ctx, &server.mission_id)?;
         }

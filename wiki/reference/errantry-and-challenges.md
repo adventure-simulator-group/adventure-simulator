@@ -225,3 +225,7 @@ insight, which remains visible after returning to camp so equipment can be
 prepared accordingly. Rest at least one hour to exercise the wounded-courier interruption, or
 use **Continue travel** to bypass either preliminary challenge and reach the
 bound finale.
+
+Wounded couriers and knights are durable Characters with an actual untreated
+limb wound and treatment consent. Their authored outcome observes an ordinary
+successful bandage rather than consuming a bandage through a bespoke effect.

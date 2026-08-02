@@ -93,15 +93,34 @@ pub(super) async fn surgery(
         return Html("<h1>Choose a character first</h1>".into());
     };
     let party_members = get_active_party_members(&state, Some(&active)).await;
-    let Some(patient) = party_members
+    let patient = party_members
         .iter()
         .find(|member| member.id == patient_id)
-        .cloned()
-    else {
-        return Html("<h1>Party member not found</h1>".into());
+        .cloned();
+    let patient = match patient {
+        Some(patient) => patient,
+        None => match state
+            .db
+            .query_one::<Character>(&format!(
+                "SELECT * FROM backend_characters WHERE id = {patient_id}"
+            ))
+            .await
+        {
+            Ok(Some(patient)) => patient,
+            _ => return Html("<h1>Patient not found</h1>".into()),
+        },
     };
+    let contextual_patient = state
+        .db
+        .query::<BackendContextCharacter>(&format!(
+            "SELECT * FROM backend_context_characters WHERE character_id = {patient_id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .any(|row| row.alive && row.location_id == id);
     if !character_is_at_location(&active, &location)
-        || !character_is_at_location(&patient, &location)
+        || (!character_is_at_location(&patient, &location) && !contextual_patient)
     {
         return Html("<h1>Surgeon and patient must be together</h1>".into());
     }

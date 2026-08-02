@@ -7,7 +7,7 @@ use axum::{
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::{
@@ -25,12 +25,12 @@ use super::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BackendCorpse,
-    BackendInvestigationAction, BackendOutbreakPatient, BattleLootItem, BattleResult, Character,
-    CharacterAttributes, CharacterLimbs, CharacterStats, CharacterStrategicCondition,
-    CharacterTime, CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
-    FoodLot, InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyStake,
-    Settlement,
+    AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BackendContextCharacter,
+    BackendCorpse, BackendInvestigationAction, BackendOutbreakPatient, BattleLootItem,
+    BattleResult, Character, CharacterAttributes, CharacterLimbs, CharacterStats,
+    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, ContractPresentation,
+    ContractPresentationStatus, FoodLot, InventoryQuantityTarget, ItemDefinition, Party,
+    PartyInventoryItem, PartyStake, Settlement,
 };
 use crate::templates::quest::{
     CaseSitePagePresentation, CaseSiteRecoveryNotice, quest_location_enemy_page,
@@ -47,6 +47,10 @@ pub fn routes() -> Router<AppState> {
         .route("/locations/case-site/{id}", get(quest_location_base))
         .route("/locations/case-site/{id}/map", get(quest_location_map))
         .route("/locations/case-site/{id}/enemy", get(quest_location_enemy))
+        .route(
+            "/locations/case-site/{id}/counterparty/contact",
+            post(contact_quest_counterparty),
+        )
         .route("/corpses/{corpse_id}/action", post(perform_corpse_action))
         .route(
             "/outbreak-patients/{patient_ref}/physiology",
@@ -1096,6 +1100,30 @@ async fn render_quest_location(
         can_control,
         party_ready,
     );
+    let context_memberships: Vec<BackendContextCharacter> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM backend_context_characters WHERE location_id = {}",
+            sql_string_literal(&site.case_site_id)
+        ))
+        .await
+        .unwrap_or_default();
+    let counterparty_contact = context_memberships
+        .first()
+        .map(|row| (row.contact_ref.clone(), row.revision));
+    let mut counterparties = Vec::new();
+    for membership in context_memberships.into_iter().filter(|row| row.alive) {
+        if let Ok(Some(counterparty)) = state
+            .db
+            .query_one::<Character>(&format!(
+                "SELECT * FROM backend_characters WHERE id = {}",
+                membership.character_id
+            ))
+            .await
+        {
+            counterparties.push(counterparty);
+        }
+    }
     let onsite_actions = onsite_investigation_actions(
         state
             .db
@@ -1191,6 +1219,13 @@ async fn render_quest_location(
             &onsite_actions,
             character.as_ref(),
             &party_members,
+            &counterparties,
+            counterparty_contact
+                .as_ref()
+                .map(|(contact_ref, _)| contact_ref.as_str()),
+            counterparty_contact
+                .as_ref()
+                .map_or(1, |(_, revision)| *revision),
             can_fight,
             resolved,
             autoresolve_report.as_ref(),
@@ -1308,6 +1343,43 @@ async fn autoresolve_quest(
         .flatten()
         .and_then(|character| character.current_case_site_id);
     autoresolve_redirect(case_site_id.as_deref(), outcome)
+}
+
+#[derive(Debug, Deserialize)]
+struct QuestCounterpartyContactForm {
+    target_id: u64,
+    contact_ref: String,
+    expected_revision: u32,
+    action_id: String,
+}
+
+async fn contact_quest_counterparty(
+    State(state): State<AppState>,
+    Path(case_site_id): Path<String>,
+    session: Session,
+    Form(form): Form<QuestCounterpartyContactForm>,
+) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    let return_to = format!("/locations/case-site/{case_site_id}/enemy");
+    match state
+        .db
+        .call(
+            "contact_context_character",
+            &[
+                json!(character_id),
+                json!(form.target_id),
+                json!(form.contact_ref),
+                json!(form.expected_revision),
+                json!(form.action_id),
+            ],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to(&return_to).into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
 }
 
 fn autoresolve_redirect<E>(
