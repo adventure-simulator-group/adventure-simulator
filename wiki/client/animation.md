@@ -346,12 +346,12 @@ useful interpolation, but they do not redefine semantic poses owned by another
 file. The catalog entries above designate exactly one authoritative file and
 frame for every required semantic pose.
 
-The procedural humanoid pass initially binds the case-sensitive names `hips`,
-`chest`, `head`, `thigh.L`, `shin.L`, `foot.L`, `thigh.R`, `shin.R`, `foot.R`,
-`upper_arm.L`, `forearm.L`, `hand.L`, `upper_arm.R`, `forearm.R`, and `hand.R`.
-Additional twist, toe, finger, face, weapon, or attachment bones are permitted
-and remain under authored FK until a procedural constraint explicitly uses
-them. See the tactical-client README for the concise exporter checklist.
+The canonical procedural rig uses `root`, `pelvis`, `stomach_01`,
+`stomach_02`, `chest`, `neck_01`, `neck_02`, and `head`; paired clavicle,
+major arm, arm-twist, hand, major leg, leg-twist, foot, and toe bones use the
+`.L`/`.R` suffix. `weapon.L` and `weapon.R` are hand attachment sockets. The
+scene-root animation cylinder is authoring-only. See the tactical-client README
+for the concise exporter checklist.
 
 The server-owned character transform remains authoritative. Authored root
 offsets may shape a step or lean visually, but the evaluator reconciles them

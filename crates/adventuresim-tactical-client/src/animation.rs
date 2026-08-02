@@ -6,12 +6,14 @@ use std::{
 use adventuresim_tactical_core::prelude::*;
 use bevy::{
     animation::{AnimatedBy, AnimationTargetId},
+    app::AnimationSystems,
     asset::LoadState,
     ecs::hierarchy::ChildSpawnerCommands,
     gltf::Gltf,
     prelude::*,
 };
 
+mod procedural;
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
 const ANIMATION_FPS: f32 = 30.0;
@@ -30,12 +32,23 @@ impl Plugin for TacticalAnimationPlugin {
                     attach_loaded_rig_scenes,
                     establish_animation_targets,
                     identify_animation_players,
+                    procedural::bind_humanoid_bones,
                     evaluate_skeletons,
                     sync_animation_graphs,
                     drive_fk_players,
                     update_rig_visibility,
                 )
                     .chain(),
+            )
+            .add_systems(
+                PostUpdate,
+                (
+                    procedural::apply_head_and_torso_look,
+                    procedural::apply_terrain_leg_ik,
+                )
+                    .chain()
+                    .after(AnimationSystems)
+                    .before(TransformSystems::Propagate),
             );
     }
 }
@@ -356,7 +369,7 @@ struct WeightedClip {
 pub struct FallbackAnimationRig(pub Entity);
 
 #[derive(Component)]
-struct AnimationRigScene(pub Entity);
+pub(super) struct AnimationRigScene(pub Entity);
 
 #[derive(Component)]
 struct AnimationRigAttached;

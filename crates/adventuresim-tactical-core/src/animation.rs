@@ -551,6 +551,39 @@ impl Default for SkeletonState {
     }
 }
 
+impl SkeletonState {
+    pub fn begin_action(&mut self, action: SkeletonAction, start_tick: u64, contact_tick: u64) {
+        self.action = action;
+        self.action_phase = 0.0;
+        self.action_started_tick = start_tick;
+        self.action_contact_tick = contact_tick.max(start_tick + 1);
+    }
+
+    /// Advances an action whose contact is the midpoint of its visual
+    /// timeline. Recovery gets the same bounded duration as preparation.
+    pub fn advance_action(&mut self, current_tick: u64) {
+        if self.action == SkeletonAction::None {
+            return;
+        }
+        let preparation = self
+            .action_contact_tick
+            .saturating_sub(self.action_started_tick)
+            .max(1);
+        let end_tick = self.action_contact_tick.saturating_add(preparation);
+        if current_tick >= end_tick {
+            self.action = SkeletonAction::None;
+            self.action_phase = 0.0;
+            return;
+        }
+        self.action_phase = if current_tick <= self.action_contact_tick {
+            0.5 * current_tick.saturating_sub(self.action_started_tick) as f32 / preparation as f32
+        } else {
+            0.5 + 0.5 * current_tick.saturating_sub(self.action_contact_tick) as f32
+                / preparation as f32
+        };
+    }
+}
+
 /// One weighted authored pose contributing to the FK result.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PoseSampling {
@@ -1165,5 +1198,19 @@ mod tests {
                 progress: 0.5,
             }
         );
+    }
+
+    #[test]
+    fn authoritative_action_clock_centers_contact_and_finishes_recovery() {
+        let mut state = SkeletonState::default();
+        state.begin_action(SkeletonAction::Attack, 10, 20);
+        state.advance_action(15);
+        assert_eq!(state.action_phase, 0.25);
+        state.advance_action(20);
+        assert_eq!(state.action_phase, 0.5);
+        state.advance_action(25);
+        assert_eq!(state.action_phase, 0.75);
+        state.advance_action(30);
+        assert_eq!(state.action, SkeletonAction::None);
     }
 }
