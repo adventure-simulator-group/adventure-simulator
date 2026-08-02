@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use adventuresim_tactical_core::prelude::*;
 use bevy::prelude::*;
 
-use super::AnimationRigScene;
+use super::{AnimationPlayback, AnimationRigScene, ImpactReaction};
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct HumanoidBone {
@@ -144,6 +144,86 @@ pub(super) fn apply_head_and_torso_look(
     }
 }
 
+/// Constructs the opposite gait half-cycle without mirroring handed upper-body
+/// carriage. The evaluator can continuously blend into or out of the mirror.
+pub(super) fn apply_lower_body_mirroring(
+    playbacks: Query<&AnimationPlayback>,
+    mut bones: ParamSet<(
+        Query<(Entity, &HumanoidBone, &Transform)>,
+        Query<&mut Transform>,
+    )>,
+) {
+    let mut rigs = BTreeMap::<Entity, BTreeMap<BoneRole, (Entity, Transform)>>::new();
+    {
+        let snapshots = bones.p0();
+        for (entity, bone, transform) in &snapshots {
+            rigs.entry(bone.owner)
+                .or_default()
+                .insert(bone.role, (entity, *transform));
+        }
+    }
+    for (owner, rig) in rigs {
+        let Ok(playback) = playbacks.get(owner) else {
+            continue;
+        };
+        let weight = playback.lower_body_mirror;
+        if weight <= f32::EPSILON {
+            continue;
+        }
+        for (left_role, right_role) in [
+            (BoneRole::ThighLeft, BoneRole::ThighRight),
+            (BoneRole::ShinLeft, BoneRole::ShinRight),
+            (BoneRole::FootLeft, BoneRole::FootRight),
+        ] {
+            let (Some((left_entity, left)), Some((right_entity, right))) =
+                (rig.get(&left_role), rig.get(&right_role))
+            else {
+                continue;
+            };
+            let mirrored_right = mirrored_across_anatomical_center(*right);
+            let mirrored_left = mirrored_across_anatomical_center(*left);
+            let mut transforms = bones.p1();
+            if let Ok(mut transform) = transforms.get_mut(*left_entity) {
+                transform.translation = left.translation.lerp(mirrored_right.translation, weight);
+                transform.rotation = left.rotation.slerp(mirrored_right.rotation, weight);
+            }
+            if let Ok(mut transform) = transforms.get_mut(*right_entity) {
+                transform.translation = right.translation.lerp(mirrored_left.translation, weight);
+                transform.rotation = right.rotation.slerp(mirrored_left.rotation, weight);
+            }
+        }
+    }
+}
+
+fn mirrored_across_anatomical_center(mut transform: Transform) -> Transform {
+    transform.translation.x = -transform.translation.x;
+    let rotation = transform.rotation;
+    transform.rotation = Quat::from_xyzw(rotation.x, -rotation.y, -rotation.z, rotation.w);
+    transform
+}
+
+pub(super) fn apply_impact_reaction(
+    reactions: Query<&ImpactReaction>,
+    mut bones: Query<(&HumanoidBone, &mut Transform)>,
+) {
+    for (bone, mut transform) in &mut bones {
+        let Ok(reaction) = reactions.get(bone.owner) else {
+            continue;
+        };
+        if !matches!(bone.role, BoneRole::Chest | BoneRole::Head) {
+            continue;
+        }
+        let progress = 1.0 - (reaction.remaining / reaction.duration).clamp(0.0, 1.0);
+        let pulse = (progress * std::f32::consts::PI).sin() * reaction.strength;
+        let scale = if bone.role == BoneRole::Head {
+            0.12
+        } else {
+            0.2
+        };
+        transform.rotation *= Quat::from_rotation_x(-pulse * scale);
+    }
+}
+
 #[derive(Clone, Copy)]
 struct BoneSnapshot {
     entity: Entity,
@@ -195,7 +275,7 @@ pub(super) fn apply_terrain_leg_ik(
             continue;
         }
         let plant_left = skeleton.gait_phase.rem_euclid(1.0) < 0.5;
-        for (upper_role, lower_role, foot_role, planted) in [
+        let legs = [
             (
                 BoneRole::ThighLeft,
                 BoneRole::ShinLeft,
@@ -208,7 +288,25 @@ pub(super) fn apply_terrain_leg_ik(
                 BoneRole::FootRight,
                 !plant_left,
             ),
-        ] {
+        ];
+        let mut hip_shift = 0.0_f32;
+        for (_, _, foot_role, _) in legs {
+            let Some(foot) = rig.get(&foot_role) else {
+                continue;
+            };
+            let position = foot.global.translation();
+            if let Some(height) = terrain.height_at(position.xz()) {
+                hip_shift = hip_shift.min((height - position.y).clamp(-0.2, 0.0));
+            }
+        }
+        if hip_shift < -0.001
+            && let Some(pelvis) = rig.get(&BoneRole::Pelvis)
+            && let Ok(mut transform) = transforms.p1().get_mut(pelvis.entity)
+        {
+            transform.translation.y += hip_shift;
+        }
+        let root_offset = Vec3::Y * hip_shift;
+        for (upper_role, lower_role, foot_role, planted) in legs {
             let (Some(upper), Some(lower), Some(foot)) = (
                 rig.get(&upper_role),
                 rig.get(&lower_role),
@@ -226,7 +324,14 @@ pub(super) fn apply_terrain_leg_ik(
                 continue;
             }
             let target = foot_position + Vec3::Y * correction;
-            solve_and_apply_leg(*upper, *lower, *foot, target, &mut transforms.p1());
+            solve_and_apply_leg(
+                *upper,
+                *lower,
+                *foot,
+                target,
+                root_offset,
+                &mut transforms.p1(),
+            );
         }
     }
 }
@@ -236,11 +341,12 @@ fn solve_and_apply_leg(
     lower: BoneSnapshot,
     foot: BoneSnapshot,
     target: Vec3,
+    root_offset: Vec3,
     transforms: &mut Query<&mut Transform>,
 ) {
-    let root = upper.global.translation();
-    let knee = lower.global.translation();
-    let end = foot.global.translation();
+    let root = upper.global.translation() + root_offset;
+    let knee = lower.global.translation() + root_offset;
+    let end = foot.global.translation() + root_offset;
     let upper_length = root.distance(knee);
     let lower_length = knee.distance(end);
     let Some(knee_target) =
@@ -341,5 +447,18 @@ mod tests {
         )
         .unwrap();
         assert!(solved.is_finite());
+    }
+
+    #[test]
+    fn lower_body_mirror_is_an_involution() {
+        let original = Transform::from_xyz(0.3, -0.8, 0.2).with_rotation(Quat::from_euler(
+            EulerRot::XYZ,
+            0.2,
+            -0.3,
+            0.4,
+        ));
+        let twice = mirrored_across_anatomical_center(mirrored_across_anatomical_center(original));
+        assert!(twice.translation.abs_diff_eq(original.translation, 0.0001));
+        assert!(twice.rotation.abs_diff_eq(original.rotation, 0.0001));
     }
 }

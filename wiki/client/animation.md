@@ -388,8 +388,10 @@ identifies the instant at which the weapon, hand, or claw crosses its canonical
 opponent-side contact plane. The engine remains responsible for authoritative
 collision and damage.
 
-Locomotion poses use the **left** side as their canonical first half-cycle.
-The runtime may construct the opposite half by mirroring lower-body motion.
+Locomotion semantic anchors use the **left** side as their canonical first
+half-cycle, while each authored gait file supplies its complete second half and
+closure. Lower-body mirroring is retained only as an explicit fallback for a
+resolved sample whose source lacks authored opposite-foot frames.
 Attack and guard poses are not assumed to be whole-body mirrorable because a
 weapon may remain in the same hand.
 
