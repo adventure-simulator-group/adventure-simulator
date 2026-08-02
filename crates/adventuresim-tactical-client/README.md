@@ -67,6 +67,16 @@ Finger and breast bones remain under authored FK. Twist, toe, and weapon socket
 bones are canonical parts of the base hierarchy and are available to later
 procedural constraints.
 
+The final client-only pose pass distributes bounded look across the actual
+spine/neck chain, converts bounded pelvis compensation through its real parent,
+and solves legs and optional hand targets through the twist-intermediate
+hierarchy without overwriting authored twist locals. Foot slope alignment uses
+the authored bind transform to derive its sole-up axis; local +Y is
+ankle-to-toe on this rig and is not a sole normal. A primary hand socket drives
+a held weapon, then an optional weapon-local secondary grip drives the off hand.
+These targets and constraints are client-only and never extend replicated
+`SkeletonState`.
+
 ## Missing assets
 
 Pack lookup first follows the pack's single fallback chain. If the requested
