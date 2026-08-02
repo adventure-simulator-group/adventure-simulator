@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1702)
+## Files (1705)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -31,6 +31,11 @@ development, or other wiki document before changing a subsystem.
 - `assets/TownA.glb` — Binary game or UI asset.
 - `assets/TownB.glb` — Binary game or UI asset.
 - `assets/world-data/ieg-religion-1544.csv` — Repository support file.
+- `assets_src/base.blend` — Repository support file.
+- `assets_src/base.blend1` — Repository support file.
+- `assets_src/base.casc` — Repository support file.
+- `assets_src/base.glb` — Binary game or UI asset.
+- `assets_src/base.qrigcasc` — Repository support file.
 - `book.toml` — Tooling or build configuration.
 - `content/dialogue/examples.yaml` — Repository support file.
 - `content/dialogue/organizations.yaml` — Repository support file.
@@ -1168,8 +1173,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-server/src/combat/melee.rs` — Rust source module.
 - `crates/adventuresim-tactical-server/src/combat/protocol.rs` — Rust source module.
 - `crates/adventuresim-tactical-server/src/combat/ranged.rs` — Rust source module.
-- `crates/adventuresim-tactical-server/src/main.rs` — Rust source module for this component.
-- `crates/adventuresim-tactical-server/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/mission/enrollment.rs` — Rust source module.
 - `crates/adventuresim-tactical-server/src/mission/mod.rs` — Rust source module.
