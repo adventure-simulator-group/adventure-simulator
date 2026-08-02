@@ -75,6 +75,8 @@ chain (for example run to walk and thrust to slash), restarting pack lookup for
 each candidate. Missing, unloaded, zero-animation, multiple-animation, or short
 motion files affect only that motion. Every local or remote character also gets
 a generated T-pose safety net until the base scene is available. If no pose
-candidate resolves, the client uses the authored bind pose, or that generated
-T-pose when the base scene itself is unavailable; incomplete in-progress art
-does not panic.
+candidate resolves, the client uses the complete authored `base.glb` bind
+T-pose. The generated mannequin appears only when the compatible base rig
+itself is unavailable. Bind locals are reset before every animation evaluation
+so partial clips cannot accumulate stale or procedural transforms. Incomplete
+in-progress art does not panic.
