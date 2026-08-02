@@ -171,6 +171,19 @@ The fallback mechanism means that this selection need not duplicate identical
 walking, prone, or airborne poses. A weapon pack may override those poses when
 the weapon genuinely changes how the character carries their body.
 
+During asset production, runtime lookup is deliberately more tolerant than
+final content validation. After the selected pack's single fallback chain
+misses a semantic name, the client follows a deterministic similar-pose chain
+and restarts pack lookup for each candidate. Examples include `run_contact` to
+`walk_contact`, `run_flight` to `walk_passing`, directional jumps to the
+corresponding center jump, thrust attacks to the same slash variant, and then
+attack or block poses to the appropriate guard. If neither chain resolves, the
+client displays the skeleton's authored bind pose, which is a T-pose for the
+humanoid convention. Release validation still requires the complete unarmed
+root described above; this graceful runtime behavior exists so incomplete or
+temporarily unavailable art never crashes the tactical client or makes an
+actor disappear.
+
 ## Authored pose contract
 
 All authored poses in a compatible pack chain must follow the same conventions:
@@ -183,6 +196,146 @@ All authored poses in a compatible pack chain must follow the same conventions:
 - an action phase or event marker for attack contact and other important
   moments; and
 - no baked assumption that visual root movement grants gameplay movement.
+
+### Animation file convention
+
+Every authored motion has its own Cascadeur source file and matching binary
+glTF export. Files are grouped first by skeleton family. The initial humanoid
+family uses `biped/`:
+
+```text
+biped/idle_relaxed.casc
+biped/idle_relaxed.glb
+biped/walk.casc
+biped/walk.glb
+```
+
+The `.casc` and `.glb` files always share a basename. `.casc` is the editable
+Cascadeur scene and `.glb` is its runtime export. Do not place several
+unrelated motions at undocumented ranges of one long timeline, and do not use
+Cascadeur Animation Tracks as animation names: tracks organize parts of a rig,
+not runtime clips.
+
+A file may contain more than one required semantic pose when those poses are
+phases of the same coherent motion. For example, `biped/walk.casc` contains a
+complete walk cycle, with particular keyframes designated as `walk_contact`
+and `walk_passing`. The corresponding `biped/walk.glb` preserves the full
+motion. The animation catalog maps each semantic pose to a file and frame; the
+semantic poses are not separate glTF clips. Frames not named by the catalog are
+ordinary in-betweens or endpoint references.
+
+Author at 30 frames per second. Frame numbers in the tables below are part of
+the asset contract. A cyclic file repeats its initial pose on the last frame so
+that it previews as a closed loop; the repeated last frame is not a second
+semantic sample. Cascadeur labels may repeat the semantic names for animator
+convenience, but labels are not relied upon to survive glTF export.
+
+Coordinates are glTF-native meters with +Y up, -Z forward, and +X anatomical
+left. The bind pose is a T-pose. Each exported `.glb` uses the same skeleton,
+bone names, hierarchy, bind pose, and neutral root transform as the rest of its
+compatible pack chain. A root-family file may include the skinned mesh;
+specialized overrides may contain only the compatible skeleton and animation.
+
+#### File and keyframe assignments
+
+Single-pose files place their named semantic pose at frame 0:
+
+| File basename under `biped/` | Semantic pose at frame 0 |
+|---|---|
+| `idle_relaxed` | `idle_relaxed` |
+| `crouch_idle` | `crouch_idle` |
+| `guard_lead_left` | `guard_lead_left` |
+| `guard_lead_right` | `guard_lead_right` |
+| `prone_idle` | `prone_idle` |
+| `supine_idle` | `supine_idle` |
+
+Gaits are complete cycles. Their second half is the opposite-foot counterpart
+of the named first-half samples and is available for interpolation and
+preview, but does not introduce additional semantic names:
+
+| File basename | Frame assignments |
+|---|---|
+| `walk` | 0 `walk_contact`; 8 `walk_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
+| `run` | 0 `run_contact`; 5 `run_flight`; 10 opposite contact; 15 opposite flight; 20 loop closure |
+| `crouch_walk` | 0 `crouch_walk_contact`; 10 `crouch_walk_passing`; 20 opposite contact; 30 opposite passing; 40 loop closure |
+| `prone_crawl` | 0 `prone_crawl_contact`; 8 `prone_crawl_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
+| `prone_strafe` | 0 `prone_strafe_contact`; 8 `prone_strafe_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
+| `supine_scamper` | 0 `supine_scamper_contact`; 8 `supine_scamper_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
+
+Each directional duck is a short out-and-back motion in its own file. Frame 0
+and frame 12 reproduce `crouch_idle` as unnamed endpoint references; frame
+6 is the file's named pose:
+
+| File basename | Semantic pose at frame 6 |
+|---|---|
+| `duck_forward` | `duck_forward` |
+| `duck_backward` | `duck_backward` |
+| `duck_left` | `duck_left` |
+| `duck_right` | `duck_right` |
+
+Each directional jump file uses the same phase layout. Frame 0 is an unnamed
+directional load based on the duck blend, frames 6, 15, and 24 are semantic
+samples, and frame 30 is an unnamed crouch or guard recovery reference:
+
+| File basename | Frame 6 | Frame 15 | Frame 24 |
+|---|---|---|---|
+| `jump_center` | `jump_center_launch` | `jump_center_flight` | `jump_center_landing` |
+| `jump_forward` | `jump_forward_launch` | `jump_forward_flight` | `jump_forward_landing` |
+| `jump_backward` | `jump_backward_launch` | `jump_backward_flight` | `jump_backward_landing` |
+| `jump_left` | `jump_left_launch` | `jump_left_flight` | `jump_left_landing` |
+| `jump_right` | `jump_right_launch` | `jump_right_flight` | `jump_right_landing` |
+
+Each attack recipe has one file named
+`attack_<family>_lead_<left|right>_<stay|switch>`. Frame 0 reproduces its
+starting guard, frames 4, 8, and 13 provide the three semantic poses, and frame
+20 reproduces the appropriate ending guard:
+
+| Frame | Semantic suffix |
+|---:|---|
+| 4 | `_commit` |
+| 8 | `_contact` |
+| 13 | `_follow_through` |
+
+Instantiate that layout for both `thrust` and `slash`, both starting leads, and
+both `stay` and `switch`. For example,
+`biped/attack_thrust_lead_left_switch.casc` and its matching `.glb` provide
+`attack_thrust_lead_left_switch_commit` at frame 4,
+`attack_thrust_lead_left_switch_contact` at frame 8, and
+`attack_thrust_lead_left_switch_follow_through` at frame 13.
+
+Each block contact has its own file using the semantic pose name as its
+basename. Frame 0 reproduces the applicable guard, frame 6 is the named block
+contact, and frame 14 returns toward that guard. Instantiate this layout as:
+
+```text
+block_cut_left_lead_left
+block_cut_left_lead_right
+block_cut_right_lead_left
+block_cut_right_lead_right
+block_thrust_lead_left
+block_thrust_lead_right
+```
+
+The remaining ground transitions each use one motion-coherent file:
+
+| File basename | Frame assignments |
+|---|---|
+| `upright_prone_transition` | 0 upright/crouch reference; 12 `upright_prone_transition`; 24 `prone_idle` reference |
+| `dive` | 0 launch reference; 10 `dive_impact`; 18 `prone_idle` reference |
+| `prone_supine_roll_left` | 0 `prone_idle` reference; 10 `prone_supine_roll_left`; 20 `supine_idle` reference |
+| `prone_supine_roll_right` | 0 `prone_idle` reference; 10 `prone_supine_roll_right`; 20 `supine_idle` reference |
+
+Endpoint references make each file understandable when previewed and provide
+useful interpolation, but they do not redefine semantic poses owned by another
+file. The catalog entries above designate exactly one authoritative file and
+frame for every required semantic pose.
+
+The procedural humanoid pass initially binds the case-sensitive names `hips`,
+`chest`, `head`, `thigh.L`, `shin.L`, `foot.L`, `thigh.R`, `shin.R`, `foot.R`,
+`upper_arm.L`, `forearm.L`, `hand.L`, `upper_arm.R`, `forearm.R`, and `hand.R`.
+Additional twist, toe, finger, face, weapon, or attachment bones are permitted
+and remain under authored FK until a procedural constraint explicitly uses
+them. See the tactical-client README for the concise exporter checklist.
 
 The server-owned character transform remains authoritative. Authored root
 offsets may shape a step or lean visually, but the evaluator reconciles them
