@@ -23,7 +23,7 @@
       "choices": [
         {
           "id": "pay_tribute",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "blocked", "issue": "#377", "reason": "Paying a road counterparty needs shared ownership and transfer authority." },
           "label": "Pay the twelve-groschen tribute",
           "response": [{ "speaker": "ferryman", "text": "Thy silver spareth thee the harsher bank. Sit steady whilst I scull us slowly with the sound oar, and heed how this swollen water useth those who bear great weight.", "reviewed_shakespearean": true }],
           "result": "Thou payest twelve groschen and crossest in fifteen minutes beneath the ferryman's slow sculling. From the ferry thou witnessest a mail-clad rider urge his horse into the deep current; the water forceth both back until they take the shallow gravel margin.",
@@ -40,7 +40,7 @@
         },
         {
           "id": "barter_provisions",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Barter four travel rations for passage",
           "response": [{ "speaker": "ferryman", "text": "Bread keepeth strength when swollen waters idle honest hands. Lay down four rations, and I shall scull thy company slowly across with the sound oar.", "reviewed_shakespearean": true }],
           "result": "Thou barterest four travel rations and crossest in twenty minutes beneath the ferryman's slow sculling. From the ferry thou witnessest a mail-clad rider urge his horse into the deep current; the water forceth both back until they take the shallow gravel margin.",
@@ -57,7 +57,7 @@
         },
         {
           "id": "row_in_lieu",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "relationship_personality"] },
           "label": "Relieve the ferryman at the sound sculling oar",
           "response": [{ "speaker": "ferryman", "text": "Thy back may pay where purse will not. Relieve me at the sound sculling oar; work it when I command, whilst I tend the landing cable and call thy stroke.", "reviewed_shakespearean": true }],
           "result": "Under the ferryman's direction, thou spendest forty-five minutes working the sound sculling oar whilst he tendeth the landing cable and calleth each stroke. During thy labor thou witnessest a mail-clad rider urge his horse into the deep current; the water forceth both back until they take the shallow gravel margin.",
@@ -71,7 +71,7 @@
         },
         {
           "id": "expose_altered_tally",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "blocked", "issue": "#373", "reason": "Exposing a false tally needs shared persuasion and agreement authority." },
           "label": "Read the elder cuts and expose the altered tally",
           "response": [{ "speaker": "ferryman", "text": "Thine eye hath found the witness-mark beneath the fresher knife. Four groschen was the lawful fare; pay that sum, and I shall gainsay thee no further.", "reviewed_shakespearean": true }],
           "result": "Thou matchest the elder cuts to their witness-mark, payest the lawful four-groschen fare, and crossest in thirty minutes beneath the ferryman's slow sculling. During the passage thou witnessest a mail-clad rider urge his horse into the deep current; the water forceth both back until they take the shallow gravel margin.",
@@ -89,7 +89,7 @@
         },
         {
           "id": "organize_repair",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "relationship_personality"] },
           "label": "Organize the stranded travelers to repair the oar",
           "response": [{ "speaker": "ferryman", "text": "I have raw ash, cord, and iron, and know a binding that shall serve awhile. Set thou these waiting travelers to ordered work; beneath my hand we shall splint the west blade for the crossings presently before us.", "reviewed_shakespearean": true }],
           "result": "Thou spendest an hour ordering the waiting company whilst the ferryman shapeth raw ash, cord, and iron into a temporary splint for the west blade, sufficient only for the immediate queued crossings. During that work thou witnessest a mail-clad rider urge his horse into the deep current; the water forceth both back until they take the shallow gravel margin.",
@@ -122,7 +122,7 @@
         },
         {
           "id": "ignore",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["ignore_travel"] },
           "label": "Seek the rough upper ford",
           "response": [],
           "result": "Thou leavest the ferry and spendest three hours reaching and crossing the rough upper ford.",

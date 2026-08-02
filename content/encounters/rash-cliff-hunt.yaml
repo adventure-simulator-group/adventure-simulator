@@ -23,7 +23,7 @@
       "choices": [
         {
           "id": "stalk_safe_switchback",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Stalk the safer switchback and prove the sounder ascent",
           "response": [{ "speaker": "young_lord", "text": "Thou readest these hills more soberly than I. Take the safer winding path, and twelve groschen shall answer thy better judgment if thou reachest the station.", "reviewed_shakespearean": true }],
           "result": "Thou spendest ninety minutes scouting the safer switchback and earnest twelve groschen. From a prepared bow lane upon the lower spur, thou watchest a lightly equipped, bow-bearing beater engage the buck as it crosseth the exposed upper traverse. Across the gap, the mail-clad squire, armed only for melee with a hunting spear, cannot answer the bowman.",
@@ -40,7 +40,7 @@
         },
         {
           "id": "climb_with_hunting_spear",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Climb the shale using thy hunting spear for purchase",
           "response": [{ "speaker": "young_lord", "text": "Thy hunting spear may serve as staff and brace where shale betrayeth boots. Win thou the upper cairn by strength, and the full twenty-groschen wager shall be thine.", "reviewed_shakespearean": true }],
           "result": "Thou spendest an hour climbing with thy hunting spear as staff and brace, keepest possession of it, and winnest twenty groschen. From the cairn thou seest the chief place a lightly equipped bow-bearer in the prepared lower-spur lane. When the buck entereth the exposed traverse, that beater can engage it; the mail-clad squire, armed only for melee with his hunting spear, cannot answer across the gap.",
@@ -58,7 +58,7 @@
         },
         {
           "id": "order_belayed_drive",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Order a belayed drive with the hunt's cords and poles",
           "response": [{ "speaker": "young_lord", "text": "My chief beater knoweth the safe anchors and belayed order, and my train beareth cords and stout poles, yet these frightened hands heed him not. Lend him thine authority, enforce his plan, and eight groschen shall reward thy command.", "reviewed_shakespearean": true }],
           "result": "Thou spendest seventy-five minutes enforcing and coordinating the chief beater's belay plan whilst he chooseth the safe anchors and directeth the mountain work. At his prepared lower-spur bow lane, a lightly equipped beater engageth the buck upon the exposed traverse. The mail-clad squire, armed only for melee with a hunting spear, cannot answer that bowman across the gap. Thou receivest eight groschen.",
@@ -94,7 +94,7 @@
         },
         {
           "id": "rebuke_vainglory",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "relationship_personality"] },
           "label": "Rebuke his vainglory and the threatened servants' wages",
           "response": [{ "speaker": "young_lord", "text": "Thy rebuke doth recall me that vainglory maketh poor sport of another man's bread. My servants shall keep their wages; remain and show me how a worthier hunt is ordered.", "reviewed_shakespearean": true }],
           "result": "Thou spendest thirty-five minutes recalling the young lord to his Christian duty and allowing the chief beater to lead a careful drive. From his prepared lower-spur lane, a lightly equipped bow-bearing beater engageth the buck upon the exposed traverse. The mail-clad squire, armed only for melee with a hunting spear, cannot answer across the gap, and no servant's bread is forfeit.",
@@ -127,7 +127,7 @@
         },
         {
           "id": "ignore",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["ignore_travel"] },
           "label": "Continue along the open road",
           "response": [],
           "result": "Thou leavest the rash young lord and his hunt upon the shale heights, for the road remaineth open.",

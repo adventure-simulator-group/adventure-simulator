@@ -3003,7 +3003,7 @@ fn socializing_target(
             .find(candidate.id)
         {
             return actor.current_settlement_id.as_deref() == Some(&presence.settlement_id)
-                && npc_is_present(&presence, effective_minute);
+                && npc_is_present(ctx, &presence, effective_minute);
         }
         // A mutable location without an interval history is authoritative
         // only at the character's own frontier. Fail closed for historical
@@ -4556,7 +4556,7 @@ mod tests {
         assert!(target.contains("character_alive_at(ctx, candidate.id, effective_minute)"));
         assert!(target.contains("candidate_minute <= effective_minute"));
         assert!(target.contains("death.strategic_minute > effective_minute"));
-        assert!(target.contains("npc_is_present(&presence, effective_minute)"));
+        assert!(target.contains("npc_is_present(ctx, &presence, effective_minute)"));
         assert!(target.contains("select_daily_location_target"));
         assert!(!target.contains("canonical_now(ctx, actor_id)"));
     }

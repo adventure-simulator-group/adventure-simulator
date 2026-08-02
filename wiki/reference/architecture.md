@@ -312,5 +312,8 @@ transient and are never persisted to SpacetimeDB.
 Generated outbreak patients follow the same rule: the Patient membership
 references an existing resident Character and an ordinary infection episode.
 Private outbreak authority stores only case linkage and provenance. Shared
-resident presence suppresses schedules and services while that context is
-active, then restores them without shadow schedule state when it deactivates.
+resident presence tracks context suppression separately from health
+suppression. Leaving a case context restores only the former; ordinary disease
+recovery or death authority controls the latter. All NPC availability
+consumers share the same authoritative projection and never advertise a dead
+or still-ill provider from a stale schedule row.

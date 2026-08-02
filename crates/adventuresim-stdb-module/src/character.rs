@@ -29,6 +29,7 @@ use crate::{
     },
     relationship::{child_identity_reservation, npc_policy},
     repair::{item_condition, repair_order},
+    settlement_population::settlement_resident_presence,
     strategic::{
         inventory_quantity_target, party_authority, party_member, settlement,
         strategic_gateway_authority__view,
@@ -388,6 +389,19 @@ pub fn transition_character_to_dead_at(
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::social::close_physiology_presence(ctx, character_id);
     character.alive = false;
+    if let Some(mut presence) = ctx
+        .db
+        .settlement_resident_presence()
+        .character_id()
+        .find(character_id)
+    {
+        presence.context_suppressed = false;
+        presence.health_suppressed = true;
+        ctx.db
+            .settlement_resident_presence()
+            .character_id()
+            .update(presence);
+    }
     // Keep an active tactical assignment until that server commits or removes
     // the character. This lets mission teardown find and cascade temporary
     // combatants that died in transient tactical state.

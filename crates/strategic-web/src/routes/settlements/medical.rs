@@ -113,7 +113,8 @@ pub(super) async fn surgery(
     let contextual_patient = state
         .db
         .query::<BackendContextCharacter>(&format!(
-            "SELECT * FROM backend_context_characters WHERE character_id = {patient_id}"
+            "SELECT * FROM backend_context_characters WHERE character_id = {patient_id} AND party_id = {}",
+            sql_string_literal(active.party_id.as_deref().unwrap_or(""))
         ))
         .await
         .unwrap_or_default()

@@ -1111,8 +1111,9 @@ async fn render_quest_location(
     let context_memberships: Vec<BackendContextCharacter> = state
         .db
         .query(&format!(
-            "SELECT * FROM backend_context_characters WHERE location_id = {}",
-            sql_string_literal(&site.case_site_id)
+            "SELECT * FROM backend_context_characters WHERE location_id = {} AND party_id = {}",
+            sql_string_literal(&site.case_site_id),
+            sql_string_literal(party.as_ref().map_or("", |party| party.id.as_str()))
         ))
         .await
         .unwrap_or_default();
@@ -1121,13 +1122,8 @@ async fn render_quest_location(
         .map(|row| (row.contact_ref.clone(), row.revision));
     let mut counterparties = Vec::new();
     for membership in context_memberships.into_iter().filter(|row| row.alive) {
-        if let Ok(Some(counterparty)) = state
-            .db
-            .query_one::<Character>(&format!(
-                "SELECT * FROM backend_characters WHERE id = {}",
-                membership.character_id
-            ))
-            .await
+        if let Ok(Some(counterparty)) =
+            super::data::character(&state, membership.character_id).await
         {
             counterparties.push(counterparty);
         }
@@ -1803,6 +1799,9 @@ mod quest_route_tests {
         assert!(loader.contains("case_site_combat_permitted"));
         assert!(loader.contains("battle.case_site_id.value == site.case_site_id"));
         assert!(!loader.contains("active_contract_id.as_deref() == Some(&presentation"));
+        assert!(
+            loader.contains("backend_context_characters WHERE location_id = {} AND party_id = {}")
+        );
     }
 
     #[test]

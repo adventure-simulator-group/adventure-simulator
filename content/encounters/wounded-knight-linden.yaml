@@ -23,7 +23,7 @@
       "choices": [
         {
           "id": "treat",
-          "interaction": { "kind": "shared_systems", "character_actions": ["treatment"] },
+          "interaction": { "kind": "shared_systems", "character_actions": ["treatment", "investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Spend a bandage and dress the knight's wound",
           "response": [{ "speaker": "wounded_knight", "text": "Thy hands have stayed the blood. Mark this: they hid within the thorn brake and rushed me only when I drew near. Take these few groschen with my thanks.", "reviewed_shakespearean": true }],
           "result": "Thou spendest a clean bandage, dressest the wound, learnest the assailants' close-ambush method, and acceptest a modest purse in thanks.",
@@ -41,7 +41,7 @@
         },
         {
           "id": "track",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Read the robbers' trail before it groweth cold",
           "response": [{ "speaker": "wounded_knight", "text": "Thou hast read their flight aright. That torn dispatch fell from their leader; its marks shall tell thee which hidden ways they favor.", "reviewed_shakespearean": true }],
           "result": "Thou followest the fresh spoor far enough to recover a dropped dispatch, then returnest before the wounded knight is forsaken.",
@@ -57,7 +57,7 @@
         },
         {
           "id": "organize_aid",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["item_inventory_transfer", "relationship_personality"] },
           "label": "Set his sumpter-boy to ride for household aid",
           "response": [{ "speaker": "wounded_knight", "text": "Thy word hath put good order in our fear. Take this household silver, for my folk shall come armed and bear me hence.", "reviewed_shakespearean": true }],
           "result": "Thou orderest the frightened servant onto the fresh sumpter and arrangest a guarded return; the knight payeth thee from his travel purse.",
@@ -85,7 +85,7 @@
         },
         {
           "id": "ignore",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["ignore_travel"] },
           "label": "Leave him beneath the linden",
           "response": [],
           "result": "Thou leavest the wounded knight and his tethered horses beneath the linden.",

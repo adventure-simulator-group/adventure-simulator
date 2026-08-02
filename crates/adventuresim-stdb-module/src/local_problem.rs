@@ -1590,7 +1590,7 @@ pub fn surface_problem(
                     &presence.settlement_id,
                     &settlement_id,
                     &presence.location_id,
-                    crate::settlement_population::npc_is_present(&presence, observer_minute),
+                    crate::settlement_population::npc_is_present(ctx, &presence, observer_minute),
                     npc.as_ref().is_some_and(|npc| {
                         npc.home_settlement_id == settlement_id
                             && crate::settlement_population::resident_is_dialogue_capable(npc)
@@ -2085,7 +2085,7 @@ mod tests {
         assert!(surface.contains("let observer_minute = ctx"));
         assert!(surface.contains("is_active(problem, official_world_minute)"));
         assert!(!surface.contains("is_active(problem, observer_minute)"));
-        assert!(surface.contains("npc_is_present(&presence, observer_minute)"));
+        assert!(surface.contains("npc_is_present(ctx, &presence, observer_minute)"));
         assert!(surface.contains("learned_at: observer_minute"));
         assert!(surface.contains("official_learned_at: official_world_minute"));
         assert!(surface.contains("recorded_at: observer_minute"));

@@ -326,7 +326,7 @@ fn settle_romance_decision(
         .settlement_resident_presence()
         .character_id()
         .find(character_id)
-        .filter(|presence| crate::settlement_population::npc_is_present(presence, minute))
+        .filter(|presence| crate::settlement_population::npc_is_present(ctx, presence, minute))
     else {
         record_decision(
             ctx,
@@ -361,7 +361,7 @@ fn settle_romance_decision(
         .filter(&actor_presence.settlement_id)
         .filter(|presence| {
             presence.character_id != character_id
-                && crate::settlement_population::npc_is_present(presence, minute)
+                && crate::settlement_population::npc_is_present(ctx, presence, minute)
         })
         .filter_map(|presence| {
             ctx.db

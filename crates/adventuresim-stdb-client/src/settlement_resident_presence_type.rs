@@ -14,6 +14,7 @@ pub struct SettlementResidentPresence {
     pub end_minute: u16,
     pub is_default: bool,
     pub context_suppressed: bool,
+    pub health_suppressed: bool,
 }
 
 impl __sdk::InModule for SettlementResidentPresence {
@@ -31,6 +32,7 @@ pub struct SettlementResidentPresenceCols {
     pub end_minute: __sdk::__query_builder::Col<SettlementResidentPresence, u16>,
     pub is_default: __sdk::__query_builder::Col<SettlementResidentPresence, bool>,
     pub context_suppressed: __sdk::__query_builder::Col<SettlementResidentPresence, bool>,
+    pub health_suppressed: __sdk::__query_builder::Col<SettlementResidentPresence, bool>,
 }
 
 impl __sdk::__query_builder::HasCols for SettlementResidentPresence {
@@ -44,6 +46,7 @@ impl __sdk::__query_builder::HasCols for SettlementResidentPresence {
             end_minute: __sdk::__query_builder::Col::new(table_name, "end_minute"),
             is_default: __sdk::__query_builder::Col::new(table_name, "is_default"),
             context_suppressed: __sdk::__query_builder::Col::new(table_name, "context_suppressed"),
+            health_suppressed: __sdk::__query_builder::Col::new(table_name, "health_suppressed"),
         }
     }
 }

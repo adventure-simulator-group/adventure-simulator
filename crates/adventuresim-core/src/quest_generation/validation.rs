@@ -310,11 +310,11 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 action.route == RouteClass::PhysicalTrail
                     && action.kind == InvestigationActionKind::InspectSite
             });
-            let social = initial_actions.iter().any(|action| {
+            let social = initial_actions.iter().find(|action| {
                 action.route == RouteClass::SocialInquiry
                     && action.kind == InvestigationActionKind::LocateContact
             });
-            if initial_actions.len() < 2 || physical.is_none() || !social {
+            if initial_actions.len() < 2 || physical.is_none() || social.is_none() {
                 errors.push(
                     "outbreak cases require independent physical and non-corpse social routes"
                         .into(),
@@ -418,15 +418,6 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                             witness.resident_character_id
                                 == exposure.patient_character_id
                         })
-                        || exposure.family_resident_character_id
-                            == Some(exposure.patient_character_id)
-                        || exposure.family_resident_character_id.as_ref().is_some_and(
-                            |family_resident_character_id| {
-                                !case.witnesses.iter().any(|witness| {
-                                    witness.resident_character_id == *family_resident_character_id
-                                })
-                            },
-                        )
                         || exposure.became_symptomatic_at
                             != exposure
                                 .exposed_at
@@ -443,6 +434,15 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     .any(|pair| pair[0].exposed_at > pair[1].exposed_at)
             {
                 errors.push("outbreak exposure chronology is incoherent".into());
+            }
+            let fatal_patients = outbreak
+                .exposure_chronology
+                .iter()
+                .filter(|exposure| exposure.died_at.is_some())
+                .map(|exposure| exposure.patient_character_id.to_string())
+                .collect::<BTreeSet<_>>();
+            if social.is_some_and(|action| fatal_patients.contains(&action.target_id)) {
+                errors.push("outbreak social route must target a surviving witness".into());
             }
             let source_is_compatible = match (&outbreak.source, outbreak.transmission_route) {
                 (

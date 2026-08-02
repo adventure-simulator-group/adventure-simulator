@@ -9,7 +9,7 @@ use std::{collections::BTreeSet, sync::OnceLock};
 #[cfg(runtime_catalog)]
 include!(concat!(env!("OUT_DIR"), "/road_encounter_catalog.rs"));
 
-pub const CATALOG_REVISION: u32 = 2;
+pub const CATALOG_REVISION: u32 = 3;
 pub const MAX_WEIGHT: u16 = 10_000;
 pub const MAX_CHOICES: usize = 8;
 pub const MAX_TEXT_BYTES: usize = 2_048;
@@ -151,7 +151,13 @@ pub enum InteractionBacking {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SharedCharacterInteraction {
+    ConversationContact,
     Treatment,
+    InvestigationInformation,
+    ItemInventoryTransfer,
+    RelationshipPersonality,
+    Combat,
+    IgnoreTravel,
 }
 
 impl EncounterChoice {
@@ -474,8 +480,36 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
             validate_goal_neutral(&choice.label)?;
             validate_goal_neutral(&choice.result)?;
             validate_lines(&definition.id, &definition.cast, &choice.response)?;
+            // Ignore is a universal escape hatch. Report violations of that
+            // invariant before validating its declared backing so content
+            // authors get the actionable error even when the dirty mechanic
+            // would also require another typed system declaration.
+            if choice.id == "ignore"
+                && (!choice.requirements.is_empty()
+                    || !choice.checks.is_empty()
+                    || !choice.effects.is_empty()
+                    || !choice.personality.is_empty()
+                    || !choice.quest_reward_tags.is_empty()
+                    || !choice.outcome_tags.is_empty()
+                    || !matches!(
+                        choice.transition.as_ref(),
+                        None | Some(EncounterTransition::Noop)
+                            | Some(EncounterTransition::TravelDelay { .. })
+                    ))
+            {
+                return Err(format!(
+                    "{}: ignore choice must be consequence-free",
+                    definition.id
+                ));
+            }
             match &choice.interaction {
                 InteractionBacking::SharedSystems { character_actions } => {
+                    if character_actions.is_empty() {
+                        return Err(format!(
+                            "{}:{} shared-system interaction requires a typed character action",
+                            definition.id, choice.id
+                        ));
+                    }
                     if character_actions.contains(&SharedCharacterInteraction::Treatment)
                         && !definition.cast.iter().any(|speaker| {
                             matches!(
@@ -491,6 +525,63 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
                             "{}:{} treatment requires a consenting Patient",
                             definition.id, choice.id
                         ));
+                    }
+                    if choice.id == "ignore"
+                        && character_actions.as_slice()
+                            != [SharedCharacterInteraction::IgnoreTravel]
+                    {
+                        return Err(format!(
+                            "{}:{} ignore must declare only ignore_travel",
+                            definition.id, choice.id
+                        ));
+                    }
+                    let starts_combat = matches!(
+                        choice.transition.as_ref(),
+                        Some(EncounterTransition::StartCombat { .. })
+                    );
+                    if starts_combat
+                        != character_actions.contains(&SharedCharacterInteraction::Combat)
+                    {
+                        return Err(format!(
+                            "{}:{} combat backing does not match its transition",
+                            definition.id, choice.id
+                        ));
+                    }
+                    let has_information = choice
+                        .effects
+                        .iter()
+                        .any(|effect| matches!(effect, Effect::Information { .. }));
+                    let has_inventory_transfer = choice.effects.iter().any(|effect| {
+                        matches!(
+                            effect,
+                            Effect::GrantItem { .. }
+                                | Effect::ConsumeItem { .. }
+                                | Effect::Currency { .. }
+                        )
+                    });
+                    for (mechanic_present, action, label) in [
+                        (
+                            has_information,
+                            SharedCharacterInteraction::InvestigationInformation,
+                            "investigation information",
+                        ),
+                        (
+                            has_inventory_transfer,
+                            SharedCharacterInteraction::ItemInventoryTransfer,
+                            "inventory transfer",
+                        ),
+                        (
+                            !choice.personality.is_empty(),
+                            SharedCharacterInteraction::RelationshipPersonality,
+                            "relationship personality",
+                        ),
+                    ] {
+                        if mechanic_present != character_actions.contains(&action) {
+                            return Err(format!(
+                                "{}:{} {label} backing does not match its mechanics",
+                                definition.id, choice.id
+                            ));
+                        }
                     }
                 }
                 InteractionBacking::NarrativeOnly { reason } if reason.trim().is_empty() => {
@@ -1023,7 +1114,9 @@ mod tests {
                     .choices
                     .iter()
                     .all(|choice| match &choice.interaction {
-                        InteractionBacking::SharedSystems { .. } => true,
+                        InteractionBacking::SharedSystems { character_actions } => {
+                            !character_actions.is_empty()
+                        }
                         InteractionBacking::NarrativeOnly { reason } => !reason.trim().is_empty(),
                         InteractionBacking::Blocked { issue, reason } => {
                             valid_follow_up_issue(issue) && !reason.trim().is_empty()
@@ -1079,6 +1172,42 @@ mod tests {
             validate_definitions(&[blocked])
                 .unwrap_err()
                 .contains("named follow-up issue")
+        );
+    }
+
+    #[test]
+    fn validator_rejects_empty_and_mismatched_shared_system_claims() {
+        let mut empty = encounter("proud_traveler_errands_v1").unwrap().clone();
+        empty.choices[0].interaction = InteractionBacking::SharedSystems {
+            character_actions: Vec::new(),
+        };
+        assert!(
+            validate_definitions(&[empty])
+                .unwrap_err()
+                .contains("requires a typed character action")
+        );
+
+        let mut false_combat = encounter("proud_traveler_errands_v1").unwrap().clone();
+        false_combat.choices[0].interaction = InteractionBacking::SharedSystems {
+            character_actions: vec![SharedCharacterInteraction::Combat],
+        };
+        assert!(
+            validate_definitions(&[false_combat])
+                .unwrap_err()
+                .contains("combat backing does not match")
+        );
+
+        let mut false_inventory = encounter("proud_traveler_errands_v1").unwrap().clone();
+        if let InteractionBacking::SharedSystems { character_actions } =
+            &mut false_inventory.choices[0].interaction
+        {
+            character_actions
+                .retain(|action| *action != SharedCharacterInteraction::ItemInventoryTransfer);
+        }
+        assert!(
+            validate_definitions(&[false_inventory])
+                .unwrap_err()
+                .contains("inventory transfer backing does not match")
         );
     }
     #[test]

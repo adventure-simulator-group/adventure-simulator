@@ -59,7 +59,7 @@ pub fn start_dialogue(
         .map_or(720, |time| time.minutes);
     if presence.settlement_id != settlement_id
         || presence.location_id != location_id
-        || !crate::settlement_population::npc_is_present(&presence, minute)
+        || !crate::settlement_population::npc_is_present(ctx, &presence, minute)
     {
         return Err("Dialogue actor is not present at this time".into());
     }
@@ -130,7 +130,7 @@ pub fn start_dialogue(
         .filter(&settlement_id)
         .filter(|candidate| {
             candidate.location_id == location_id
-                && crate::settlement_population::npc_is_present(candidate, minute)
+                && crate::settlement_population::npc_is_present(ctx, candidate, minute)
         })
         .filter_map(|presence| {
             crate::settlement_population::resolve_settlement_resident(ctx, presence.character_id)

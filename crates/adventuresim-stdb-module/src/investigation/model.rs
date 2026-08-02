@@ -21,6 +21,7 @@ use crate::{
         advance_investigation_time, character_time, character_time__view,
         synchronize_party_activity_time, world_clock, world_clock__view,
     },
+    world_actor::character_context_membership,
 };
 use adventuresim_core::investigation as inv;
 use adventuresim_core::investigation_action as action;
@@ -1065,6 +1066,24 @@ pub(crate) fn set_character_case_site(
     character_id: u64,
     case_site_id: Option<String>,
 ) {
+    let previous_site = character_case_site_id(ctx, character_id);
+    if previous_site.as_deref() != case_site_id.as_deref()
+        && let Some(previous_site) = previous_site.as_deref()
+    {
+        for membership in ctx
+            .db
+            .character_context_membership()
+            .location_id()
+            .filter(&previous_site.to_owned())
+            .filter(|membership| membership.active)
+        {
+            crate::social::close_physiology_presence_between(
+                ctx,
+                character_id,
+                membership.character_id,
+            );
+        }
+    }
     crate::outbreak::record_case_site_presence_transition(
         ctx,
         character_id,

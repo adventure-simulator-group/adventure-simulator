@@ -1000,6 +1000,7 @@ fn materialize_narrative_combat(
         .party_id()
         .find(&party.id);
     let terrain_kind = encounter_terrain_at(route.as_ref(), challenge.camp_movement_minute);
+    let contacted = crate::world_actor::party_contacted_context(ctx, &party.id, &challenge.id);
     let encounter = build_strategic_encounter(
         ctx,
         &party.id,
@@ -1014,9 +1015,18 @@ fn materialize_narrative_combat(
         challenge.latitude_e7,
         current_party_fatigue_percent(ctx, &living_party_member_ids(ctx, &party.id)),
         terrain_kind,
-        Awareness::PartyOnly,
-        "Your party can approach the roadside opponents unseen, or speak and reveal itself first."
-            .into(),
+        if contacted {
+            Awareness::Both
+        } else {
+            Awareness::PartyOnly
+        },
+        if contacted {
+            "Earlier contact made both sides mutually aware; surprise is no longer possible."
+                .into()
+        } else {
+            "Your party can approach the roadside opponents unseen, or speak and reveal itself first."
+                .into()
+        },
     )?;
     let outcome_payloads_json = serde_json::to_string(outcomes)
         .map_err(|_| "Could not encode narrative combat outcome payloads")?;
@@ -1055,10 +1065,9 @@ fn materialize_narrative_combat(
     } else {
         ctx.db.strategic_encounter().insert(encounter);
     }
-    let roster = crate::world_actor::materialize_context_roster(
+    let roster = crate::world_actor::rebind_road_cast_to_strategic_encounter(
         ctx,
-        crate::world_actor::CharacterContextKind::StrategicEncounter,
-        &encounter_id,
+        &challenge.id,
         &encounter_id,
         match archetype {
             adventuresim_core::road_encounter_catalog::RoadCombatArchetype::Bandits => "bandit",
@@ -2600,8 +2609,10 @@ mod challenge_source_boundary_tests {
         assert!(dispatch.contains("existing.status == \"awaiting_choice\""));
         assert!(dispatch.contains("narrative_combat_followup_authority"));
         assert!(dispatch.contains("build_strategic_encounter"));
+        assert!(dispatch.contains("party_contacted_context"));
+        assert!(dispatch.contains("Awareness::Both"));
         assert!(dispatch.contains("Awareness::PartyOnly"));
-        assert!(dispatch.contains("materialize_context_roster"));
+        assert!(dispatch.contains("rebind_road_cast_to_strategic_encounter"));
         assert!(dispatch.contains("CharacterContextKind::StrategicEncounter"));
         assert!(dispatch.contains("initiating_character_id"));
         assert!(dispatch.contains("existing.encounter_id == encounter_id"));

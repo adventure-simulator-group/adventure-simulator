@@ -8,8 +8,10 @@ use crate::{
     character::{character, character_attributes, character_death},
     corpse::strategic_corpse,
     disease::infection_episode,
-    local_problem::local_problem_receipt__view,
+    local_problem::{local_problem_receipt, local_problem_receipt__view},
+    relationship::character_kinship,
     settlement_population::{settlement_resident_presence, settlement_resident_profile},
+    strategic::party_authority,
     time::character_time,
     world_actor::character_context_membership,
 };
@@ -51,10 +53,10 @@ pub struct OutbreakPatientAuthority {
     pub case_id: String,
     #[index(btree)]
     pub patient_character_id: u64,
-    pub family_resident_character_id: Option<u64>,
     #[unique]
     pub episode_id: u64,
-    pub active: bool,
+    pub context_active: bool,
+    pub health_active: bool,
     pub corpse_id: Option<String>,
     pub autopsy_evidence_id: Option<String>,
 }
@@ -92,6 +94,32 @@ pub(crate) fn case_patient_visible_to_character_view(
         .local_problem_receipt()
         .character_id()
         .filter(character_id)
+        .any(|receipt| {
+            receipt.problem_id == authority.problem_id
+                && receipt.settlement_id == authority.settlement_id
+        })
+}
+
+pub(crate) fn case_patient_visible_to_party(
+    ctx: &ReducerContext,
+    party_id: &str,
+    case_id: &str,
+) -> bool {
+    let Some(authority) = ctx
+        .db
+        .outbreak_authority()
+        .case_id()
+        .find(&case_id.to_owned())
+    else {
+        return false;
+    };
+    let Some(party) = ctx.db.party_authority().id().find(&party_id.to_owned()) else {
+        return false;
+    };
+    ctx.db
+        .local_problem_receipt()
+        .character_id()
+        .filter(party.leader_id)
         .any(|receipt| {
             receipt.problem_id == authority.problem_id
                 && receipt.settlement_id == authority.settlement_id
@@ -200,14 +228,28 @@ fn materialize_patient_corpse(
             wasting: symptoms.contains(&Symptom::Wasting),
         },
     )?;
-    if let Some(family_resident_character_id) = &exposure.family_resident_character_id {
-        crate::corpse::materialize_corpse_family_bindings(
-            ctx,
-            &corpse_id,
-            settlement_id,
-            std::slice::from_ref(family_resident_character_id),
-        )?;
-    }
+    let canonical_family = ctx
+        .db
+        .character_kinship()
+        .subject_id()
+        .filter(exposure.patient_character_id)
+        .filter_map(|edge| {
+            ctx.db
+                .settlement_resident_profile()
+                .character_id()
+                .find(edge.related_id)
+                .filter(|profile| profile.home_settlement_id == settlement_id)
+                .map(|_| edge.related_id)
+        })
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    crate::corpse::materialize_corpse_family_bindings(
+        ctx,
+        &corpse_id,
+        settlement_id,
+        &canonical_family,
+    )?;
     Ok(corpse_id)
 }
 
@@ -365,17 +407,6 @@ pub(crate) fn materialize_generated_outbreak(
                 exposure.patient_character_id,
                 now_minute,
             )?;
-        }
-        if let Some(family_resident_character_id) = &exposure.family_resident_character_id {
-            let family = ctx
-                .db
-                .settlement_resident_profile()
-                .character_id()
-                .find(*family_resident_character_id)
-                .ok_or("Explicit outbreak family NPC no longer exists")?;
-            if family.home_settlement_id != settlement_id {
-                return Err("Explicit outbreak family NPC is not local".into());
-            }
         }
         let episode = adventuresim_core::disease::InfectionEpisode {
             id: exposure.episode_id,
@@ -544,6 +575,13 @@ pub(crate) fn materialize_generated_outbreak(
             .find(exposure.patient_character_id)
         {
             presence.context_suppressed = patient_active;
+            presence.health_suppressed = patient_active
+                || ctx
+                    .db
+                    .character()
+                    .id()
+                    .find(exposure.patient_character_id)
+                    .is_none_or(|character| !character.alive);
             ctx.db
                 .settlement_resident_presence()
                 .character_id()
@@ -555,9 +593,9 @@ pub(crate) fn materialize_generated_outbreak(
                 id: row_id,
                 case_id: generated.canonical_case_id.clone(),
                 patient_character_id: exposure.patient_character_id,
-                family_resident_character_id: exposure.family_resident_character_id.clone(),
                 episode_id: exposure.episode_id,
-                active: patient_active,
+                context_active: patient_active,
+                health_active: patient_active,
                 corpse_id,
                 autopsy_evidence_id,
             });
@@ -614,7 +652,7 @@ fn deactivate_outbreak_patient_contexts(ctx: &ReducerContext, case_id: &str) {
         .filter(&case_id.to_string())
         .collect::<Vec<_>>()
     {
-        patient.active = false;
+        patient.context_active = false;
         if let Some(mut presence) = ctx
             .db
             .settlement_resident_presence()
@@ -650,7 +688,7 @@ pub(crate) fn refresh_patient_context_after_time_write(
         .outbreak_patient_authority()
         .patient_character_id()
         .filter(character_id)
-        .filter(|patient| patient.active)
+        .filter(|patient| patient.health_active)
         .collect::<Vec<_>>()
     {
         let recovered = ctx
@@ -676,7 +714,8 @@ pub(crate) fn refresh_patient_context_after_time_write(
         if alive && !recovered {
             continue;
         }
-        patient.active = false;
+        patient.context_active = false;
+        patient.health_active = false;
         let membership_id = format!(
             "context:{}:patient:{}",
             patient.case_id, patient.patient_character_id
@@ -704,6 +743,7 @@ pub(crate) fn refresh_patient_context_after_time_write(
             .find(character_id)
     {
         presence.context_suppressed = false;
+        presence.health_suppressed = !alive;
         ctx.db
             .settlement_resident_presence()
             .character_id()
@@ -975,5 +1015,23 @@ mod tests {
         assert!(actions.contains("OutcomeFactKind::SourceRemediated"));
         let objectives = include_str!("strategic/custody_objectives.rs");
         assert!(objectives.contains("accepted_hostile_remediation"));
+    }
+
+    #[test]
+    fn remediation_releases_context_without_curing_and_family_is_canonical() {
+        let source = include_str!("outbreak.rs");
+        let deactivate = source
+            .split("fn deactivate_outbreak_patient_contexts")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub(crate) fn refresh_patient_context_after_time_write")
+                    .next()
+            })
+            .expect("context deactivation");
+        assert!(deactivate.contains("patient.context_active = false"));
+        assert!(!deactivate.contains("patient.health_active = false"));
+        assert!(!deactivate.contains("health_suppressed = false"));
+        assert!(source.contains("character_kinship()"));
+        assert!(!source.contains("family_resident_character_id: Option"));
     }
 }

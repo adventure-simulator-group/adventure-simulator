@@ -33,10 +33,12 @@ practice, responsibility, or a carrier's presence. Neither route requires a
 corpse, so a buried or inaccessible victim cannot deadlock the case.
 
 After the party hears the ordinary outbreak rumor, each modeled patient and
-their explicitly authored family member or carer can discuss the fevers
-directly. The party does not have to follow the rumor's witness referrals in a
-specific order. Unrelated residents do not gain outbreak testimony merely
-because they live in the settlement.
+their relatives from canonical kinship authority can discuss the fevers
+directly. Generated cases do not carry a second family or carer field. The
+party does not have to follow the rumor's witness referrals in a specific
+order, and unrelated residents do not gain outbreak testimony merely because
+they live in the settlement. A generated social route always targets a
+surviving witness rather than a patient whose authored course is fatal.
 
 Living patients progress against authoritative world time and appear in the
 case site's shared counterparty roster after discovery. The standard Talk and
@@ -44,9 +46,11 @@ Bandage interactions address the same Character identity used in the
 settlement, relationship, physiology, and surgery systems; there is no outbreak
 examination reducer or findings table. While a patient membership is active,
 shared resident presence suppresses their ordinary schedule and services
-without rewriting that schedule. Remediation deactivates the membership and
-restores ordinary presence while retaining the Character and infection
-history. Environmental and carrier exposure requires presence at the exact
+without rewriting that schedule. Remediation deactivates the case context but
+does not cure an infection: health suppression remains until authoritative
+world time reaches recovery, and remains permanent for a dead Character. Every
+service, dialogue, investigation, and social availability check uses that same
+projection. Environmental and carrier exposure requires presence at the exact
 source site; only community sanitation or behavior sources apply across
 settlement presence.
 

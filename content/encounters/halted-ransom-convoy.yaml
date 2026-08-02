@@ -23,7 +23,7 @@
       "choices": [
         {
           "id": "choose_dry_repair_shoulder",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Read the washed ground and choose a dry repair shoulder",
           "response": [{ "speaker": "veteran_custody_sergeant", "text": "Read rut, bank, and seepage; choose where wheel and crib shall bear. My guards shall move when I signal, and my axle crew shall follow the ground thou findest.", "reviewed_shakespearean": true }],
           "result": "For forty minutes thou readest the plain and findest firm chalk beyond the culvert wash. The sergeant shifts guards, bonds, wagon, and cribbing onto thy chosen shoulder whilst the clerk keepeth roll and identities sealed. Once the axle seateth and trust is earned, captive and sergeant agree upon the unexplained dents: sword edges skated upon the worn mail, but a flanged mace crushed rings into padding. The convoy continueth, and the sergeant granteth thee that mace for prudent ground-reading.",
@@ -40,7 +40,7 @@
         },
         {
           "id": "identify_dangerous_binding_swelling",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Examine the prisoners for dangerous swelling and chafing",
           "response": [{ "speaker": "veteran_custody_sergeant", "text": "Name where flesh requireth slack or padding, and no more. The keys stay at my belt; mine own hands shall tend buckle, chain, prisoner, and guard place.", "reviewed_shakespearean": true }],
           "result": "For thirty minutes thou findest a retainer's swelling hand and the knight's raw wrist before either suffereth lasting hurt. At thy bounded advice the sergeant padeth and slackeneth each needful place, then secureth every restraint anew whilst ordinary axle work proceedeth. Grateful for safe handling, the knight explaineth his broad mail dents: edges scarcely bit, whereas the flanged head crushed worn rings and stuffing together; the sergeant confirmeth the capture. Repair complete, the convoy leaveth, and she granteth thee the mace.",
@@ -75,7 +75,7 @@
         },
         {
           "id": "coordinate_guarded_axle_turns",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Coordinate hands, guards, and axle turns without crossing authority",
           "response": [{ "speaker": "veteran_custody_sergeant", "text": "Repeat my turns and hand-signs, but command no bond or body. The clerk shall keep roll and count; my guards and axle crew shall move at my word.", "reviewed_shakespearean": true }],
           "result": "For forty-five minutes thou coordinatest labor and timing whilst the clerk counteth named prisoners against the sealed roll and the sergeant placeth guards, restraints, levers, and bodies. When the axle seateth, orderly aid hath earned a candid comparison: the captive saith blades slid upon his worn mail, and the sergeant nameth the flanged mace that drove the visible rings into their padding. Every prisoner remaineth lawfully held and the repaired convoy continueth. The sergeant granteth thee the mace for loyal command.",
@@ -93,7 +93,7 @@
         },
         {
           "id": "hold_neutral_line_for_prisoner_lift",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Stand the neutral line while loosened prisoners help lift",
           "response": [{ "speaker": "veteran_custody_sergeant", "text": "Hold steady betwixt guard and captive, and suffer neither side to cross thy line. I shall choose whose hands are loosed, where each standeth, and when each bond returneth.", "reviewed_shakespearean": true }],
           "result": "For fifty minutes thou holdest a neutral line under threat from either side whilst the sergeant briefly looseth the knight and retainers to lift at her appointed places. After the wheel beareth and every bond is resumed, the knight rewardeth thy steadiness with the truth behind his caved mail: sword strokes slipped, but a flanged mace compressed rings and padding beneath. The sergeant attesteth it and granteth thee that mace. Ordinary repair complete, the convoy leaveth immediately.",
@@ -110,7 +110,7 @@
         },
         {
           "id": "swear_cross_marked_work_truce",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Recognize the Saint Leonard signs and frame their familiar work oath",
           "response": [{ "speaker": "ransom_clerk", "text": "Thou hast rightly known their matched Saint Leonard signs and the confraternity's work response. Recite its familiar form; I shall set a narrow covenant beneath the field seal, and the sergeant shall keep key, chain, and place.", "reviewed_shakespearean": true }],
           "result": "For forty minutes thou usest knowledge of the matched Saint Leonard signs to propose their familiar cross-sworn work truce. The clerk drafteth and validateth its narrow terms; the sergeant looseth, placeth, and rebindeth the prisoners. Mortal oath and shared cadence earn a truthful field account, not a miracle: edges skated upon the knight's worn mail, whilst a flanged mace crushed rings and padding. The repaired convoy continueth with restraints resumed, and the sergeant granteth thee the mace for faithful fellowship.",
@@ -147,7 +147,7 @@
         },
         {
           "id": "ignore",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["ignore_travel"] },
           "label": "Leave the halted convoy to its own repair",
           "response": [],
           "result": "Thou leavest the clerk, sergeant, prisoners, and sprung wagon at the washed culvert. They continue their repair whilst the open road and nearby resting ground remain free.",

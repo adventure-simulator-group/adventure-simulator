@@ -4,6 +4,7 @@ use crate::{
     personality::{Presentation, character_personality, character_personality__view},
     relationship::{NpcPolicy, npc_policy},
     strategic::{settlement, strategic_gateway_authority__view},
+    time::world_clock,
 };
 use adventuresim_core::settlement_population::{
     self as population, AgeBand, GenerationInput, LocationContext, PresenceBridge, Profession,
@@ -251,6 +252,8 @@ pub struct SettlementResidentPresence {
     /// Shared schedule/service suppression while another active context owns
     /// this Character's physical presence. The authored schedule is retained.
     pub context_suppressed: bool,
+    /// Ordinary health availability, independent of quest/context lifecycle.
+    pub health_suppressed: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -577,6 +580,7 @@ fn insert_resident_with_seed(
             end_minute,
             is_default,
             context_suppressed: false,
+            health_suppressed: false,
         });
     let explanation = PersistedGenerationExplanation { input, profile };
     let relations_json = serde_json::to_string(&explanation)
@@ -729,8 +733,44 @@ pub fn ensure_settlement_population(
     crate::relationship::ensure_seeded_family_households(ctx, settlement_id)?;
     Ok(())
 }
-pub fn npc_is_present(presence: &SettlementResidentPresence, minute: u64) -> bool {
-    npc_presence_remaining_minutes(presence, minute).is_some()
+pub fn npc_is_present(
+    ctx: &ReducerContext,
+    presence: &SettlementResidentPresence,
+    minute: u64,
+) -> bool {
+    npc_presence_remaining_minutes_at(ctx, presence, minute).is_some()
+}
+
+/// Authoritative availability projection shared by every service, dialogue,
+/// investigation, and social consumer. This catches episode completion even
+/// when the patient has been idle since outbreak materialization.
+pub fn npc_presence_remaining_minutes_at(
+    ctx: &ReducerContext,
+    presence: &SettlementResidentPresence,
+    minute: u64,
+) -> Option<u64> {
+    let frontier = ctx
+        .db
+        .world_clock()
+        .id()
+        .find(0)
+        .map_or(minute, |clock| clock.official_minutes.max(minute));
+    crate::outbreak::refresh_patient_context_after_time_write(ctx, presence.character_id, frontier);
+    let effective_presence = ctx
+        .db
+        .settlement_resident_presence()
+        .character_id()
+        .find(presence.character_id)
+        .unwrap_or_else(|| presence.clone());
+    let alive = ctx
+        .db
+        .character()
+        .id()
+        .find(presence.character_id)
+        .is_some_and(|character| character.alive);
+    alive
+        .then(|| npc_presence_remaining_minutes(&effective_presence, minute))
+        .flatten()
 }
 
 /// Remaining contiguous minutes in the NPC's current daily presence window.
@@ -739,7 +779,7 @@ pub fn npc_presence_remaining_minutes(
     presence: &SettlementResidentPresence,
     minute: u64,
 ) -> Option<u64> {
-    if presence.context_suppressed {
+    if presence.context_suppressed || presence.health_suppressed {
         return None;
     }
     let minute = minute % 1_440;
@@ -791,6 +831,7 @@ mod tests {
             end_minute,
             is_default: true,
             context_suppressed: false,
+            health_suppressed: false,
         }
     }
 
@@ -815,6 +856,10 @@ mod tests {
 
         row.context_suppressed = false;
         assert_eq!(npc_presence_remaining_minutes(&row, 900), Some(120));
+
+        row.health_suppressed = true;
+        assert_eq!(npc_presence_remaining_minutes(&row, 900), None);
+        assert_eq!((row.start_minute, row.end_minute), (480, 1_020));
     }
 
     #[test]
@@ -906,5 +951,18 @@ mod tests {
         assert!(ensure.contains("organization_representative_id"));
         assert!(source.contains("id = format!(\"npc:{settlement_id}:{location}:{ordinal}\")"));
         assert!(ensure.contains("physical_location == chapter.location_id.as_str()"));
+    }
+
+    #[test]
+    fn authoritative_presence_refreshes_idle_outbreak_health_before_service_use() {
+        let source = include_str!("settlement_population.rs");
+        let projection = source
+            .split("pub fn npc_presence_remaining_minutes_at")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn npc_presence_remaining_minutes").next())
+            .expect("authoritative presence projection");
+        assert!(projection.contains("world_clock"));
+        assert!(projection.contains("refresh_patient_context_after_time_write"));
+        assert!(projection.contains("character.alive"));
     }
 }

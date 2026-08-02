@@ -199,19 +199,19 @@ fn patient_courses_and_bindings_are_exact_and_carriers_have_no_direct_fix() {
                     .any(|witness| witness.resident_character_id
                         == exposure.patient_character_id)
             );
-            assert_ne!(
-                exposure.family_resident_character_id,
-                Some(exposure.patient_character_id)
-            );
-            if let Some(family_resident_character_id) = &exposure.family_resident_character_id {
-                assert!(
-                    case.witnesses
-                        .iter()
-                        .any(|witness| witness.resident_character_id
-                            == *family_resident_character_id)
-                );
-            }
         }
+        let fatal_ids = truth
+            .exposure_chronology
+            .iter()
+            .filter(|exposure| exposure.died_at.is_some())
+            .map(|exposure| exposure.patient_character_id.to_string())
+            .collect::<BTreeSet<_>>();
+        let social_target = case
+            .actions
+            .iter()
+            .find(|action| action.route == RouteClass::SocialInquiry && action.active_initially)
+            .expect("social outbreak route");
+        assert!(!fatal_ids.contains(&social_target.target_id));
         let physical = case
             .actions
             .iter()

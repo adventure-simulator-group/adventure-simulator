@@ -23,7 +23,7 @@
       "choices": [
         {
           "id": "aid",
-          "interaction": { "kind": "shared_systems", "character_actions": ["treatment"] },
+          "interaction": { "kind": "shared_systems", "character_actions": ["treatment", "item_inventory_transfer", "relationship_personality"] },
           "label": "Bind his wound and bear his dispatch onward",
           "response": [{ "speaker": "courier", "text": "Gramercy. Take this dispatch; its warning may yet preserve good folk from those knaves.", "reviewed_shakespearean": true }],
           "result": "Thou bindest the courier's wound and receivest the captured dispatch.",
@@ -36,7 +36,7 @@
         },
         {
           "id": "rally",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "blocked", "issue": "#373", "reason": "Rallying unrelated Characters needs shared persuasion and agreement authority." },
           "label": "Rally him and escort him through the ford",
           "response": [{ "speaker": "courier", "text": "Thy courage kindleth mine. Take thou this token, for I shall stand beside thee at the crossing.", "reviewed_shakespearean": true }],
           "result": "Thou rallyest the courier, who yieldeth thee his oath token after the crossing.",
@@ -50,7 +50,7 @@
         },
         {
           "id": "consecrate",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["item_inventory_transfer", "relationship_personality"] },
           "label": "Hear his oath and bless his sword-knot",
           "response": [{ "speaker": "courier", "text": "Amen. Bear thou this sword-knot; it showeth that a faithful witness hath marked thy deed.", "reviewed_shakespearean": true }],
           "result": "Thou hearest his oath and receivest the sword-knot as material witness of the rite.",
@@ -75,7 +75,7 @@
         },
         {
           "id": "ignore",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["ignore_travel"] },
           "label": "Pass by without answer",
           "response": [],
           "result": "Thou passest by, and the courier's plea fadeth behind thee.",

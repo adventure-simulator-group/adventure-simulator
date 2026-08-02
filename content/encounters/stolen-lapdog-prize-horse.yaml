@@ -35,7 +35,7 @@
       "choices": [
         {
           "id": "follow_mixed_tracks",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Follow the mixed tracks across the plain",
           "response": [{ "speaker": "kennel_master", "text": "Read where light paws cross the bay's shod prints and where the coper's party doubled from the gate. Follow that trail, and I shall bring witnesses by a separate way.", "reviewed_shakespearean": true }],
           "result": "Thou spendest an hour following mixed dog and horse tracks to the kennel master's chosen drainage ditch. There his light bowman holdeth a prepared lane across the gap; the coper's two mailed grooms visibly carry blades only and cannot answer it by melee, so they yield while the master recovereth the lapdog and prize bay without blood. For prudent aid the chatelaine granteth thee the declared spare self bow and eight arrows from her hunt cart.",
@@ -53,7 +53,7 @@
         },
         {
           "id": "compare_leash_brand_and_tally",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Compare the leash, hidden brand, and tally",
           "response": [{ "speaker": "widowed_chatelaine", "text": "Set silver thread, clay-hidden brand, and doubtful witness line together before us. If common evidence answereth the coper's tally, no blade need judge my claim.", "reviewed_shakespearean": true }],
           "result": "Thou spendest thirty minutes matching the severed silver leash, the clay-daubed livery brand, and the tally's altered witness line. When the kennel master presents that proof beside his prepared drainage-ditch bow lane, the coper's mailed blade-only grooms cannot answer across the gap and stand aside; dog and bay return to the household without blood. The chatelaine rewardeth thy just proof with the spare self bow and eight arrows from her hunt cart.",
@@ -90,7 +90,7 @@
         },
         {
           "id": "coordinate_bloodless_recovery",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Coordinate witnesses and servants beneath the kennel master's plan",
           "response": [{ "speaker": "kennel_master", "text": "I shall choose the ditch, recall, and animal handling. Inventory our witnesses, place each servant where he may obey without confusion, and keep all hands beneath my bloodless terrain plan.", "reviewed_shakespearean": true }],
           "result": "Thou spendest forty-five minutes coordinating witnesses and servants while the kennel master alone selecteth terrain, recall, and handling. At his prepared drainage-ditch bow lane, the coper's mailed blade-only grooms cannot answer across the gap and yield; the master bringeth lapdog and bay home without blood. The chatelaine payeth the declared marshal reward of one spare self bow and eight arrows.",
@@ -109,7 +109,7 @@
         },
         {
           "id": "lure_dog_for_recall_proof",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Offer one travel ration so the kennel master may prove the recall",
           "response": [{ "speaker": "kennel_master", "text": "One ration shall draw her attention without force. Cast it where I direct; when I give the household recall and she answereth, witnesses shall see ownership proved by known training.", "reviewed_shakespearean": true }],
           "result": "Thou spendest twenty minutes using one travel ration exactly as the kennel master directeth; his known recall bringeth the lapdog across as public proof. His prepared bowman meanwhile covereth the drainage-ditch gap, which the coper's mailed blade-only grooms cannot answer by melee, so they release the prize bay without blood. The chatelaine rewardeth this mercy with the declared spare self bow and eight arrows.",
@@ -148,7 +148,7 @@
         },
         {
           "id": "ignore",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["ignore_travel"] },
           "label": "Leave the disputed animals to the roadside parties",
           "response": [],
           "result": "Thou leavest chatelaine, kennel master, horse-coper, grooms, lapdog, and prize bay upon the open roadside.",

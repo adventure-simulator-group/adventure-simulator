@@ -15,6 +15,7 @@ use crate::social::{
     PhysiologyPresenceSpan, physiology_presence_span, physiology_presence_span__view,
 };
 use crate::time::character_time__view;
+use crate::world_actor::character_context_membership;
 use crate::{
     character_attributes, character_skills, character_time,
     item::{inventory_item, item},
@@ -2154,7 +2155,7 @@ fn require_intervention_relationship(
     }
     let actor_site = crate::investigation::character_case_site_id(ctx, actor.id);
     let patient_site = crate::investigation::character_case_site_id(ctx, patient.id);
-    if !physiology::intervention_relationship_allowed(
+    let ordinary_relationship = physiology::intervention_relationship_allowed(
         actor.id,
         patient.id,
         actor.party_id.as_deref(),
@@ -2163,10 +2164,23 @@ fn require_intervention_relationship(
         patient.current_settlement_id.as_deref(),
         actor_site.as_deref(),
         patient_site.as_deref(),
-    ) {
+    );
+    let contextual_relationship =
+        crate::world_actor::contextual_interaction_is_authorized(ctx, actor_id, patient_id, true);
+    let has_active_patient_context = ctx
+        .db
+        .character_context_membership()
+        .character_id()
+        .filter(patient_id)
+        .any(|membership| {
+            membership.active
+                && membership.role == crate::world_actor::CharacterContextRole::Patient
+        });
+    if (has_active_patient_context && !contextual_relationship)
+        || (!has_active_patient_context && !ordinary_relationship && !contextual_relationship)
+    {
         return Err(
-            "An intervention actor and patient must be living, co-located members of the same party"
-                .into(),
+            "An intervention actor and patient must share an authorized treatment context".into(),
         );
     }
     Ok(())

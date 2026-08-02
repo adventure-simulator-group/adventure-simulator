@@ -23,7 +23,7 @@
       "choices": [
         {
           "id": "read_departing_spoor",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Read the departing spoor without disturbing the master's scene",
           "response": [{ "speaker": "kennel_master", "text": "Read thou the prints beyond his fallen hand and leave body, hound, and blood as found. I shall hold her cast and choose when the bier may enter.", "reviewed_shakespearean": true }],
           "result": "For an hour thou readest heel turns, alder scuffs, and departing prints beyond the untouched hollow while the kennel master restraineth the brachet and governeth access. The spoor establisheth the assailant's hurried departure without moving the corpse. As the master setteth his bier, several close blade cuts lie stopped across the lord's mail and layered arming doublet, while the lethal cut entered the uncovered neck. He recovereth body and hound in order and granteth thee the promised spare doublet for prudent fieldcraft.",
@@ -40,7 +40,7 @@
         },
         {
           "id": "examine_blade_wounds",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Examine the stopped chest cuts and lethal uncovered wound",
           "response": [{ "speaker": "kennel_master", "text": "Examine him where he lieth, but lift no limb until I bind the brachet and set the bier. Name what steel overcame and what his layered harness stayed.", "reviewed_shakespearean": true }],
           "result": "For forty-five minutes thou examinest the lord before the kennel master alone turneth and bindeth him for the bier. Several close sword cuts scored mail yet spent themselves across the covered chest, where the layered arming doublet supplied padding beneath; the mortal wound entered the uncovered neck. This physical distinction, not sentiment, governeth thy finding. The master then recovereth his lord and brachet and payeth the declared spare doublet for prudent knowledge.",
@@ -57,7 +57,7 @@
         },
         {
           "id": "hold_watch_during_body_recovery",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Hold watch while the kennel master binds hound, bier, and body",
           "response": [{ "speaker": "kennel_master", "text": "Watch thou alder rim and open track whilst I leash my brachet, choose the bier cast, and bind my lord. Cry warning, but meddle not with hound or lashings.", "reviewed_shakespearean": true }],
           "result": "For fifty minutes thine eyes hold the hollow's rim while the kennel master alone leasheth the brachet and chooseth the bier cast. Once thou hast secured the perimeter, he calleth thee inward before he bindeth chest and neck. At his direction thou seest repeated close blade cuts stopped across the mail-covered, doublet-padded chest, yet one cut reached the bare neck and slew. With the rim safe, he alone handleth and secureth the body, then granteth thee the common spare arming doublet for courageous watch.",
@@ -74,7 +74,7 @@
         },
         {
           "id": "rally_orderly_recovery",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "blocked", "issue": "#373", "reason": "Rallying unrelated Characters needs shared persuasion and agreement authority." },
           "label": "Rally available hands beneath the kennel master's recovery plan",
           "response": [{ "speaker": "kennel_master", "text": "I alone shall choose leash, cast, bier lashings, and handling of my lord. Number the willing hands, order their turns, and keep each beneath my recovery plan.", "reviewed_shakespearean": true }],
           "result": "For forty-five minutes thou coordinatest bearers and sequence while the veteran master exclusively chooseth the brachet's leash and cast, the bier lashings, and every touch upon the body. His ordered lift exposeth several close blade marks stopped upon the mail and padded arming doublet across the chest, beside the single lethal entry at the uncovered neck. The company secureth body and hound without confusion; the master granteth thee the promised spare doublet for loyal command.",
@@ -92,7 +92,7 @@
         },
         {
           "id": "steady_grieving_kennel_master",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Steady the grieving master so he may execute his own plan",
           "response": [{ "speaker": "kennel_master", "text": "Thy measured speech recalleth me unto the work mine office requireth. Stand near and name each task once; my hands shall govern brachet, bier, and lord as they have long been trained.", "reviewed_shakespearean": true }],
           "result": "For thirty-five minutes thy courteous words let grief pass without displacing the kennel master's competence. He resumeth his own practiced sequence, calming the brachet and setting bier and body. As he looseth the outer mail for sound binding, ye observe close blade cuts that stopped upon the layered, doublet-covered chest and the fatal wound that entered the unguarded neck. He completeth the recovery and honorably granteth thee the declared spare arming doublet.",
@@ -110,7 +110,7 @@
         },
         {
           "id": "keep_ordinary_christian_vigil",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Keep the ordinary Christian vigil and office for the body",
           "response": [{ "speaker": "kennel_master", "text": "Keep thou the accustomed vigil and speak the common office whilst I leash the brachet and bind the bier. Prayer shall order our mortal duty; it needeth work no marvel upon the dead.", "reviewed_shakespearean": true }],
           "result": "For forty minutes thou keepest the ordinary Christian vigil as the kennel master performeth every physical task of hound and body recovery. No miracle altereth corpse, wounds, or harness. In the bier preparation, several close blade cuts prove stopped upon the mail and arming doublet over the covered chest, while the lethal steel entered the uncovered neck. The master completeth his earthly duty and granteth thee the common spare doublet for faithful fellowship.",
@@ -149,7 +149,7 @@
         },
         {
           "id": "ignore",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["ignore_travel"] },
           "label": "Leave the black brachet and her master beside the hollow",
           "response": [],
           "result": "Thou leavest the veteran master with black brachet and slain lord beside the alder hollow. The open road and nearby resting ground remain free.",

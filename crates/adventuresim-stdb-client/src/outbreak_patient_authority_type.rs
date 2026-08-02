@@ -10,9 +10,9 @@ pub struct OutbreakPatientAuthority {
     pub id: String,
     pub case_id: String,
     pub patient_character_id: u64,
-    pub family_resident_character_id: Option<u64>,
     pub episode_id: u64,
-    pub active: bool,
+    pub context_active: bool,
+    pub health_active: bool,
     pub corpse_id: Option<String>,
     pub autopsy_evidence_id: Option<String>,
 }
@@ -28,10 +28,9 @@ pub struct OutbreakPatientAuthorityCols {
     pub id: __sdk::__query_builder::Col<OutbreakPatientAuthority, String>,
     pub case_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, String>,
     pub patient_character_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, u64>,
-    pub family_resident_character_id:
-        __sdk::__query_builder::Col<OutbreakPatientAuthority, Option<u64>>,
     pub episode_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, u64>,
-    pub active: __sdk::__query_builder::Col<OutbreakPatientAuthority, bool>,
+    pub context_active: __sdk::__query_builder::Col<OutbreakPatientAuthority, bool>,
+    pub health_active: __sdk::__query_builder::Col<OutbreakPatientAuthority, bool>,
     pub corpse_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, Option<String>>,
     pub autopsy_evidence_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, Option<String>>,
 }
@@ -46,12 +45,9 @@ impl __sdk::__query_builder::HasCols for OutbreakPatientAuthority {
                 table_name,
                 "patient_character_id",
             ),
-            family_resident_character_id: __sdk::__query_builder::Col::new(
-                table_name,
-                "family_resident_character_id",
-            ),
             episode_id: __sdk::__query_builder::Col::new(table_name, "episode_id"),
-            active: __sdk::__query_builder::Col::new(table_name, "active"),
+            context_active: __sdk::__query_builder::Col::new(table_name, "context_active"),
+            health_active: __sdk::__query_builder::Col::new(table_name, "health_active"),
             corpse_id: __sdk::__query_builder::Col::new(table_name, "corpse_id"),
             autopsy_evidence_id: __sdk::__query_builder::Col::new(
                 table_name,

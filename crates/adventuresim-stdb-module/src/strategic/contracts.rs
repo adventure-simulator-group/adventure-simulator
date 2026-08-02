@@ -69,7 +69,7 @@ fn record_contract_issuer_interaction(
         || issuer.service_id != contract.service_id
         || presence.settlement_id != contract.settlement_id
         || presence.location_id != location_id
-        || !crate::settlement_population::npc_is_present(&presence, minute)
+        || !crate::settlement_population::npc_is_present(ctx, &presence, minute)
     {
         return Err("Contract issuer is not available for interaction".into());
     }

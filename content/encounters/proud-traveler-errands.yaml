@@ -23,7 +23,7 @@
       "choices": [
         {
           "id": "render_service",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Render the requested service without bargaining",
           "response": [{ "speaker": "proud_traveler", "text": "Thy courtesy hath done what pride alone could not. Take eight groschen, and mark what our close labor hath shown: where mire rose to mid-shin, mail-burdened riders and horses could scarce advance, whilst lightly burdened haulers yet moved freely.", "reviewed_shakespearean": true }],
           "result": "Thou spendest an hour hauling beside the household, acceptest modest payment, and observest that mid-shin mud stops effective movement by mail-burdened riders and horses whilst lightly burdened haulers remain mobile.",
@@ -57,7 +57,7 @@
         },
         {
           "id": "order_household",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "relationship_personality"] },
           "label": "Order his household into an efficient hauling line",
           "response": [{ "speaker": "proud_traveler", "text": "Thy command hath lent one purpose unto many weary hands. The cart is free, and thou hast seen the measure plainly: mid-shin mire arresteth mail-burdened riders and horses, whilst lightly burdened haulers keep their movement.", "reviewed_shakespearean": true }],
           "result": "Thou orderest and joinest the household hauling line for twenty minutes, observing that mid-shin mud checks mail-burdened riders and horses but leaves lightly burdened haulers mobile.",
@@ -72,7 +72,7 @@
         },
         {
           "id": "rebuke_pride",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Rebuke his pride and remind him of Christian duty",
           "response": [{ "speaker": "proud_traveler", "text": "Thy rebuke striketh home. A Christian master oweth duty unto the exhausted servant, not scorn. I shall take my share of the rope. Accept two flasks of table wine, and remember what our common labor showed: mid-shin mire stayed the mail-burdened riders and horses, not the lightly burdened haulers.", "reviewed_shakespearean": true }],
           "result": "Thou recallest the traveler to his duty toward exhausted servants and haulest beside them for forty minutes, receiving two flasks of wine and observing how mid-shin mud stops mail-burdened movement but not lightly burdened haulers.",
@@ -108,7 +108,7 @@
         },
         {
           "id": "ignore",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["ignore_travel"] },
           "label": "Continue along the open edge of the causeway",
           "response": [],
           "result": "Thou passest along the open edge of the causeway and leavest the proud traveler to his mired cart.",

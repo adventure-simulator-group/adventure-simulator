@@ -1124,7 +1124,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
             kind: InvestigationActionKind::LocateContact,
             route: RouteClass::SocialInquiry,
             target_kind: "contact".into(),
-            target_id: primary.resident_character_id.to_string(),
+            target_id: secondary.resident_character_id.to_string(),
             prerequisite: None,
             alternate: physical_action,
             active_initially: true,
@@ -1247,8 +1247,6 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
             OutbreakExposure {
                 patient_ref,
                 patient_character_id: resident_character_id,
-                family_resident_character_id: (name == "first")
-                    .then(|| secondary.resident_character_id.clone()),
                 episode_id,
                 exposed_at,
                 became_symptomatic_at,

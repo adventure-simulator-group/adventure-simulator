@@ -564,7 +564,6 @@ pub struct OutbreakExposure {
     pub patient_character_id: u64,
     /// Explicit authoritative kinship only. `None` means clergy/civic custody;
     /// generation must never infer family from witness adjacency.
-    pub family_resident_character_id: Option<u64>,
     pub episode_id: u64,
     pub exposed_at: u64,
     pub became_symptomatic_at: u64,

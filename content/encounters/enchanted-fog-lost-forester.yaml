@@ -24,7 +24,7 @@
       "choices": [
         {
           "id": "hold_staked_line_against_voices",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Hold the road-stakes and keep the company in touch",
           "response": [{ "speaker": "forest_reeve", "text": "Grip thou the iron stakes and keep each hand in living touch. Though beloved voices call beyond the line, I shall lead by the marks I set before the mist arose.", "reviewed_shakespearean": true }],
           "result": "For forty-five minutes thou holdest fast against borrowed voices and keepest the company hand to hand upon the reeve's staked line. Near the clear edge he prepareth his spare self bow across a narrow drainage cut. Two mailed road robbers show blades only, find no ranged answer across the gap, and withdraw without a shot. For thy courage the reeve granteth thee that bow and eight arrows from his pack.",
@@ -42,7 +42,7 @@
         },
         {
           "id": "follow_falling_water",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Follow falling water beneath the reeve's local judgment",
           "response": [{ "speaker": "forest_reeve", "text": "The false voices wander, but water yet falleth toward the old roadside drain. Read its descent beneath my premise, whilst I match each turn unto my stakes and local bounds.", "reviewed_shakespearean": true }],
           "result": "For an hour thou readest the fall of hidden water while the reeve matchest it to his known drains, stakes, and lawful road. The company reacheth the clear edge at a narrow drainage cut, where he prepareth the pack's spare self bow. Two mailed road robbers bearing blades only cannot answer across that lane and withdraw unshot. The reeve rewardeth thy prudent reading with the bow and eight arrows.",
@@ -60,7 +60,7 @@
         },
         {
           "id": "hear_bell_and_stream_beneath_echoes",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Distinguish the iron road-bell and stream beneath the echoes",
           "response": [{ "speaker": "forest_reeve", "text": "Hearken for the iron road-bell's blunt return and the stream's unbroken fall. The copied cries leap without distance; those honest sounds abide where wood and water set them.", "reviewed_shakespearean": true }],
           "result": "For forty minutes thou separatest the real iron bell and steady stream from familiar voices that shift without distance. The reeve useth those bearings to recover his marked line. At its clear edge he setteth the spare self bow across a narrow drainage cut; two mailed, blade-only road robbers cannot answer that range and retreat before any shot. He granteth thee the bow and eight arrows for prudent hearing.",
@@ -78,7 +78,7 @@
         },
         {
           "id": "calm_and_name_the_company",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Calm the company and name each living companion",
           "response": [{ "speaker": "forest_reeve", "text": "Speak each living name and bid its bearer answer from thy hand's reach. Courtesy among the fearful shall keep borrowed voices from dividing those I guide.", "reviewed_shakespearean": true }],
           "result": "For thirty-five minutes thou namest and reassures each frightened forester, so every true answer cometh from a companion held within the line. Thus composed, they obey the reeve unto the clear edge. He prepareth the spare self bow across a narrow drainage cut; two mailed road robbers reveal blades only and withdraw without a shot when they cannot answer its range. He granteth thee the bow and eight arrows for courteous aid.",
@@ -97,7 +97,7 @@
         },
         {
           "id": "coordinate_reeves_mist_line",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Coordinate the reeve's tethers, counting, and mist-line",
           "response": [{ "speaker": "forest_reeve", "text": "I shall choose the drainage, stakes, route, and marching order. Set thou my tethers, repeat each count, and keep every charge obedient beneath that forest judgment.", "reviewed_shakespearean": true }],
           "result": "For fifty minutes thou coordinatest tethers, repeated counts, and the mist-line while the reeve alone chooseth drainage, stakes, route, and order. His company reacheth the clear edge together. There he prepareth the spare self bow across a narrow drainage cut; two mailed road robbers show blades only, cannot answer across it, and withdraw without a shot. He granteth thee the bow and eight arrows for prudent command.",
@@ -116,7 +116,7 @@
         },
         {
           "id": "keep_shared_litany",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Keep a spoken litany as the company's shared cadence",
           "response": [{ "speaker": "forest_reeve", "text": "Let each Christian speak the known response upon the same measured breath. No prayer commandeth this fog; the shared cadence shall fix our moral purpose and tell true companions from borrowed cries.", "reviewed_shakespearean": true }],
           "result": "For forty-five minutes the company keepeth a familiar spoken litany as shared cadence and moral focus. It neither dispelleth nor altereth the fog; it helpeth mortal companions answer together while the reeve followeth his stakes unto the clear edge. There his prepared self bow commandeth a narrow drainage cut, and two mailed road robbers with blades only withdraw without a shot when they cannot answer its range. He granteth thee the bow and eight arrows for faithful fellowship.",
@@ -155,7 +155,7 @@
         },
         {
           "id": "ignore",
-          "interaction": { "kind": "shared_systems" },
+          "interaction": { "kind": "shared_systems", "character_actions": ["ignore_travel"] },
           "label": "Wait silently for the white fog to thin",
           "response": [],
           "result": "Thou waitest three hours without joining the forest company. The white enchantment passeth, the fog thinneth of itself, and thou continuest upon the common road.",

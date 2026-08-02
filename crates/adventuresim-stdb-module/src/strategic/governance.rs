@@ -1223,7 +1223,7 @@ fn recruitment_offer_bindings_are_live(
             presence_location_id: presence.as_ref().map(|row| row.location_id.as_str()),
             presence_is_current: presence
                 .as_ref()
-                .is_some_and(|row| crate::settlement_population::npc_is_present(row, now)),
+                .is_some_and(|row| crate::settlement_population::npc_is_present(ctx, row, now)),
         },
     )
 }

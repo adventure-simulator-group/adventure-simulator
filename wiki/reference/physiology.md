@@ -136,6 +136,11 @@ training from sharpening historical observations. Every notebook records at
 most one examination per day. Higher bands produce more finely quantized
 readings and a better-calibrated differential, but do not add examinations.
 
+Contacting a contextual Character opens the same kind of pair-presence span at
+the current clock frontier; merely discovering or rendering a Patient does
+not. Leaving the case site closes the span. This permits ordinary examination
+and close-contact transmission without granting retroactive shared time.
+
 The same private spans bound passive prevention. Each span pins both members'
 Physiology bands and is clamped to their lesser personal clock, so joining,
 leaving, training across a band boundary, lazy catch-up, and split time advances

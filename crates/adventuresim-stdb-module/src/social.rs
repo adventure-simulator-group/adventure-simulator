@@ -687,7 +687,7 @@ pub fn spend_time_with_settlement_resident(
         .character_id()
         .find(resident_character_id)
         .and_then(|presence| {
-            crate::settlement_population::npc_presence_remaining_minutes(&presence, now)
+            crate::settlement_population::npc_presence_remaining_minutes_at(ctx, &presence, now)
         });
     if remaining_presence.is_none_or(|remaining| requested_minutes > remaining) {
         return Err("The conversation would continue beyond the resident's availability".into());
@@ -1969,6 +1969,83 @@ pub fn close_physiology_presence(ctx: &ReducerContext, character_id: u64) {
                 .min(clock(span.high_id))
                 .max(span.started_at),
         );
+        ctx.db.physiology_presence_span().id().update(span);
+    }
+}
+
+/// Begin observation only when two contextual Characters actually make
+/// contact. Earlier co-location is never backfilled into the chart.
+pub(crate) fn begin_physiology_presence_on_contact(
+    ctx: &ReducerContext,
+    observer_id: u64,
+    patient_id: u64,
+) {
+    let Some((low_id, high_id)) = canonical_pair(observer_id, patient_id) else {
+        return;
+    };
+    if ctx
+        .db
+        .physiology_presence_span()
+        .presence_low_id()
+        .filter(low_id)
+        .any(|span| span.high_id == high_id && span.ended_at.is_none())
+    {
+        return;
+    }
+    let clock = |id| {
+        ctx.db
+            .character_time()
+            .character_id()
+            .find(id)
+            .map_or(0, |time| time.minutes)
+    };
+    let band = |id| {
+        ctx.db
+            .character_capability()
+            .character_id()
+            .find(id)
+            .map_or(0, |capability| {
+                capability.physiology.round().clamp(0.0, 5.0) as u8
+            })
+    };
+    ctx.db
+        .physiology_presence_span()
+        .insert(PhysiologyPresenceSpan {
+            id: 0,
+            low_id,
+            high_id,
+            started_at: clock(low_id).min(clock(high_id)),
+            ended_at: None,
+            low_observer_band: band(low_id),
+            high_observer_band: band(high_id),
+        });
+}
+
+pub(crate) fn close_physiology_presence_between(ctx: &ReducerContext, left_id: u64, right_id: u64) {
+    let Some((low_id, high_id)) = canonical_pair(left_id, right_id) else {
+        return;
+    };
+    let low_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(low_id)
+        .map_or(0, |time| time.minutes);
+    let high_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(high_id)
+        .map_or(0, |time| time.minutes);
+    for mut span in ctx
+        .db
+        .physiology_presence_span()
+        .presence_low_id()
+        .filter(low_id)
+        .filter(|span| span.high_id == high_id && span.ended_at.is_none())
+        .collect::<Vec<_>>()
+    {
+        span.ended_at = Some(low_minute.min(high_minute).max(span.started_at));
         ctx.db.physiology_presence_span().id().update(span);
     }
 }
