@@ -11,21 +11,21 @@ pub type ControlledPlayer = Actions<Player>;
 /// Component for a player entity, for both client-controlled
 /// active player and other players.
 #[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq, Eq)]
-#[require(PlayerId, Limbs, Skills, Attributes, Stats)]
+#[require(CharacterId, Limbs, Skills, Attributes, Stats)]
 #[component(immutable)]
 pub struct Player {
     pub name: String,
 }
 
-/// Player's client ID usable to distinguish the active player
-/// from other connected players.
+/// Strategic character identity projected into the transient tactical world.
+/// Network client identity remains a separate transport concern.
 #[derive(
-    Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, Copy, PartialEq, Eq,
+    Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, Copy, PartialEq, Eq, Hash,
 )]
 #[component(immutable)]
-pub struct PlayerId(pub u64);
+pub struct CharacterId(pub u64);
 
-impl PlayerId {
+impl CharacterId {
     /// Get associated color of this player.
     pub fn color(&self) -> Color {
         // SplitMix64-style mixing for good bit diffusion
@@ -91,7 +91,6 @@ pub struct TacticalCombatState {
     pub blood_loss_fraction: f32,
     pub imbalance: f32,
     pub incapacitation: f32,
-    pub incapacitated: bool,
 }
 
 impl Default for TacticalCombatState {
@@ -102,8 +101,26 @@ impl Default for TacticalCombatState {
             blood_loss_fraction: 0.0,
             imbalance: 0.0,
             incapacitation: 0.0,
-            incapacitated: false,
         }
+    }
+}
+
+impl TacticalCombatState {
+    /// Derives readiness from the one replicated incapacitation value.
+    ///
+    /// Readiness is intentionally not stored separately: clients, authority
+    /// checks, AI, and mission resolution therefore cannot observe divergent
+    /// boolean/component copies of the same state.
+    pub fn incapacitation_status(&self) -> IncapacitationStatus {
+        match self.incapacitation {
+            total if total >= 1.0 => IncapacitationStatus::Incapacitated,
+            total if total > 0.5 => IncapacitationStatus::Staggered,
+            _ => IncapacitationStatus::Ready,
+        }
+    }
+
+    pub fn is_incapacitated(&self) -> bool {
+        self.incapacitation_status() == IncapacitationStatus::Incapacitated
     }
 }
 

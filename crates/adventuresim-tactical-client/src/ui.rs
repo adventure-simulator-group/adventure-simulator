@@ -1,6 +1,6 @@
 use adventuresim_tactical_core::{
     inventory::{ItemQuery, ItemQueryItem},
-    player::{Player, PlayerId},
+    player::{CharacterId, Player},
     prelude::*,
 };
 use adventuresim_tactical_netcode::{
@@ -339,7 +339,7 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 }
 
 fn combat_state_label(state: &TacticalCombatState) -> String {
-    if state.incapacitated {
+    if state.is_incapacitated() {
         format!(
             "INCAPACITATED | Blood loss {:.0}% | Imbalance {:.0}%",
             state.blood_loss_fraction * 100.0,
@@ -380,13 +380,13 @@ fn on_tactical_outcome_display(
 
 fn update_stats_ui(
     diagnostics: Res<DiagnosticsStore>,
-    player: Single<(Ref<Transform>, &PlayerId), With<ClientPlayer>>,
+    player: Single<(Ref<Transform>, &CharacterId), With<ClientPlayer>>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<PositionSpan>>,
         Single<&mut TextSpan, With<FpsSpan>>,
     )>,
 ) {
-    let (transform, &PlayerId(_player_id)) = player.into_inner();
+    let (transform, &CharacterId(_player_id)) = player.into_inner();
 
     if transform.is_changed() {
         let translation = transform.translation;
@@ -404,7 +404,7 @@ fn update_stats_ui(
 }
 
 fn update_skills_ui(
-    player: Single<(&Skills, &PlayerId), (With<ClientPlayer>, Changed<Skills>)>,
+    player: Single<(&Skills, &CharacterId), (With<ClientPlayer>, Changed<Skills>)>,
     mut spans: Query<(&mut TextSpan, &SkillSpan)>,
 ) {
     let (skills, _player_id) = player.into_inner();
@@ -449,7 +449,7 @@ fn update_skills_ui(
 }
 
 fn update_limbs_ui(
-    player: Single<(&Limbs, &PlayerId), (With<ClientPlayer>, Changed<Limbs>)>,
+    player: Single<(&Limbs, &CharacterId), (With<ClientPlayer>, Changed<Limbs>)>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<HeadSpan>>,
         Single<&mut TextSpan, With<ChestSpan>>,
@@ -593,7 +593,7 @@ fn update_attack_timer_ui(
 fn on_successful_attack_display(
     event: On<SuccessfulAttackResponse>,
     mut cmd: Commands,
-    q_player: Query<(&Player, &PlayerId)>,
+    q_player: Query<(&Player, &CharacterId)>,
     mut span: Single<(Entity, &mut AttackResultText, &mut Text)>,
 ) {
     let Some((player, id)) = event.hit.first().and_then(|e| q_player.get(*e).ok()) else {
@@ -663,7 +663,7 @@ fn update_attack_result_ui(
 fn on_new_player_added_hook(
     event: On<Add, Player>,
     mut commands: Commands,
-    query: Query<(&PlayerId, &Player)>,
+    query: Query<(&CharacterId, &Player)>,
     args: Res<Args>,
     players_list: Single<Entity, With<PlayersList>>,
 ) -> Result {
@@ -712,7 +712,7 @@ mod tests {
             "Active | Blood loss 25% | Imbalance 50%"
         );
         let incapacitated = TacticalCombatState {
-            incapacitated: true,
+            incapacitation: 1.0,
             ..active
         };
         assert!(combat_state_label(&incapacitated).starts_with("INCAPACITATED"));

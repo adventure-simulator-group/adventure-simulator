@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1689)
+## Files (1702)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -666,8 +666,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/mission_outcome_candidate_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mixed_lithology_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
-- `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
-- `crates/adventuresim-stdb-client/src/mod.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-client/src/modeled_tree_species_profile_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/modeled_tree_species_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/morale_band_type.rs` — Generated SpacetimeDB data type.
@@ -1090,8 +1088,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/strategic/world_import.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/surgery.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/tactical.rs` — Rust source module for this component.
-- `crates/adventuresim-stdb-module/src/tactical.rs` — Rust source module for this component.
-- `crates/adventuresim-stdb-module/src/tactical.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/time.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/world_actor.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/static/tactical.html` — Browser UI page.
@@ -1162,8 +1158,25 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-server-dispatcher/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-tactical-server/src/bot.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-server/src/bot/defense.rs` — Rust source module.
+- `crates/adventuresim-tactical-server/src/bot/offense.rs` — Rust source module.
 - `crates/adventuresim-tactical-server/src/combat.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-server/src/combat/authority.rs` — Rust source module.
+- `crates/adventuresim-tactical-server/src/combat/condition.rs` — Rust source module.
+- `crates/adventuresim-tactical-server/src/combat/consequence.rs` — Rust source module.
+- `crates/adventuresim-tactical-server/src/combat/ingress.rs` — Rust source module.
+- `crates/adventuresim-tactical-server/src/combat/melee.rs` — Rust source module.
+- `crates/adventuresim-tactical-server/src/combat/protocol.rs` — Rust source module.
+- `crates/adventuresim-tactical-server/src/combat/ranged.rs` — Rust source module.
 - `crates/adventuresim-tactical-server/src/main.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-server/src/main.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-server/src/main.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-server/src/mission/enrollment.rs` — Rust source module.
+- `crates/adventuresim-tactical-server/src/mission/mod.rs` — Rust source module.
+- `crates/adventuresim-tactical-server/src/mission/receipt.rs` — Rust source module.
+- `crates/adventuresim-tactical-server/src/mission/systems.rs` — Rust source module.
+- `crates/adventuresim-tactical-server/src/mission/terminal.rs` — Rust source module.
+- `crates/adventuresim-tactical-server/src/player_projection.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/stdb.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/terrain.rs` — Rust source module for this component.
 - `crates/adventuresim-terrain/Cargo.toml` — Cargo package/workspace manifest.

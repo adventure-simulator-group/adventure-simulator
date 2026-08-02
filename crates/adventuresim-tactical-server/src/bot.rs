@@ -1,88 +1,34 @@
+mod defense;
+mod offense;
+
+use adventuresim_core::item_references::ARROW_ID;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::FromClient,
-    message::{DefendRequest, MeleeActionPhase, MeleeActionRequest},
+    message::{DefendRequest, MeleeActionRequest},
 };
 use bevy::prelude::*;
 use std::cmp::Ordering;
 
 use crate::{
-    MissionState,
     combat::{
-        Incapacitated, MeleeAttackIntent, MeleeAttackStartedIntent, PendingDefenderResponse,
-        RangedAttackIntent, RangedAttackStartedIntent, TacticalCombatSide,
-        TacticalCombatantDefeated,
+        CombatDuration, CombatInstant, CombatSet, MeleeAttackIntent, MeleeAttackStartedIntent,
+        PendingDefenderResponse, RangedAttackIntent, RangedAttackStartedIntent, ReportedPrecision,
+        TacticalCombatSide, TacticalCombatantDefeated,
     },
+    mission::MissionState,
 };
-
-/// Chance that a bot notices an incoming attack in time to parry it.
-const PARRY_CHANCE: f64 = 0.2;
-/// Chance that a bot notices an incoming attack in time to dodge it.
-const DODGE_CHANCE: f64 = 0.2;
-/// Flanking values at or below this are considered "facing each other" (see
-/// [`flanking_from_dir`]), which is the only case a bot can react at all.
-const FRONTAL_FLANKING_MAX: f32 = 0.01;
-/// Range (in seconds) a bot's reaction to a noticed attack is delayed by,
-/// simulating varying skill/reflexes between bots. A bot that rolls a long
-/// delay may end up committing its reaction only after the attack has
-/// already been resolved, i.e. reacting too late to matter.
-const REACTION_DELAY_SECS: std::ops::Range<f32> = 0.05..0.6;
-/// AI attacks are intentionally deterministic until animation-driven precision
-/// can be authored for server-controlled actors.
-const AI_HIT_PRECISION: f32 = 1.0;
-const AI_BODY_PART: BodyPart = BodyPart::Chest;
-const AI_WINDUP_SECS: f32 = 0.5;
-const AI_COOLDOWN_SECS: f32 = 1.0;
-const AI_RANGED_MIN_STANDOFF: f32 = 1.5;
-const AI_RANGED_MAX_STANDOFF: f32 = 12.0;
-const AI_RANGED_STANDOFF_SLOP: f32 = 0.5;
-const ARROW_ITEM_ID: &str = "arrow";
-
-fn ranged_weapon_needs_ammo_lookup(weapon_is_ranged: bool, weapon_reach: f32) -> bool {
-    weapon_is_ranged && weapon_reach.is_finite() && weapon_reach > 0.0
-}
+use defense::{
+    CountedEnemyDefeat, on_attack_started, on_tactical_combatant_defeated,
+    on_targeted_attack_started, on_targeted_ranged_attack_started, tick_bot_reactions,
+};
+pub use offense::OffensiveCombatAi;
+use offense::{compare_target, drive_offensive_combat_ai, ranged_weapon_needs_ammo_lookup};
 
 /// Marks a server-controlled bot filling in for a temporary (non-connected)
 /// mission character.
 #[derive(Component)]
 pub struct MissionEnemy;
-
-/// Enables server-owned offensive control, preferring ranged fire while a
-/// usable ranged weapon and arrows are available and otherwise using melee.
-#[derive(Component, Debug)]
-pub struct OffensiveMeleeAi {
-    target: Option<Entity>,
-    phase: OffensiveMeleePhase,
-}
-
-impl Default for OffensiveMeleeAi {
-    fn default() -> Self {
-        Self {
-            target: None,
-            phase: OffensiveMeleePhase::Pursuing,
-        }
-    }
-}
-
-#[derive(Debug)]
-enum OffensiveMeleePhase {
-    Pursuing,
-    MeleeWindup(Timer),
-    RangedWindup(Timer),
-    Cooldown(Timer),
-}
-
-#[derive(Component)]
-pub struct CountedEnemyDefeat;
-
-/// A bot's yet-to-commit reaction to a noticed attack. Ticks down for
-/// [`REACTION_DELAY_SECS`] before becoming a [`PendingDefenderResponse`],
-/// simulating the bot's reflexes.
-#[derive(Component)]
-struct PendingBotReaction {
-    timer: Timer,
-    choice: DefendRequest,
-}
 
 pub struct BotPlugin;
 
@@ -92,318 +38,10 @@ impl Plugin for BotPlugin {
             .add_observer(on_attack_started)
             .add_observer(on_targeted_attack_started)
             .add_observer(on_targeted_ranged_attack_started)
-            .add_systems(Update, (drive_offensive_melee_ai, tick_bot_reactions));
-    }
-}
-
-fn on_tactical_combatant_defeated(
-    defeated: On<TacticalCombatantDefeated>,
-    enemies: Query<(), (With<MissionEnemy>, Without<CountedEnemyDefeat>)>,
-    mut commands: Commands,
-    mut state: ResMut<MissionState>,
-) {
-    let entity = defeated.0;
-    if enemies.get(entity).is_err() {
-        return;
-    }
-    commands.entity(entity).insert(CountedEnemyDefeat);
-    state.enemies_defeated = state.enemies_defeated.saturating_add(1);
-}
-
-/// Predicts whether the nearest opposing AI facing a client attacker notices
-/// the untargeted client windup and decides to dodge or parry it.
-///
-/// A bot has no real reflexes: it only ever gets a chance to react when it is
-/// facing its attacker (`flanking <= FRONTAL_FLANKING_MAX`), and even then it
-/// correctly reads the attack only some of the time. A decision to react is
-/// committed only after a random delay (see [`REACTION_DELAY_SECS`]).
-fn on_attack_started(
-    event: On<FromClient<MeleeActionRequest>>,
-    mut cmd: Commands,
-    q_character: Query<(&CharacterLook, &Transform, &TacticalCombatSide)>,
-    q_bots: Query<
-        (Entity, &CharacterLook, &Transform, &TacticalCombatSide),
-        (With<OffensiveMeleeAi>, Without<Incapacitated>),
-    >,
-) {
-    if event.phase != MeleeActionPhase::Start {
-        return;
-    }
-    let Some(attacker) = event.client_id.entity() else {
-        return;
-    };
-    let Ok((attacker_look, attacker_transform, attacker_side)) = q_character.get(attacker) else {
-        return;
-    };
-    let nearest = q_bots
-        .iter()
-        .filter(|(_, _, _, side)| **side != *attacker_side)
-        .min_by(|(a, _, a_transform, _), (b, _, b_transform, _)| {
-            compare_target(attacker_transform, a_transform, *a, b_transform, *b)
-        });
-    let Some((bot, bot_look, _, _)) = nearest else {
-        return;
-    };
-    try_start_reaction(&mut cmd, bot, attacker_look, bot_look);
-}
-
-fn on_targeted_attack_started(
-    event: On<MeleeAttackStartedIntent>,
-    mut cmd: Commands,
-    q_character: Query<&CharacterLook>,
-    q_ai: Query<&CharacterLook, (With<OffensiveMeleeAi>, Without<Incapacitated>)>,
-) {
-    let Ok([attacker_look, defender_look]) = q_character.get_many([event.attacker, event.target])
-    else {
-        return;
-    };
-    if q_ai.get(event.target).is_ok() {
-        try_start_reaction(&mut cmd, event.target, attacker_look, defender_look);
-    }
-}
-
-fn on_targeted_ranged_attack_started(
-    event: On<RangedAttackStartedIntent>,
-    mut cmd: Commands,
-    q_character: Query<&CharacterLook>,
-    q_ai: Query<&CharacterLook, (With<OffensiveMeleeAi>, Without<Incapacitated>)>,
-) {
-    let Some(target) = event.target else {
-        return;
-    };
-    let Ok([attacker_look, defender_look]) = q_character.get_many([event.attacker, target]) else {
-        return;
-    };
-    if q_ai.get(target).is_ok() {
-        try_start_reaction(&mut cmd, target, attacker_look, defender_look);
-    }
-}
-
-fn try_start_reaction(
-    cmd: &mut Commands,
-    defender: Entity,
-    attacker_look: &CharacterLook,
-    defender_look: &CharacterLook,
-) {
-    let (a2, a1) = attacker_look.yaw.sin_cos();
-    let (d2, d1) = defender_look.yaw.sin_cos();
-    if flanking_from_dir((a1, a2), (d1, d2)) > FRONTAL_FLANKING_MAX {
-        return;
-    }
-    let Some(choice) = roll_defend_choice() else {
-        return;
-    };
-    cmd.entity(defender).insert(PendingBotReaction {
-        timer: Timer::from_seconds(rand::random_range(REACTION_DELAY_SECS), TimerMode::Once),
-        choice,
-    });
-}
-
-fn compare_target(
-    origin: &Transform,
-    a_transform: &Transform,
-    a: Entity,
-    b_transform: &Transform,
-    b: Entity,
-) -> Ordering {
-    let a_distance_squared = origin
-        .translation
-        .xz()
-        .distance_squared(a_transform.translation.xz());
-    let b_distance_squared = origin
-        .translation
-        .xz()
-        .distance_squared(b_transform.translation.xz());
-    a_distance_squared
-        .total_cmp(&b_distance_squared)
-        .then_with(|| a.to_bits().cmp(&b.to_bits()))
-}
-
-fn drive_offensive_melee_ai(
-    mut cmd: Commands,
-    time: Res<Time<()>>,
-    viewer: TacticalPlayerViewer,
-    candidates: Query<
-        (Entity, &Transform, &TacticalCombatSide),
-        (With<Player>, Without<Incapacitated>),
-    >,
-    mut ai: Query<
-        (
-            Entity,
-            &Transform,
-            &TacticalCombatSide,
-            &mut CharacterLook,
-            &mut input::AccumulatedInput,
-            &mut OffensiveMeleeAi,
-        ),
-        Without<Incapacitated>,
-    >,
-) {
-    for (entity, transform, side, mut look, mut input, mut controller) in &mut ai {
-        let target = candidates
-            .iter()
-            .filter(|(candidate, _, candidate_side)| {
-                *candidate != entity && **candidate_side != *side
-            })
-            .min_by(|(a, a_transform, _), (b, b_transform, _)| {
-                compare_target(transform, a_transform, *a, b_transform, *b)
-            })
-            .map(|(target, _, _)| target);
-
-        if target != controller.target {
-            controller.target = target;
-            controller.phase = OffensiveMeleePhase::Pursuing;
-        }
-        let Some(target) = target else {
-            input.last_movement = None;
-            continue;
-        };
-        let Ok((_, target_transform, _)) = candidates.get(target) else {
-            continue;
-        };
-
-        let offset = target_transform.translation.xz() - transform.translation.xz();
-        let distance = offset.length();
-        if distance > f32::EPSILON {
-            look.yaw = (-offset.x).atan2(-offset.y);
-        }
-        let (weapon_reach, weapon_is_melee, weapon_is_ranged) = viewer
-            .get(entity)
-            .map(|view| {
-                (
-                    view.weapon_reach(),
-                    view.weapon_is_melee(),
-                    view.weapon_is_ranged(),
-                )
-            })
-            .unwrap_or_default();
-        let has_ammo = ranged_weapon_needs_ammo_lookup(weapon_is_ranged, weapon_reach)
-            && viewer.inventory.get(entity).has_item_id(ARROW_ITEM_ID);
-        let use_ranged = weapon_is_ranged && weapon_reach > 0.0 && has_ammo;
-        let interaction_range = melee_interaction_range(weapon_reach);
-
-        let abort_windup = matches!(
-            &controller.phase,
-            OffensiveMeleePhase::MeleeWindup(_)
-                if !weapon_is_melee || weapon_reach <= 0.0 || distance > interaction_range
-        ) || matches!(
-            &controller.phase,
-            OffensiveMeleePhase::RangedWindup(_) if !use_ranged || distance > weapon_reach
-        );
-        if abort_windup {
-            controller.phase = OffensiveMeleePhase::Pursuing;
-        }
-
-        match &mut controller.phase {
-            OffensiveMeleePhase::Pursuing if use_ranged => {
-                let standoff = (weapon_reach * 0.5)
-                    .clamp(AI_RANGED_MIN_STANDOFF, AI_RANGED_MAX_STANDOFF)
-                    .min(weapon_reach);
-                if distance > weapon_reach || distance > standoff + AI_RANGED_STANDOFF_SLOP {
-                    input.last_movement = Some(Vec2::Y);
-                } else if distance + AI_RANGED_STANDOFF_SLOP < standoff {
-                    input.last_movement = Some(-Vec2::Y);
-                } else {
-                    input.last_movement = None;
-                    cmd.trigger(RangedAttackStartedIntent {
-                        attacker: entity,
-                        target: Some(target),
-                        windup_secs: AI_WINDUP_SECS,
-                    });
-                    controller.phase = OffensiveMeleePhase::RangedWindup(Timer::from_seconds(
-                        AI_WINDUP_SECS,
-                        TimerMode::Once,
-                    ));
-                }
-            }
-            OffensiveMeleePhase::Pursuing
-                if weapon_is_melee && weapon_reach > 0.0 && distance <= interaction_range =>
-            {
-                input.last_movement = None;
-                cmd.trigger(MeleeAttackStartedIntent {
-                    attacker: entity,
-                    target,
-                    windup_secs: AI_WINDUP_SECS,
-                });
-                controller.phase = OffensiveMeleePhase::MeleeWindup(Timer::from_seconds(
-                    AI_WINDUP_SECS,
-                    TimerMode::Once,
-                ));
-            }
-            OffensiveMeleePhase::Pursuing => {
-                input.last_movement = Some(Vec2::Y);
-            }
-            OffensiveMeleePhase::MeleeWindup(timer) => {
-                input.last_movement = None;
-                timer.tick(time.delta());
-                if timer.is_finished() {
-                    cmd.trigger(MeleeAttackIntent {
-                        attacker: entity,
-                        target,
-                        body_part: AI_BODY_PART,
-                        hit_precision: AI_HIT_PRECISION,
-                    });
-                    controller.phase = OffensiveMeleePhase::Cooldown(Timer::from_seconds(
-                        AI_COOLDOWN_SECS,
-                        TimerMode::Once,
-                    ));
-                }
-            }
-            OffensiveMeleePhase::RangedWindup(timer) => {
-                input.last_movement = None;
-                timer.tick(time.delta());
-                if timer.is_finished() {
-                    cmd.trigger(RangedAttackIntent {
-                        attacker: entity,
-                        target: Some(target),
-                        body_part: AI_BODY_PART,
-                        hit_precision: AI_HIT_PRECISION,
-                    });
-                    controller.phase = OffensiveMeleePhase::Cooldown(Timer::from_seconds(
-                        AI_COOLDOWN_SECS,
-                        TimerMode::Once,
-                    ));
-                }
-            }
-            OffensiveMeleePhase::Cooldown(timer) => {
-                input.last_movement = None;
-                timer.tick(time.delta());
-                if timer.is_finished() {
-                    controller.phase = OffensiveMeleePhase::Pursuing;
-                }
-            }
-        }
-    }
-}
-
-fn roll_defend_choice() -> Option<DefendRequest> {
-    let roll: f64 = rand::random();
-    if roll < PARRY_CHANCE {
-        Some(DefendRequest::Parry)
-    } else if roll < PARRY_CHANCE + DODGE_CHANCE {
-        Some(DefendRequest::Dodge)
-    } else {
-        None
-    }
-}
-
-fn tick_bot_reactions(
-    mut cmd: Commands,
-    time: Res<Time<()>>,
-    mut q_reacting: Query<(Entity, &mut PendingBotReaction), Without<Incapacitated>>,
-) {
-    for (bot, mut reaction) in &mut q_reacting {
-        reaction.timer.tick(time.delta());
-        if !reaction.timer.is_finished() {
-            continue;
-        }
-
-        cmd.entity(bot)
-            .remove::<PendingBotReaction>()
-            .insert(PendingDefenderResponse {
-                choice: reaction.choice,
-                set_at: time.elapsed_secs(),
-            });
+            .add_systems(
+                Update,
+                (drive_offensive_combat_ai, tick_bot_reactions).after(CombatSet::Condition),
+            );
     }
 }
 
@@ -468,7 +106,7 @@ mod tests {
                 side,
                 CharacterLook::default(),
                 input::AccumulatedInput::default(),
-                OffensiveMeleeAi::default(),
+                OffensiveCombatAi::default(),
                 TacticalCombatState::default(),
             ))
             .id();
@@ -505,7 +143,7 @@ mod tests {
                 side,
                 CharacterLook::default(),
                 input::AccumulatedInput::default(),
-                OffensiveMeleeAi::default(),
+                OffensiveCombatAi::default(),
                 TacticalCombatState::default(),
             ))
             .id();
@@ -528,7 +166,7 @@ mod tests {
             .spawn((
                 ItemOf(actor),
                 ItemProperties {
-                    id: ARROW_ITEM_ID.to_owned(),
+                    id: ARROW_ID.to_owned(),
                     weight: 0.05,
                 },
                 ItemQuantity(NonZeroU32::new(1).unwrap()),
@@ -556,7 +194,7 @@ mod tests {
             .init_resource::<RecordedRangedAttacks>()
             .add_observer(record_attack)
             .add_observer(record_ranged_attack)
-            .add_systems(Update, drive_offensive_melee_ai);
+            .add_systems(Update, drive_offensive_combat_ai);
         app
     }
 
@@ -612,25 +250,8 @@ mod tests {
     #[test]
     fn enemy_defeat_is_counted_only_once() {
         let mut app = App::new();
-        app.insert_resource(MissionState {
-            timeout: None,
-            enemies_defeated: 0,
-            required_enemy_defeats: 1,
-            expected_party_members: 1,
-            seen_party_members: Default::default(),
-            enrollment_begun: false,
-            enrollment_sealed: false,
-            abandonment_elapsed: Default::default(),
-            terminal_retry_not_before: Default::default(),
-            pending_resolution: None,
-            pending_receipt: None,
-            terminal_in_flight: false,
-            terminal_ack_deadline: None,
-            terminal_transport_failed: false,
-            terminal_presentation: None,
-            committed: false,
-        })
-        .add_observer(on_tactical_combatant_defeated);
+        app.insert_resource(MissionState::new(None, 1, NonZeroU32::new(1).unwrap()))
+            .add_observer(on_tactical_combatant_defeated);
         let enemy = app.world_mut().spawn(MissionEnemy).id();
 
         app.world_mut().trigger(TacticalCombatantDefeated(enemy));
@@ -638,7 +259,7 @@ mod tests {
         app.world_mut().trigger(TacticalCombatantDefeated(enemy));
         app.update();
 
-        assert_eq!(app.world().resource::<MissionState>().enemies_defeated, 1);
+        assert_eq!(app.world().resource::<MissionState>().enemies_defeated(), 1);
         assert!(app.world().entity(enemy).contains::<CountedEnemyDefeat>());
     }
 
@@ -762,9 +383,9 @@ mod tests {
         let selected = app
             .world()
             .entity(actor)
-            .get::<OffensiveMeleeAi>()
+            .get::<OffensiveCombatAi>()
             .unwrap()
-            .target;
+            .target();
         let expected = if first.to_bits() < second.to_bits() {
             first
         } else {
@@ -783,8 +404,8 @@ mod tests {
             .add_systems(
                 Update,
                 (
-                    drive_offensive_melee_ai,
                     crate::combat::update_tactical_combat_state,
+                    drive_offensive_combat_ai,
                 )
                     .chain(),
             );
@@ -832,7 +453,7 @@ mod tests {
                 app.world()
                     .entity(actor)
                     .get::<TacticalCombatState>()
-                    .is_some_and(|state| state.incapacitated)
+                    .is_some_and(TacticalCombatState::is_incapacitated)
             }) {
                 break;
             }
@@ -845,7 +466,7 @@ mod tests {
                     .entity(*actor)
                     .get::<TacticalCombatState>()
                     .unwrap()
-                    .incapacitated
+                    .is_incapacitated()
             })
             .collect();
         assert!(!incapacitated.is_empty());
@@ -866,25 +487,26 @@ mod tests {
             .entity(party)
             .get::<TacticalCombatState>()
             .unwrap()
-            .incapacitated;
+            .is_incapacitated();
         let enemy_defeated = app
             .world()
             .entity(enemy)
             .get::<TacticalCombatState>()
             .unwrap()
-            .incapacitated;
-        let resolution = crate::terminal_resolution(crate::TerminalCombatSnapshot {
-            required_enemies: 1,
-            loaded_enemies: 1,
-            defeated_enemies: u32::from(enemy_defeated),
-            loaded_party: 1,
-            incapacitated_party: u32::from(party_defeated),
-            enrollment_sealed: true,
-        });
+            .is_incapacitated();
+        let resolution =
+            crate::mission::terminal_resolution(crate::mission::TerminalCombatSnapshot {
+                required_enemies: 1,
+                loaded_enemies: 1,
+                defeated_enemies: u32::from(enemy_defeated),
+                loaded_party: 1,
+                incapacitated_party: u32::from(party_defeated),
+                enrollment_sealed: true,
+            });
         let expected = if party_defeated {
-            Some(crate::TacticalMissionResolution::Failed)
+            Some(adventuresim_stdb_client::TacticalMissionResolution::Failed)
         } else {
-            Some(crate::TacticalMissionResolution::Defeated)
+            Some(adventuresim_stdb_client::TacticalMissionResolution::Defeated)
         };
         assert_eq!(resolution, expected);
     }
