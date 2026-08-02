@@ -1058,7 +1058,7 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
                     .settlement_resident_presence()
                     .character_id()
                     .find(npc.character_id)
-                    .filter(|presence| crate::settlement_population::npc_is_present(presence, now))
+                    .filter(|presence| crate::settlement_population::npc_is_present(ctx, presence, now))
                     .map(|presence| (npc, presence))
             })
             .min_by_key(|(npc, _)| (!npc.service_id.is_empty(), npc.character_id.clone()))
@@ -1669,7 +1669,7 @@ fn ensure_simulation_quest_provisioning_environment(
         .character_id()
         .find(provider_id)
         .ok_or("Quest fixture general merchant has no presence")?;
-    if !crate::settlement_population::npc_is_present(&provider, minute) {
+    if !crate::settlement_population::npc_is_present(ctx, &provider, minute) {
         return Err("Quest fixture general merchant is not presently available".into());
     }
     Ok(settlement_id)
@@ -1731,7 +1731,7 @@ pub(crate) fn seed_simulation_quest_fixture_inner(
                     .find(profile.character_id)
                     .is_some_and(|presence| {
                         presence.settlement_id == settlement_id
-                            && crate::settlement_population::npc_is_present(&presence, minute)
+                            && crate::settlement_population::npc_is_present(ctx, &presence, minute)
                             && npc_location_is_navigable(
                                 &settlement.economy,
                                 has_keep,
@@ -2354,6 +2354,8 @@ mod developer_quest_source_tests {
             start_minute: 480,
             end_minute: 1_020,
             is_default: true,
+            context_suppressed: false,
+            health_suppressed: false,
         };
         for presentation in [
             Presentation::Man,

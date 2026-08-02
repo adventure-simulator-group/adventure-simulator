@@ -1124,7 +1124,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
             kind: InvestigationActionKind::LocateContact,
             route: RouteClass::SocialInquiry,
             target_kind: "contact".into(),
-            target_id: primary.resident_character_id.to_string(),
+            target_id: secondary.resident_character_id.to_string(),
             prerequisite: None,
             alternate: physical_action,
             active_initially: true,
@@ -1196,7 +1196,6 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
     let patient_course =
         |name: &str, resident_character_id: u64, immunity_milli: u16, carrier_death: bool| {
             let patient_ref = patient_ref(name);
-            let patient_key = hash(context.seed, &patient_ref);
             let definition = crate::disease::definition(disease);
             let course_duration = definition
                 .incubation_minutes
@@ -1205,12 +1204,12 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                 .saturating_add(definition.recovery_minutes);
             let exposed_at = context.now_minute.saturating_sub(course_duration);
             let episode_id = crate::disease::outbreak_exposure_seed(
-                patient_key,
+                resident_character_id,
                 &format!("{}:{patient_ref}", problem_id),
             );
             let episode = crate::disease::InfectionEpisode {
                 id: episode_id,
-                character_id: patient_key,
+                character_id: resident_character_id,
                 disease_id: disease,
                 contracted_at: exposed_at,
                 ruleset_version: crate::physiology::PHYSIOLOGY_RULESET_VERSION,
@@ -1228,7 +1227,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                     .saturating_add(definition.recovery_minutes),
                 immunity,
             );
-            let (died_at, death_kind, terminal_failure) = if carrier_death {
+            let (died_at, death_kind) = if carrier_death {
                 let attack_at = context
                     .now_minute
                     .saturating_sub(1_440)
@@ -1236,37 +1235,23 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                 let attack_precedes_terminal =
                     terminal.is_none_or(|(terminal_at, _)| attack_at < terminal_at);
                 if attack_at <= context.now_minute && attack_precedes_terminal {
-                    (
-                        Some(attack_at),
-                        Some(OutbreakPatientDeathKind::CarrierAttack),
-                        None,
-                    )
+                    (Some(attack_at), Some(OutbreakPatientDeathKind::CarrierAttack))
                 } else {
-                    (None, None, None)
+                    (None, None)
                 }
             } else {
                 let past_terminal =
                     terminal.filter(|(terminal_at, _)| *terminal_at <= context.now_minute);
-                (
-                    past_terminal.map(|value| value.0),
-                    past_terminal.map(|_| OutbreakPatientDeathKind::Disease),
-                    past_terminal.map(|value| value.1),
-                )
+                (past_terminal.map(|value| value.0), past_terminal.map(|_| OutbreakPatientDeathKind::Disease))
             };
             OutbreakExposure {
                 patient_ref,
-                presentation_resident_character_id: resident_character_id,
-                family_resident_character_id: (name == "first")
-                    .then(|| secondary.resident_character_id.clone()),
-                patient_key,
+                patient_character_id: resident_character_id,
                 episode_id,
-                immunity_milli,
-                phenotype_key_version: crate::physiology::PHENOTYPE_KEY_VERSION,
                 exposed_at,
                 became_symptomatic_at,
                 died_at,
                 death_kind,
-                terminal_failure,
             }
         };
     let first_patient_killed_by_carrier = matches!(&source, OutbreakSource::ThreatVector { .. });

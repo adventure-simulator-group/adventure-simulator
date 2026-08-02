@@ -535,7 +535,7 @@ fn require_live_dialogue_presence(
         if npc.home_settlement_id != session.settlement_id
             || presence.settlement_id != session.settlement_id
             || presence.location_id != session.location_id
-            || !crate::settlement_population::npc_is_present(&presence, minute)
+            || !crate::settlement_population::npc_is_present(ctx, &presence, minute)
         {
             return Err("Dialogue NPC is not present at the session location and time".into());
         }

@@ -832,7 +832,7 @@ fn require_together(ctx: &ReducerContext, actor_id: u64, patient_id: u64) -> Res
     }
     if actor_id != patient_id
         && (actor.party_id.is_none() || actor.party_id != patient.party_id)
-        && !crate::world_actor::treatment_is_authorized(ctx, patient_id)
+        && !crate::world_actor::treatment_is_authorized(ctx, actor_id, patient_id)
     {
         return Err("Treatment requires the co-present patient's consent or incapacitation".into());
     }

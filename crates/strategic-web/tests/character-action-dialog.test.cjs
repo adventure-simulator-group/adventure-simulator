@@ -23,11 +23,19 @@ test("encounter counterparties use durable characters and ordinary actions", () 
   const travel = fs.readFileSync(path.join(__dirname, "../src/templates/settlement/travel.rs"), "utf8");
   assert.match(worldActors, /CharacterContextMembership/);
   assert.match(worldActors, /apply_async_socializing/);
+  assert.match(worldActors, /materialize_road_encounter_cast/);
+  assert.match(worldActors, /Road cast retry found partial Character authority/);
+  assert.match(worldActors, /deactivate_context_roster/);
+  assert.match(worldActors, /row\.active = false/);
   assert.match(encounters, /context_character_ids/);
   assert.doesNotMatch(encounters, /u64::MAX\.saturating_sub\(index\)/);
   assert.match(surgery, /treatment_is_authorized/);
   assert.match(travel, /aria-label="Counterparty"/);
+  assert.match(travel, /presentation\.cast/);
+  assert.match(travel, /aria-label="Roadside characters"/);
   assert.match(travel, /\{ "Talk" \}/);
+  assert.match(travel, /\{ "Bandage" \}/);
+  assert.doesNotMatch(travel, /challenge\.actor_character_id/);
 });
 
 test("character dialogs trap focus in either direction", () => {

@@ -310,11 +310,11 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 action.route == RouteClass::PhysicalTrail
                     && action.kind == InvestigationActionKind::InspectSite
             });
-            let social = initial_actions.iter().any(|action| {
+            let social = initial_actions.iter().find(|action| {
                 action.route == RouteClass::SocialInquiry
                     && action.kind == InvestigationActionKind::LocateContact
             });
-            if initial_actions.len() < 2 || physical.is_none() || !social {
+            if initial_actions.len() < 2 || physical.is_none() || social.is_none() {
                 errors.push(
                     "outbreak cases require independent physical and non-corpse social routes"
                         .into(),
@@ -381,11 +381,11 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 || outbreak.exposure_chronology.iter().any(|exposure| {
                     let episode = crate::disease::InfectionEpisode {
                         id: exposure.episode_id,
-                        character_id: exposure.patient_key,
+                        character_id: exposure.patient_character_id,
                         disease_id: outbreak.disease,
                         contracted_at: exposure.exposed_at,
                         ruleset_version: crate::physiology::PHYSIOLOGY_RULESET_VERSION,
-                        phenotype_key_version: exposure.phenotype_key_version,
+                        phenotype_key_version: crate::physiology::PHENOTYPE_KEY_VERSION,
                     };
                     let definition = crate::disease::definition(outbreak.disease);
                     let course_end = exposure
@@ -398,36 +398,26 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                         &[episode],
                         exposure.exposed_at,
                         course_end,
-                        f32::from(exposure.immunity_milli) / 1_000.0,
+                        0.0,
                     );
                     let death_is_coherent = match exposure.death_kind {
                         Some(OutbreakPatientDeathKind::Disease) => {
-                            terminal == exposure.died_at.zip(exposure.terminal_failure)
+                            terminal.map(|value| value.0) == exposure.died_at
                         }
                         Some(OutbreakPatientDeathKind::CarrierAttack) => {
                             matches!(&outbreak.source, OutbreakSource::ThreatVector { .. })
                                 && exposure.died_at.is_some_and(|died_at| {
                                     terminal.is_none_or(|(terminal_at, _)| died_at < terminal_at)
                                 })
-                                && exposure.terminal_failure.is_none()
                         }
-                        None => exposure.died_at.is_none() && exposure.terminal_failure.is_none(),
+                        None => exposure.died_at.is_none(),
                     };
                     exposure.patient_ref.is_empty()
-                        || exposure.presentation_resident_character_id == 0
+                        || exposure.patient_character_id == 0
                         || !case.witnesses.iter().any(|witness| {
                             witness.resident_character_id
-                                == exposure.presentation_resident_character_id
+                                == exposure.patient_character_id
                         })
-                        || exposure.family_resident_character_id
-                            == Some(exposure.presentation_resident_character_id)
-                        || exposure.family_resident_character_id.as_ref().is_some_and(
-                            |family_resident_character_id| {
-                                !case.witnesses.iter().any(|witness| {
-                                    witness.resident_character_id == *family_resident_character_id
-                                })
-                            },
-                        )
                         || exposure.became_symptomatic_at
                             != exposure
                                 .exposed_at
@@ -444,6 +434,15 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     .any(|pair| pair[0].exposed_at > pair[1].exposed_at)
             {
                 errors.push("outbreak exposure chronology is incoherent".into());
+            }
+            let fatal_patients = outbreak
+                .exposure_chronology
+                .iter()
+                .filter(|exposure| exposure.died_at.is_some())
+                .map(|exposure| exposure.patient_character_id.to_string())
+                .collect::<BTreeSet<_>>();
+            if social.is_some_and(|action| fatal_patients.contains(&action.target_id)) {
+                errors.push("outbreak social route must target a surviving witness".into());
             }
             let source_is_compatible = match (&outbreak.source, outbreak.transmission_route) {
                 (

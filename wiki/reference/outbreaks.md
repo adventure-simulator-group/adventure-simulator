@@ -15,14 +15,14 @@ culpability, patient chronology, and the exact remediation. Public local-problem
 state says only that an unusual number of locals are ill. Different causes
 deliberately share that early wording.
 
-Patient rows and outbreak authority are private; no synthetic public Character
-row is created. Each patient retains the exact episode, immunity, phenotype
-version, presentation NPC, and disease-course inputs used by the core
-evaluator. Disease fatalities occur only at a real terminal crossing and create
-an injury-free disease body with pathology captured from that exact state. A
-carrier-attack fatality instead runs the modeled threat through strategic
-autoresolve. Bodies and living-patient portraits become known only after normal
-rumor discovery.
+Patient membership and outbreak authority are private. Every patient is an
+existing settlement resident's canonical `Character`, and their illness is an
+ordinary `InfectionEpisodeRow`; the outbreak does not create a presentation
+proxy or retain a shadow copy of immunity, phenotype, or disease state.
+Disease fatalities cross the ordinary terminal threshold at the authored
+minute and use the normal Character death, relationship, corpse, and pathology
+flows. Bodies and living-patient context membership become known only through
+the normal rumor and exact-site presence rules.
 
 ## Investigation and resolution
 
@@ -33,15 +33,25 @@ practice, responsibility, or a carrier's presence. Neither route requires a
 corpse, so a buried or inaccessible victim cannot deadlock the case.
 
 After the party hears the ordinary outbreak rumor, each modeled patient and
-their explicitly authored family member or carer can discuss the fevers
-directly. The party does not have to follow the rumor's witness referrals in a
-specific order. Unrelated residents do not gain outbreak testimony merely
-because they live in the settlement.
+their relatives from canonical kinship authority can discuss the fevers
+directly. Generated cases do not carry a second family or carer field. The
+party does not have to follow the rumor's witness referrals in a specific
+order, and unrelated residents do not gain outbreak testimony merely because
+they live in the settlement. A generated social route always targets a
+surviving witness rather than a patient whose authored course is fatal.
 
-Living patients progress against authoritative world time and appear through an
-observer-scoped portrait after discovery. Their Physiology action exposes only
-bounded findings. Environmental and carrier exposure requires presence at the
-exact source site; only community sanitation or behavior sources apply across
+Living patients progress against authoritative world time and appear in the
+case site's shared counterparty roster after discovery. The standard Talk and
+Bandage interactions address the same Character identity used in the
+settlement, relationship, physiology, and surgery systems; there is no outbreak
+examination reducer or findings table. While a patient membership is active,
+shared resident presence suppresses their ordinary schedule and services
+without rewriting that schedule. Remediation deactivates the case context but
+does not cure an infection: health suppression remains until authoritative
+world time reaches recovery, and remains permanent for a dead Character. Every
+service, dialogue, investigation, and social availability check uses that same
+projection. Environmental and carrier exposure requires presence at the exact
+source site; only community sanitation or behavior sources apply across
 settlement presence.
 
 Completion requires a typed `RemediateSource` objective. Closing a contaminated

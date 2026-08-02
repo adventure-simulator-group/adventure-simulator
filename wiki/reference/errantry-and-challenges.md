@@ -167,6 +167,14 @@ movement, elapsed, and finale-destination coordinates match private authority.
 A pending random encounter hides and blocks trial actions. The trial is not a
 `StrategicEncounter` and never blocks **Continue travel**.
 
+Road encounter choices carry a closed audit vocabulary. Empty
+`shared_systems` claims are invalid, combat and ignore choices must name their
+matching shared action, and interactions that still require negotiation,
+crime, or ownership authority remain explicitly blocked on their follow-up
+issue. If a party talks before choosing combat, the exact road-cast Character
+IDs carry into the strategic encounter and eventual corpse flow; mutual
+awareness removes the opening sneak option.
+
 After at least one hour of rest at that same camp, an optional wounded courier
 can interrupt the rest. The same build-compiled, goal-neutral scene may also
 occur by chance during ordinary travel or wilderness rest. Its public
@@ -229,3 +237,8 @@ bound finale.
 Wounded couriers and knights are durable Characters with an actual untreated
 limb wound and treatment consent. Their authored outcome observes an ordinary
 successful bandage rather than consuming a bandage through a bespoke effect.
+The camp projects every active Character-backed cast member in authored order.
+Each can be contacted through the ordinary contextual social reducer, and a
+consenting wounded Patient exposes the ordinary bandage action. Resolving or
+ignoring the occurrence deactivates only context membership; it never deletes
+the Characters or their relationship history.

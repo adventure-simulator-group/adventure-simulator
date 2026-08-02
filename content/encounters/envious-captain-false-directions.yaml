@@ -2,7 +2,7 @@
   "encounters": [
     {
       "id": "envious_captain_false_directions_v1",
-      "version": 1,
+      "version": 2,
       "weight": 65,
       "triggers": { "travel": true, "rest": false },
       "provenance": {
@@ -11,8 +11,8 @@
         "adaptation_note": "An original synthesis of false guides, jealous retainers, contested roads, sworn claims, and payroll treachery common in chivalric romance; it does not reproduce a particular episode."
       },
       "cast": [
-        { "id": "escort_captain", "name": "Escort captain", "nature": "mortal" },
-        { "id": "merchant_factor", "name": "Merchant factor", "nature": "mortal" }
+        { "id": "escort_captain", "name": "Escort captain", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } },
+        { "id": "merchant_factor", "name": "Merchant factor", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } }
       ],
       "opening": [
         {
@@ -29,6 +29,7 @@
       "choices": [
         {
           "id": "read_false_waymarks",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Read the chalk, elder stone, and flood marks together",
           "response": [{ "speaker": "merchant_factor", "text": "Thy reading of chalk, elder stone, and flood mark may save my train from false guidance. Prove the safer way before our wagons commit, and twelve groschen from our purse shall reward the warning.", "reviewed_shakespearean": true }],
           "result": "Thou spendest twenty-five minutes matching fresh ridge chalk to the elder pointing stone and reading flood marks across the lower road, and the merchant factor payeth twelve groschen for thy warning. Exposed, the captain's wounded pride maketh him order his mailed escort to bar the train and claim first ridge passage. The merchant advance guard gaineth the opposite shelf and revealeth a prepared bow above the washed cleft; the escort's melee-only swords and spears cannot answer across the gap, so the captain yieldeth the lane.",
@@ -45,6 +46,7 @@
         },
         {
           "id": "scout_both_roads",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Scout both roads before either company committeth",
           "response": [{ "speaker": "merchant_factor", "text": "Scout both ways before our train committeth, and eight groschen shall reward a true account of flood and ridge. My advance guard knoweth the heights and shall receive thy finding.", "reviewed_shakespearean": true }],
           "result": "Thou spendest ninety minutes scouting the flooded lower road and sound ridge approach, and the merchant factor payeth eight groschen for thy guidance. The captain's pride maketh him order his mailed escort to claim precedence and obstruct the merchant train. Its light advance guard taketh the opposite shelf and revealeth a prepared bow across the washed cleft; the melee-only escort's swords and spears cannot answer across the gap, and it yieldeth the passage.",
@@ -61,6 +63,7 @@
         },
         {
           "id": "expose_before_companies",
+          "interaction": { "kind": "blocked", "issue": "#373", "reason": "Publicly exposing the captain needs shared persuasion and agreement authority." },
           "label": "Expose the contradiction before both companies",
           "response": [{ "speaker": "merchant_factor", "text": "Set his oath, chalked boots, and the elder stone plainly before both companies. If thy honest speech keepeth my payroll from the mire, sixteen groschen from the train shall reward the exposure.", "reviewed_shakespearean": true }],
           "result": "Thou spendest forty-five minutes exposing the contradiction before both companies, and the merchant factor payeth sixteen groschen. Envious of the richer train and shamed before witnesses, the captain ordereth his mailed escort to bar its ridge passage. The merchant advance guard mounteth the opposite shelf and revealeth a prepared bow over the washed cleft; the escort's melee-only swords and spears cannot answer across the gap, and the captain yieldeth his claimed precedence.",
@@ -78,6 +81,7 @@
         },
         {
           "id": "organize_ridge_passage",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Organize the train under the factor's ridge plan",
           "response": [{ "speaker": "merchant_factor", "text": "My advance guard knoweth every shelf and anchor, yet the wagons and porters lack one ordering voice. Inventory and place the convoy beneath their ridge plan, and twenty groschen from our purse shall reward thy command.", "reviewed_shakespearean": true }],
           "result": "Thou spendest seventy-five minutes inventorying wagons and positioning the convoy while the factor and advance guard choose the route and anchors, and the factor payeth twenty groschen. The captain then ordereth his mailed escort to obstruct the ordered train and seize first passage. The advance guard secureth the opposite shelf and revealeth its prepared bow above the washed cleft; melee-only swords and spears cannot answer across the gap, so the escort yieldeth the lane until the convoy passeth.",
@@ -95,6 +99,7 @@
         },
         {
           "id": "demand_oath_at_cross",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "relationship_personality"] },
           "label": "Demand that he repeat his Holy Rood oath at the wayside cross",
           "response": [{ "speaker": "merchant_factor", "text": "Thou hast read Saint Christopher's road-brotherhood rule aright. False guidance sworn before its witnessed Cross forfeiteth an escort's wages and standing unless the captain publicly recant and undertake penance.", "reviewed_shakespearean": true }, { "speaker": "escort_captain", "text": "I shall not swear it twice. My counsel was false, and before these witnesses I recant it and accept the brotherhood's penance; yet my escort shall claim first ridge passage.", "reviewed_shakespearean": true }],
           "result": "Thou spendest thirty-five minutes invoking the mortal road contract and Saint Christopher brotherhood rule before the factor and witnesses. To preserve his escort's wages and standing, the captain publicly recanteth without supernatural judgment, but pride still maketh him order his mailed escort to claim first ridge passage. The merchant advance guard revealeth a prepared bow from the opposite shelf above the washed cleft; melee-only swords and spears cannot answer across the gap, and the escort yieldeth the lane.",
@@ -109,6 +114,7 @@
         },
         {
           "id": "collude_and_split_payroll",
+          "interaction": { "kind": "blocked", "issue": "#374", "reason": "Collusion and payroll theft need shared crime consequences." },
           "label": "Collude in the false guidance and split the payroll",
           "response": [{ "speaker": "escort_captain", "text": "Then hear the truth I hid: envy biteth me whenever that richer train passeth mine. Lead its first wagon into the lower-road mire under color of aid, and we shall divide the quarrymen's ninety-six-groschen payroll equally.", "reviewed_shakespearean": true }],
           "result": "Whilst thou and the captain plan, the merchant advance guard scouteth ahead and taketh the opposite shelf above the washed ridge cleft, revealing a prepared bow. The captain's mailed escort, bearing melee-only swords and spears, cannot answer across the gap and yieldeth the lane, abandoning direct seizure. That failure moveth thee to the lower-road deceit: thou spendest ninety minutes redirecting the lead payroll wagon under color of aid until it boggeth upright without overturn or injury. Thou stealest its ninety-six-groschen purse and dividest it equally with the captain, keeping forty-eight groschen.",
@@ -126,6 +132,7 @@
         },
         {
           "id": "ignore",
+          "interaction": { "kind": "shared_systems", "character_actions": ["ignore_travel"] },
           "label": "Wait until both companies clear the crossing",
           "response": [],
           "result": "Thou waitest an hour until the escort and the following merchant train have cleared the crossing, then continuest upon the open road.",

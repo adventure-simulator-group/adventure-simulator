@@ -2,7 +2,7 @@
   "encounters": [
     {
       "id": "wounded_order_courier_v1",
-      "version": 1,
+      "version": 2,
       "weight": 100,
       "triggers": { "travel": true, "rest": true },
       "provenance": {
@@ -11,7 +11,7 @@
         "adaptation_note": "Infrastructure fixture combining common romance motifs; not a direct adaptation of a named episode."
       },
       "cast": [
-        { "id": "courier", "name": "Wounded courier", "nature": "mortal" }
+        { "id": "courier", "name": "Wounded courier", "nature": "mortal", "backing": { "kind": "character", "role": "patient", "treatment_consent": true } }
       ],
       "opening": [
         {
@@ -23,6 +23,7 @@
       "choices": [
         {
           "id": "aid",
+          "interaction": { "kind": "shared_systems", "character_actions": ["treatment", "item_inventory_transfer", "relationship_personality"] },
           "label": "Bind his wound and bear his dispatch onward",
           "response": [{ "speaker": "courier", "text": "Gramercy. Take this dispatch; its warning may yet preserve good folk from those knaves.", "reviewed_shakespearean": true }],
           "result": "Thou bindest the courier's wound and receivest the captured dispatch.",
@@ -35,6 +36,7 @@
         },
         {
           "id": "rally",
+          "interaction": { "kind": "blocked", "issue": "#373", "reason": "Rallying unrelated Characters needs shared persuasion and agreement authority." },
           "label": "Rally him and escort him through the ford",
           "response": [{ "speaker": "courier", "text": "Thy courage kindleth mine. Take thou this token, for I shall stand beside thee at the crossing.", "reviewed_shakespearean": true }],
           "result": "Thou rallyest the courier, who yieldeth thee his oath token after the crossing.",
@@ -48,6 +50,7 @@
         },
         {
           "id": "consecrate",
+          "interaction": { "kind": "shared_systems", "character_actions": ["item_inventory_transfer", "relationship_personality"] },
           "label": "Hear his oath and bless his sword-knot",
           "response": [{ "speaker": "courier", "text": "Amen. Bear thou this sword-knot; it showeth that a faithful witness hath marked thy deed.", "reviewed_shakespearean": true }],
           "result": "Thou hearest his oath and receivest the sword-knot as material witness of the rite.",
@@ -61,6 +64,7 @@
         },
         {
           "id": "rob",
+          "interaction": { "kind": "blocked", "issue": "#377", "reason": "Robbing a wounded Character needs shared ownership authority." },
           "label": "Take his purse and leave him to his fortune",
           "response": [{ "speaker": "courier", "text": "Fie on thee. Take what thou wilt; yet shall this shame outlive the silver.", "reviewed_shakespearean": true }],
           "result": "Thou takest the helpless courier's coin and leavest him beside the road.",
@@ -71,6 +75,7 @@
         },
         {
           "id": "ignore",
+          "interaction": { "kind": "shared_systems", "character_actions": ["ignore_travel"] },
           "label": "Pass by without answer",
           "response": [],
           "result": "Thou passest by, and the courier's plea fadeth behind thee.",

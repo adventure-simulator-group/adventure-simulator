@@ -1930,7 +1930,7 @@ fn validate_personal_storefront_purchase(
         .character_id()
         .find(character_id)
         .map_or(0, |time| time.minutes);
-    if !crate::settlement_population::npc_is_present(&presence, minute) {
+    if !crate::settlement_population::npc_is_present(ctx, &presence, minute) {
         return Err("Merchant service provider is not available".into());
     }
     let speaker = ctx
@@ -2067,7 +2067,7 @@ fn finalize_storefront_trade_impl(ctx: &ReducerContext, execution: StorefrontTra
         || provider_presence.settlement_id != settlement_id
         || provider_presence.location_id != location_id
         || !provider_presence.is_default
-        || !crate::settlement_population::npc_is_present(&provider_presence, problem_minute)
+        || !crate::settlement_population::npc_is_present(ctx, &provider_presence, problem_minute)
     {
         return Err("Merchant service provider is not available".into());
     }

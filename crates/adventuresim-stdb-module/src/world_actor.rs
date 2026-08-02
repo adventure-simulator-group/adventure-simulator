@@ -7,7 +7,7 @@ use crate::{
     condition::character_strategic_condition,
     investigation::character_case_site_id,
     strategic::{
-        hostile_group_authority, party_authority__view, road_challenge_authority,
+        hostile_group_authority, party_authority, party_authority__view, road_challenge_authority,
         road_challenge_authority__view, strategic_encounter, strategic_encounter__view,
         strategic_gateway_authority__view,
     },
@@ -16,6 +16,7 @@ use crate::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum CharacterContextKind {
     HostileGroup,
+    CaseSite,
     StrategicEncounter,
     RoadEncounter,
 }
@@ -120,6 +121,25 @@ pub fn backend_context_characters(ctx: &ViewContext) -> Vec<BackendContextCharac
             continue;
         };
         let parties = match row.context_kind {
+            CharacterContextKind::CaseSite => ctx
+                .db
+                .party_authority()
+                .gateway_bucket()
+                .filter(0u8)
+                .filter(|party| {
+                    party
+                        .current_case_site_id
+                        .as_ref()
+                        .is_some_and(|site| site.value == row.location_id)
+                        && (row.role != CharacterContextRole::Patient
+                            || crate::outbreak::case_patient_visible_to_character_view(
+                                ctx,
+                                party.leader_id,
+                                &row.context_id,
+                            ))
+                })
+                .map(|party| (party.id, row.location_id.clone()))
+                .collect(),
             CharacterContextKind::StrategicEncounter => ctx
                 .db
                 .party_authority()
@@ -199,6 +219,19 @@ pub fn backend_context_characters(ctx: &ViewContext) -> Vec<BackendContextCharac
 
 fn party_context_contact_id(party_id: &str, context_id: &str) -> String {
     format!("party-context-contact:{party_id}:{context_id}")
+}
+
+pub(crate) fn context_contact_revision_view(
+    ctx: &ViewContext,
+    party_id: &str,
+    context_id: &str,
+    fallback: u32,
+) -> u32 {
+    ctx.db
+        .party_context_contact_authority()
+        .id()
+        .find(&party_context_contact_id(party_id, context_id))
+        .map_or(fallback, |contact| contact.revision)
 }
 
 pub(crate) fn party_contacted_context(
@@ -306,6 +339,68 @@ pub(crate) fn materialize_context_roster(
     Ok(ids)
 }
 
+/// Carry already-materialized mortal road counterparties into a combat
+/// follow-up without replacing their Character identity or components.
+pub(crate) fn rebind_road_cast_to_strategic_encounter(
+    ctx: &ReducerContext,
+    road_context_id: &str,
+    encounter_id: &str,
+    archetype: &str,
+    count: u32,
+) -> Result<Vec<u64>, String> {
+    let mut eligible = context_members(ctx, road_context_id)
+        .into_iter()
+        .filter(|membership| {
+            membership.context_kind == CharacterContextKind::RoadEncounter
+                && membership.role == CharacterContextRole::Counterparty
+                && ctx
+                    .db
+                    .character()
+                    .id()
+                    .find(membership.character_id)
+                    .is_some_and(|character| character.alive)
+        })
+        .take(usize::try_from(count).unwrap_or(usize::MAX))
+        .collect::<Vec<_>>();
+    eligible.sort_by_key(|membership| membership.ordinal);
+    for (ordinal, road_membership) in eligible.iter().enumerate() {
+        let ordinal = u16::try_from(ordinal)
+            .map_err(|_| "Strategic encounter roster exceeds the supported size")?;
+        let id = format!("context:{encounter_id}:{ordinal}");
+        let rebound = CharacterContextMembership {
+            id: id.clone(),
+            context_id: encounter_id.into(),
+            location_id: encounter_id.into(),
+            character_id: road_membership.character_id,
+            context_kind: CharacterContextKind::StrategicEncounter,
+            role: CharacterContextRole::Counterparty,
+            ordinal,
+            active: true,
+            revision: 1,
+            treatment_consent: false,
+        };
+        if let Some(existing) = ctx.db.character_context_membership().id().find(&id) {
+            if existing.context_id != rebound.context_id
+                || existing.character_id != rebound.character_id
+                || existing.context_kind != rebound.context_kind
+                || existing.role != rebound.role
+            {
+                return Err("Road-to-combat Character identity collision".into());
+            }
+        } else {
+            ctx.db.character_context_membership().insert(rebound);
+        }
+    }
+    materialize_context_roster(
+        ctx,
+        CharacterContextKind::StrategicEncounter,
+        encounter_id,
+        encounter_id,
+        archetype,
+        count,
+    )
+}
+
 fn title_case(value: &str) -> String {
     let mut chars = value.chars();
     chars
@@ -322,53 +417,99 @@ pub(crate) fn deactivate_context_roster(ctx: &ReducerContext, context_id: &str) 
     }
 }
 
-pub(crate) fn materialize_wounded_road_actor(
+/// Materialize every individualized mortal in a compiled road cast as an
+/// ordinary, fully componentized Character. Cast order is the stable identity
+/// coordinate; narrative collectives and explicitly blocked figures never
+/// receive a surrogate Character row.
+pub(crate) fn materialize_road_encounter_cast(
     ctx: &ReducerContext,
     context_id: &str,
-    catalog_id: &str,
+    definition: &adventuresim_core::road_encounter_catalog::EncounterDefinition,
     absolute_minute: u64,
-) -> Result<Option<u64>, String> {
-    let name = match catalog_id {
-        "wounded_order_courier_v1" => "Wounded Order courier",
-        "wounded_knight_linden_v1" => "Wounded knight",
-        _ => return Ok(None),
-    };
-    if let Some(existing) = context_members(ctx, context_id).into_iter().next() {
-        return Ok(Some(existing.character_id));
+) -> Result<Vec<u64>, String> {
+    use adventuresim_core::road_encounter_catalog::{CharacterCastRole, SpeakerBacking};
+
+    let mut materialized = Vec::new();
+    for (cast_ordinal, speaker) in definition.cast.iter().enumerate() {
+        let SpeakerBacking::Character {
+            role,
+            treatment_consent,
+        } = &speaker.backing
+        else {
+            continue;
+        };
+        let ordinal = u16::try_from(cast_ordinal)
+            .map_err(|_| "Road encounter cast exceeds the supported roster size")?;
+        let membership_id = format!("context:{context_id}:{ordinal}");
+        let character_id = field_character_id(context_id, ordinal);
+        let expected_role = match role {
+            CharacterCastRole::Counterparty => CharacterContextRole::Counterparty,
+            CharacterCastRole::Patient => CharacterContextRole::Patient,
+            CharacterCastRole::Bystander => CharacterContextRole::Bystander,
+        };
+        let existing_membership = ctx
+            .db
+            .character_context_membership()
+            .id()
+            .find(&membership_id);
+        let existing_character = ctx.db.character().id().find(character_id);
+        match (existing_membership, existing_character) {
+            (Some(membership), Some(character)) => {
+                if membership.context_id != context_id
+                    || membership.location_id != context_id
+                    || membership.character_id != character_id
+                    || membership.context_kind != CharacterContextKind::RoadEncounter
+                    || membership.role != expected_role
+                    || membership.ordinal != ordinal
+                    || !membership.active
+                    || membership.treatment_consent != *treatment_consent
+                    || character.name != speaker.name
+                {
+                    return Err(
+                        "Road cast retry conflicts with immutable Character authority".into(),
+                    );
+                }
+                materialized.push(character_id);
+                continue;
+            }
+            (Some(_), None) | (None, Some(_)) => {
+                return Err("Road cast retry found partial Character authority".into());
+            }
+            (None, None) => {}
+        }
+        crate::character::insert_persistent_field_character(
+            ctx,
+            speaker.name.clone(),
+            character_id,
+            character_id,
+            Some(absolute_minute),
+        )?;
+        ctx.db
+            .character_context_membership()
+            .insert(CharacterContextMembership {
+                id: membership_id,
+                context_id: context_id.into(),
+                location_id: context_id.into(),
+                character_id,
+                context_kind: CharacterContextKind::RoadEncounter,
+                role: expected_role,
+                ordinal,
+                active: true,
+                revision: 1,
+                treatment_consent: *treatment_consent,
+            });
+        if expected_role == CharacterContextRole::Patient {
+            crate::surgery::seed_field_cut(
+                ctx,
+                character_id,
+                crate::surgery::LimbRegion::LeftArm,
+                0.35,
+                absolute_minute,
+            );
+        }
+        materialized.push(character_id);
     }
-    let id = field_character_id(context_id, 0);
-    if ctx.db.character().id().find(id).is_some() {
-        return Err("Deterministic road-character identity collision".into());
-    }
-    crate::character::insert_persistent_field_character(
-        ctx,
-        name.into(),
-        id,
-        id,
-        Some(absolute_minute),
-    )?;
-    ctx.db
-        .character_context_membership()
-        .insert(CharacterContextMembership {
-            id: format!("context:{context_id}:0"),
-            context_id: context_id.into(),
-            location_id: context_id.into(),
-            character_id: id,
-            context_kind: CharacterContextKind::RoadEncounter,
-            role: CharacterContextRole::Patient,
-            ordinal: 0,
-            active: true,
-            revision: 1,
-            treatment_consent: true,
-        });
-    crate::surgery::seed_field_cut(
-        ctx,
-        id,
-        crate::surgery::LimbRegion::LeftArm,
-        0.35,
-        absolute_minute,
-    );
-    Ok(Some(id))
+    Ok(materialized)
 }
 
 pub(crate) fn characters_are_contextually_present(
@@ -397,6 +538,7 @@ pub(crate) fn characters_are_contextually_present(
         .filter(target_id)
         .filter(|row| row.active)
         .any(|row| match row.context_kind {
+            CharacterContextKind::CaseSite => actor_site.as_ref() == Some(&row.location_id),
             CharacterContextKind::HostileGroup => actor_site.as_ref().is_some_and(|site| {
                 ctx.db
                     .hostile_group_authority()
@@ -419,21 +561,78 @@ pub(crate) fn characters_are_contextually_present(
             CharacterContextKind::RoadEncounter => {
                 actor.party_id.as_ref().is_some_and(|party_id| {
                     ctx.db
-                        .road_challenge_authority()
+                        .party_authority()
                         .id()
-                        .find(&row.context_id)
-                        .is_some_and(|challenge| challenge.party_id == *party_id && challenge.open)
+                        .find(party_id)
+                        .is_some_and(|party| {
+                            ctx.db
+                                .road_challenge_authority()
+                                .id()
+                                .find(&row.context_id)
+                                .is_some_and(|challenge| {
+                                    challenge.party_id == *party_id
+                                        && challenge.open
+                                        && crate::strategic::party_at_bound_road_challenge(
+                                            ctx, &party, &challenge,
+                                        )
+                                })
+                        })
                 })
             }
         })
 }
 
-pub(crate) fn treatment_is_authorized(ctx: &ReducerContext, patient_id: u64) -> bool {
+pub(crate) fn contextual_interaction_is_authorized(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    target_id: u64,
+    require_treatment_consent: bool,
+) -> bool {
+    let Some(actor) = ctx.db.character().id().find(actor_id) else {
+        return false;
+    };
+    let Some(party_id) = actor.party_id.as_deref() else {
+        return false;
+    };
     ctx.db
         .character_context_membership()
         .character_id()
-        .filter(patient_id)
-        .any(|row| row.active && row.treatment_consent)
+        .filter(target_id)
+        .filter(|row| row.active)
+        .any(|row| {
+            (!require_treatment_consent || row.treatment_consent)
+                && characters_are_contextually_present(ctx, actor_id, target_id)
+                && match row.context_kind {
+                    CharacterContextKind::CaseSite => {
+                        crate::outbreak::case_patient_visible_to_party(
+                            ctx,
+                            party_id,
+                            &row.context_id,
+                        )
+                    }
+                    CharacterContextKind::RoadEncounter => ctx
+                        .db
+                        .road_challenge_authority()
+                        .id()
+                        .find(&row.context_id)
+                        .is_some_and(|challenge| challenge.party_id == party_id),
+                    CharacterContextKind::StrategicEncounter => ctx
+                        .db
+                        .strategic_encounter()
+                        .party_id()
+                        .find(&party_id.to_owned())
+                        .is_some_and(|encounter| encounter.encounter_id == row.context_id),
+                    CharacterContextKind::HostileGroup => true,
+                }
+        })
+}
+
+pub(crate) fn treatment_is_authorized(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    patient_id: u64,
+) -> bool {
+    contextual_interaction_is_authorized(ctx, actor_id, patient_id, true)
         || ctx
             .db
             .character_strategic_condition()
@@ -491,25 +690,23 @@ pub fn contact_context_character(
         .find(actor_id)
         .ok_or("Contact actor does not exist")?;
     let party_id = actor.party_id.ok_or("Contact requires an active party")?;
-    let membership =
-        ctx.db
-            .character_context_membership()
-            .character_id()
-            .filter(target_id)
-            .find(|row| {
-                row.active
-                    && match row.context_kind {
-                        CharacterContextKind::StrategicEncounter => row.context_id == contact_ref,
-                        CharacterContextKind::HostileGroup
-                        | CharacterContextKind::RoadEncounter => row.location_id == contact_ref,
-                    }
-            })
-            .ok_or("Target is not present in that context")?;
-    if membership.role != CharacterContextRole::Counterparty {
-        return Err("That context actor is not available for conversation".into());
-    }
-    if !characters_are_contextually_present(ctx, actor_id, target_id) {
-        return Err("Characters are not co-present".into());
+    let membership = ctx
+        .db
+        .character_context_membership()
+        .character_id()
+        .filter(target_id)
+        .find(|row| {
+            row.active
+                && match row.context_kind {
+                    CharacterContextKind::StrategicEncounter => row.context_id == contact_ref,
+                    CharacterContextKind::HostileGroup
+                    | CharacterContextKind::CaseSite
+                    | CharacterContextKind::RoadEncounter => row.location_id == contact_ref,
+                }
+        })
+        .ok_or("Target is not present in that context")?;
+    if !contextual_interaction_is_authorized(ctx, actor_id, target_id, false) {
+        return Err("Target is not an authorized co-present Character".into());
     }
     let mut encounter = ctx
         .db
@@ -575,6 +772,7 @@ pub fn contact_context_character(
     } else {
         ctx.db.party_context_contact_authority().insert(contact);
     }
+    crate::social::begin_physiology_presence_on_contact(ctx, actor_id, target_id);
     crate::social::apply_async_socializing(ctx, actor_id, target_id, 10)?;
     ctx.db
         .contextual_contact_receipt()
@@ -588,4 +786,41 @@ pub fn contact_context_character(
             resulting_revision,
         });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn contextual_actions_share_privacy_consent_and_physiology_authority() {
+        let source = include_str!("world_actor.rs");
+        let authorization = source
+            .split("pub(crate) fn contextual_interaction_is_authorized")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn treatment_is_authorized").next())
+            .expect("contextual authorization");
+        assert!(authorization.contains("case_patient_visible_to_party"));
+        assert!(authorization.contains("challenge.party_id == party_id"));
+        assert!(authorization.contains("row.treatment_consent"));
+
+        let contact = source
+            .split("pub fn contact_context_character")
+            .nth(1)
+            .expect("context contact reducer");
+        assert!(contact.contains("contextual_interaction_is_authorized"));
+        assert!(contact.contains("begin_physiology_presence_on_contact"));
+        assert!(contact.contains("retain(|choice| choice != \"sneak\")"));
+    }
+
+    #[test]
+    fn road_combat_reuses_cast_character_identity() {
+        let source = include_str!("world_actor.rs");
+        let rebound = source
+            .split("pub(crate) fn rebind_road_cast_to_strategic_encounter")
+            .nth(1)
+            .and_then(|tail| tail.split("fn title_case").next())
+            .expect("road cast rebound");
+        assert!(rebound.contains("character_id: road_membership.character_id"));
+        assert!(rebound.contains("CharacterContextKind::StrategicEncounter"));
+        assert!(rebound.contains("materialize_context_roster"));
+    }
 }

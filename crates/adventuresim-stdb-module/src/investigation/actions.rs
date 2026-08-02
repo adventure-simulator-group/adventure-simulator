@@ -347,15 +347,8 @@ fn validate_action_position(
                 return Err("The referred contact is in another settlement".into());
             }
             if kind == action::InvestigationActionKind::LocateContact {
-                let minute = character_strategic_minute(ctx, actor.id) % 1_440;
-                let present = if presence.start_minute <= presence.end_minute {
-                    minute >= u64::from(presence.start_minute)
-                        && minute < u64::from(presence.end_minute)
-                } else {
-                    minute >= u64::from(presence.start_minute)
-                        || minute < u64::from(presence.end_minute)
-                };
-                if !present {
+                let minute = character_strategic_minute(ctx, actor.id);
+                if !crate::settlement_population::npc_is_present(ctx, &presence, minute) {
                     return Err("The referred contact is not currently present".into());
                 }
             }
@@ -561,7 +554,7 @@ fn validate_generated_pattern_condition(
                 &expected,
                 &current,
                 &presence.settlement_id,
-            ) || !crate::settlement_population::npc_is_present(&presence, started_at)
+            ) || !crate::settlement_population::npc_is_present(ctx, &presence, started_at)
             {
                 return Err("Victim cohort target moved, changed, or is unavailable".into());
             }

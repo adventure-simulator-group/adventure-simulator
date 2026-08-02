@@ -1,9 +1,11 @@
 # Physiology system
 
-During an outbreak, Physiology can examine living or dead patients through the
-existing window and contribute systemic findings. It does not read outbreak
-truth, identify the source, or complete the quest; those conclusions require
-the investigation evidence graph and exact remediation. See
+During an outbreak, living patients are ordinary canonical Characters in a
+case-site Patient context, so treatment and observation use the same Surgery
+and Physiology authority as any other co-present Character. Dead patients use
+the ordinary corpse interface. Neither system reads outbreak truth, identifies
+the source, or completes the quest; those conclusions require the investigation
+evidence graph and exact remediation. See
 [Outbreak investigations](outbreaks.md).
 
 Dead subjects remain available to the medical interface. External and internal
@@ -133,6 +135,11 @@ observer's Physiology capability band at that boundary, preventing later
 training from sharpening historical observations. Every notebook records at
 most one examination per day. Higher bands produce more finely quantized
 readings and a better-calibrated differential, but do not add examinations.
+
+Contacting a contextual Character opens the same kind of pair-presence span at
+the current clock frontier; merely discovering or rendering a Patient does
+not. Leaving the case site closes the span. This permits ordinary examination
+and close-contact transmission without granting retroactive shared time.
 
 The same private spans bound passive prevention. Each span pins both members'
 Physiology bands and is clamped to their lesser personal clock, so joining,

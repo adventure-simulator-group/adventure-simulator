@@ -162,6 +162,7 @@ fn all_nonterminal_encounters_follow_authoritative_public_post_state() {
 #[test]
 fn narrative_encounter_policy_uses_only_the_available_public_ignore_choice() {
     let presentation = adventuresim_core::road_encounter_catalog::EncounterPresentation {
+        cast: Vec::new(),
         opening: Vec::new(),
         choices: vec![
             adventuresim_core::road_encounter_catalog::PresentationChoice {
@@ -184,6 +185,7 @@ fn narrative_encounter_policy_uses_only_the_available_public_ignore_choice() {
     );
 
     let unavailable_ignore = adventuresim_core::road_encounter_catalog::EncounterPresentation {
+        cast: Vec::new(),
         opening: Vec::new(),
         choices: vec![
             adventuresim_core::road_encounter_catalog::PresentationChoice {
@@ -207,6 +209,7 @@ fn narrative_encounter_policy_uses_only_the_available_public_ignore_choice() {
         None
     );
     let missing_ignore = adventuresim_core::road_encounter_catalog::EncounterPresentation {
+        cast: Vec::new(),
         opening: Vec::new(),
         choices: vec![adventuresim_core::road_encounter_catalog::PresentationChoice {
             id: "attempt_checked_action".into(),

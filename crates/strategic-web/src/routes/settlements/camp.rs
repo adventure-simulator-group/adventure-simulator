@@ -568,6 +568,11 @@ mod road_challenge_route_tests {
         assert!(template.contains("generic_road_encounter(road_trial)"));
         assert!(template.contains("presentation.choices"));
         assert!(template.contains("presentation.opening"));
+        assert!(template.contains("presentation.cast"));
+        assert!(template.contains("Roadside characters"));
+        assert!(template.contains(">Talk<") || template.contains("{ \"Talk\" }"));
+        assert!(template.contains(">Bandage<") || template.contains("{ \"Bandage\" }"));
+        assert!(!template.contains("challenge.actor_character_id"));
         assert!(!template.contains("EncounterDefinition"));
         assert!(!template.contains("WoundedOrderCourierV1"));
         assert!(!template.contains("Black Knight's men"));

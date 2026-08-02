@@ -458,12 +458,29 @@ never become strategic state or effect IDs.
 `content/encounters/*.yaml` is sorted, strictly deserialized with unknown
 fields denied, semantically validated, SHA-256 digested, embedded, and source
 mapped at build time. YAML owns stable ID/version/weight, trigger eligibility,
-cast nature, reviewed goal-neutral Shakespearean prose, choices/results,
+cast nature and authority backing, reviewed goal-neutral Shakespearean prose, choices/results,
 deed/outcome tags, typed requirement/check/effect declarations, an optional
 closed transition identifier, material
 rewards/costs, personality development, and optional reward tags. Rust owns
 selection, rolls, checks, all mutation, receipts, and private quest overlays.
 Run `cargo run -p adventuresim-core --bin content-check -- encounters`.
+
+Every individualized mortal cast entry is explicitly `character`-backed and
+materializes as a durable, fully componentized Character whose stable identity
+comes from the occurrence and authored cast ordinal. Replaying materialization
+must find the same Character and context membership; partial or mismatched
+retry state is rejected. Anonymous collectives remain explicitly
+`narrative_only`, with a reason. Supernatural presenters are explicitly
+`blocked` on #375 and never receive mortal surrogate physiology.
+
+Every authored choice likewise declares its interaction backing. Current
+choices reach the shared check, inventory, information, personality, travel,
+and combat authorities. A blocked interaction must name its follow-up issue
+and renders unavailable. The validator rejects missing classifications,
+invalid blocker references, supernatural Character surrogates, and
+narrative-only choices that claim authoritative mechanics. Ownership/custody
+(#377), crime response (#374), negotiation (#373), and consent (#376) can
+replace remaining narrative consequences without encounter-specific reducers.
 
 Developer builds expose a generic road-encounter demo reducer and HTTP route
 that accept a validated compiled catalog ID. The selected party leader must be

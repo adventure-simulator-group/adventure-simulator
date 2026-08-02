@@ -423,6 +423,7 @@ pub(crate) fn settle_lifecycle_after_character_time_write(
         minute,
     )?;
     crate::relationship::settle_marriage_lifecycle_for_character(ctx, character_id, minute);
+    crate::outbreak::refresh_patient_context_after_time_write(ctx, character_id, minute);
     Ok(())
 }
 

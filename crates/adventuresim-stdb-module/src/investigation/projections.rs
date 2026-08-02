@@ -1485,7 +1485,8 @@ fn victim_cohort_is_current_view(
         &expected,
         &current,
         &presence.settlement_id,
-    ) && crate::settlement_population::npc_is_present(&presence, started_at)
+    ) && crate::settlement_population::npc_presence_remaining_minutes(&presence, started_at)
+        .is_some()
 }
 
 fn action_unavailable_reason_view(

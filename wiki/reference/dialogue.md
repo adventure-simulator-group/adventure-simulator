@@ -65,6 +65,15 @@ heard. Casual chat can still change that NPC's
 private morale, directional affinity, and familiarity, so time spent getting
 to know someone can affect a later confrontation without revealing whether
 they have quest information.
+
+Contextual contact applies to every living, co-present Character role,
+including road-encounter counterparties and consenting Patients. Road content
+does not own a parallel dialogue or affinity table: **Talk** uses the shared
+social mutation and durable relationship edge. At a combat choice point,
+contact establishes mutual awareness and removes the opening stealth choice.
+For a non-combat road conversation it still records contact revision and
+ordinary social consequences, leaving persuasion and nonviolent resolution to
+#373.
 The resulting contextual exchange is client dialogue presentation: local-chat
 live reconciliation preserves it, while selecting another NPC or reloading the
 page may clear it. The social and romance reducers remain the authoritative

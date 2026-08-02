@@ -29,6 +29,7 @@ use crate::{
     },
     relationship::{child_identity_reservation, npc_policy},
     repair::{item_condition, repair_order},
+    settlement_population::settlement_resident_presence,
     strategic::{
         inventory_quantity_target, party_authority, party_member, settlement,
         strategic_gateway_authority__view,
@@ -328,6 +329,32 @@ pub fn transition_character_to_dead(
     source: DeathSource,
     source_id: Option<String>,
 ) -> Result<CharacterDeath, String> {
+    let strategic_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |time| time.minutes);
+    transition_character_to_dead_at(
+        ctx,
+        character_id,
+        cause,
+        source,
+        source_id,
+        strategic_minute,
+    )
+}
+
+/// Exact-minute variant for materializing already-elapsed authored history.
+/// The character's clock is never rewound; a future death is rejected.
+pub fn transition_character_to_dead_at(
+    ctx: &ReducerContext,
+    character_id: u64,
+    cause: DeathCause,
+    source: DeathSource,
+    source_id: Option<String>,
+    strategic_minute: u64,
+) -> Result<CharacterDeath, String> {
     if let Some(death) = ctx.db.character_death().character_id().find(character_id) {
         return Ok(death);
     }
@@ -337,12 +364,15 @@ pub fn transition_character_to_dead(
         .id()
         .find(character_id)
         .ok_or("Character not found")?;
-    let strategic_minute = ctx
+    let current_minute = ctx
         .db
         .character_time()
         .character_id()
         .find(character_id)
         .map_or(0, |time| time.minutes);
+    if strategic_minute > current_minute {
+        return Err("Character death cannot be after their personal clock".into());
+    }
     let death = ctx.db.character_death().insert(CharacterDeath {
         character_id,
         cause,
@@ -359,6 +389,19 @@ pub fn transition_character_to_dead(
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::social::close_physiology_presence(ctx, character_id);
     character.alive = false;
+    if let Some(mut presence) = ctx
+        .db
+        .settlement_resident_presence()
+        .character_id()
+        .find(character_id)
+    {
+        presence.context_suppressed = false;
+        presence.health_suppressed = true;
+        ctx.db
+            .settlement_resident_presence()
+            .character_id()
+            .update(presence);
+    }
     // Keep an active tactical assignment until that server commits or removes
     // the character. This lets mission teardown find and cascade temporary
     // combatants that died in transient tactical state.

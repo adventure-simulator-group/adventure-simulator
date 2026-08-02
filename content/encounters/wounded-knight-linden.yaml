@@ -2,7 +2,7 @@
   "encounters": [
     {
       "id": "wounded_knight_linden_v1",
-      "version": 1,
+      "version": 2,
       "weight": 85,
       "triggers": { "travel": true, "rest": true },
       "provenance": {
@@ -11,7 +11,7 @@
         "adaptation_note": "An original encounter assembled cautiously from wounded-knight and roadside-aid commonplaces shared by medieval romance; it does not reproduce a particular episode."
       },
       "cast": [
-        { "id": "wounded_knight", "name": "Wounded knight", "nature": "mortal" }
+        { "id": "wounded_knight", "name": "Wounded knight", "nature": "mortal", "backing": { "kind": "character", "role": "patient", "treatment_consent": true } }
       ],
       "opening": [
         {
@@ -23,6 +23,7 @@
       "choices": [
         {
           "id": "treat",
+          "interaction": { "kind": "shared_systems", "character_actions": ["treatment", "investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Spend a bandage and dress the knight's wound",
           "response": [{ "speaker": "wounded_knight", "text": "Thy hands have stayed the blood. Mark this: they hid within the thorn brake and rushed me only when I drew near. Take these few groschen with my thanks.", "reviewed_shakespearean": true }],
           "result": "Thou spendest a clean bandage, dressest the wound, learnest the assailants' close-ambush method, and acceptest a modest purse in thanks.",
@@ -40,6 +41,7 @@
         },
         {
           "id": "track",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
           "label": "Read the robbers' trail before it groweth cold",
           "response": [{ "speaker": "wounded_knight", "text": "Thou hast read their flight aright. That torn dispatch fell from their leader; its marks shall tell thee which hidden ways they favor.", "reviewed_shakespearean": true }],
           "result": "Thou followest the fresh spoor far enough to recover a dropped dispatch, then returnest before the wounded knight is forsaken.",
@@ -55,6 +57,7 @@
         },
         {
           "id": "organize_aid",
+          "interaction": { "kind": "shared_systems", "character_actions": ["item_inventory_transfer", "relationship_personality"] },
           "label": "Set his sumpter-boy to ride for household aid",
           "response": [{ "speaker": "wounded_knight", "text": "Thy word hath put good order in our fear. Take this household silver, for my folk shall come armed and bear me hence.", "reviewed_shakespearean": true }],
           "result": "Thou orderest the frightened servant onto the fresh sumpter and arrangest a guarded return; the knight payeth thee from his travel purse.",
@@ -67,6 +70,7 @@
         },
         {
           "id": "plunder",
+          "interaction": { "kind": "blocked", "issue": "#377", "reason": "Plundering a wounded Character needs shared ownership authority." },
           "label": "Take ransom, sword, and shield from the helpless knight",
           "response": [{ "speaker": "wounded_knight", "text": "Take purse and harness, false knight, yet know thy profit proclaimeth what honor thou hast sold.", "reviewed_shakespearean": true }],
           "result": "Thou exactest ransom from the helpless man and takest the arming sword and heater shield from his tethered horse.",
@@ -81,6 +85,7 @@
         },
         {
           "id": "ignore",
+          "interaction": { "kind": "shared_systems", "character_actions": ["ignore_travel"] },
           "label": "Leave him beneath the linden",
           "response": [],
           "result": "Thou leavest the wounded knight and his tethered horses beneath the linden.",

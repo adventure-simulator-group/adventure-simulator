@@ -571,7 +571,8 @@ fn npc_conversation_party(
         presence.start_minute,
         presence.end_minute,
         minute,
-    ) {
+    ) || !crate::settlement_population::npc_is_present(ctx, &presence, minute)
+    {
         return Err("NPC is not at the sender's settlement".into());
     }
     Ok(party_id.to_string())

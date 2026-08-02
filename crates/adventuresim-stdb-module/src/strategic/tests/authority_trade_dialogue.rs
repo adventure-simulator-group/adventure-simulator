@@ -531,7 +531,7 @@ fn merchant_trade_is_bound_to_a_closed_storefront_and_persistent_provider() {
         "provider.home_settlement_id != settlement_id",
         "provider.service_id != service_id",
         "provider_presence.location_id != location_id",
-        "npc_is_present(&provider_presence, problem_minute)",
+        "npc_is_present(ctx, &provider_presence, problem_minute)",
         "default_merchant_provider(ctx, &settlement_id, &service_id, location_id)",
         "storefront_stocks(",
         "settlement_allowlist",

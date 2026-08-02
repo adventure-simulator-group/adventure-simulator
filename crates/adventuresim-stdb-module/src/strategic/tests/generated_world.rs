@@ -67,7 +67,7 @@ fn simulation_quest_fixture_exposes_ordinary_provisioning_to_both_paths() {
         environment
             .contains("default_merchant_provider(ctx, &settlement_id, \"merchants\", \"market\")")
     );
-    assert!(environment.contains("npc_is_present(&provider, minute)"));
+    assert!(environment.contains("npc_is_present(ctx, &provider, minute)"));
 
     let fixture = STRATEGIC_SOURCE
         .split("pub(crate) fn seed_simulation_quest_fixture_inner")

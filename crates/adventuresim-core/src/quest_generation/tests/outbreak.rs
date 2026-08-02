@@ -174,32 +174,44 @@ fn patient_courses_and_bindings_are_exact_and_carriers_have_no_direct_fix() {
             .map(|exposure| exposure.patient_ref.as_str())
             .collect::<BTreeSet<_>>();
         assert_eq!(refs.len(), truth.exposure_chronology.len());
+        let character_ids = truth
+            .exposure_chronology
+            .iter()
+            .map(|exposure| exposure.patient_character_id)
+            .collect::<BTreeSet<_>>();
+        let episode_ids = truth
+            .exposure_chronology
+            .iter()
+            .map(|exposure| exposure.episode_id)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(character_ids.len(), truth.exposure_chronology.len());
+        assert_eq!(episode_ids.len(), truth.exposure_chronology.len());
         for exposure in &truth.exposure_chronology {
             let definition = crate::disease::definition(truth.disease);
             assert_eq!(
                 exposure.became_symptomatic_at,
                 exposure.exposed_at + definition.incubation_minutes
             );
-            assert_ne!(exposure.presentation_resident_character_id, 0);
+            assert_ne!(exposure.patient_character_id, 0);
             assert!(
                 case.witnesses
                     .iter()
                     .any(|witness| witness.resident_character_id
-                        == exposure.presentation_resident_character_id)
+                        == exposure.patient_character_id)
             );
-            assert_ne!(
-                exposure.family_resident_character_id,
-                Some(exposure.presentation_resident_character_id)
-            );
-            if let Some(family_resident_character_id) = &exposure.family_resident_character_id {
-                assert!(
-                    case.witnesses
-                        .iter()
-                        .any(|witness| witness.resident_character_id
-                            == *family_resident_character_id)
-                );
-            }
         }
+        let fatal_ids = truth
+            .exposure_chronology
+            .iter()
+            .filter(|exposure| exposure.died_at.is_some())
+            .map(|exposure| exposure.patient_character_id.to_string())
+            .collect::<BTreeSet<_>>();
+        let social_target = case
+            .actions
+            .iter()
+            .find(|action| action.route == RouteClass::SocialInquiry && action.active_initially)
+            .expect("social outbreak route");
+        assert!(!fatal_ids.contains(&social_target.target_id));
         let physical = case
             .actions
             .iter()
