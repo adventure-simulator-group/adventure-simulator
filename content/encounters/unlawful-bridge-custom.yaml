@@ -2,7 +2,7 @@
   "encounters": [
     {
       "id": "unlawful_bridge_custom_v1",
-      "version": 1,
+      "version": 2,
       "weight": 75,
       "triggers": { "travel": true, "rest": false },
       "provenance": {
@@ -11,7 +11,7 @@
         "adaptation_note": "An original synthesis of unlawful bridge and ford customs common in chivalric romance; it does not reproduce a particular episode."
       },
       "cast": [
-        { "id": "bridge_keeper", "name": "Bridge keeper", "nature": "mortal" }
+        { "id": "bridge_keeper", "name": "Bridge keeper", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } }
       ],
       "opening": [
         {
@@ -23,6 +23,7 @@
       "choices": [
         {
           "id": "pay_toll",
+          "interaction": { "kind": "shared_systems" },
           "label": "Pay the twelve groschen and cross",
           "response": [{ "speaker": "bridge_keeper", "text": "Thou hast more prudence than proud stomach. Pass, and trouble not the custom further.", "reviewed_shakespearean": true }],
           "result": "Thou payest the disputed toll and crossest without bloodshed.",
@@ -34,6 +35,7 @@
         },
         {
           "id": "barter_rations",
+          "interaction": { "kind": "shared_systems" },
           "label": "Offer four travel rations for peaceful passage",
           "response": [{ "speaker": "bridge_keeper", "text": "Bread serveth hungry watches better than silver. Leave four rations, and thy company may pass in peace.", "reviewed_shakespearean": true }],
           "result": "Thou yieldest four travel rations and gainest peaceful passage without supporting the keeper's coined toll.",
@@ -45,6 +47,7 @@
         },
         {
           "id": "expose_charter",
+          "interaction": { "kind": "shared_systems" },
           "label": "Examine his charter and expose the false seal",
           "response": [{ "speaker": "bridge_keeper", "text": "Thou readest wax too closely. Speak no more of seals, and take the road whilst I yet suffer it.", "reviewed_shakespearean": true }],
           "result": "Thou showest the travelers how the false seal and altered witness line betray the unlawful charter.",
@@ -57,6 +60,7 @@
         },
         {
           "id": "challenge_to_arms",
+          "interaction": { "kind": "shared_systems" },
           "label": "Challenge the keeper and his men to arms",
           "response": [{ "speaker": "bridge_keeper", "text": "Then steel shall judge the custom of this span. My fellow, draw, and let no challenger pass.", "reviewed_shakespearean": true }],
           "result": "Steel shall judge the custom: thou appealest to arms, and the keeper with his armed fellow make ready upon the bridge.",
@@ -92,6 +96,7 @@
         },
         {
           "id": "join_watch",
+          "interaction": { "kind": "shared_systems" },
           "label": "Join the watch and share its next exaction",
           "response": [{ "speaker": "bridge_keeper", "text": "A hard heart knoweth profitable law. Stand beside us awhile, and forty groschen of the next purses shall be thine.", "reviewed_shakespearean": true }],
           "result": "Thou aidest the unlawful watch in cowing later travelers and takest the largest share of its coin.",
@@ -102,6 +107,7 @@
         },
         {
           "id": "ignore",
+          "interaction": { "kind": "shared_systems" },
           "label": "Turn aside and seek another crossing",
           "response": [],
           "result": "Thou turnest from the bridge and spendest two hours upon a rougher crossing.",

@@ -2,7 +2,7 @@
   "encounters": [
     {
       "id": "insulting_damsel_and_dwarf_v1",
-      "version": 1,
+      "version": 2,
       "weight": 65,
       "triggers": { "travel": true, "rest": false },
       "provenance": {
@@ -11,8 +11,8 @@
         "adaptation_note": "An original synthesis of sharp-tongued companions, prudent household officers, contested passages, vows, and tests of courage common in chivalric romance; it does not reproduce a particular episode or direct abuse toward bodily identity."
       },
       "cast": [
-        { "id": "sharp_tongued_damsel", "name": "Sharp-tongued damsel", "nature": "mortal" },
-        { "id": "dwarf_steward", "name": "Dwarf steward", "nature": "mortal" }
+        { "id": "sharp_tongued_damsel", "name": "Sharp-tongued damsel", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } },
+        { "id": "dwarf_steward", "name": "Dwarf steward", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } }
       ],
       "opening": [
         {
@@ -29,6 +29,7 @@
       "choices": [
         {
           "id": "endure_and_verify",
+          "interaction": { "kind": "shared_systems" },
           "label": "Endure the taunt and verify the crossing carefully",
           "response": [{ "speaker": "sharp_tongued_damsel", "text": "Thou wilt answer insult with measured proof? Go then beneath such cover as thy judgment chooseth, and the twenty-groschen wager shall stand without demand for any rash charge.", "reviewed_shakespearean": true }],
           "result": "Thou spendest seventy-five minutes verifying the crossing carefully beneath cover and receivest the declared twenty groschen. From concealment thou seest a light road warden reveal a prepared bow on the shelf opposite the washed gap; the retainers' visible swords and spears are melee-only and cannot answer across it, whilst the public lower path avoideth the private shelf. The steward identifies four straight household-store arrows with sound heads that he planted by hand in the soft near-bank turf as sight-line markers before thy arrival, and granteth them unto thee; no arrow is loosed during this scene.",
@@ -46,6 +47,7 @@
         },
         {
           "id": "answer_with_courtesy",
+          "interaction": { "kind": "shared_systems" },
           "label": "Answer the damsel courteously and ask the steward's counsel",
           "response": [{ "speaker": "dwarf_steward", "text": "Thy courtesy hath won the hearing that haste denied me. Walk with me along the bank, and I shall show thee why the public lower path is wiser than the private shelf.", "reviewed_shakespearean": true }],
           "result": "Thou spendest forty minutes hearing the steward's terrain judgment along the bank. At his chosen lookout thou observest a lightly equipped forester with a prepared bow upon the shelf opposite the washed gap; the mailed retainers bear only swords and spears for melee and cannot answer that distance, while the public lower path passeth clear of the private shelf. In answer to thy courtesy, the steward offereth thee four straight household-store arrows with sound heads that he planted by hand in the near-bank turf as range markers before thy arrival; no arrow is loosed during this scene.",
@@ -63,6 +65,7 @@
         },
         {
           "id": "prove_caution_from_marks",
+          "interaction": { "kind": "shared_systems" },
           "label": "Prove the steward's caution from the fresh marks",
           "response": [{ "speaker": "dwarf_steward", "text": "Read the stopped boots, the scar in yon shaft, and the far shelf together. They are mortal signs enough for honest judgment, without recourse to wonder.", "reviewed_shakespearean": true }],
           "result": "Thou spendest thirty minutes reading abrupt boot-stops in the turf, a fresh shaft scar, and the far shelf, proving the steward's caution by ordinary signs. The marks lead thine eye to a light forester with a prepared bow opposite the washed gap; sword-and-spear-only mailed retainers cannot answer him by melee, and the public lower path avoideth his private shelf. Among that evidence thou findest four straight household-store arrows with sound heads that the steward planted by hand before thy arrival as sight-line markers, and he yieldeth them unto thee; no arrow is loosed during this scene.",
@@ -79,6 +82,7 @@
         },
         {
           "id": "lend_steward_authority",
+          "interaction": { "kind": "shared_systems" },
           "label": "Lend the steward authority to marshal the household",
           "response": [{ "speaker": "sharp_tongued_damsel", "text": "My steward claimeth the terrain judgment, whilst thou claimest command of compliance. Marshal my retainers beneath his route plan without confusion, and the declared twelve-groschen fee is thine.", "reviewed_shakespearean": true }],
           "result": "Thou spendest fifty-five minutes coordinating the household beneath the steward's own terrain plan and receivest the declared twelve-groschen marshal fee. From the station he selecteth, a light road warden showeth a prepared bow opposite the washed gap; the mailed retainers' visible swords and spears serve melee only and cannot answer, so the steward leadeth them by the public lower path away from the private shelf. Under thine order the household collecteth four straight household-store arrows with sound heads that the steward planted by hand as range markers before thy arrival and granteth them unto thee; no arrow is loosed during this scene.",
@@ -97,6 +101,7 @@
         },
         {
           "id": "rebuke_abuse_of_vow",
+          "interaction": { "kind": "shared_systems" },
           "label": "Rebuke the misuse of Saint Michael's vow",
           "response": [{ "speaker": "sharp_tongued_damsel", "text": "Thou sayest truly that my Saint Michael candle vow granteth neither leave to demand a private shortcut nor license to hazard servants needlessly. I shall master my pride, hear the steward, and take the lawful public path.", "reviewed_shakespearean": true }],
           "result": "Thou spendest thirty-five minutes distinguishing the Saint Michael candle vow from any license to demand private passage or risk servants without need. During the steward's lawful survey, a light forester revealeth a prepared bow opposite the washed gap; the mailed retainers' swords and spears serve melee only and cannot answer across it, while the public lower path avoideth the private shelf. After thy rebuke the steward identifies four straight household-store arrows with sound heads that he planted by hand as sight-line markers before thy arrival and granteth them unto thee; no arrow is loosed during this scene.",
@@ -114,6 +119,7 @@
         },
         {
           "id": "invent_forester_toll_and_keep_purse",
+          "interaction": { "kind": "blocked", "issue": "#377", "reason": "Fraudulently keeping entrusted money needs shared ownership authority." },
           "label": "Misread the old toll cuts, invent a forester's toll, and keep the purse",
           "response": [{ "speaker": "sharp_tongued_damsel", "text": "Those visible toll cuts support thy claim that the distant forester privately collecteth forty-eight groschen for immediate passage, and he refuseth us from beyond our hearing. Take this purse and discharge his toll in my name; I shall trust thy bold counsel above another delay upon the public road.", "reviewed_shakespearean": true }, { "speaker": "dwarf_steward", "text": "My lady, no present toll is declared. I cannot speak for the distant forester's private demand, yet neither should old cuts and pride outweigh the known public way.", "reviewed_shakespearean": true }],
           "result": "Thou first readest the weathered toll cuts and fresh signs, then seest a light forester with a prepared bow opposite the washed gap, beyond immediate earshot; the mailed retainers' visible swords and spears are melee-only and cannot answer across it, whilst the public lower path avoideth the private shelf. Before deceiving the damsel, thou pocketest four straight household-store arrows with sound heads that the steward planted by hand as range markers before thy arrival; no arrow is loosed during this scene. Thou falsely claimest the distant forester privately collecteth forty-eight groschen for immediate private passage, receivest the entrusted purse, and abscondest with it. When the household later reacheth him, the forester denieth any private passage or toll, exposing thy lie; the steward rationally leadeth the unconfined, unharmed household along the genuinely public lower path.",
@@ -132,6 +138,7 @@
         },
         {
           "id": "ignore",
+          "interaction": { "kind": "shared_systems" },
           "label": "Continue along the open road",
           "response": [],
           "result": "Thou leavest the damsel, steward, and halted household beside the washed hollow, for the road remaineth open.",

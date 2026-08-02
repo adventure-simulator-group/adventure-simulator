@@ -9,7 +9,7 @@ use std::{collections::BTreeSet, sync::OnceLock};
 #[cfg(runtime_catalog)]
 include!(concat!(env!("OUT_DIR"), "/road_encounter_catalog.rs"));
 
-pub const CATALOG_REVISION: u32 = 1;
+pub const CATALOG_REVISION: u32 = 2;
 pub const MAX_WEIGHT: u16 = 10_000;
 pub const MAX_CHOICES: usize = 8;
 pub const MAX_TEXT_BYTES: usize = 2_048;
@@ -56,6 +56,35 @@ pub struct Speaker {
     pub id: String,
     pub name: String,
     pub nature: SpeakerNature,
+    pub backing: SpeakerBacking,
+}
+
+/// Declares whether a visible cast entry owns ordinary Character authority.
+/// This is deliberately mandatory in content: a mortal name is never allowed
+/// to silently fall back to a prose-only surrogate.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SpeakerBacking {
+    Character {
+        role: CharacterCastRole,
+        #[serde(default)]
+        treatment_consent: bool,
+    },
+    NarrativeOnly {
+        reason: String,
+    },
+    Blocked {
+        issue: String,
+        reason: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CharacterCastRole {
+    Counterparty,
+    Patient,
+    Bystander,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -79,6 +108,7 @@ pub struct SpokenLine {
 #[serde(deny_unknown_fields)]
 pub struct EncounterChoice {
     pub id: String,
+    pub interaction: InteractionBacking,
     pub label: String,
     #[serde(default)]
     pub response: Vec<SpokenLine>,
@@ -97,6 +127,41 @@ pub struct EncounterChoice {
     pub quest_reward_tags: Vec<String>,
     #[serde(default)]
     pub transition: Option<EncounterTransition>,
+}
+
+/// Machine-readable audit of how a choice reaches game authority. Narrative
+/// text can explain a deed, but it cannot be the authority for a character
+/// interaction.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum InteractionBacking {
+    SharedSystems {
+        #[serde(default)]
+        character_actions: Vec<SharedCharacterInteraction>,
+    },
+    NarrativeOnly {
+        reason: String,
+    },
+    Blocked {
+        issue: String,
+        reason: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SharedCharacterInteraction {
+    Treatment,
+}
+
+impl EncounterChoice {
+    pub fn requires_treatment(&self) -> bool {
+        matches!(
+            &self.interaction,
+            InteractionBacking::SharedSystems { character_actions }
+                if character_actions.contains(&SharedCharacterInteraction::Treatment)
+        )
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -179,9 +244,21 @@ pub enum RoadCombatArchetype {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct EncounterPresentation {
+    pub cast: Vec<PresentationCastMember>,
     pub opening: Vec<PresentationLine>,
     pub choices: Vec<PresentationChoice>,
     pub response: Vec<PresentationLine>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PresentationCastMember {
+    pub character_id: u64,
+    pub name: String,
+    pub role: CharacterCastRole,
+    pub can_talk: bool,
+    pub can_bandage: bool,
+    pub contact_revision: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -352,6 +429,29 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
             if speaker.name.trim().is_empty() || !speakers.insert(speaker.id.as_str()) {
                 return Err(format!("{}: empty or duplicate speaker", definition.id));
             }
+            match &speaker.backing {
+                SpeakerBacking::Character { .. } if speaker.nature != SpeakerNature::Mortal => {
+                    return Err(format!(
+                        "{}:{}: supernatural cast cannot silently materialize as a Character",
+                        definition.id, speaker.id
+                    ));
+                }
+                SpeakerBacking::NarrativeOnly { reason } if reason.trim().is_empty() => {
+                    return Err(format!(
+                        "{}:{}: narrative-only cast requires an audit reason",
+                        definition.id, speaker.id
+                    ));
+                }
+                SpeakerBacking::Blocked { issue, reason }
+                    if !valid_follow_up_issue(issue) || reason.trim().is_empty() =>
+                {
+                    return Err(format!(
+                        "{}:{}: blocked cast requires a named follow-up issue and reason",
+                        definition.id, speaker.id
+                    ));
+                }
+                _ => {}
+            }
         }
         validate_lines(&definition.id, &definition.cast, &definition.opening)?;
         if !(3..=MAX_CHOICES).contains(&definition.choices.len()) {
@@ -374,6 +474,41 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
             validate_goal_neutral(&choice.label)?;
             validate_goal_neutral(&choice.result)?;
             validate_lines(&definition.id, &definition.cast, &choice.response)?;
+            match &choice.interaction {
+                InteractionBacking::SharedSystems { character_actions } => {
+                    if character_actions.contains(&SharedCharacterInteraction::Treatment)
+                        && !definition.cast.iter().any(|speaker| {
+                            matches!(
+                                &speaker.backing,
+                                SpeakerBacking::Character {
+                                    role: CharacterCastRole::Patient,
+                                    treatment_consent: true,
+                                }
+                            )
+                        })
+                    {
+                        return Err(format!(
+                            "{}:{} treatment requires a consenting Patient",
+                            definition.id, choice.id
+                        ));
+                    }
+                }
+                InteractionBacking::NarrativeOnly { reason } if reason.trim().is_empty() => {
+                    return Err(format!(
+                        "{}:{} narrative-only interaction requires an audit reason",
+                        definition.id, choice.id
+                    ));
+                }
+                InteractionBacking::Blocked { issue, reason }
+                    if !valid_follow_up_issue(issue) || reason.trim().is_empty() =>
+                {
+                    return Err(format!(
+                        "{}:{} blocked interaction requires a named follow-up issue and reason",
+                        definition.id, choice.id
+                    ));
+                }
+                _ => {}
+            }
             for requirement in &choice.requirements {
                 match requirement {
                     Requirement::Skill { minimum_hours, .. } if *minimum_hours == 0 => {
@@ -512,6 +647,23 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
                 ));
             }
             if choice.id != "ignore" {
+                if matches!(
+                    &choice.interaction,
+                    InteractionBacking::NarrativeOnly { .. }
+                ) && (!choice.requirements.is_empty()
+                    || !choice.checks.is_empty()
+                    || !choice.effects.is_empty()
+                    || !choice.personality.is_empty()
+                    || !matches!(
+                        choice.transition.as_ref(),
+                        None | Some(EncounterTransition::Noop)
+                    ))
+                {
+                    return Err(format!(
+                        "{}:{} narrative-only interaction declares authoritative mechanics",
+                        definition.id, choice.id
+                    ));
+                }
                 material_routes.insert(
                     serde_json::to_string(&(
                         choice.requirements.as_slice(),
@@ -540,6 +692,12 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
         }
     }
     Ok(())
+}
+
+fn valid_follow_up_issue(issue: &str) -> bool {
+    issue.strip_prefix('#').is_some_and(|number| {
+        !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+    })
 }
 
 fn validate_combat_outcome_payload(
@@ -843,6 +1001,85 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn every_cast_member_and_choice_has_machine_readable_backing() {
+        for definition in definitions() {
+            assert!(
+                definition
+                    .cast
+                    .iter()
+                    .all(|speaker| match &speaker.backing {
+                        SpeakerBacking::Character { .. } => speaker.nature == SpeakerNature::Mortal,
+                        SpeakerBacking::NarrativeOnly { reason } => !reason.trim().is_empty(),
+                        SpeakerBacking::Blocked { issue, reason } => {
+                            valid_follow_up_issue(issue) && !reason.trim().is_empty()
+                        }
+                    })
+            );
+            assert!(
+                definition
+                    .choices
+                    .iter()
+                    .all(|choice| match &choice.interaction {
+                        InteractionBacking::SharedSystems { .. } => true,
+                        InteractionBacking::NarrativeOnly { reason } => !reason.trim().is_empty(),
+                        InteractionBacking::Blocked { issue, reason } => {
+                            valid_follow_up_issue(issue) && !reason.trim().is_empty()
+                        }
+                    })
+            );
+        }
+    }
+
+    #[test]
+    fn treatment_verbs_are_typed_and_bound_to_consenting_patients() {
+        let treatment_routes = definitions()
+            .iter()
+            .flat_map(|definition| {
+                definition
+                    .choices
+                    .iter()
+                    .filter(|choice| choice.requires_treatment())
+                    .map(move |choice| (definition, choice))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(treatment_routes.len(), 2);
+        for (definition, _) in treatment_routes {
+            assert!(definition.cast.iter().any(|speaker| matches!(
+                &speaker.backing,
+                SpeakerBacking::Character {
+                    role: CharacterCastRole::Patient,
+                    treatment_consent: true,
+                }
+            )));
+        }
+    }
+
+    #[test]
+    fn validator_rejects_unsupported_character_and_scripted_backing() {
+        let mut supernatural = encounter("enchanted_fog_lost_forester_v1").unwrap().clone();
+        supernatural.cast[0].backing = SpeakerBacking::Character {
+            role: CharacterCastRole::Counterparty,
+            treatment_consent: false,
+        };
+        assert!(
+            validate_definitions(&[supernatural])
+                .unwrap_err()
+                .contains("supernatural cast")
+        );
+
+        let mut blocked = encounter("proud_traveler_errands_v1").unwrap().clone();
+        blocked.choices[0].interaction = InteractionBacking::Blocked {
+            issue: "later".into(),
+            reason: "Needs a shared authority".into(),
+        };
+        assert!(
+            validate_definitions(&[blocked])
+                .unwrap_err()
+                .contains("named follow-up issue")
+        );
     }
     #[test]
     fn semantic_validator_rejects_goal_slots_duplicate_routes_and_missing_review() {

@@ -2,7 +2,7 @@
   "encounters": [
     {
       "id": "enchanted_sleep_beneath_hawthorn_v1",
-      "version": 1,
+      "version": 2,
       "weight": 60,
       "triggers": { "travel": true, "rest": true },
       "provenance": {
@@ -11,8 +11,8 @@
         "adaptation_note": "A direct adaptation of Malory's Volume I, Book VI, Chapter III, where Morgan le Fay enchants the sleeping Launcelot for six hours and has him borne away. This version relocates enchanted sleep to a reusable roadside company rescue and omits Morgan's abduction and coercive demand."
       },
       "cast": [
-        { "id": "veteran_caravan_mistress", "name": "Veteran caravan mistress", "nature": "mortal" },
-        { "id": "lady_of_hawthorn", "name": "Lady of the Hawthorn", "nature": "supernatural" }
+        { "id": "veteran_caravan_mistress", "name": "Veteran caravan mistress", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } },
+        { "id": "lady_of_hawthorn", "name": "Lady of the Hawthorn", "nature": "supernatural", "backing": { "kind": "blocked", "issue": "#375", "reason": "Supernatural personhood and physiology are not yet modeled." } }
       ],
       "opening": [
         {
@@ -27,6 +27,7 @@
       "choices": [
         {
           "id": "draw_offending_stake",
+          "interaction": { "kind": "shared_systems" },
           "label": "Draw the offending stake with the mistress's cart line",
           "response": [{ "speaker": "veteran_caravan_mistress", "text": "I shall place every sleeper and forbid unsafe lifting. Take the hauling line I have laid; my halberd's long shaft and hook shall set it upon the iron from beyond the blossom while thou drawest against root and earth.", "reviewed_shakespearean": true }],
           "result": "For fifty minutes thou endurest the hawthorn song's attention and haulest beneath the mistress's body-order. From outside the sharp blossom line she useth the halberd's full reach and hook to lay the cart rope upon the buried stake without crossing into the song. Thy sustained pull draweth the offending iron from root and earth. The company waketh safely, and the mistress granteth thee the same common halberd for restoring what justice required.",
@@ -43,6 +44,7 @@
         },
         {
           "id": "bear_sleepers_beyond_blossom",
+          "interaction": { "kind": "shared_systems" },
           "label": "Resist the song and bear sleepers beyond the blossom line",
           "response": [{ "speaker": "veteran_caravan_mistress", "text": "I alone shall assign each carry by breath, weight, and limb. Bind thy will within the song, obey my lifting word, and bear each sleeper unto the receiving cloth I set beyond the blossoms.", "reviewed_shakespearean": true }],
           "result": "For an hour thou resistest the song and carriest sleepers in the mistress's exact triage order. She remaineth outside the ring and extendeth the hooked halberd across its edge to draw each receiving cloth the final two long paces, so she may receive its burden without stepping into the song. The last sleeper passeth the blossom line and all wake unharmed; the mistress granteth thee the long common halberd for courage.",
@@ -59,6 +61,7 @@
         },
         {
           "id": "find_brooks_acoustic_lee",
+          "interaction": { "kind": "shared_systems" },
           "label": "Find the brook's acoustic lee for a low-song withdrawal lane",
           "response": [{ "speaker": "veteran_caravan_mistress", "text": "Find where brook and bank break the song, but leave breath, pulse, and carries unto me. I shall set a withdrawal lane upon thy hearing and use cart cloths to receive them.", "reviewed_shakespearean": true }],
           "result": "For forty minutes thou distinguishest a narrow acoustic lee where brook noise and alder bank lower the hawthorn song without altering it. The mistress directeth carriers and sleepers through that lane. Standing upon its quiet side, she useth the halberd's reach of above two yards to pass straps over the singing verge and draw burdened cloths back across it. The company clears the blossom line and waketh; she rewardeth thy prudent hearing with the halberd.",
@@ -75,6 +78,7 @@
         },
         {
           "id": "coordinate_silent_rescue_relay",
+          "interaction": { "kind": "shared_systems" },
           "label": "Coordinate covered ears, hand signs, and the rescue relay",
           "response": [{ "speaker": "veteran_caravan_mistress", "text": "I alone shall assign every carry, receiving place, and safe lift. Order covered ears, repeat my hand signs, and relay cloth and bearer when I command.", "reviewed_shakespearean": true }],
           "result": "For forty-five minutes thou coordinatest covered ears, hand signs, and relay timing while the mistress alone assigneth bodies and lifting order. She setteth the halberd crosswise at the blossom edge; its long shaft receiveth each strap across the boundary, and its hook draweth the waiting cloth to the outer relay without requiring another bearer to enter the song. The ordered company waketh safely beyond the line, and she granteth thee the halberd for loyal command.",
@@ -92,6 +96,7 @@
         },
         {
           "id": "keep_litany_carry_cadence",
+          "interaction": { "kind": "shared_systems" },
           "label": "Keep a known litany as the rescuers' carrying cadence",
           "response": [{ "speaker": "veteran_caravan_mistress", "text": "Speak the known response together and heed who answereth at thy side. The litany shall keep mortal minds mutually attentive whilst I govern each lift; it shall neither dispel nor alter the lady's song.", "reviewed_shakespearean": true }],
           "result": "For forty minutes the rescuers keep a familiar Christian litany as shared attention and carrying cadence, never as counterspell. The enchantment changeth not. Under the mistress's physical directions they bear each sleeper to the edge, where her long-shafted halberd hook draweth the receiving cloth fully beyond the song-line. All wake safely after physical removal; she granteth thee the halberd for faithful fellowship.",
@@ -109,6 +114,7 @@
         },
         {
           "id": "request_restitution_pause",
+          "interaction": { "kind": "shared_systems" },
           "label": "Acknowledge the wrong and request a brief restitution pause",
           "response": [{ "speaker": "veteran_caravan_mistress", "text": "Name the pierced root plainly and ask only time to restore it. If the song relenteth, I shall choose who approacheth, govern the stake line, and move every sleeper.", "reviewed_shakespearean": true }],
           "result": "For thirty-five minutes thou courteously acknowledgest the iron wound and seekest no release without restitution. A brief quiet in the already-declared song alloweth the mistress to work; the Lady of the Hawthorn addeth no spoken reply. Remaining beyond the blossom, the mistress setteth her halberd hook at its full reach upon the stake rope and draweth it clear across the boundary. The root freed, the company waketh safely, and she granteth thee the halberd for courteous truth.",
@@ -126,6 +132,7 @@
         },
         {
           "id": "steal_watch_cart_stores_and_release_rig",
+          "interaction": { "kind": "blocked", "issue": "#377", "reason": "Stealing caravan property needs shared ownership authority." },
           "label": "Send the mistress ahead, rob the watch cart, and release her rig",
           "response": [{ "speaker": "veteran_caravan_mistress", "text": "Thou sayest the far receiving bank hath slipped beneath my blankets? Guard the watch cart and my rigged hauling brake whilst I go beyond the ring and set the sleepers' places anew.", "reviewed_shakespearean": true }],
           "result": "For an hour thou aidest until the mistress hath established safe receiving places and rigged a cart-hauling line to the offending stake. From beyond the blossom she showeth how the common halberd's long hook may trip its brake without entering the song. Thou falsely reportest that the far receiving bank hath slipped and sendest her beyond the ring under color of needing her skilled triage there. Alone, thou securest the declared ninety-six-groschen wage coffer and folded jack of plates among thy road baggage, and takest the halberd in hand. As thy final act, thou usest its full reach from outside the blossom to trip her already-rigged brake. The hauling line draweth the stake free; as the company beginneth safely to wake, thou departest at once with all three goods. The mistress returneth unharmed and may tend her people, but her caravan suffereth the real material loss.",
@@ -145,6 +152,7 @@
         },
         {
           "id": "ignore",
+          "interaction": { "kind": "shared_systems" },
           "label": "Skirt the blossom line and leave the sleeping company",
           "response": [],
           "result": "Thou skirtest the fallen blossom and leavest sleeping company and caravan mistress beneath the hawthorn. The open road and nearby resting ground remain free.",

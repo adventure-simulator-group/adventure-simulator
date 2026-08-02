@@ -229,3 +229,8 @@ bound finale.
 Wounded couriers and knights are durable Characters with an actual untreated
 limb wound and treatment consent. Their authored outcome observes an ordinary
 successful bandage rather than consuming a bandage through a bespoke effect.
+The camp projects every active Character-backed cast member in authored order.
+Each can be contacted through the ordinary contextual social reducer, and a
+consenting wounded Patient exposes the ordinary bandage action. Resolving or
+ignoring the occurrence deactivates only context membership; it never deletes
+the Characters or their relationship history.

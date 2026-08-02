@@ -35,7 +35,6 @@ pub struct BackendRoadChallenge {
     pub active: bool,
     pub result_transcript: Option<String>,
     pub quest_reward_addendum: Option<String>,
-    pub actor_character_id: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize)]

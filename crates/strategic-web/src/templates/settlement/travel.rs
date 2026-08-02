@@ -991,17 +991,28 @@ fn generic_road_encounter(challenge: &BackendRoadChallenge) -> Markup {
     };
     html! {
         section class="settlement-chat challenge-chat-invitation" aria-label="Roadside conversation" {
-            @if challenge.active && challenge.open {
-              @if let Some(patient_id) = challenge.actor_character_id {
-                nav class="settlement-npc-strip counterparty-strip" aria-label="Roadside character" {
-                    div class="npc-portrait counterparty-portrait" {
-                        span class="npc-portrait-image" aria-hidden="true" { "?" }
-                        span class="npc-portrait-name" { "Wounded character" }
-                        form action="/camp/counterparty/bandage" method="post" {
-                            input type="hidden" name="patient_id" value=(patient_id);
-                            button type="submit" class="btn btn-secondary btn-small" { "Bandage" }
-                        }
+            @if challenge.active && challenge.open && !presentation.cast.is_empty() {
+              nav class="settlement-npc-strip counterparty-strip" aria-label="Roadside characters" {
+                @for character in &presentation.cast {
+                  div class="npc-portrait counterparty-portrait" data-character-id=(character.character_id) {
+                    span class="npc-portrait-image" aria-hidden="true" { "?" }
+                    span class="npc-portrait-name" { (&character.name) }
+                    @if character.can_talk {
+                      form action="/camp/counterparty/contact" method="post" {
+                        input type="hidden" name="target_id" value=(character.character_id);
+                        input type="hidden" name="contact_ref" value=(&challenge.id);
+                        input type="hidden" name="expected_revision" value=(character.contact_revision);
+                        input type="hidden" name="action_id" value=(format!("road-contact:{}:{}:{}", challenge.id, character.contact_revision, character.character_id));
+                        button type="submit" class="btn btn-secondary btn-small" { "Talk" }
+                      }
                     }
+                    @if character.can_bandage {
+                      form action="/camp/counterparty/bandage" method="post" {
+                        input type="hidden" name="patient_id" value=(character.character_id);
+                        button type="submit" class="btn btn-secondary btn-small" { "Bandage" }
+                      }
+                    }
+                  }
                 }
               }
             }

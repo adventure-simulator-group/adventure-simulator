@@ -376,7 +376,6 @@ pub struct BackendRoadChallenge {
     pub active: bool,
     pub result_transcript: Option<String>,
     pub quest_reward_addendum: Option<String>,
-    pub actor_character_id: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -543,6 +542,8 @@ pub fn backend_challenges(ctx: &ViewContext) -> Vec<BackendChallenge> {
 
 #[view(accessor = backend_road_challenges, public)]
 pub fn backend_road_challenges(ctx: &ViewContext) -> Vec<BackendRoadChallenge> {
+    use crate::character::character__view as _;
+
     if !strategic_view_is_gateway(ctx) {
         return Vec::new();
     }
@@ -592,15 +593,59 @@ pub fn backend_road_challenges(ctx: &ViewContext) -> Vec<BackendRoadChallenge> {
                 .find(|row| row.active && row.role == crate::world_actor::CharacterContextRole::Patient)
                 .is_some_and(|patient| ctx.db.limb_injury().character_id().filter(patient.character_id)
                     .any(|injury| injury.cut_damage > 0.0 && injury.bandaged));
+            let contact_revision = crate::world_actor::context_contact_revision_view(
+                ctx,
+                &party.id,
+                &challenge.id,
+                1,
+            );
+            let cast = definition
+                .cast
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, speaker)| {
+                    use adventuresim_core::road_encounter_catalog::SpeakerBacking;
+                    let SpeakerBacking::Character { role, .. } = &speaker.backing else {
+                        return None;
+                    };
+                    let membership = ctx
+                        .db
+                        .character_context_membership()
+                        .context_id()
+                        .filter(&challenge.id)
+                        .find(|row| row.active && usize::from(row.ordinal) == ordinal)?;
+                    let character = ctx.db.character().id().find(membership.character_id)?;
+                    let has_unbandaged_cut = ctx
+                        .db
+                        .limb_injury()
+                        .character_id()
+                        .filter(character.id)
+                        .any(|injury| injury.cut_damage > 0.0 && !injury.bandaged);
+                    Some(adventuresim_core::road_encounter_catalog::PresentationCastMember {
+                        character_id: character.id,
+                        name: character.name,
+                        role: *role,
+                        can_talk: active && challenge.open && character.alive,
+                        can_bandage: active
+                            && challenge.open
+                            && character.alive
+                            && membership.treatment_consent
+                            && has_unbandaged_cut,
+                        contact_revision,
+                    })
+                })
+                .collect();
             let presentation = adventuresim_core::road_encounter_catalog::EncounterPresentation {
+                cast,
                 opening: definition.opening.iter().filter_map(line).collect(),
                 choices: if challenge.open { definition.choices.iter().map(|choice| adventuresim_core::road_encounter_catalog::PresentationChoice {
                     id: choice.id.clone(), label: choice.label.clone(),
                     available: if matches!(
-                        (challenge.catalog_id.as_str(), choice.id.as_str()),
-                        ("wounded_order_courier_v1", "aid")
-                            | ("wounded_knight_linden_v1", "treat")
+                        &choice.interaction,
+                        adventuresim_core::road_encounter_catalog::InteractionBacking::Blocked { .. }
                     ) {
+                        false
+                    } else if choice.requires_treatment() {
                         ordinary_treatment_complete
                     } else {
                         choice.requirements.iter().all(|requirement| available(requirement))
@@ -619,14 +664,6 @@ pub fn backend_road_challenges(ctx: &ViewContext) -> Vec<BackendRoadChallenge> {
                 active,
                 result_transcript: challenge.result_transcript,
                 quest_reward_addendum: private.reward_addendum,
-                actor_character_id: (active && challenge.open && !ordinary_treatment_complete)
-                    .then(|| {
-                        ctx.db.character_context_membership()
-                            .context_id().filter(&challenge.id)
-                            .find(|row| row.active)
-                            .map(|row| row.character_id)
-                    })
-                    .flatten(),
             })
         })
         .collect()
@@ -752,7 +789,7 @@ fn party_at_bound_road_challenge_view(
             .is_some_and(|encounter| encounter.status == "awaiting_choice")
 }
 
-fn party_at_bound_road_challenge(
+pub(crate) fn party_at_bound_road_challenge(
     ctx: &ReducerContext,
     party: &Party,
     challenge: &RoadChallengeAuthority,
@@ -880,10 +917,10 @@ pub(crate) fn materialize_chance_narrative_encounter(
             virtue_exemplified: None,
             result_transcript: None,
         });
-    crate::world_actor::materialize_wounded_road_actor(
+    crate::world_actor::materialize_road_encounter_cast(
         ctx,
         &id,
-        &definition.id,
+        definition,
         journey
             .departure_minute
             .saturating_add(journey.completed_elapsed_minutes),
@@ -977,8 +1014,9 @@ fn materialize_narrative_combat(
         challenge.latitude_e7,
         current_party_fatigue_percent(ctx, &living_party_member_ids(ctx, &party.id)),
         terrain_kind,
-        Awareness::Both,
-        "A catalog-authored roadside challenge openly became combat".into(),
+        Awareness::PartyOnly,
+        "Your party can approach the roadside opponents unseen, or speak and reveal itself first."
+            .into(),
     )?;
     let outcome_payloads_json = serde_json::to_string(outcomes)
         .map_err(|_| "Could not encode narrative combat outcome payloads")?;
@@ -1016,6 +1054,19 @@ fn materialize_narrative_combat(
         ctx.db.strategic_encounter().party_id().update(encounter);
     } else {
         ctx.db.strategic_encounter().insert(encounter);
+    }
+    let roster = crate::world_actor::materialize_context_roster(
+        ctx,
+        crate::world_actor::CharacterContextKind::StrategicEncounter,
+        &encounter_id,
+        &encounter_id,
+        match archetype {
+            adventuresim_core::road_encounter_catalog::RoadCombatArchetype::Bandits => "bandit",
+        },
+        u32::from(count),
+    )?;
+    if roster.len() != usize::from(count) {
+        return Err("Narrative combat roster does not match its enemy count".into());
     }
     Ok(())
 }
@@ -1569,10 +1620,15 @@ pub fn resolve_errantry_road_challenge(
         .iter()
         .find(|candidate| candidate.id == choice)
         .ok_or("Road challenge choice is invalid")?;
-    let ordinary_treatment = matches!(
-        (challenge.catalog_id.as_str(), selected.id.as_str()),
-        ("wounded_order_courier_v1", "aid") | ("wounded_knight_linden_v1", "treat")
-    );
+    if let adventuresim_core::road_encounter_catalog::InteractionBacking::Blocked {
+        issue, ..
+    } = &selected.interaction
+    {
+        return Err(format!(
+            "This interaction is unavailable until follow-up {issue} provides shared authority"
+        ));
+    }
+    let ordinary_treatment = selected.requires_treatment();
     if ordinary_treatment && !crate::world_actor::context_patient_is_treated(ctx, &challenge.id) {
         return Err("Bandage the wounded character through the ordinary Surgery interface first".into());
     }
@@ -2286,10 +2342,10 @@ fn materialize_order_errantry(
             virtue_exemplified: None,
             result_transcript: None,
         });
-    crate::world_actor::materialize_wounded_road_actor(
+    crate::world_actor::materialize_road_encounter_cast(
         ctx,
         &courier_challenge_id,
-        &road_definition.id,
+        road_definition,
         now,
     )?;
     ctx.db
@@ -2423,6 +2479,7 @@ mod challenge_source_boundary_tests {
             .next()
             .unwrap();
         assert!(road_projection.contains("presentation_json"));
+        assert!(!road_projection.contains("actor_character_id"));
         assert!(!road_projection.contains("catalog_id"));
         assert!(!road_projection.contains("catalog_digest"));
         assert!(!road_projection.contains("origin:"));
@@ -2543,6 +2600,9 @@ mod challenge_source_boundary_tests {
         assert!(dispatch.contains("existing.status == \"awaiting_choice\""));
         assert!(dispatch.contains("narrative_combat_followup_authority"));
         assert!(dispatch.contains("build_strategic_encounter"));
+        assert!(dispatch.contains("Awareness::PartyOnly"));
+        assert!(dispatch.contains("materialize_context_roster"));
+        assert!(dispatch.contains("CharacterContextKind::StrategicEncounter"));
         assert!(dispatch.contains("initiating_character_id"));
         assert!(dispatch.contains("existing.encounter_id == encounter_id"));
         assert!(!dispatch.contains("unlawful_bridge_custom_v1"));
