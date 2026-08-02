@@ -989,7 +989,8 @@ fn validate_tactical_receipt(
             .iter()
             .any(|row| row.channel == crate::item::EquipmentChannel::Held);
         let worn = occupancy.iter().any(|row| {
-            row.anchor_kind == crate::character::EquipmentAnchorKind::CharacterLocation && !held
+            row.anchor_kind == crate::character::EquipmentAnchorKind::CharacterLocation
+                && row.channel != crate::item::EquipmentChannel::Held
         });
         let definition = ctx
             .db

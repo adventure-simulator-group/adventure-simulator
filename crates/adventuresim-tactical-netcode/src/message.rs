@@ -16,7 +16,7 @@ pub enum DefendRequest {
 /// The sender remains the authoritative network identity.
 #[derive(Debug, Clone, Copy, Event, Serialize, Deserialize)]
 pub struct JoinRequest {
-    pub player_id: u64,
+    pub character_id: CharacterId,
 }
 
 #[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize)]
@@ -26,78 +26,31 @@ pub struct PlayerInputRequest {
     pub jump: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MeleeActionPhase {
-    Start,
-    Complete,
-}
-
 /// Both melee phases share one mapped ordered stream, so a completion cannot
 /// overtake its server-observed start.
 #[derive(Debug, Clone, Copy, Event, Serialize, Deserialize, MapEntities)]
-pub struct MeleeActionRequest {
-    pub phase: MeleeActionPhase,
-    #[entities]
-    pub target: Option<Entity>,
-    pub body_part: BodyPart,
-    pub hit_precision: f32,
-}
-
-impl MeleeActionRequest {
-    pub fn start() -> Self {
-        Self {
-            phase: MeleeActionPhase::Start,
-            target: None,
-            body_part: BodyPart::Chest,
-            hit_precision: 0.0,
-        }
-    }
-
-    pub fn complete(target: Entity, body_part: BodyPart, hit_precision: f32) -> Self {
-        Self {
-            phase: MeleeActionPhase::Complete,
-            target: Some(target),
-            body_part,
-            hit_precision,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RangedActionPhase {
+pub enum MeleeActionRequest {
     Start,
-    Complete,
+    Complete {
+        #[entities]
+        target: Entity,
+        body_part: BodyPart,
+        reported_precision: f32,
+    },
 }
 
 /// Both ranged phases share one mapped ordered stream. A completion may omit
 /// a target when the client-fired shot missed, but it still consumes ammo.
 #[derive(Debug, Clone, Copy, Event, Serialize, Deserialize, MapEntities)]
-pub struct RangedActionRequest {
-    pub phase: RangedActionPhase,
-    #[entities]
-    pub target: Option<Entity>,
-    pub body_part: BodyPart,
-    pub hit_precision: f32,
-}
-
-impl RangedActionRequest {
-    pub fn start() -> Self {
-        Self {
-            phase: RangedActionPhase::Start,
-            target: None,
-            body_part: BodyPart::Chest,
-            hit_precision: 0.0,
-        }
-    }
-
-    pub fn complete(target: Option<Entity>, body_part: BodyPart, hit_precision: f32) -> Self {
-        Self {
-            phase: RangedActionPhase::Complete,
-            target,
-            body_part,
-            hit_precision,
-        }
-    }
+pub enum RangedActionRequest {
+    Start,
+    CompleteMiss,
+    CompleteHit {
+        #[entities]
+        target: Entity,
+        body_part: BodyPart,
+        reported_precision: f32,
+    },
 }
 
 #[derive(Debug, Clone, Event, Serialize, Deserialize, MapEntities)]

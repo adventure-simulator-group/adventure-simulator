@@ -554,6 +554,11 @@ Each tactical server:
 4. Calls `end_tactical_server` with its terminal resolution
 5. Exits after strategic authority validates and commits the durable outcome
 
+Party enrollment and terminal submission are explicit lifecycle enums. The
+frozen resolution and bounded receipt stay together through bounded retry,
+acknowledgement, presentation, and shutdown; an ambiguous acknowledgement
+timeout fails closed without presenting an uncommitted result.
+
 ## Testing a Single Server
 
 For testing without the spawner:
