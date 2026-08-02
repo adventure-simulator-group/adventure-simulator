@@ -260,6 +260,13 @@ load-viabundus-world server=spacetime_url database=spacetime_module: spacetime-v
 build-tactical: verify-db-client
     @cargo build --package adventuresim-tactical-server --package adventuresim-tactical-server-dispatcher
 
+# Same build as build-tactical, without first re-verifying bindings freshness
+# (a CI-hygiene check against the schema, not something a mission needs at
+# runtime). Used only by tactical-isolated so repeated combat-testing restarts
+# don't pay for a redundant module build/introspection every time.
+_build-tactical-unverified:
+    @cargo build --package adventuresim-tactical-server --package adventuresim-tactical-server-dispatcher
+
 # Build the WASM client
 build-wasm: verify-db-client
     @{{ python_bin }} scripts/build_wasm.py
@@ -294,7 +301,7 @@ client id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_defau
 # No strategic layer, no WASM build - just the DB plus a mission. Writes
 # .env.tactical so a bare `just tactical` / `just client` (no arguments) in
 # other terminals targets it automatically.
-tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="hills" character_id="0" bots="3": preflight verify-db-client build-tactical
+tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="hills" character_id="0" bots="3": preflight _build-tactical-unverified
     @{{ python_bin }} scripts/dev_stack.py run-profile --mode tactical {{ quote(profile) }} {{ quote(base_port) }} --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }}
 
 # Generate self-signed WebTransport certificates
