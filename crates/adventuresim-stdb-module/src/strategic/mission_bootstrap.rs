@@ -2354,6 +2354,7 @@ mod developer_quest_source_tests {
             start_minute: 480,
             end_minute: 1_020,
             is_default: true,
+            context_suppressed: false,
         };
         for presentation in [
             Presentation::Man,

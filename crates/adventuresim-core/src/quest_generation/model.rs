@@ -560,22 +560,16 @@ pub enum OutbreakEnvironmentalReservoir {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutbreakExposure {
     pub patient_ref: String,
-    /// Existing settlement NPC whose portrait and public identity present this
-    /// private medical subject after observer discovery.
-    pub presentation_resident_character_id: u64,
+    /// Canonical existing settlement resident who is the medical subject.
+    pub patient_character_id: u64,
     /// Explicit authoritative kinship only. `None` means clergy/civic custody;
     /// generation must never infer family from witness adjacency.
     pub family_resident_character_id: Option<u64>,
-    /// Stable private disease inputs retained for replay and pathology.
-    pub patient_key: u64,
     pub episode_id: u64,
-    pub immunity_milli: u16,
-    pub phenotype_key_version: u16,
     pub exposed_at: u64,
     pub became_symptomatic_at: u64,
     pub died_at: Option<u64>,
     pub death_kind: Option<OutbreakPatientDeathKind>,
-    pub terminal_failure: Option<crate::disease::TerminalFailure>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

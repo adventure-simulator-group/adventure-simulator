@@ -16,6 +16,7 @@ use crate::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum CharacterContextKind {
     HostileGroup,
+    CaseSite,
     StrategicEncounter,
     RoadEncounter,
 }
@@ -120,6 +121,25 @@ pub fn backend_context_characters(ctx: &ViewContext) -> Vec<BackendContextCharac
             continue;
         };
         let parties = match row.context_kind {
+            CharacterContextKind::CaseSite => ctx
+                .db
+                .party_authority()
+                .gateway_bucket()
+                .filter(0u8)
+                .filter(|party| {
+                    party
+                        .current_case_site_id
+                        .as_ref()
+                        .is_some_and(|site| site.value == row.location_id)
+                        && (row.role != CharacterContextRole::Patient
+                            || crate::outbreak::case_patient_visible_to_character_view(
+                                ctx,
+                                party.leader_id,
+                                &row.context_id,
+                            ))
+                })
+                .map(|party| (party.id, row.location_id.clone()))
+                .collect(),
             CharacterContextKind::StrategicEncounter => ctx
                 .db
                 .party_authority()
@@ -456,6 +476,7 @@ pub(crate) fn characters_are_contextually_present(
         .filter(target_id)
         .filter(|row| row.active)
         .any(|row| match row.context_kind {
+            CharacterContextKind::CaseSite => actor_site.as_ref() == Some(&row.location_id),
             CharacterContextKind::HostileGroup => actor_site.as_ref().is_some_and(|site| {
                 ctx.db
                     .hostile_group_authority()
@@ -562,20 +583,21 @@ pub fn contact_context_character(
         .find(actor_id)
         .ok_or("Contact actor does not exist")?;
     let party_id = actor.party_id.ok_or("Contact requires an active party")?;
-    let membership =
-        ctx.db
-            .character_context_membership()
-            .character_id()
-            .filter(target_id)
-            .find(|row| {
-                row.active
-                    && match row.context_kind {
-                        CharacterContextKind::StrategicEncounter => row.context_id == contact_ref,
-                        CharacterContextKind::HostileGroup
-                        | CharacterContextKind::RoadEncounter => row.location_id == contact_ref,
-                    }
-            })
-            .ok_or("Target is not present in that context")?;
+    let membership = ctx
+        .db
+        .character_context_membership()
+        .character_id()
+        .filter(target_id)
+        .find(|row| {
+            row.active
+                && match row.context_kind {
+                    CharacterContextKind::StrategicEncounter => row.context_id == contact_ref,
+                    CharacterContextKind::HostileGroup
+                    | CharacterContextKind::CaseSite
+                    | CharacterContextKind::RoadEncounter => row.location_id == contact_ref,
+                }
+        })
+        .ok_or("Target is not present in that context")?;
     if !characters_are_contextually_present(ctx, actor_id, target_id) {
         return Err("Characters are not co-present".into());
     }

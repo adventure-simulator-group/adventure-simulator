@@ -592,7 +592,7 @@ pub(crate) fn known_outbreak_witness(
             continue;
         };
         let has_explicit_relationship = outbreak.exposure_chronology.iter().any(|patient| {
-            patient.presentation_resident_character_id == witness_resident_character_id
+            patient.patient_character_id == witness_resident_character_id
                 || patient.family_resident_character_id == Some(witness_resident_character_id)
         });
         if !has_explicit_relationship {

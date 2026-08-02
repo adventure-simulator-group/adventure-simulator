@@ -328,6 +328,32 @@ pub fn transition_character_to_dead(
     source: DeathSource,
     source_id: Option<String>,
 ) -> Result<CharacterDeath, String> {
+    let strategic_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |time| time.minutes);
+    transition_character_to_dead_at(
+        ctx,
+        character_id,
+        cause,
+        source,
+        source_id,
+        strategic_minute,
+    )
+}
+
+/// Exact-minute variant for materializing already-elapsed authored history.
+/// The character's clock is never rewound; a future death is rejected.
+pub fn transition_character_to_dead_at(
+    ctx: &ReducerContext,
+    character_id: u64,
+    cause: DeathCause,
+    source: DeathSource,
+    source_id: Option<String>,
+    strategic_minute: u64,
+) -> Result<CharacterDeath, String> {
     if let Some(death) = ctx.db.character_death().character_id().find(character_id) {
         return Ok(death);
     }
@@ -337,12 +363,15 @@ pub fn transition_character_to_dead(
         .id()
         .find(character_id)
         .ok_or("Character not found")?;
-    let strategic_minute = ctx
+    let current_minute = ctx
         .db
         .character_time()
         .character_id()
         .find(character_id)
         .map_or(0, |time| time.minutes);
+    if strategic_minute > current_minute {
+        return Err("Character death cannot be after their personal clock".into());
+    }
     let death = ctx.db.character_death().insert(CharacterDeath {
         character_id,
         cause,

@@ -111,8 +111,6 @@ pub mod backend_local_problem_rumor_type;
 pub mod backend_local_problem_rumors_table;
 pub mod backend_local_problem_trade_effect_type;
 pub mod backend_local_problem_trade_effects_table;
-pub mod backend_outbreak_patient_type;
-pub mod backend_outbreak_patients_table;
 pub mod backend_physical_evidence_inspection_type;
 pub mod backend_physical_evidence_inspections_table;
 pub mod backend_physical_evidence_table;
@@ -340,7 +338,6 @@ pub mod estate_disposition_type;
 pub mod estate_heir_kind_type;
 pub mod evidence_presentation_kind_type;
 pub mod examine_corpse_reducer;
-pub mod examine_outbreak_patient_reducer;
 pub mod exclusive_commitment_participant_type;
 pub mod exclusive_commitment_type;
 pub mod exhume_corpse_reducer;
@@ -549,7 +546,6 @@ pub mod organization_presentation_type;
 pub mod other_non_textured_soil_type;
 pub mod outbreak_authority_type;
 pub mod outbreak_patient_authority_type;
-pub mod outbreak_patient_examination_type;
 pub mod outbreak_source_presence_span_type;
 pub mod outcome_source_authority_type;
 pub mod outlook_type;
@@ -962,8 +958,6 @@ pub use backend_local_problem_rumor_type::BackendLocalProblemRumor;
 pub use backend_local_problem_rumors_table::*;
 pub use backend_local_problem_trade_effect_type::BackendLocalProblemTradeEffect;
 pub use backend_local_problem_trade_effects_table::*;
-pub use backend_outbreak_patient_type::BackendOutbreakPatient;
-pub use backend_outbreak_patients_table::*;
 pub use backend_physical_evidence_inspection_type::BackendPhysicalEvidenceInspection;
 pub use backend_physical_evidence_inspections_table::*;
 pub use backend_physical_evidence_table::*;
@@ -1191,7 +1185,6 @@ pub use estate_disposition_type::EstateDisposition;
 pub use estate_heir_kind_type::EstateHeirKind;
 pub use evidence_presentation_kind_type::EvidencePresentationKind;
 pub use examine_corpse_reducer::examine_corpse;
-pub use examine_outbreak_patient_reducer::examine_outbreak_patient;
 pub use exclusive_commitment_participant_type::ExclusiveCommitmentParticipant;
 pub use exclusive_commitment_type::ExclusiveCommitment;
 pub use exhume_corpse_reducer::exhume_corpse;
@@ -1400,7 +1393,6 @@ pub use organization_presentation_type::OrganizationPresentation;
 pub use other_non_textured_soil_type::OtherNonTexturedSoil;
 pub use outbreak_authority_type::OutbreakAuthority;
 pub use outbreak_patient_authority_type::OutbreakPatientAuthority;
-pub use outbreak_patient_examination_type::OutbreakPatientExamination;
 pub use outbreak_source_presence_span_type::OutbreakSourcePresenceSpan;
 pub use outcome_source_authority_type::OutcomeSourceAuthority;
 pub use outlook_type::Outlook;
@@ -1999,10 +1991,6 @@ pub enum Reducer {
         action_id: String,
         expected_revision: u32,
         confirm_unauthorized: bool,
-    },
-    ExamineOutbreakPatient {
-        actor_id: u64,
-        patient_ref: String,
     },
     ExhumeCorpse {
         actor_id: u64,
@@ -2631,7 +2619,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::EquipItem { .. } => "equip_item",
             Reducer::EquipItemAtPlacement { .. } => "equip_item_at_placement",
             Reducer::ExamineCorpse { .. } => "examine_corpse",
-            Reducer::ExamineOutbreakPatient { .. } => "examine_outbreak_patient",
             Reducer::ExhumeCorpse { .. } => "exhume_corpse",
             Reducer::FinalizeMerchantTrade { .. } => "finalize_merchant_trade",
             Reducer::FinalizePartyOffer { .. } => "finalize_party_offer",
@@ -3266,13 +3253,6 @@ Reducer::BeginFormalCourtship{
                 action_id: action_id.clone(),
                 expected_revision: expected_revision.clone(),
                 confirm_unauthorized: confirm_unauthorized.clone(),
-}),
-            Reducer::ExamineOutbreakPatient{
-                actor_id,
-                patient_ref,
-}             => __sats::bsatn::to_vec(&examine_outbreak_patient_reducer::ExamineOutbreakPatientArgs {
-                actor_id: actor_id.clone(),
-                patient_ref: patient_ref.clone(),
 }),
             Reducer::ExhumeCorpse{
                 actor_id,
@@ -4331,7 +4311,6 @@ pub struct DbUpdate {
     backend_local_chat_messages: __sdk::TableUpdate<BackendLocalChatMessage>,
     backend_local_problem_rumors: __sdk::TableUpdate<BackendLocalProblemRumor>,
     backend_local_problem_trade_effects: __sdk::TableUpdate<BackendLocalProblemTradeEffect>,
-    backend_outbreak_patients: __sdk::TableUpdate<BackendOutbreakPatient>,
     backend_physical_evidence: __sdk::TableUpdate<BackendPhysicalEvidence>,
     backend_physical_evidence_inspections: __sdk::TableUpdate<BackendPhysicalEvidenceInspection>,
     backend_physiology_administrations: __sdk::TableUpdate<BackendPhysiologyAdministration>,
@@ -4602,9 +4581,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                         )?,
                     )
                 }
-                "backend_outbreak_patients" => db_update.backend_outbreak_patients.append(
-                    backend_outbreak_patients_table::parse_table_update(table_update)?,
-                ),
                 "backend_physical_evidence" => db_update.backend_physical_evidence.append(
                     backend_physical_evidence_table::parse_table_update(table_update)?,
                 ),
@@ -5276,10 +5252,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_local_problem_trade_effects",
                 &self.backend_local_problem_trade_effects,
             );
-        diff.backend_outbreak_patients = cache.apply_diff_to_table::<BackendOutbreakPatient>(
-            "backend_outbreak_patients",
-            &self.backend_outbreak_patients,
-        );
         diff.backend_physical_evidence = cache.apply_diff_to_table::<BackendPhysicalEvidence>(
             "backend_physical_evidence",
             &self.backend_physical_evidence,
@@ -5502,9 +5474,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_local_problem_trade_effects" => db_update
                     .backend_local_problem_trade_effects
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_outbreak_patients" => db_update
-                    .backend_outbreak_patients
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_physical_evidence" => db_update
                     .backend_physical_evidence
@@ -5870,9 +5839,6 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_local_problem_trade_effects" => db_update
                     .backend_local_problem_trade_effects
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_outbreak_patients" => db_update
-                    .backend_outbreak_patients
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_physical_evidence" => db_update
                     .backend_physical_evidence
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -6145,7 +6111,6 @@ pub struct AppliedDiff<'r> {
     backend_local_problem_rumors: __sdk::TableAppliedDiff<'r, BackendLocalProblemRumor>,
     backend_local_problem_trade_effects:
         __sdk::TableAppliedDiff<'r, BackendLocalProblemTradeEffect>,
-    backend_outbreak_patients: __sdk::TableAppliedDiff<'r, BackendOutbreakPatient>,
     backend_physical_evidence: __sdk::TableAppliedDiff<'r, BackendPhysicalEvidence>,
     backend_physical_evidence_inspections:
         __sdk::TableAppliedDiff<'r, BackendPhysicalEvidenceInspection>,
@@ -6477,11 +6442,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendLocalProblemTradeEffect>(
             "backend_local_problem_trade_effects",
             &self.backend_local_problem_trade_effects,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<BackendOutbreakPatient>(
-            "backend_outbreak_patients",
-            &self.backend_outbreak_patients,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendPhysicalEvidence>(
@@ -7493,7 +7453,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_local_chat_messages_table::register_table(client_cache);
         backend_local_problem_rumors_table::register_table(client_cache);
         backend_local_problem_trade_effects_table::register_table(client_cache);
-        backend_outbreak_patients_table::register_table(client_cache);
         backend_physical_evidence_table::register_table(client_cache);
         backend_physical_evidence_inspections_table::register_table(client_cache);
         backend_physiology_administrations_table::register_table(client_cache);
@@ -7613,7 +7572,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_local_chat_messages",
         "backend_local_problem_rumors",
         "backend_local_problem_trade_effects",
-        "backend_outbreak_patients",
         "backend_physical_evidence",
         "backend_physical_evidence_inspections",
         "backend_physiology_administrations",

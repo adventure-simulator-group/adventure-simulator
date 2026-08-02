@@ -241,18 +241,6 @@ pub struct BackendCorpse {
     pub findings: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BackendOutbreakPatient {
-    pub owner_character_id: u64,
-    pub patient_ref: String,
-    pub presentation_resident_character_id: String,
-    pub display_name: String,
-    pub case_id: String,
-    pub source_site_id: String,
-    pub alive: bool,
-    pub symptomatic: bool,
-    pub findings: Vec<String>,
-}
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
 

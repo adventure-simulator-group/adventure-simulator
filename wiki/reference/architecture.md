@@ -308,3 +308,9 @@ patient status, and other roles belong to `CharacterContextMembership`, never
 to a character kind. Exact durable roster IDs cross into autoresolve and
 tactical handoff; tactical positions, live HP, damage, AI, and ticks remain
 transient and are never persisted to SpacetimeDB.
+
+Generated outbreak patients follow the same rule: the Patient membership
+references an existing resident Character and an ordinary infection episode.
+Private outbreak authority stores only case linkage and provenance. Shared
+resident presence suppresses schedules and services while that context is
+active, then restores them without shadow schedule state when it deactivates.

@@ -381,11 +381,11 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 || outbreak.exposure_chronology.iter().any(|exposure| {
                     let episode = crate::disease::InfectionEpisode {
                         id: exposure.episode_id,
-                        character_id: exposure.patient_key,
+                        character_id: exposure.patient_character_id,
                         disease_id: outbreak.disease,
                         contracted_at: exposure.exposed_at,
                         ruleset_version: crate::physiology::PHYSIOLOGY_RULESET_VERSION,
-                        phenotype_key_version: exposure.phenotype_key_version,
+                        phenotype_key_version: crate::physiology::PHENOTYPE_KEY_VERSION,
                     };
                     let definition = crate::disease::definition(outbreak.disease);
                     let course_end = exposure
@@ -398,29 +398,28 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                         &[episode],
                         exposure.exposed_at,
                         course_end,
-                        f32::from(exposure.immunity_milli) / 1_000.0,
+                        0.0,
                     );
                     let death_is_coherent = match exposure.death_kind {
                         Some(OutbreakPatientDeathKind::Disease) => {
-                            terminal == exposure.died_at.zip(exposure.terminal_failure)
+                            terminal.map(|value| value.0) == exposure.died_at
                         }
                         Some(OutbreakPatientDeathKind::CarrierAttack) => {
                             matches!(&outbreak.source, OutbreakSource::ThreatVector { .. })
                                 && exposure.died_at.is_some_and(|died_at| {
                                     terminal.is_none_or(|(terminal_at, _)| died_at < terminal_at)
                                 })
-                                && exposure.terminal_failure.is_none()
                         }
-                        None => exposure.died_at.is_none() && exposure.terminal_failure.is_none(),
+                        None => exposure.died_at.is_none(),
                     };
                     exposure.patient_ref.is_empty()
-                        || exposure.presentation_resident_character_id == 0
+                        || exposure.patient_character_id == 0
                         || !case.witnesses.iter().any(|witness| {
                             witness.resident_character_id
-                                == exposure.presentation_resident_character_id
+                                == exposure.patient_character_id
                         })
                         || exposure.family_resident_character_id
-                            == Some(exposure.presentation_resident_character_id)
+                            == Some(exposure.patient_character_id)
                         || exposure.family_resident_character_id.as_ref().is_some_and(
                             |family_resident_character_id| {
                                 !case.witnesses.iter().any(|witness| {

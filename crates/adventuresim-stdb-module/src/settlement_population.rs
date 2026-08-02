@@ -248,6 +248,9 @@ pub struct SettlementResidentPresence {
     pub start_minute: u16,
     pub end_minute: u16,
     pub is_default: bool,
+    /// Shared schedule/service suppression while another active context owns
+    /// this Character's physical presence. The authored schedule is retained.
+    pub context_suppressed: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -573,6 +576,7 @@ fn insert_resident_with_seed(
             start_minute,
             end_minute,
             is_default,
+            context_suppressed: false,
         });
     let explanation = PersistedGenerationExplanation { input, profile };
     let relations_json = serde_json::to_string(&explanation)
@@ -735,6 +739,9 @@ pub fn npc_presence_remaining_minutes(
     presence: &SettlementResidentPresence,
     minute: u64,
 ) -> Option<u64> {
+    if presence.context_suppressed {
+        return None;
+    }
     let minute = minute % 1_440;
     let start = u64::from(presence.start_minute);
     let end = u64::from(presence.end_minute);
@@ -783,6 +790,7 @@ mod tests {
             start_minute,
             end_minute,
             is_default: true,
+            context_suppressed: false,
         }
     }
 
@@ -796,6 +804,17 @@ mod tests {
         assert_eq!(npc_presence_remaining_minutes(&overnight, 1_380), Some(180));
         assert_eq!(npc_presence_remaining_minutes(&overnight, 60), Some(60));
         assert_eq!(npc_presence_remaining_minutes(&overnight, 600), None);
+    }
+
+    #[test]
+    fn contextual_membership_suppresses_without_rewriting_schedule() {
+        let mut row = presence(480, 1_020);
+        row.context_suppressed = true;
+        assert_eq!(npc_presence_remaining_minutes(&row, 900), None);
+        assert_eq!((row.start_minute, row.end_minute), (480, 1_020));
+
+        row.context_suppressed = false;
+        assert_eq!(npc_presence_remaining_minutes(&row, 900), Some(120));
     }
 
     #[test]

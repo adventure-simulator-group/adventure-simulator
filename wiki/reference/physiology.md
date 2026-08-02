@@ -1,9 +1,11 @@
 # Physiology system
 
-During an outbreak, Physiology can examine living or dead patients through the
-existing window and contribute systemic findings. It does not read outbreak
-truth, identify the source, or complete the quest; those conclusions require
-the investigation evidence graph and exact remediation. See
+During an outbreak, living patients are ordinary canonical Characters in a
+case-site Patient context, so treatment and observation use the same Surgery
+and Physiology authority as any other co-present Character. Dead patients use
+the ordinary corpse interface. Neither system reads outbreak truth, identifies
+the source, or completes the quest; those conclusions require the investigation
+evidence graph and exact remediation. See
 [Outbreak investigations](outbreaks.md).
 
 Dead subjects remain available to the medical interface. External and internal
