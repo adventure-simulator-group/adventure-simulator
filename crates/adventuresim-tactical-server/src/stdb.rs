@@ -12,8 +12,31 @@ pub struct SpacetimeDbPlugin;
 impl Plugin for SpacetimeDbPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, connect_spacetimedb)
-            .add_systems(Update, update_spacetimedb)
+            .add_systems(
+                Update,
+                (
+                    update_spacetimedb,
+                    publish_spacetimedb_ready.after(update_spacetimedb),
+                ),
+            )
             .add_systems(Last, disconnect_spacetimedb);
+    }
+}
+
+/// A SpacetimeDB connection whose initial identity handshake has completed.
+///
+/// `DbConnection::build` returns before the SDK necessarily receives this
+/// identity. Systems which invoke reducers with the server identity must wait
+/// for this resource instead of calling the SDK's panicking `identity()` API.
+#[derive(Resource, Debug, Clone, Copy)]
+pub struct SpacetimeDbReady {
+    identity: Identity,
+}
+
+impl SpacetimeDbReady {
+    /// Identity assigned to this tactical server connection.
+    pub fn identity(self) -> Identity {
+        self.identity
     }
 }
 
@@ -31,11 +54,6 @@ impl SpacetimeDb {
     /// Access spacetime db reducers.
     pub fn reducers(&self) -> &RemoteReducers {
         &self.conn.reducers
-    }
-
-    /// Get the server's SpacetimeDB identity.
-    pub fn identity(&self) -> Identity {
-        self.conn.identity()
     }
 
     /// Subscribe to `connected_players` and start collecting inserted rows.
@@ -73,6 +91,24 @@ impl SpacetimeDb {
 pub fn update_spacetimedb(stdb: Res<SpacetimeDb>) -> Result {
     stdb.conn.frame_tick()?;
     Ok(())
+}
+
+/// Publish readiness only after `frame_tick` receives the initial identity.
+fn publish_spacetimedb_ready(
+    mut commands: Commands,
+    stdb: Res<SpacetimeDb>,
+    ready: Option<Res<SpacetimeDbReady>>,
+) {
+    if ready.is_some() {
+        return;
+    }
+
+    let Some(identity) = stdb.conn.try_identity() else {
+        return;
+    };
+
+    info!("SpacetimeDB connection is ready: {identity}");
+    commands.insert_resource(SpacetimeDbReady { identity });
 }
 
 /// On app exit, close the connection cleanly.

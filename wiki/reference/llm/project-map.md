@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1679)
+## Files (1681)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -1153,6 +1153,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-server/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-tactical-server/src/bot.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/combat.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-server/src/main.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-server/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/stdb.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/terrain.rs` — Rust source module for this component.
