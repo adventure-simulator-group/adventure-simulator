@@ -29,7 +29,7 @@ use crate::{
     },
     player_projection::{
         PlayerProjectionSet, on_client_disconnected, on_join_request, on_player_input,
-        spawn_connected_players,
+        spawn_connected_players, update_skeleton_locomotion,
     },
     stdb::{SpacetimeDb, SpacetimeDbReady},
     terrain::TerrainGenerator,
@@ -120,6 +120,7 @@ fn main() {
             ),
         )
         .add_systems(OnEnter(ServerState::Running), on_server_started)
+        .add_systems(FixedPostUpdate, update_skeleton_locomotion)
         .add_observer(on_join_request)
         .add_observer(on_player_input)
         .add_observer(on_client_disconnected)

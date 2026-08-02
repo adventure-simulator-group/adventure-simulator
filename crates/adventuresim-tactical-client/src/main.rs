@@ -31,6 +31,7 @@ use console_error_panic_hook;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
+mod animation;
 #[cfg(feature = "debug")]
 mod debug;
 mod player;
@@ -92,7 +93,11 @@ fn run(args: Args) {
         AdventureSimulatorNetPlugins,
     ))
     .add_input_context::<Player>()
-    .add_plugins((ui::UiPlugin, player::PlayerPlugin))
+    .add_plugins((
+        ui::UiPlugin,
+        player::PlayerPlugin,
+        animation::TacticalAnimationPlugin,
+    ))
     .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
     .add_systems(Startup, (setup_scene, setup_client))
     .add_systems(
