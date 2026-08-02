@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1713)
+## Files (1735)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -30,13 +30,27 @@ development, or other wiki document before changing a subsystem.
 - `THIRD_PARTY_NOTICES.md` — Project documentation.
 - `assets/TownA.glb` — Binary game or UI asset.
 - `assets/TownB.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/base.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/idle_relaxed.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/run.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/walk.glb` — Binary game or UI asset.
 - `assets/world-data/ieg-religion-1544.csv` — Repository support file.
 - `assets_src/base.blend` — Repository support file.
 - `assets_src/base.blend1` — Repository support file.
 - `assets_src/base.casc` — Repository support file.
 - `assets_src/base.glb` — Binary game or UI asset.
 - `assets_src/base.qrigcasc` — Repository support file.
+- `assets_src/biped/unarmed/attack_slash_lead_left_contact.casc` — Repository support file.
+- `assets_src/biped/unarmed/attack_slash_lead_left_contact.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/attack_thrust_lead_left_contact.casc` — Repository support file.
+- `assets_src/biped/unarmed/attack_thrust_lead_left_contact.glb` — Binary game or UI asset.
 - `assets_src/biped/unarmed/base.casc` — Repository support file.
+- `assets_src/biped/unarmed/duck_lead_left_backward.casc` — Repository support file.
+- `assets_src/biped/unarmed/duck_lead_left_backward.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/duck_lead_left_left.casc` — Repository support file.
+- `assets_src/biped/unarmed/duck_lead_left_left.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/duck_lead_left_right.casc` — Repository support file.
+- `assets_src/biped/unarmed/duck_lead_left_right.glb` — Binary game or UI asset.
 - `assets_src/biped/unarmed/guard_lead_left.casc` — Repository support file.
 - `assets_src/biped/unarmed/idle_relaxed.casc` — Repository support file.
 - `assets_src/biped/unarmed/idle_relaxed.glb` — Binary game or UI asset.
@@ -1150,11 +1164,13 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/assets/SNPro-VariableFont_wght.ttf` — Binary game or UI asset.
 - `crates/adventuresim-tactical-client/assets/crosshair.png` — Binary game or UI asset.
 - `crates/adventuresim-tactical-client/assets/ui.css` — Browser UI styling.
+- `crates/adventuresim-tactical-client/src/animation.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/debug.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/player.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/ui.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-core/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/adventuresim-tactical-core/src/animation.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-core/src/combat.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-core/src/inventory.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-core/src/lib.rs` — Rust source module for this component.
@@ -1635,6 +1651,8 @@ development, or other wiki document before changing a subsystem.
 - `scripts/init_world_data.py` — Development or documentation automation script.
 - `scripts/init_world_runtime.py` — Development or documentation automation script.
 - `scripts/just_tasks.py` — Development or documentation automation script.
+- `scripts/prepare_animation_motion.py` — Development or documentation automation script.
+- `scripts/prepare_rig_base.py` — Development or documentation automation script.
 - `scripts/quest_web_eval.mjs` — Repository support file.
 - `scripts/test_init_forest_cover.py` — Development or documentation automation script.
 - `scripts/test_init_jung_pnv.py` — Development or documentation automation script.
@@ -1648,6 +1666,8 @@ development, or other wiki document before changing a subsystem.
 - `scripts/test_world_source_init.py` — Development or documentation automation script.
 - `scripts/tests/test_dev_stack.py` — Development or documentation automation script.
 - `scripts/tests/test_just_tasks.py` — Development or documentation automation script.
+- `scripts/tests/test_prepare_animation_motion.py` — Development or documentation automation script.
+- `scripts/tests/test_prepare_rig_base.py` — Development or documentation automation script.
 - `scripts/update_project_map.py` — Development or documentation automation script.
 - `scripts/validate_organization_world.py` — Development or documentation automation script.
 - `scripts/world_data_bundle.py` — Development or documentation automation script.
@@ -1655,6 +1675,8 @@ development, or other wiki document before changing a subsystem.
 - `scripts/world_source_init.py` — Development or documentation automation script.
 - `utils/generate_certificates.py` — Development or documentation automation script.
 - `wiki/SUMMARY.md` — Project documentation.
+- `wiki/client/animation.md` — Project documentation.
+- `wiki/client/animation.md` — Project documentation.
 - `wiki/client/animation.md` — Project documentation.
 - `wiki/client/controls.md` — Project documentation.
 - `wiki/client/models.md` — Project documentation.

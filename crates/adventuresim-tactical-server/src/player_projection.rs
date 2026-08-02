@@ -476,6 +476,50 @@ pub(crate) fn on_player_input(
     }
 }
 
+/// Projects authoritative controller motion into the compact presentation
+/// state replicated to every client. It deliberately never evaluates bones.
+pub(crate) fn update_skeleton_locomotion(
+    time: Res<Time<Fixed>>,
+    mut players: Query<
+        (
+            &CharacterControllerState,
+            &LinearVelocity,
+            &mut SkeletonState,
+        ),
+        With<Player>,
+    >,
+) {
+    for (controller, velocity, mut skeleton) in &mut players {
+        let local_velocity = controller.orientation.inverse() * velocity.0;
+        skeleton.local_velocity = local_velocity;
+        skeleton.grounded = controller.grounded.is_some();
+        skeleton.posture = if skeleton.grounded {
+            if controller.crouching {
+                Posture::Crouched
+            } else {
+                Posture::Upright
+            }
+        } else {
+            Posture::Airborne
+        };
+
+        let ground_speed = local_velocity.xz().length();
+        if skeleton.grounded && ground_speed > 0.05 {
+            // One normalized cycle covers an average left/right stride. The
+            // evaluator shares this phase across walk, run, and crouch-walk.
+            let stride_length = (0.9 + ground_speed * 0.16).clamp(0.9, 1.8);
+            skeleton.gait_phase = (skeleton.gait_phase
+                + ground_speed * time.delta_secs() / stride_length)
+                .rem_euclid(1.0);
+            skeleton.lead_foot = if skeleton.gait_phase < 0.5 {
+                LeadFoot::Left
+            } else {
+                LeadFoot::Right
+            };
+        }
+    }
+}
+
 pub(crate) fn on_client_disconnected(
     disconnected: On<Disconnected>,
     query: Query<(Option<&CharacterId>, Option<&LoadingPlayer>)>,
