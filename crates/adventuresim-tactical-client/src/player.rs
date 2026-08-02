@@ -106,7 +106,7 @@ fn on_new_player_added_hook(
     event: On<Add, Player>,
     mut commands: Commands,
     camera: Single<Entity, With<Camera3d>>,
-    query: Query<(&Player, &PlayerId)>,
+    query: Query<(&Player, &CharacterId)>,
     args: Res<Args>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -262,17 +262,17 @@ fn update_attack_state_system(
             };
 
             if state.ranged {
-                cmd.client_trigger(RangedActionRequest::complete(
-                    Some(target),
-                    body_part,
-                    HIT_PRECISION,
-                ));
-            } else {
-                cmd.client_trigger(MeleeActionRequest::complete(
+                cmd.client_trigger(RangedActionRequest::CompleteHit {
                     target,
                     body_part,
-                    HIT_PRECISION,
-                ));
+                    reported_precision: HIT_PRECISION,
+                });
+            } else {
+                cmd.client_trigger(MeleeActionRequest::Complete {
+                    target,
+                    body_part,
+                    reported_precision: HIT_PRECISION,
+                });
             }
             cmd.trigger(HitPerformed {
                 entity: attacker,
@@ -282,11 +282,7 @@ fn update_attack_state_system(
             });
         } else {
             if state.ranged {
-                cmd.client_trigger(RangedActionRequest::complete(
-                    None,
-                    BodyPart::Chest,
-                    HIT_PRECISION,
-                ));
+                cmd.client_trigger(RangedActionRequest::CompleteMiss);
             }
             cmd.trigger(HitPerformed {
                 entity: attacker,
@@ -326,9 +322,9 @@ fn on_attack_fired_hook(
     cmd.entity(event.context)
         .insert(AttackState::new(PRE_HIT_DELAY, reach, ranged));
     if ranged {
-        cmd.client_trigger(RangedActionRequest::start());
+        cmd.client_trigger(RangedActionRequest::Start);
     } else {
-        cmd.client_trigger(MeleeActionRequest::start());
+        cmd.client_trigger(MeleeActionRequest::Start);
     }
 }
 

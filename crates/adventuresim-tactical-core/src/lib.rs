@@ -22,8 +22,8 @@ pub mod prelude {
         ItemQuantity, ShieldItem, WeaponItem,
     };
     pub use crate::player::{
-        Attributes, BestiaryCategories, ControlledPlayer, Limbs, Player, PlayerId, Skills, Stats,
-        TacticalCombatState, TacticalPlayerView, TacticalPlayerViewer,
+        Attributes, BestiaryCategories, CharacterId, ControlledPlayer, Limbs, Player, Skills,
+        Stats, TacticalCombatState, TacticalPlayerView, TacticalPlayerViewer,
     };
     pub use crate::scene::{SceneId, SceneTerrain};
     pub use adventuresim_core::prelude::*;

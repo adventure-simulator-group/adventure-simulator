@@ -23,6 +23,12 @@ action protocol, so completion cannot overtake start on a separate event
 stream. An observed windup expires one second after it becomes ready, bounding
 delayed or replayed completions.
 
+The variants carry only valid data: `Start` has no completion sentinels, melee
+`Complete` always carries a target, body part, and reported precision, while
+ranged completion is either `CompleteMiss` or `CompleteHit`. Finite precision
+is converted to a trusted boundary type and timing to duration-backed authority
+types before combat mutation.
+
 ### Current offensive AI
 
 Each AI melee combatant has an explicit Party or Enemy allegiance and chooses
@@ -55,6 +61,9 @@ An actor over the threshold stops moving, attacking, defending, and being
 selected by offensive AI; an imbalance-only incapacitation can recover and
 return the actor to combat. Limb and live combat-state replication provide
 basic client feedback, but all of this remains transient server memory.
+Every consumer derives readiness from the one numeric incapacitation value;
+there is no parallel boolean or server marker for AI and authority to observe
+differently.
 
 An enemy's first transition into incapacitation counts as its defeat, even if
 temporary imbalance later lets it recover. The server immediately ends the
