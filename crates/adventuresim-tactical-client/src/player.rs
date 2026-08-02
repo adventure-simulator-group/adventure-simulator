@@ -49,6 +49,10 @@ const HITBOX_LAYER: LayerMask = LayerMask(1 << 1);
 const PRE_HIT_DELAY: f32 = 0.3;
 const HIT_PRECISION: f32 = 1.0;
 const HANDS_REACH: f32 = 1.5;
+/// Seconds a dead bot's detached visual takes to fade to transparent. Purely
+/// a client-side presentation detail: the server despawns the authoritative
+/// entity immediately on death and has no notion of this delay.
+const ENEMY_DEATH_FADE_SECONDS: f32 = 2.0;
 
 pub struct PlayerPlugin;
 
@@ -63,6 +67,8 @@ impl Plugin for PlayerPlugin {
                 (
                     update_character_look_rotation.run_if(any_with_component::<CharacterLook>),
                     update_attack_state_system.run_if(any_with_component::<AttackState>),
+                    start_fade_on_incapacitation,
+                    tick_fade_out.run_if(any_with_component::<FadingOut>),
                 ),
             );
     }
@@ -81,6 +87,18 @@ pub struct HitPerformed {
 
 #[derive(Component, Clone, Copy)]
 pub struct LimbHitbox(pub BodyPart);
+
+/// A standalone, client-only entity holding a dead player/bot's detached body
+/// meshes, fading them to transparent over [`ENEMY_DEATH_FADE_SECONDS`] before
+/// despawning itself. Spawned by [`start_fade_on_incapacitation`] the moment
+/// [`CombatState`] is seen to be `Incapacitated`, since by that point the
+/// server may despawn (and replication may remove) the real player entity at
+/// any time — this entity has no server counterpart and outlives it on
+/// purpose so the fade has something to animate.
+#[derive(Component)]
+struct FadingOut {
+    timer: Timer,
+}
 
 #[derive(Component, Default)]
 pub struct AttackState {
@@ -223,6 +241,81 @@ fn on_new_player_added_hook(
     }
 
     Ok(())
+}
+
+/// Detaches another player/bot's body meshes onto a standalone [`FadingOut`]
+/// corpse entity the first time their replicated [`CombatState`] is seen to
+/// be `Incapacitated`. The server despawns the real entity immediately on
+/// death with no fade delay of its own (see the tactical server's
+/// `bot::on_authoritative_enemy_death`), so the meshes have to be moved off
+/// of it before that despawn — which recursively despawns children — can take
+/// them with it. Excludes the locally controlled player, which never spawns
+/// any body meshes to fade (see [`on_new_player_added_hook`]).
+fn start_fade_on_incapacitation(
+    mut commands: Commands,
+    q: Query<(&CombatState, &Transform, &Children), (Changed<CombatState>, Without<ClientPlayer>)>,
+    q_mesh: Query<(), With<MeshMaterial3d<StandardMaterial>>>,
+) {
+    for (state, transform, children) in &q {
+        if state.status() != IncapacitationStatus::Incapacitated {
+            continue;
+        }
+
+        let meshes: Vec<Entity> = children
+            .iter()
+            .filter(|&child| q_mesh.contains(child))
+            .collect();
+        if meshes.is_empty() {
+            // Already detached by an earlier `CombatState` change (e.g. the
+            // continuing imbalance-recovery ticks), or nothing to fade.
+            continue;
+        }
+
+        let corpse = commands
+            .spawn((
+                *transform,
+                Visibility::default(),
+                FadingOut {
+                    timer: Timer::from_seconds(ENEMY_DEATH_FADE_SECONDS, TimerMode::Once),
+                },
+            ))
+            .id();
+        for mesh in meshes {
+            commands.entity(mesh).insert(ChildOf(corpse));
+        }
+    }
+}
+
+/// Fades a [`FadingOut`] corpse's detached meshes toward transparent and
+/// despawns the corpse once the timer finishes — nothing server-side ever
+/// removes it, since it has no networked counterpart. Each material handle is
+/// unique per body part per player (see [`on_new_player_added_hook`]), so
+/// mutating alpha here can't bleed into any other entity's appearance.
+fn tick_fade_out(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut q_fading: Query<(Entity, &mut FadingOut, &Children)>,
+    q_material: Query<&MeshMaterial3d<StandardMaterial>>,
+) {
+    for (corpse, mut fading, children) in &mut q_fading {
+        fading.timer.tick(time.delta());
+        let alpha = (1.0 - fading.timer.fraction()).clamp(0.0, 1.0);
+
+        for child in children.iter() {
+            let Ok(material_handle) = q_material.get(child) else {
+                continue;
+            };
+            if let Some(material) = materials.get_mut(&material_handle.0) {
+                material.alpha_mode = AlphaMode::Blend;
+                material.base_color = material.base_color.with_alpha(alpha);
+            }
+        }
+
+        if fading.timer.is_finished() {
+            commands.entity(corpse).despawn();
+        }
+    }
 }
 
 fn update_attack_state_system(

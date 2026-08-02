@@ -400,6 +400,9 @@ fn spawn_connected_player(
                     reach: item.item.reach,
                     balance: item.item.balance,
                     precise: item.item.precise,
+                    blunt: item.item.blunt,
+                    slash: item.item.slash,
+                    pierce: item.item.pierce,
                 });
             }
             ItemKind::Armor | ItemKind::Clothing => {}

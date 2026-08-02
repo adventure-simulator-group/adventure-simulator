@@ -11,7 +11,7 @@ pub type ControlledPlayer = Actions<Player>;
 /// Component for a player entity, for both client-controlled
 /// active player and other players.
 #[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq, Eq)]
-#[require(PlayerId, Limbs, Skills, Attributes, Stats)]
+#[require(PlayerId, Limbs, Skills, Attributes, Stats, CombatState)]
 #[component(immutable)]
 pub struct Player {
     pub name: String,
@@ -129,6 +129,87 @@ impl PlayerBody for Limbs {
     fn primary_side(&self) -> BodySide {
         // TODO: this should be stored in DB ?
         BodySide::Right
+    }
+}
+
+impl Limbs {
+    /// Applies up to `damage` (0-1 scale) to `part`'s health, clamped to what
+    /// remains, and returns how much was actually applied. Mirrors
+    /// `CombatBody::apply_damage` in `adventuresim_core::autoresolve`.
+    pub fn apply_damage(&mut self, part: BodyPart, damage: f32) -> f32 {
+        let health = match part {
+            BodyPart::LeftArm => &mut self.left_arm,
+            BodyPart::RightArm => &mut self.right_arm,
+            BodyPart::LeftLeg => &mut self.left_leg,
+            BodyPart::RightLeg => &mut self.right_leg,
+            BodyPart::Chest => &mut self.chest,
+            BodyPart::Stomach => &mut self.stomach,
+            BodyPart::Head => &mut self.head,
+        };
+        let applied = damage.max(0.0).min(health.max(0.0));
+        *health = (*health - applied).max(0.0);
+        applied
+    }
+
+    /// Aggregate health deficit across all body parts, used as the `pain`
+    /// input in [`CombatState::recompute`].
+    pub fn total_damage(&self) -> f32 {
+        [
+            self.left_arm,
+            self.right_arm,
+            self.left_leg,
+            self.right_leg,
+            self.chest,
+            self.stomach,
+            self.head,
+        ]
+        .into_iter()
+        .map(|health| (1.0 - health).max(0.0))
+        .sum()
+    }
+}
+
+/// Short-lived tactical combat state: the imbalance and blood-loss inputs to
+/// [`combat.md`'s incapacitation model](../../../../wiki/tactical/combat.md),
+/// tracked in real time instead of the abstract per-round battle resolved by
+/// `adventuresim_core::autoresolve`. Unlike [`Limbs`] wounds, this state is
+/// tactical-only and is not meant to be persisted strategically (see
+/// `adventuresim_core::morale`).
+#[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, Copy, PartialEq)]
+pub struct CombatState {
+    /// Momentary stagger from unabsorbed attack force. Recovers continuously
+    /// (see the tactical server's `recover_imbalance` system).
+    pub imbalance: f32,
+    /// Fraction of blood volume lost so far this session.
+    pub blood_loss_fraction: f32,
+    /// Cached `pain_incapacitation` output, refreshed whenever damage lands.
+    pub pain: f32,
+    /// Cached `blood_loss_incapacitation` output, refreshed whenever damage lands.
+    pub blood_loss: f32,
+}
+
+impl CombatState {
+    /// Refreshes the cached `pain`/`blood_loss` incapacitation terms from the
+    /// current aggregate body damage and a Will skill check.
+    pub fn recompute(&mut self, total_damage: f32, will_check: f32) {
+        self.pain = pain_incapacitation(total_damage, will_check);
+        let remaining_blood = (1.0 - self.blood_loss_fraction).clamp(0.0, 1.0);
+        self.blood_loss = blood_loss_incapacitation(remaining_blood, 1.0);
+    }
+
+    /// Total incapacitation, matching `Combatant::incapacitation` in
+    /// `adventuresim_core::autoresolve` (without a strategic carryover term,
+    /// since there is none at the tactical layer).
+    pub fn incapacitation(&self) -> f32 {
+        self.pain + self.blood_loss + self.imbalance
+    }
+
+    pub fn status(&self) -> IncapacitationStatus {
+        match self.incapacitation() {
+            total if total >= 1.0 => IncapacitationStatus::Incapacitated,
+            total if total > 0.5 => IncapacitationStatus::Staggered,
+            _ => IncapacitationStatus::Ready,
+        }
     }
 }
 

@@ -5,7 +5,9 @@ use adventuresim_world_schema::{BestiaryCategory, BestiaryHours};
 
 const MAX_COMBAT_ROUNDS: usize = 256;
 const MAX_RANGED_ATTACKS_PER_PHASE: usize = 64;
-const BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
+/// Blood volume lost per point of applied 0-1 body-part health damage. Shared
+/// with tactical combat so both layers derive blood loss the same way.
+pub const BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
 const FORMATION_SPACING_METERS: f32 = 2.0;
 const COMBAT_ROUND_SECONDS: f32 = 1.0;
 const REFERENCE_MELEE_ATTACK_SECONDS: f32 = 1.0;

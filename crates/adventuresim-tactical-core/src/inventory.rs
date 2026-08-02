@@ -71,6 +71,9 @@ pub struct WeaponItem {
     pub reach: f32,
     pub balance: f32,
     pub precise: bool,
+    pub blunt: bool,
+    pub slash: bool,
+    pub pierce: bool,
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -302,6 +305,24 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .and_then(|item| item.weapon)
             .map(|weapon| weapon.balance)
             .unwrap_or_default()
+    }
+
+    fn weapon_does_blunt(&self) -> bool {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_some_and(|weapon| weapon.blunt)
+    }
+
+    fn weapon_does_slash(&self) -> bool {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_some_and(|weapon| weapon.slash)
+    }
+
+    fn weapon_does_pierce(&self) -> bool {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_some_and(|weapon| weapon.pierce)
     }
 
     fn armor_range_of_motion(&self, part: BodyPart) -> f32 {

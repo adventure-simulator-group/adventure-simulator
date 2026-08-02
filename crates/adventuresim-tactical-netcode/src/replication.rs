@@ -23,6 +23,7 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .replicate::<Player>()
             .replicate::<PlayerId>()
             .replicate::<Limbs>()
+            .replicate::<CombatState>()
             .replicate::<Skills>()
             .replicate::<Stats>()
             .replicate::<Attributes>()
