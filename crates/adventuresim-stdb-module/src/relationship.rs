@@ -2491,6 +2491,7 @@ pub fn settle_due_births(ctx: &ReducerContext, mother_id: u64, now: u64) -> Resu
                 create_solo_party: false,
                 stable_seed: pregnancy.child_name_seed,
                 initial_time_minute: Some(pregnancy.due_minute),
+                field_actor: false,
             },
             None,
             Some(&newborn_life),

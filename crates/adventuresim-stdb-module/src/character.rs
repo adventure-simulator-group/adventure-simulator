@@ -1754,6 +1754,7 @@ pub(crate) fn insert_new_character(
             create_solo_party: true,
             stable_seed: id,
             initial_time_minute: None,
+            field_actor: false,
         },
         None,
         None,
@@ -1792,6 +1793,7 @@ pub(crate) struct CharacterCreationOptions<'a> {
     pub create_solo_party: bool,
     pub stable_seed: u64,
     pub initial_time_minute: Option<u64>,
+    pub field_actor: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1844,6 +1846,7 @@ pub(crate) fn insert_new_npc_character(
             create_solo_party: temporary,
             stable_seed: id,
             initial_time_minute: None,
+            field_actor: false,
         },
         None,
         Some(&life),
@@ -1871,6 +1874,34 @@ pub(crate) fn insert_persistent_npc_character(
             create_solo_party: false,
             stable_seed,
             initial_time_minute,
+            field_actor: false,
+        },
+        None,
+        Some(&life),
+    )
+}
+
+/// Create a durable, fully componentized character whose authoritative
+/// placement is a non-settlement context (an encounter, case site, or group).
+pub(crate) fn insert_persistent_field_character(
+    ctx: &ReducerContext,
+    name: String,
+    id: u64,
+    stable_seed: u64,
+    initial_time_minute: Option<u64>,
+) -> Result<(), String> {
+    let life = NpcLifeFacts::from_stable_seed(stable_seed);
+    insert_character_with_origin(
+        ctx,
+        name,
+        id,
+        CharacterCreationOptions {
+            origin_settlement_id: None,
+            mode: CharacterCreationMode::PersistentNpc,
+            create_solo_party: false,
+            stable_seed,
+            initial_time_minute,
+            field_actor: true,
         },
         None,
         Some(&life),
@@ -1891,6 +1922,7 @@ fn insert_starting_character(
             create_solo_party: true,
             stable_seed: spec.id,
             initial_time_minute: None,
+            field_actor: false,
         },
         Some(spec),
         None,
@@ -2047,7 +2079,7 @@ pub(crate) fn insert_character_with_origin(
         // Legacy scalar retained only for schema compatibility. Currency is
         // authoritative in inventory.
         gold: 0,
-        current_settlement_id: Some(start_settlement.id.clone()),
+        current_settlement_id: (!options.field_actor).then(|| start_settlement.id.clone()),
         party_id: None,
         server: Identity::ZERO,
         in_server: false,

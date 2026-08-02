@@ -35,6 +35,7 @@ pub struct BackendRoadChallenge {
     pub active: bool,
     pub result_transcript: Option<String>,
     pub quest_reward_addendum: Option<String>,
+    pub actor_character_id: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1084,6 +1085,34 @@ pub struct StrategicEncounter {
     pub penalty_minutes: u64,
     pub loss_preview: Vec<StrategicEncounterLoss>,
     pub outcome: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CharacterContextKind {
+    HostileGroup,
+    StrategicEncounter,
+    RoadEncounter,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CharacterContextRole {
+    Counterparty,
+    Patient,
+    Bystander,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendContextCharacter {
+    pub party_id: String,
+    pub contact_ref: String,
+    pub context_kind: CharacterContextKind,
+    pub location_id: String,
+    pub character_id: u64,
+    pub role: CharacterContextRole,
+    pub ordinal: u16,
+    pub alive: bool,
+    pub revision: u32,
+    pub treatment_consent: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

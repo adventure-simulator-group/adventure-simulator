@@ -1595,6 +1595,10 @@ pub(crate) fn ensure_bound_mission_authority(
         .ok_or("Bound hostile group disappeared")?;
     let enemy_combat_scale_bps = hostile_group.combat_scale_bps;
     let normalized_combat_power = hostile_group.normalized_combat_power;
+    let enemy_character_ids = crate::world_actor::context_character_ids(ctx, &hostile_group_id);
+    if enemy_character_ids.len() != hostile_group.enemy_count as usize {
+        return Err("Hostile group roster does not match group count".into());
+    }
     let authority = MissionAuthority {
         id: mission_id.to_string(),
         party_id: party_id.to_string(),
@@ -1610,6 +1614,12 @@ pub(crate) fn ensure_bound_mission_authority(
         scene_key: scene_key.to_string(),
         hostile_version: hostile_group.escalation_incident_ordinal,
         enemy_count: hostile_group.enemy_count,
+        enemy_character_ids,
+        contacted_before_combat: crate::world_actor::party_contacted_context(
+            ctx,
+            party_id,
+            &hostile_group_id,
+        ),
         enemy_difficulty: hostile_group.base_difficulty,
         enemy_combat_scale_bps,
         normalized_combat_power,

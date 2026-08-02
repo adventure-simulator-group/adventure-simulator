@@ -299,3 +299,8 @@ persisted activity occurrence minute rather than the random occurrence roll.
 Consequently, an unrelated battle or incident can never complete a quest, and
 resolving or avoiding an incident cannot mutate quest/objective state.
 Tactical positions, health, damage, and tick state remain transient.
+
+Each hostile group owns one exact stable Character roster through contextual
+membership. Mission binding snapshots those IDs; autoresolve and tactical
+servers consume the snapshot instead of fabricating anonymous combatants.
+Nonviolent quest completion remains a follow-up.

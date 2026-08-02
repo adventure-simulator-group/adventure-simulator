@@ -680,13 +680,28 @@ fn commit_encounter_scan(
     } else {
         Vec::new()
     };
-    if ctx
+    let previous = ctx
         .db
         .strategic_encounter()
         .party_id()
-        .find(&party_id.to_string())
-        .is_some()
+        .find(&party_id.to_string());
+    if let Some(previous) = previous.as_ref()
+        && previous.encounter_id != encounter.encounter_id
     {
+        crate::world_actor::deactivate_context_roster(ctx, &previous.encounter_id);
+    }
+    let roster = crate::world_actor::materialize_context_roster(
+        ctx,
+        crate::world_actor::CharacterContextKind::StrategicEncounter,
+        &encounter.encounter_id,
+        &encounter.encounter_id,
+        &encounter.archetype,
+        u32::from(encounter.enemy_count),
+    )?;
+    if roster.len() != usize::from(encounter.enemy_count) {
+        return Err("Committed encounter roster does not match its enemy count".into());
+    }
+    if previous.is_some() {
         ctx.db.strategic_encounter().party_id().update(encounter);
     } else {
         ctx.db.strategic_encounter().insert(encounter);
@@ -1019,10 +1034,15 @@ fn resolve_random_encounter_battle(
         })
         .collect::<Result<Vec<_>, String>>()?;
     let difficulty = i32::from(encounter.enemy_count.max(1));
-    let enemies = (0..u64::from(encounter.enemy_count))
-        .map(|index| {
+    let enemy_ids = crate::world_actor::context_character_ids(ctx, &encounter.encounter_id);
+    if enemy_ids.len() != encounter.enemy_count as usize {
+        return Err("Encounter counterparty roster does not match encounter authority".into());
+    }
+    let enemies = enemy_ids
+        .into_iter()
+        .map(|enemy_id| {
             autoresolve_enemy(
-                u64::MAX.saturating_sub(index),
+                enemy_id,
                 &encounter.archetype,
                 difficulty,
                 10_000,
@@ -1036,6 +1056,15 @@ fn resolve_random_encounter_battle(
         &encounter.party_id,
         &member_ids,
         5.0 + f32::from(encounter.enemy_count),
+        &outcome,
+    )?;
+    crate::corpse::persist_autoresolve_enemy_corpses(
+        ctx,
+        &encounter.encounter_id,
+        &encounter.party_id,
+        "",
+        "",
+        &encounter.archetype,
         &outcome,
     )?;
     if outcome.victor == BattleVictor::Allies {
@@ -1227,6 +1256,7 @@ pub fn resolve_strategic_encounter(
         .strategic_encounter()
         .party_id()
         .update(encounter.clone());
+    crate::world_actor::deactivate_context_roster(ctx, &encounter.encounter_id);
     ctx.db
         .strategic_encounter_resolution_receipt()
         .insert(StrategicEncounterResolutionReceipt {

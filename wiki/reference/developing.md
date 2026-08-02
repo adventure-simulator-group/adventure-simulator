@@ -604,3 +604,7 @@ reducer. Schema changes are destructive in this pre-launch workflow, so rerun
 the isolated profile to recreate its database. Select **Zealous Prayer Demo**
 and open **Margareta the Pilgrim** to inspect the same Lutheran action kept
 visible, greyed out, and annotated with its unavailable reason.
+
+Encounter development should query `backend_context_characters` by exact
+`context_id` or `location_id`. After contextual schema changes, run
+`just generate-db-client` before building the web or tactical server.

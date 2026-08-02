@@ -30,6 +30,7 @@ use adventuresim_stdb_client::{
     backend_character_strategic_conditions_table::BackendCharacterStrategicConditionsTableAccess,
     backend_character_training_schedules_table::BackendCharacterTrainingSchedulesTableAccess,
     backend_characters_table::BackendCharactersTableAccess,
+    backend_context_characters_table::BackendContextCharactersTableAccess,
     backend_contracts_table::BackendContractsTableAccess,
     backend_dialogue_events_table::BackendDialogueEventsTableAccess,
     backend_dialogue_participants_table::BackendDialogueParticipantsTableAccess,
@@ -99,6 +100,7 @@ use crate::{
 /// large immutable world/import tables and item definitions are read on demand.
 pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "backend_characters",
+    "backend_context_characters",
     "backend_character_case_site_locations",
     "backend_character_attributes",
     "backend_character_stats",
@@ -270,6 +272,7 @@ impl LiveState {
         // These tables cover location/navigation, party state and requests,
         // recruitment, quest state, local conversations, and mission readiness.
         invalidate_on_view_changes!(state.0._connection.db.backend_characters());
+        invalidate_on_view_changes!(state.0._connection.db.backend_context_characters());
         invalidate_on_view_changes!(
             state
                 .0
@@ -388,6 +391,7 @@ impl LiveState {
             .add_query(|query| query.from.autoresolve_report())
             .add_query(|query| query.from.strategic_encounter())
             .add_query(|query| query.from.backend_characters())
+            .add_query(|query| query.from.backend_context_characters())
             .add_query(|query| query.from.backend_character_case_site_locations())
             .add_query(|query| query.from.backend_character_attributes())
             .add_query(|query| query.from.backend_character_capabilities())

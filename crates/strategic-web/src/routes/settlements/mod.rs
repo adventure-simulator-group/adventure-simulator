@@ -90,9 +90,9 @@ mod rest_preview {
 #[cfg(test)]
 use camp::camp_continue_block_reason;
 use camp::{
-    camp, change_camp_destination, continue_camp_travel, resolve_camp_encounter,
-    resolve_errantry_road_challenge, rest_at_camp, update_camp_travel_configuration,
-    update_travel_configuration,
+    bandage_camp_counterparty, camp, change_camp_destination, contact_camp_counterparty,
+    continue_camp_travel, resolve_camp_encounter, resolve_errantry_road_challenge, rest_at_camp,
+    update_camp_travel_configuration, update_travel_configuration,
 };
 use commerce::{
     inn, merchant_provider_id, merchant_service_location, provisioning_storefront_path,

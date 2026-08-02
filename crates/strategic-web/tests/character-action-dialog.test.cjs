@@ -16,6 +16,20 @@ const styles = fs.readFileSync(path.join(__dirname, "../static/css/strategic.css
 const components = fs.readFileSync(path.join(__dirname, "../static/css/components.css"), "utf8");
 const routes = readRustModuleSource(path.join(__dirname, "../src/routes/settlements/mod.rs"));
 
+test("encounter counterparties use durable characters and ordinary actions", () => {
+  const worldActors = fs.readFileSync(path.join(__dirname, "../../adventuresim-stdb-module/src/world_actor.rs"), "utf8");
+  const encounters = fs.readFileSync(path.join(__dirname, "../../adventuresim-stdb-module/src/strategic/encounters.rs"), "utf8");
+  const surgery = fs.readFileSync(path.join(__dirname, "../../adventuresim-stdb-module/src/surgery.rs"), "utf8");
+  const travel = fs.readFileSync(path.join(__dirname, "../src/templates/settlement/travel.rs"), "utf8");
+  assert.match(worldActors, /CharacterContextMembership/);
+  assert.match(worldActors, /apply_async_socializing/);
+  assert.match(encounters, /context_character_ids/);
+  assert.doesNotMatch(encounters, /u64::MAX\.saturating_sub\(index\)/);
+  assert.match(surgery, /treatment_is_authorized/);
+  assert.match(travel, /aria-label="Counterparty"/);
+  assert.match(travel, /\{ "Talk" \}/);
+});
+
 test("character dialogs trap focus in either direction", () => {
   assert.equal(wrappedFocusIndex(3, 0, true), 2);
   assert.equal(wrappedFocusIndex(3, 2, false), 0);

@@ -645,47 +645,50 @@ pub(crate) fn persist_autoresolve_enemy_corpses(
     creature_kind: &str,
     outcome: &BattleOutcome,
 ) -> Result<usize, String> {
-    let minute = crate::strategic::living_party_member_ids(ctx, party_id)
-        .into_iter()
-        .filter_map(|id| ctx.db.character_time().character_id().find(id))
-        .map(|row| row.minutes)
-        .min()
-        .unwrap_or(0);
     let mut inserted = 0;
     for enemy in outcome
         .enemies
         .iter()
         .filter(|enemy| adventuresim_core::autopsy::is_lethal_body(enemy))
     {
-        let corpse_id = format!("corpse:{source_id}:{}", enemy.id);
-        if ctx.db.strategic_corpse().id().find(&corpse_id).is_some() {
+        let was_alive = ctx
+            .db
+            .character()
+            .id()
+            .find(enemy.id)
+            .is_some_and(|row| row.alive);
+        crate::character::transition_character_to_dead(
+            ctx,
+            enemy.id,
+            crate::character::DeathCause::Combat,
+            crate::character::DeathSource::Autoresolve,
+            Some(source_id.into()),
+        )?;
+        let corpse_id = format!("corpse:character:{}", enemy.id);
+        let mut corpse = ctx
+            .db
+            .strategic_corpse()
+            .id()
+            .find(&corpse_id)
+            .ok_or("Enemy death did not create its canonical corpse")?;
+        corpse.source_id = source_id.into();
+        corpse.discovering_party_id = party_id.into();
+        corpse.subject_character_id = Some(enemy.id);
+        corpse.display_name = format!("Fallen {creature_kind}");
+        corpse.creature_kind = creature_kind.into();
+        corpse.settlement_id = settlement_id.into();
+        corpse.case_site_id = case_site_id.into();
+        corpse.party_killed_enemy = true;
+        ctx.db.strategic_corpse().id().update(corpse);
+        let body = post_combat_body(enemy, &outcome.log);
+        if let Some(mut state) = ctx.db.corpse_body_state().corpse_id().find(&corpse_id) {
+            state.health = body.health.to_vec();
+            state.blood_loss_fraction = body.blood_loss_fraction;
+            ctx.db.corpse_body_state().corpse_id().update(state);
+        }
+        if !was_alive {
             continue;
         }
-        persist_body(
-            ctx,
-            StrategicCorpse {
-                id: corpse_id,
-                source_id: source_id.into(),
-                discovering_party_id: party_id.into(),
-                subject_character_id: None,
-                display_name: format!("Fallen {creature_kind}"),
-                creature_kind: creature_kind.into(),
-                settlement_id: settlement_id.into(),
-                case_site_id: case_site_id.into(),
-                death_minute: minute,
-                discovered_minute: minute,
-                buried: false,
-                exhumed: false,
-                burned: false,
-                party_killed_enemy: true,
-                handling_damage_bps: 0,
-                opened: false,
-                opening_quality_bps: 0,
-                opening_obscuration_bps: 0,
-                revision: 0,
-            },
-            post_combat_body(enemy, &outcome.log),
-        )?;
         inserted += 1;
     }
     Ok(inserted)

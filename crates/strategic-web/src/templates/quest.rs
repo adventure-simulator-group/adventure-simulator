@@ -325,6 +325,9 @@ pub fn quest_location_enemy_page(
     onsite_actions: &[BackendInvestigationAction],
     active_character: Option<&Character>,
     party_members: &[Character],
+    counterparties: &[Character],
+    counterparty_contact_ref: Option<&str>,
+    counterparty_contact_revision: u32,
     can_fight: bool,
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
@@ -347,6 +350,25 @@ pub fn quest_location_enemy_page(
 ) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
+            @if !resolved && !counterparties.is_empty() {
+                (sidebar_section("Counterparty", html! {
+                    nav class="settlement-npc-strip counterparty-strip" aria-label="Counterparty" {
+                        @for counterparty in counterparties {
+                            div class="npc-portrait counterparty-portrait" {
+                                span class="npc-portrait-image" aria-hidden="true" { "?" }
+                                span class="npc-portrait-name" { (&counterparty.name) }
+                                form method="post" action=(format!("/locations/case-site/{}/counterparty/contact", site.case_site_id)) {
+                                    input type="hidden" name="target_id" value=(counterparty.id);
+                                    input type="hidden" name="contact_ref" value=(counterparty_contact_ref.unwrap_or(&site.case_site_id));
+                                    input type="hidden" name="expected_revision" value=(counterparty_contact_revision);
+                                    input type="hidden" name="action_id" value=(format!("quest-contact:{}:{}:{}", site.case_site_id, counterparty_contact_revision, counterparty.id));
+                                    button type="submit" class="btn btn-secondary btn-small" { "Talk" }
+                                }
+                            }
+                        }
+                    }
+                }))
+            }
             @if !resolved {
                 (sidebar_section("Location", html! { p { (&site.description) } }))
                 section class="rest-service-menu quest-rest-menu" aria-label="Destination rest" {

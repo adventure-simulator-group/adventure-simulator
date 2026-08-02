@@ -267,3 +267,9 @@ root `data-developer-mode` attribute; do not create independent toggles.
 Schema changes are pre-launch and intentionally have no migration or legacy
 compatibility path. Recreate/reseed the development database and regenerate the
 SpacetimeDB client when deploying this schema.
+
+Ordinary social contact also applies to any living, co-present Character,
+including quest and random-encounter counterparties. It uses ordinary affinity
+and familiarity without broadening the compiled fact/contract dialogue engine.
+Random-encounter contact creates mutual awareness and permanently removes that
+encounter's opening Sneak option.

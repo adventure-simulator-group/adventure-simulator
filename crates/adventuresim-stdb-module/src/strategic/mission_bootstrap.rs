@@ -201,10 +201,15 @@ pub fn autoresolve_mission(
             )
         })
         .collect::<Result<Vec<_>, String>>()?;
-    let enemies = (0..u64::from(mission.enemy_count))
-        .map(|index| {
+    let enemy_ids = mission.enemy_character_ids.clone();
+    if enemy_ids.len() != mission.enemy_count as usize {
+        return Err("Mission hostile roster no longer matches its bound snapshot".into());
+    }
+    let enemies = enemy_ids
+        .into_iter()
+        .map(|enemy_id| {
             autoresolve_enemy_with_countermeasure(
-                u64::MAX.saturating_sub(index),
+                enemy_id,
                 &hostile_group.enemy_type,
                 mission.enemy_difficulty,
                 mission.enemy_combat_scale_bps,
@@ -213,7 +218,12 @@ pub fn autoresolve_mission(
         })
         .collect::<Result<Vec<_>, String>>()?;
     let seed = ctx.random();
-    let outcome = resolve_battle(allies, enemies, seed, BattleOpening::Normal);
+    let opening = if mission.contacted_before_combat {
+        BattleOpening::Normal
+    } else {
+        BattleOpening::AlliesSurprise
+    };
+    let outcome = resolve_battle(allies, enemies, seed, opening);
     let morale_difficulty = mission.enemy_difficulty.max(
         mission
             .normalized_combat_power
@@ -494,6 +504,14 @@ pub fn seed_standalone_tactical_mission(
         .id()
         .find(&hostile_group_id)
         .ok_or("Standalone hostile group disappeared")?;
+    crate::world_actor::materialize_context_roster(
+        ctx,
+        crate::world_actor::CharacterContextKind::HostileGroup,
+        &group.id,
+        &group.case_site_id.value,
+        &group.enemy_type,
+        group.enemy_count,
+    )?;
     let objective_id = format!("objective:standalone:{mission_id}");
     if ctx.db.case_authority().id().find(&case_id).is_none() {
         use adventuresim_core::case::{
@@ -583,6 +601,12 @@ pub fn seed_standalone_tactical_mission(
             scene_key: scene_key.clone(),
             hostile_version: group.escalation_incident_ordinal,
             enemy_count: group.enemy_count,
+            enemy_character_ids: crate::world_actor::context_character_ids(ctx, &hostile_group_id),
+            contacted_before_combat: crate::world_actor::party_contacted_context(
+                ctx,
+                &party_id,
+                &hostile_group_id,
+            ),
             enemy_difficulty: group.base_difficulty,
             enemy_combat_scale_bps,
             normalized_combat_power,
@@ -631,6 +655,8 @@ pub fn seed_standalone_tactical_mission(
             enemy_combat_scale_bps: mission.enemy_combat_scale_bps,
             countermeasure_multiplier_bps: 10_000,
             normalized_combat_power: mission.normalized_combat_power,
+            enemy_character_ids: mission.enemy_character_ids.clone(),
+            party_has_surprise: !mission.contacted_before_combat,
         });
     ctx.db
         .tactical_server_claim()

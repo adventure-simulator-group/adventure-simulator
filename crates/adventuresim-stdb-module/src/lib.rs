@@ -32,6 +32,7 @@ pub mod strategic;
 pub mod surgery;
 pub mod tactical;
 pub mod time;
+pub mod world_actor;
 
 pub use alcohol::*;
 pub use browser_session::*;
@@ -67,3 +68,4 @@ pub use strategic::*;
 pub use surgery::*;
 pub use tactical::*;
 pub use time::*;
+pub use world_actor::*;

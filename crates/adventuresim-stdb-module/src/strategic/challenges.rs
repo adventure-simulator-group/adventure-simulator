@@ -376,6 +376,7 @@ pub struct BackendRoadChallenge {
     pub active: bool,
     pub result_transcript: Option<String>,
     pub quest_reward_addendum: Option<String>,
+    pub actor_character_id: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -586,11 +587,24 @@ pub fn backend_road_challenges(ctx: &ViewContext) -> Vec<BackendRoadChallenge> {
             };
             let selected = challenge.resolved_choice.as_deref()
                 .and_then(|id| definition.choices.iter().find(|choice| choice.id == id));
+            let ordinary_treatment_complete = ctx.db.character_context_membership()
+                .context_id().filter(&challenge.id)
+                .find(|row| row.active && row.role == crate::world_actor::CharacterContextRole::Patient)
+                .is_some_and(|patient| ctx.db.limb_injury().character_id().filter(patient.character_id)
+                    .any(|injury| injury.cut_damage > 0.0 && injury.bandaged));
             let presentation = adventuresim_core::road_encounter_catalog::EncounterPresentation {
                 opening: definition.opening.iter().filter_map(line).collect(),
                 choices: if challenge.open { definition.choices.iter().map(|choice| adventuresim_core::road_encounter_catalog::PresentationChoice {
                     id: choice.id.clone(), label: choice.label.clone(),
-                    available: choice.requirements.iter().all(|requirement| available(requirement)),
+                    available: if matches!(
+                        (challenge.catalog_id.as_str(), choice.id.as_str()),
+                        ("wounded_order_courier_v1", "aid")
+                            | ("wounded_knight_linden_v1", "treat")
+                    ) {
+                        ordinary_treatment_complete
+                    } else {
+                        choice.requirements.iter().all(|requirement| available(requirement))
+                    },
                 }).collect() } else { Vec::new() },
                 response: selected.into_iter().flat_map(|choice| choice.response.iter()).filter_map(line).collect(),
             };
@@ -605,6 +619,14 @@ pub fn backend_road_challenges(ctx: &ViewContext) -> Vec<BackendRoadChallenge> {
                 active,
                 result_transcript: challenge.result_transcript,
                 quest_reward_addendum: private.reward_addendum,
+                actor_character_id: (active && challenge.open && !ordinary_treatment_complete)
+                    .then(|| {
+                        ctx.db.character_context_membership()
+                            .context_id().filter(&challenge.id)
+                            .find(|row| row.active)
+                            .map(|row| row.character_id)
+                    })
+                    .flatten(),
             })
         })
         .collect()
@@ -858,6 +880,14 @@ pub(crate) fn materialize_chance_narrative_encounter(
             virtue_exemplified: None,
             result_transcript: None,
         });
+    crate::world_actor::materialize_wounded_road_actor(
+        ctx,
+        &id,
+        &definition.id,
+        journey
+            .departure_minute
+            .saturating_add(journey.completed_elapsed_minutes),
+    )?;
     ctx.db
         .narrative_encounter_private_authority()
         .insert(NarrativeEncounterPrivateAuthority {
@@ -1539,6 +1569,13 @@ pub fn resolve_errantry_road_challenge(
         .iter()
         .find(|candidate| candidate.id == choice)
         .ok_or("Road challenge choice is invalid")?;
+    let ordinary_treatment = matches!(
+        (challenge.catalog_id.as_str(), selected.id.as_str()),
+        ("wounded_order_courier_v1", "aid") | ("wounded_knight_linden_v1", "treat")
+    );
+    if ordinary_treatment && !crate::world_actor::context_patient_is_treated(ctx, &challenge.id) {
+        return Err("Bandage the wounded character through the ordinary Surgery interface first".into());
+    }
     let now = crate::time::refresh_clock(ctx)?;
     for requirement in &selected.requirements {
         match requirement {
@@ -1570,6 +1607,9 @@ pub fn resolve_errantry_road_challenge(
                 item_id,
                 minimum_quantity,
             } => {
+                if ordinary_treatment && item_id == "bandage" {
+                    continue;
+                }
                 let held: u32 = ctx
                     .db
                     .party_inventory_item()
@@ -1626,6 +1666,11 @@ pub fn resolve_errantry_road_challenge(
     let effects_json = serde_json::to_string(&selected.effects)
         .map_err(|_| "Could not encode encounter effects")?;
     for effect in &selected.effects {
+        if ordinary_treatment
+            && matches!(effect, adventuresim_core::road_encounter_catalog::Effect::ConsumeItem { item_id, .. } if item_id == "bandage")
+        {
+            continue;
+        }
         apply_narrative_effect(ctx, &challenge.id, &party_id, now, effect)?;
     }
     let recognized_virtue =
@@ -1695,6 +1740,7 @@ pub fn resolve_errantry_road_challenge(
         .road_challenge_authority()
         .id()
         .update(challenge.clone());
+    crate::world_actor::deactivate_context_roster(ctx, &challenge.id);
     ctx.db
         .road_challenge_resolution_receipt()
         .insert(RoadChallengeResolutionReceipt {
@@ -2240,6 +2286,12 @@ fn materialize_order_errantry(
             virtue_exemplified: None,
             result_transcript: None,
         });
+    crate::world_actor::materialize_wounded_road_actor(
+        ctx,
+        &courier_challenge_id,
+        &road_definition.id,
+        now,
+    )?;
     ctx.db
         .narrative_encounter_private_authority()
         .insert(NarrativeEncounterPrivateAuthority {

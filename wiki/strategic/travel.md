@@ -179,3 +179,8 @@ does not.
 The active route stores its validated geometry and terrain mixture so a
 character's later training cannot retroactively change a journey already in
 progress.
+
+Combat interruptions materialize an exact durable roster of full Characters.
+Camp renders those counterparties and permits contact before combat. Contact is
+revisioned and idempotent, makes both sides aware, and removes Sneak for the
+remainder of that encounter.

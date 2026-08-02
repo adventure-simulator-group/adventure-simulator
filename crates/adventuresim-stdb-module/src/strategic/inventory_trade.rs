@@ -986,6 +986,7 @@ fn commit_hostile_battle_resolution(
             HostileResolutionKind::CaptureTargetKilled => unreachable!(),
         };
         ctx.db.hostile_group_authority().id().update(group.clone());
+        crate::world_actor::deactivate_context_roster(ctx, &group.id);
         match resolution {
             HostileResolutionKind::Defeated => ingest_hostile_group_defeat_fact(
                 ctx,

@@ -825,6 +825,7 @@ pub fn camp_page(
     planned_wake_minute: u16,
     continue_block_reason: Option<&str>,
     encounter: Option<&StrategicEncounter>,
+    counterparties: &[Character],
     trial: Option<(&str, &str, ChallengePresenterCatalogId)>,
     tactical_insight: Option<(&str, &str)>,
     road_trial: Option<&BackendRoadChallenge>,
@@ -938,7 +939,7 @@ pub fn camp_page(
         }
         aside class="right-sidebar camp-journey-sidebar" {
             @if let Some(encounter) = encounter.filter(|encounter| encounter.status == "awaiting_choice") {
-                (strategic_encounter_panel(encounter))
+                (strategic_encounter_panel(encounter, counterparties))
             }
             div class="sidebar-section camp-journey-section" {
                 h3 class="sidebar-header" { "Journey" }
@@ -990,6 +991,20 @@ fn generic_road_encounter(challenge: &BackendRoadChallenge) -> Markup {
     };
     html! {
         section class="settlement-chat challenge-chat-invitation" aria-label="Roadside conversation" {
+            @if challenge.active && challenge.open {
+              @if let Some(patient_id) = challenge.actor_character_id {
+                nav class="settlement-npc-strip counterparty-strip" aria-label="Roadside character" {
+                    div class="npc-portrait counterparty-portrait" {
+                        span class="npc-portrait-image" aria-hidden="true" { "?" }
+                        span class="npc-portrait-name" { "Wounded character" }
+                        form action="/camp/counterparty/bandage" method="post" {
+                            input type="hidden" name="patient_id" value=(patient_id);
+                            button type="submit" class="btn btn-secondary btn-small" { "Bandage" }
+                        }
+                    }
+                }
+              }
+            }
             div class="settlement-chat-layout" { div class="settlement-chat-conversation" {
                 div class="settlement-chat-messages" aria-live="polite" {
                     @for line in &presentation.opening {
@@ -1024,7 +1039,10 @@ fn generic_road_encounter(challenge: &BackendRoadChallenge) -> Markup {
     }
 }
 
-fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
+fn strategic_encounter_panel(
+    encounter: &StrategicEncounter,
+    counterparties: &[Character],
+) -> Markup {
     let threat = encounter.archetype.parse::<ThreatId>().ok();
     let threat_name = threat
         .map(|id| id.display_name(u32::from(encounter.enemy_count)))
@@ -1049,6 +1067,23 @@ fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
             }
             p { (awareness) }
             p class="text-muted small-copy" { (encounter.selection_explanation.as_str()) }
+            @if !counterparties.is_empty() {
+                nav class="settlement-npc-strip counterparty-strip" aria-label="Counterparty" {
+                    @for character in counterparties {
+                        div class="npc-portrait counterparty-portrait" {
+                            span class="npc-portrait-image" aria-hidden="true" { "?" }
+                            span class="npc-portrait-name" { (&character.name) }
+                            form action="/camp/counterparty/contact" method="post" {
+                                input type="hidden" name="target_id" value=(character.id);
+                                input type="hidden" name="contact_ref" value=(&encounter.encounter_id);
+                                input type="hidden" name="expected_revision" value=(encounter.revision);
+                                input type="hidden" name="action_id" value=(format!("contact:{}:{}:{}", encounter.encounter_id, encounter.revision, character.id));
+                                button type="submit" class="btn btn-secondary btn-small" { "Talk" }
+                            }
+                        }
+                    }
+                }
+            }
             @if let Some(reason) = encounter.run_ineligibility.as_deref() {
                 p class="encounter-warning" { "Cannot run: " (reason) }
             }
@@ -1222,7 +1257,7 @@ mod tests {
             }],
             outcome: None,
         };
-        let rendered = strategic_encounter_panel(&encounter).into_string();
+        let rendered = strategic_encounter_panel(&encounter, &[]).into_string();
         assert!(rendered.contains("The enemy surprised your party"));
         assert!(rendered.contains("Cannot run: too slow"));
         assert!(rendered.contains("12 × gold_coin"));

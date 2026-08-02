@@ -1181,6 +1181,10 @@ pub struct MissionAuthority {
     /// Immutable combat/loot snapshot captured when this mission binds.
     pub hostile_version: u16,
     pub enemy_count: u32,
+    /// Immutable exact roster captured at bind time.
+    pub enemy_character_ids: Vec<u64>,
+    /// Immutable awareness snapshot. Contact removes the party's opening surprise.
+    pub contacted_before_combat: bool,
     pub enemy_difficulty: i32,
     pub enemy_combat_scale_bps: u32,
     pub normalized_combat_power: u32,
@@ -1346,12 +1350,28 @@ fn materialize_hostile_group(
             && existing.baseline_enemy_power == group.baseline_enemy_power
             && existing.drop_item_id == group.drop_item_id
         {
+            crate::world_actor::materialize_context_roster(
+                ctx,
+                crate::world_actor::CharacterContextKind::HostileGroup,
+                &existing.id,
+                &existing.case_site_id.value,
+                &existing.enemy_type,
+                existing.enemy_count,
+            )?;
             Ok(existing)
         } else {
             Err("Hostile-group ID is already bound to different authority".into())
         };
     }
     ctx.db.hostile_group_authority().insert(group.clone());
+    crate::world_actor::materialize_context_roster(
+        ctx,
+        crate::world_actor::CharacterContextKind::HostileGroup,
+        &group.id,
+        &group.case_site_id.value,
+        &group.enemy_type,
+        group.enemy_count,
+    )?;
     Ok(group)
 }
 

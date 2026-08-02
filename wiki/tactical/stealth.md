@@ -27,3 +27,7 @@ When an enemy does not detect you or for a short reaction-time window after they
 Even an instantaneous takedown creates *some* noise, so unless nearby enemies are asleep this is typically just going to begin combat rather than allow you to take down an entire enemy camp in stealth.
 
 If you do not manage to kill your target before their flat-footed timer has passed, they will alert nearby allies
+
+Talking to a counterparty before combat establishes mutual awareness. The
+opening Sneak/surprise opportunity cannot reappear after contact, including
+after a reload or stale-client retry.

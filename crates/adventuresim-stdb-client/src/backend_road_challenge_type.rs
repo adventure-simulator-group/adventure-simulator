@@ -16,6 +16,7 @@ pub struct BackendRoadChallenge {
     pub active: bool,
     pub result_transcript: Option<String>,
     pub quest_reward_addendum: Option<String>,
+    pub actor_character_id: Option<u64>,
 }
 
 impl __sdk::InModule for BackendRoadChallenge {
@@ -35,6 +36,7 @@ pub struct BackendRoadChallengeCols {
     pub active: __sdk::__query_builder::Col<BackendRoadChallenge, bool>,
     pub result_transcript: __sdk::__query_builder::Col<BackendRoadChallenge, Option<String>>,
     pub quest_reward_addendum: __sdk::__query_builder::Col<BackendRoadChallenge, Option<String>>,
+    pub actor_character_id: __sdk::__query_builder::Col<BackendRoadChallenge, Option<u64>>,
 }
 
 impl __sdk::__query_builder::HasCols for BackendRoadChallenge {
@@ -53,6 +55,7 @@ impl __sdk::__query_builder::HasCols for BackendRoadChallenge {
                 table_name,
                 "quest_reward_addendum",
             ),
+            actor_character_id: __sdk::__query_builder::Col::new(table_name, "actor_character_id"),
         }
     }
 }

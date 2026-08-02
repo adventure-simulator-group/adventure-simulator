@@ -9,6 +9,7 @@ use super::character_stats_type::CharacterStats;
 use super::character_type::Character;
 use super::connected_player_item_type::ConnectedPlayerItem;
 use super::connected_player_type::ConnectedPlayer;
+use super::tactical_mission_side_type::TacticalMissionSide;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `connected_players`.

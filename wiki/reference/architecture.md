@@ -300,3 +300,11 @@ with [Source manifests](source-manifests.md),
 - [Organizations](organizations.md)
 - [Strategic simulation](strategic-simulation.md)
 - [Strategic route terrain](route-terrain.md)
+
+## Unified world actors
+
+All living world actors use the canonical `Character` aggregate. Hostility,
+patient status, and other roles belong to `CharacterContextMembership`, never
+to a character kind. Exact durable roster IDs cross into autoresolve and
+tactical handoff; tactical positions, live HP, damage, AI, and ticks remain
+transient and are never persisted to SpacetimeDB.
