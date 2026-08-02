@@ -353,6 +353,14 @@ major arm, arm-twist, hand, major leg, leg-twist, foot, and toe bones use the
 scene-root animation cylinder is authoring-only. See the tactical-client README
 for the concise exporter checklist.
 
+Procedural IK rotates major thigh/shin and upper-arm/forearm joints through the
+real twist intermediates while preserving authored twist locals. Stable bend
+poles are stored in owner space; foot planting uses an authored bind-derived
+sole axis, bounded terrain normals, toe-coherent slope tilt, and smooth gait
+weights. Optional hand and held-weapon constraints are client presentation
+only: the primary socket places the weapon before its secondary grip targets
+the off hand. None of these targets are replicated in `SkeletonState`.
+
 The server-owned character transform remains authoritative. Authored root
 offsets may shape a step or lean visually, but the evaluator reconciles them
 with actual movement. Terrain alignment, final foot height, and exact contact

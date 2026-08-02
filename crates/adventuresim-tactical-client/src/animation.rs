@@ -40,6 +40,7 @@ impl Plugin for TacticalAnimationPlugin {
                     establish_animation_targets,
                     identify_animation_players,
                     procedural::bind_humanoid_bones,
+                    procedural::capture_humanoid_rig_axes,
                     capture_authored_bind_transforms,
                     evaluate_skeletons,
                     tick_impact_reactions,
@@ -61,6 +62,7 @@ impl Plugin for TacticalAnimationPlugin {
                     procedural::apply_lower_body_mirroring,
                     procedural::apply_impact_reaction,
                     procedural::apply_terrain_leg_ik,
+                    procedural::apply_arm_and_weapon_constraints,
                 )
                     .chain()
                     .after(AnimationSystems)
@@ -1545,5 +1547,18 @@ mod tests {
             .run_system_cached(reset_authored_bind_before_fk)
             .unwrap();
         assert_eq!(*world.get::<Transform>(node).unwrap(), bind);
+    }
+
+    #[test]
+    fn client_constraint_api_is_reexported() {
+        let _: Option<HandIkTarget> = None;
+        let _: HumanoidIkTargets = default();
+        let _ = [HandSide::Left, HandSide::Right];
+        let constraint = HeldWeaponConstraint {
+            owner: Entity::PLACEHOLDER,
+            primary_hand: HandSide::Right,
+            secondary_grip_local: None,
+        };
+        assert_eq!(constraint.primary_hand, HandSide::Right);
     }
 }
