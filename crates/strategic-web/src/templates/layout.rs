@@ -1143,18 +1143,7 @@ mod tests {
         assert!(!markup.contains("data-developer-autopsy-demo"));
         assert!(!markup.contains("data-developer-puzzle-demo"));
         assert!(markup.contains("href=\"/developer/scenarios\""));
-        for puzzle_kind in [
-            "ordered-sigils",
-            "truthful-witnesses",
-            "rune-transformation",
-            "logic-grid",
-            "resource-allocation",
-        ] {
-            assert!(
-                markup.contains(&format!("data-puzzle-kind=\"{puzzle_kind}\"")),
-                "developer header omits the {puzzle_kind} puzzle demo"
-            );
-        }
+        assert!(!markup.contains("data-puzzle-kind="));
         let layout_css = include_str!("../../static/css/layout.css");
         assert!(
             layout_css.contains(

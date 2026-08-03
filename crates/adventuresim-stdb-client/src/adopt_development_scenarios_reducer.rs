@@ -6,46 +6,46 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct LoadAutopsyDemoArgs {
-    pub character_id: u64,
+pub(super) struct AdoptDevelopmentScenariosArgs {
+    pub owner_key: String,
 }
 
-impl From<LoadAutopsyDemoArgs> for super::Reducer {
-    fn from(args: LoadAutopsyDemoArgs) -> Self {
-        Self::LoadAutopsyDemo {
-            character_id: args.character_id,
+impl From<AdoptDevelopmentScenariosArgs> for super::Reducer {
+    fn from(args: AdoptDevelopmentScenariosArgs) -> Self {
+        Self::AdoptDevelopmentScenarios {
+            owner_key: args.owner_key,
         }
     }
 }
 
-impl __sdk::InModule for LoadAutopsyDemoArgs {
+impl __sdk::InModule for AdoptDevelopmentScenariosArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `load_autopsy_demo`.
+/// Extension trait for access to the reducer `adopt_development_scenarios`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait load_autopsy_demo {
-    /// Request that the remote module invoke the reducer `load_autopsy_demo` to run as soon as possible.
+pub trait adopt_development_scenarios {
+    /// Request that the remote module invoke the reducer `adopt_development_scenarios` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`load_autopsy_demo:load_autopsy_demo_then`] to run a callback after the reducer completes.
-    fn load_autopsy_demo(&self, character_id: u64) -> __sdk::Result<()> {
-        self.load_autopsy_demo_then(character_id, |_, _| {})
+    /// /// Use [`adopt_development_scenarios:adopt_development_scenarios_then`] to run a callback after the reducer completes.
+    fn adopt_development_scenarios(&self, owner_key: String) -> __sdk::Result<()> {
+        self.adopt_development_scenarios_then(owner_key, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `load_autopsy_demo` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `adopt_development_scenarios` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn load_autopsy_demo_then(
+    fn adopt_development_scenarios_then(
         &self,
-        character_id: u64,
+        owner_key: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -55,10 +55,10 @@ pub trait load_autopsy_demo {
     ) -> __sdk::Result<()>;
 }
 
-impl load_autopsy_demo for super::RemoteReducers {
-    fn load_autopsy_demo_then(
+impl adopt_development_scenarios for super::RemoteReducers {
+    fn adopt_development_scenarios_then(
         &self,
-        character_id: u64,
+        owner_key: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -67,6 +67,6 @@ impl load_autopsy_demo for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(LoadAutopsyDemoArgs { character_id }, callback)
+            .invoke_reducer_with_callback(AdoptDevelopmentScenariosArgs { owner_key }, callback)
     }
 }

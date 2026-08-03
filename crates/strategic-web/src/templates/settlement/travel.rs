@@ -802,14 +802,6 @@ fn camp_forage_href(has_active_character: bool) -> Option<&'static str> {
     has_active_character.then_some("/camp?forage=true")
 }
 
-fn developer_road_encounter_label(id: &str) -> String {
-    let words = id.trim_end_matches("_v1").replace('_', " ");
-    let mut chars = words.chars();
-    chars.next().map_or(words.clone(), |first| {
-        first.to_uppercase().collect::<String>() + chars.as_str()
-    })
-}
-
 pub fn camp_page(
     party: &Party,
     journey: Option<&PartyJourney>,

@@ -11,6 +11,8 @@ pub enum BrowserCharacterGrantOrigin {
     StartingCandidate,
 
     AdultDescendant,
+
+    DevelopmentScenario,
 }
 
 impl __sdk::InModule for BrowserCharacterGrantOrigin {
