@@ -51,3 +51,8 @@ workspace = true
 [[bin]]
 name = "adventuresim-tactical-client"
 doc = false
+
+[[bin]]
+name = "animation-viewer"
+path = "src/animation_viewer_main.rs"
+doc = false
