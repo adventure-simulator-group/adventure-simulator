@@ -17,7 +17,9 @@ use bevy::{
 mod procedural;
 
 #[allow(unused_imports)]
-pub(crate) use procedural::{BoneRole, HumanoidBone};
+pub(crate) use procedural::{
+    BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone, HumanoidIkTargets,
+};
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
 const ANIMATION_FPS: f32 = 30.0;
