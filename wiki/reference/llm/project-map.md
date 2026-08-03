@@ -1178,6 +1178,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/debug.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/player.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-client/src/presentation.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/ui.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-core/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-tactical-core/src/animation.rs` — Rust source module for this component.
@@ -1215,7 +1216,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-server/src/mission/terminal.rs` — Rust source module.
 - `crates/adventuresim-tactical-server/src/player_projection.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/stdb.rs` — Rust source module for this component.
-- `crates/adventuresim-tactical-server/src/terrain.rs` — Rust source module for this component.
 - `crates/adventuresim-terrain/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-terrain/src/builder.rs` — Rust source module for this component.
 - `crates/adventuresim-terrain/src/lib.rs` — Rust source module for this component.

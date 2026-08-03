@@ -5,7 +5,6 @@ use adventuresim_tactical_netcode::{
 };
 use bevy::prelude::*;
 
-use crate::Args;
 use crate::animation::spawn_fallback_t_pose;
 
 const BODY_PART_HITBOXES: &[(BodyPart, Vec3, Vec3)] = &[
@@ -53,7 +52,11 @@ pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(on_new_player_added_hook)
+        // Replication supplies Transform but not a render hierarchy root.
+        // Require visibility before Add<Player> observers attach mesh children
+        // so authored rigs cannot inherit from a component-less parent.
+        app.register_required_components_with::<Player, _>(|| Visibility::Inherited)
+            .add_observer(on_new_player_added_hook)
             .add_observer(on_attack_fired_hook)
             .add_observer(on_dodge_fired)
             .add_observer(on_parry_fired)
@@ -66,6 +69,12 @@ impl Plugin for PlayerPlugin {
             );
     }
 }
+
+/// Identifies which replicated character receives local controls and the
+/// gameplay camera. Kept separate from transport CLI arguments so local
+/// presentation fixtures use the exact same player-spawn observer.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalCharacterId(pub u64);
 
 #[derive(Component, Debug, Clone, Copy)]
 pub struct ClientPlayer;
@@ -108,14 +117,14 @@ fn on_new_player_added_hook(
     mut commands: Commands,
     camera: Single<Entity, With<Camera3d>>,
     query: Query<(&Player, &CharacterId)>,
-    args: Res<Args>,
+    local_character: Res<LocalCharacterId>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) -> Result {
     let (Player { name }, id) = query.get(event.entity)?;
     info!(entity = ?event.entity, id = id.0, "Added new player {name}");
 
-    let is_client_player = args.id == id.0;
+    let is_client_player = local_character.0 == id.0;
     if is_client_player {
         info!(
             entity = ?event.entity,

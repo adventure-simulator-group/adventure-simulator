@@ -20,7 +20,8 @@ pub mod prelude {
     pub use crate::animation::{
         AnimationEvaluation, AnimationPack, AnimationPackLibrary, AttackLine, Footwork, LeadFoot,
         PackValidationError, PoseSample, PoseSampling, Posture, ResolvedPose, SemanticPose,
-        SkeletonAction, SkeletonState, StrikeFamily,
+        SkeletonAction, SkeletonLocomotionInput, SkeletonState, StrikeFamily,
+        project_skeleton_locomotion,
     };
     pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
     pub use crate::inventory::{
@@ -31,7 +32,7 @@ pub mod prelude {
         Attributes, BestiaryCategories, CharacterId, ControlledPlayer, Limbs, Player, Skills,
         Stats, TacticalCombatState, TacticalPlayerView, TacticalPlayerViewer,
     };
-    pub use crate::scene::{SceneId, SceneTerrain};
+    pub use crate::scene::{SceneId, SceneTerrain, TerrainGenerator};
     pub use adventuresim_core::prelude::*;
     pub use avian3d::prelude::*;
     pub use bevy_ahoy::{

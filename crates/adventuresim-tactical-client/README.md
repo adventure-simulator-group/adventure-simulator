@@ -62,14 +62,19 @@ IK, with a bounded procedural lift preserving the run's airborne beats.
 
 ## Deterministic animation capture
 
-The native `animation-viewer` binary exercises the same authored FK,
-procedural mirroring, look pass, and terrain IK plugin as the tactical client
-without a server or player input. It advances the same server stride formula
-at a deterministic 60Hz through two-cycle 2.0m/s walk, 3.75m/s blend, and
-5.5m/s run scenarios plus a four-second start/run/stop transition. Every frame
-is captured from live-like third-person, side, and front views over a fixed
-one-metre world grid, with a skeleton overlay and yellow supported-foot / pink
-swing-foot markers. The output includes per-view PNG sequences, `manifest.json` bone and
+The native `animation-viewer` binary is a deterministic gameplay-presentation
+fixture rather than a separate pose renderer. It installs the gameplay player,
+camera, scene presentation, authored FK, procedural mirroring, look, and
+terrain-IK plugins,
+then advances the shared authoritative locomotion projector at its real 64Hz
+fixed tick. It continuously moves the gameplay root over the same seeded hilly
+terrain representation used by the tactical client through two-cycle 2.0m/s
+walk, 3.75m/s blend, and 5.5m/s run scenarios plus a four-second
+start/run/stop transition. Every logical tick is captured first from the raw
+gameplay third-person camera, then from side and front diagnostic cameras with
+a skeleton overlay and yellow supported-foot / pink swing-foot markers. The
+simulation is frozen while those three views are rendered, so they describe
+one pose. The output includes per-view PNG sequences, `manifest.json` bone and
 support telemetry, and an `index.html` normal/half/quarter-speed reviewer with
 representative contact sheets. A missing rig or unresolved locomotion clip
 times out with `failure.txt` rather than hanging.
@@ -80,18 +85,25 @@ Run it from the repository root:
 cargo run -p adventuresim-tactical-client --bin animation-viewer -- --output target/animation-captures/locomotion-review
 ```
 
-Use `--asset-root` when invoking it outside the repository root and
+Use `--asset-root` when invoking it outside the repository root,
+`--scenario steady-walk-2.0` for a focused iteration, and
 `--frames-per-sample` to change the render settle interval (not the simulated
-60Hz sample interval). Open `index.html` after capture and review each scenario
+64Hz sample interval). Open `index.html` after capture and review each scenario
 at normal speed before using slow motion. The manifest tracks pelvis, chest,
 head, shoulders, elbows, hands, hips, knees, and feet; finite transforms; loop
-seams; per-frame displacement and rotation spikes; knee direction; foot
-height/support/slip; and pelvis/head stability. These values are regression
-signals and do not establish biomechanical correctness without visual review.
+seams; per-frame displacement and rotation spikes; knee direction;
+terrain-relative foot clearance/support/slip; and pelvis/head stability. These
+values are regression signals and do not establish biomechanical correctness
+without visual review.
 Capture fails for teleport-scale continuity, ground penetration, duplicate
 front/side/third-person image output, missing artifacts, or excessive
 supported-foot per-frame slip and planted-interval drift, and records the
 responsible frames.
+
+The fixture synthesizes deterministic controller observations at the shared
+server projection boundary; it does not replay network packets or run the
+physics character controller. Its root follows the rendered terrain height so
+the final client animation passes can be reviewed repeatably on slopes.
 
 Walk keeps at least partial terrain support throughout its cycle. As locomotion
 blends toward run, support narrows around each foot contact until the authored

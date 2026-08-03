@@ -584,6 +584,51 @@ impl SkeletonState {
     }
 }
 
+/// One authoritative fixed-tick locomotion observation. The tactical server
+/// supplies this from its character controller; deterministic presentation
+/// fixtures replay the same boundary without inventing gait phase directly.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SkeletonLocomotionInput {
+    pub orientation: Quat,
+    pub linear_velocity: Vec3,
+    pub grounded: bool,
+    pub crouching: bool,
+    pub delta_seconds: f32,
+    pub tick: u64,
+}
+
+/// Projects controller motion into the compact replicated animation state.
+/// Bone evaluation remains client-only; this is the shared server seam that
+/// keeps deterministic captures on the same stride and posture rules.
+pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: SkeletonLocomotionInput) {
+    let local_velocity = input.orientation.inverse() * input.linear_velocity;
+    skeleton.local_velocity = local_velocity;
+    skeleton.grounded = input.grounded;
+    skeleton.posture = if input.grounded {
+        if input.crouching {
+            Posture::Crouched
+        } else {
+            Posture::Upright
+        }
+    } else {
+        Posture::Airborne
+    };
+
+    let ground_speed = local_velocity.xz().length();
+    if input.grounded && ground_speed > 0.05 {
+        let stride_length = (0.9 + ground_speed * 0.16).clamp(0.9, 1.8);
+        skeleton.gait_phase = (skeleton.gait_phase
+            + ground_speed * input.delta_seconds / stride_length)
+            .rem_euclid(1.0);
+        skeleton.lead_foot = if skeleton.gait_phase < 0.5 {
+            LeadFoot::Left
+        } else {
+            LeadFoot::Right
+        };
+    }
+    skeleton.advance_action(input.tick);
+}
+
 /// One weighted authored pose contributing to the FK result.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PoseSampling {
@@ -1084,6 +1129,30 @@ mod tests {
             library.validate_structure(),
             Err(PackValidationError::FallbackCycle("a".to_owned()))
         );
+    }
+
+    #[test]
+    fn locomotion_projection_uses_controller_frame_and_fixed_stride() {
+        let mut state = SkeletonState::default();
+        let orientation = Quat::from_rotation_y(std::f32::consts::PI);
+        let local_velocity = Vec3::NEG_Z * 2.0;
+        project_skeleton_locomotion(
+            &mut state,
+            SkeletonLocomotionInput {
+                orientation,
+                linear_velocity: orientation * local_velocity,
+                grounded: true,
+                crouching: false,
+                delta_seconds: 1.0 / 64.0,
+                tick: 1,
+            },
+        );
+
+        assert!(state.grounded);
+        assert_eq!(state.posture, Posture::Upright);
+        assert!((state.local_velocity - local_velocity).length() < 0.0001);
+        assert!((state.gait_phase - 2.0 / (0.9 + 2.0 * 0.16) / 64.0).abs() < 0.0001);
+        assert_eq!(state.lead_foot, LeadFoot::Left);
     }
 
     #[test]

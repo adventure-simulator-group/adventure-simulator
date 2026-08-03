@@ -1,4 +1,4 @@
-//! A network-free, reviewer-oriented capture of the real tactical animation pipeline.
+//! A deterministic gameplay-presentation fixture for tactical animation review.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -6,9 +6,11 @@ use std::{
     path::PathBuf,
 };
 
+use adventuresim_tactical_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventuresim_tactical_core::prelude::*;
 use bevy::{
     app::AppExit,
+    input_focus::InputDispatchPlugin,
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     window::PresentMode,
@@ -16,15 +18,17 @@ use bevy::{
 use serde::Serialize;
 
 use crate::animation::{
-    AnimationPlayback, BoneRole, HumanoidBone, TacticalAnimationPlugin, gait_support_weights,
+    AnimationPlayback, BoneRole, HumanoidBone, ProceduralIkState, TacticalAnimationPlugin,
+    gait_support_weights,
+};
+use crate::{
+    camera::{CameraMode, TacticalCameraPlugin, TacticalCameraSet, third_person_offset},
+    player::{LocalCharacterId, PlayerPlugin},
+    presentation::TacticalPresentationPlugin,
 };
 
-const SAMPLE_HZ: f32 = 60.0;
-const VIEWS: [CaptureView; 3] = [
-    CaptureView::ThirdPerson,
-    CaptureView::Side,
-    CaptureView::Front,
-];
+const SAMPLE_HZ: f32 = 64.0;
+const VIEWS: [CaptureView; 3] = [CaptureView::Gameplay, CaptureView::Side, CaptureView::Front];
 const TRACKED_BONE_NAMES: [&str; 15] = [
     "pelvis",
     "chest",
@@ -43,13 +47,22 @@ const TRACKED_BONE_NAMES: [&str; 15] = [
     "right_foot",
 ];
 
-pub(crate) fn run(output: PathBuf, asset_root: PathBuf, settle_frames: u32) -> AppExit {
+pub(crate) fn run(
+    output: PathBuf,
+    asset_root: PathBuf,
+    settle_frames: u32,
+    scenario: Option<&str>,
+) -> AppExit {
     fs::create_dir_all(&output).unwrap_or_else(|error| {
         panic!("failed to create animation capture directory {output:?}: {error}")
     });
     invalidate_previous_report(&output);
 
     App::new()
+        // The live debug client registers the same default through
+        // `DebugPlugin`. The fixture does not install that input/network
+        // plugin, so mirror its presentation default explicitly.
+        .register_required_components_with::<Collider, _>(DebugRender::none)
         .add_plugins(
             DefaultPlugins
                 .set(AssetPlugin {
@@ -66,11 +79,34 @@ pub(crate) fn run(output: PathBuf, asset_root: PathBuf, settle_frames: u32) -> A
                     ..default()
                 }),
         )
-        .add_plugins(TacticalAnimationPlugin)
+        .add_plugins((
+            AdventureSimulatorCorePlugins
+                .build()
+                .set(AdventureSimulatorPhysicsPlugin {
+                    enable_simulation: false,
+                }),
+            EnhancedInputPlugin,
+            InputDispatchPlugin,
+        ))
+        .add_plugins((
+            PlayerPlugin,
+            TacticalAnimationPlugin,
+            TacticalCameraPlugin,
+            TacticalPresentationPlugin,
+        ))
+        .insert_resource(LocalCharacterId(0))
+        .insert_resource(CameraMode { third_person: true })
+        .insert_resource(Time::<Fixed>::from_hz(SAMPLE_HZ as f64))
         .insert_resource(ClearColor(Color::srgb(0.08, 0.1, 0.13)))
-        .insert_resource(CaptureSequence::new(output, settle_frames))
+        .insert_resource(CaptureSequence::new(output, settle_frames, scenario))
         .add_systems(Startup, setup_viewer)
-        .add_systems(PreUpdate, (drive_sequence, position_capture_camera).chain())
+        .add_systems(PreUpdate, drive_sequence)
+        .add_systems(
+            PostUpdate,
+            position_capture_camera
+                .after(TacticalCameraSet::Offset)
+                .before(TransformSystems::Propagate),
+        )
         .add_systems(
             PostUpdate,
             draw_skeleton_overlay.after(TransformSystems::Propagate),
@@ -83,15 +119,12 @@ pub(crate) fn run(output: PathBuf, asset_root: PathBuf, settle_frames: u32) -> A
 struct CaptureSubject;
 
 #[derive(Component)]
-struct CaptureCamera;
-
-#[derive(Component)]
 struct CaptureLabel;
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum CaptureView {
-    ThirdPerson,
+    Gameplay,
     Side,
     Front,
 }
@@ -99,7 +132,7 @@ enum CaptureView {
 impl CaptureView {
     fn slug(self) -> &'static str {
         match self {
-            Self::ThirdPerson => "third-person",
+            Self::Gameplay => "gameplay",
             Self::Side => "side",
             Self::Front => "front",
         }
@@ -111,8 +144,6 @@ struct PlannedFrame {
     scenario: &'static str,
     scenario_frame: usize,
     speed: f32,
-    gait_phase: f32,
-    distance: f32,
     time_seconds: f32,
     local_direction: Vec2,
 }
@@ -131,14 +162,25 @@ struct CaptureSequence {
     view_fingerprints: Vec<u64>,
     duplicate_view_frames: Vec<String>,
     samples: Vec<FrameSample>,
+    active_scenario: Option<&'static str>,
+    simulation_tick: u64,
+    scenario_distance: f32,
 }
 
 impl CaptureSequence {
-    fn new(output: PathBuf, settle_frames: u32) -> Self {
+    fn new(output: PathBuf, settle_frames: u32, scenario: Option<&str>) -> Self {
+        let plan = capture_plan()
+            .into_iter()
+            .filter(|frame| scenario.is_none_or(|scenario| frame.scenario == scenario))
+            .collect::<Vec<_>>();
+        assert!(
+            !plan.is_empty(),
+            "requested animation capture scenario is unknown"
+        );
         Self {
             output,
             settle_frames: settle_frames.max(1),
-            plan: capture_plan(),
+            plan,
             index: 0,
             view_index: 0,
             applied: false,
@@ -148,6 +190,9 @@ impl CaptureSequence {
             view_fingerprints: Vec::with_capacity(VIEWS.len()),
             duplicate_view_frames: Vec::new(),
             samples: Vec::new(),
+            active_scenario: None,
+            simulation_tick: 0,
+            scenario_distance: 0.0,
         }
     }
 }
@@ -213,7 +258,7 @@ struct ScenarioMetrics {
     minimum_knee_forward_bend_metres: f32,
     maximum_supported_foot_slip_metres_per_frame: f32,
     maximum_planted_foot_drift_metres: f32,
-    minimum_foot_height_metres: f32,
+    minimum_foot_clearance_metres: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -244,6 +289,7 @@ struct FrameSample {
 struct BoneSample {
     position: [f32; 3],
     rotation_xyzw: [f32; 4],
+    terrain_clearance_metres: Option<f32>,
 }
 
 fn stride_length(speed: f32) -> f32 {
@@ -262,36 +308,17 @@ fn steady_scenario_in_direction(
 ) -> Vec<PlannedFrame> {
     let cycle_duration = stride_length(speed) / speed;
     let duration = cycles * cycle_duration;
-    let last_regular_frame = (duration * SAMPLE_HZ).floor() as usize;
-    let mut times = (0..=last_regular_frame)
-        .map(|frame| (frame as f32 / SAMPLE_HZ, false))
-        .collect::<Vec<_>>();
-    for cycle in 1..=cycles.round() as usize {
-        times.push((cycle as f32 * cycle_duration, true));
-    }
-    times.sort_by(|a, b| a.0.total_cmp(&b.0));
-    times.dedup_by(|a, b| {
-        if (a.0 - b.0).abs() < 0.00001 {
-            b.1 |= a.1;
-            true
-        } else {
-            false
-        }
-    });
-    times
-        .into_iter()
-        .enumerate()
-        .map(|(scenario_frame, (time_seconds, closure))| PlannedFrame {
+    // Include the first authoritative tick after the requested final cycle.
+    // Fixed-rate sampling rarely lands on the mathematical wrap exactly; the
+    // post-wrap sample makes every steady scenario exercise its real loop
+    // transition instead of silently reporting no seam.
+    let last_frame = (duration * SAMPLE_HZ).ceil() as usize + 1;
+    (0..=last_frame)
+        .map(|scenario_frame| PlannedFrame {
             scenario: name,
             scenario_frame,
             speed,
-            gait_phase: if closure {
-                0.0
-            } else {
-                (time_seconds / cycle_duration).rem_euclid(1.0)
-            },
-            distance: speed * time_seconds,
-            time_seconds,
+            time_seconds: scenario_frame as f32 / SAMPLE_HZ,
             local_direction,
         })
         .collect()
@@ -300,8 +327,6 @@ fn steady_scenario_in_direction(
 fn transition_scenario() -> Vec<PlannedFrame> {
     let duration = 4.0;
     let last_frame = (duration * SAMPLE_HZ) as usize;
-    let mut phase = 0.0;
-    let mut distance = 0.0;
     (0..=last_frame)
         .map(|frame| {
             let t = frame as f32 / SAMPLE_HZ;
@@ -318,16 +343,10 @@ fn transition_scenario() -> Vec<PlannedFrame> {
             } else {
                 0.0
             };
-            if frame > 0 {
-                phase = (phase + speed / stride_length(speed) / SAMPLE_HZ).rem_euclid(1.0);
-                distance += speed / SAMPLE_HZ;
-            }
             PlannedFrame {
                 scenario: "start-stop-transition",
                 scenario_frame: frame,
                 speed,
-                gait_phase: phase,
-                distance,
                 time_seconds: t,
                 local_direction: Vec2::NEG_Y,
             }
@@ -354,51 +373,16 @@ fn capture_plan() -> Vec<PlannedFrame> {
     .collect()
 }
 
-fn setup_viewer(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    let terrain = SceneTerrain::new(64, 24, 1.0, |position| {
-        let centered = position - Vec2::new(32.0, 12.0);
-        // Deliberately visible, deterministic uneven ground. Its broad slope
-        // and smaller cross-wave expose overreaching leg solves and incorrect
-        // foot normals that the previous three-centimetre ripple concealed.
-        (centered.y * 0.22).sin() * 0.22
-            + (centered.x * 0.31).sin() * 0.10
-            + ((centered.x + centered.y) * 0.55).sin() * 0.035
-    });
-    let terrain_mesh = terrain.mesh();
-    commands.spawn(terrain);
+fn setup_viewer(mut commands: Commands) {
+    let mut generator = TerrainGenerator::new(0xA11C_E5E1);
+    generator.period = 200.0;
+    let terrain = generator.generate(100, 30, 100);
+    let spawn_height = terrain.height_at(Vec2::ZERO).unwrap_or_default() + 0.95;
     commands.spawn((
-        Name::new("Animation review floor"),
-        Mesh3d(meshes.add(terrain_mesh)),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgb(0.18, 0.23, 0.16),
-            perceptual_roughness: 0.95,
-            ..default()
-        })),
-    ));
-    let grid_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.72, 0.76, 0.58),
-        emissive: LinearRgba::new(0.08, 0.09, 0.05, 1.0),
-        perceptual_roughness: 1.0,
-        ..default()
-    });
-    let cross_line = meshes.add(Cuboid::new(8.0, 0.008, 0.025));
-    for metre in -2..=20 {
-        commands.spawn((
-            Name::new(format!("World grid metre {metre}")),
-            Mesh3d(cross_line.clone()),
-            MeshMaterial3d(grid_material.clone()),
-            Transform::from_xyz(0.0, 0.006, metre as f32),
-        ));
-    }
-    commands.spawn((
-        Name::new("World grid center line"),
-        Mesh3d(meshes.add(Cuboid::new(0.025, 0.009, 24.0))),
-        MeshMaterial3d(grid_material),
-        Transform::from_xyz(0.0, 0.008, 9.0),
+        Name::new("Animation review hills scene"),
+        SceneId("hills".to_owned()),
+        terrain,
+        Transform::default(),
     ));
 
     commands.spawn((
@@ -407,34 +391,13 @@ fn setup_viewer(
         Player {
             name: "Animation review".into(),
         },
+        CharacterId(0),
         CharacterLook::default(),
-        SkeletonState {
-            local_velocity: Vec3::NEG_Z * 2.0,
-            grounded: true,
-            ..default()
-        },
-        Transform::from_xyz(0.0, 0.95, 0.0),
-        Visibility::Inherited,
-    ));
-    commands.spawn((
-        Name::new("Animation review sun"),
-        DirectionalLight {
-            shadows_enabled: true,
-            illuminance: 12_000.0,
-            ..default()
-        },
-        Transform::from_xyz(4.0, 7.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
-    commands.spawn(AmbientLight {
-        color: Color::WHITE,
-        brightness: 350.0,
-        affects_lightmapped_meshes: true,
-    });
-    commands.spawn((
-        Name::new("Animation review camera"),
-        CaptureCamera,
-        Camera3d::default(),
-        Transform::from_xyz(3.2, 2.1, -4.5).looking_at(Vec3::Y, Vec3::Y),
+        SkeletonState::default(),
+        Transform::from_xyz(0.0, spawn_height, 0.0),
+        Collider::cylinder(0.4, 1.9),
+        CollisionMargin(0.01),
+        CharacterController::default(),
     ));
     commands.spawn((
         CaptureLabel,
@@ -453,31 +416,76 @@ fn setup_viewer(
 fn drive_sequence(
     mut sequence: ResMut<CaptureSequence>,
     terrain: Single<&SceneTerrain>,
-    mut subjects: Query<(&mut SkeletonState, &mut Transform), With<CaptureSubject>>,
+    mut subjects: Query<
+        (
+            &mut SkeletonState,
+            &mut Transform,
+            Option<&AnimationPlayback>,
+            Option<&mut ProceduralIkState>,
+        ),
+        With<CaptureSubject>,
+    >,
     mut labels: Query<&mut Text, With<CaptureLabel>>,
 ) {
     if sequence.applied || sequence.capture_in_flight || sequence.index >= sequence.plan.len() {
         return;
     }
     let frame = sequence.plan[sequence.index].clone();
-    for (mut skeleton, mut transform) in &mut subjects {
-        skeleton.local_velocity =
+    let mut gait_phase = 0.0;
+    for (mut skeleton, mut transform, playback, ik_state) in &mut subjects {
+        let Some(playback) = playback else {
+            return;
+        };
+        if !playback.authored_pose_is_ready() {
+            return;
+        }
+
+        if sequence.active_scenario != Some(frame.scenario) {
+            sequence.active_scenario = Some(frame.scenario);
+            sequence.simulation_tick = 0;
+            sequence.scenario_distance = 0.0;
+            *skeleton = SkeletonState::default();
+            if let Some(mut ik_state) = ik_state {
+                ik_state.reset();
+            }
+            let ground = terrain.height_at(Vec2::ZERO).unwrap_or_default();
+            transform.translation = Vec3::new(0.0, ground + 0.95, 0.0);
+        }
+
+        let orientation = Quat::from_rotation_y(std::f32::consts::PI);
+        let local_velocity =
             Vec3::new(frame.local_direction.x, 0.0, frame.local_direction.y) * frame.speed;
-        skeleton.gait_phase = frame.gait_phase;
-        skeleton.grounded = true;
-        skeleton.posture = Posture::Upright;
-        // Gameplay's controller frame is half-turned relative to the authored
-        // mesh, so world travel is the negative local velocity direction.
-        let horizontal = -frame.local_direction * frame.distance;
-        let ground = terrain.height_at(horizontal).unwrap_or(0.0);
+        let world_velocity = orientation * local_velocity;
+        let delta_seconds = if frame.scenario_frame == 0 {
+            0.0
+        } else {
+            sequence.simulation_tick += 1;
+            1.0 / SAMPLE_HZ
+        };
+        let horizontal = transform.translation.xz() + world_velocity.xz() * delta_seconds;
+        let ground = terrain.height_at(horizontal).unwrap_or_default();
         transform.translation = Vec3::new(horizontal.x, ground + 0.95, horizontal.y);
+        transform.rotation = orientation;
+        sequence.scenario_distance += frame.speed * delta_seconds;
+        project_skeleton_locomotion(
+            &mut skeleton,
+            SkeletonLocomotionInput {
+                orientation,
+                linear_velocity: world_velocity,
+                grounded: true,
+                crouching: false,
+                delta_seconds,
+                tick: sequence.simulation_tick,
+            },
+        );
+        gait_phase = skeleton.gait_phase;
     }
     for mut label in &mut labels {
         **label = format!(
-            "{} | {:>4.2} m/s | phase {:>5.3} | {} view | 60 Hz frame {}",
+            "{} | {:>4.2} m/s | phase {:>5.3} | {} view | 64 Hz frame {}",
             frame.scenario,
             frame.speed,
-            frame.gait_phase,
+            gait_phase,
             VIEWS[sequence.view_index].slug(),
             frame.scenario_frame,
         );
@@ -488,31 +496,49 @@ fn drive_sequence(
 
 fn position_capture_camera(
     sequence: Res<CaptureSequence>,
-    subjects: Query<&Transform, With<CaptureSubject>>,
-    mut cameras: Query<&mut Transform, (With<CaptureCamera>, Without<CaptureSubject>)>,
-    mut labels: Query<&mut Text, With<CaptureLabel>>,
+    subjects: Query<(&Transform, &SkeletonState), With<CaptureSubject>>,
+    mut cameras: Query<&mut Transform, (With<Camera3d>, Without<CaptureSubject>)>,
+    mut labels: Query<(&mut Text, &mut Visibility), With<CaptureLabel>>,
 ) {
-    let (Ok(subject), Ok(mut camera)) = (subjects.single(), cameras.single_mut()) else {
+    let (Ok((subject, skeleton)), Ok(mut camera)) = (subjects.single(), cameras.single_mut())
+    else {
         return;
     };
     let focus = subject.translation + Vec3::Y * 0.95;
     let view = VIEWS[sequence.view_index.min(VIEWS.len() - 1)];
-    camera.translation = focus
-        + match view {
-            CaptureView::ThirdPerson => Vec3::new(3.2, 1.6, 4.5),
-            CaptureView::Side => Vec3::new(5.0, 0.45, 0.0),
-            CaptureView::Front => Vec3::new(0.0, 0.45, -5.0),
-        };
-    camera.look_at(focus, Vec3::Y);
+    match view {
+        CaptureView::Gameplay => {
+            // Physics simulation is disabled in this fixture, so ahoy does
+            // not refresh its controller-follow base transform. Reconstruct
+            // that default base and apply the exact gameplay camera offset;
+            // otherwise the offset accumulates and the first raw frame is a
+            // pelvis-level/empty view.
+            camera.translation = subject.translation + third_person_offset(Quat::IDENTITY);
+            camera.rotation = Quat::IDENTITY;
+        }
+        CaptureView::Side => {
+            camera.translation = focus + Vec3::new(5.0, 0.45, 0.0);
+            camera.look_at(focus, Vec3::Y);
+        }
+        CaptureView::Front => {
+            camera.translation = focus + Vec3::new(0.0, 0.45, -5.0);
+            camera.look_at(focus, Vec3::Y);
+        }
+    }
     if sequence.applied
         && let Some(frame) = sequence.plan.get(sequence.index)
     {
-        for mut label in &mut labels {
+        for (mut label, mut visibility) in &mut labels {
+            *visibility = if matches!(view, CaptureView::Gameplay) {
+                Visibility::Hidden
+            } else {
+                Visibility::Inherited
+            };
             **label = format!(
-                "{} | {:>4.2} m/s | phase {:>5.3} | {} view | 60 Hz frame {}",
+                "{} | {:>4.2} m/s | phase {:>5.3} | {} view | 64 Hz frame {}",
                 frame.scenario,
                 frame.speed,
-                frame.gait_phase,
+                skeleton.gait_phase,
                 view.slug(),
                 frame.scenario_frame,
             );
@@ -521,10 +547,17 @@ fn position_capture_camera(
 }
 
 fn draw_skeleton_overlay(
+    sequence: Res<CaptureSequence>,
     mut gizmos: Gizmos,
     subjects: Query<(Entity, &SkeletonState), With<CaptureSubject>>,
     bones: Query<(&HumanoidBone, &GlobalTransform)>,
 ) {
+    if matches!(
+        VIEWS[sequence.view_index.min(VIEWS.len() - 1)],
+        CaptureView::Gameplay
+    ) {
+        return;
+    }
     let Ok((subject, skeleton)) = subjects.single() else {
         return;
     };
@@ -591,6 +624,7 @@ fn capture_frame(
         With<CaptureSubject>,
     >,
     bones: Query<(&HumanoidBone, &GlobalTransform)>,
+    terrain: Single<&SceneTerrain>,
     mut exit: MessageWriter<AppExit>,
 ) {
     if !sequence.applied || sequence.capture_in_flight {
@@ -642,13 +676,14 @@ fn capture_frame(
     if sequence.view_index == 0 {
         let (left_support_weight, right_support_weight) =
             gait_support_weights(skeleton.gait_phase, frame.speed);
+        let root_distance_metres = sequence.scenario_distance;
         sequence.samples.push(FrameSample {
             scenario: frame.scenario.to_owned(),
             scenario_frame: frame.scenario_frame,
             time_seconds: frame.time_seconds,
             speed_metres_per_second: frame.speed,
             gait_phase: skeleton.gait_phase,
-            root_distance_metres: frame.distance,
+            root_distance_metres,
             root_position_metres: subject_global.translation().to_array(),
             world_travel_direction: Vec3::new(
                 -frame.local_direction.x,
@@ -672,7 +707,7 @@ fn capture_frame(
                     )
                 })
                 .collect(),
-            bones: collect_bones(subject, &bones),
+            bones: collect_bones(subject, &bones, &terrain),
         });
     }
     sequence.capture_in_flight = true;
@@ -739,6 +774,7 @@ fn visual_fingerprint(image: &Image) -> u64 {
 fn collect_bones(
     subject: Entity,
     bones: &Query<(&HumanoidBone, &GlobalTransform)>,
+    terrain: &SceneTerrain,
 ) -> BTreeMap<String, BoneSample> {
     bones
         .iter()
@@ -750,6 +786,9 @@ fn collect_bones(
                 BoneSample {
                     position: transform.translation().to_array(),
                     rotation_xyzw: [rotation.x, rotation.y, rotation.z, rotation.w],
+                    terrain_clearance_metres: terrain
+                        .height_at(transform.translation().xz())
+                        .map(|height| transform.translation().y - height),
                 },
             )
         })
@@ -816,24 +855,29 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     });
     let no_ground_penetration = scenarios
         .iter()
-        .all(|metrics| metrics.minimum_foot_height_metres >= -0.08);
+        .all(|metrics| metrics.minimum_foot_clearance_metres >= -0.08);
     let biomechanics_within_review_bounds = scenarios.iter().all(|metrics| {
         metrics.maximum_supported_foot_slip_metres_per_frame <= 0.035
             && metrics.maximum_planted_foot_drift_metres <= 0.035
             && metrics.minimum_knee_forward_bend_metres >= -0.08
             && metrics.pelvis_vertical_range_metres <= 0.20
             && metrics.head_vertical_range_metres <= 0.20
-            && metrics
-                .loop_seam_position_metres
-                .is_none_or(|value| value <= 0.015)
-            && metrics
-                .loop_seam_rotation_degrees
-                .is_none_or(|value| value <= 5.0)
+            && if metrics.scenario == "start-stop-transition" {
+                metrics.loop_seam_position_metres.is_none()
+                    && metrics.loop_seam_rotation_degrees.is_none()
+            } else {
+                metrics
+                    .loop_seam_position_metres
+                    .is_some_and(|value| value <= 0.015)
+                    && metrics
+                        .loop_seam_rotation_degrees
+                        .is_some_and(|value| value <= 5.0)
+            }
     });
     let views_are_distinct = sequence.duplicate_view_frames.is_empty();
     let manifest = CaptureManifest {
         sample_hz: SAMPLE_HZ,
-        pipeline: "authored FK plus final tactical mirroring, look, and terrain leg IK",
+        pipeline: "shared tactical player, scene, camera, authoritative locomotion projection, authored FK, and final procedural passes",
         views: VIEWS,
         validation: CaptureValidation {
             finite_transforms,
@@ -973,19 +1017,19 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
             }
             let looped = scenario != "start-stop-transition";
             let (loop_position, loop_rotation) = if looped {
-                let closures = frames
-                    .iter()
-                    .copied()
-                    .filter(|frame| frame.gait_phase.abs() < 0.0001)
+                let seams = frames
+                    .windows(2)
+                    .filter(|pair| pair[1].gait_phase < pair[0].gait_phase)
+                    .map(|pair| loop_seam(pair[0], pair[1]))
                     .collect::<Vec<_>>();
-                closures
-                    .get(closures.len().saturating_sub(2))
-                    .copied()
-                    .zip(closures.last().copied())
-                    .map(|(first, last)| loop_seam(first, last))
-                    .map_or((None, None), |(position, rotation)| {
-                        (Some(position), Some(rotation))
-                    })
+                if seams.is_empty() {
+                    (None, None)
+                } else {
+                    (
+                        Some(seams.iter().map(|seam| seam.0).fold(0.0, f32::max)),
+                        Some(seams.iter().map(|seam| seam.1).fold(0.0, f32::max)),
+                    )
+                }
             } else {
                 (None, None)
             };
@@ -1003,7 +1047,7 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
                 minimum_knee_forward_bend_metres: minimum_knee_bend(&frames),
                 maximum_supported_foot_slip_metres_per_frame: maximum_slip,
                 maximum_planted_foot_drift_metres: maximum_plant_drift,
-                minimum_foot_height_metres: minimum_foot_height(&frames),
+                minimum_foot_clearance_metres: minimum_foot_clearance(&frames),
             }
         })
         .collect()
@@ -1089,12 +1133,12 @@ fn minimum_knee_bend(frames: &[&FrameSample]) -> f32 {
     if minimum.is_finite() { minimum } else { 0.0 }
 }
 
-fn minimum_foot_height(frames: &[&FrameSample]) -> f32 {
+fn minimum_foot_clearance(frames: &[&FrameSample]) -> f32 {
     let minimum = frames
         .iter()
         .flat_map(|frame| [frame.bones.get("left_foot"), frame.bones.get("right_foot")])
         .flatten()
-        .map(|foot| foot.position[1])
+        .filter_map(|foot| foot.terrain_clearance_metres)
         .fold(f32::INFINITY, f32::min);
     if minimum.is_finite() { minimum } else { -1.0 }
 }
@@ -1141,7 +1185,7 @@ fn review_html(manifest: &CaptureManifest) -> String {
                 scenario.loop_seam_rotation_degrees.map_or("&mdash;".into(), |value| format!("{value:.2}")),
                 scenario.maximum_supported_foot_slip_metres_per_frame,
                 scenario.maximum_planted_foot_drift_metres,
-                scenario.minimum_foot_height_metres,
+                scenario.minimum_foot_clearance_metres,
             )
         })
         .collect::<String>();
@@ -1150,14 +1194,14 @@ fn review_html(manifest: &CaptureManifest) -> String {
 <html><head><meta charset="utf-8"><title>Animation review</title><style>
 body{{font:15px system-ui;background:#111820;color:#e8eef5;margin:24px}}button,select{{margin:4px;padding:8px}}img{{max-width:min(960px,100%);background:#222}}table{{border-collapse:collapse;margin-top:20px}}td,th{{border:1px solid #526171;padding:6px}}.note{{max-width:960px;color:#b9c7d5}}#contact{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:20px}}#contact img{{width:100%}}
 </style></head><body><h1>Tactical locomotion review</h1>
-<p class="note">This is the real base mesh and TacticalAnimationPlugin, sampled at 60 Hz with live stride phase, root travel, final mirroring/look/terrain IK, and a cyan skeleton overlay. Use normal speed first, then slow motion. Metrics flag continuity for investigation; they are not biomechanical proof.</p>
-<div>{scenario_buttons}</div><label>View <select id="view"><option value="third-person">third person</option><option value="side">side</option><option value="front">front</option></select></label>
+<p class="note">This runs the shared tactical player, hills scene, gameplay camera, 64 Hz authoritative locomotion projection, authored FK, and final procedural passes. Gameplay images are raw; side/front diagnostics add the cyan skeleton and support markers. Use normal speed first, then slow motion.</p>
+<div>{scenario_buttons}</div><label>View <select id="view"><option value="gameplay">gameplay (raw)</option><option value="side">side diagnostic</option><option value="front">front diagnostic</option></select></label>
 <label>Playback <select id="rate"><option value="1">normal</option><option value="2">half speed</option><option value="4">quarter speed</option></select></label>
 <p id="telemetry"></p><img id="player"><div id="contact"></div>
-<table><thead><tr><th>scenario</th><th>frames</th><th>worst root-relative displacement</th><th>worst rotation</th><th>loop seam m</th><th>loop seam deg</th><th>supported slip m/frame</th><th>planted interval drift m</th><th>minimum foot height m</th></tr></thead><tbody>{metrics}</tbody></table>
+<table><thead><tr><th>scenario</th><th>frames</th><th>worst root-relative displacement</th><th>worst rotation</th><th>loop seam m</th><th>loop seam deg</th><th>supported slip m/frame</th><th>planted interval drift m</th><th>minimum terrain-relative foot clearance m</th></tr></thead><tbody>{metrics}</tbody></table>
 <script>const all={frame_json},scenarioNames={scenario_names_json};let scenario=scenarioNames[0]||"",i=0,timer;const player=document.querySelector('#player'),view=document.querySelector('#view'),rate=document.querySelector('#rate'),telemetry=document.querySelector('#telemetry');
 function frames(){{return all.filter(x=>x.scenario===scenario)}}function show(){{const list=frames(),f=list.length?list[i%list.length]:null;if(!f){{player.removeAttribute('src');telemetry.textContent='No completed capture frames';return}}player.src=f.screenshots[view.value];telemetry.textContent=`${{f.scenario}} frame ${{f.scenario_frame}} | ${{f.speed_metres_per_second.toFixed(2)}} m/s | phase ${{f.gait_phase.toFixed(3)}} | support L ${{f.left_support_weight.toFixed(2)}} R ${{f.right_support_weight.toFixed(2)}}`;}}
-function play(){{clearInterval(timer);timer=setInterval(()=>{{i=(i+1)%frames().length;show()}},1000/60*Number(rate.value))}}function contacts(){{const f=frames(),step=Math.max(1,Math.floor(f.length/12)),box=document.querySelector('#contact');box.innerHTML='';for(let n=0;n<f.length;n+=step){{let x=document.createElement('img');x.src=f[n].screenshots[view.value];x.title=`frame ${{f[n].scenario_frame}} phase ${{f[n].gait_phase.toFixed(3)}}`;box.appendChild(x)}}}}
+function play(){{clearInterval(timer);timer=setInterval(()=>{{i=(i+1)%frames().length;show()}},1000/64*Number(rate.value))}}function contacts(){{const f=frames(),step=Math.max(1,Math.floor(f.length/12)),box=document.querySelector('#contact');box.innerHTML='';for(let n=0;n<f.length;n+=step){{let x=document.createElement('img');x.src=f[n].screenshots[view.value];x.title=`frame ${{f[n].scenario_frame}} phase ${{f[n].gait_phase.toFixed(3)}}`;box.appendChild(x)}}}}
 document.querySelectorAll('button').forEach(b=>b.onclick=()=>{{scenario=b.dataset.scenario;i=0;show();contacts();play()}});view.onchange=()=>{{show();contacts()}};rate.onchange=play;show();contacts();play();</script></body></html>"#
     )
 }
@@ -1223,15 +1267,16 @@ mod tests {
     }
 
     #[test]
-    fn steady_scenarios_close_exactly_after_two_cycles() {
+    fn steady_scenarios_use_authoritative_fixed_tick_samples() {
         for (name, speed) in [("walk", 2.0), ("blend", 3.75), ("run", 5.5)] {
             let frames = steady_scenario(name, speed, 2.0);
-            assert_eq!(frames.first().unwrap().gait_phase, 0.0);
-            assert!(frames.last().unwrap().gait_phase.abs() < 0.0001);
+            assert_eq!(frames.first().unwrap().time_seconds, 0.0);
             assert!(frames.len() > 30);
             for pair in frames.windows(2) {
                 assert!(pair[1].time_seconds > pair[0].time_seconds);
-                assert!(pair[1].time_seconds - pair[0].time_seconds <= 1.0 / SAMPLE_HZ + 0.0001);
+                assert!(
+                    (pair[1].time_seconds - pair[0].time_seconds - 1.0 / SAMPLE_HZ).abs() < 0.0001
+                );
             }
         }
     }
@@ -1239,10 +1284,10 @@ mod tests {
     #[test]
     fn transition_uses_server_stride_formula_without_non_finite_state() {
         let frames = transition_scenario();
-        assert_eq!(frames.len(), 241);
+        assert_eq!(frames.len(), 257);
         assert!(frames.iter().all(|frame| frame.speed.is_finite()
-            && frame.gait_phase.is_finite()
-            && frame.distance.is_finite()));
+            && frame.time_seconds.is_finite()
+            && frame.local_direction.is_finite()));
         assert_eq!(frames.first().unwrap().speed, 0.0);
         assert_eq!(frames.last().unwrap().speed, 0.0);
     }
