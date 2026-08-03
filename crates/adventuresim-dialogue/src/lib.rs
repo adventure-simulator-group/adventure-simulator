@@ -53,11 +53,24 @@ pub enum ParticipantKind {
 pub struct Topic {
     pub id: String,
     pub label: String,
+    /// Presentation grouping. Discovery remains controlled by the authoritative
+    /// known-topic rows; this metadata never makes a topic visible by itself.
+    #[serde(default)]
+    pub category: TopicCategory,
     #[serde(default)]
     pub initially_known: bool,
     #[serde(default)]
     pub conditions: Condition,
     pub responses: Vec<Response>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TopicCategory {
+    Quest,
+    #[default]
+    Lore,
+    About,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -826,6 +839,14 @@ pub fn source_for_topic(conversation_id: &str, topic_id: &str) -> Option<&'stati
     None
 }
 
+pub fn category_for_topic(conversation_id: &str, topic_id: &str) -> Option<TopicCategory> {
+    conversation(conversation_id)?
+        .topics
+        .iter()
+        .find(|topic| topic.id == topic_id)
+        .map(|topic| topic.category)
+}
+
 pub fn source_for_choice(
     conversation_id: &str,
     topic_id: &str,
@@ -946,6 +967,19 @@ pub fn github_edit_url_for_location(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn topic_categories_are_typed_and_default_to_lore() {
+        assert_eq!(
+            category_for_topic("service-professions", "quest"),
+            Some(TopicCategory::Quest)
+        );
+        assert_eq!(
+            category_for_topic("service-professions", "profession"),
+            Some(TopicCategory::Lore)
+        );
+        assert_eq!(category_for_topic("service-professions", "hidden"), None);
+    }
     #[test]
     fn compiled_catalog_is_valid_and_has_source_spans() {
         validate(catalog()).unwrap();

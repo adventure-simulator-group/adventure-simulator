@@ -85,7 +85,7 @@
               ] }
           }]
         },
-        { "id": "quest", "label": "Work", "initially_known": true,
+        { "id": "quest", "label": "Work", "category": "quest", "initially_known": true,
           "responses": [{ "id": "quest-turn-in", "priority": 20, "conditions": { "op": "fact", "key": { "kind": "contract_state", "contract": "selected-service-contract" }, "equals": "readytoreport" },
             "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "You have completed the work. Shall we settle the contract?" }] }],
             "effects": [], "prompt": { "id": "turn-in-work", "respondent": "player", "mode": "yes_no", "choices": [

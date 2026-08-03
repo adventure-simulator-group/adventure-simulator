@@ -145,6 +145,25 @@ pub(super) async fn party_social(
             .flatten()
             .is_some_and(|row| row.enabled)
     };
+    let relationship_answer = state
+        .db
+        .query_one::<crate::spacetimedb::BackendCharacterRelationshipStatus>(&format!(
+            "SELECT * FROM backend_character_relationship_statuses WHERE character_id = {target_id}"
+        ))
+        .await
+        .ok()
+        .flatten()
+        .map(|status| {
+            if status.wedding_commitment_id.is_some() {
+                "I am promised in marriage, and the appointed day draws nigh.".to_owned()
+            } else if status.spouse_id.is_some() {
+                "I am wed, and bound in marriage.".to_owned()
+            } else if status.courtship_partner_id.is_some() {
+                "I am in courtship, though I shall not name whom without cause.".to_owned()
+            } else {
+                "I am neither wed nor pledged in courtship.".to_owned()
+            }
+        });
     let actor_personality_result = state
         .db
         .query::<CharacterPersonality>(&format!(
@@ -240,6 +259,7 @@ pub(super) async fn party_social(
             adventuresim_core::social::SocialActionKind::Flirt,
         ),
         prayer_disabled_reason,
+        relationship_answer,
         feedback: social_feedback(building.social_feedback.as_deref()),
         unavailable: !beliefs_available || !affinity_available || !familiarity_available,
     };
@@ -320,8 +340,17 @@ pub(super) async fn set_automatic_social_chat(
     {
         tracing::warn!(%error, actor_id, target_id, "automatic social chat preference rejected");
     }
-    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party/{target_id}/social")).await)
-        .into_response()
+    Redirect::to(
+        &building
+            .append_to(
+                &state,
+                &kind,
+                &id,
+                format!("/locations/{kind}/{id}/party/{target_id}/social"),
+            )
+            .await,
+    )
+    .into_response()
 }
 
 pub(super) async fn perform_social_action(
@@ -371,9 +400,18 @@ pub(super) async fn perform_social_action(
             social_action_error_feedback(&error.to_string())
         }
     };
-    Redirect::to(&building.append_to(&state, &kind, &id, format!(
-        "/locations/{kind}/{id}/party/{target_id}/social?social_feedback={feedback}"
-    )).await)
+    Redirect::to(
+        &building
+            .append_to(
+                &state,
+                &kind,
+                &id,
+                format!(
+                    "/locations/{kind}/{id}/party/{target_id}/social?social_feedback={feedback}"
+                ),
+            )
+            .await,
+    )
     .into_response()
 }
 
@@ -419,9 +457,18 @@ pub(super) async fn chat_with_party_member(
             "chat_unavailable"
         }
     };
-    Redirect::to(&building.append_to(&state, &kind, &id, format!(
-        "/locations/{kind}/{id}/party/{target_id}/social?social_feedback={feedback}"
-    )).await)
+    Redirect::to(
+        &building
+            .append_to(
+                &state,
+                &kind,
+                &id,
+                format!(
+                    "/locations/{kind}/{id}/party/{target_id}/social?social_feedback={feedback}"
+                ),
+            )
+            .await,
+    )
     .into_response()
 }
 
@@ -466,7 +513,9 @@ pub(super) fn social_action_blocked_by_actor(
     !actor_allows_social_action(action, mirth, courtship)
 }
 
-pub(super) fn social_feedback(value: Option<&str>) -> Option<crate::templates::settlement::SocialFeedback> {
+pub(super) fn social_feedback(
+    value: Option<&str>,
+) -> Option<crate::templates::settlement::SocialFeedback> {
     use crate::templates::settlement::SocialFeedback;
     match value {
         Some("addressed") => Some(SocialFeedback {

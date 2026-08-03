@@ -323,6 +323,7 @@ struct ClaimView {
 struct TopicView {
     id: String,
     label: String,
+    category: adventuresim_dialogue::TopicCategory,
     source: Option<EditSource>,
 }
 #[derive(Serialize)]
@@ -1346,6 +1347,11 @@ async fn build_view(
     let topics = topics
         .into_iter()
         .map(|topic| TopicView {
+            category: adventuresim_dialogue::category_for_topic(
+                &session.conversation_id,
+                &topic.topic_id,
+            )
+            .unwrap_or_default(),
             id: topic.topic_id,
             label: topic.label,
             source: serde_json::from_str::<Option<adventuresim_dialogue::SourceRef>>(

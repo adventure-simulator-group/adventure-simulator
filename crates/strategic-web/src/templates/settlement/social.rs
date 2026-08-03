@@ -2,7 +2,6 @@ use maud::{Markup, html};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::{
-    character_details::religion_name,
     context::LocationView,
     trade::{item_name_with_food_lot, trade_inventory_table_header},
 };
@@ -23,6 +22,7 @@ pub struct SocialPresentation {
     pub joke_blocked: bool,
     pub flirt_blocked: bool,
     pub prayer_disabled_reason: Option<String>,
+    pub relationship_answer: Option<String>,
     pub feedback: Option<SocialFeedback>,
     pub unavailable: bool,
 }
@@ -158,8 +158,8 @@ fn belief_tooltip(belief: &crate::spacetimedb::SocialBelief) -> String {
     )
 }
 
-/// Dedicated social view. It intentionally receives observer-specific beliefs
-/// rather than authoritative personality.
+/// Conversation Dock projection. It intentionally receives observer-specific
+/// beliefs rather than authoritative personality.
 pub fn party_social_dialog(
     location: &LocationView,
     selected: &Character,
@@ -191,27 +191,85 @@ pub fn party_social_dialog(
         _ => "Neutral",
     };
     let is_self = selected.id == active_character.id;
-    let affinity_certainty = if social.familiarity_hours >= 48.0 {
-        "fairly certain"
-    } else if social.familiarity_hours >= 8.0 {
-        "tentative"
-    } else {
-        "uncertain"
+    let affinity_face = match social.affinity {
+        value if value >= 50.0 => ("very-warm", "Very warm regard", "☺"),
+        value if value >= 15.0 => ("warm", "Warm regard", "🙂"),
+        value if value <= -50.0 => ("hostile", "Hostile regard", "☹"),
+        value if value <= -15.0 => ("cold", "Cold regard", "🙁"),
+        _ => ("neutral", "Neutral regard", "😐"),
     };
-    let close_href = location.preserve_building(if is_self {
-        format!("{}/party/{}", location.base_path(), selected.id)
-    } else {
-        format!("{}/party/{}/stats", location.base_path(), selected.id)
-    });
     html! {
-        div class="character-action-overlay" data-character-action-dialog {
-            a class="character-action-backdrop" href=(&close_href) aria-label="Close social dialog" {}
-            section class="character-action-dialog social-dialog" role="dialog" aria-modal="true" aria-labelledby="social-dialog-title" tabindex="-1" {
-                header class="character-action-dialog-header" {
-                    h2 id="social-dialog-title" { "Social — " (selected.name) }
-                    a class="character-action-dialog-close" href=(&close_href) aria-label="Close social dialog" { "×" }
+        section class="settlement-chat social-conversation-dock" aria-label=(format!("Conversation with {}", selected.name))
+          data-social-conversation data-social-subject=(selected.id) data-social-self=[is_self.then_some("true")] {
+          div class="settlement-chat-layout" {
+            div class="settlement-chat-conversation" {
+              header class="conversation-dock-header" {
+                div class="settlement-chat-filters" role="group" aria-label="Visible chat channels" {
+                  @for (channel, label, abbreviation) in [("local", "Local", "L"), ("party", "Party", "P"), ("info", "Info", "I")] {
+                    label class=(format!("chat-channel-filter chat-channel-filter-{channel}")) title=(label) {
+                      input type="checkbox" checked data-chat-filter=(channel) aria-label=(label) title=(label);
+                      span aria-hidden="true" { (abbreviation) }
+                    }
+                  }
                 }
-                div class="social-rail" data-social-panel data-target-id=(selected.id) {
+                div class="conversation-dock-tools" {
+                  @if !is_self {
+                    div class=(format!("affinity-popover affinity-{}", affinity_face.0)) data-affinity-popover {
+                      button type="button" class="affinity-face" aria-label=(affinity_face.1)
+                        aria-expanded="false" aria-controls=(format!("affinity-details-{}", selected.id))
+                        data-affinity-trigger data-strategic-tooltip=(format!("{}; click to pin details", affinity_face.1)) {
+                        span aria-hidden="true" { (affinity_face.2) }
+                      }
+                      section id=(format!("affinity-details-{}", selected.id)) class="affinity-details"
+                        data-affinity-details aria-label=(format!("Your impression of {}", selected.name)) {
+                        h3 { "Thy impression" }
+                        dl class="social-biography" {
+                          div { dt { "Regard" } dd { (affinity_label) } }
+                          div { dt { "Familiarity" } dd { (familiarity_label(social.familiarity_hours)) } }
+                        }
+                        @if social.unavailable {
+                          p class="social-unavailable" role="status" { "Your impressions are unavailable right now." }
+                        } @else if social.beliefs.is_empty() {
+                          p class="text-muted small-copy" { "You have not formed a confident impression of their character yet." }
+                        } @else {
+                          ul class="perceived-traits" aria-label="Perceived personality traits" {
+                            @for belief in &social.beliefs {
+                              @let (axis, value) = perceived_trait(belief.axis, belief.perceived_value);
+                              li class="perceived-trait" style=(belief_style(belief.confidence)) tabindex="0" {
+                                strong { (value) }
+                                span { (axis) ": " (format!("{:.0}% confidence", belief.confidence.clamp(0.0, 1.0) * 100.0)) }
+                                small { (personality_reaction_hint(belief.axis, belief.perceived_value)) }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                  div class="conversation-tabs" role="tablist" aria-label="Conversation topics" {
+                    @for (id, label, icon, selected_tab) in [
+                      ("quests", "Quests", "bookmark", false),
+                      ("lore", "Lore", "open-book", false),
+                      ("tidings", "Recent Tidings", "calendar", true),
+                      ("about", "Of Thee", "person", false),
+                    ] {
+                      button type="button" role="tab" class="conversation-tab"
+                        id=(format!("conversation-tab-{id}-{}", selected.id))
+                        aria-controls=(format!("conversation-panel-{id}-{}", selected.id))
+                        aria-selected=(if selected_tab { "true" } else { "false" }) tabindex=(if selected_tab { "0" } else { "-1" })
+                        data-conversation-tab=(id) data-strategic-tooltip=(if id == "about" { "About this person" } else { label }) {
+                        (decorative_game_icon(icon)) span class="visually-hidden" { (label) }
+                      }
+                    }
+                  }
+                }
+              }
+              section role="tabpanel" class="conversation-panel" id=(format!("conversation-panel-quests-{}", selected.id))
+                aria-labelledby=(format!("conversation-tab-quests-{}", selected.id)) hidden { p class="conversation-empty" { "No discovered quest matter is ready to discuss." } }
+              section role="tabpanel" class="conversation-panel" id=(format!("conversation-panel-lore-{}", selected.id))
+                aria-labelledby=(format!("conversation-tab-lore-{}", selected.id)) hidden { p class="conversation-empty" { "No discovered lore is ready to discuss." } }
+              section role="tabpanel" class="conversation-panel social-rail" id=(format!("conversation-panel-tidings-{}", selected.id))
+                aria-labelledby=(format!("conversation-tab-tidings-{}", selected.id)) data-social-panel data-target-id=(selected.id) {
             @if let Some(feedback) = &social.feedback {
                 p class=(if feedback.is_error { "social-feedback social-feedback-error" } else { "social-feedback social-feedback-result" })
                     role=(if feedback.is_error { "alert" } else { "status" }) {
@@ -255,42 +313,23 @@ pub fn party_social_dialog(
                     }
                 }
             }
-            (sidebar_section("What you believe", html! {
-                dl class="social-biography" {
-                    div { dt { "Age" } dd { (selected.age_years) } }
-                    div { dt { "Religion" } dd { (religion_name(social.religion_id.as_deref())) } }
-                    div { dt { "Local fame" } dd { (format!("{:.1}", social.fame)) } }
-                    div { dt { "Local infamy" } dd { (format!("{:.1}", social.infamy)) } }
-                    @if !is_self {
-                        div { dt { "Affinity toward you" } dd { (affinity_label) " (" (affinity_certainty) ")" } }
-                        div { dt { "Familiarity" } dd { (familiarity_label(social.familiarity_hours)) } }
-                    }
-                }
-                @if social.unavailable {
-                    p class="social-unavailable" role="status" { "Your impressions are unavailable right now." }
-                } @else if social.beliefs.is_empty() {
-                    p class="text-muted small-copy" { "You have not formed a confident impression of their personality yet." }
-                } @else {
-                    ul class="perceived-traits" aria-label="Perceived personality traits" {
-                        @for belief in &social.beliefs {
-                            @let (_, value) = perceived_trait(belief.axis, belief.perceived_value);
-                            li class="perceived-trait" style=(belief_style(belief.confidence))
-                                tabindex="0" data-strategic-tooltip=(belief_tooltip(belief)) {
-                                (value)
-                            }
-                        }
-                    }
-                }
-            }))
-            (sidebar_section("Morale sources", html! {
+            (sidebar_section("Recent Tidings", html! {
                 @if morale_sources.is_empty() { p class="text-muted" { "No current morale effects." } }
                 div class="social-source-list" {
                     @for source in morale_sources {
                         @let topic = adventuresim_core::social::topic_for_source_kind(&source.kind);
                         @let addressed = source.magnitude < 0.0 && social.addressed_source_ids.contains(&source.id);
-                        article class=(if addressed { "social-source social-source-negative social-source-addressed" } else if source.magnitude < 0.0 { "social-source social-source-negative" } else { "social-source social-source-positive" }) {
+                        @let magnitude = source.magnitude.clamp(-5.0, 5.0);
+                        @let topic_color = if magnitude < 0.0 {
+                            format!("color-mix(in srgb, #d7b650 {:.0}%, #cf4f4f)", (100.0 - magnitude.abs() * 18.0).max(10.0))
+                        } else if magnitude > 0.0 {
+                            format!("color-mix(in srgb, #d7b650 {:.0}%, #4fae67)", (100.0 - magnitude * 18.0).max(10.0))
+                        } else { "#d7b650".to_owned() };
+                        @let strength = if magnitude > 0.0 { format!("Positive morale, {magnitude:+.1}") } else if magnitude < 0.0 { format!("Negative morale, {magnitude:+.1}") } else { "Neutral morale, +0.0".to_owned() };
+                        article class=(if addressed { "social-source social-source-negative social-source-addressed" } else if source.magnitude < 0.0 { "social-source social-source-negative" } else if source.magnitude > 0.0 { "social-source social-source-positive" } else { "social-source social-source-neutral" })
+                            style=(format!("--social-topic-color:{topic_color}")) aria-label=(format!("{}: {strength}", source.label)) {
                             div class="social-source-context" {
-                                div { strong { (&source.label) } span { (format!("{:+.1}", source.magnitude)) } }
+                                div { strong { (&source.label) } span class="social-source-strength" { (&strength) } }
                                 @if addressed {
                                     p class="social-addressed-status" { "Addressed by you" }
                                 }
@@ -373,6 +412,35 @@ pub fn party_social_dialog(
                 }
             }))
                 }
+                section role="tabpanel" class="conversation-panel about-person-panel"
+                    id=(format!("conversation-panel-about-{}", selected.id))
+                    aria-labelledby=(format!("conversation-tab-about-{}", selected.id)) hidden data-about-person=(selected.name) {
+                    @if is_self {
+                        p { "To know thyself, seek thy Recent Tidings and reflect thereupon." }
+                    } @else {
+                        h3 { "Of Thee" }
+                        p class="text-muted small-copy" { "Ask, and hear the answer in their own words." }
+                        div class="about-person-topics" {
+                            @for (question, answer) in [
+                                ("How stand I in thy regard?", format!("I hold thee in {} regard.", affinity_label.to_ascii_lowercase())),
+                                ("How well knowest thou me?", format!("I have known thee for {}.", familiarity_label(social.familiarity_hours))),
+                                ("How fares thy spirit?", if morale_sources.iter().any(|source| source.magnitude < 0.0) { "My spirit is troubled; look to the recent tidings, and thou shalt know why.".to_owned() } else { "My spirit rests easily enough at present.".to_owned() }),
+                                ("Art thou pledged to another?", social.relationship_answer.clone().unwrap_or_else(|| "I shall speak of courtship or marriage only when such suit is lawful between us.".to_owned())),
+                            ] {
+                                button type="button" class="about-person-topic" data-about-question=(question) data-about-answer=(answer) { (question) }
+                            }
+                        }
+                    }
+                }
+                @if !is_self {
+                    div class="settlement-chat-composer" {
+                        div class="settlement-chat-input-shell" {
+                            input type="text" name="body" aria-label="Local message" autocomplete="off" placeholder=(format!("Speak with {}", selected.name));
+                        }
+                        button type="button" class="btn btn-primary btn-icon" aria-label="Send message" { (decorative_game_icon("plain-arrow")) }
+                    }
+                }
+            }
             }
         }
     }
@@ -472,6 +540,7 @@ fn chat_area(
             }
             div class="settlement-chat-layout" {
                 div class="settlement-chat-conversation" {
+                  header class="conversation-dock-header" {
                     div class="settlement-chat-filters" role="group" aria-label="Visible chat channels" {
                         @for (channel, label, abbreviation) in [
                             ("local", "Local", "L"),
@@ -487,6 +556,28 @@ fn chat_area(
                                 span aria-hidden="true" { (abbreviation) }
                             }
                         }
+                    }
+                    div class="conversation-tabs" role="tablist" aria-label="Conversation topics" data-dialogue-category-tabs {
+                      @for (id, label, icon, selected_tab) in [
+                        ("quest", "Quests", "bookmark", false),
+                        ("lore", "Lore", "open-book", true),
+                        ("tidings", "Recent Tidings", "calendar", false),
+                        ("about", "Of Thee", "person", false),
+                      ] {
+                        button type="button" role="tab" class="conversation-tab" id=(format!("dialogue-category-tab-{id}"))
+                          aria-controls=(format!("dialogue-category-panel-{id}")) aria-selected=(if selected_tab { "true" } else { "false" })
+                          tabindex=(if selected_tab { "0" } else { "-1" }) data-dialogue-category=(id)
+                          data-strategic-tooltip=(if id == "about" { "About this person" } else { label }) {
+                          (decorative_game_icon(icon)) span class="visually-hidden" { (label) }
+                        }
+                      }
+                    }
+                  }
+                    @for (id, label, selected_panel) in [("quest", "Quests", false), ("lore", "Lore", true), ("tidings", "Recent Tidings", false), ("about", "Of Thee", false)] {
+                      section role="tabpanel" class="dialogue-category-panel" id=(format!("dialogue-category-panel-{id}"))
+                        aria-labelledby=(format!("dialogue-category-tab-{id}")) hidden[!selected_panel] data-dialogue-category-panel=(id) {
+                        p class="conversation-empty" data-dialogue-category-empty { "No discovered " (label) " topics are ready to discuss." }
+                      }
                     }
                     div class="settlement-chat-messages" aria-live="polite" {
                         @if local_context.is_none() { div class="chat-system-message" data-chat-channel="info" {
@@ -653,6 +744,13 @@ mod tests {
         assert!(markup.contains("social-source-addressed"));
         assert!(markup.contains("Addressed by you"));
         assert!(!markup.contains("class=\"social-actions\""));
+        assert!(markup.contains("role=\"tablist\" aria-label=\"Conversation topics\""));
+        assert!(markup.contains(">Recent Tidings</span>"));
+        assert!(markup.contains("data-affinity-trigger"));
+        assert!(markup.contains("aria-expanded=\"false\""));
+        assert!(markup.contains("Negative morale, -2.0"));
+        assert!(markup.contains("--social-topic-color:color-mix"));
+        assert!(!markup.contains("Local fame"));
 
         let feedback_social = SocialPresentation {
             feedback: Some(SocialFeedback {

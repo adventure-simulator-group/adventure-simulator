@@ -44,10 +44,20 @@ pub struct AuthoringTopic {
     pub id: String,
     pub label: String,
     #[serde(default)]
+    pub category: TopicCategory,
+    #[serde(default)]
     pub initially_known: bool,
     #[serde(default)]
     pub conditions: Condition,
     pub responses: Vec<AuthoringResponse>,
+}
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TopicCategory {
+    Quest,
+    #[default]
+    Lore,
+    About,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

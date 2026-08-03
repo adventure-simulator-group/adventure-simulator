@@ -7,10 +7,10 @@ separate consequence: a successful approach can release bound testimony, while
 a benign concern yields only clarification. This separation prevents morale or
 affinity results from becoming a hidden-truth oracle.
 
-The character-sheet morale meter is informational. A raised Social meta-skill
-icon beside its heading opens the observer-specific morale sources, beliefs,
-and available social actions in a modal dialog without replacing either
-character rail. The icon remains inset while that dialog is open; the privacy
+The character-sheet morale meter is informational. Its conversation icon opens
+the selected character's **Recent Tidings** in the shared Conversation Dock,
+with observer-specific morale sources, beliefs, and available social actions.
+The privacy
 boundary remains the active observer's beliefs rather than authoritative
 personality state. Manual response buttons show a response-specific icon and
 short label; hovering the icon explains the contextual approach, skill, and
@@ -173,7 +173,7 @@ It is therefore an explanation of the current net morale, like a treated
 injury segment, rather than extra morale. Color, striping, and meter text all
 identify the segment.
 
-Each negative morale point produces one percentage point of fear incapacitation, so -100 morale is the meaningful left endpoint of the meter. The center represents neutral morale. The right side shows the character's allocated share of the party's current ally-restoration percentage relative to the party's present `5% × aggregate Command` limit. Selecting the meter opens the dedicated social panel and source actions.
+Each negative morale point produces one percentage point of fear incapacitation, so -100 morale is the meaningful left endpoint of the meter. The center represents neutral morale. The right side shows the character's allocated share of the party's current ally-restoration percentage relative to the party's present `5% × aggregate Command` limit. Selecting the meter opens Recent Tidings and its source actions. Every current source remains a distinct card. Signed, accessibly worded strength accompanies a yellow neutral color that moves toward green for increasingly positive values and toward red for increasingly negative values. Positive and neutral sources are read-only.
 
 The strategic condition and morale-source tables are refreshable projections.
 Durable state includes private personality scores and immutable development
@@ -243,7 +243,7 @@ The incident temporarily occupies the party's active-encounter slot while preser
 
 Morale sources are not dialogue memories. Each source has a closed topic such
 as defeat, injury, fatigue, hunger, faith, or filth. The character page's
-Morale meter opens a social panel where a party member can listen, commiserate,
+The morale meter opens Recent Tidings where a party member can listen, commiserate,
 use humor, rally with Command, offer a deceptive reframe, or flirt. Labels are
 generic and grounded in the durable source; the game does not invent incidental
 details about a battle or conversation.

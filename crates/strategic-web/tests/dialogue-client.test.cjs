@@ -16,6 +16,8 @@ const {
   socialDurationChoices,
   contextualMutationIsCurrent,
   courtshipPresentation,
+  affinityPresentation,
+  moraleTopicPresentation,
 } = require("../static/dialogue-client.js");
 
 test("errantry acceptance reuses its action ID after a lost response", async () => {
@@ -71,9 +73,9 @@ test("dialogue client is schema-driven with stable authoritative actions", () =>
   assert.doesNotMatch(source, /professionDetails|openQuestOffer|beginHerbalistConversation|dialogueActions/);
 });
 
-test("authored topics stay inline while contextual social topics use icon controls", () => {
-  assert.doesNotMatch(source, /data-dialogue-topic-pane/);
-  assert.doesNotMatch(source, /topicList\.replaceChildren/);
+test("discovered authored topics use typed category tabs while contextual actions stay inline", () => {
+  assert.match(source, /topic\.category \|\| "lore"/);
+  assert.match(source, /data-dialogue-category-panel/);
   assert.match(source, /row\.append\(topicAnchor/);
   assert.match(source, /dialogue-context-topics/);
   assert.match(source, /contextTopicButton\("social", "conversation"/);
@@ -149,7 +151,7 @@ test("settlement NPCs reuse the circular party portrait structure", () => {
   assert.doesNotMatch(source, /npc-social-summary/);
 });
 
-test("socializing and romance are dialogue responses with visual relationship meters", () => {
+test("socializing and romance are dialogue responses with a qualitative regard face", () => {
   assert.equal(relationshipLabel("well_known"), "well known");
   assert.equal(relationshipLevel("affinity", "trusted"), 1);
   assert.equal(relationshipLevel("morale", "guarded"), 2 / 3);
@@ -161,12 +163,24 @@ test("socializing and romance are dialogue responses with visual relationship me
   assert.deepEqual(courtshipPresentation("informal", true), { icon: "eye-target", label: "informal courtship; known to family" });
   assert.match(source, /dataset\.dialogueContextPrompt/);
   assert.match(source, /appendContextExchange/);
-  assert.match(source, /npc-relationship-meter/);
+  assert.match(source, /data\.npcAffinityFace/);
   assert.match(source, /requested_minutes: choice\.minutes/);
-  assert.match(source, /track\.setAttribute\("role", "meter"\)/);
+  assert.match(source, /ask under Of Thee for more/);
   assert.match(source, /currentView\.open_prompt \|\| contextualMutation/);
   assert.match(source, /const render = \(view\) => \{[\s\S]*?removeContextPrompt\(\);/);
   assert.doesNotMatch(source, /success_chance|personality_fit|morale_delta/);
+});
+
+test("morale topics and affinity faces combine color with accessible qualitative wording", () => {
+  assert.deepEqual(affinityPresentation(0), { band: "neutral", label: "Neutral regard", face: "😐" });
+  assert.equal(affinityPresentation(70).band, "very-warm");
+  assert.equal(affinityPresentation(-70).band, "hostile");
+  assert.equal(moraleTopicPresentation(0).label, "Neutral morale, +0.0");
+  assert.equal(moraleTopicPresentation(4).direction, "positive");
+  assert.equal(moraleTopicPresentation(-4).direction, "negative");
+  assert.notEqual(moraleTopicPresentation(1).color, moraleTopicPresentation(5).color);
+  assert.match(dialogueCss, /affinity-popover\.is-pinned/);
+  assert.match(source, /event\.key !== "Escape"/);
 });
 
 test("contextual mutations are bound to the active NPC, path, session, revision, and operation", () => {
