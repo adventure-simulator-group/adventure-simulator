@@ -753,9 +753,7 @@ fn evaluate_skeletons(
             );
             let added = (weighted.iter().map(|clip| clip.weight).sum::<f32>() - before).max(0.0);
             resolved_weight += added;
-            if sample.mirror_lower_body {
-                mirror_weight += added;
-            }
+            mirror_weight += added * sample.mirror_lower_body.clamp(0.0, 1.0);
         }
         let next = AnimationPlayback {
             use_bind_pose_t: weighted.is_empty(),
@@ -802,7 +800,6 @@ fn tick_impact_reactions(
 struct ResolvedAnchor<'a> {
     clip: &'a LoadedClip,
     anchor: &'a PoseAnchor,
-    source: &'a MotionSource,
     pack_id: &'a str,
 }
 
@@ -828,7 +825,6 @@ fn resolve_anchor<'a>(
     Some(ResolvedAnchor {
         clip,
         anchor,
-        source,
         pack_id,
     })
 }
@@ -871,12 +867,6 @@ fn append_resolved_sample(
             weighted,
             &start,
             frame_seconds(start.anchor.frame),
-            sample.weight,
-        ),
-        PoseSampling::Cycle { phase } => append_weighted(
-            weighted,
-            &start,
-            frame_seconds(start.source.last_frame) * phase.rem_euclid(1.0),
             sample.weight,
         ),
         PoseSampling::Span { end, progress } => {
@@ -1203,7 +1193,7 @@ mod tests {
                     progress: 0.5,
                 },
                 weight: 1.0,
-                mirror_lower_body: false,
+                mirror_lower_body: 0.0,
             },
         );
         assert_eq!(weighted.len(), 1);
@@ -1230,7 +1220,7 @@ mod tests {
                     progress: 0.5,
                 },
                 weight: 1.0,
-                mirror_lower_body: false,
+                mirror_lower_body: 0.0,
             },
         );
         assert_eq!(weighted.len(), 1);
@@ -1333,13 +1323,13 @@ mod tests {
             HUMANOID_UNARMED_PACK,
             PoseSample {
                 pose: SemanticPose::RunContact,
-                sampling: PoseSampling::Cycle { phase: 0.25 },
+                sampling: PoseSampling::Anchor,
                 weight: 1.0,
-                mirror_lower_body: false,
+                mirror_lower_body: 0.0,
             },
         );
         assert_eq!(weighted.len(), 1);
-        assert!((weighted[0].time_seconds - 8.0 / 30.0).abs() < 0.0001);
+        assert!(weighted[0].time_seconds.abs() < 0.0001);
     }
 
     #[test]

@@ -47,7 +47,9 @@ Use these conventions:
 - the armature bind pose is a T-pose, which is the final runtime fallback;
 - each motion GLB contains exactly one animation and preserves all authored
   in-betweens between its documented frame anchors;
-- all locomotion cycles use the documented normalized phase convention; and
+- locomotion exports provide the canonical contact and passing/flight poses;
+  the runtime interpolates them, mirrors only the lower body for the
+  opposite-foot half, and closes the normalized gait cycle; and
 - packs in one fallback chain use identical bone names and hierarchy.
 
 The procedural humanoid pass recognizes these case-sensitive bone names:
