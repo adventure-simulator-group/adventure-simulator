@@ -19,6 +19,7 @@ use bevy_flair::prelude::*;
 
 use crate::{
     Args,
+    animation::TerrainIkEnabled,
     player::{AttackState, ClientPlayer},
 };
 
@@ -38,6 +39,8 @@ impl Plugin for UiPlugin {
                     update_combat_state_ui.run_if(any_with_component::<ClientPlayer>),
                     update_items_ui.run_if(any_with_component::<ClientPlayer>),
                     update_attack_timer_ui.run_if(any_with_component::<ClientPlayer>),
+                    #[cfg(feature = "debug")]
+                    update_terrain_ik_debug_ui,
                 ),
             )
             .add_observer(on_new_player_added_hook)
@@ -91,6 +94,10 @@ struct AttackTimerSpan;
 
 #[derive(Component)]
 struct CombatStateSpan;
+
+#[cfg(feature = "debug")]
+#[derive(Component)]
+struct TerrainIkDebugSpan;
 
 #[derive(Component)]
 struct TacticalOutcomeBanner;
@@ -154,7 +161,9 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                     #[cfg(feature = "debug")]
                     TextSpan::new(
                         "DEBUG: F2 to toggle body | F3 to toggle hitbox | F4 to toggle hitscan"
-                    )
+                    ),
+                    #[cfg(feature = "debug")]
+                    (TerrainIkDebugSpan, TextSpan::new(" | F8 terrain IK: ON"))
                 ],
             ),
             (
@@ -338,6 +347,20 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             ),
         ],
     ));
+}
+
+#[cfg(feature = "debug")]
+fn update_terrain_ik_debug_ui(
+    enabled: Res<TerrainIkEnabled>,
+    mut span: Single<&mut TextSpan, With<TerrainIkDebugSpan>>,
+) {
+    if enabled.is_changed() {
+        span.0 = if enabled.0 {
+            " | F8 terrain IK: ON".to_owned()
+        } else {
+            " | F8 terrain IK: OFF".to_owned()
+        };
+    }
 }
 
 fn combat_state_label(state: &TacticalCombatState) -> String {

@@ -101,6 +101,10 @@ When support is high, terrain IK retains the foot's world-space horizontal
 plant until support releases; this prevents the character-following camera
 from concealing conveyor-belt foot skating.
 
+In debug builds, press `F8` to toggle only the final terrain leg-IK pass. The
+HUD reports whether it is on or off; authored FK, gait mirroring, and torso
+stabilization remain active for a useful before/after comparison.
+
 The procedural humanoid pass recognizes these case-sensitive bone names:
 
 ```text
