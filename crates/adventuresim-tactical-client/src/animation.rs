@@ -19,6 +19,7 @@ mod procedural;
 #[allow(unused_imports)]
 pub(crate) use procedural::{
     BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone, HumanoidIkTargets,
+    gait_support_weights,
 };
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
@@ -62,8 +63,9 @@ impl Plugin for TacticalAnimationPlugin {
                 PostUpdate,
                 (
                     restore_authored_bind_pose,
-                    procedural::apply_head_and_torso_look,
                     procedural::apply_lower_body_mirroring,
+                    procedural::stabilize_locomotion_torso,
+                    procedural::apply_head_and_torso_look,
                     procedural::apply_impact_reaction,
                     procedural::apply_terrain_leg_ik,
                     procedural::apply_arm_and_weapon_constraints,
@@ -346,7 +348,10 @@ impl AnimationPackCatalog {
 #[derive(Debug, Clone)]
 struct LoadedClip {
     node: AnimationNodeIndex,
-    duration_seconds: f32,
+    /// The code-owned catalog range is authoritative. Exporters may retain
+    /// extra timeline keys, but locomotion must never sample beyond the
+    /// documented closure frame.
+    cycle_duration_seconds: f32,
 }
 
 #[derive(Resource, Default)]
@@ -417,8 +422,8 @@ struct AnimationGraphRevision(u64);
 
 #[derive(Component, Debug, Clone, Copy)]
 struct AuthoredBindTransform {
-    owner: Entity,
-    local: Transform,
+    pub(super) owner: Entity,
+    pub(super) local: Transform,
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -581,15 +586,19 @@ fn collect_loaded_packs(
         .into_iter()
         .zip(nodes)
         .map(|((key, handle), node)| {
-            let duration_seconds = clips
+            let source = &catalog.packs[&key.0].motions[&key.1];
+            let exported_duration = clips
                 .get(&handle)
                 .map(AnimationClip::duration)
-                .unwrap_or_default();
+                .unwrap_or(0.0);
+            let cycle_duration_seconds =
+                authoritative_cycle_duration(source.last_frame, exported_duration)
+                    .expect("processed motion already passed catalog-range validation");
             (
                 key,
                 LoadedClip {
                     node,
-                    duration_seconds,
+                    cycle_duration_seconds,
                 },
             )
         })
@@ -604,6 +613,10 @@ fn sole_animation(animations: &[Handle<AnimationClip>]) -> Option<&Handle<Animat
 
 fn frame_fits_clip(frame: u16, duration: f32) -> bool {
     frame_seconds(frame) <= duration + 0.5 / ANIMATION_FPS
+}
+
+fn authoritative_cycle_duration(last_frame: u16, exported_duration: f32) -> Option<f32> {
+    frame_fits_clip(last_frame, exported_duration).then(|| frame_seconds(last_frame))
 }
 
 fn frame_seconds(frame: u16) -> f32 {
@@ -965,7 +978,7 @@ fn append_resolved_sample(
         PoseSampling::Cycle { progress } => append_weighted(
             weighted,
             &start,
-            start.clip.duration_seconds * progress.rem_euclid(1.0),
+            start.clip.cycle_duration_seconds * progress.rem_euclid(1.0),
             sample.weight,
         ),
         PoseSampling::Span { end, progress } => {
@@ -1166,7 +1179,6 @@ pub fn spawn_fallback_t_pose(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::player::ClientPlayer;
 
     fn spawn_test_t_pose(
         In(owner): In<Entity>,
@@ -1274,16 +1286,16 @@ mod tests {
         };
         for pose in poses {
             let anchor = &catalog.packs[HUMANOID_UNARMED_PACK].poses[&pose];
-            let duration_seconds = catalog.packs[HUMANOID_UNARMED_PACK].motions[&anchor.motion]
-                .last_frame as f32
-                / ANIMATION_FPS;
+            let cycle_duration_seconds =
+                catalog.packs[HUMANOID_UNARMED_PACK].motions[&anchor.motion].last_frame as f32
+                    / ANIMATION_FPS;
             let next_node = AnimationNodeIndex::new(runtime.clips.len());
             runtime
                 .clips
                 .entry((HUMANOID_UNARMED_PACK.to_owned(), anchor.motion.clone()))
                 .or_insert(LoadedClip {
                     node: next_node,
-                    duration_seconds,
+                    cycle_duration_seconds,
                 });
         }
         runtime
@@ -1333,6 +1345,42 @@ mod tests {
         );
         assert_eq!(weighted.len(), 1);
         assert!((weighted[0].time_seconds - 16.0 / ANIMATION_FPS).abs() < 0.0001);
+    }
+
+    #[test]
+    fn complete_cycle_ignores_exported_keys_after_catalog_closure() {
+        let catalog = AnimationPackCatalog::default();
+        let mut runtime = runtime_with_available([SemanticPose::RunContact]);
+        let exported_clip_duration = 64.0 / ANIMATION_FPS;
+        runtime
+            .clips
+            .get_mut(&(HUMANOID_UNARMED_PACK.to_owned(), "run".to_owned()))
+            .unwrap()
+            .cycle_duration_seconds =
+            authoritative_cycle_duration(20, exported_clip_duration).unwrap();
+        let mut weighted = Vec::new();
+        append_resolved_sample(
+            &mut weighted,
+            &runtime,
+            &catalog,
+            HUMANOID_UNARMED_PACK,
+            PoseSample {
+                pose: SemanticPose::RunContact,
+                sampling: PoseSampling::Cycle { progress: 0.999 },
+                weight: 1.0,
+                mirror_lower_body: 0.0,
+            },
+        );
+        assert!(
+            weighted
+                .iter()
+                .all(|sample| sample.time_seconds <= 20.0 / ANIMATION_FPS)
+        );
+        assert!(
+            weighted
+                .iter()
+                .all(|sample| sample.time_seconds < exported_clip_duration)
+        );
     }
 
     #[test]
@@ -1407,12 +1455,14 @@ mod tests {
     }
 
     #[test]
-    fn authored_rig_attaches_to_the_client_controlled_player() {
+    fn authored_rig_attaches_to_a_player_with_skeleton_state() {
         let mut world = World::new();
         let mut runtime = AnimationRuntime::default();
         runtime.base_scene = Some(Handle::default());
         world.insert_resource(runtime);
-        let owner = world.spawn((Player::default(), ClientPlayer)).id();
+        let owner = world
+            .spawn((Player::default(), SkeletonState::default()))
+            .id();
 
         world.run_system_cached(attach_loaded_rig_scenes).unwrap();
         world.flush();

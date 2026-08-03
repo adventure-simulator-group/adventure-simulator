@@ -8,18 +8,21 @@ use std::path::PathBuf;
 use clap::Parser;
 
 #[derive(Debug, Parser)]
-#[command(version, about = "Capture deterministic tactical animation phases")]
+#[command(
+    version,
+    about = "Capture deterministic tactical locomotion review sequences"
+)]
 struct Args {
-    /// Directory receiving PNG frames and manifest.json.
-    #[arg(long, default_value = "target/animation-captures/walk")]
+    /// Directory receiving per-view PNGs, manifest.json, and index.html.
+    #[arg(long, default_value = "target/animation-captures/locomotion-review")]
     output: PathBuf,
 
     /// Repository asset directory containing animations/.
     #[arg(long, default_value = "assets")]
     asset_root: PathBuf,
 
-    /// Rendered frames allowed for each phase to settle before capture.
-    #[arg(long, default_value_t = 6)]
+    /// Rendered frames allowed for each deterministic sample to settle.
+    #[arg(long, default_value_t = 1)]
     frames_per_sample: u32,
 }
 
@@ -32,5 +35,8 @@ fn main() {
             .expect("animation viewer needs a working directory")
             .join(args.asset_root)
     };
-    animation_viewer::run(args.output, asset_root, args.frames_per_sample.max(1));
+    let exit = animation_viewer::run(args.output, asset_root, args.frames_per_sample.max(1));
+    if let bevy::app::AppExit::Error(code) = exit {
+        std::process::exit(code.get() as i32);
+    }
 }

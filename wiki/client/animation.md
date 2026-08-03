@@ -430,6 +430,21 @@ procedural pelvis lowering, additional hip and knee flexion, shortened stride,
 and foot IK to the ordinary gait instead of requiring a separate crouch-walk
 cycle.
 
+Contact and passing/flight anchors are authoritative sparse gait inputs. The
+evaluator constructs four smooth quarters: contact to passing, passing to the
+character-space mirrored contact, mirrored contact to mirrored passing, and
+mirrored passing back to contact. It does not traverse later exported gait
+timeline data. Character-space reflection retains anatomical lateral spacing
+rather than swapping bones discretely. Terrain leg IK preserves continuous
+support for walking, narrows support through the walk/run blend, and releases
+both feet during the authored run flight phase. During high support it also
+locks the stance foot horizontally in world space until release, preventing
+visible skating as the gameplay root advances. Authored upper-body carriage
+remains intact unless an explicit hand or weapon constraint takes priority.
+Locomotion also bounds root, pelvis, torso, neck, and head excursions around
+bind before look and final IK, then restores a bounded vertical lift at each
+run flight beat.
+
 During ordinary travel the body turns toward its velocity, so forward walk and
 run also serve diagonal and lateral travel. During combat, the torso remains
 oriented toward the opponent and a procedural stance-step planner provides
