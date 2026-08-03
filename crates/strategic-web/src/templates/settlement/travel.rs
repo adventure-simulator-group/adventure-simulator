@@ -873,6 +873,18 @@ pub fn camp_page(
         }
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, "/camp", None, false))
+            @if active_character.is_some() {
+                nav class="settlement-npc-strip counterparty-strip camp-counterparty-strip" aria-label="Camp counterparties" {
+                    a class="npc-portrait fireplace-portrait" href="/camp/fireplace"
+                        aria-label="Cook at fireplace" title="Cook at fireplace" {
+                        span class="npc-portrait-image fireplace-portrait-image" aria-hidden="true" {
+                            (decorative_game_icon("campfire"))
+                        }
+                        span class="npc-portrait-name" { "Campfire" }
+                        span class="btn btn-secondary btn-small" aria-hidden="true" { "Cook" }
+                    }
+                }
+            }
             (visual_stage("camp", "Camp", "A resting place beside the party's onward route"))
             @if let Some((finding, preparation)) = tactical_insight {
                 section class="strategic-notice" data-tactical-insight aria-label="Tactical insight" {

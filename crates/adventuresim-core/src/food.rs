@@ -9,6 +9,106 @@ pub const RECONTAMINATION_FLOOR: f32 = 1.0e-9;
 pub const MAX_CONTAMINATION: f32 = 1.0e9;
 pub const PAN_FRY_MIN_FAT_MASS_RATIO: f32 = 0.02;
 
+/// Retrieval-time effects for a dish left on a fireplace. Quality is a
+/// discrete tier adjustment applied to the ready dish. Early retrieval moves
+/// proportionally from raw calories toward the method's ready retention and
+/// only applies a fraction of the method's microbial kill;
+/// after readiness calories fall linearly to zero over one more target
+/// duration. Tier penalties use `ceil`, so any early/late retrieval is
+/// observably worse while exact readiness is unpenalized.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DonenessOutcome {
+    pub progress: f32,
+    pub calorie_factor: f32,
+    pub contamination_kill_progress: f32,
+    pub quality_penalty: u8,
+}
+
+pub fn doneness_outcome(elapsed_minutes: u64, target_minutes: u32) -> DonenessOutcome {
+    let target = u64::from(target_minutes.max(1));
+    let progress = (elapsed_minutes as f64 / target as f64).clamp(0.0, 2.0) as f32;
+    if progress < 1.0 {
+        DonenessOutcome {
+            progress,
+            calorie_factor: 1.0,
+            contamination_kill_progress: progress,
+            quality_penalty: ((1.0 - progress) * 4.0).ceil().clamp(1.0, 4.0) as u8,
+        }
+    } else {
+        DonenessOutcome {
+            progress,
+            calorie_factor: (2.0 - progress).clamp(0.0, 1.0),
+            contamination_kill_progress: 1.0,
+            quality_penalty: ((progress - 1.0) * 4.0).ceil().clamp(0.0, 4.0) as u8,
+        }
+    }
+}
+
+/// Geometric interpolation from the raw load to the full method kill. This is
+/// stable at zero and keeps partial cooking meaningfully riskier than ready.
+pub fn partially_cooked_contamination(raw: f32, method: CookingMethod, kill_progress: f32) -> f32 {
+    let raw = if raw.is_finite() {
+        raw.max(0.0)
+    } else {
+        MAX_CONTAMINATION
+    };
+    let fully_cooked = cooked_contamination(raw, method);
+    let progress = if kill_progress.is_finite() {
+        kill_progress.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    if raw <= 0.0 {
+        return 0.0;
+    }
+    let ratio = (fully_cooked / raw).clamp(0.0, 1.0);
+    (raw * ratio.powf(progress)).clamp(0.0, MAX_CONTAMINATION)
+}
+
+/// Raw calories are retained until heat has done work. Cooking/method losses
+/// interpolate from no loss at progress zero to the normal ready retention;
+/// only after readiness does the overcook calorie factor apply.
+pub fn doneness_nutrition_factor(ready_retention: f32, outcome: DonenessOutcome) -> f32 {
+    let ready = if ready_retention.is_finite() {
+        ready_retention.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    if outcome.progress < 1.0 {
+        1.0 + (ready - 1.0) * outcome.progress.clamp(0.0, 1.0)
+    } else {
+        ready * outcome.calorie_factor.clamp(0.0, 1.0)
+    }
+}
+
+pub fn partially_cooked_growth(raw: f32, cooked: f32, kill_progress: f32) -> f32 {
+    let raw = if raw.is_finite() { raw.max(0.0) } else { 0.0 };
+    let cooked = if cooked.is_finite() {
+        cooked.max(0.0)
+    } else {
+        0.0
+    };
+    let progress = if kill_progress.is_finite() {
+        kill_progress.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    raw + (cooked - raw) * progress
+}
+
+/// Converts aggregate microbial load into a final-food concentration. Added
+/// water contributes no load, so water-inclusive mass naturally dilutes stew.
+pub fn microbial_concentration(total_load: f32, final_mass_kg: f32) -> f32 {
+    if !total_load.is_finite()
+        || !final_mass_kg.is_finite()
+        || total_load < 0.0
+        || final_mass_kg <= 0.0
+    {
+        return 0.0;
+    }
+    (total_load / final_mass_kg).clamp(0.0, MAX_CONTAMINATION)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FoodClass {
     Ration,
@@ -553,5 +653,75 @@ mod tests {
             let consumed = retained_component(value, 0.63);
             assert!((remaining + consumed - value).abs() < 0.001);
         }
+    }
+
+    #[test]
+    fn fireplace_doneness_is_bounded_and_hits_authored_boundaries() {
+        let zero = doneness_outcome(0, 60);
+        let almost = doneness_outcome(59, 60);
+        let ready = doneness_outcome(60, 60);
+        let late = doneness_outcome(90, 60);
+        let burnt = doneness_outcome(120, 60);
+        let extreme = doneness_outcome(u64::MAX, 60);
+        assert_eq!(zero.calorie_factor, 1.0);
+        assert_eq!(zero.contamination_kill_progress, 0.0);
+        assert_eq!(zero.quality_penalty, 4);
+        assert!(almost.contamination_kill_progress < 1.0);
+        assert_eq!(ready.calorie_factor, 1.0);
+        assert_eq!(ready.quality_penalty, 0);
+        assert_eq!(late.calorie_factor, 0.5);
+        assert_eq!(burnt.calorie_factor, 0.0);
+        assert_eq!(burnt.quality_penalty, 4);
+        assert_eq!(extreme, burnt);
+    }
+
+    #[test]
+    fn doneness_changes_monotonically_and_partial_heat_kill_is_geometric() {
+        let mut previous_kill = 0.0;
+        let mut previous_calories = 1.0;
+        for elapsed in 0..=10_000 {
+            let outcome = doneness_outcome(elapsed, 100);
+            assert!((0.0..=2.0).contains(&outcome.progress));
+            assert!((0.0..=1.0).contains(&outcome.calorie_factor));
+            assert!((0.0..=1.0).contains(&outcome.contamination_kill_progress));
+            assert!(outcome.contamination_kill_progress >= previous_kill);
+            assert!(outcome.calorie_factor <= previous_calories);
+            previous_kill = outcome.contamination_kill_progress;
+            previous_calories = outcome.calorie_factor;
+        }
+        let raw = 1.0;
+        let half = partially_cooked_contamination(raw, CookingMethod::Stew, 0.5);
+        let ready = partially_cooked_contamination(raw, CookingMethod::Stew, 1.0);
+        assert!(half < raw && half > ready);
+        assert_eq!(
+            partially_cooked_contamination(raw, CookingMethod::Stew, 0.0),
+            raw
+        );
+    }
+
+    #[test]
+    fn nutrition_and_growth_interpolate_from_raw_to_ready_then_burn() {
+        let raw = doneness_outcome(0, 100);
+        let half = doneness_outcome(50, 100);
+        let ready = doneness_outcome(100, 100);
+        let burnt = doneness_outcome(200, 100);
+        assert_eq!(doneness_nutrition_factor(0.8, raw), 1.0);
+        assert!((doneness_nutrition_factor(0.8, half) - 0.9).abs() < f32::EPSILON);
+        assert!((doneness_nutrition_factor(0.8, ready) - 0.8).abs() < f32::EPSILON);
+        assert_eq!(doneness_nutrition_factor(0.8, burnt), 0.0);
+        assert_eq!(partially_cooked_growth(0.08, 0.02, 0.0), 0.08);
+        assert!((partially_cooked_growth(0.08, 0.02, 0.5) - 0.05).abs() < f32::EPSILON);
+        assert_eq!(partially_cooked_growth(0.08, 0.02, 1.0), 0.02);
+    }
+
+    #[test]
+    fn clean_water_dilutes_load_without_adding_pathogens() {
+        let load = 0.04;
+        let dry = microbial_concentration(load, 1.0);
+        let stew = microbial_concentration(load, 2.0);
+        assert_eq!(dry, 0.04);
+        assert_eq!(stew, 0.02);
+        assert_eq!(microbial_concentration(load, 0.0), 0.0);
+        assert_eq!(microbial_concentration(f32::NAN, 1.0), 0.0);
     }
 }

@@ -4,71 +4,59 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::cooking_method_type::CookingMethod;
-
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct CookFoodArgs {
+pub(super) struct RetrieveFireplaceDishArgs {
     pub character_id: u64,
-    pub method: CookingMethod,
-    pub inventory_item_ids: Vec<u64>,
-    pub amounts_milliunits: Vec<u32>,
+    pub context_key: String,
+    pub inventory_scope: String,
 }
 
-impl From<CookFoodArgs> for super::Reducer {
-    fn from(args: CookFoodArgs) -> Self {
-        Self::CookFood {
+impl From<RetrieveFireplaceDishArgs> for super::Reducer {
+    fn from(args: RetrieveFireplaceDishArgs) -> Self {
+        Self::RetrieveFireplaceDish {
             character_id: args.character_id,
-            method: args.method,
-            inventory_item_ids: args.inventory_item_ids,
-            amounts_milliunits: args.amounts_milliunits,
+            context_key: args.context_key,
+            inventory_scope: args.inventory_scope,
         }
     }
 }
 
-impl __sdk::InModule for CookFoodArgs {
+impl __sdk::InModule for RetrieveFireplaceDishArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `cook_food`.
+/// Extension trait for access to the reducer `retrieve_fireplace_dish`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait cook_food {
-    /// Request that the remote module invoke the reducer `cook_food` to run as soon as possible.
+pub trait retrieve_fireplace_dish {
+    /// Request that the remote module invoke the reducer `retrieve_fireplace_dish` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`cook_food:cook_food_then`] to run a callback after the reducer completes.
-    fn cook_food(
+    /// /// Use [`retrieve_fireplace_dish:retrieve_fireplace_dish_then`] to run a callback after the reducer completes.
+    fn retrieve_fireplace_dish(
         &self,
         character_id: u64,
-        method: CookingMethod,
-        inventory_item_ids: Vec<u64>,
-        amounts_milliunits: Vec<u32>,
+        context_key: String,
+        inventory_scope: String,
     ) -> __sdk::Result<()> {
-        self.cook_food_then(
-            character_id,
-            method,
-            inventory_item_ids,
-            amounts_milliunits,
-            |_, _| {},
-        )
+        self.retrieve_fireplace_dish_then(character_id, context_key, inventory_scope, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `cook_food` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `retrieve_fireplace_dish` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn cook_food_then(
+    fn retrieve_fireplace_dish_then(
         &self,
         character_id: u64,
-        method: CookingMethod,
-        inventory_item_ids: Vec<u64>,
-        amounts_milliunits: Vec<u32>,
+        context_key: String,
+        inventory_scope: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -78,13 +66,12 @@ pub trait cook_food {
     ) -> __sdk::Result<()>;
 }
 
-impl cook_food for super::RemoteReducers {
-    fn cook_food_then(
+impl retrieve_fireplace_dish for super::RemoteReducers {
+    fn retrieve_fireplace_dish_then(
         &self,
         character_id: u64,
-        method: CookingMethod,
-        inventory_item_ids: Vec<u64>,
-        amounts_milliunits: Vec<u32>,
+        context_key: String,
+        inventory_scope: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -93,11 +80,10 @@ impl cook_food for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            CookFoodArgs {
+            RetrieveFireplaceDishArgs {
                 character_id,
-                method,
-                inventory_item_ids,
-                amounts_milliunits,
+                context_key,
+                inventory_scope,
             },
             callback,
         )

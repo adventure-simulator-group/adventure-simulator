@@ -19,10 +19,11 @@ use super::{
     },
 };
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterCondition, CharacterEquipmentGraph, CharacterLimbs,
-    CharacterSkills, CharacterStats, EquipmentBodyPart, EquipmentChannel, EquipmentLocation,
-    FoodLot, InventoryItem, InventoryItemAmount, InventoryQuantityTarget, ItemDefinition,
-    PartyInventoryItem, Settlement,
+    BackendFireplaceDish, BackendFireplaceStation, Character, CharacterAttributes,
+    CharacterCondition, CharacterEquipmentGraph, CharacterLimbs, CharacterSkills, CharacterStats,
+    EquipmentBodyPart, EquipmentChannel, EquipmentLocation, FoodLot, InventoryItem,
+    InventoryItemAmount, InventoryQuantityTarget, ItemDefinition, PartyInventoryItem,
+    PartyItemAmount, Settlement,
 };
 use crate::templates::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use crate::templates::{
@@ -299,141 +300,186 @@ pub fn party_discard_page(
     location.render_layout("Inventory", content, Some(&active_character.name))
 }
 
-pub(super) fn cooking_activity_dialog(
-    location: &LocationView,
-    active_character: &Character,
-    inventory: &[InventoryItem],
-    inventory_amounts: &[InventoryItemAmount],
+#[allow(clippy::too_many_arguments)]
+pub fn fireplace_page(
+    title: &str,
+    back_href: &str,
+    action_base: &str,
+    rest_action: &str,
+    _active_character: &Character,
+    inventory_scope: &str,
+    personal_inventory: &[InventoryItem],
+    party_inventory: &[PartyInventoryItem],
+    personal_amounts: &[InventoryItemAmount],
+    party_amounts: &[PartyItemAmount],
     food_lots: &[FoodLot],
-    item_definitions: &[ItemDefinition],
+    definitions: &[ItemDefinition],
+    station: Option<&BackendFireplaceStation>,
+    dish: Option<&BackendFireplaceDish>,
+    character_minute: u64,
+    layout: impl FnOnce(Markup) -> Markup,
 ) -> Markup {
-    let close_href = location.preserve_building(format!(
-        "{}/party/{}",
-        location.base_path(),
-        active_character.id
-    ));
-    let cook_action = location.preserve_building(format!(
-        "{}/party/{}/cook",
-        location.base_path(),
-        active_character.id
-    ));
-    let owns = |item_id: &str| {
-        inventory
-            .iter()
-            .any(|row| row.item_id == item_id && row.qty > 0)
+    let instrument = station.and_then(|row| row.instrument_item_id.as_deref());
+    let method = match instrument {
+        Some("cooking_pan") => "pan-fry",
+        Some("cooking_pot") => "stew",
+        Some("portable_oven") => "bake",
+        _ => "roast",
     };
-    let pan = owns("cooking_pan");
-    let pot = owns("cooking_pot");
-    let oven = owns("portable_oven");
-    let ingredients = inventory
-        .iter()
-        .filter(|item| {
-            food_lots
-                .iter()
-                .any(|lot| lot.inventory_item_id == Some(item.id))
-        })
-        .collect::<Vec<_>>();
-    html! {
-        div class="character-action-overlay" data-character-action-dialog data-initial-focus="[data-cooking-method]:checked" {
-            a class="character-action-backdrop" href=(&close_href) aria-label="Close cooking dialog" {}
-            section class="character-action-dialog cooking-dialog" role="dialog" aria-modal="true" aria-labelledby="cooking-dialog-title" tabindex="-1" {
-            header class="character-action-dialog-header" {
-                h2 id="cooking-dialog-title" { "Cooking" }
-                a class="character-action-dialog-close" href=(&close_href) aria-label="Close cooking dialog" { "×" }
-            }
-            div class="cooking-activity" data-cooking-activity
-                data-pan-fat-ratio=(adventuresim_core::food::PAN_FRY_MIN_FAT_MASS_RATIO) {
-            aside class="cooking-pot" aria-label="Cooking pot" {
-                (sidebar_section("Pot", html! {
-                    p class="text-muted small-copy cooking-pot-empty" data-cooking-pot-empty {
-                        "Transfer ingredients here to prepare a meal."
-                    }
-                    (trade_inventory_table("cooking-pot-left", InventoryColumnSet::Basic, true, false, false, html! {}))
-                }))
-            }
-            main class="cooking-stage" {
-                section class="cooking-workspace" aria-label="Cooking workspace" {
-                    div class="cooking-method-list" aria-label="Cooking instrument" {
-                        (cooking_method("pan-fry", "Pan-fry", "meal", pan, "A pan is required", false))
-                        (cooking_method("stew", "Stew", "water-bottle", pot, "A pot and water are required", false))
-                        (cooking_method("roast", "Roast / skewer", "campfire", true, "", true))
-                        (cooking_method("bake", "Bake", "bread", oven, "A portable oven is required", false))
-                    }
-                    div class="cooking-hearth-scene" role="img"
-                        aria-label="A cooking vessel warming over a stone hearth" {
-                        span class="cooking-hearth-icon" aria-hidden="true" {}
-                    }
-                }
-                form id="cooking-submit-form" class="cooking-submit-form" method="post"
-                    action=(&cook_action) {
-                    input type="hidden" name="inventory_item_ids" value="" data-cooking-ids;
-                    input type="hidden" name="amounts_milliunits" value="" data-cooking-amounts;
-                    div class="party-offer cooking-actions" {
-                        p class="small-copy text-muted cooking-preview" data-cooking-preview {
-                            "Choose a method and stage ingredients for a preview."
-                        }
-                        a class="btn btn-secondary party-offer-cancel" href=(&close_href) { "Cancel" }
-                        button type="submit" class="btn btn-primary" disabled title="Select at least one ingredient" data-cook-submit { "Cook" }
-                    }
-                }
-            }
-            aside class="cooking-ingredients" aria-label="Ingredient inventory" {
-                @let title = format!("{}'s inventory", active_character.name);
-                (sidebar_section(&title, html! {
-                    @if ingredients.is_empty() {
-                        (empty_state("No food carried.", None, None))
-                    } @else {
-                        (trade_inventory_table("cooking-inventory-right", InventoryColumnSet::Basic, true, false, false, html! {
-                            @for item in ingredients {
-                                @let definition = item_definitions.iter().find(|definition| definition.id == item.item_id);
-                                @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
-                                @let display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
-                                @let unit_mass = food_lot.map_or_else(|| definition.map_or(0.0, |definition| definition.weight), |lot| lot.mass_kg / item.qty.max(1) as f32);
-                                @let value = food_lot.map_or_else(|| item_value(definition), |lot| weight_display(lot.total_value));
-                                @let amount = inventory_amounts.iter()
-                                    .find(|state| state.inventory_item_id == item.id)
-                                    .map_or(0, |state| state.remaining_milliunits);
-                                @let display_amount = amount as f32 / 1_000_000.0;
-                                tr class="trade-inventory-row trade-row-player" data-cooking-source=(item.id) data-item-key=(&item.item_id) {
-                                    td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
-                                    td class="inventory-item-name" {
-                                        (item_name_with_food_lot(&item.item_id, &display_name, definition, food_lot))
-                                        span class="inventory-row-actions" {
-                                            @if food_lot.is_some() {
-                                                @let safety = adventuresim_core::food::definition(&item.item_id).map_or(5, |food| food.cooking_minutes);
-                                                button type="button" class="trade-transfer trade-transfer-left"
-                                                    data-cooking-stage=(item.id) data-cooking-name=(&display_name)
-                                                    data-count=(amount) data-mass=(format!("{unit_mass:.4}")) data-safety=(safety)
-                                                    data-culinary-fat=(adventuresim_core::food::definition(&item.item_id).is_some_and(|food| food.culinary_fat))
-                                                    data-salty=(food_lot.map_or(0.0, |lot| lot.salty_kg))
-                                                    data-spicy=(food_lot.map_or(0.0, |lot| lot.spicy_kg))
-                                                    data-sweet=(food_lot.map_or(0.0, |lot| lot.sweet_kg))
-                                                    data-sour=(food_lot.map_or(0.0, |lot| lot.sour_kg))
-                                                    data-savory=(food_lot.map_or(0.0, |lot| lot.savory_kg))
-                                                    data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one"
-                                                    data-label-one=(format!("Add 0.25 {display_name} to the pot"))
-                                                    data-label-target=(format!("Add {display_name} to the pot"))
-                                                    data-label-all=(format!("Add all {display_name} to the pot"))
-                                                    aria-label=(format!("Add 0.25 {display_name} to the pot"))
-                                                    title=(format!("Add 0.25 {display_name} to the pot")) { (transfer_glyph(1)) }
-                                            } @else {
-                                                (disabled_transfer_button("left", "Only food ingredients can be added to the pot"))
-                                            }
-                                        }
-                                    }
-                                    td class="inventory-count" { (weight_display(display_amount)) }
-                                    td class="inventory-weight" { (weight_display(unit_mass)) }
-                                    td class="inventory-gold" { (value) }
-                                }
+    let elapsed = dish.map_or(0, |row| {
+        character_minute.saturating_sub(row.started_at_minute)
+    });
+    let remaining = dish.map_or(1, |row| {
+        u64::from(row.target_minutes).saturating_sub(elapsed).max(1)
+    });
+    let status = dish.map(|row| {
+        if elapsed < u64::from(row.target_minutes) {
+            "Undercooked"
+        } else if elapsed == u64::from(row.target_minutes) {
+            "Ready"
+        } else {
+            "Overcooking"
+        }
+    });
+    let scope_href = |scope: &str| {
+        format!(
+            "{action_base}{}inventory_scope={scope}",
+            if action_base.contains('?') { "&" } else { "?" }
+        )
+    };
+    let content = html! {
+        div class="fireplace-layout" data-cooking-activity[dish.is_none()] data-pan-fat-ratio=(adventuresim_core::food::PAN_FRY_MIN_FAT_MASS_RATIO) {
+        aside class="left-sidebar fireplace-station-sidebar" {
+            (sidebar_section("Fireplace", html! {
+                p { strong { "Instrument: " } (instrument.map(item_display_name).unwrap_or_else(|| "Roasting spit".into())) }
+                @if let Some(row) = dish {
+                    p data-fireplace-status { strong { (status.unwrap_or("Cooking")) } " · " (elapsed) "/" (row.target_minutes) " min" }
+                    p class="small-copy text-muted" { "Added by " (&row.contributor_name) " at character minute " (row.started_at_minute) ". Hidden food-safety state is intentionally not shown." }
+                    form action=(format!("{action_base}/retrieve")) method="post" {
+                        label { "Retrieve to "
+                            select name="inventory_scope" {
+                                option value="personal" selected[inventory_scope == "personal"] { "Personal inventory" }
+                                option value="party" selected[inventory_scope == "party"] { "Party inventory" }
                             }
-                        }))
+                        }
+                        button class="btn btn-primary btn-block" type="submit" { "Retrieve dish" }
                     }
-                }))
-            }
-            }
+                } @else {
+                    p class="small-copy text-muted" { "One dish may occupy this fireplace. With no instrument installed, ingredients roast." }
+                }
+            }))
+            @if let Some(row) = dish {
+                section class="rest-service-menu fireplace-rest-menu" aria-label="Rest until food is ready" {
+                    div class="rest-service-heading" { strong { "Rest while cooking" } }
+                    p class="small-copy" { "Target: " (row.target_minutes) " minutes · Remaining: " (u64::from(row.target_minutes).saturating_sub(elapsed)) " minutes" }
+                    @if elapsed >= u64::from(row.target_minutes) {
+                        p class="strategic-warning" role="status" { "The dish is ready. More rest will overcook it." }
+                    }
+                    form action=(rest_action) method="post" {
+                        input type="hidden" name="unit" value="minutes";
+                        input type="hidden" name="shelter" value="bivouac";
+                        label for="fireplace-rest-minutes" { "Minutes" }
+                        input id="fireplace-rest-minutes" type="range" name="duration" min="1" max=(row.target_minutes.saturating_mul(2).max(1)) value=(remaining);
+                        output for="fireplace-rest-minutes" { (remaining) }
+                        button type="submit" class="btn btn-primary btn-block" { "Rest" }
+                    }
+                }
             }
         }
-    }
+        main class="center-content settlement-main fireplace-stage" {
+            a class="btn btn-secondary btn-small" href=(back_href) { "Back" }
+            (visual_stage("campfire", title, "A working fireplace and its cooking station"))
+            @if dish.is_none() {
+                section class="cooking-activity" {
+                    input type="radio" name="method-preview" value=(method) checked hidden data-cooking-method;
+                    form id="cooking-submit-form" method="post" action=(format!("{action_base}/ingredients")) {
+                        input type="hidden" name="inventory_scope" value=(inventory_scope);
+                        input type="hidden" name="inventory_item_ids" value="" data-cooking-ids;
+                        input type="hidden" name="amounts_milliunits" value="" data-cooking-amounts;
+                        p class="strategic-warning" { "Adding ingredients is irreversible: selected food is immediately diced and consolidated into one generic cooked meal." }
+                        p class="small-copy text-muted cooking-preview" data-cooking-preview { "Stage at least one measured food portion." }
+                        button type="submit" class="btn btn-primary" disabled data-cook-submit { "Add Ingredients" }
+                    }
+                    div data-cooking-pot-empty hidden {}
+                    div data-inventory-browser="cooking-pot-left" hidden { table { tbody {} } }
+                }
+            }
+        }
+        aside class="right-sidebar fireplace-inventory-sidebar" {
+            (sidebar_section("Inventory", html! {
+                nav class="tab-list" aria-label="Ingredient inventory source" {
+                    a class=(if inventory_scope == "personal" { "active" } else { "" }) href=(scope_href("personal")) aria-current=(if inventory_scope == "personal" { "page" } else { "false" }) { "Personal" }
+                    a class=(if inventory_scope == "party" { "active" } else { "" }) href=(scope_href("party")) aria-current=(if inventory_scope == "party" { "page" } else { "false" }) { "Party" }
+                }
+                @if dish.is_none() {
+                    div data-inventory-browser="cooking-inventory-right" {
+                        table class="trade-inventory-table" { tbody {
+                            @if inventory_scope == "personal" {
+                                @for item in personal_inventory.iter().filter(|row| row.qty > 0) {
+                                    (fireplace_inventory_row(action_base, inventory_scope, item.id, &item.item_id, item.qty, personal_amounts.iter().find(|a| a.inventory_item_id == item.id).map(|a| a.remaining_milliunits), food_lots.iter().find(|l| l.inventory_item_id == Some(item.id)), definitions, instrument))
+                                }
+                            } @else {
+                                @for item in party_inventory.iter().filter(|row| row.quantity > 0) {
+                                    (fireplace_inventory_row(action_base, inventory_scope, item.id, &item.item_id, item.quantity, party_amounts.iter().find(|a| a.party_inventory_item_id == item.id).map(|a| a.remaining_milliunits), food_lots.iter().find(|l| l.party_inventory_item_id == Some(item.id)), definitions, instrument))
+                                }
+                            }
+                        } }
+                    }
+                    @if instrument.is_some() {
+                        form action=(format!("{action_base}/instrument")) method="post" {
+                            input type="hidden" name="inventory_scope" value=(station.and_then(|s| s.instrument_source.as_deref()).unwrap_or("personal"));
+                            button class="btn btn-secondary btn-block" type="submit" { "Remove instrument (restore roast)" }
+                        }
+                    }
+                }
+            }))
+        }
+        }
+    };
+    layout(content)
+}
+
+fn fireplace_inventory_row(
+    action_base: &str,
+    scope: &str,
+    id: u64,
+    item_id: &str,
+    quantity: u32,
+    measured: Option<u32>,
+    lot: Option<&FoodLot>,
+    definitions: &[ItemDefinition],
+    installed: Option<&str>,
+) -> Markup {
+    let definition = definitions.iter().find(|d| d.id == item_id);
+    let is_tool = matches!(item_id, "cooking_pan" | "cooking_pot" | "portable_oven");
+    let display = lot.map_or_else(|| item_display_name(item_id), |l| l.display_name.clone());
+    let amount = measured.unwrap_or(quantity.saturating_mul(1_000_000));
+    html! { tr class="trade-inventory-row trade-row-player" data-cooking-source=[lot.map(|_| id)] {
+        td class="inventory-item-type" { (item_type_icon(item_id)) }
+        td class="inventory-item-name" { (&display)
+            span class="inventory-row-actions" {
+                @if lot.is_some() && adventuresim_core::food::is_cookable_ingredient(item_id) {
+                    button type="button" class="trade-transfer trade-transfer-left"
+                        data-cooking-stage=(id) data-cooking-name=(&display) data-count=(amount)
+                        data-mass=(format!("{:.4}", lot.map_or(0.0, |l| l.mass_kg))) data-safety=(adventuresim_core::food::definition(item_id).map_or(5, |f| f.cooking_minutes))
+                        data-culinary-fat=(adventuresim_core::food::definition(item_id).is_some_and(|f| f.culinary_fat))
+                        data-salty=(lot.map_or(0.0, |l| l.salty_kg)) data-spicy=(lot.map_or(0.0, |l| l.spicy_kg))
+                        data-sweet=(lot.map_or(0.0, |l| l.sweet_kg)) data-sour=(lot.map_or(0.0, |l| l.sour_kg)) data-savory=(lot.map_or(0.0, |l| l.savory_kg))
+                        data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one"
+                        data-label-one=(format!("Add 0.25 {display}")) data-label-target=(format!("Add {display}")) data-label-all=(format!("Add all {display}"))
+                        aria-label=(format!("Add 0.25 {display}")) title=(format!("Add 0.25 {display}")) { (transfer_glyph(1)) }
+                } @else if is_tool {
+                    form action=(format!("{action_base}/instrument")) method="post" {
+                        input type="hidden" name="inventory_scope" value=(scope);
+                        input type="hidden" name="inventory_item_id" value=(id);
+                        button type="submit" class="btn btn-secondary btn-small" title=(if installed.is_some() { "Install this tool and return the previous one to its original inventory" } else { "Install this cooking tool" }) { "Install" }
+                    }
+                }
+            }
+        }
+        td class="inventory-count" { (format!("{:.2}", amount as f32 / 1_000_000.0)) }
+        td class="inventory-weight" { (definition.map_or(0.0, |d| d.weight)) }
+    } }
 }
 
 pub(super) fn herbalism_activity_dialog(
@@ -568,29 +614,6 @@ pub(super) fn herbalism_activity_dialog(
                     }
                 }
             }
-        }
-    }
-}
-
-fn cooking_method(
-    value: &str,
-    label: &str,
-    icon: &str,
-    available: bool,
-    reason: &str,
-    selected: bool,
-) -> Markup {
-    html! {
-        label class=(if available { "cooking-method" } else { "cooking-method disabled" })
-            title=(if available { label } else { reason }) {
-            input type="radio" name="method" value=(value) form="cooking-submit-form"
-                checked[selected] disabled[!available]
-                data-cooking-method data-unavailable-reason=[(!available).then_some(reason)];
-            span class="cooking-method-icon"
-                style=(format!("--cooking-method-icon: url('/static/icons/game/{icon}.svg')"))
-                aria-hidden="true" {}
-            span class="sr-only" { (label) }
-            @if !available { span class="sr-only" { (reason) } }
         }
     }
 }

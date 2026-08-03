@@ -28,7 +28,6 @@ use std::collections::{HashMap, HashSet};
 #[derive(Clone, Debug, Default, Deserialize)]
 struct BuildingQuery {
     building: Option<String>,
-    cook: Option<bool>,
     herbalism: Option<bool>,
     corpse: Option<String>,
     medical: Option<String>,
@@ -73,9 +72,6 @@ impl BuildingQuery {
         }
     }
 
-    fn cooking(&self) -> bool {
-        self.cook == Some(true)
-    }
 }
 
 #[cfg(test)]
@@ -142,10 +138,6 @@ mod building_query_tests {
             valid.append_to_location(&location, "/locations/settlement/x/party/1".into()),
             "/locations/settlement/x/party/1?building=inn"
         );
-        assert_eq!(
-            valid.append_to_location(&location, "/locations/settlement/x/party/1?cook=true".into()),
-            "/locations/settlement/x/party/1?cook=true&building=inn"
-        );
         let non_service = BuildingQuery {
             building: Some("public-square".into()),
             ..Default::default()
@@ -198,6 +190,23 @@ mod building_query_tests {
             .expect("service quest offers route");
         assert!(!offers.contains("ensure_settlement_activity"));
     }
+
+    #[test]
+    fn fireplace_pages_use_gateway_views_and_authoritative_locality_inputs() {
+        let source = SETTLEMENTS_SOURCE;
+        assert!(source.contains("SELECT * FROM backend_fireplace_stations"));
+        assert!(source.contains("SELECT * FROM backend_fireplace_dishes"));
+        let private_station = ["SELECT * FROM fireplace_", "station WHERE"].concat();
+        let private_dish = ["SELECT * FROM fireplace_", "dish WHERE"].concat();
+        assert!(!source.contains(&private_station));
+        assert!(!source.contains(&private_dish));
+        assert!(source.contains("party.camp_destination.is_none()"));
+        assert!(source.contains(
+            "journey.camp_stop_minutes.contains(&journey.completed_minutes)"
+        ));
+        assert!(source.contains("service_npc_location_available"));
+        assert!(source.contains("chapter_has_standalone_building"));
+    }
 }
 
 use super::inventory_forms::{
@@ -224,9 +233,10 @@ use crate::spacetimedb::{
     CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterPersonality,
     CharacterSettlementReputation, CharacterSkills, CharacterStats, CharacterStrategicCondition,
     CharacterTime, CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
-    EquipmentAnchorKind, EquipmentAttachmentTarget, EquipmentOccupancy, FoodLot, InventoryItem,
+    BackendFireplaceDish, BackendFireplaceStation, EquipmentAnchorKind,
+    EquipmentAttachmentTarget, EquipmentOccupancy, FoodLot, InventoryItem,
     InventoryItemAmount, InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind,
-    ItemSlot, LimbInjury, LimbRegion, Party, PartyInventoryItem, PartyJourney,
+    ItemSlot, LimbInjury, LimbRegion, Party, PartyInventoryItem, PartyItemAmount, PartyJourney,
     PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake,
     RecruitmentOffer, RecruitmentOfferStatus, RecruitmentRequirements, ReligiousDemand,
     RepairOrder, ResidenceTier, RetainedProjectile, ScheduleAllocation, Settlement,
@@ -255,6 +265,10 @@ pub fn routes() -> Router<AppState> {
             post(change_residence),
         )
         .route("/locations/settlement/{id}", get(show_settlement_location))
+        .route("/locations/settlement/{id}/fireplace", get(settlement_fireplace))
+        .route("/locations/settlement/{id}/fireplace/ingredients", post(settlement_fireplace_ingredients))
+        .route("/locations/settlement/{id}/fireplace/instrument", post(settlement_fireplace_instrument))
+        .route("/locations/settlement/{id}/fireplace/retrieve", post(settlement_fireplace_retrieve))
         .route("/locations/settlement/{id}/map", get(settlement_map))
         .route("/locations/settlement/{id}/alchemy", get(alchemy))
         .route(
@@ -270,6 +284,10 @@ pub fn routes() -> Router<AppState> {
             post(update_travel_configuration),
         )
         .route("/camp", get(camp))
+        .route("/camp/fireplace", get(camp_fireplace_page))
+        .route("/camp/fireplace/ingredients", post(camp_fireplace_ingredients))
+        .route("/camp/fireplace/instrument", post(camp_fireplace_instrument))
+        .route("/camp/fireplace/retrieve", post(camp_fireplace_retrieve))
         .route("/camp/rest", post(rest_at_camp))
         .route(
             "/camp/errantry-road-challenge",
@@ -307,10 +325,6 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/settlement/{id}/party/{character_id}/organization-presentation-none",
             post(clear_presented_organization),
-        )
-        .route(
-            "/locations/{kind}/{id}/party/{character_id}/cook",
-            post(cook_food),
         )
         .route(
             "/locations/{kind}/{id}/party/{character_id}/physiology/{administration_id}/stop",

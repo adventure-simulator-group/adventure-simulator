@@ -808,7 +808,7 @@ pub struct PartyJourneyRoute {
     pub return_route: Option<JourneyRouteLeg>,
 }
 
-fn strategic_view_is_gateway(ctx: &ViewContext) -> bool {
+pub(crate) fn strategic_view_is_gateway(ctx: &ViewContext) -> bool {
     ctx.db
         .strategic_gateway_authority()
         .id()
