@@ -8,6 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct LocalProblemAuthority {
     pub id: String,
+    pub gateway_bucket: u8,
     pub scope_key: String,
     pub scope_json: String,
     pub consequence_mechanism: String,
@@ -38,6 +39,7 @@ impl __sdk::InModule for LocalProblemAuthority {
 /// Provides typed access to columns for query building.
 pub struct LocalProblemAuthorityCols {
     pub id: __sdk::__query_builder::Col<LocalProblemAuthority, String>,
+    pub gateway_bucket: __sdk::__query_builder::Col<LocalProblemAuthority, u8>,
     pub scope_key: __sdk::__query_builder::Col<LocalProblemAuthority, String>,
     pub scope_json: __sdk::__query_builder::Col<LocalProblemAuthority, String>,
     pub consequence_mechanism: __sdk::__query_builder::Col<LocalProblemAuthority, String>,
@@ -64,6 +66,7 @@ impl __sdk::__query_builder::HasCols for LocalProblemAuthority {
     fn cols(table_name: &'static str) -> Self::Cols {
         LocalProblemAuthorityCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
+            gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
             scope_key: __sdk::__query_builder::Col::new(table_name, "scope_key"),
             scope_json: __sdk::__query_builder::Col::new(table_name, "scope_json"),
             consequence_mechanism: __sdk::__query_builder::Col::new(
@@ -106,6 +109,7 @@ impl __sdk::__query_builder::HasCols for LocalProblemAuthority {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct LocalProblemAuthorityIxCols {
+    pub gateway_bucket: __sdk::__query_builder::IxCol<LocalProblemAuthority, u8>,
     pub id: __sdk::__query_builder::IxCol<LocalProblemAuthority, String>,
     pub scope_key: __sdk::__query_builder::IxCol<LocalProblemAuthority, String>,
 }
@@ -114,6 +118,7 @@ impl __sdk::__query_builder::HasIxCols for LocalProblemAuthority {
     type IxCols = LocalProblemAuthorityIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         LocalProblemAuthorityIxCols {
+            gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
             scope_key: __sdk::__query_builder::IxCol::new(table_name, "scope_key"),
         }

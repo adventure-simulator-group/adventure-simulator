@@ -71,18 +71,6 @@ web-isolated profile="renderer-demo" base_port="23100": preflight verify-db-clie
 web-isolated-strategic profile="renderer-demo" base_port="23100": preflight verify-db-client
     @{{ python_bin }} scripts/dev_stack.py run-profile --mode bare-strategic {{ quote(profile) }} {{ quote(base_port) }}
 
-# Start a disposable strategic stack for the one-click in-world autopsy demo.
-autopsy-demo base_port="23100": preflight verify-db-client
-    @{{ python_bin }} scripts/dev_stack.py run-profile --mode bare-strategic autopsy-demo {{ quote(base_port) }}
-
-# Start a disposable strategic stack for the one-click generated outbreak demo.
-outbreak-demo base_port="23100": preflight verify-db-client
-    @{{ python_bin }} scripts/dev_stack.py run-profile --mode bare-strategic outbreak-demo {{ quote(base_port) }}
-
-# Start an isolated strategic stack for the direct ordered-sigil puzzle demo.
-puzzle-demo base_port="23100": preflight verify-db-client
-    @{{ python_bin }} scripts/dev_stack.py run-profile --mode bare-strategic puzzle-demo {{ quote(base_port) }}
-
 # Run the dependency-light puzzle laboratory without building the game stack.
 puzzle-lab args="--help":
     @cargo run -q -p adventuresim-puzzles --bin puzzle-lab -- {{ args }}

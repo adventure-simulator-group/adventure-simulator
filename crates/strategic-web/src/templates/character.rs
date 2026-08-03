@@ -9,10 +9,10 @@ use super::settlement::{
 use super::{entry_layout, item_display_name, item_type_icon, panel, sidebar_section};
 use crate::medical::MedicalPresentation;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterPersonality,
-    CharacterSkills, Conscience, Conviction, Courtship, Drive, Hygiene, Inclination, Mirth, Nerve,
-    OrganizationMembership, OrganizationPresentation, Outlook, Presentation, SelfKnowledge,
-    SelfRegard, Sex, Sociability, Temperance, Transparency,
+    BackendDevelopmentScenario, Character, CharacterAttributes, CharacterCapability,
+    CharacterLimbs, CharacterPersonality, CharacterSkills, Conscience, Conviction, Courtship,
+    Drive, Hygiene, Inclination, Mirth, Nerve, OrganizationMembership, OrganizationPresentation,
+    Outlook, Presentation, SelfKnowledge, SelfRegard, Sex, Sociability, Temperance, Transparency,
 };
 use adventuresim_core::starting_character::{
     StartingAgeTier, StartingCharacterSpec, StartingInclination, StartingPersonalityTrait,
@@ -25,7 +25,11 @@ use adventuresim_core::{
 };
 
 /// List all characters and select the adventurer who enters the strategic layer.
-pub fn characters_list_page(characters: &[Character], current_character_id: Option<u64>) -> Markup {
+pub fn characters_list_page(
+    characters: &[Character],
+    scenarios: &[BackendDevelopmentScenario],
+    current_character_id: Option<u64>,
+) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
             (sidebar_section("Choose an adventurer", html! {
@@ -70,6 +74,32 @@ pub fn characters_list_page(characters: &[Character], current_character_id: Opti
             }
             a href="/characters/candidates" class="btn btn-primary candidate-play-action" {
                 "Create another adventurer"
+            }
+            @if !scenarios.is_empty() {
+                section class="panel mt-2" data-development-scenarios {
+                    h2 { "Test scenarios" }
+                    p class="small-copy text-muted" { "Search and enter a prebuilt strategic state. Reset the isolated profile to restore every scenario." }
+                    label for="scenario-search" class="sr-only" { "Search test scenarios" }
+                    input id="scenario-search" type="search" placeholder="Search scenarios" data-scenario-search;
+                    @for category in scenarios.iter().map(|scenario| &scenario.category).collect::<std::collections::BTreeSet<_>>() {
+                        section data-scenario-group {
+                            h3 { (category) }
+                            div class="character-select-grid" {
+                                @for scenario in scenarios.iter().filter(|scenario| &scenario.category == category) {
+                                    article class="panel" data-scenario-card data-scenario-search-text=(format!("{} {} {}", scenario.category, scenario.label, scenario.description).to_ascii_lowercase()) {
+                                        h4 { (&scenario.label) }
+                                        p class="small-copy" { (&scenario.description) }
+                                        form action=(format!("/characters/{}/select", scenario.primary_character_id)) method="post" {
+                                            input type="hidden" name="next" value=(&scenario.entry_route);
+                                            button type="submit" class="btn btn-primary btn-block" { "Select and open" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                script src="/static/development-scenarios.js?v=1" defer {}
             }
         }
 
@@ -141,7 +171,7 @@ mod tests {
             automatic_social_chat_enabled: false,
         };
 
-        let markup = characters_list_page(&[character], Some(7)).into_string();
+        let markup = characters_list_page(&[character], &[], Some(7)).into_string();
         assert!(markup.contains("Dead"));
         assert!(markup.contains("Currently viewed"));
         assert!(markup.contains("View Fallen Adventurer"));

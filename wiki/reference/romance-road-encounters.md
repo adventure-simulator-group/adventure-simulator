@@ -482,13 +482,11 @@ narrative-only choices that claim authoritative mechanics. Ownership/custody
 (#377), crime response (#374), negotiation (#373), and consent (#376) can
 replace remaining narrative consequences without encounter-specific reducers.
 
-Developer builds expose a generic road-encounter demo reducer and HTTP route
-that accept a validated compiled catalog ID. The selected party leader must be
-at a reached journey camp; the encounter is then persisted through the same
-authority and resolution path as a chance occurrence. The public response
-contains only the safe presentation projection and never catalog provenance.
-Camp alone renders the developer-only selector, populated from the compiled
-catalog, so adding encounters does not require shared navigation controls.
+The development scenario gallery materializes one character per compiled road
+encounter at a reached journey camp. Each occurrence is persisted through the
+same authority and resolution path as a chance occurrence and is reused by
+stable identity if bootstrap runs again. Select the matching scenario character
+instead of mutating the currently selected party.
 
 The validator requires a consequence-free ignore choice plus at least two
 mechanically distinct non-ignore routes, rejects zero requirements/effects/

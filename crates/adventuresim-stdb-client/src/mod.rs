@@ -14,6 +14,7 @@ pub mod active_pregnancy_type;
 pub mod activity_incident_entropy_type;
 pub mod administer_preparation_reducer;
 pub mod admit_household_occupant_reducer;
+pub mod adopt_development_scenarios_reducer;
 pub mod advance_simulation_world_time_reducer;
 pub mod affinity_band_type;
 pub mod agricultural_commodity_type;
@@ -77,6 +78,10 @@ pub mod backend_corpse_type;
 pub mod backend_corpses_table;
 pub mod backend_courtship_discoveries_table;
 pub mod backend_courtship_discovery_status_type;
+pub mod backend_development_quest_type;
+pub mod backend_development_quests_table;
+pub mod backend_development_scenario_type;
+pub mod backend_development_scenarios_table;
 pub mod backend_dialogue_event_type;
 pub mod backend_dialogue_events_table;
 pub mod backend_dialogue_participant_type;
@@ -283,6 +288,10 @@ pub mod derived_historical_vegetation_method_type;
 pub mod derived_historical_vegetation_type;
 pub mod derived_industry_type;
 pub mod designate_residence_reducer;
+pub mod development_scenario_browser_access_type;
+pub mod development_scenario_subject_type;
+pub mod development_scenario_type;
+pub mod development_scenario_update_receipt_type;
 pub mod dialogue_action_type;
 pub mod dialogue_answer_type;
 pub mod dialogue_event_type;
@@ -332,7 +341,6 @@ pub mod equipment_occupancy_type;
 pub mod equipment_parent_requirement_type;
 pub mod equipment_placement_type;
 pub mod errantry_authority_type;
-pub mod errantry_puzzle_kind_type;
 pub mod estate_disposition_status_type;
 pub mod estate_disposition_type;
 pub mod estate_heir_kind_type;
@@ -479,10 +487,6 @@ pub mod limb_injury_type;
 pub mod limb_region_type;
 pub mod lineage_control_claim_type;
 pub mod liquidate_party_inventory_reducer;
-pub mod load_autopsy_demo_reducer;
-pub mod load_outbreak_demo_reducer;
-pub mod load_puzzle_demo_reducer;
-pub mod load_road_encounter_demo_reducer;
 pub mod local_chat_message_type;
 pub mod local_problem_authority_type;
 pub mod local_problem_generation_explanation_type;
@@ -830,6 +834,7 @@ pub mod travel_to_settlement_reducer;
 pub mod treat_limb_reducer;
 pub mod tree_species_id_type;
 pub mod tree_species_profile_type;
+pub mod trigger_development_scenario_incident_reducer;
 pub mod unconsolidated_deposit_type;
 pub mod update_character_reducer;
 pub mod update_party_check_targets_reducer;
@@ -861,6 +866,7 @@ pub use active_pregnancy_type::ActivePregnancy;
 pub use activity_incident_entropy_type::ActivityIncidentEntropy;
 pub use administer_preparation_reducer::administer_preparation;
 pub use admit_household_occupant_reducer::admit_household_occupant;
+pub use adopt_development_scenarios_reducer::adopt_development_scenarios;
 pub use advance_simulation_world_time_reducer::advance_simulation_world_time;
 pub use affinity_band_type::AffinityBand;
 pub use agricultural_commodity_type::AgriculturalCommodity;
@@ -924,6 +930,10 @@ pub use backend_corpse_type::BackendCorpse;
 pub use backend_corpses_table::*;
 pub use backend_courtship_discoveries_table::*;
 pub use backend_courtship_discovery_status_type::BackendCourtshipDiscoveryStatus;
+pub use backend_development_quest_type::BackendDevelopmentQuest;
+pub use backend_development_quests_table::*;
+pub use backend_development_scenario_type::BackendDevelopmentScenario;
+pub use backend_development_scenarios_table::*;
 pub use backend_dialogue_event_type::BackendDialogueEvent;
 pub use backend_dialogue_events_table::*;
 pub use backend_dialogue_participant_type::BackendDialogueParticipant;
@@ -1130,6 +1140,10 @@ pub use derived_historical_vegetation_method_type::DerivedHistoricalVegetationMe
 pub use derived_historical_vegetation_type::DerivedHistoricalVegetation;
 pub use derived_industry_type::DerivedIndustry;
 pub use designate_residence_reducer::designate_residence;
+pub use development_scenario_browser_access_type::DevelopmentScenarioBrowserAccess;
+pub use development_scenario_subject_type::DevelopmentScenarioSubject;
+pub use development_scenario_type::DevelopmentScenario;
+pub use development_scenario_update_receipt_type::DevelopmentScenarioUpdateReceipt;
 pub use dialogue_action_type::DialogueAction;
 pub use dialogue_answer_type::DialogueAnswer;
 pub use dialogue_event_type::DialogueEvent;
@@ -1179,7 +1193,6 @@ pub use equipment_occupancy_type::EquipmentOccupancy;
 pub use equipment_parent_requirement_type::EquipmentParentRequirement;
 pub use equipment_placement_type::EquipmentPlacement;
 pub use errantry_authority_type::ErrantryAuthority;
-pub use errantry_puzzle_kind_type::ErrantryPuzzleKind;
 pub use estate_disposition_status_type::EstateDispositionStatus;
 pub use estate_disposition_type::EstateDisposition;
 pub use estate_heir_kind_type::EstateHeirKind;
@@ -1326,10 +1339,6 @@ pub use limb_injury_type::LimbInjury;
 pub use limb_region_type::LimbRegion;
 pub use lineage_control_claim_type::LineageControlClaim;
 pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
-pub use load_autopsy_demo_reducer::load_autopsy_demo;
-pub use load_outbreak_demo_reducer::load_outbreak_demo;
-pub use load_puzzle_demo_reducer::load_puzzle_demo;
-pub use load_road_encounter_demo_reducer::load_road_encounter_demo;
 pub use local_chat_message_type::LocalChatMessage;
 pub use local_problem_authority_type::LocalProblemAuthority;
 pub use local_problem_generation_explanation_type::LocalProblemGenerationExplanation;
@@ -1677,6 +1686,7 @@ pub use travel_to_settlement_reducer::travel_to_settlement;
 pub use treat_limb_reducer::treat_limb;
 pub use tree_species_id_type::TreeSpeciesId;
 pub use tree_species_profile_type::TreeSpeciesProfile;
+pub use trigger_development_scenario_incident_reducer::trigger_development_scenario_incident;
 pub use unconsolidated_deposit_type::UnconsolidatedDeposit;
 pub use update_character_reducer::update_character;
 pub use update_party_check_targets_reducer::update_party_check_targets;
@@ -1738,6 +1748,9 @@ pub enum Reducer {
         owner_character_id: u64,
         holding_id: String,
         occupant_id: u64,
+    },
+    AdoptDevelopmentScenarios {
+        owner_key: String,
     },
     AdvanceSimulationWorldTime {
         nonce: String,
@@ -1801,7 +1814,6 @@ pub enum Reducer {
     },
     BootstrapDevelopmentWorld {
         bootstrap_token: String,
-        include_visual_demos: bool,
     },
     BurnCorpse {
         actor_id: u64,
@@ -2088,20 +2100,6 @@ pub enum Reducer {
         settlement_id: String,
         party_inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
-    },
-    LoadAutopsyDemo {
-        character_id: u64,
-    },
-    LoadOutbreakDemo {
-        character_id: u64,
-    },
-    LoadPuzzleDemo {
-        character_id: u64,
-        puzzle_kind: ErrantryPuzzleKind,
-    },
-    LoadRoadEncounterDemo {
-        character_id: u64,
-        catalog_id: String,
     },
     OpenCorpse {
         actor_id: u64,
@@ -2513,6 +2511,11 @@ pub enum Reducer {
         projectile_id: Option<u64>,
         use_soap: bool,
     },
+    TriggerDevelopmentScenarioIncident {
+        scenario_slug: String,
+        problem_id: String,
+        request_id: String,
+    },
     UpdateCharacter {
         id: u64,
         name: String,
@@ -2560,6 +2563,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::AcceptPartyJoinRequest { .. } => "accept_party_join_request",
             Reducer::AdministerPreparation { .. } => "administer_preparation",
             Reducer::AdmitHouseholdOccupant { .. } => "admit_household_occupant",
+            Reducer::AdoptDevelopmentScenarios { .. } => "adopt_development_scenarios",
             Reducer::AdvanceSimulationWorldTime { .. } => "advance_simulation_world_time",
             Reducer::AnswerDialoguePrompt { .. } => "answer_dialogue_prompt",
             Reducer::ApproachDialogueWitness { .. } => "approach_dialogue_witness",
@@ -2638,10 +2642,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
-            Reducer::LoadAutopsyDemo { .. } => "load_autopsy_demo",
-            Reducer::LoadOutbreakDemo { .. } => "load_outbreak_demo",
-            Reducer::LoadPuzzleDemo { .. } => "load_puzzle_demo",
-            Reducer::LoadRoadEncounterDemo { .. } => "load_road_encounter_demo",
             Reducer::OpenCorpse { .. } => "open_corpse",
             Reducer::PayOrganizationDues { .. } => "pay_organization_dues",
             Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
@@ -2729,6 +2729,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::TravelToSettlement { .. } => "travel_to_settlement",
             Reducer::TravelToSettlementPlanned { .. } => "travel_to_settlement_planned",
             Reducer::TreatLimb { .. } => "treat_limb",
+            Reducer::TriggerDevelopmentScenarioIncident { .. } => {
+                "trigger_development_scenario_incident"
+            }
             Reducer::UpdateCharacter { .. } => "update_character",
             Reducer::UpdatePartyCheckTargets { .. } => "update_party_check_targets",
             Reducer::UpdateRecruitmentRole { .. } => "update_recruitment_role",
@@ -2797,6 +2800,11 @@ impl __sdk::Reducer for Reducer {
                 owner_character_id: owner_character_id.clone(),
                 holding_id: holding_id.clone(),
                 occupant_id: occupant_id.clone(),
+}),
+            Reducer::AdoptDevelopmentScenarios{
+                owner_key,
+}             => __sats::bsatn::to_vec(&adopt_development_scenarios_reducer::AdoptDevelopmentScenariosArgs {
+                owner_key: owner_key.clone(),
 }),
             Reducer::AdvanceSimulationWorldTime{
                 nonce,
@@ -2909,10 +2917,8 @@ Reducer::BeginFormalCourtship{
 }),
             Reducer::BootstrapDevelopmentWorld{
                 bootstrap_token,
-                include_visual_demos,
 }             => __sats::bsatn::to_vec(&bootstrap_development_world_reducer::BootstrapDevelopmentWorldArgs {
                 bootstrap_token: bootstrap_token.clone(),
-                include_visual_demos: include_visual_demos.clone(),
 }),
             Reducer::BurnCorpse{
                 actor_id,
@@ -3428,30 +3434,6 @@ Reducer::BeginFormalCourtship{
                 settlement_id: settlement_id.clone(),
                 party_inventory_item_ids: party_inventory_item_ids.clone(),
                 quantities: quantities.clone(),
-}),
-            Reducer::LoadAutopsyDemo{
-                character_id,
-}             => __sats::bsatn::to_vec(&load_autopsy_demo_reducer::LoadAutopsyDemoArgs {
-                character_id: character_id.clone(),
-}),
-            Reducer::LoadOutbreakDemo{
-                character_id,
-}             => __sats::bsatn::to_vec(&load_outbreak_demo_reducer::LoadOutbreakDemoArgs {
-                character_id: character_id.clone(),
-}),
-            Reducer::LoadPuzzleDemo{
-                character_id,
-                puzzle_kind,
-}             => __sats::bsatn::to_vec(&load_puzzle_demo_reducer::LoadPuzzleDemoArgs {
-                character_id: character_id.clone(),
-                puzzle_kind: puzzle_kind.clone(),
-}),
-            Reducer::LoadRoadEncounterDemo{
-                character_id,
-                catalog_id,
-}             => __sats::bsatn::to_vec(&load_road_encounter_demo_reducer::LoadRoadEncounterDemoArgs {
-                character_id: character_id.clone(),
-                catalog_id: catalog_id.clone(),
 }),
             Reducer::OpenCorpse{
                 actor_id,
@@ -4194,6 +4176,15 @@ Reducer::BeginFormalCourtship{
                 projectile_id: projectile_id.clone(),
                 use_soap: use_soap.clone(),
 }),
+            Reducer::TriggerDevelopmentScenarioIncident{
+                scenario_slug,
+                problem_id,
+                request_id,
+}             => __sats::bsatn::to_vec(&trigger_development_scenario_incident_reducer::TriggerDevelopmentScenarioIncidentArgs {
+                scenario_slug: scenario_slug.clone(),
+                problem_id: problem_id.clone(),
+                request_id: request_id.clone(),
+}),
             Reducer::UpdateCharacter{
                 id,
                 name,
@@ -4294,6 +4285,8 @@ pub struct DbUpdate {
     backend_contracts: __sdk::TableUpdate<BackendContract>,
     backend_corpses: __sdk::TableUpdate<BackendCorpse>,
     backend_courtship_discoveries: __sdk::TableUpdate<BackendCourtshipDiscoveryStatus>,
+    backend_development_quests: __sdk::TableUpdate<BackendDevelopmentQuest>,
+    backend_development_scenarios: __sdk::TableUpdate<BackendDevelopmentScenario>,
     backend_dialogue_events: __sdk::TableUpdate<BackendDialogueEvent>,
     backend_dialogue_participants: __sdk::TableUpdate<BackendDialogueParticipant>,
     backend_dialogue_prompts: __sdk::TableUpdate<BackendDialoguePrompt>,
@@ -4517,6 +4510,12 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                     .append(backend_corpses_table::parse_table_update(table_update)?),
                 "backend_courtship_discoveries" => db_update.backend_courtship_discoveries.append(
                     backend_courtship_discoveries_table::parse_table_update(table_update)?,
+                ),
+                "backend_development_quests" => db_update.backend_development_quests.append(
+                    backend_development_quests_table::parse_table_update(table_update)?,
+                ),
+                "backend_development_scenarios" => db_update.backend_development_scenarios.append(
+                    backend_development_scenarios_table::parse_table_update(table_update)?,
                 ),
                 "backend_dialogue_events" => db_update.backend_dialogue_events.append(
                     backend_dialogue_events_table::parse_table_update(table_update)?,
@@ -5176,6 +5175,15 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_courtship_discoveries",
                 &self.backend_courtship_discoveries,
             );
+        diff.backend_development_quests = cache.apply_diff_to_table::<BackendDevelopmentQuest>(
+            "backend_development_quests",
+            &self.backend_development_quests,
+        );
+        diff.backend_development_scenarios = cache
+            .apply_diff_to_table::<BackendDevelopmentScenario>(
+                "backend_development_scenarios",
+                &self.backend_development_scenarios,
+            );
         diff.backend_dialogue_events = cache.apply_diff_to_table::<BackendDialogueEvent>(
             "backend_dialogue_events",
             &self.backend_dialogue_events,
@@ -5423,6 +5431,12 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_courtship_discoveries" => db_update
                     .backend_courtship_discoveries
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_development_quests" => db_update
+                    .backend_development_quests
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_development_scenarios" => db_update
+                    .backend_development_scenarios
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_dialogue_events" => db_update
                     .backend_dialogue_events
@@ -5788,6 +5802,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_courtship_discoveries" => db_update
                     .backend_courtship_discoveries
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_development_quests" => db_update
+                    .backend_development_quests
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_development_scenarios" => db_update
+                    .backend_development_scenarios
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_dialogue_events" => db_update
                     .backend_dialogue_events
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -6092,6 +6112,8 @@ pub struct AppliedDiff<'r> {
     backend_contracts: __sdk::TableAppliedDiff<'r, BackendContract>,
     backend_corpses: __sdk::TableAppliedDiff<'r, BackendCorpse>,
     backend_courtship_discoveries: __sdk::TableAppliedDiff<'r, BackendCourtshipDiscoveryStatus>,
+    backend_development_quests: __sdk::TableAppliedDiff<'r, BackendDevelopmentQuest>,
+    backend_development_scenarios: __sdk::TableAppliedDiff<'r, BackendDevelopmentScenario>,
     backend_dialogue_events: __sdk::TableAppliedDiff<'r, BackendDialogueEvent>,
     backend_dialogue_participants: __sdk::TableAppliedDiff<'r, BackendDialogueParticipant>,
     backend_dialogue_prompts: __sdk::TableAppliedDiff<'r, BackendDialoguePrompt>,
@@ -6357,6 +6379,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendCourtshipDiscoveryStatus>(
             "backend_courtship_discoveries",
             &self.backend_courtship_discoveries,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendDevelopmentQuest>(
+            "backend_development_quests",
+            &self.backend_development_quests,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendDevelopmentScenario>(
+            "backend_development_scenarios",
+            &self.backend_development_scenarios,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendDialogueEvent>(
@@ -7436,6 +7468,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_contracts_table::register_table(client_cache);
         backend_corpses_table::register_table(client_cache);
         backend_courtship_discoveries_table::register_table(client_cache);
+        backend_development_quests_table::register_table(client_cache);
+        backend_development_scenarios_table::register_table(client_cache);
         backend_dialogue_events_table::register_table(client_cache);
         backend_dialogue_participants_table::register_table(client_cache);
         backend_dialogue_prompts_table::register_table(client_cache);
@@ -7555,6 +7589,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_contracts",
         "backend_corpses",
         "backend_courtship_discoveries",
+        "backend_development_quests",
+        "backend_development_scenarios",
         "backend_dialogue_events",
         "backend_dialogue_participants",
         "backend_dialogue_prompts",

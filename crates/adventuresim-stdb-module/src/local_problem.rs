@@ -27,6 +27,8 @@ pub struct LocalProblemAuthority {
     #[primary_key]
     pub id: String,
     #[index(btree)]
+    pub gateway_bucket: u8,
+    #[index(btree)]
     pub scope_key: String,
     pub scope_json: String,
     /// Symptom-to-effect mechanism only. Canonical cause belongs exclusively
@@ -344,7 +346,7 @@ pub fn backend_local_problem_rumors(ctx: &ViewContext) -> Vec<BackendLocalProble
         .collect()
 }
 
-fn official_minute(ctx: &ReducerContext) -> u64 {
+pub(crate) fn official_minute(ctx: &ReducerContext) -> u64 {
     ctx.db
         .world_clock()
         .id()
@@ -414,6 +416,7 @@ pub(crate) fn materialize_generated_problem(
         .local_problem_authority()
         .insert(LocalProblemAuthority {
             id: case.problem_id.clone(),
+            gateway_bucket: 0,
             scope_key,
             scope_json: serde_json::to_string(&scope)
                 .map_err(|_| "Could not encode generated problem scope")?,
@@ -494,6 +497,52 @@ pub(crate) fn ensure_generated_incidents(
     settlement_id: &str,
     minute: u64,
 ) -> Result<(), String> {
+    ensure_generated_incidents_inner(ctx, settlement_id, minute, None, None)
+}
+
+pub(crate) fn trigger_next_generated_incident(
+    ctx: &ReducerContext,
+    problem_id: &str,
+    occurred_at: u64,
+) -> Result<u16, String> {
+    let problem = ctx
+        .db
+        .local_problem_authority()
+        .id()
+        .find(problem_id.to_owned())
+        .ok_or("Generated problem not found")?;
+    if problem.resolved_at.is_some() {
+        return Err("Resolved generated problems cannot receive another incident".into());
+    }
+    let scope: lp::Scope = serde_json::from_str(&problem.scope_json)
+        .map_err(|_| "Generated problem scope authority is invalid")?;
+    let lp::Scope::Settlement { settlement_id } = scope else {
+        return Err("Only settlement generated problems support manual incidents".into());
+    };
+    let validated = validated_problem_generation(ctx, &problem, &settlement_id)
+        .ok_or("Generated problem has no valid private generation authority")?;
+    if !problem.recurring_hostile && problem.incident_count >= validated.manifest.maximum_incidents
+    {
+        return Err("Generated problem has reached its incident maximum".into());
+    }
+    let next = problem.incident_count.saturating_add(1);
+    ensure_generated_incidents_inner(
+        ctx,
+        &settlement_id,
+        occurred_at,
+        Some(problem_id),
+        Some(occurred_at),
+    )?;
+    Ok(next)
+}
+
+fn ensure_generated_incidents_inner(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    minute: u64,
+    target_problem_id: Option<&str>,
+    forced_occurred_at: Option<u64>,
+) -> Result<(), String> {
     let scope = format!("settlement:{settlement_id}");
     let problems: Vec<_> = ctx
         .db
@@ -501,6 +550,7 @@ pub(crate) fn ensure_generated_incidents(
         .scope_key()
         .filter(&scope)
         .filter(|problem| is_active(problem, minute))
+        .filter(|problem| target_problem_id.is_none_or(|id| problem.id == id))
         .collect();
     for mut problem in problems {
         let Some(validated) = validated_problem_generation(ctx, &problem, settlement_id) else {
@@ -511,12 +561,19 @@ pub(crate) fn ensure_generated_incidents(
         } else {
             validated.manifest.maximum_incidents
         };
-        let total_due = lp::due_incident_count_configured(
-            problem.starts_at,
-            minute,
-            validated.manifest.incident_interval_minutes,
-            configured_maximum,
-        );
+        let total_due = if target_problem_id.is_some() {
+            problem
+                .incident_count
+                .saturating_add(1)
+                .min(configured_maximum)
+        } else {
+            lp::due_incident_count_configured(
+                problem.starts_at,
+                minute,
+                validated.manifest.incident_interval_minutes,
+                configured_maximum,
+            )
+        };
         // Bound one transaction's catch-up work. Repeated settlement refreshes
         // deterministically continue from the persisted ordinal.
         let due = total_due.min(problem.incident_count.saturating_add(16));
@@ -559,10 +616,12 @@ pub(crate) fn ensure_generated_incidents(
             let event_id = format!("{id}:event");
             let proposition_id = format!("{id}:proposition");
             let evidence_id = format!("{id}:evidence");
-            let occurred_at = problem.starts_at.saturating_add(
-                u64::from(ordinal.saturating_sub(1))
-                    .saturating_mul(validated.manifest.incident_interval_minutes),
-            );
+            let occurred_at = forced_occurred_at.unwrap_or_else(|| {
+                problem.starts_at.saturating_add(
+                    u64::from(ordinal.saturating_sub(1))
+                        .saturating_mul(validated.manifest.incident_interval_minutes),
+                )
+            });
             let public_summary = follow_up_summary(&problem.symptom).to_owned();
             let witness_account = format!(
                 "{} reported seeing signs near {} while {}.",
@@ -644,12 +703,13 @@ pub(crate) fn ensure_generated_incidents(
             if problem.public_since_minute.is_none()
                 && adventuresim_core::threat_escalation::is_public(problem.public_awareness_bps)
             {
-                problem.public_since_minute =
+                problem.public_since_minute = forced_occurred_at.or_else(|| {
                     adventuresim_core::threat_escalation::scheduled_public_since_minute(
                         problem.starts_at,
                         validated.manifest.incident_interval_minutes,
                         profile.investigation.investigability,
-                    );
+                    )
+                });
                 if problem.public_since_minute.is_none() {
                     return Err("Public awareness crossed without a crossing ordinal".into());
                 }
@@ -727,6 +787,7 @@ pub fn ensure_settlement_problems(ctx: &ReducerContext, settlement_id: &str) -> 
         .local_problem_authority()
         .insert(LocalProblemAuthority {
             id: problem.id.0.clone(),
+            gateway_bucket: 0,
             scope_key: key,
             scope_json: serde_json::to_string(&scope)
                 .map_err(|_| "Could not encode problem scope")?,
@@ -800,6 +861,7 @@ pub fn ensure_route_problem(
         .local_problem_authority()
         .insert(LocalProblemAuthority {
             id: problem.id.0.clone(),
+            gateway_bucket: 0,
             scope_key: key,
             scope_json: serde_json::to_string(&scope)
                 .map_err(|_| "Could not encode route scope")?,
@@ -1520,6 +1582,91 @@ fn surface_new_problem(
     Ok(true)
 }
 
+/// Development-gallery seam that establishes the same receipt, referral, and
+/// journal-visible action graph as a completed local rumor interaction, plus
+/// the dry journal notice required to index the case immediately. It accepts
+/// only one exact already-materialized problem in the selected character's
+/// current settlement.
+pub(crate) fn discover_development_problem(
+    ctx: &ReducerContext,
+    character_id: u64,
+    problem_id: &str,
+    scenario_slug: &str,
+) -> Result<(), String> {
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    let settlement_id = character
+        .current_settlement_id
+        .ok_or("Development quest discovery requires a settlement")?;
+    let problem = ctx
+        .db
+        .local_problem_authority()
+        .id()
+        .find(&problem_id.to_owned())
+        .ok_or("Development quest problem is missing")?;
+    if problem.scope_key != format!("settlement:{settlement_id}") {
+        return Err("Development quest problem is outside its scenario settlement".into());
+    }
+    let validated = validated_problem_generation(ctx, &problem, &settlement_id)
+        .ok_or("Development quest problem has invalid generation authority")?;
+    let witness = validated
+        .manifest
+        .witnesses
+        .first()
+        .ok_or("Development quest problem has no rumor witness")?;
+    let source = crate::settlement_population::resolve_settlement_resident(
+        ctx,
+        witness.resident_character_id,
+    )
+    .ok_or("Development quest rumor witness is missing")?;
+    let observer_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or("Development quest character time is missing")?
+        .minutes;
+    let official_world_minute = official_minute(ctx);
+    let session_id = format!("development-scenario:{scenario_slug}:rumor");
+    surface_new_problem(
+        ctx,
+        &problem,
+        character_id,
+        &session_id,
+        source.character_id,
+        Some(&source),
+        &settlement_id,
+        observer_minute,
+        official_world_minute,
+    )?;
+    let receipt_id = format!("{character_id}:{}", problem.id);
+    crate::investigation::receive_local_problem_rumor_for_development_bootstrap(
+        ctx,
+        character_id,
+        receipt_id.clone(),
+        format!("development-scenario:{scenario_slug}:receive-rumor"),
+    )?;
+    let receipt = ctx
+        .db
+        .local_problem_receipt()
+        .id()
+        .find(&receipt_id)
+        .ok_or("Development quest rumor receipt is missing")?;
+    crate::investigation::record_journal_notice(
+        ctx,
+        character_id,
+        &validated.manifest.public_case_id,
+        &format!("development-scenario:{scenario_slug}:discovered-rumor"),
+        &receipt.safe_summary,
+        "local rumor",
+        receipt.learned_at,
+    )?;
+    ctx.db
+        .local_problem_rumor_preference()
+        .character_id()
+        .delete(character_id);
+    Ok(())
+}
+
 /// Surface at most one active problem. A private one-shot preference may order
 /// an explicit development demo first, but disclosure still occurs through
 /// ordinary eligible rumor dialogue and creates the normal observer receipt.
@@ -2127,6 +2274,37 @@ mod tests {
             demo.find("materialize_generated_quest(").unwrap()
                 < demo.rfind("prefer_next_rumor(").unwrap()
         );
+    }
+
+    #[test]
+    fn development_discovery_uses_bootstrap_safe_rumor_transition() {
+        let source = include_str!("local_problem.rs");
+        let discovery = source
+            .split("pub(crate) fn discover_development_problem")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn surface_problem").next())
+            .expect("development problem discovery implementation");
+        assert!(discovery.contains("receive_local_problem_rumor_for_development_bootstrap"));
+        assert!(!discovery.contains("crate::investigation::receive_local_problem_rumor("));
+        assert!(discovery.contains("record_journal_notice"));
+
+        let investigation = crate::investigation::INVESTIGATION_SOURCE;
+        let external = investigation
+            .split("pub fn receive_local_problem_rumor(")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub(crate) fn receive_local_problem_rumor_for_development_bootstrap")
+                    .next()
+            })
+            .expect("external rumor reducer");
+        assert!(external.contains("require_actor(ctx, character_id)?"));
+        let bootstrap = investigation
+            .split("pub(crate) fn receive_local_problem_rumor_for_development_bootstrap")
+            .nth(1)
+            .and_then(|tail| tail.split("fn receive_local_problem_rumor_impl").next())
+            .expect("bootstrap rumor transition");
+        assert!(bootstrap.contains("development_capability_enabled()"));
+        assert!(!bootstrap.contains("require_strategic_gateway"));
     }
 
     #[test]

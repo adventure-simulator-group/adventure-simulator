@@ -87,6 +87,11 @@ pub fn journal_page(
                 record.source.clone(),
             )
         });
+        rows.dedup_by(|left, right| {
+            left.recorded_at == right.recorded_at
+                && left.summary == right.summary
+                && left.source == right.source
+        });
     }
 
     let content = html! {
@@ -226,6 +231,28 @@ mod tests {
         }
     }
 
+    fn entry(
+        case_id: &str,
+        record_id: &str,
+        summary: &str,
+        source_label: &str,
+        recorded_at: u64,
+    ) -> BackendInvestigationJournalEntry {
+        BackendInvestigationJournalEntry {
+            owner_character_id: 1,
+            case_id: case_id.into(),
+            record_id: record_id.into(),
+            kind: "notice".into(),
+            summary: summary.into(),
+            source_label: source_label.into(),
+            confidence_bps: 0,
+            contradiction_group: String::new(),
+            corrected_by: String::new(),
+            supersedes: String::new(),
+            recorded_at,
+        }
+    }
+
     #[test]
     fn journal_orders_open_cases_by_recency_before_closed_cases() {
         let cases = [
@@ -307,6 +334,30 @@ mod tests {
         assert!(!markup.contains("Expected at: workshops"));
         assert!(!markup.contains("Directions: beyond the mill"));
         assert!(!markup.contains("data-exact-destination"));
+    }
+
+    #[test]
+    fn journal_deduplicates_only_identical_notice_and_lead_presentations() {
+        let summary = "Several expected caravans have not arrived.";
+        let notice = entry("case", "notice", summary, "local rumor", 7);
+        let duplicate_lead = lead("case", "lead", summary, "local rumor", 7);
+        let later_repeat = lead("case", "later", summary, "local rumor", 8);
+        let distinct_source = lead("case", "witness", summary, "the carter", 7);
+        let cases = [case("case", "Missing caravans", "open", 8)];
+
+        let markup = journal_page(
+            &[notice],
+            &[duplicate_lead, later_repeat, distinct_source],
+            &cases,
+            &[],
+            "Ada",
+            None,
+        )
+        .into_string();
+
+        assert_eq!(markup.matches(summary).count(), 3);
+        assert_eq!(markup.matches("Source: local rumor").count(), 2);
+        assert_eq!(markup.matches("Source: the carter").count(), 1);
     }
 
     #[test]
