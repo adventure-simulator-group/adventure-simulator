@@ -597,11 +597,64 @@ pub struct SkeletonLocomotionInput {
     pub tick: u64,
 }
 
+/// Maximum server-authoritative body turn speed during ordinary locomotion.
+pub const BODY_TURN_SPEED_RADIANS: f32 = 10.0;
+
+/// Returns the controller's yaw without allowing camera pitch or roll to tilt
+/// planar locomotion into or out of the ground plane.
+pub fn controller_yaw(orientation: Quat) -> Quat {
+    let forward = orientation * Vec3::NEG_Z;
+    let Some(flat_forward) = forward.xz().try_normalize() else {
+        return Quat::IDENTITY;
+    };
+    Quat::from_rotation_y((-flat_forward.x).atan2(-flat_forward.y))
+}
+
+/// Advances the authored body's +Z forward axis toward its single desired
+/// world direction. Attack and block are the current guard boundary and keep
+/// look-facing; all other moving states face authoritative planar velocity.
+/// At exactly 180 degrees the positive turn direction is chosen consistently,
+/// avoiding a normalize-through-zero snap.
+pub fn advance_body_facing(
+    current: Quat,
+    controller_orientation: Quat,
+    linear_velocity: Vec3,
+    action: SkeletonAction,
+    delta_seconds: f32,
+) -> Quat {
+    let current_yaw = body_yaw(current);
+    let desired_forward = if matches!(action, SkeletonAction::Attack | SkeletonAction::Block) {
+        controller_yaw(controller_orientation) * Vec3::NEG_Z
+    } else {
+        if linear_velocity.xz().length() <= 0.05 {
+            return Quat::from_rotation_y(current_yaw);
+        }
+        let Some(direction) = linear_velocity.xz().try_normalize() else {
+            return Quat::from_rotation_y(current_yaw);
+        };
+        Vec3::new(direction.x, 0.0, direction.y)
+    };
+    let desired_yaw = desired_forward.x.atan2(desired_forward.z);
+    let mut delta = (desired_yaw - current_yaw + std::f32::consts::PI)
+        .rem_euclid(std::f32::consts::TAU)
+        - std::f32::consts::PI;
+    if (delta + std::f32::consts::PI).abs() <= 1.0e-5 {
+        delta = std::f32::consts::PI;
+    }
+    let maximum = (BODY_TURN_SPEED_RADIANS * delta_seconds.max(0.0)).min(std::f32::consts::PI);
+    Quat::from_rotation_y(current_yaw + delta.clamp(-maximum, maximum))
+}
+
+fn body_yaw(rotation: Quat) -> f32 {
+    let forward = rotation * Vec3::Z;
+    forward.x.atan2(forward.z)
+}
+
 /// Projects controller motion into the compact replicated animation state.
 /// Bone evaluation remains client-only; this is the shared server seam that
 /// keeps deterministic captures on the same stride and posture rules.
 pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: SkeletonLocomotionInput) {
-    let local_velocity = input.orientation.inverse() * input.linear_velocity;
+    let local_velocity = controller_yaw(input.orientation).inverse() * input.linear_velocity;
     skeleton.local_velocity = local_velocity;
     skeleton.grounded = input.grounded;
     skeleton.posture = if input.grounded {
@@ -1153,6 +1206,52 @@ mod tests {
         assert!((state.local_velocity - local_velocity).length() < 0.0001);
         assert!((state.gait_phase - 2.0 / (0.9 + 2.0 * 0.16) / 64.0).abs() < 0.0001);
         assert_eq!(state.lead_foot, LeadFoot::Left);
+    }
+
+    #[test]
+    fn planar_projection_ignores_camera_pitch() {
+        let yaw = 0.7;
+        let orientation = Quat::from_euler(EulerRot::YXZ, yaw, 1.25, 0.0);
+        let world_velocity = Quat::from_rotation_y(yaw) * Vec3::NEG_Z * 3.0;
+        let mut state = SkeletonState::default();
+        project_skeleton_locomotion(
+            &mut state,
+            SkeletonLocomotionInput {
+                orientation,
+                linear_velocity: world_velocity,
+                grounded: true,
+                crouching: false,
+                delta_seconds: 1.0 / 64.0,
+                tick: 1,
+            },
+        );
+        assert!(state.local_velocity.abs_diff_eq(Vec3::NEG_Z * 3.0, 0.0001));
+    }
+
+    #[test]
+    fn body_facing_is_bounded_and_uses_stable_half_turn() {
+        let first = advance_body_facing(
+            Quat::IDENTITY,
+            Quat::IDENTITY,
+            Vec3::NEG_Z,
+            SkeletonAction::None,
+            1.0 / 64.0,
+        );
+        let angle = Quat::IDENTITY.angle_between(first);
+        assert!((angle - BODY_TURN_SPEED_RADIANS / 64.0).abs() < 0.0001);
+        assert!(
+            (first * Vec3::Z).x > 0.0,
+            "exact reversal chooses positive yaw"
+        );
+    }
+
+    #[test]
+    fn guard_faces_look_while_locomotion_faces_world_velocity() {
+        let look = Quat::from_rotation_y(0.8);
+        let guard = advance_body_facing(Quat::IDENTITY, look, Vec3::X, SkeletonAction::Block, 1.0);
+        assert!((guard * Vec3::Z).abs_diff_eq(look * Vec3::NEG_Z, 0.0001));
+        let travel = advance_body_facing(Quat::IDENTITY, look, Vec3::X, SkeletonAction::None, 1.0);
+        assert!((travel * Vec3::Z).abs_diff_eq(Vec3::X, 0.0001));
     }
 
     #[test]

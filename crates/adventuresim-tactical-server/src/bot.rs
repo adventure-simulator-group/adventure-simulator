@@ -102,7 +102,8 @@ mod tests {
         let actor = world
             .spawn((
                 Player::default(),
-                Transform::from_translation(position),
+                Transform::from_translation(position)
+                    .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
                 side,
                 CharacterLook::default(),
                 input::AccumulatedInput::default(),
@@ -139,7 +140,8 @@ mod tests {
         let actor = world
             .spawn((
                 Player::default(),
-                Transform::from_translation(position),
+                Transform::from_translation(position)
+                    .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
                 side,
                 CharacterLook::default(),
                 input::AccumulatedInput::default(),
@@ -179,7 +181,8 @@ mod tests {
         world
             .spawn((
                 Player::default(),
-                Transform::from_translation(position),
+                Transform::from_translation(position)
+                    .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
                 side,
                 CharacterLook::default(),
                 TacticalCombatState::default(),
