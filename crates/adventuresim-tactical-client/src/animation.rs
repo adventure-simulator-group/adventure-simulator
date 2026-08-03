@@ -15,6 +15,11 @@ use bevy::{
 };
 
 mod procedural;
+
+#[allow(unused_imports)]
+pub(crate) use procedural::{
+    BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone, HumanoidIkTargets,
+};
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
 const ANIMATION_FPS: f32 = 30.0;
@@ -329,6 +334,7 @@ impl AnimationPackCatalog {
 #[derive(Debug, Clone)]
 struct LoadedClip {
     node: AnimationNodeIndex,
+    duration_seconds: f32,
 }
 
 #[derive(Resource, Default)]
@@ -353,6 +359,13 @@ pub(super) struct AnimationPlayback {
     clips: Vec<WeightedClip>,
     use_bind_pose_t: bool,
     pub(super) lower_body_mirror: f32,
+}
+
+impl AnimationPlayback {
+    #[allow(dead_code)] // Used by the standalone animation-viewer binary.
+    pub(super) fn authored_pose_is_ready(&self) -> bool {
+        !self.use_authored_bind_pose && !self.clips.is_empty()
+    }
 }
 
 impl Default for AnimationPlayback {
@@ -549,7 +562,19 @@ fn collect_loaded_packs(
     runtime.clips = ordered
         .into_iter()
         .zip(nodes)
-        .map(|((key, _handle), node)| (key, LoadedClip { node }))
+        .map(|((key, handle), node)| {
+            let duration_seconds = clips
+                .get(&handle)
+                .map(AnimationClip::duration)
+                .unwrap_or_default();
+            (
+                key,
+                LoadedClip {
+                    node,
+                    duration_seconds,
+                },
+            )
+        })
         .collect();
     runtime.graph = Some(graphs.add(graph));
     runtime.revision = runtime.revision.wrapping_add(1);
@@ -869,6 +894,12 @@ fn append_resolved_sample(
             frame_seconds(start.anchor.frame),
             sample.weight,
         ),
+        PoseSampling::Cycle { progress } => append_weighted(
+            weighted,
+            &start,
+            start.clip.duration_seconds * progress.rem_euclid(1.0),
+            sample.weight,
+        ),
         PoseSampling::Span { end, progress } => {
             let end_pose = end;
             let progress = progress.clamp(0.0, 1.0);
@@ -1166,11 +1197,17 @@ mod tests {
         };
         for pose in poses {
             let anchor = &catalog.packs[HUMANOID_UNARMED_PACK].poses[&pose];
+            let duration_seconds = catalog.packs[HUMANOID_UNARMED_PACK].motions[&anchor.motion]
+                .last_frame as f32
+                / ANIMATION_FPS;
             let next_node = AnimationNodeIndex::new(runtime.clips.len());
             runtime
                 .clips
                 .entry((HUMANOID_UNARMED_PACK.to_owned(), anchor.motion.clone()))
-                .or_insert(LoadedClip { node: next_node });
+                .or_insert(LoadedClip {
+                    node: next_node,
+                    duration_seconds,
+                });
         }
         runtime
     }
@@ -1198,6 +1235,27 @@ mod tests {
         );
         assert_eq!(weighted.len(), 1);
         assert!((weighted[0].time_seconds - 4.0 / 30.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn complete_cycle_uses_the_motion_frame_range() {
+        let catalog = AnimationPackCatalog::default();
+        let runtime = runtime_with_available([SemanticPose::WalkContact]);
+        let mut weighted = Vec::new();
+        append_resolved_sample(
+            &mut weighted,
+            &runtime,
+            &catalog,
+            HUMANOID_UNARMED_PACK,
+            PoseSample {
+                pose: SemanticPose::WalkContact,
+                sampling: PoseSampling::Cycle { progress: 0.5 },
+                weight: 1.0,
+                mirror_lower_body: 0.0,
+            },
+        );
+        assert_eq!(weighted.len(), 1);
+        assert!((weighted[0].time_seconds - 16.0 / ANIMATION_FPS).abs() < 0.0001);
     }
 
     #[test]
