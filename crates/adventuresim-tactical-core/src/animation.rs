@@ -589,6 +589,9 @@ impl SkeletonState {
 pub enum PoseSampling {
     /// Sample the pose's authoritative catalog frame.
     Anchor,
+    /// Sample the complete cyclic motion containing this pose. The client
+    /// maps normalized gait phase across the motion's catalog frame range.
+    Cycle { progress: f32 },
     /// Sample between two semantic anchors. The client uses one exact clip
     /// time when both anchors belong to the same motion and blends otherwise.
     Span { end: SemanticPose, progress: f32 },
@@ -600,7 +603,7 @@ pub struct PoseSample {
     pub sampling: PoseSampling,
     pub weight: f32,
     /// Continuous weight for exchanging and reflecting the authored left/right
-    /// leg transforms. Sparse gaits use this to synthesize their opposite half.
+    /// leg transforms when a resolved source lacks an authored opposite half.
     pub mirror_lower_body: f32,
 }
 
@@ -742,21 +745,14 @@ fn weighted_pair(a: SemanticPose, b: SemanticPose, b_weight: f32) -> Vec<PoseSam
     samples
 }
 
-fn gait_pair(phase: f32, contact: SemanticPose, passing: SemanticPose) -> Vec<PoseSample> {
-    let quarter_phase = phase.rem_euclid(1.0) * 4.0;
-    let quarter = (quarter_phase.floor() as u8).min(3);
-    let progress = quarter_phase.fract();
-    let (pose, end, mirror_lower_body) = match quarter {
-        0 => (contact, passing, 0.0),
-        1 => (passing, contact, progress),
-        2 => (contact, passing, 1.0),
-        _ => (passing, contact, 1.0 - progress),
-    };
+fn gait_pair(phase: f32, contact: SemanticPose, _passing: SemanticPose) -> Vec<PoseSample> {
     vec![PoseSample {
-        pose,
-        sampling: PoseSampling::Span { end, progress },
+        pose: contact,
+        sampling: PoseSampling::Cycle {
+            progress: phase.rem_euclid(1.0),
+        },
         weight: 1.0,
-        mirror_lower_body,
+        mirror_lower_body: 0.0,
     }]
 }
 
@@ -1055,44 +1051,36 @@ mod tests {
         let evaluation = AnimationEvaluation::from_skeleton(&state);
         assert_eq!(evaluation.base.len(), 2);
         assert!(evaluation.base.iter().any(|sample| {
-            sample.pose == SemanticPose::WalkPassing
-                && sample.sampling
-                    == (PoseSampling::Span {
-                        end: SemanticPose::WalkContact,
-                        progress: 0.0,
-                    })
+            sample.pose == SemanticPose::WalkContact
+                && sample.sampling == (PoseSampling::Cycle { progress: 0.25 })
                 && sample.weight == 0.5
         }));
         assert!(evaluation.base.iter().any(|sample| {
-            sample.pose == SemanticPose::RunFlight
-                && sample.sampling
-                    == (PoseSampling::Span {
-                        end: SemanticPose::RunContact,
-                        progress: 0.0,
-                    })
+            sample.pose == SemanticPose::RunContact
+                && sample.sampling == (PoseSampling::Cycle { progress: 0.25 })
                 && sample.weight == 0.5
         }));
     }
 
     #[test]
-    fn sparse_gait_mirrors_and_closes_the_authored_half_cycle() {
+    fn gait_samples_the_complete_authored_cycle() {
         let samples = [0.0, 0.25, 0.5, 0.75]
             .map(|phase| gait_pair(phase, SemanticPose::WalkContact, SemanticPose::WalkPassing)[0]);
-        assert_eq!(samples[0].pose, SemanticPose::WalkContact);
-        assert_eq!(samples[1].pose, SemanticPose::WalkPassing);
-        assert_eq!(samples[2].pose, SemanticPose::WalkContact);
-        assert_eq!(samples[3].pose, SemanticPose::WalkPassing);
-        assert_eq!(
-            samples.map(|sample| sample.mirror_lower_body),
-            [0.0, 0.0, 1.0, 1.0]
+        assert!(
+            samples
+                .iter()
+                .all(|sample| sample.pose == SemanticPose::WalkContact)
         );
-
-        let entering_mirror =
-            gait_pair(0.375, SemanticPose::WalkContact, SemanticPose::WalkPassing)[0];
-        let leaving_mirror =
-            gait_pair(0.875, SemanticPose::WalkContact, SemanticPose::WalkPassing)[0];
-        assert_eq!(entering_mirror.mirror_lower_body, 0.5);
-        assert_eq!(leaving_mirror.mirror_lower_body, 0.5);
+        assert_eq!(
+            samples.map(|sample| sample.sampling),
+            [
+                PoseSampling::Cycle { progress: 0.0 },
+                PoseSampling::Cycle { progress: 0.25 },
+                PoseSampling::Cycle { progress: 0.5 },
+                PoseSampling::Cycle { progress: 0.75 },
+            ]
+        );
+        assert!(samples.iter().all(|sample| sample.mirror_lower_body == 0.0));
     }
 
     #[test]

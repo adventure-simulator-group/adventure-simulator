@@ -6,13 +6,13 @@ use bevy::{math::Affine3A, prelude::*};
 use super::{AnimationPlayback, AnimationRigScene, ImpactReaction};
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct HumanoidBone {
-    owner: Entity,
-    role: BoneRole,
+pub(crate) struct HumanoidBone {
+    pub(crate) owner: Entity,
+    pub(crate) role: BoneRole,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum BoneRole {
+pub(crate) enum BoneRole {
     Root,
     Pelvis,
     StomachOne,
