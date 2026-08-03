@@ -15,6 +15,7 @@ use bevy::input_focus::InputDispatchPlugin;
 use bevy::prelude::*;
 use bevy::window::PresentMode;
 use bevy::{
+    asset::io::AssetSourceBuilder,
     ecs::schedule::common_conditions::any_with_component,
     input::common_conditions::input_just_pressed,
     window::{CursorGrabMode, CursorOptions},
@@ -63,19 +64,30 @@ pub fn wasm_run(args: Vec<String>) {
 
 fn run(args: Args) {
     let mut app = App::new();
-    app.add_plugins((
-        DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Adventure Simulator - Tactical".into(),
-                canvas: Some("#game-canvas".into()),
-                fit_canvas_to_parent: true,
-                prevent_default_event_handling: true,
-                present_mode: PresentMode::AutoVsync,
-                decorations: false,
-                ..default()
-            }),
+    #[cfg(not(target_family = "wasm"))]
+    app.register_asset_source(
+        "workspace",
+        AssetSourceBuilder::platform_default(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../assets")
+                .to_string_lossy(),
+            None,
+        ),
+    );
+    let default_plugins = DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "Adventure Simulator - Tactical".into(),
+            canvas: Some("#game-canvas".into()),
+            fit_canvas_to_parent: true,
+            prevent_default_event_handling: true,
+            present_mode: PresentMode::AutoVsync,
+            decorations: false,
             ..default()
         }),
+        ..default()
+    });
+    app.add_plugins((
+        default_plugins,
         FrameTimeDiagnosticsPlugin::default(),
         EnhancedInputPlugin,
         InputDispatchPlugin,

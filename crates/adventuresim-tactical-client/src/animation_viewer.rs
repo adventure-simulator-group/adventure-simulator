@@ -10,6 +10,7 @@ use adventuresim_tactical_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventuresim_tactical_core::prelude::*;
 use bevy::{
     app::AppExit,
+    asset::io::AssetSourceBuilder,
     input_focus::InputDispatchPlugin,
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
@@ -58,7 +59,10 @@ pub(crate) fn run(
     });
     invalidate_previous_report(&output);
 
+    let workspace_asset_source =
+        AssetSourceBuilder::platform_default(&asset_root.to_string_lossy(), None);
     App::new()
+        .register_asset_source("workspace", workspace_asset_source)
         // The live debug client registers the same default through
         // `DebugPlugin`. The fixture does not install that input/network
         // plugin, so mirror its presentation default explicitly.
