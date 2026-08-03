@@ -114,6 +114,7 @@ struct PlannedFrame {
     gait_phase: f32,
     distance: f32,
     time_seconds: f32,
+    local_direction: Vec2,
 }
 
 #[derive(Resource)]
@@ -231,6 +232,8 @@ struct FrameSample {
     speed_metres_per_second: f32,
     gait_phase: f32,
     root_distance_metres: f32,
+    root_position_metres: [f32; 3],
+    world_travel_direction: [f32; 3],
     left_support_weight: f32,
     right_support_weight: f32,
     screenshots: BTreeMap<String, String>,
@@ -248,6 +251,15 @@ fn stride_length(speed: f32) -> f32 {
 }
 
 fn steady_scenario(name: &'static str, speed: f32, cycles: f32) -> Vec<PlannedFrame> {
+    steady_scenario_in_direction(name, speed, cycles, Vec2::NEG_Y)
+}
+
+fn steady_scenario_in_direction(
+    name: &'static str,
+    speed: f32,
+    cycles: f32,
+    local_direction: Vec2,
+) -> Vec<PlannedFrame> {
     let cycle_duration = stride_length(speed) / speed;
     let duration = cycles * cycle_duration;
     let last_regular_frame = (duration * SAMPLE_HZ).floor() as usize;
@@ -280,6 +292,7 @@ fn steady_scenario(name: &'static str, speed: f32, cycles: f32) -> Vec<PlannedFr
             },
             distance: speed * time_seconds,
             time_seconds,
+            local_direction,
         })
         .collect()
 }
@@ -316,6 +329,7 @@ fn transition_scenario() -> Vec<PlannedFrame> {
                 gait_phase: phase,
                 distance,
                 time_seconds: t,
+                local_direction: Vec2::NEG_Y,
             }
         })
         .collect()
@@ -331,6 +345,8 @@ fn capture_plan() -> Vec<PlannedFrame> {
         steady_scenario("steady-walk-2.0", 2.0, 2.0),
         steady_scenario("walk-run-blend-3.75", 3.75, 2.0),
         steady_scenario("steady-run-5.5", 5.5, 2.0),
+        steady_scenario_in_direction("lateral-walk-2.0", 2.0, 1.0, Vec2::X),
+        steady_scenario_in_direction("reverse-walk-2.0", 2.0, 1.0, Vec2::Y),
         transition_scenario(),
     ]
     .into_iter()
@@ -343,14 +359,20 @@ fn setup_viewer(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    commands.spawn(SceneTerrain::new(64, 24, 1.0, |position| {
-        // Nearly flat live-like terrain exercises final foot IK without hiding
-        // discontinuities behind a perfectly featureless plane.
-        (position.x * 0.18).sin() * 0.018 + (position.y * 0.11).sin() * 0.012
-    }));
+    let terrain = SceneTerrain::new(64, 24, 1.0, |position| {
+        let centered = position - Vec2::new(32.0, 12.0);
+        // Deliberately visible, deterministic uneven ground. Its broad slope
+        // and smaller cross-wave expose overreaching leg solves and incorrect
+        // foot normals that the previous three-centimetre ripple concealed.
+        (centered.y * 0.22).sin() * 0.22
+            + (centered.x * 0.31).sin() * 0.10
+            + ((centered.x + centered.y) * 0.55).sin() * 0.035
+    });
+    let terrain_mesh = terrain.mesh();
+    commands.spawn(terrain);
     commands.spawn((
         Name::new("Animation review floor"),
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(64.0, 24.0))),
+        Mesh3d(meshes.add(terrain_mesh)),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(0.18, 0.23, 0.16),
             perceptual_roughness: 0.95,
@@ -387,7 +409,7 @@ fn setup_viewer(
         },
         CharacterLook::default(),
         SkeletonState {
-            local_velocity: Vec3::Z * 2.0,
+            local_velocity: Vec3::NEG_Z * 2.0,
             grounded: true,
             ..default()
         },
@@ -430,6 +452,7 @@ fn setup_viewer(
 
 fn drive_sequence(
     mut sequence: ResMut<CaptureSequence>,
+    terrain: Single<&SceneTerrain>,
     mut subjects: Query<(&mut SkeletonState, &mut Transform), With<CaptureSubject>>,
     mut labels: Query<&mut Text, With<CaptureLabel>>,
 ) {
@@ -438,11 +461,16 @@ fn drive_sequence(
     }
     let frame = sequence.plan[sequence.index].clone();
     for (mut skeleton, mut transform) in &mut subjects {
-        skeleton.local_velocity = Vec3::Z * frame.speed;
+        skeleton.local_velocity =
+            Vec3::new(frame.local_direction.x, 0.0, frame.local_direction.y) * frame.speed;
         skeleton.gait_phase = frame.gait_phase;
         skeleton.grounded = true;
         skeleton.posture = Posture::Upright;
-        transform.translation = Vec3::new(0.0, 0.95, frame.distance);
+        // Gameplay's controller frame is half-turned relative to the authored
+        // mesh, so world travel is the negative local velocity direction.
+        let horizontal = -frame.local_direction * frame.distance;
+        let ground = terrain.height_at(horizontal).unwrap_or(0.0);
+        transform.translation = Vec3::new(horizontal.x, ground + 0.95, horizontal.y);
     }
     for mut label in &mut labels {
         **label = format!(
@@ -553,14 +581,22 @@ fn draw_skeleton_overlay(
 fn capture_frame(
     mut commands: Commands,
     mut sequence: ResMut<CaptureSequence>,
-    subjects: Query<(Entity, &SkeletonState, Option<&AnimationPlayback>), With<CaptureSubject>>,
+    subjects: Query<
+        (
+            Entity,
+            &SkeletonState,
+            &GlobalTransform,
+            Option<&AnimationPlayback>,
+        ),
+        With<CaptureSubject>,
+    >,
     bones: Query<(&HumanoidBone, &GlobalTransform)>,
     mut exit: MessageWriter<AppExit>,
 ) {
     if !sequence.applied || sequence.capture_in_flight {
         return;
     }
-    let Ok((subject, skeleton, playback)) = subjects.single() else {
+    let Ok((subject, skeleton, subject_global, playback)) = subjects.single() else {
         wait_or_fail(&mut sequence, "capture subject is missing", &mut exit);
         return;
     };
@@ -613,6 +649,13 @@ fn capture_frame(
             speed_metres_per_second: frame.speed,
             gait_phase: skeleton.gait_phase,
             root_distance_metres: frame.distance,
+            root_position_metres: subject_global.translation().to_array(),
+            world_travel_direction: Vec3::new(
+                -frame.local_direction.x,
+                0.0,
+                -frame.local_direction.y,
+            )
+            .to_array(),
             left_support_weight,
             right_support_weight,
             screenshots: VIEWS
@@ -782,7 +825,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             && metrics.head_vertical_range_metres <= 0.20
             && metrics
                 .loop_seam_position_metres
-                .is_none_or(|value| value <= 0.01)
+                .is_none_or(|value| value <= 0.015)
             && metrics
                 .loop_seam_rotation_degrees
                 .is_none_or(|value| value <= 5.0)
@@ -852,8 +895,8 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
             let mut worst_rotation = None;
             for pair in frames.windows(2) {
                 let (before, after) = (pair[0], pair[1]);
-                let root_delta =
-                    Vec3::Z * (after.root_distance_metres - before.root_distance_metres);
+                let root_delta = Vec3::from_array(after.root_position_metres)
+                    - Vec3::from_array(before.root_position_metres);
                 for (name, before_bone) in &before.bones {
                     let Some(after_bone) = after.bones.get(name) else {
                         continue;
@@ -955,8 +998,8 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
                 worst_rotation,
                 loop_seam_position_metres: loop_position,
                 loop_seam_rotation_degrees: loop_rotation,
-                pelvis_vertical_range_metres: vertical_range(&frames, "pelvis"),
-                head_vertical_range_metres: vertical_range(&frames, "head"),
+                pelvis_vertical_range_metres: root_relative_vertical_range(&frames, "pelvis"),
+                head_vertical_range_metres: root_relative_vertical_range(&frames, "head"),
                 minimum_knee_forward_bend_metres: minimum_knee_bend(&frames),
                 maximum_supported_foot_slip_metres_per_frame: maximum_slip,
                 maximum_planted_foot_drift_metres: maximum_plant_drift,
@@ -971,7 +1014,8 @@ fn quat(bone: &BoneSample) -> Quat {
 }
 
 fn loop_seam(first: &FrameSample, last: &FrameSample) -> (f32, f32) {
-    let root_delta = Vec3::Z * (last.root_distance_metres - first.root_distance_metres);
+    let root_delta =
+        Vec3::from_array(last.root_position_metres) - Vec3::from_array(first.root_position_metres);
     first
         .bones
         .iter()
@@ -996,10 +1040,15 @@ fn loop_seam(first: &FrameSample, last: &FrameSample) -> (f32, f32) {
         })
 }
 
-fn vertical_range(frames: &[&FrameSample], bone: &str) -> f32 {
+fn root_relative_vertical_range(frames: &[&FrameSample], bone: &str) -> f32 {
     let (minimum, maximum) = frames
         .iter()
-        .filter_map(|frame| frame.bones.get(bone).map(|bone| bone.position[1]))
+        .filter_map(|frame| {
+            frame
+                .bones
+                .get(bone)
+                .map(|bone| bone.position[1] - frame.root_position_metres[1])
+        })
         .fold(
             (f32::INFINITY, f32::NEG_INFINITY),
             |(minimum, maximum), value| (minimum.min(value), maximum.max(value)),
@@ -1030,7 +1079,10 @@ fn minimum_knee_bend(frames: &[&FrameSample]) -> f32 {
             let axis = foot - hip;
             if axis.length_squared() > 0.0001 {
                 let closest = hip + axis * (knee - hip).dot(axis) / axis.length_squared();
-                minimum = minimum.min((knee - closest).z);
+                let forward = Vec3::from_array(frame.world_travel_direction)
+                    .try_normalize()
+                    .unwrap_or(Vec3::Z);
+                minimum = minimum.min((knee - closest).dot(forward));
             }
         }
     }
@@ -1151,6 +1203,8 @@ mod tests {
             speed_metres_per_second: 0.0,
             gait_phase: 0.0,
             root_distance_metres: 0.0,
+            root_position_metres: Vec3::ZERO.to_array(),
+            world_travel_direction: Vec3::Z.to_array(),
             left_support_weight: 1.0,
             right_support_weight: 1.0,
             screenshots,

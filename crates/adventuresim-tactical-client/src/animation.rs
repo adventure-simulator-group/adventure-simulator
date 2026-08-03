@@ -64,7 +64,8 @@ impl Plugin for TacticalAnimationPlugin {
                 PostUpdate,
                 (
                     restore_authored_bind_pose,
-                    procedural::apply_lower_body_mirroring,
+                    procedural::apply_locomotion_facing,
+                    procedural::apply_gait_mirroring,
                     procedural::stabilize_locomotion_torso,
                     procedural::apply_head_and_torso_look,
                     procedural::apply_impact_reaction,
