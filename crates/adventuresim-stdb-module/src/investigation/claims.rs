@@ -628,6 +628,32 @@ pub fn receive_local_problem_rumor(
     action_id: String,
 ) -> Result<(), String> {
     require_actor(ctx, character_id)?;
+    receive_local_problem_rumor_impl(ctx, character_id, receipt_id, action_id)
+}
+
+/// Capability-gated bootstrap entrypoint for development scenario characters.
+/// Bootstrap intentionally runs before the strategic gateway registers, so it
+/// cannot call the public reducer even though it materializes the same durable
+/// observer state.
+pub(crate) fn receive_local_problem_rumor_for_development_bootstrap(
+    ctx: &ReducerContext,
+    character_id: u64,
+    receipt_id: String,
+    action_id: String,
+) -> Result<(), String> {
+    if !crate::strategic::development_capability_enabled() {
+        return Err("Development scenarios are disabled in this module build".into());
+    }
+    crate::character::require_living_character(ctx, character_id)?;
+    receive_local_problem_rumor_impl(ctx, character_id, receipt_id, action_id)
+}
+
+fn receive_local_problem_rumor_impl(
+    ctx: &ReducerContext,
+    character_id: u64,
+    receipt_id: String,
+    action_id: String,
+) -> Result<(), String> {
     bounded(&receipt_id)?;
     let payload = canonical_payload(&[&receipt_id])?;
     if idempotent(ctx, &action_id, character_id, "receive_rumor", &payload)? {

@@ -1638,7 +1638,7 @@ pub(crate) fn discover_development_problem(
         official_world_minute,
     )?;
     let receipt_id = format!("{character_id}:{}", problem.id);
-    crate::investigation::receive_local_problem_rumor(
+    crate::investigation::receive_local_problem_rumor_for_development_bootstrap(
         ctx,
         character_id,
         receipt_id.clone(),
@@ -2273,6 +2273,36 @@ mod tests {
             demo.find("materialize_generated_quest(").unwrap()
                 < demo.rfind("prefer_next_rumor(").unwrap()
         );
+    }
+
+    #[test]
+    fn development_discovery_uses_bootstrap_safe_rumor_transition() {
+        let source = include_str!("local_problem.rs");
+        let discovery = source
+            .split("pub(crate) fn discover_development_problem")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn surface_problem").next())
+            .expect("development problem discovery implementation");
+        assert!(discovery.contains("receive_local_problem_rumor_for_development_bootstrap"));
+        assert!(!discovery.contains("crate::investigation::receive_local_problem_rumor("));
+
+        let investigation = crate::investigation::INVESTIGATION_SOURCE;
+        let external = investigation
+            .split("pub fn receive_local_problem_rumor(")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub(crate) fn receive_local_problem_rumor_for_development_bootstrap")
+                    .next()
+            })
+            .expect("external rumor reducer");
+        assert!(external.contains("require_actor(ctx, character_id)?"));
+        let bootstrap = investigation
+            .split("pub(crate) fn receive_local_problem_rumor_for_development_bootstrap")
+            .nth(1)
+            .and_then(|tail| tail.split("fn receive_local_problem_rumor_impl").next())
+            .expect("bootstrap rumor transition");
+        assert!(bootstrap.contains("development_capability_enabled()"));
+        assert!(!bootstrap.contains("require_strategic_gateway"));
     }
 
     #[test]
