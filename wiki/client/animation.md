@@ -445,6 +445,10 @@ Locomotion also bounds root, pelvis, torso, neck, and head excursions around
 bind before look and final IK, then restores a bounded vertical lift at each
 run flight beat.
 
+Debug clients expose `F8` as a runtime terrain leg-IK toggle. Disabling it
+leaves authored FK, gait mirroring, and torso stabilization intact and clears
+stored foot plants so re-enabling IK cannot snap to an obsolete target.
+
 During ordinary travel the body turns toward its velocity, so forward walk and
 run also serve diagonal and lateral travel. During combat, the torso remains
 oriented toward the opponent and a procedural stance-step planner provides

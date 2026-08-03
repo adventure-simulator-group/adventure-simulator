@@ -1,7 +1,10 @@
 use adventuresim_tactical_core::prelude::*;
 use bevy::{color::palettes::tailwind, prelude::*};
 
-use crate::player::{ClientPlayer, HitPerformed, LimbHitbox};
+use crate::{
+    animation::TerrainIkEnabled,
+    player::{ClientPlayer, HitPerformed, LimbHitbox},
+};
 
 pub struct DebugPlugin;
 
@@ -41,6 +44,7 @@ struct DebugRay {
 fn toggle_debug_visuals(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut config: ResMut<DebugVisualsConfig>,
+    mut terrain_ik: ResMut<TerrainIkEnabled>,
     q_colliders: Query<(Entity, Option<&LimbHitbox>), (With<Collider>, Without<ClientPlayer>)>,
     mut cmd: Commands,
 ) {
@@ -73,6 +77,11 @@ fn toggle_debug_visuals(
 
     if keyboard.just_pressed(KeyCode::F4) {
         config.raycast = !config.raycast;
+    }
+
+    if keyboard.just_pressed(KeyCode::F8) {
+        terrain_ik.0 = !terrain_ik.0;
+        info!(enabled = terrain_ik.0, "Terrain leg IK toggled");
     }
 }
 
@@ -140,5 +149,35 @@ fn draw_debug_rays(
                 color.set_alpha(alpha);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn f8_toggles_terrain_ik() {
+        let mut app = App::new();
+        app.init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<DebugVisualsConfig>()
+            .init_resource::<TerrainIkEnabled>()
+            .add_systems(Update, toggle_debug_visuals);
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::F8);
+        app.update();
+        assert!(!app.world().resource::<TerrainIkEnabled>().0);
+
+        {
+            let mut keyboard = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keyboard.release(KeyCode::F8);
+            keyboard.clear_just_pressed(KeyCode::F8);
+            keyboard.clear_just_released(KeyCode::F8);
+            keyboard.press(KeyCode::F8);
+        }
+        app.update();
+        assert!(app.world().resource::<TerrainIkEnabled>().0);
     }
 }

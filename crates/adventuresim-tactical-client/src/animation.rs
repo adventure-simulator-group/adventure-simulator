@@ -35,6 +35,7 @@ impl Plugin for TacticalAnimationPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<AnimationPackCatalog>()
             .init_resource::<AnimationRuntime>()
+            .init_resource::<TerrainIkEnabled>()
             .add_systems(Startup, request_animation_packs)
             .add_observer(on_successful_attack)
             .add_systems(
@@ -74,6 +75,17 @@ impl Plugin for TacticalAnimationPlugin {
                     .after(AnimationSystems)
                     .before(TransformSystems::Propagate),
             );
+    }
+}
+
+/// Runtime switch for the final terrain leg-IK pass. It defaults on in every
+/// build; the debug plugin exposes an F8 toggle without changing authored FK.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TerrainIkEnabled(pub bool);
+
+impl Default for TerrainIkEnabled {
+    fn default() -> Self {
+        Self(true)
     }
 }
 

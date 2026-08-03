@@ -450,6 +450,7 @@ pub(crate) struct HeldWeaponConstraint {
 /// then lowers the hips by the bounded residual. Weapon/hand constraints use
 /// the same final-pose seam when authored held-item rigs arrive.
 pub(super) fn apply_terrain_leg_ik(
+    enabled: Res<super::TerrainIkEnabled>,
     terrain: Query<&SceneTerrain>,
     owners: Query<&SkeletonState>,
     bones: Query<(Entity, &HumanoidBone, Option<&SoleUpAxis>)>,
@@ -458,6 +459,14 @@ pub(super) fn apply_terrain_leg_ik(
     mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
     mut commands: Commands,
 ) {
+    if !enabled.0 {
+        // Discard plant targets while disabled so re-enabling IK starts from
+        // the current authored pose instead of snapping to a stale footprint.
+        for mut state in &mut ik_states {
+            state.0 = PoleMemory::default();
+        }
+        return;
+    }
     let Some(terrain) = terrain.iter().next() else {
         return;
     };
