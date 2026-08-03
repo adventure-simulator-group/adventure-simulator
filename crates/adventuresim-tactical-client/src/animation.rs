@@ -207,13 +207,18 @@ impl AnimationPackCatalog {
                 builder.pose(motion, frame, pose)?;
             }
         }
-        for direction in ["forward", "backward", "left", "right"] {
-            let motion = format!("duck_{direction}");
-            builder.motion(&motion, 12);
-            builder.pose(&motion, 6, &motion)?;
-            builder.reference(&motion, 0, "crouch_idle")?;
-            builder.reference(&motion, 12, "crouch_idle")?;
+        for (motion, pose) in [
+            ("duck_lead_left_backward", "duck_backward"),
+            ("duck_lead_left_left", "duck_left"),
+            ("duck_lead_left_right", "duck_right"),
+        ] {
+            builder.motion(motion, 0);
+            builder.pose(motion, 0, pose)?;
         }
+        builder.motion("duck_forward", 12);
+        builder.pose("duck_forward", 6, "duck_forward")?;
+        builder.reference("duck_forward", 0, "crouch_idle")?;
+        builder.reference("duck_forward", 12, "crouch_idle")?;
         for direction in ["center", "forward", "backward", "left", "right"] {
             let motion = format!("jump_{direction}");
             builder.motion(&motion, 30);
@@ -222,20 +227,30 @@ impl AnimationPackCatalog {
             }
         }
         for family in ["thrust", "slash"] {
+            let contact_motion = format!("attack_{family}_lead_left_contact");
+            builder.motion(&contact_motion, 0);
             for lead in ["left", "right"] {
                 for footwork in ["stay", "switch"] {
-                    let motion = format!("attack_{family}_lead_{lead}_{footwork}");
-                    builder.motion(&motion, 20);
-                    for (frame, phase) in [(4, "commit"), (8, "contact"), (13, "follow_through")] {
-                        builder.pose(&motion, frame, &format!("{motion}_{phase}"))?;
+                    let legacy_motion = format!("attack_{family}_lead_{lead}_{footwork}");
+                    builder.motion(&legacy_motion, 20);
+                    builder.pose(&legacy_motion, 4, &format!("{legacy_motion}_commit"))?;
+                    if lead == "left" {
+                        builder.pose(&contact_motion, 0, &format!("{legacy_motion}_contact"))?;
+                    } else {
+                        builder.pose(&legacy_motion, 8, &format!("{legacy_motion}_contact"))?;
                     }
-                    builder.reference(&motion, 0, &format!("guard_lead_{lead}"))?;
+                    builder.pose(
+                        &legacy_motion,
+                        13,
+                        &format!("{legacy_motion}_follow_through"),
+                    )?;
+                    builder.reference(&legacy_motion, 0, &format!("guard_lead_{lead}"))?;
                     let end_lead = if footwork == "switch" {
                         if lead == "left" { "right" } else { "left" }
                     } else {
                         lead
                     };
-                    builder.reference(&motion, 20, &format!("guard_lead_{end_lead}"))?;
+                    builder.reference(&legacy_motion, 20, &format!("guard_lead_{end_lead}"))?;
                 }
             }
         }
@@ -1016,6 +1031,20 @@ mod tests {
             PoseAnchor {
                 motion: "walk".to_owned(),
                 frame: 8,
+            }
+        );
+        assert_eq!(
+            root.poses[&SemanticPose::AttackThrustLeadLeftSwitchContact],
+            PoseAnchor {
+                motion: "attack_thrust_lead_left_contact".to_owned(),
+                frame: 0,
+            }
+        );
+        assert_eq!(
+            root.poses[&SemanticPose::DuckBackward],
+            PoseAnchor {
+                motion: "duck_lead_left_backward".to_owned(),
+                frame: 0,
             }
         );
     }
