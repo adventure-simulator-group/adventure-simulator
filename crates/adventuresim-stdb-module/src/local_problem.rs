@@ -27,6 +27,8 @@ pub struct LocalProblemAuthority {
     #[primary_key]
     pub id: String,
     #[index(btree)]
+    pub gateway_bucket: u8,
+    #[index(btree)]
     pub scope_key: String,
     pub scope_json: String,
     /// Symptom-to-effect mechanism only. Canonical cause belongs exclusively
@@ -414,6 +416,7 @@ pub(crate) fn materialize_generated_problem(
         .local_problem_authority()
         .insert(LocalProblemAuthority {
             id: case.problem_id.clone(),
+            gateway_bucket: 0,
             scope_key,
             scope_json: serde_json::to_string(&scope)
                 .map_err(|_| "Could not encode generated problem scope")?,
@@ -506,7 +509,7 @@ pub(crate) fn trigger_next_generated_incident(
         .db
         .local_problem_authority()
         .id()
-        .find(problem_id)
+        .find(problem_id.to_owned())
         .ok_or("Generated problem not found")?;
     if problem.resolved_at.is_some() {
         return Err("Resolved generated problems cannot receive another incident".into());
@@ -781,6 +784,7 @@ pub fn ensure_settlement_problems(ctx: &ReducerContext, settlement_id: &str) -> 
         .local_problem_authority()
         .insert(LocalProblemAuthority {
             id: problem.id.0.clone(),
+            gateway_bucket: 0,
             scope_key: key,
             scope_json: serde_json::to_string(&scope)
                 .map_err(|_| "Could not encode problem scope")?,
@@ -854,6 +858,7 @@ pub fn ensure_route_problem(
         .local_problem_authority()
         .insert(LocalProblemAuthority {
             id: problem.id.0.clone(),
+            gateway_bucket: 0,
             scope_key: key,
             scope_json: serde_json::to_string(&scope)
                 .map_err(|_| "Could not encode route scope")?,

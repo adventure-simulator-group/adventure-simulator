@@ -10,7 +10,9 @@ use crate::{
     character::{character, character__view, starting_character_claim},
     continuity::lineage_control_claim,
     relationship::{character_birth, character_birth__view, effective_age_years},
-    strategic::{require_strategic_gateway, strategic_gateway_authority__view},
+    strategic::{
+        development_scenario, require_strategic_gateway, strategic_gateway_authority__view,
+    },
     time::{character_time, character_time__view},
 };
 

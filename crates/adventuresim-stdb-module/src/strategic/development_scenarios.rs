@@ -1,13 +1,15 @@
-//! Private, capability-gated catalog for isolated strategic development scenarios.
-//!
-//! Scenario metadata is deliberately separate from player and quest models. A
-//! normal module build cannot project, adopt, or mutate this authority.
+// Private, capability-gated catalog for isolated strategic development scenarios.
+//
+// Scenario metadata is deliberately separate from player and quest models. A
+// normal module build cannot project, adopt, or mutate this authority.
 
 #[derive(Clone, Debug)]
 #[table(accessor = development_scenario)]
 pub struct DevelopmentScenario {
     #[primary_key]
     pub slug: String,
+    #[index(btree)]
+    pub scan_id: u64,
     pub revision: u16,
     #[index(btree)]
     pub category: String,
@@ -23,6 +25,8 @@ pub struct DevelopmentScenario {
 pub struct DevelopmentScenarioSubject {
     #[primary_key]
     pub id: String,
+    #[index(btree)]
+    pub scan_id: u64,
     #[index(btree)]
     pub scenario_slug: String,
     pub subject_kind: String,
@@ -110,6 +114,9 @@ pub(crate) fn register_development_scenario(
     }
     let row = DevelopmentScenario {
         slug: slug.into(),
+        scan_id: adventuresim_core::settlement_population::stable_hash(&format!(
+            "development-scenario:{slug}"
+        )),
         revision: 1,
         category: category.into(),
         label: label.into(),
@@ -117,7 +124,12 @@ pub(crate) fn register_development_scenario(
         primary_character_id,
         entry_route: entry_route.into(),
     };
-    if let Some(existing) = ctx.db.development_scenario().slug().find(slug) {
+    if let Some(existing) = ctx
+        .db
+        .development_scenario()
+        .slug()
+        .find(slug.to_owned())
+    {
         if existing.primary_character_id != primary_character_id {
             return Err("Development scenario slug conflicts with another primary".into());
         }
@@ -134,16 +146,31 @@ pub(crate) fn register_development_subject(
     subject_kind: &str,
     subject_id: &str,
 ) -> Result<(), String> {
-    if ctx.db.development_scenario().slug().find(scenario_slug).is_none() {
+    if ctx
+        .db
+        .development_scenario()
+        .slug()
+        .find(scenario_slug.to_owned())
+        .is_none()
+    {
         return Err("Development scenario subject has no registered scenario".into());
     }
     let row = DevelopmentScenarioSubject {
         id: format!("{scenario_slug}:{subject_kind}:{subject_id}"),
+        scan_id: adventuresim_core::settlement_population::stable_hash(&format!(
+            "development-scenario-subject:{scenario_slug}:{subject_kind}:{subject_id}"
+        )),
         scenario_slug: scenario_slug.into(),
         subject_kind: subject_kind.into(),
         subject_id: subject_id.into(),
     };
-    if ctx.db.development_scenario_subject().id().find(&row.id).is_none() {
+    if ctx
+        .db
+        .development_scenario_subject()
+        .id()
+        .find(row.id.clone())
+        .is_none()
+    {
         ctx.db.development_scenario_subject().insert(row);
     }
     Ok(())
@@ -260,7 +287,8 @@ pub fn backend_development_scenarios(ctx: &ViewContext) -> Vec<BackendDevelopmen
     let mut rows = ctx
         .db
         .development_scenario()
-        .iter()
+        .scan_id()
+        .filter(0u64..)
         .map(|row| BackendDevelopmentScenario {
             slug: row.slug,
             revision: row.revision,
@@ -286,11 +314,17 @@ pub fn backend_development_quests(ctx: &ViewContext) -> Vec<BackendDevelopmentQu
         return Vec::new();
     }
     let mut rows = Vec::new();
-    for problem in ctx.db.local_problem_authority().iter() {
+    for problem in ctx
+        .db
+        .local_problem_authority()
+        .gateway_bucket()
+        .filter(0u8)
+    {
         let scenario_slug = ctx
             .db
             .development_scenario_subject()
-            .iter()
+            .scan_id()
+            .filter(0u64..)
             .find(|row| row.subject_kind == "generated_problem" && row.subject_id == problem.id)
             .map_or_else(String::new, |row| row.scenario_slug);
         let player_safe_summary = ctx
