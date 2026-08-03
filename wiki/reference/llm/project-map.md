@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1792)
+## Files (1800)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -36,6 +36,14 @@ development, or other wiki document before changing a subsystem.
 - `assets_src/base.casc` — Repository support file.
 - `assets_src/base.glb` — Binary game or UI asset.
 - `assets_src/base.qrigcasc` — Repository support file.
+- `assets_src/biped/unarmed/base.casc` — Repository support file.
+- `assets_src/biped/unarmed/guard_lead_left.casc` — Repository support file.
+- `assets_src/biped/unarmed/idle_relaxed.casc` — Repository support file.
+- `assets_src/biped/unarmed/idle_relaxed.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/run.casc` — Repository support file.
+- `assets_src/biped/unarmed/run.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/walk.casc` — Repository support file.
+- `assets_src/biped/unarmed/walk.glb` — Binary game or UI asset.
 - `book.toml` — Tooling or build configuration.
 - `content/dialogue/examples.yaml` — Repository support file.
 - `content/dialogue/organizations.yaml` — Repository support file.

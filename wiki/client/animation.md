@@ -175,12 +175,12 @@ During asset production, runtime lookup is deliberately more tolerant than
 final content validation. After the selected pack's single fallback chain
 misses a semantic name, the client follows a deterministic similar-pose chain
 and restarts pack lookup for each candidate. Examples include `run_contact` to
-`walk_contact`, `run_flight` to `walk_passing`, directional jumps to the
-corresponding center jump, thrust attacks to the same slash variant, and then
-attack or block poses to the appropriate guard. If neither chain resolves, the
-client displays the skeleton's authored bind pose, which is a T-pose for the
-humanoid convention. Release validation still requires the complete unarmed
-root described above; this graceful runtime behavior exists so incomplete or
+`walk_contact`, `run_flight` to `walk_passing`, `airborne_travel` to
+`airborne_center`, same-lead thrust contacts to slash contacts, and then attack
+or block poses to the appropriate guard. If neither chain resolves, the client
+displays the skeleton's authored bind pose, which is a T-pose for the humanoid
+convention. Release validation still requires the complete unarmed root
+described above; this graceful runtime behavior exists so incomplete or
 temporarily unavailable art never crashes the tactical client or makes an
 actor disappear.
 
@@ -246,6 +246,12 @@ Single-pose files place their named semantic pose at frame 0:
 | `crouch_idle` | `crouch_idle` |
 | `guard_lead_left` | `guard_lead_left` |
 | `guard_lead_right` | `guard_lead_right` |
+| `airborne_center` | `airborne_center` |
+| `airborne_travel` | `airborne_travel` |
+| `attack_thrust_lead_left` | `attack_thrust_lead_left_contact` |
+| `attack_thrust_lead_right` | `attack_thrust_lead_right_contact` |
+| `attack_slash_lead_left` | `attack_slash_lead_left_contact` |
+| `attack_slash_lead_right` | `attack_slash_lead_right_contact` |
 | `prone_idle` | `prone_idle` |
 | `supine_idle` | `supine_idle` |
 
@@ -257,9 +263,7 @@ preview, but does not introduce additional semantic names:
 |---|---|
 | `walk` | 0 `walk_contact`; 8 `walk_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
 | `run` | 0 `run_contact`; 5 `run_flight`; 10 opposite contact; 15 opposite flight; 20 loop closure |
-| `crouch_walk` | 0 `crouch_walk_contact`; 10 `crouch_walk_passing`; 20 opposite contact; 30 opposite passing; 40 loop closure |
 | `prone_crawl` | 0 `prone_crawl_contact`; 8 `prone_crawl_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
-| `prone_strafe` | 0 `prone_strafe_contact`; 8 `prone_strafe_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
 | `supine_scamper` | 0 `supine_scamper_contact`; 8 `supine_scamper_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
 
 Each directional duck is a short out-and-back motion in its own file. Frame 0
@@ -268,40 +272,20 @@ and frame 12 reproduce `crouch_idle` as unnamed endpoint references; frame
 
 | File basename | Semantic pose at frame 6 |
 |---|---|
-| `duck_forward` | `duck_forward` |
 | `duck_backward` | `duck_backward` |
 | `duck_left` | `duck_left` |
-| `duck_right` | `duck_right` |
 
-Each directional jump file uses the same phase layout. Frame 0 is an unnamed
-directional load based on the duck blend, frames 6, 15, and 24 are semantic
-samples, and frame 30 is an unnamed crouch or guard recovery reference:
+Airborne motion uses the two single-pose files listed above. The runtime blends
+from a directional crouch/load into `airborne_center` or `airborne_travel`,
+modifies the traveling pose from horizontal velocity, and returns through a
+directional crouch/load on landing. There are no separate authored launch,
+direction, or landing samples in the complete pack.
 
-| File basename | Frame 6 | Frame 15 | Frame 24 |
-|---|---|---|---|
-| `jump_center` | `jump_center_launch` | `jump_center_flight` | `jump_center_landing` |
-| `jump_forward` | `jump_forward_launch` | `jump_forward_flight` | `jump_forward_landing` |
-| `jump_backward` | `jump_backward_launch` | `jump_backward_flight` | `jump_backward_landing` |
-| `jump_left` | `jump_left_launch` | `jump_left_flight` | `jump_left_landing` |
-| `jump_right` | `jump_right_launch` | `jump_right_flight` | `jump_right_landing` |
-
-Each attack recipe has one file named
-`attack_<family>_lead_<left|right>_<stay|switch>`. Frame 0 reproduces its
-starting guard, frames 4, 8, and 13 provide the three semantic poses, and frame
-20 reproduces the appropriate ending guard:
-
-| Frame | Semantic suffix |
-|---:|---|
-| 4 | `_commit` |
-| 8 | `_contact` |
-| 13 | `_follow_through` |
-
-Instantiate that layout for both `thrust` and `slash`, both starting leads, and
-both `stay` and `switch`. For example,
-`biped/attack_thrust_lead_left_switch.casc` and its matching `.glb` provide
-`attack_thrust_lead_left_switch_commit` at frame 4,
-`attack_thrust_lead_left_switch_contact` at frame 8, and
-`attack_thrust_lead_left_switch_follow_through` at frame 13.
+Attacks likewise use the four single-pose contact files listed above: one for
+each combination of `thrust` or `slash` and left or right starting lead. There
+are no required commit or follow-through poses, and `stay` versus `switch` is
+not part of the asset name. Runtime footwork, continuation, and recovery turn
+the contact pose into a complete attack.
 
 Each block contact has its own file using the semantic pose name as its
 basename. Frame 0 reproduces the applicable guard, frame 6 is the named block
@@ -322,8 +306,6 @@ The remaining ground transitions each use one motion-coherent file:
 |---|---|
 | `upright_prone_transition` | 0 upright/crouch reference; 12 `upright_prone_transition`; 24 `prone_idle` reference |
 | `dive` | 0 launch reference; 10 `dive_impact`; 18 `prone_idle` reference |
-| `prone_supine_roll_left` | 0 `prone_idle` reference; 10 `prone_supine_roll_left`; 20 `supine_idle` reference |
-| `prone_supine_roll_right` | 0 `prone_idle` reference; 10 `prone_supine_roll_right`; 20 `supine_idle` reference |
 
 Endpoint references make each file understandable when previewed and provide
 useful interpolation, but they do not redefine semantic poses owned by another
@@ -396,19 +378,31 @@ motion while preserving handed upper-body carriage.
 | `run_contact` | Pose the instant the left foot accepts a running landing beneath or only modestly ahead of the center of mass. Flex the left ankle, knee, and hip to absorb load. The right leg trails and is leaving the prior flight phase. The torso inclines forward from the ankles without folding at the waist. Only the left foot is marked planted; avoid a long over-stride. |
 | `run_flight` | Pose the airborne crossover after left support, with neither foot planted. The right knee travels forward, the left leg trails, and both knees remain flexed rather than forming a split. Keep the pelvis level enough to interpolate cleanly, the body traveling forward, and the upper-body carriage compatible with the pack's held item. This must read as a run flight phase, not a walking passing pose. |
 | `crouch_idle` | Lower the pelvis by flexing hips, knees, and ankles while keeping both whole feet stably planted about shoulder-width apart. Keep the chest sufficiently upright to look forward and use the hands. Do not obtain the height by bending only the spine. The pose must be able to load into a jump and serve as the center of the directional duck blend. |
-| `crouch_walk_contact` | Use the same left-forward/right-rear contact relationship as `walk_contact`, but keep the pelvis at crouch height and the stride shorter. The left foot is accepting weight and the right forefoot is leaving. Maintain head clearance and a usable hand carriage; do not let the knees collapse inward. |
-| `crouch_walk_passing` | Keep the left foot planted while the right foot passes low beside it with enough toe clearance. The pelvis stays near crouch height instead of rising to full standing height. The left knee remains flexed and stable, and the torso does not bob upright. |
 
-Walk, run, and crouch-walk use the same normalized gait phase. Speed blends
-walk continuously into run; crouch amount blends upright locomotion into its
-crouched counterpart. A run is not merely an exaggerated walk: it must retain
-an airborne phase, while walking retains ground contact.
+Walk and run use the same normalized gait phase, and speed blends continuously
+between them. A run is not merely an exaggerated walk: it retains an airborne
+phase, while walking retains ground contact. Crouched locomotion applies
+procedural pelvis lowering, additional hip and knee flexion, shortened stride,
+and foot IK to the ordinary gait instead of requiring a separate crouch-walk
+cycle.
 
-During ordinary travel the body can turn toward its velocity, so the first
-version does not require separate forward, backward, and lateral gait cycles.
-During combat, procedural stance stepping keeps the body oriented toward the
-opponent. Overgrowth takes a similar approach by maintaining planted-foot
-targets and moving one foot at a time in
+During ordinary travel the body turns toward its velocity, so forward walk and
+run also serve diagonal and lateral travel. During combat, the torso remains
+oriented toward the opponent and a procedural stance-step planner provides
+advancing, retreating, strafing, and diagonal movement without directional
+gait cycles. It maintains a world-space target for each planted foot, chooses
+one swing foot at a time, gives that foot a short clearance arc, and uses leg
+IK and pelvis correction to reach its new plant. It blends the lower body
+between the two lead-foot guards as the stance changes while preserving the
+pack's upper-body guard.
+
+The planner must avoid crossing the feet, keep at least one reliable support
+foot during ordinary combat steps, and scale step length and frequency from
+actual local velocity. At speeds too high for credible stance stepping, the
+character turns toward travel and transitions to the ordinary run. An optional
+pack may later override this with an authored lateral cycle, but no strafe pose
+is required in the complete pack. Overgrowth takes a similar approach by
+maintaining planted-foot targets and moving one foot at a time in
 [`HandleFootStance`](https://github.com/WolfireGames/overgrowth/blob/245fe4828631c84c0023d29d1525f5716ccb6106/Data/Scripts/aschar.as#L11726-L11833).
 
 ### Combat guards
@@ -427,71 +421,51 @@ whole-body mirroring also changes the weapon hand.
 
 ### Crouching and directional ducking
 
-`crouch_idle` is the center of a two-dimensional directional duck blend. Four
-additional poses define its extrema. Begin each pose from `crouch_idle`, keep
-the same planted foot locations, and preserve the normal hand carriage.
+`crouch_idle` is the center of a two-dimensional directional duck blend. The
+complete pack adds only a backward withdrawal and one anatomical-left lateral
+extreme. Begin each pose from `crouch_idle`, keep the same planted foot
+locations, and preserve the normal hand carriage.
 
 | Pose | Animator brief |
 |---|---|
-| `duck_forward` | Move the head, ribcage, and pelvis forward and lower them slightly by increasing ankle, knee, and hip flexion. Keep the center of mass inside the feet and the heels controlled; this should look like slipping under and toward an incoming path, not falling or diving. Tuck the chin enough to protect the face. |
 | `duck_backward` | Withdraw the head and upper torso backward while sitting the pelvis down and back between the feet. Increase knee flexion to preserve balance and avoid creating the motion solely by arching the lower back. Keep the gaze generally forward and do not lift both toes or heels. |
 | `duck_left` | Shift the pelvis, ribcage, and especially the head toward anatomical left. Load the left leg more heavily, flex it, and allow the right leg to lengthen without moving either foot. Incline or rotate the torso only enough to keep balance and protect the head. Do not cross the legs. |
-| `duck_right` | Shift toward anatomical right as the structural counterpart of `duck_left`: load and flex the right leg, allow the left leg to lengthen, keep both feet planted, and move the head clearly out of the central line without collapsing the torso. |
 
-The direction describes the defender's desired body or head displacement in
-local space, not merely the attacker's bearing. The incoming weapon path and
-targeted body region determine which displacement is useful. Diagonal ducks
-are produced by blending adjacent extrema.
+The runtime constructs rightward ducking by safely mirroring the lateral body
+delta while retaining handed equipment constraints. Forward/downward ducking
+comes from increasing the `crouch_idle` weight and applying a bounded forward
+head, ribcage, and pelvis displacement with planted-foot IK. Diagonal ducks
+blend these components. Direction still describes the defender's desired body
+or head displacement in local space, not merely the attacker's bearing.
 
 Directional ducks should preferably be authored as pose deltas or masked
 overrides so that they can be applied over the current guard without requiring
-four versions for every weapon and lead foot.
+versions for every weapon and lead foot.
 
 ### Jumping and dodging
 
-Jumping and dodging share one directional pose family. Charge changes the
-height, distance, and timing rather than selecting an unrelated animation.
-There are five directional samples: center, forward, backward, left, and
-right. Each has a launch, flight, and landing pose. Use the following phase
-rules for every direction:
+Jumping and dodging share two sustainable airborne poses. Charge changes
+height, distance, and timing rather than selecting another authored sequence:
 
-- **Launch:** show the first instant after the final floor contact. The pushing
-  leg or legs are near extension but not hyperextended; no foot is marked
-  planted. The pose should clearly continue from a loaded crouch.
-- **Flight:** show a sustainable mid-air arrangement with no floor contacts.
-  Avoid an extreme tuck or split that would look frozen when held for a long
-  airtime. The head remains able to track forward and held weapons remain
-  controlled.
-- **Landing:** show the instant of first anticipated floor contact. Mark the
-  named receiving foot or feet as planted, flex the receiving joints, keep the
-  knee aligned over the foot, and arrange the torso so it can continue into
-  `crouch_idle` or a guard without snapping.
-
-The direction-specific briefs are:
-
-| Direction | Launch | Flight | Landing |
-|---|---|---|---|
-| `center` | Push evenly through both legs with the pelvis rising vertically and both feet leaving together or nearly together. Keep lateral symmetry except for the pack's hand carriage. | Hold both knees moderately flexed beneath the hips with the feet separated enough for balance. Keep the torso upright and avoid implying forward travel. | Receive on both forefeet/feet at approximately shoulder width, with symmetrical ankle, knee, and hip flexion and the pelvis descending between them. |
-| `forward` | Finish the push with the rear leg extending behind the traveling pelvis while the forward knee begins to advance. Incline the whole body slightly forward without folding the spine. | Carry the forward knee ahead and the opposite leg behind in a compact, controllable leap. The pelvis and chest face generally forward. | Reach the forward foot toward first contact beneath, not far ahead of, the center of mass; keep the rear foot ready to follow and flex the lead leg to absorb forward momentum. |
-| `backward` | Push the body backward while keeping the chest and gaze sufficiently forward to see the threat. Let the knees and feet travel slightly forward relative to the pelvis; do not throw the head backward. | Keep both legs somewhat in front of or beneath the pelvis, one prepared to reach backward for the ground. Maintain a guarded torso rather than an uncontrolled back arch. | Reach one foot backward under the traveling pelvis for first contact, flex it to absorb motion, and keep the other foot ready to widen the base. The character must not land on a locked rear knee. |
-| `left` | Push primarily from the right leg, allowing the left leg and pelvis to travel left. Keep the right leg extended toward the takeoff point and the torso balanced over the lateral motion. | Lead with the left knee/foot and let the right leg trail to the right without crossing behind it. Keep the pelvis facing generally forward. | Receive first on the left foot with the left knee flexed and aligned, the right foot ready to establish width, and the torso resisting excessive leftward collapse. |
-| `right` | Push primarily from the left leg, allowing the right leg and pelvis to travel right. Keep the left leg extended toward the takeoff point and the torso balanced. | Lead with the right knee/foot and let the left leg trail without crossing. Preserve forward awareness and controlled hand carriage. | Receive first on the right foot with aligned flexion, the left foot ready to establish width, and the torso balanced against rightward momentum. |
-
-The resulting authored names are
-`jump_center_launch`, `jump_center_flight`, `jump_center_landing`, and the
-equivalent three names for `forward`, `backward`, `left`, and `right`.
+| Pose | Animator brief |
+|---|---|
+| `airborne_center` | Hold both knees moderately flexed beneath the hips with the feet separated enough for balance. Keep the pelvis and torso generally upright and avoid implying horizontal travel. Neither foot or other body surface is marked planted. The arrangement must remain plausible when held through an unusually long vertical airtime. |
+| `airborne_travel` | Arrange a compact traveling leap with the canonical left knee and foot leading and the right leg trailing without forming a split. Incline the body slightly along travel without folding the spine, keep both knees flexed, preserve forward awareness and controlled equipment carriage, and mark no floor contacts. The runtime can mirror the lower-body delta and orient its travel contribution from horizontal velocity. |
 
 The sequence is:
 
 ```text
-directional duck/load -> launch -> flight -> landing -> crouch or guard
+directional duck/load -> airborne blend -> directional duck/load -> guard
 ```
 
-The load reuses the directional duck blend, so it does not require another
-five poses. The center sample supports a stationary vertical jump. Air phase
-is driven primarily by vertical velocity so the flight pose can extend for
-different airtimes without slowing takeoff or landing. Overgrowth uses the
-same general idea by deriving an `up_coord` from vertical velocity in
+The load and landing both reuse the crouch/duck blend, with the runtime choosing
+the pushing and receiving legs from horizontal velocity and planted-foot state.
+It synthesizes the short leg extension after takeoff, reaches a receiving foot
+beneath the projected center of mass before landing, and uses foot IK at ground
+contact. The center-to-travel blend is driven primarily by horizontal speed;
+air phase is driven primarily by vertical velocity so the airborne pose can
+extend for different airtimes without slowing takeoff or landing. Overgrowth
+uses the same general idea by deriving an `up_coord` from vertical velocity in
 [`aircontrols.as`](https://github.com/WolfireGames/overgrowth/blob/245fe4828631c84c0023d29d1525f5716ccb6106/Data/Scripts/aircontrols.as#L114-L180).
 
 ### Attacking
@@ -502,64 +476,66 @@ An attack recipe declares:
 - its starting and ending lead foot;
 - whether its footwork is `stay` or `switch`;
 - its target-height behavior;
-- its commit, contact, recovery, and cancellation timing; and
+- its contact, continuation, recovery, and cancellation timing; and
 - its hand/weapon constraints.
 
 A stay attack ends with the same foot forward. A switch attack takes one step
 and ends with the opposite foot forward.
 
-Each attack motion has three attack-specific poses. Names use
-`attack_<family>_lead_<left|right>_<stay|switch>_<phase>`; for example,
-`attack_thrust_lead_left_switch_contact`.
+Each strike family has one contact pose for each starting lead. Names use
+`attack_<family>_lead_<left|right>_contact`; for example,
+`attack_thrust_lead_left_contact`. `stay` and `switch` remain gameplay and
+footwork parameters, not separate authored motions.
 
-The phases have these animator-facing meanings:
-
-| Phase | Animator brief |
-|---|---|
-| `commit` | Begin from the named guard and show the last controllable preparation before acceleration toward the target. Preserve balance and defense. The pose may visibly load the legs and torso, but a trained attack should not use a theatrical wind-up. In a stay attack, both feet remain in their guard locations. In a switch attack, unload the rear foot that will become the new lead while the original lead still supports the body. |
-| `contact` | Pose the instant the fist, claw, point, or edge crosses a canonical target plane at approximately upper-torso height. Align the striking structure from the floor through hips and torso to the striking limb without locking the elbow or knee. A stay attack retains both original foot contacts. In a switch attack, the formerly rear foot is arriving or planted as the new lead and must be capable of supporting the strike. |
-| `follow_through` | Continue the real line of force beyond contact rather than stopping unnaturally at the target plane, but retain enough structure to recover. A stay attack still uses the original foot locations and prepares to return to the same guard. A switch attack settles weight into the new lead and arranges the body to finish in the opposite-lead guard. Do not add a full spin unless the particular pack explicitly calls for one. |
+At contact, pose the instant the fist, claw, point, or edge crosses a canonical
+target plane at approximately upper-torso height. Align the striking structure
+from the feet through hips and torso to the striking limb without locking an
+elbow or knee. Begin with the feet in the named starting guard and make the
+whole body mechanically coherent, even though the evaluator will combine the
+upper-body and torso action with its separately evaluated footwork.
 
 The strike-family construction rules are:
 
 | Family | Animator brief |
 |---|---|
-| `thrust` | Move the primary striking point generally forward along a direct line. For the unarmed root this is a punch: the primary fist travels toward the target while the other hand protects, the shoulder does not rise into the neck, and the fist/wrist/forearm align at contact. For a weapon, the point and grip align with the thrust while the off hand follows the weapon's normal use. Retract or chamber only enough to create a plausible commit pose. |
-| `slash` | Move the primary striking edge, claw, or hand from the pack's primary side across the target line toward the opposite side. For the unarmed root this is a swipe, particularly suitable for claws. At contact, preserve edge or claw alignment and support the motion with coordinated pelvis and ribcage rotation rather than an isolated arm swing. Continue onto the opposite side in follow-through without turning it into an uncontrolled baseball swing. A pack that later supports the reverse slash direction should define it as a distinct recipe. |
+| `thrust` | Move the primary striking point generally forward along a direct line. For the unarmed root this is a punch: the primary fist reaches the target while the other hand protects, the shoulder does not rise into the neck, and the fist, wrist, and forearm align at contact. For a weapon, the point and grip align with the thrust while the off hand follows the weapon's normal use. Do not add an anticipatory chamber beyond what already exists in the guard. |
+| `slash` | Move the primary striking edge, claw, or hand from the pack's primary side across the target line toward the opposite side. For the unarmed root this is a swipe, particularly suitable for claws. At contact, preserve edge or claw alignment and support the motion with coordinated pelvis and ribcage rotation rather than an isolated arm swing. Arrange the body so that continuing along the same line briefly after contact remains anatomically safe. A pack that later supports the reverse slash direction should define it as a distinct recipe. |
 
-For `lead_left`, begin from `guard_lead_left`; for `lead_right`, begin from
-`guard_lead_right`. For `stay`, the feet occupy those same floor positions in
-all three poses. For `switch`, the initially rear foot passes or steps beyond
-the initial lead so that the motion can finish in the opposite guard. The new
-lead should be usable by contact or immediately afterward; the animator should
-not depict both feet airborne at the contact pose unless that recipe is
-explicitly an airborne attack.
+For `lead_left`, the contact is constructed from `guard_lead_left`; for
+`lead_right`, it is constructed from `guard_lead_right`. The runtime preserves
+those planted targets for a stay attack. For a switch attack, the stance-step
+planner passes or steps the initially rear foot beyond the initial lead and
+blends toward the opposite guard, timing the new support foot to arrive by
+contact or immediately afterward.
 
 The full visual sequence is:
 
 ```text
-start guard -> commit -> contact -> follow-through -> end guard
+start guard -> immediate acceleration -> contact -> bounded continuation -> end guard
 ```
 
-The commit may be subtle for a trained character, but it gives immediate local
-feedback and provides a plausible segment in which to absorb network latency.
-The contact marker synchronizes presentation with the server-owned attack
-event; it does not itself decide whether anything was hit.
+The guard is already positioned to attack, so there is no required commit or
+wind-up pose. The evaluator accelerates away from the guard immediately and
+times contact to the server-owned attack event. After contact it estimates the
+selected bones' incoming linear and angular velocities, continues them for a
+short recipe-defined interval, clamps weapon-tip travel and joint rotation,
+then uses a critically damped recovery toward the ending guard. A thrust uses
+little continuation and usually retracts promptly; a slash continues farther
+along its striking line. Network timing differences are absorbed by adjusting
+early acceleration and recovery, not by adding a visible telegraph.
 
-For each strike family a pack defines, the minimum graph has four motions:
+Unusual attacks whose path cannot be represented safely by bounded
+continuation, such as a full spin or a weapon passing around the body, may add
+an optional authored recovery anchor. It is not part of the complete-pack
+contract. The contact marker synchronizes presentation with gameplay but does
+not itself decide whether anything was hit.
 
-- left-foot lead, stay;
-- left-foot lead, switch;
-- right-foot lead, stay; and
-- right-foot lead, switch.
-
-At three poses per motion, overriding only thrust or only slash requires twelve
-attack-specific poses. Defining both requires twenty-four. The complete
-unarmed root defines both so that every descendant can resolve either semantic
-strike. Slash direction may initially be the biomechanically appropriate
-direction for the starting stance. Supporting both slash directions
-independently from either lead foot would add more recipes, but is not required
-by gameplay yet.
+Each strike family therefore requires two poses, one for each starting lead.
+The complete unarmed root defines two thrust/punch contacts and two slash/swipe
+contacts so that every descendant can resolve either semantic strike. Slash
+direction may initially be the biomechanically appropriate direction for the
+starting stance. Supporting both slash directions independently from either
+lead foot would add more recipes, but is not required by gameplay yet.
 
 Overgrowth likewise stores attack height, direction, stance swapping,
 mobility, reactions, and animation paths as data rather than deriving them
@@ -567,6 +543,12 @@ from filenames; see
 [`attacks.h`](https://github.com/WolfireGames/overgrowth/blob/245fe4828631c84c0023d29d1525f5716ccb6106/Source/Asset/Asset/attacks.h#L52-L78)
 and
 [`attacks.cpp`](https://github.com/WolfireGames/overgrowth/blob/245fe4828631c84c0023d29d1525f5716ccb6106/Source/Asset/Asset/attacks.cpp#L74-L145).
+Overgrowth samples four authored keyframes with cubic interpolation while
+clamping the interpolation coordinate to the authored interval; our bounded
+post-contact continuation is therefore an intentional extension of the
+inspiration rather than a claim that Overgrowth extrapolates indefinitely.
+See
+[`animation.cpp`](https://github.com/WolfireGames/overgrowth/blob/245fe4828631c84c0023d29d1525f5716ccb6106/Source/Asset/Asset/animation.cpp#L1285-L1316).
 
 ### Blocking
 
@@ -588,7 +570,10 @@ approximately upper-torso height:
 
 Instantiate each pattern once with `foot` equal to `left` and once with it
 equal to `right`, preserving the corresponding guard's handedness and foot
-lead.
+lead. These lead variants are required rather than procedural lower-body
+overlays: shield position, torso presentation, reachable blocking structure,
+and the path by which force reaches the stance can change substantially with
+the forward foot.
 
 The evaluator interpolates from the current guard into the appropriate contact
 pose, procedurally adjusts its height toward the predicted contact point, and
@@ -605,19 +590,16 @@ The initial complete set contains:
 | `supine_idle` | Lie on the back with the head and shoulders slightly raised enough to see forward. Flex the knees enough to keep the feet available for movement, with one or both soles planted, and keep the arms in a protective usable position rather than flat in a rigid anatomical display pose. |
 | `prone_crawl_contact` | Show a contralateral crawling support: left forearm/hand reaches or plants forward while the right knee/inside leg advances, with the right arm and left leg contributing rearward support. Keep hips and chest low and mark the current supporting surfaces. This is the maximum useful extension of the crawl, not a long military split. |
 | `prone_crawl_passing` | Bring the advancing right knee and left arm back beneath the body as the torso passes over the support polygon. Limbs are compact and changing roles; avoid a moment where the entire body appears unsupported. This is the neutral midpoint between mirrored crawl contacts. |
-| `prone_strafe_contact` | Author the canonical leftward strafe extreme. Plant the left forearm/hand to pull or brace toward the left while the right forearm and right knee/foot push the torso laterally. Keep the body facing forward rather than rolling fully onto its side, and separate the limbs enough to prevent intersection. The rightward extreme may be produced from the lower/body-safe mirror. |
-| `prone_strafe_passing` | Compact the limbs beneath and beside the torso halfway through the lateral crawl. The body remains low and forward-facing, with support transferring between forearms and knees without a visible forward surge. |
 | `supine_scamper_contact` | On the back, plant the left heel/foot and the opposite hand or forearm as the canonical extended support, with the pelvis slightly lifted or unloaded enough to move. The right leg is advancing toward its next plant. Protect the head and keep the neck from bearing body weight. |
 | `supine_scamper_passing` | Bring the advancing foot under the knee and move the torso through the support provided by heels and arms. Keep the pelvis near the floor but visibly mobile, and preserve a guarded upper body. This is the midpoint used between mirrored scamper contacts. |
 | `upright_prone_transition` | Pose the stable intermediate between standing/crouching and prone: both hands or forearms and at least one knee contact the floor, the head remains protected and able to look forward, and the pelvis is low enough to continue down without dropping the chest through the ground. It must also work in reverse as the main get-up intermediate. |
 | `dive_impact` | Pose first controlled contact after a forward dive. Use forearms and/or hands to absorb impact with bent elbows, turn or raise the head clear of the floor, keep the chest just above contact, and let knees/hips flex behind the body. Do not land on locked wrists, straight elbows, the face, or the weapon. |
-| `prone_supine_roll_left` | Pose the midpoint of rolling over the anatomical left side between prone and supine. The body rests chiefly on the left side of torso/hip, the left arm is placed where it will not be trapped beneath the body, the right arm protects or guides the roll, and the knees are modestly flexed to clear each other. |
-| `prone_supine_roll_right` | Construct the corresponding safe midpoint over the anatomical right side, with the right arm clear of entrapment and the left arm free to protect or guide. Preserve the same handedness and item grip rather than blindly mirroring equipment into the opposite hand. |
 
 Backward crawling may initially reverse the forward cycle, and getting up may
-reverse the upright-to-prone transition. The side-roll poses support the
-camera-driven change between prone and supine and can later contribute to
-ground dodges.
+reverse the upright-to-prone transition. The planned controls do not include
+prone strafing or a deliberate prone-to-supine roll, so neither has an authored
+pose. Supine may still result from a hit or physical fall; recovery from it is
+an automatic get-up or ragdoll transition rather than a player-controlled roll.
 
 ## Initial complete-pack size
 
@@ -626,21 +608,21 @@ has no fallback. Its tentative size is:
 
 | Family | Authored poses |
 |---|---:|
-| Standing and locomotion | 8 |
-| Directional ducking | 4 |
-| Jumping and dodging | 15 |
-| Prone and supine | 12 |
+| Standing and locomotion | 6 |
+| Directional ducking | 2 |
+| Jumping and dodging | 2 |
+| Prone and supine | 8 |
 | Combat guards | 2 |
-| Thrust/punch attacks | 12 |
-| Slash/swipe attacks | 12 |
+| Thrust/punch attacks | 2 |
+| Slash/swipe attacks | 2 |
 | Blocks | 6 |
-| **Complete unarmed root** | **71** |
+| **Complete unarmed root** | **30** |
 
 Most specialized packs should be substantially smaller because they inherit
-unchanged poses. A pack that overrides just one strike family needs twelve
-attack poses, not another complete set of seventy-one. The unarmed root
-supplies punch poses for unresolved thrust semantics and swipe poses for
-unresolved slash semantics.
+unchanged poses. A pack that overrides just one strike family needs two attack
+poses, not another complete set of thirty. The unarmed root supplies punch
+poses for unresolved thrust semantics and swipe poses for unresolved slash
+semantics.
 
 ## Secondary animation
 
