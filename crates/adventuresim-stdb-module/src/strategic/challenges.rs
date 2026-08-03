@@ -1826,6 +1826,7 @@ pub fn resolve_errantry_road_challenge(
     Ok(())
 }
 
+#[cfg(any())]
 fn puzzle_demo_enabled() -> bool {
     COMPILED_DEV_BOOTSTRAP_TOKEN.is_some_and(|token| {
         adventuresim_core::simulation_security::simulation_bootstrap_authorized(
@@ -1919,6 +1920,7 @@ fn order_errantry_issuer(
 
 /// Creates or reuses an accepted, immediately playable errantry quest.
 #[reducer]
+#[cfg(any())]
 pub fn load_puzzle_demo(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1937,24 +1939,39 @@ pub fn load_puzzle_demo(
     .map(|_| ())
 }
 
-/// Developer-only catalog harness for iterating on any compiled road encounter.
-/// It uses the ordinary persisted occurrence and reducer path, but binds the
-/// requested definition to the party's current journey camp immediately.
-#[reducer]
-pub fn load_road_encounter_demo(
+/// Bootstrap-only catalog materializer. Each scenario begins from its own
+/// ordinary errantry camp, so no selected character is mutated by the UI.
+fn materialize_development_road_encounter(
     ctx: &ReducerContext,
     character_id: u64,
-    catalog_id: String,
+    catalog_id: &str,
 ) -> Result<(), String> {
-    require_strategic_character_authority(ctx, character_id)?;
-    if !puzzle_demo_enabled() {
-        return Err("Road encounter demo loading is disabled in this module build".into());
-    }
     if catalog_id.is_empty() || catalog_id.len() > 96 {
         return Err("Road encounter catalog ID is invalid".into());
     }
-    let definition = adventuresim_core::road_encounter_catalog::encounter(&catalog_id)
+    let definition = adventuresim_core::road_encounter_catalog::encounter(catalog_id)
         .ok_or("Unknown road encounter catalog ID")?;
+    // Reuse the ordinary quest/camp materializer to establish durable journey
+    // authority. Its generated puzzle remains a separate, harmless subject.
+    if ctx
+        .db
+        .party_journey_authority()
+        .iter()
+        .all(|journey| {
+            ctx.db
+                .party_authority()
+                .id()
+                .find(&journey.party_id)
+                .is_none_or(|party| party.leader_id != character_id)
+        })
+    {
+        materialize_order_errantry(
+            ctx,
+            character_id,
+            None,
+            ErrantryLaunch::DirectDemoCamp(ErrantryPuzzleKind::OrderedSigils),
+        )?;
+    }
     let character = crate::character::require_living_character(ctx, character_id)?;
     let party_id = character.party_id.ok_or("Must be in a party")?;
     let party = ctx
@@ -1989,7 +2006,7 @@ pub fn load_road_encounter_demo(
         .road_challenge_authority()
         .party_id()
         .filter(&party_id)
-        .filter(|challenge| challenge.catalog_id == definition.id)
+            .filter(|challenge| challenge.catalog_id == definition.id)
         .count() as u64;
     let catalog_hash = catalog_id
         .bytes()
@@ -2002,7 +2019,7 @@ pub fn load_road_encounter_demo(
         &adventuresim_core::encounter::NarrativeSelection {
             boundary_minute: journey.completed_elapsed_minutes,
             roll_index: 0xd000_0000_0000_0000 ^ catalog_hash ^ ordinal.rotate_left(17),
-            catalog_id,
+            catalog_id: catalog_id.into(),
         },
         NarrativeEncounterOrigin::DeveloperDemo,
     )

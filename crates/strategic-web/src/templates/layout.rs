@@ -199,7 +199,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
                     script src="/static/dialogue-client.js?v=social-chat-integration-1" defer {}
                     script src="/static/physical-evidence.js?v=deterministic-inspection-1" defer {}
-                    script src="/static/developer-quest-editor.js?v=road-encounter-demo-1" defer {}
+                    script src="/static/developer-quest-editor.js?v=scenario-gallery-1" defer {}
                     script src="/static/chat-resize.js?v=counterparty-portraits-1" defer {}
                     script src="/static/local-chat.js?v=local-chat-location-authority-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-4" defer {}
@@ -364,47 +364,8 @@ fn settlement_top_bar(
 
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
-                    button type="button" class="btn btn-small developer-puzzle-demo-button"
-                        data-developer-puzzle-demo data-puzzle-kind="ordered-sigils" data-developer-only
-                        aria-label="Load the ordered sigil puzzle demo"
-                        title="Create an accepted errantry quest and open its puzzle immediately" {
-                        "Sigil puzzle"
-                    }
-                    button type="button" class="btn btn-small developer-puzzle-demo-button"
-                        data-developer-puzzle-demo data-puzzle-kind="truthful-witnesses" data-developer-only
-                        aria-label="Load the truthful witnesses puzzle demo"
-                        title="Create an accepted errantry quest and open its puzzle immediately" {
-                        "Witness puzzle"
-                    }
-                    button type="button" class="btn btn-small developer-puzzle-demo-button"
-                        data-developer-puzzle-demo data-puzzle-kind="rune-transformation" data-developer-only
-                        aria-label="Load the rune transformation puzzle demo"
-                        title="Create an accepted errantry quest and open its puzzle immediately" {
-                        "Rune puzzle"
-                    }
-                    button type="button" class="btn btn-small developer-puzzle-demo-button"
-                        data-developer-puzzle-demo data-puzzle-kind="logic-grid" data-developer-only
-                        aria-label="Load the logic-grid puzzle demo"
-                        title="Create an accepted errantry quest and open its puzzle immediately" {
-                        "Logic-grid puzzle"
-                    }
-                    button type="button" class="btn btn-small developer-puzzle-demo-button"
-                        data-developer-puzzle-demo data-puzzle-kind="resource-allocation" data-developer-only
-                        aria-label="Load the resource-allocation puzzle demo"
-                        title="Create an accepted errantry quest and open its puzzle immediately" {
-                        "Provision puzzle"
-                    }
-                    button type="button" class="btn btn-small developer-outbreak-demo-button"
-                        data-developer-outbreak-demo data-developer-only
-                        aria-label="Load the outbreak demo"
-                        title="Create a real outbreak and discover it through an ordinary rumor" {
-                        "Outbreak demo"
-                    }
-                    button type="button" class="btn btn-small developer-autopsy-demo-button"
-                        data-developer-autopsy-demo data-developer-only
-                        aria-label="Load the autopsy demo"
-                        title="Prepare this character and load autoresolve-derived demo bodies" {
-                        "Autopsy demo"
+                    a href="/developer/scenarios" class="btn btn-small" data-developer-only {
+                        "Scenario inspector"
                     }
                     button type="button" class="developer-quest-button" data-developer-quest-open
                         data-developer-only aria-label="Spawn a developer quest"
@@ -1178,9 +1139,10 @@ mod tests {
         );
         assert!(markup.contains("aria-label=\"Enable developer mode\""));
         assert!(markup.contains("aria-pressed=\"false\""));
-        assert!(markup.contains("data-developer-outbreak-demo data-developer-only"));
-        assert!(markup.contains("data-developer-autopsy-demo data-developer-only"));
-        assert_eq!(markup.matches("data-developer-puzzle-demo").count(), 5);
+        assert!(!markup.contains("data-developer-outbreak-demo"));
+        assert!(!markup.contains("data-developer-autopsy-demo"));
+        assert!(!markup.contains("data-developer-puzzle-demo"));
+        assert!(markup.contains("href=\"/developer/scenarios\""));
         for puzzle_kind in [
             "ordered-sigils",
             "truthful-witnesses",

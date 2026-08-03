@@ -79,7 +79,8 @@ when promoting replay candidates.
 
 ## Development demo
 
-Run `just outbreak-demo`, create or select a character, enable browser-local
+Run the single isolated strategic scenario-gallery command, then select the
+**Undiscovered outbreak** scenario character. Use browser-local
 developer mode, and choose **Outbreak demo** from a settlement. The gated loader
 raises useful investigation skills, supplies a surgery kit, and materializes
 one deterministic generated outbreak with private progressing patients and an

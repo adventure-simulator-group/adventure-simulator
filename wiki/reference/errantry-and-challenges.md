@@ -218,7 +218,8 @@ as decorative bookkeeping.
 
 ## Direct development demo
 
-Run `just puzzle-demo`, select a character in a settlement, enable developer
+Run the single isolated strategic scenario-gallery command, select the desired
+puzzle scenario character, and enable developer
 mode, and choose **Sigil puzzle**, **Witness puzzle**, **Rune puzzle**,
 **Logic-grid puzzle**, or **Provision puzzle**. The development-only reducer creates or
 reuses a deterministic Order-sourced case, accepted contract, finale site and

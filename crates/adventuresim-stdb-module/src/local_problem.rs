@@ -344,7 +344,7 @@ pub fn backend_local_problem_rumors(ctx: &ViewContext) -> Vec<BackendLocalProble
         .collect()
 }
 
-fn official_minute(ctx: &ReducerContext) -> u64 {
+pub(crate) fn official_minute(ctx: &ReducerContext) -> u64 {
     ctx.db
         .world_clock()
         .id()
@@ -494,6 +494,53 @@ pub(crate) fn ensure_generated_incidents(
     settlement_id: &str,
     minute: u64,
 ) -> Result<(), String> {
+    ensure_generated_incidents_inner(ctx, settlement_id, minute, None, None)
+}
+
+pub(crate) fn trigger_next_generated_incident(
+    ctx: &ReducerContext,
+    problem_id: &str,
+    occurred_at: u64,
+) -> Result<u16, String> {
+    let problem = ctx
+        .db
+        .local_problem_authority()
+        .id()
+        .find(problem_id)
+        .ok_or("Generated problem not found")?;
+    if problem.resolved_at.is_some() {
+        return Err("Resolved generated problems cannot receive another incident".into());
+    }
+    let scope: lp::Scope = serde_json::from_str(&problem.scope_json)
+        .map_err(|_| "Generated problem scope authority is invalid")?;
+    let lp::Scope::Settlement { settlement_id } = scope else {
+        return Err("Only settlement generated problems support manual incidents".into());
+    };
+    let validated = validated_problem_generation(ctx, &problem, &settlement_id)
+        .ok_or("Generated problem has no valid private generation authority")?;
+    if !problem.recurring_hostile
+        && problem.incident_count >= validated.manifest.maximum_incidents
+    {
+        return Err("Generated problem has reached its incident maximum".into());
+    }
+    let next = problem.incident_count.saturating_add(1);
+    ensure_generated_incidents_inner(
+        ctx,
+        &settlement_id,
+        occurred_at,
+        Some(problem_id),
+        Some(occurred_at),
+    )?;
+    Ok(next)
+}
+
+fn ensure_generated_incidents_inner(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    minute: u64,
+    target_problem_id: Option<&str>,
+    forced_occurred_at: Option<u64>,
+) -> Result<(), String> {
     let scope = format!("settlement:{settlement_id}");
     let problems: Vec<_> = ctx
         .db
@@ -501,6 +548,7 @@ pub(crate) fn ensure_generated_incidents(
         .scope_key()
         .filter(&scope)
         .filter(|problem| is_active(problem, minute))
+        .filter(|problem| target_problem_id.is_none_or(|id| problem.id == id))
         .collect();
     for mut problem in problems {
         let Some(validated) = validated_problem_generation(ctx, &problem, settlement_id) else {
@@ -511,12 +559,16 @@ pub(crate) fn ensure_generated_incidents(
         } else {
             validated.manifest.maximum_incidents
         };
-        let total_due = lp::due_incident_count_configured(
-            problem.starts_at,
-            minute,
-            validated.manifest.incident_interval_minutes,
-            configured_maximum,
-        );
+        let total_due = if target_problem_id.is_some() {
+            problem.incident_count.saturating_add(1).min(configured_maximum)
+        } else {
+            lp::due_incident_count_configured(
+                problem.starts_at,
+                minute,
+                validated.manifest.incident_interval_minutes,
+                configured_maximum,
+            )
+        };
         // Bound one transaction's catch-up work. Repeated settlement refreshes
         // deterministically continue from the persisted ordinal.
         let due = total_due.min(problem.incident_count.saturating_add(16));
@@ -559,10 +611,12 @@ pub(crate) fn ensure_generated_incidents(
             let event_id = format!("{id}:event");
             let proposition_id = format!("{id}:proposition");
             let evidence_id = format!("{id}:evidence");
-            let occurred_at = problem.starts_at.saturating_add(
-                u64::from(ordinal.saturating_sub(1))
-                    .saturating_mul(validated.manifest.incident_interval_minutes),
-            );
+            let occurred_at = forced_occurred_at.unwrap_or_else(|| {
+                problem.starts_at.saturating_add(
+                    u64::from(ordinal.saturating_sub(1))
+                        .saturating_mul(validated.manifest.incident_interval_minutes),
+                )
+            });
             let public_summary = follow_up_summary(&problem.symptom).to_owned();
             let witness_account = format!(
                 "{} reported seeing signs near {} while {}.",
@@ -644,12 +698,12 @@ pub(crate) fn ensure_generated_incidents(
             if problem.public_since_minute.is_none()
                 && adventuresim_core::threat_escalation::is_public(problem.public_awareness_bps)
             {
-                problem.public_since_minute =
+                problem.public_since_minute = forced_occurred_at.or_else(||
                     adventuresim_core::threat_escalation::scheduled_public_since_minute(
                         problem.starts_at,
                         validated.manifest.incident_interval_minutes,
                         profile.investigation.investigability,
-                    );
+                    ));
                 if problem.public_since_minute.is_none() {
                     return Err("Public awareness crossed without a crossing ordinal".into());
                 }

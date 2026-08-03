@@ -46,42 +46,22 @@ test("submission handles structured 422 diagnostics, override, and duplicate pre
   assert.doesNotMatch(questSubmission, /location\.(assign|replace)|window\.location/);
 });
 
-test("autopsy demo loader is explicit, settlement-only, and redirects after success", () => {
-  assert.match(layout, /data-developer-autopsy-demo/);
-  assert.match(script, /fetch\("\/api\/developer\/autopsy-demo"/);
-  assert.match(script, /Prepare the selected character/);
-  assert.match(script, /window\.location\.assign\(body\.redirect_to/);
-  assert.match(route, /\.route\("\/api\/developer\/autopsy-demo"/);
-  assert.match(route, /"load_autopsy_demo"/);
-});
-
-test("outbreak demo uses real server materialization and ordinary rumor discovery", () => {
-  assert.match(layout, /data-developer-outbreak-demo/);
-  assert.match(script, /fetch\("\/api\/developer\/outbreak-demo"/);
-  assert.match(script, /discover it through an ordinary local rumor/);
-  assert.match(route, /\.route\("\/api\/developer\/outbreak-demo"/);
-  assert.match(route, /"load_outbreak_demo"/);
-  assert.match(route, /"discovery":"normal_rumor"/);
-});
-
-test("puzzle demo creates a real quest and redirects straight to its challenge", () => {
-  assert.match(layout, /data-developer-puzzle-demo/);
-  assert.match(script, /fetch\("\/api\/developer\/puzzle-demo"/);
-  assert.match(script, /window\.location\.assign\(body\.redirect_to\)/);
-  assert.match(route, /\.route\("\/api\/developer\/puzzle-demo"/);
-  assert.match(route, /query::<BackendChallenge>/);
-  assert.match(route, /row\.id\.starts_with\(&demo_prefix\)/);
-  assert.match(route, /challenge\.case_id, challenge\.id/);
+test("selected-character fixture loaders are removed in favor of scenario characters", () => {
+  for (const surface of [layout.split("#[cfg(test)]")[0], script, route.split("#[cfg(any())]")[0]]) {
+    assert.doesNotMatch(surface, /developer-(?:autopsy|outbreak|puzzle)-demo/);
+    assert.doesNotMatch(surface, /api\/developer\/(?:autopsy|outbreak|puzzle)-demo/);
+  }
+  assert.match(layout, /\/developer\/scenarios/);
 });
 
 test("HTTP adapter derives settlement and leaves discovery to normal rumors", () => {
-  const productionRoute = route.split("#[cfg(test)]")[0];
+  const productionRoute = route.split("#[cfg(any())]")[0];
   assert.match(productionRoute, /current_settlement_id/);
   const request = productionRoute.split("struct SpawnRequest {")[1].split("}")[0];
   assert.doesNotMatch(request, /settlement_id/);
   assert.match(productionRoute, /"discovery":"normal_rumor"/);
   assert.doesNotMatch(productionRoute, /rumor_receipt|journal|case_site_pin|referral/);
-  assert.match(productionRoute, /SELECT \* FROM character_time WHERE character_id/);
+  assert.match(productionRoute, /SELECT \* FROM backend_character_times WHERE character_id/);
   assert.match(productionRoute, /now_minute/);
 });
 

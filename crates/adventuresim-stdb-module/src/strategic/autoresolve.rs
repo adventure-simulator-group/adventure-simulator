@@ -45,7 +45,8 @@ use crate::{
     },
     item::{InventoryItem, inventory_item, item},
     local_problem::{
-        local_problem_receipt, local_problem_rumor_delivery, public_threat_disclosure,
+        local_problem_authority, local_problem_receipt, local_problem_rumor_delivery,
+        local_problem_symptom, public_threat_disclosure,
     },
     npc_adventurer::npc_adventuring_party_authority,
     organization::organization_presentation,

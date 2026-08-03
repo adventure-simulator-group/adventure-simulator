@@ -18,6 +18,7 @@ use crate::{
 pub enum BrowserCharacterGrantOrigin {
     StartingCandidate,
     AdultDescendant,
+    DevelopmentScenario,
 }
 
 #[derive(Clone, Debug)]
@@ -38,16 +39,26 @@ pub struct BrowserCharacterGrant {
     /// out of ad-hoc strings.
     pub starting_claim_request_key: Option<String>,
     pub lineage_source_parent_id: Option<u64>,
+    pub development_scenario_slug: Option<String>,
     pub granted_micros: i64,
 }
 
 fn valid_grant_provenance(grant: &BrowserCharacterGrant) -> bool {
     match grant.origin {
         BrowserCharacterGrantOrigin::StartingCandidate => {
-            grant.starting_claim_request_key.is_some() && grant.lineage_source_parent_id.is_none()
+            grant.starting_claim_request_key.is_some()
+                && grant.lineage_source_parent_id.is_none()
+                && grant.development_scenario_slug.is_none()
         }
         BrowserCharacterGrantOrigin::AdultDescendant => {
-            grant.starting_claim_request_key.is_none() && grant.lineage_source_parent_id.is_some()
+            grant.starting_claim_request_key.is_none()
+                && grant.lineage_source_parent_id.is_some()
+                && grant.development_scenario_slug.is_none()
+        }
+        BrowserCharacterGrantOrigin::DevelopmentScenario => {
+            grant.starting_claim_request_key.is_none()
+                && grant.lineage_source_parent_id.is_none()
+                && grant.development_scenario_slug.is_some()
         }
     }
 }
@@ -131,6 +142,7 @@ pub(crate) fn grant_browser_character_internal(
             origin: BrowserCharacterGrantOrigin::StartingCandidate,
             starting_claim_request_key: Some(starting_request_key.to_owned()),
             lineage_source_parent_id: None,
+            development_scenario_slug: None,
             granted_micros: ctx.timestamp.to_micros_since_unix_epoch(),
         });
     Ok(())
@@ -210,6 +222,7 @@ pub(crate) fn grant_adult_descendant_internal(
             origin: BrowserCharacterGrantOrigin::AdultDescendant,
             starting_claim_request_key: None,
             lineage_source_parent_id: Some(source_parent_id),
+            development_scenario_slug: None,
             granted_micros: ctx.timestamp.to_micros_since_unix_epoch(),
         });
     Ok(())
@@ -238,6 +251,60 @@ pub fn grant_browser_character(
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
     grant_browser_character_internal(ctx, &owner_key, character_id, &starting_request_key)
+}
+
+/// Adopt only the explicitly registered development-scenario primaries into
+/// an opaque browser owner. This never scans or grants ordinary characters.
+#[reducer]
+pub fn adopt_development_scenarios(
+    ctx: &ReducerContext,
+    owner_key: String,
+) -> Result<(), String> {
+    crate::strategic::require_development_gateway(ctx)?;
+    if !valid_owner_key(&owner_key) {
+        return Err("Browser owner key is malformed".into());
+    }
+    let scenarios = ctx.db.development_scenario().iter().collect::<Vec<_>>();
+    if scenarios.is_empty() {
+        return Err("Development scenario catalog has not been initialized".into());
+    }
+    for scenario in scenarios {
+        let character = ctx
+            .db
+            .character()
+            .id()
+            .find(scenario.primary_character_id)
+            .ok_or("Development scenario primary character is missing")?;
+        if character.temporary {
+            return Err("Temporary characters cannot be adopted as development scenarios".into());
+        }
+        if let Some(existing) = ctx
+            .db
+            .browser_character_grant()
+            .character_id()
+            .find(scenario.primary_character_id)
+        {
+            if existing.owner_key != owner_key
+                || existing.origin != BrowserCharacterGrantOrigin::DevelopmentScenario
+                || existing.development_scenario_slug.as_deref() != Some(&scenario.slug)
+                || !valid_grant_provenance(&existing)
+            {
+                return Err("Development scenario is already adopted by another browser".into());
+            }
+            continue;
+        }
+        ctx.db.browser_character_grant().insert(BrowserCharacterGrant {
+            character_id: scenario.primary_character_id,
+            character_scan_id: scenario.primary_character_id,
+            owner_key: owner_key.clone(),
+            origin: BrowserCharacterGrantOrigin::DevelopmentScenario,
+            starting_claim_request_key: None,
+            lineage_source_parent_id: None,
+            development_scenario_slug: Some(scenario.slug),
+            granted_micros: ctx.timestamp.to_micros_since_unix_epoch(),
+        });
+    }
+    Ok(())
 }
 
 #[reducer]
@@ -480,6 +547,7 @@ mod tests {
             origin: BrowserCharacterGrantOrigin::StartingCandidate,
             starting_claim_request_key: Some("claim".into()),
             lineage_source_parent_id: None,
+            development_scenario_slug: None,
             granted_micros: 0,
         };
         assert!(valid_grant_provenance(&grant));

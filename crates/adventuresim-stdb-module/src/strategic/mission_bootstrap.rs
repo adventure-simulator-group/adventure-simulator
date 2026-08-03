@@ -323,7 +323,6 @@ pub fn cancel_mission_request(
 pub fn bootstrap_development_world(
     ctx: &ReducerContext,
     bootstrap_token: String,
-    include_visual_demos: bool,
 ) -> Result<(), String> {
     if !adventuresim_core::simulation_security::simulation_bootstrap_authorized(
         COMPILED_DEV_BOOTSTRAP_TOKEN,
@@ -331,52 +330,15 @@ pub fn bootstrap_development_world(
     ) {
         return Err("Development bootstrap is disabled or unauthorized".into());
     }
-    seed_world(ctx, include_visual_demos)?;
+    seed_world(ctx, true)?;
     crate::disease::seed_sick_character(ctx)?;
-    if include_visual_demos {
-        crate::character::seed_damaged_character(ctx)?;
-        crate::character::seed_religion_scholar_character(ctx)?;
-        crate::character::seed_bestiary_scholar_character(ctx)?;
-        crate::character::seed_herbalism_demo_character(ctx)?;
-        crate::social::seed_social_demo(ctx)?;
-    }
+    crate::character::seed_damaged_character(ctx)?;
+    crate::character::seed_religion_scholar_character(ctx)?;
+    crate::character::seed_bestiary_scholar_character(ctx)?;
+    crate::character::seed_herbalism_demo_character(ctx)?;
+    crate::social::seed_social_demo(ctx)?;
+    materialize_development_scenario_gallery(ctx)?;
     Ok(())
-}
-
-/// Load the one-shot autopsy visual fixture for the currently selected
-/// character. The reducer is callable only from module binaries compiled for
-/// the isolated development bootstrap; ordinary builds contain no enabling
-/// capability.
-#[reducer]
-pub fn load_autopsy_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
-    require_strategic_character_authority(ctx, character_id)?;
-    let enabled = COMPILED_DEV_BOOTSTRAP_TOKEN.is_some_and(|token| {
-        adventuresim_core::simulation_security::simulation_bootstrap_authorized(
-            COMPILED_DEV_BOOTSTRAP_TOKEN,
-            token,
-        )
-    });
-    if !enabled {
-        return Err("Autopsy demo loading is disabled in this module build".into());
-    }
-    crate::corpse::seed_autopsy_demo(ctx, character_id)
-}
-
-/// Load one deterministic, fully materialized outbreak without bypassing the
-/// ordinary rumor and journal discovery path.
-#[reducer]
-pub fn load_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
-    require_strategic_character_authority(ctx, character_id)?;
-    let enabled = COMPILED_DEV_BOOTSTRAP_TOKEN.is_some_and(|token| {
-        adventuresim_core::simulation_security::simulation_bootstrap_authorized(
-            COMPILED_DEV_BOOTSTRAP_TOKEN,
-            token,
-        )
-    });
-    if !enabled {
-        return Err("Outbreak demo loading is disabled in this module build".into());
-    }
-    seed_outbreak_demo(ctx, character_id)
 }
 
 /// Seed a standalone tactical mission: a solo party occupying a typed case
@@ -2120,6 +2082,7 @@ pub fn spawn_developer_quest(
     definition_json: String,
     allow_implausible: bool,
 ) -> Result<(), String> {
+    require_development_gateway(ctx)?;
     use adventuresim_core::{developer_quest as dq, quest_generation as qg};
     require_strategic_character_authority(ctx, character_id)?;
     let definition = dq::parse_definition_json(&definition_json).map_err(|diagnostics| {

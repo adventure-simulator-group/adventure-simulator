@@ -174,11 +174,10 @@ def publish(server: str, database: str) -> int:
     return result.returncode
 
 
-def seed(server: str, database: str, bootstrap_token: str, include_damaged_demo: bool = False) -> int:
+def seed(server: str, database: str, bootstrap_token: str) -> int:
     result = run_checked([
         "spacetime", "call", "--server", server, database,
         "bootstrap_development_world", bootstrap_token,
-        "true" if include_damaged_demo else "false",
     ])
     write_console(result.stdout)
     if result.returncode:
@@ -764,12 +763,7 @@ def run_profile(
                     os.environ["ADVENTURESIM_DEV_BOOTSTRAP_TOKEN"] = previous_token
             if code:
                 return code
-            code = seed(
-                server,
-                database,
-                bootstrap_token,
-                include_damaged_demo=mode is not ProfileMode.TACTICAL,
-            )
+            code = seed(server, database, bootstrap_token)
             if code:
                 return code
 

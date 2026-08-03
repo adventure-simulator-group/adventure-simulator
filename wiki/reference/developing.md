@@ -4,14 +4,41 @@ For fast puzzle generation, interactive play, structural difficulty sweeps,
 and deterministic regression replay without starting SpacetimeDB or the web
 stack, use the dependency-light [`puzzle-lab`](puzzle-lab.md) CLI.
 
-## Puzzle demo
+## Strategic scenario gallery
 
-Start a disposable strategic-only stack with `just puzzle-demo`. Create or
-select an adventurer in a settlement, enable browser-local developer mode, and
-choose **Sigil puzzle**, **Witness puzzle**, **Rune puzzle**,
-**Logic-grid puzzle**, or **Provision puzzle**. It creates or
-reuses a deterministic Order-sourced quest, active journey, persisted road
-camp, finale hostile, and selected puzzle trial, then redirects immediately to
+Start every in-game strategic fixture with one isolated command:
+
+```powershell
+just web-isolated-strategic scenario-gallery 23100
+```
+
+The guarded bootstrap always creates the complete gallery; there is no visual
+demo flag and no feature-specific profile. Open **Character select**, search
+the distinct **Test scenarios** roster, and choose **Select and open**. Each
+entry owns a deterministic character and durable state, including disease,
+wounds, knowledge, social interactions, autopsy, outbreak, all puzzle kinds,
+and every compiled road encounter. Reset the disposable isolated profile to
+restore irreversible scenarios.
+
+The **Scenario inspector** lists bounded generated quest state. Player-safe
+summaries are visually separated from private problem and canonical case IDs.
+For a registered recurring-threat scenario, **Trigger next incident / attack**
+appends exactly one incident at the official current minute through the same
+materializer as scheduled progression; it does not advance the world clock or
+run settlement-wide activity.
+
+Scenario adoption is available only to the registered strategic gateway in a
+module compiled with the development capability. The opaque browser owner is
+granted only registered primary characters. Ordinary builds project no
+scenario catalog and cannot adopt or update it.
+
+## Puzzle demo (scenario character)
+
+Use the single scenario-gallery command above, then select **Sigil puzzle**,
+**Witness puzzle**, **Rune puzzle**, **Logic-grid puzzle**, or
+**Provision puzzle**. Each already owns a deterministic Order-sourced quest,
+active journey, persisted road camp, finale hostile, and selected puzzle trial,
+then opens
 the playable chat challenge. This skips
 ordinary dialogue acceptance and travel setup. The no-JavaScript form uses
 POST/redirect/GET and preserves safe wrong/correct feedback. Background world
@@ -31,9 +58,8 @@ challenge projection rather than reconstructed by the HTTP adapter. See
 
 ## Outbreak demo
 
-Start a disposable strategic-only stack with `just outbreak-demo`. Create or
-select an adventurer, enable browser-local developer mode, and choose
-**Outbreak demo** in the settlement top bar. The loader creates a deterministic
+Use the single scenario-gallery command and select **Undiscovered outbreak**.
+Its character owns a deterministic
 generated outbreak with private progressing patients, an optional exact-course
 disease victim or carrier-autoresolve victim, and an ordinary remediation path.
 It prepares the selected character
@@ -48,15 +74,8 @@ in a development-bootstrap module.
 
 ## Autopsy demo
 
-Start a disposable strategic-only stack:
-
-```powershell
-just autopsy-demo
-```
-
-Create or select an adventurer, enable browser-local developer mode, return to
-their settlement overview, and choose **Autopsy demo** in the top bar. The
-one-shot loader raises that character's Surgery, Physiology, and Bestiary
+Use the single scenario-gallery command and select **Autopsy**. Its character's
+Surgery, Physiology, and Bestiary
 skills, supplies a surgery kit, and stages three bodies in the current
 settlement: a recent victim, an unidentified interred victim, and an enemy
 killed by the party. All physical injuries come from ordinary strategic
@@ -76,7 +95,7 @@ deploy a development-bootstrap module to an untrusted environment.
 
 ## Herbalism demo
 
-Bootstrap the isolated profile with visual demos, select **Herbalism Demo**,
+Bootstrap the isolated scenario gallery, select **Herbalism Demo**,
 and open the raised **Herbalism** skill action. Willow demonstrates public
 grade and potency, comfrey demonstrates dry/grind and excessive-heat waste,
 and poppy tincture demonstrates a strong benefit with a physiological hazard.
@@ -115,10 +134,9 @@ pages it reveals a top-right quest-authoring button; it never appears at camp
 or case sites. The resulting quest remains undiscovered until ordinary
 tavern/NPC rumor delivery.
 
-This is not an authorization boundary. The HTTP endpoint and
-`spawn_developer_quest` reducer intentionally have no developer credential yet,
-so they must not be exposed as an administrative tool on an untrusted
-deployment.
+Browser-local mode remains presentation only. The reducer requires the
+registered strategic gateway and the compiled development capability, so a
+normal module build cannot author arbitrary quests.
 
 The editor, authorization limitation, generated authority, and discovery model
 are documented in

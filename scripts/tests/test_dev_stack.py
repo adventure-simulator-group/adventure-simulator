@@ -115,18 +115,14 @@ class WorkflowTests(unittest.TestCase):
         run_checked.return_value = mock.Mock(returncode=0, stdout="")
 
         self.assertEqual(dev_stack.seed("http://localhost:1", "db", "a" * 64), 0)
-        self.assertEqual(run_checked.call_args.args[0][-3:], ["bootstrap_development_world", "a" * 64, "false"])
+        self.assertEqual(run_checked.call_args.args[0][-2:], ["bootstrap_development_world", "a" * 64])
 
     @mock.patch.object(dev_stack, "run_checked")
-    def test_seed_includes_damaged_demo_character(self, run_checked):
+    def test_seed_has_no_optional_visual_fixture_flag(self, run_checked):
         run_checked.return_value = mock.Mock(returncode=0, stdout="")
 
-        self.assertEqual(
-            dev_stack.seed("http://localhost:1", "db", "a" * 64, include_damaged_demo=True),
-            0,
-        )
-
-        self.assertEqual(run_checked.call_args.args[0][-3:], ["bootstrap_development_world", "a" * 64, "true"])
+        self.assertEqual(dev_stack.seed("http://localhost:1", "db", "a" * 64), 0)
+        self.assertEqual(run_checked.call_args.args[0][-2:], ["bootstrap_development_world", "a" * 64])
 
     @mock.patch.object(dev_stack, "run_checked")
     def test_publish_messages_distinguish_reset(self, run_checked):
@@ -308,16 +304,12 @@ class WorkflowTests(unittest.TestCase):
         parameterized = [line for line in lines if "{{ quote(profile) }}" in line]
         fixed_demos = [line for line in lines if line not in parameterized]
         self.assertEqual(len(parameterized), 3)
-        self.assertEqual(len(fixed_demos), 3)
+        self.assertEqual(len(fixed_demos), 0)
         for line in parameterized:
             compact = line.replace(" ", "")
             self.assertIn("{{quote(profile)}}", compact)
             self.assertIn("{{quote(base_port)}}", compact)
             self.assertNotIn("'{{profile}}'", line)
-        for profile in ("autopsy-demo", "outbreak-demo", "puzzle-demo"):
-            matching = [line for line in fixed_demos if f" {profile} " in line]
-            self.assertEqual(len(matching), 1)
-            self.assertIn("{{quote(base_port)}}", matching[0].replace(" ", ""))
 
     def test_write_and_remove_tactical_env_file(self):
         with mock.patch.object(dev_stack, "TACTICAL_ENV_FILE", Path(tempfile.mkdtemp()) / ".env.tactical"):

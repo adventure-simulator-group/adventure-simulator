@@ -474,6 +474,30 @@ pub enum AlgebraicType {
 // Domain types matching strategic-db schema
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendDevelopmentScenario {
+    pub slug: String,
+    pub revision: u16,
+    pub category: String,
+    pub label: String,
+    pub description: String,
+    pub primary_character_id: u64,
+    pub entry_route: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendDevelopmentQuest {
+    pub scenario_slug: String,
+    pub problem_id: String,
+    pub canonical_case_id: String,
+    pub symptom: String,
+    pub incident_count: u16,
+    pub public_awareness_bps: u16,
+    pub recurring_hostile: bool,
+    pub resolved: bool,
+    pub player_safe_summary: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Character {
     pub id: u64,
     pub name: String,
