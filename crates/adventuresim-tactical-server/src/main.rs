@@ -16,6 +16,10 @@ use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::{Replicated, ServerState},
     prelude::{AdventureSimulatorNetPlugins, AdventureSimulatorServer},
 };
+#[cfg(feature = "debug")]
+use adventuresim_tactical_netcode::{
+    bevy_replicon::prelude::FromClient, prelude::DebugGameTimeScaleRequest,
+};
 use bevy::ecs::schedule::ApplyDeferred;
 use bevy::prelude::*;
 use clap::{ArgAction, Parser};
@@ -72,59 +76,71 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    App::new()
-        .add_plugins(DefaultPlugins.set(bevy::log::LogPlugin {
-            filter: "tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
-            ..default()
-        }))
-        .add_plugins((
-            AdventureSimulatorCorePlugins
-                .build()
-                .set(AdventureSimulatorPhysicsPlugin {
-                    enable_simulation: true,
-                }),
-            AdventureSimulatorNetPlugins,
-        ))
-        .add_plugins((
-            stdb::SpacetimeDbPlugin,
-            combat::CombatPlugin,
-            bot::BotPlugin,
-        ))
-        .insert_resource(MissionState::new(
-            (!args.no_timeout)
-                .then_some(args.timeout)
-                .map(|duration| Timer::from_seconds(duration, TimerMode::Once)),
-            args.required_enemy_kills,
-            NonZeroU32::new(args.expected_party_members)
-                .expect("clap validates at least one expected party member"),
-        ))
-        .insert_resource(args)
-        .add_systems(
-            Update,
-            (
-                (check_terminal_combat_outcome, check_mission_timeout)
-                    .chain()
-                    .after(CombatSet::Condition)
-                    .after(spawn_connected_players)
-                    .after(process_terminal_submission_results),
-                process_terminal_submission_results.after(stdb::update_spacetimedb),
-                fail_stalled_terminal_submission
-                    .after(process_terminal_submission_results)
-                    .before(check_terminal_combat_outcome),
-                finish_terminal_presentation.after(check_mission_timeout),
-                (spawn_connected_players, ApplyDeferred)
-                    .chain()
-                    .in_set(PlayerProjectionSet::Spawn)
-                    .after(stdb::update_spacetimedb),
-                (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDbReady>),
-            ),
-        )
-        .add_systems(OnEnter(ServerState::Running), on_server_started)
-        .add_systems(FixedPostUpdate, update_skeleton_locomotion)
-        .add_observer(on_join_request)
-        .add_observer(on_player_input)
-        .add_observer(on_client_disconnected)
-        .run();
+    let mut app = App::new();
+    app.add_plugins(DefaultPlugins.set(bevy::log::LogPlugin {
+        filter: "tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
+        ..default()
+    }))
+    .add_plugins((
+        AdventureSimulatorCorePlugins
+            .build()
+            .set(AdventureSimulatorPhysicsPlugin {
+                enable_simulation: true,
+            }),
+        AdventureSimulatorNetPlugins,
+    ))
+    .add_plugins((
+        stdb::SpacetimeDbPlugin,
+        combat::CombatPlugin,
+        bot::BotPlugin,
+    ))
+    .insert_resource(MissionState::new(
+        (!args.no_timeout)
+            .then_some(args.timeout)
+            .map(|duration| Timer::from_seconds(duration, TimerMode::Once)),
+        args.required_enemy_kills,
+        NonZeroU32::new(args.expected_party_members)
+            .expect("clap validates at least one expected party member"),
+    ))
+    .insert_resource(args)
+    .add_systems(
+        Update,
+        (
+            (check_terminal_combat_outcome, check_mission_timeout)
+                .chain()
+                .after(CombatSet::Condition)
+                .after(spawn_connected_players)
+                .after(process_terminal_submission_results),
+            process_terminal_submission_results.after(stdb::update_spacetimedb),
+            fail_stalled_terminal_submission
+                .after(process_terminal_submission_results)
+                .before(check_terminal_combat_outcome),
+            finish_terminal_presentation.after(check_mission_timeout),
+            (spawn_connected_players, ApplyDeferred)
+                .chain()
+                .in_set(PlayerProjectionSet::Spawn)
+                .after(stdb::update_spacetimedb),
+            (setup_server, setup_stdb_callbacks).run_if(resource_added::<SpacetimeDbReady>),
+        ),
+    )
+    .add_systems(OnEnter(ServerState::Running), on_server_started)
+    .add_systems(FixedPostUpdate, update_skeleton_locomotion)
+    .add_observer(on_join_request)
+    .add_observer(on_player_input)
+    .add_observer(on_client_disconnected);
+    #[cfg(feature = "debug")]
+    app.add_observer(on_debug_game_time_scale_request);
+    app.run();
+}
+
+#[cfg(feature = "debug")]
+fn on_debug_game_time_scale_request(
+    request: On<FromClient<DebugGameTimeScaleRequest>>,
+    mut virtual_time: ResMut<Time<Virtual>>,
+) {
+    let relative_speed = request.relative_speed();
+    virtual_time.set_relative_speed(relative_speed);
+    info!(relative_speed, "Debug tactical game speed changed");
 }
 
 fn setup_server(mut commands: Commands, args: Res<Args>) {

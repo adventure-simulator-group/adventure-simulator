@@ -5,8 +5,8 @@ use bevy_replicon::prelude::*;
 
 use crate::FIXED_TIMESTEP_HZ;
 use crate::message::{
-    DefendRequest, JoinRequest, MeleeActionRequest, PlayerInputRequest, RangedActionRequest,
-    SuccessfulAttackResponse, TacticalOutcomeResponse,
+    DebugGameTimeScaleRequest, DefendRequest, JoinRequest, MeleeActionRequest, PlayerInputRequest,
+    RangedActionRequest, SuccessfulAttackResponse, TacticalOutcomeResponse,
 };
 
 #[derive(Default)]
@@ -41,6 +41,7 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .replicate::<SceneTerrain>()
             .add_client_event::<JoinRequest>(Channel::Ordered)
             .add_client_event::<PlayerInputRequest>(Channel::Unreliable)
+            .add_client_event::<DebugGameTimeScaleRequest>(Channel::Ordered)
             .add_client_event::<DefendRequest>(Channel::Unreliable)
             .add_mapped_client_event::<MeleeActionRequest>(Channel::Ordered)
             .add_mapped_client_event::<RangedActionRequest>(Channel::Ordered)

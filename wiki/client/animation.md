@@ -451,6 +451,10 @@ run flight beat.
 Debug clients expose `F8` as a runtime terrain leg-IK toggle. Disabling it
 leaves authored FK, gait mirroring, and torso stabilization intact and clears
 stored foot plants so re-enabling IK cannot snap to an obsolete target.
+Debug clients also expose `F7` to toggle the connected local tactical mission
+between normal and quarter-speed game time. Both client presentation and the
+authoritative server clock change together, so movement, physics, combat, and
+animation remain synchronized during slow-motion inspection.
 
 During ordinary travel the body turns toward its velocity, so forward walk and
 run also serve diagonal and lateral travel. During combat, the torso remains
