@@ -122,6 +122,12 @@ enum ConversationSelector {
     PlayerParty(String),
 }
 
+fn npc_history_matches_subject(subject_resident_character_id: Option<u64>, expected: &str) -> bool {
+    expected
+        .parse::<u64>()
+        .is_ok_and(|expected| subject_resident_character_id == Some(expected))
+}
+
 async fn actor_and_selector(
     state: &AppState,
     actor_id: u64,
@@ -240,10 +246,7 @@ async fn messages(
             .await
             .map_err(|e| (StatusCode::FORBIDDEN, e))?;
     let selector_filter = match &selector {
-        ConversationSelector::Npc(resident_character_id) => format!(
-            "conversation_kind = 'npc' AND subject_resident_character_id = {}",
-            sql_string_literal(resident_character_id)
-        ),
+        ConversationSelector::Npc(_) => "conversation_kind = 'npc'".to_owned(),
         ConversationSelector::PlayerParty(party_id) => format!(
             "conversation_kind = 'player' AND subject_party_id = {}",
             sql_string_literal(party_id)
@@ -256,6 +259,14 @@ async fn messages(
         ))
         .await
         .map_err(|error| (StatusCode::SERVICE_UNAVAILABLE, error.to_string()))?;
+    if let ConversationSelector::Npc(resident_character_id) = &selector {
+        messages.retain(|message| {
+            npc_history_matches_subject(
+                message.subject_resident_character_id,
+                resident_character_id,
+            )
+        });
+    }
     // Close the gap between the authority read and returning private message bodies.
     actor_and_selector(&state, actor_id, &kind, &subject_id, &query.location_id)
         .await
@@ -386,7 +397,16 @@ async fn incoming(State(state): State<AppState>, session: Session) -> Json<Vec<I
 mod tests {
     use super::{
         LocalNpcPresenceRow, LocalNpcRow, npc_authority_matches, npc_history_location_is_navigable,
+        npc_history_matches_subject,
     };
+
+    #[test]
+    fn npc_history_filters_optional_subjects_after_the_owner_scoped_query() {
+        assert!(npc_history_matches_subject(Some(42), "42"));
+        assert!(!npc_history_matches_subject(Some(7), "42"));
+        assert!(!npc_history_matches_subject(None, "42"));
+        assert!(!npc_history_matches_subject(Some(42), "not-an-id"));
+    }
     use crate::spacetimedb::SettlementCategory;
 
     #[test]

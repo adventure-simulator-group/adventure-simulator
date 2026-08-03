@@ -3588,6 +3588,7 @@ button.party-portrait-action {
   position: relative;
   z-index: 4;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: .75rem;
@@ -3596,6 +3597,7 @@ button.party-portrait-action {
 }
 .conversation-dock-tools,
 .conversation-tabs { display: flex; align-items: center; gap: .3rem; }
+.conversation-tabs { margin-left: auto; }
 .conversation-tab,
 .affinity-face {
   display: inline-grid;
