@@ -29,6 +29,17 @@ const ANIMATION_FPS: f32 = 30.0;
 // lower face so the first-person camera lands at the authored head.
 const PLAYER_VISUAL_Y_OFFSET: f32 = -0.95;
 
+fn animation_asset_path(path: &str) -> String {
+    #[cfg(not(target_family = "wasm"))]
+    {
+        format!("workspace://{path}")
+    }
+    #[cfg(target_family = "wasm")]
+    {
+        path.to_owned()
+    }
+}
+
 pub struct TacticalAnimationPlugin;
 
 impl Plugin for TacticalAnimationPlugin {
@@ -451,12 +462,12 @@ fn request_animation_packs(
     asset_server: Res<AssetServer>,
     mut runtime: ResMut<AnimationRuntime>,
 ) {
-    runtime.requested_base = Some(asset_server.load(BIPED_BASE_GLB));
+    runtime.requested_base = Some(asset_server.load(animation_asset_path(BIPED_BASE_GLB)));
     for (pack_id, pack) in &catalog.packs {
         for (motion_id, source) in &pack.motions {
             runtime.requested_motions.insert(
                 (pack_id.clone(), motion_id.clone()),
-                asset_server.load(source.path.clone()),
+                asset_server.load(animation_asset_path(&source.path)),
             );
         }
     }
