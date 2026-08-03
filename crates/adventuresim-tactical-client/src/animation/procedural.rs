@@ -432,7 +432,7 @@ pub(super) fn apply_terrain_leg_ik(
                 BoneRole::ShinLeft,
                 BoneRole::FootLeft,
                 left_weight,
-                Vec3::NEG_Z,
+                Vec3::Z,
                 true,
             ),
             (
@@ -440,7 +440,7 @@ pub(super) fn apply_terrain_leg_ik(
                 BoneRole::ShinRight,
                 BoneRole::FootRight,
                 right_weight,
-                Vec3::NEG_Z,
+                Vec3::Z,
                 false,
             ),
         ];
@@ -604,11 +604,11 @@ fn solve_two_bone(
     let height = (upper_length * upper_length - along * along)
         .max(0.0)
         .sqrt();
-    let bend = pole_direction
+    let bend = (current_knee - root)
         .reject_from_normalized(target_direction)
         .try_normalize()
         .or_else(|| {
-            (current_knee - root)
+            pole_direction
                 .reject_from_normalized(target_direction)
                 .try_normalize()
         })
@@ -1061,7 +1061,7 @@ mod tests {
     }
 
     #[test]
-    fn straight_chain_uses_stable_owner_space_pole() {
+    fn straight_chain_uses_rig_bind_space_knee_pole() {
         let solved = solve_two_bone(
             Vec3::ZERO,
             Vec3::NEG_Y,
@@ -1069,11 +1069,26 @@ mod tests {
             Vec3::new(0.0, -1.8, 0.0),
             1.0,
             1.0,
+            Vec3::Z,
+        )
+        .unwrap();
+        assert!(solved.knee.z > 0.0);
+        assert!(solved.knee.is_finite());
+    }
+
+    #[test]
+    fn authored_knee_bend_wins_over_fallback_pole() {
+        let solved = solve_two_bone(
+            Vec3::ZERO,
+            Vec3::new(0.0, -1.0, 0.1),
+            Vec3::NEG_Y * 2.0,
+            Vec3::new(0.0, -1.8, 0.0),
+            1.0,
+            1.0,
             Vec3::NEG_Z,
         )
         .unwrap();
-        assert!(solved.knee.z < 0.0);
-        assert!(solved.knee.is_finite());
+        assert!(solved.knee.z > 0.0);
     }
 
     #[test]
