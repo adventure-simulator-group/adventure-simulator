@@ -487,13 +487,14 @@ pub struct BackendDevelopmentScenario {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackendDevelopmentQuest {
     pub scenario_slug: String,
-    pub problem_id: String,
+    pub quest_kind: String,
+    pub subject_id: String,
     pub canonical_case_id: String,
-    pub symptom: String,
+    pub title: String,
+    pub status: String,
     pub incident_count: u16,
     pub public_awareness_bps: u16,
-    pub recurring_hostile: bool,
-    pub resolved: bool,
+    pub supports_incident_action: bool,
     pub player_safe_summary: String,
 }
 

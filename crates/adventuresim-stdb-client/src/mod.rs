@@ -288,6 +288,7 @@ pub mod derived_historical_vegetation_method_type;
 pub mod derived_historical_vegetation_type;
 pub mod derived_industry_type;
 pub mod designate_residence_reducer;
+pub mod development_scenario_browser_access_type;
 pub mod development_scenario_subject_type;
 pub mod development_scenario_type;
 pub mod development_scenario_update_receipt_type;
@@ -1139,6 +1140,7 @@ pub use derived_historical_vegetation_method_type::DerivedHistoricalVegetationMe
 pub use derived_historical_vegetation_type::DerivedHistoricalVegetation;
 pub use derived_industry_type::DerivedIndustry;
 pub use designate_residence_reducer::designate_residence;
+pub use development_scenario_browser_access_type::DevelopmentScenarioBrowserAccess;
 pub use development_scenario_subject_type::DevelopmentScenarioSubject;
 pub use development_scenario_type::DevelopmentScenario;
 pub use development_scenario_update_receipt_type::DevelopmentScenarioUpdateReceipt;

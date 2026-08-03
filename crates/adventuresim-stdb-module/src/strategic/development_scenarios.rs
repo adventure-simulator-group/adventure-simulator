@@ -58,13 +58,14 @@ pub struct BackendDevelopmentScenario {
 #[derive(Clone, Debug, SpacetimeType)]
 pub struct BackendDevelopmentQuest {
     pub scenario_slug: String,
-    pub problem_id: String,
+    pub quest_kind: String,
+    pub subject_id: String,
     pub canonical_case_id: String,
-    pub symptom: String,
+    pub title: String,
+    pub status: String,
     pub incident_count: u16,
     pub public_awareness_bps: u16,
-    pub recurring_hostile: bool,
-    pub resolved: bool,
+    pub supports_incident_action: bool,
     pub player_safe_summary: String,
 }
 
@@ -187,6 +188,53 @@ fn ensure_scenario_character(
     Ok(())
 }
 
+fn ensure_scenario_settlement(ctx: &ReducerContext, id: &str, name: &str) -> Result<(), String> {
+    if let Some(existing) = ctx.db.settlement().id().find(&id.to_owned()) {
+        return (existing.name == name)
+            .then_some(())
+            .ok_or_else(|| "Development scenario settlement identity conflicts".into());
+    }
+    let mut settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&"riverdale".to_owned())
+        .ok_or("Development scenario settlement template is missing")?;
+    settlement.id = id.into();
+    settlement.name = name.into();
+    settlement.source_node_id = None;
+    ctx.db.settlement().insert(settlement);
+    ensure_settlement_activity(ctx, id.into())
+}
+
+fn ensure_scenario_character_at(
+    ctx: &ReducerContext,
+    character_id: u64,
+    name: &str,
+    settlement_id: &str,
+) -> Result<(), String> {
+    if let Some(character) = ctx.db.character().id().find(character_id) {
+        return (character.current_settlement_id.as_deref() == Some(settlement_id))
+            .then_some(())
+            .ok_or_else(|| "Development scenario character is in the wrong settlement".into());
+    }
+    crate::character::insert_character_with_origin(
+        ctx,
+        name.into(),
+        character_id,
+        crate::character::CharacterCreationOptions {
+            origin_settlement_id: Some(settlement_id),
+            mode: crate::character::CharacterCreationMode::Player,
+            create_solo_party: true,
+            stable_seed: character_id,
+            initial_time_minute: None,
+            field_actor: false,
+        },
+        None,
+        None,
+    )
+}
+
 /// Register every fixture from the one strategic bootstrap and materialize
 /// feature states against distinct primary characters.
 pub(crate) fn materialize_development_scenario_gallery(
@@ -211,25 +259,25 @@ pub(crate) fn materialize_development_scenario_gallery(
     register_development_scenario(ctx, "health-autopsy", "Health", "Autopsy", "Examine a deterministic corpse through the ordinary settlement UI.", AUTOPSY_ID, "/characters")?;
 
     const OUTBREAK_ID: u64 = 9_999_999_999_999_959;
-    ensure_scenario_character(ctx, OUTBREAK_ID, "Outbreak Investigator")?;
-    seed_outbreak_demo(ctx, OUTBREAK_ID)?;
+    const OUTBREAK_SETTLEMENT: &str = "dev-scenario-outbreak";
+    ensure_scenario_settlement(ctx, OUTBREAK_SETTLEMENT, "Outbreak Scenario Hamlet")?;
+    ensure_scenario_character_at(ctx, OUTBREAK_ID, "Outbreak Investigator", OUTBREAK_SETTLEMENT)?;
+    let outbreak_problem_id = seed_outbreak_demo(ctx, OUTBREAK_ID)?;
     register_development_scenario(ctx, "quest-outbreak", "Quests", "Undiscovered outbreak", "Follow an outbreak through ordinary rumor and journal discovery.", OUTBREAK_ID, "/quests")?;
-    if let Some(problem) = ctx.db.local_problem_authority().iter().find(|problem| {
-        problem.scope_key == "settlement:riverdale" && problem.disease_intensity > 0
-    }) {
-        register_development_subject(ctx, "quest-outbreak", "generated_problem", &problem.id)?;
-    }
+    register_development_subject(ctx, "quest-outbreak", "generated_problem", &outbreak_problem_id)?;
 
     const THREAT_ID: u64 = 9_999_999_999_999_958;
-    ensure_scenario_character(ctx, THREAT_ID, "Threat Investigator")?;
-    register_development_scenario(ctx, "quest-recurring-threat", "Quests", "Recurring hostile threat", "Inspect a generated threat and trigger one isolated follow-up attack.", THREAT_ID, "/developer/scenarios")?;
-    let threat_problem = ctx
-        .db
-        .local_problem_authority()
-        .iter()
-        .find(|problem| problem.recurring_hostile && problem.resolved_at.is_none())
-        .ok_or("Development bootstrap did not create a recurring hostile problem")?;
-    register_development_subject(ctx, "quest-recurring-threat", "generated_problem", &threat_problem.id)?;
+    const THREAT_SETTLEMENT: &str = "dev-scenario-recurring-threat";
+    ensure_scenario_settlement(ctx, THREAT_SETTLEMENT, "Threat Scenario Hamlet")?;
+    ensure_scenario_character_at(ctx, THREAT_ID, "Threat Investigator", THREAT_SETTLEMENT)?;
+    let threat_problem_id = materialize_preferred_generated_fixture(
+        ctx,
+        THREAT_ID,
+        adventuresim_core::quest_generation::TemplateFamily::RecurringDepredation,
+        0x5448_5245_4154_0001,
+    )?;
+    register_development_scenario(ctx, "quest-recurring-threat", "Quests", "Recurring hostile threat", "Discover a deterministic local threat through ordinary rumor UI, then inspect it or trigger an isolated follow-up attack.", THREAT_ID, "/quests")?;
+    register_development_subject(ctx, "quest-recurring-threat", "generated_problem", &threat_problem_id)?;
 
     for (offset, kind) in [
         ErrantryPuzzleKind::OrderedSigils,
@@ -261,13 +309,13 @@ pub(crate) fn materialize_development_scenario_gallery(
         let scenario_slug = format!("road-{}", definition.id);
         let character_id = 9_999_999_999_990_000_u64.saturating_sub(ordinal as u64);
         ensure_scenario_character(ctx, character_id, &format!("Road Tester {}", ordinal + 1))?;
-        materialize_development_road_encounter(ctx, character_id, &definition.id)?;
+        let occurrence_id = materialize_development_road_encounter(ctx, character_id, &definition.id)?;
         let label = definition
             .cast
             .first()
             .map_or_else(|| definition.id.replace('-', " ").replace('_', " "), |speaker| format!("Encounter with {}", speaker.name));
         register_development_scenario(ctx, &scenario_slug, "Road encounters", &label, "Play this compiled encounter through its ordinary journey-camp presentation.", character_id, "/camp")?;
-        register_development_subject(ctx, &scenario_slug, "road_encounter", &definition.id)?;
+        register_development_subject(ctx, &scenario_slug, "road_encounter", &occurrence_id)?;
     }
 
     // Postcondition validation makes a partial gallery abort transactionally.
@@ -313,40 +361,139 @@ pub fn backend_development_quests(ctx: &ViewContext) -> Vec<BackendDevelopmentQu
     if !development_capability_enabled() || !strategic_view_is_gateway(ctx) {
         return Vec::new();
     }
+    const MAX_SUBJECT_INPUTS: usize = 512;
+    const MAX_KIND_INPUTS: usize = 256;
+    const MAX_OUTPUTS: usize = 256;
+
+    let mut subjects = ctx
+        .db
+        .development_scenario_subject()
+        .scan_id()
+        .filter(0u64..)
+        .take(MAX_SUBJECT_INPUTS)
+        .collect::<Vec<_>>();
+    subjects.sort_by(|left, right| left.id.cmp(&right.id));
+    let subject_scenarios = subjects
+        .into_iter()
+        .map(|subject| {
+            (
+                (subject.subject_kind, subject.subject_id),
+                subject.scenario_slug,
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+
     let mut rows = Vec::new();
-    for problem in ctx
+    let mut problems = ctx
         .db
         .local_problem_authority()
         .gateway_bucket()
         .filter(0u8)
-    {
-        let scenario_slug = ctx
-            .db
-            .development_scenario_subject()
-            .scan_id()
-            .filter(0u64..)
-            .find(|row| row.subject_kind == "generated_problem" && row.subject_id == problem.id)
-            .map_or_else(String::new, |row| row.scenario_slug);
+        .take(MAX_KIND_INPUTS)
+        .collect::<Vec<_>>();
+    problems.sort_by(|left, right| left.id.cmp(&right.id));
+    for problem in problems {
+        let scenario_slug = subject_scenarios
+            .get(&("generated_problem".into(), problem.id.clone()))
+            .cloned()
+            .unwrap_or_default();
         let player_safe_summary = ctx
             .db
             .local_problem_symptom()
             .problem_id()
             .find(problem.id.clone())
             .map_or_else(|| "Not publicly described".into(), |row| row.public_summary);
+        let supports_incident_action = !scenario_slug.is_empty()
+            && problem.recurring_hostile
+            && problem.resolved_at.is_none();
         rows.push(BackendDevelopmentQuest {
             scenario_slug,
-            problem_id: problem.id,
+            quest_kind: "generated problem".into(),
+            subject_id: problem.id,
             canonical_case_id: problem.opaque_case_ref,
-            symptom: problem.symptom,
+            title: problem.symptom,
+            status: if problem.resolved_at.is_some() {
+                "resolved".into()
+            } else {
+                "active".into()
+            },
             incident_count: problem.incident_count,
             public_awareness_bps: problem.public_awareness_bps,
-            recurring_hostile: problem.recurring_hostile,
-            resolved: problem.resolved_at.is_some(),
+            supports_incident_action,
             player_safe_summary,
         });
     }
-    rows.sort_by(|left, right| left.scenario_slug.cmp(&right.scenario_slug));
-    rows.truncate(256);
+
+    let mut contracts = ctx
+        .db
+        .contract_authority()
+        .gateway_bucket()
+        .filter(0u8)
+        .take(MAX_KIND_INPUTS)
+        .filter(|contract| {
+            !matches!(
+                contract.status,
+                ContractStatus::Paid | ContractStatus::Withdrawn
+            )
+        })
+        .collect::<Vec<_>>();
+    contracts.sort_by(|left, right| left.id.cmp(&right.id));
+    for contract in contracts {
+        let scenario_slug = subject_scenarios
+            .get(&("case".into(), contract.case_id.clone()))
+            .cloned()
+            .unwrap_or_default();
+        rows.push(BackendDevelopmentQuest {
+            scenario_slug,
+            quest_kind: if ctx
+                .db
+                .errantry_authority()
+                .case_id()
+                .find(&contract.case_id)
+                .is_some()
+            {
+                "errantry contract".into()
+            } else {
+                "contract".into()
+            },
+            subject_id: contract.id,
+            canonical_case_id: contract.case_id,
+            title: contract.title,
+            status: format!("{:?}", contract.status).to_ascii_lowercase(),
+            incident_count: 0,
+            public_awareness_bps: 0,
+            supports_incident_action: false,
+            player_safe_summary: contract.description,
+        });
+    }
+
+    for ((kind, occurrence_id), scenario_slug) in &subject_scenarios {
+        if kind != "road_encounter" {
+            continue;
+        }
+        let Some(challenge) = ctx.db.road_challenge_authority().id().find(occurrence_id) else {
+            continue;
+        };
+        rows.push(BackendDevelopmentQuest {
+            scenario_slug: scenario_slug.clone(),
+            quest_kind: "road encounter".into(),
+            subject_id: challenge.id,
+            canonical_case_id: challenge.case_id,
+            title: challenge.catalog_id,
+            status: if challenge.open { "open".into() } else { "resolved".into() },
+            incident_count: 0,
+            public_awareness_bps: 0,
+            supports_incident_action: false,
+            player_safe_summary: "Catalog-authored encounter bound to this scenario's ordinary journey camp.".into(),
+        });
+    }
+    rows.sort_by(|left, right| {
+        left.scenario_slug
+            .cmp(&right.scenario_slug)
+            .then_with(|| left.quest_kind.cmp(&right.quest_kind))
+            .then_with(|| left.subject_id.cmp(&right.subject_id))
+    });
+    rows.truncate(MAX_OUTPUTS);
     rows
 }
 
@@ -403,8 +550,24 @@ mod development_scenario_source_tests {
     fn scenario_projection_is_bounded_gateway_only_and_metadata_only() {
         let source = include_str!("development_scenarios.rs");
         assert!(source.contains("!strategic_view_is_gateway(ctx)"));
-        assert!(source.contains("rows.truncate(256)"));
+        assert!(source.contains("MAX_SUBJECT_INPUTS"));
+        assert!(source.contains("MAX_KIND_INPUTS"));
+        assert!(source.contains("rows.truncate(MAX_OUTPUTS)"));
+        assert!(source.contains("subject_scenarios"));
+        assert!(source.contains("\"errantry contract\""));
+        assert!(source.contains("\"road encounter\""));
         assert!(!source.contains("authority_json"));
         assert!(!source.contains("manifest_json"));
+    }
+
+    #[test]
+    fn mutable_scenarios_bind_exact_stable_subjects() {
+        let source = include_str!("development_scenarios.rs");
+        assert!(source.contains("dev-scenario-outbreak"));
+        assert!(source.contains("dev-scenario-recurring-threat"));
+        assert!(source.contains("let outbreak_problem_id = seed_outbreak_demo"));
+        assert!(source.contains("let threat_problem_id = materialize_preferred_generated_fixture"));
+        assert!(source.contains("let occurrence_id = materialize_development_road_encounter"));
+        assert!(!source.contains(".find(|problem| problem.recurring_hostile"));
     }
 }

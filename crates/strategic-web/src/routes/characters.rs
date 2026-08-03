@@ -106,7 +106,11 @@ async fn list_characters(State(state): State<AppState>, session: Session) -> Res
             Ok(issued) => Some(issued),
             Err(error) => {
                 tracing::error!(%error, "failed to issue development roster browser session");
-                None
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "The development scenario roster could not create a browser session.",
+                )
+                    .into_response();
             }
         }
     } else {
@@ -122,15 +126,29 @@ async fn list_characters(State(state): State<AppState>, session: Session) -> Res
                 .character_ids()
                 .contains(&scenario.primary_character_id)
         });
-        if missing
-            && state
+        if missing {
+            match state
                 .db
                 .call("adopt_development_scenarios", &[json!(owner_key)])
                 .await
-                .is_ok()
-        {
-            let token = issued.as_ref().map(|issued| issued.token.as_str());
-            return redirect_with_session_cookie(&state.session_codec, token, "/characters");
+            {
+                Ok(()) => {
+                    let token = issued.as_ref().map(|issued| issued.token.as_str());
+                    return redirect_with_session_cookie(
+                        &state.session_codec,
+                        token,
+                        "/characters",
+                    );
+                }
+                Err(error) => {
+                    tracing::error!(%error, "failed to grant development scenario access");
+                    return (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "The development scenario roster is unavailable.",
+                    )
+                        .into_response();
+                }
+            }
         }
     }
     let characters = remembered_characters(&state, &session).await;

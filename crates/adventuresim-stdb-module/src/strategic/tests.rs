@@ -14,6 +14,7 @@ mod healing_tests {
         generated_dialogue_producer_recipient, generated_scene_key,
         generated_witness_visible_description, hostile_group_authority_row,
         hostile_resolution_for_objective, incident_group_matches,
+        ordinary_generated_site_distance_m,
         mission_candidate_from_capability, npc_conversation_authority_matches,
         player_participant_ids, project_local_chat_message, quest_encounter_archetype,
         quest_generation_context_commitment, quest_influence_case_site_id,

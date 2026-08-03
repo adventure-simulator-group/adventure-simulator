@@ -20,7 +20,6 @@ use crate::{
 pub enum BrowserCharacterGrantOrigin {
     StartingCandidate,
     AdultDescendant,
-    DevelopmentScenario,
 }
 
 #[derive(Clone, Debug)]
@@ -37,32 +36,37 @@ pub struct BrowserCharacterGrant {
     pub owner_key: String,
     pub origin: BrowserCharacterGrantOrigin,
     /// Exactly one provenance arm is populated, as selected by `origin`.
-    /// Keeping the arms structural prevents parsing security-sensitive IDs
-    /// out of ad-hoc strings.
     pub starting_claim_request_key: Option<String>,
     pub lineage_source_parent_id: Option<u64>,
-    pub development_scenario_slug: Option<String>,
     pub granted_micros: i64,
 }
 
 fn valid_grant_provenance(grant: &BrowserCharacterGrant) -> bool {
     match grant.origin {
         BrowserCharacterGrantOrigin::StartingCandidate => {
-            grant.starting_claim_request_key.is_some()
-                && grant.lineage_source_parent_id.is_none()
-                && grant.development_scenario_slug.is_none()
+            grant.starting_claim_request_key.is_some() && grant.lineage_source_parent_id.is_none()
         }
         BrowserCharacterGrantOrigin::AdultDescendant => {
-            grant.starting_claim_request_key.is_none()
-                && grant.lineage_source_parent_id.is_some()
-                && grant.development_scenario_slug.is_none()
-        }
-        BrowserCharacterGrantOrigin::DevelopmentScenario => {
-            grant.starting_claim_request_key.is_none()
-                && grant.lineage_source_parent_id.is_none()
-                && grant.development_scenario_slug.is_some()
+            grant.starting_claim_request_key.is_none() && grant.lineage_source_parent_id.is_some()
         }
     }
+}
+
+/// Owner-scoped access to a shared development-scenario character. Unlike an
+/// ordinary grant, this row deliberately does not confer exclusive ownership.
+#[derive(Clone, Debug)]
+#[table(accessor = development_scenario_browser_access)]
+pub struct DevelopmentScenarioBrowserAccess {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub scan_id: u64,
+    #[index(btree)]
+    pub owner_key: String,
+    #[index(btree)]
+    pub character_id: u64,
+    pub scenario_slug: String,
+    pub granted_micros: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -70,7 +74,7 @@ fn valid_grant_provenance(grant: &BrowserCharacterGrant) -> bool {
 pub struct BrowserCharacterSelection {
     #[primary_key]
     pub owner_key: String,
-    #[unique]
+    #[index(btree)]
     pub character_id: u64,
     /// Numeric scan key for owner-scoped trusted projections.
     #[index(btree)]
@@ -90,6 +94,10 @@ fn valid_owner_key(owner_key: &str) -> bool {
         && owner_key
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn development_scenario_access_id(owner_key: &str, scenario_slug: &str) -> String {
+    format!("{owner_key}:{scenario_slug}")
 }
 
 pub(crate) fn grant_browser_character_internal(
@@ -144,7 +152,6 @@ pub(crate) fn grant_browser_character_internal(
             origin: BrowserCharacterGrantOrigin::StartingCandidate,
             starting_claim_request_key: Some(starting_request_key.to_owned()),
             lineage_source_parent_id: None,
-            development_scenario_slug: None,
             granted_micros: ctx.timestamp.to_micros_since_unix_epoch(),
         });
     Ok(())
@@ -224,19 +231,19 @@ pub(crate) fn grant_adult_descendant_internal(
             origin: BrowserCharacterGrantOrigin::AdultDescendant,
             starting_claim_request_key: None,
             lineage_source_parent_id: Some(source_parent_id),
-            development_scenario_slug: None,
             granted_micros: ctx.timestamp.to_micros_since_unix_epoch(),
         });
     Ok(())
 }
 
 pub(crate) fn clear_dead_character_selection(ctx: &ReducerContext, character_id: u64) {
-    if let Some(selection) = ctx
+    let selections = ctx
         .db
         .browser_character_selection()
         .character_id()
-        .find(character_id)
-    {
+        .filter(character_id)
+        .collect::<Vec<_>>();
+    for selection in selections {
         ctx.db
             .browser_character_selection()
             .owner_key()
@@ -255,8 +262,8 @@ pub fn grant_browser_character(
     grant_browser_character_internal(ctx, &owner_key, character_id, &starting_request_key)
 }
 
-/// Adopt only the explicitly registered development-scenario primaries into
-/// an opaque browser owner. This never scans or grants ordinary characters.
+/// Give one browser owner access to every explicitly registered shared
+/// development-scenario primary. Ordinary character ownership is untouched.
 #[reducer]
 pub fn adopt_development_scenarios(ctx: &ReducerContext, owner_key: String) -> Result<(), String> {
     crate::strategic::require_development_gateway(ctx)?;
@@ -277,33 +284,32 @@ pub fn adopt_development_scenarios(ctx: &ReducerContext, owner_key: String) -> R
         if character.temporary {
             return Err("Temporary characters cannot be adopted as development scenarios".into());
         }
+        let access = DevelopmentScenarioBrowserAccess {
+            id: development_scenario_access_id(&owner_key, &scenario.slug),
+            scan_id: adventuresim_core::settlement_population::stable_hash(&format!(
+                "development-scenario-access:{owner_key}:{}",
+                scenario.slug
+            )),
+            owner_key: owner_key.clone(),
+            character_id: scenario.primary_character_id,
+            scenario_slug: scenario.slug,
+            granted_micros: ctx.timestamp.to_micros_since_unix_epoch(),
+        };
         if let Some(existing) = ctx
             .db
-            .browser_character_grant()
-            .character_id()
-            .find(scenario.primary_character_id)
+            .development_scenario_browser_access()
+            .id()
+            .find(&access.id)
         {
-            if existing.owner_key != owner_key
-                || existing.origin != BrowserCharacterGrantOrigin::DevelopmentScenario
-                || existing.development_scenario_slug.as_deref() != Some(&scenario.slug)
-                || !valid_grant_provenance(&existing)
+            if existing.owner_key != access.owner_key
+                || existing.character_id != access.character_id
+                || existing.scenario_slug != access.scenario_slug
             {
-                return Err("Development scenario is already adopted by another browser".into());
+                return Err("Development scenario access provenance conflicts".into());
             }
-            continue;
+        } else {
+            ctx.db.development_scenario_browser_access().insert(access);
         }
-        ctx.db
-            .browser_character_grant()
-            .insert(BrowserCharacterGrant {
-                character_id: scenario.primary_character_id,
-                character_scan_id: scenario.primary_character_id,
-                owner_key: owner_key.clone(),
-                origin: BrowserCharacterGrantOrigin::DevelopmentScenario,
-                starting_claim_request_key: None,
-                lineage_source_parent_id: None,
-                development_scenario_slug: Some(scenario.slug),
-                granted_micros: ctx.timestamp.to_micros_since_unix_epoch(),
-            });
     }
     Ok(())
 }
@@ -318,13 +324,19 @@ pub fn select_browser_character(
     if !valid_owner_key(&owner_key) {
         return Err("Browser owner key is malformed".into());
     }
-    let grant = ctx
+    let ordinary_grant = ctx
         .db
         .browser_character_grant()
         .character_id()
         .find(character_id)
-        .ok_or("Character is not granted to this browser session")?;
-    if grant.owner_key != owner_key || !valid_grant_provenance(&grant) {
+        .filter(|grant| grant.owner_key == owner_key && valid_grant_provenance(grant));
+    let scenario_access = ctx
+        .db
+        .development_scenario_browser_access()
+        .owner_key()
+        .filter(&owner_key)
+        .find(|access| access.character_id == character_id);
+    if ordinary_grant.is_none() && scenario_access.is_none() {
         return Err("Character is not granted to this browser session".into());
     }
     let character = ctx
@@ -346,7 +358,10 @@ pub fn select_browser_character(
     {
         return Err("Only living adult characters can be selected".into());
     }
-    if grant.origin == BrowserCharacterGrantOrigin::AdultDescendant {
+    if ordinary_grant
+        .as_ref()
+        .is_some_and(|grant| grant.origin == BrowserCharacterGrantOrigin::AdultDescendant)
+    {
         let birth = ctx
             .db
             .character_birth()
@@ -450,7 +465,8 @@ pub fn backend_browser_character_access(ctx: &ViewContext) -> Vec<BackendBrowser
     if !is_strategic_gateway(ctx) {
         return Vec::new();
     }
-    ctx.db
+    let mut rows = ctx
+        .db
         .browser_character_grant()
         .character_scan_id()
         .filter(0u64..)
@@ -520,7 +536,40 @@ pub fn backend_browser_character_access(ctx: &ViewContext) -> Vec<BackendBrowser
                 selected,
             }
         })
-        .collect()
+        .collect::<Vec<_>>();
+    if crate::strategic::development_capability_enabled() {
+        rows.extend(
+            ctx.db
+                .development_scenario_browser_access()
+                .scan_id()
+                .filter(0u64..)
+                .filter_map(|access| {
+                    let character = ctx.db.character().id().find(access.character_id)?;
+                    let minute = ctx
+                        .db
+                        .character_time()
+                        .character_id()
+                        .find(access.character_id)?
+                        .minutes;
+                    (character.alive
+                        && effective_age_years_for_view(ctx, access.character_id, minute)
+                            .is_some_and(|age| {
+                                age >= adventuresim_core::courtship::ADULT_AGE_YEARS
+                            }))
+                    .then(|| BackendBrowserCharacterAccess {
+                        owner_key: access.owner_key.clone(),
+                        character_id: access.character_id,
+                        selected: ctx
+                            .db
+                            .browser_character_selection()
+                            .owner_key()
+                            .find(&access.owner_key)
+                            .is_some_and(|selection| selection.character_id == access.character_id),
+                    })
+                }),
+        );
+    }
+    rows
 }
 
 fn effective_age_years_for_view(ctx: &ViewContext, character_id: u64, minute: u64) -> Option<u16> {
@@ -548,7 +597,6 @@ mod tests {
             origin: BrowserCharacterGrantOrigin::StartingCandidate,
             starting_claim_request_key: Some("claim".into()),
             lineage_source_parent_id: None,
-            development_scenario_slug: None,
             granted_micros: 0,
         };
         assert!(valid_grant_provenance(&grant));
@@ -569,5 +617,14 @@ mod tests {
     fn absent_or_dead_selection_allows_successor_recovery() {
         assert!(descendant_grant_visible_at(1_000, None, 1_000));
         assert!(!descendant_grant_visible_at(1_000, None, 999));
+    }
+
+    #[test]
+    fn development_access_is_owner_scoped_not_character_exclusive() {
+        let first = development_scenario_access_id(&"a".repeat(64), "quest-outbreak");
+        let second = development_scenario_access_id(&"b".repeat(64), "quest-outbreak");
+        assert_ne!(first, second);
+        assert!(first.ends_with(":quest-outbreak"));
+        assert!(second.ends_with(":quest-outbreak"));
     }
 }

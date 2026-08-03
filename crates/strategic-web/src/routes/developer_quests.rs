@@ -82,21 +82,24 @@ async fn inspector(State(state): State<AppState>) -> Response {
             input id="quest-filter" type="search" data-scenario-search placeholder="Scenario, symptom, or status";
             section data-scenario-group {
             @for quest in quests {
-                article class="panel" data-scenario-card data-scenario-search-text=(format!("{} {} {}", quest.scenario_slug, quest.symptom, if quest.resolved { "resolved" } else { "active" }).to_ascii_lowercase()) {
-                    h2 { @if quest.scenario_slug.is_empty() { "Generated world quest" } @else { (&quest.scenario_slug) } }
+                article class="panel" data-scenario-card data-scenario-search-text=(format!("{} {} {} {}", quest.scenario_slug, quest.quest_kind, quest.title, quest.status).to_ascii_lowercase()) {
+                    h2 { @if quest.scenario_slug.is_empty() { (&quest.title) } @else { (&quest.scenario_slug) } }
+                    p { strong { "Kind: " } (&quest.quest_kind) }
                     p { strong { "Player-safe: " } (&quest.player_safe_summary) }
                     dl {
-                        dt { "Private problem ID" } dd { code { (&quest.problem_id) } }
+                        dt { "Private subject ID" } dd { code { (&quest.subject_id) } }
                         dt { "Canonical case ID" } dd { code { (&quest.canonical_case_id) } }
-                        dt { "Status" } dd { (if quest.resolved { "Resolved" } else { "Active" }) }
-                        dt { "Incidents" } dd { (quest.incident_count) }
-                        dt { "Public awareness" } dd { (quest.public_awareness_bps) " bps" }
+                        dt { "Status" } dd { (&quest.status) }
+                        @if quest.quest_kind == "generated problem" {
+                            dt { "Incidents" } dd { (quest.incident_count) }
+                            dt { "Public awareness" } dd { (quest.public_awareness_bps) " bps" }
+                        }
                     }
-                    @if !quest.scenario_slug.is_empty() && quest.recurring_hostile && !quest.resolved {
+                    @if quest.supports_incident_action {
                         form action="/developer/scenarios/incident" method="post" {
                             input type="hidden" name="scenario_slug" value=(&quest.scenario_slug);
-                            input type="hidden" name="problem_id" value=(&quest.problem_id);
-                            input type="hidden" name="request_id" value=(format!("web:{}:{}", quest.problem_id, quest.incident_count.saturating_add(1)));
+                            input type="hidden" name="problem_id" value=(&quest.subject_id);
+                            input type="hidden" name="request_id" value=(format!("web:{}:{}", quest.subject_id, quest.incident_count.saturating_add(1)));
                             button class="btn btn-primary" type="submit" { "Trigger next incident / attack" }
                         }
                     }

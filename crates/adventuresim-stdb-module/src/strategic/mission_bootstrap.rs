@@ -1369,9 +1369,11 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
     materialize_generated_quest(ctx, &settlement, &context, &generated, None)
 }
 
-fn materialize_preferred_outbreak(
+fn materialize_preferred_generated_fixture(
     ctx: &ReducerContext,
     character_id: u64,
+    family: adventuresim_core::quest_generation::TemplateFamily,
+    seed_salt: u64,
 ) -> Result<String, String> {
     use adventuresim_core::quest_generation as qg;
 
@@ -1388,7 +1390,7 @@ fn materialize_preferred_outbreak(
         .ok_or("Current settlement not found")?;
 
     let now_minute = crate::time::refresh_clock(ctx)?.max(4_000);
-    let entropy = character_id ^ 0x4f55_5442_5245_414b;
+    let entropy = character_id ^ seed_salt;
     let context = qg::GenerationContext {
         seed: entropy.rotate_left(11),
         observer_entropy_hi: entropy.rotate_left(23),
@@ -1398,14 +1400,14 @@ fn materialize_preferred_outbreak(
         scope: adventuresim_core::local_problem::Scope::Settlement {
             settlement_id: settlement_id.clone(),
         },
-        ordinal: u16::MAX,
+        ordinal: (seed_salt as u16).max(1),
         now_minute,
         incident_weather: adventuresim_core::weather::Precipitation::Clear,
-        requested_family: Some(qg::TemplateFamily::Outbreak),
+        requested_family: Some(family),
         witness_candidates: generated_witness_candidates(ctx, &settlement_id),
     };
     let generated = qg::generate(&context)
-        .map_err(|error| format!("Outbreak demo generation failed: {error:?}"))?;
+        .map_err(|error| format!("Development quest fixture generation failed: {error:?}"))?;
     let witness = generated
         .witnesses
         .first()
@@ -1425,7 +1427,7 @@ fn materialize_preferred_outbreak(
         .is_none()
     {
         qg::validate(&generated).map_err(|errors| {
-            format!("Outbreak demo manifest is invalid: {}", errors.join("; "))
+            format!("Development quest fixture manifest is invalid: {}", errors.join("; "))
         })?;
         materialize_generated_quest(ctx, &settlement, &context, &generated, None)?;
     }
@@ -1435,7 +1437,18 @@ fn materialize_preferred_outbreak(
         &settlement_id,
         &generated.problem_id,
     );
-    Ok(generated.canonical_case_id)
+    let problem = ctx
+        .db
+        .local_problem_authority()
+        .id()
+        .find(&generated.problem_id)
+        .ok_or("Development quest fixture did not materialize its exact local problem")?;
+    if problem.opaque_case_ref != generated.canonical_case_id
+        || problem.scope_key != format!("settlement:{settlement_id}")
+    {
+        return Err("Development quest fixture local-problem binding is inconsistent".into());
+    }
+    Ok(generated.problem_id)
 }
 
 fn ordinary_generated_site_distance_m(seed: u64, index: usize) -> u64 {
@@ -1509,7 +1522,7 @@ fn materialize_simulation_acceptance_outbreak(
     Err("No ordinary generated outbreak met the bounded acceptance route constraint".into())
 }
 
-fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<String, String> {
     let mut skills = ctx
         .db
         .character_skills()
@@ -1549,7 +1562,12 @@ fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), Str
         crate::add_inventory_item(ctx, character_id, "surgery_kit", 1);
     }
 
-    materialize_preferred_outbreak(ctx, character_id).map(|_| ())
+    materialize_preferred_generated_fixture(
+        ctx,
+        character_id,
+        adventuresim_core::quest_generation::TemplateFamily::Outbreak,
+        0x4f55_5442_5245_414b,
+    )
 }
 
 pub(crate) struct SimulationQuestFixtureSeed {
@@ -2220,28 +2238,30 @@ mod developer_quest_source_tests {
             .split("pub fn bootstrap_development_world")
             .nth(1)
             .unwrap()
-            .split("/// Load the one-shot autopsy")
+            .split("pub fn seed_standalone_tactical_mission")
             .next()
             .unwrap();
         assert!(
             bootstrap
-                .find("seed_world(ctx, include_visual_demos)")
+                .find("seed_world(ctx, true)")
                 .unwrap()
                 < bootstrap.find("seed_social_demo(ctx)").unwrap()
+        );
+        assert!(
+            bootstrap.find("seed_social_demo(ctx)").unwrap()
+                < bootstrap
+                    .find("materialize_development_scenario_gallery(ctx)")
+                    .unwrap()
         );
         assert!(
             include_str!("../simulation.rs").contains("crate::strategic::seed_world(ctx, false)")
         );
 
         let challenges = include_str!("challenges.rs");
-        let demo = challenges
-            .split("pub fn load_puzzle_demo")
-            .nth(1)
-            .unwrap()
-            .split("/// Narrow production issuance")
-            .next()
-            .unwrap();
-        assert!(demo.contains("ErrantryLaunch::DirectDemoCamp"));
+        let gallery = include_str!("development_scenarios.rs");
+        assert!(!challenges.contains("pub fn load_puzzle_demo"));
+        assert!(gallery.contains("ErrantryLaunch::DirectDemoCamp(kind)"));
+        assert!(gallery.contains("ErrantryPuzzleKind::ResourceAllocation"));
         let materializer = challenges
             .split("fn materialize_order_errantry")
             .nth(1)

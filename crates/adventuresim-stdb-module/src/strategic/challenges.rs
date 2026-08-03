@@ -821,6 +821,23 @@ pub(crate) fn party_at_bound_road_challenge(
             .is_some_and(|encounter| encounter.status == "awaiting_choice")
 }
 
+fn narrative_encounter_occurrence_id(
+    party_id: &str,
+    seed: u64,
+    origin_slug: &str,
+    journey: &PartyJourney,
+    selection: &adventuresim_core::encounter::NarrativeSelection,
+) -> String {
+    format!(
+        "narrative:{party_id}:{seed:016x}:{origin_slug}:{}:{}:{}:{}:{}",
+        journey.departure_minute,
+        selection.boundary_minute,
+        journey.completed_minutes,
+        journey.completed_elapsed_minutes,
+        selection.roll_index
+    )
+}
+
 pub(crate) fn materialize_chance_narrative_encounter(
     ctx: &ReducerContext,
     party_id: &str,
@@ -858,13 +875,12 @@ pub(crate) fn materialize_chance_narrative_encounter(
         NarrativeEncounterOrigin::Errantry => "errantry",
         NarrativeEncounterOrigin::DeveloperDemo => "developer-demo",
     };
-    let id = format!(
-        "narrative:{party_id}:{seed:016x}:{origin_slug}:{}:{}:{}:{}:{}",
-        journey.departure_minute,
-        selection.boundary_minute,
-        journey.completed_minutes,
-        journey.completed_elapsed_minutes,
-        selection.roll_index
+    let id = narrative_encounter_occurrence_id(
+        party_id,
+        seed,
+        origin_slug,
+        &journey,
+        selection,
     );
     if let Some(existing) = ctx.db.road_challenge_authority().id().find(&id) {
         let private = ctx
@@ -1918,34 +1934,13 @@ fn order_errantry_issuer(
     })
 }
 
-/// Creates or reuses an accepted, immediately playable errantry quest.
-#[reducer]
-#[cfg(any())]
-pub fn load_puzzle_demo(
-    ctx: &ReducerContext,
-    character_id: u64,
-    puzzle_kind: ErrantryPuzzleKind,
-) -> Result<(), String> {
-    require_strategic_character_authority(ctx, character_id)?;
-    if !puzzle_demo_enabled() {
-        return Err("Puzzle demo loading is disabled in this module build".into());
-    }
-    materialize_order_errantry(
-        ctx,
-        character_id,
-        None,
-        ErrantryLaunch::DirectDemoCamp(puzzle_kind),
-    )
-    .map(|_| ())
-}
-
 /// Bootstrap-only catalog materializer. Each scenario begins from its own
 /// ordinary errantry camp, so no selected character is mutated by the UI.
 fn materialize_development_road_encounter(
     ctx: &ReducerContext,
     character_id: u64,
     catalog_id: &str,
-) -> Result<(), String> {
+) -> Result<String, String> {
     if catalog_id.is_empty() || catalog_id.len() > 96 {
         return Err("Road encounter catalog ID is invalid".into());
     }
@@ -2001,28 +1996,54 @@ fn materialize_development_road_encounter(
     {
         return Err("Road encounter demo requires a reached journey camp".into());
     }
-    let ordinal = ctx
-        .db
-        .road_challenge_authority()
-        .party_id()
-        .filter(&party_id)
-            .filter(|challenge| challenge.catalog_id == definition.id)
-        .count() as u64;
     let catalog_hash = catalog_id
         .bytes()
         .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
             (hash ^ u64::from(byte)).wrapping_mul(0x1000_0000_01b3)
         });
+    let selection = adventuresim_core::encounter::NarrativeSelection {
+        boundary_minute: journey.completed_elapsed_minutes,
+        roll_index: 0xd000_0000_0000_0000 ^ catalog_hash,
+        catalog_id: catalog_id.into(),
+    };
+    let seed = ctx
+        .db
+        .party_journey_encounter_authority()
+        .party_id()
+        .find(&party_id)
+        .ok_or("Road encounter demo requires durable encounter entropy")?
+        .seed;
+    let occurrence_id = narrative_encounter_occurrence_id(
+        &party_id,
+        seed,
+        "developer-demo",
+        &journey,
+        &selection,
+    );
+    if let Some(existing) = ctx.db.road_challenge_authority().id().find(&occurrence_id) {
+        let private = ctx
+            .db
+            .narrative_encounter_private_authority()
+            .occurrence_id()
+            .find(&occurrence_id)
+            .ok_or("Development road occurrence lacks private authority")?;
+        if existing.party_id == party_id
+            && existing.catalog_id == definition.id
+            && existing.catalog_revision == definition.version
+            && existing.catalog_digest == adventuresim_core::road_encounter_catalog::digest()
+            && private.origin == NarrativeEncounterOrigin::DeveloperDemo
+        {
+            return Ok(occurrence_id);
+        }
+        return Err("Development road occurrence identity conflicts".into());
+    }
     materialize_chance_narrative_encounter(
         ctx,
         &party_id,
-        &adventuresim_core::encounter::NarrativeSelection {
-            boundary_minute: journey.completed_elapsed_minutes,
-            roll_index: 0xd000_0000_0000_0000 ^ catalog_hash ^ ordinal.rotate_left(17),
-            catalog_id: catalog_id.into(),
-        },
+        &selection,
         NarrativeEncounterOrigin::DeveloperDemo,
-    )
+    )?;
+    Ok(occurrence_id)
 }
 
 /// Narrow production issuance seam: the client identifies only its live
@@ -2569,7 +2590,7 @@ mod challenge_source_boundary_tests {
         let reuse = loader.find("active_puzzle_demo").unwrap();
         let fresh_ordinal = loader.find("let ordinal =").unwrap();
         assert!(reuse < fresh_ordinal);
-        assert!(loader.contains("return Ok(())"));
+        assert!(loader.contains("return Ok(MaterializedErrantry"));
         assert!(loader.contains("ordinal.rotate_left(23)"));
         let reuse_lookup = source
             .split("fn active_puzzle_demo")
@@ -2590,18 +2611,18 @@ mod challenge_source_boundary_tests {
     fn road_encounter_demo_is_dev_authorized_catalog_driven_and_camp_bound() {
         let source = include_str!("challenges.rs");
         let loader = source
-            .split("pub fn load_road_encounter_demo")
+            .split("fn materialize_development_road_encounter")
             .nth(1)
             .and_then(|tail| tail.split("pub fn accept_order_errantry").next())
             .unwrap();
-        assert!(loader.contains("require_strategic_character_authority"));
-        assert!(loader.contains("puzzle_demo_enabled"));
-        assert!(loader.contains("road_encounter_catalog::encounter(&catalog_id)"));
+        assert!(loader.contains("road_encounter_catalog::encounter(catalog_id)"));
         assert!(loader.contains("party.leader_id != character_id"));
         assert!(loader.contains("camp_stop_minutes.contains"));
         assert!(loader.contains("materialize_chance_narrative_encounter"));
         assert!(loader.contains("NarrativeEncounterOrigin::DeveloperDemo"));
-        assert!(!loader.contains("provenance"));
+        assert!(loader.contains("narrative_encounter_occurrence_id"));
+        assert!(!loader.contains(".count()"));
+        assert!(!loader.contains("ordinal.rotate_left"));
     }
 
     #[test]

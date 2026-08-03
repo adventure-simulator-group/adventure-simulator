@@ -20,17 +20,20 @@ wounds, knowledge, social interactions, autopsy, outbreak, all puzzle kinds,
 and every compiled road encounter. Reset the disposable isolated profile to
 restore irreversible scenarios.
 
-The **Scenario inspector** lists bounded generated quest state. Player-safe
-summaries are visually separated from private problem and canonical case IDs.
+The **Scenario inspector** lists a bounded union of generated local problems,
+open contracts and Order errantries, and registered road encounters. Player-safe
+summaries are visually separated from private subject and canonical case IDs.
 For a registered recurring-threat scenario, **Trigger next incident / attack**
 appends exactly one incident at the official current minute through the same
 materializer as scheduled progression; it does not advance the world clock or
 run settlement-wide activity.
 
 Scenario adoption is available only to the registered strategic gateway in a
-module compiled with the development capability. The opaque browser owner is
-granted only registered primary characters. Ordinary builds project no
-scenario catalog and cannot adopt or update it.
+module compiled with the development capability. Each opaque browser owner
+receives owner-scoped access to the shared registered primaries; scenario
+characters are not captured by the first browser. Ordinary character grants
+remain exclusive. Ordinary builds project no scenario catalog and cannot adopt
+or update it.
 
 ## Puzzle demo (scenario character)
 
@@ -51,9 +54,8 @@ exercise the optional wounded-courier road trial. Aiding him adds his captured
 dispatch to party inventory; leaving him or continuing the journey remains
 valid.
 
-The loader is idempotent while its puzzle remains open and is disabled in
-ordinary module builds. The redirect is read from the safe
-challenge projection rather than reconstructed by the HTTP adapter. See
+Bootstrap reuses the durable puzzle state when invoked repeatedly. The redirect
+is read from the safe challenge projection rather than reconstructed by the HTTP adapter. See
 [Errantry and modular challenges](errantry-and-challenges.md).
 
 ## Outbreak demo
@@ -66,11 +68,11 @@ It prepares the selected character
 with Physiology, Surgery, Bestiary, social and urban-investigation skills plus a
 surgery kit.
 
-The loader intentionally does not reveal the case or write a journal entry.
+Bootstrap intentionally does not reveal the case or write a journal entry.
 Ask local NPCs for rumors, then investigate through the normal quest,
 physiology, surgery, bestiary, and dialogue surfaces. Repeated loading is
-idempotent for the same character and settlement. The reducer is available only
-in a development-bootstrap module.
+idempotent for the scenario character and its dedicated settlement. The gallery
+is available only in a development-bootstrap module.
 
 ## Autopsy demo
 

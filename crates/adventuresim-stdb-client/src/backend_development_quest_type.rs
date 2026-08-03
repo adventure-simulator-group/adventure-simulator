@@ -8,13 +8,14 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct BackendDevelopmentQuest {
     pub scenario_slug: String,
-    pub problem_id: String,
+    pub quest_kind: String,
+    pub subject_id: String,
     pub canonical_case_id: String,
-    pub symptom: String,
+    pub title: String,
+    pub status: String,
     pub incident_count: u16,
     pub public_awareness_bps: u16,
-    pub recurring_hostile: bool,
-    pub resolved: bool,
+    pub supports_incident_action: bool,
     pub player_safe_summary: String,
 }
 
@@ -27,13 +28,14 @@ impl __sdk::InModule for BackendDevelopmentQuest {
 /// Provides typed access to columns for query building.
 pub struct BackendDevelopmentQuestCols {
     pub scenario_slug: __sdk::__query_builder::Col<BackendDevelopmentQuest, String>,
-    pub problem_id: __sdk::__query_builder::Col<BackendDevelopmentQuest, String>,
+    pub quest_kind: __sdk::__query_builder::Col<BackendDevelopmentQuest, String>,
+    pub subject_id: __sdk::__query_builder::Col<BackendDevelopmentQuest, String>,
     pub canonical_case_id: __sdk::__query_builder::Col<BackendDevelopmentQuest, String>,
-    pub symptom: __sdk::__query_builder::Col<BackendDevelopmentQuest, String>,
+    pub title: __sdk::__query_builder::Col<BackendDevelopmentQuest, String>,
+    pub status: __sdk::__query_builder::Col<BackendDevelopmentQuest, String>,
     pub incident_count: __sdk::__query_builder::Col<BackendDevelopmentQuest, u16>,
     pub public_awareness_bps: __sdk::__query_builder::Col<BackendDevelopmentQuest, u16>,
-    pub recurring_hostile: __sdk::__query_builder::Col<BackendDevelopmentQuest, bool>,
-    pub resolved: __sdk::__query_builder::Col<BackendDevelopmentQuest, bool>,
+    pub supports_incident_action: __sdk::__query_builder::Col<BackendDevelopmentQuest, bool>,
     pub player_safe_summary: __sdk::__query_builder::Col<BackendDevelopmentQuest, String>,
 }
 
@@ -42,16 +44,20 @@ impl __sdk::__query_builder::HasCols for BackendDevelopmentQuest {
     fn cols(table_name: &'static str) -> Self::Cols {
         BackendDevelopmentQuestCols {
             scenario_slug: __sdk::__query_builder::Col::new(table_name, "scenario_slug"),
-            problem_id: __sdk::__query_builder::Col::new(table_name, "problem_id"),
+            quest_kind: __sdk::__query_builder::Col::new(table_name, "quest_kind"),
+            subject_id: __sdk::__query_builder::Col::new(table_name, "subject_id"),
             canonical_case_id: __sdk::__query_builder::Col::new(table_name, "canonical_case_id"),
-            symptom: __sdk::__query_builder::Col::new(table_name, "symptom"),
+            title: __sdk::__query_builder::Col::new(table_name, "title"),
+            status: __sdk::__query_builder::Col::new(table_name, "status"),
             incident_count: __sdk::__query_builder::Col::new(table_name, "incident_count"),
             public_awareness_bps: __sdk::__query_builder::Col::new(
                 table_name,
                 "public_awareness_bps",
             ),
-            recurring_hostile: __sdk::__query_builder::Col::new(table_name, "recurring_hostile"),
-            resolved: __sdk::__query_builder::Col::new(table_name, "resolved"),
+            supports_incident_action: __sdk::__query_builder::Col::new(
+                table_name,
+                "supports_incident_action",
+            ),
             player_safe_summary: __sdk::__query_builder::Col::new(
                 table_name,
                 "player_safe_summary",
