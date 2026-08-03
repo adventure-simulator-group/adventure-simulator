@@ -387,6 +387,7 @@ mod tests {
     use super::{
         LocalNpcPresenceRow, LocalNpcRow, npc_authority_matches, npc_history_location_is_navigable,
     };
+
     use crate::spacetimedb::SettlementCategory;
 
     #[test]

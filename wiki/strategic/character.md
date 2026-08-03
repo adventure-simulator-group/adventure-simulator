@@ -48,7 +48,13 @@ after they separate.
 
 Relationship systems distinguish **pairwise-soft** history from canonical,
 exclusive history. Affinity, familiarity, and ordinary Socializing are
-pairwise-soft: they may be updated on the acting character's clock and never
+presented in the Conversation Dock rather than a separate Social modal. The
+header's qualitative regard face opens an observer-only impression containing
+familiarity, perceived traits, confidence, and approach hints; it can be pinned
+for pointer or keyboard inspection. Self-selection omits the chat composer and
+uses Recent Tidings for reflection. Age, faith, and local reputation remain on
+the biography and are also expressed naturally as questions and answers under
+Of Thee. These pairwise-soft values may be updated on the acting character's clock and never
 consume another character's schedule. A person who is engaged or married can
 therefore still become a close friend of somebody whose personal date is in
 their past. The resulting friendship does not create romantic eligibility.

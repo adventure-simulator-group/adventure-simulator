@@ -22,7 +22,7 @@ pub struct BackendLocalChatMessage {
     pub owner_character_id: u64,
     pub conversation_kind: String,
     pub subject_party_id: String,
-    pub subject_resident_character_id: Option<u64>,
+    pub subject_resident_character_id: String,
     pub sender_id: u64,
     pub sender_name: String,
     pub body: String,
@@ -64,7 +64,7 @@ fn project_local_chat_message(
                 owner_character_id,
                 "player".into(),
                 row.other_party_id.clone(),
-                None,
+                String::new(),
             );
         }
         if row.other_party_id != row.audience_party_id {
@@ -73,7 +73,7 @@ fn project_local_chat_message(
                     owner_character_id,
                     "player".into(),
                     row.audience_party_id.clone(),
-                    None,
+                    String::new(),
                 );
             }
         }
@@ -83,7 +83,7 @@ fn project_local_chat_message(
                 owner_character_id,
                 "npc".into(),
                 String::new(),
-                row.resident_character_id,
+                row.resident_character_id.map_or_else(String::new, |id| id.to_string()),
             );
         }
     }

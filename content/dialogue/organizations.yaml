@@ -603,6 +603,7 @@
         {
           "id": "referred-testimony",
           "label": "What I saw",
+          "category": "quest",
           "initially_known": true,
           "conditions": {
             "op": "fact",
@@ -633,6 +634,7 @@
         {
           "id": "return-recovered-property",
           "label": "Return recovered property",
+          "category": "quest",
           "initially_known": true,
           "responses": [
             {
@@ -656,6 +658,7 @@
         {
           "id": "expose-false-account",
           "label": "Challenge the account",
+          "category": "quest",
           "initially_known": true,
           "responses": [
             {

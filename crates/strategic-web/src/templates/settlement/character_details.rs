@@ -15,7 +15,7 @@ use super::{
     },
     chrome::{party_portrait_overlay, visual_stage},
     context::LocationView,
-    social::{player_chat_area, settlement_chat_area},
+    social::player_chat_area,
     trade::{cooking_activity_dialog, religious_demand_rail},
 };
 use crate::medical::MedicalPresentation;
@@ -306,7 +306,8 @@ pub fn party_personal_page(
         Some(active_character.id),
         false,
     );
-    let center_after = settlement_chat_area(&active_character.name, Some(active_character));
+    let center_after = character_action_dialog
+        .unwrap_or_else(|| player_chat_area(location, active_character, active_character));
     let foraging_open = foraging_dialog.is_some();
     let after = html! {
         (physiology_dialog(medical, "physiology-chart-dialog", &active_character.name))
@@ -330,8 +331,6 @@ pub fn party_personal_page(
             ))
         } @else if let Some(dialog) = foraging_dialog {
             (dialog)
-        } @else {
-            @if let Some(dialog) = character_action_dialog { (dialog) }
         }
     };
     let content = character_sheet_markup(CharacterSheetView {
@@ -429,7 +428,8 @@ pub fn party_stats_page(
         Some(selected.id),
         false,
     );
-    let center_after = player_chat_area(selected, active_character);
+    let center_after = character_action_dialog
+        .unwrap_or_else(|| player_chat_area(location, selected, active_character));
     let right_after = html! {
         @if selected.id != active_character.id {
                 @if active_character.party_id == selected.party_id {
@@ -459,10 +459,7 @@ pub fn party_stats_page(
                 }
             }
     };
-    let after = html! {
-        @if let Some(dialog) = character_action_dialog { (dialog) }
-        (physiology_dialog(medical, "physiology-chart-dialog", &selected.name))
-    };
+    let after = html! { (physiology_dialog(medical, "physiology-chart-dialog", &selected.name)) };
     let content = character_sheet_markup(CharacterSheetView {
         character: selected,
         capability,

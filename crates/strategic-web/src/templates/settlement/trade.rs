@@ -245,7 +245,7 @@ pub fn party_inventory_page(
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id), false))
             (visual_stage("character", &selected.name, "Party member and trading companion"))
-            (player_chat_area(selected, active_character))
+            (player_chat_area(location, selected, active_character))
             form id="party-offer" class="party-offer" action=(format!("{}/party/{}/inventory/offer", location.base_path(), selected.id)) method="post" hidden
                 role="dialog" aria-modal="true" aria-label="Confirm party item offer" tabindex="-1" {
                 span class="party-offer-summary" { "Review and send the staged item offer." }

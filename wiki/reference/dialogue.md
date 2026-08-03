@@ -254,12 +254,27 @@ nonmembers see joining, suspended members see dues only where dues exist, and
 current members can follow a gated chain through dues, promotion, and
 presentation without seeing actions unavailable in their current state.
 
-The web conversation surface exposes topics only as highlighted phrases in
-NPC dialogue. Clicking one asks about that subject; there is no separate list
-of generic or undiscovered topics. While a prompt is open, the shared composer
+The web conversation surface exposes discovered topics both as highlighted
+phrases in NPC dialogue and in four icon tabs: **Quests**, **Lore**, **Recent
+Tidings**, and **Of Thee**. Each compiled topic carries a typed presentation
+category; the browser never infers it from an ID. The tab list is built only
+from owner-scoped authoritative topic-option rows, so it cannot reveal an
+undiscovered topic. Recent Tidings is privacy-safe for residents when detailed
+source authorization is absent, while Of Thee expresses qualitative
+relationship state as spoken questions and answers. While a prompt is open, the shared composer
 matches its choices, shows a unique prefix as grey inline completion, and lets
 Tab accept it. Multi-select answers use comma-separated choice labels. Other
 text continues through the independent free-form chat stream.
+
+Of Thee answers are server-authored observer-safe projections bound to the
+selected subject and projection revision. They are appended as transient
+contextual exchanges in the same visible message stream and are not durable
+free-form chat history. Switching subjects clears them before the next request;
+late responses cannot be attributed to the newly selected person. Party
+portraits retain ordinary profile selection, while choosing Recent Tidings
+deep-loads that subject's authorized social projection into the same functional
+chat dock. Self-selection disables free-form posting and exposes reflection in
+Recent Tidings.
 
 ## Developer mode and source editing
 

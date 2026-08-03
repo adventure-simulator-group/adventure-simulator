@@ -3555,8 +3555,10 @@ button.party-portrait-action {
   cursor: help;
 }
 .social-source { overflow: hidden; border: 1px solid var(--border-color); border-radius: 0.4rem; background: var(--panel-bg); }
-.social-source-negative { border-left: 3px solid var(--danger); }
-.social-source-positive { border-left: 3px solid var(--success); }
+.social-source-negative,
+.social-source-positive,
+.social-source-neutral { border-left: 4px solid var(--social-topic-color, #d7b650); }
+.social-source-strength { color: var(--social-topic-color, #d7b650); font-weight: 800; }
 .social-source-addressed {
   border-left-color: #8b6fc7;
   background-image: repeating-linear-gradient(
@@ -3580,6 +3582,82 @@ button.party-portrait-action {
 .social-action .game-icon { width: 1.15rem; height: 1.15rem; }
 .social-action-label { white-space: nowrap; }
 .social-unavailable { color: var(--danger); }
+
+.social-conversation-dock { min-height: 22rem; }
+.conversation-dock-header {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: .75rem;
+  padding: .45rem .6rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.conversation-dock-tools,
+.conversation-tabs { display: flex; align-items: center; gap: .3rem; }
+.conversation-tabs { margin-left: auto; }
+.conversation-tab,
+.affinity-face {
+  display: inline-grid;
+  width: 2.15rem;
+  height: 2.15rem;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: .35rem;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.conversation-tab .game-icon { width: 1.25rem; height: 1.25rem; }
+.conversation-tab[aria-selected="true"] { border-color: var(--accent-gold-light); background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-gold-light); }
+.conversation-tab:focus-visible,
+.affinity-face:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.conversation-panel { min-height: 12rem; max-height: 28rem; padding: .7rem; overflow: auto; }
+.conversation-panel[hidden] { display: none; }
+.dialogue-category-panel { padding: .45rem .7rem; border-bottom: 1px solid var(--border-color); }
+.dialogue-category-panel[hidden] { display: none; }
+.dialogue-category-topic-list { display: flex; flex-wrap: wrap; gap: .45rem; padding: 0; margin: 0; list-style: none; }
+.conversation-empty { color: var(--text-muted); font-style: italic; }
+.affinity-popover { position: relative; --affinity-color: #d7b650; }
+.affinity-neutral { --affinity-color: #d7b650; }
+.affinity-warm { --affinity-color: #8dbb55; }
+.affinity-very-warm,
+.affinity-trusted { --affinity-color: #4fae67; }
+.affinity-cold,
+.affinity-reserved { --affinity-color: #d87952; }
+.affinity-hostile { --affinity-color: #cf4f4f; }
+.affinity-face { border-color: color-mix(in srgb, var(--affinity-color) 70%, var(--border-color)); color: var(--affinity-color); font-size: 1.25rem; }
+.affinity-details {
+  position: absolute;
+  top: calc(100% + .35rem);
+  right: 0;
+  display: none;
+  width: min(24rem, 80vw);
+  max-height: 24rem;
+  padding: .75rem;
+  overflow: auto;
+  border: 1px solid var(--affinity-color);
+  border-radius: .45rem;
+  background: var(--panel-bg);
+  box-shadow: 0 .6rem 1.4rem rgb(0 0 0 / .42);
+}
+.affinity-popover:hover .affinity-details,
+.affinity-popover:focus-within .affinity-details,
+.affinity-popover.is-pinned .affinity-details { display: block; }
+.affinity-popover.is-closing .affinity-details { display: none !important; }
+.affinity-details h3 { margin: 0 0 .55rem; }
+.affinity-details .perceived-traits { display: grid; gap: .45rem; padding: 0; margin: .65rem 0 0; list-style: none; }
+.affinity-details .perceived-trait { display: grid; gap: .15rem; padding: .4rem; border-left: 3px solid color-mix(in srgb, var(--accent) var(--belief-confidence), var(--border-color)); }
+.affinity-details .perceived-trait span,
+.affinity-details .perceived-trait small { color: var(--text-muted); }
+.about-person-topics { display: flex; flex-wrap: wrap; gap: .4rem; }
+.about-person-topic { padding: .45rem .6rem; border: 1px solid var(--border-color); border-radius: .35rem; background: var(--panel-bg); color: var(--text); cursor: pointer; }
+.about-person-topic:hover,
+.about-person-topic:focus-visible { border-color: var(--accent-gold-light); }
+.about-person-exchange { margin-top: .75rem; }
+.about-person-exchange p { margin: .25rem 0; }
 
 .fervor-meter {
   position: relative;

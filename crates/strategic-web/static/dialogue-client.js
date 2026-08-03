@@ -80,15 +80,15 @@
     return index < 0 ? 0 : (index + 1) / bands.length;
   };
   const socialDurationChoices = Object.freeze([
-    { id: "brief", minutes: 15, icon: "conversation", label: "Do you have a moment to talk?", detail: "A brief fifteen-minute conversation." },
-    { id: "visit", minutes: 60, icon: "sun", label: "I would like to stay and talk awhile.", detail: "An unhurried one-hour visit." },
-    { id: "evening", minutes: 240, icon: "calendar", label: "Shall we spend the evening together?", detail: "A long four-hour conversation." },
+    { id: "brief", minutes: 15, icon: "conversation", label: "Hast thou a moment to speak?", detail: "A brief fifteen-minute conversation." },
+    { id: "visit", minutes: 60, icon: "sun", label: "I would tarry and speak with thee awhile.", detail: "An unhurried one-hour visit." },
+    { id: "evening", minutes: 240, icon: "calendar", label: "Shall we pass the evening together?", detail: "A long four-hour conversation." },
   ]);
   const romanticResponse = (action) => ({
-    formal_courtship: { icon: "rose", label: "Ask for a formal courtship", line: "I would like to seek your family's leave to court you." },
-    informal_courtship: { icon: "lockpicks", label: "Propose a private courtship", line: "Would you court me, even if we must keep it between us?" },
-    schedule_wedding: { icon: "calendar", label: "Plan the wedding", line: "Let us choose the day and make our promise." },
-    cancel_wedding: { icon: "broken-heart", label: "Cancel the wedding", line: "I cannot go forward with the wedding as planned." },
+    formal_courtship: { icon: "rose", label: "Ask for a formal courtship", line: "I would seek thy family's leave to court thee." },
+    informal_courtship: { icon: "lockpicks", label: "Propose a private courtship", line: "Wilt thou court me, though we keep it between ourselves?" },
+    schedule_wedding: { icon: "calendar", label: "Plan the wedding", line: "Let us appoint the day and plight our troth." },
+    cancel_wedding: { icon: "broken-heart", label: "Cancel the wedding", line: "I cannot go forward with our wedding as appointed." },
   })[action] || null;
   const courtshipPresentation = (kind, exposed) => {
     const informal = kind === "informal";
@@ -106,6 +106,21 @@
     && binding.sessionId === currentView?.session_id
     && binding.revision === currentView?.revision
   );
+  const affinityPresentation = (value) => {
+    const score = Number.isFinite(Number(value)) ? Number(value) : 0;
+    if (score >= 50) return { band: "very-warm", label: "Very warm regard", face: "☺" };
+    if (score >= 15) return { band: "warm", label: "Warm regard", face: "🙂" };
+    if (score <= -50) return { band: "hostile", label: "Hostile regard", face: "☹" };
+    if (score <= -15) return { band: "cold", label: "Cold regard", face: "🙁" };
+    return { band: "neutral", label: "Neutral regard", face: "😐" };
+  };
+  const moraleTopicPresentation = (value) => {
+    const score = Math.max(-5, Math.min(5, Number(value) || 0));
+    const direction = score < 0 ? "negative" : score > 0 ? "positive" : "neutral";
+    const endpoint = score < 0 ? "#cf4f4f" : score > 0 ? "#4fae67" : "#d7b650";
+    const yellow = score === 0 ? 100 : Math.max(10, 100 - Math.abs(score) * 18);
+    return { direction, label: `${direction[0].toUpperCase()}${direction.slice(1)} morale, ${score >= 0 ? "+" : ""}${score.toFixed(1)}`, color: `color-mix(in srgb, #d7b650 ${yellow}%, ${endpoint})` };
+  };
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
@@ -121,6 +136,8 @@
       socialDurationChoices,
       contextualMutationIsCurrent,
       courtshipPresentation,
+      affinityPresentation,
+      moraleTopicPresentation,
     };
   }
   if (typeof document === "undefined") return;
@@ -130,6 +147,98 @@
   lifecycle?.abort();
   lifecycle = new AbortController();
   const { signal } = lifecycle;
+  document.querySelectorAll("[data-dialogue-category-tabs]").forEach((tablist) => {
+    const dockChat = tablist.closest(".settlement-chat");
+    const tabs = [...tablist.querySelectorAll("[role='tab']")];
+    const activate = (tab, focus = false) => {
+      tabs.forEach((candidate) => {
+        const selected = candidate === tab;
+        candidate.setAttribute("aria-selected", String(selected));
+        candidate.tabIndex = selected ? 0 : -1;
+        const panel = document.getElementById(candidate.getAttribute("aria-controls"));
+        if (panel) panel.hidden = !selected;
+      });
+      if (focus) tab.focus();
+    };
+    const activateRequested = async (tab, focus = false) => {
+        if (tab.dataset.dialogueCategory === "tidings" && dockChat?.dataset.partySocialHref) {
+          const response = await window.strategicFetch(dockChat.dataset.partySocialHref, { headers: { Accept: "text/html" } });
+          if (!response.ok) { window.reportStrategicError(new Error(`Recent Tidings failed (${response.status})`), "open Recent Tidings"); return; }
+          const page = new DOMParser().parseFromString(await response.text(), "text/html");
+          const replacement = page.querySelector("[data-social-conversation]");
+          if (!replacement) { window.reportStrategicError(new Error("Recent Tidings response was incomplete"), "open Recent Tidings"); return; }
+          dockChat.replaceWith(replacement); document.dispatchEvent(new Event("strategic-page-mounted")); return;
+        }
+        activate(tab, focus);
+    };
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => void activateRequested(tab), { signal });
+      tab.addEventListener("keydown", (event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+        void activateRequested(tabs[next], true);
+      }, { signal });
+    });
+  });
+  document.querySelectorAll("[data-social-conversation]").forEach((dock) => {
+    const tabs = [...dock.querySelectorAll("[role='tab'][data-conversation-tab]")];
+    const activate = (tab, focus = false) => {
+      tabs.forEach((candidate) => {
+        const selected = candidate === tab;
+        candidate.setAttribute("aria-selected", String(selected));
+        candidate.tabIndex = selected ? 0 : -1;
+        const panel = dock.querySelector(`#${CSS.escape(candidate.getAttribute("aria-controls"))}`);
+        if (panel) panel.hidden = !selected;
+      });
+      if (focus) tab.focus();
+    };
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => activate(tab), { signal });
+      tab.addEventListener("keydown", (event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1
+          : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+        activate(tabs[next], true);
+      }, { signal });
+    });
+    const popover = dock.querySelector("[data-affinity-popover]");
+    const trigger = popover?.querySelector("[data-affinity-trigger]");
+    const closeAffinity = () => {
+      if (!popover) return;
+      popover.classList.remove("is-pinned");
+      popover.classList.add("is-closing");
+      trigger?.setAttribute("aria-expanded", "false");
+    };
+    popover?.addEventListener("pointerenter", () => popover.classList.remove("is-closing"), { signal });
+    popover?.addEventListener("focusin", () => popover.classList.remove("is-closing"), { signal });
+    trigger?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      popover.classList.remove("is-closing");
+      const pinned = popover.classList.toggle("is-pinned");
+      if (!pinned) popover.classList.add("is-closing");
+      trigger.setAttribute("aria-expanded", String(pinned));
+    }, { signal });
+    dock.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !popover?.classList.contains("is-pinned")) return;
+      event.preventDefault(); trigger?.focus(); closeAffinity();
+    }, { signal });
+    document.addEventListener("click", (event) => {
+      if (popover && !popover.contains(event.target)) closeAffinity();
+    }, { signal });
+    dock.querySelectorAll("[data-about-question]").forEach((topic) => topic.addEventListener("click", () => {
+      const panel = topic.closest("[data-about-person]");
+      const stream = dock.querySelector("[data-social-message-stream]");
+      stream?.querySelector("[data-about-exchange]")?.remove();
+      const exchange = document.createElement("div");
+      exchange.dataset.aboutExchange = "true";
+      exchange.className = "about-person-exchange";
+      const question = document.createElement("p"); question.className = "chat-player-message"; question.textContent = topic.dataset.aboutQuestion;
+      const answer = document.createElement("p"); answer.className = "chat-npc-message"; answer.textContent = topic.dataset.aboutAnswer;
+      exchange.append(question, answer); stream?.append(exchange);
+    }, { signal }));
+  });
   const chat = document.querySelector("[data-local-chat-subject][data-dialogue-catalog-revision]");
   if (!chat) return;
   const messages = chat.querySelector(".settlement-chat-messages");
@@ -175,57 +284,64 @@
     row.append(timestamp, name, document.createTextNode(body));
     return row;
   };
-  const visualVital = (kind, value, icon) => {
-    const label = relationshipLabel(value);
-    const vital = document.createElement("span");
-    vital.className = `npc-relationship-vital npc-relationship-${kind}`;
-    vital.title = `${kind}: ${label}`;
-    vital.setAttribute("aria-label", vital.title);
-    const glyph = document.createElement("span"); glyph.className = "game-icon"; glyph.style.setProperty("--game-icon", `url('/static/icons/game/${icon}.svg')`); glyph.setAttribute("aria-hidden", "true");
-    const percent = Math.round(relationshipLevel(kind, value) * 100);
-    const track = document.createElement("span"); track.className = "npc-relationship-meter"; track.setAttribute("role", "meter"); track.setAttribute("aria-valuemin", "0"); track.setAttribute("aria-valuemax", "100"); track.setAttribute("aria-valuenow", String(percent)); track.setAttribute("aria-valuetext", label);
-    const fill = document.createElement("span"); fill.style.width = `${percent}%`; fill.setAttribute("aria-hidden", "true");
-    track.append(fill); vital.append(glyph, track);
-    return vital;
-  };
   const renderRelationshipVitals = () => {
     if (!npcDescription) return;
-    npcDescription.querySelector("[data-npc-relationship-vitals]")?.remove();
     if (!currentSocial) return;
-    const vitals = document.createElement("div");
-    vitals.className = "npc-relationship-vitals";
-    vitals.dataset.npcRelationshipVitals = "true";
-    vitals.setAttribute("role", "group");
-    vitals.setAttribute("aria-label", `Your relationship with ${currentSocial.name}`);
-    vitals.append(
-      visualVital("affinity", currentSocial.affinity, "heart-beats"),
-      visualVital("familiarity", currentSocial.familiarity, "conversation"),
-      visualVital("morale", currentSocial.morale, "sun"),
-    );
-    if (currentSocial.courtship_kind) {
-      const presentation = courtshipPresentation(currentSocial.courtship_kind, currentSocial.courtship_exposed);
-      const courtship = document.createElement("span");
-      courtship.className = "npc-relationship-state";
-      courtship.title = presentation.label;
-      courtship.setAttribute("role", "img");
-      courtship.setAttribute("aria-label", courtship.title);
-      const icon = document.createElement("span"); icon.className = "game-icon"; icon.style.setProperty("--game-icon", `url('/static/icons/game/${presentation.icon}.svg')`); icon.setAttribute("aria-hidden", "true");
-      courtship.append(icon); vitals.append(courtship);
+    // Relationship state is spoken under Of Thee. The header retains only a
+    // qualitative, non-authoritative regard face as an at-a-glance invitation.
+    const header = chat.querySelector(".conversation-dock-header");
+    header?.querySelector("[data-npc-affinity-popover]")?.remove();
+    if (header) {
+      const popover = document.createElement("div"); popover.dataset.npcAffinityPopover = "true"; popover.className = `affinity-popover affinity-${currentSocial.affinity || "neutral"}`;
+      const face = document.createElement("button"); face.type = "button"; face.dataset.npcAffinityFace = "true"; face.className = "affinity-face";
+      const presentation = ({ hostile: ["☹", "Hostile regard"], reserved: ["🙁", "Reserved regard"], warm: ["🙂", "Warm regard"], trusted: ["☺", "Very warm regard"] })[currentSocial.affinity] || ["😐", "Neutral regard"];
+      const details = document.createElement("section"); details.className = "affinity-details"; details.id = `npc-affinity-${currentSocial.resident_character_id}`; details.dataset.affinityDetails = "true";
+      face.textContent = presentation[0]; face.setAttribute("aria-label", presentation[1]); face.title = `${presentation[1]}; ask under Of Thee for more`; face.setAttribute("aria-expanded", "false"); face.setAttribute("aria-controls", details.id);
+      const heading = document.createElement("h3"); heading.textContent = "Thy impression";
+      const familiarity = document.createElement("p"); familiarity.textContent = `Familiarity: ${relationshipLabel(currentSocial.familiarity)}.`;
+      const unavailable = document.createElement("p"); unavailable.className = "text-muted small-copy"; unavailable.textContent = "No observer-safe trait impression is available.";
+      details.append(heading, familiarity, unavailable); popover.append(face, details);
+      const close = () => { popover.classList.remove("is-pinned"); popover.classList.add("is-closing"); face.setAttribute("aria-expanded", "false"); };
+      face.addEventListener("click", (event) => { event.stopPropagation(); popover.classList.remove("is-closing"); const pinned = popover.classList.toggle("is-pinned"); if (!pinned) popover.classList.add("is-closing"); face.setAttribute("aria-expanded", String(pinned)); }, { signal });
+      popover.addEventListener("pointerenter", () => popover.classList.remove("is-closing"), { signal });
+      popover.addEventListener("focusin", () => popover.classList.remove("is-closing"), { signal });
+      document.addEventListener("click", (event) => { if (!popover.contains(event.target)) close(); }, { signal });
+      popover.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.preventDefault(); face.focus(); close(); } }, { signal });
+      header.insertBefore(popover, header.querySelector("[data-dialogue-category-tabs]"));
     }
-    if (Number.isFinite(currentSocial.wedding_countdown_days)) {
-      const wedding = document.createElement("span");
-      wedding.className = "npc-relationship-state npc-wedding-progress";
-      wedding.title = `Wedding in ${currentSocial.wedding_countdown_days} days`;
-      const percent = Math.round(Math.max(0, Math.min(100, (365 - currentSocial.wedding_countdown_days) / 365 * 100)));
-      wedding.setAttribute("role", "meter"); wedding.setAttribute("aria-valuemin", "0"); wedding.setAttribute("aria-valuemax", "100"); wedding.setAttribute("aria-valuenow", String(percent)); wedding.setAttribute("aria-valuetext", wedding.title);
-      wedding.style.setProperty("--wedding-progress", `${percent}%`);
-      const icon = document.createElement("span"); icon.className = "game-icon"; icon.style.setProperty("--game-icon", "url('/static/icons/game/calendar.svg')"); icon.setAttribute("aria-hidden", "true");
-      wedding.append(icon); vitals.append(wedding);
-    }
-    npcDescription.append(vitals);
   };
   const topicAnchor = (topic, binding) => {
     const anchor = document.createElement("a"); anchor.href = "#"; anchor.className = "chat-quest-link"; anchor.textContent = topic.label; anchor.dataset.dialogueTopic = topic.id; anchor.dataset.dialogueSession = binding.sessionId; anchor.dataset.dialogueRevision = String(binding.revision); anchor.dataset.dialogueGeneration = String(binding.selectionGeneration); anchor.dataset.dialogueNpc = binding.npcId; const edit = sourceLink(topic.source); if (!edit) return anchor; const fragment = document.createDocumentFragment(); fragment.append(anchor, edit); return fragment;
+  };
+  const renderCategoryTopics = (view, binding) => {
+    document.querySelectorAll("[data-dialogue-category-panel]").forEach((panel) => {
+      panel.replaceChildren();
+      const category = panel.dataset.dialogueCategoryPanel;
+      if (category === "tidings") {
+        const unavailable = document.createElement("p"); unavailable.className = "conversation-empty";
+        unavailable.textContent = "Their private recent tidings are not thine to inspect."; panel.append(unavailable); return;
+      }
+      if (category === "about") {
+        const topics = document.createElement("div"); topics.className = "about-person-topics";
+        const questions = currentSocial?.about_topics || [];
+        questions.forEach(({ question, answer }) => {
+          const button = document.createElement("button"); button.type = "button"; button.className = "about-person-topic"; button.textContent = question;
+          button.dataset.socialRevision = currentSocial.social_revision; button.dataset.socialSubject = currentSocial.resident_character_id;
+          button.addEventListener("click", () => {
+            if (button.dataset.socialRevision !== currentSocial?.social_revision || button.dataset.socialSubject !== chat.dataset.localChatSubject) return;
+            appendContextExchange(question, answer);
+          }, { signal }); topics.append(button);
+        });
+        if (topics.childElementCount) panel.append(topics);
+        else { const empty = document.createElement("p"); empty.className = "conversation-empty"; empty.textContent = "No private answer is available."; panel.append(empty); }
+        return;
+      }
+      const known = (view.topics || []).filter((topic) => (topic.category || "lore") === category);
+      if (!known.length) { const empty = document.createElement("p"); empty.className = "conversation-empty"; empty.textContent = `No discovered ${category} topics are ready to discuss.`; panel.append(empty); return; }
+      const list = document.createElement("ul"); list.className = "dialogue-category-topic-list";
+      known.forEach((topic) => { const item = document.createElement("li"); item.append(topicAnchor(topic, { ...binding, topicId: topic.id })); list.append(item); });
+      panel.append(list);
+    });
   };
   const renderPrompt = (prompt) => {
     if (!prompt) return;
@@ -268,7 +384,9 @@
     if (!response.ok) return null;
     const social = await response.json();
     if (generation !== selectionGeneration || social.resident_character_id !== chat.dataset.localChatSubject) return null;
-    currentSocial = social; renderRelationshipVitals(); renderContextTopics(); return social;
+    currentSocial = social;
+    if (currentView) renderCategoryTopics(currentView, { sessionId: currentView.session_id, revision: currentView.revision, selectionGeneration, npcId: chat.dataset.localChatSubject || "" });
+    renderRelationshipVitals(); renderContextTopics(); return social;
   };
   const chooseSocialResponse = async (choice) => {
     const binding = beginContextMutation(); if (!binding) return;
@@ -277,8 +395,10 @@
       if (!response.ok) throw new Error(`Conversation failed (${response.status})`);
       const social = await response.json(); if (!contextMutationCurrent(binding)) return;
       currentSocial = social;
-      const reaction = ({ positive: "I am glad we had this time together.", mixed: "That was awkward in places, but I am glad we spoke.", negative: "I think we should leave the conversation there." })[currentSocial.last_outcome] || "Thank you for speaking with me.";
-      removeContextPrompt(); appendContextExchange(choice.label, reaction); renderRelationshipVitals(); renderContextTopics();
+      const reaction = ({ positive: "I am glad we passed this time together.", mixed: "Our words stumbled at times, yet I am glad we spoke.", negative: "Let us leave our speech here, lest it sour further." })[currentSocial.last_outcome] || "I thank thee for speaking with me.";
+      removeContextPrompt(); appendContextExchange(choice.label, reaction);
+      if (currentView) renderCategoryTopics(currentView, { sessionId: currentView.session_id, revision: currentView.revision, selectionGeneration, npcId: chat.dataset.localChatSubject || "" });
+      renderRelationshipVitals(); renderContextTopics();
     } catch (error) { if (contextMutationCurrent(binding)) window.reportStrategicError(error, "choose conversation response"); }
     finally { finishContextMutation(binding); }
   };
@@ -289,7 +409,9 @@
       if (!response.ok) throw new Error(`Relationship response failed (${response.status})`);
       const result = await response.json(); if (!contextMutationCurrent(binding)) return;
       if (!result || typeof result.ok !== "boolean" || typeof result.message !== "string" || !result.view) throw new Error("Relationship response returned an invalid result");
-      currentSocial = result.view; removeContextPrompt(); appendContextExchange(responseView.line, result.message); renderRelationshipVitals(); renderContextTopics();
+      currentSocial = result.view; removeContextPrompt(); appendContextExchange(responseView.line, result.message);
+      if (currentView) renderCategoryTopics(currentView, { sessionId: currentView.session_id, revision: currentView.revision, selectionGeneration, npcId: chat.dataset.localChatSubject || "" });
+      renderRelationshipVitals(); renderContextTopics();
     } catch (error) { if (contextMutationCurrent(binding)) window.reportStrategicError(error, "choose relationship response"); }
     finally { finishContextMutation(binding); }
   };
@@ -434,6 +556,7 @@
       selectionGeneration,
       npcId: chat.dataset.localChatSubject || "",
     };
+    renderCategoryTopics(view, binding);
     messages?.querySelectorAll("[data-dialogue-scripted]").forEach((node) => node.remove());
     view.events.forEach((event) => {
       const row = document.createElement("div");
@@ -608,6 +731,10 @@
     chat.dispatchEvent(new Event("local-chat-subject-changed"));
     currentView = null;
     currentSocial = null;
+    chat.querySelector("[data-npc-affinity-popover]")?.remove();
+    document.querySelectorAll("[data-dialogue-category-panel]").forEach((panel) => {
+      panel.replaceChildren(); const loading = document.createElement("p"); loading.className = "conversation-empty"; loading.textContent = "Loading this person's conversation…"; panel.append(loading);
+    });
     messages?.querySelectorAll("[data-dialogue-scripted], [data-dialogue-contextual], [data-dialogue-context-prompt], [data-dialogue-context-topics]").forEach((node) => node.remove());
     refreshCompletion();
     npcStrip?.querySelectorAll(".settlement-npc-portrait").forEach((candidate) => {

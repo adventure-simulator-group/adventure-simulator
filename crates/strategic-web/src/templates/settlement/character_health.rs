@@ -536,8 +536,8 @@ pub(super) fn strategic_condition_rail(
                         strong class="metric-label" { (decorative_game_icon("sun")) span { "Morale" } }
                         span class="morale-meter-value" { (format!("{:+.1}", condition.morale)) }
                         a class=(if social_open { "character-menu-button is-open" } else { "character-menu-button" })
-                            href=(social_href) title="Open social menu" aria-label="Open social menu"
-                            aria-haspopup="dialog" aria-expanded=(social_open) {
+                            href=(social_href) title="Open Recent Tidings" aria-label="Open conversation to Recent Tidings"
+                            aria-current=[social_open.then_some("page")] {
                             span class="stat-icon" style="--stat-icon: url('/static/icons/game/conversation.svg')" aria-hidden="true" {}
                             @if social_open { span class="sr-only" { " (open)" } }
                         }
@@ -1848,9 +1848,9 @@ mod tests {
         assert!(sources < morale);
         assert!(morale < temperature);
         assert!(!markup.contains("class=\"incapacitation-source incapacitation-fear\""));
-        assert!(markup.contains("href=\"/social\" title=\"Open social menu\""));
+        assert!(markup.contains("href=\"/social\" title=\"Open Recent Tidings\""));
         assert!(markup.contains("/static/icons/game/conversation.svg"));
-        assert!(markup.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
+        assert!(!markup.contains("href=\"/social\" title=\"Open Recent Tidings\" aria-haspopup"));
         let water = markup.find("Water").expect("water meter");
         let wetness = markup
             .find("class=\"wetness-status\"")

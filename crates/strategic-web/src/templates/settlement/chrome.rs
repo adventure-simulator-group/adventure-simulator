@@ -837,9 +837,8 @@ pub(crate) fn party_portrait_overlay(
                     span class="party-portrait-actions" aria-label=(format!("Actions for {}", member.name)) {
                             a href=(format!("{}/party/{}/social", location_path, member.id))
                                 class=(format!("party-portrait-action party-social-action{}", if persistently_notified { " party-social-notified" } else { "" }))
-                                title=(if notified { format!("Talk to {} about {} morale concerns", member.name, member.social_notification_count) } else { format!("Talk to {}", member.name) })
-                                aria-label=(if notified { format!("Talk to {} about {} unaddressed morale concerns", member.name, member.social_notification_count) } else { format!("Talk to {}", member.name) })
-                                aria-haspopup="dialog" {
+                                title=(if notified { format!("Open {}'s Recent Tidings ({} morale concerns)", member.name, member.social_notification_count) } else { format!("Talk to {}", member.name) })
+                                aria-label=(if notified { format!("Open conversation with {} to Recent Tidings; {} unaddressed morale concerns", member.name, member.social_notification_count) } else { format!("Open conversation with {}", member.name) }) {
                                 span class="party-action-icon"
                                     style="--party-action-icon: url('/static/icons/game/conversation.svg')"
                                     aria-hidden="true" {}
@@ -961,7 +960,7 @@ mod tests {
         assert!(!quiet_markup.contains("party-social-notification"));
         assert!(quiet_markup.contains("class=\"party-portrait-action party-social-action\""));
         assert!(quiet_markup.contains("/party/12/social"));
-        assert!(quiet_markup.contains("aria-label=\"Talk to Greta\""));
+        assert!(quiet_markup.contains("aria-label=\"Open conversation with Greta\""));
 
         let mut automatic = quiet;
         automatic.social_notification_count = 2;

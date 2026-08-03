@@ -588,13 +588,14 @@ Start the isolated strategic stack with the guarded visual fixtures:
 just web-isolated-strategic social-demo 23100
 ```
 
-Select **Social Demo**, open **Greta the Guard**, and press the raised Social
-icon beside the Morale meter.
+Select **Social Demo**, open **Greta the Guard**, and open their conversation
+from the portrait action. Use **Recent Tidings** for morale concerns and
+**Of Thee** for observer-safe questions about Greta.
 The fixture includes defeat and injury penalties, established Familiarity,
 positive Affinity, exact multi-valued observer beliefs, presentation, and one
 deliberately incorrect perceived sensitivity. Greta professes Lutheranism, and
 Social Demo has direct Lutheran study plus correlated Catholic knowledge, so
-the themed Prayer response is immediately usable. The Social rail shows
+the themed Prayer response is immediately usable. The conversation dock offers
 Insight, Charm, Command, Deception, and target-specific Religion; Lighten Mood
 and Flirt are distinct Charm
 approaches, and repeated supported observations demonstrate the

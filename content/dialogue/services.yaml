@@ -85,7 +85,7 @@
               ] }
           }]
         },
-        { "id": "quest", "label": "Work", "initially_known": true,
+        { "id": "quest", "label": "Work", "category": "quest", "initially_known": true,
           "responses": [{ "id": "quest-turn-in", "priority": 20, "conditions": { "op": "fact", "key": { "kind": "contract_state", "contract": "selected-service-contract" }, "equals": "readytoreport" },
             "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "You have completed the work. Shall we settle the contract?" }] }],
             "effects": [], "prompt": { "id": "turn-in-work", "respondent": "player", "mode": "yes_no", "choices": [
@@ -104,7 +104,7 @@
             "turns": [{ "speaker": "professional", "fragments": [{ "kind": "text", "value": "The contract is still in your hands. Return when the work is complete." }] }],
             "effects": [], "prompt": null }]
         },
-        { "id": "referred-testimony", "label": "What I saw", "initially_known": true,
+        { "id": "referred-testimony", "label": "What I saw", "category": "quest", "initially_known": true,
           "conditions": { "op": "fact", "key": { "kind": "participant_referral_contact", "role": "professional" }, "equals": true },
           "responses": [{ "id": "hear-referred-testimony", "priority": 0,
             "turns": [
@@ -113,12 +113,12 @@
             ],
             "effects": [{ "kind": "receive_referred_testimony" }], "prompt": null }]
         },
-        { "id": "return-recovered-property", "label": "Return recovered property", "initially_known": true,
+        { "id": "return-recovered-property", "label": "Return recovered property", "category": "quest", "initially_known": true,
           "responses": [{ "id": "return-recovered-property", "priority": 0,
             "turns": [{ "speaker": "player", "fragments": [{ "kind": "text", "value": "I found the missing property and brought it back." }] }, { "speaker": "professional", "fragments": [{ "kind": "text", "value": "Then the matter is finally put right. I will see that it returns to its proper place." }] }],
             "effects": [{ "kind": "investigation_action", "action": "return_asset" }], "prompt": null }]
         },
-        { "id": "expose-false-account", "label": "Challenge the account", "initially_known": true,
+        { "id": "expose-false-account", "label": "Challenge the account", "category": "quest", "initially_known": true,
           "responses": [{ "id": "expose-false-account", "priority": 0,
             "turns": [{ "speaker": "player", "fragments": [{ "kind": "text", "value": "The evidence contradicts the story that was told." }] }, { "speaker": "professional", "fragments": [{ "kind": "text", "value": "Then say plainly what you have proved. This claim will not stand unchallenged." }] }],
             "effects": [{ "kind": "investigation_action", "action": "expose" }], "prompt": null }]
@@ -148,7 +148,7 @@
           ],
           "effects": [], "prompt": null
         }] },
-        { "id": "referred-testimony", "label": "What I saw", "initially_known": true,
+        { "id": "referred-testimony", "label": "What I saw", "category": "quest", "initially_known": true,
           "conditions": { "op": "fact", "key": { "kind": "participant_referral_contact", "role": "herbalist" }, "equals": true },
           "responses": [{ "id": "hear-referred-testimony", "priority": 0,
             "turns": [
@@ -181,7 +181,7 @@
             { "id": "yes", "label": "I profess this faith.", "effects": [{ "kind": "set_flag", "flag": "profess-local-faith", "value": true }], "result_turns": [{ "speaker": "cleric", "fragments": [{ "kind": "text", "value": "Welcome to the congregation. Your profession of faith has been recorded." }] }] },
             { "id": "no", "label": "I am only asking.", "result_turns": [{ "speaker": "cleric", "fragments": [{ "kind": "text", "value": "Then listen and consider; no profession is required." }] }] }
           ] } }] },
-        { "id": "referred-testimony", "label": "What I saw", "initially_known": true,
+        { "id": "referred-testimony", "label": "What I saw", "category": "quest", "initially_known": true,
           "conditions": { "op": "fact", "key": { "kind": "participant_referral_contact", "role": "cleric" }, "equals": true },
           "responses": [{ "id": "hear-referred-testimony", "priority": 0,
             "turns": [
@@ -204,7 +204,7 @@
         { "id": "local-default", "priority": 0, "turns": [{ "speaker": "local", "fragments": [{ "kind": "text", "value": "Good day, traveler. What brings you among the people here?" }] }], "effects": [], "prompt": null }
       ],
       "topics": [
-        { "id": "referred-testimony", "label": "What I saw", "initially_known": true,
+        { "id": "referred-testimony", "label": "What I saw", "category": "quest", "initially_known": true,
           "conditions": { "op": "fact", "key": { "kind": "participant_referral_contact", "role": "local" }, "equals": true },
           "responses": [{ "id": "hear-referred-testimony", "priority": 0,
             "turns": [
@@ -213,12 +213,12 @@
             ],
             "effects": [{ "kind": "receive_referred_testimony" }], "prompt": null }]
         },
-        { "id": "return-recovered-property", "label": "Return recovered property", "initially_known": true,
+        { "id": "return-recovered-property", "label": "Return recovered property", "category": "quest", "initially_known": true,
           "responses": [{ "id": "return-recovered-property", "priority": 0,
             "turns": [{ "speaker": "player", "fragments": [{ "kind": "text", "value": "I found the missing property and brought it back." }] }, { "speaker": "local", "fragments": [{ "kind": "text", "value": "Then the matter is finally put right. I will see that it returns to its proper place." }] }],
             "effects": [{ "kind": "investigation_action", "action": "return_asset" }], "prompt": null }]
         },
-        { "id": "expose-false-account", "label": "Challenge the account", "initially_known": true,
+        { "id": "expose-false-account", "label": "Challenge the account", "category": "quest", "initially_known": true,
           "responses": [{ "id": "expose-false-account", "priority": 0,
             "turns": [{ "speaker": "player", "fragments": [{ "kind": "text", "value": "The evidence contradicts the story that was told." }] }, { "speaker": "local", "fragments": [{ "kind": "text", "value": "Then say plainly what you have proved. This claim will not stand unchallenged." }] }],
             "effects": [{ "kind": "investigation_action", "action": "expose" }], "prompt": null }]
@@ -232,7 +232,7 @@
           "turns": [{ "speaker": "employer", "fragments": [{ "kind": "text", "value": "An adventuring company is looking for capable hands." }] }],
           "effects": [{ "kind": "learn_topic", "topic": "open-roles" }], "prompt": null }]
       },
-      { "id": "referred-testimony", "label": "What I saw", "initially_known": true,
+      { "id": "referred-testimony", "label": "What I saw", "category": "quest", "initially_known": true,
         "conditions": { "op": "fact", "key": { "kind": "participant_referral_contact", "role": "employer" }, "equals": true },
         "responses": [{ "id": "hear-referred-testimony", "priority": 0,
           "turns": [
