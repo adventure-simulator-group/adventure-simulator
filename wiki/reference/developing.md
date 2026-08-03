@@ -70,10 +70,10 @@ surgery kit.
 
 Bootstrap completes the same observer-safe discovery transition as accepting a
 local NPC rumor: the selected character starts with the exact problem's receipt,
-witness referral, lead/action graph, and journal notice. Continue through the
-normal quest, physiology, surgery, bestiary, and dialogue surfaces. Repeated
-loading is idempotent for the scenario character and its dedicated settlement.
-The gallery is available only in a development-bootstrap module.
+witness referral, and journal-visible lead/action graph. Continue through the
+normal quest, physiology, surgery, bestiary, and dialogue surfaces. Repeated loading
+is idempotent for the scenario character and its dedicated settlement. The gallery
+is available only in a development-bootstrap module.
 
 ## Autopsy demo
 
