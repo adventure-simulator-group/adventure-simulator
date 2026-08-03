@@ -481,7 +481,7 @@
       const cell = document.createElement("td");
       cell.colSpan = 20;
       const label = row.querySelector("[data-item-name]");
-      const visible = new Set(parsePanelState(global.location.search, browser.dataset.inventoryBrowser, browser.dataset.optionalColumns.split(",").filter(Boolean)).columns);
+      const visible = new Set(parsePanelState(global.location.search, browser.dataset.inventoryBrowser, (browser.dataset.optionalColumns || "").split(",").filter(Boolean)).columns);
       const entries = [["Slot", label?.dataset.detailSlot], ["Balance", label?.dataset.detailBalance], ["Mode", label?.dataset.detailMode], ...Object.entries(OPTIONAL_COLUMNS).filter(([key]) => !visible.has(key)).map(([key, [name, dataKey]]) => [name, label?.dataset[`stat${dataKey[0].toUpperCase()}${dataKey.slice(1)}`]])].filter(([, value]) => value && value !== "0" && value !== "—");
       if (entries.length) {
         const list = document.createElement("dl");
@@ -550,7 +550,7 @@
 
   function mount(browser) {
     if (browser.dataset.inventoryMounted) { // live refresh may preserve the wrapper but replace rows
-      const refreshed = parsePanelState(global.location.search, browser.dataset.inventoryBrowser, browser.dataset.optionalColumns.split(",").filter(Boolean));
+      const refreshed = parsePanelState(global.location.search, browser.dataset.inventoryBrowser, (browser.dataset.optionalColumns || "").split(",").filter(Boolean));
       Object.assign(browser._inventoryState, refreshed);
       const search = browser.querySelector("[data-inventory-search]"); if (search) search.value = refreshed.query;
       browser.querySelectorAll("[data-inventory-column-options] input").forEach((input) => { input.checked = refreshed.columns.includes(input.value); });
@@ -558,10 +558,10 @@
       return;
     }
     browser.dataset.inventoryMounted = "true";
-    const available = browser.dataset.optionalColumns.split(",").filter(Boolean);
+    const available = (browser.dataset.optionalColumns || "").split(",").filter(Boolean);
     let state = parsePanelState(global.location.search, browser.dataset.inventoryBrowser, available);
     browser._inventoryState = state;
-    const search = browser.querySelector("[data-inventory-search]"); search.value = state.query;
+    const search = browser.querySelector("[data-inventory-search]"); if (search) search.value = state.query;
     const options = browser.querySelector("[data-inventory-column-options]");
     available.forEach((column) => {
       const label = document.createElement("label");
@@ -575,8 +575,8 @@
       if (actionHeader && actionHeader === headerRow.lastElementChild) headerRow.insertBefore(th, actionHeader);
       else headerRow.append(th);
     });
-    search.addEventListener("input", () => { state.query = search.value; updateHistory(browser, state, browser._searchEditing === true); browser._searchEditing = true; apply(browser, state); });
-    search.addEventListener("blur", () => { browser._searchEditing = false; });
+    search?.addEventListener("input", () => { state.query = search.value; updateHistory(browser, state, browser._searchEditing === true); browser._searchEditing = true; apply(browser, state); });
+    search?.addEventListener("blur", () => { browser._searchEditing = false; });
     browser.addEventListener("click", (event) => {
       const coinAction = event.target.closest("[data-coin-action]");
       if (coinAction) {
@@ -630,7 +630,7 @@
     const closest = scope.closest?.("[data-inventory-browser]"); if (closest && !browsers.includes(closest)) browsers.push(closest);
     browsers.forEach((browser) => {
       if (!browser.dataset.inventoryMounted) mount(browser);
-      else apply(browser, browser._inventoryState || parsePanelState(global.location.search, browser.dataset.inventoryBrowser, browser.dataset.optionalColumns.split(",").filter(Boolean)));
+      else apply(browser, browser._inventoryState || parsePanelState(global.location.search, browser.dataset.inventoryBrowser, (browser.dataset.optionalColumns || "").split(",").filter(Boolean)));
     });
   }
   const api = { parsePanelState, serializePanelState, compareValues, normalizeSortValue, rowValue, groupCurrencyRows, groupFoodRows, mountAll, refresh, syncPanelWidth };

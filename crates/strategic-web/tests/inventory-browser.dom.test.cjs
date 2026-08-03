@@ -85,6 +85,27 @@ test("expanded item details expose a developer-only YAML editor button", () => {
   assert.equal(link.textContent, "Edit YAML");
 });
 
+test("minimal cooking inventory browsers mount without optional toolbar metadata", () => {
+  const { window, document } = parseHTML(`<html><body>
+    <div data-inventory-browser="cooking-pot-left" hidden><table><tbody></tbody></table></div>
+    <div data-inventory-browser="cooking-inventory-right"><table><tbody>
+      ${ordinaryRow("torch", "Torch", 1)}
+      ${foodRow("apple", "Apple", 1, 0.18, 1)}
+    </tbody></table></div>
+  </body></html>`);
+  window.location = { search: "", pathname: "/locations/settlement/demo/fireplace", hash: "" };
+  window.history = { pushState() {}, replaceState() {} };
+  window.getComputedStyle = () => ({ paddingLeft: "0", paddingRight: "0" });
+  global.window = window;
+  global.document = document;
+  delete require.cache[require.resolve("../static/inventory-browser.js")];
+  const inventory = require("../static/inventory-browser.js");
+
+  assert.doesNotThrow(() => inventory.mountAll(document));
+  assert.doesNotThrow(() => inventory.refresh(document));
+  assert.doesNotThrow(() => document.querySelector('[data-item-key="torch"]').click());
+});
+
 test("mixed currency DOM stays one aggregate through normalization, staging, and live insertion", () => {
   const { document, browser } = fixture();
   delete require.cache[require.resolve("../static/inventory-browser.js")];

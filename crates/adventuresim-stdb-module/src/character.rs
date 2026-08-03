@@ -356,6 +356,7 @@ pub fn transition_character_to_dead_at(
     strategic_minute: u64,
 ) -> Result<CharacterDeath, String> {
     if let Some(death) = ctx.db.character_death().character_id().find(character_id) {
+        crate::food::cleanup_fireplace_custody_for_death(ctx, character_id);
         return Ok(death);
     }
     let mut character = ctx
@@ -380,6 +381,7 @@ pub fn transition_character_to_dead_at(
         source_id,
         strategic_minute,
     });
+    crate::food::cleanup_fireplace_custody_for_death(ctx, character_id);
     crate::corpse::persist_character_death_corpse(
         ctx,
         character_id,

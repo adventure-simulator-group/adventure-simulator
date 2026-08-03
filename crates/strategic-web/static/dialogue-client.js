@@ -757,7 +757,13 @@
     const response = await window.strategicFetch(path, { headers: { Accept: "application/json" } });
     if (!response.ok) throw new Error(`Could not load people here (${response.status})`);
     const people = await response.json();
-    if (!people.length) { npcStrip.textContent = "Nobody is available here just now."; return; }
+    const environmental = [...npcStrip.querySelectorAll(".fireplace-portrait")];
+    if (!people.length) {
+      npcStrip.querySelector("[data-npc-loading]")?.remove();
+      if (!environmental.length) npcStrip.textContent = "Nobody is available here just now.";
+      begin();
+      return;
+    }
     const buttons = people.map((npc) => {
       const button = document.createElement("button"); button.type = "button"; button.className = "party-portrait settlement-npc-portrait"; button.dataset.npcId = npc.id; button.setAttribute("aria-label", `Talk to ${npc.name}`); button.setAttribute("aria-pressed", "false"); button.tabIndex = -1;
       const portrait = document.createElement("span"); portrait.className = "party-portrait-initial settlement-npc-initials";
@@ -767,7 +773,7 @@
       button.addEventListener("keydown", (event) => { if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return; event.preventDefault(); const offset = event.key === 'ArrowRight' ? 1 : -1; buttons[(buttons.indexOf(button) + offset + buttons.length) % buttons.length].focus(); });
       return button;
     });
-    npcStrip.replaceChildren(...buttons);
+    npcStrip.replaceChildren(...buttons, ...environmental);
     const defaultIndex = Math.max(0, people.findIndex((npc) => npc.is_default));
     selectNpc(people[defaultIndex], buttons[defaultIndex]);
   };

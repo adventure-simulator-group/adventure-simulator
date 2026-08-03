@@ -188,22 +188,22 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/character-switcher.js?v=multi-character-switcher-1" defer {}
                     script src="/static/journal-tab.js?v=journal-tab-1" defer {}
                     script src="/static/numeric-editor.js?v=shared-numeric-editor-2" defer {}
-                    script src="/static/inventory-browser.js?v=coin-currencies-3-alcohol-targets-1-food-lots-4-infinite-catalog-item-yaml-editor-1" defer {}
+                    script src="/static/inventory-browser.js?v=coin-currencies-3-alcohol-targets-1-food-lots-4-infinite-catalog-item-yaml-editor-2" defer {}
                     script src="/static/party-trade.js?v=provision-party-food-1-slot-controls-1" defer {}
-                    script src="/static/cooking.js?v=trade-pot-1" defer {}
+                    script src="/static/cooking.js?v=fireplace-station-1" defer {}
                     script src="/static/herbalism.js?v=bounded-craft-1" defer {}
                     script src="/static/equipment-toggle.js?v=location-keyboard-slots-5" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                 script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                 script src="/static/physiology-dialog.js?v=visual-notebook-2" defer {}
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
-                    script src="/static/dialogue-client.js?v=social-chat-integration-1" defer {}
+                    script src="/static/dialogue-client.js?v=fireplace-counterparty-1" defer {}
                     script src="/static/physical-evidence.js?v=deterministic-inspection-1" defer {}
                     script src="/static/developer-quest-editor.js?v=scenario-gallery-1" defer {}
                     script src="/static/chat-resize.js?v=counterparty-portraits-1" defer {}
                     script src="/static/local-chat.js?v=local-chat-location-authority-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-4" defer {}
-                    script src="/static/building-state.js?v=exact-place-facades-1" defer {}
+                    script src="/static/building-state.js?v=fireplace-context-2" defer {}
                     script src="/static/travel-planner.js?v=travel-rails-1" defer {}
                     script src="/static/strategic-map.js?v=population-culling-3" defer {}
                     script src="/static/rest-duration.js?v=wake-time-4" defer {}
@@ -1082,8 +1082,9 @@ mod tests {
         assert!(building.contains("searchParams.get(\"building\")"));
         assert!(building.contains("searchParams.set(\"building\", building)"));
         assert!(building.contains("pathname.includes(\"/party\")"));
-        assert!(building.contains("partyInspection && buildings.has(requested)"));
-        assert!(building.contains("!buildings.has(requested) || !partyInspection"));
+        assert!(building.contains("buildingContextPath && buildings.has(requested)"));
+        assert!(building.contains("/locations\\/settlement\\/[^/]+\\/fireplace"));
+        assert!(building.contains("!buildings.has(requested) || !buildingContextPath"));
         assert!(building.contains("tab.dataset.buildingId === building"));
     }
 

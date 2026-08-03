@@ -2364,6 +2364,40 @@ body.character-action-dialog-open { overflow: hidden; }
   pointer-events: auto;
 }
 
+.fireplace-portrait {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .25rem;
+    min-width: 5.5rem;
+    color: inherit;
+    text-decoration: none;
+}
+
+.fireplace-layout {
+    display: contents;
+}
+
+.fireplace-portrait:focus-visible {
+    outline: 2px solid var(--accent, #d4a85f);
+    outline-offset: 3px;
+}
+
+.fireplace-portrait-image {
+    display: grid;
+    place-items: center;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 50%;
+    background: radial-gradient(circle, #f6bb58 0 20%, #9d472d 55%, #33231d 100%);
+}
+
+.fireplace-rest-menu output {
+    display: block;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
 .settlement-npc-portrait {
   border: 0;
   border-radius: 50%;

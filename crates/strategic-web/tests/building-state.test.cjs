@@ -12,6 +12,7 @@ function fixture(href) {
     <main id="strategic-page">
       <nav data-settlement-id="lubeck">
         <a class="nav-tab" data-service-id="map" data-building-id="map"></a>
+        <a class="nav-tab" data-service-id="inn" data-building-id="inn"></a>
         <a class="nav-tab active" data-service-id="organization"
           data-building-id="organization-merchants-lubeck"></a>
       </nav>
@@ -68,5 +69,31 @@ test("an invalid requested identity is removed and cannot become active", () => 
   assert.equal(view.replacements.length, 1);
   assert.equal(view.replacements[0], "http://game.test/locations/settlement/lubeck/party/7");
   assert.equal(view.document.querySelector('[data-building-id="organization-foreign-town"]'), null);
+  assert.equal(view.document.querySelectorAll(".nav-tab.active").length, 1);
+});
+
+test("fireplace building state survives mount and remount without rewriting history", () => {
+  const view = fixture(
+    "http://game.test/locations/settlement/lubeck/fireplace?building=inn",
+  );
+  const inn = view.document.querySelector('[data-building-id="inn"]');
+  assert.equal(inn.classList.contains("active"), true);
+  assert.deepEqual(view.replacements, []);
+
+  view.document.dispatchEvent(new view.window.Event("strategic-page-mounted"));
+  assert.equal(inn.classList.contains("active"), true);
+  assert.equal(view.document.querySelectorAll(".nav-tab.active").length, 1);
+  assert.deepEqual(view.replacements, []);
+});
+
+test("an invalid fireplace building is removed", () => {
+  const view = fixture(
+    "http://game.test/locations/settlement/lubeck/fireplace?building=forge",
+  );
+  assert.equal(view.replacements.length, 1);
+  assert.equal(
+    view.replacements[0],
+    "http://game.test/locations/settlement/lubeck/fireplace",
+  );
   assert.equal(view.document.querySelectorAll(".nav-tab.active").length, 1);
 });

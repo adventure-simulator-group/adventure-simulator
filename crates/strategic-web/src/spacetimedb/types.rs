@@ -1453,6 +1453,34 @@ pub struct FoodLot {
     pub created_at_minute: u64,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CookingMethod {
+    PanFry,
+    Stew,
+    Roast,
+    Bake,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendFireplaceStation {
+    pub key: String,
+    pub character_id: u64,
+    pub context_key: String,
+    pub instrument_item_id: Option<String>,
+    pub instrument_source: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendFireplaceDish {
+    pub station_key: String,
+    pub character_id: u64,
+    pub contributor_name: String,
+    pub method: CookingMethod,
+    pub started_at_minute: u64,
+    pub target_minutes: u32,
+    pub display_name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterNeeds {
     pub character_id: u64,

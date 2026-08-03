@@ -2459,6 +2459,11 @@ pub fn remove_party_member(
     if actor_character_id != member_character_id && party.leader_id != actor_character_id {
         return Err("Only the party leader may remove another member".into());
     }
+    crate::food::require_members_clear_current_camp_fireplace(
+        ctx,
+        &party_id,
+        &[member_character_id],
+    )?;
     if actor_character_id == party.leader_id && character.temporary {
         settle_temporary_member_stake(ctx, &party_id, member_character_id)?;
     }
@@ -2534,6 +2539,18 @@ pub fn disband_party(ctx: &ReducerContext, leader_id: u64, party_id: String) -> 
     if party.leader_id != leader_id {
         return Err("Only the party leader can disband the party".into());
     }
+    let fireplace_member_ids = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(&party_id)
+        .map(|member| member.character_id)
+        .collect::<Vec<_>>();
+    crate::food::require_members_clear_current_camp_fireplace(
+        ctx,
+        &party_id,
+        &fireplace_member_ids,
+    )?;
     if party
         .active_contract_id
         .as_ref()

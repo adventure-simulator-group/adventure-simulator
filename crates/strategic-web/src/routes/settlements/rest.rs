@@ -59,6 +59,10 @@ pub(crate) fn travel_rest_minutes(form: &RestForm) -> Result<u64, &'static str> 
 
 pub(super) fn parsed_rest_minutes(form: &RestForm) -> Result<u64, &'static str> {
     Ok(match form.unit.as_str() {
+        "minutes" => form
+            .duration
+            .parse::<u64>()
+            .map_err(|_| "Rest minutes must be a whole number")?,
         "hours" => {
             let (hours, minutes) = form
                 .duration

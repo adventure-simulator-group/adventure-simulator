@@ -6,6 +6,7 @@ const test = require("node:test");
 const source = fs.readFileSync(path.join(__dirname, "../static/cooking.js"), "utf8");
 const inventoryBrowserSource = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
 const template = fs.readFileSync(path.join(__dirname, "../src/templates/settlement/trade.rs"), "utf8");
+const dialogue = fs.readFileSync(path.join(__dirname, "../static/dialogue-client.js"), "utf8");
 
 test("cooking stages inventory rows into a bounded pot draft", () => {
   assert.match(source, /data-cooking-stage/);
@@ -15,11 +16,11 @@ test("cooking stages inventory rows into a bounded pot draft", () => {
   assert.match(source, /\.join\(","\)/);
 });
 
-test("preview explains retained-food exceptions and quality inputs", () => {
+test("preview explains quality inputs without claiming stew is discarded", () => {
   assert.match(source, /bake: 30/);
   assert.match(source, /15% calories lost to drippings/);
   assert.match(source, /below 2% of ingredient mass: quality drops one tier/);
-  assert.match(source, /eaten now; leftovers are discarded/);
+  assert.doesNotMatch(source, /eaten now; leftovers are discarded/);
   assert.match(source, /stewWaterMl/);
   assert.match(source, /kg water included in flavor mass/);
   assert.match(source, /culinaryFatMass < mass \* panFatRatio/);
@@ -36,13 +37,26 @@ test("cook exposes the shared duration formula to hover and accessibility", () =
   assert.match(source, /strategic-live-regions-refreshed/);
 });
 
-test("cooking methods submit through the valid center form", () => {
-  assert.match(template, /form id="cooking-submit-form" class="cooking-submit-form"/);
-  assert.match(template, /name="method" value=\(value\) form="cooking-submit-form"/);
+test("fireplace submission is explicit and irreversible", () => {
+  assert.match(template, /Add Ingredients/);
+  assert.match(template, /Adding ingredients is irreversible/);
+  assert.match(template, /inventory_scope/);
+  assert.match(template, /personal/);
+  assert.match(template, /party/);
+  assert.match(template, /Rest while cooking/);
+  assert.match(template, /name="unit" value="minutes"/);
 });
 
-test("cooking inventory shows only food and expands its food group initially", () => {
-  assert.match(template, /let ingredients = inventory/);
-  assert.match(template, /@for item in ingredients/);
+test("fireplace inventory exposes food and instrument exchanges", () => {
+  assert.match(template, /fireplace_inventory_row/);
+  assert.match(template, /cooking_pan/);
+  assert.match(template, /cooking_pot/);
+  assert.match(template, /portable_oven/);
   assert.match(inventoryBrowserSource, /browser\.dataset\.inventoryBrowser === "cooking-inventory-right"/);
+});
+
+test("environmental fireplace survives dynamic NPC loading", () => {
+  assert.match(dialogue, /querySelectorAll\("\.fireplace-portrait"\)/);
+  assert.match(dialogue, /replaceChildren\(\.\.\.buttons, \.\.\.environmental\)/);
+  assert.match(template, /data-cooking-activity\[dish\.is_none\(\)\]/);
 });

@@ -525,6 +525,17 @@ pub(super) fn npc_portrait_strip(settlement_id: &str, location_id: &str) -> Mark
     html! {
         nav class="settlement-npc-strip" aria-label="People here" data-npc-strip
             data-npc-settlement=(settlement_id) data-npc-location=(location_id) {
+            @if !matches!(location_id, "overview" | "public-square" | "map") {
+                a class="npc-portrait fireplace-portrait"
+                    href=(format!("/locations/settlement/{settlement_id}/fireplace?building={location_id}"))
+                    aria-label="Cook at fireplace" title="Cook at fireplace" {
+                    span class="npc-portrait-image fireplace-portrait-image" aria-hidden="true" {
+                        (decorative_game_icon("campfire"))
+                    }
+                    span class="npc-portrait-name" { "Fireplace" }
+                    span class="btn btn-secondary btn-small" aria-hidden="true" { "Cook" }
+                }
+            }
             span class="text-muted" data-npc-loading { "Finding the people here…" }
         }
     }
@@ -1112,6 +1123,8 @@ mod tests {
         assert!(strip.contains("aria-label=\"People here\""));
         assert!(strip.contains("data-npc-settlement=\"lubeck\""));
         assert!(strip.contains("data-npc-location=\"market\""));
+        assert!(strip.contains("aria-label=\"Cook at fireplace\""));
+        assert!(strip.contains("/locations/settlement/lubeck/fireplace?building=market"));
         let chat =
             settlement_resident_chat_area("Market", None, "lubeck", "market", Some("merchants"))
                 .into_string();
@@ -1123,6 +1136,8 @@ mod tests {
         assert_eq!(npc_location_id("inn"), "inn");
         assert_eq!(npc_location_id("books"), "bookstore");
         let church_strip = npc_portrait_strip("lubeck", "church").into_string();
+        let square = npc_portrait_strip("lubeck", "public-square").into_string();
+        assert!(!square.contains("Cook at fireplace"));
         assert!(church_strip.contains("Finding the people here…"));
         assert!(!church_strip.contains("â"));
     }

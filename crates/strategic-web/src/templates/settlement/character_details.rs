@@ -16,7 +16,7 @@ use super::{
     chrome::{party_portrait_overlay, visual_stage},
     context::LocationView,
     social::player_chat_area,
-    trade::{cooking_activity_dialog, religious_demand_rail},
+    trade::religious_demand_rail,
 };
 use crate::medical::MedicalPresentation;
 use crate::spacetimedb::{
@@ -251,23 +251,20 @@ pub fn party_personal_page(
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     filth: &[crate::spacetimedb::CharacterFilth],
-    cooking: bool,
     herbalism: bool,
     inventory: &[InventoryItem],
-    inventory_amounts: &[InventoryItemAmount],
-    food_lots: &[FoodLot],
+    _inventory_amounts: &[InventoryItemAmount],
+    _food_lots: &[FoodLot],
     item_definitions: &[ItemDefinition],
     character_action_dialog: Option<Markup>,
     surgery_open: Option<&str>,
     social_open: bool,
     foraging_dialog: Option<Markup>,
 ) -> Markup {
-    let cooking_href = location.preserve_building(format!(
-        "{}/party/{}?cook=true",
-        location.base_path(),
-        active_character.id
-    ));
-    let cooking_open = cooking;
+    // Cooking is informational on the skill sheet. The environmental
+    // fireplace portrait is the sole entry point to cooking.
+    let cooking_href: Option<String> = None;
+    let cooking_open = false;
     let herbalism_href = location.preserve_building(format!(
         "{}/party/{}?herbalism=true",
         location.base_path(),
@@ -311,16 +308,7 @@ pub fn party_personal_page(
     let foraging_open = foraging_dialog.is_some();
     let after = html! {
         (physiology_dialog(medical, "physiology-chart-dialog", &active_character.name))
-        @if cooking_open {
-            (cooking_activity_dialog(
-                location,
-                active_character,
-                inventory,
-                inventory_amounts,
-                food_lots,
-                item_definitions,
-            ))
-        } @else if herbalism_open {
+        @if herbalism_open {
             (super::trade::herbalism_activity_dialog(
                 location,
                 active_character,
@@ -364,7 +352,7 @@ pub fn party_personal_page(
         professes_religion: religion_id.is_some(),
         prayer_religion_check,
         skill_actions: CharacterSheetActions {
-            cooking_href: Some(&cooking_href),
+            cooking_href: cooking_href.as_deref(),
             cooking_open,
             herbalism_href: Some(&herbalism_href),
             herbalism_open,

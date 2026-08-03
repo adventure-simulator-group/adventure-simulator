@@ -12,6 +12,7 @@ pub mod accept_order_errantry_reducer;
 pub mod accept_party_join_request_reducer;
 pub mod active_pregnancy_type;
 pub mod activity_incident_entropy_type;
+pub mod add_fireplace_ingredients_reducer;
 pub mod administer_preparation_reducer;
 pub mod admit_household_occupant_reducer;
 pub mod adopt_development_scenarios_reducer;
@@ -98,6 +99,10 @@ pub mod backend_estate_disposition_type;
 pub mod backend_estate_dispositions_table;
 pub mod backend_family_child_type;
 pub mod backend_family_children_table;
+pub mod backend_fireplace_dish_type;
+pub mod backend_fireplace_dishes_table;
+pub mod backend_fireplace_station_type;
+pub mod backend_fireplace_stations_table;
 pub mod backend_forage_receipt_type;
 pub mod backend_forage_receipts_table;
 pub mod backend_investigation_action_outcome_type;
@@ -248,7 +253,6 @@ pub mod contract_issuer_interaction_receipt_type;
 pub mod contract_status_type;
 pub mod contract_type;
 pub mod conviction_type;
-pub mod cook_food_reducer;
 pub mod cooking_method_type;
 pub mod corpse_body_state_type;
 pub mod corpse_family_binding_type;
@@ -367,6 +371,8 @@ pub mod finalize_merchant_trade_reducer;
 pub mod finalize_party_offer_reducer;
 pub mod finalize_storefront_trade_reducer;
 pub mod finish_world_data_import_reducer;
+pub mod fireplace_dish_type;
+pub mod fireplace_station_type;
 pub mod fish_commodity_type;
 pub mod fishing_industry_type;
 pub mod flow_persistence_type;
@@ -671,6 +677,7 @@ pub mod rest_at_settlement_hours_reducer;
 pub mod rest_at_settlement_reducer;
 pub mod retained_projectile_table;
 pub mod retained_projectile_type;
+pub mod retrieve_fireplace_dish_reducer;
 pub mod retrieve_repaired_item_reducer;
 pub mod retrieve_repaired_items_reducer;
 pub mod revoke_tactical_server_claim_reducer;
@@ -716,6 +723,7 @@ pub mod self_regard_type;
 pub mod send_local_chat_message_reducer;
 pub mod set_automatic_social_chat_reducer;
 pub mod set_character_religion_reducer;
+pub mod set_fireplace_instrument_reducer;
 pub mod set_inventory_quantity_target_reducer;
 pub mod set_party_camp_fatigue_percent_reducer;
 pub mod set_party_travel_itinerary_reducer;
@@ -864,6 +872,7 @@ pub use accept_order_errantry_reducer::accept_order_errantry;
 pub use accept_party_join_request_reducer::accept_party_join_request;
 pub use active_pregnancy_type::ActivePregnancy;
 pub use activity_incident_entropy_type::ActivityIncidentEntropy;
+pub use add_fireplace_ingredients_reducer::add_fireplace_ingredients;
 pub use administer_preparation_reducer::administer_preparation;
 pub use admit_household_occupant_reducer::admit_household_occupant;
 pub use adopt_development_scenarios_reducer::adopt_development_scenarios;
@@ -950,6 +959,10 @@ pub use backend_estate_disposition_type::BackendEstateDisposition;
 pub use backend_estate_dispositions_table::*;
 pub use backend_family_child_type::BackendFamilyChild;
 pub use backend_family_children_table::*;
+pub use backend_fireplace_dish_type::BackendFireplaceDish;
+pub use backend_fireplace_dishes_table::*;
+pub use backend_fireplace_station_type::BackendFireplaceStation;
+pub use backend_fireplace_stations_table::*;
 pub use backend_forage_receipt_type::BackendForageReceipt;
 pub use backend_forage_receipts_table::*;
 pub use backend_investigation_action_outcome_type::BackendInvestigationActionOutcome;
@@ -1100,7 +1113,6 @@ pub use contract_issuer_interaction_receipt_type::ContractIssuerInteractionRecei
 pub use contract_status_type::ContractStatus;
 pub use contract_type::Contract;
 pub use conviction_type::Conviction;
-pub use cook_food_reducer::cook_food;
 pub use cooking_method_type::CookingMethod;
 pub use corpse_body_state_type::CorpseBodyState;
 pub use corpse_family_binding_type::CorpseFamilyBinding;
@@ -1219,6 +1231,8 @@ pub use finalize_merchant_trade_reducer::finalize_merchant_trade;
 pub use finalize_party_offer_reducer::finalize_party_offer;
 pub use finalize_storefront_trade_reducer::finalize_storefront_trade;
 pub use finish_world_data_import_reducer::finish_world_data_import;
+pub use fireplace_dish_type::FireplaceDish;
+pub use fireplace_station_type::FireplaceStation;
 pub use fish_commodity_type::FishCommodity;
 pub use fishing_industry_type::FishingIndustry;
 pub use flow_persistence_type::FlowPersistence;
@@ -1523,6 +1537,7 @@ pub use rest_at_settlement_hours_reducer::rest_at_settlement_hours;
 pub use rest_at_settlement_reducer::rest_at_settlement;
 pub use retained_projectile_table::*;
 pub use retained_projectile_type::RetainedProjectile;
+pub use retrieve_fireplace_dish_reducer::retrieve_fireplace_dish;
 pub use retrieve_repaired_item_reducer::retrieve_repaired_item;
 pub use retrieve_repaired_items_reducer::retrieve_repaired_items;
 pub use revoke_tactical_server_claim_reducer::revoke_tactical_server_claim;
@@ -1568,6 +1583,7 @@ pub use self_regard_type::SelfRegard;
 pub use send_local_chat_message_reducer::send_local_chat_message;
 pub use set_automatic_social_chat_reducer::set_automatic_social_chat;
 pub use set_character_religion_reducer::set_character_religion;
+pub use set_fireplace_instrument_reducer::set_fireplace_instrument;
 pub use set_inventory_quantity_target_reducer::set_inventory_quantity_target;
 pub use set_party_camp_fatigue_percent_reducer::set_party_camp_fatigue_percent;
 pub use set_party_travel_itinerary_reducer::set_party_travel_itinerary;
@@ -1735,6 +1751,13 @@ pub enum Reducer {
         leader_id: u64,
         request_id: u64,
     },
+    AddFireplaceIngredients {
+        character_id: u64,
+        context_key: String,
+        inventory_scope: String,
+        inventory_item_ids: Vec<u64>,
+        amounts_milliunits: Vec<u32>,
+    },
     AdministerPreparation {
         actor_id: u64,
         patient_id: u64,
@@ -1890,12 +1913,6 @@ pub enum Reducer {
     },
     ContinueCampTravel {
         character_id: u64,
-    },
-    CookFood {
-        character_id: u64,
-        method: CookingMethod,
-        inventory_item_ids: Vec<u64>,
-        amounts_milliunits: Vec<u32>,
     },
     CreateCharacter {
         id: u64,
@@ -2285,6 +2302,11 @@ pub enum Reducer {
         requested_minutes: u64,
         at_inn: bool,
     },
+    RetrieveFireplaceDish {
+        character_id: u64,
+        context_key: String,
+        inventory_scope: String,
+    },
     RetrieveRepairedItem {
         character_id: u64,
         order_id: u64,
@@ -2359,6 +2381,12 @@ pub enum Reducer {
     SetCharacterReligion {
         character_id: u64,
         religion_id: String,
+    },
+    SetFireplaceInstrument {
+        character_id: u64,
+        context_key: String,
+        inventory_scope: String,
+        inventory_item_id: Option<u64>,
     },
     SetInventoryQuantityTarget {
         character_id: u64,
@@ -2561,6 +2589,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::AcceptContract { .. } => "accept_contract",
             Reducer::AcceptOrderErrantry { .. } => "accept_order_errantry",
             Reducer::AcceptPartyJoinRequest { .. } => "accept_party_join_request",
+            Reducer::AddFireplaceIngredients { .. } => "add_fireplace_ingredients",
             Reducer::AdministerPreparation { .. } => "administer_preparation",
             Reducer::AdmitHouseholdOccupant { .. } => "admit_household_occupant",
             Reducer::AdoptDevelopmentScenarios { .. } => "adopt_development_scenarios",
@@ -2599,7 +2628,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::ConfigureSimulationCharacter { .. } => "configure_simulation_character",
             Reducer::ContactContextCharacter { .. } => "contact_context_character",
             Reducer::ContinueCampTravel { .. } => "continue_camp_travel",
-            Reducer::CookFood { .. } => "cook_food",
             Reducer::CreateCharacter { .. } => "create_character",
             Reducer::CreateNamedCharacter { .. } => "create_named_character",
             Reducer::CreateNamedCharacterWithId { .. } => "create_named_character_with_id",
@@ -2681,6 +2709,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::RestAtResidenceHours { .. } => "rest_at_residence_hours",
             Reducer::RestAtSettlement { .. } => "rest_at_settlement",
             Reducer::RestAtSettlementHours { .. } => "rest_at_settlement_hours",
+            Reducer::RetrieveFireplaceDish { .. } => "retrieve_fireplace_dish",
             Reducer::RetrieveRepairedItem { .. } => "retrieve_repaired_item",
             Reducer::RetrieveRepairedItems { .. } => "retrieve_repaired_items",
             Reducer::RevokeTacticalServerClaim { .. } => "revoke_tactical_server_claim",
@@ -2696,6 +2725,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SendLocalChatMessage { .. } => "send_local_chat_message",
             Reducer::SetAutomaticSocialChat { .. } => "set_automatic_social_chat",
             Reducer::SetCharacterReligion { .. } => "set_character_religion",
+            Reducer::SetFireplaceInstrument { .. } => "set_fireplace_instrument",
             Reducer::SetInventoryQuantityTarget { .. } => "set_inventory_quantity_target",
             Reducer::SetPartyCampFatiguePercent { .. } => "set_party_camp_fatigue_percent",
             Reducer::SetPartyTravelItinerary { .. } => "set_party_travel_itinerary",
@@ -2774,6 +2804,19 @@ impl __sdk::Reducer for Reducer {
 }             => __sats::bsatn::to_vec(&accept_party_join_request_reducer::AcceptPartyJoinRequestArgs {
                 leader_id: leader_id.clone(),
                 request_id: request_id.clone(),
+}),
+            Reducer::AddFireplaceIngredients{
+                character_id,
+                context_key,
+                inventory_scope,
+                inventory_item_ids,
+                amounts_milliunits,
+}             => __sats::bsatn::to_vec(&add_fireplace_ingredients_reducer::AddFireplaceIngredientsArgs {
+                character_id: character_id.clone(),
+                context_key: context_key.clone(),
+                inventory_scope: inventory_scope.clone(),
+                inventory_item_ids: inventory_item_ids.clone(),
+                amounts_milliunits: amounts_milliunits.clone(),
 }),
             Reducer::AdministerPreparation{
                 actor_id,
@@ -3057,17 +3100,6 @@ Reducer::BeginFormalCourtship{
                 character_id,
 }             => __sats::bsatn::to_vec(&continue_camp_travel_reducer::ContinueCampTravelArgs {
                 character_id: character_id.clone(),
-}),
-            Reducer::CookFood{
-                character_id,
-                method,
-                inventory_item_ids,
-                amounts_milliunits,
-}             => __sats::bsatn::to_vec(&cook_food_reducer::CookFoodArgs {
-                character_id: character_id.clone(),
-                method: method.clone(),
-                inventory_item_ids: inventory_item_ids.clone(),
-                amounts_milliunits: amounts_milliunits.clone(),
 }),
             Reducer::CreateCharacter{
                 id,
@@ -3766,6 +3798,15 @@ Reducer::BeginFormalCourtship{
                 requested_minutes: requested_minutes.clone(),
                 at_inn: at_inn.clone(),
 }),
+            Reducer::RetrieveFireplaceDish{
+                character_id,
+                context_key,
+                inventory_scope,
+}             => __sats::bsatn::to_vec(&retrieve_fireplace_dish_reducer::RetrieveFireplaceDishArgs {
+                character_id: character_id.clone(),
+                context_key: context_key.clone(),
+                inventory_scope: inventory_scope.clone(),
+}),
             Reducer::RetrieveRepairedItem{
                 character_id,
                 order_id,
@@ -3900,6 +3941,17 @@ Reducer::BeginFormalCourtship{
 }             => __sats::bsatn::to_vec(&set_character_religion_reducer::SetCharacterReligionArgs {
                 character_id: character_id.clone(),
                 religion_id: religion_id.clone(),
+}),
+            Reducer::SetFireplaceInstrument{
+                character_id,
+                context_key,
+                inventory_scope,
+                inventory_item_id,
+}             => __sats::bsatn::to_vec(&set_fireplace_instrument_reducer::SetFireplaceInstrumentArgs {
+                character_id: character_id.clone(),
+                context_key: context_key.clone(),
+                inventory_scope: inventory_scope.clone(),
+                inventory_item_id: inventory_item_id.clone(),
 }),
             Reducer::SetInventoryQuantityTarget{
                 character_id,
@@ -4295,6 +4347,8 @@ pub struct DbUpdate {
     backend_dialogue_witness_claims: __sdk::TableUpdate<BackendDialogueWitnessClaim>,
     backend_estate_dispositions: __sdk::TableUpdate<BackendEstateDisposition>,
     backend_family_children: __sdk::TableUpdate<BackendFamilyChild>,
+    backend_fireplace_dishes: __sdk::TableUpdate<BackendFireplaceDish>,
+    backend_fireplace_stations: __sdk::TableUpdate<BackendFireplaceStation>,
     backend_forage_receipts: __sdk::TableUpdate<BackendForageReceipt>,
     backend_investigation_action_outcomes: __sdk::TableUpdate<BackendInvestigationActionOutcome>,
     backend_investigation_actions: __sdk::TableUpdate<BackendInvestigationAction>,
@@ -4544,6 +4598,12 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 ),
                 "backend_family_children" => db_update.backend_family_children.append(
                     backend_family_children_table::parse_table_update(table_update)?,
+                ),
+                "backend_fireplace_dishes" => db_update.backend_fireplace_dishes.append(
+                    backend_fireplace_dishes_table::parse_table_update(table_update)?,
+                ),
+                "backend_fireplace_stations" => db_update.backend_fireplace_stations.append(
+                    backend_fireplace_stations_table::parse_table_update(table_update)?,
                 ),
                 "backend_forage_receipts" => db_update.backend_forage_receipts.append(
                     backend_forage_receipts_table::parse_table_update(table_update)?,
@@ -5219,6 +5279,14 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_family_children",
             &self.backend_family_children,
         );
+        diff.backend_fireplace_dishes = cache.apply_diff_to_table::<BackendFireplaceDish>(
+            "backend_fireplace_dishes",
+            &self.backend_fireplace_dishes,
+        );
+        diff.backend_fireplace_stations = cache.apply_diff_to_table::<BackendFireplaceStation>(
+            "backend_fireplace_stations",
+            &self.backend_fireplace_stations,
+        );
         diff.backend_forage_receipts = cache.apply_diff_to_table::<BackendForageReceipt>(
             "backend_forage_receipts",
             &self.backend_forage_receipts,
@@ -5461,6 +5529,12 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_family_children" => db_update
                     .backend_family_children
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_fireplace_dishes" => db_update
+                    .backend_fireplace_dishes
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_fireplace_stations" => db_update
+                    .backend_fireplace_stations
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
@@ -5832,6 +5906,12 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_family_children" => db_update
                     .backend_family_children
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_fireplace_dishes" => db_update
+                    .backend_fireplace_dishes
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_fireplace_stations" => db_update
+                    .backend_fireplace_stations
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -6122,6 +6202,8 @@ pub struct AppliedDiff<'r> {
     backend_dialogue_witness_claims: __sdk::TableAppliedDiff<'r, BackendDialogueWitnessClaim>,
     backend_estate_dispositions: __sdk::TableAppliedDiff<'r, BackendEstateDisposition>,
     backend_family_children: __sdk::TableAppliedDiff<'r, BackendFamilyChild>,
+    backend_fireplace_dishes: __sdk::TableAppliedDiff<'r, BackendFireplaceDish>,
+    backend_fireplace_stations: __sdk::TableAppliedDiff<'r, BackendFireplaceStation>,
     backend_forage_receipts: __sdk::TableAppliedDiff<'r, BackendForageReceipt>,
     backend_investigation_action_outcomes:
         __sdk::TableAppliedDiff<'r, BackendInvestigationActionOutcome>,
@@ -6429,6 +6511,16 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendFamilyChild>(
             "backend_family_children",
             &self.backend_family_children,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendFireplaceDish>(
+            "backend_fireplace_dishes",
+            &self.backend_fireplace_dishes,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendFireplaceStation>(
+            "backend_fireplace_stations",
+            &self.backend_fireplace_stations,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendForageReceipt>(
@@ -7478,6 +7570,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_dialogue_witness_claims_table::register_table(client_cache);
         backend_estate_dispositions_table::register_table(client_cache);
         backend_family_children_table::register_table(client_cache);
+        backend_fireplace_dishes_table::register_table(client_cache);
+        backend_fireplace_stations_table::register_table(client_cache);
         backend_forage_receipts_table::register_table(client_cache);
         backend_investigation_action_outcomes_table::register_table(client_cache);
         backend_investigation_actions_table::register_table(client_cache);
@@ -7599,6 +7693,8 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_dialogue_witness_claims",
         "backend_estate_dispositions",
         "backend_family_children",
+        "backend_fireplace_dishes",
+        "backend_fireplace_stations",
         "backend_forage_receipts",
         "backend_investigation_action_outcomes",
         "backend_investigation_actions",
