@@ -448,7 +448,13 @@ struct PoleMemory {
 }
 
 #[derive(Component, Debug, Clone, Copy, Default)]
-pub(super) struct ProceduralIkState(PoleMemory);
+pub(crate) struct ProceduralIkState(PoleMemory);
+
+impl ProceduralIkState {
+    pub(crate) fn reset(&mut self) {
+        self.0 = PoleMemory::default();
+    }
+}
 
 /// Client-only world-space target for a hand. It is presentation data and is
 /// deliberately absent from replicated `SkeletonState`.
@@ -620,8 +626,13 @@ pub(super) fn apply_terrain_leg_ik(
             } else {
                 &mut memory.right_foot_plant
             };
+            // Keep the world-space plant through the support interval. The
+            // analytic solver already clamps unreachable targets; dropping a
+            // plant at a fixed distance repins it to the authored swing pose
+            // in one frame and produces a visible kick/pop. Retain only a
+            // broad teleport guard for genuinely discontinuous owner motion.
             if weight <= 0.05
-                || plant.is_some_and(|position| position.distance(foot_position) > 0.75)
+                || plant.is_some_and(|position| position.distance(foot_position) > 2.0)
             {
                 *plant = None;
             }

@@ -19,7 +19,7 @@ mod procedural;
 #[allow(unused_imports)]
 pub(crate) use procedural::{
     BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone, HumanoidIkTargets,
-    gait_support_weights,
+    ProceduralIkState, gait_support_weights,
 };
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";

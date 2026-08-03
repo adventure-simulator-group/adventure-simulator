@@ -187,6 +187,7 @@ dependencies = [
  "bevy",
  "bevy_ahoy",
  "bevy_enhanced_input",
+ "noiz",
  "serde",
  "strum 0.28.0",
 ]
@@ -215,7 +216,6 @@ dependencies = [
  "adventuresim-tactical-netcode",
  "bevy",
  "clap",
- "noiz",
  "rand 0.9.4",
  "spacetimedb-sdk",
 ]

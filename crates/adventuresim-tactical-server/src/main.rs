@@ -5,7 +5,6 @@ mod combat;
 mod mission;
 mod player_projection;
 mod stdb;
-mod terrain;
 
 use std::{net::SocketAddr, num::NonZeroU32};
 
@@ -36,7 +35,6 @@ use crate::{
         spawn_connected_players, update_skeleton_locomotion,
     },
     stdb::{SpacetimeDb, SpacetimeDbReady},
-    terrain::TerrainGenerator,
 };
 
 const MISSION_TIMEOUT_SECS: f32 = 300.0;

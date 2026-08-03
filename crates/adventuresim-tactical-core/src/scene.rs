@@ -1,13 +1,61 @@
 use core::f32;
 
 use avian3d::prelude::*;
+use bevy::platform::hash::RandomState;
 use bevy::prelude::*;
 #[cfg(feature = "meshgen")]
 use bevy::{
     asset::RenderAssetUsages,
     mesh::{Indices, PrimitiveTopology},
 };
+use noiz::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::hash::{BuildHasher, Hasher};
+
+/// Terrain generator shared by the authoritative server and deterministic
+/// presentation fixtures. Keeping the implementation here prevents animation
+/// captures from approximating a different surface than gameplay uses.
+#[derive(Debug, Clone)]
+pub struct TerrainGenerator {
+    pub seed: u32,
+    pub period: f32,
+    pub grid_scale: f32,
+}
+
+impl TerrainGenerator {
+    pub fn new(seed: u32) -> Self {
+        Self {
+            seed,
+            period: 30.0,
+            grid_scale: 1.0,
+        }
+    }
+
+    pub fn from_hash(hash: impl std::hash::Hash) -> Self {
+        let mut hasher = RandomState::default().build_hasher();
+        hash.hash(&mut hasher);
+        Self::new(hasher.finish() as u32)
+    }
+
+    pub fn generate(self, width: usize, height: usize, depth: usize) -> SceneTerrain {
+        let mut noise = Noise::from(LayeredNoise::new(
+            Normed::<f32>::default(),
+            Persistence(0.5),
+            FractalLayers {
+                layer: Octave::<MixCellGradients<OrthoGrid, Smoothstep, QuickGradients>>::default(),
+                lacunarity: 2.0,
+                amount: 8,
+            },
+        ));
+        noise.set_seed(self.seed);
+        noise.set_period(self.period);
+
+        SceneTerrain::new(width, depth, self.grid_scale, move |location| {
+            let normal: f32 = noise.sample(location);
+            normal * height as f32
+        })
+    }
+}
 
 /// Id of the scene in which the game takes place.
 #[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq, Eq)]
