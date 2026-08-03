@@ -294,8 +294,8 @@ _spawner-stop:
 # Run a single tactical server (for testing). Defaults come from `.env.tactical`
 # (written by `tactical-isolated`) when present, otherwise from the canonical
 # stack - so a bare `just tactical` targets whichever is currently running.
-tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") scene_key=env_var_or_default("TACTICAL_SCENE_KEY", "hills") bots=env_var_or_default("TACTICAL_BOTS", "3") port=env_var_or_default("TACTICAL_PORT", tactical_port) url=env_var_or_default("TACTICAL_SPACETIMEDB_URL", spacetime_url) module=env_var_or_default("TACTICAL_SPACETIMEDB_MODULE", spacetime_module):
-    @cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --expected-party-members 1 --required-enemy-kills {{ bots }} --enemy-combat-scale-bps 10000 --no-timeout
+tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") scene_key=env_var_or_default("TACTICAL_SCENE_KEY", "hills") bots=env_var_or_default("TACTICAL_BOTS", "3") port=env_var_or_default("TACTICAL_PORT", tactical_port) url=env_var_or_default("TACTICAL_SPACETIMEDB_URL", spacetime_url) module=env_var_or_default("TACTICAL_SPACETIMEDB_MODULE", spacetime_module) enemy_combat_scale_bps=env_var_or_default("TACTICAL_ENEMY_COMBAT_SCALE_BPS", "10000"):
+    @cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --expected-party-members 1 --required-enemy-kills {{ bots }} --enemy-combat-scale-bps {{ enemy_combat_scale_bps }} --no-timeout
 
 # Run a native tactical client (for testing `just tactical`). Defaults come
 # from `.env.tactical` when present, same as `tactical` above.
@@ -308,6 +308,21 @@ client id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_defau
 # other terminals targets it automatically.
 tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="hills" character_id="0" bots="3": preflight verify-db-client build-tactical
     @{{ python_bin }} scripts/dev_stack.py run-profile --mode tactical {{ quote(profile) }} {{ quote(base_port) }} --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }}
+
+# Build and supervise a complete disposable native tactical test session.
+# animation disables combat, combat uses normal enemies, and networking omits
+# the client while retaining the validated database/server fixture.
+tactical-play mode="animation" base_port="24920": preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }}
+
+# Report whether the supervised tactical database, claim, authority, listener,
+# and recorded child identities are healthy.
+tactical-status:
+    @{{ python_bin }} scripts/dev_stack.py tactical-status
+
+# Relaunch only the native client after validating the supervised server.
+tactical-client:
+    @{{ python_bin }} scripts/dev_stack.py tactical-client
 
 # Generate self-signed WebTransport certificates
 certs sans="127.0.0.1,localhost":

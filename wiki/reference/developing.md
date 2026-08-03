@@ -539,6 +539,34 @@ timeout fails closed without presenting an uncommitted result.
 
 ## Testing a Single Server
 
+For normal native tactical development, use the supervised launcher:
+
+```bash
+just tactical-play animation
+```
+
+This builds the native tactical server and client before creating a mission,
+starts a worktree-isolated SpacetimeDB instance, publishes and seeds it, starts
+the server, verifies that its one-use claim was consumed and its listener is
+owned by the recorded process, and only then launches the native client. The
+`animation` fixture disables enemy combat and mission timeout so rendering,
+camera, and animation work can remain open indefinitely. `combat` enables
+normal enemy behavior. `networking` creates the validated database and server
+without launching a client. Tactical-only profiles do not build or serve a
+browser/WASM client.
+
+The supervisor prints the database, mission, tactical address, combat mode,
+and log directory. Press Ctrl+C in its terminal to stop only children whose
+recorded executable and process-start identities still match. Run
+`just tactical-status` from another terminal to inspect database,
+claim/authority, listener, and client state. After closing only the native
+client, run `just tactical-client` to validate the live server and relaunch it.
+If the server has died after consuming its claim, relaunch fails with a
+recovery command instead of opening a client that remains on `Connecting...`.
+
+The three-terminal workflow below remains available for advanced/manual
+debugging. It exposes more lifecycle details and therefore more footguns.
+
 For testing without the spawner:
 
 ```bash
@@ -568,6 +596,15 @@ Finally connect the seeded Party character:
 ```bash
 just client
 ```
+
+The generated tactical server claim is single-use. Native client restarts are
+safe while that server remains alive, but restarting the server requires a
+fresh isolated mission and claim. Keep the `tactical-isolated` owner terminal
+running: it owns the database and removes `.env.tactical` during orderly
+shutdown. After a reboot or forced termination, do not trust a surviving
+`.env.tactical`; `just tactical-status` detects stale supervised state, and
+the recovery is `just tactical-play animation`. Launch through repository
+recipes so the worktree, working directory, binary, and asset roots agree.
 
 Fight the single enemy or allow the Party character to become incapacitated.
 The client shows live blood-loss/imbalance/incapacitation status, then an
