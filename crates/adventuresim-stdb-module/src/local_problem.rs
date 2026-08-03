@@ -1583,9 +1583,10 @@ fn surface_new_problem(
 }
 
 /// Development-gallery seam that establishes the same receipt, referral, and
-/// journal-visible action graph as a completed local rumor interaction. It
-/// accepts only one exact already-materialized problem in the selected
-/// character's current settlement.
+/// journal-visible action graph as a completed local rumor interaction, plus
+/// the dry journal notice required to index the case immediately. It accepts
+/// only one exact already-materialized problem in the selected character's
+/// current settlement.
 pub(crate) fn discover_development_problem(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1643,6 +1644,21 @@ pub(crate) fn discover_development_problem(
         character_id,
         receipt_id.clone(),
         format!("development-scenario:{scenario_slug}:receive-rumor"),
+    )?;
+    let receipt = ctx
+        .db
+        .local_problem_receipt()
+        .id()
+        .find(&receipt_id)
+        .ok_or("Development quest rumor receipt is missing")?;
+    crate::investigation::record_journal_notice(
+        ctx,
+        character_id,
+        &validated.manifest.public_case_id,
+        &format!("development-scenario:{scenario_slug}:discovered-rumor"),
+        &receipt.safe_summary,
+        "local rumor",
+        receipt.learned_at,
     )?;
     ctx.db
         .local_problem_rumor_preference()
@@ -2270,7 +2286,7 @@ mod tests {
             .expect("development problem discovery implementation");
         assert!(discovery.contains("receive_local_problem_rumor_for_development_bootstrap"));
         assert!(!discovery.contains("crate::investigation::receive_local_problem_rumor("));
-        assert!(!discovery.contains("record_journal_notice"));
+        assert!(discovery.contains("record_journal_notice"));
 
         let investigation = crate::investigation::INVESTIGATION_SOURCE;
         let external = investigation
