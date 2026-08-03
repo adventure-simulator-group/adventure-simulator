@@ -11,6 +11,7 @@ use bevy::prelude::*;
 use bevy::time::Stopwatch;
 
 use crate::{
+    Args,
     bot::{MissionEnemy, OffensiveCombatAi},
     combat::{MeleeAttackAuthority, RangedAttackAuthority, TacticalCombatSide},
     mission::MissionState,
@@ -42,6 +43,14 @@ fn mission_enemy_scale(difficulty: i32, combat_scale_bps: u32, countermeasure_bp
     difficulty_scale * (combat_scale_bps as f32 / 10_000.0) * (countermeasure_bps as f32 / 10_000.0)
 }
 
+fn mission_enemy_health_scale(combat_scale_bps: u32, projected_scale: f32) -> f32 {
+    if combat_scale_bps == 0 {
+        1.0
+    } else {
+        projected_scale
+    }
+}
+
 #[derive(Component)]
 #[allow(dead_code)]
 struct MissionOpeningAwareness {
@@ -67,28 +76,35 @@ fn tactical_covered_parts(parts: &[EquipmentBodyPart]) -> [bool; 7] {
 
 pub(crate) fn spawn_connected_players(
     conn: Res<SpacetimeDb>,
+    args: Res<Args>,
     mut cmd: Commands,
     q_loading: Query<(Entity, &LoadingPlayer)>,
     q_scene: Query<&SceneTerrain>,
 ) {
     for player in conn.take_connected_players() {
-        spawn_connected_player(&player, &mut cmd, &q_loading, &q_scene);
+        spawn_connected_player(
+            &player,
+            args.enemy_combat_scale_bps,
+            &mut cmd,
+            &q_loading,
+            &q_scene,
+        );
     }
 }
 
 fn spawn_connected_player(
     player: &ConnectedPlayer,
+    enemy_combat_scale_bps: u32,
     cmd: &mut Commands,
     q_loading: &Query<(Entity, &LoadingPlayer)>,
     q_scene: &Query<&SceneTerrain>,
 ) {
     let entity = if player.mission_side == TacticalMissionSide::Enemy {
-        cmd.spawn((
-            MissionEnemy,
-            OffensiveCombatAi::default(),
-            TacticalCombatSide::Enemy,
-        ))
-        .id()
+        let mut enemy = cmd.spawn((MissionEnemy, TacticalCombatSide::Enemy));
+        if enemy_combat_scale_bps > 0 {
+            enemy.insert(OffensiveCombatAi::default());
+        }
+        enemy.id()
     } else {
         let Some((entity, _)) = q_loading
             .iter()
@@ -186,7 +202,7 @@ fn spawn_connected_player(
     if player.mission_side == TacticalMissionSide::Enemy {
         let scale = mission_enemy_scale(
             player.enemy_difficulty,
-            player.enemy_combat_scale_bps,
+            enemy_combat_scale_bps,
             player.countermeasure_multiplier_bps,
         );
         for hours in [
@@ -221,6 +237,7 @@ fn spawn_connected_player(
         ] {
             *attribute *= scale;
         }
+        let health_scale = mission_enemy_health_scale(enemy_combat_scale_bps, scale);
         for health in [
             &mut limbs.left_arm,
             &mut limbs.right_arm,
@@ -230,7 +247,7 @@ fn spawn_connected_player(
             &mut limbs.stomach,
             &mut limbs.head,
         ] {
-            *health *= scale;
+            *health *= health_scale;
         }
     }
     let stats = Stats {
@@ -562,7 +579,7 @@ fn player_spawn_offset(collider: &Collider) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::mission_enemy_scale;
+    use super::{mission_enemy_health_scale, mission_enemy_scale};
 
     #[test]
     fn same_durable_enemy_identity_projects_different_mission_strength() {
@@ -572,5 +589,11 @@ mod tests {
         assert_eq!(baseline, 1.0);
         assert!(escalated > baseline);
         assert!(countered < escalated);
+    }
+
+    #[test]
+    fn zero_combat_scale_keeps_test_enemy_alive() {
+        assert_eq!(mission_enemy_health_scale(0, 0.0), 1.0);
+        assert_eq!(mission_enemy_health_scale(5_000, 0.5), 0.5);
     }
 }

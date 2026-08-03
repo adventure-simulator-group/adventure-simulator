@@ -21,6 +21,10 @@ pub(crate) use procedural::{BoneRole, HumanoidBone};
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
 const ANIMATION_FPS: f32 = 30.0;
+// Player transforms sit at the center of the 1.9 m server collider, while
+// authored rigs use a floor-level origin. Keep visual feet on the collider's
+// lower face so the first-person camera lands at the authored head.
+const PLAYER_VISUAL_Y_OFFSET: f32 = -0.95;
 
 pub struct TacticalAnimationPlugin;
 
@@ -638,6 +642,7 @@ fn attach_loaded_rig_scenes(
                 Name::new("Authored animation rig"),
                 AnimationRigScene(player),
                 SceneRoot(scene.clone()),
+                Transform::from_xyz(0.0, PLAYER_VISUAL_Y_OFFSET, 0.0),
                 Visibility::Hidden,
             ));
         });
@@ -1115,7 +1120,7 @@ pub fn spawn_fallback_t_pose(
         .spawn((
             Name::new("Fallback bind-pose T rig"),
             FallbackAnimationRig(owner),
-            Transform::default(),
+            Transform::from_xyz(0.0, PLAYER_VISUAL_Y_OFFSET, 0.0),
             Visibility::Inherited,
         ))
         .with_children(|rig| {
@@ -1411,13 +1416,14 @@ mod tests {
         world.flush();
 
         assert!(world.get::<AnimationRigAttached>(owner).is_some());
+        let rig = world
+            .query::<(Entity, &AnimationRigScene)>()
+            .iter(&world)
+            .find_map(|(entity, scene)| (scene.0 == owner).then_some(entity))
+            .expect("client authored rig");
         assert_eq!(
-            world
-                .query::<&AnimationRigScene>()
-                .iter(&world)
-                .filter(|scene| scene.0 == owner)
-                .count(),
-            1
+            world.get::<Transform>(rig).unwrap().translation.y,
+            PLAYER_VISUAL_Y_OFFSET
         );
     }
 
