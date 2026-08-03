@@ -521,8 +521,7 @@ pub(crate) fn trigger_next_generated_incident(
     };
     let validated = validated_problem_generation(ctx, &problem, &settlement_id)
         .ok_or("Generated problem has no valid private generation authority")?;
-    if !problem.recurring_hostile
-        && problem.incident_count >= validated.manifest.maximum_incidents
+    if !problem.recurring_hostile && problem.incident_count >= validated.manifest.maximum_incidents
     {
         return Err("Generated problem has reached its incident maximum".into());
     }
@@ -563,7 +562,10 @@ fn ensure_generated_incidents_inner(
             validated.manifest.maximum_incidents
         };
         let total_due = if target_problem_id.is_some() {
-            problem.incident_count.saturating_add(1).min(configured_maximum)
+            problem
+                .incident_count
+                .saturating_add(1)
+                .min(configured_maximum)
         } else {
             lp::due_incident_count_configured(
                 problem.starts_at,
@@ -701,12 +703,13 @@ fn ensure_generated_incidents_inner(
             if problem.public_since_minute.is_none()
                 && adventuresim_core::threat_escalation::is_public(problem.public_awareness_bps)
             {
-                problem.public_since_minute = forced_occurred_at.or_else(||
+                problem.public_since_minute = forced_occurred_at.or_else(|| {
                     adventuresim_core::threat_escalation::scheduled_public_since_minute(
                         problem.starts_at,
                         validated.manifest.incident_interval_minutes,
                         profile.investigation.investigability,
-                    ));
+                    )
+                });
                 if problem.public_since_minute.is_none() {
                     return Err("Public awareness crossed without a crossing ordinal".into());
                 }

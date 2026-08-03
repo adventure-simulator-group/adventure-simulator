@@ -258,10 +258,7 @@ pub fn grant_browser_character(
 /// Adopt only the explicitly registered development-scenario primaries into
 /// an opaque browser owner. This never scans or grants ordinary characters.
 #[reducer]
-pub fn adopt_development_scenarios(
-    ctx: &ReducerContext,
-    owner_key: String,
-) -> Result<(), String> {
+pub fn adopt_development_scenarios(ctx: &ReducerContext, owner_key: String) -> Result<(), String> {
     crate::strategic::require_development_gateway(ctx)?;
     if !valid_owner_key(&owner_key) {
         return Err("Browser owner key is malformed".into());
@@ -295,16 +292,18 @@ pub fn adopt_development_scenarios(
             }
             continue;
         }
-        ctx.db.browser_character_grant().insert(BrowserCharacterGrant {
-            character_id: scenario.primary_character_id,
-            character_scan_id: scenario.primary_character_id,
-            owner_key: owner_key.clone(),
-            origin: BrowserCharacterGrantOrigin::DevelopmentScenario,
-            starting_claim_request_key: None,
-            lineage_source_parent_id: None,
-            development_scenario_slug: Some(scenario.slug),
-            granted_micros: ctx.timestamp.to_micros_since_unix_epoch(),
-        });
+        ctx.db
+            .browser_character_grant()
+            .insert(BrowserCharacterGrant {
+                character_id: scenario.primary_character_id,
+                character_scan_id: scenario.primary_character_id,
+                owner_key: owner_key.clone(),
+                origin: BrowserCharacterGrantOrigin::DevelopmentScenario,
+                starting_claim_request_key: None,
+                lineage_source_parent_id: None,
+                development_scenario_slug: Some(scenario.slug),
+                granted_micros: ctx.timestamp.to_micros_since_unix_epoch(),
+            });
     }
     Ok(())
 }

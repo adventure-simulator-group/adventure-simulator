@@ -117,9 +117,11 @@ async fn list_characters(State(state): State<AppState>, session: Session) -> Res
         .or_else(|| issued.as_ref().map(|issued| issued.owner_key.as_str()));
     if let Some(owner_key) = owner_key {
         let scenarios = development_scenarios(&state).await;
-        let missing = scenarios
-            .iter()
-            .any(|scenario| !session.character_ids().contains(&scenario.primary_character_id));
+        let missing = scenarios.iter().any(|scenario| {
+            !session
+                .character_ids()
+                .contains(&scenario.primary_character_id)
+        });
         if missing
             && state
                 .db
@@ -316,7 +318,11 @@ async fn select_character(
                 Ok(()) => redirect_with_session_cookie(
                     &state.session_codec,
                     None,
-                    selection.next.as_deref().filter(|next| safe_entry_route(next)).unwrap_or("/"),
+                    selection
+                        .next
+                        .as_deref()
+                        .filter(|next| safe_entry_route(next))
+                        .unwrap_or("/"),
                 ),
                 Err(error) => {
                     tracing::error!(character_id = id, %error, "failed to select granted character");

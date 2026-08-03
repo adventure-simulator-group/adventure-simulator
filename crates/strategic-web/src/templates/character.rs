@@ -9,10 +9,10 @@ use super::settlement::{
 use super::{entry_layout, item_display_name, item_type_icon, panel, sidebar_section};
 use crate::medical::MedicalPresentation;
 use crate::spacetimedb::{
-    BackendDevelopmentScenario, Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterPersonality,
-    CharacterSkills, Conscience, Conviction, Courtship, Drive, Hygiene, Inclination, Mirth, Nerve,
-    OrganizationMembership, OrganizationPresentation, Outlook, Presentation, SelfKnowledge,
-    SelfRegard, Sex, Sociability, Temperance, Transparency,
+    BackendDevelopmentScenario, Character, CharacterAttributes, CharacterCapability,
+    CharacterLimbs, CharacterPersonality, CharacterSkills, Conscience, Conviction, Courtship,
+    Drive, Hygiene, Inclination, Mirth, Nerve, OrganizationMembership, OrganizationPresentation,
+    Outlook, Presentation, SelfKnowledge, SelfRegard, Sex, Sociability, Temperance, Transparency,
 };
 use adventuresim_core::starting_character::{
     StartingAgeTier, StartingCharacterSpec, StartingInclination, StartingPersonalityTrait,

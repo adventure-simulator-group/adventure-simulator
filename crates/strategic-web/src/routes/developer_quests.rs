@@ -113,10 +113,18 @@ async fn trigger_incident(
     State(state): State<AppState>,
     Form(form): Form<TriggerIncidentForm>,
 ) -> Response {
-    match state.db.call(
-        "trigger_development_scenario_incident",
-        &[json!(form.scenario_slug), json!(form.problem_id), json!(form.request_id)],
-    ).await {
+    match state
+        .db
+        .call(
+            "trigger_development_scenario_incident",
+            &[
+                json!(form.scenario_slug),
+                json!(form.problem_id),
+                json!(form.request_id),
+            ],
+        )
+        .await
+    {
         Ok(()) => Redirect::to("/developer/scenarios").into_response(),
         Err(error) => (StatusCode::UNPROCESSABLE_ENTITY, error.to_string()).into_response(),
     }
