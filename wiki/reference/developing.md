@@ -60,7 +60,7 @@ is read from the safe challenge projection rather than reconstructed by the HTTP
 
 ## Outbreak demo
 
-Use the single scenario-gallery command and select **Undiscovered outbreak**.
+Use the single scenario-gallery command and select **Discovered outbreak**.
 Its character owns a deterministic
 generated outbreak with private progressing patients, an optional exact-course
 disease victim or carrier-autoresolve victim, and an ordinary remediation path.
@@ -68,11 +68,12 @@ It prepares the selected character
 with Physiology, Surgery, Bestiary, social and urban-investigation skills plus a
 surgery kit.
 
-Bootstrap intentionally does not reveal the case or write a journal entry.
-Ask local NPCs for rumors, then investigate through the normal quest,
-physiology, surgery, bestiary, and dialogue surfaces. Repeated loading is
-idempotent for the scenario character and its dedicated settlement. The gallery
-is available only in a development-bootstrap module.
+Bootstrap completes the same observer-safe discovery transition as accepting a
+local NPC rumor: the selected character starts with the exact problem's receipt,
+witness referral, lead/action graph, and journal notice. Continue through the
+normal quest, physiology, surgery, bestiary, and dialogue surfaces. Repeated
+loading is idempotent for the scenario character and its dedicated settlement.
+The gallery is available only in a development-bootstrap module.
 
 ## Autopsy demo
 

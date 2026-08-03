@@ -364,7 +364,7 @@ fn settlement_top_bar(
 
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
-                    a href="/developer/scenarios" class="btn btn-small" data-developer-only {
+                    a href="/developer/scenarios" class="btn btn-small" data-developer-only data-hard-navigation {
                         "Scenario inspector"
                     }
                     button type="button" class="developer-quest-button" data-developer-quest-open
@@ -1143,6 +1143,7 @@ mod tests {
         assert!(!markup.contains("data-developer-autopsy-demo"));
         assert!(!markup.contains("data-developer-puzzle-demo"));
         assert!(markup.contains("href=\"/developer/scenarios\""));
+        assert!(markup.contains("href=\"/developer/scenarios\" class=\"btn btn-small\" data-developer-only data-hard-navigation"));
         assert!(!markup.contains("data-puzzle-kind="));
         let layout_css = include_str!("../../static/css/layout.css");
         assert!(

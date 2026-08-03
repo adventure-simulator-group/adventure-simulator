@@ -263,7 +263,13 @@ pub(crate) fn materialize_development_scenario_gallery(
     ensure_scenario_settlement(ctx, OUTBREAK_SETTLEMENT, "Outbreak Scenario Hamlet")?;
     ensure_scenario_character_at(ctx, OUTBREAK_ID, "Outbreak Investigator", OUTBREAK_SETTLEMENT)?;
     let outbreak_problem_id = seed_outbreak_demo(ctx, OUTBREAK_ID)?;
-    register_development_scenario(ctx, "quest-outbreak", "Quests", "Undiscovered outbreak", "Follow an outbreak through ordinary rumor and journal discovery.", OUTBREAK_ID, "/quests")?;
+    crate::local_problem::discover_development_problem(
+        ctx,
+        OUTBREAK_ID,
+        &outbreak_problem_id,
+        "quest-outbreak",
+    )?;
+    register_development_scenario(ctx, "quest-outbreak", "Quests", "Discovered outbreak", "Continue a deterministic outbreak from its ordinary rumor-derived journal entry, referral, and investigation actions.", OUTBREAK_ID, "/quests")?;
     register_development_subject(ctx, "quest-outbreak", "generated_problem", &outbreak_problem_id)?;
 
     const THREAT_ID: u64 = 9_999_999_999_999_958;
@@ -276,7 +282,13 @@ pub(crate) fn materialize_development_scenario_gallery(
         adventuresim_core::quest_generation::TemplateFamily::RecurringDepredation,
         0x5448_5245_4154_0001,
     )?;
-    register_development_scenario(ctx, "quest-recurring-threat", "Quests", "Recurring hostile threat", "Discover a deterministic local threat through ordinary rumor UI, then inspect it or trigger an isolated follow-up attack.", THREAT_ID, "/quests")?;
+    crate::local_problem::discover_development_problem(
+        ctx,
+        THREAT_ID,
+        &threat_problem_id,
+        "quest-recurring-threat",
+    )?;
+    register_development_scenario(ctx, "quest-recurring-threat", "Quests", "Discovered recurring hostile threat", "Continue a deterministic local threat from its ordinary rumor-derived journal entry, or trigger an isolated follow-up attack in the scenario inspector.", THREAT_ID, "/quests")?;
     register_development_subject(ctx, "quest-recurring-threat", "generated_problem", &threat_problem_id)?;
 
     for (offset, kind) in [
@@ -567,6 +579,11 @@ mod development_scenario_source_tests {
         assert!(source.contains("dev-scenario-recurring-threat"));
         assert!(source.contains("let outbreak_problem_id = seed_outbreak_demo"));
         assert!(source.contains("let threat_problem_id = materialize_preferred_generated_fixture"));
+        assert_eq!(source.matches("discover_development_problem(").count(), 2);
+        assert!(source.contains("&outbreak_problem_id,\n        \"quest-outbreak\""));
+        assert!(source.contains("&threat_problem_id,\n        \"quest-recurring-threat\""));
+        assert!(source.contains("\"Discovered outbreak\""));
+        assert!(source.contains("\"Discovered recurring hostile threat\""));
         assert!(source.contains("let occurrence_id = materialize_development_road_encounter"));
         assert!(!source.contains(".find(|problem| problem.recurring_hostile"));
     }

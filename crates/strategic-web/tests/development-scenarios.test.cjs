@@ -9,6 +9,7 @@ const characterRoutes = fs.readFileSync(path.join(root, "src/routes/characters.r
 const questRoutes = fs.readFileSync(path.join(root, "src/routes/developer_quests.rs"), "utf8");
 const scenarioModule = fs.readFileSync(path.join(root, "../adventuresim-stdb-module/src/strategic/development_scenarios.rs"), "utf8");
 const scenarioScript = fs.readFileSync(path.join(root, "static/development-scenarios.js"), "utf8");
+const layoutTemplate = fs.readFileSync(path.join(root, "src/templates/layout.rs"), "utf8");
 
 test("development roster is grouped, searchable, and adopts only registered primaries", () => {
   assert.match(characterTemplate, /Test scenarios/);
@@ -33,4 +34,11 @@ test("quest inspector unifies bounded quest kinds and offers only its typed upda
   assert.match(scenarioModule, /"errantry contract"/);
   assert.match(scenarioModule, /"road encounter"/);
   assert.doesNotMatch(questRoutes, /manifest_json|authority_json/);
+});
+
+test("scenario inspector crosses the full-page navigation boundary", () => {
+  assert.match(
+    layoutTemplate,
+    /a href="\/developer\/scenarios"[^\n{]*data-hard-navigation/,
+  );
 });

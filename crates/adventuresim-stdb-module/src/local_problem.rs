@@ -1582,6 +1582,90 @@ fn surface_new_problem(
     Ok(true)
 }
 
+/// Development-gallery seam that establishes the same receipt, referral,
+/// action graph, and observer-safe journal notice as a completed local rumor
+/// interaction. It accepts only one exact already-materialized problem in the
+/// selected character's current settlement.
+pub(crate) fn discover_development_problem(
+    ctx: &ReducerContext,
+    character_id: u64,
+    problem_id: &str,
+    scenario_slug: &str,
+) -> Result<(), String> {
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    let settlement_id = character
+        .current_settlement_id
+        .ok_or("Development quest discovery requires a settlement")?;
+    let problem = ctx
+        .db
+        .local_problem_authority()
+        .id()
+        .find(&problem_id.to_owned())
+        .ok_or("Development quest problem is missing")?;
+    if problem.scope_key != format!("settlement:{settlement_id}") {
+        return Err("Development quest problem is outside its scenario settlement".into());
+    }
+    let validated = validated_problem_generation(ctx, &problem, &settlement_id)
+        .ok_or("Development quest problem has invalid generation authority")?;
+    let witness = validated
+        .manifest
+        .witnesses
+        .first()
+        .ok_or("Development quest problem has no rumor witness")?;
+    let source = crate::settlement_population::resolve_settlement_resident(
+        ctx,
+        witness.resident_character_id,
+    )
+    .ok_or("Development quest rumor witness is missing")?;
+    let observer_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or("Development quest character time is missing")?
+        .minutes;
+    let official_world_minute = official_minute(ctx);
+    let session_id = format!("development-scenario:{scenario_slug}:rumor");
+    surface_new_problem(
+        ctx,
+        &problem,
+        character_id,
+        &session_id,
+        source.character_id,
+        Some(&source),
+        &settlement_id,
+        observer_minute,
+        official_world_minute,
+    )?;
+    let receipt_id = format!("{character_id}:{}", problem.id);
+    crate::investigation::receive_local_problem_rumor(
+        ctx,
+        character_id,
+        receipt_id.clone(),
+        format!("development-scenario:{scenario_slug}:receive-rumor"),
+    )?;
+    let receipt = ctx
+        .db
+        .local_problem_receipt()
+        .id()
+        .find(&receipt_id)
+        .ok_or("Development quest rumor receipt is missing")?;
+    crate::investigation::record_journal_notice(
+        ctx,
+        character_id,
+        &validated.manifest.public_case_id,
+        &format!("development-scenario:{scenario_slug}:discovered-rumor"),
+        &receipt.safe_summary,
+        "local rumor",
+        receipt.learned_at,
+    )?;
+    ctx.db
+        .local_problem_rumor_preference()
+        .character_id()
+        .delete(character_id);
+    Ok(())
+}
+
 /// Surface at most one active problem. A private one-shot preference may order
 /// an explicit development demo first, but disclosure still occurs through
 /// ordinary eligible rumor dialogue and creates the normal observer receipt.
