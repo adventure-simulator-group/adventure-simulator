@@ -57,7 +57,10 @@ One feature we quite want in the game eventually is a split between *direct* and
 We posit control schemes for both modes below.
 
 ### Direct controls
-These are designed primarily for the first person, but we can add a third-person camera option after the MVP.
+These are designed primarily for first person. The tactical client defaults to
+first person and toggles its current centered third-person follow camera with
+<kbd>F9</kbd>. The third-person option intentionally does not yet adjust its
+distance around nearby walls or thin obstacles.
 
 > Halbe: I assume that first person is easier because with third-person cameras, you need to handle a lot of edge cases to avoid awkwardness in tight spaces or near thin obstacles like trees, not to mention smoothing out the motion or reconciling the shoulder offset when aiming. However, if I am mistaken in my assumptions, we should implement whichever is easier for the MVP.
 
@@ -65,6 +68,7 @@ These are designed primarily for the first person, but we can add a third-person
 |-|-|-|-|
 | <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> | Left Stick | Movement. | |
 | Mouse | Right Stick | Look. | |
+| <kbd>F9</kbd> | | Toggle first-/third-person camera. | Third person uses the same look direction and a centered follow offset. |
 | LMB | RT | Attack! | |
 | Release <kbd>SPACE</kbd> | Full LT | Dodge or jump. | <ul><li>A quick tap is more like a hop or dash. Holding the button for a bit before releasing makes it a full-body jump. You can tell whether you have held long enough for a full jump by the state of your character's animation.<li>LT has to be held all the way, then released, to jump. |
 | <kbd>SHIFT</kbd> | Partial LT | Crouch or duck. | <ul><li>When crouching and attacked, your character automatically ducks in an appropriate direction, but only if you were not crouching before the attack began.<li>LT is only held partially here, so releasing it to un-crouch does not cause you to jump.
