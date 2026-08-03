@@ -960,7 +960,7 @@ mod tests {
         assert!(!quiet_markup.contains("party-social-notification"));
         assert!(quiet_markup.contains("class=\"party-portrait-action party-social-action\""));
         assert!(quiet_markup.contains("/party/12/social"));
-        assert!(quiet_markup.contains("aria-label=\"Talk to Greta\""));
+        assert!(quiet_markup.contains("aria-label=\"Open conversation with Greta\""));
 
         let mut automatic = quiet;
         automatic.social_notification_count = 2;

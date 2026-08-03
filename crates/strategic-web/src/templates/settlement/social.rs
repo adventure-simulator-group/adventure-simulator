@@ -2,6 +2,7 @@ use maud::{Markup, html};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::{
+    character_details::religion_name,
     context::LocationView,
     trade::{item_name_with_food_lot, trade_inventory_table_header},
 };
@@ -109,6 +110,22 @@ fn familiarity_label(hours: f32) -> String {
         "<1 hours".into()
     } else {
         format!("{:.0} hours", hours.max(0.0))
+    }
+}
+
+fn reputation_answer(fame: f32, infamy: f32) -> &'static str {
+    match (fame, infamy) {
+        (good, ill) if good >= 0.5 && ill >= 0.5 => {
+            "My name is much abroad here, for deeds both praised and blamed."
+        }
+        (good, _) if good >= 0.5 => "Folk here speak well of me, and my good name is widely known.",
+        (_, ill) if ill >= 0.5 => "Ill report follows me here, and many speak my name with care.",
+        (good, ill) if good >= 0.15 && ill >= 0.15 => {
+            "Some speak well of me, and some ill; my name is not unknown here."
+        }
+        (good, _) if good >= 0.15 => "I have won some small good report in these parts.",
+        (_, ill) if ill >= 0.15 => "Some little ill report follows me in these parts.",
+        _ => "My name bears little report in these parts, either fair or foul.",
     }
 }
 
@@ -249,7 +266,7 @@ pub fn party_social_dialog(
                   }
                   div class="conversation-tabs" role="tablist" aria-label="Conversation topics" {
                     @for (id, label, icon, selected_tab) in [
-                      ("quests", "Quests", "bookmark", false),
+                      ("quests", "Quests", "treasure-map", false),
                       ("lore", "Lore", "open-book", false),
                       ("tidings", "Recent Tidings", "calendar", true),
                       ("about", "Of Thee", "person", false),
@@ -421,6 +438,9 @@ pub fn party_social_dialog(
                                 ("How well knowest thou me?", format!("I have known thee for {}.", familiarity_label(social.familiarity_hours))),
                                 ("How fares thy spirit?", if morale_sources.iter().any(|source| source.magnitude < 0.0) { "My spirit is troubled; look to the recent tidings, and thou shalt know why.".to_owned() } else { "My spirit rests easily enough at present.".to_owned() }),
                                 ("Art thou pledged to another?", social.relationship_answer.clone().unwrap_or_else(|| "I shall speak of courtship or marriage only when such suit is lawful between us.".to_owned())),
+                                ("How many years hast thou seen?", format!("I have seen {} years.", selected.age_years)),
+                                ("What faith dost thou profess?", match religion_name(social.religion_id.as_deref()) { "None" => "I profess no settled faith.".to_owned(), faith => format!("I am of the {faith} confession.") }),
+                                ("What report dost thou bear in these parts?", reputation_answer(social.fame, social.infamy).to_owned()),
                             ] {
                                 button type="button" class="about-person-topic" data-about-question=(question) data-about-answer=(answer) { (question) }
                             }
@@ -587,7 +607,7 @@ fn chat_area(
                     }
                     div class="conversation-tabs" role="tablist" aria-label="Conversation topics" data-dialogue-category-tabs {
                       @for (id, label, icon, selected_tab) in [
-                        ("quest", "Quests", "bookmark", false),
+                        ("quest", "Quests", "treasure-map", false),
                         ("lore", "Lore", "open-book", true),
                         ("tidings", "Recent Tidings", "calendar", false),
                         ("about", "Of Thee", "person", false),
@@ -746,6 +766,9 @@ mod tests {
             active_building: Some("inn".into()),
         };
         let social = SocialPresentation {
+            religion_id: Some("lutheran".into()),
+            fame: 0.6,
+            infamy: 0.2,
             automatic_chat_enabled: true,
             addressed_source_ids: vec!["concern".into()],
             ..Default::default()
@@ -779,6 +802,12 @@ mod tests {
         assert!(markup.contains("Negative morale, -2.0"));
         assert!(markup.contains("--social-topic-color:color-mix"));
         assert!(!markup.contains("Local fame"));
+        assert!(markup.contains("How many years hast thou seen?"));
+        assert!(markup.contains("I have seen 20 years."));
+        assert!(markup.contains("What faith dost thou profess?"));
+        assert!(markup.contains("I am of the Lutheran confession."));
+        assert!(markup.contains("What report dost thou bear in these parts?"));
+        assert!(markup.contains("Folk here speak well of me"));
         assert!(markup.contains("data-local-chat-kind=\"player\" data-local-chat-subject=\"2\""));
         assert!(markup.contains("class=\"settlement-chat-messages\""));
         assert!(markup.contains("class=\"settlement-chat-composer\""));
@@ -816,7 +845,10 @@ mod tests {
         };
         let feedback_markup =
             party_social_dialog(&location, &target, &actor, &[], &feedback_social).into_string();
-        assert!(feedback_markup.contains("class=\"social-feedback social-feedback-error\""));
+        assert!(
+            feedback_markup
+                .contains("class=\"chat-system-message social-feedback social-feedback-error\"")
+        );
         assert!(feedback_markup.contains("role=\"alert\""));
         assert!(feedback_markup.contains("That approach needs time"));
 
