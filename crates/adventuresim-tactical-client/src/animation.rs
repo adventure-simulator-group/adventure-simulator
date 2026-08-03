@@ -818,7 +818,7 @@ fn resolve_anchor<'a>(
     };
     let pack = catalog.packs.get(pack_id)?;
     let anchor = pack.poses.get(&resolved_pose)?;
-    let source = pack.motions.get(&anchor.motion)?;
+    pack.motions.get(&anchor.motion)?;
     let clip = runtime
         .clips
         .get(&(pack_id.to_owned(), anchor.motion.clone()))?;
