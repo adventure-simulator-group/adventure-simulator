@@ -17,9 +17,12 @@ use bevy::{
 };
 use bevy_flair::prelude::*;
 
+#[cfg(feature = "debug")]
+use crate::animation::TerrainIkEnabled;
+#[cfg(feature = "debug")]
+use crate::debug::DebugGameSpeed;
 use crate::{
     Args,
-    animation::TerrainIkEnabled,
     player::{AttackState, ClientPlayer},
 };
 
@@ -41,6 +44,8 @@ impl Plugin for UiPlugin {
                     update_attack_timer_ui.run_if(any_with_component::<ClientPlayer>),
                     #[cfg(feature = "debug")]
                     update_terrain_ik_debug_ui,
+                    #[cfg(feature = "debug")]
+                    update_game_speed_debug_ui,
                 ),
             )
             .add_observer(on_new_player_added_hook)
@@ -99,6 +104,10 @@ struct CombatStateSpan;
 #[derive(Component)]
 struct TerrainIkDebugSpan;
 
+#[cfg(feature = "debug")]
+#[derive(Component)]
+struct GameSpeedDebugSpan;
+
 #[derive(Component)]
 struct TacticalOutcomeBanner;
 
@@ -153,16 +162,15 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             ),
             (
                 Name::new("controls"),
-                Text::new(""),
+                Text::new(
+                    "WASD to move | Space to jump | Mouse to look around | F9 to toggle camera\n",
+                ),
+                #[cfg(feature = "debug")]
                 children![
-                    TextSpan::new(
-                        "WASD to move | Space to jump | Mouse to look around | F9 to toggle camera\n"
-                    ),
-                    #[cfg(feature = "debug")]
                     TextSpan::new(
                         "DEBUG: F2 to toggle body | F3 to toggle hitbox | F4 to toggle hitscan"
                     ),
-                    #[cfg(feature = "debug")]
+                    (GameSpeedDebugSpan, TextSpan::new(" | F7 game speed: 1x")),
                     (TerrainIkDebugSpan, TextSpan::new(" | F8 terrain IK: ON"))
                 ],
             ),
@@ -359,6 +367,20 @@ fn update_terrain_ik_debug_ui(
             " | F8 terrain IK: ON".to_owned()
         } else {
             " | F8 terrain IK: OFF".to_owned()
+        };
+    }
+}
+
+#[cfg(feature = "debug")]
+fn update_game_speed_debug_ui(
+    speed: Res<DebugGameSpeed>,
+    mut span: Single<&mut TextSpan, With<GameSpeedDebugSpan>>,
+) {
+    if speed.is_changed() {
+        span.0 = if speed.quarter_speed {
+            " | F7 game speed: 1/4x".to_owned()
+        } else {
+            " | F7 game speed: 1x".to_owned()
         };
     }
 }
