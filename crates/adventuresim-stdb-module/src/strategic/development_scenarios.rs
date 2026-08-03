@@ -331,8 +331,7 @@ pub fn backend_development_quests(ctx: &ViewContext) -> Vec<BackendDevelopmentQu
             .db
             .local_problem_symptom()
             .problem_id()
-            .filter(&problem.id)
-            .next()
+            .find(problem.id.clone())
             .map_or_else(|| "Not publicly described".into(), |row| row.public_summary);
         rows.push(BackendDevelopmentQuest {
             scenario_slug,
