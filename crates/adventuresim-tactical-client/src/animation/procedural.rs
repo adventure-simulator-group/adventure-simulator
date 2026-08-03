@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use adventuresim_tactical_core::prelude::*;
-use bevy::prelude::*;
+use bevy::{math::Affine3A, prelude::*};
 
 use super::{AnimationPlayback, AnimationRigScene, ImpactReaction};
 
@@ -148,18 +148,47 @@ pub(super) fn apply_head_and_torso_look(
 /// carriage. The evaluator can continuously blend into or out of the mirror.
 pub(super) fn apply_lower_body_mirroring(
     playbacks: Query<&AnimationPlayback>,
-    mut bones: ParamSet<(
+    parents: Query<&ChildOf>,
+    mut transforms: ParamSet<(
         Query<(Entity, &HumanoidBone, &Transform)>,
+        TransformHelper,
         Query<&mut Transform>,
     )>,
 ) {
-    let mut rigs = BTreeMap::<Entity, BTreeMap<BoneRole, (Entity, Transform)>>::new();
+    let locals = {
+        let bones = transforms.p0();
+        bones
+            .iter()
+            .map(|(entity, bone, transform)| (entity, *bone, *transform))
+            .collect::<Vec<_>>()
+    };
+    let mut rigs = BTreeMap::<Entity, BTreeMap<BoneRole, MirrorBone>>::new();
+    let mut owner_globals = BTreeMap::<Entity, GlobalTransform>::new();
     {
-        let snapshots = bones.p0();
-        for (entity, bone, transform) in &snapshots {
-            rigs.entry(bone.owner)
-                .or_default()
-                .insert(bone.role, (entity, *transform));
+        let helper = transforms.p1();
+        for (entity, bone, local) in locals {
+            let Ok(global) = helper.compute_global_transform(entity) else {
+                continue;
+            };
+            let parent = parents.get(entity).ok().map(ChildOf::parent);
+            let parent_global = parent
+                .and_then(|parent| helper.compute_global_transform(parent).ok())
+                .unwrap_or(GlobalTransform::IDENTITY);
+            if !owner_globals.contains_key(&bone.owner)
+                && let Ok(owner_global) = helper.compute_global_transform(bone.owner)
+            {
+                owner_globals.insert(bone.owner, owner_global);
+            }
+            rigs.entry(bone.owner).or_default().insert(
+                bone.role,
+                MirrorBone {
+                    entity,
+                    local,
+                    global,
+                    parent,
+                    parent_global,
+                },
+            );
         }
     }
     for (owner, rig) in rigs {
@@ -170,29 +199,72 @@ pub(super) fn apply_lower_body_mirroring(
         if weight <= f32::EPSILON {
             continue;
         }
+        let Some(owner_global) = owner_globals.get(&owner) else {
+            continue;
+        };
+        let mut desired_globals = BTreeMap::<Entity, Affine3A>::new();
         for (left_role, right_role) in [
             (BoneRole::ThighLeft, BoneRole::ThighRight),
+            (BoneRole::ThighTwistLeft, BoneRole::ThighTwistRight),
             (BoneRole::ShinLeft, BoneRole::ShinRight),
+            (BoneRole::ShinTwistLeft, BoneRole::ShinTwistRight),
             (BoneRole::FootLeft, BoneRole::FootRight),
+            (BoneRole::ToeLeft, BoneRole::ToeRight),
         ] {
-            let (Some((left_entity, left)), Some((right_entity, right))) =
-                (rig.get(&left_role), rig.get(&right_role))
-            else {
+            let (Some(left), Some(right)) = (rig.get(&left_role), rig.get(&right_role)) else {
                 continue;
             };
-            let mirrored_right = mirrored_across_anatomical_center(*right);
-            let mirrored_left = mirrored_across_anatomical_center(*left);
-            let mut transforms = bones.p1();
-            if let Ok(mut transform) = transforms.get_mut(*left_entity) {
-                transform.translation = left.translation.lerp(mirrored_right.translation, weight);
-                transform.rotation = left.rotation.slerp(mirrored_right.rotation, weight);
+            desired_globals.insert(
+                left.entity,
+                mirrored_global_affine(right.global, *owner_global),
+            );
+            desired_globals.insert(
+                right.entity,
+                mirrored_global_affine(left.global, *owner_global),
+            );
+        }
+        let mut bones = transforms.p2();
+        for bone in rig.values() {
+            let Some(&desired_global) = desired_globals.get(&bone.entity) else {
+                continue;
+            };
+            let desired_parent = bone
+                .parent
+                .and_then(|parent| desired_globals.get(&parent).copied())
+                .unwrap_or_else(|| bone.parent_global.affine());
+            let (scale, rotation, translation) =
+                (desired_parent.inverse() * desired_global).to_scale_rotation_translation();
+            if !translation.is_finite() || !rotation.is_finite() || !scale.is_finite() {
+                continue;
             }
-            if let Ok(mut transform) = transforms.get_mut(*right_entity) {
-                transform.translation = right.translation.lerp(mirrored_left.translation, weight);
-                transform.rotation = right.rotation.slerp(mirrored_left.rotation, weight);
+            if let Ok(mut transform) = bones.get_mut(bone.entity) {
+                transform.translation = bone.local.translation.lerp(translation, weight);
+                transform.rotation = bone.local.rotation.slerp(rotation, weight);
+                transform.scale = bone.local.scale.lerp(scale, weight);
             }
         }
     }
+}
+
+#[derive(Clone, Copy)]
+struct MirrorBone {
+    entity: Entity,
+    local: Transform,
+    global: GlobalTransform,
+    parent: Option<Entity>,
+    parent_global: GlobalTransform,
+}
+
+fn mirrored_global_affine(source: GlobalTransform, owner: GlobalTransform) -> Affine3A {
+    let owner_affine = owner.affine();
+    let relative = owner_affine.inverse() * source.affine();
+    let (scale, rotation, translation) = relative.to_scale_rotation_translation();
+    let mirrored = mirrored_across_anatomical_center(Transform {
+        translation,
+        rotation,
+        scale,
+    });
+    owner_affine * mirrored.compute_affine()
 }
 
 fn mirrored_across_anatomical_center(mut transform: Transform) -> Transform {
@@ -460,5 +532,26 @@ mod tests {
         let twice = mirrored_across_anatomical_center(mirrored_across_anatomical_center(original));
         assert!(twice.translation.abs_diff_eq(original.translation, 0.0001));
         assert!(twice.rotation.abs_diff_eq(original.rotation, 0.0001));
+    }
+
+    #[test]
+    fn global_mirror_uses_character_space_under_owner_rotation() {
+        let owner = GlobalTransform::from(
+            Transform::from_xyz(4.0, 2.0, -3.0).with_rotation(Quat::from_rotation_y(1.1)),
+        );
+        let relative = Transform::from_xyz(0.4, -0.7, 0.2).with_rotation(Quat::from_euler(
+            EulerRot::XYZ,
+            0.2,
+            -0.3,
+            0.4,
+        ));
+        let source = owner.mul_transform(relative);
+        let mirrored = owner.affine().inverse() * mirrored_global_affine(source, owner);
+        let (scale, rotation, translation) = mirrored.to_scale_rotation_translation();
+        let expected = mirrored_across_anatomical_center(relative);
+
+        assert!(translation.abs_diff_eq(expected.translation, 0.0001));
+        assert!(rotation.abs_diff_eq(expected.rotation, 0.0001));
+        assert!(scale.abs_diff_eq(expected.scale, 0.0001));
     }
 }
