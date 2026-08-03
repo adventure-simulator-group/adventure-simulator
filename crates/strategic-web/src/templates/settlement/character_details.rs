@@ -15,7 +15,7 @@ use super::{
     },
     chrome::{party_portrait_overlay, visual_stage},
     context::LocationView,
-    social::{player_chat_area, settlement_chat_area},
+    social::player_chat_area,
     trade::{cooking_activity_dialog, religious_demand_rail},
 };
 use crate::medical::MedicalPresentation;
@@ -307,7 +307,7 @@ pub fn party_personal_page(
         false,
     );
     let center_after = character_action_dialog
-        .unwrap_or_else(|| settlement_chat_area(&active_character.name, Some(active_character)));
+        .unwrap_or_else(|| player_chat_area(location, active_character, active_character));
     let foraging_open = foraging_dialog.is_some();
     let after = html! {
         (physiology_dialog(medical, "physiology-chart-dialog", &active_character.name))
@@ -428,8 +428,8 @@ pub fn party_stats_page(
         Some(selected.id),
         false,
     );
-    let center_after =
-        character_action_dialog.unwrap_or_else(|| player_chat_area(selected, active_character));
+    let center_after = character_action_dialog
+        .unwrap_or_else(|| player_chat_area(location, selected, active_character));
     let right_after = html! {
         @if selected.id != active_character.id {
                 @if active_character.party_id == selected.party_id {

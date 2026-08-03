@@ -200,7 +200,8 @@ pub fn party_social_dialog(
     };
     html! {
         section class="settlement-chat social-conversation-dock" aria-label=(format!("Conversation with {}", selected.name))
-          data-social-conversation data-social-subject=(selected.id) data-social-self=[is_self.then_some("true")] {
+          data-social-conversation data-social-subject=(selected.id) data-social-self=[is_self.then_some("true")]
+          data-local-chat-kind="player" data-local-chat-subject=(selected.id) {
           div class="settlement-chat-layout" {
             div class="settlement-chat-conversation" {
               header class="conversation-dock-header" {
@@ -235,10 +236,10 @@ pub fn party_social_dialog(
                           ul class="perceived-traits" aria-label="Perceived personality traits" {
                             @for belief in &social.beliefs {
                               @let (axis, value) = perceived_trait(belief.axis, belief.perceived_value);
-                              li class="perceived-trait" style=(belief_style(belief.confidence)) tabindex="0" {
+                              li class="perceived-trait" style=(belief_style(belief.confidence)) tabindex="0"
+                                data-strategic-tooltip=(belief_tooltip(belief)) {
                                 strong { (value) }
-                                span { (axis) ": " (format!("{:.0}% confidence", belief.confidence.clamp(0.0, 1.0) * 100.0)) }
-                                small { (personality_reaction_hint(belief.axis, belief.perceived_value)) }
+                                span class="visually-hidden" { (axis) "; hover or focus for confidence and approach hints" }
                               }
                             }
                           }
@@ -270,12 +271,6 @@ pub fn party_social_dialog(
                 aria-labelledby=(format!("conversation-tab-lore-{}", selected.id)) hidden { p class="conversation-empty" { "No discovered lore is ready to discuss." } }
               section role="tabpanel" class="conversation-panel social-rail" id=(format!("conversation-panel-tidings-{}", selected.id))
                 aria-labelledby=(format!("conversation-tab-tidings-{}", selected.id)) data-social-panel data-target-id=(selected.id) {
-            @if let Some(feedback) = &social.feedback {
-                p class=(if feedback.is_error { "social-feedback social-feedback-error" } else { "social-feedback social-feedback-result" })
-                    role=(if feedback.is_error { "alert" } else { "status" }) {
-                    (feedback.message)
-                }
-            }
             @if !is_self {
                 (sidebar_section("Spend time together", html! {
                     form class="social-chat-activity" method="post" action=(&chat_href)
@@ -432,9 +427,18 @@ pub fn party_social_dialog(
                         }
                     }
                 }
+                div class="settlement-chat-messages" aria-live="polite" data-social-message-stream {
+                    @if let Some(feedback) = &social.feedback {
+                        div class=(if feedback.is_error { "chat-system-message social-feedback social-feedback-error" } else { "chat-system-message social-feedback social-feedback-result" })
+                            data-chat-channel="info" role=(if feedback.is_error { "alert" } else { "status" }) {
+                            span class="chat-timestamp" { "[--:--] " }
+                            (feedback.message)
+                        }
+                    }
+                }
                 @if !is_self {
                     div class="settlement-chat-composer" {
-                        div class="settlement-chat-input-shell" {
+                        div class="settlement-chat-input-shell" { span class="settlement-chat-completion" data-dialogue-completion aria-hidden="true" {}
                             input type="text" name="body" aria-label="Local message" autocomplete="off" placeholder=(format!("Speak with {}", selected.name));
                         }
                         button type="button" class="btn btn-primary btn-icon" aria-label="Send message" { (decorative_game_icon("plain-arrow")) }
@@ -450,7 +454,7 @@ pub fn party_social_dialog(
 /// filters are present so their messages can join the same stream as their
 /// backends become available.
 pub(crate) fn settlement_chat_area(location: &str, active_character: Option<&Character>) -> Markup {
-    chat_area(location, active_character, None, None, None, &[])
+    chat_area(location, active_character, None, None, None, None, &[])
 }
 
 pub(crate) fn settlement_chat_area_with_info(
@@ -458,10 +462,22 @@ pub(crate) fn settlement_chat_area_with_info(
     active_character: Option<&Character>,
     info_messages: &[String],
 ) -> Markup {
-    chat_area(location, active_character, None, None, None, info_messages)
+    chat_area(
+        location,
+        active_character,
+        None,
+        None,
+        None,
+        None,
+        info_messages,
+    )
 }
 
-pub(super) fn player_chat_area(subject: &Character, active_character: &Character) -> Markup {
+pub(super) fn player_chat_area(
+    location: &LocationView,
+    subject: &Character,
+    active_character: &Character,
+) -> Markup {
     let context = ("player", subject.id.to_string());
     chat_area(
         &subject.name,
@@ -469,6 +485,11 @@ pub(super) fn player_chat_area(subject: &Character, active_character: &Character
         None,
         Some(context),
         None,
+        Some(location.preserve_building(format!(
+            "{}/party/{}/social",
+            location.base_path(),
+            subject.id
+        ))),
         &[],
     )
 }
@@ -510,18 +531,24 @@ pub(super) fn settlement_resident_chat_area(
         Some((settlement_id, service_id.unwrap_or(""))),
         Some(("npc", String::new())),
         Some(location_id),
+        None,
         &[],
     )
 }
 
 fn chat_area(
     location: &str,
-    _active_character: Option<&Character>,
+    active_character: Option<&Character>,
     service_context: Option<(&str, &str)>,
     local_context: Option<(&str, String)>,
     local_location_id: Option<&str>,
+    party_social_href: Option<String>,
     info_messages: &[String],
 ) -> Markup {
+    let is_self_chat = local_context.as_ref().is_some_and(|(kind, subject)| {
+        *kind == "player"
+            && active_character.is_some_and(|active| subject == &active.id.to_string())
+    });
     html! {
         section class="settlement-chat" aria-label="Settlement chat"
             data-service-quest-settlement=[service_context.map(|context| context.0)]
@@ -532,7 +559,8 @@ fn chat_area(
                 .map(|_| adventuresim_core::strategic_economy::NPC_HERBALIST_EXAM_FEE)]
             data-local-chat-kind=[local_context.as_ref().map(|context| context.0)]
             data-local-chat-subject=[local_context.as_ref().map(|context| context.1.as_str())]
-            data-local-chat-location=[local_location_id] {
+            data-local-chat-location=[local_location_id]
+            data-party-social-href=[party_social_href.as_deref()] {
             div class="settlement-chat-resize" role="separator" aria-label="Resize chat"
                 aria-orientation="horizontal" aria-valuemin="128" aria-valuemax="640"
                 aria-valuenow="184" tabindex="0" title="Drag to resize chat" {
@@ -594,12 +622,12 @@ fn chat_area(
                     div class="settlement-chat-composer" {
                         div class="settlement-chat-input-shell" {
                             span class="settlement-chat-completion" data-dialogue-completion aria-hidden="true" {}
-                            input type="text" name="body" disabled[local_context.is_none()]
+                            input type="text" name="body" disabled[local_context.is_none() || is_self_chat]
                                 aria-label="Local message"
                                 autocomplete="off"
-                                placeholder=(format!("Message {location} (Local)"));
+                                placeholder=(if is_self_chat { "Select Recent Tidings to reflect".to_owned() } else { format!("Message {location} (Local)") });
                         }
-                        button type="button" class="btn btn-primary btn-icon" disabled[local_context.is_none()]
+                        button type="button" class="btn btn-primary btn-icon" disabled[local_context.is_none() || is_self_chat]
                             aria-label="Send message" {
                             (decorative_game_icon("plain-arrow"))
                         }
@@ -751,6 +779,33 @@ mod tests {
         assert!(markup.contains("Negative morale, -2.0"));
         assert!(markup.contains("--social-topic-color:color-mix"));
         assert!(!markup.contains("Local fame"));
+        assert!(markup.contains("data-local-chat-kind=\"player\" data-local-chat-subject=\"2\""));
+        assert!(markup.contains("class=\"settlement-chat-messages\""));
+        assert!(markup.contains("class=\"settlement-chat-composer\""));
+
+        let self_markup = party_social_dialog(
+            &location,
+            &actor,
+            &actor,
+            &[CharacterMoraleSource {
+                id: "self-concern".into(),
+                character_id: actor.id,
+                kind: "defeat".into(),
+                label: "A private defeat".into(),
+                magnitude: -1.0,
+            }],
+            &SocialPresentation::default(),
+        )
+        .into_string();
+        assert!(self_markup.contains("value=\"reflect\""));
+        assert!(self_markup.contains("data-social-self=\"true\""));
+        assert!(!self_markup.contains("class=\"settlement-chat-composer\""));
+        let ordinary_self = player_chat_area(&location, &actor, &actor).into_string();
+        assert!(ordinary_self.contains(
+            "data-party-social-href=\"/locations/settlement/lubeck/party/1/social?building=inn\""
+        ));
+        assert!(ordinary_self.contains("placeholder=\"Select Recent Tidings to reflect\""));
+        assert!(ordinary_self.contains("name=\"body\" disabled"));
 
         let feedback_social = SocialPresentation {
             feedback: Some(SocialFeedback {
@@ -996,9 +1051,10 @@ mod tests {
 
     #[test]
     fn chat_uses_one_stream_with_all_channel_filters() {
-        let markup = chat_area("Lubeck", None, None, None, None, &[]).into_string();
+        let markup = chat_area("Lubeck", None, None, None, None, None, &[]).into_string();
 
-        assert!(!markup.contains("role=\"tablist\""));
+        assert!(markup.contains("role=\"tablist\""));
+        assert!(markup.contains("data-dialogue-category=\"tidings\""));
         for channel in ["local", "party", "settlement", "dm", "guild", "info"] {
             assert!(
                 markup.contains(&format!("data-chat-filter=\"{channel}\"")),

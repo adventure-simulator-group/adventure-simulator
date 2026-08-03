@@ -266,6 +266,16 @@ matches its choices, shows a unique prefix as grey inline completion, and lets
 Tab accept it. Multi-select answers use comma-separated choice labels. Other
 text continues through the independent free-form chat stream.
 
+Of Thee answers are server-authored observer-safe projections bound to the
+selected subject and projection revision. They are appended as transient
+contextual exchanges in the same visible message stream and are not durable
+free-form chat history. Switching subjects clears them before the next request;
+late responses cannot be attributed to the newly selected person. Party
+portraits retain ordinary profile selection, while choosing Recent Tidings
+deep-loads that subject's authorized social projection into the same functional
+chat dock. Self-selection disables free-form posting and exposes reflection in
+Recent Tidings.
+
 ## Developer mode and source editing
 
 The hammer button immediately left of the character portrait toggles developer

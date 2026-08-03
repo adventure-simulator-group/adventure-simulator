@@ -840,7 +840,7 @@ pub fn source_for_topic(conversation_id: &str, topic_id: &str) -> Option<&'stati
 }
 
 pub fn category_for_topic(conversation_id: &str, topic_id: &str) -> Option<TopicCategory> {
-    conversation(conversation_id)?
+    find_conversation(conversation_id)?
         .topics
         .iter()
         .find(|topic| topic.id == topic_id)
@@ -979,6 +979,17 @@ mod tests {
             Some(TopicCategory::Lore)
         );
         assert_eq!(category_for_topic("service-professions", "hidden"), None);
+        for (conversation, topic) in [
+            ("service-professions", "referred-testimony"),
+            ("service-professions", "return-recovered-property"),
+            ("service-professions", "expose-false-account"),
+            ("organization-representative", "referred-testimony"),
+        ] {
+            assert_eq!(
+                category_for_topic(conversation, topic),
+                Some(TopicCategory::Quest)
+            );
+        }
     }
     #[test]
     fn compiled_catalog_is_valid_and_has_source_spans() {

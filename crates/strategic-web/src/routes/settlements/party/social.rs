@@ -1,3 +1,25 @@
+fn observer_safe_relationship_answer(
+    status: &crate::spacetimedb::BackendCharacterRelationshipStatus,
+    observer_id: u64,
+) -> String {
+    let observer_is_partner = status.courtship_partner_id == Some(observer_id)
+        || status.wedding_partner_id == Some(observer_id);
+    let courtship_is_public = status.courtship_kind.as_ref().is_some_and(|kind| {
+        !matches!(kind, crate::spacetimedb::CourtshipKind::Informal)
+            || status.courtship_exposed
+            || observer_is_partner
+    });
+    if status.wedding_commitment_id.is_some() && (status.courtship_exposed || observer_is_partner) {
+        "I am promised in marriage, and the appointed day draws nigh.".to_owned()
+    } else if status.spouse_id.is_some() {
+        "I am wed, and bound in marriage.".to_owned()
+    } else if status.courtship_partner_id.is_some() && courtship_is_public {
+        "I am in courtship, though I shall not name whom without cause.".to_owned()
+    } else {
+        "I have no public pledge of courtship to declare.".to_owned()
+    }
+}
+
 pub(super) async fn party_social(
     State(state): State<AppState>,
     Path((kind, id, target_id)): Path<(String, String, u64)>,
@@ -153,17 +175,8 @@ pub(super) async fn party_social(
         .await
         .ok()
         .flatten()
-        .map(|status| {
-            if status.wedding_commitment_id.is_some() {
-                "I am promised in marriage, and the appointed day draws nigh.".to_owned()
-            } else if status.spouse_id.is_some() {
-                "I am wed, and bound in marriage.".to_owned()
-            } else if status.courtship_partner_id.is_some() {
-                "I am in courtship, though I shall not name whom without cause.".to_owned()
-            } else {
-                "I am neither wed nor pledged in courtship.".to_owned()
-            }
-        });
+        .map(|status| observer_safe_relationship_answer(&status, active.id));
+
     let actor_personality_result = state
         .db
         .query::<CharacterPersonality>(&format!(
@@ -539,15 +552,15 @@ pub(super) fn social_feedback(
             is_error: true,
         }),
         Some("chat_positive") => Some(SocialFeedback {
-            message: "The conversation brings you closer.",
+            message: "Thy conversation hath drawn you closer.",
             is_error: false,
         }),
         Some("chat_mixed") => Some(SocialFeedback {
-            message: "The conversation has warm moments and awkward ones.",
+            message: "Your speech held both warmth and uneasy pauses.",
             is_error: false,
         }),
         Some("chat_negative") => Some(SocialFeedback {
-            message: "The conversation leaves some friction between you.",
+            message: "Your words have left some discord betwixt you.",
             is_error: false,
         }),
         Some("chat_unavailable") => Some(SocialFeedback {
@@ -555,5 +568,35 @@ pub(super) fn social_feedback(
             is_error: true,
         }),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod relationship_privacy_tests {
+    use super::*;
+
+    fn informal(exposed: bool) -> crate::spacetimedb::BackendCharacterRelationshipStatus {
+        crate::spacetimedb::BackendCharacterRelationshipStatus {
+            character_id: 2,
+            spouse_id: None,
+            courtship_partner_id: Some(7),
+            courtship_kind: Some(crate::spacetimedb::CourtshipKind::Informal),
+            courtship_exposed: exposed,
+            wedding_commitment_id: None,
+            wedding_partner_id: None,
+            wedding_effective_minute: None,
+            wedding_settlement_id: None,
+            pregnancy_due_minute: None,
+            pregnancy_child_id: None,
+        }
+    }
+
+    #[test]
+    fn informal_courtship_is_visible_only_to_partner_or_after_exposure() {
+        assert!(
+            observer_safe_relationship_answer(&informal(false), 9).contains("no public pledge")
+        );
+        assert!(observer_safe_relationship_answer(&informal(false), 7).contains("in courtship"));
+        assert!(observer_safe_relationship_answer(&informal(true), 9).contains("in courtship"));
     }
 }

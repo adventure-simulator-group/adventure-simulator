@@ -230,6 +230,16 @@ struct NpcSocialView {
     courtship_exposed: bool,
     wedding_countdown_days: Option<u64>,
     romantic_actions: Vec<RomanceAction>,
+    social_revision: String,
+    about_topics: Vec<NpcAboutTopic>,
+    trait_impression_available: bool,
+}
+
+#[derive(Serialize)]
+struct NpcAboutTopic {
+    id: &'static str,
+    question: &'static str,
+    answer: String,
 }
 
 #[derive(Serialize)]
@@ -630,6 +640,9 @@ mod npc_navigation_tests {
             courtship_exposed: false,
             wedding_countdown_days: None,
             romantic_actions: vec![RomanceAction::ScheduleWedding],
+            social_revision: "42:test".into(),
+            about_topics: vec![],
+            trait_impression_available: false,
         };
         let value = serde_json::to_value(view).unwrap();
         assert_eq!(value["affinity"], "trusted");
@@ -669,7 +682,7 @@ mod npc_navigation_tests {
     fn romantic_rejections_use_stable_codes_instead_of_prose_matching() {
         assert_eq!(
             romantic_rejection_message(CourtshipRejectionCode::FatherApproval),
-            "My family would not approve of a formal courtship."
+            "My family would not bless a formal courtship."
         );
         let source = include_str!("dialogue.rs");
         let mapper = source
@@ -969,23 +982,80 @@ async fn npc_social_view(
             .saturating_sub(actor_minute)
             .div_ceil(1_440)
     });
+    let affinity = relationship
+        .as_ref()
+        .map_or(AffinityBand::Reserved, |row| row.affinity_band);
+    let familiarity = relationship
+        .as_ref()
+        .map_or(FamiliarityBand::New, |row| row.familiarity_band);
+    let morale = relationship
+        .as_ref()
+        .map_or(MoraleBand::Uncertain, |row| row.morale_band);
+    let affinity_words = match affinity {
+        AffinityBand::Hostile => "with open enmity",
+        AffinityBand::Reserved => "with reserve",
+        AffinityBand::Warm => "with warmth",
+        AffinityBand::Trusted => "as one dear and trusted",
+    };
+    let familiarity_words = match familiarity {
+        FamiliarityBand::New => "scarcely know thee",
+        FamiliarityBand::Known => "know thee somewhat",
+        FamiliarityBand::Familiar => "know thee well",
+        FamiliarityBand::WellKnown => "know thee as an old companion",
+    };
+    let morale_words = match morale {
+        MoraleBand::Uncertain => "I cannot well name my present humour.",
+        MoraleBand::Distressed => "My spirit is sorely troubled.",
+        MoraleBand::Guarded => "My spirit is wary, yet I endure.",
+        MoraleBand::Settled => "My spirit rests in good order.",
+    };
+    let pledge = if let Some(days) = wedding_countdown_days {
+        format!("Our wedding day shall come in {days} days.")
+    } else if courtship_kind.is_some() {
+        "Our courtship yet stands, as thou knowest.".to_owned()
+    } else {
+        "I have no pledge that I may declare to thee.".to_owned()
+    };
+    let about_topics = vec![
+        NpcAboutTopic {
+            id: "regard",
+            question: "How stand I in thy regard?",
+            answer: format!("I hold thee {affinity_words}."),
+        },
+        NpcAboutTopic {
+            id: "familiarity",
+            question: "How well knowest thou me?",
+            answer: format!("I {familiarity_words}."),
+        },
+        NpcAboutTopic {
+            id: "morale",
+            question: "How fares thy spirit?",
+            answer: morale_words.to_owned(),
+        },
+        NpcAboutTopic {
+            id: "pledge",
+            question: "Art thou pledged to another?",
+            answer: pledge,
+        },
+    ];
+    let social_revision = format!(
+        "{}:{:?}:{:?}:{:?}:{:?}",
+        npc.character_id, affinity, familiarity, morale, wedding_countdown_days
+    );
     Ok(NpcSocialView {
         resident_character_id: npc.character_id.to_string(),
         name: npc.name,
-        affinity: relationship
-            .as_ref()
-            .map_or(AffinityBand::Reserved, |row| row.affinity_band),
-        familiarity: relationship
-            .as_ref()
-            .map_or(FamiliarityBand::New, |row| row.familiarity_band),
-        morale: relationship
-            .as_ref()
-            .map_or(MoraleBand::Uncertain, |row| row.morale_band),
+        affinity,
+        familiarity,
+        morale,
         last_outcome,
         courtship_kind,
         courtship_exposed,
         wedding_countdown_days,
         romantic_actions,
+        social_revision,
+        about_topics,
+        trait_impression_available: false,
     })
 }
 
@@ -1010,32 +1080,28 @@ async fn active_commitment_with(
 
 fn romantic_rejection_message(code: CourtshipRejectionCode) -> &'static str {
     match code {
-        CourtshipRejectionCode::Affinity => {
-            "I care for you, but I am not ready for that relationship."
-        }
-        CourtshipRejectionCode::FatherApproval => {
-            "My family would not approve of a formal courtship."
-        }
+        CourtshipRejectionCode::Affinity => "I care for thee, yet am not ready for such a bond.",
+        CourtshipRejectionCode::FatherApproval => "My family would not bless a formal courtship.",
         CourtshipRejectionCode::FormalRoute => {
-            "I cannot agree unless we approach this through the available route."
+            "I cannot consent unless we pursue the proper course."
         }
-        CourtshipRejectionCode::MutualAttraction => "I care for you, but not romantically.",
+        CourtshipRejectionCode::MutualAttraction => "I care for thee, but not as a lover.",
         CourtshipRejectionCode::ExclusiveCommitment => {
-            "I cannot make that promise while one of us is already committed."
+            "I cannot plight my troth whilst one of us is already pledged."
         }
         CourtshipRejectionCode::AlreadyMarried => {
-            "I cannot agree while one of us is already married."
+            "I cannot consent whilst one of us is already wed."
         }
-        CourtshipRejectionCode::CoLocation => "We need to be together before we can speak of that.",
-        CourtshipRejectionCode::IneligibleCharacter => "I cannot enter that courtship.",
-        CourtshipRejectionCode::CloseRelative => "We are too closely related for courtship.",
+        CourtshipRejectionCode::CoLocation => "We must meet before we speak of such a bond.",
+        CourtshipRejectionCode::IneligibleCharacter => "I cannot enter such a courtship.",
+        CourtshipRejectionCode::CloseRelative => "Our blood lies too near for courtship.",
         CourtshipRejectionCode::ActiveCourtshipRequired => {
-            "We must be courting before we can plan a wedding."
+            "We must first be courting ere we appoint a wedding."
         }
         CourtshipRejectionCode::CeremonySettlementRequired => {
-            "We must first agree where the ceremony will be held."
+            "We must first agree where the ceremony shall be held."
         }
-        CourtshipRejectionCode::ResidenceRequired => "We need a suitable home before the wedding.",
+        CourtshipRejectionCode::ResidenceRequired => "We must have a fitting home ere we wed.",
     }
 }
 
@@ -1065,17 +1131,17 @@ async fn npc_romance_action(
         RomanceAction::FormalCourtship => (
             "begin_formal_courtship",
             vec![json!(character_id), json!(resident_character_id)],
-            "Yes. Let us seek my family's blessing and proceed openly.",
+            "Yea. Let us seek my family's blessing and proceed openly.",
         ),
         RomanceAction::InformalCourtship => (
             "begin_informal_courtship",
             vec![json!(character_id), json!(resident_character_id)],
-            "Yes. We will keep this between ourselves.",
+            "Yea. We shall keep this between ourselves.",
         ),
         RomanceAction::ScheduleWedding => (
             "schedule_wedding",
             vec![json!(character_id), json!(resident_character_id)],
-            "Then it is settled. One year from today.",
+            "Then is it settled: one year from this day.",
         ),
         RomanceAction::CancelWedding => {
             let Some(commitment) =
@@ -1084,7 +1150,7 @@ async fn npc_romance_action(
                 let view = npc_social_view(&state, character_id, npc, None).await?;
                 return Ok(Json(NpcRomanceActionResult {
                     ok: false,
-                    message: "There is no wedding between us to cancel.".into(),
+                    message: "There is no wedding betwixt us to forswear.".into(),
                     view,
                 }));
             };
@@ -1098,7 +1164,7 @@ async fn npc_romance_action(
                             .expect("projected active commitment has an id")
                     ),
                 ],
-                "I understand. The wedding will not go forward.",
+                "I understand. The wedding shall not go forward.",
             )
         }
     };
@@ -1117,7 +1183,7 @@ async fn npc_romance_action(
                     error = %error_text,
                     "romantic action rejected"
                 );
-                (false, "I cannot make that promise right now.".into())
+                (false, "I cannot make that promise at this hour.".into())
             }
         }
     };

@@ -95,6 +95,9 @@ test("social replaces the ordinary chat dock while surgery remains an overlay", 
   assert.doesNotMatch(socialDialog, /left-sidebar|right-sidebar|render_layout/);
   assert.match(socialDialog, /role="tablist"/);
   assert.match(socialDialog, /Recent Tidings/);
+  assert.match(socialDialog, /class="settlement-chat-messages"/);
+  assert.match(socialDialog, /data-local-chat-kind="player"/);
+  assert.match(socialDialog, /data-strategic-tooltip=\(belief_tooltip\(belief\)\)/);
   assert.doesNotMatch(surgeryDialog, /left-sidebar|right-sidebar|render_layout/);
   assert.match(socialDialog, /preserve_building/);
   assert.match(surgeryDialog, /preserve_building/);

@@ -1850,7 +1850,7 @@ mod tests {
         assert!(!markup.contains("class=\"incapacitation-source incapacitation-fear\""));
         assert!(markup.contains("href=\"/social\" title=\"Open Recent Tidings\""));
         assert!(markup.contains("/static/icons/game/conversation.svg"));
-        assert!(markup.contains("aria-haspopup=\"dialog\" aria-expanded=\"false\""));
+        assert!(!markup.contains("href=\"/social\" title=\"Open Recent Tidings\" aria-haspopup"));
         let water = markup.find("Water").expect("water meter");
         let wetness = markup
             .find("class=\"wetness-status\"")

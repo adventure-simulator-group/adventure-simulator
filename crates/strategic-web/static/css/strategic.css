@@ -3644,6 +3644,7 @@ button.party-portrait-action {
 .affinity-popover:hover .affinity-details,
 .affinity-popover:focus-within .affinity-details,
 .affinity-popover.is-pinned .affinity-details { display: block; }
+.affinity-popover.is-closing .affinity-details { display: none !important; }
 .affinity-details h3 { margin: 0 0 .55rem; }
 .affinity-details .perceived-traits { display: grid; gap: .45rem; padding: 0; margin: .65rem 0 0; list-style: none; }
 .affinity-details .perceived-trait { display: grid; gap: .15rem; padding: .4rem; border-left: 3px solid color-mix(in srgb, var(--accent) var(--belief-confidence), var(--border-color)); }

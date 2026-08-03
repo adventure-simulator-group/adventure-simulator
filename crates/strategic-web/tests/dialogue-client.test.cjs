@@ -163,7 +163,7 @@ test("socializing and romance are dialogue responses with a qualitative regard f
   assert.deepEqual(courtshipPresentation("informal", true), { icon: "eye-target", label: "informal courtship; known to family" });
   assert.match(source, /dataset\.dialogueContextPrompt/);
   assert.match(source, /appendContextExchange/);
-  assert.match(source, /data\.npcAffinityFace/);
+  assert.match(source, /face\.dataset\.npcAffinityFace/);
   assert.match(source, /requested_minutes: choice\.minutes/);
   assert.match(source, /ask under Of Thee for more/);
   assert.match(source, /currentView\.open_prompt \|\| contextualMutation/);
@@ -181,6 +181,24 @@ test("morale topics and affinity faces combine color with accessible qualitative
   assert.notEqual(moraleTopicPresentation(1).color, moraleTopicPresentation(5).color);
   assert.match(dialogueCss, /affinity-popover\.is-pinned/);
   assert.match(source, /event\.key !== "Escape"/);
+  assert.match(source, /is-closing/);
+  assert.match(dialogueCss, /is-closing \.affinity-details/);
+});
+
+test("NPC switches clear subject-bound social state before asynchronous refresh", () => {
+  const selectNpc = source.slice(source.indexOf("const selectNpc"), source.indexOf("const loadPeople"));
+  assert.match(selectNpc, /currentSocial = null/);
+  assert.match(selectNpc, /data-npc-affinity-popover/);
+  assert.match(selectNpc, /data-dialogue-category-panel/);
+  assert.match(selectNpc, /Loading this person's conversation/);
+  assert.match(source, /button\.dataset\.socialRevision !== currentSocial\?\.social_revision/);
+  assert.match(source, /button\.dataset\.socialSubject !== chat\.dataset\.localChatSubject/);
+});
+
+test("party portrait chat deep-loads the authorized social dock into the functional stream", () => {
+  assert.match(source, /dockChat\.dataset\.partySocialHref/);
+  assert.match(source, /querySelector\("\[data-social-conversation\]"\)/);
+  assert.match(source, /dockChat\.replaceWith\(replacement\)/);
 });
 
 test("contextual mutations are bound to the active NPC, path, session, revision, and operation", () => {

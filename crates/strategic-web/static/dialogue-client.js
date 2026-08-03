@@ -80,15 +80,15 @@
     return index < 0 ? 0 : (index + 1) / bands.length;
   };
   const socialDurationChoices = Object.freeze([
-    { id: "brief", minutes: 15, icon: "conversation", label: "Do you have a moment to talk?", detail: "A brief fifteen-minute conversation." },
-    { id: "visit", minutes: 60, icon: "sun", label: "I would like to stay and talk awhile.", detail: "An unhurried one-hour visit." },
-    { id: "evening", minutes: 240, icon: "calendar", label: "Shall we spend the evening together?", detail: "A long four-hour conversation." },
+    { id: "brief", minutes: 15, icon: "conversation", label: "Hast thou a moment to speak?", detail: "A brief fifteen-minute conversation." },
+    { id: "visit", minutes: 60, icon: "sun", label: "I would tarry and speak with thee awhile.", detail: "An unhurried one-hour visit." },
+    { id: "evening", minutes: 240, icon: "calendar", label: "Shall we pass the evening together?", detail: "A long four-hour conversation." },
   ]);
   const romanticResponse = (action) => ({
-    formal_courtship: { icon: "rose", label: "Ask for a formal courtship", line: "I would like to seek your family's leave to court you." },
-    informal_courtship: { icon: "lockpicks", label: "Propose a private courtship", line: "Would you court me, even if we must keep it between us?" },
-    schedule_wedding: { icon: "calendar", label: "Plan the wedding", line: "Let us choose the day and make our promise." },
-    cancel_wedding: { icon: "broken-heart", label: "Cancel the wedding", line: "I cannot go forward with the wedding as planned." },
+    formal_courtship: { icon: "rose", label: "Ask for a formal courtship", line: "I would seek thy family's leave to court thee." },
+    informal_courtship: { icon: "lockpicks", label: "Propose a private courtship", line: "Wilt thou court me, though we keep it between ourselves?" },
+    schedule_wedding: { icon: "calendar", label: "Plan the wedding", line: "Let us appoint the day and plight our troth." },
+    cancel_wedding: { icon: "broken-heart", label: "Cancel the wedding", line: "I cannot go forward with our wedding as appointed." },
   })[action] || null;
   const courtshipPresentation = (kind, exposed) => {
     const informal = kind === "informal";
@@ -148,6 +148,7 @@
   lifecycle = new AbortController();
   const { signal } = lifecycle;
   document.querySelectorAll("[data-dialogue-category-tabs]").forEach((tablist) => {
+    const dockChat = tablist.closest(".settlement-chat");
     const tabs = [...tablist.querySelectorAll("[role='tab']")];
     const activate = (tab, focus = false) => {
       tabs.forEach((candidate) => {
@@ -160,7 +161,17 @@
       if (focus) tab.focus();
     };
     tabs.forEach((tab, index) => {
-      tab.addEventListener("click", () => activate(tab), { signal });
+      tab.addEventListener("click", async () => {
+        if (tab.dataset.dialogueCategory === "tidings" && dockChat?.dataset.partySocialHref) {
+          const response = await window.strategicFetch(dockChat.dataset.partySocialHref, { headers: { Accept: "text/html" } });
+          if (!response.ok) { window.reportStrategicError(new Error(`Recent Tidings failed (${response.status})`), "open Recent Tidings"); return; }
+          const page = new DOMParser().parseFromString(await response.text(), "text/html");
+          const replacement = page.querySelector("[data-social-conversation]");
+          if (!replacement) { window.reportStrategicError(new Error("Recent Tidings response was incomplete"), "open Recent Tidings"); return; }
+          dockChat.replaceWith(replacement); document.dispatchEvent(new Event("strategic-page-mounted")); return;
+        }
+        activate(tab);
+      }, { signal });
       tab.addEventListener("keydown", (event) => {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
         event.preventDefault();
@@ -196,29 +207,35 @@
     const closeAffinity = () => {
       if (!popover) return;
       popover.classList.remove("is-pinned");
+      popover.classList.add("is-closing");
       trigger?.setAttribute("aria-expanded", "false");
     };
+    popover?.addEventListener("pointerenter", () => popover.classList.remove("is-closing"), { signal });
+    popover?.addEventListener("focusin", () => popover.classList.remove("is-closing"), { signal });
     trigger?.addEventListener("click", (event) => {
       event.stopPropagation();
+      popover.classList.remove("is-closing");
       const pinned = popover.classList.toggle("is-pinned");
+      if (!pinned) popover.classList.add("is-closing");
       trigger.setAttribute("aria-expanded", String(pinned));
     }, { signal });
     dock.addEventListener("keydown", (event) => {
       if (event.key !== "Escape" || !popover?.classList.contains("is-pinned")) return;
-      event.preventDefault(); closeAffinity(); trigger?.focus();
+      event.preventDefault(); trigger?.focus(); closeAffinity();
     }, { signal });
     document.addEventListener("click", (event) => {
       if (popover && !popover.contains(event.target)) closeAffinity();
     }, { signal });
     dock.querySelectorAll("[data-about-question]").forEach((topic) => topic.addEventListener("click", () => {
       const panel = topic.closest("[data-about-person]");
-      panel.querySelector("[data-about-exchange]")?.remove();
+      const stream = dock.querySelector("[data-social-message-stream]");
+      stream?.querySelector("[data-about-exchange]")?.remove();
       const exchange = document.createElement("div");
       exchange.dataset.aboutExchange = "true";
       exchange.className = "about-person-exchange";
       const question = document.createElement("p"); question.className = "chat-player-message"; question.textContent = topic.dataset.aboutQuestion;
       const answer = document.createElement("p"); answer.className = "chat-npc-message"; answer.textContent = topic.dataset.aboutAnswer;
-      exchange.append(question, answer); panel.append(exchange);
+      exchange.append(question, answer); stream?.append(exchange);
     }, { signal }));
   });
   const chat = document.querySelector("[data-local-chat-subject][data-dialogue-catalog-revision]");
@@ -272,12 +289,24 @@
     // Relationship state is spoken under Of Thee. The header retains only a
     // qualitative, non-authoritative regard face as an at-a-glance invitation.
     const header = chat.querySelector(".conversation-dock-header");
-    header?.querySelector("[data-npc-affinity-face]")?.remove();
+    header?.querySelector("[data-npc-affinity-popover]")?.remove();
     if (header) {
-      const face = document.createElement("button"); face.type = "button"; face.dataset.npcAffinityFace = "true"; face.className = `affinity-face affinity-${currentSocial.affinity || "neutral"}`;
+      const popover = document.createElement("div"); popover.dataset.npcAffinityPopover = "true"; popover.className = `affinity-popover affinity-${currentSocial.affinity || "neutral"}`;
+      const face = document.createElement("button"); face.type = "button"; face.dataset.npcAffinityFace = "true"; face.className = "affinity-face";
       const presentation = ({ hostile: ["☹", "Hostile regard"], reserved: ["🙁", "Reserved regard"], warm: ["🙂", "Warm regard"], trusted: ["☺", "Very warm regard"] })[currentSocial.affinity] || ["😐", "Neutral regard"];
-      face.textContent = presentation[0]; face.setAttribute("aria-label", presentation[1]); face.title = `${presentation[1]}; ask under Of Thee for more`;
-      header.insertBefore(face, header.querySelector("[data-dialogue-category-tabs]"));
+      const details = document.createElement("section"); details.className = "affinity-details"; details.id = `npc-affinity-${currentSocial.resident_character_id}`; details.dataset.affinityDetails = "true";
+      face.textContent = presentation[0]; face.setAttribute("aria-label", presentation[1]); face.title = `${presentation[1]}; ask under Of Thee for more`; face.setAttribute("aria-expanded", "false"); face.setAttribute("aria-controls", details.id);
+      const heading = document.createElement("h3"); heading.textContent = "Thy impression";
+      const familiarity = document.createElement("p"); familiarity.textContent = `Familiarity: ${relationshipLabel(currentSocial.familiarity)}.`;
+      const unavailable = document.createElement("p"); unavailable.className = "text-muted small-copy"; unavailable.textContent = "No observer-safe trait impression is available.";
+      details.append(heading, familiarity, unavailable); popover.append(face, details);
+      const close = () => { popover.classList.remove("is-pinned"); popover.classList.add("is-closing"); face.setAttribute("aria-expanded", "false"); };
+      face.addEventListener("click", (event) => { event.stopPropagation(); popover.classList.remove("is-closing"); const pinned = popover.classList.toggle("is-pinned"); if (!pinned) popover.classList.add("is-closing"); face.setAttribute("aria-expanded", String(pinned)); }, { signal });
+      popover.addEventListener("pointerenter", () => popover.classList.remove("is-closing"), { signal });
+      popover.addEventListener("focusin", () => popover.classList.remove("is-closing"), { signal });
+      document.addEventListener("click", (event) => { if (!popover.contains(event.target)) close(); }, { signal });
+      popover.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.preventDefault(); face.focus(); close(); } }, { signal });
+      header.insertBefore(popover, header.querySelector("[data-dialogue-category-tabs]"));
     }
   };
   const topicAnchor = (topic, binding) => {
@@ -293,17 +322,14 @@
       }
       if (category === "about") {
         const topics = document.createElement("div"); topics.className = "about-person-topics";
-        const questions = currentSocial ? [
-          ["How stand I in thy regard?", `I hold thee in ${relationshipLabel(currentSocial.affinity)} regard.`],
-          ["How well knowest thou me?", `I know thee as one ${relationshipLabel(currentSocial.familiarity)} to me.`],
-          ["How fares thy spirit?", `My spirit is ${relationshipLabel(currentSocial.morale)} at present.`],
-          ["Art thou pledged to another?", Number.isFinite(currentSocial.wedding_countdown_days)
-            ? `Our wedding day shall come in ${currentSocial.wedding_countdown_days} days.`
-            : currentSocial.courtship_kind ? `Our ${relationshipLabel(currentSocial.courtship_kind)} courtship yet stands.` : "I am under no pledge that I shall declare to thee."],
-        ] : [];
-        questions.forEach(([question, answer]) => {
+        const questions = currentSocial?.about_topics || [];
+        questions.forEach(({ question, answer }) => {
           const button = document.createElement("button"); button.type = "button"; button.className = "about-person-topic"; button.textContent = question;
-          button.addEventListener("click", () => appendContextExchange(question, answer), { signal }); topics.append(button);
+          button.dataset.socialRevision = currentSocial.social_revision; button.dataset.socialSubject = currentSocial.resident_character_id;
+          button.addEventListener("click", () => {
+            if (button.dataset.socialRevision !== currentSocial?.social_revision || button.dataset.socialSubject !== chat.dataset.localChatSubject) return;
+            appendContextExchange(question, answer);
+          }, { signal }); topics.append(button);
         });
         if (topics.childElementCount) panel.append(topics);
         else { const empty = document.createElement("p"); empty.className = "conversation-empty"; empty.textContent = "No private answer is available."; panel.append(empty); }
@@ -368,7 +394,7 @@
       if (!response.ok) throw new Error(`Conversation failed (${response.status})`);
       const social = await response.json(); if (!contextMutationCurrent(binding)) return;
       currentSocial = social;
-      const reaction = ({ positive: "I am glad we had this time together.", mixed: "That was awkward in places, but I am glad we spoke.", negative: "I think we should leave the conversation there." })[currentSocial.last_outcome] || "Thank you for speaking with me.";
+      const reaction = ({ positive: "I am glad we passed this time together.", mixed: "Our words stumbled at times, yet I am glad we spoke.", negative: "Let us leave our speech here, lest it sour further." })[currentSocial.last_outcome] || "I thank thee for speaking with me.";
       removeContextPrompt(); appendContextExchange(choice.label, reaction); renderRelationshipVitals(); renderContextTopics();
     } catch (error) { if (contextMutationCurrent(binding)) window.reportStrategicError(error, "choose conversation response"); }
     finally { finishContextMutation(binding); }
@@ -700,6 +726,10 @@
     chat.dispatchEvent(new Event("local-chat-subject-changed"));
     currentView = null;
     currentSocial = null;
+    chat.querySelector("[data-npc-affinity-popover]")?.remove();
+    document.querySelectorAll("[data-dialogue-category-panel]").forEach((panel) => {
+      panel.replaceChildren(); const loading = document.createElement("p"); loading.className = "conversation-empty"; loading.textContent = "Loading this person's conversation…"; panel.append(loading);
+    });
     messages?.querySelectorAll("[data-dialogue-scripted], [data-dialogue-contextual], [data-dialogue-context-prompt], [data-dialogue-context-topics]").forEach((node) => node.remove());
     refreshCompletion();
     npcStrip?.querySelectorAll(".settlement-npc-portrait").forEach((candidate) => {
