@@ -5,7 +5,7 @@ from pathlib import Path
 import socket
 import tempfile
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 import scripts.dev_stack as dev_stack
@@ -335,6 +335,160 @@ class WorkflowTests(unittest.TestCase):
             dev_stack.remove_tactical_env_file()
             self.assertFalse(dev_stack.TACTICAL_ENV_FILE.exists())
             dev_stack.remove_tactical_env_file()
+
+    def test_supervised_env_omits_claim_and_records_profile_identity(self):
+        with mock.patch.object(
+            dev_stack, "TACTICAL_ENV_FILE", Path(tempfile.mkdtemp()) / ".env.tactical"
+        ):
+            dev_stack.write_tactical_env_file(
+                url="http://127.0.0.1:24920",
+                database="adventuresim-dev-tactical-play-animation-abc123",
+                port=24922,
+                mission_id="mission:animation-123",
+                scene_key="hills",
+                character_id=0,
+                enemy_count=1,
+                tactical_claim=None,
+                profile="tactical-play-animation",
+                worktree_fingerprint_value="abc123",
+                run_dir=Path("C:/Users/test/runtime/run"),
+                session_id="session-123",
+                play_mode="animation",
+            )
+            content = dev_stack.TACTICAL_ENV_FILE.read_text()
+            self.assertNotIn("ADVENTURESIM_TACTICAL_CLAIM", content)
+            self.assertIn("TACTICAL_SESSION_ID=session-123", content)
+            self.assertIn("TACTICAL_PLAY_MODE=animation", content)
+            self.assertIn("TACTICAL_RUN_DIR=C:/Users/test/runtime/run", content)
+            self.assertNotIn("TACTICAL_RUN_DIR=C:\\", content)
+
+    def test_tactical_play_parser_profiles(self):
+        parser = dev_stack.create_parser()
+        animation = parser.parse_args(["tactical-play", "animation"])
+        networking = parser.parse_args(["tactical-play", "networking", "25000"])
+        self.assertEqual(animation.base_port, 24920)
+        self.assertEqual(networking.base_port, 25000)
+
+    def test_visual_and_networking_profiles_disable_combat(self):
+        self.assertEqual(
+            dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.ANIMATION), 0
+        )
+        self.assertEqual(
+            dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.NETWORKING), 0
+        )
+        self.assertEqual(
+            dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.COMBAT), 10_000
+        )
+
+    @mock.patch.object(dev_stack, "profile_values")
+    @mock.patch.object(dev_stack, "build_tactical_play", return_value=9)
+    def test_build_failure_prevents_profile_or_mission_creation(self, _build, profile_values):
+        self.assertEqual(
+            dev_stack.tactical_play(dev_stack.TacticalPlayMode.ANIMATION, 24920), 9
+        )
+        profile_values.assert_not_called()
+
+    def test_supervised_state_rejects_stale_worktree_environment(self):
+        environment = {
+            "TACTICAL_PROFILE": "tactical-play-animation",
+            "TACTICAL_WORKTREE_FINGERPRINT": "another-worktree",
+            "TACTICAL_RUN_DIR": "unused",
+            "TACTICAL_SESSION_ID": "session",
+            "TACTICAL_SPACETIMEDB_URL": "http://127.0.0.1:24920",
+            "TACTICAL_SPACETIMEDB_MODULE": "db",
+            "TACTICAL_PORT": "24922",
+        }
+        with mock.patch.object(dev_stack, "read_tactical_env_file", return_value=environment):
+            with self.assertRaisesRegex(ValueError, "another worktree"):
+                dev_stack.supervised_tactical_state()
+
+    def test_readiness_rejects_unrecorded_listener(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            metadata = root / "server.json"
+            log = root / "server.log"
+            recorded = {"pid": 10, "executable": "server", "start_token": "1"}
+            metadata.write_text(json.dumps({"process": recorded}))
+            log.write_text("")
+            process = mock.Mock()
+            process.poll.return_value = None
+            with mock.patch.object(dev_stack, "identity_matches", return_value=True), \
+                 mock.patch.object(
+                     dev_stack,
+                     "listener_process_snapshot",
+                     return_value={"pid": 11, "executable": "other", "start_token": "1"},
+                 ):
+                with self.assertRaisesRegex(RuntimeError, "unrecorded process"):
+                    dev_stack.wait_for_tactical_server(
+                        process, metadata, log, "http://127.0.0.1:1", "db",
+                        "mission:test", 24922,
+                    )
+
+    def test_readiness_requires_consumed_claim_and_registered_authority(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            metadata = root / "server.json"
+            log = root / "server.log"
+            recorded = {"pid": 10, "executable": "server", "start_token": "1"}
+            metadata.write_text(json.dumps({"process": recorded}))
+            log.write_text("")
+            process = mock.Mock()
+            process.poll.return_value = None
+            with mock.patch.object(dev_stack, "identity_matches", return_value=True), \
+                 mock.patch.object(dev_stack, "listener_process_snapshot", return_value=recorded), \
+                 mock.patch.object(
+                     dev_stack, "sql_mission_row_exists", side_effect=[True, False, False]
+                 ) as sql:
+                self.assertEqual(
+                    dev_stack.wait_for_tactical_server(
+                        process, metadata, log, "http://127.0.0.1:1", "db",
+                        "mission:test", 24922,
+                    ),
+                    recorded,
+                )
+            self.assertEqual(sql.call_count, 3)
+
+    @mock.patch.object(dev_stack, "run_checked")
+    def test_sql_readiness_accepts_cli_quoted_text_rows(self, run_checked):
+        run_checked.return_value = mock.Mock(
+            returncode=0,
+            stdout=' mission_id\n------------\n "mission:animation-123" \n',
+        )
+        self.assertTrue(dev_stack.sql_mission_row_exists(
+            "http://127.0.0.1:24920",
+            "db",
+            "tactical_server_authority",
+            "mission:animation-123",
+        ))
+
+    def test_status_explains_consumed_claim_with_dead_server(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            (run_dir / "spacetime.identity.json").write_text(json.dumps({
+                "listener": {"pid": 10, "executable": "stdb", "start_token": "1"}
+            }))
+            environment = {
+                "TACTICAL_SPACETIMEDB_URL": "http://127.0.0.1:24920",
+                "TACTICAL_SPACETIMEDB_MODULE": "db",
+            }
+            config = {
+                "profile": "tactical-play-animation",
+                "worktree_fingerprint": "abc",
+                "mission_id": "mission:test",
+                "tactical_port": 24922,
+                "native_client": True,
+            }
+            output = io.StringIO()
+            with mock.patch.object(
+                dev_stack, "supervised_tactical_state",
+                return_value=(environment, config, run_dir),
+            ), mock.patch.object(dev_stack, "identity_matches", return_value=True), \
+                 mock.patch.object(
+                     dev_stack, "sql_mission_row_exists", side_effect=[True, False, False]
+                 ), redirect_stdout(output):
+                self.assertEqual(dev_stack.tactical_status(), 1)
+            self.assertIn("claim was already consumed", output.getvalue())
+            self.assertIn("Recovery: just tactical-play animation", output.getvalue())
 
     def test_strategic_only_recipes_skip_tactical_builds(self):
         source = Path(dev_stack.ROOT, "justfile").read_text()

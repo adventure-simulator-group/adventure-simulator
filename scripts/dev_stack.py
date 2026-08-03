@@ -38,6 +38,14 @@ class ProfileMode(str, Enum):
     TACTICAL = "tactical"  # isolated DB + seeded standalone mission only
 
 
+class TacticalPlayMode(str, Enum):
+    """Safe fixtures exposed by the supervised native tactical launcher."""
+
+    ANIMATION = "animation"
+    COMBAT = "combat"
+    NETWORKING = "networking"
+
+
 def cargo_target_dir() -> Path:
     configured = os.environ.get("CARGO_TARGET_DIR")
     if configured:
@@ -390,10 +398,14 @@ def write_tactical_env_file(
     scene_key: str,
     character_id: int,
     enemy_count: int,
-    tactical_claim: str,
+    tactical_claim: str | None,
+    profile: str | None = None,
+    worktree_fingerprint_value: str | None = None,
+    run_dir: Path | None = None,
+    session_id: str | None = None,
+    play_mode: str | None = None,
 ) -> None:
-    TACTICAL_ENV_FILE.write_text(
-        "\n".join([
+    values = [
             f"TACTICAL_SPACETIMEDB_URL={url}",
             f"TACTICAL_SPACETIMEDB_MODULE={database}",
             f"TACTICAL_PORT={port}",
@@ -401,15 +413,40 @@ def write_tactical_env_file(
             f"TACTICAL_SCENE_KEY={scene_key}",
             f"TACTICAL_CHARACTER_ID={character_id}",
             f"TACTICAL_BOTS={enemy_count}",
-            # Matches the tactical server's own `--tactical-claim` env fallback,
-            # so a bare `just tactical` picks it up with no extra flag.
-            f"ADVENTURESIM_TACTICAL_CLAIM={tactical_claim}",
-            "",
-        ])
-    )
+    ]
+    if tactical_claim is not None:
+        # The advanced/manual workflow needs the one-use claim. The supervised
+        # launcher deliberately retains it only in memory.
+        values.append(f"ADVENTURESIM_TACTICAL_CLAIM={tactical_claim}")
+    optional = {
+        "TACTICAL_PROFILE": profile,
+        "TACTICAL_WORKTREE_FINGERPRINT": worktree_fingerprint_value,
+        # python-dotenv treats backslashes as escapes even in unquoted values.
+        "TACTICAL_RUN_DIR": run_dir.as_posix() if run_dir is not None else None,
+        "TACTICAL_SESSION_ID": session_id,
+        "TACTICAL_PLAY_MODE": play_mode,
+    }
+    values.extend(f"{key}={value}" for key, value in optional.items() if value is not None)
+    TACTICAL_ENV_FILE.write_text("\n".join([*values, ""]), encoding="utf-8")
 
 
-def remove_tactical_env_file() -> None:
+def read_tactical_env_file() -> dict[str, str]:
+    if not TACTICAL_ENV_FILE.is_file():
+        return {}
+    values: dict[str, str] = {}
+    for line in TACTICAL_ENV_FILE.read_text(encoding="utf-8").splitlines():
+        if not line or line.lstrip().startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key] = value
+    return values
+
+
+def remove_tactical_env_file(expected_session_id: str | None = None) -> None:
+    if expected_session_id is not None:
+        current = read_tactical_env_file()
+        if current.get("TACTICAL_SESSION_ID") != expected_session_id:
+            return
     TACTICAL_ENV_FILE.unlink(missing_ok=True)
 
 
@@ -592,7 +629,14 @@ def check_spawner_identity(identity_file: Path, expected: dict[str, object]) -> 
     return 0
 
 
-def spawn_recorded(command: list[str], metadata_file: Path, log_file: Path, config: dict[str, object]) -> subprocess.Popen[str]:
+def spawn_recorded(
+    command: list[str],
+    metadata_file: Path,
+    log_file: Path,
+    config: dict[str, object],
+    *,
+    environment: dict[str, str] | None = None,
+) -> subprocess.Popen[str]:
     if metadata_file.exists():
         try:
             previous = json.loads(metadata_file.read_text()).get("process", {})
@@ -603,7 +647,14 @@ def spawn_recorded(command: list[str], metadata_file: Path, log_file: Path, conf
         metadata_file.unlink()
     log = secure_log(log_file)
     try:
-        process = subprocess.Popen(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, text=True)
+        process = subprocess.Popen(
+            command,
+            cwd=ROOT,
+            env=environment,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
     finally:
         log.close()
     snapshot = process_snapshot(process.pid)
@@ -855,6 +906,458 @@ def run_profile(
                 stop_spacetime(stdb_metadata, stdb_config)
 
 
+def tactical_executable(package: str) -> Path:
+    suffix = ".exe" if os.name == "nt" else ""
+    target = cargo_target_dir()
+    if not target.is_absolute():
+        target = ROOT / target
+    return (target / "debug" / f"{package}{suffix}").resolve()
+
+
+def build_tactical_play(launch_client: bool) -> int:
+    commands = [[
+        "cargo", "build", "--package", "adventuresim-tactical-server",
+        "--bin", "adventuresim-tactical-server", "--features", "debug",
+    ]]
+    if launch_client:
+        commands.append([
+            "cargo", "build", "--package", "adventuresim-tactical-client",
+            "--bin", "adventuresim-tactical-client", "--features", "debug",
+        ])
+    for command in commands:
+        result = subprocess.run(command, cwd=ROOT)
+        if result.returncode:
+            return result.returncode
+    return 0
+
+
+def sql_mission_row_exists(
+    server: str,
+    database: str,
+    table: str,
+    mission_id: str,
+) -> bool:
+    if table not in {
+        "tactical_server_authority",
+        "tactical_server_claim",
+        "tactical_server_request_authority",
+    }:
+        raise ValueError("unsupported tactical readiness table")
+    literal = mission_id.replace("'", "''")
+    result = run_checked([
+        "spacetime", "sql", "--server", server, database,
+        f"SELECT mission_id FROM {table} WHERE mission_id = '{literal}'",
+    ])
+    if result.returncode:
+        raise RuntimeError(f"database readiness query failed for {table}")
+    return any(
+        line.strip().strip('"') == mission_id for line in result.stdout.splitlines()
+    )
+
+
+def log_tail(path: Path, line_count: int = 30) -> str:
+    try:
+        return "\n".join(path.read_text(encoding="utf-8", errors="replace").splitlines()[-line_count:])
+    except OSError:
+        return "(log unavailable)"
+
+
+def wait_for_tactical_server(
+    process: subprocess.Popen[str],
+    metadata_file: Path,
+    log_file: Path,
+    server: str,
+    database: str,
+    mission_id: str,
+    port: int,
+) -> dict[str, object]:
+    stage = "server process startup"
+    for _ in range(300):
+        metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+        recorded = metadata["process"]
+        if process.poll() is not None or not identity_matches(recorded):
+            raise RuntimeError(
+                f"tactical readiness failed during {stage}; server exited.\n"
+                f"Log: {log_file}\n{log_tail(log_file)}"
+            )
+        listener = listener_process_snapshot(port)
+        if listener is None:
+            time.sleep(0.1)
+            continue
+        stage = "listener ownership verification"
+        if listener != recorded:
+            raise RuntimeError(
+                f"tactical port {port} is owned by an unrecorded process; refusing client launch"
+            )
+        stage = "claim consumption and server authority registration"
+        if sql_mission_row_exists(server, database, "tactical_server_authority", mission_id):
+            if sql_mission_row_exists(server, database, "tactical_server_claim", mission_id):
+                time.sleep(0.1)
+                continue
+            if sql_mission_row_exists(
+                server, database, "tactical_server_request_authority", mission_id
+            ):
+                time.sleep(0.1)
+                continue
+            return listener
+        time.sleep(0.1)
+    raise RuntimeError(
+        f"tactical readiness timed out during {stage}.\n"
+        f"Log: {log_file}\n{log_tail(log_file)}"
+    )
+
+
+def tactical_session_config(
+    values: dict[str, object],
+    mode: TacticalPlayMode,
+    mission_id: str,
+    character_id: int,
+    enemy_count: int,
+    session_id: str,
+) -> dict[str, object]:
+    return {
+        "repository": str(ROOT.resolve()),
+        "profile": values["profile"],
+        "worktree_fingerprint": values["worktree_fingerprint"],
+        "database": values["database"],
+        "spacetime_port": values["spacetime_port"],
+        "tactical_port": values["tactical_port"],
+        "mission_id": mission_id,
+        "character_id": character_id,
+        "enemy_count": enemy_count,
+        "play_mode": mode.value,
+        "combat_enabled": mode is TacticalPlayMode.COMBAT,
+        "native_client": mode is not TacticalPlayMode.NETWORKING,
+        "browser_client": False,
+        "session_id": session_id,
+    }
+
+
+def tactical_combat_scale(mode: TacticalPlayMode) -> int:
+    return 10_000 if mode is TacticalPlayMode.COMBAT else 0
+
+
+def launch_recorded_tactical_client(
+    run_dir: Path,
+    config: dict[str, object],
+) -> subprocess.Popen[str]:
+    executable = tactical_executable("adventuresim-tactical-client")
+    if not executable.is_file():
+        raise RuntimeError("native tactical client is not built; run `just tactical-play animation`")
+    client_config = {
+        "role": "native-client",
+        "repository": str(ROOT.resolve()),
+        "worktree_fingerprint": config["worktree_fingerprint"],
+        "session_id": config["session_id"],
+        "executable": str(executable),
+        "character_id": config["character_id"],
+        "server_addr": f"127.0.0.1:{config['tactical_port']}",
+    }
+    process = spawn_recorded(
+        [
+            str(executable), "--id", str(config["character_id"]),
+            "--server-addr", str(client_config["server_addr"]),
+        ],
+        run_dir / "client.identity.json",
+        run_dir / "client.log",
+        client_config,
+    )
+    time.sleep(0.5)
+    if process.poll() is not None:
+        raise RuntimeError(
+            f"native client exited during launch.\nLog: {run_dir / 'client.log'}\n"
+            f"{log_tail(run_dir / 'client.log')}"
+        )
+    return process
+
+
+def tactical_play(mode: TacticalPlayMode, base_port: int) -> int:
+    launch_client = mode is not TacticalPlayMode.NETWORKING
+    code = build_tactical_play(launch_client)
+    if code:
+        return code
+
+    profile = f"tactical-play-{mode.value}"
+    values = profile_values(profile, base_port)
+    state_root = runtime_root()
+    profile_dir = ensure_secure_directory(Path(str(values["profile_dir"])), state_root)
+    run_dir = ensure_secure_directory(profile_dir / "run", state_root)
+    data_dir = ensure_secure_directory(profile_dir / "spacetimedb-data", state_root)
+    session_id = secrets.token_hex(16)
+    mission_id = f"mission:{mode.value}-{session_id[:12]}"
+    character_id = 0
+    enemy_count = 1
+    config = tactical_session_config(
+        values, mode, mission_id, character_id, enemy_count, session_id
+    )
+    session_file = run_dir / "tactical-session.json"
+
+    with ProfileLock(profile_dir / "lifecycle.lock") as lifecycle:
+        occupied = ports_in_use([
+            int(values["spacetime_port"]), int(values["tactical_port"]),
+        ])
+        if occupied:
+            raise ValueError(f"tactical-play profile ports already occupied: {occupied}")
+        atomic_write_json(session_file, config)
+        server_url = f"http://127.0.0.1:{values['spacetime_port']}"
+        database = str(values["database"])
+        stdb_config = {
+            "role": "spacetimedb", "profile": profile,
+            "worktree_fingerprint": values["worktree_fingerprint"],
+            "server": server_url, "database": database, "data_dir": str(data_dir),
+            "session_id": session_id,
+        }
+        stdb_metadata = run_dir / "spacetime.identity.json"
+        stdb_log = run_dir / "spacetime.log"
+        stdb = spawn_recorded([
+            "spacetime", "start", "--non-interactive", "--listen-addr",
+            f"127.0.0.1:{values['spacetime_port']}", "--data-dir", str(data_dir),
+        ], stdb_metadata, stdb_log, stdb_config)
+        server_process = None
+        wrote_env = False
+        try:
+            listener = wait_for_spacetime(
+                stdb, stdb_metadata, stdb_log, int(values["spacetime_port"])
+            )
+            capability = ResetCapability(
+                profile, base_port, server_url, database, lifecycle, listener
+            )
+            bootstrap_token = secrets.token_hex(32)
+            previous_token = os.environ.get("ADVENTURESIM_DEV_BOOTSTRAP_TOKEN")
+            os.environ["ADVENTURESIM_DEV_BOOTSTRAP_TOKEN"] = bootstrap_token
+            try:
+                code = reset_publish(capability)
+            finally:
+                if previous_token is None:
+                    os.environ.pop("ADVENTURESIM_DEV_BOOTSTRAP_TOKEN", None)
+                else:
+                    os.environ["ADVENTURESIM_DEV_BOOTSTRAP_TOKEN"] = previous_token
+            if code:
+                return code
+            if seed(server_url, database, bootstrap_token):
+                return 1
+
+            tactical_claim = secrets.token_hex(32)
+            result = run_checked([
+                "spacetime", "call", "--server", server_url, database,
+                "seed_standalone_tactical_mission", bootstrap_token,
+                str(character_id), mission_id, "hills", str(enemy_count), tactical_claim,
+            ])
+            if result.returncode:
+                write_console(result.stdout)
+                raise RuntimeError("standalone tactical mission seed failed")
+            write_tactical_env_file(
+                url=server_url,
+                database=database,
+                port=int(values["tactical_port"]),
+                mission_id=mission_id,
+                scene_key="hills",
+                character_id=character_id,
+                enemy_count=enemy_count,
+                tactical_claim=None,
+                profile=profile,
+                worktree_fingerprint_value=str(values["worktree_fingerprint"]),
+                run_dir=run_dir,
+                session_id=session_id,
+                play_mode=mode.value,
+            )
+            wrote_env = True
+
+            server_executable = tactical_executable("adventuresim-tactical-server")
+            server_config = {
+                "role": "tactical-server",
+                "repository": str(ROOT.resolve()),
+                "worktree_fingerprint": values["worktree_fingerprint"],
+                "session_id": session_id,
+                "executable": str(server_executable),
+                "mission_id": mission_id,
+                "port": values["tactical_port"],
+            }
+            environment = os.environ.copy()
+            environment["ADVENTURESIM_TACTICAL_CLAIM"] = tactical_claim
+            combat_scale = tactical_combat_scale(mode)
+            server_log = run_dir / "server.log"
+            server_metadata = run_dir / "server.identity.json"
+            server_process = spawn_recorded([
+                str(server_executable), "--addr", f"0.0.0.0:{values['tactical_port']}",
+                "--mission-id", mission_id, "--scene-key", "hills",
+                "--spacetimedb-url", server_url, "--spacetimedb-module", database,
+                "--expected-party-members", "1", "--required-enemy-kills", str(enemy_count),
+                "--enemy-combat-scale-bps", str(combat_scale), "--no-timeout",
+            ], server_metadata, server_log, server_config, environment=environment)
+            wait_for_tactical_server(
+                server_process, server_metadata, server_log, server_url, database,
+                mission_id, int(values["tactical_port"]),
+            )
+            if launch_client:
+                launch_recorded_tactical_client(run_dir, config)
+
+            print("")
+            print(f"Database: ready at {server_url} ({database})")
+            print(f"Mission: {mission_id}")
+            print("Claim: consumed successfully")
+            print(f"Server: listening at ws://127.0.0.1:{values['tactical_port']}")
+            if launch_client:
+                print(f"Client: launched, character {character_id} (native)")
+            else:
+                print("Client: not launched (networking profile)")
+            print(f"Combat: {'enabled' if combat_scale else 'disabled'}")
+            print("Browser client: unavailable in tactical-only mode")
+            print(f"Logs: {run_dir}")
+            print("Press Ctrl+C to stop this profile's recorded processes.")
+            while server_process.poll() is None:
+                time.sleep(0.25)
+            raise RuntimeError(
+                f"recorded tactical server exited; see {server_log}\n{log_tail(server_log)}"
+            )
+        except KeyboardInterrupt:
+            print("\nStopping supervised tactical profile...")
+            return 0
+        finally:
+            try:
+                stop_recorded(run_dir / "client.identity.json")
+                stop_recorded(run_dir / "server.identity.json", None)
+            finally:
+                if wrote_env:
+                    remove_tactical_env_file(session_id)
+                stop_spacetime(stdb_metadata, stdb_config)
+
+
+def supervised_tactical_state() -> tuple[dict[str, str], dict[str, object], Path]:
+    environment = read_tactical_env_file()
+    if not environment:
+        raise ValueError(".env.tactical is absent; run `just tactical-play animation`")
+    required = {
+        "TACTICAL_PROFILE", "TACTICAL_WORKTREE_FINGERPRINT", "TACTICAL_RUN_DIR",
+        "TACTICAL_SESSION_ID", "TACTICAL_SPACETIMEDB_URL",
+        "TACTICAL_SPACETIMEDB_MODULE", "TACTICAL_PORT",
+    }
+    missing = sorted(required - environment.keys())
+    if missing:
+        raise ValueError(
+            "legacy or incomplete .env.tactical is not a supervised session; "
+            "run `just tactical-play animation`"
+        )
+    if environment["TACTICAL_WORKTREE_FINGERPRINT"] != worktree_fingerprint():
+        raise ValueError(
+            ".env.tactical belongs to another worktree; run `just tactical-play animation` here"
+        )
+    run_dir = Path(environment["TACTICAL_RUN_DIR"]).resolve()
+    expected_root = runtime_root().resolve() / worktree_fingerprint()
+    if expected_root != run_dir and expected_root not in run_dir.parents:
+        raise ValueError(".env.tactical run directory escapes this worktree's runtime profile")
+    session_file = run_dir / "tactical-session.json"
+    try:
+        config = json.loads(session_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("supervised tactical session metadata is unavailable or corrupt") from error
+    if (
+        config.get("session_id") != environment["TACTICAL_SESSION_ID"]
+        or config.get("repository") != str(ROOT.resolve())
+        or config.get("worktree_fingerprint") != worktree_fingerprint()
+        or config.get("profile") != environment["TACTICAL_PROFILE"]
+        or config.get("database") != environment["TACTICAL_SPACETIMEDB_MODULE"]
+        or str(config.get("tactical_port")) != environment["TACTICAL_PORT"]
+        or config.get("mission_id") != environment.get("TACTICAL_MISSION_ID")
+    ):
+        raise ValueError("stale .env.tactical does not match the recorded session identity")
+    validate_loopback_server(
+        environment["TACTICAL_SPACETIMEDB_URL"], int(config["spacetime_port"])
+    )
+    return environment, config, run_dir
+
+
+def tactical_status() -> int:
+    try:
+        environment, config, run_dir = supervised_tactical_state()
+    except ValueError as error:
+        print(f"Tactical session: stale or unavailable ({error})")
+        print("Recovery: just tactical-play animation")
+        return 1
+    server_url = environment["TACTICAL_SPACETIMEDB_URL"]
+    database = environment["TACTICAL_SPACETIMEDB_MODULE"]
+    mission_id = str(config["mission_id"])
+    db_metadata = run_dir / "spacetime.identity.json"
+    server_metadata = run_dir / "server.identity.json"
+    database_ready = False
+    server_ready = False
+    client_ready = False
+    if db_metadata.is_file():
+        try:
+            metadata = json.loads(db_metadata.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            metadata = {}
+        listener = metadata.get("listener", {})
+        database_ready = isinstance(listener, dict) and identity_matches(listener)
+    if server_metadata.is_file():
+        try:
+            metadata = json.loads(server_metadata.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            metadata = {}
+        recorded = metadata.get("process", {})
+        listener = listener_process_snapshot(int(config["tactical_port"]))
+        server_ready = isinstance(recorded, dict) and identity_matches(recorded) and listener == recorded
+    client_metadata = run_dir / "client.identity.json"
+    if client_metadata.is_file():
+        try:
+            metadata = json.loads(client_metadata.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            metadata = {}
+        recorded = metadata.get("process", {})
+        client_ready = isinstance(recorded, dict) and identity_matches(recorded)
+    authority = claim = request = False
+    if database_ready:
+        authority = sql_mission_row_exists(server_url, database, "tactical_server_authority", mission_id)
+        claim = sql_mission_row_exists(server_url, database, "tactical_server_claim", mission_id)
+        request = sql_mission_row_exists(
+            server_url, database, "tactical_server_request_authority", mission_id
+        )
+    print(f"Profile: {config['profile']} ({config['worktree_fingerprint']})")
+    print(f"Environment: {TACTICAL_ENV_FILE}")
+    print(f"Database: {'ready' if database_ready else 'unreachable'} at {server_url}")
+    print(f"Mission: {mission_id}")
+    claim_state = (
+        "unknown" if not database_ready
+        else "available" if claim
+        else "consumed" if authority or not request
+        else "unknown"
+    )
+    print(f"Claim: {claim_state}")
+    print(f"Server authority: {'registered' if authority else 'missing'}")
+    print(f"Tactical listener: {'owned by recorded server' if server_ready else 'missing or unowned'}")
+    if config["native_client"]:
+        print(f"Client: {'running' if client_ready else 'stopped; run just tactical-client'}")
+    else:
+        print("Client: not launched by networking profile")
+    print("Browser client: unavailable in tactical-only mode")
+    print(f"Logs: {run_dir}")
+    if not database_ready or not server_ready or not authority:
+        if database_ready and not server_ready and claim_state == "consumed":
+            print("This mission's server claim was already consumed and no server is listening.")
+        print("Recovery: just tactical-play animation")
+        return 1
+    return 0
+
+
+def tactical_client_relaunch() -> int:
+    environment, config, run_dir = supervised_tactical_state()
+    if tactical_status():
+        raise RuntimeError("refusing native client launch because the supervised server is not ready")
+    metadata_file = run_dir / "client.identity.json"
+    if metadata_file.is_file():
+        metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+        recorded = metadata.get("process", {})
+        if isinstance(recorded, dict) and identity_matches(recorded):
+            print(f"Native client is already running (pid {recorded['pid']}).")
+            return 0
+    launch_recorded_tactical_client(run_dir, config)
+    print(
+        f"Native client relaunched for character {config['character_id']} at "
+        f"127.0.0.1:{environment['TACTICAL_PORT']}"
+    )
+    return 0
+
+
 def canonical_spawner(action: str) -> int:
     state_root = runtime_root()
     profile_dir = ensure_secure_directory(
@@ -911,6 +1414,13 @@ def create_parser() -> argparse.ArgumentParser:
     verifier.add_argument("base_port", type=int)
     canonical = sub.add_parser("canonical-spawner")
     canonical.add_argument("action", choices=("start", "stop", "status"))
+    tactical_play_parser = sub.add_parser("tactical-play")
+    tactical_play_parser.add_argument(
+        "mode", choices=[mode.value for mode in TacticalPlayMode]
+    )
+    tactical_play_parser.add_argument("base_port", type=int, nargs="?", default=24920)
+    sub.add_parser("tactical-status")
+    sub.add_parser("tactical-client")
     return parser
 
 
@@ -941,6 +1451,12 @@ def main() -> int:
             )
         if args.command == "canonical-spawner":
             return canonical_spawner(args.action)
+        if args.command == "tactical-play":
+            return tactical_play(TacticalPlayMode(args.mode), args.base_port)
+        if args.command == "tactical-status":
+            return tactical_status()
+        if args.command == "tactical-client":
+            return tactical_client_relaunch()
     except (ValueError, RuntimeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
