@@ -168,6 +168,10 @@ test("socializing and romance are dialogue responses with a qualitative regard f
   assert.match(source, /ask under Of Thee for more/);
   assert.match(source, /currentView\.open_prompt \|\| contextualMutation/);
   assert.match(source, /const render = \(view\) => \{[\s\S]*?removeContextPrompt\(\);/);
+  const socialMutation = source.slice(source.indexOf("const chooseSocialResponse"), source.indexOf("const chooseRomanticResponse"));
+  const romanceMutation = source.slice(source.indexOf("const chooseRomanticResponse"), source.indexOf("const renderContextPrompt"));
+  assert.match(socialMutation, /renderCategoryTopics\(currentView/);
+  assert.match(romanceMutation, /renderCategoryTopics\(currentView/);
   assert.doesNotMatch(source, /success_chance|personality_fit|morale_delta/);
 });
 
@@ -197,6 +201,8 @@ test("NPC switches clear subject-bound social state before asynchronous refresh"
 
 test("party portrait chat deep-loads the authorized social dock into the functional stream", () => {
   assert.match(source, /dockChat\.dataset\.partySocialHref/);
+  assert.match(source, /const activateRequested = async \(tab, focus = false\)/);
+  assert.match(source, /void activateRequested\(tabs\[next\], true\)/);
   assert.match(source, /querySelector\("\[data-social-conversation\]"\)/);
   assert.match(source, /dockChat\.replaceWith\(replacement\)/);
 });

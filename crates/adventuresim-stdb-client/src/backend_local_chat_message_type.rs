@@ -11,7 +11,7 @@ pub struct BackendLocalChatMessage {
     pub owner_character_id: u64,
     pub conversation_kind: String,
     pub subject_party_id: String,
-    pub subject_resident_character_id: Option<u64>,
+    pub subject_resident_character_id: String,
     pub sender_id: u64,
     pub sender_name: String,
     pub body: String,
@@ -30,8 +30,7 @@ pub struct BackendLocalChatMessageCols {
     pub owner_character_id: __sdk::__query_builder::Col<BackendLocalChatMessage, u64>,
     pub conversation_kind: __sdk::__query_builder::Col<BackendLocalChatMessage, String>,
     pub subject_party_id: __sdk::__query_builder::Col<BackendLocalChatMessage, String>,
-    pub subject_resident_character_id:
-        __sdk::__query_builder::Col<BackendLocalChatMessage, Option<u64>>,
+    pub subject_resident_character_id: __sdk::__query_builder::Col<BackendLocalChatMessage, String>,
     pub sender_id: __sdk::__query_builder::Col<BackendLocalChatMessage, u64>,
     pub sender_name: __sdk::__query_builder::Col<BackendLocalChatMessage, String>,
     pub body: __sdk::__query_builder::Col<BackendLocalChatMessage, String>,

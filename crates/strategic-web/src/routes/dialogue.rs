@@ -1039,8 +1039,14 @@ async fn npc_social_view(
         },
     ];
     let social_revision = format!(
-        "{}:{:?}:{:?}:{:?}:{:?}",
-        npc.character_id, affinity, familiarity, morale, wedding_countdown_days
+        "{}:{:?}:{:?}:{:?}:{:?}:{:?}:{}",
+        npc.character_id,
+        affinity,
+        familiarity,
+        morale,
+        wedding_countdown_days,
+        courtship_kind,
+        courtship_exposed
     );
     Ok(NpcSocialView {
         resident_character_id: npc.character_id.to_string(),

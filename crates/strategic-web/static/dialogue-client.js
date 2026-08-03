@@ -160,8 +160,7 @@
       });
       if (focus) tab.focus();
     };
-    tabs.forEach((tab, index) => {
-      tab.addEventListener("click", async () => {
+    const activateRequested = async (tab, focus = false) => {
         if (tab.dataset.dialogueCategory === "tidings" && dockChat?.dataset.partySocialHref) {
           const response = await window.strategicFetch(dockChat.dataset.partySocialHref, { headers: { Accept: "text/html" } });
           if (!response.ok) { window.reportStrategicError(new Error(`Recent Tidings failed (${response.status})`), "open Recent Tidings"); return; }
@@ -170,13 +169,15 @@
           if (!replacement) { window.reportStrategicError(new Error("Recent Tidings response was incomplete"), "open Recent Tidings"); return; }
           dockChat.replaceWith(replacement); document.dispatchEvent(new Event("strategic-page-mounted")); return;
         }
-        activate(tab);
-      }, { signal });
+        activate(tab, focus);
+    };
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => void activateRequested(tab), { signal });
       tab.addEventListener("keydown", (event) => {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
         event.preventDefault();
         const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
-        activate(tabs[next], true);
+        void activateRequested(tabs[next], true);
       }, { signal });
     });
   });
@@ -395,7 +396,9 @@
       const social = await response.json(); if (!contextMutationCurrent(binding)) return;
       currentSocial = social;
       const reaction = ({ positive: "I am glad we passed this time together.", mixed: "Our words stumbled at times, yet I am glad we spoke.", negative: "Let us leave our speech here, lest it sour further." })[currentSocial.last_outcome] || "I thank thee for speaking with me.";
-      removeContextPrompt(); appendContextExchange(choice.label, reaction); renderRelationshipVitals(); renderContextTopics();
+      removeContextPrompt(); appendContextExchange(choice.label, reaction);
+      if (currentView) renderCategoryTopics(currentView, { sessionId: currentView.session_id, revision: currentView.revision, selectionGeneration, npcId: chat.dataset.localChatSubject || "" });
+      renderRelationshipVitals(); renderContextTopics();
     } catch (error) { if (contextMutationCurrent(binding)) window.reportStrategicError(error, "choose conversation response"); }
     finally { finishContextMutation(binding); }
   };
@@ -406,7 +409,9 @@
       if (!response.ok) throw new Error(`Relationship response failed (${response.status})`);
       const result = await response.json(); if (!contextMutationCurrent(binding)) return;
       if (!result || typeof result.ok !== "boolean" || typeof result.message !== "string" || !result.view) throw new Error("Relationship response returned an invalid result");
-      currentSocial = result.view; removeContextPrompt(); appendContextExchange(responseView.line, result.message); renderRelationshipVitals(); renderContextTopics();
+      currentSocial = result.view; removeContextPrompt(); appendContextExchange(responseView.line, result.message);
+      if (currentView) renderCategoryTopics(currentView, { sessionId: currentView.session_id, revision: currentView.revision, selectionGeneration, npcId: chat.dataset.localChatSubject || "" });
+      renderRelationshipVitals(); renderContextTopics();
     } catch (error) { if (contextMutationCurrent(binding)) window.reportStrategicError(error, "choose relationship response"); }
     finally { finishContextMutation(binding); }
   };
