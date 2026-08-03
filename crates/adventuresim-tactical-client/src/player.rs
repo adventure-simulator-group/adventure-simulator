@@ -62,10 +62,7 @@ impl Plugin for PlayerPlugin {
             .add_observer(on_parry_fired)
             .add_systems(
                 Update,
-                (
-                    update_character_look_rotation.run_if(any_with_component::<CharacterLook>),
-                    update_attack_state_system.run_if(any_with_component::<AttackState>),
-                ),
+                update_attack_state_system.run_if(any_with_component::<AttackState>),
             );
     }
 }
@@ -311,17 +308,6 @@ fn on_attack_fired_hook(
         cmd.client_trigger(RangedActionRequest::Start);
     } else {
         cmd.client_trigger(MeleeActionRequest::Start);
-    }
-}
-
-fn update_character_look_rotation(
-    mut q_characters: Query<
-        (&mut Transform, &CharacterLook),
-        (Changed<CharacterLook>, Without<ControlledPlayer>),
-    >,
-) {
-    for (mut transform, look) in &mut q_characters {
-        transform.rotation = Quat::from_rotation_y(look.yaw + std::f32::consts::PI);
     }
 }
 

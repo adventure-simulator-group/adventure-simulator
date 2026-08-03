@@ -18,9 +18,10 @@ pub use avian3d;
 pub mod prelude {
     pub use crate::AdventureSimulatorCorePlugins;
     pub use crate::animation::{
-        AnimationEvaluation, AnimationPack, AnimationPackLibrary, AttackLine, Footwork, LeadFoot,
-        PackValidationError, PoseSample, PoseSampling, Posture, ResolvedPose, SemanticPose,
-        SkeletonAction, SkeletonLocomotionInput, SkeletonState, StrikeFamily,
+        AnimationEvaluation, AnimationPack, AnimationPackLibrary, AttackLine,
+        BODY_TURN_SPEED_RADIANS, Footwork, LeadFoot, PackValidationError, PoseSample, PoseSampling,
+        Posture, ResolvedPose, SemanticPose, SkeletonAction, SkeletonLocomotionInput,
+        SkeletonState, StrikeFamily, advance_body_facing, controller_yaw,
         project_skeleton_locomotion,
     };
     pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
@@ -36,7 +37,7 @@ pub mod prelude {
     pub use adventuresim_core::prelude::*;
     pub use avian3d::prelude::*;
     pub use bevy_ahoy::{
-        CharacterController, CharacterControllerState, CharacterLook,
+        AhoySystems, CharacterController, CharacterControllerState, CharacterLook,
         camera::{CharacterControllerCamera, CharacterControllerCameraOf},
         input,
     };

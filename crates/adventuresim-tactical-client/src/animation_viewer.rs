@@ -19,8 +19,8 @@ use bevy::{
 use serde::Serialize;
 
 use crate::animation::{
-    AnimationPlayback, BoneRole, HumanoidBone, ProceduralIkState, TacticalAnimationPlugin,
-    gait_support_weights,
+    AnimationPlayback, BoneRole, HumanoidBone, ProceduralAnimationClock, ProceduralIkState,
+    TacticalAnimationPlugin, gait_support_weights,
 };
 use crate::{
     camera::{CameraMode, TacticalCameraPlugin, TacticalCameraSet, third_person_offset},
@@ -150,6 +150,9 @@ struct PlannedFrame {
     speed: f32,
     time_seconds: f32,
     local_direction: Vec2,
+    camera_yaw: f32,
+    camera_pitch: f32,
+    action: SkeletonAction,
 }
 
 #[derive(Resource)]
@@ -260,6 +263,14 @@ struct ScenarioMetrics {
     pelvis_vertical_range_metres: f32,
     head_vertical_range_metres: f32,
     minimum_knee_forward_bend_metres: f32,
+    minimum_signed_foot_track_metres: f32,
+    minimum_inter_foot_separation_metres: f32,
+    minimum_knee_flexion_degrees: f32,
+    minimum_knee_hemisphere_dot: f32,
+    maximum_facing_motion_error_degrees: f32,
+    maximum_facing_tracking_excess_degrees: f32,
+    maximum_guard_facing_error_degrees: f32,
+    final_facing_motion_error_degrees: f32,
     maximum_supported_foot_slip_metres_per_frame: f32,
     maximum_planted_foot_drift_metres: f32,
     minimum_foot_clearance_metres: f32,
@@ -283,6 +294,10 @@ struct FrameSample {
     root_distance_metres: f32,
     root_position_metres: [f32; 3],
     world_travel_direction: [f32; 3],
+    desired_body_forward_direction: [f32; 3],
+    body_forward_direction: [f32; 3],
+    body_rotation_xyzw: [f32; 4],
+    guard_action: bool,
     left_support_weight: f32,
     right_support_weight: f32,
     screenshots: BTreeMap<String, String>,
@@ -324,6 +339,9 @@ fn steady_scenario_in_direction(
             speed,
             time_seconds: scenario_frame as f32 / SAMPLE_HZ,
             local_direction,
+            camera_yaw: 0.0,
+            camera_pitch: 0.0,
+            action: SkeletonAction::None,
         })
         .collect()
 }
@@ -353,6 +371,9 @@ fn transition_scenario() -> Vec<PlannedFrame> {
                 speed,
                 time_seconds: t,
                 local_direction: Vec2::NEG_Y,
+                camera_yaw: 0.0,
+                camera_pitch: 0.0,
+                action: SkeletonAction::None,
             }
         })
         .collect()
@@ -370,11 +391,57 @@ fn capture_plan() -> Vec<PlannedFrame> {
         steady_scenario("steady-run-5.5", 5.5, 2.0),
         steady_scenario_in_direction("lateral-walk-2.0", 2.0, 1.0, Vec2::X),
         steady_scenario_in_direction("reverse-walk-2.0", 2.0, 1.0, Vec2::Y),
+        turning_scenario("gradual-camera-turn", false),
+        turning_scenario("half-turn-reversal", true),
+        guard_plant_turn_scenario(),
+        steady_scenario_in_direction("cross-slope-walk", 2.0, 1.0, Vec2::X),
         transition_scenario(),
     ]
     .into_iter()
     .flatten()
     .collect()
+}
+
+fn turning_scenario(name: &'static str, reversal: bool) -> Vec<PlannedFrame> {
+    (0..=64)
+        .map(|frame| {
+            let progress = frame as f32 / 64.0;
+            PlannedFrame {
+                scenario: name,
+                scenario_frame: frame,
+                speed: 2.0,
+                time_seconds: progress,
+                local_direction: Vec2::NEG_Y,
+                camera_yaw: if reversal && frame > 0 {
+                    std::f32::consts::PI
+                } else if reversal {
+                    0.0
+                } else {
+                    std::f32::consts::FRAC_PI_2 * progress
+                },
+                camera_pitch: 0.55 * progress,
+                action: SkeletonAction::None,
+            }
+        })
+        .collect()
+}
+
+fn guard_plant_turn_scenario() -> Vec<PlannedFrame> {
+    (0..=64)
+        .map(|frame| {
+            let progress = frame as f32 / 64.0;
+            PlannedFrame {
+                scenario: "planted-guard-turn",
+                scenario_frame: frame,
+                speed: 0.35,
+                time_seconds: progress,
+                local_direction: Vec2::X,
+                camera_yaw: std::f32::consts::FRAC_PI_2 * progress,
+                camera_pitch: 0.0,
+                action: SkeletonAction::Block,
+            }
+        })
+        .collect()
 }
 
 fn setup_viewer(mut commands: Commands) {
@@ -419,11 +486,13 @@ fn setup_viewer(mut commands: Commands) {
 
 fn drive_sequence(
     mut sequence: ResMut<CaptureSequence>,
+    mut procedural_clock: ResMut<ProceduralAnimationClock>,
     terrain: Single<&SceneTerrain>,
     mut subjects: Query<
         (
             &mut SkeletonState,
             &mut Transform,
+            &mut CharacterLook,
             Option<&AnimationPlayback>,
             Option<&mut ProceduralIkState>,
         ),
@@ -436,7 +505,7 @@ fn drive_sequence(
     }
     let frame = sequence.plan[sequence.index].clone();
     let mut gait_phase = 0.0;
-    for (mut skeleton, mut transform, playback, ik_state) in &mut subjects {
+    for (mut skeleton, mut transform, mut look, playback, ik_state) in &mut subjects {
         let Some(playback) = playback else {
             return;
         };
@@ -454,22 +523,40 @@ fn drive_sequence(
             }
             let ground = terrain.height_at(Vec2::ZERO).unwrap_or_default();
             transform.translation = Vec3::new(0.0, ground + 0.95, 0.0);
+            transform.rotation = Quat::from_rotation_y(std::f32::consts::PI);
         }
 
-        let orientation = Quat::from_rotation_y(std::f32::consts::PI);
+        let orientation =
+            Quat::from_euler(EulerRot::YXZ, frame.camera_yaw, frame.camera_pitch, 0.0);
+        look.yaw = frame.camera_yaw;
+        look.pitch = frame.camera_pitch;
         let local_velocity =
             Vec3::new(frame.local_direction.x, 0.0, frame.local_direction.y) * frame.speed;
-        let world_velocity = orientation * local_velocity;
+        let world_velocity = controller_yaw(orientation) * local_velocity;
         let delta_seconds = if frame.scenario_frame == 0 {
             0.0
         } else {
             sequence.simulation_tick += 1;
             1.0 / SAMPLE_HZ
         };
+        procedural_clock.set_fixed_tick(sequence.simulation_tick, delta_seconds);
         let horizontal = transform.translation.xz() + world_velocity.xz() * delta_seconds;
         let ground = terrain.height_at(horizontal).unwrap_or_default();
         transform.translation = Vec3::new(horizontal.x, ground + 0.95, horizontal.y);
-        transform.rotation = orientation;
+        if frame.action != SkeletonAction::None {
+            skeleton.begin_action(
+                frame.action,
+                sequence.simulation_tick,
+                sequence.simulation_tick + 64,
+            );
+        }
+        transform.rotation = advance_body_facing(
+            transform.rotation,
+            orientation,
+            world_velocity,
+            frame.action,
+            delta_seconds,
+        );
         sequence.scenario_distance += frame.speed * delta_seconds;
         project_skeleton_locomotion(
             &mut skeleton,
@@ -689,12 +776,24 @@ fn capture_frame(
             gait_phase: skeleton.gait_phase,
             root_distance_metres,
             root_position_metres: subject_global.translation().to_array(),
-            world_travel_direction: Vec3::new(
-                -frame.local_direction.x,
-                0.0,
-                -frame.local_direction.y,
-            )
+            world_travel_direction: (controller_yaw(Quat::from_rotation_y(frame.camera_yaw))
+                * Vec3::new(frame.local_direction.x, 0.0, frame.local_direction.y))
+            .normalize_or_zero()
             .to_array(),
+            desired_body_forward_direction: if matches!(
+                frame.action,
+                SkeletonAction::Attack | SkeletonAction::Block
+            ) {
+                (controller_yaw(Quat::from_rotation_y(frame.camera_yaw)) * Vec3::NEG_Z).to_array()
+            } else {
+                (controller_yaw(Quat::from_rotation_y(frame.camera_yaw))
+                    * Vec3::new(frame.local_direction.x, 0.0, frame.local_direction.y))
+                .normalize_or_zero()
+                .to_array()
+            },
+            body_forward_direction: (subject_global.rotation() * Vec3::Z).to_array(),
+            body_rotation_xyzw: subject_global.rotation().to_array(),
+            guard_action: matches!(frame.action, SkeletonAction::Attack | SkeletonAction::Block),
             left_support_weight,
             right_support_weight,
             screenshots: VIEWS
@@ -863,10 +962,15 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     let biomechanics_within_review_bounds = scenarios.iter().all(|metrics| {
         metrics.maximum_supported_foot_slip_metres_per_frame <= 0.035
             && metrics.maximum_planted_foot_drift_metres <= 0.035
-            && metrics.minimum_knee_forward_bend_metres >= -0.08
+            && metrics.minimum_signed_foot_track_metres >= -0.01
+            && metrics.minimum_inter_foot_separation_metres >= 0.08
+            && metrics.minimum_knee_flexion_degrees >= 4.0
+            && metrics.minimum_knee_hemisphere_dot >= 0.0
+            && metrics.maximum_facing_tracking_excess_degrees <= 0.2
+            && metrics.final_facing_motion_error_degrees <= 3.0
             && metrics.pelvis_vertical_range_metres <= 0.20
             && metrics.head_vertical_range_metres <= 0.20
-            && if metrics.scenario == "start-stop-transition" {
+            && if !expects_loop_seam(&metrics.scenario) {
                 metrics.loop_seam_position_metres.is_none()
                     && metrics.loop_seam_rotation_degrees.is_none()
             } else {
@@ -943,16 +1047,16 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
             let mut worst_rotation = None;
             for pair in frames.windows(2) {
                 let (before, after) = (pair[0], pair[1]);
-                let root_delta = Vec3::from_array(after.root_position_metres)
-                    - Vec3::from_array(before.root_position_metres);
+                let body_turn = Quat::from_array(before.body_rotation_xyzw)
+                    .angle_between(Quat::from_array(after.body_rotation_xyzw))
+                    .to_degrees();
                 for (name, before_bone) in &before.bones {
                     let Some(after_bone) = after.bones.get(name) else {
                         continue;
                     };
-                    let displacement = (Vec3::from_array(after_bone.position)
-                        - Vec3::from_array(before_bone.position)
-                        - root_delta)
-                        .length();
+                    let displacement = body_local(after, name)
+                        .zip(body_local(before, name))
+                        .map_or(f32::INFINITY, |(after, before)| after.distance(before));
                     if displacement > maximum_step {
                         maximum_step = displacement;
                         worst_displacement = Some(ContinuityLocation {
@@ -962,8 +1066,8 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
                             value: displacement,
                         });
                     }
-                    let rotation = quat(after_bone)
-                        .angle_between(quat(before_bone))
+                    let rotation = body_local_rotation(after, after_bone)
+                        .angle_between(body_local_rotation(before, before_bone))
                         .to_degrees();
                     if rotation > maximum_rotation {
                         maximum_rotation = rotation;
@@ -985,7 +1089,11 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
                         before.right_support_weight.min(after.right_support_weight),
                     ),
                 ] {
+                    // A body turn deliberately slides an old world plant onto
+                    // its new anatomical side corridor. Treat that bounded
+                    // adaptation separately from skating under a stable body.
                     if support >= 0.9
+                        && body_turn <= 0.5
                         && let (Some(a), Some(b)) = (before.bones.get(foot), after.bones.get(foot))
                     {
                         maximum_slip = maximum_slip.max(
@@ -998,7 +1106,15 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
             }
             for (foot, left) in [("left_foot", true), ("right_foot", false)] {
                 let mut anchor = None;
+                let mut previous_body_rotation = None;
                 for frame in &frames {
+                    let body_rotation = Quat::from_array(frame.body_rotation_xyzw);
+                    if previous_body_rotation.is_some_and(|previous: Quat| {
+                        previous.angle_between(body_rotation).to_degrees() > 0.5
+                    }) {
+                        anchor = None;
+                    }
+                    previous_body_rotation = Some(body_rotation);
                     let support = if left {
                         frame.left_support_weight
                     } else {
@@ -1019,7 +1135,7 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
                     }
                 }
             }
-            let looped = scenario != "start-stop-transition";
+            let looped = expects_loop_seam(scenario);
             let (loop_position, loop_rotation) = if looped {
                 let seams = frames
                     .windows(2)
@@ -1049,6 +1165,14 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
                 pelvis_vertical_range_metres: root_relative_vertical_range(&frames, "pelvis"),
                 head_vertical_range_metres: root_relative_vertical_range(&frames, "head"),
                 minimum_knee_forward_bend_metres: minimum_knee_bend(&frames),
+                minimum_signed_foot_track_metres: minimum_signed_foot_track(&frames),
+                minimum_inter_foot_separation_metres: minimum_inter_foot_separation(&frames),
+                minimum_knee_flexion_degrees: minimum_knee_flexion(&frames),
+                minimum_knee_hemisphere_dot: minimum_knee_hemisphere(&frames),
+                maximum_facing_motion_error_degrees: maximum_facing_error(&frames),
+                maximum_facing_tracking_excess_degrees: maximum_facing_tracking_excess(&frames),
+                maximum_guard_facing_error_degrees: maximum_guard_facing_error(&frames),
+                final_facing_motion_error_degrees: final_facing_error(&frames),
                 maximum_supported_foot_slip_metres_per_frame: maximum_slip,
                 maximum_planted_foot_drift_metres: maximum_plant_drift,
                 minimum_foot_clearance_metres: minimum_foot_clearance(&frames),
@@ -1057,13 +1181,157 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
         .collect()
 }
 
+fn expects_loop_seam(scenario: &str) -> bool {
+    !matches!(
+        scenario,
+        "start-stop-transition"
+            | "gradual-camera-turn"
+            | "half-turn-reversal"
+            | "planted-guard-turn"
+    )
+}
+
 fn quat(bone: &BoneSample) -> Quat {
     Quat::from_array(bone.rotation_xyzw).normalize()
 }
 
+fn body_local(frame: &FrameSample, bone: &str) -> Option<Vec3> {
+    let world = Vec3::from_array(frame.bones.get(bone)?.position)
+        - Vec3::from_array(frame.root_position_metres);
+    Some(Quat::from_array(frame.body_rotation_xyzw).inverse() * world)
+}
+
+fn body_local_rotation(frame: &FrameSample, bone: &BoneSample) -> Quat {
+    Quat::from_array(frame.body_rotation_xyzw).inverse() * quat(bone)
+}
+
+fn minimum_signed_foot_track(frames: &[&FrameSample]) -> f32 {
+    frames
+        .iter()
+        .flat_map(|frame| {
+            [("left_hip", "left_foot"), ("right_hip", "right_foot")].map(|(hip, foot)| {
+                let side = body_local(frame, hip).map_or(1.0, |value| value.x.signum());
+                body_local(frame, foot).map_or(f32::INFINITY, |value| value.x * side)
+            })
+        })
+        .fold(f32::INFINITY, f32::min)
+}
+
+fn minimum_inter_foot_separation(frames: &[&FrameSample]) -> f32 {
+    frames
+        .iter()
+        .filter_map(|frame| {
+            Some((body_local(frame, "left_foot")?.x - body_local(frame, "right_foot")?.x).abs())
+        })
+        .fold(f32::INFINITY, f32::min)
+}
+
+fn minimum_knee_flexion(frames: &[&FrameSample]) -> f32 {
+    frames
+        .iter()
+        .flat_map(|frame| {
+            [
+                ("left_hip", "left_knee", "left_foot"),
+                ("right_hip", "right_knee", "right_foot"),
+            ]
+            .map(|(hip, knee, foot)| {
+                let (Some(hip), Some(knee), Some(foot)) = (
+                    body_local(frame, hip),
+                    body_local(frame, knee),
+                    body_local(frame, foot),
+                ) else {
+                    return f32::INFINITY;
+                };
+                180.0 - (hip - knee).angle_between(foot - knee).to_degrees()
+            })
+        })
+        .fold(f32::INFINITY, f32::min)
+}
+
+fn minimum_knee_hemisphere(frames: &[&FrameSample]) -> f32 {
+    frames
+        .iter()
+        .flat_map(|frame| {
+            [
+                ("left_hip", "left_knee", "left_foot"),
+                ("right_hip", "right_knee", "right_foot"),
+            ]
+            .map(|(hip, knee, foot)| {
+                let (Some(hip), Some(knee), Some(foot)) = (
+                    body_local(frame, hip),
+                    body_local(frame, knee),
+                    body_local(frame, foot),
+                ) else {
+                    return f32::INFINITY;
+                };
+                let Some(axis) = (foot - hip).try_normalize() else {
+                    return f32::INFINITY;
+                };
+                let Some(bend) = (knee - hip).reject_from_normalized(axis).try_normalize() else {
+                    return -1.0;
+                };
+                let side = hip.x.signum();
+                bend.dot((Vec3::Z + Vec3::X * side * 0.18).normalize())
+            })
+        })
+        .fold(f32::INFINITY, f32::min)
+}
+
+fn maximum_facing_error(frames: &[&FrameSample]) -> f32 {
+    frames
+        .iter()
+        .filter(|frame| frame.speed_metres_per_second > 0.05)
+        .map(|frame| {
+            Vec3::from_array(frame.body_forward_direction)
+                .angle_between(Vec3::from_array(frame.desired_body_forward_direction))
+                .to_degrees()
+        })
+        .fold(0.0, f32::max)
+}
+
+fn maximum_facing_tracking_excess(frames: &[&FrameSample]) -> f32 {
+    frames
+        .windows(2)
+        .filter(|pair| pair[1].speed_metres_per_second > 0.05)
+        .map(|pair| {
+            let before = Vec3::from_array(pair[0].body_forward_direction);
+            let actual = Vec3::from_array(pair[1].body_forward_direction);
+            let desired = Vec3::from_array(pair[1].desired_body_forward_direction);
+            let elapsed = (pair[1].time_seconds - pair[0].time_seconds).max(0.0);
+            let permitted_residual =
+                (before.angle_between(desired) - BODY_TURN_SPEED_RADIANS * elapsed).max(0.0);
+            (actual.angle_between(desired) - permitted_residual)
+                .abs()
+                .to_degrees()
+        })
+        .fold(0.0, f32::max)
+}
+
+fn maximum_guard_facing_error(frames: &[&FrameSample]) -> f32 {
+    frames
+        .iter()
+        .filter(|frame| frame.guard_action && frame.speed_metres_per_second > 0.05)
+        .map(|frame| {
+            Vec3::from_array(frame.body_forward_direction)
+                .angle_between(Vec3::from_array(frame.desired_body_forward_direction))
+                .to_degrees()
+        })
+        .fold(0.0, f32::max)
+}
+
+fn final_facing_error(frames: &[&FrameSample]) -> f32 {
+    frames
+        .iter()
+        .rev()
+        .find(|frame| frame.speed_metres_per_second > 0.05)
+        .map_or(0.0, |frame| {
+            Vec3::from_array(frame.body_forward_direction)
+                .angle_between(Vec3::from_array(frame.desired_body_forward_direction))
+                .to_degrees()
+        })
+}
+
 fn loop_seam(first: &FrameSample, last: &FrameSample) -> (f32, f32) {
-    let root_delta =
-        Vec3::from_array(last.root_position_metres) - Vec3::from_array(first.root_position_metres);
     first
         .bones
         .iter()
@@ -1080,10 +1348,15 @@ fn loop_seam(first: &FrameSample, last: &FrameSample) -> (f32, f32) {
             };
             (
                 metrics.0.max(
-                    (Vec3::from_array(b.position) - Vec3::from_array(a.position) - root_delta)
-                        .length(),
+                    body_local(last, name)
+                        .zip(body_local(first, name))
+                        .map_or(f32::INFINITY, |(last, first)| last.distance(first)),
                 ),
-                metrics.1.max(quat(a).angle_between(quat(b)).to_degrees()),
+                metrics.1.max(
+                    body_local_rotation(first, a)
+                        .angle_between(body_local_rotation(last, b))
+                        .to_degrees(),
+                ),
             )
         })
 }
@@ -1180,7 +1453,7 @@ fn review_html(manifest: &CaptureManifest) -> String {
                 })
             };
             format!(
-                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td></tr>",
+                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.2}</td><td>{:.3}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.4}</td></tr>",
                 scenario.scenario,
                 scenario.frame_count,
                 describe(&scenario.worst_displacement, "m"),
@@ -1189,6 +1462,14 @@ fn review_html(manifest: &CaptureManifest) -> String {
                 scenario.loop_seam_rotation_degrees.map_or("&mdash;".into(), |value| format!("{value:.2}")),
                 scenario.maximum_supported_foot_slip_metres_per_frame,
                 scenario.maximum_planted_foot_drift_metres,
+                scenario.minimum_signed_foot_track_metres,
+                scenario.minimum_inter_foot_separation_metres,
+                scenario.minimum_knee_flexion_degrees,
+                scenario.minimum_knee_hemisphere_dot,
+                scenario.maximum_facing_motion_error_degrees,
+                scenario.maximum_facing_tracking_excess_degrees,
+                scenario.maximum_guard_facing_error_degrees,
+                scenario.final_facing_motion_error_degrees,
                 scenario.minimum_foot_clearance_metres,
             )
         })
@@ -1202,7 +1483,7 @@ body{{font:15px system-ui;background:#111820;color:#e8eef5;margin:24px}}button,s
 <div>{scenario_buttons}</div><label>View <select id="view"><option value="gameplay">gameplay (raw)</option><option value="side">side diagnostic</option><option value="front">front diagnostic</option></select></label>
 <label>Playback <select id="rate"><option value="1">normal</option><option value="2">half speed</option><option value="4">quarter speed</option></select></label>
 <p id="telemetry"></p><img id="player"><div id="contact"></div>
-<table><thead><tr><th>scenario</th><th>frames</th><th>worst root-relative displacement</th><th>worst rotation</th><th>loop seam m</th><th>loop seam deg</th><th>supported slip m/frame</th><th>planted interval drift m</th><th>minimum terrain-relative foot clearance m</th></tr></thead><tbody>{metrics}</tbody></table>
+<table><thead><tr><th>scenario</th><th>frames</th><th>worst root-relative displacement</th><th>worst rotation</th><th>loop seam m</th><th>loop seam deg</th><th>supported slip m/frame</th><th>planted interval drift m</th><th>signed foot track m</th><th>inter-foot separation m</th><th>knee flexion deg</th><th>knee hemisphere dot</th><th>maximum facing error deg</th><th>tracking excess deg</th><th>guard facing error deg</th><th>final facing error deg</th><th>minimum terrain-relative foot clearance m</th></tr></thead><tbody>{metrics}</tbody></table>
 <script>const all={frame_json},scenarioNames={scenario_names_json};let scenario=scenarioNames[0]||"",i=0,timer;const player=document.querySelector('#player'),view=document.querySelector('#view'),rate=document.querySelector('#rate'),telemetry=document.querySelector('#telemetry');
 function frames(){{return all.filter(x=>x.scenario===scenario)}}function show(){{const list=frames(),f=list.length?list[i%list.length]:null;if(!f){{player.removeAttribute('src');telemetry.textContent='No completed capture frames';return}}player.src=f.screenshots[view.value];telemetry.textContent=`${{f.scenario}} frame ${{f.scenario_frame}} | ${{f.speed_metres_per_second.toFixed(2)}} m/s | phase ${{f.gait_phase.toFixed(3)}} | support L ${{f.left_support_weight.toFixed(2)}} R ${{f.right_support_weight.toFixed(2)}}`;}}
 function play(){{clearInterval(timer);timer=setInterval(()=>{{i=(i+1)%frames().length;show()}},1000/64*Number(rate.value))}}function contacts(){{const f=frames(),step=Math.max(1,Math.floor(f.length/12)),box=document.querySelector('#contact');box.innerHTML='';for(let n=0;n<f.length;n+=step){{let x=document.createElement('img');x.src=f[n].screenshots[view.value];x.title=`frame ${{f[n].scenario_frame}} phase ${{f[n].gait_phase.toFixed(3)}}`;box.appendChild(x)}}}}
@@ -1253,6 +1534,10 @@ mod tests {
             root_distance_metres: 0.0,
             root_position_metres: Vec3::ZERO.to_array(),
             world_travel_direction: Vec3::Z.to_array(),
+            desired_body_forward_direction: Vec3::Z.to_array(),
+            body_forward_direction: Vec3::Z.to_array(),
+            body_rotation_xyzw: Quat::IDENTITY.to_array(),
+            guard_action: false,
             left_support_weight: 1.0,
             right_support_weight: 1.0,
             screenshots,
@@ -1294,5 +1579,52 @@ mod tests {
             && frame.local_direction.is_finite()));
         assert_eq!(frames.first().unwrap().speed, 0.0);
         assert_eq!(frames.last().unwrap().speed, 0.0);
+    }
+
+    #[test]
+    fn manifest_metrics_detect_crossed_feet_and_facing_mismatch() {
+        let bone = |position: Vec3| BoneSample {
+            position: position.to_array(),
+            rotation_xyzw: Quat::IDENTITY.to_array(),
+            terrain_clearance_metres: Some(0.0),
+        };
+        let bones = BTreeMap::from([
+            ("left_hip".into(), bone(Vec3::new(-0.15, 1.0, 0.0))),
+            ("left_knee".into(), bone(Vec3::new(-0.1, 0.5, 0.2))),
+            ("left_foot".into(), bone(Vec3::new(0.12, 0.0, 0.0))),
+            ("right_hip".into(), bone(Vec3::new(0.15, 1.0, 0.0))),
+            ("right_knee".into(), bone(Vec3::new(0.1, 0.5, 0.2))),
+            ("right_foot".into(), bone(Vec3::new(-0.12, 0.0, 0.0))),
+        ]);
+        let mut frame = FrameSample {
+            scenario: "metric-test".into(),
+            scenario_frame: 0,
+            time_seconds: 0.0,
+            speed_metres_per_second: 2.0,
+            gait_phase: 0.0,
+            root_distance_metres: 0.0,
+            root_position_metres: Vec3::ZERO.to_array(),
+            world_travel_direction: Vec3::NEG_Z.to_array(),
+            desired_body_forward_direction: Vec3::NEG_Z.to_array(),
+            body_forward_direction: Vec3::Z.to_array(),
+            body_rotation_xyzw: Quat::IDENTITY.to_array(),
+            guard_action: false,
+            left_support_weight: 1.0,
+            right_support_weight: 1.0,
+            screenshots: BTreeMap::new(),
+            bones,
+        };
+        let frames = [&frame];
+        assert!(minimum_signed_foot_track(&frames) < 0.0);
+        assert!(maximum_facing_error(&frames) > 179.0);
+
+        let mut previous = frame.clone();
+        previous.desired_body_forward_direction = Vec3::Z.to_array();
+        frame.scenario_frame = 1;
+        frame.time_seconds = 1.0 / SAMPLE_HZ;
+        assert!(maximum_facing_tracking_excess(&[&previous, &frame]) > 8.0);
+
+        frame.guard_action = true;
+        assert!(maximum_guard_facing_error(&[&frame]) > 179.0);
     }
 }
