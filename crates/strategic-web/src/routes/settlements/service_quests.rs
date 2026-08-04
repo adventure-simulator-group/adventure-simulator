@@ -176,7 +176,7 @@ pub(super) async fn begin_service_apprenticeship(
     if character.current_settlement_id.as_deref() != Some(id.as_str()) {
         return Json(ApprenticeshipResult {
             enrolled: false,
-            message: "You must speak to the guild member in person.",
+            message: "This matter requireth speech with the guild member in person.",
         });
     }
     match state
@@ -189,13 +189,13 @@ pub(super) async fn begin_service_apprenticeship(
     {
         Ok(()) => Json(ApprenticeshipResult {
             enrolled: true,
-            message: "Your membership begins today.",
+            message: "The membership beginneth this day.",
         }),
         Err(error) => {
             tracing::warn!(%error, character_id = character.id, %service_id, "failed to begin apprenticeship");
             Json(ApprenticeshipResult {
                 enrolled: false,
-                message: "I cannot take you on just now.",
+                message: "I cannot take on another apprentice just now.",
             })
         }
     }
@@ -568,11 +568,11 @@ pub(super) async fn service_quest_offers(
                         &settlement.name,
                         &neighboring_name,
                     ),
-                    acceptance: "Splendid! And please, do be careful! You wouldn't be the first men they've slain.",
+                    acceptance: "Excellent! Yet have a care: ye would not be the first men they have slain.",
                     state,
-                    waiting: "Hello again, I eagerly await the results of your efforts.",
+                    waiting: "Well met again; I eagerly await the fruit of these labours.",
                     turn_in_response: format!(
-                        "Excellent work. Here is the promised {} coin. You've earned it.",
+                        "Excellent work. Here is the promised sum: {} coin. Ye have earned it.",
                         quest.gold_reward
                     ),
                     can_accept,
@@ -615,11 +615,11 @@ pub(super) fn service_quest_greeting(service_id: &str) -> (&'static str, &'stati
         ),
         "religion" => (
             "Priest",
-            "God give you peace. I must ask your aid concerning",
+            "God give peace. I must beg aid concerning",
         ),
         _ => (
             "Merchant",
-            "Welcome, traveler. You'll have to excuse the sorry state of my inventory;",
+            "Welcome, traveler. Pray excuse the sorry state of mine inventory;",
         ),
     }
 }
@@ -634,7 +634,7 @@ pub(super) fn service_quest_details(
     // never the threat or location; several templates intentionally share it.
     let situation = &quest.description;
     format!(
-        "Yes, {situation}. I believe it involves {} {}, but that account may be wrong. I'd offer {} coin for a verified resolution. Learn more before committing to a fight. Are you",
+        "Yea, {situation}. I believe it toucheth {} {}, yet that account may be false. I would offer {} coin for a resolution well proved. Learn more ere committing to battle. Is the company",
         quest.opposition_count_wording, quest.opposition_wording, quest.gold_reward,
     )
 }

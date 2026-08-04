@@ -16,6 +16,7 @@ pub struct BackendSettlementResidentRelationship {
     pub affinity_band: AffinityBand,
     pub familiarity_band: FamiliarityBand,
     pub morale_band: MoraleBand,
+    pub uses_familiar_address: bool,
 }
 
 impl __sdk::InModule for BackendSettlementResidentRelationship {
@@ -35,6 +36,8 @@ pub struct BackendSettlementResidentRelationshipCols {
     pub familiarity_band:
         __sdk::__query_builder::Col<BackendSettlementResidentRelationship, FamiliarityBand>,
     pub morale_band: __sdk::__query_builder::Col<BackendSettlementResidentRelationship, MoraleBand>,
+    pub uses_familiar_address:
+        __sdk::__query_builder::Col<BackendSettlementResidentRelationship, bool>,
 }
 
 impl __sdk::__query_builder::HasCols for BackendSettlementResidentRelationship {
@@ -52,6 +55,10 @@ impl __sdk::__query_builder::HasCols for BackendSettlementResidentRelationship {
             affinity_band: __sdk::__query_builder::Col::new(table_name, "affinity_band"),
             familiarity_band: __sdk::__query_builder::Col::new(table_name, "familiarity_band"),
             morale_band: __sdk::__query_builder::Col::new(table_name, "morale_band"),
+            uses_familiar_address: __sdk::__query_builder::Col::new(
+                table_name,
+                "uses_familiar_address",
+            ),
         }
     }
 }

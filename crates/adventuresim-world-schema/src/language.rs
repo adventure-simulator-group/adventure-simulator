@@ -589,7 +589,7 @@ pub fn initial_character_languages(
 ) -> (OralLanguageHours, WrittenLanguageHours) {
     let oral = initial_oral_languages(profile, character_id, npc);
     // Literacy is social and institutional, never a universal consequence of
-    // speaking the local language. Noble estate and authored professional
+    // speaking the local language. Noble-family roles and authored professional
     // curricula are applied by character authority after relational roles are
     // established.
     let written = WrittenLanguageHours::default();

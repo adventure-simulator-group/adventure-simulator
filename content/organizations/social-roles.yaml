@@ -1,0 +1,349 @@
+[
+    {
+        "id":  "house_habsburg",
+        "name":  "House of Habsburg",
+        "description":  "The royal and imperial dynasty whose members hold noble family roles.",
+        "kind":  "noble_house",
+        "roles":  [
+                      {
+                          "id":  "house_member",
+                          "name":  "Member of the house",
+                          "profession":  "noble",
+                          "address_priority":  300,
+                          "social_precedence":  300,
+                          "address_title":  "my lord",
+                          "publicly_recognizable":  true,
+                          "description":  "The authored member of the house role.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "German"
+                      },
+                      {
+                          "id":  "prince",
+                          "name":  "Prince",
+                          "profession":  "prince",
+                          "address_priority":  320,
+                          "social_precedence":  340,
+                          "address_title":  "Your Highness",
+                          "publicly_recognizable":  true,
+                          "description":  "The authored prince role.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "German"
+                      }
+                  ],
+        "public_threat_referrals":  false,
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "activity":  {
+                         "training":  [
+
+                                      ],
+                         "reward":  "fame"
+                     },
+        "privileges":  [
+
+                       ],
+        "entry_role_ids":  [
+                               "house_member",
+                               "prince"
+                           ]
+    },
+    {
+        "id":  "habsburg_crown_lordships",
+        "name":  "Habsburg Crown Lordships",
+        "description":  "The aggregate lordships under Habsburg authority for first-pass social assignment.",
+        "kind":  "lordship",
+        "roles":  [
+                      {
+                          "id":  "serf",
+                          "name":  "Bound tenant",
+                          "profession":  "serf",
+                          "address_priority":  40,
+                          "social_precedence":  20,
+                          "address_title":  "goodman",
+                          "publicly_recognizable":  true,
+                          "description":  "The authored bound tenant role.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
+                      }
+                  ],
+        "public_threat_referrals":  false,
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "activity":  {
+                         "training":  [
+
+                                      ],
+                         "reward":  "fame"
+                     },
+        "privileges":  [
+
+                       ],
+        "entry_role_ids":  [
+                               "serf"
+                           ]
+    },
+    {
+        "id":  "settlement_civic_community",
+        "name":  "Settlement civic community",
+        "description":  "A template instantiated deterministically for each imported settlement.",
+        "kind":  "civic_community",
+        "roles":  [
+                      {
+                          "id":  "free_resident",
+                          "name":  "Free resident",
+                          "profession":  "free_resident",
+                          "address_priority":  60,
+                          "social_precedence":  60,
+                          "address_title":  "goodman",
+                          "publicly_recognizable":  true,
+                          "description":  "The authored free resident role.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "citizen",
+                          "name":  "Citizen",
+                          "profession":  "citizen",
+                          "address_priority":  100,
+                          "social_precedence":  100,
+                          "address_title":  "good citizen",
+                          "publicly_recognizable":  true,
+                          "description":  "The authored citizen role.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
+                      }
+                  ],
+        "public_threat_referrals":  false,
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "activity":  {
+                         "training":  [
+
+                                      ],
+                         "reward":  "fame"
+                     },
+        "privileges":  [
+
+                       ],
+        "entry_role_ids":  [
+                               "free_resident",
+                               "citizen"
+                           ]
+    },
+    {
+        "id":  "local_noble_house",
+        "name":  "Local noble house",
+        "description":  "A chapterless template instantiated for each settlement\u0027s local nobility.",
+        "kind":  "noble_house",
+        "roles":  [
+                      {
+                          "id":  "house_member",
+                          "name":  "Member of the local house",
+                          "profession":  "noble",
+                          "address_priority":  300,
+                          "social_precedence":  300,
+                          "address_title":  "my lord",
+                          "publicly_recognizable":  true,
+                          "description":  "The authored member of the local house role.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "German"
+                      }
+                  ],
+        "public_threat_referrals":  false,
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "activity":  {
+                         "training":  [
+
+                                      ],
+                         "reward":  "fame"
+                     },
+        "privileges":  [
+
+                       ],
+        "entry_role_ids":  [
+                               "house_member"
+                           ]
+    },
+    {
+        "id":  "local_lordship",
+        "name":  "Local lordship",
+        "description":  "A chapterless template instantiated for each settlement\u0027s local dependants.",
+        "kind":  "lordship",
+        "roles":  [
+                      {
+                          "id":  "serf",
+                          "name":  "Bound tenant",
+                          "profession":  "serf",
+                          "address_priority":  40,
+                          "social_precedence":  20,
+                          "address_title":  "goodman",
+                          "publicly_recognizable":  true,
+                          "description":  "The authored bound tenant role.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
+                      }
+                  ],
+        "public_threat_referrals":  false,
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "activity":  {
+                         "training":  [
+
+                                      ],
+                         "reward":  "fame"
+                     },
+        "privileges":  [
+
+                       ],
+        "entry_role_ids":  [
+                               "serf"
+                           ]
+    },
+    {
+        "id":  "common_family",
+        "name":  "Family",
+        "description":  "A durable family identity instantiated for every seeded birth family, distinct from its mutable household.",
+        "kind":  "family",
+        "roles":  [
+                      {
+                          "id":  "family_member",
+                          "name":  "Member of the family",
+                          "profession":  "family_member",
+                          "address_priority":  20,
+                          "social_precedence":  50,
+                          "address_title":  "kinsman",
+                          "publicly_recognizable":  true,
+                          "description":  "The authored member of the family role.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
+                      }
+                  ],
+        "public_threat_referrals":  false,
+        "chapters":  [
+
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  0,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "activity":  {
+                         "training":  [
+
+                                      ],
+                         "reward":  "fame"
+                     },
+        "privileges":  [
+
+                       ],
+        "entry_role_ids":  [
+                               "family_member"
+                           ]
+    }
+]

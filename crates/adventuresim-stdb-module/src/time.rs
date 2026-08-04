@@ -1064,13 +1064,9 @@ fn validate_organization_schedule(
             .ok_or("Professional practice time requires an organization")?;
         let row =
             crate::organization::require_activity_membership(ctx, character_id, organization_id)?;
-        let definition = adventuresim_core::organization::organization(organization_id)
-            .ok_or("Unknown organization")?;
-        let rank = definition
-            .rank(&row.rank_id)
-            .ok_or("Membership references an unknown organization rank")?;
-        if !rank.practice_allowed {
-            return Err("This organization rank does not permit independent practice".into());
+        let role = crate::organization::membership_role(ctx, &row)?;
+        if !role.practice_allowed {
+            return Err("This organization role does not permit independent practice".into());
         }
     }
     Ok(())
@@ -1106,10 +1102,9 @@ fn effective_organization_schedule(
                     organization_id,
                 )
                 .ok()?;
-                let definition = adventuresim_core::organization::organization(organization_id)?;
-                definition.rank(&membership.rank_id)
+                crate::organization::membership_role(ctx, &membership).ok()
             })
-            .is_some_and(|rank| rank.practice_allowed);
+            .is_some_and(|role| role.practice_allowed);
         if !eligible {
             effective.profession_practice_minutes = 0;
         }
@@ -2076,17 +2071,15 @@ fn apply_organization_outcomes(
             .ok_or("Eligible organization membership disappeared during the interval")?;
         let definition = adventuresim_core::organization::organization(organization_id)
             .ok_or("Unknown organization")?;
-        let rank = definition
-            .rank(&row.rank_id)
-            .ok_or("Membership references an unknown organization rank")?;
+        let role = crate::organization::membership_role(ctx, &row)?;
         let old = row.practice_minutes_accrued;
         row.practice_minutes_accrued = old.saturating_add(
             elapsed.saturating_mul(u64::from(schedule.profession_practice_minutes)),
         );
         let interval =
-            u64::from(rank.practice_reward_interval_minutes).saturating_mul(ACTIVITY_MINUTE_SCALE);
+            u64::from(role.practice_reward_interval_minutes).saturating_mul(ACTIVITY_MINUTE_SCALE);
         if interval == 0 {
-            return Err("Eligible organization rank has no practice reward cadence".into());
+            return Err("Eligible organization role has no practice reward cadence".into());
         }
         let reward = row.practice_minutes_accrued / interval - old / interval;
         match definition.activity.reward {

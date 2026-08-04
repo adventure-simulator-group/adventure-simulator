@@ -1,5 +1,5 @@
 use adventuresim_core::{
-    organization::{OrganizationDefinition, OrganizationRank, organization},
+    organization::{OrganizationDefinition, OrganizationRoleDefinition, organization},
     strategic_schedule::CombatTrainingProfile,
 };
 use adventuresim_world_schema::OfficialReligion;
@@ -569,8 +569,8 @@ fn organization_identity_display(
                 && membership.organization_id == presentation.organization_id
         })?;
         let definition = organization(&membership.organization_id)?;
-        let rank = definition.rank(&membership.rank_id)?;
-        Some((definition, rank))
+        let role = definition.role(&membership.role_id)?;
+        Some((definition, role))
     });
     let class = if selected.is_some() {
         "identity-control organization-identity-control is-readonly"
@@ -579,11 +579,11 @@ fn organization_identity_display(
     };
     html! {
         div class=(class) {
-            @if let Some((definition, rank)) = selected {
+            @if let Some((definition, role)) = selected {
                 (organization_crest(definition))
                 (organization_identity_copy(
                     definition.name.as_str(),
-                    &profession_name(definition, rank),
+                    &profession_name(definition, role),
                 ))
             } @else {
                 (empty_organization_crest())
@@ -635,11 +635,11 @@ fn organization_identity_picker(
         .iter()
         .filter_map(|membership| {
             let definition = organization(&membership.organization_id)?;
-            let rank = definition.rank(&membership.rank_id)?;
+            let role = definition.role(&membership.role_id)?;
             (membership.status == "active"
                 && minute <= membership.dues_paid_through_minute
                 && definition.recognition.includes(settlement_id))
-            .then_some((membership, definition, rank))
+            .then_some((membership, definition, role))
         })
         .collect::<Vec<_>>();
     let selected = presentation.and_then(|presentation| {
@@ -661,9 +661,9 @@ fn organization_identity_picker(
     html! {
         details class="organization-identity-picker" {
             summary class=(summary_class) {
-                @if let Some((_, definition, rank)) = selected {
+                @if let Some((_, definition, role)) = selected {
                     (organization_crest(definition))
-                    (organization_identity_copy(definition.name.as_str(), &profession_name(definition, rank)))
+                    (organization_identity_copy(definition.name.as_str(), &profession_name(definition, role)))
                 } @else {
                     (empty_organization_crest())
                     (organization_identity_copy("No organization", "No Profession"))
@@ -678,13 +678,13 @@ fn organization_identity_picker(
                         (organization_identity_copy("No organization", "No Profession"))
                     }
                 }
-                @for (_, definition, rank) in choices {
+                @for (_, definition, role) in choices {
                     @let is_selected = selected.is_some_and(|(_, selected_definition, _)| selected_definition.id == definition.id);
                     form method="post" action=(format!("{base}/organization-presentation/{}", definition.id)) {
                         button type="submit" class=(if is_selected { "organization-picker-option is-selected" } else { "organization-picker-option" })
                             role="menuitem" {
                             (organization_crest(definition))
-                            (organization_identity_copy(definition.name.as_str(), &profession_name(definition, rank)))
+                            (organization_identity_copy(definition.name.as_str(), &profession_name(definition, role)))
                         }
                     }
                 }
@@ -702,7 +702,10 @@ fn organization_identity_copy(organization_name: &str, profession: &str) -> Mark
     }
 }
 
-fn profession_name(definition: &OrganizationDefinition, rank: &OrganizationRank) -> String {
+fn profession_name(
+    definition: &OrganizationDefinition,
+    role: &OrganizationRoleDefinition,
+) -> String {
     let profession = match definition.service_id.as_deref() {
         Some("merchants") => Some("Merchant"),
         Some("weapons") => Some("Weaponsmith"),
@@ -715,9 +718,9 @@ fn profession_name(definition: &OrganizationDefinition, rank: &OrganizationRank)
         _ => None,
     };
     profession.map_or_else(
-        || rank.name.clone(),
-        |profession| match rank.id.as_str() {
-            "apprentice" | "journeyman" | "master" => format!("{} {profession}", rank.name),
+        || role.name.clone(),
+        |profession| match role.id.as_str() {
+            "apprentice" | "journeyman" | "master" => format!("{} {profession}", role.name),
             _ => profession.to_string(),
         },
     )
@@ -1078,8 +1081,8 @@ mod tests {
     #[test]
     fn service_memberships_name_the_profession() {
         let definition = organization("weaponsmith_guild").expect("weapons guild");
-        let rank = definition.ranks.first().expect("weapons guild rank");
-        assert_eq!(profession_name(definition, rank), "Apprentice Weaponsmith");
+        let role = definition.roles.first().expect("weapons guild role");
+        assert_eq!(profession_name(definition, role), "Apprentice Weaponsmith");
     }
 
     #[test]
@@ -1090,8 +1093,8 @@ mod tests {
             ("surgeons_guild", "Apprentice Surgeon", "scalpel"),
         ] {
             let definition = organization(id).unwrap();
-            let rank = definition.ranks.first().unwrap();
-            assert_eq!(profession_name(definition, rank), profession);
+            let role = definition.roles.first().unwrap();
+            assert_eq!(profession_name(definition, role), profession);
             assert_eq!(organization_charge(definition), charge);
         }
     }

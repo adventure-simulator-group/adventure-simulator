@@ -434,13 +434,13 @@ pub fn party_social_dialog(
                         p class="text-muted small-copy" { "Ask, and hear the answer in their own words." }
                         div class="about-person-topics" {
                             @for (question, answer) in [
-                                ("How stand I in thy regard?", format!("I hold thee in {} regard.", affinity_label.to_ascii_lowercase())),
-                                ("How well knowest thou me?", format!("I have known thee for {}.", familiarity_label(social.familiarity_hours))),
-                                ("How fares thy spirit?", if morale_sources.iter().any(|source| source.magnitude < 0.0) { "My spirit is troubled; look to the recent tidings, and thou shalt know why.".to_owned() } else { "My spirit rests easily enough at present.".to_owned() }),
-                                ("Art thou pledged to another?", social.relationship_answer.clone().unwrap_or_else(|| "I shall speak of courtship or marriage only when such suit is lawful between us.".to_owned())),
-                                ("How many years hast thou seen?", format!("I have seen {} years.", selected.age_years)),
-                                ("What faith dost thou profess?", match religion_name(social.religion_id.as_deref()) { "None" => "I profess no settled faith.".to_owned(), faith => format!("I am of the {faith} confession.") }),
-                                ("What report dost thou bear in these parts?", reputation_answer(social.fame, social.infamy).to_owned()),
+                                ("In what regard am I held?", format!("My regard is {}.", affinity_label.to_ascii_lowercase())),
+                                ("How long have we been acquainted?", format!("Our acquaintance hath endured {}.", familiarity_label(social.familiarity_hours))),
+                                ("How fares the spirit?", if morale_sources.iter().any(|source| source.magnitude < 0.0) { "My spirit is troubled; the recent tidings shall show why.".to_owned() } else { "My spirit rests easily enough at present.".to_owned() }),
+                                ("Is there a pledge to another?", social.relationship_answer.clone().unwrap_or_else(|| "I shall speak of courtship or marriage only when such suit is lawful between us.".to_owned())),
+                                ("How many years have passed?", format!("I have seen {} years.", selected.age_years)),
+                                ("What faith is professed?", match religion_name(social.religion_id.as_deref()) { "None" => "I profess no settled faith.".to_owned(), faith => format!("I am of the {faith} confession.") }),
+                                ("What report is borne in these parts?", reputation_answer(social.fame, social.infamy).to_owned()),
                             ] {
                                 button type="button" class="about-person-topic" data-about-question=(question) data-about-answer=(answer) { (question) }
                             }

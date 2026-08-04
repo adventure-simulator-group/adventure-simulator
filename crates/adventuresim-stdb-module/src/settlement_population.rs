@@ -408,7 +408,7 @@ fn insert_resident_with_seed(
                 | crate::strategic::SettlementCategory::City
                 | crate::strategic::SettlementCategory::Capital
         );
-        crate::social_estate::ensure_character_social_roles(
+        crate::social_roles::ensure_character_social_roles(
             ctx,
             character_id,
             settlement_id,
@@ -416,12 +416,15 @@ fn insert_resident_with_seed(
         )?;
         if existing.profession == "cleric" {
             if let Some(organization_id) =
-                crate::social_estate::religious_organization_for(&settlement.religion_id)
+                crate::social_roles::religious_organization_for(&settlement.religion_id)
             {
-                crate::social_estate::ensure_character_professional_role(
+                crate::social_roles::ensure_character_professional_role(
                     ctx,
                     character_id,
                     organization_id,
+                    adventuresim_core::organization::organization(organization_id)
+                        .and_then(|definition| definition.entry_role_ids.first())
+                        .ok_or("Religious organization has no entry role")?,
                 )?;
             }
         }
@@ -547,7 +550,7 @@ fn insert_resident_with_seed(
             | crate::strategic::SettlementCategory::City
             | crate::strategic::SettlementCategory::Capital
     );
-    crate::social_estate::ensure_character_social_roles(
+    crate::social_roles::ensure_character_social_roles(
         ctx,
         resident.character_id,
         settlement_id,
@@ -555,12 +558,15 @@ fn insert_resident_with_seed(
     )?;
     if resident.profession == "cleric" {
         if let Some(organization_id) =
-            crate::social_estate::religious_organization_for(&settlement.religion_id)
+            crate::social_roles::religious_organization_for(&settlement.religion_id)
         {
-            crate::social_estate::ensure_character_professional_role(
+            crate::social_roles::ensure_character_professional_role(
                 ctx,
                 resident.character_id,
                 organization_id,
+                adventuresim_core::organization::organization(organization_id)
+                    .and_then(|definition| definition.entry_role_ids.first())
+                    .ok_or("Religious organization has no entry role")?,
             )?;
         }
     }
@@ -599,7 +605,7 @@ pub fn ensure_settlement_population(
     ctx: &ReducerContext,
     settlement_id: &str,
 ) -> Result<(), String> {
-    crate::social_estate::ensure_settlement_social_organizations(ctx, settlement_id)?;
+    crate::social_roles::ensure_settlement_social_organizations(ctx, settlement_id)?;
     for (service, location, profession, role) in SERVICES {
         insert_resident(
             ctx,

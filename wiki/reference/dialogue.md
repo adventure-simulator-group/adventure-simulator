@@ -154,7 +154,9 @@ one start response exactly once when it creates a session; use it for greetings
 instead of making the browser select a topic implicitly. Topics have
 stable IDs, labels, knowledge/eligibility conditions, and explicitly prioritized
 responses. A response contains attributed turns composed of text and inline
-topic fragments. It may also contain an allowlisted typed runtime slot for a
+topic fragments. Every turn explicitly addresses either the acting participant,
+one role that must bind exactly one participant, or an explicitly group-addressed
+role. It may also contain an allowlisted typed runtime slot for a
 speaker's visible identity, place, symptom, claim, uncertainty, referral,
 evidence, testimony, or contract terms. Authored literals and runtime slots
 remain distinct in the compiled catalog and source map. The server resolves
@@ -171,7 +173,7 @@ Choices may contain `result_turns`; these are appended to the durable transcript
 only after the prompt resolves and its effects succeed.
 
 Conditions are a typed tree: `always`, `all`, `any`, `not`, and `fact`. Fact keys
-are allowlisted in `FactKey`; participant estate, profession, organization, religion,
+are allowlisted in `FactKey`; participant role/profession, organization, religion,
 familiarity, clothing,
 service role, location, time period, quest state, and flags are supported. New
 world facts require a Rust resolver change. Never put executable code, SQL, or
@@ -179,16 +181,24 @@ client-trusted effects in content. Effects are likewise a closed enum. A client
 sends catalog revision and stable topic/choice IDs; the authoritative reducer
 resolves turns and effects from the embedded catalog.
 
-`participant_estate` is resolved once per participant from that actor's
-server-authoritative estate basis and intrinsic organization-role definition.
-It supports both durable Characters and persistent settlement NPCs without
-enumerating house IDs in authored dialogue. Because role-keyed scalar facts
-would otherwise overwrite each other, the compiler rejects
-`participant_estate` for any authored dialogue role whose maximum cardinality
-is greater than one. Its comparison value must be textual `serf`, `freeman`,
-`burgher`, or `noble`. `participant_profession` retains its existing meaning;
-the broader multi-profession predicate is intentionally deferred until all
-professional assignment sources can populate it faithfully.
+`participant_role` is a multi-valued boolean fact resolved from every
+server-authoritative organization-role assignment. It may match a specific
+role ID, profession, or both without enumerating organization IDs in dialogue.
+This permits `noble`, `serf`, `citizen`, and professional identities to coexist
+without overwriting one another. `participant_profession` retains the
+resident's presented service profession semantics where that narrower fact is
+desired.
+
+Direct address uses typed runtime fragments for the visible title and the
+second-person subject, object, possessives, reflexive, and verb agreement.
+Only an explicitly group-addressed role receives plural formal `you`. A singular addressee receives
+familiar `thou` when the speaker socially outranks them or the pair are spouse,
+active lovers/courtiers, immediate parent/child/siblings, or have forty shared
+hours; otherwise speech uses formal `you`. The register is resolved once when
+the shared transcript event is authored, never separately per viewer. Public
+role metadata chooses one winning public identity by address priority, and
+both title and social precedence come from that same role: clergy overrides
+family, noble family overrides citizen, and unrecognized roles cannot leak.
 
 Investigation dialogue uses generic facts and effects rather than per-case
 content IDs. A local-problem referral records the character-owned safe rumor
@@ -245,7 +255,10 @@ existing membership authority. Membership state, promotion availability,
 dues, and current presentation are server-built dialogue facts. Before asking
 for confirmation, the representative names the organization and states the
 joining fee and admission requirements, the dues amount, interval, and current
-standing, or the current rank and next-rank requirements as applicable.
+standing, or the current role and every directly reachable role's requirements
+as applicable. When a role branches, the authoritative prompt expands into one
+stable choice per authored destination role; the selected destination is passed
+explicitly to the promotion reducer and revalidated as a direct transition.
 Committed prompt answers are retry-safe when a response is lost; a new answer
 or an action receipt from a different prompt cannot mutate a closed prompt.
 The representative's greeting anchors a highlighted organization-business

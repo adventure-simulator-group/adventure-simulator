@@ -689,7 +689,7 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
                     id: 0,
                     character_id: spec.id,
                     organization_id: organization.organization_id.clone(),
-                    rank_id: organization.rank_id.clone(),
+                    role_id: organization.role_id.clone(),
                     joined_minute: 0,
                     dues_paid_through_minute: paid_through,
                     status: "active".into(),

@@ -2044,7 +2044,7 @@ pub struct OrganizationMembership {
     pub id: u64,
     pub character_id: u64,
     pub organization_id: String,
-    pub rank_id: String,
+    pub role_id: String,
     pub joined_minute: u64,
     pub dues_paid_through_minute: u64,
     pub status: String,

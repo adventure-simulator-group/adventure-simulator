@@ -329,7 +329,7 @@ fn discard_placeholder_settlement_data(ctx: &ReducerContext) -> Result<(), Strin
                 crate::character::delete_character_for_world_import(ctx, character)?;
             }
         }
-        crate::social_estate::delete_unreferenced_settlement_social_organizations(
+        crate::social_roles::delete_unreferenced_settlement_social_organizations(
             ctx,
             settlement_id,
         );

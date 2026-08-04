@@ -215,6 +215,7 @@ pub fn start_dialogue(
                     &session,
                     character_id,
                     &turn.speaker,
+                    Some(&turn.addressee),
                     &turn.fragments,
                 )?)
                 .map_err(|_| "Could not encode dialogue greeting")?,

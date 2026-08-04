@@ -1161,7 +1161,7 @@ fn delete_character_data(
     {
         ctx.db.organization_membership().id().delete(row.id);
     }
-    crate::social_estate::delete_character_social_roles(ctx, character.id);
+    crate::social_roles::delete_character_social_roles(ctx, character.id);
     if ctx
         .db
         .organization_presentation()
@@ -2008,7 +2008,7 @@ pub(crate) fn set_character_languages_for_settlement(
     );
     skills.oral_languages = oral;
     // Relocating a character can replace their authored vernacular identity
-    // during bootstrap, but literacy comes from estate and institutional
+    // during bootstrap, but literacy comes from organization roles and institutional
     // training and must not be erased by a change of settlement.
     ctx.db.character_skills().character_id().update(skills);
     Ok(())
@@ -2154,7 +2154,7 @@ pub(crate) fn insert_character_with_origin(
                 | crate::strategic::SettlementCategory::City
                 | crate::strategic::SettlementCategory::Capital
         );
-        crate::social_estate::ensure_character_social_roles(
+        crate::social_roles::ensure_character_social_roles(
             ctx,
             character.id,
             &start_settlement.id,
@@ -2191,20 +2191,9 @@ pub(crate) fn insert_character_with_origin(
         .insert(character_attributes.clone());
     let (oral_languages, mut written_languages) =
         adventuresim_world_schema::initial_character_languages(start_settlement.languages, id, npc);
-    let creation_literacy = npc_life.and_then(|facts| facts.literacy).or_else(|| {
-        (!temporary
-            && crate::social_estate::character_estate(ctx, id)
-                .is_ok_and(|estate| estate == adventuresim_core::organization::Estate::Noble))
-        .then(|| {
-            if start_settlement.languages.dominant_german()
-                == adventuresim_world_schema::OralLanguage::Low
-            {
-                adventuresim_world_schema::WrittenLanguage::Low
-            } else {
-                adventuresim_world_schema::WrittenLanguage::German
-            }
-        })
-    });
+    let creation_literacy = npc_life
+        .and_then(|facts| facts.literacy)
+        .or(crate::social_roles::character_creation_literacy(ctx, id)?);
     let life_skills = (starting.is_none() && (!temporary || npc)).then(|| {
         let profile = adventuresim_core::strategic_schedule::ActivityTrainingProfile {
             combat: adventuresim_core::strategic_schedule::CombatTrainingProfile {
@@ -2544,8 +2533,8 @@ pub(crate) fn insert_character_with_origin(
         let definition =
             adventuresim_core::organization::organization(&starting_organization.organization_id)
                 .ok_or("Starting organization is not in the catalog")?;
-        if definition.rank(&starting_organization.rank_id).is_none() {
-            return Err("Starting rank is not in the organization catalog".into());
+        if definition.role(&starting_organization.role_id).is_none() {
+            return Err("Starting role is not in the organization catalog".into());
         }
         let now = ctx
             .db
@@ -2564,7 +2553,6 @@ pub(crate) fn insert_character_with_origin(
                 id: 0,
                 character_id: character.id,
                 organization_id: starting_organization.organization_id.clone(),
-                rank_id: starting_organization.rank_id.clone(),
                 joined_minute,
                 dues_paid_through_minute: paid_through,
                 status: crate::organization::MEMBERSHIP_ACTIVE.into(),
@@ -2577,10 +2565,11 @@ pub(crate) fn insert_character_with_origin(
                 character_id: character.id,
                 organization_id: starting_organization.organization_id.clone(),
             });
-        crate::social_estate::ensure_character_professional_role(
+        crate::social_roles::ensure_character_professional_role(
             ctx,
             character.id,
             &starting_organization.organization_id,
+            &starting_organization.role_id,
         )?;
     }
     crate::capability::refresh_character_capability(ctx, character.id)?;

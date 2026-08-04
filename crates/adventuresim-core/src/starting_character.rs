@@ -147,8 +147,8 @@ pub struct StartingSkills {
 pub struct StartingOrganization {
     pub organization_id: String,
     pub organization_name: String,
-    pub rank_id: String,
-    pub rank_name: String,
+    pub role_id: String,
+    pub role_name: String,
 }
 
 /// Exact non-neutral personality axes persisted for a generated character.
@@ -707,12 +707,12 @@ fn simulate_starting_life(
     let requirements = organization
         .into_iter()
         .flat_map(|definition| {
-            let rank_id = &spec
+            let role_id = &spec
                 .organization
                 .as_ref()
                 .expect("paired organization")
-                .rank_id;
-            requirements_through_rank(definition, rank_id)
+                .role_id;
+            requirements_for_role(definition, role_id)
         })
         .cloned()
         .collect::<Vec<_>>();
@@ -835,27 +835,24 @@ fn required_religion<'a>(
             .as_deref()
             .is_some_and(|selected| selected != religion)
         {
-            return Err("starting organization rank has conflicting religions");
+            return Err("starting organization role has conflicting religions");
         }
         selected = Some(religion.clone());
     }
     Ok(selected)
 }
 
-fn requirements_through_rank<'a>(
+fn requirements_for_role<'a>(
     organization: &'a crate::organization::OrganizationDefinition,
-    rank_id: &str,
+    role_id: &str,
 ) -> Vec<&'a Requirement> {
     let mut requirements = organization
         .admission
         .requirements
         .iter()
         .collect::<Vec<_>>();
-    for rank in &organization.ranks {
-        requirements.extend(rank.requirements.iter());
-        if rank.id == rank_id {
-            break;
-        }
+    if let Some(role) = organization.role(role_id) {
+        requirements.extend(role.requirements.iter());
     }
     requirements
 }
@@ -1160,15 +1157,15 @@ fn apply_professional_start(
         .starting_role
         .as_ref()
         .expect("filtered starting role");
-    let rank_id = match spec.age_tier {
-        StartingAgeTier::Adult => &role.adult_rank_id,
-        StartingAgeTier::Old => &role.old_rank_id,
+    let role_id = match spec.age_tier {
+        StartingAgeTier::Adult => &role.adult_role_id,
+        StartingAgeTier::Old => &role.old_role_id,
         StartingAgeTier::Young => return Err("young characters cannot have a profession"),
     };
-    let rank = organization
-        .rank(rank_id)
-        .ok_or("starting organization rank is missing")?;
-    let starting_requirements = requirements_through_rank(organization, rank_id);
+    let assigned_role = organization
+        .role(role_id)
+        .ok_or("starting organization role is missing")?;
+    let starting_requirements = requirements_for_role(organization, role_id);
     let religion_id = required_religion(starting_requirements.iter().copied())?;
     let adult = spec.age_tier == StartingAgeTier::Adult;
     let purse_base = match profession {
@@ -1237,15 +1234,15 @@ fn apply_professional_start(
     spec.background = format!(
         "{} {} of {}",
         if adult { "Newly qualified" } else { "Veteran" },
-        rank.name,
+        assigned_role.name,
         organization.name
     );
     spec.profession = Some(profession);
     spec.organization = Some(StartingOrganization {
         organization_id: organization.id.clone(),
         organization_name: organization.name.clone(),
-        rank_id: rank.id.clone(),
-        rank_name: rank.name.clone(),
+        role_id: assigned_role.id.clone(),
+        role_name: assigned_role.name.clone(),
     });
     spec.religion_id = religion_id;
     spec.settlement_selector = tier_hash("settlement", seed, spec.age_tier, slot);
@@ -1328,7 +1325,7 @@ mod tests {
         }
         let adult = roster(GENERATOR_VERSION, SEED, StartingAgeTier::Adult).unwrap();
         let old = roster(GENERATOR_VERSION, SEED, StartingAgeTier::Old).unwrap();
-        for (profession, id, name, adult_rank, old_rank) in [
+        for (profession, id, name, adult_role, old_role) in [
             (
                 StartingProfession::WitchHunter,
                 "hunt_pale_lantern",
@@ -1359,17 +1356,17 @@ mod tests {
             let old_organization = old[slot].organization.as_ref().unwrap();
             assert_eq!(adult_organization.organization_id, id);
             assert_eq!(adult_organization.organization_name, name);
-            assert_eq!(adult_organization.rank_id, adult_rank);
+            assert_eq!(adult_organization.role_id, adult_role);
             assert_eq!(old_organization.organization_id, id);
             assert_eq!(old_organization.organization_name, name);
-            assert_eq!(old_organization.rank_id, old_rank);
+            assert_eq!(old_organization.role_id, old_role);
             assert!(adult[slot].religion_id.is_none());
             assert!(old[slot].religion_id.is_none());
         }
         assert!(adult.iter().zip(&old).all(|(adult, old)| {
             adult.id != old.id
-                && adult.organization.as_ref().unwrap().rank_id
-                    != old.organization.as_ref().unwrap().rank_id
+                && adult.organization.as_ref().unwrap().role_id
+                    != old.organization.as_ref().unwrap().role_id
         }));
         assert_eq!(
             adult,
@@ -1387,11 +1384,11 @@ mod tests {
                 &candidate.organization.as_ref().unwrap().organization_id,
             )
             .unwrap();
-            let rank = organization
-                .rank(&candidate.organization.as_ref().unwrap().rank_id)
+            let role = organization
+                .role(&candidate.organization.as_ref().unwrap().role_id)
                 .unwrap();
             assert!(
-                requirements_through_rank(organization, &rank.id)
+                requirements_for_role(organization, &role.id)
                     .into_iter()
                     .all(|requirement| requirement_met(
                         &candidate.skills,

@@ -148,7 +148,7 @@ pub(super) async fn render_party_personal(
     let apprenticeships: Vec<crate::spacetimedb::OrganizationMembership> = state
         .db
         .query(&format!(
-            "SELECT * FROM organization_membership WHERE character_id = {character_id}"
+            "SELECT * FROM backend_organization_memberships WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();

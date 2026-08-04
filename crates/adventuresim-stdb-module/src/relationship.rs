@@ -818,6 +818,25 @@ pub fn backend_character_relationship_statuses(
         .collect()
 }
 
+/// Pairwise courtship lookup for other gateway projections. Keeping this
+/// beside the private table avoids leaking rows or creating an accessor-name
+/// collision in consumers that also read relationship views.
+pub(crate) fn active_courtship_between_view(ctx: &ViewContext, left: u64, right: u64) -> bool {
+    ctx.db
+        .courtship()
+        .first_character_id()
+        .filter(left)
+        .chain(ctx.db.courtship().first_character_id().filter(right))
+        .any(|courtship| {
+            ((courtship.first_character_id == left && courtship.second_character_id == right)
+                || (courtship.first_character_id == right && courtship.second_character_id == left))
+                && matches!(
+                    courtship.status,
+                    CourtshipStatus::Active | CourtshipStatus::Exposed
+                )
+        })
+}
+
 #[view(accessor = backend_courtship_discoveries, public)]
 pub fn backend_courtship_discoveries(ctx: &ViewContext) -> Vec<BackendCourtshipDiscoveryStatus> {
     if !is_strategic_gateway(ctx) {
@@ -1491,6 +1510,19 @@ pub fn ensure_seeded_family_households(
         ];
         for (index, character_id) in family.iter().copied().enumerate() {
             join_household(ctx, &household_id, character_id, 0, roles[index]);
+        }
+        let family_key = format!("seeded:{settlement_id}:{cohort}");
+        let noble = family.iter().copied().any(|character_id| {
+            crate::social_roles::character_has_profession(ctx, character_id, "noble")
+                .unwrap_or(false)
+        });
+        for character_id in family.iter().copied() {
+            crate::social_roles::ensure_character_family_role(
+                ctx,
+                character_id,
+                &family_key,
+                noble,
+            )?;
         }
         if family.len() < 4 {
             continue;
@@ -2496,6 +2528,7 @@ pub fn settle_due_births(ctx: &ReducerContext, mother_id: u64, now: u64) -> Resu
             None,
             Some(&newborn_life),
         )?;
+        crate::social_roles::copy_birth_family_roles(ctx, mother.id, child_id)?;
         record_character_birth(
             ctx,
             child_id,
@@ -4346,7 +4379,32 @@ mod tests {
         assert!(seed.contains("HouseholdRole::Spouse"));
         assert!(seed.contains("KinshipKind::Parent"));
         assert!(seed.contains("KinshipKind::Sibling"));
+        assert!(seed.contains("ensure_character_family_role"));
+        assert!(seed.contains("seeded:{settlement_id}:{cohort}"));
         assert!(seed.contains("character_personality().character_id().update"));
+    }
+
+    #[test]
+    fn marriage_preserves_birth_family_and_birth_copies_it_to_the_child() {
+        let source = include_str!("relationship.rs");
+        let wedding = source
+            .split("pub fn settle_due_weddings")
+            .nth(1)
+            .unwrap()
+            .split("pub fn settle_due_weddings_global")
+            .next()
+            .unwrap();
+        assert!(!wedding.contains("ensure_character_family_role"));
+        assert!(!wedding.contains("delete_character_social_roles"));
+        let birth = source
+            .split("pub fn settle_due_births")
+            .nth(1)
+            .unwrap()
+            .split("pub fn settle_due_births_global")
+            .next()
+            .unwrap();
+        assert!(birth.contains("insert_character_with_origin"));
+        assert!(birth.contains("copy_birth_family_roles"));
     }
 
     #[test]
