@@ -562,7 +562,8 @@
   function decorateContainers(browser) {
     browser.querySelectorAll("tr.trade-inventory-row").forEach((row) => {
       const label = row.querySelector("[data-container-capacity-ml]");
-      if (!label || !["cooking_pan", "cooking_pot", "portable_oven"].includes(label.dataset.itemName)) return;
+      if ((!row.dataset.containerObjectId && !rowInventoryKey(row)) || !label
+          || !["cooking_pan", "cooking_pot", "portable_oven"].includes(label.dataset.itemName)) return;
       if (row.dataset.containerDecorated) {
         const used = Number(row.dataset.containerUsedMl || 0);
         const capacity = Number(label.dataset.containerCapacityMl || 0);
@@ -600,6 +601,7 @@
       row.addEventListener("dragleave", () => row.classList.remove("inventory-container-drop-target"));
       row.addEventListener("drop", (event) => {
         event.preventDefault();
+        event.stopPropagation();
         row.classList.remove("inventory-container-drop-target");
         const child = event.dataTransfer?.getData("application/x-adventuresim-inventory-object");
         if (child) browser.dispatchEvent(new CustomEvent("inventory-container-move", {
@@ -648,11 +650,12 @@
     actions.append(select, move);
   }
 
-  let containerHydrationGeneration = 0;
+  const containerHydrationGenerations = new WeakMap();
   let authoritativeContainerSnapshot = null;
   async function hydrateContainerState(root = document) {
     if (!global.fetch) return;
-    const generation = ++containerHydrationGeneration;
+    const generation = (containerHydrationGenerations.get(root) || 0) + 1;
+    containerHydrationGenerations.set(root, generation);
     let snapshot;
     try {
       snapshot = await global.fetch("/api/inventory/containers", { headers: { Accept: "application/json" } }).then((response) => {
@@ -660,7 +663,7 @@
         return response.json();
       });
     } catch (_) { return; }
-    if (generation !== containerHydrationGeneration) return;
+    if (generation !== containerHydrationGenerations.get(root)) return;
     authoritativeContainerSnapshot = snapshot;
     const objects = new Map(snapshot.objects.map((object) => [object.id, object]));
     const parents = new Map(snapshot.edges.map((edge) => [edge.child_object_id, edge.parent_object_id]));
@@ -756,15 +759,17 @@
       host.append(counterpart); mount(counterpart);
     }
     counterpart._containerPanelStack ||= [];
+    const sourceRows = [...document.querySelectorAll(`tr[data-container-ancestor~="${CSS.escape(id)}"]`)];
+    const tbody = counterpart.querySelector("tbody");
+    const panelRows = tbody ? [...tbody.children] : [];
     counterpart._containerPanelStack.push({
       active: document.activeElement,
-      rowHidden: [...counterpart.querySelectorAll("tr.trade-inventory-row")].map((row) => [row, row.hidden]),
+      rowHidden: panelRows.map((row) => [row, row.hidden]),
       previousId: counterpart.dataset.openContainerObjectId || "",
-      tbodyHtml: counterpart.querySelector("tbody")?.innerHTML || "",
+      rows: panelRows,
     });
-    counterpart.querySelectorAll("[data-container-transient]").forEach((row) => row.remove());
-    const tbody = counterpart.querySelector("tbody");
-    document.querySelectorAll(`tr[data-container-ancestor~="${CSS.escape(id)}"]`).forEach((source) => {
+    tbody?.replaceChildren();
+    sourceRows.forEach((source) => {
       if (!counterpart.contains(source) && tbody) {
         const clone = source.cloneNode(true); clone.dataset.containerTransient = "true"; clone.hidden = false; tbody.append(clone);
       }
@@ -846,16 +851,17 @@
     const snapshot = browser._containerPanelStack?.pop();
     if (!snapshot) return;
     const tbody = browser.querySelector("tbody");
-    if (snapshot.previousId && tbody) {
-      tbody.innerHTML = snapshot.tbodyHtml;
+    if (tbody) {
+      tbody.replaceChildren(...snapshot.rows);
+      snapshot.rowHidden.forEach(([row, hidden]) => { row.hidden = hidden; });
+    }
+    if (snapshot.previousId) {
       browser.dataset.openContainerObjectId = snapshot.previousId;
       browser.querySelector("[data-container-close]").hidden = false;
       const water = browser.querySelector("[data-container-water-actions]");
       if (water) water.hidden = !/^\d+$/.test(snapshot.previousId);
       hydrateContainerState(browser);
     } else {
-      snapshot.rowHidden.forEach(([row, hidden]) => { row.hidden = hidden; });
-      browser.querySelectorAll("[data-container-transient]").forEach((row) => row.remove());
       browser.querySelector("[data-container-close]").hidden = true;
       const water = browser.querySelector("[data-container-water-actions]"); if (water) water.hidden = true;
       delete browser.dataset.openContainerObjectId;

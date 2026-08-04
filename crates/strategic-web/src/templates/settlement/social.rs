@@ -695,9 +695,18 @@ pub(super) fn inventory_rail(
 
     html! {
         (sidebar_section(&title, html! {
+            div class="inventory-browser" data-inventory-browser="service-personal" data-optional-columns="" {
+            div class="inventory-browser-toolbar" {
+                label class="inventory-browser-search" {
+                    span class="sr-only" { "Search items by name" }
+                    input type="search" data-inventory-search placeholder="Search items" autocomplete="off"
+                        aria-label="Search items by name";
+                }
+            }
             @if inventory.is_empty() {
                 p class="text-muted small-copy" { "No items carried." }
             } @else {
+                div class="inventory-browser-table-frame" {
                 table class="trade-inventory-table" {
                     (trade_inventory_table_header(false, None))
                     tbody {
@@ -724,6 +733,8 @@ pub(super) fn inventory_rail(
                 }
                 }
             }
+            }
+            }
         }))
     }
 }
@@ -734,6 +745,21 @@ mod tests {
     use crate::spacetimedb::*;
     use crate::templates::settlement::settlement_resident_location_page;
     use crate::templates::settlement::test_support::*;
+
+    #[test]
+    fn service_inventory_mounts_the_shared_inventory_browser() {
+        let rendered = inventory_rail(None, &[], &[], &[], None, false).into_string();
+        assert!(rendered.contains("data-inventory-browser=\"service-personal\""));
+        let inventory = [InventoryItem {
+            id: 7,
+            character_id: 1,
+            item_id: "cooking_pot".into(),
+            qty: 1,
+        }];
+        let rendered = inventory_rail(None, &inventory, &[], &[], None, false).into_string();
+        assert!(rendered.contains("data-inventory-browser=\"service-personal\""));
+        assert!(rendered.contains("data-personal-inventory-id=\"7\""));
+    }
 
     #[test]
     fn npc_description_fallback_uses_the_neutral_person_silhouette() {

@@ -101,6 +101,11 @@ pub(crate) fn ancestry_reaches_fireplace(ctx: &ReducerContext, object_id: u64) -
     true
 }
 
+pub(crate) fn row_is_fireplace_rooted(ctx: &ReducerContext, kind: &str, row_id: u64) -> bool {
+    object_for_row(ctx, kind, row_id)
+        .is_some_and(|object| ancestry_reaches_fireplace(ctx, object.id))
+}
+
 pub(crate) fn detach_if_nested(ctx: &ReducerContext, object_id: u64) -> Result<bool, String> {
     if ancestry_reaches_fireplace(ctx, object_id) {
         return Err("Retrieve the container from its fireplace before moving its contents".into());
@@ -648,6 +653,29 @@ mod tests {
         assert!(super::is_generic_container("portable_oven"));
         assert!(!super::is_generic_container("waterskin"));
     }
+
+    #[test]
+    fn empty_container_reconciliation_covers_removal_and_automatic_drain() {
+        let source = include_str!("inventory_container.rs");
+        let remove = source
+            .split("pub fn remove_inventory_item_from_container")
+            .nth(1)
+            .unwrap()
+            .split("pub fn pour_water_into_container")
+            .next()
+            .unwrap();
+        assert!(remove.contains("merge_empty_container(ctx, child_object_id)"));
+        assert!(remove.contains("merge_empty_container(ctx, former_parent)"));
+        let drain = source
+            .split("pub(crate) fn consume_contained_water")
+            .nth(1)
+            .unwrap()
+            .split("fn require_mutable")
+            .next()
+            .unwrap();
+        assert!(drain.contains("!ancestry_reaches_fireplace"));
+        assert!(drain.contains("merge_empty_container(ctx, liquid.container_object_id)"));
+    }
 }
 
 pub(crate) fn ensure_object(
@@ -747,12 +775,13 @@ pub(crate) fn consume_contained_water(
     kind: &str,
     owner: &str,
     requested_ml: u64,
-) -> u64 {
+) -> Result<u64, String> {
     let mut liquids = ctx
         .db
         .inventory_object()
         .iter()
         .filter(|object| object.location_kind == kind && object.location_owner == owner)
+        .filter(|object| !ancestry_reaches_fireplace(ctx, object.id))
         .filter_map(|object| {
             ctx.db
                 .container_liquid()
@@ -771,6 +800,7 @@ pub(crate) fn consume_contained_water(
                 .container_liquid()
                 .container_object_id()
                 .delete(liquid.container_object_id);
+            merge_empty_container(ctx, liquid.container_object_id)?;
         } else {
             ctx.db
                 .container_liquid()
@@ -781,7 +811,7 @@ pub(crate) fn consume_contained_water(
             break;
         }
     }
-    requested_ml - remaining
+    Ok(requested_ml - remaining)
 }
 
 fn require_mutable(ctx: &ReducerContext, object_id: u64) -> Result<(), String> {
@@ -956,6 +986,7 @@ pub fn remove_inventory_item_from_container(
         .inventory_containment()
         .child_object_id()
         .delete(child_object_id);
+    merge_empty_container(ctx, child_object_id)?;
     merge_empty_container(ctx, former_parent)?;
     Ok(())
 }

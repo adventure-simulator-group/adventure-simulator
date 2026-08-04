@@ -184,8 +184,8 @@ test("containers hydrate authoritative trees and wire accessible mutations", () 
 
 test("container hydration is race-safe and empty-stack opening is read-only", () => {
   const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
-  assert.match(source, /containerHydrationGeneration/);
-  assert.match(source, /generation !== containerHydrationGeneration/);
+  assert.match(source, /containerHydrationGenerations = new WeakMap/);
+  assert.match(source, /generation !== containerHydrationGenerations\.get\(root\)/);
   assert.doesNotMatch(source, /\/api\/inventory\/containers\/open/);
   assert.match(source, /parentLegacy/);
   assert.match(source, /parent_scope/);
@@ -196,4 +196,17 @@ test("container hydration is race-safe and empty-stack opening is read-only", ()
   assert.match(source, /inventoryCounterpart/);
   assert.match(source, /previousId/);
   assert.match(source, /data-container-move-into/);
+});
+
+test("nested container panels preserve live nodes and row drops do not bubble", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
+  assert.match(source, /rows: panelRows/);
+  assert.match(source, /replaceChildren\(\.\.\.snapshot\.rows\)/);
+  assert.doesNotMatch(source, /tbodyHtml/);
+  assert.match(source, /event\.stopPropagation\(\)/);
+});
+
+test("container decoration requires an owned or authoritative object row", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
+  assert.match(source, /!row\.dataset\.containerObjectId && !rowInventoryKey\(row\)/);
 });

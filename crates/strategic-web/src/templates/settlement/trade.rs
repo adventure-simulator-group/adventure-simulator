@@ -367,11 +367,16 @@ pub fn fireplace_page(
             }))
             @if !vessel_stations.is_empty() {
                 (sidebar_section("Vessels over the fire", html! {
+                    div data-inventory-browser="fireplace-vessels-left" data-optional-columns="" {
                     @for vessel in vessel_stations {
                         @let object_id = vessel.instrument_object_id.unwrap_or_default();
                         @let vessel_dish = vessel_dishes.iter().find(|dish| dish.station_key == vessel.key);
+                        @let vessel_item_id = vessel.instrument_item_id.as_deref().unwrap_or("container");
+                        @let vessel_definition = definitions.iter().find(|item| item.id == vessel_item_id);
                         section class="fireplace-vessel" data-fireplace-container=(object_id) {
-                            p { strong { (vessel.instrument_item_id.as_deref().map(item_display_name).unwrap_or_else(|| "Container".into())) } }
+                            p { strong { (item_name_with_display(vessel_item_id, &item_display_name(vessel_item_id), vessel_definition)) } }
+                            button type="button" class="btn btn-secondary btn-small"
+                                data-container-open=(object_id) aria-label=(format!("Open {}", item_display_name(vessel_item_id))) { "Open" }
                             @if let Some(cooking) = vessel_dish {
                                 p class="small-copy" { (cooking.display_name.as_str()) " is cooking." }
                                 form action=(format!("{action_base}/retrieve")) method="post" {
@@ -389,6 +394,7 @@ pub fn fireplace_page(
                                 }
                             }
                         }
+                    }
                     }
                 }))
             }
@@ -474,7 +480,7 @@ fn fireplace_inventory_row(
     let amount = measured.unwrap_or(quantity.saturating_mul(1_000_000));
     html! { tr class="trade-inventory-row trade-row-player" data-cooking-source=[lot.map(|_| id)] data-personal-inventory-id=[(scope == "personal").then_some(id)] data-party-inventory-id=[(scope == "party").then_some(id)] {
         td class="inventory-item-type" { (item_type_icon(item_id)) }
-        td class="inventory-item-name" { (&display)
+        td class="inventory-item-name" { (item_name_with_display(item_id, &display, definition))
             span class="inventory-row-actions" {
                 @if lot.is_some() && adventuresim_core::food::is_cookable_ingredient(item_id) {
                     button type="button" class="trade-transfer trade-transfer-left"
@@ -2511,6 +2517,21 @@ mod tests {
     use crate::spacetimedb::{EquipmentAnchorKind, EquipmentLocation};
     use crate::templates::settlement::test_support::*;
     use adventuresim_core::equipment::EncumbranceSummary;
+
+    #[test]
+    fn fireplace_container_rows_expose_shared_browser_metadata_and_open_controls() {
+        let source = include_str!("trade.rs");
+        let fireplace = source
+            .split("pub fn fireplace_page")
+            .nth(1)
+            .unwrap()
+            .split("pub(super) fn herbalism_activity_dialog")
+            .next()
+            .unwrap();
+        assert!(fireplace.contains("data-inventory-browser=\"fireplace-vessels-left\""));
+        assert!(fireplace.contains("data-container-open=(object_id)"));
+        assert!(fireplace.contains("item_name_with_display(item_id, &display, definition)"));
+    }
 
     #[test]
     fn inferred_general_blacksmith_exposes_limited_weapon_and_armor_stock() {

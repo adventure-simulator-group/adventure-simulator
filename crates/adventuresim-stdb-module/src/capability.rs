@@ -393,6 +393,9 @@ impl StrategicEquipment {
             .character_id()
             .filter(character_id)
             .filter(|inventory| inventory.item_id == "arrow")
+            .filter(|inventory| {
+                !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", inventory.id)
+            })
             .map(|inventory| inventory.quantity)
             .sum();
         let mut armor = [adventuresim_core::equipment::LayeredArmor::default(); 7];
@@ -474,6 +477,13 @@ impl StrategicEquipment {
             .character_id()
             .filter(character_id)
             .filter_map(|inventory: InventoryItem| {
+                if crate::inventory_container::row_is_fireplace_rooted(
+                    ctx,
+                    "personal",
+                    inventory.id,
+                ) {
+                    return None;
+                }
                 if let Some(lot) = ctx
                     .db
                     .food_lot()
@@ -507,6 +517,7 @@ impl StrategicEquipment {
             .filter(|object| {
                 object.location_kind == "personal"
                     && object.location_owner == character_id.to_string()
+                    && !crate::inventory_container::ancestry_reaches_fireplace(ctx, object.id)
             })
             .filter_map(|object| {
                 ctx.db

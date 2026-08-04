@@ -376,6 +376,7 @@ fn submit(
     } else {
         Vec::new()
     };
+    crate::inventory_container::reconcile_consumed_row(ctx, "personal", inventory_item_id, true)?;
     crate::character::unequip_wearable(ctx, inventory_item_id);
     // Zero is reserved for smith custody and is excluded by every owner-scoped inventory path.
     inventory.character_id = 0;
@@ -817,6 +818,21 @@ mod tests {
                     attachment_point_id: "right".into(),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn repair_submission_releases_nested_object_custody() {
+        let source = include_str!("repair.rs");
+        let submit = source
+            .split("fn submit(")
+            .nth(1)
+            .unwrap()
+            .split("fn saved_attachment_targets")
+            .next()
+            .unwrap();
+        assert!(
+            submit.contains("reconcile_consumed_row(ctx, \"personal\", inventory_item_id, true)")
         );
     }
 }

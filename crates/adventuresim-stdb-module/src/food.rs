@@ -2055,6 +2055,9 @@ pub fn consume_travel_food_to_zero(ctx: &ReducerContext, character_id: u64) -> R
             .party_inventory_item()
             .party_id()
             .filter(party_id)
+            .filter(|inventory| {
+                !crate::inventory_container::row_is_fireplace_rooted(ctx, "party", inventory.id)
+            })
             .filter_map(|inventory| {
                 let lot = ctx
                     .db
@@ -2135,6 +2138,9 @@ pub fn consume_travel_food_to_zero(ctx: &ReducerContext, character_id: u64) -> R
         .inventory_item()
         .character_id()
         .filter(character_id)
+        .filter(|inventory| {
+            !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", inventory.id)
+        })
         .filter_map(|inventory| {
             lot_for_inventory(ctx, inventory.id)
                 .ok()
@@ -2235,6 +2241,7 @@ mod tests {
         let source = include_str!("food.rs");
         assert!(source.contains("reconcile_consumed_row(ctx, \"personal\""));
         assert!(source.contains("reconcile_consumed_row(ctx, \"party\""));
+        assert!(source.contains("row_is_fireplace_rooted"));
     }
 
     #[test]
