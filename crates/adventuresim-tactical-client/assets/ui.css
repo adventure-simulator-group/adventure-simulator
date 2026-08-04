@@ -148,6 +148,13 @@ text,span {
   text-align: center;
 }
 
+#weapon-guard {
+  position: absolute;
+  bottom: 48px;
+  width: 100%;
+  text-align: center;
+}
+
 #info {
   position: absolute;
   top: 0px;

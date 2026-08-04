@@ -60,6 +60,31 @@ This state is synchronized over the network. A client does not need to know
 whether another character is an NPC or player; it needs only the replicated
 physical state and presentation intent.
 
+Weapon guard is a two-state authoritative stance intent: `lowered` is the
+default and `raised` is the direct-control Aim state. Every unreliable input
+request carries the client's complete desired state rather than an edge event.
+The server validates guard, movement, and look together, stores the accepted
+guard only in transient tactical `SkeletonState`, and replicates it with the
+rest of that state. It is never persisted to SpacetimeDB. Incapacitation
+forces the authoritative state back to `lowered`.
+
+Raised upright locomotion also carries a transient latched direction and
+cadence. Once a guard shuttle leaves its static endpoint, the authority keeps
+that intent until it returns to guard even if gameplay velocity stops or
+changes. Input observed during the pulse is accepted only at that seam. This
+prevents release or reversal from replacing a movement extreme halfway through
+the blend. Lowering, incapacitation, crouching, or leaving the ground clears
+the latch.
+
+A discrete raised/lowered change is presentation-crossfaded from the currently
+displayed effective pose over 0.18 seconds. This includes resolved fallback
+clips and their lower- or whole-body mirror contribution, so an incomplete
+guard asset set does not hard-cut from locomotion to a relaxed fallback. The
+crossfade clock advances once per simulation sample in deterministic capture
+tools (and by render delta in gameplay); changing direction or gait phase does
+not restart it. Reversing guard during the blend starts from the pose already
+on screen rather than either original endpoint.
+
 The server owns movement, posture and action acceptance, gameplay position,
 attack timing, hits, damage, and other outcomes. A client may begin an
 animation immediately in response to local input, then reconcile it with the
@@ -300,6 +325,19 @@ preview, but does not introduce additional semantic names:
 | `prone_crawl` | 0 `prone_crawl_contact`; 8 `prone_crawl_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
 | `supine_scamper` | 0 `supine_scamper_contact`; 8 `supine_scamper_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
 
+Raised-guard locomotion files each contain one directional movement pose at
+frame 0. They are not gait cycles and do not contain or imply an opposite-foot
+half. The other runtime endpoint is the separate same-lead static guard:
+
+| File basename | Frame assignments |
+|---|---|
+| `guard_walk_lead_left` | 0 `guard_walk_lead_left` movement extreme |
+| `guard_walk_lead_right` (optional counterpart) | 0 `guard_walk_lead_right` movement extreme |
+| `guard_strafe_lead_left_left` | 0 `guard_strafe_lead_left_left` movement extreme |
+| `guard_strafe_lead_left_right` | 0 `guard_strafe_lead_left_right` movement extreme |
+| `guard_strafe_lead_right_left` (optional counterpart) | 0 `guard_strafe_lead_right_left` movement extreme |
+| `guard_strafe_lead_right_right` (optional counterpart) | 0 `guard_strafe_lead_right_right` movement extreme |
+
 Each guard-relative duck extreme is a single pose in its own file at frame 0.
 The runtime blends from the current guard to the extreme and back. The lead
 and final direction components are both semantic: a left-lead dodge toward
@@ -420,6 +458,18 @@ unarmed combat can therefore author one side. Handed weapon styles author both
 sides whenever reflection would move the weapon to the wrong hand or otherwise
 change the technique.
 
+Guard locomotion follows the same exact-first rule. Its mirror pairs are walk
+left/right, strafe left-lead-left/right-lead-right, and strafe
+left-lead-right/right-lead-left. If a strafe is still unavailable it falls
+back to the same-lead guard walk and then the same-lead static guard. A
+diagonal may mix walk and strafe contributions; the resolver selects one
+coherent whole-body mirror orientation for that blend. It scores both parity
+candidates by how many requested movement semantics and guard endpoints they
+preserve before ordinary fallback. Thus a complete opposite-side walk+strafe
+set beats an exact walk plus a collapsed strafe, while an exact cardinal pose
+wins a complete tie. Partial asset sets cannot create a fractionally mirrored
+body.
+
 ## Required semantic poses
 
 The following inventory defines the complete initial humanoid unarmed pack.
@@ -503,36 +553,56 @@ The fixture supplies deterministic controller observations at the shared
 server projection boundary and follows rendered terrain height; it does not
 exercise physics contacts, replication, interpolation, or recorded live input.
 
-During ordinary travel the server advances the replicated body's authored +Z
+The vertical-excursion gate remains 0.20 m for ordinary flat-ground motion and
+0.30 m for raised-guard scenarios. The explicit cross-slope scenario adds only
+the terrain relief measured beneath its sampled feet to the ordinary 0.20 m
+envelope; this separates required pelvis reach correction from authored body
+bob without weakening the flat-ground check. Cumulative planted-foot drift is
+measured while support is effectively pinned (at least 0.99). The separate
+per-frame slip gate continues through the blended release interval (at least
+0.9 support), where the IK target intentionally yields back to authored FK.
+Loop-seam gates apply only to repeatable cycles. Start/stop, facing-turn, and
+raised-guard release-at-peak scenarios are transition probes whose final
+simulation state intentionally differs from the state that initiated them;
+their continuity remains covered by the per-frame displacement and rotation
+gates instead.
+
+During ordinary lowered-guard travel the server advances the replicated body's authored +Z
 axis toward authoritative horizontal velocity at a bounded turn rate. Camera
 pitch is removed before planar gait projection. Camera yaw intentionally maps
 raw movement input into world movement, but it is not applied again by either
 the client root or authored-rig child. At idle, the last body yaw is retained;
-an exact reversal uses a deterministic turn side. Attack and block are the
-current guard boundary and retain look/aim facing while moving. This root is
+an exact reversal uses a deterministic turn side. Raised guard, attack, and
+block retain controller-yaw look facing while moving. This root is
 shared by local players, remote players, bots, fallback bodies, authored rigs,
 and the viewer, with the authored +Z/controller -Z half-turn represented once.
 The viewer additionally replays gradual turns, an exact reversal, planted
-guard rotation, camera pitch, and cross-slope terrain.
+guard rotation, camera pitch, cross-slope terrain, every raised cardinal and
+diagonal direction, release at the directional peak, and a mid-pulse lateral
+reversal.
 
-During ordinary travel forward walk and run therefore also serve diagonal and
-lateral travel. During combat, the torso remains
-oriented toward the opponent and a procedural stance-step planner provides
-advancing, retreating, strafing, and diagonal movement without directional
-gait cycles. It maintains a world-space target for each planted foot, chooses
-one swing foot at a time, gives that foot a short clearance arc, and uses leg
-IK and pelvis correction to reach its new plant. It blends the lower body
-between the two lead-foot guards as the stance changes while preserving the
-pack's upper-body guard.
+During lowered travel, forward walk and run continue to serve diagonal and
+lateral travel. Raised upright grounded movement instead freezes the current
+lead and evaluates a synchronized fixed-lead shuttle. Phase zero is the static
+guard, phase one-half is the directional authored extreme, and the pulse then
+returns smoothly to guard with zero velocity at both endpoints. Forward and
+backward magnitude select the same-lead guard-walk pose; signed lateral
+magnitude selects the corresponding same-lead strafe. Diagonals blend those
+contributions with L1-normalized weights, so forward/back and lateral weights
+always sum to one and sample the same pulse. Neither retreat nor the return
+half swaps lead, mirrors the lower body, or constructs an opposite-foot step.
+Direction and speed are latched for the whole out-and-back pulse. Releasing at
+the extreme therefore completes the return to guard; changing direction waits
+until that guard seam before starting the next pulse.
 
-The planner must avoid crossing the feet, keep at least one reliable support
-foot during ordinary combat steps, and scale step length and frequency from
-actual local velocity. At speeds too high for credible stance stepping, the
-character turns toward travel and transitions to the ordinary run. An optional
-pack may later override this with an authored lateral cycle, but no strafe pose
-is required in the complete pack. Overgrowth takes a similar approach by
-maintaining planted-foot targets and moving one foot at a time in
-[`HandleFootStance`](https://github.com/WolfireGames/overgrowth/blob/245fe4828631c84c0023d29d1525f5716ccb6106/Data/Scripts/aschar.as#L11726-L11833).
+Ordinary alternating world-space foot plants are disabled while a moving
+raised guard follows the authored pose. Both feet retain their authored XZ
+tracks while terrain IK follows their current positions vertically and keeps
+the existing reach, knee-pole, and minimum-separation constraints. This avoids
+turning the fixed-lead shuttle back into a crossing gait. Raised grounded idle
+may plant both feet in its static guard. Raised crouched and airborne
+characters retain the existing crouch and airborne posture rules; specialized
+raised variants can be added later.
 
 ### Combat guards
 

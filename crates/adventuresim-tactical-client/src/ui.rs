@@ -6,6 +6,7 @@ use adventuresim_tactical_core::{
 use adventuresim_tactical_netcode::{
     aeronet::io::connection::{LocalAddr, PeerAddr},
     bevy_replicon::prelude::{ClientState, ClientStats},
+    client::WeaponGuardInputState,
     client::normalize_server_url,
     message::{SuccessfulAttackResponse, TacticalOutcome, TacticalOutcomeResponse},
     prelude::*,
@@ -42,6 +43,7 @@ impl Plugin for UiPlugin {
                     update_combat_state_ui.run_if(any_with_component::<ClientPlayer>),
                     update_items_ui.run_if(any_with_component::<ClientPlayer>),
                     update_attack_timer_ui.run_if(any_with_component::<ClientPlayer>),
+                    update_weapon_guard_ui,
                     #[cfg(feature = "debug")]
                     update_terrain_ik_debug_ui,
                     #[cfg(feature = "debug")]
@@ -99,6 +101,9 @@ struct AttackTimerSpan;
 
 #[derive(Component)]
 struct CombatStateSpan;
+
+#[derive(Component)]
+struct WeaponGuardSpan;
 
 #[cfg(feature = "debug")]
 #[derive(Component)]
@@ -159,6 +164,11 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                         }
                     )
                 ]
+            ),
+            (
+                Name::new("weapon-guard"),
+                Text::new("Guard: "),
+                children![(WeaponGuardSpan, TextSpan::new("Lowered"))],
             ),
             (
                 Name::new("controls"),
@@ -355,6 +365,21 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             ),
         ],
     ));
+}
+
+fn update_weapon_guard_ui(
+    guard: Res<WeaponGuardInputState>,
+    mut spans: Query<&mut TextSpan, With<WeaponGuardSpan>>,
+) {
+    if !guard.is_changed() {
+        return;
+    }
+    for mut span in &mut spans {
+        **span = match guard.desired {
+            WeaponGuardState::Lowered => "Lowered".to_owned(),
+            WeaponGuardState::Raised => "Raised".to_owned(),
+        };
+    }
 }
 
 #[cfg(feature = "debug")]

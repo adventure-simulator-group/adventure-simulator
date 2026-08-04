@@ -20,9 +20,10 @@ pub mod prelude {
     pub use crate::animation::{
         AnimationEvaluation, AnimationPack, AnimationPackLibrary, AttackLine,
         BODY_TURN_SPEED_RADIANS, Footwork, LeadFoot, PackValidationError, PoseSample, PoseSampling,
-        Posture, ResolvedPose, SemanticPose, SkeletonAction, SkeletonLocomotionInput,
-        SkeletonState, StrikeFamily, advance_body_facing, controller_yaw,
-        project_skeleton_locomotion,
+        Posture, RaisedLocomotionIntent, ResolvedPose, SemanticPose, SkeletonAction,
+        SkeletonLocomotionInput, SkeletonState, StrikeFamily, WeaponGuardState,
+        advance_body_facing, controller_yaw, guard_shuttle_guard_weight,
+        project_skeleton_locomotion, set_weapon_guard,
     };
     pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
     pub use crate::inventory::{
