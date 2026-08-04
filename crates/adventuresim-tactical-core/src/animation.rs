@@ -628,6 +628,167 @@ pub enum Footwork {
     Switch,
 }
 
+/// Typed locomotion families shared by authoritative cadence projection and
+/// client-only presentation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+pub enum LocomotionGait {
+    #[default]
+    Walk,
+    Run,
+    Crouch,
+    RaisedGuard,
+}
+
+/// Compact gait dynamics metadata. Phase 0..1 is one complete left/right
+/// cycle; contact phases are 0 and 0.5.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Reflect)]
+pub struct LocomotionProfile {
+    pub gait: LocomotionGait,
+    pub reference_speed: f32,
+    pub step_distance: f32,
+    /// Radius around each contact phase that can carry support.
+    pub support_phase_radius: f32,
+    /// Visual grounded bounce, in metres.
+    pub bounce_metres: f32,
+    /// Visual unsupported apex, in metres. Zero means a grounded curve.
+    pub flight_apex_metres: f32,
+    pub landing: LandingProfile,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Reflect)]
+pub struct LandingProfile {
+    pub compression_per_metre_per_second: f32,
+    pub minimum_compression_metres: f32,
+    pub maximum_compression_metres: f32,
+    pub recovery_seconds: f32,
+}
+
+pub const HUMANOID_LANDING_PROFILE: LandingProfile = LandingProfile {
+    compression_per_metre_per_second: 0.012,
+    minimum_compression_metres: 0.04,
+    maximum_compression_metres: 0.08,
+    recovery_seconds: 0.16,
+};
+
+pub const LOCOMOTION_SAMPLE_HZ: f32 = 64.0;
+
+pub const WALK_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
+    gait: LocomotionGait::Walk,
+    reference_speed: 2.0,
+    step_distance: 1.22,
+    support_phase_radius: 0.28,
+    bounce_metres: 0.04,
+    flight_apex_metres: 0.0,
+    landing: HUMANOID_LANDING_PROFILE,
+};
+pub const RUN_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
+    gait: LocomotionGait::Run,
+    reference_speed: 5.5,
+    step_distance: 1.78,
+    support_phase_radius: 0.175,
+    bounce_metres: 0.0,
+    flight_apex_metres: 0.16,
+    landing: HUMANOID_LANDING_PROFILE,
+};
+pub const CROUCH_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
+    gait: LocomotionGait::Crouch,
+    reference_speed: 1.5,
+    step_distance: 1.14,
+    support_phase_radius: 0.30,
+    bounce_metres: 0.025,
+    flight_apex_metres: 0.0,
+    landing: HUMANOID_LANDING_PROFILE,
+};
+pub const RAISED_GUARD_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
+    gait: LocomotionGait::RaisedGuard,
+    reference_speed: 2.0,
+    step_distance: 0.38,
+    support_phase_radius: 0.25,
+    bounce_metres: 0.03,
+    flight_apex_metres: 0.0,
+    landing: HUMANOID_LANDING_PROFILE,
+};
+
+pub fn locomotion_profile(state: &SkeletonState) -> LocomotionProfile {
+    let speed = state.animation_speed();
+    if state.posture == Posture::Crouched {
+        return CROUCH_LOCOMOTION_PROFILE;
+    }
+    if state.weapon_guard == WeaponGuardState::Raised {
+        return LocomotionProfile {
+            step_distance: guard_step_length(speed),
+            ..RAISED_GUARD_LOCOMOTION_PROFILE
+        };
+    }
+    let run = ((speed - WALK_LOCOMOTION_PROFILE.reference_speed)
+        / (RUN_LOCOMOTION_PROFILE.reference_speed - WALK_LOCOMOTION_PROFILE.reference_speed))
+        .clamp(0.0, 1.0);
+    LocomotionProfile {
+        gait: if run >= 0.5 {
+            LocomotionGait::Run
+        } else {
+            LocomotionGait::Walk
+        },
+        reference_speed: WALK_LOCOMOTION_PROFILE
+            .reference_speed
+            .lerp(RUN_LOCOMOTION_PROFILE.reference_speed, run),
+        step_distance: ordinary_step_distance(speed),
+        support_phase_radius: WALK_LOCOMOTION_PROFILE
+            .support_phase_radius
+            .lerp(RUN_LOCOMOTION_PROFILE.support_phase_radius, run),
+        bounce_metres: WALK_LOCOMOTION_PROFILE.bounce_metres * (1.0 - run),
+        flight_apex_metres: RUN_LOCOMOTION_PROFILE.flight_apex_metres * run,
+        landing: HUMANOID_LANDING_PROFILE,
+    }
+}
+
+/// Shared distance model through authored walk/run reference points. This
+/// replaces duplicated cadence arithmetic without changing current timing.
+pub fn ordinary_step_distance(speed: f32) -> f32 {
+    let speed = speed.max(0.0);
+    if speed <= WALK_LOCOMOTION_PROFILE.reference_speed {
+        0.9_f32.lerp(
+            WALK_LOCOMOTION_PROFILE.step_distance,
+            speed / WALK_LOCOMOTION_PROFILE.reference_speed,
+        )
+    } else {
+        let blend = ((speed - WALK_LOCOMOTION_PROFILE.reference_speed)
+            / (RUN_LOCOMOTION_PROFILE.reference_speed - WALK_LOCOMOTION_PROFILE.reference_speed))
+            .clamp(0.0, 1.0);
+        WALK_LOCOMOTION_PROFILE
+            .step_distance
+            .lerp(RUN_LOCOMOTION_PROFILE.step_distance, blend)
+    }
+}
+
+pub fn gait_cycle_phase_delta(profile: LocomotionProfile, speed: f32, delta_seconds: f32) -> f32 {
+    speed.max(0.0) * delta_seconds.max(0.0) / (profile.step_distance.max(0.01) * 2.0)
+}
+
+pub fn gait_support_weights(profile: LocomotionProfile, phase: f32) -> (f32, f32) {
+    if profile.gait == LocomotionGait::RaisedGuard {
+        return (1.0, 1.0);
+    }
+    let support = |contact: f32| {
+        let distance = {
+            let delta = (phase - contact).abs();
+            delta.min(1.0 - delta)
+        };
+        (1.0 - smoothstep(
+            profile.support_phase_radius * 0.45,
+            profile.support_phase_radius,
+            distance,
+        ))
+        .clamp(0.0, 1.0)
+    };
+    (support(0.0), support(0.5))
+}
+
+fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
+    let t = ((value - edge0) / (edge1 - edge0).max(f32::EPSILON)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
 pub enum AttackLine {
     #[default]
@@ -642,8 +803,15 @@ pub enum AttackLine {
 pub struct SkeletonState {
     pub posture: Posture,
     pub local_velocity: Vec3,
+    pub world_velocity: Vec3,
     pub grounded: bool,
     pub gait_phase: f32,
+    pub locomotion_sample_tick: u64,
+    pub world_acceleration: Vec3,
+    pub contact_sequence: u64,
+    pub contact_foot: LeadFoot,
+    pub landing_sequence: u64,
+    pub landing_impact_speed: f32,
     pub lead_foot: LeadFoot,
     pub weapon_guard: WeaponGuardState,
     pub raised_locomotion: RaisedLocomotionIntent,
@@ -664,8 +832,15 @@ impl Default for SkeletonState {
         Self {
             posture: Posture::Upright,
             local_velocity: Vec3::ZERO,
+            world_velocity: Vec3::ZERO,
             grounded: true,
             gait_phase: 0.0,
+            locomotion_sample_tick: 0,
+            world_acceleration: Vec3::ZERO,
+            contact_sequence: 0,
+            contact_foot: LeadFoot::Left,
+            landing_sequence: 0,
+            landing_impact_speed: 0.0,
             lead_foot: LeadFoot::Left,
             weapon_guard: WeaponGuardState::Lowered,
             raised_locomotion: RaisedLocomotionIntent::default(),
@@ -818,9 +993,29 @@ fn body_yaw(rotation: Quat) -> f32 {
 /// Bone evaluation remains client-only; this is the shared server seam that
 /// keeps deterministic captures on the same stride and posture rules.
 pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: SkeletonLocomotionInput) {
+    let previous_world_velocity = skeleton.world_velocity;
+    let was_grounded = skeleton.grounded;
+    let previous_guard_sequence = skeleton.raised_locomotion.step_sequence;
+    let previous_guard_swing = skeleton
+        .raised_locomotion
+        .active
+        .then_some(skeleton.raised_locomotion.swing_foot);
     let local_velocity = controller_yaw(input.orientation).inverse() * input.linear_velocity;
+    let contiguous_sample = input.tick == skeleton.locomotion_sample_tick.wrapping_add(1);
+    skeleton.world_acceleration = if contiguous_sample {
+        ((input.linear_velocity - previous_world_velocity) * LOCOMOTION_SAMPLE_HZ)
+            .clamp_length_max(80.0)
+    } else {
+        Vec3::ZERO
+    };
     skeleton.local_velocity = local_velocity;
+    skeleton.world_velocity = input.linear_velocity;
     skeleton.grounded = input.grounded;
+    skeleton.locomotion_sample_tick = input.tick;
+    if !was_grounded && input.grounded {
+        skeleton.landing_sequence = skeleton.landing_sequence.wrapping_add(1);
+        skeleton.landing_impact_speed = (-previous_world_velocity.y).max(0.0);
+    }
     skeleton.posture = if input.grounded {
         if input.crouching {
             Posture::Crouched
@@ -834,11 +1029,21 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     let ground_speed = local_velocity.xz().length();
     if skeleton.weapon_guard == WeaponGuardState::Raised && skeleton.posture == Posture::Upright {
         advance_raised_locomotion_intent(skeleton, local_velocity, input.delta_seconds);
+        let handoffs = skeleton
+            .raised_locomotion
+            .step_sequence
+            .wrapping_sub(previous_guard_sequence);
+        advance_contact_identity(skeleton, handoffs, previous_guard_swing);
     } else {
         skeleton.raised_locomotion = RaisedLocomotionIntent::default();
         if input.grounded && ground_speed > 0.05 {
-            let phase_delta = gait_cycle_phase_delta(ground_speed, input.delta_seconds);
-            skeleton.gait_phase = (skeleton.gait_phase + phase_delta).rem_euclid(1.0);
+            let profile = locomotion_profile(skeleton);
+            let phase = skeleton.gait_phase.rem_euclid(1.0);
+            let next_phase =
+                phase + gait_cycle_phase_delta(profile, ground_speed, input.delta_seconds);
+            let handoffs = ((next_phase * 2.0).floor() - (phase * 2.0).floor()).max(0.0) as u32;
+            skeleton.gait_phase = next_phase.rem_euclid(1.0);
+            advance_contact_identity(skeleton, handoffs, None);
             if skeleton.weapon_guard == WeaponGuardState::Lowered {
                 skeleton.lead_foot = if skeleton.gait_phase < 0.5 {
                     LeadFoot::Left
@@ -849,6 +1054,28 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
         }
     }
     skeleton.advance_action(input.tick);
+}
+
+fn advance_contact_identity(
+    skeleton: &mut SkeletonState,
+    handoffs: u32,
+    first_contact: Option<LeadFoot>,
+) {
+    for handoff in 0..handoffs {
+        skeleton.contact_sequence = skeleton.contact_sequence.wrapping_add(1);
+        skeleton.contact_foot = if handoff == 0 {
+            first_contact.unwrap_or_else(|| opposite_foot(skeleton.contact_foot))
+        } else {
+            opposite_foot(skeleton.contact_foot)
+        };
+    }
+}
+
+fn opposite_foot(foot: LeadFoot) -> LeadFoot {
+    match foot {
+        LeadFoot::Left => LeadFoot::Right,
+        LeadFoot::Right => LeadFoot::Left,
+    }
 }
 
 fn advance_raised_locomotion_intent(
@@ -904,7 +1131,11 @@ fn advance_raised_locomotion_intent(
     }
     let speed = skeleton.raised_locomotion.speed;
     let phase = skeleton.gait_phase.rem_euclid(1.0);
-    let next_phase = phase + guard_step_phase_delta(speed, delta_seconds.max(0.0));
+    let profile = LocomotionProfile {
+        step_distance: guard_step_length(speed),
+        ..RAISED_GUARD_LOCOMOTION_PROFILE
+    };
+    let next_phase = phase + gait_cycle_phase_delta(profile, speed, delta_seconds.max(0.0));
     let handoffs = ((next_phase * 2.0).floor() - (phase * 2.0).floor()).max(0.0) as u32;
     let crossed_handoff = handoffs > 0;
 
@@ -956,17 +1187,6 @@ fn initial_guard_swing_foot(direction: Vec2, lead: LeadFoot) -> LeadFoot {
 /// movement uses compact shuffles rather than ordinary walking strides.
 pub fn guard_step_length(speed: f32) -> f32 {
     (0.26 + speed.max(0.0) * 0.06).clamp(0.28, 0.42)
-}
-
-fn guard_step_phase_delta(speed: f32, delta_seconds: f32) -> f32 {
-    speed.max(0.0) * delta_seconds.max(0.0) / (guard_step_length(speed) * 2.0)
-}
-
-/// Advances a complete left-right gait cycle. `stride_length` describes one
-/// step, while phase 0..1 contains both the left and right step.
-fn gait_cycle_phase_delta(speed: f32, delta_seconds: f32) -> f32 {
-    let stride_length = (0.9 + speed * 0.16).clamp(0.9, 1.8);
-    speed * delta_seconds.max(0.0) / (stride_length * 2.0)
 }
 
 /// One weighted authored pose contributing to the FK result.
@@ -1673,8 +1893,96 @@ mod tests {
         assert!(state.grounded);
         assert_eq!(state.posture, Posture::Upright);
         assert!((state.local_velocity - local_velocity).length() < 0.0001);
-        assert!((state.gait_phase - 2.0 / (0.9 + 2.0 * 0.16) / 2.0 / 64.0).abs() < 0.0001);
+        assert!(
+            (state.gait_phase - gait_cycle_phase_delta(WALK_LOCOMOTION_PROFILE, 2.0, 1.0 / 64.0))
+                .abs()
+                < 0.0001
+        );
         assert_eq!(state.lead_foot, LeadFoot::Left);
+    }
+
+    #[test]
+    fn shared_profiles_own_cadence_support_and_flight() {
+        assert!(
+            (ordinary_step_distance(2.0) - WALK_LOCOMOTION_PROFILE.step_distance).abs() < 0.0001
+        );
+        assert!(
+            (ordinary_step_distance(5.5) - RUN_LOCOMOTION_PROFILE.step_distance).abs() < 0.0001
+        );
+        let (walk_left, walk_right) = gait_support_weights(WALK_LOCOMOTION_PROFILE, 0.25);
+        assert!(walk_left + walk_right > 0.0);
+        assert_eq!(
+            gait_support_weights(RUN_LOCOMOTION_PROFILE, 0.25),
+            (0.0, 0.0)
+        );
+        assert_eq!(RUN_LOCOMOTION_PROFILE.flight_apex_metres, 0.16);
+    }
+
+    #[test]
+    fn projector_sequences_contacts_acceleration_and_one_landing_edge() {
+        let mut state = SkeletonState {
+            gait_phase: 0.49,
+            locomotion_sample_tick: 1,
+            local_velocity: Vec3::new(0.0, -4.0, -1.0),
+            world_velocity: Vec3::new(0.0, -4.0, -1.0),
+            grounded: false,
+            ..default()
+        };
+        project_skeleton_locomotion(
+            &mut state,
+            SkeletonLocomotionInput {
+                orientation: Quat::IDENTITY,
+                linear_velocity: Vec3::NEG_Z * 2.0,
+                grounded: true,
+                crouching: false,
+                delta_seconds: 0.1,
+                tick: 2,
+            },
+        );
+        assert_eq!(state.contact_sequence, 1);
+        assert_eq!(state.contact_foot, LeadFoot::Right);
+        assert_eq!(state.landing_sequence, 1);
+        assert_eq!(state.landing_impact_speed, 4.0);
+        assert!(state.world_acceleration.length() > 0.0);
+        project_skeleton_locomotion(
+            &mut state,
+            SkeletonLocomotionInput {
+                orientation: Quat::IDENTITY,
+                linear_velocity: Vec3::NEG_Z * 2.0,
+                grounded: true,
+                crouching: false,
+                delta_seconds: 0.1,
+                tick: 3,
+            },
+        );
+        assert_eq!(state.landing_sequence, 1);
+    }
+
+    #[test]
+    fn turning_acceleration_is_differenced_in_one_world_frame() {
+        let previous_velocity = Vec3::NEG_Z * 5.5;
+        let orientation = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
+        let current_velocity = controller_yaw(orientation) * Vec3::NEG_Z * 5.5;
+        let mut state = SkeletonState {
+            locomotion_sample_tick: 4,
+            local_velocity: Vec3::NEG_Z * 5.5,
+            world_velocity: previous_velocity,
+            ..default()
+        };
+        project_skeleton_locomotion(
+            &mut state,
+            SkeletonLocomotionInput {
+                orientation,
+                linear_velocity: current_velocity,
+                grounded: true,
+                crouching: false,
+                delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                tick: 5,
+            },
+        );
+        let expected =
+            ((current_velocity - previous_velocity) * LOCOMOTION_SAMPLE_HZ).clamp_length_max(80.0);
+        assert!(state.world_acceleration.abs_diff_eq(expected, 0.0001));
     }
 
     #[test]
@@ -1823,9 +2131,11 @@ mod tests {
     #[test]
     fn gait_phase_spans_two_steps_at_run_speed() {
         let speed = 5.5;
-        let stride_length = 0.9 + speed * 0.16;
-        let cycle_seconds = stride_length * 2.0 / speed;
-        assert!((gait_cycle_phase_delta(speed, cycle_seconds) - 1.0).abs() < 0.0001);
+        let cycle_seconds = RUN_LOCOMOTION_PROFILE.step_distance * 2.0 / speed;
+        assert!(
+            (gait_cycle_phase_delta(RUN_LOCOMOTION_PROFILE, speed, cycle_seconds) - 1.0).abs()
+                < 0.0001
+        );
     }
 
     #[test]

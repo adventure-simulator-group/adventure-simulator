@@ -20,7 +20,8 @@ use bevy::{
 use serde::Serialize;
 
 use crate::animation::{
-    AnimationPlayback, BoneRole, HumanoidBone, LocomotionHeightState, ProceduralAnimationClock,
+    AnimationPlayback, BoneRole, HumanoidBone, LocomotionBodyResponseState, LocomotionHeightState,
+    LocomotionPresentationEvent, LocomotionPresentationEventKind, ProceduralAnimationClock,
     ProceduralIkState, RaisedFootworkState, TacticalAnimationPlugin, TerrainIkEnabled,
     locomotion_support_weights,
 };
@@ -30,7 +31,7 @@ use crate::{
     presentation::TacticalPresentationPlugin,
 };
 
-const SAMPLE_HZ: f32 = 64.0;
+const SAMPLE_HZ: f32 = LOCOMOTION_SAMPLE_HZ;
 const CAPTURE_ROOT_GROUND_OFFSET_METRES: f32 = 0.95;
 const FULL_PLANT_SUPPORT_WEIGHT: f32 = 0.99;
 const RAISED_MINIMUM_INTER_FOOT_SEPARATION_METRES: f32 = 0.16;
@@ -63,6 +64,64 @@ const TRACKED_BONE_NAMES: [&str; 15] = [
     "left_foot",
     "right_foot",
 ];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScenarioKind {
+    Ordinary,
+    RaisedGuard,
+    Terrain,
+    Transition,
+    Landing,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ScenarioMetadata {
+    kind: ScenarioKind,
+    repeatable: bool,
+    procedural_solver: bool,
+}
+
+fn scenario_metadata(name: &str) -> ScenarioMetadata {
+    if name == "cross-slope-walk" {
+        ScenarioMetadata {
+            kind: ScenarioKind::Terrain,
+            repeatable: true,
+            procedural_solver: true,
+        }
+    } else if name.starts_with("raised-guard") {
+        ScenarioMetadata {
+            kind: ScenarioKind::RaisedGuard,
+            repeatable: !name.contains("release")
+                && !name.contains("reversal")
+                && !name.contains("accelerate")
+                && name != "raised-guard-transition",
+            procedural_solver: true,
+        }
+    } else if name == "airborne-landing" {
+        ScenarioMetadata {
+            kind: ScenarioKind::Landing,
+            repeatable: false,
+            procedural_solver: false,
+        }
+    } else if name.contains("transition")
+        || name.contains("enter-exit")
+        || name.contains("hard-stop")
+        || name.contains("ramp")
+        || name.contains("turn")
+    {
+        ScenarioMetadata {
+            kind: ScenarioKind::Transition,
+            repeatable: false,
+            procedural_solver: false,
+        }
+    } else {
+        ScenarioMetadata {
+            kind: ScenarioKind::Ordinary,
+            repeatable: true,
+            procedural_solver: false,
+        }
+    }
+}
 
 pub(crate) fn run(
     output: PathBuf,
@@ -135,7 +194,10 @@ pub(crate) fn run(
             PostUpdate,
             draw_skeleton_overlay.after(TransformSystems::Propagate),
         )
-        .add_systems(Last, capture_frame)
+        .add_systems(
+            Last,
+            (collect_locomotion_presentation_events, capture_frame).chain(),
+        )
         .run()
 }
 
@@ -192,6 +254,9 @@ struct CaptureSequence {
     view_fingerprints: Vec<u64>,
     duplicate_view_frames: Vec<String>,
     samples: Vec<FrameSample>,
+    presentation_events: Vec<PresentationEventSample>,
+    repeated_evaluation_baseline: Option<RepeatedEvaluationSnapshot>,
+    repeated_evaluation_valid: bool,
     active_scenario: Option<&'static str>,
     simulation_tick: u64,
     scenario_distance: f32,
@@ -220,11 +285,23 @@ impl CaptureSequence {
             view_fingerprints: Vec::with_capacity(VIEWS.len()),
             duplicate_view_frames: Vec::new(),
             samples: Vec::new(),
+            presentation_events: Vec::new(),
+            repeated_evaluation_baseline: None,
+            repeated_evaluation_valid: true,
             active_scenario: None,
             simulation_tick: 0,
             scenario_distance: 0.0,
         }
     }
+}
+
+struct RepeatedEvaluationSnapshot {
+    scenario: &'static str,
+    scenario_frame: usize,
+    bones: BTreeMap<String, BoneSample>,
+    contact_sequence: u64,
+    landing_sequence: u64,
+    event_count: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -235,6 +312,17 @@ struct CaptureManifest {
     validation: CaptureValidation,
     scenarios: Vec<ScenarioMetrics>,
     frames: Vec<FrameSample>,
+    presentation_events: Vec<PresentationEventSample>,
+}
+
+#[derive(Debug, Serialize)]
+struct PresentationEventSample {
+    scenario: String,
+    scenario_frame: usize,
+    owner: String,
+    sequence: u64,
+    sample_tick: u64,
+    kind: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -249,6 +337,16 @@ struct CaptureValidation {
     flat_controller_height_stable: bool,
     phase_owned_height_valid: bool,
     run_flight_valid: bool,
+    body_response_valid: bool,
+    speed_ramp_phase_continuity_valid: bool,
+    contact_sequences_valid: bool,
+    cadence_contact_valid: bool,
+    event_stream_valid: bool,
+    landing_response_valid: bool,
+    landing_foot_preservation_valid: bool,
+    hard_stop_maximum_pelvis_step_metres: Option<f32>,
+    hard_stop_height_continuity_valid: bool,
+    repeated_evaluation_valid: bool,
     views_are_distinct: bool,
     duplicate_view_frames: Vec<String>,
     note: &'static str,
@@ -327,6 +425,16 @@ struct FrameSample {
     time_seconds: f32,
     speed_metres_per_second: f32,
     gait_phase: f32,
+    locomotion_sample_tick: u64,
+    body_acceleration: [f32; 3],
+    world_acceleration: [f32; 3],
+    contact_sequence: u64,
+    contact_foot: LeadFoot,
+    landing_sequence: u64,
+    landing_impact_speed: f32,
+    body_lean_pitch_degrees: f32,
+    body_lean_roll_degrees: f32,
+    landing_compression_metres: f32,
     root_distance_metres: f32,
     root_position_metres: [f32; 3],
     world_travel_direction: [f32; 3],
@@ -351,10 +459,6 @@ struct BoneSample {
     terrain_clearance_metres: Option<f32>,
 }
 
-fn stride_length(speed: f32) -> f32 {
-    (0.9 + speed * 0.16).clamp(0.9, 1.8)
-}
-
 fn steady_scenario(name: &'static str, speed: f32, cycles: f32) -> Vec<PlannedFrame> {
     steady_scenario_in_direction(name, speed, cycles, Vec2::NEG_Y)
 }
@@ -365,7 +469,7 @@ fn steady_scenario_in_direction(
     cycles: f32,
     local_direction: Vec2,
 ) -> Vec<PlannedFrame> {
-    let cycle_duration = stride_length(speed) * 2.0 / speed;
+    let cycle_duration = ordinary_step_distance(speed) * 2.0 / speed;
     let duration = cycles * cycle_duration;
     // Include the first authoritative tick after the requested final cycle.
     // Fixed-rate sampling rarely lands on the mathematical wrap exactly; the
@@ -451,6 +555,55 @@ fn crouch_transition_scenario() -> Vec<PlannedFrame> {
         .collect()
 }
 
+fn dynamics_speed_scenario(name: &'static str, hard_stop: bool) -> Vec<PlannedFrame> {
+    (0..=256)
+        .map(|scenario_frame| {
+            let speed = if hard_stop {
+                if scenario_frame < 96 { 5.5 } else { 0.0 }
+            } else if scenario_frame < 32 {
+                5.5 * scenario_frame as f32 / 32.0
+            } else if scenario_frame < 128 {
+                5.5
+            } else if scenario_frame < 160 {
+                5.5 * (160 - scenario_frame) as f32 / 32.0
+            } else {
+                0.0
+            };
+            PlannedFrame {
+                scenario: name,
+                scenario_frame,
+                speed,
+                time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+                local_direction: Vec2::NEG_Y,
+                camera_yaw: 0.0,
+                camera_pitch: 0.0,
+                crouching: false,
+                action: SkeletonAction::None,
+                weapon_guard: WeaponGuardState::Lowered,
+                lead_foot: LeadFoot::Left,
+            }
+        })
+        .collect()
+}
+
+fn airborne_landing_scenario() -> Vec<PlannedFrame> {
+    (0..=96)
+        .map(|scenario_frame| PlannedFrame {
+            scenario: "airborne-landing",
+            scenario_frame,
+            speed: 0.0,
+            time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+            local_direction: Vec2::ZERO,
+            camera_yaw: 0.0,
+            camera_pitch: 0.0,
+            crouching: false,
+            action: SkeletonAction::None,
+            weapon_guard: WeaponGuardState::Lowered,
+            lead_foot: LeadFoot::Left,
+        })
+        .collect()
+}
+
 fn smoothstep01(value: f32) -> f32 {
     let value = value.clamp(0.0, 1.0);
     value * value * (3.0 - 2.0 * value)
@@ -511,6 +664,12 @@ fn capture_plan() -> Vec<PlannedFrame> {
         ),
         raised_guard_transition_scenario(),
         crouch_transition_scenario(),
+        dynamics_speed_scenario("speed-ramp-up-down", false),
+        dynamics_speed_scenario("hard-stop", true),
+        dynamics_turn_scenario("dynamics-turn-90", std::f32::consts::FRAC_PI_2),
+        dynamics_turn_scenario("dynamics-turn-180", std::f32::consts::PI),
+        airborne_landing_scenario(),
+        steady_scenario("cadence-contact", 2.0, 2.0),
         steady_scenario_in_direction("cross-slope-walk", 2.0, 1.0, Vec2::X),
         transition_scenario(),
     ]
@@ -537,6 +696,27 @@ fn turning_scenario(name: &'static str, reversal: bool) -> Vec<PlannedFrame> {
                     std::f32::consts::FRAC_PI_2 * progress
                 },
                 camera_pitch: 0.55 * progress,
+                crouching: false,
+                action: SkeletonAction::None,
+                weapon_guard: WeaponGuardState::Lowered,
+                lead_foot: LeadFoot::Left,
+            }
+        })
+        .collect()
+}
+
+fn dynamics_turn_scenario(name: &'static str, angle_radians: f32) -> Vec<PlannedFrame> {
+    (0..=64)
+        .map(|frame| {
+            let progress = frame as f32 / 64.0;
+            PlannedFrame {
+                scenario: name,
+                scenario_frame: frame,
+                speed: 5.5,
+                time_seconds: progress,
+                local_direction: Vec2::NEG_Y,
+                camera_yaw: angle_radians * progress,
+                camera_pitch: 0.0,
                 crouching: false,
                 action: SkeletonAction::None,
                 weapon_guard: WeaponGuardState::Lowered,
@@ -770,6 +950,7 @@ fn drive_sequence(
             Option<&mut ProceduralIkState>,
             Option<&mut RaisedFootworkState>,
             Option<&mut LocomotionHeightState>,
+            Option<&mut LocomotionBodyResponseState>,
         ),
         With<CaptureSubject>,
     >,
@@ -779,6 +960,7 @@ fn drive_sequence(
         return;
     }
     let frame = sequence.plan[sequence.index].clone();
+    let metadata = scenario_metadata(frame.scenario);
     let mut gait_phase = 0.0;
     for (
         mut skeleton,
@@ -788,6 +970,7 @@ fn drive_sequence(
         ik_state,
         raised_footwork,
         height_state,
+        body_response,
     ) in &mut subjects
     {
         let Some(playback) = playback else {
@@ -812,6 +995,9 @@ fn drive_sequence(
             if let Some(mut height_state) = height_state {
                 *height_state = LocomotionHeightState::default();
             }
+            if let Some(mut body_response) = body_response {
+                *body_response = LocomotionBodyResponseState::default();
+            }
             let ground = terrain.height_at(Vec2::ZERO).unwrap_or_default();
             transform.translation = Vec3::new(0.0, ground + CAPTURE_ROOT_GROUND_OFFSET_METRES, 0.0);
             transform.rotation = Quat::from_rotation_y(std::f32::consts::PI);
@@ -826,11 +1012,20 @@ fn drive_sequence(
             WeaponGuardState::Lowered => -1.0,
         };
         skeleton.lead_foot = frame.lead_foot;
-        terrain_ik.0 = frame.scenario == "cross-slope-walk";
+        terrain_ik.0 = metadata.kind == ScenarioKind::Terrain;
         guard_input.apply_controls(wheel, false);
         set_weapon_guard(&mut skeleton, guard_input.desired);
-        let local_velocity =
-            Vec3::new(frame.local_direction.x, 0.0, frame.local_direction.y) * frame.speed;
+        let grounded = metadata.kind != ScenarioKind::Landing || frame.scenario_frame >= 32;
+        let vertical_velocity = if metadata.kind == ScenarioKind::Landing && !grounded {
+            -4.5
+        } else {
+            0.0
+        };
+        let local_velocity = Vec3::new(
+            frame.local_direction.x * frame.speed,
+            vertical_velocity,
+            frame.local_direction.y * frame.speed,
+        );
         let world_velocity = controller_yaw(orientation) * local_velocity;
         let delta_seconds = if frame.scenario_frame == 0 {
             0.0
@@ -867,7 +1062,7 @@ fn drive_sequence(
             SkeletonLocomotionInput {
                 orientation,
                 linear_velocity: world_velocity,
-                grounded: true,
+                grounded,
                 crouching: frame.crouching,
                 delta_seconds,
                 tick: sequence.simulation_tick,
@@ -1005,6 +1200,32 @@ fn draw_skeleton_overlay(
     }
 }
 
+fn collect_locomotion_presentation_events(
+    mut events: MessageReader<LocomotionPresentationEvent>,
+    mut sequence: ResMut<CaptureSequence>,
+) {
+    if sequence.index >= sequence.plan.len() {
+        return;
+    }
+    let scenario = sequence.plan[sequence.index].scenario.to_owned();
+    let scenario_frame = sequence.plan[sequence.index].scenario_frame;
+    sequence
+        .presentation_events
+        .extend(events.read().map(move |event| PresentationEventSample {
+            scenario: scenario.clone(),
+            scenario_frame,
+            owner: format!("{:?}", event.owner),
+            sequence: event.sequence,
+            sample_tick: event.sample_tick,
+            kind: match event.kind {
+                LocomotionPresentationEventKind::Contact(foot) => {
+                    format!("contact_{foot:?}").to_lowercase()
+                }
+                LocomotionPresentationEventKind::Landing => "landing".to_owned(),
+            },
+        }));
+}
+
 fn capture_frame(
     mut commands: Commands,
     mut sequence: ResMut<CaptureSequence>,
@@ -1016,6 +1237,8 @@ fn capture_frame(
             &GlobalTransform,
             Option<&AnimationPlayback>,
             Option<&RaisedFootworkState>,
+            Option<&LocomotionBodyResponseState>,
+            Option<&LocomotionHeightState>,
         ),
         With<CaptureSubject>,
     >,
@@ -1026,7 +1249,15 @@ fn capture_frame(
     if !sequence.applied || sequence.capture_in_flight {
         return;
     }
-    let Ok((subject, skeleton, subject_global, playback, raised_footwork)) = subjects.single()
+    let Ok((
+        subject,
+        skeleton,
+        subject_global,
+        playback,
+        raised_footwork,
+        body_response,
+        height_state,
+    )) = subjects.single()
     else {
         wait_or_fail(&mut sequence, "capture subject is missing", &mut exit);
         return;
@@ -1070,6 +1301,41 @@ fn capture_frame(
         view.slug()
     );
     let path = sequence.output.join(&file_name);
+    let evaluation_bones = collect_bones(
+        subject,
+        &bones,
+        &terrain,
+        (!terrain_ik.0)
+            .then_some(subject_global.translation().y - CAPTURE_ROOT_GROUND_OFFSET_METRES),
+    );
+    if sequence.view_index == 0 {
+        sequence.repeated_evaluation_baseline = Some(RepeatedEvaluationSnapshot {
+            scenario: frame.scenario,
+            scenario_frame: frame.scenario_frame,
+            bones: evaluation_bones.clone(),
+            contact_sequence: skeleton.contact_sequence,
+            landing_sequence: skeleton.landing_sequence,
+            event_count: sequence.presentation_events.len(),
+        });
+    } else if let Some(baseline) = &sequence.repeated_evaluation_baseline {
+        let bones_match = baseline.bones.iter().all(|(name, expected)| {
+            evaluation_bones.get(name).is_some_and(|actual| {
+                Vec3::from_array(expected.position).distance(Vec3::from_array(actual.position))
+                    <= 0.0005
+                    && Quat::from_array(expected.rotation_xyzw)
+                        .angle_between(Quat::from_array(actual.rotation_xyzw))
+                        .to_degrees()
+                        <= 0.1
+            })
+        });
+        let repeated_evaluation_matches = baseline.scenario == frame.scenario
+            && baseline.scenario_frame == frame.scenario_frame
+            && bones_match
+            && baseline.contact_sequence == skeleton.contact_sequence
+            && baseline.landing_sequence == skeleton.landing_sequence
+            && baseline.event_count == sequence.presentation_events.len();
+        sequence.repeated_evaluation_valid &= repeated_evaluation_matches;
+    }
     if sequence.view_index == 0 {
         let (left_support_weight, right_support_weight) = locomotion_support_weights(skeleton);
         let root_distance_metres = sequence.scenario_distance;
@@ -1082,6 +1348,19 @@ fn capture_frame(
             time_seconds: frame.time_seconds,
             speed_metres_per_second: frame.speed,
             gait_phase: skeleton.gait_phase,
+            locomotion_sample_tick: skeleton.locomotion_sample_tick,
+            body_acceleration: (subject_global.rotation().inverse() * skeleton.world_acceleration)
+                .to_array(),
+            world_acceleration: skeleton.world_acceleration.to_array(),
+            contact_sequence: skeleton.contact_sequence,
+            contact_foot: skeleton.contact_foot,
+            landing_sequence: skeleton.landing_sequence,
+            landing_impact_speed: skeleton.landing_impact_speed,
+            body_lean_pitch_degrees: body_response
+                .map_or(0.0, |state| state.pitch_radians.to_degrees()),
+            body_lean_roll_degrees: body_response
+                .map_or(0.0, |state| state.roll_radians.to_degrees()),
+            landing_compression_metres: height_state.map_or(0.0, |state| state.landing_compression),
             root_distance_metres,
             root_position_metres: subject_global.translation().to_array(),
             world_travel_direction: (controller_yaw(Quat::from_rotation_y(frame.camera_yaw))
@@ -1122,13 +1401,7 @@ fn capture_frame(
                     )
                 })
                 .collect(),
-            bones: collect_bones(
-                subject,
-                &bones,
-                &terrain,
-                (!terrain_ik.0)
-                    .then_some(subject_global.translation().y - CAPTURE_ROOT_GROUND_OFFSET_METRES),
-            ),
+            bones: evaluation_bones,
         });
     }
     sequence.capture_in_flight = true;
@@ -1255,6 +1528,7 @@ fn wait_or_fail(sequence: &mut CaptureSequence, reason: &str, exit: &mut Message
 
 fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppExit>) {
     let frames = std::mem::take(&mut sequence.samples);
+    let presentation_events = std::mem::take(&mut sequence.presentation_events);
     let scenarios = scenario_metrics(&frames);
     let finite_transforms = frames.iter().all(|frame| {
         frame.bones.values().all(|bone| {
@@ -1321,6 +1595,206 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             true
         }
     });
+    let contact_sequences_valid = frames.windows(2).all(|pair| {
+        if pair[0].scenario != pair[1].scenario {
+            return true;
+        }
+        let delta = pair[1]
+            .contact_sequence
+            .wrapping_sub(pair[0].contact_sequence);
+        delta <= 1
+            && (delta == 0 || pair[1].contact_foot != pair[0].contact_foot)
+            && !(pair[0].speed_metres_per_second <= 0.05
+                && pair[1].speed_metres_per_second <= 0.05
+                && delta != 0)
+    });
+    let cadence_frames = frames
+        .iter()
+        .filter(|frame| frame.scenario == "cadence-contact")
+        .collect::<Vec<_>>();
+    let cadence_contacts = cadence_frames
+        .windows(2)
+        .filter_map(|pair| {
+            (pair[1].contact_sequence == pair[0].contact_sequence + 1).then_some(pair[1])
+        })
+        .collect::<Vec<_>>();
+    let cadence_step_distance = ordinary_step_distance(2.0);
+    let adjusted_contact_distances = cadence_contacts
+        .iter()
+        .map(|frame| {
+            let contact_phase = match frame.contact_foot {
+                LeadFoot::Left => 0.0,
+                LeadFoot::Right => 0.5,
+            };
+            let phase_since_contact = (frame.gait_phase - contact_phase).rem_euclid(1.0);
+            frame.root_distance_metres - phase_since_contact * cadence_step_distance * 2.0
+        })
+        .collect::<Vec<_>>();
+    let cadence_tolerance = (cadence_step_distance * 0.01).max(0.005);
+    let cadence_contact_valid = cadence_frames.is_empty()
+        || (cadence_contacts.len() == 4
+            && cadence_contacts.windows(2).all(|pair| {
+                pair[1].contact_sequence == pair[0].contact_sequence + 1
+                    && pair[1].contact_foot != pair[0].contact_foot
+            })
+            && adjusted_contact_distances.windows(2).all(|pair| {
+                ((pair[1] - pair[0]) - cadence_step_distance).abs() <= cadence_tolerance
+            })
+            && adjusted_contact_distances.windows(3).all(|window| {
+                ((window[2] - window[0]) - cadence_step_distance * 2.0).abs() <= cadence_tolerance
+            }));
+    let event_stream_valid = presentation_events.windows(2).all(|pair| {
+        let same_stream = (pair[0].kind.starts_with("contact")
+            && pair[1].kind.starts_with("contact"))
+            || (pair[0].kind == "landing" && pair[1].kind == "landing");
+        pair[0].scenario != pair[1].scenario
+            || !same_stream
+            || (pair[1].sequence > pair[0].sequence && pair[1].sample_tick >= pair[0].sample_tick)
+    }) && presentation_events
+        .iter()
+        .enumerate()
+        .all(|(index, event)| {
+            !presentation_events[..index].iter().any(|previous| {
+                previous.owner == event.owner
+                    && previous.scenario == event.scenario
+                    && previous.kind == event.kind
+                    && previous.sequence == event.sequence
+            })
+        })
+        && (cadence_frames.is_empty()
+            || presentation_events
+                .iter()
+                .filter(|event| {
+                    event.scenario == "cadence-contact" && event.kind.starts_with("contact")
+                })
+                .count()
+                == 4)
+        && (!frames
+            .iter()
+            .any(|frame| frame.scenario == "airborne-landing")
+            || presentation_events
+                .iter()
+                .filter(|event| event.scenario == "airborne-landing" && event.kind == "landing")
+                .count()
+                == 1);
+    let speed_ramp_phase_continuity_valid = frames.windows(2).all(|pair| {
+        if pair[0].scenario != "speed-ramp-up-down" || pair[1].scenario != "speed-ramp-up-down" {
+            return true;
+        }
+        let phase_delta = pair[1].gait_phase - pair[0].gait_phase;
+        phase_delta >= -0.001
+            || (phase_delta < -0.5
+                && pair[1]
+                    .contact_sequence
+                    .wrapping_sub(pair[0].contact_sequence)
+                    == 1)
+    });
+    let lean_range = |scenario: &str, select: fn(&FrameSample) -> f32| {
+        frames
+            .iter()
+            .filter(|frame| frame.scenario == scenario)
+            .map(select)
+            .fold(
+                (f32::INFINITY, f32::NEG_INFINITY),
+                |(minimum, maximum), value| (minimum.min(value), maximum.max(value)),
+            )
+    };
+    let (ramp_pitch_minimum, ramp_pitch_maximum) =
+        lean_range("speed-ramp-up-down", |frame| frame.body_lean_pitch_degrees);
+    let (_, hard_stop_pitch_maximum) =
+        lean_range("hard-stop", |frame| frame.body_lean_pitch_degrees);
+    let turn_90_roll = lean_range("dynamics-turn-90", |frame| {
+        frame.body_lean_roll_degrees.abs()
+    });
+    let turn_180_roll = lean_range("dynamics-turn-180", |frame| {
+        frame.body_lean_roll_degrees.abs()
+    });
+    let lean_step_valid = frames.windows(2).all(|pair| {
+        pair[0].scenario != pair[1].scenario
+            || Vec2::new(
+                pair[1].body_lean_pitch_degrees - pair[0].body_lean_pitch_degrees,
+                pair[1].body_lean_roll_degrees - pair[0].body_lean_roll_degrees,
+            )
+            .length()
+                <= 2.01
+    });
+    let has_scenario = |name: &str| frames.iter().any(|frame| frame.scenario == name);
+    let body_response_valid = (!has_scenario("speed-ramp-up-down")
+        || ((-12.0..=-8.0).contains(&ramp_pitch_minimum)
+            && (6.0..=10.0).contains(&ramp_pitch_maximum)))
+        && (!has_scenario("hard-stop") || (6.0..=10.0).contains(&hard_stop_pitch_maximum))
+        && (!has_scenario("dynamics-turn-90") || (6.0..=10.0).contains(&turn_90_roll.1))
+        && (!has_scenario("dynamics-turn-180") || (6.0..=10.0).contains(&turn_180_roll.1))
+        && lean_step_valid
+        && ["speed-ramp-up-down", "hard-stop"]
+            .iter()
+            .filter(|scenario| has_scenario(scenario))
+            .all(|scenario| {
+                frames
+                    .iter()
+                    .rev()
+                    .find(|frame| frame.scenario == *scenario)
+                    .is_some_and(|frame| {
+                        Vec2::new(frame.body_lean_pitch_degrees, frame.body_lean_roll_degrees)
+                            .length()
+                            <= 0.5
+                    })
+            });
+    let landing_frames = frames
+        .iter()
+        .filter(|frame| scenario_metadata(&frame.scenario).kind == ScenarioKind::Landing)
+        .collect::<Vec<_>>();
+    let landing_response_valid = landing_frames.is_empty()
+        || (landing_frames
+            .last()
+            .zip(landing_frames.first())
+            .is_some_and(|(last, first)| {
+                last.landing_sequence.wrapping_sub(first.landing_sequence) == 1
+            })
+            && (0.04..=0.08).contains(
+                &landing_frames
+                    .iter()
+                    .map(|frame| frame.landing_compression_metres)
+                    .fold(0.0, f32::max),
+            )
+            && landing_frames
+                .last()
+                .is_some_and(|frame| frame.landing_compression_metres <= 0.005)
+            && landing_frames
+                .iter()
+                .max_by(|left, right| {
+                    left.landing_compression_metres
+                        .total_cmp(&right.landing_compression_metres)
+                })
+                .is_some_and(|frame| frame_minimum_knee_flexion(frame) >= 10.0));
+    let landing_grounded_frames = landing_frames
+        .iter()
+        .copied()
+        .filter(|frame| frame.scenario_frame >= 32)
+        .collect::<Vec<_>>();
+    let landing_foot_preservation_valid = landing_frames.is_empty()
+        || landing_grounded_frames.last().is_some_and(|reference| {
+            ["left_foot", "right_foot"].iter().all(|name| {
+                let Some(reference_position) = reference
+                    .bones
+                    .get(*name)
+                    .map(|bone| Vec3::from_array(bone.position))
+                else {
+                    return false;
+                };
+                landing_grounded_frames.iter().all(|frame| {
+                    frame.bones.get(*name).is_some_and(|bone| {
+                        Vec3::from_array(bone.position).distance(reference_position) <= 0.01
+                            && bone
+                                .terrain_clearance_metres
+                                .is_some_and(|height| height >= -0.01)
+                    })
+                })
+            })
+        });
+    let hard_stop_maximum_pelvis_step_metres = hard_stop_pelvis_vertical_step(&frames);
+    let hard_stop_height_continuity_valid =
+        hard_stop_maximum_pelvis_step_metres.is_none_or(|maximum_step| maximum_step <= 0.02);
     let biomechanics_within_review_bounds = scenarios.iter().all(|metrics| {
         // Raised guard deliberately adds a little vertical readiness through
         // the pelvis and torso. Keep the stricter ordinary-locomotion gate,
@@ -1358,6 +1832,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             }
     });
     let views_are_distinct = sequence.duplicate_view_frames.is_empty();
+    let repeated_evaluation_valid = sequence.repeated_evaluation_valid;
     let manifest = CaptureManifest {
         sample_hz: SAMPLE_HZ,
         pipeline: "shared tactical player, scene, camera, authoritative locomotion projection, authored FK, and final procedural passes",
@@ -1373,12 +1848,23 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             flat_controller_height_stable,
             phase_owned_height_valid,
             run_flight_valid,
+            body_response_valid,
+            speed_ramp_phase_continuity_valid,
+            contact_sequences_valid,
+            cadence_contact_valid,
+            event_stream_valid,
+            landing_response_valid,
+            landing_foot_preservation_valid,
+            hard_stop_maximum_pelvis_step_metres,
+            hard_stop_height_continuity_valid,
+            repeated_evaluation_valid,
             views_are_distinct,
             duplicate_view_frames: sequence.duplicate_view_frames.clone(),
             note: "Continuity metrics are regression signals, not biomechanical proof; review index.html at normal and slow speed.",
         },
         scenarios,
         frames,
+        presentation_events,
     };
     let manifest_path = sequence.output.join("manifest.json");
     fs::write(
@@ -1400,6 +1886,15 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         && flat_controller_height_stable
         && phase_owned_height_valid
         && run_flight_valid
+        && body_response_valid
+        && speed_ramp_phase_continuity_valid
+        && contact_sequences_valid
+        && cadence_contact_valid
+        && event_stream_valid
+        && landing_response_valid
+        && landing_foot_preservation_valid
+        && hard_stop_height_continuity_valid
+        && repeated_evaluation_valid
         && views_are_distinct
     {
         exit.write(AppExit::Success);
@@ -1423,7 +1918,7 @@ fn planted_drift_limit(scenario: &str) -> f32 {
 }
 
 fn procedural_leg_solver_gates_apply(scenario: &str) -> bool {
-    scenario == "cross-slope-walk" || scenario.starts_with("raised-guard")
+    scenario_metadata(scenario).procedural_solver
 }
 
 fn inter_foot_separation_limit(scenario: &str) -> f32 {
@@ -1445,7 +1940,8 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
             // Terrain conformity calibrates retained pelvis/plant state during
             // its first cycle. Judge its steady gait after that deterministic
             // warmup, matching the phase-height validation window.
-            let metric_frames = if scenario == "cross-slope-walk" {
+            let metadata = scenario_metadata(scenario);
+            let metric_frames = if metadata.kind == ScenarioKind::Terrain {
                 phase_validation_frames(&frames)
             } else {
                 frames.clone()
@@ -1453,7 +1949,7 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
             let procedural_frames = metric_frames
                 .iter()
                 .copied()
-                .filter(|frame| scenario == "cross-slope-walk" || frame.guard_action)
+                .filter(|frame| metadata.kind == ScenarioKind::Terrain || frame.guard_action)
                 .collect::<Vec<_>>();
             let mut maximum_step = 0.0_f32;
             let mut maximum_rotation = 0.0_f32;
@@ -1507,7 +2003,7 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
                     // A body turn deliberately slides an old world plant onto
                     // its new anatomical side corridor. Treat that bounded
                     // adaptation separately from skating under a stable body.
-                    let procedural_plant_active = scenario == "cross-slope-walk"
+                    let procedural_plant_active = metadata.kind == ScenarioKind::Terrain
                         || (before.guard_action && after.guard_action);
                     if procedural_plant_active
                         && support >= 0.9
@@ -1591,26 +2087,16 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
 }
 
 fn expects_loop_seam(scenario: &str) -> bool {
-    if scenario.contains("-release")
-        || scenario.contains("-reversal")
-        || scenario.contains("accelerate")
-    {
-        return false;
-    }
-    !matches!(
-        scenario,
-        "start-stop-transition"
-            | "gradual-camera-turn"
-            | "half-turn-reversal"
-            | "planted-guard-turn"
-            | "crouch-enter-exit"
-            | "raised-guard-release-at-peak"
-    )
+    scenario_metadata(scenario).repeatable
 }
 
 fn vertical_range_limit(scenario: &str, foot_terrain_relief_metres: f32) -> f32 {
     if scenario.starts_with("raised-guard-") {
         RAISED_GUARD_VERTICAL_RANGE_LIMIT_METRES
+    } else if scenario == "hard-stop" {
+        // The scenario intentionally spans the run apex and exact final idle.
+        // Per-frame release continuity is enforced separately at 2 cm.
+        ORDINARY_VERTICAL_RANGE_LIMIT_METRES + 0.01
     } else if scenario == "cross-slope-walk" {
         ORDINARY_VERTICAL_RANGE_LIMIT_METRES + foot_terrain_relief_metres.max(0.0)
     } else {
@@ -1666,23 +2152,27 @@ fn minimum_inter_foot_separation(frames: &[&FrameSample]) -> f32 {
 fn minimum_knee_flexion(frames: &[&FrameSample]) -> f32 {
     frames
         .iter()
-        .flat_map(|frame| {
-            [
-                ("left_hip", "left_knee", "left_foot"),
-                ("right_hip", "right_knee", "right_foot"),
-            ]
-            .map(|(hip, knee, foot)| {
-                let (Some(hip), Some(knee), Some(foot)) = (
-                    body_local(frame, hip),
-                    body_local(frame, knee),
-                    body_local(frame, foot),
-                ) else {
-                    return f32::INFINITY;
-                };
-                180.0 - (hip - knee).angle_between(foot - knee).to_degrees()
-            })
-        })
+        .map(|frame| frame_minimum_knee_flexion(frame))
         .fold(f32::INFINITY, f32::min)
+}
+
+fn frame_minimum_knee_flexion(frame: &FrameSample) -> f32 {
+    [
+        ("left_hip", "left_knee", "left_foot"),
+        ("right_hip", "right_knee", "right_foot"),
+    ]
+    .into_iter()
+    .map(|(hip, knee, foot)| {
+        let (Some(hip), Some(knee), Some(foot)) = (
+            body_local(frame, hip),
+            body_local(frame, knee),
+            body_local(frame, foot),
+        ) else {
+            return f32::INFINITY;
+        };
+        180.0 - (hip - knee).angle_between(foot - knee).to_degrees()
+    })
+    .fold(f32::INFINITY, f32::min)
 }
 
 fn minimum_knee_hemisphere(frames: &[&FrameSample]) -> f32 {
@@ -1827,6 +2317,27 @@ fn root_relative_vertical_step(frames: &[&FrameSample], bone: &str) -> f32 {
             Some((current - previous).abs())
         })
         .fold(0.0, f32::max)
+}
+
+fn hard_stop_pelvis_vertical_step(frames: &[FrameSample]) -> Option<f32> {
+    let hard_stop = frames
+        .iter()
+        .filter(|frame| frame.scenario == "hard-stop")
+        .collect::<Vec<_>>();
+    if hard_stop.is_empty() {
+        return None;
+    }
+    let Some(first_stopped) = hard_stop
+        .iter()
+        .position(|frame| frame.speed_metres_per_second <= 0.05)
+    else {
+        return Some(f32::INFINITY);
+    };
+    let transition_start = first_stopped.saturating_sub(1);
+    Some(root_relative_vertical_step(
+        &hard_stop[transition_start..],
+        "pelvis",
+    ))
 }
 
 fn controller_vertical_range(frames: &[&FrameSample]) -> f32 {
@@ -2225,6 +2736,16 @@ mod tests {
             time_seconds: 0.0,
             speed_metres_per_second: 0.0,
             gait_phase: 0.0,
+            locomotion_sample_tick: 0,
+            body_acceleration: Vec3::ZERO.to_array(),
+            world_acceleration: Vec3::ZERO.to_array(),
+            contact_sequence: 0,
+            contact_foot: LeadFoot::Left,
+            landing_sequence: 0,
+            landing_impact_speed: 0.0,
+            body_lean_pitch_degrees: 0.0,
+            body_lean_roll_degrees: 0.0,
+            landing_compression_metres: 0.0,
             root_distance_metres: 0.0,
             root_position_metres: Vec3::ZERO.to_array(),
             world_travel_direction: Vec3::Z.to_array(),
@@ -2507,6 +3028,16 @@ mod tests {
             time_seconds: 0.0,
             speed_metres_per_second: 2.0,
             gait_phase: 0.0,
+            locomotion_sample_tick: 0,
+            body_acceleration: Vec3::ZERO.to_array(),
+            world_acceleration: Vec3::ZERO.to_array(),
+            contact_sequence: 0,
+            contact_foot: LeadFoot::Left,
+            landing_sequence: 0,
+            landing_impact_speed: 0.0,
+            body_lean_pitch_degrees: 0.0,
+            body_lean_roll_degrees: 0.0,
+            landing_compression_metres: 0.0,
             root_distance_metres: 0.0,
             root_position_metres: Vec3::ZERO.to_array(),
             world_travel_direction: Vec3::NEG_Z.to_array(),
@@ -2537,6 +3068,38 @@ mod tests {
         assert!(maximum_guard_facing_error(&[&frame]) > 179.0);
     }
 
+    #[test]
+    fn hard_stop_height_gate_measures_only_the_transition_and_settle_window() {
+        let frame = |scenario_frame: usize, speed: f32, pelvis_y: f32| {
+            let mut frame = foot_metric_frame(scenario_frame, -0.1, 1.0, 0.0, 0.0);
+            frame.scenario = "hard-stop".into();
+            frame.speed_metres_per_second = speed;
+            frame.bones.insert(
+                "pelvis".into(),
+                BoneSample {
+                    position: (Vec3::Y * pelvis_y).to_array(),
+                    rotation_xyzw: Quat::IDENTITY.to_array(),
+                    terrain_clearance_metres: None,
+                },
+            );
+            frame
+        };
+        let frames = vec![
+            frame(0, 5.5, 0.0),
+            frame(1, 5.5, 0.03),
+            frame(2, 5.5, 0.04),
+            frame(3, 0.0, 0.055),
+            frame(4, 0.0, 0.065),
+        ];
+        assert!(
+            (root_relative_vertical_step(&frames.iter().collect::<Vec<_>>(), "pelvis") - 0.03)
+                .abs()
+                < 0.0001
+        );
+        assert!((hard_stop_pelvis_vertical_step(&frames).unwrap() - 0.015).abs() < 0.0001);
+        assert_eq!(hard_stop_pelvis_vertical_step(&[]), None);
+    }
+
     fn foot_metric_frame(
         scenario_frame: usize,
         left_x: f32,
@@ -2555,6 +3118,16 @@ mod tests {
             time_seconds: scenario_frame as f32 / SAMPLE_HZ,
             speed_metres_per_second: 2.0,
             gait_phase: 0.0,
+            locomotion_sample_tick: scenario_frame as u64,
+            body_acceleration: Vec3::ZERO.to_array(),
+            world_acceleration: Vec3::ZERO.to_array(),
+            contact_sequence: 0,
+            contact_foot: LeadFoot::Left,
+            landing_sequence: 0,
+            landing_impact_speed: 0.0,
+            body_lean_pitch_degrees: 0.0,
+            body_lean_roll_degrees: 0.0,
+            landing_compression_metres: 0.0,
             root_distance_metres: 0.0,
             root_position_metres: Vec3::new(0.0, CAPTURE_ROOT_GROUND_OFFSET_METRES, 0.0).to_array(),
             world_travel_direction: Vec3::NEG_Z.to_array(),
