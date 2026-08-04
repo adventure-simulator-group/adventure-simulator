@@ -81,7 +81,7 @@ vertically fixed gameplay root; the explicit cross-slope scenario opts into
 the seeded terrain-IK pass. Coverage includes two-cycle 2.0m/s walk, 3.75m/s
 blend, 5.5m/s run, crouch, raised-guard full/half-speed movement, the complete
 attack/block matrix, low/high idle/moving hit reactions, and start/stop,
-guard-entry, guard-release, and crouch-enter/exit transitions. One-shot actions
+guard-entry, guard-release, moving-airborne, and crouch-enter/exit transitions. One-shot actions
 begin only on their scenario edge and advance on the authoritative 64Hz clock.
 Every logical tick is captured first from the raw
 gameplay third-person camera, then from side and front diagnostic cameras with
@@ -181,8 +181,11 @@ These targets and constraints are client-only and never extend replicated
 Pack lookup checks an exact pose and its same-pack mirrored counterpart before
 following the pack's parent and deterministic similar-pose fallback chain.
 Missing attack or block contacts therefore retain a valid guard/ordinary
-runtime pose while the capture report lists missing authored content
-separately. Missing, unloaded, zero-animation, multiple-animation, or short
+runtime pose while the manifest records requested and actually resolved
+semantic/source/mirror details at contact and end guard. The review page marks
+authored-content readiness as incomplete/non-passing separately from runtime
+fallback validity, so an incomplete pack remains usable without being reported
+as content-complete. Missing, unloaded, zero-animation, multiple-animation, or short
 motion files affect only that motion. Every local or remote character also gets
 a generated T-pose safety net until the base scene is available. If no pose
 candidate resolves, the client uses the complete authored `base.glb` bind

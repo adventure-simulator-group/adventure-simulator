@@ -204,7 +204,7 @@ impl SemanticPose {
             DuckLeadLeftBackward | DuckLeadLeftLeft | DuckLeadLeftRight => GuardLeadLeft,
             DuckLeadRightBackward | DuckLeadRightLeft | DuckLeadRightRight => GuardLeadRight,
             AirborneCenter => CrouchIdle,
-            AirborneTravel => AirborneCenter,
+            AirborneTravel => RunFlight,
             ProneIdle | SupineIdle => CrouchIdle,
             ProneCrawlContact | ProneCrawlPassing => ProneIdle,
             SupineScamperContact | SupineScamperPassing => SupineIdle,
@@ -1070,10 +1070,7 @@ impl AnimationEvaluation {
                 SemanticPose::SupineScamperContact,
                 SemanticPose::SupineScamperPassing,
             ),
-            Posture::Airborne => vec![airborne_sample(
-                state.action_direction,
-                state.local_velocity.y,
-            )],
+            Posture::Airborne => vec![airborne_sample(state.local_velocity.xz())],
             Posture::Ragdolled => Vec::new(),
             Posture::Upright if state.weapon_guard == WeaponGuardState::Raised => {
                 raised_guard_locomotion_samples(
@@ -1258,12 +1255,12 @@ fn smoothstep01(value: f32) -> f32 {
     value * value * (3.0 - 2.0 * value)
 }
 
-fn airborne_sample(direction: Vec2, _vertical_velocity: f32) -> PoseSample {
+fn airborne_sample(horizontal_velocity: Vec2) -> PoseSample {
     PoseSample {
         pose: SemanticPose::AirborneCenter,
         sampling: PoseSampling::Span {
             end: SemanticPose::AirborneTravel,
-            progress: smoothstep01(direction.length() / 0.2),
+            progress: smoothstep01(horizontal_velocity.length() / 0.2),
         },
         weight: 1.0,
         mirror_lower_body: 0.0,
@@ -2276,11 +2273,10 @@ mod tests {
 
     #[test]
     fn airborne_recipe_uses_only_center_and_travel_anchors() {
-        for (direction, progress) in [(Vec2::ZERO, 0.0), (Vec2::Y, 1.0)] {
+        for (velocity, progress) in [(Vec3::Y, 0.0), (Vec3::new(2.0, 3.0, -1.0), 1.0)] {
             let evaluation = AnimationEvaluation::from_skeleton(&SkeletonState {
                 posture: Posture::Airborne,
-                local_velocity: Vec3::Y,
-                action_direction: direction,
+                local_velocity: velocity,
                 ..default()
             });
             assert_eq!(evaluation.base[0].pose, SemanticPose::AirborneCenter);
@@ -2292,6 +2288,20 @@ mod tests {
                 }
             );
         }
+
+        let mut library = AnimationPackLibrary::default();
+        library
+            .insert(pack("unarmed", None, [SemanticPose::RunFlight]))
+            .unwrap();
+        assert_eq!(
+            library.resolve("unarmed", SemanticPose::AirborneTravel),
+            ResolvedPose::Clip {
+                pack_id: "unarmed",
+                semantic: SemanticPose::RunFlight,
+                pose: SemanticPose::RunFlight,
+                mirrored: false,
+            }
+        );
     }
     #[test]
     fn dodge_and_block_return_to_their_reference_stances() {

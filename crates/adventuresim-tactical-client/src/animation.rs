@@ -476,7 +476,7 @@ struct LoadedClip {
 }
 
 #[derive(Resource, Default)]
-struct AnimationRuntime {
+pub(super) struct AnimationRuntime {
     requested_base: Option<Handle<Gltf>>,
     base_processed: bool,
     base_failed: bool,
@@ -490,6 +490,45 @@ struct AnimationRuntime {
     graph: Option<Handle<AnimationGraph>>,
     revision: u64,
     canonical_targets: HashSet<AnimationTargetId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct RuntimePoseResolution {
+    pub(super) semantic: Option<SemanticPose>,
+    pub(super) source_pose: Option<SemanticPose>,
+    pub(super) pack_id: Option<String>,
+    pub(super) mirrored: bool,
+    pub(super) bind_pose: bool,
+}
+
+impl AnimationRuntime {
+    pub(super) fn resolve_pose(
+        &self,
+        requested_pack: &str,
+        requested_pose: SemanticPose,
+    ) -> RuntimePoseResolution {
+        match self.library.resolve(requested_pack, requested_pose) {
+            ResolvedPose::Clip {
+                pack_id,
+                semantic,
+                pose,
+                mirrored,
+            } => RuntimePoseResolution {
+                semantic: Some(semantic),
+                source_pose: Some(pose),
+                pack_id: Some(pack_id.to_owned()),
+                mirrored,
+                bind_pose: false,
+            },
+            ResolvedPose::BindPoseT => RuntimePoseResolution {
+                semantic: None,
+                source_pose: None,
+                pack_id: None,
+                mirrored: false,
+                bind_pose: true,
+            },
+        }
+    }
 }
 
 #[derive(Component, Debug)]
@@ -583,11 +622,16 @@ const IMPACT_REACTION_DURATION_TICKS: u64 = 14;
 
 pub(super) fn impact_reaction_progress(reaction: &ImpactReaction, sample_tick: u64) -> Option<f32> {
     let elapsed = sample_tick.checked_sub(reaction.started_tick)?;
-    (elapsed < reaction.duration_ticks).then(|| elapsed as f32 / reaction.duration_ticks as f32)
+    (elapsed <= reaction.duration_ticks)
+        .then(|| elapsed as f32 / reaction.duration_ticks.max(1) as f32)
 }
 
 pub(super) fn impact_reaction_pulse(progress: f32, strength: f32) -> f32 {
-    (progress.clamp(0.0, 1.0) * std::f32::consts::PI).sin() * strength.clamp(0.0, 1.0)
+    let progress = progress.clamp(0.0, 1.0);
+    if progress == 0.0 || progress == 1.0 {
+        return 0.0;
+    }
+    (progress * std::f32::consts::PI).sin() * strength.clamp(0.0, 1.0)
 }
 
 fn request_animation_packs(
@@ -1660,7 +1704,9 @@ mod tests {
         assert_eq!(first, Some(0.5));
         assert_eq!(impact_reaction_progress(&reaction, 107), first);
         assert!(impact_reaction_progress(&reaction, 113).is_some());
-        assert_eq!(impact_reaction_progress(&reaction, 114), None);
+        assert_eq!(impact_reaction_progress(&reaction, 114), Some(1.0));
+        assert_eq!(impact_reaction_pulse(1.0, reaction.strength), 0.0);
+        assert_eq!(impact_reaction_progress(&reaction, 115), None);
         assert_eq!(impact_reaction_progress(&reaction, 99), None);
         assert!((impact_reaction_pulse(0.5, reaction.strength) - 0.75).abs() < 0.0001);
         assert!(impact_reaction_pulse(0.5, 4.0) <= 1.0);
@@ -2062,239 +2108,6 @@ mod tests {
         );
         assert_eq!(weighted.len(), 1);
         assert!((weighted[0].mirrored_weight - 0.75).abs() < 0.0001);
-    }
-
-    #[test]
-    #[cfg(any())]
-    fn partial_guard_diagonal_assets_keep_one_coherent_exact_orientation() {
-        let catalog = AnimationPackCatalog::default();
-        let runtime = runtime_with_available([
-            SemanticPose::GuardLeadLeft,
-            SemanticPose::GuardWalkLeadLeft,
-            SemanticPose::GuardStrafeLeadRightRight,
-        ]);
-        let requested = [
-            (SemanticPose::GuardWalkLeadLeft, 0.25),
-            (SemanticPose::GuardStrafeLeadLeftLeft, 0.75),
-        ];
-        let samples = requested.map(|(pose, weight)| PoseSample {
-            pose: SemanticPose::GuardLeadLeft,
-            sampling: PoseSampling::Span {
-                end: pose,
-                progress: 0.5,
-            },
-            weight,
-            mirror_lower_body: 0.0,
-        });
-        let movement = requested.map(|item| item.0);
-        let exact = guard_parity_score(
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
-            &samples,
-            &movement,
-            false,
-        );
-        let mirrored = guard_parity_score(
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
-            &samples,
-            &movement,
-            true,
-        );
-        let parity = mirrored > exact;
-        assert!(!parity);
-
-        let mut weighted = Vec::new();
-        for sample in samples {
-            append_resolved_sample(
-                &mut weighted,
-                &runtime,
-                &catalog,
-                HUMANOID_UNARMED_PACK,
-                sample,
-                Some(parity),
-            );
-        }
-        assert!(!weighted.is_empty());
-        assert!(weighted.iter().all(|clip| clip.mirrored_weight == 0.0));
-        assert!((weighted.iter().map(|clip| clip.weight).sum::<f32>() - 1.0).abs() < 0.0001);
-        let exact_nodes = [
-            runtime.clips[&(
-                HUMANOID_UNARMED_PACK.to_owned(),
-                "guard_lead_left".to_owned(),
-            )]
-                .node,
-            runtime.clips[&(
-                HUMANOID_UNARMED_PACK.to_owned(),
-                "guard_walk_lead_left".to_owned(),
-            )]
-                .node,
-        ];
-        assert!(
-            weighted
-                .iter()
-                .all(|clip| exact_nodes.contains(&clip.clip.node))
-        );
-    }
-
-    #[test]
-    #[cfg(any())]
-    fn coherent_opposite_parity_preserves_complete_diagonal_semantics() {
-        let catalog = AnimationPackCatalog::default();
-        let runtime = runtime_with_available([
-            SemanticPose::GuardLeadLeft,
-            SemanticPose::GuardLeadRight,
-            SemanticPose::GuardWalkLeadLeft,
-            SemanticPose::GuardWalkLeadRight,
-            SemanticPose::GuardStrafeLeadRightRight,
-        ]);
-        let samples = [
-            PoseSample {
-                pose: SemanticPose::GuardLeadLeft,
-                sampling: PoseSampling::Span {
-                    end: SemanticPose::GuardWalkLeadLeft,
-                    progress: 0.5,
-                },
-                weight: 0.5,
-                mirror_lower_body: 0.0,
-            },
-            PoseSample {
-                pose: SemanticPose::GuardLeadLeft,
-                sampling: PoseSampling::Span {
-                    end: SemanticPose::GuardStrafeLeadLeftLeft,
-                    progress: 0.5,
-                },
-                weight: 0.5,
-                mirror_lower_body: 0.0,
-            },
-        ];
-        let movement = [
-            SemanticPose::GuardWalkLeadLeft,
-            SemanticPose::GuardStrafeLeadLeftLeft,
-        ];
-        let exact = guard_parity_score(
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
-            &samples,
-            &movement,
-            false,
-        );
-        let mirrored = guard_parity_score(
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
-            &samples,
-            &movement,
-            true,
-        );
-        assert!(mirrored > exact);
-
-        let mut weighted = Vec::new();
-        for sample in samples {
-            append_resolved_sample(
-                &mut weighted,
-                &runtime,
-                &catalog,
-                HUMANOID_UNARMED_PACK,
-                sample,
-                Some(true),
-            );
-        }
-        let expected_nodes = [
-            runtime.clips[&(
-                HUMANOID_UNARMED_PACK.to_owned(),
-                "guard_lead_right".to_owned(),
-            )]
-                .node,
-            runtime.clips[&(
-                HUMANOID_UNARMED_PACK.to_owned(),
-                "guard_walk_lead_right".to_owned(),
-            )]
-                .node,
-            runtime.clips[&(
-                HUMANOID_UNARMED_PACK.to_owned(),
-                "guard_strafe_lead_right_right".to_owned(),
-            )]
-                .node,
-        ];
-        assert!(
-            weighted
-                .iter()
-                .all(|clip| expected_nodes.contains(&clip.clip.node))
-        );
-        assert!(
-            weighted
-                .iter()
-                .all(|clip| (clip.mirrored_weight - clip.weight).abs() < 0.0001)
-        );
-    }
-
-    #[test]
-    #[cfg(any())]
-    fn exact_cardinal_guard_motion_wins_a_complete_parity_tie() {
-        let catalog = AnimationPackCatalog::default();
-        let runtime = runtime_with_available([
-            SemanticPose::GuardLeadLeft,
-            SemanticPose::GuardLeadRight,
-            SemanticPose::GuardWalkLeadLeft,
-            SemanticPose::GuardWalkLeadRight,
-        ]);
-        let samples = [PoseSample {
-            pose: SemanticPose::GuardLeadLeft,
-            sampling: PoseSampling::Span {
-                end: SemanticPose::GuardWalkLeadLeft,
-                progress: 0.5,
-            },
-            weight: 1.0,
-            mirror_lower_body: 0.0,
-        }];
-        let movement = [SemanticPose::GuardWalkLeadLeft];
-        let exact = guard_parity_score(
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
-            &samples,
-            &movement,
-            false,
-        );
-        let mirrored = guard_parity_score(
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
-            &samples,
-            &movement,
-            true,
-        );
-        assert_eq!(exact, mirrored);
-        assert!(!(mirrored > exact));
-    }
-
-    #[test]
-    #[cfg(any())]
-    fn absent_guard_locomotion_assets_degrade_without_a_partial_clip() {
-        let catalog = AnimationPackCatalog::default();
-        let runtime = runtime_with_available([]);
-        let mut weighted = Vec::new();
-        append_resolved_sample(
-            &mut weighted,
-            &runtime,
-            &catalog,
-            HUMANOID_UNARMED_PACK,
-            PoseSample {
-                pose: SemanticPose::GuardLeadLeft,
-                sampling: PoseSampling::Span {
-                    end: SemanticPose::GuardStrafeLeadLeftRight,
-                    progress: 0.5,
-                },
-                weight: 1.0,
-                mirror_lower_body: 0.0,
-            },
-            Some(false),
-        );
-        assert!(weighted.is_empty());
     }
 
     #[test]

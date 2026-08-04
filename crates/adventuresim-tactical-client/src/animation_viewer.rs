@@ -20,11 +20,11 @@ use bevy::{
 use serde::Serialize;
 
 use crate::animation::{
-    AnimationPackCatalog, AnimationPlayback, BoneRole, HumanoidBone, ImpactReaction,
-    LocomotionBodyResponseState, LocomotionHeightState, LocomotionPresentationEvent,
-    LocomotionPresentationEventKind, ProceduralAnimationClock, ProceduralIkState,
-    RaisedFootworkState, TacticalAnimationPlugin, TerrainIkEnabled, impact_reaction_progress,
-    impact_reaction_pulse, locomotion_support_weights,
+    AnimationPackCatalog, AnimationPlayback, AnimationRuntime, BoneRole, HumanoidBone,
+    ImpactReaction, LocomotionBodyResponseState, LocomotionHeightState,
+    LocomotionPresentationEvent, LocomotionPresentationEventKind, ProceduralAnimationClock,
+    ProceduralIkState, RaisedFootworkState, TacticalAnimationPlugin, TerrainIkEnabled,
+    impact_reaction_progress, impact_reaction_pulse, locomotion_support_weights,
 };
 use crate::{
     camera::{CameraMode, TacticalCameraPlugin, TacticalCameraSet, third_person_offset},
@@ -48,9 +48,10 @@ const RAISED_GUARD_VERTICAL_RANGE_LIMIT_METRES: f32 = 0.30;
 const HEIGHT_PEAK_PROMINENCE_METRES: f32 = 0.003;
 const PASSING_PEAK_PHASE_WINDOW: f32 = 0.10;
 const VIEWS: [CaptureView; 3] = [CaptureView::Gameplay, CaptureView::Side, CaptureView::Front];
-const TRACKED_BONE_NAMES: [&str; 15] = [
+const TRACKED_BONE_NAMES: [&str; 16] = [
     "pelvis",
     "chest",
+    "neck_02",
     "head",
     "left_shoulder",
     "right_shoulder",
@@ -100,7 +101,7 @@ fn scenario_metadata(name: &str) -> ScenarioMetadata {
                 && name != "raised-guard-transition",
             procedural_solver: true,
         }
-    } else if name == "airborne-landing" {
+    } else if matches!(name, "airborne-landing" | "moving-airborne") {
         ScenarioMetadata {
             kind: ScenarioKind::Landing,
             repeatable: false,
@@ -376,6 +377,8 @@ struct CaptureValidation {
     hard_stop_height_continuity_valid: bool,
     repeated_evaluation_valid: bool,
     runtime_fallback_valid: bool,
+    combat_recipe_valid: bool,
+    authored_content_complete: bool,
     one_shot_actions_valid: bool,
     hit_reactions_valid: bool,
     missing_authored_content: Vec<String>,
@@ -464,6 +467,8 @@ struct FrameSample {
     action_started_tick: u64,
     action_contact_tick: u64,
     impact_pulse: f32,
+    contact_resolution: Option<PoseResolutionSample>,
+    end_guard_resolution: Option<PoseResolutionSample>,
     body_acceleration: [f32; 3],
     world_acceleration: [f32; 3],
     contact_sequence: u64,
@@ -488,6 +493,17 @@ struct FrameSample {
     desired_right_foot_target: Option<[f32; 3]>,
     screenshots: BTreeMap<String, String>,
     bones: BTreeMap<String, BoneSample>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PoseResolutionSample {
+    requested: String,
+    resolved_semantic: Option<String>,
+    source_pose: Option<String>,
+    pack_id: Option<String>,
+    mirrored: bool,
+    bind_pose: bool,
+    exact_semantic: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -642,6 +658,16 @@ fn airborne_landing_scenario() -> Vec<PlannedFrame> {
         .collect()
 }
 
+fn moving_airborne_scenario() -> Vec<PlannedFrame> {
+    let mut frames = airborne_landing_scenario();
+    for frame in &mut frames {
+        frame.scenario = "moving-airborne";
+        frame.speed = 2.0;
+        frame.local_direction = Vec2::NEG_Y;
+    }
+    frames
+}
+
 fn smoothstep01(value: f32) -> f32 {
     let value = value.clamp(0.0, 1.0);
     value * value * (3.0 - 2.0 * value)
@@ -675,7 +701,7 @@ fn one_shot_scenario(
 }
 
 fn action_scenario_matrix() -> Vec<Vec<PlannedFrame>> {
-    vec![
+    let mut scenarios = vec![
         one_shot_scenario(
             "attack-thrust-left-stay",
             SkeletonAction::Attack,
@@ -784,7 +810,15 @@ fn action_scenario_matrix() -> Vec<Vec<PlannedFrame>> {
             2.0,
             LeadFoot::Left,
         ),
-    ]
+    ];
+    for (name, speed) in [("hit-baseline-idle", 0.0), ("hit-baseline-moving", 2.0)] {
+        let mut baseline = one_shot_scenario(name, SkeletonAction::None, speed, LeadFoot::Left);
+        for frame in &mut baseline {
+            frame.weapon_guard = WeaponGuardState::Lowered;
+        }
+        scenarios.push(baseline);
+    }
+    scenarios
 }
 
 fn configure_one_shot(skeleton: &mut SkeletonState, scenario: &str) {
@@ -805,6 +839,73 @@ fn configure_one_shot(skeleton: &mut SkeletonState, scenario: &str) {
     } else {
         AttackLine::Thrust
     };
+}
+
+fn expected_contact_pose(scenario: &str, lead: LeadFoot) -> Option<SemanticPose> {
+    use SemanticPose::*;
+    Some(if scenario.starts_with("attack-thrust") {
+        match lead {
+            LeadFoot::Left => AttackThrustLeadLeftContact,
+            LeadFoot::Right => AttackThrustLeadRightContact,
+        }
+    } else if scenario.starts_with("attack-slash") {
+        match lead {
+            LeadFoot::Left => AttackSlashLeadLeftContact,
+            LeadFoot::Right => AttackSlashLeadRightContact,
+        }
+    } else if scenario.starts_with("block-cut-left") {
+        match lead {
+            LeadFoot::Left => BlockCutLeftLeadLeft,
+            LeadFoot::Right => BlockCutLeftLeadRight,
+        }
+    } else if scenario.starts_with("block-cut-right") {
+        match lead {
+            LeadFoot::Left => BlockCutRightLeadLeft,
+            LeadFoot::Right => BlockCutRightLeadRight,
+        }
+    } else if scenario.starts_with("block-thrust") {
+        match lead {
+            LeadFoot::Left => BlockThrustLeadLeft,
+            LeadFoot::Right => BlockThrustLeadRight,
+        }
+    } else {
+        return None;
+    })
+}
+
+fn expected_end_guard_pose(scenario: &str, lead: LeadFoot) -> Option<SemanticPose> {
+    if !scenario.starts_with("attack-") && !scenario.starts_with("block-") {
+        return None;
+    }
+    let end_lead = if scenario.starts_with("attack-") && scenario.ends_with("switch") {
+        match lead {
+            LeadFoot::Left => LeadFoot::Right,
+            LeadFoot::Right => LeadFoot::Left,
+        }
+    } else {
+        lead
+    };
+    Some(match end_lead {
+        LeadFoot::Left => SemanticPose::GuardLeadLeft,
+        LeadFoot::Right => SemanticPose::GuardLeadRight,
+    })
+}
+
+fn pose_resolution_sample(
+    runtime: &AnimationRuntime,
+    pack: &str,
+    requested: SemanticPose,
+) -> PoseResolutionSample {
+    let resolved = runtime.resolve_pose(pack, requested);
+    PoseResolutionSample {
+        requested: requested.as_str().to_owned(),
+        resolved_semantic: resolved.semantic.map(|pose| pose.as_str().to_owned()),
+        source_pose: resolved.source_pose.map(|pose| pose.as_str().to_owned()),
+        pack_id: resolved.pack_id,
+        mirrored: resolved.mirrored,
+        bind_pose: resolved.bind_pose,
+        exact_semantic: resolved.semantic == Some(requested),
+    }
 }
 
 fn hit_reaction_strength(scenario: &str) -> f32 {
@@ -875,6 +976,7 @@ fn capture_plan() -> Vec<PlannedFrame> {
         dynamics_turn_scenario("dynamics-turn-90", std::f32::consts::FRAC_PI_2),
         dynamics_turn_scenario("dynamics-turn-180", std::f32::consts::PI),
         airborne_landing_scenario(),
+        moving_airborne_scenario(),
         steady_scenario("cadence-contact", 2.0, 2.0),
         steady_scenario_in_direction("cross-slope-walk", 2.0, 1.0, Vec2::X),
         transition_scenario(),
@@ -1451,6 +1553,7 @@ fn capture_frame(
     mut commands: Commands,
     mut sequence: ResMut<CaptureSequence>,
     terrain_ik: Res<TerrainIkEnabled>,
+    runtime: Res<AnimationRuntime>,
     subjects: Query<
         (
             Entity,
@@ -1583,6 +1686,12 @@ fn capture_frame(
                         .map(|progress| impact_reaction_pulse(progress, reaction.strength))
                 })
                 .unwrap_or(0.0),
+            contact_resolution: expected_contact_pose(frame.scenario, frame.lead_foot).map(
+                |requested| pose_resolution_sample(&runtime, &skeleton.animation_pack, requested),
+            ),
+            end_guard_resolution: expected_end_guard_pose(frame.scenario, frame.lead_foot).map(
+                |requested| pose_resolution_sample(&runtime, &skeleton.animation_pack, requested),
+            ),
             body_acceleration: (subject_global.rotation().inverse() * skeleton.world_acceleration)
                 .to_array(),
             world_acceleration: skeleton.world_acceleration.to_array(),
@@ -1733,6 +1842,7 @@ fn tracked_bone(role: BoneRole) -> Option<&'static str> {
     Some(match role {
         BoneRole::Pelvis => "pelvis",
         BoneRole::Chest => "chest",
+        BoneRole::NeckTwo => "neck_02",
         BoneRole::Head => "head",
         BoneRole::UpperArmLeft => "left_shoulder",
         BoneRole::UpperArmRight => "right_shoulder",
@@ -1763,6 +1873,69 @@ fn wait_or_fail(sequence: &mut CaptureSequence, reason: &str, exit: &mut Message
     fs::write(&path, &message).unwrap_or_else(|error| panic!("failed to write {path:?}: {error}"));
     error!(%reason, path = ?path, "Animation capture failed");
     exit.write(AppExit::Error(1.try_into().expect("one is non-zero")));
+}
+
+fn reaction_bone_delta(frame: &FrameSample, baseline: &FrameSample) -> Option<(f32, f32)> {
+    ["chest", "neck_02", "head"]
+        .into_iter()
+        .map(|name| {
+            let actual = frame.bones.get(name)?;
+            let neutral = baseline.bones.get(name)?;
+            let position =
+                Vec3::from_array(actual.position).distance(Vec3::from_array(neutral.position));
+            let rotation = Quat::from_array(actual.rotation_xyzw)
+                .angle_between(Quat::from_array(neutral.rotation_xyzw))
+                .to_degrees();
+            Some((position, rotation))
+        })
+        .try_fold((0.0_f32, 0.0_f32), |(position, rotation), delta| {
+            delta.map(|(next_position, next_rotation)| {
+                (position.max(next_position), rotation.max(next_rotation))
+            })
+        })
+}
+
+fn hit_reaction_transforms_valid(frames: &[FrameSample]) -> bool {
+    let scenarios = [
+        ("hit-idle-low", "hit-baseline-idle"),
+        ("hit-idle-high", "hit-baseline-idle"),
+        ("hit-moving-low", "hit-baseline-moving"),
+        ("hit-moving-high", "hit-baseline-moving"),
+    ];
+    let mut peak_rotation = [0.0_f32; 4];
+    for (index, (scenario, baseline)) in scenarios.into_iter().enumerate() {
+        let observed = frames
+            .iter()
+            .filter(|frame| frame.scenario == scenario)
+            .collect::<Vec<_>>();
+        if observed.is_empty() {
+            return false;
+        }
+        for frame in observed {
+            let Some(neutral) = frames.iter().find(|candidate| {
+                candidate.scenario == baseline && candidate.scenario_frame == frame.scenario_frame
+            }) else {
+                return false;
+            };
+            let Some((position, rotation)) = reaction_bone_delta(frame, neutral) else {
+                return false;
+            };
+            if !position.is_finite() || !rotation.is_finite() || position > 0.20 || rotation > 20.0
+            {
+                return false;
+            }
+            peak_rotation[index] = peak_rotation[index].max(rotation);
+            if frame.scenario_frame == 14
+                && (frame.impact_pulse != 0.0 || position > 0.01 || rotation > 1.0)
+            {
+                return false;
+            }
+        }
+    }
+    peak_rotation[0] > 0.1
+        && peak_rotation[2] > 0.1
+        && peak_rotation[1] > peak_rotation[0]
+        && peak_rotation[3] > peak_rotation[2]
 }
 
 fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppExit>) {
@@ -1981,7 +2154,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             });
     let landing_frames = frames
         .iter()
-        .filter(|frame| scenario_metadata(&frame.scenario).kind == ScenarioKind::Landing)
+        .filter(|frame| frame.scenario == "airborne-landing")
         .collect::<Vec<_>>();
     let landing_response_valid = landing_frames.is_empty()
         || (landing_frames
@@ -2078,12 +2251,77 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     });
     let views_are_distinct = sequence.duplicate_view_frames.is_empty();
     let repeated_evaluation_valid = sequence.repeated_evaluation_valid;
-    let runtime_fallback_valid = frames
+    let combat_contacts = frames
         .iter()
         .filter(|frame| {
-            frame.scenario.starts_with("attack-") || frame.scenario.starts_with("block-")
+            (frame.scenario.starts_with("attack-") || frame.scenario.starts_with("block-"))
+                && frame.locomotion_sample_tick == 8
         })
-        .all(|frame| !frame.bones.is_empty());
+        .collect::<Vec<_>>();
+    let expected_combat_scenarios = action_scenario_matrix()
+        .into_iter()
+        .filter_map(|planned| {
+            let first = planned.first()?;
+            matches!(first.action, SkeletonAction::Attack | SkeletonAction::Block)
+                .then_some(first.scenario)
+        })
+        .collect::<Vec<_>>();
+    let runtime_fallback_valid = combat_contacts.len() == expected_combat_scenarios.len()
+        && expected_combat_scenarios.iter().all(|scenario| {
+            combat_contacts.iter().any(|frame| {
+                if frame.scenario != *scenario {
+                    return false;
+                }
+                let expected_contact = expected_contact_pose(frame.scenario, frame.lead_foot)
+                    .expect("combat scenarios declare a contact pose")
+                    .as_str();
+                let expected_guard = expected_end_guard_pose(frame.scenario, frame.lead_foot)
+                    .expect("combat scenarios declare an end guard")
+                    .as_str();
+                frame.contact_resolution.as_ref().is_some_and(|resolution| {
+                    resolution.requested == expected_contact
+                        && !resolution.bind_pose
+                        && resolution.resolved_semantic.is_some()
+                        && resolution.source_pose.is_some()
+                        && resolution.pack_id.is_some()
+                }) && frame
+                    .end_guard_resolution
+                    .as_ref()
+                    .is_some_and(|resolution| {
+                        resolution.requested == expected_guard
+                            && resolution.exact_semantic
+                            && !resolution.bind_pose
+                    })
+            })
+        });
+    let combat_recipe_valid = runtime_fallback_valid
+        && combat_contacts.iter().all(|frame| {
+            let Some(resolution) = &frame.contact_resolution else {
+                return false;
+            };
+            if frame.scenario.starts_with("block-") {
+                return true;
+            }
+            if !resolution.exact_semantic {
+                return false;
+            }
+            if frame.lead_foot == LeadFoot::Right {
+                resolution.mirrored
+                    && resolution
+                        .source_pose
+                        .as_deref()
+                        .is_some_and(|source| source.contains("lead_left_contact"))
+            } else {
+                !resolution.mirrored
+            }
+        });
+    let authored_content_complete = sequence.missing_authored_content.is_empty()
+        && combat_contacts.iter().all(|frame| {
+            frame
+                .contact_resolution
+                .as_ref()
+                .is_some_and(|resolution| resolution.exact_semantic)
+        });
     let one_shot_actions_valid = action_scenario_matrix()
         .into_iter()
         .filter(|planned| {
@@ -2139,7 +2377,8 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         && hit_peaks[0] > 0.0
         && hit_peaks[2] > 0.0
         && hit_peaks[1] > hit_peaks[0]
-        && hit_peaks[3] > hit_peaks[2];
+        && hit_peaks[3] > hit_peaks[2]
+        && hit_reaction_transforms_valid(&frames);
     let manifest = CaptureManifest {
         sample_hz: SAMPLE_HZ,
         pipeline: "shared tactical player, scene, camera, authoritative locomotion projection, authored FK, and final procedural passes",
@@ -2166,6 +2405,8 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             hard_stop_height_continuity_valid,
             repeated_evaluation_valid,
             runtime_fallback_valid,
+            combat_recipe_valid,
+            authored_content_complete,
             one_shot_actions_valid,
             hit_reactions_valid,
             missing_authored_content: sequence.missing_authored_content.clone(),
@@ -2207,6 +2448,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         && hard_stop_height_continuity_valid
         && repeated_evaluation_valid
         && runtime_fallback_valid
+        && combat_recipe_valid
         && one_shot_actions_valid
         && hit_reactions_valid
         && views_are_distinct
@@ -2959,6 +3201,22 @@ fn review_html(manifest: &CaptureManifest) -> String {
             )
         })
         .collect::<String>();
+    let authored_status = if manifest.validation.authored_content_complete {
+        "PASS: every requested combat semantic has authored content"
+    } else {
+        "INCOMPLETE / NON-PASSING: runtime fallback is usable, but authored combat content is missing"
+    };
+    let runtime_status =
+        if manifest.validation.runtime_fallback_valid && manifest.validation.combat_recipe_valid {
+            "PASS"
+        } else {
+            "FAIL"
+        };
+    let missing_authored_content = if manifest.validation.missing_authored_content.is_empty() {
+        "none".to_owned()
+    } else {
+        manifest.validation.missing_authored_content.join(", ")
+    };
     let metrics = manifest
         .scenarios
         .iter()
@@ -2996,15 +3254,16 @@ fn review_html(manifest: &CaptureManifest) -> String {
     format!(
         r#"<!doctype html>
 <html><head><meta charset="utf-8"><title>Animation review</title><style>
-body{{font:15px system-ui;background:#111820;color:#e8eef5;margin:24px}}button,select{{margin:4px;padding:8px}}img{{max-width:min(960px,100%);background:#222}}table{{border-collapse:collapse;margin-top:20px}}td,th{{border:1px solid #526171;padding:6px}}.note{{max-width:960px;color:#b9c7d5}}#contact{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:20px}}#contact img{{width:100%}}
+body{{font:15px system-ui;background:#111820;color:#e8eef5;margin:24px}}button,select{{margin:4px;padding:8px}}img{{max-width:min(960px,100%);background:#222}}table{{border-collapse:collapse;margin-top:20px}}td,th{{border:1px solid #526171;padding:6px}}.note{{max-width:960px;color:#b9c7d5}}.readiness{{max-width:960px;border:2px solid #e3a64b;background:#352915;padding:12px 16px;margin:16px 0}}.readiness strong{{display:block;color:#ffd58f;font-size:1.1rem;margin-bottom:6px}}#contact{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:20px}}#contact img{{width:100%}}
 </style></head><body><h1>Tactical locomotion review</h1>
 <p class="note">This runs the shared tactical player, hills scene, gameplay camera, 64 Hz authoritative locomotion projection, authored FK, and final procedural passes. Gameplay images are raw; side/front diagnostics add the cyan skeleton and support markers. Use normal speed first, then slow motion.</p>
+<section class="readiness"><strong>Authored content readiness: {authored_status}</strong>Runtime recipe/fallback validation: {runtime_status}<br>Missing authored semantics: {missing_authored_content}</section>
 <div>{scenario_buttons}</div><label>View <select id="view"><option value="gameplay">gameplay (raw)</option><option value="side">side diagnostic</option><option value="front">front diagnostic</option></select></label>
 <label>Playback <select id="rate"><option value="1">normal</option><option value="2">half speed</option><option value="4">quarter speed</option></select></label>
 <p id="telemetry"></p><img id="player"><div id="contact"></div>
 <table><thead><tr><th>scenario</th><th>frames</th><th>worst root-relative displacement</th><th>worst rotation</th><th>loop seam m</th><th>loop seam deg</th><th>supported slip m/frame</th><th>planted interval drift m</th><th>signed foot track m</th><th>inter-foot separation m</th><th>knee flexion deg</th><th>knee hemisphere dot</th><th>maximum facing error deg</th><th>tracking excess deg</th><th>guard facing error deg</th><th>final facing error deg</th><th>minimum terrain-relative foot clearance m</th></tr></thead><tbody>{metrics}</tbody></table>
 <script>const all={frame_json},scenarioNames={scenario_names_json};let scenario=scenarioNames[0]||"",i=0,timer;const player=document.querySelector('#player'),view=document.querySelector('#view'),rate=document.querySelector('#rate'),telemetry=document.querySelector('#telemetry');
-function frames(){{return all.filter(x=>x.scenario===scenario)}}function show(){{const list=frames(),f=list.length?list[i%list.length]:null;if(!f){{player.removeAttribute('src');telemetry.textContent='No completed capture frames';return}}player.src=f.screenshots[view.value];telemetry.textContent=`${{f.scenario}} frame ${{f.scenario_frame}} | guard ${{f.weapon_guard}} lead ${{f.lead_foot}} | ${{f.speed_metres_per_second.toFixed(2)}} m/s | phase ${{f.gait_phase.toFixed(3)}} | world plants L ${{f.left_support_weight.toFixed(2)}} R ${{f.right_support_weight.toFixed(2)}}`;}}
+function resolution(r){{if(!r)return 'n/a';return `${{r.requested}} -> ${{r.resolved_semantic||'bind pose'}} (source ${{r.source_pose||'none'}}, mirror ${{r.mirrored}})`}}function frames(){{return all.filter(x=>x.scenario===scenario)}}function show(){{const list=frames(),f=list.length?list[i%list.length]:null;if(!f){{player.removeAttribute('src');telemetry.textContent='No completed capture frames';return}}player.src=f.screenshots[view.value];telemetry.textContent=`${{f.scenario}} frame ${{f.scenario_frame}} | guard ${{f.weapon_guard}} lead ${{f.lead_foot}} | ${{f.speed_metres_per_second.toFixed(2)}} m/s | phase ${{f.gait_phase.toFixed(3)}} | contact ${{resolution(f.contact_resolution)}} | end guard ${{resolution(f.end_guard_resolution)}}`;}}
 function play(){{clearInterval(timer);timer=setInterval(()=>{{i=(i+1)%frames().length;show()}},1000/64*Number(rate.value))}}function contacts(){{const f=frames(),step=Math.max(1,Math.floor(f.length/12)),box=document.querySelector('#contact');box.innerHTML='';for(let n=0;n<f.length;n+=step){{let x=document.createElement('img');x.src=f[n].screenshots[view.value];x.title=`frame ${{f[n].scenario_frame}} phase ${{f[n].gait_phase.toFixed(3)}}`;box.appendChild(x)}}}}
 document.querySelectorAll('button').forEach(b=>b.onclick=()=>{{scenario=b.dataset.scenario;i=0;show();contacts();play()}});view.onchange=()=>{{show();contacts()}};rate.onchange=play;show();contacts();play();</script></body></html>"#
     )
@@ -3057,6 +3316,8 @@ mod tests {
             action_started_tick: 0,
             action_contact_tick: 0,
             impact_pulse: 0.0,
+            contact_resolution: None,
+            end_guard_resolution: None,
             body_acceleration: Vec3::ZERO.to_array(),
             world_acceleration: Vec3::ZERO.to_array(),
             contact_sequence: 0,
@@ -3222,6 +3483,38 @@ mod tests {
                 1
             );
         }
+    }
+
+    #[test]
+    fn moving_airborne_fixture_uses_projected_horizontal_velocity_without_action_direction() {
+        let frame = moving_airborne_scenario()[0].clone();
+        let mut skeleton = SkeletonState::default();
+        let local_velocity = Vec3::new(
+            frame.local_direction.x * frame.speed,
+            -4.5,
+            frame.local_direction.y * frame.speed,
+        );
+        project_skeleton_locomotion(
+            &mut skeleton,
+            SkeletonLocomotionInput {
+                orientation: Quat::IDENTITY,
+                linear_velocity: local_velocity,
+                grounded: false,
+                crouching: false,
+                delta_seconds: 0.0,
+                tick: 0,
+            },
+        );
+        assert_eq!(skeleton.action_direction, Vec2::ZERO);
+        let evaluation = AnimationEvaluation::from_skeleton(&skeleton);
+        assert_eq!(evaluation.base[0].pose, SemanticPose::AirborneCenter);
+        assert_eq!(
+            evaluation.base[0].sampling,
+            PoseSampling::Span {
+                end: SemanticPose::AirborneTravel,
+                progress: 1.0,
+            }
+        );
     }
 
     #[test]
@@ -3508,6 +3801,8 @@ mod tests {
             action_started_tick: 0,
             action_contact_tick: 0,
             impact_pulse: 0.0,
+            contact_resolution: None,
+            end_guard_resolution: None,
             body_acceleration: Vec3::ZERO.to_array(),
             world_acceleration: Vec3::ZERO.to_array(),
             contact_sequence: 0,
@@ -3604,6 +3899,8 @@ mod tests {
             action_started_tick: 0,
             action_contact_tick: 0,
             impact_pulse: 0.0,
+            contact_resolution: None,
+            end_guard_resolution: None,
             body_acceleration: Vec3::ZERO.to_array(),
             world_acceleration: Vec3::ZERO.to_array(),
             contact_sequence: 0,

@@ -127,7 +127,8 @@ The initial evaluator should support at least:
 - movement speed, including continuous walk-to-run blending;
 - crouch amount;
 - local movement or dodge direction;
-- airborne center/travel blend from horizontal intent (vertical velocity remains telemetry);
+- airborne center/travel blend from authoritative horizontal local velocity
+  (vertical velocity remains telemetry);
 - attack target height;
 - action phase; and
 - layer weights for head look, impact reaction, and future secondary motion.
@@ -142,6 +143,8 @@ behavior we want to emulate rather than allowing feet to slide.
 Hit reaction has no semantic authored pose. A client-only bounded chest,
 neck, and head pulse is keyed to the replicated 64Hz locomotion sample identity;
 re-evaluating one tick for multiple renders cannot advance or duplicate it.
+The duration's terminal tick is sampled at zero pulse before the reaction is
+removed, so both idle and moving reactions return to their no-hit baseline.
 Directional and body-region reactions remain future work.
 
 ## Animation packs and fallback
@@ -207,7 +210,7 @@ final content validation. After the selected pack's single fallback chain
 misses a semantic name, the client follows a deterministic similar-pose chain
 and restarts pack lookup for each candidate. Examples include `run_contact` to
 `walk_contact`, `run_flight` to `walk_passing`, `airborne_travel` to
-`airborne_center`, same-lead thrust contacts to slash contacts, and then attack
+`run_flight`, same-lead thrust contacts to slash contacts, and then attack
 or block poses to the appropriate guard. If neither chain resolves, the client
 displays the skeleton's authored bind pose, which is a T-pose for the humanoid
 convention. Release validation still requires the complete unarmed root
@@ -619,6 +622,8 @@ The fixture supplies deterministic controller observations at the shared
 server projection boundary and follows rendered terrain height only in the
 cross-slope probe; it does not
 exercise physics contacts, replication, interpolation, or recorded live input.
+Its separate moving-airborne fixture leaves action direction unset and proves
+the center/travel recipe follows projected authoritative horizontal velocity.
 
 The vertical-excursion gate remains 0.20 m for ordinary flat-ground motion and
 0.30 m for raised-guard scenarios. The explicit cross-slope scenario adds only
@@ -754,9 +759,9 @@ The load and landing both reuse the crouch/duck blend, with the runtime choosing
 the pushing and receiving legs from horizontal velocity and planted-foot state.
 It synthesizes the short leg extension after takeoff, reaches a receiving foot
 beneath the projected center of mass before landing, and uses foot IK at ground
-contact. The center-to-travel blend is driven primarily by horizontal speed;
-air phase is driven primarily by vertical velocity so the airborne pose can
-extend for different airtimes without slowing takeoff or landing. Overgrowth
+contact. The center-to-travel blend is driven only by authoritative horizontal
+local velocity; vertical velocity is retained for telemetry and future
+takeoff/landing timing, but does not select the airborne pose. Overgrowth
 uses the same general idea by deriving an `up_coord` from vertical velocity in
 [`aircontrols.as`](https://github.com/WolfireGames/overgrowth/blob/245fe4828631c84c0023d29d1525f5716ccb6106/Data/Scripts/aircontrols.as#L114-L180).
 
