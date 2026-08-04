@@ -536,15 +536,24 @@ consumer for that family still assumes `base weight/value * quantity`.
 
 ## Deliberately deferred
 
-- Arbitrary pouring, partial-row transfer, and player-selected splitting.
+- Partial-row merchant transfer and player-selected solid-lot splitting.
 - Mixing liquids or heterogeneous food lots with different profiles,
   provenance, age, contamination, or preparation.
-- Refilling reusable bottles, cups, waterskins, and arbitrary vessels.
+- Mixing or refilling definition-owned sealed retail bottles.
 - Merchant purchase/sale of arbitrary sub-row amounts.
-- Container damage, leakage, evaporation, and nested containers.
+- Container damage, leakage, and evaporation.
 
 These omissions constrain the first rollout; they do not change the durable
 model.
+
+## Generic container integration
+
+Water poured into a generic container is authoritative integer-millilitre
+custody: the transition subtracts from the existing personal or party carried
+pool and pouring out performs the checked inverse. Measured alcohol occupies
+its actual remaining millilitres. Measured solid lots scale their authored
+exterior volume by remaining amount for capacity checks. This physical graph is
+independent of equipment containment attachment points.
 
 ## Issue #150 acceptance map
 

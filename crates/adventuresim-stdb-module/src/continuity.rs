@@ -22,6 +22,7 @@ use crate::{
         character, character__view, character_attributes, character_death, character_death__view,
         character_equipped_item, character_skills, unequip_wearable,
     },
+    inventory_container::inventory_object,
     item::inventory_item,
     relationship::{
         HouseholdRole, KinshipKind, character_alive_at, character_birth, character_birth__view,
@@ -497,6 +498,24 @@ fn transfer_personal_estate(
     // Tear down every body and item-attachment anchor before ownership moves.
     // Item IDs remain stable, preserving amounts, food lots, and condition.
     unequip_personal_estate(ctx, decedent_id)?;
+    let object_roots = ctx
+        .db
+        .inventory_object()
+        .iter()
+        .filter(|object| {
+            object.location_kind == "personal" && object.location_owner == decedent_id.to_string()
+        })
+        .filter(|object| !crate::inventory_container::object_is_nested(ctx, object.id))
+        .map(|object| object.id)
+        .collect::<Vec<_>>();
+    for object_id in object_roots {
+        crate::inventory_container::rehome_subtree(
+            ctx,
+            object_id,
+            "personal",
+            &heir_id.to_string(),
+        )?;
+    }
     let mut inventory = ctx
         .db
         .inventory_item()

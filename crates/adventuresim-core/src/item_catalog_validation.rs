@@ -245,6 +245,7 @@ fn validate_item(
             "id",
             "display_name",
             "weight_kg",
+            "exterior_volume_ml",
             "base_value",
             "tags",
             "presentation",
@@ -309,6 +310,15 @@ fn validate_item(
         None => errors.push(format!("{file}: {path}.tags: required array")),
     }
     finite_in(item, "weight_kg", 0.0, 10_000.0, file, &path, errors);
+    if !item
+        .get("exterior_volume_ml")
+        .and_then(Value::as_u64)
+        .is_some_and(|volume| (1..=1_000_000).contains(&volume))
+    {
+        errors.push(format!(
+            "{file}: {path}.exterior_volume_ml: expected 1..1000000"
+        ));
+    }
     if item.get("base_value").and_then(Value::as_u64).is_none() {
         errors.push(format!(
             "{file}: {path}.base_value: required non-negative integer"
@@ -1231,6 +1241,7 @@ mod tests {
             "id": id,
             "display_name": "Test",
             "weight_kg": 1.0,
+            "exterior_volume_ml": 1250,
             "base_value": 1,
             "tags": [],
             "presentation": {"icon": "help"},

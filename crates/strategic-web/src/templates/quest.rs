@@ -420,7 +420,7 @@ pub fn quest_location_enemy_page(
                                 @let display_name = food_lot.map_or_else(|| item_display_name(&entry.item_id), |lot| lot.display_name.clone());
                                 @let value = definition.and_then(|item| item.base_value).unwrap_or(0);
                                 @let target = inventory_target(targets, &entry.item_id);
-                                tr class="trade-inventory-row" data-target=(target) {
+                                tr class="trade-inventory-row" data-target=(target) data-party-inventory-id=(entry.id) {
                                     td class="inventory-item-type" { (item_type_icon(&entry.item_id)) }
                                     td class="inventory-item-name" { (super::settlement::item_name_with_food_lot(&entry.item_id, &display_name, definition, food_lot)) }
                                     td class="inventory-count" { (entry.quantity) }

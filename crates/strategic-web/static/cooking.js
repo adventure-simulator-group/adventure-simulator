@@ -64,7 +64,7 @@
         amounts.value = values.map((value) => value.quantity).join(",");
         if (empty) empty.hidden = values.length > 0;
 
-        let reason = "Transfer at least one ingredient to the pot";
+        let reason = "Select at least one loose food portion for spit roasting";
         if (method && values.length) {
           const mass = values.reduce(
             (sum, value) => sum + value.mass * value.quantity / value.available,

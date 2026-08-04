@@ -1,3 +1,5 @@
+use crate::inventory_container::inventory_object as _;
+
 /// Transfer a stack of items between two members of the same party.
 #[reducer]
 pub fn transfer_party_item(
@@ -30,6 +32,23 @@ pub fn transfer_party_item(
     }
     if crate::character::inventory_item_is_equipped(ctx, from_character_id, inventory_item_id) {
         return Err("Unequip an item before transferring it".into());
+    }
+
+    let container_object = crate::inventory_container::object_for_row(ctx, "personal", source_item.id);
+    if let Some(object) = container_object.clone()
+        && (crate::inventory_container::object_is_nonempty(ctx, object.id)
+            || crate::inventory_container::object_is_nested(ctx, object.id))
+    {
+        if quantity != 1 || source_item.quantity != 1 {
+            return Err("A filled container must move as one exact object".into());
+        }
+        crate::inventory_container::detach_if_nested(ctx, object.id)?;
+        crate::inventory_container::rehome_subtree(
+            ctx, object.id, "personal", &to_character_id.to_string(),
+        )?;
+        crate::capability::refresh_character_capability(ctx, from_character_id)?;
+        crate::capability::refresh_character_capability(ctx, to_character_id)?;
+        return Ok(());
     }
 
     let measured = crate::inventory_amount::personal_amount(ctx, source_item.id).is_some();
@@ -115,6 +134,9 @@ pub fn transfer_party_item(
 
     if source_item.quantity == quantity {
         ctx.db.inventory_item().id().delete(inventory_item_id);
+        if let Some(object) = container_object {
+            ctx.db.inventory_object().id().delete(object.id);
+        }
     } else {
         let mut updated = source_item.clone();
         updated.quantity -= quantity;
@@ -201,6 +223,22 @@ fn party_inventory_value(
             .checked_mul(u64::from(quantity))
             .ok_or_else(|| "Inventory value overflow".into())
     }
+}
+
+fn personal_subtree_value(ctx: &ReducerContext, root_object_id: u64) -> Result<u64, String> {
+    crate::inventory_container::subtree_object_ids(ctx, root_object_id)?.into_iter().try_fold(0u64, |total, id| {
+        let object = ctx.db.inventory_object().id().find(id).ok_or("Inventory subtree object is missing")?;
+        let row = ctx.db.inventory_item().id().find(object.inventory_row_id).ok_or("Inventory subtree row is missing")?;
+        total.checked_add(personal_inventory_value(ctx, &row, row.quantity)?).ok_or("Inventory subtree value overflow".into())
+    })
+}
+
+fn party_subtree_value(ctx: &ReducerContext, root_object_id: u64) -> Result<u64, String> {
+    crate::inventory_container::subtree_object_ids(ctx, root_object_id)?.into_iter().try_fold(0u64, |total, id| {
+        let object = ctx.db.inventory_object().id().find(id).ok_or("Inventory subtree object is missing")?;
+        let row = ctx.db.party_inventory_item().id().find(object.inventory_row_id).ok_or("Party inventory subtree row is missing")?;
+        total.checked_add(party_inventory_value(ctx, &row, row.quantity)?).ok_or("Inventory subtree value overflow".into())
+    })
 }
 
 fn item_is_durable(ctx: &ReducerContext, item_id: &str) -> bool {
@@ -1205,6 +1243,18 @@ pub fn deposit_party_inventory_item(
     if crate::character::inventory_item_is_equipped(ctx, character_id, inventory_item_id) {
         return Err("Unequip an item before depositing it".into());
     }
+    if let Some(object) = crate::inventory_container::object_for_row(ctx, "personal", inventory.id)
+        && (crate::inventory_container::object_is_nonempty(ctx, object.id)
+            || crate::inventory_container::object_is_nested(ctx, object.id))
+    {
+        if quantity != 1 || inventory.quantity != 1 { return Err("A contained subtree must be deposited as one exact object".into()); }
+        let value = personal_subtree_value(ctx, object.id)?;
+        crate::inventory_container::detach_if_nested(ctx, object.id)?;
+        crate::inventory_container::rehome_subtree(ctx, object.id, "party", &party_id)?;
+        credit_party_stake(ctx, &party_id, character_id, value)?;
+        crate::capability::refresh_character_capability(ctx, character_id)?;
+        return Ok(());
+    }
     let medication = item_is_medication(ctx, &inventory.item_id);
     if medication && (quantity != 1 || inventory.quantity != 1) {
         return Err("Medication must be deposited as an individual course".into());
@@ -1454,7 +1504,16 @@ pub fn withdraw_party_inventory_item(
     if quantity == 0 || inventory.party_id != party_id || inventory.quantity < quantity {
         return Err("Invalid party inventory withdrawal".into());
     }
-    let cost = party_inventory_value(ctx, &inventory, quantity)?;
+    let container_object = crate::inventory_container::object_for_row(ctx, "party", inventory.id);
+    let container_subtree = container_object.as_ref().is_some_and(|object|
+        crate::inventory_container::object_is_nonempty(ctx, object.id)
+            || crate::inventory_container::object_is_nested(ctx, object.id));
+    if container_subtree && (quantity != 1 || inventory.quantity != 1) {
+        return Err("A contained subtree must be withdrawn as one exact object".into());
+    }
+    let cost = if let Some(object) = container_object.as_ref().filter(|_| container_subtree) {
+        party_subtree_value(ctx, object.id)?
+    } else { party_inventory_value(ctx, &inventory, quantity)? };
     let mut stake = ctx
         .db
         .party_stake()
@@ -1469,6 +1528,12 @@ pub fn withdraw_party_inventory_item(
     if let Some(ref mut stake) = stake {
         stake.value = stake.value.saturating_sub(cost);
         ctx.db.party_stake().id().update(stake.clone());
+    }
+    if let Some(object) = container_object.filter(|_| container_subtree) {
+        crate::inventory_container::detach_if_nested(ctx, object.id)?;
+        crate::inventory_container::rehome_subtree(ctx, object.id, "personal", &character_id.to_string())?;
+        crate::capability::refresh_character_capability(ctx, character_id)?;
+        return Ok(());
     }
     let durable = item_is_durable(ctx, &inventory.item_id);
     let medication = item_is_medication(ctx, &inventory.item_id);
@@ -1591,15 +1656,29 @@ pub fn liquidate_party_inventory(
         {
             return Err("Invalid party asset liquidation".into());
         }
-        let line_value = party_inventory_value(ctx, &entry, quantity)?;
+        let object = crate::inventory_container::object_for_row(ctx, "party", entry.id);
+        let subtree = object.as_ref().is_some_and(|object|
+            crate::inventory_container::object_is_nonempty(ctx, object.id)
+                || crate::inventory_container::object_is_nested(ctx, object.id));
+        if subtree && (quantity != 1 || entry.quantity != 1) {
+            return Err("A contained subtree must be liquidated as one exact object".into());
+        }
+        let line_value = if let Some(object) = object.as_ref().filter(|_| subtree) {
+            party_subtree_value(ctx, object.id)?
+        } else { party_inventory_value(ctx, &entry, quantity)? };
         proceeds = proceeds
             .checked_add(line_value)
             .ok_or("Party asset liquidation total overflow")?;
-        staged.push((entry, quantity));
+        staged.push((entry, quantity, object, subtree));
     }
     let proceeds =
         u32::try_from(proceeds).map_err(|_| "Party asset liquidation exceeds currency limits")?;
-    for (mut entry, quantity) in staged {
+    for (mut entry, quantity, object, subtree) in staged {
+        if let Some(object) = object.filter(|_| subtree) {
+            crate::inventory_container::detach_if_nested(ctx, object.id)?;
+            crate::inventory_container::delete_subtree(ctx, object.id)?;
+            continue;
+        }
         let is_food = crate::food::party_lot(ctx, entry.id).is_some();
         if is_food {
             crate::food::remove_party_lot_quantity(ctx, entry.id, quantity, entry.quantity)?;
@@ -1656,10 +1735,26 @@ pub fn discard_inventory_items(
         if crate::character::inventory_item_is_equipped(ctx, character_id, inventory_item_id) {
             return Err("Unequip an item before discarding it".into());
         }
-        staged.push((item, quantity));
+        let object = crate::inventory_container::object_for_row(ctx, "personal", item.id);
+        if object.as_ref().is_some_and(|object|
+            crate::inventory_container::object_is_nonempty(ctx, object.id)
+                || crate::inventory_container::object_is_nested(ctx, object.id))
+            && (quantity != 1 || item.quantity != 1)
+        {
+            return Err("A contained subtree must be discarded as one exact object".into());
+        }
+        staged.push((item, quantity, object));
     }
 
-    for (mut item, quantity) in staged {
+    for (mut item, quantity, object) in staged {
+        if let Some(object) = object.filter(|object|
+            crate::inventory_container::object_is_nonempty(ctx, object.id)
+                || crate::inventory_container::object_is_nested(ctx, object.id))
+        {
+            crate::inventory_container::detach_if_nested(ctx, object.id)?;
+            crate::inventory_container::delete_subtree(ctx, object.id)?;
+            continue;
+        }
         if item.quantity == quantity {
             ctx.db
                 .inventory_item_amount()
@@ -2155,6 +2250,12 @@ fn finalize_storefront_trade_impl(ctx: &ReducerContext, execution: StorefrontTra
     }
     let mut proceeds = 0_u64;
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
+        let container_object = crate::inventory_container::object_for_row(
+            ctx, if party_scope { "party" } else { "personal" }, *inventory_id,
+        );
+        let container_subtree = container_object.as_ref().is_some_and(|object|
+            crate::inventory_container::object_is_nonempty(ctx, object.id)
+                || crate::inventory_container::object_is_nested(ctx, object.id));
         let (item_id, available, food_value) = if party_scope {
             let inventory = ctx
                 .db
@@ -2193,12 +2294,22 @@ fn finalize_storefront_trade_impl(ctx: &ReducerContext, execution: StorefrontTra
         {
             return Err("Invalid merchant sale".into());
         }
+        if container_subtree && (*quantity != 1 || available != 1) {
+            return Err("A contained subtree must be sold as one exact object".into());
+        }
         if !party_scope
             && crate::character::inventory_item_is_equipped(ctx, character_id, *inventory_id)
         {
             return Err("Unequip an item before selling it".into());
         }
-        let line = if let Some(value) = food_value {
+        let line = if let Some(object) = container_object.as_ref().filter(|_| container_subtree) {
+            let intrinsic = if party_scope { party_subtree_value(ctx, object.id)? } else { personal_subtree_value(ctx, object.id)? };
+            let quoted = adventuresim_core::strategic_economy::language_adjusted_sell_price(
+                adventuresim_core::strategic_economy::merchant_sell_price(u32::try_from(intrinsic).map_err(|_| "Container subtree quote overflow")?),
+                shared_language,
+            );
+            u64::from(adventuresim_core::local_problem::adjust_price(quoted, -problem_effects.sell_penalty_bps))
+        } else if let Some(value) = food_value {
             if *quantity != available || !value.is_finite() || value < 0.0 {
                 return Err("Food batches must be sold as complete valid lots".into());
             }
@@ -2262,6 +2373,17 @@ fn finalize_storefront_trade_impl(ctx: &ReducerContext, execution: StorefrontTra
         return Err("Not enough coin".into());
     }
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
+        let object = crate::inventory_container::object_for_row(
+            ctx, if party_scope { "party" } else { "personal" }, *inventory_id,
+        );
+        if let Some(object) = object.filter(|object|
+            crate::inventory_container::object_is_nonempty(ctx, object.id)
+                || crate::inventory_container::object_is_nested(ctx, object.id))
+        {
+            crate::inventory_container::detach_if_nested(ctx, object.id)?;
+            crate::inventory_container::delete_subtree(ctx, object.id)?;
+            continue;
+        }
         if party_scope {
             let mut inventory = ctx
                 .db

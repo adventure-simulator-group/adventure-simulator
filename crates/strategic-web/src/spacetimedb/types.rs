@@ -1417,6 +1417,27 @@ pub struct InventoryItemAmount {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryObject {
+    pub id: u64,
+    pub item_id: String,
+    pub location_kind: String,
+    pub location_owner: String,
+    pub inventory_row_id: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryContainment {
+    pub child_object_id: u64,
+    pub parent_object_id: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContainerLiquid {
+    pub container_object_id: u64,
+    pub water_ml: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartyItemAmount {
     pub party_inventory_item_id: u64,
     pub remaining_milliunits: u32,
@@ -1467,6 +1488,8 @@ pub struct BackendFireplaceStation {
     pub character_id: u64,
     pub context_key: String,
     pub instrument_item_id: Option<String>,
+    #[serde(default)]
+    pub instrument_object_id: Option<u64>,
     pub instrument_source: Option<String>,
 }
 
@@ -1558,6 +1581,8 @@ pub struct ItemDefinition {
     pub id: String,
     pub weight: f32,
     #[serde(default)]
+    pub exterior_volume_ml: u32,
+    #[serde(default)]
     pub slot: ItemSlot,
     pub kind: ItemKind,
     #[serde(default)]
@@ -1608,6 +1633,8 @@ pub struct ItemDefinition {
     pub nutrition_kcal: f32,
     #[serde(default)]
     pub water_capacity_ml: u32,
+    #[serde(default)]
+    pub container_capacity_ml: u32,
     #[serde(default)]
     pub alcohol_serving_ml: u32,
     #[serde(default)]
@@ -1769,6 +1796,7 @@ impl Default for ItemDefinition {
         Self {
             id: String::new(),
             weight: 0.0,
+            exterior_volume_ml: 0,
             slot: ItemSlot::None,
             kind: ItemKind::Simple,
             equipment_placements: Vec::new(),
@@ -1795,6 +1823,7 @@ impl Default for ItemDefinition {
             base_value: None,
             nutrition_kcal: 0.0,
             water_capacity_ml: 0,
+            container_capacity_ml: 0,
             alcohol_serving_ml: 0,
             alcohol_abv_basis_points: 0,
             alcohol_net_hydration_ml: 0,

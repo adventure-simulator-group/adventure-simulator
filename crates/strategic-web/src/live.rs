@@ -45,9 +45,12 @@ use adventuresim_stdb_client::{
     character_equipped_item_table::CharacterEquippedItemTableAccess,
     character_filth_table::CharacterFilthTableAccess,
     character_settlement_reputation_table::CharacterSettlementReputationTableAccess,
+    container_liquid_table::ContainerLiquidTableAccess,
     equipment_occupancy_table::EquipmentOccupancyTableAccess, food_lot_table::FoodLotTableAccess,
+    inventory_containment_table::InventoryContainmentTableAccess,
     inventory_item_amount_table::InventoryItemAmountTableAccess,
     inventory_item_table::InventoryItemTableAccess,
+    inventory_object_table::InventoryObjectTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
     item_condition_table::ItemConditionTableAccess, limb_injury_table::LimbInjuryTableAccess,
     morale_event_table::MoraleEventTableAccess,
@@ -124,6 +127,9 @@ pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "settlement_description",
     "inventory_item",
     "inventory_item_amount",
+    "inventory_object",
+    "inventory_containment",
+    "container_liquid",
     "food_lot",
     "item_condition",
     "repair_order",
@@ -308,6 +314,9 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.settlement_description());
         invalidate_on_changes!(state.0._connection.db.inventory_item());
         invalidate_on_changes!(state.0._connection.db.inventory_item_amount());
+        invalidate_on_changes!(state.0._connection.db.inventory_object());
+        invalidate_on_changes!(state.0._connection.db.inventory_containment());
+        invalidate_on_changes!(state.0._connection.db.container_liquid());
         invalidate_on_changes!(state.0._connection.db.food_lot());
         invalidate_on_changes!(state.0._connection.db.item_condition());
         invalidate_on_changes!(state.0._connection.db.repair_order());
@@ -417,6 +426,9 @@ impl LiveState {
             .add_query(|query| query.from.party_journey_itinerary())
             .add_query(|query| query.from.inventory_item())
             .add_query(|query| query.from.inventory_item_amount())
+            .add_query(|query| query.from.inventory_object())
+            .add_query(|query| query.from.inventory_containment())
+            .add_query(|query| query.from.container_liquid())
             .add_query(|query| query.from.food_lot())
             .add_query(|query| query.from.inventory_quantity_target())
             .add_query(|query| query.from.item_condition())

@@ -544,8 +544,383 @@
       row._foodComponents.forEach((component) => { component.hidden = open || row.hidden; });
       return;
     }
+    if (row.dataset.containerObjectId) {
+      const selector = open
+        ? `tr[data-container-ancestor~="${CSS.escape(row.dataset.containerObjectId)}"]`
+        : `tr[data-container-parent-object-id="${CSS.escape(row.dataset.containerObjectId)}"]`;
+      browser.querySelectorAll(selector).forEach((child) => {
+        child.hidden = open || row.hidden;
+        child.setAttribute("aria-hidden", String(open || row.hidden));
+      });
+      row.querySelector("[data-container-toggle]")?.setAttribute("aria-expanded", String(!open));
+      return;
+    }
     if (!open) createDetail(row, browser);
     else if (row._inventoryDetail) row._inventoryDetail.hidden = true;
+  }
+
+  function ensureRowActionRail(row) {
+    let cell = row.querySelector(":scope > .inventory-actions-cell");
+    if (!cell) {
+      cell = document.createElement("td");
+      cell.className = "inventory-actions-cell";
+      cell.setAttribute("aria-label", "Item actions");
+      row.append(cell);
+    }
+    let actions = row.querySelector(".inventory-row-actions");
+    if (!actions) {
+      actions = document.createElement("span");
+      actions.className = "inventory-row-actions";
+    }
+    if (actions.parentElement !== cell) cell.prepend(actions);
+    return { cell, actions };
+  }
+
+  function bindContainerRowDragDrop(browser, row, open) {
+    row.draggable = true;
+    if (!row.dataset.containerDragBound) {
+      row.dataset.containerDragBound = "true";
+      row.addEventListener("dragstart", (event) => event.dataTransfer?.setData(
+        "application/x-adventuresim-inventory-object",
+        row.dataset.containerObjectId || row.dataset.personalInventoryId || row.dataset.partyInventoryId || "",
+      ));
+    }
+    if (row.dataset.containerDropBound) return;
+    row.dataset.containerDropBound = "true";
+    row.addEventListener("dragover", (event) => { event.preventDefault(); row.classList.add("inventory-container-drop-target"); });
+    row.addEventListener("dragleave", () => row.classList.remove("inventory-container-drop-target"));
+    row.addEventListener("drop", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      row.classList.remove("inventory-container-drop-target");
+      const child = event.dataTransfer?.getData("application/x-adventuresim-inventory-object");
+      if (child) browser.dispatchEvent(new CustomEvent("inventory-container-move", {
+        bubbles: true,
+        detail: { child, parent: open.dataset.containerOpen },
+      }));
+    });
+  }
+
+  function decorateContainers(browser) {
+    browser.querySelectorAll("tr.trade-inventory-row").forEach((row) => {
+      const label = row.querySelector("[data-container-capacity-ml]");
+      if ((!row.dataset.containerObjectId && !rowInventoryKey(row)) || !label
+          || !["cooking_pan", "cooking_pot", "portable_oven"].includes(label.dataset.itemName)) return;
+      if (row.dataset.containerDecorated) {
+        const used = Number(row.dataset.containerUsedMl || 0);
+        const capacity = Number(label.dataset.containerCapacityMl || 0);
+        const meter = row.querySelector(".inventory-container-capacity");
+        if (meter) {
+          meter.textContent = `${used / 1000} / ${capacity / 1000} L`;
+          meter.setAttribute("aria-label", `${used} of ${capacity} milliliters used`);
+        }
+        const open = row.querySelector("[data-container-open]");
+        if (open && row.dataset.containerObjectId) open.dataset.containerOpen = row.dataset.containerObjectId;
+        if (open) bindContainerRowDragDrop(browser, row, open);
+        return;
+      }
+      row.dataset.containerDecorated = "true";
+      const capacity = Number(label.dataset.containerCapacityMl || 0);
+      const used = Number(row.dataset.containerUsedMl || 0);
+      const meter = document.createElement("span");
+      meter.className = "inventory-container-capacity";
+      meter.textContent = `${used / 1000} / ${capacity / 1000} L`;
+      meter.setAttribute("aria-label", `${used} of ${capacity} milliliters used`);
+      row.querySelector(".inventory-item-name")?.append(meter);
+      const { cell: actions } = ensureRowActionRail(row);
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "inventory-container-open";
+      open.dataset.containerOpen = row.dataset.containerObjectId || rowInventoryKey(row) || "";
+      open.textContent = "Open";
+      open.setAttribute("aria-label", `Open ${label.dataset.itemName || "container"}`);
+      actions?.append(open);
+      bindContainerRowDragDrop(browser, row, open);
+    });
+  }
+
+  function rowInventoryKey(row) {
+    if (row.dataset.personalInventoryId) return `personal:${row.dataset.personalInventoryId}`;
+    if (row.dataset.partyInventoryId) return `party:${row.dataset.partyInventoryId}`;
+    return null;
+  }
+
+  function ensureMoveIntoControl(row, rowRef, snapshot) {
+    const { actions } = ensureRowActionRail(row);
+    if (!actions || actions.querySelector("[data-container-move-into]")) return;
+    const candidates = snapshot.objects.filter((object) =>
+      ["cooking_pan", "cooking_pot", "portable_oven"].includes(object.item_id)
+        && String(object.id) !== String(rowRef) && object.location_kind !== "fireplace")
+      .map((object) => ({ id: String(object.id), item_id: object.item_id }));
+    document.querySelectorAll("tr.trade-inventory-row").forEach((candidateRow) => {
+      const label = candidateRow.querySelector("[data-container-capacity-ml]");
+      const id = candidateRow.dataset.containerObjectId || rowInventoryKey(candidateRow);
+      if (id && id !== String(rowRef) && label
+          && ["cooking_pan", "cooking_pot", "portable_oven"].includes(label.dataset.itemName)
+          && !candidates.some((candidate) => candidate.id === id)) {
+        candidates.push({ id, item_id: label.dataset.itemName });
+      }
+    });
+    if (!candidates.length) return;
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", "Destination container");
+    candidates.forEach((container) => {
+      const option = document.createElement("option"); option.value = String(container.id);
+      option.textContent = container.item_id.replaceAll("_", " "); select.append(option);
+    });
+    const move = document.createElement("button"); move.type = "button";
+    move.dataset.containerMoveInto = String(rowRef); move.textContent = "Move into";
+    move.setAttribute("aria-label", "Move item into selected container");
+    move.addEventListener("click", () => row.closest("[data-inventory-browser]")?.dispatchEvent(
+      new CustomEvent("inventory-container-move", { bubbles: true, detail: { child: rowRef, parent: select.value } }),
+    ));
+    actions.classList.add("inventory-container-move-actions");
+    actions.append(select, move);
+  }
+
+  const containerHydrationGenerations = new WeakMap();
+  let authoritativeContainerSnapshot = null;
+  async function hydrateContainerState(root = document) {
+    if (!global.fetch) return;
+    const generation = (containerHydrationGenerations.get(root) || 0) + 1;
+    containerHydrationGenerations.set(root, generation);
+    let snapshot;
+    try {
+      snapshot = await global.fetch("/api/inventory/containers", { headers: { Accept: "application/json" } }).then((response) => {
+        if (!response.ok) throw new Error("container snapshot unavailable");
+        return response.json();
+      });
+    } catch (_) { return; }
+    if (generation !== containerHydrationGenerations.get(root)) return;
+    authoritativeContainerSnapshot = snapshot;
+    const objects = new Map(snapshot.objects.map((object) => [object.id, object]));
+    const parents = new Map(snapshot.edges.map((edge) => [edge.child_object_id, edge.parent_object_id]));
+    const liquids = new Map(snapshot.liquids.map((liquid) => [liquid.container_object_id, Number(liquid.water_ml)]));
+    const byRow = new Map(snapshot.objects.map((object) => [`${object.location_kind}:${object.inventory_row_id}`, object]));
+    root.querySelectorAll?.("tr.trade-inventory-row").forEach((row) => {
+      const object = byRow.get(rowInventoryKey(row));
+      const rowKey = rowInventoryKey(row);
+      if (!object) {
+        if (rowKey && !row.dataset.containerDragBound) {
+          row.draggable = true; row.dataset.containerDragBound = "true";
+          row.addEventListener("dragstart", (event) => event.dataTransfer?.setData(
+            "application/x-adventuresim-inventory-object", rowKey,
+          ));
+        }
+        if (rowKey) ensureMoveIntoControl(row, rowKey, snapshot);
+        return;
+      }
+      row.dataset.containerObjectId = String(object.id);
+      ensureMoveIntoControl(row, String(object.id), snapshot);
+      row.tabIndex = 0;
+      row.draggable = true;
+      if (!row.dataset.containerDragBound) {
+        row.dataset.containerDragBound = "true";
+        row.addEventListener("dragstart", (event) => event.dataTransfer?.setData(
+          "application/x-adventuresim-inventory-object", String(object.id),
+        ));
+      }
+      const ancestors = [];
+      let parent = parents.get(object.id);
+      while (parent != null && ancestors.length <= 16) {
+        ancestors.push(parent); parent = parents.get(parent);
+      }
+      if (ancestors.length) {
+        row.dataset.containerParentObjectId = String(ancestors[0]);
+        row.dataset.containerAncestor = ancestors.join(" ");
+        const openPanel = row.closest("[data-open-container-object-id]");
+        row.hidden = openPanel
+          ? row.dataset.containerParentObjectId !== openPanel.dataset.openContainerObjectId
+          : true;
+        const actions = row.querySelector(".inventory-row-actions") || row.querySelector(".inventory-item-name");
+        if (actions && !actions.querySelector("[data-container-remove]")) {
+          const remove = document.createElement("button");
+          remove.type = "button"; remove.className = "inventory-container-remove";
+          remove.dataset.containerRemove = String(object.id); remove.textContent = "Remove";
+          remove.setAttribute("aria-label", "Remove item from container"); actions.append(remove);
+        }
+      }
+      let used = liquids.get(object.id) || 0;
+      snapshot.edges.filter((edge) => edge.parent_object_id === object.id).forEach((edge) => {
+        const child = objects.get(edge.child_object_id);
+        const childRow = child && root.querySelector(`tr[data-${child.location_kind}-inventory-id="${child.inventory_row_id}"]`);
+        used += Number(childRow?.querySelector("[data-exterior-volume-ml]")?.dataset.exteriorVolumeMl || 0);
+      });
+      row.dataset.containerUsedMl = String(used);
+      if (snapshot.edges.some((edge) => edge.parent_object_id === object.id)) {
+        const actions = row.querySelector(".inventory-row-actions") || row.querySelector(".inventory-item-name");
+        if (actions && !actions.querySelector("[data-container-toggle]")) {
+          const toggle = document.createElement("button");
+          toggle.type = "button"; toggle.dataset.containerToggle = "true";
+          toggle.textContent = "Expand"; toggle.setAttribute("aria-expanded", "false");
+          toggle.setAttribute("aria-label", "Expand container contents"); actions.append(toggle);
+        }
+      }
+    });
+    root.querySelectorAll?.("[data-inventory-browser]").forEach(decorateContainers);
+  }
+
+  async function postContainer(path, values) {
+    const body = new URLSearchParams(values);
+    const response = await global.fetch(path, { method: "POST", body, headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+    if (!response.ok) throw new Error(await response.text());
+    global.location.reload();
+  }
+
+  function openContainer(browser, button) {
+    const id = button.dataset.containerOpen;
+    if (!id) return;
+    const paired = browser.dataset.inventoryCounterpart
+      ? document.querySelector(`[data-inventory-browser="${CSS.escape(browser.dataset.inventoryCounterpart)}"]`)
+      : null;
+    let counterpart = browser.dataset.openContainerObjectId ? browser
+      : paired && !paired.closest("[hidden]") ? paired
+      : [...document.querySelectorAll("[data-inventory-browser]")]
+        .find((candidate) => candidate !== browser && !candidate.hidden && !candidate.closest("[hidden]"));
+    if (!counterpart) {
+      const host = [...document.querySelectorAll(".left-sidebar,.right-sidebar,.center-content")]
+        .find((candidate) => !candidate.contains(browser));
+      if (!host) return;
+      const hidden = [...host.children].map((child) => [child, child.hidden]);
+      hidden.forEach(([child]) => { child.hidden = true; });
+      counterpart = document.createElement("section");
+      counterpart.dataset.inventoryBrowser = `container-${id}`;
+      counterpart.innerHTML = '<label>Search container <input type="search" data-inventory-search></label><table class="trade-inventory-table"><tbody></tbody></table>';
+      counterpart._containerHost = { host, hidden };
+      host.append(counterpart); mount(counterpart);
+    }
+    counterpart._containerPanelStack ||= [];
+    const sourceRows = [...document.querySelectorAll(`tr[data-container-ancestor~="${CSS.escape(id)}"]`)]
+      .filter((source) => !counterpart.contains(source));
+    const tbody = counterpart.querySelector("tbody");
+    const panelRows = tbody ? [...tbody.children] : [];
+    counterpart._containerPanelStack.push({
+      active: document.activeElement,
+      rowHidden: panelRows.map((row) => [row, row.hidden]),
+      previousId: counterpart.dataset.openContainerObjectId || "",
+      rows: panelRows,
+    });
+    tbody?.replaceChildren();
+    sourceRows.forEach((source) => {
+      if (tbody) {
+        const clone = source.cloneNode(true);
+        clone.dataset.containerTransient = "true";
+        delete clone.dataset.containerDragBound;
+        delete clone.dataset.containerDropBound;
+        clone.hidden = false;
+        tbody.append(clone);
+      }
+    });
+    if (tbody && authoritativeContainerSnapshot) {
+      const parents = new Map(authoritativeContainerSnapshot.edges.map((edge) => [edge.child_object_id, edge.parent_object_id]));
+      const belongsToOpenTree = (objectId) => {
+        let cursor = parents.get(objectId);
+        for (let depth = 0; cursor != null && depth <= 16; depth += 1) {
+          if (String(cursor) === id) return true;
+          cursor = parents.get(cursor);
+        }
+        return false;
+      };
+      authoritativeContainerSnapshot.presentations.filter((item) => belongsToOpenTree(item.object_id)).forEach((item) => {
+        if (tbody.querySelector(`[data-container-object-id="${item.object_id}"]`)) return;
+        const row = document.createElement("tr");
+        row.className = "trade-inventory-row inventory-container-snapshot-row";
+        row.dataset.containerTransient = "true"; row.dataset.containerObjectId = String(item.object_id);
+        row.dataset.containerParentObjectId = String(parents.get(item.object_id));
+        const ancestors = []; let cursor = parents.get(item.object_id);
+        while (cursor != null && ancestors.length <= 16) { ancestors.push(cursor); cursor = parents.get(cursor); }
+        row.dataset.containerAncestor = ancestors.join(" "); row.tabIndex = 0; row.draggable = true;
+        row.addEventListener("dragstart", (event) => event.dataTransfer?.setData(
+          "application/x-adventuresim-inventory-object", String(item.object_id),
+        ));
+        row.hidden = row.dataset.containerParentObjectId !== id;
+        const name = document.createElement("td"); name.className = "inventory-item-name";
+        const label = document.createElement("span"); label.className = "inventory-item-label";
+        label.dataset.itemName = item.item_id; label.dataset.exteriorVolumeMl = String(item.exterior_volume_ml);
+        if (item.container_capacity_ml > 0) label.dataset.containerCapacityMl = String(item.container_capacity_ml);
+        label.textContent = item.display_name;
+        const actions = document.createElement("span"); actions.className = "inventory-row-actions";
+        const remove = document.createElement("button"); remove.type = "button";
+        remove.dataset.containerRemove = String(item.object_id); remove.textContent = "Remove";
+        remove.setAttribute("aria-label", `Remove ${item.display_name} from container`);
+        actions.append(remove); name.append(label, actions);
+        const quantity = document.createElement("td"); quantity.className = "inventory-count"; quantity.textContent = String(item.quantity);
+        row.append(name, quantity); tbody.append(row);
+      });
+    }
+    counterpart.querySelectorAll("tr.trade-inventory-row").forEach((row) => {
+      row.hidden = row.dataset.containerParentObjectId !== id;
+    });
+    hydrateContainerState(counterpart);
+    let close = counterpart.querySelector("[data-container-close]");
+    if (!close) {
+      close = document.createElement("button");
+      close.type = "button";
+      close.className = "inventory-container-close";
+      close.dataset.containerClose = "true";
+      close.textContent = "Close";
+      close.setAttribute("aria-label", "Close container inventory");
+      counterpart.prepend(close);
+    }
+    close.hidden = false;
+    let water = counterpart.querySelector("[data-container-water-actions]");
+    if (!water) {
+      water = document.createElement("div"); water.dataset.containerWaterActions = "true";
+      water.className = "inventory-container-water-actions";
+      water.innerHTML = '<button type="button" data-container-pour>Pour water in</button><button type="button" data-container-drain>Pour water out</button>';
+      close.after(water);
+    }
+    water.hidden = !/^\d+$/.test(id);
+    counterpart.dataset.openContainerObjectId = id;
+    if (!counterpart._containerDropBound) {
+      counterpart._containerDropBound = true;
+      counterpart.addEventListener("dragover", (event) => event.preventDefault());
+      counterpart.addEventListener("drop", (event) => {
+        const child = event.dataTransfer?.getData("application/x-adventuresim-inventory-object");
+        const destination = event.target.closest?.("tr")?.querySelector?.("[data-container-open]");
+        if (child && destination?.dataset.containerOpen && destination.dataset.containerOpen !== child) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          counterpart.dispatchEvent(new CustomEvent("inventory-container-move", {
+            bubbles: true,
+            detail: { child, parent: destination.dataset.containerOpen },
+          }));
+          return;
+        }
+        if (/^\d+$/.test(child || "")) {
+          event.preventDefault();
+          postContainer("/api/inventory/containers/remove", { child_object_id: child })
+            .catch((error) => global.alert?.(error.message));
+        }
+      });
+    }
+    counterpart.querySelector("[data-inventory-search]")?.focus();
+  }
+
+  function closeContainer(browser) {
+    const snapshot = browser._containerPanelStack?.pop();
+    if (!snapshot) return;
+    const tbody = browser.querySelector("tbody");
+    if (tbody) {
+      tbody.replaceChildren(...snapshot.rows);
+      snapshot.rowHidden.forEach(([row, hidden]) => { row.hidden = hidden; });
+    }
+    if (snapshot.previousId) {
+      browser.dataset.openContainerObjectId = snapshot.previousId;
+      browser.querySelector("[data-container-close]").hidden = false;
+      const water = browser.querySelector("[data-container-water-actions]");
+      if (water) water.hidden = !/^\d+$/.test(snapshot.previousId);
+      hydrateContainerState(browser);
+    } else {
+      browser.querySelector("[data-container-close]").hidden = true;
+      const water = browser.querySelector("[data-container-water-actions]"); if (water) water.hidden = true;
+      delete browser.dataset.openContainerObjectId;
+    }
+    snapshot.active?.focus?.();
+    if (browser._containerHost && !browser._containerPanelStack.length) {
+      browser._containerHost.hidden.forEach(([child, hidden]) => { child.hidden = hidden; });
+      browser.remove();
+    }
   }
 
   function mount(browser) {
@@ -555,6 +930,7 @@
       const search = browser.querySelector("[data-inventory-search]"); if (search) search.value = refreshed.query;
       browser.querySelectorAll("[data-inventory-column-options] input").forEach((input) => { input.checked = refreshed.columns.includes(input.value); });
       apply(browser, browser._inventoryState);
+      decorateContainers(browser);
       return;
     }
     browser.dataset.inventoryMounted = "true";
@@ -578,6 +954,27 @@
     search?.addEventListener("input", () => { state.query = search.value; updateHistory(browser, state, browser._searchEditing === true); browser._searchEditing = true; apply(browser, state); });
     search?.addEventListener("blur", () => { browser._searchEditing = false; });
     browser.addEventListener("click", (event) => {
+      const containerOpen = event.target.closest("[data-container-open]");
+      if (containerOpen) { event.preventDefault(); openContainer(browser, containerOpen); return; }
+      const containerClose = event.target.closest("[data-container-close]");
+      if (containerClose) { event.preventDefault(); closeContainer(browser); return; }
+      const containerRemove = event.target.closest("[data-container-remove]");
+      if (containerRemove) {
+        event.preventDefault();
+        postContainer("/api/inventory/containers/remove", { child_object_id: containerRemove.dataset.containerRemove })
+          .catch((error) => global.alert?.(error.message));
+        return;
+      }
+      const waterAction = event.target.closest("[data-container-pour],[data-container-drain]");
+      if (waterAction) {
+        event.preventDefault();
+        const requested = global.prompt?.("Milliliters", "1000");
+        if (requested && Number(requested) > 0) postContainer(
+          waterAction.matches("[data-container-pour]") ? "/api/inventory/containers/pour" : "/api/inventory/containers/drain",
+          { container_object_id: browser.dataset.openContainerObjectId, requested_ml: requested },
+        ).catch((error) => global.alert?.(error.message));
+        return;
+      }
       const coinAction = event.target.closest("[data-coin-action]");
       if (coinAction) {
         event.preventDefault(); event.stopImmediatePropagation();
@@ -611,6 +1008,8 @@
       if (alcoholToggle) { event.preventDefault(); toggleExpanded(alcoholToggle.closest(".alcohol-parent-row"), browser); return; }
       const foodToggle = event.target.closest("[data-food-toggle]");
       if (foodToggle) { event.preventDefault(); toggleExpanded(foodToggle.closest(".food-parent-row"), browser); return; }
+      const containerToggle = event.target.closest("[data-container-toggle]");
+      if (containerToggle) { event.preventDefault(); toggleExpanded(containerToggle.closest("tr.trade-inventory-row"), browser); return; }
       const sort = event.target.closest("[data-inventory-sort]");
       if (sort) { const key = sort.dataset.inventorySort; state.direction = state.sort === key && state.direction === "asc" ? "desc" : "asc"; state.sort = key; updateHistory(browser, state); apply(browser, state); return; }
       const row = event.target.closest("tr.trade-inventory-row");
@@ -622,6 +1021,7 @@
       }
     });
     apply(browser, state);
+    decorateContainers(browser);
   }
 
   function mountAll(root = document) { root.querySelectorAll?.("[data-inventory-browser]").forEach(mount); }
@@ -632,13 +1032,26 @@
       if (!browser.dataset.inventoryMounted) mount(browser);
       else apply(browser, browser._inventoryState || parsePanelState(global.location.search, browser.dataset.inventoryBrowser, (browser.dataset.optionalColumns || "").split(",").filter(Boolean)));
     });
+    hydrateContainerState(scope);
   }
-  const api = { parsePanelState, serializePanelState, compareValues, normalizeSortValue, rowValue, groupCurrencyRows, groupFoodRows, mountAll, refresh, syncPanelWidth };
+  const api = { parsePanelState, serializePanelState, compareValues, normalizeSortValue, rowValue, groupCurrencyRows, groupFoodRows, decorateContainers, hydrateContainerState, openContainer, closeContainer, mountAll, refresh, syncPanelWidth };
   global.strategicInventoryBrowser = api;
   if (typeof module !== "undefined") module.exports = api;
   if (global.document) {
-    global.addEventListener("DOMContentLoaded", () => mountAll());
+    global.addEventListener("DOMContentLoaded", () => { mountAll(); hydrateContainerState(); });
     global.addEventListener("popstate", () => mountAll());
-    global.document.addEventListener("strategic-page-mounted", () => mountAll());
+    global.document.addEventListener("strategic-page-mounted", () => { mountAll(); hydrateContainerState(); });
+    global.document.addEventListener("inventory-container-move", (event) => {
+      const raw = String(event.detail.child);
+      const legacy = raw.match(/^(personal|party):(\d+)$/);
+      const parentRaw = String(event.detail.parent);
+      const parentLegacy = parentRaw.match(/^(personal|party):(\d+)$/);
+      postContainer("/api/inventory/containers/move", {
+        child_object_id: legacy ? "0" : raw,
+        child_scope: legacy?.[1] || "", child_row_id: legacy?.[2] || "0",
+        parent_object_id: parentLegacy ? "0" : parentRaw,
+        parent_scope: parentLegacy?.[1] || "", parent_row_id: parentLegacy?.[2] || "0",
+      }).catch((error) => global.alert?.(error.message));
+    });
   }
 })(typeof window === "undefined" ? globalThis : window);

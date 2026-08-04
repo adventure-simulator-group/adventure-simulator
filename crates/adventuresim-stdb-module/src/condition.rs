@@ -391,6 +391,9 @@ fn inventory_quantity(ctx: &ReducerContext, character_id: u64, item_id: &str) ->
         .inventory_item()
         .character_and_item_id()
         .filter((character_id, item_id))
+        .filter(|entry| {
+            !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", entry.id)
+        })
         .map(|entry| entry.quantity)
         .sum()
 }
@@ -403,7 +406,7 @@ fn water_reserve_days(needs: &CharacterNeeds) -> f32 {
     needs.water_balance_ml.max(0.0) / TRAVEL_WATER_ML_PER_DAY
 }
 
-fn water_capacity_ml(ctx: &ReducerContext, character_id: u64) -> u32 {
+pub(crate) fn water_capacity_ml(ctx: &ReducerContext, character_id: u64) -> u32 {
     let capacity_per_container = ctx
         .db
         .item()
@@ -411,6 +414,24 @@ fn water_capacity_ml(ctx: &ReducerContext, character_id: u64) -> u32 {
         .find(WATERSKIN_ID.to_string())
         .map_or(0, |item| item.water_capacity_ml);
     inventory_quantity(ctx, character_id, WATERSKIN_ID).saturating_mul(capacity_per_container)
+}
+
+pub(crate) fn party_water_capacity_ml(ctx: &ReducerContext, party_id: &str) -> u32 {
+    let capacity = ctx
+        .db
+        .item()
+        .id()
+        .find(WATERSKIN_ID.to_string())
+        .map_or(0, |item| item.water_capacity_ml);
+    ctx.db
+        .party_inventory_item()
+        .party_id()
+        .filter(party_id)
+        .filter(|row| row.item_id == WATERSKIN_ID)
+        .filter(|row| !crate::inventory_container::row_is_fireplace_rooted(ctx, "party", row.id))
+        .map(|row| row.quantity)
+        .sum::<u32>()
+        .saturating_mul(capacity)
 }
 
 pub fn prepare_party_waterskins(
@@ -430,6 +451,7 @@ pub fn prepare_party_waterskins(
         .party_id()
         .filter(party_id)
         .filter(|row| row.item_id == WATERSKIN_ID)
+        .filter(|row| !crate::inventory_container::row_is_fireplace_rooted(ctx, "party", row.id))
         .map(|row| row.quantity)
         .sum();
     let mut party = ctx
@@ -628,12 +650,26 @@ fn apply_elapsed_needs_with_provision(
             party.pooled_water_ml -= pooled_drunk;
             ctx.db.party_authority().id().update(party);
             needs.water_balance_ml += pooled_drunk;
+            let contained = crate::inventory_container::consume_contained_water(
+                ctx,
+                "party",
+                &party_id,
+                (-needs.water_balance_ml).max(0.0).ceil() as u64,
+            )?;
+            needs.water_balance_ml += contained as f32;
         }
         let drunk = (-needs.water_balance_ml)
             .max(0.0)
             .min(needs.carried_water_ml);
         needs.carried_water_ml -= drunk;
         needs.water_balance_ml += drunk;
+        let contained = crate::inventory_container::consume_contained_water(
+            ctx,
+            "personal",
+            &character_id.to_string(),
+            (-needs.water_balance_ml).max(0.0).ceil() as u64,
+        )?;
+        needs.water_balance_ml += contained as f32;
     }
     ctx.db.character_needs().character_id().update(needs);
     Ok(())
