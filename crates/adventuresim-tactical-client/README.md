@@ -13,7 +13,7 @@ The humanoid base rig is independent from authored motions:
 ```text
 assets/animations/biped/unarmed/base.glb
 assets/animations/biped/unarmed/walk.glb
-assets/animations/biped/unarmed/attack_thrust_lead_left_stay.glb
+assets/animations/biped/unarmed/attack_thrust_lead_left_contact.glb
 ```
 
 Only `base.glb` supplies a spawnable scene. Its default scene must retain the
@@ -21,9 +21,11 @@ skinned character mesh; `prepare_rig_base.py` strips only authoring helpers such
 as the placeholder weapon cylinder. The client attaches this authored scene to
 both the client-controlled character and replicated remote characters. Each
 other file contains exactly one coherent motion, named or unnamed, and never
-has its scene attached. The
-30fps `AnimationPackCatalog` explicitly owns every semantic pose through a
-file/frame anchor and includes unnamed endpoint/closure frames. Source motion
+has its scene attached. The 30fps `AnimationPackCatalog` owns 28 required
+root-authored anchors and accepts six exact right-side counterparts; when those
+optional files are absent, same-pack reflection satisfies the 34 canonical
+runtime requests. Typed recipes assemble locomotion and actions from those
+anchors instead of naming every intermediate pose. Source motion
 files belong under `assets_src/biped/unarmed/`; `assets_src/base.*` remains the
 rig-source special case until `assets_src/biped/unarmed/base.casc` has a matching
 base GLB export.
@@ -77,8 +79,11 @@ then advances the shared authoritative locomotion projector at its real 64Hz
 fixed tick. Default-off scenarios retain authored ordinary leg motion with a
 vertically fixed gameplay root; the explicit cross-slope scenario opts into
 the seeded terrain-IK pass. Coverage includes two-cycle 2.0m/s walk, 3.75m/s
-blend, 5.5m/s run, crouch, raised-guard full/half-speed movement, and
-start/stop, guard-entry, guard-release, and crouch-enter/exit transitions. Every logical tick is captured first from the raw
+blend, 5.5m/s run, crouch, raised-guard full/half-speed movement, the complete
+attack/block matrix, low/high idle/moving hit reactions, and start/stop,
+guard-entry, guard-release, and crouch-enter/exit transitions. One-shot actions
+begin only on their scenario edge and advance on the authoritative 64Hz clock.
+Every logical tick is captured first from the raw
 gameplay third-person camera, then from side and front diagnostic cameras with
 a skeleton overlay and yellow supported-foot / pink swing-foot markers. The
 simulation is frozen while those three views are rendered, so they describe
@@ -173,10 +178,11 @@ These targets and constraints are client-only and never extend replicated
 
 ## Missing assets
 
-Pack lookup first follows the pack's single fallback chain. If the requested
-semantic pose is still absent, lookup follows the deterministic similar-pose
-chain (for example run to walk and thrust to slash), restarting pack lookup for
-each candidate. Missing, unloaded, zero-animation, multiple-animation, or short
+Pack lookup checks an exact pose and its same-pack mirrored counterpart before
+following the pack's parent and deterministic similar-pose fallback chain.
+Missing attack or block contacts therefore retain a valid guard/ordinary
+runtime pose while the capture report lists missing authored content
+separately. Missing, unloaded, zero-animation, multiple-animation, or short
 motion files affect only that motion. Every local or remote character also gets
 a generated T-pose safety net until the base scene is available. If no pose
 candidate resolves, the client uses the complete authored `base.glb` bind

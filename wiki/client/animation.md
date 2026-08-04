@@ -127,16 +127,22 @@ The initial evaluator should support at least:
 - movement speed, including continuous walk-to-run blending;
 - crouch amount;
 - local movement or dodge direction;
-- airborne phase derived primarily from vertical velocity;
+- airborne center/travel blend from horizontal intent (vertical velocity remains telemetry);
 - attack target height;
 - action phase; and
 - layer weights for head look, impact reaction, and future secondary motion.
 
 Animations blended along a shared coordinate must be phase-compatible. For
 example, the contact frame of a walk must have the same gait phase as the
-contact frame of a run and crouch-walk. Overgrowth's synchronized animation
+contact frame of a run and the crouched recipe, which reuses the ordinary gait
+anchors under `crouch_idle`. Overgrowth's synchronized animation
 groups also adjust playback frequency from actual ground speed, which is the
 behavior we want to emulate rather than allowing feet to slide.
+
+Hit reaction has no semantic authored pose. A client-only bounded chest,
+neck, and head pulse is keyed to the replicated 64Hz locomotion sample identity;
+re-evaluating one tick for multiple renders cannot advance or duplicate it.
+Directional and body-region reactions remain future work.
 
 ## Animation packs and fallback
 
@@ -325,18 +331,11 @@ preview, but does not introduce additional semantic names:
 | `prone_crawl` | 0 `prone_crawl_contact`; 8 `prone_crawl_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
 | `supine_scamper` | 0 `supine_scamper_contact`; 8 `supine_scamper_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
 
-Raised-guard locomotion files each contain one directional movement pose at
-frame 0. They are not gait cycles and do not contain or imply an opposite-foot
-half. The other runtime endpoint is the separate same-lead static guard:
-
-| File basename | Frame assignments |
-|---|---|
-| `guard_walk_lead_left` | 0 `guard_walk_lead_left` movement extreme |
-| `guard_walk_lead_right` (optional counterpart) | 0 `guard_walk_lead_right` movement extreme |
-| `guard_strafe_lead_left_left` | 0 `guard_strafe_lead_left_left` movement extreme |
-| `guard_strafe_lead_left_right` | 0 `guard_strafe_lead_left_right` movement extreme |
-| `guard_strafe_lead_right_left` (optional counterpart) | 0 `guard_strafe_lead_right_left` movement extreme |
-| `guard_strafe_lead_right_right` (optional counterpart) | 0 `guard_strafe_lead_right_right` movement extreme |
+Raised-guard locomotion has no authored movement semantics. It keeps the exact
+static `guard_lead_<side>` upper-body pose while the client-only footwork
+planner moves and plants the legs. Step targets, support handoff, pelvis
+response, and speed-scaled cadence are typed code-owned behavior rather than
+catalog motions.
 
 Each guard-relative duck extreme is a single pose in its own file at frame 0.
 The runtime blends from the current guard to the extreme and back. The lead
@@ -359,10 +358,8 @@ pairs are `left_backward`/`right_backward`, `left_left`/`right_right`, and
 `left_right`/`right_left`.
 
 Airborne motion uses the two single-pose files listed above. The runtime blends
-from a directional crouch/load into `airborne_center` or `airborne_travel`,
-modifies the traveling pose from horizontal velocity, and returns through a
-directional crouch/load on landing. There are no separate authored launch,
-direction, or landing samples in the complete pack.
+between `airborne_center` and `airborne_travel` from horizontal travel intent;
+there are no separate authored launch, direction, or landing samples.
 
 Attacks likewise use the single-pose contact files listed above. There are no
 required commit or follow-through poses, and `stay` versus `switch` is not part
@@ -726,9 +723,9 @@ locations and normal hand carriage.
 | `duck_lead_<left\|right>_right` | From the named guard lead, make the corresponding anatomical-right displacement while retaining that same lead. This is a separately authored extreme when the pack supplies both lateral directions for the lead; do not derive it by reflecting the other lateral pose without also changing lead. |
 
 The same-pack counterpart rule mirrors an entire lead/direction pair only when
-the requested counterpart file is absent. Forward/downward ducking remains
-procedural: it applies a bounded forward head, ribcage, and pelvis displacement
-with planted-foot IK. Diagonal ducks blend these components. Direction still
+the requested counterpart file is absent. Forward/downward dodge currently
+uses the existing `crouch_idle` recipe basis rather than inventing another
+authored semantic; richer procedural displacement remains future work. Direction still
 describes the defender's desired body or head displacement in local space, not
 merely the attacker's bearing.
 
@@ -797,40 +794,26 @@ The strike-family construction rules are:
 | `slash` | Move the primary striking edge, claw, or hand from the pack's primary side across the target line toward the opposite side. For the unarmed root this is a swipe, particularly suitable for claws. At contact, preserve edge or claw alignment and support the motion with coordinated pelvis and ribcage rotation rather than an isolated arm swing. Arrange the body so that continuing along the same line briefly after contact remains anatomically safe. A pack that later supports the reverse slash direction should define it as a distinct recipe. |
 
 For `lead_left`, the contact is constructed from `guard_lead_left`; for
-`lead_right`, it is constructed from `guard_lead_right`. The runtime preserves
-those planted targets for a stay attack. For a switch attack, the stance-step
-planner passes or steps the initially rear foot beyond the initial lead and
-blends toward the opposite guard, timing the new support foot to arrive by
-contact or immediately afterward.
+`lead_right`, it is constructed from `guard_lead_right`. Stay returns to that
+guard; switch selects the opposite guard as the recovery endpoint.
 
-The full visual sequence is:
+The implemented visual sequence is:
 
 ```text
-start guard -> immediate acceleration -> contact -> bounded continuation -> end guard
+start guard -> contact at authoritative phase 0.5 -> selected stay/switch end guard
 ```
 
-The guard is already positioned to attack, so there is no required commit or
-wind-up pose. The evaluator accelerates away from the guard immediately and
-times contact to the server-owned attack event. After contact it estimates the
-selected bones' incoming linear and angular velocities, continues them for a
-short recipe-defined interval, clamps weapon-tip travel and joint rotation,
-then uses a critically damped recovery toward the ending guard. A thrust uses
-little continuation and usually retracts promptly; a slash continues farther
-along its striking line. Network timing differences are absorbed by adjusting
-early acceleration and recovery, not by adding a visible telegraph.
+The guard is already positioned to attack, so there is no authored commit,
+wind-up, follow-through, stay, or switch pose. The typed evaluator times the
+single family/lead contact to the server-owned event and selects the ending
+guard from footwork. More sophisticated bounded post-contact continuation is
+a future procedural layer, not an authored vocabulary requirement.
 
-Unusual attacks whose path cannot be represented safely by bounded
-continuation, such as a full spin or a weapon passing around the body, may add
-an optional authored recovery anchor. It is not part of the complete-pack
-contract. The contact marker synchronizes presentation with gameplay but does
-not itself decide whether anything was hit.
-
-Each strike family therefore requires two poses, one for each starting lead.
-The complete unarmed root defines two thrust/punch contacts and two slash/swipe
-contacts so that every descendant can resolve either semantic strike. Slash
-direction may initially be the biomechanically appropriate direction for the
-starting stance. Supporting both slash directions independently from either
-lead foot would add more recipes, but is not required by gameplay yet.
+The runtime accepts two lead requests per strike family. The complete unarmed
+root authors the left-lead contact and satisfies the right-lead request by
+reflection; an exact optional right-lead file wins when handedness requires
+one. The contact marker synchronizes presentation with gameplay but does not
+itself decide whether anything was hit.
 
 Overgrowth likewise stores attack height, direction, stance swapping,
 mobility, reactions, and animation paths as data rather than deriving them
@@ -839,9 +822,9 @@ from filenames; see
 and
 [`attacks.cpp`](https://github.com/WolfireGames/overgrowth/blob/245fe4828631c84c0023d29d1525f5716ccb6106/Source/Asset/Asset/attacks.cpp#L74-L145).
 Overgrowth samples four authored keyframes with cubic interpolation while
-clamping the interpolation coordinate to the authored interval; our bounded
-post-contact continuation is therefore an intentional extension of the
-inspiration rather than a claim that Overgrowth extrapolates indefinitely.
+clamping the interpolation coordinate to the authored interval; our current
+sparse guard/contact/guard recipe is intentionally smaller and does not claim
+equivalent procedural continuation.
 See
 [`animation.cpp`](https://github.com/WolfireGames/overgrowth/blob/245fe4828631c84c0023d29d1525f5716ccb6106/Source/Asset/Asset/animation.cpp#L1285-L1316).
 
@@ -893,8 +876,9 @@ The initial complete set contains:
 Backward crawling may initially reverse the forward cycle, and getting up may
 reverse the upright-to-prone transition. The planned controls do not include
 prone strafing or a deliberate prone-to-supine roll, so neither has an authored
-pose. Supine may still result from a hit or physical fall; recovery from it is
-an automatic get-up or ragdoll transition rather than a player-controlled roll.
+pose. Supine may still result from a hit or physical fall. Supine get-up is
+currently unsupported: requesting it holds `supine_idle` rather than silently
+reusing the prone transition.
 
 ## Initial complete-pack size
 
@@ -917,9 +901,8 @@ both satisfy that requirement. Its tentative authored size is:
 Most specialized packs should be substantially smaller because they inherit
 unchanged poses. A symmetric pack that overrides one strike family needs one
 attack pose; an asymmetric pack exports the opposite lead as well. The unarmed
-root supplies punch
-poses for unresolved thrust semantics and swipe poses for unresolved slash
-semantics.
+root supplies one punch contact and one swipe contact, with reflection covering
+their optional right-lead requests.
 
 ## Secondary animation
 

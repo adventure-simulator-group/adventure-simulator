@@ -20,10 +20,11 @@ use bevy::{
 use serde::Serialize;
 
 use crate::animation::{
-    AnimationPlayback, BoneRole, HumanoidBone, LocomotionBodyResponseState, LocomotionHeightState,
-    LocomotionPresentationEvent, LocomotionPresentationEventKind, ProceduralAnimationClock,
-    ProceduralIkState, RaisedFootworkState, TacticalAnimationPlugin, TerrainIkEnabled,
-    locomotion_support_weights,
+    AnimationPackCatalog, AnimationPlayback, BoneRole, HumanoidBone, ImpactReaction,
+    LocomotionBodyResponseState, LocomotionHeightState, LocomotionPresentationEvent,
+    LocomotionPresentationEventKind, ProceduralAnimationClock, ProceduralIkState,
+    RaisedFootworkState, TacticalAnimationPlugin, TerrainIkEnabled, impact_reaction_progress,
+    impact_reaction_pulse, locomotion_support_weights,
 };
 use crate::{
     camera::{CameraMode, TacticalCameraPlugin, TacticalCameraSet, third_person_offset},
@@ -72,6 +73,8 @@ enum ScenarioKind {
     Terrain,
     Transition,
     Landing,
+    Action,
+    HitReaction,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -100,6 +103,18 @@ fn scenario_metadata(name: &str) -> ScenarioMetadata {
     } else if name == "airborne-landing" {
         ScenarioMetadata {
             kind: ScenarioKind::Landing,
+            repeatable: false,
+            procedural_solver: false,
+        }
+    } else if name.starts_with("attack-") || name.starts_with("block-") {
+        ScenarioMetadata {
+            kind: ScenarioKind::Action,
+            repeatable: false,
+            procedural_solver: false,
+        }
+    } else if name.starts_with("hit-") {
+        ScenarioMetadata {
+            kind: ScenarioKind::HitReaction,
             repeatable: false,
             procedural_solver: false,
         }
@@ -181,7 +196,12 @@ pub(crate) fn run(
         // captures exercise authored FK with the live default-off IK setting.
         .insert_resource(TerrainIkEnabled(false))
         .insert_resource(ClearColor(Color::srgb(0.08, 0.1, 0.13)))
-        .insert_resource(CaptureSequence::new(output, settle_frames, scenario))
+        .insert_resource(CaptureSequence::new(
+            output,
+            &asset_root,
+            settle_frames,
+            scenario,
+        ))
         .add_systems(Startup, setup_viewer)
         .add_systems(PreUpdate, drive_sequence)
         .add_systems(
@@ -260,10 +280,16 @@ struct CaptureSequence {
     active_scenario: Option<&'static str>,
     simulation_tick: u64,
     scenario_distance: f32,
+    missing_authored_content: Vec<String>,
 }
 
 impl CaptureSequence {
-    fn new(output: PathBuf, settle_frames: u32, scenario: Option<&str>) -> Self {
+    fn new(
+        output: PathBuf,
+        asset_root: &std::path::Path,
+        settle_frames: u32,
+        scenario: Option<&str>,
+    ) -> Self {
         let plan = capture_plan()
             .into_iter()
             .filter(|frame| scenario.is_none_or(|scenario| frame.scenario == scenario))
@@ -291,6 +317,8 @@ impl CaptureSequence {
             active_scenario: None,
             simulation_tick: 0,
             scenario_distance: 0.0,
+            missing_authored_content: AnimationPackCatalog::default()
+                .missing_root_content(asset_root),
         }
     }
 }
@@ -347,6 +375,10 @@ struct CaptureValidation {
     hard_stop_maximum_pelvis_step_metres: Option<f32>,
     hard_stop_height_continuity_valid: bool,
     repeated_evaluation_valid: bool,
+    runtime_fallback_valid: bool,
+    one_shot_actions_valid: bool,
+    hit_reactions_valid: bool,
+    missing_authored_content: Vec<String>,
     views_are_distinct: bool,
     duplicate_view_frames: Vec<String>,
     note: &'static str,
@@ -426,6 +458,12 @@ struct FrameSample {
     speed_metres_per_second: f32,
     gait_phase: f32,
     locomotion_sample_tick: u64,
+    planned_action: SkeletonAction,
+    active_action: SkeletonAction,
+    action_phase: f32,
+    action_started_tick: u64,
+    action_contact_tick: u64,
+    impact_pulse: f32,
     body_acceleration: [f32; 3],
     world_acceleration: [f32; 3],
     contact_sequence: u64,
@@ -609,8 +647,176 @@ fn smoothstep01(value: f32) -> f32 {
     value * value * (3.0 - 2.0 * value)
 }
 
+fn one_shot_scenario(
+    name: &'static str,
+    action: SkeletonAction,
+    speed: f32,
+    lead_foot: LeadFoot,
+) -> Vec<PlannedFrame> {
+    (0..=40)
+        .map(|scenario_frame| PlannedFrame {
+            scenario: name,
+            scenario_frame,
+            speed,
+            time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+            local_direction: (speed > 0.0).then_some(Vec2::NEG_Y).unwrap_or(Vec2::ZERO),
+            camera_yaw: 0.0,
+            camera_pitch: 0.0,
+            crouching: false,
+            action,
+            weapon_guard: if action == SkeletonAction::HitReaction {
+                WeaponGuardState::Lowered
+            } else {
+                WeaponGuardState::Raised
+            },
+            lead_foot,
+        })
+        .collect()
+}
+
+fn action_scenario_matrix() -> Vec<Vec<PlannedFrame>> {
+    vec![
+        one_shot_scenario(
+            "attack-thrust-left-stay",
+            SkeletonAction::Attack,
+            0.0,
+            LeadFoot::Left,
+        ),
+        one_shot_scenario(
+            "attack-thrust-left-switch",
+            SkeletonAction::Attack,
+            0.0,
+            LeadFoot::Left,
+        ),
+        one_shot_scenario(
+            "attack-thrust-right-stay",
+            SkeletonAction::Attack,
+            0.0,
+            LeadFoot::Right,
+        ),
+        one_shot_scenario(
+            "attack-thrust-right-switch",
+            SkeletonAction::Attack,
+            0.0,
+            LeadFoot::Right,
+        ),
+        one_shot_scenario(
+            "attack-slash-left-stay",
+            SkeletonAction::Attack,
+            0.0,
+            LeadFoot::Left,
+        ),
+        one_shot_scenario(
+            "attack-slash-left-switch",
+            SkeletonAction::Attack,
+            0.0,
+            LeadFoot::Left,
+        ),
+        one_shot_scenario(
+            "attack-slash-right-stay",
+            SkeletonAction::Attack,
+            0.0,
+            LeadFoot::Right,
+        ),
+        one_shot_scenario(
+            "attack-slash-right-switch",
+            SkeletonAction::Attack,
+            0.0,
+            LeadFoot::Right,
+        ),
+        one_shot_scenario(
+            "block-cut-left-left",
+            SkeletonAction::Block,
+            0.0,
+            LeadFoot::Left,
+        ),
+        one_shot_scenario(
+            "block-cut-left-right",
+            SkeletonAction::Block,
+            0.0,
+            LeadFoot::Right,
+        ),
+        one_shot_scenario(
+            "block-cut-right-left",
+            SkeletonAction::Block,
+            0.0,
+            LeadFoot::Left,
+        ),
+        one_shot_scenario(
+            "block-cut-right-right",
+            SkeletonAction::Block,
+            0.0,
+            LeadFoot::Right,
+        ),
+        one_shot_scenario(
+            "block-thrust-left",
+            SkeletonAction::Block,
+            0.0,
+            LeadFoot::Left,
+        ),
+        one_shot_scenario(
+            "block-thrust-right",
+            SkeletonAction::Block,
+            0.0,
+            LeadFoot::Right,
+        ),
+        one_shot_scenario(
+            "hit-idle-low",
+            SkeletonAction::HitReaction,
+            0.0,
+            LeadFoot::Left,
+        ),
+        one_shot_scenario(
+            "hit-idle-high",
+            SkeletonAction::HitReaction,
+            0.0,
+            LeadFoot::Left,
+        ),
+        one_shot_scenario(
+            "hit-moving-low",
+            SkeletonAction::HitReaction,
+            2.0,
+            LeadFoot::Left,
+        ),
+        one_shot_scenario(
+            "hit-moving-high",
+            SkeletonAction::HitReaction,
+            2.0,
+            LeadFoot::Left,
+        ),
+    ]
+}
+
+fn configure_one_shot(skeleton: &mut SkeletonState, scenario: &str) {
+    skeleton.strike_family = if scenario.contains("slash") {
+        StrikeFamily::Slash
+    } else {
+        StrikeFamily::Thrust
+    };
+    skeleton.footwork = if scenario.contains("switch") {
+        Footwork::Switch
+    } else {
+        Footwork::Stay
+    };
+    skeleton.incoming_attack_line = if scenario.starts_with("block-cut-left") {
+        AttackLine::CutFromLeft
+    } else if scenario.starts_with("block-cut-right") {
+        AttackLine::CutFromRight
+    } else {
+        AttackLine::Thrust
+    };
+}
+
+fn hit_reaction_strength(scenario: &str) -> f32 {
+    if scenario.ends_with("high") {
+        1.0
+    } else {
+        0.25
+    }
+}
+
 fn capture_plan() -> Vec<PlannedFrame> {
-    [
+    let mut plan = [
         steady_scenario("steady-walk-2.0", 2.0, 2.0),
         steady_scenario("walk-run-blend-3.75", 3.75, 2.0),
         steady_scenario("steady-run-5.5", 5.5, 2.0),
@@ -675,7 +881,9 @@ fn capture_plan() -> Vec<PlannedFrame> {
     ]
     .into_iter()
     .flatten()
-    .collect()
+    .collect::<Vec<_>>();
+    plan.extend(action_scenario_matrix().into_iter().flatten());
+    plan
 }
 
 fn turning_scenario(name: &'static str, reversal: bool) -> Vec<PlannedFrame> {
@@ -936,6 +1144,7 @@ fn setup_viewer(mut commands: Commands) {
 }
 
 fn drive_sequence(
+    mut commands: Commands,
     mut sequence: ResMut<CaptureSequence>,
     mut procedural_clock: ResMut<ProceduralAnimationClock>,
     mut terrain_ik: ResMut<TerrainIkEnabled>,
@@ -943,6 +1152,7 @@ fn drive_sequence(
     terrain: Single<&SceneTerrain>,
     mut subjects: Query<
         (
+            Entity,
             &mut SkeletonState,
             &mut Transform,
             &mut CharacterLook,
@@ -963,6 +1173,7 @@ fn drive_sequence(
     let metadata = scenario_metadata(frame.scenario);
     let mut gait_phase = 0.0;
     for (
+        subject,
         mut skeleton,
         mut transform,
         mut look,
@@ -985,6 +1196,7 @@ fn drive_sequence(
             sequence.simulation_tick = 0;
             sequence.scenario_distance = 0.0;
             *skeleton = SkeletonState::default();
+            commands.entity(subject).remove::<ImpactReaction>();
             *guard_input = WeaponGuardInputState::default();
             if let Some(mut ik_state) = ik_state {
                 *ik_state = ProceduralIkState::default();
@@ -1012,6 +1224,7 @@ fn drive_sequence(
             WeaponGuardState::Lowered => -1.0,
         };
         skeleton.lead_foot = frame.lead_foot;
+        configure_one_shot(&mut skeleton, frame.scenario);
         terrain_ik.0 = metadata.kind == ScenarioKind::Terrain;
         guard_input.apply_controls(wheel, false);
         set_weapon_guard(&mut skeleton, guard_input.desired);
@@ -1041,18 +1254,26 @@ fn drive_sequence(
             transform.translation.y
         };
         transform.translation = Vec3::new(horizontal.x, vertical, horizontal.y);
-        if frame.action != SkeletonAction::None {
+        if frame.action != SkeletonAction::None && frame.scenario_frame == 0 {
             skeleton.begin_action(
                 frame.action,
                 sequence.simulation_tick,
-                sequence.simulation_tick + 64,
+                sequence.simulation_tick + 8,
             );
+            if frame.action == SkeletonAction::HitReaction {
+                commands.entity(subject).insert(ImpactReaction {
+                    started_tick: sequence.simulation_tick,
+                    duration_ticks: 14,
+                    strength: hit_reaction_strength(frame.scenario),
+                });
+            }
         }
+        skeleton.advance_action(sequence.simulation_tick);
         transform.rotation = advance_body_facing(
             transform.rotation,
             orientation,
             world_velocity,
-            frame.action,
+            skeleton.action,
             skeleton.weapon_guard,
             delta_seconds,
         );
@@ -1239,6 +1460,7 @@ fn capture_frame(
             Option<&RaisedFootworkState>,
             Option<&LocomotionBodyResponseState>,
             Option<&LocomotionHeightState>,
+            Option<&ImpactReaction>,
         ),
         With<CaptureSubject>,
     >,
@@ -1257,6 +1479,7 @@ fn capture_frame(
         raised_footwork,
         body_response,
         height_state,
+        impact_reaction,
     )) = subjects.single()
     else {
         wait_or_fail(&mut sequence, "capture subject is missing", &mut exit);
@@ -1349,6 +1572,17 @@ fn capture_frame(
             speed_metres_per_second: frame.speed,
             gait_phase: skeleton.gait_phase,
             locomotion_sample_tick: skeleton.locomotion_sample_tick,
+            planned_action: frame.action,
+            active_action: skeleton.action,
+            action_phase: skeleton.action_phase,
+            action_started_tick: skeleton.action_started_tick,
+            action_contact_tick: skeleton.action_contact_tick,
+            impact_pulse: impact_reaction
+                .and_then(|reaction| {
+                    impact_reaction_progress(reaction, skeleton.locomotion_sample_tick)
+                        .map(|progress| impact_reaction_pulse(progress, reaction.strength))
+                })
+                .unwrap_or(0.0),
             body_acceleration: (subject_global.rotation().inverse() * skeleton.world_acceleration)
                 .to_array(),
             world_acceleration: skeleton.world_acceleration.to_array(),
@@ -1368,8 +1602,10 @@ fn capture_frame(
             .normalize_or_zero()
             .to_array(),
             desired_body_forward_direction: if frame.weapon_guard == WeaponGuardState::Raised
-                || matches!(frame.action, SkeletonAction::Attack | SkeletonAction::Block)
-            {
+                || matches!(
+                    skeleton.action,
+                    SkeletonAction::Attack | SkeletonAction::Block
+                ) {
                 (controller_yaw(Quat::from_rotation_y(frame.camera_yaw)) * Vec3::NEG_Z).to_array()
             } else {
                 (controller_yaw(Quat::from_rotation_y(frame.camera_yaw))
@@ -1382,7 +1618,10 @@ fn capture_frame(
             weapon_guard: frame.weapon_guard,
             lead_foot: skeleton.lead_foot,
             guard_action: frame.weapon_guard == WeaponGuardState::Raised
-                || matches!(frame.action, SkeletonAction::Attack | SkeletonAction::Block),
+                || matches!(
+                    skeleton.action,
+                    SkeletonAction::Attack | SkeletonAction::Block
+                ),
             left_support_weight,
             right_support_weight,
             desired_left_foot_target: desired_left_foot_target.map(|value| value.to_array()),
@@ -1796,6 +2035,12 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     let hard_stop_height_continuity_valid =
         hard_stop_maximum_pelvis_step_metres.is_none_or(|maximum_step| maximum_step <= 0.02);
     let biomechanics_within_review_bounds = scenarios.iter().all(|metrics| {
+        if matches!(
+            scenario_metadata(&metrics.scenario).kind,
+            ScenarioKind::Action | ScenarioKind::HitReaction
+        ) {
+            return true;
+        }
         // Raised guard deliberately adds a little vertical readiness through
         // the pelvis and torso. Keep the stricter ordinary-locomotion gate,
         // while allowing the documented guard silhouette (including the
@@ -1833,6 +2078,68 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     });
     let views_are_distinct = sequence.duplicate_view_frames.is_empty();
     let repeated_evaluation_valid = sequence.repeated_evaluation_valid;
+    let runtime_fallback_valid = frames
+        .iter()
+        .filter(|frame| {
+            frame.scenario.starts_with("attack-") || frame.scenario.starts_with("block-")
+        })
+        .all(|frame| !frame.bones.is_empty());
+    let one_shot_actions_valid = action_scenario_matrix()
+        .into_iter()
+        .filter(|planned| {
+            matches!(
+                planned[0].action,
+                SkeletonAction::Attack | SkeletonAction::Block
+            )
+        })
+        .all(|planned| {
+            let observed = frames
+                .iter()
+                .filter(|frame| frame.scenario == planned[0].scenario)
+                .collect::<Vec<_>>();
+            let phases = observed
+                .iter()
+                .filter(|frame| frame.active_action == planned[0].action)
+                .map(|frame| frame.action_phase)
+                .collect::<Vec<_>>();
+            !phases.is_empty()
+                && phases.windows(2).all(|pair| pair[1] >= pair[0])
+                && observed.iter().any(|frame| {
+                    frame.locomotion_sample_tick == 8 && (frame.action_phase - 0.5).abs() < 0.0001
+                })
+                && observed
+                    .iter()
+                    .filter(|frame| frame.active_action == planned[0].action)
+                    .all(|frame| frame.action_started_tick == 0 && frame.action_contact_tick == 8)
+                && observed
+                    .windows(2)
+                    .filter(|pair| {
+                        pair[0].active_action == planned[0].action
+                            && pair[1].active_action == SkeletonAction::None
+                    })
+                    .count()
+                    == 1
+        });
+    let hit_peaks = [
+        "hit-idle-low",
+        "hit-idle-high",
+        "hit-moving-low",
+        "hit-moving-high",
+    ]
+    .map(|scenario| {
+        frames
+            .iter()
+            .filter(|frame| frame.scenario == scenario)
+            .map(|frame| frame.impact_pulse)
+            .fold(0.0_f32, f32::max)
+    });
+    let hit_reactions_valid = hit_peaks
+        .iter()
+        .all(|pulse| pulse.is_finite() && *pulse <= 1.0)
+        && hit_peaks[0] > 0.0
+        && hit_peaks[2] > 0.0
+        && hit_peaks[1] > hit_peaks[0]
+        && hit_peaks[3] > hit_peaks[2];
     let manifest = CaptureManifest {
         sample_hz: SAMPLE_HZ,
         pipeline: "shared tactical player, scene, camera, authoritative locomotion projection, authored FK, and final procedural passes",
@@ -1858,6 +2165,10 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             hard_stop_maximum_pelvis_step_metres,
             hard_stop_height_continuity_valid,
             repeated_evaluation_valid,
+            runtime_fallback_valid,
+            one_shot_actions_valid,
+            hit_reactions_valid,
+            missing_authored_content: sequence.missing_authored_content.clone(),
             views_are_distinct,
             duplicate_view_frames: sequence.duplicate_view_frames.clone(),
             note: "Continuity metrics are regression signals, not biomechanical proof; review index.html at normal and slow speed.",
@@ -1895,6 +2206,9 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         && landing_foot_preservation_valid
         && hard_stop_height_continuity_valid
         && repeated_evaluation_valid
+        && runtime_fallback_valid
+        && one_shot_actions_valid
+        && hit_reactions_valid
         && views_are_distinct
     {
         exit.write(AppExit::Success);
@@ -2737,6 +3051,12 @@ mod tests {
             speed_metres_per_second: 0.0,
             gait_phase: 0.0,
             locomotion_sample_tick: 0,
+            planned_action: SkeletonAction::None,
+            active_action: SkeletonAction::None,
+            action_phase: 0.0,
+            action_started_tick: 0,
+            action_contact_tick: 0,
+            impact_pulse: 0.0,
             body_acceleration: Vec3::ZERO.to_array(),
             world_acceleration: Vec3::ZERO.to_array(),
             contact_sequence: 0,
@@ -2867,6 +3187,147 @@ mod tests {
     }
 
     #[test]
+    fn capture_plan_covers_action_block_and_hit_reaction_matrix() {
+        let plan = capture_plan();
+        for scenario in [
+            "attack-thrust-left-stay",
+            "attack-thrust-left-switch",
+            "attack-thrust-right-stay",
+            "attack-thrust-right-switch",
+            "attack-slash-left-stay",
+            "attack-slash-left-switch",
+            "attack-slash-right-stay",
+            "attack-slash-right-switch",
+            "block-cut-left-left",
+            "block-cut-left-right",
+            "block-cut-right-left",
+            "block-cut-right-right",
+            "block-thrust-left",
+            "block-thrust-right",
+            "hit-idle-low",
+            "hit-idle-high",
+            "hit-moving-low",
+            "hit-moving-high",
+        ] {
+            let frames = plan
+                .iter()
+                .filter(|frame| frame.scenario == scenario)
+                .collect::<Vec<_>>();
+            assert_eq!(frames.len(), 41, "{scenario}");
+            assert_eq!(
+                frames
+                    .iter()
+                    .filter(|frame| frame.scenario_frame == 0)
+                    .count(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn one_shot_action_fixture_starts_once_contacts_at_half_and_completes_once() {
+        for frames in action_scenario_matrix().into_iter().filter(|frames| {
+            matches!(
+                frames[0].action,
+                SkeletonAction::Attack | SkeletonAction::Block
+            )
+        }) {
+            let mut skeleton = SkeletonState {
+                lead_foot: frames[0].lead_foot,
+                weapon_guard: WeaponGuardState::Raised,
+                ..default()
+            };
+            configure_one_shot(&mut skeleton, frames[0].scenario);
+            let mut starts = 0;
+            let mut completions = 0;
+            let mut previous_phase = 0.0;
+            let mut was_active = false;
+            for frame in frames {
+                if frame.scenario_frame == 0 {
+                    starts += 1;
+                    skeleton.begin_action(frame.action, 0, 8);
+                }
+                skeleton.advance_action(frame.scenario_frame as u64);
+                if skeleton.action != SkeletonAction::None {
+                    assert!(skeleton.action_phase >= previous_phase);
+                    previous_phase = skeleton.action_phase;
+                }
+                if frame.scenario_frame == 8 {
+                    assert_eq!(skeleton.action_phase, 0.5);
+                }
+                if was_active && skeleton.action == SkeletonAction::None {
+                    completions += 1;
+                }
+                was_active = skeleton.action != SkeletonAction::None;
+            }
+            assert_eq!(starts, 1);
+            assert_eq!(completions, 1);
+        }
+    }
+
+    #[test]
+    fn action_scenarios_request_canonical_semantics_and_never_need_bind_pose() {
+        let available = [
+            SemanticPose::IdleRelaxed,
+            SemanticPose::GuardLeadLeft,
+            SemanticPose::AttackThrustLeadLeftContact,
+            SemanticPose::AttackSlashLeadLeftContact,
+        ];
+        let mut library = AnimationPackLibrary::default();
+        library
+            .insert(AnimationPack {
+                id: "humanoid_unarmed".to_owned(),
+                skeleton_family: "humanoid".to_owned(),
+                fallback: None,
+                clips: available.into_iter().collect(),
+            })
+            .unwrap();
+        for frames in action_scenario_matrix().into_iter().filter(|frames| {
+            matches!(
+                frames[0].action,
+                SkeletonAction::Attack | SkeletonAction::Block
+            )
+        }) {
+            for phase in [0.0, 0.5, 0.999] {
+                let mut skeleton = SkeletonState {
+                    action: frames[0].action,
+                    action_phase: phase,
+                    lead_foot: frames[0].lead_foot,
+                    weapon_guard: WeaponGuardState::Raised,
+                    ..default()
+                };
+                configure_one_shot(&mut skeleton, frames[0].scenario);
+                let evaluation = AnimationEvaluation::from_skeleton(&skeleton);
+                for sample in evaluation.action {
+                    let mut requests = vec![sample.pose];
+                    if let PoseSampling::Span { end, .. } = sample.sampling {
+                        requests.push(end);
+                    }
+                    for requested in requests {
+                        assert!(SemanticPose::HUMANOID_REQUESTS.contains(&requested));
+                        assert!(matches!(
+                            library.resolve("humanoid_unarmed", requested),
+                            ResolvedPose::Clip { semantic, .. }
+                                if SemanticPose::HUMANOID_REQUESTS.contains(&semantic)
+                        ));
+                    }
+                }
+            }
+        }
+        assert!(matches!(
+            library.resolve(
+                "humanoid_unarmed",
+                SemanticPose::AttackThrustLeadRightContact
+            ),
+            ResolvedPose::Clip {
+                semantic: SemanticPose::AttackThrustLeadRightContact,
+                mirrored: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn raised_guard_uses_strict_plant_and_separation_gates() {
         assert_eq!(planted_drift_limit("raised-guard-right"), 0.01);
         assert_eq!(inter_foot_separation_limit("raised-guard-right"), 0.16);
@@ -2994,16 +3455,28 @@ mod tests {
     }
 
     #[test]
-    fn raised_guard_capture_uses_prepared_runtime_pose_assets() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        for name in [
-            "guard_walk_lead_left.glb",
-            "guard_strafe_lead_left_left.glb",
-            "guard_strafe_lead_left_right.glb",
-        ] {
-            let source = root.join("assets_src/biped/unarmed").join(name);
-            let runtime = root.join("assets/animations/biped/unarmed").join(name);
-            assert_eq!(fs::read(source).unwrap(), fs::read(runtime).unwrap());
+    fn raised_guard_capture_requests_only_static_guard_authorship() {
+        for lead_foot in [LeadFoot::Left, LeadFoot::Right] {
+            let evaluation = AnimationEvaluation::from_skeleton(&SkeletonState {
+                weapon_guard: WeaponGuardState::Raised,
+                raised_locomotion: RaisedLocomotionIntent {
+                    active: true,
+                    local_direction: Vec2::X,
+                    speed: 2.0,
+                    swing_foot: LeadFoot::Left,
+                    step_sequence: 1,
+                },
+                lead_foot,
+                ..default()
+            });
+            assert_eq!(evaluation.base.len(), 1);
+            assert_eq!(
+                evaluation.base[0].pose,
+                match lead_foot {
+                    LeadFoot::Left => SemanticPose::GuardLeadLeft,
+                    LeadFoot::Right => SemanticPose::GuardLeadRight,
+                }
+            );
         }
     }
 
@@ -3029,6 +3502,12 @@ mod tests {
             speed_metres_per_second: 2.0,
             gait_phase: 0.0,
             locomotion_sample_tick: 0,
+            planned_action: SkeletonAction::None,
+            active_action: SkeletonAction::None,
+            action_phase: 0.0,
+            action_started_tick: 0,
+            action_contact_tick: 0,
+            impact_pulse: 0.0,
             body_acceleration: Vec3::ZERO.to_array(),
             world_acceleration: Vec3::ZERO.to_array(),
             contact_sequence: 0,
@@ -3119,6 +3598,12 @@ mod tests {
             speed_metres_per_second: 2.0,
             gait_phase: 0.0,
             locomotion_sample_tick: scenario_frame as u64,
+            planned_action: SkeletonAction::None,
+            active_action: SkeletonAction::None,
+            action_phase: 0.0,
+            action_started_tick: 0,
+            action_contact_tick: 0,
+            impact_pulse: 0.0,
             body_acceleration: Vec3::ZERO.to_array(),
             world_acceleration: Vec3::ZERO.to_array(),
             contact_sequence: 0,

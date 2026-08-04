@@ -23,74 +23,28 @@ pub enum SemanticPose {
     RunContact,
     RunFlight,
     CrouchIdle,
-    CrouchWalkContact,
-    CrouchWalkPassing,
-    DuckForward,
     DuckLeadLeftBackward,
     DuckLeadLeftLeft,
     DuckLeadLeftRight,
     DuckLeadRightBackward,
     DuckLeadRightLeft,
     DuckLeadRightRight,
-    JumpCenterLaunch,
-    JumpCenterFlight,
-    JumpCenterLanding,
-    JumpForwardLaunch,
-    JumpForwardFlight,
-    JumpForwardLanding,
-    JumpBackwardLaunch,
-    JumpBackwardFlight,
-    JumpBackwardLanding,
-    JumpLeftLaunch,
-    JumpLeftFlight,
-    JumpLeftLanding,
-    JumpRightLaunch,
-    JumpRightFlight,
-    JumpRightLanding,
+    AirborneCenter,
+    AirborneTravel,
     ProneIdle,
     SupineIdle,
     ProneCrawlContact,
     ProneCrawlPassing,
-    ProneStrafeContact,
-    ProneStrafePassing,
     SupineScamperContact,
     SupineScamperPassing,
     UprightProneTransition,
     DiveImpact,
-    ProneSupineRollLeft,
-    ProneSupineRollRight,
     GuardLeadLeft,
     GuardLeadRight,
-    GuardWalkLeadLeft,
-    GuardWalkLeadRight,
-    GuardStrafeLeadLeftLeft,
-    GuardStrafeLeadLeftRight,
-    GuardStrafeLeadRightLeft,
-    GuardStrafeLeadRightRight,
-    AttackThrustLeadLeftStayCommit,
-    AttackThrustLeadLeftStayContact,
-    AttackThrustLeadLeftStayFollowThrough,
-    AttackThrustLeadLeftSwitchCommit,
-    AttackThrustLeadLeftSwitchContact,
-    AttackThrustLeadLeftSwitchFollowThrough,
-    AttackThrustLeadRightStayCommit,
-    AttackThrustLeadRightStayContact,
-    AttackThrustLeadRightStayFollowThrough,
-    AttackThrustLeadRightSwitchCommit,
-    AttackThrustLeadRightSwitchContact,
-    AttackThrustLeadRightSwitchFollowThrough,
-    AttackSlashLeadLeftStayCommit,
-    AttackSlashLeadLeftStayContact,
-    AttackSlashLeadLeftStayFollowThrough,
-    AttackSlashLeadLeftSwitchCommit,
-    AttackSlashLeadLeftSwitchContact,
-    AttackSlashLeadLeftSwitchFollowThrough,
-    AttackSlashLeadRightStayCommit,
-    AttackSlashLeadRightStayContact,
-    AttackSlashLeadRightStayFollowThrough,
-    AttackSlashLeadRightSwitchCommit,
-    AttackSlashLeadRightSwitchContact,
-    AttackSlashLeadRightSwitchFollowThrough,
+    AttackThrustLeadLeftContact,
+    AttackThrustLeadRightContact,
+    AttackSlashLeadLeftContact,
+    AttackSlashLeadRightContact,
     BlockCutLeftLeadLeft,
     BlockCutLeftLeadRight,
     BlockCutRightLeadLeft,
@@ -100,81 +54,71 @@ pub enum SemanticPose {
 }
 
 impl SemanticPose {
-    pub const HUMANOID_REQUIRED: [Self; 80] = [
+    /// Every semantic request the runtime may issue. This is intentionally
+    /// larger than the root-authored minimum: the six right-lead counterparts
+    /// may be supplied exactly or reflected from the same pack.
+    pub const HUMANOID_REQUESTS: [Self; 34] = [
         Self::IdleRelaxed,
         Self::WalkContact,
         Self::WalkPassing,
         Self::RunContact,
         Self::RunFlight,
         Self::CrouchIdle,
-        Self::CrouchWalkContact,
-        Self::CrouchWalkPassing,
-        Self::DuckForward,
         Self::DuckLeadLeftBackward,
         Self::DuckLeadLeftLeft,
         Self::DuckLeadLeftRight,
         Self::DuckLeadRightBackward,
         Self::DuckLeadRightLeft,
         Self::DuckLeadRightRight,
-        Self::JumpCenterLaunch,
-        Self::JumpCenterFlight,
-        Self::JumpCenterLanding,
-        Self::JumpForwardLaunch,
-        Self::JumpForwardFlight,
-        Self::JumpForwardLanding,
-        Self::JumpBackwardLaunch,
-        Self::JumpBackwardFlight,
-        Self::JumpBackwardLanding,
-        Self::JumpLeftLaunch,
-        Self::JumpLeftFlight,
-        Self::JumpLeftLanding,
-        Self::JumpRightLaunch,
-        Self::JumpRightFlight,
-        Self::JumpRightLanding,
+        Self::AirborneCenter,
+        Self::AirborneTravel,
         Self::ProneIdle,
         Self::SupineIdle,
         Self::ProneCrawlContact,
         Self::ProneCrawlPassing,
-        Self::ProneStrafeContact,
-        Self::ProneStrafePassing,
         Self::SupineScamperContact,
         Self::SupineScamperPassing,
         Self::UprightProneTransition,
         Self::DiveImpact,
-        Self::ProneSupineRollLeft,
-        Self::ProneSupineRollRight,
         Self::GuardLeadLeft,
         Self::GuardLeadRight,
-        Self::GuardWalkLeadLeft,
-        Self::GuardWalkLeadRight,
-        Self::GuardStrafeLeadLeftLeft,
-        Self::GuardStrafeLeadLeftRight,
-        Self::GuardStrafeLeadRightLeft,
-        Self::GuardStrafeLeadRightRight,
-        Self::AttackThrustLeadLeftStayCommit,
-        Self::AttackThrustLeadLeftStayContact,
-        Self::AttackThrustLeadLeftStayFollowThrough,
-        Self::AttackThrustLeadLeftSwitchCommit,
-        Self::AttackThrustLeadLeftSwitchContact,
-        Self::AttackThrustLeadLeftSwitchFollowThrough,
-        Self::AttackThrustLeadRightStayCommit,
-        Self::AttackThrustLeadRightStayContact,
-        Self::AttackThrustLeadRightStayFollowThrough,
-        Self::AttackThrustLeadRightSwitchCommit,
-        Self::AttackThrustLeadRightSwitchContact,
-        Self::AttackThrustLeadRightSwitchFollowThrough,
-        Self::AttackSlashLeadLeftStayCommit,
-        Self::AttackSlashLeadLeftStayContact,
-        Self::AttackSlashLeadLeftStayFollowThrough,
-        Self::AttackSlashLeadLeftSwitchCommit,
-        Self::AttackSlashLeadLeftSwitchContact,
-        Self::AttackSlashLeadLeftSwitchFollowThrough,
-        Self::AttackSlashLeadRightStayCommit,
-        Self::AttackSlashLeadRightStayContact,
-        Self::AttackSlashLeadRightStayFollowThrough,
-        Self::AttackSlashLeadRightSwitchCommit,
-        Self::AttackSlashLeadRightSwitchContact,
-        Self::AttackSlashLeadRightSwitchFollowThrough,
+        Self::AttackThrustLeadLeftContact,
+        Self::AttackThrustLeadRightContact,
+        Self::AttackSlashLeadLeftContact,
+        Self::AttackSlashLeadRightContact,
+        Self::BlockCutLeftLeadLeft,
+        Self::BlockCutLeftLeadRight,
+        Self::BlockCutRightLeadLeft,
+        Self::BlockCutRightLeadRight,
+        Self::BlockThrustLeadLeft,
+        Self::BlockThrustLeadRight,
+    ];
+
+    /// Minimum authored anchors for a complete root humanoid pack. Each
+    /// omitted request is accepted through its same-pack reflected anchor.
+    pub const HUMANOID_ROOT_MINIMUM: [Self; 28] = [
+        Self::IdleRelaxed,
+        Self::WalkContact,
+        Self::WalkPassing,
+        Self::RunContact,
+        Self::RunFlight,
+        Self::CrouchIdle,
+        Self::DuckLeadLeftBackward,
+        Self::DuckLeadLeftLeft,
+        Self::DuckLeadLeftRight,
+        Self::AirborneCenter,
+        Self::AirborneTravel,
+        Self::ProneIdle,
+        Self::SupineIdle,
+        Self::ProneCrawlContact,
+        Self::ProneCrawlPassing,
+        Self::SupineScamperContact,
+        Self::SupineScamperPassing,
+        Self::UprightProneTransition,
+        Self::DiveImpact,
+        Self::GuardLeadLeft,
+        Self::AttackThrustLeadLeftContact,
+        Self::AttackSlashLeadLeftContact,
         Self::BlockCutLeftLeadLeft,
         Self::BlockCutLeftLeadRight,
         Self::BlockCutRightLeadLeft,
@@ -192,84 +136,28 @@ impl SemanticPose {
             RunContact => "run_contact",
             RunFlight => "run_flight",
             CrouchIdle => "crouch_idle",
-            CrouchWalkContact => "crouch_walk_contact",
-            CrouchWalkPassing => "crouch_walk_passing",
-            DuckForward => "duck_forward",
             DuckLeadLeftBackward => "duck_lead_left_backward",
             DuckLeadLeftLeft => "duck_lead_left_left",
             DuckLeadLeftRight => "duck_lead_left_right",
             DuckLeadRightBackward => "duck_lead_right_backward",
             DuckLeadRightLeft => "duck_lead_right_left",
             DuckLeadRightRight => "duck_lead_right_right",
-            JumpCenterLaunch => "jump_center_launch",
-            JumpCenterFlight => "jump_center_flight",
-            JumpCenterLanding => "jump_center_landing",
-            JumpForwardLaunch => "jump_forward_launch",
-            JumpForwardFlight => "jump_forward_flight",
-            JumpForwardLanding => "jump_forward_landing",
-            JumpBackwardLaunch => "jump_backward_launch",
-            JumpBackwardFlight => "jump_backward_flight",
-            JumpBackwardLanding => "jump_backward_landing",
-            JumpLeftLaunch => "jump_left_launch",
-            JumpLeftFlight => "jump_left_flight",
-            JumpLeftLanding => "jump_left_landing",
-            JumpRightLaunch => "jump_right_launch",
-            JumpRightFlight => "jump_right_flight",
-            JumpRightLanding => "jump_right_landing",
+            AirborneCenter => "airborne_center",
+            AirborneTravel => "airborne_travel",
             ProneIdle => "prone_idle",
             SupineIdle => "supine_idle",
             ProneCrawlContact => "prone_crawl_contact",
             ProneCrawlPassing => "prone_crawl_passing",
-            ProneStrafeContact => "prone_strafe_contact",
-            ProneStrafePassing => "prone_strafe_passing",
             SupineScamperContact => "supine_scamper_contact",
             SupineScamperPassing => "supine_scamper_passing",
             UprightProneTransition => "upright_prone_transition",
             DiveImpact => "dive_impact",
-            ProneSupineRollLeft => "prone_supine_roll_left",
-            ProneSupineRollRight => "prone_supine_roll_right",
             GuardLeadLeft => "guard_lead_left",
             GuardLeadRight => "guard_lead_right",
-            GuardWalkLeadLeft => "guard_walk_lead_left",
-            GuardWalkLeadRight => "guard_walk_lead_right",
-            GuardStrafeLeadLeftLeft => "guard_strafe_lead_left_left",
-            GuardStrafeLeadLeftRight => "guard_strafe_lead_left_right",
-            GuardStrafeLeadRightLeft => "guard_strafe_lead_right_left",
-            GuardStrafeLeadRightRight => "guard_strafe_lead_right_right",
-            AttackThrustLeadLeftStayCommit => "attack_thrust_lead_left_stay_commit",
-            AttackThrustLeadLeftStayContact => "attack_thrust_lead_left_stay_contact",
-            AttackThrustLeadLeftStayFollowThrough => "attack_thrust_lead_left_stay_follow_through",
-            AttackThrustLeadLeftSwitchCommit => "attack_thrust_lead_left_switch_commit",
-            AttackThrustLeadLeftSwitchContact => "attack_thrust_lead_left_switch_contact",
-            AttackThrustLeadLeftSwitchFollowThrough => {
-                "attack_thrust_lead_left_switch_follow_through"
-            }
-            AttackThrustLeadRightStayCommit => "attack_thrust_lead_right_stay_commit",
-            AttackThrustLeadRightStayContact => "attack_thrust_lead_right_stay_contact",
-            AttackThrustLeadRightStayFollowThrough => {
-                "attack_thrust_lead_right_stay_follow_through"
-            }
-            AttackThrustLeadRightSwitchCommit => "attack_thrust_lead_right_switch_commit",
-            AttackThrustLeadRightSwitchContact => "attack_thrust_lead_right_switch_contact",
-            AttackThrustLeadRightSwitchFollowThrough => {
-                "attack_thrust_lead_right_switch_follow_through"
-            }
-            AttackSlashLeadLeftStayCommit => "attack_slash_lead_left_stay_commit",
-            AttackSlashLeadLeftStayContact => "attack_slash_lead_left_stay_contact",
-            AttackSlashLeadLeftStayFollowThrough => "attack_slash_lead_left_stay_follow_through",
-            AttackSlashLeadLeftSwitchCommit => "attack_slash_lead_left_switch_commit",
-            AttackSlashLeadLeftSwitchContact => "attack_slash_lead_left_switch_contact",
-            AttackSlashLeadLeftSwitchFollowThrough => {
-                "attack_slash_lead_left_switch_follow_through"
-            }
-            AttackSlashLeadRightStayCommit => "attack_slash_lead_right_stay_commit",
-            AttackSlashLeadRightStayContact => "attack_slash_lead_right_stay_contact",
-            AttackSlashLeadRightStayFollowThrough => "attack_slash_lead_right_stay_follow_through",
-            AttackSlashLeadRightSwitchCommit => "attack_slash_lead_right_switch_commit",
-            AttackSlashLeadRightSwitchContact => "attack_slash_lead_right_switch_contact",
-            AttackSlashLeadRightSwitchFollowThrough => {
-                "attack_slash_lead_right_switch_follow_through"
-            }
+            AttackThrustLeadLeftContact => "attack_thrust_lead_left_contact",
+            AttackThrustLeadRightContact => "attack_thrust_lead_right_contact",
+            AttackSlashLeadLeftContact => "attack_slash_lead_left_contact",
+            AttackSlashLeadRightContact => "attack_slash_lead_right_contact",
             BlockCutLeftLeadLeft => "block_cut_left_lead_left",
             BlockCutLeftLeadRight => "block_cut_left_lead_right",
             BlockCutRightLeadLeft => "block_cut_right_lead_left",
@@ -294,36 +182,10 @@ impl SemanticPose {
             DuckLeadRightRight => DuckLeadLeftLeft,
             GuardLeadLeft => GuardLeadRight,
             GuardLeadRight => GuardLeadLeft,
-            GuardWalkLeadLeft => GuardWalkLeadRight,
-            GuardWalkLeadRight => GuardWalkLeadLeft,
-            GuardStrafeLeadLeftLeft => GuardStrafeLeadRightRight,
-            GuardStrafeLeadLeftRight => GuardStrafeLeadRightLeft,
-            GuardStrafeLeadRightLeft => GuardStrafeLeadLeftRight,
-            GuardStrafeLeadRightRight => GuardStrafeLeadLeftLeft,
-            AttackThrustLeadLeftStayCommit => AttackThrustLeadRightStayCommit,
-            AttackThrustLeadLeftStayContact => AttackThrustLeadRightStayContact,
-            AttackThrustLeadLeftStayFollowThrough => AttackThrustLeadRightStayFollowThrough,
-            AttackThrustLeadLeftSwitchCommit => AttackThrustLeadRightSwitchCommit,
-            AttackThrustLeadLeftSwitchContact => AttackThrustLeadRightSwitchContact,
-            AttackThrustLeadLeftSwitchFollowThrough => AttackThrustLeadRightSwitchFollowThrough,
-            AttackThrustLeadRightStayCommit => AttackThrustLeadLeftStayCommit,
-            AttackThrustLeadRightStayContact => AttackThrustLeadLeftStayContact,
-            AttackThrustLeadRightStayFollowThrough => AttackThrustLeadLeftStayFollowThrough,
-            AttackThrustLeadRightSwitchCommit => AttackThrustLeadLeftSwitchCommit,
-            AttackThrustLeadRightSwitchContact => AttackThrustLeadLeftSwitchContact,
-            AttackThrustLeadRightSwitchFollowThrough => AttackThrustLeadLeftSwitchFollowThrough,
-            AttackSlashLeadLeftStayCommit => AttackSlashLeadRightStayCommit,
-            AttackSlashLeadLeftStayContact => AttackSlashLeadRightStayContact,
-            AttackSlashLeadLeftStayFollowThrough => AttackSlashLeadRightStayFollowThrough,
-            AttackSlashLeadLeftSwitchCommit => AttackSlashLeadRightSwitchCommit,
-            AttackSlashLeadLeftSwitchContact => AttackSlashLeadRightSwitchContact,
-            AttackSlashLeadLeftSwitchFollowThrough => AttackSlashLeadRightSwitchFollowThrough,
-            AttackSlashLeadRightStayCommit => AttackSlashLeadLeftStayCommit,
-            AttackSlashLeadRightStayContact => AttackSlashLeadLeftStayContact,
-            AttackSlashLeadRightStayFollowThrough => AttackSlashLeadLeftStayFollowThrough,
-            AttackSlashLeadRightSwitchCommit => AttackSlashLeadLeftSwitchCommit,
-            AttackSlashLeadRightSwitchContact => AttackSlashLeadLeftSwitchContact,
-            AttackSlashLeadRightSwitchFollowThrough => AttackSlashLeadLeftSwitchFollowThrough,
+            AttackThrustLeadLeftContact => AttackThrustLeadRightContact,
+            AttackThrustLeadRightContact => AttackThrustLeadLeftContact,
+            AttackSlashLeadLeftContact => AttackSlashLeadRightContact,
+            AttackSlashLeadRightContact => AttackSlashLeadLeftContact,
             _ => return None,
         })
     }
@@ -339,67 +201,21 @@ impl SemanticPose {
             RunContact => WalkContact,
             RunFlight => WalkPassing,
             CrouchIdle => IdleRelaxed,
-            CrouchWalkContact => WalkContact,
-            CrouchWalkPassing => WalkPassing,
-            DuckForward => CrouchIdle,
             DuckLeadLeftBackward | DuckLeadLeftLeft | DuckLeadLeftRight => GuardLeadLeft,
             DuckLeadRightBackward | DuckLeadRightLeft | DuckLeadRightRight => GuardLeadRight,
-            JumpCenterLaunch | JumpCenterLanding => CrouchIdle,
-            JumpCenterFlight => RunFlight,
-            JumpForwardLaunch => JumpCenterLaunch,
-            JumpForwardFlight => JumpCenterFlight,
-            JumpForwardLanding => JumpCenterLanding,
-            JumpBackwardLaunch => JumpCenterLaunch,
-            JumpBackwardFlight => JumpCenterFlight,
-            JumpBackwardLanding => JumpCenterLanding,
-            JumpLeftLaunch => JumpCenterLaunch,
-            JumpLeftFlight => JumpCenterFlight,
-            JumpLeftLanding => JumpCenterLanding,
-            JumpRightLaunch => JumpCenterLaunch,
-            JumpRightFlight => JumpCenterFlight,
-            JumpRightLanding => JumpCenterLanding,
+            AirborneCenter => CrouchIdle,
+            AirborneTravel => AirborneCenter,
             ProneIdle | SupineIdle => CrouchIdle,
             ProneCrawlContact | ProneCrawlPassing => ProneIdle,
-            ProneStrafeContact => ProneCrawlContact,
-            ProneStrafePassing => ProneCrawlPassing,
             SupineScamperContact | SupineScamperPassing => SupineIdle,
             UprightProneTransition => CrouchIdle,
-            DiveImpact => JumpForwardLanding,
-            ProneSupineRollLeft | ProneSupineRollRight => ProneIdle,
+            DiveImpact => ProneIdle,
             GuardLeadLeft => IdleRelaxed,
             GuardLeadRight => IdleRelaxed,
-            GuardWalkLeadLeft => GuardLeadLeft,
-            GuardWalkLeadRight => GuardLeadRight,
-            GuardStrafeLeadLeftLeft | GuardStrafeLeadLeftRight => GuardWalkLeadLeft,
-            GuardStrafeLeadRightLeft | GuardStrafeLeadRightRight => GuardWalkLeadRight,
-            AttackThrustLeadLeftStayCommit => AttackSlashLeadLeftStayCommit,
-            AttackThrustLeadLeftStayContact => AttackSlashLeadLeftStayContact,
-            AttackThrustLeadLeftStayFollowThrough => AttackSlashLeadLeftStayFollowThrough,
-            AttackThrustLeadLeftSwitchCommit => AttackSlashLeadLeftSwitchCommit,
-            AttackThrustLeadLeftSwitchContact => AttackSlashLeadLeftSwitchContact,
-            AttackThrustLeadLeftSwitchFollowThrough => AttackSlashLeadLeftSwitchFollowThrough,
-            AttackThrustLeadRightStayCommit => AttackSlashLeadRightStayCommit,
-            AttackThrustLeadRightStayContact => AttackSlashLeadRightStayContact,
-            AttackThrustLeadRightStayFollowThrough => AttackSlashLeadRightStayFollowThrough,
-            AttackThrustLeadRightSwitchCommit => AttackSlashLeadRightSwitchCommit,
-            AttackThrustLeadRightSwitchContact => AttackSlashLeadRightSwitchContact,
-            AttackThrustLeadRightSwitchFollowThrough => AttackSlashLeadRightSwitchFollowThrough,
-            AttackSlashLeadLeftStayCommit
-            | AttackSlashLeadLeftStayContact
-            | AttackSlashLeadLeftStayFollowThrough => GuardLeadLeft,
-            AttackSlashLeadLeftSwitchCommit => AttackSlashLeadLeftStayCommit,
-            AttackSlashLeadLeftSwitchContact => AttackSlashLeadLeftStayContact,
-            AttackSlashLeadLeftSwitchFollowThrough => AttackSlashLeadLeftStayFollowThrough,
-            AttackSlashLeadRightStayCommit
-            | AttackSlashLeadRightStayContact
-            | AttackSlashLeadRightStayFollowThrough => GuardLeadRight,
-            AttackSlashLeadRightSwitchCommit => AttackSlashLeadRightStayCommit,
-            AttackSlashLeadRightSwitchContact => AttackSlashLeadRightStayContact,
-            AttackSlashLeadRightSwitchFollowThrough => AttackSlashLeadRightStayFollowThrough,
-            BlockCutLeftLeadLeft => BlockThrustLeadLeft,
-            BlockCutLeftLeadRight => BlockThrustLeadRight,
-            BlockCutRightLeadLeft => BlockCutLeftLeadLeft,
-            BlockCutRightLeadRight => BlockCutLeftLeadRight,
+            AttackThrustLeadLeftContact | AttackSlashLeadLeftContact => GuardLeadLeft,
+            AttackThrustLeadRightContact | AttackSlashLeadRightContact => GuardLeadRight,
+            BlockCutLeftLeadLeft | BlockCutRightLeadLeft => BlockThrustLeadLeft,
+            BlockCutLeftLeadRight | BlockCutRightLeadRight => BlockThrustLeadRight,
             BlockThrustLeadLeft => GuardLeadLeft,
             BlockThrustLeadRight => GuardLeadRight,
         })
@@ -410,7 +226,7 @@ impl FromStr for SemanticPose {
     type Err = ();
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Self::HUMANOID_REQUIRED
+        Self::HUMANOID_REQUESTS
             .into_iter()
             .find(|pose| pose.as_str() == value)
             .ok_or(())
@@ -448,7 +264,8 @@ pub enum PackValidationError {
     MissingFallback { pack: String, fallback: String },
     FallbackCycle(String),
     IncompatibleSkeleton { pack: String, fallback: String },
-    MissingRequiredPose(SemanticPose),
+    MissingRootAnchor(SemanticPose),
+    UnresolvedRuntimeRequest(SemanticPose),
 }
 
 #[derive(Debug, Default)]
@@ -499,10 +316,16 @@ impl AnimationPackLibrary {
 
     pub fn validate_complete(&self, root: &str) -> Result<(), PackValidationError> {
         self.validate_structure()?;
-        for pose in SemanticPose::HUMANOID_REQUIRED {
+        let root_clips = self.packs.get(root).map(|pack| &pack.clips);
+        for pose in SemanticPose::HUMANOID_ROOT_MINIMUM {
+            if !root_clips.is_some_and(|clips| clips.contains(&pose)) {
+                return Err(PackValidationError::MissingRootAnchor(pose));
+            }
+        }
+        for pose in SemanticPose::HUMANOID_REQUESTS {
             if !matches!(self.resolve(root, pose), ResolvedPose::Clip { semantic, .. } if semantic == pose)
             {
-                return Err(PackValidationError::MissingRequiredPose(pose));
+                return Err(PackValidationError::UnresolvedRuntimeRequest(pose));
             }
         }
         Ok(())
@@ -1337,14 +1160,23 @@ fn locomotion_samples(speed: f32, phase: f32, crouch: f32) -> Vec<PoseSample> {
     );
     append_scaled(
         &mut samples,
-        gait_pair(
-            phase,
-            SemanticPose::CrouchWalkContact,
-            SemanticPose::CrouchWalkPassing,
-        ),
+        crouched_gait_samples(phase),
         locomotion * crouch,
     );
     samples.retain(|sample| sample.weight > f32::EPSILON);
+    samples
+}
+
+fn crouched_gait_samples(phase: f32) -> Vec<PoseSample> {
+    let mirror = gait_mirror(phase);
+    let mut samples = gait_pair(phase, SemanticPose::WalkContact, SemanticPose::WalkPassing);
+    samples[0].weight = 0.7;
+    samples.push(PoseSample {
+        pose: SemanticPose::CrouchIdle,
+        sampling: PoseSampling::Anchor,
+        weight: 0.3,
+        mirror_lower_body: mirror,
+    });
     samples
 }
 
@@ -1426,37 +1258,13 @@ fn smoothstep01(value: f32) -> f32 {
     value * value * (3.0 - 2.0 * value)
 }
 
-fn directional_jump_poses(direction: Vec2) -> [SemanticPose; 3] {
-    use SemanticPose::*;
-    let direction = if direction.length_squared() < 0.04 {
-        0
-    } else if direction.x.abs() > direction.y.abs() {
-        if direction.x < 0.0 { 3 } else { 4 }
-    } else if direction.y >= 0.0 {
-        1
-    } else {
-        2
-    };
-    match direction {
-        0 => [JumpCenterLaunch, JumpCenterFlight, JumpCenterLanding],
-        1 => [JumpForwardLaunch, JumpForwardFlight, JumpForwardLanding],
-        2 => [JumpBackwardLaunch, JumpBackwardFlight, JumpBackwardLanding],
-        3 => [JumpLeftLaunch, JumpLeftFlight, JumpLeftLanding],
-        _ => [JumpRightLaunch, JumpRightFlight, JumpRightLanding],
-    }
-}
-
-fn airborne_sample(direction: Vec2, vertical_velocity: f32) -> PoseSample {
-    let [launch, flight, landing] = directional_jump_poses(direction);
-    let phase = (0.5 - vertical_velocity * 0.2).clamp(0.0, 1.0);
-    let (pose, end, progress) = if phase < 0.5 {
-        (launch, flight, phase * 2.0)
-    } else {
-        (flight, landing, (phase - 0.5) * 2.0)
-    };
+fn airborne_sample(direction: Vec2, _vertical_velocity: f32) -> PoseSample {
     PoseSample {
-        pose,
-        sampling: PoseSampling::Span { end, progress },
+        pose: SemanticPose::AirborneCenter,
+        sampling: PoseSampling::Span {
+            end: SemanticPose::AirborneTravel,
+            progress: smoothstep01(direction.length() / 0.2),
+        },
         weight: 1.0,
         mirror_lower_body: 0.0,
     }
@@ -1509,7 +1317,7 @@ fn action_samples(state: &SkeletonState) -> Vec<PoseSample> {
                     LeadFoot::Right => SemanticPose::DuckLeadRightBackward,
                 }
             } else {
-                SemanticPose::DuckForward
+                SemanticPose::CrouchIdle
             };
             vec![out_and_back(
                 guard_pose(state.lead_foot),
@@ -1530,6 +1338,12 @@ fn action_samples(state: &SkeletonState) -> Vec<PoseSample> {
             SemanticPose::ProneIdle,
             state.action_phase,
         )],
+        SkeletonAction::GetUp if state.posture == Posture::Supine => vec![PoseSample {
+            pose: SemanticPose::SupineIdle,
+            sampling: PoseSampling::Anchor,
+            weight: 1.0,
+            mirror_lower_body: 0.0,
+        }],
         SkeletonAction::GetUp => vec![through_transition(
             SemanticPose::ProneIdle,
             SemanticPose::UprightProneTransition,
@@ -1549,31 +1363,17 @@ fn duck_side_pose(lead: LeadFoot, duck_left: bool) -> SemanticPose {
 }
 
 fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
-    let phase = state.action_phase.clamp(0.0, 1.0);
     let start_guard = guard_pose(state.lead_foot);
     let end_guard = guard_pose(match state.footwork {
         Footwork::Stay => state.lead_foot,
         Footwork::Switch => opposite(state.lead_foot),
     });
-    let poses = [
+    vec![through_transition(
         start_guard,
-        attack_pose(state, 0),
-        attack_pose(state, 1),
-        attack_pose(state, 2),
+        attack_contact_pose(state.strike_family, state.lead_foot),
         end_guard,
-    ];
-    let scaled = phase * 4.0;
-    let segment = (scaled.floor() as usize).min(3);
-    let blend = if phase >= 1.0 { 1.0 } else { scaled.fract() };
-    vec![PoseSample {
-        pose: poses[segment],
-        sampling: PoseSampling::Span {
-            end: poses[segment + 1],
-            progress: blend,
-        },
-        weight: 1.0,
-        mirror_lower_body: 0.0,
-    }]
+        state.action_phase,
+    )]
 }
 
 fn opposite(foot: LeadFoot) -> LeadFoot {
@@ -1602,33 +1402,13 @@ fn block_pose(line: AttackLine, lead: LeadFoot) -> SemanticPose {
     }
 }
 
-fn attack_pose(state: &SkeletonState, phase: u8) -> SemanticPose {
-    use {Footwork::*, LeadFoot::*, SemanticPose::*, StrikeFamily::*};
-    match (state.strike_family, state.lead_foot, state.footwork, phase) {
-        (Thrust, Left, Stay, 0) => AttackThrustLeadLeftStayCommit,
-        (Thrust, Left, Stay, 1) => AttackThrustLeadLeftStayContact,
-        (Thrust, Left, Stay, _) => AttackThrustLeadLeftStayFollowThrough,
-        (Thrust, Left, Switch, 0) => AttackThrustLeadLeftSwitchCommit,
-        (Thrust, Left, Switch, 1) => AttackThrustLeadLeftSwitchContact,
-        (Thrust, Left, Switch, _) => AttackThrustLeadLeftSwitchFollowThrough,
-        (Thrust, Right, Stay, 0) => AttackThrustLeadRightStayCommit,
-        (Thrust, Right, Stay, 1) => AttackThrustLeadRightStayContact,
-        (Thrust, Right, Stay, _) => AttackThrustLeadRightStayFollowThrough,
-        (Thrust, Right, Switch, 0) => AttackThrustLeadRightSwitchCommit,
-        (Thrust, Right, Switch, 1) => AttackThrustLeadRightSwitchContact,
-        (Thrust, Right, Switch, _) => AttackThrustLeadRightSwitchFollowThrough,
-        (Slash, Left, Stay, 0) => AttackSlashLeadLeftStayCommit,
-        (Slash, Left, Stay, 1) => AttackSlashLeadLeftStayContact,
-        (Slash, Left, Stay, _) => AttackSlashLeadLeftStayFollowThrough,
-        (Slash, Left, Switch, 0) => AttackSlashLeadLeftSwitchCommit,
-        (Slash, Left, Switch, 1) => AttackSlashLeadLeftSwitchContact,
-        (Slash, Left, Switch, _) => AttackSlashLeadLeftSwitchFollowThrough,
-        (Slash, Right, Stay, 0) => AttackSlashLeadRightStayCommit,
-        (Slash, Right, Stay, 1) => AttackSlashLeadRightStayContact,
-        (Slash, Right, Stay, _) => AttackSlashLeadRightStayFollowThrough,
-        (Slash, Right, Switch, 0) => AttackSlashLeadRightSwitchCommit,
-        (Slash, Right, Switch, 1) => AttackSlashLeadRightSwitchContact,
-        (Slash, Right, Switch, _) => AttackSlashLeadRightSwitchFollowThrough,
+fn attack_contact_pose(family: StrikeFamily, lead: LeadFoot) -> SemanticPose {
+    use {LeadFoot::*, SemanticPose::*, StrikeFamily::*};
+    match (family, lead) {
+        (Thrust, Left) => AttackThrustLeadLeftContact,
+        (Thrust, Right) => AttackThrustLeadRightContact,
+        (Slash, Left) => AttackSlashLeadLeftContact,
+        (Slash, Right) => AttackSlashLeadRightContact,
     }
 }
 
@@ -1710,7 +1490,7 @@ mod tests {
 
     #[test]
     fn mirrored_semantic_counterparts_are_involutions() {
-        for pose in SemanticPose::HUMANOID_REQUIRED {
+        for pose in SemanticPose::HUMANOID_REQUESTS {
             let Some(counterpart) = pose.mirrored_counterpart() else {
                 continue;
             };
@@ -1767,85 +1547,44 @@ mod tests {
     }
 
     #[test]
-    fn guard_locomotion_prefers_exact_then_same_pack_mirror_then_parent() {
-        let mut library = AnimationPackLibrary::default();
-        library
-            .insert(pack(
-                "unarmed",
-                None,
-                [
-                    SemanticPose::GuardWalkLeadRight,
-                    SemanticPose::GuardStrafeLeadRightRight,
-                ],
-            ))
-            .unwrap();
-        library
-            .insert(pack(
-                "sword",
-                Some("unarmed"),
-                [
-                    SemanticPose::GuardWalkLeadLeft,
-                    SemanticPose::GuardStrafeLeadLeftLeft,
-                ],
-            ))
-            .unwrap();
-
-        assert_eq!(
-            library.resolve("sword", SemanticPose::GuardWalkLeadRight),
-            ResolvedPose::Clip {
-                pack_id: "sword",
-                semantic: SemanticPose::GuardWalkLeadRight,
-                pose: SemanticPose::GuardWalkLeadLeft,
-                mirrored: true,
-            }
-        );
-        assert_eq!(
-            library.resolve("sword", SemanticPose::GuardStrafeLeadLeftLeft),
-            ResolvedPose::Clip {
-                pack_id: "sword",
-                semantic: SemanticPose::GuardStrafeLeadLeftLeft,
-                pose: SemanticPose::GuardStrafeLeadLeftLeft,
-                mirrored: false,
-            }
-        );
+    fn request_and_root_minimum_vocabularies_are_distinct_and_complete() {
+        assert_eq!(SemanticPose::HUMANOID_REQUESTS.len(), 34);
+        assert_eq!(SemanticPose::HUMANOID_ROOT_MINIMUM.len(), 28);
+        let minimum = SemanticPose::HUMANOID_ROOT_MINIMUM
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let optional = SemanticPose::HUMANOID_REQUESTS
+            .into_iter()
+            .filter(|pose| !minimum.contains(pose))
+            .collect::<Vec<_>>();
+        assert_eq!(optional.len(), 6);
+        assert!(optional.into_iter().all(|pose| {
+            pose.mirrored_counterpart()
+                .is_some_and(|source| minimum.contains(&source))
+        }));
     }
 
     #[test]
-    fn missing_guard_strafe_falls_back_to_same_lead_walk_then_guard() {
+    fn root_minimum_validates_through_same_pack_reflection() {
         let mut library = AnimationPackLibrary::default();
         library
-            .insert(pack("unarmed", None, [SemanticPose::GuardWalkLeadLeft]))
+            .insert(pack("unarmed", None, SemanticPose::HUMANOID_ROOT_MINIMUM))
             .unwrap();
-        assert_eq!(
-            library.resolve("unarmed", SemanticPose::GuardStrafeLeadLeftRight),
-            ResolvedPose::Clip {
-                pack_id: "unarmed",
-                semantic: SemanticPose::GuardWalkLeadLeft,
-                pose: SemanticPose::GuardWalkLeadLeft,
-                mirrored: false,
-            }
-        );
+        assert_eq!(library.validate_complete("unarmed"), Ok(()));
     }
 
     #[test]
-    fn thrust_falls_back_to_corresponding_slash_before_guard() {
-        let mut library = AnimationPackLibrary::default();
-        library
-            .insert(pack(
-                "unarmed",
-                None,
-                [SemanticPose::AttackSlashLeadRightSwitchContact],
-            ))
-            .unwrap();
-        assert_eq!(
-            library.resolve("unarmed", SemanticPose::AttackThrustLeadRightSwitchContact,),
-            ResolvedPose::Clip {
-                pack_id: "unarmed",
-                semantic: SemanticPose::AttackSlashLeadRightSwitchContact,
-                pose: SemanticPose::AttackSlashLeadRightSwitchContact,
-                mirrored: false,
-            }
-        );
+    fn obsolete_semantic_strings_are_rejected() {
+        for legacy in [
+            "crouch_walk_contact",
+            "duck_forward",
+            "jump_left_flight",
+            "guard_walk_lead_left",
+            "attack_thrust_lead_left_switch_follow_through",
+            "prone_supine_roll_left",
+        ] {
+            assert!(SemanticPose::from_str(legacy).is_err(), "{legacy}");
+        }
     }
 
     #[test]
@@ -1853,7 +1592,7 @@ mod tests {
         let mut library = AnimationPackLibrary::default();
         library.insert(pack("empty", None, [])).unwrap();
         assert_eq!(
-            library.resolve("empty", SemanticPose::JumpLeftFlight),
+            library.resolve("empty", SemanticPose::AirborneTravel),
             ResolvedPose::BindPoseT
         );
         assert_eq!(
@@ -2347,15 +2086,25 @@ mod tests {
             crouched
                 .base
                 .iter()
-                .any(|sample| { sample.pose == SemanticPose::CrouchWalkContact })
+                .any(|sample| { sample.pose == SemanticPose::WalkContact })
         );
+        assert!(
+            crouched
+                .base
+                .iter()
+                .any(|sample| sample.pose == SemanticPose::CrouchIdle)
+        );
+        assert!(crouched.base.iter().all(|sample| matches!(
+            sample.pose,
+            SemanticPose::WalkContact | SemanticPose::WalkPassing | SemanticPose::CrouchIdle
+        )));
         let airborne = AnimationEvaluation::from_skeleton(&SkeletonState {
             weapon_guard: WeaponGuardState::Raised,
             posture: Posture::Airborne,
             local_velocity: Vec3::Y,
             ..default()
         });
-        assert_eq!(airborne.base[0].pose, SemanticPose::JumpCenterLaunch);
+        assert_eq!(airborne.base[0].pose, SemanticPose::AirborneCenter);
     }
 
     #[test]
@@ -2430,7 +2179,7 @@ mod tests {
     }
 
     #[test]
-    fn attack_blends_guard_commit_contact_follow_through_and_end_guard() {
+    fn attack_recipe_blends_guard_contact_and_selected_end_guard() {
         let state = SkeletonState {
             action: SkeletonAction::Attack,
             action_phase: 0.5,
@@ -2443,9 +2192,9 @@ mod tests {
         assert_eq!(
             evaluation.action,
             vec![PoseSample {
-                pose: SemanticPose::AttackThrustLeadLeftSwitchContact,
+                pose: SemanticPose::AttackThrustLeadLeftContact,
                 sampling: PoseSampling::Span {
-                    end: SemanticPose::AttackThrustLeadLeftSwitchFollowThrough,
+                    end: SemanticPose::GuardLeadRight,
                     progress: 0.0,
                 },
                 weight: 1.0,
@@ -2459,7 +2208,7 @@ mod tests {
         });
         assert_eq!(
             end.action.last().unwrap().pose,
-            SemanticPose::AttackThrustLeadLeftSwitchFollowThrough
+            SemanticPose::AttackThrustLeadLeftContact
         );
         assert_eq!(
             end.action.last().unwrap().sampling,
@@ -2471,37 +2220,76 @@ mod tests {
     }
 
     #[test]
-    fn vertical_velocity_drives_continuous_airborne_spans() {
-        for (velocity, pose, end, progress) in [
-            (
-                3.0,
-                SemanticPose::JumpForwardLaunch,
-                SemanticPose::JumpForwardFlight,
-                0.0,
-            ),
-            (
-                0.0,
-                SemanticPose::JumpForwardFlight,
-                SemanticPose::JumpForwardLanding,
-                0.0,
-            ),
-            (
-                -3.0,
-                SemanticPose::JumpForwardFlight,
-                SemanticPose::JumpForwardLanding,
-                1.0,
-            ),
+    fn attack_and_block_recipe_matrix_uses_only_canonical_contacts_and_guard_endpoints() {
+        for family in [StrikeFamily::Thrust, StrikeFamily::Slash] {
+            for lead in [LeadFoot::Left, LeadFoot::Right] {
+                for footwork in [Footwork::Stay, Footwork::Switch] {
+                    let state = SkeletonState {
+                        action: SkeletonAction::Attack,
+                        action_phase: 0.5,
+                        strike_family: family,
+                        lead_foot: lead,
+                        footwork,
+                        ..default()
+                    };
+                    let contact = AnimationEvaluation::from_skeleton(&state).action[0];
+                    assert_eq!(contact.pose, attack_contact_pose(family, lead));
+                    let expected_end = guard_pose(match footwork {
+                        Footwork::Stay => lead,
+                        Footwork::Switch => opposite(lead),
+                    });
+                    assert_eq!(
+                        contact.sampling,
+                        PoseSampling::Span {
+                            end: expected_end,
+                            progress: 0.0,
+                        }
+                    );
+                }
+            }
+        }
+        for line in [
+            AttackLine::CutFromLeft,
+            AttackLine::CutFromRight,
+            AttackLine::Thrust,
         ] {
+            for lead in [LeadFoot::Left, LeadFoot::Right] {
+                let state = SkeletonState {
+                    action: SkeletonAction::Block,
+                    action_phase: 0.5,
+                    incoming_attack_line: line,
+                    lead_foot: lead,
+                    ..default()
+                };
+                let contact = AnimationEvaluation::from_skeleton(&state).action[0];
+                assert_eq!(contact.pose, block_pose(line, lead));
+                assert_eq!(
+                    contact.sampling,
+                    PoseSampling::Span {
+                        end: guard_pose(lead),
+                        progress: 0.0,
+                    }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn airborne_recipe_uses_only_center_and_travel_anchors() {
+        for (direction, progress) in [(Vec2::ZERO, 0.0), (Vec2::Y, 1.0)] {
             let evaluation = AnimationEvaluation::from_skeleton(&SkeletonState {
                 posture: Posture::Airborne,
-                local_velocity: Vec3::new(0.0, velocity, 0.0),
-                action_direction: Vec2::Y,
+                local_velocity: Vec3::Y,
+                action_direction: direction,
                 ..default()
             });
-            assert_eq!(evaluation.base[0].pose, pose);
+            assert_eq!(evaluation.base[0].pose, SemanticPose::AirborneCenter);
             assert_eq!(
                 evaluation.base[0].sampling,
-                PoseSampling::Span { end, progress }
+                PoseSampling::Span {
+                    end: SemanticPose::AirborneTravel,
+                    progress,
+                }
             );
         }
     }
@@ -2586,6 +2374,15 @@ mod tests {
                 progress: 0.5,
             }
         );
+
+        let supine = AnimationEvaluation::from_skeleton(&SkeletonState {
+            posture: Posture::Supine,
+            action: SkeletonAction::GetUp,
+            action_phase: 0.75,
+            ..default()
+        });
+        assert_eq!(supine.action[0].pose, SemanticPose::SupineIdle);
+        assert_eq!(supine.action[0].sampling, PoseSampling::Anchor);
     }
 
     #[test]

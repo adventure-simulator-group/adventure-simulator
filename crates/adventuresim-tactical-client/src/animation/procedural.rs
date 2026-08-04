@@ -3,7 +3,10 @@ use std::collections::BTreeMap;
 use adventuresim_tactical_core::prelude::*;
 use bevy::{math::Affine3A, prelude::*};
 
-use super::{AnimationPlayback, AnimationRigScene, AuthoredBindTransform, ImpactReaction};
+use super::{
+    AnimationPlayback, AnimationRigScene, AuthoredBindTransform, ImpactReaction,
+    impact_reaction_progress, impact_reaction_pulse,
+};
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct HumanoidBone {
@@ -803,10 +806,14 @@ fn mirrored_across_anatomical_center(mut transform: Transform) -> Transform {
 
 pub(super) fn apply_impact_reaction(
     reactions: Query<&ImpactReaction>,
+    skeletons: Query<&SkeletonState>,
     mut bones: Query<(&HumanoidBone, &mut Transform)>,
 ) {
     for (bone, mut transform) in &mut bones {
         let Ok(reaction) = reactions.get(bone.owner) else {
+            continue;
+        };
+        let Ok(skeleton) = skeletons.get(bone.owner) else {
             continue;
         };
         if !matches!(
@@ -815,8 +822,11 @@ pub(super) fn apply_impact_reaction(
         ) {
             continue;
         }
-        let progress = 1.0 - (reaction.remaining / reaction.duration).clamp(0.0, 1.0);
-        let pulse = (progress * std::f32::consts::PI).sin() * reaction.strength;
+        let Some(progress) = impact_reaction_progress(reaction, skeleton.locomotion_sample_tick)
+        else {
+            continue;
+        };
+        let pulse = impact_reaction_pulse(progress, reaction.strength);
         let scale = if bone.role == BoneRole::Head {
             0.12
         } else {
@@ -863,6 +873,7 @@ pub(crate) struct ProceduralAnimationClock {
 }
 
 impl ProceduralAnimationClock {
+    #[allow(dead_code)] // Used by the standalone animation-viewer binary and focused tests.
     pub(crate) fn set_fixed_tick(&mut self, tick: u64, delta_seconds: f32) {
         self.fixed_tick = Some((tick, delta_seconds.max(0.0)));
     }
