@@ -577,13 +577,21 @@ pub enum WeaponGuardState {
     Raised,
 }
 
-/// Direction and cadence held for one complete raised-guard movement pulse.
-/// New controller input is observed only when the pulse returns to guard.
+/// Compact authoritative input for client-side raised-guard foot placement.
+/// Speed follows the controller continuously so acceleration changes cadence
+/// during the current step. Ordinary turns wait for the next foot handoff;
+/// material opposite-direction reversals perform an immediate safe semantic
+/// handoff so the support side agrees with the already-reversed gameplay root.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, Reflect)]
 pub struct RaisedLocomotionIntent {
     pub active: bool,
     pub local_direction: Vec2,
     pub speed: f32,
+    /// Swing-side state is independent from the fixed guard lead.
+    pub swing_foot: LeadFoot,
+    /// Monotonic semantic handoff identity. Clients use this to detect
+    /// coalesced updates without treating gait-phase parity as step identity.
+    pub step_sequence: u32,
 }
 
 impl RaisedLocomotionIntent {
@@ -691,8 +699,8 @@ pub fn set_weapon_guard(skeleton: &mut SkeletonState, weapon_guard: WeaponGuardS
 }
 
 impl SkeletonState {
-    /// Presentation motion remains latched through a raised-guard pulse even
-    /// when gameplay velocity has already stopped or changed direction.
+    /// Presentation motion finishes an in-flight raised-guard step after
+    /// gameplay velocity stops. Speed otherwise follows authoritative motion.
     pub fn animation_local_velocity(&self) -> Vec3 {
         if self.weapon_guard == WeaponGuardState::Raised && self.raised_locomotion.active {
             self.raised_locomotion.local_velocity()
@@ -854,30 +862,104 @@ fn advance_raised_locomotion_intent(
         local_direction: Vec2::new(observed_local_velocity.x, observed_local_velocity.z)
             .normalize_or_zero(),
         speed: observed_speed,
+        swing_foot: skeleton.lead_foot,
+        step_sequence: skeleton.raised_locomotion.step_sequence,
     });
     if !skeleton.raised_locomotion.active {
         let Some(observed) = observed else {
             skeleton.gait_phase = 0.0;
             return;
         };
-        skeleton.raised_locomotion = observed;
+        skeleton.raised_locomotion = RaisedLocomotionIntent {
+            swing_foot: initial_guard_swing_foot(observed.local_direction, skeleton.lead_foot),
+            ..observed
+        };
         skeleton.gait_phase = 0.0;
-    }
-
-    let speed = skeleton.raised_locomotion.speed;
-    let next_phase = skeleton.gait_phase + gait_cycle_phase_delta(speed, delta_seconds.max(0.0));
-    if next_phase < 1.0 {
-        skeleton.gait_phase = next_phase;
-        return;
     }
 
     if let Some(observed) = observed {
-        skeleton.raised_locomotion = observed;
-        skeleton.gait_phase = next_phase.rem_euclid(1.0);
-    } else {
-        skeleton.raised_locomotion = RaisedLocomotionIntent::default();
-        skeleton.gait_phase = 0.0;
+        // Do not latch the tiny velocity from the first acceleration tick for
+        // a complete pulse. Cadence and reach adapt immediately; only a hard
+        // direction change waits until the current swing foot lands.
+        skeleton.raised_locomotion.speed = observed.speed;
+        if skeleton
+            .raised_locomotion
+            .local_direction
+            .dot(observed.local_direction)
+            < -0.5
+        {
+            // Gameplay root velocity reverses immediately. Hand support off
+            // immediately too, rather than dragging the old world plant
+            // across its anatomical corridor until the scheduled seam.
+            skeleton.raised_locomotion.local_direction = observed.local_direction;
+            skeleton.raised_locomotion.swing_foot = match skeleton.raised_locomotion.swing_foot {
+                LeadFoot::Left => LeadFoot::Right,
+                LeadFoot::Right => LeadFoot::Left,
+            };
+            skeleton.raised_locomotion.step_sequence =
+                skeleton.raised_locomotion.step_sequence.wrapping_add(1);
+            skeleton.gait_phase = if skeleton.gait_phase < 0.5 { 0.5 } else { 0.0 };
+            return;
+        }
     }
+    let speed = skeleton.raised_locomotion.speed;
+    let phase = skeleton.gait_phase.rem_euclid(1.0);
+    let next_phase = phase + guard_step_phase_delta(speed, delta_seconds.max(0.0));
+    let handoffs = ((next_phase * 2.0).floor() - (phase * 2.0).floor()).max(0.0) as u32;
+    let crossed_handoff = handoffs > 0;
+
+    if observed.is_none() && crossed_handoff {
+        let step_sequence = skeleton.raised_locomotion.step_sequence.wrapping_add(1);
+        skeleton.raised_locomotion = RaisedLocomotionIntent {
+            step_sequence,
+            ..default()
+        };
+        skeleton.gait_phase = if phase < 0.5 { 0.5 } else { 0.0 };
+        return;
+    }
+
+    skeleton.gait_phase = next_phase.rem_euclid(1.0);
+    if crossed_handoff && let Some(observed) = observed {
+        if handoffs % 2 == 1 {
+            skeleton.raised_locomotion.swing_foot = match skeleton.raised_locomotion.swing_foot {
+                LeadFoot::Left => LeadFoot::Right,
+                LeadFoot::Right => LeadFoot::Left,
+            };
+        }
+        skeleton.raised_locomotion.step_sequence = skeleton
+            .raised_locomotion
+            .step_sequence
+            .wrapping_add(handoffs);
+        skeleton.raised_locomotion.local_direction = observed.local_direction;
+    }
+}
+
+fn initial_guard_swing_foot(direction: Vec2, lead: LeadFoot) -> LeadFoot {
+    if direction.x.abs() >= direction.y.abs() {
+        if direction.x.is_sign_negative() {
+            LeadFoot::Left
+        } else {
+            LeadFoot::Right
+        }
+    } else if direction.y.is_sign_positive() {
+        // Retreat begins with the forward foot; advance begins with the rear.
+        lead
+    } else {
+        match lead {
+            LeadFoot::Left => LeadFoot::Right,
+            LeadFoot::Right => LeadFoot::Left,
+        }
+    }
+}
+
+/// Ground distance covered by one procedural combat-stance step. Raised
+/// movement uses compact shuffles rather than ordinary walking strides.
+pub fn guard_step_length(speed: f32) -> f32 {
+    (0.26 + speed.max(0.0) * 0.06).clamp(0.28, 0.42)
+}
+
+fn guard_step_phase_delta(speed: f32, delta_seconds: f32) -> f32 {
+    speed.max(0.0) * delta_seconds.max(0.0) / (guard_step_length(speed) * 2.0)
 }
 
 /// Advances a complete left-right gait cycle. `stride_length` describes one
@@ -976,64 +1058,16 @@ impl AnimationEvaluation {
 }
 
 fn raised_guard_locomotion_samples(
-    local_velocity: Vec3,
-    phase: f32,
+    _local_velocity: Vec3,
+    _phase: f32,
     lead: LeadFoot,
 ) -> Vec<PoseSample> {
-    let forward = -local_velocity.z;
-    let lateral = local_velocity.x;
-    let magnitude = forward.abs() + lateral.abs();
-    if magnitude <= 0.05 {
-        return vec![PoseSample {
-            pose: guard_pose(lead),
-            sampling: PoseSampling::Anchor,
-            weight: 1.0,
-            mirror_lower_body: 0.0,
-        }];
-    }
-    let mut samples = Vec::with_capacity(2);
-    let movement_progress = 1.0 - guard_shuttle_guard_weight(phase);
-    let forward_weight = forward.abs() / magnitude;
-    if forward_weight > f32::EPSILON {
-        samples.push(PoseSample {
-            pose: guard_pose(lead),
-            sampling: PoseSampling::Span {
-                end: match lead {
-                    LeadFoot::Left => SemanticPose::GuardWalkLeadLeft,
-                    LeadFoot::Right => SemanticPose::GuardWalkLeadRight,
-                },
-                progress: movement_progress,
-            },
-            weight: forward_weight,
-            mirror_lower_body: 0.0,
-        });
-    }
-    let lateral_weight = lateral.abs() / magnitude;
-    if lateral_weight > f32::EPSILON {
-        samples.push(PoseSample {
-            pose: guard_pose(lead),
-            sampling: PoseSampling::Span {
-                end: match (lead, lateral.is_sign_negative()) {
-                    (LeadFoot::Left, true) => SemanticPose::GuardStrafeLeadLeftLeft,
-                    (LeadFoot::Left, false) => SemanticPose::GuardStrafeLeadLeftRight,
-                    (LeadFoot::Right, true) => SemanticPose::GuardStrafeLeadRightLeft,
-                    (LeadFoot::Right, false) => SemanticPose::GuardStrafeLeadRightRight,
-                },
-                progress: movement_progress,
-            },
-            weight: lateral_weight,
-            mirror_lower_body: 0.0,
-        });
-    }
-    samples
-}
-
-/// Weight of the static guard endpoint in the fixed-lead movement shuttle.
-/// Phase zero is deliberately the guard so entering Raised can start without
-/// sampling a directional movement extreme.
-pub fn guard_shuttle_guard_weight(phase: f32) -> f32 {
-    let movement = (std::f32::consts::PI * phase.rem_euclid(1.0)).sin().powi(2);
-    1.0 - movement
+    vec![PoseSample {
+        pose: guard_pose(lead),
+        sampling: PoseSampling::Anchor,
+        weight: 1.0,
+        mirror_lower_body: 0.0,
+    }]
 }
 
 fn gait_or_idle(
@@ -1388,6 +1422,8 @@ mod tests {
             active: speed > 0.05,
             local_direction: Vec2::new(local_velocity.x, local_velocity.z).normalize_or_zero(),
             speed,
+            swing_foot: LeadFoot::Left,
+            step_sequence: 0,
         }
     }
 
@@ -1793,7 +1829,7 @@ mod tests {
     }
 
     #[test]
-    fn raised_guard_idle_and_cardinal_locomotion_use_frozen_lead_contracts() {
+    fn raised_guard_locomotion_uses_static_lead_guard_for_procedural_legs() {
         let evaluate = |velocity| {
             AnimationEvaluation::from_skeleton(&SkeletonState {
                 weapon_guard: WeaponGuardState::Raised,
@@ -1808,35 +1844,16 @@ mod tests {
         assert_eq!(idle.base[0].pose, SemanticPose::GuardLeadLeft);
         assert_eq!(idle.base[0].sampling, PoseSampling::Anchor);
 
-        for velocity in [Vec3::NEG_Z, Vec3::Z] {
-            let sample = evaluate(velocity).base[0];
-            assert_eq!(sample.pose, SemanticPose::GuardLeadLeft);
-            assert_eq!(
-                sample.sampling,
-                PoseSampling::Span {
-                    end: SemanticPose::GuardWalkLeadLeft,
-                    progress: 0.5,
-                }
-            );
+        for velocity in [Vec3::NEG_Z, Vec3::Z, Vec3::NEG_X, Vec3::X] {
+            let evaluation = evaluate(velocity);
+            assert_eq!(evaluation.base.len(), 1);
+            assert_eq!(evaluation.base[0].pose, SemanticPose::GuardLeadLeft);
+            assert_eq!(evaluation.base[0].sampling, PoseSampling::Anchor);
         }
-        assert_eq!(
-            evaluate(Vec3::NEG_X).base[0].sampling,
-            PoseSampling::Span {
-                end: SemanticPose::GuardStrafeLeadLeftLeft,
-                progress: 0.5,
-            }
-        );
-        assert_eq!(
-            evaluate(Vec3::X).base[0].sampling,
-            PoseSampling::Span {
-                end: SemanticPose::GuardStrafeLeadLeftRight,
-                progress: 0.5,
-            }
-        );
     }
 
     #[test]
-    fn raised_guard_diagonal_blend_is_l1_normalized_and_phase_synchronized() {
+    fn raised_guard_diagonal_keeps_static_guard_and_fixed_lead() {
         let evaluation = AnimationEvaluation::from_skeleton(&SkeletonState {
             weapon_guard: WeaponGuardState::Raised,
             lead_foot: LeadFoot::Right,
@@ -1845,44 +1862,14 @@ mod tests {
             gait_phase: 0.75,
             ..default()
         });
-        assert_eq!(evaluation.base.len(), 2);
+        assert_eq!(evaluation.base.len(), 1);
         assert_eq!(evaluation.base[0].pose, SemanticPose::GuardLeadRight);
-        assert_eq!(evaluation.base[0].weight, 0.25);
-        assert_eq!(
-            evaluation.base[0].sampling,
-            PoseSampling::Span {
-                end: SemanticPose::GuardWalkLeadRight,
-                progress: 0.5,
-            }
-        );
-        assert_eq!(
-            evaluation.base[1].sampling,
-            PoseSampling::Span {
-                end: SemanticPose::GuardStrafeLeadRightLeft,
-                progress: 0.5,
-            }
-        );
-        assert_eq!(evaluation.base[1].weight, 0.75);
-        assert!(evaluation.base.iter().all(|sample| {
-            sample.pose == SemanticPose::GuardLeadRight && sample.mirror_lower_body == 0.0
-        }));
-        assert_eq!(
-            evaluation
-                .base
-                .iter()
-                .map(|sample| sample.weight)
-                .sum::<f32>(),
-            1.0
-        );
+        assert_eq!(evaluation.base[0].sampling, PoseSampling::Anchor);
+        assert_eq!(evaluation.base[0].weight, 1.0);
     }
 
     #[test]
-    fn raised_guard_shuttle_starts_and_closes_at_guard_without_switching_lead() {
-        for (phase, expected) in [(0.0, 1.0), (0.25, 0.5), (0.5, 0.0), (0.75, 0.5)] {
-            assert!((guard_shuttle_guard_weight(phase) - expected).abs() < 0.0001);
-        }
-        assert!((guard_shuttle_guard_weight(0.999) - 1.0).abs() < 0.0001);
-
+    fn raised_guard_fk_stays_at_guard_through_both_procedural_steps() {
         for phase in [0.0, 0.5, 0.999] {
             let evaluation = AnimationEvaluation::from_skeleton(&SkeletonState {
                 weapon_guard: WeaponGuardState::Raised,
@@ -1893,13 +1880,7 @@ mod tests {
                 ..default()
             });
             assert_eq!(evaluation.base[0].pose, SemanticPose::GuardLeadRight);
-            assert_eq!(
-                evaluation.base[0].sampling,
-                PoseSampling::Span {
-                    end: SemanticPose::GuardWalkLeadRight,
-                    progress: 1.0 - guard_shuttle_guard_weight(phase),
-                }
-            );
+            assert_eq!(evaluation.base[0].sampling, PoseSampling::Anchor);
         }
     }
 
@@ -1922,7 +1903,7 @@ mod tests {
     }
 
     #[test]
-    fn raised_guard_release_at_peak_completes_return_before_idling() {
+    fn raised_guard_release_finishes_only_the_in_flight_step() {
         let mut state = SkeletonState::default();
         set_weapon_guard(&mut state, WeaponGuardState::Raised);
         let input = |velocity, delta_seconds| SkeletonLocomotionInput {
@@ -1933,20 +1914,20 @@ mod tests {
             delta_seconds,
             tick: 1,
         };
-        project_skeleton_locomotion(&mut state, input(Vec3::NEG_Z * 2.0, 0.61));
+        project_skeleton_locomotion(&mut state, input(Vec3::NEG_Z * 2.0, 0.095));
         assert!(state.raised_locomotion.active);
-        assert!((state.gait_phase - 0.5).abs() < 0.001);
+        assert!((state.gait_phase - 0.25).abs() < 0.001);
 
-        project_skeleton_locomotion(&mut state, input(Vec3::ZERO, 0.3));
+        project_skeleton_locomotion(&mut state, input(Vec3::ZERO, 0.08));
         assert!(state.raised_locomotion.active);
         assert_eq!(state.raised_locomotion.local_direction, Vec2::NEG_Y);
-        project_skeleton_locomotion(&mut state, input(Vec3::ZERO, 0.31));
+        project_skeleton_locomotion(&mut state, input(Vec3::ZERO, 0.02));
         assert!(!state.raised_locomotion.active);
-        assert_eq!(state.gait_phase, 0.0);
+        assert_eq!(state.gait_phase, 0.5);
     }
 
     #[test]
-    fn raised_guard_direction_change_is_latched_only_at_guard_seam() {
+    fn raised_guard_direction_change_waits_only_for_foot_handoff() {
         let mut state = SkeletonState::default();
         set_weapon_guard(&mut state, WeaponGuardState::Raised);
         let input = |velocity, delta_seconds| SkeletonLocomotionInput {
@@ -1957,14 +1938,91 @@ mod tests {
             delta_seconds,
             tick: 1,
         };
-        project_skeleton_locomotion(&mut state, input(Vec3::NEG_X * 2.0, 0.2));
-        project_skeleton_locomotion(&mut state, input(Vec3::X * 2.0, 0.2));
+        project_skeleton_locomotion(&mut state, input(Vec3::NEG_X * 2.0, 0.05));
+        project_skeleton_locomotion(&mut state, input(Vec3::NEG_Z * 2.0, 0.05));
         assert_eq!(state.raised_locomotion.local_direction, Vec2::NEG_X);
 
-        project_skeleton_locomotion(&mut state, input(Vec3::X * 2.0, 0.85));
-        assert_eq!(state.raised_locomotion.local_direction, Vec2::X);
-        assert!(state.gait_phase < 0.15);
+        project_skeleton_locomotion(&mut state, input(Vec3::NEG_Z * 2.0, 0.15));
+        assert_eq!(state.raised_locomotion.local_direction, Vec2::NEG_Y);
+        assert!(state.gait_phase > 0.5);
         assert_eq!(state.lead_foot, LeadFoot::Left);
+    }
+
+    #[test]
+    fn raised_guard_reversal_hands_support_off_immediately() {
+        let mut state = SkeletonState::default();
+        set_weapon_guard(&mut state, WeaponGuardState::Raised);
+        let input = |velocity| SkeletonLocomotionInput {
+            orientation: Quat::IDENTITY,
+            linear_velocity: velocity,
+            grounded: true,
+            crouching: false,
+            delta_seconds: 0.05,
+            tick: 1,
+        };
+        project_skeleton_locomotion(&mut state, input(Vec3::NEG_X * 2.0));
+        let sequence = state.raised_locomotion.step_sequence;
+        let swing = state.raised_locomotion.swing_foot;
+        project_skeleton_locomotion(&mut state, input(Vec3::X * 2.0));
+        assert_eq!(state.raised_locomotion.local_direction, Vec2::X);
+        assert_eq!(state.raised_locomotion.step_sequence, sequence + 1);
+        assert_ne!(state.raised_locomotion.swing_foot, swing);
+        assert!(state.gait_phase == 0.0 || state.gait_phase == 0.5);
+    }
+
+    #[test]
+    fn raised_guard_cadence_adapts_during_first_acceleration_step() {
+        let mut state = SkeletonState::default();
+        set_weapon_guard(&mut state, WeaponGuardState::Raised);
+        let input = |velocity| SkeletonLocomotionInput {
+            orientation: Quat::IDENTITY,
+            linear_velocity: velocity,
+            grounded: true,
+            crouching: false,
+            delta_seconds: 0.05,
+            tick: 1,
+        };
+        project_skeleton_locomotion(&mut state, input(Vec3::NEG_Z * 0.1));
+        let slow_delta = state.gait_phase;
+        project_skeleton_locomotion(&mut state, input(Vec3::NEG_Z * 2.0));
+        let fast_delta = state.gait_phase - slow_delta;
+        assert_eq!(state.raised_locomotion.speed, 2.0);
+        assert!(fast_delta > slow_delta * 5.0);
+    }
+
+    #[test]
+    fn raised_guard_sequence_counts_coalesced_handoffs_beyond_phase_parity() {
+        let mut state = SkeletonState::default();
+        set_weapon_guard(&mut state, WeaponGuardState::Raised);
+        project_skeleton_locomotion(
+            &mut state,
+            SkeletonLocomotionInput {
+                orientation: Quat::IDENTITY,
+                linear_velocity: Vec3::NEG_Z * 2.0,
+                grounded: true,
+                crouching: false,
+                // At 2 m/s a full two-step cycle is 0.38 seconds.
+                delta_seconds: guard_step_length(2.0) * 2.0 / 2.0,
+                tick: 1,
+            },
+        );
+        assert_eq!(state.raised_locomotion.step_sequence, 2);
+        assert_eq!(state.raised_locomotion.swing_foot, LeadFoot::Right);
+        assert!(state.gait_phase < 0.0001);
+    }
+
+    #[test]
+    fn diagonal_guard_steps_begin_with_the_outward_lateral_foot() {
+        for lead in [LeadFoot::Left, LeadFoot::Right] {
+            assert_eq!(
+                initial_guard_swing_foot(Vec2::new(-1.0, -1.0).normalize(), lead),
+                LeadFoot::Left
+            );
+            assert_eq!(
+                initial_guard_swing_foot(Vec2::new(1.0, 1.0).normalize(), lead),
+                LeadFoot::Right
+            );
+        }
     }
 
     #[test]
