@@ -26,9 +26,12 @@ pub enum SemanticPose {
     CrouchWalkContact,
     CrouchWalkPassing,
     DuckForward,
-    DuckBackward,
-    DuckLeft,
-    DuckRight,
+    DuckLeadLeftBackward,
+    DuckLeadLeftLeft,
+    DuckLeadLeftRight,
+    DuckLeadRightBackward,
+    DuckLeadRightLeft,
+    DuckLeadRightRight,
     JumpCenterLaunch,
     JumpCenterFlight,
     JumpCenterLanding,
@@ -91,7 +94,7 @@ pub enum SemanticPose {
 }
 
 impl SemanticPose {
-    pub const HUMANOID_REQUIRED: [Self; 71] = [
+    pub const HUMANOID_REQUIRED: [Self; 74] = [
         Self::IdleRelaxed,
         Self::WalkContact,
         Self::WalkPassing,
@@ -101,9 +104,12 @@ impl SemanticPose {
         Self::CrouchWalkContact,
         Self::CrouchWalkPassing,
         Self::DuckForward,
-        Self::DuckBackward,
-        Self::DuckLeft,
-        Self::DuckRight,
+        Self::DuckLeadLeftBackward,
+        Self::DuckLeadLeftLeft,
+        Self::DuckLeadLeftRight,
+        Self::DuckLeadRightBackward,
+        Self::DuckLeadRightLeft,
+        Self::DuckLeadRightRight,
         Self::JumpCenterLaunch,
         Self::JumpCenterFlight,
         Self::JumpCenterLanding,
@@ -177,9 +183,12 @@ impl SemanticPose {
             CrouchWalkContact => "crouch_walk_contact",
             CrouchWalkPassing => "crouch_walk_passing",
             DuckForward => "duck_forward",
-            DuckBackward => "duck_backward",
-            DuckLeft => "duck_left",
-            DuckRight => "duck_right",
+            DuckLeadLeftBackward => "duck_lead_left_backward",
+            DuckLeadLeftLeft => "duck_lead_left_left",
+            DuckLeadLeftRight => "duck_lead_left_right",
+            DuckLeadRightBackward => "duck_lead_right_backward",
+            DuckLeadRightLeft => "duck_lead_right_left",
+            DuckLeadRightRight => "duck_lead_right_right",
             JumpCenterLaunch => "jump_center_launch",
             JumpCenterFlight => "jump_center_flight",
             JumpCenterLanding => "jump_center_landing",
@@ -252,6 +261,49 @@ impl SemanticPose {
         }
     }
 
+    /// Authored whole-body counterpart that may satisfy this pose by
+    /// reflection when the exact pose is absent from the same pack. Exact
+    /// authored clips always win, so handed packs opt out simply by exporting
+    /// both sides.
+    pub fn mirrored_counterpart(self) -> Option<Self> {
+        use SemanticPose::*;
+        Some(match self {
+            DuckLeadLeftBackward => DuckLeadRightBackward,
+            DuckLeadLeftLeft => DuckLeadRightRight,
+            DuckLeadLeftRight => DuckLeadRightLeft,
+            DuckLeadRightBackward => DuckLeadLeftBackward,
+            DuckLeadRightLeft => DuckLeadLeftRight,
+            DuckLeadRightRight => DuckLeadLeftLeft,
+            GuardLeadLeft => GuardLeadRight,
+            GuardLeadRight => GuardLeadLeft,
+            AttackThrustLeadLeftStayCommit => AttackThrustLeadRightStayCommit,
+            AttackThrustLeadLeftStayContact => AttackThrustLeadRightStayContact,
+            AttackThrustLeadLeftStayFollowThrough => AttackThrustLeadRightStayFollowThrough,
+            AttackThrustLeadLeftSwitchCommit => AttackThrustLeadRightSwitchCommit,
+            AttackThrustLeadLeftSwitchContact => AttackThrustLeadRightSwitchContact,
+            AttackThrustLeadLeftSwitchFollowThrough => AttackThrustLeadRightSwitchFollowThrough,
+            AttackThrustLeadRightStayCommit => AttackThrustLeadLeftStayCommit,
+            AttackThrustLeadRightStayContact => AttackThrustLeadLeftStayContact,
+            AttackThrustLeadRightStayFollowThrough => AttackThrustLeadLeftStayFollowThrough,
+            AttackThrustLeadRightSwitchCommit => AttackThrustLeadLeftSwitchCommit,
+            AttackThrustLeadRightSwitchContact => AttackThrustLeadLeftSwitchContact,
+            AttackThrustLeadRightSwitchFollowThrough => AttackThrustLeadLeftSwitchFollowThrough,
+            AttackSlashLeadLeftStayCommit => AttackSlashLeadRightStayCommit,
+            AttackSlashLeadLeftStayContact => AttackSlashLeadRightStayContact,
+            AttackSlashLeadLeftStayFollowThrough => AttackSlashLeadRightStayFollowThrough,
+            AttackSlashLeadLeftSwitchCommit => AttackSlashLeadRightSwitchCommit,
+            AttackSlashLeadLeftSwitchContact => AttackSlashLeadRightSwitchContact,
+            AttackSlashLeadLeftSwitchFollowThrough => AttackSlashLeadRightSwitchFollowThrough,
+            AttackSlashLeadRightStayCommit => AttackSlashLeadLeftStayCommit,
+            AttackSlashLeadRightStayContact => AttackSlashLeadLeftStayContact,
+            AttackSlashLeadRightStayFollowThrough => AttackSlashLeadLeftStayFollowThrough,
+            AttackSlashLeadRightSwitchCommit => AttackSlashLeadLeftSwitchCommit,
+            AttackSlashLeadRightSwitchContact => AttackSlashLeadLeftSwitchContact,
+            AttackSlashLeadRightSwitchFollowThrough => AttackSlashLeadLeftSwitchFollowThrough,
+            _ => return None,
+        })
+    }
+
     /// The next closest semantic pose. A miss restarts lookup at the selected
     /// animation pack, so specialized packs can supply a useful substitute.
     pub fn fallback(self) -> Option<Self> {
@@ -265,7 +317,9 @@ impl SemanticPose {
             CrouchIdle => IdleRelaxed,
             CrouchWalkContact => WalkContact,
             CrouchWalkPassing => WalkPassing,
-            DuckForward | DuckBackward | DuckLeft | DuckRight => CrouchIdle,
+            DuckForward => CrouchIdle,
+            DuckLeadLeftBackward | DuckLeadLeftLeft | DuckLeadLeftRight => GuardLeadLeft,
+            DuckLeadRightBackward | DuckLeadRightLeft | DuckLeadRightRight => GuardLeadRight,
             JumpCenterLaunch | JumpCenterLanding => CrouchIdle,
             JumpCenterFlight => RunFlight,
             JumpForwardLaunch => JumpCenterLaunch,
@@ -289,7 +343,7 @@ impl SemanticPose {
             DiveImpact => JumpForwardLanding,
             ProneSupineRollLeft | ProneSupineRollRight => ProneIdle,
             GuardLeadLeft => IdleRelaxed,
-            GuardLeadRight => GuardLeadLeft,
+            GuardLeadRight => IdleRelaxed,
             AttackThrustLeadLeftStayCommit => AttackSlashLeadLeftStayCommit,
             AttackThrustLeadLeftStayContact => AttackSlashLeadLeftStayContact,
             AttackThrustLeadLeftStayFollowThrough => AttackSlashLeadLeftStayFollowThrough,
@@ -308,9 +362,9 @@ impl SemanticPose {
             AttackSlashLeadLeftSwitchCommit => AttackSlashLeadLeftStayCommit,
             AttackSlashLeadLeftSwitchContact => AttackSlashLeadLeftStayContact,
             AttackSlashLeadLeftSwitchFollowThrough => AttackSlashLeadLeftStayFollowThrough,
-            AttackSlashLeadRightStayCommit => AttackSlashLeadLeftStayCommit,
-            AttackSlashLeadRightStayContact => AttackSlashLeadLeftStayContact,
-            AttackSlashLeadRightStayFollowThrough => AttackSlashLeadLeftStayFollowThrough,
+            AttackSlashLeadRightStayCommit
+            | AttackSlashLeadRightStayContact
+            | AttackSlashLeadRightStayFollowThrough => GuardLeadRight,
             AttackSlashLeadRightSwitchCommit => AttackSlashLeadRightStayCommit,
             AttackSlashLeadRightSwitchContact => AttackSlashLeadRightStayContact,
             AttackSlashLeadRightSwitchFollowThrough => AttackSlashLeadRightStayFollowThrough,
@@ -349,7 +403,11 @@ pub struct AnimationPack {
 pub enum ResolvedPose<'a> {
     Clip {
         pack_id: &'a str,
+        /// Semantic pose satisfied before any ordinary semantic fallback.
+        semantic: SemanticPose,
+        /// Authored clip sampled for that semantic pose.
         pose: SemanticPose,
+        mirrored: bool,
     },
     /// Use the rig's authored bind transform. For the humanoid convention this
     /// is a T-pose and needs no animation clip.
@@ -414,7 +472,7 @@ impl AnimationPackLibrary {
     pub fn validate_complete(&self, root: &str) -> Result<(), PackValidationError> {
         self.validate_structure()?;
         for pose in SemanticPose::HUMANOID_REQUIRED {
-            if !matches!(self.resolve(root, pose), ResolvedPose::Clip { pose: p, .. } if p == pose)
+            if !matches!(self.resolve(root, pose), ResolvedPose::Clip { semantic, .. } if semantic == pose)
             {
                 return Err(PackValidationError::MissingRequiredPose(pose));
             }
@@ -443,7 +501,19 @@ impl AnimationPackLibrary {
                 if pack.clips.contains(&pose) {
                     return ResolvedPose::Clip {
                         pack_id: &pack.id,
+                        semantic: pose,
                         pose,
+                        mirrored: false,
+                    };
+                }
+                if let Some(source) = pose.mirrored_counterpart()
+                    && pack.clips.contains(&source)
+                {
+                    return ResolvedPose::Clip {
+                        pack_id: &pack.id,
+                        semantic: pose,
+                        pose: source,
+                        mirrored: true,
                     };
                 }
                 pack_id = pack.fallback.as_deref();
@@ -975,18 +1045,17 @@ fn action_samples(state: &SkeletonState) -> Vec<PoseSample> {
         SkeletonAction::None | SkeletonAction::JumpCharge | SkeletonAction::Jump => Vec::new(),
         SkeletonAction::Dodge => {
             let pose = if state.action_direction.x.abs() > state.action_direction.y.abs() {
-                if state.action_direction.x < 0.0 {
-                    SemanticPose::DuckLeft
-                } else {
-                    SemanticPose::DuckRight
-                }
+                duck_side_pose(state.lead_foot, state.action_direction.x < 0.0)
             } else if state.action_direction.y < 0.0 {
-                SemanticPose::DuckBackward
+                match state.lead_foot {
+                    LeadFoot::Left => SemanticPose::DuckLeadLeftBackward,
+                    LeadFoot::Right => SemanticPose::DuckLeadRightBackward,
+                }
             } else {
                 SemanticPose::DuckForward
             };
             vec![out_and_back(
-                SemanticPose::CrouchIdle,
+                guard_pose(state.lead_foot),
                 pose,
                 state.action_phase,
             )]
@@ -1010,6 +1079,15 @@ fn action_samples(state: &SkeletonState) -> Vec<PoseSample> {
             SemanticPose::CrouchIdle,
             state.action_phase,
         )],
+    }
+}
+
+fn duck_side_pose(lead: LeadFoot, duck_left: bool) -> SemanticPose {
+    match (lead, duck_left) {
+        (LeadFoot::Left, true) => SemanticPose::DuckLeadLeftLeft,
+        (LeadFoot::Left, false) => SemanticPose::DuckLeadLeftRight,
+        (LeadFoot::Right, true) => SemanticPose::DuckLeadRightLeft,
+        (LeadFoot::Right, false) => SemanticPose::DuckLeadRightRight,
     }
 }
 
@@ -1128,14 +1206,94 @@ mod tests {
             library.resolve("rapier", SemanticPose::RunContact),
             ResolvedPose::Clip {
                 pack_id: "unarmed",
+                semantic: SemanticPose::WalkContact,
                 pose: SemanticPose::WalkContact,
+                mirrored: false,
             }
         );
         assert_eq!(
             library.resolve("rapier", SemanticPose::RunFlight),
             ResolvedPose::Clip {
                 pack_id: "rapier",
+                semantic: SemanticPose::RunFlight,
                 pose: SemanticPose::RunFlight,
+                mirrored: false,
+            }
+        );
+    }
+
+    #[test]
+    fn missing_side_resolves_to_mirrored_authored_counterpart() {
+        let mut library = AnimationPackLibrary::default();
+        library
+            .insert(pack("unarmed", None, [SemanticPose::GuardLeadLeft]))
+            .unwrap();
+
+        assert_eq!(
+            library.resolve("unarmed", SemanticPose::GuardLeadRight),
+            ResolvedPose::Clip {
+                pack_id: "unarmed",
+                semantic: SemanticPose::GuardLeadRight,
+                pose: SemanticPose::GuardLeadLeft,
+                mirrored: true,
+            }
+        );
+    }
+
+    #[test]
+    fn mirrored_semantic_counterparts_are_involutions() {
+        for pose in SemanticPose::HUMANOID_REQUIRED {
+            let Some(counterpart) = pose.mirrored_counterpart() else {
+                continue;
+            };
+            assert_ne!(pose, counterpart);
+            assert_eq!(counterpart.mirrored_counterpart(), Some(pose));
+        }
+    }
+
+    #[test]
+    fn specialized_pack_mirrors_its_own_counterpart_before_parent_fallback() {
+        let mut library = AnimationPackLibrary::default();
+        library
+            .insert(pack("unarmed", None, [SemanticPose::GuardLeadRight]))
+            .unwrap();
+        library
+            .insert(pack(
+                "sword",
+                Some("unarmed"),
+                [SemanticPose::GuardLeadLeft],
+            ))
+            .unwrap();
+
+        assert_eq!(
+            library.resolve("sword", SemanticPose::GuardLeadRight),
+            ResolvedPose::Clip {
+                pack_id: "sword",
+                semantic: SemanticPose::GuardLeadRight,
+                pose: SemanticPose::GuardLeadLeft,
+                mirrored: true,
+            }
+        );
+    }
+
+    #[test]
+    fn authored_opposite_side_wins_over_mirroring() {
+        let mut library = AnimationPackLibrary::default();
+        library
+            .insert(pack(
+                "sword",
+                None,
+                [SemanticPose::GuardLeadLeft, SemanticPose::GuardLeadRight],
+            ))
+            .unwrap();
+
+        assert_eq!(
+            library.resolve("sword", SemanticPose::GuardLeadRight),
+            ResolvedPose::Clip {
+                pack_id: "sword",
+                semantic: SemanticPose::GuardLeadRight,
+                pose: SemanticPose::GuardLeadRight,
+                mirrored: false,
             }
         );
     }
@@ -1154,7 +1312,9 @@ mod tests {
             library.resolve("unarmed", SemanticPose::AttackThrustLeadRightSwitchContact,),
             ResolvedPose::Clip {
                 pack_id: "unarmed",
+                semantic: SemanticPose::AttackSlashLeadRightSwitchContact,
                 pose: SemanticPose::AttackSlashLeadRightSwitchContact,
+                mirrored: false,
             }
         );
     }
@@ -1438,11 +1598,30 @@ mod tests {
             action_direction: Vec2::X,
             ..default()
         });
-        assert_eq!(dodge.action[0].pose, SemanticPose::DuckRight);
+        assert_eq!(dodge.action[0].pose, SemanticPose::DuckLeadLeftRight);
         assert_eq!(
             dodge.action[0].sampling,
             PoseSampling::Span {
-                end: SemanticPose::CrouchIdle,
+                end: SemanticPose::GuardLeadLeft,
+                progress: 0.5,
+            }
+        );
+
+        let right_lead_dodge = AnimationEvaluation::from_skeleton(&SkeletonState {
+            lead_foot: LeadFoot::Right,
+            action: SkeletonAction::Dodge,
+            action_phase: 0.25,
+            action_direction: Vec2::NEG_X,
+            ..default()
+        });
+        assert_eq!(
+            right_lead_dodge.action[0].pose,
+            SemanticPose::GuardLeadRight
+        );
+        assert_eq!(
+            right_lead_dodge.action[0].sampling,
+            PoseSampling::Span {
+                end: SemanticPose::DuckLeadRightLeft,
                 progress: 0.5,
             }
         );

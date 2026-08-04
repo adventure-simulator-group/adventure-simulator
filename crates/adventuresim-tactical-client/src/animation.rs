@@ -269,9 +269,9 @@ impl AnimationPackCatalog {
             }
         }
         for (motion, pose) in [
-            ("duck_lead_left_backward", "duck_backward"),
-            ("duck_lead_left_left", "duck_left"),
-            ("duck_lead_left_right", "duck_right"),
+            ("duck_lead_left_backward", "duck_lead_left_backward"),
+            ("duck_lead_left_left", "duck_lead_left_left"),
+            ("duck_lead_left_right", "duck_lead_left_right"),
         ] {
             builder.motion(motion, 0);
             builder.pose(motion, 0, pose)?;
@@ -400,6 +400,7 @@ pub(super) struct AnimationPlayback {
     clips: Vec<WeightedClip>,
     use_authored_bind_pose: bool,
     pub(super) lower_body_mirror: f32,
+    pub(super) whole_body_mirror: f32,
 }
 
 impl AnimationPlayback {
@@ -415,6 +416,7 @@ impl Default for AnimationPlayback {
             clips: Vec::new(),
             use_authored_bind_pose: true,
             lower_body_mirror: 0.0,
+            whole_body_mirror: 0.0,
         }
     }
 }
@@ -424,6 +426,7 @@ struct WeightedClip {
     clip: LoadedClip,
     weight: f32,
     time_seconds: f32,
+    mirrored_weight: f32,
 }
 
 #[derive(Component)]
@@ -838,6 +841,19 @@ fn evaluate_skeletons(
         }
         let next = AnimationPlayback {
             use_authored_bind_pose: weighted.is_empty(),
+            whole_body_mirror: {
+                let total = weighted.iter().map(|clip| clip.weight).sum::<f32>();
+                if total > f32::EPSILON {
+                    (weighted
+                        .iter()
+                        .map(|clip| clip.mirrored_weight)
+                        .sum::<f32>()
+                        / total)
+                        .clamp(0.0, 1.0)
+                } else {
+                    0.0
+                }
+            },
             clips: weighted,
             lower_body_mirror: if resolved_weight > f32::EPSILON {
                 (mirror_weight / resolved_weight).clamp(0.0, 1.0)
@@ -931,6 +947,7 @@ struct ResolvedAnchor<'a> {
     clip: &'a LoadedClip,
     anchor: &'a PoseAnchor,
     pack_id: &'a str,
+    mirrored: bool,
 }
 
 fn resolve_anchor<'a>(
@@ -942,6 +959,8 @@ fn resolve_anchor<'a>(
     let ResolvedPose::Clip {
         pack_id,
         pose: resolved_pose,
+        mirrored,
+        ..
     } = runtime.library.resolve(requested_pack, pose)
     else {
         return None;
@@ -956,6 +975,7 @@ fn resolve_anchor<'a>(
         clip,
         anchor,
         pack_id,
+        mirrored,
     })
 }
 
@@ -973,11 +993,15 @@ fn append_weighted(
             && (existing.time_seconds - time_seconds).abs() < 0.0001
     }) {
         existing.weight += weight;
+        if resolved.mirrored {
+            existing.mirrored_weight += weight;
+        }
     } else {
         weighted.push(WeightedClip {
             clip: resolved.clip.clone(),
             weight,
             time_seconds,
+            mirrored_weight: if resolved.mirrored { weight } else { 0.0 },
         });
     }
 }
@@ -1219,7 +1243,9 @@ mod tests {
     fn default_catalog_owns_all_required_poses_once() {
         let catalog = AnimationPackCatalog::default();
         let root = &catalog.packs[HUMANOID_UNARMED_PACK];
-        assert_eq!(root.poses.len(), SemanticPose::HUMANOID_REQUIRED.len());
+        // Right-lead ducks are semantic mirror counterparts rather than
+        // duplicate anchors in the same authored files.
+        assert_eq!(root.poses.len() + 3, SemanticPose::HUMANOID_REQUIRED.len());
         assert_eq!(
             root.motions["walk"].path,
             "animations/biped/unarmed/walk.glb"
@@ -1239,7 +1265,7 @@ mod tests {
             }
         );
         assert_eq!(
-            root.poses[&SemanticPose::DuckBackward],
+            root.poses[&SemanticPose::DuckLeadLeftBackward],
             PoseAnchor {
                 motion: "duck_lead_left_backward".to_owned(),
                 frame: 0,
@@ -1540,6 +1566,41 @@ mod tests {
         );
         assert_eq!(weighted.len(), 1);
         assert!(weighted[0].time_seconds.abs() < 0.0001);
+    }
+
+    #[test]
+    fn missing_opposite_guard_uses_mirrored_same_pack_anchor() {
+        let catalog = AnimationPackCatalog::default();
+        let runtime = runtime_with_available([SemanticPose::GuardLeadLeft]);
+        let resolved = resolve_anchor(
+            &runtime,
+            &catalog,
+            HUMANOID_UNARMED_PACK,
+            SemanticPose::GuardLeadRight,
+        )
+        .expect("mirrored guard fallback");
+
+        assert!(resolved.mirrored);
+        assert_eq!(
+            resolved.anchor,
+            &catalog.packs[HUMANOID_UNARMED_PACK].poses[&SemanticPose::GuardLeadLeft]
+        );
+
+        let mut weighted = Vec::new();
+        append_resolved_sample(
+            &mut weighted,
+            &runtime,
+            &catalog,
+            HUMANOID_UNARMED_PACK,
+            PoseSample {
+                pose: SemanticPose::GuardLeadRight,
+                sampling: PoseSampling::Anchor,
+                weight: 0.75,
+                mirror_lower_body: 0.0,
+            },
+        );
+        assert_eq!(weighted.len(), 1);
+        assert!((weighted[0].mirrored_weight - 0.75).abs() < 0.0001);
     }
 
     #[test]

@@ -183,7 +183,11 @@ pub(super) fn apply_head_and_torso_look(
     }
 }
 
-/// Constructs the opposite gait half-cycle for every bilateral limb chain.
+/// Applies pack fallback reflection and constructs the opposite gait half-cycle.
+/// Whole-body reflection includes the central chain and swaps every bilateral
+/// limb; gait reflection is limited to bilateral limbs. Applying both is an
+/// involution, so their bilateral weights compose as an XOR blend.
+///
 /// Gait mirroring transitions only around the authored passing pose, where the
 /// limbs are nearest neutral; interpolating throughout contact folds a planted
 /// stride through itself. The playback field retains its historical
@@ -238,14 +242,39 @@ pub(super) fn apply_gait_mirroring(
         let Ok(playback) = playbacks.get(owner) else {
             continue;
         };
-        let weight = playback.lower_body_mirror;
-        if weight <= f32::EPSILON {
+        let whole_body_weight = playback.whole_body_mirror.clamp(0.0, 1.0);
+        let gait_weight = playback.lower_body_mirror.clamp(0.0, 1.0);
+        if whole_body_weight <= f32::EPSILON && gait_weight <= f32::EPSILON {
             continue;
         }
         let Some(rig_global) = rig_globals.get(&owner) else {
             continue;
         };
         let mut desired_globals = BTreeMap::<Entity, Affine3A>::new();
+        let mut mirror_weights = BTreeMap::<Entity, f32>::new();
+        if whole_body_weight > f32::EPSILON {
+            for role in [
+                BoneRole::Root,
+                BoneRole::Pelvis,
+                BoneRole::StomachOne,
+                BoneRole::StomachTwo,
+                BoneRole::Chest,
+                BoneRole::NeckOne,
+                BoneRole::NeckTwo,
+                BoneRole::Head,
+            ] {
+                let Some(bone) = rig.get(&role) else {
+                    continue;
+                };
+                desired_globals.insert(
+                    bone.entity,
+                    mirrored_global_affine(bone.global, *rig_global),
+                );
+                mirror_weights.insert(bone.entity, whole_body_weight);
+            }
+        }
+        let bilateral_weight =
+            whole_body_weight + gait_weight - 2.0 * whole_body_weight * gait_weight;
         for (left_role, right_role) in [
             (BoneRole::ClavicleLeft, BoneRole::ClavicleRight),
             (BoneRole::UpperArmLeft, BoneRole::UpperArmRight),
@@ -272,12 +301,18 @@ pub(super) fn apply_gait_mirroring(
                 right.entity,
                 mirrored_global_affine(left.global, *rig_global),
             );
+            mirror_weights.insert(left.entity, bilateral_weight);
+            mirror_weights.insert(right.entity, bilateral_weight);
         }
         let mut bones = transforms.p2();
         for bone in rig.values() {
             let Some(&desired_global) = desired_globals.get(&bone.entity) else {
                 continue;
             };
+            let weight = mirror_weights[&bone.entity];
+            if weight <= f32::EPSILON {
+                continue;
+            }
             let desired_parent = bone
                 .parent
                 .and_then(|parent| desired_globals.get(&parent).copied())
