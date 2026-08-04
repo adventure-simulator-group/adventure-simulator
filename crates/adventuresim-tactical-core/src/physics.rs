@@ -5,8 +5,13 @@ use bevy_ahoy::{
     input::AccumulatedInput,
 };
 
+use crate::animation::{SkeletonState, WeaponGuardState};
+
 /// Maximum ordinary tactical movement speed, in metres per second.
 pub const TACTICAL_RUN_SPEED_METRES_PER_SECOND: f32 = 5.5;
+
+/// Maximum server-authoritative movement speed while the weapon guard is raised.
+pub const TACTICAL_GUARD_SPEED_METRES_PER_SECOND: f32 = 2.0;
 
 /// Builds the shared tactical controller instead of inheriting Ahoy's much
 /// faster general-purpose default.
@@ -21,8 +26,20 @@ pub fn tactical_character_controller() -> CharacterController {
 /// direction. Keyboard input has magnitude one; a half-deflected stick sets a
 /// half-speed controller target.
 pub fn tactical_movement_speed(movement: Option<Vec2>) -> f32 {
-    TACTICAL_RUN_SPEED_METRES_PER_SECOND
-        * movement.map_or(0.0, |movement| movement.length().clamp(0.0, 1.0))
+    tactical_movement_speed_for_guard(movement, WeaponGuardState::Lowered)
+}
+
+/// Resolves the controller target speed at the server-side Ahoy seam. The
+/// radial input magnitude is retained after Ahoy normalizes its wish direction.
+pub fn tactical_movement_speed_for_guard(
+    movement: Option<Vec2>,
+    weapon_guard: WeaponGuardState,
+) -> f32 {
+    let cap = match weapon_guard {
+        WeaponGuardState::Lowered => TACTICAL_RUN_SPEED_METRES_PER_SECOND,
+        WeaponGuardState::Raised => TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
+    };
+    cap * movement.map_or(0.0, |movement| movement.length().clamp(0.0, 1.0))
 }
 
 pub struct AdventureSimulatorPhysicsPlugin {
@@ -87,10 +104,19 @@ impl Plugin for AdventureSimulatorPhysicsPlugin {
 }
 
 fn apply_analogue_movement_speed(
-    mut controllers: Query<(&AccumulatedInput, &mut CharacterController)>,
+    mut controllers: Query<(
+        &AccumulatedInput,
+        &mut CharacterController,
+        Option<&SkeletonState>,
+    )>,
 ) {
-    for (input, mut controller) in &mut controllers {
-        controller.speed = tactical_movement_speed(input.last_movement);
+    for (input, mut controller, skeleton) in &mut controllers {
+        controller.speed = skeleton.map_or_else(
+            || tactical_movement_speed(input.last_movement),
+            |skeleton| {
+                tactical_movement_speed_for_guard(input.last_movement, skeleton.weapon_guard)
+            },
+        );
     }
 }
 
@@ -100,13 +126,67 @@ mod tests {
 
     #[test]
     fn movement_speed_preserves_stick_magnitude_and_caps_diagonals() {
-        assert_eq!(tactical_movement_speed(None), 0.0);
+        for (guard, cap) in [
+            (
+                WeaponGuardState::Lowered,
+                TACTICAL_RUN_SPEED_METRES_PER_SECOND,
+            ),
+            (
+                WeaponGuardState::Raised,
+                TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
+            ),
+        ] {
+            assert_eq!(tactical_movement_speed_for_guard(None, guard), 0.0);
+            assert_eq!(
+                tactical_movement_speed_for_guard(Some(Vec2::new(0.3, 0.4)), guard),
+                cap * 0.5
+            );
+            assert_eq!(
+                tactical_movement_speed_for_guard(Some(Vec2::ONE), guard),
+                cap
+            );
+        }
         assert_eq!(
             tactical_movement_speed(Some(Vec2::new(0.3, 0.4))),
             TACTICAL_RUN_SPEED_METRES_PER_SECOND * 0.5
         );
+    }
+
+    #[test]
+    fn controller_speed_system_uses_guard_state_and_lowered_fallback() {
+        let mut world = World::new();
+        let raised = world
+            .spawn((
+                AccumulatedInput {
+                    last_movement: Some(Vec2::new(0.3, 0.4)),
+                    ..default()
+                },
+                CharacterController::default(),
+                SkeletonState {
+                    weapon_guard: WeaponGuardState::Raised,
+                    ..default()
+                },
+            ))
+            .id();
+        let generic = world
+            .spawn((
+                AccumulatedInput {
+                    last_movement: Some(Vec2::ONE),
+                    ..default()
+                },
+                CharacterController::default(),
+            ))
+            .id();
+        let mut schedule = Schedule::default();
+        schedule.add_systems(apply_analogue_movement_speed);
+        schedule.run(&mut world);
+
         assert_eq!(
-            tactical_movement_speed(Some(Vec2::ONE)),
+            world.get::<CharacterController>(raised).unwrap().speed,
+            TACTICAL_GUARD_SPEED_METRES_PER_SECOND * 0.5
+        );
+        assert_eq!(
+            world.get::<CharacterController>(generic).unwrap().speed,
             TACTICAL_RUN_SPEED_METRES_PER_SECOND
         );
     }
