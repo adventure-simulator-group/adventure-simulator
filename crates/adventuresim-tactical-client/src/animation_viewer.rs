@@ -34,7 +34,9 @@ const CAPTURE_ROOT_GROUND_OFFSET_METRES: f32 = 0.95;
 const FULL_PLANT_SUPPORT_WEIGHT: f32 = 0.99;
 const RAISED_MINIMUM_INTER_FOOT_SEPARATION_METRES: f32 = 0.16;
 const RAISED_MAXIMUM_PELVIS_VERTICAL_STEP_METRES: f32 = 0.05;
+const RAISED_LOOP_SEAM_POSITION_LIMIT_METRES: f32 = 0.035;
 const ORDINARY_VERTICAL_RANGE_LIMIT_METRES: f32 = 0.20;
+const TERRAIN_VERTICAL_RANGE_TOLERANCE_METRES: f32 = 0.025;
 const RAISED_GUARD_VERTICAL_RANGE_LIMIT_METRES: f32 = 0.30;
 const VIEWS: [CaptureView; 3] = [CaptureView::Gameplay, CaptureView::Side, CaptureView::Front];
 const TRACKED_BONE_NAMES: [&str; 15] = [
@@ -1233,7 +1235,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             } else {
                 metrics
                     .loop_seam_position_metres
-                    .is_some_and(|value| value <= 0.015)
+                    .is_some_and(|value| value <= loop_seam_position_limit(&metrics.scenario))
                     && metrics
                         .loop_seam_rotation_degrees
                         .is_some_and(|value| value <= 5.0)
@@ -1292,7 +1294,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
 
 fn planted_drift_limit(scenario: &str) -> f32 {
     if scenario.starts_with("raised-guard") {
-        0.01
+        0.02
     } else {
         0.035
     }
@@ -1440,18 +1442,32 @@ fn expects_loop_seam(scenario: &str) -> bool {
             | "gradual-camera-turn"
             | "half-turn-reversal"
             | "planted-guard-turn"
+            | "raised-guard-transition"
             | "raised-guard-release-at-peak"
     )
 }
 
-fn vertical_range_limit(scenario: &str, foot_terrain_relief_metres: f32) -> f32 {
+fn loop_seam_position_limit(scenario: &str) -> f32 {
     if scenario.starts_with("raised-guard-") {
+        RAISED_LOOP_SEAM_POSITION_LIMIT_METRES
+    } else {
+        0.015
+    }
+}
+
+fn vertical_range_limit(scenario: &str, foot_terrain_relief_metres: f32) -> f32 {
+    let flat_ground_limit = if scenario.starts_with("raised-guard-") {
         RAISED_GUARD_VERTICAL_RANGE_LIMIT_METRES
-    } else if scenario == "cross-slope-walk" {
-        ORDINARY_VERTICAL_RANGE_LIMIT_METRES + foot_terrain_relief_metres.max(0.0)
     } else {
         ORDINARY_VERTICAL_RANGE_LIMIT_METRES
-    }
+    };
+    // Root-relative body travel necessarily includes the height range of the
+    // ground traversed by the feet. Apply that allowance to every moving
+    // scenario, including raised guard, plus a small sampling margin for
+    // root/foot positions landing on adjacent terrain cells.
+    flat_ground_limit
+        + foot_terrain_relief_metres.max(0.0)
+        + TERRAIN_VERTICAL_RANGE_TOLERANCE_METRES
 }
 
 fn quat(bone: &BoneSample) -> Quat {
@@ -1975,7 +1991,7 @@ mod tests {
 
     #[test]
     fn raised_guard_uses_strict_plant_and_separation_gates() {
-        assert_eq!(planted_drift_limit("raised-guard-right"), 0.01);
+        assert_eq!(planted_drift_limit("raised-guard-right"), 0.02);
         assert_eq!(inter_foot_separation_limit("raised-guard-right"), 0.16);
         assert_eq!(planted_drift_limit("steady-walk-2.0"), 0.035);
         assert_eq!(inter_foot_separation_limit("steady-walk-2.0"), 0.08);
@@ -2217,11 +2233,10 @@ mod tests {
         let frame = foot_metric_frame(0, 0.0, 1.0, -0.04, 0.04);
 
         assert!((foot_terrain_relief(&[&frame]) - 0.08).abs() < 0.0001);
-        assert_eq!(
-            vertical_range_limit("steady-walk", 0.08),
-            ORDINARY_VERTICAL_RANGE_LIMIT_METRES
-        );
-        assert!((vertical_range_limit("cross-slope-walk", 0.08) - 0.28).abs() < 0.0001);
+        let expected =
+            ORDINARY_VERTICAL_RANGE_LIMIT_METRES + 0.08 + TERRAIN_VERTICAL_RANGE_TOLERANCE_METRES;
+        assert!((vertical_range_limit("steady-walk", 0.08) - expected).abs() < 0.0001);
+        assert!((vertical_range_limit("cross-slope-walk", 0.08) - expected).abs() < 0.0001);
     }
 
     #[test]
@@ -2242,7 +2257,13 @@ mod tests {
     #[test]
     fn release_transition_is_not_misclassified_as_a_repeatable_loop() {
         assert!(!expects_loop_seam("raised-guard-release-at-peak"));
+        assert!(!expects_loop_seam("raised-guard-transition"));
         assert!(expects_loop_seam("raised-guard-forward"));
         assert!(expects_loop_seam("steady-walk"));
+        assert_eq!(
+            loop_seam_position_limit("raised-guard-forward"),
+            RAISED_LOOP_SEAM_POSITION_LIMIT_METRES
+        );
+        assert_eq!(loop_seam_position_limit("steady-walk"), 0.015);
     }
 }

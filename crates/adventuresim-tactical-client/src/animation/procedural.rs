@@ -460,11 +460,36 @@ struct PoleMemory {
     right_support_weight: Option<f32>,
     left_release_active: bool,
     right_release_active: bool,
+    left_acquisition_active: bool,
+    right_acquisition_active: bool,
     left_arm: Option<Vec3>,
     right_arm: Option<Vec3>,
     pelvis_shift: f32,
     raised_pelvis_shift: f32,
+    raised_guard_active: bool,
+    rig_origin: Option<Vec3>,
+    rig_rotation: Option<Quat>,
+    local_velocity: Option<Vec3>,
+    pelvis_world_y: Option<f32>,
     evaluation_tick: Option<u64>,
+}
+
+impl PoleMemory {
+    fn clear_leg_targets(&mut self) {
+        self.left_foot_plant = None;
+        self.right_foot_plant = None;
+        self.left_foot_target = None;
+        self.right_foot_target = None;
+        self.left_foot_world_target = None;
+        self.right_foot_world_target = None;
+        self.left_support_weight = None;
+        self.right_support_weight = None;
+        self.left_release_active = false;
+        self.right_release_active = false;
+        self.left_acquisition_active = false;
+        self.right_acquisition_active = false;
+        self.pelvis_shift = 0.0;
+    }
 }
 
 /// Optional deterministic clock for tools that render the same simulation
@@ -493,12 +518,20 @@ const GUARD_TARGET_INTER_FOOT_SEPARATION: f32 = MIN_INTER_FOOT_SEPARATION + 0.04
 const FOOT_TRACK_INNER: f32 = MIN_INTER_FOOT_SEPARATION * 0.5;
 const FOOT_TRACK_OUTER: f32 = 0.55;
 const MAX_PLANT_DISCONTINUITY: f32 = 2.0;
+const MAX_RIG_ROTATION_DISCONTINUITY: f32 = 60.0_f32.to_radians();
 const MAX_FOOT_TARGET_SPEED: f32 = 12.0;
 const MAX_FOOT_TARGET_STEP: f32 = 0.2;
+const MAX_CONTACT_ACQUISITION_SPEED: f32 = 2.0;
+const MAX_CONTACT_ACQUISITION_STEP: f32 = 0.03;
 const PELVIS_CORRECTION_SPEED: f32 = 1.6;
 const MAX_PELVIS_CORRECTION_STEP: f32 = 0.05;
+const RAISED_PELVIS_CORRECTION_SPEED: f32 = 2.4;
+const MAX_RAISED_PELVIS_CORRECTION_STEP: f32 = 0.03;
+const MAX_TERRAIN_PELVIS_DROP: f32 = 0.45;
 const MIN_KNEE_FLEXION: f32 = 20.0_f32.to_radians();
-const RAISED_GUARD_PELVIS_DROP: f32 = 0.14;
+const RAISED_GUARD_PELVIS_DROP: f32 = 0.20;
+const MAX_RAISED_GUARD_PELVIS_DROP: f32 = 0.45;
+const RAISED_GUARD_REACH_RESERVE: f32 = 0.04;
 
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub(crate) struct ProceduralIkState(PoleMemory);
@@ -623,14 +656,14 @@ pub(super) fn apply_terrain_leg_ik(
             continue;
         }
         let phase = skeleton.gait_phase.rem_euclid(1.0);
-        let ground_speed = skeleton.animation_speed();
         let raised_guard_follower = skeleton.weapon_guard == WeaponGuardState::Raised
             && skeleton.action == SkeletonAction::None
             && skeleton.raised_locomotion.active;
         if !raised_guard_follower && let Ok(mut raised) = raised_states.get_mut(owner) {
             *raised = RaisedFootworkState::default();
         }
-        let (left_weight, right_weight) = gait_support_weights(phase, ground_speed);
+        let (left_weight, right_weight) =
+            gait_support_weights_for_velocity(phase, skeleton.local_velocity);
         let legs = [
             (
                 BoneRole::ThighLeft,
@@ -659,20 +692,145 @@ pub(super) fn apply_terrain_leg_ik(
             }
             None => time.delta_secs(),
         };
-        let desired_raised_pelvis_shift = if raised_guard_follower {
+        // Pole, plant, and pelvis reach all belong to the server-owned
+        // authored-body frame. The child rig carries no locomotion yaw.
+        let (rig_origin, rig_rotation) = rig_scenes
+            .iter()
+            .find(|(_, scene)| scene.0 == owner)
+            .and_then(|(entity, _)| transforms.p0().compute_global_transform(entity).ok())
+            .map(|global| (global.translation(), global.rotation()))
+            .unwrap_or((Vec3::ZERO, Quat::IDENTITY));
+        let rig_discontinuous = rig_frame_is_discontinuous(
+            memory.rig_origin,
+            memory.rig_rotation,
+            rig_origin,
+            rig_rotation,
+        );
+        let direction_reversed =
+            locomotion_direction_reversed(memory.local_velocity, skeleton.local_velocity);
+        let rig_turning = memory
+            .rig_rotation
+            .is_some_and(|previous| previous.angle_between(rig_rotation) > 0.5_f32.to_radians());
+        let reset_for_direction = direction_reversed && !raised_guard_follower;
+        if rig_discontinuous || reset_for_direction {
+            // World plants are meaningful only inside one continuous owner
+            // frame. Teleports, respawns, and corrective yaw snaps must start
+            // a new stance instead of stretching limbs back toward stale
+            // footprints from the previous frame.
+            memory.clear_leg_targets();
+            if rig_discontinuous {
+                memory.raised_pelvis_shift = 0.0;
+                memory.pelvis_world_y = None;
+            }
+            if let Ok(mut state) = raised_states.get_mut(owner) {
+                *state = RaisedFootworkState::default();
+            }
+        }
+        memory.rig_origin = Some(rig_origin);
+        memory.rig_rotation = Some(rig_rotation);
+        memory.local_velocity = Some(skeleton.local_velocity);
+        let authored_pelvis_y = rig
+            .get(&BoneRole::Pelvis)
+            .and_then(|&pelvis| transforms.p0().compute_global_transform(pelvis).ok())
+            .map(|global| global.translation().y);
+        let guard_mode_changed = raised_guard_follower != memory.raised_guard_active;
+        if raised_guard_follower && !memory.raised_guard_active {
+            memory.raised_pelvis_shift = memory.pelvis_shift;
+            memory.pelvis_shift = 0.0;
+        } else if !raised_guard_follower && memory.raised_guard_active {
+            memory.pelvis_shift = memory.raised_pelvis_shift;
+            memory.raised_pelvis_shift = 0.0;
+        }
+        if guard_mode_changed
+            && let (Some(previous_y), Some(authored_y)) = (memory.pelvis_world_y, authored_pelvis_y)
+        {
+            let continuity_shift = (previous_y - authored_y).clamp(-0.6, 0.2);
+            if raised_guard_follower {
+                memory.raised_pelvis_shift = continuity_shift;
+            } else {
+                memory.pelvis_shift = continuity_shift;
+            }
+        }
+        memory.raised_guard_active = raised_guard_follower;
+        let pelvis_delta_seconds = if guard_mode_changed {
+            state_delta_seconds * 0.5
+        } else {
+            state_delta_seconds
+        };
+        let mut desired_raised_pelvis_shift = if raised_guard_follower {
             -RAISED_GUARD_PELVIS_DROP
         } else {
             0.0
         };
-        if state_delta_seconds > 0.0 {
-            memory.raised_pelvis_shift = advance_pelvis_shift(
+        if raised_guard_follower {
+            let support_left = skeleton.raised_locomotion.swing_foot != LeadFoot::Left;
+            let step_progress = (skeleton.gait_phase.rem_euclid(1.0) * 2.0).fract();
+            let landing_weight = smoothstep(0.70, 1.0, step_progress);
+            for (left, reach_weight) in [
+                (true, if support_left { 1.0 } else { landing_weight }),
+                (false, if support_left { landing_weight } else { 1.0 }),
+            ] {
+                let roles = if left {
+                    (BoneRole::ThighLeft, BoneRole::ShinLeft, BoneRole::FootLeft)
+                } else {
+                    (
+                        BoneRole::ThighRight,
+                        BoneRole::ShinRight,
+                        BoneRole::FootRight,
+                    )
+                };
+                let (Some(&upper), Some(&lower), Some(&foot)) =
+                    (rig.get(&roles.0), rig.get(&roles.1), rig.get(&roles.2))
+                else {
+                    continue;
+                };
+                let Some((upper_snapshot, lower_snapshot, foot_snapshot)) =
+                    snapshot_chain(upper, lower, foot, &parents, &transforms.p0())
+                else {
+                    continue;
+                };
+                let remembered_target = if left {
+                    memory.left_foot_world_target
+                } else {
+                    memory.right_foot_world_target
+                };
+                let mut target = remembered_target.unwrap_or(foot_snapshot.global.translation());
+                if enabled.0
+                    && let Some(terrain) = terrain
+                {
+                    target = terrain_conformed_guard_target(target, terrain.height_at(target.xz()));
+                }
+                let upper_length = upper_snapshot
+                    .global
+                    .translation()
+                    .distance(lower_snapshot.global.translation());
+                let lower_length = lower_snapshot
+                    .global
+                    .translation()
+                    .distance(foot_snapshot.global.translation());
+                let reach = (upper_length + lower_length) * 0.999;
+                let horizontal_distance =
+                    (target - upper_snapshot.global.translation()).xz().length();
+                let maximum_vertical = (reach * reach - horizontal_distance * horizontal_distance)
+                    .max(0.0)
+                    .sqrt();
+                let reach_shift =
+                    target.y + maximum_vertical - upper_snapshot.global.translation().y;
+                let reserved_shift = (reach_shift - RAISED_GUARD_REACH_RESERVE) * reach_weight;
+                desired_raised_pelvis_shift = desired_raised_pelvis_shift
+                    .min(reserved_shift.clamp(-MAX_RAISED_GUARD_PELVIS_DROP, 0.0));
+            }
+        }
+        if raised_guard_follower && pelvis_delta_seconds > 0.0 {
+            memory.raised_pelvis_shift = advance_raised_pelvis_shift(
                 memory.raised_pelvis_shift,
                 desired_raised_pelvis_shift,
-                state_delta_seconds,
+                pelvis_delta_seconds,
             );
         }
         let raised_pelvis_shift = memory.raised_pelvis_shift;
-        if raised_pelvis_shift < -0.001
+        if raised_guard_follower
+            && raised_pelvis_shift < -0.001
             && let Some(&pelvis) = rig.get(&BoneRole::Pelvis)
         {
             let local_delta = parents
@@ -695,15 +853,6 @@ pub(super) fn apply_terrain_leg_ik(
                 transform.translation += local_delta;
             }
         }
-        // Pole, plant, and pelvis reach all belong to the server-owned
-        // authored-body frame. The child rig carries no locomotion yaw.
-        let (rig_origin, rig_rotation) = rig_scenes
-            .iter()
-            .find(|(_, scene)| scene.0 == owner)
-            .and_then(|(entity, _)| transforms.p0().compute_global_transform(entity).ok())
-            .map(|global| (global.translation(), global.rotation()))
-            .unwrap_or((Vec3::ZERO, Quat::IDENTITY));
-
         if raised_guard_follower {
             // The authored guard is nearly straight-legged. Smoothly lower its
             // pelvis so a world-planted support foot remains within physical
@@ -997,6 +1146,7 @@ pub(super) fn apply_terrain_leg_ik(
             } else {
                 commands.entity(owner).insert(footwork);
             }
+            memory.pelvis_world_y = authored_pelvis_y.map(|y| y + raised_pelvis_shift);
             if let Ok(mut state) = ik_states.get_mut(owner) {
                 state.0 = memory;
             } else {
@@ -1008,17 +1158,8 @@ pub(super) fn apply_terrain_leg_ik(
         if !enabled.0 {
             // Terrain IK is opt-in. Clear only leg targets so enabling it later
             // cannot resurrect stale plants; arm pole continuity is unrelated.
-            memory.left_foot_plant = None;
-            memory.right_foot_plant = None;
-            memory.left_foot_target = None;
-            memory.right_foot_target = None;
-            memory.left_foot_world_target = None;
-            memory.right_foot_world_target = None;
-            memory.left_support_weight = None;
-            memory.right_support_weight = None;
-            memory.left_release_active = false;
-            memory.right_release_active = false;
-            memory.pelvis_shift = 0.0;
+            memory.clear_leg_targets();
+            memory.pelvis_world_y = authored_pelvis_y;
             if let Ok(mut state) = ik_states.get_mut(owner) {
                 state.0 = memory;
             } else {
@@ -1027,6 +1168,16 @@ pub(super) fn apply_terrain_leg_ik(
             continue;
         }
         let Some(terrain) = terrain else {
+            // A streamed-out terrain entity is also an IK discontinuity. Do
+            // not retain a world plant that can snap back when terrain data
+            // appears again at a different origin.
+            memory.clear_leg_targets();
+            memory.pelvis_world_y = authored_pelvis_y;
+            if let Ok(mut state) = ik_states.get_mut(owner) {
+                state.0 = memory;
+            } else {
+                commands.entity(owner).insert(ProceduralIkState(memory));
+            }
             continue;
         };
         let mut desired_hip_shift = 0.0_f32;
@@ -1082,14 +1233,15 @@ pub(super) fn apply_terrain_leg_ik(
                 .max(0.0)
                 .sqrt();
             let reach_shift = target_y + maximum_vertical - upper_snapshot.global.translation().y;
-            desired_hip_shift = desired_hip_shift.min((reach_shift * weight).clamp(-0.25, 0.0));
+            desired_hip_shift =
+                desired_hip_shift.min((reach_shift * weight).clamp(-MAX_TERRAIN_PELVIS_DROP, 0.0));
         }
         // Couple both legs through one bounded, continuous pelvis correction.
         // The authored pose is restored each frame, so this retained scalar is
         // the only temporal state and cannot accumulate transform drift.
-        if state_delta_seconds > 0.0 {
+        if pelvis_delta_seconds > 0.0 {
             memory.pelvis_shift =
-                advance_pelvis_shift(memory.pelvis_shift, desired_hip_shift, state_delta_seconds);
+                advance_pelvis_shift(memory.pelvis_shift, desired_hip_shift, pelvis_delta_seconds);
         }
         let hip_shift = memory.pelvis_shift;
         if hip_shift < -0.001
@@ -1170,11 +1322,19 @@ pub(super) fn apply_terrain_leg_ik(
                     side,
                 ));
             }
-            let mut horizontal_target = constrain_foot_to_track(
-                plant.unwrap_or(foot_position),
+            // The stance corridor chooses a safe plant at contact. Once the
+            // foot owns that world-space plant, do not drag it along with the
+            // moving owner merely to keep it inside the owner's current
+            // corridor. That turns lateral locomotion into conveyor-belt foot
+            // skating. Reach correction below remains the one legitimate
+            // reason to slide a planted target.
+            let mut horizontal_target = horizontal_foot_target(
+                plant,
+                foot_position,
                 rig_origin,
                 rig_rotation,
                 side,
+                rig_turning,
             );
             let Some(height) = terrain.height_at(horizontal_target.xz()) else {
                 continue;
@@ -1208,7 +1368,14 @@ pub(super) fn apply_terrain_leg_ik(
             // released. Follow that desired pose at a bounded velocity so the
             // final IK target cannot teleport, while still converging all the
             // way back to the unconstrained authored swing during flight.
-            let mut desired_target = foot_position.lerp(planted_target, weight);
+            // Treat high-confidence contact as a true world lock. Feeding the
+            // raw easing weight into the target blend lets a foot move several
+            // centimetres while the locomotion system still reports it as
+            // firmly supported. Remap the soft gait weight so the final tenth
+            // is a planted plateau, then let the existing bounded release
+            // carry the foot into swing once contact confidence falls.
+            let plant_weight = plant_blend_weight(weight);
+            let mut desired_target = foot_position.lerp(planted_target, plant_weight);
             // An unloaded sparse swing pose can dip below uneven terrain,
             // especially when the forward gait is reused in reverse. Preserve
             // exact stance contact while giving the free foot a small
@@ -1217,28 +1384,38 @@ pub(super) fn apply_terrain_leg_ik(
                 .y
                 .max(planted_target.y + 0.05 * (1.0 - weight));
             let desired_owner_target = rig_rotation.inverse() * (desired_target - rig_origin);
-            let (previous_owner_target, previous_support, mut release_active) = if left {
+            let previous_world_target = if left {
+                memory.left_foot_world_target
+            } else {
+                memory.right_foot_world_target
+            };
+            let (
+                previous_owner_target,
+                previous_support,
+                mut release_active,
+                mut acquisition_active,
+            ) = if left {
                 (
                     memory.left_foot_target,
                     memory.left_support_weight,
                     memory.left_release_active,
+                    memory.left_acquisition_active,
                 )
             } else {
                 (
                     memory.right_foot_target,
                     memory.right_support_weight,
                     memory.right_release_active,
+                    memory.right_acquisition_active,
                 )
             };
             if let Some(previous_support) = previous_support {
                 if weight + 0.001 < previous_support {
                     release_active = true;
+                    acquisition_active = false;
                 } else if weight > previous_support + 0.001 {
-                    // Contact acquisition should lock immediately. The long
-                    // swing interval has already brought the authored foot
-                    // close to its next plant, and filtering acquisition is
-                    // perceived as skating under load.
                     release_active = false;
+                    acquisition_active = true;
                 }
             }
             let owner_target = if release_active {
@@ -1247,11 +1424,20 @@ pub(super) fn apply_terrain_leg_ik(
                     desired_owner_target,
                     state_delta_seconds,
                 )
+            } else if acquisition_active {
+                let world_target = advance_contact_target(
+                    previous_world_target,
+                    desired_target,
+                    state_delta_seconds,
+                    weight,
+                );
+                rig_rotation.inverse() * (world_target - rig_origin)
             } else {
                 desired_owner_target
             };
             if owner_target.distance_squared(desired_owner_target) <= 0.000001 {
                 release_active = false;
+                acquisition_active = false;
             }
             if left {
                 memory.left_foot_target = Some(owner_target);
@@ -1259,12 +1445,14 @@ pub(super) fn apply_terrain_leg_ik(
                     memory.left_support_weight = Some(weight);
                 }
                 memory.left_release_active = release_active;
+                memory.left_acquisition_active = acquisition_active;
             } else {
                 memory.right_foot_target = Some(owner_target);
                 if state_delta_seconds > 0.0 || memory.right_support_weight.is_none() {
                     memory.right_support_weight = Some(weight);
                 }
                 memory.right_release_active = release_active;
+                memory.right_acquisition_active = acquisition_active;
             }
             let target = rig_origin + rig_rotation * owner_target;
             if left {
@@ -1280,15 +1468,34 @@ pub(super) fn apply_terrain_leg_ik(
             let canonical_pole = canonical_knee_pole(side);
             let remembered = remembered.filter(|pole| pole.dot(canonical_pole) > 0.2);
             let pole = pole_to_world(rig_rotation, remembered.unwrap_or(canonical_pole));
-            if let Some(solution) = solve_two_bone(
-                upper_snapshot.global.translation(),
-                lower_snapshot.global.translation(),
-                foot_position,
-                target,
-                upper_length,
-                lower_length,
-                pole,
-            ) {
+            // The authored knee is a useful initialization hint, but sparse
+            // gait/idle blending can move it abruptly even while the foot is
+            // planted. Once a valid procedural bend has been remembered, use
+            // that stable pole directly instead of reintroducing each frame's
+            // authored bend and producing a knee pop at speed transitions.
+            let solution = if remembered.is_some() {
+                solve_two_bone_with_reach(
+                    upper_snapshot.global.translation(),
+                    lower_snapshot.global.translation(),
+                    foot_position,
+                    target,
+                    upper_length,
+                    lower_length,
+                    pole,
+                    maximum_reach(upper_length, lower_length),
+                )
+            } else {
+                solve_two_bone(
+                    upper_snapshot.global.translation(),
+                    lower_snapshot.global.translation(),
+                    foot_position,
+                    target,
+                    upper_length,
+                    lower_length,
+                    pole,
+                )
+            };
+            if let Some(solution) = solution {
                 apply_two_bone_solution(upper, lower, foot, solution, &parents, &mut transforms);
                 let bend = (solution.knee - upper_snapshot.global.translation())
                     .reject_from_normalized(solution.end_direction);
@@ -1307,6 +1514,7 @@ pub(super) fn apply_terrain_leg_ik(
                 align_foot_to_slope(foot, sole_axis, normal, weight, &parents, &mut transforms);
             }
         }
+        memory.pelvis_world_y = authored_pelvis_y.map(|y| y + hip_shift);
         if let Ok(mut state) = ik_states.get_mut(owner) {
             state.0 = memory;
         } else {
@@ -1324,9 +1532,19 @@ fn locomotion_run_weight(speed: f32) -> f32 {
 }
 
 pub(crate) fn gait_support_weights(phase: f32, speed: f32) -> (f32, f32) {
+    gait_support_weights_for_velocity(phase, Vec3::NEG_Z * speed)
+}
+
+fn gait_support_weights_for_velocity(phase: f32, local_velocity: Vec3) -> (f32, f32) {
+    let speed = local_velocity.xz().length();
     let run_weight = locomotion_run_weight(speed);
     let locomotion = smoothstep(0.0, 0.75, speed);
-    let gait = |phase| foot_support_weight(phase, true, run_weight);
+    let lateral_weight = if speed > 0.001 {
+        (local_velocity.x.abs() / speed).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let gait = |phase| directional_foot_support_weight(phase, run_weight, lateral_weight);
     (
         1.0_f32.lerp(gait(phase.rem_euclid(1.0)), locomotion),
         1.0_f32.lerp(gait((phase + 0.5).rem_euclid(1.0)), locomotion),
@@ -1343,7 +1561,7 @@ pub(crate) fn locomotion_support_weights(skeleton: &SkeletonState) -> (f32, f32)
         let swing_left = skeleton.raised_locomotion.swing_foot == LeadFoot::Left;
         ((!swing_left) as u8 as f32, swing_left as u8 as f32)
     } else {
-        gait_support_weights(skeleton.gait_phase, skeleton.local_velocity.xz().length())
+        gait_support_weights_for_velocity(skeleton.gait_phase, skeleton.local_velocity)
     }
 }
 
@@ -1351,22 +1569,47 @@ fn foot_support_weight(phase: f32, moving: bool, run_weight: f32) -> f32 {
     if !moving {
         return 1.0;
     }
+    directional_foot_support_weight(phase, run_weight, 0.0)
+}
+
+fn directional_foot_support_weight(phase: f32, run_weight: f32, lateral_weight: f32) -> f32 {
     let run_weight = run_weight.clamp(0.0, 1.0);
+    let lateral_weight = lateral_weight.clamp(0.0, 1.0);
     // The canonical leg owns support from contact through passing, then hands
     // off to its mirrored counterpart. This keeps the passing swing foot free
     // instead of constraining both feet to a misleading 0.6 weight.
     // Release over a substantial part of late stance. A four-frame release at
     // ordinary walk speed makes the analytic knee visibly snap straight even
     // when the foot target itself remains continuous.
-    let walk_support = (1.0 - smoothstep(0.28, 0.50, phase)).max(smoothstep(0.78, 1.0, phase));
+    // Lateral movement exhausts hip reach much sooner than forward gait.
+    // Start its handoff early, as Overgrowth-style stance stepping does,
+    // instead of dragging a world plant back into a moving body corridor.
+    let release_start = 0.28_f32.lerp(0.0, lateral_weight);
+    let release_end = 0.50_f32.lerp(0.15, lateral_weight);
+    let acquire_start = 0.78_f32.lerp(0.62, lateral_weight);
+    let acquire_end = 1.0_f32.lerp(0.88, lateral_weight);
+    let walk_support = (1.0 - smoothstep(release_start, release_end, phase)).max(smoothstep(
+        acquire_start,
+        acquire_end,
+        phase,
+    ));
 
     // A running foot supports only a compact interval around its contact.
     // In particular, both legs must be free during the quarter-cycle flight
     // phases; forcing a minimum IK weight there turns the authored swing into
     // a visible kick/pop.
     let distance_to_contact = phase.min(1.0 - phase);
-    let run_support = 1.0 - smoothstep(0.08, 0.20, distance_to_contact);
+    // Sprint contact is brief. A long flat support plateau lets a 5.5 m/s
+    // root travel farther than a planted leg can reach, so the reach limiter
+    // is forced to tow the footprint. Pin at the instant of contact and hand
+    // off within a compact interval, matching the contact/flight cadence used
+    // by Overgrowth-style procedural running.
+    let run_support = 1.0 - smoothstep(0.0, 0.08, distance_to_contact);
     walk_support.lerp(run_support, run_weight).clamp(0.0, 1.0)
+}
+
+fn plant_blend_weight(support_weight: f32) -> f32 {
+    smoothstep(0.0, 0.9, support_weight.clamp(0.0, 1.0))
 }
 
 fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
@@ -1394,6 +1637,21 @@ fn constrain_foot_to_track(world: Vec3, rig_origin: Vec3, rig_rotation: Quat, si
     let signed_x = (local.x * side).clamp(FOOT_TRACK_INNER, FOOT_TRACK_OUTER);
     local.x = signed_x * side;
     rig_origin + rig_rotation * local
+}
+
+fn horizontal_foot_target(
+    plant: Option<Vec3>,
+    foot_position: Vec3,
+    rig_origin: Vec3,
+    rig_rotation: Quat,
+    side: f32,
+    adapt_plant_to_turn: bool,
+) -> Vec3 {
+    match plant {
+        Some(plant) if !adapt_plant_to_turn => plant,
+        Some(plant) => constrain_foot_to_track(plant, rig_origin, rig_rotation, side),
+        None => constrain_foot_to_track(foot_position, rig_origin, rig_rotation, side),
+    }
 }
 
 fn plan_guard_step_endpoint(
@@ -1491,7 +1749,66 @@ fn plant_is_continuous(plant: Vec3, current_foot: Vec3) -> bool {
         && plant.distance(current_foot) <= MAX_PLANT_DISCONTINUITY
 }
 
+fn rig_frame_is_discontinuous(
+    previous_origin: Option<Vec3>,
+    previous_rotation: Option<Quat>,
+    origin: Vec3,
+    rotation: Quat,
+) -> bool {
+    previous_origin.is_some_and(|previous| {
+        !previous.is_finite()
+            || !origin.is_finite()
+            || previous.distance(origin) > MAX_PLANT_DISCONTINUITY
+    }) || previous_rotation.is_some_and(|previous| {
+        !previous.is_finite()
+            || !rotation.is_finite()
+            || previous.angle_between(rotation) > MAX_RIG_ROTATION_DISCONTINUITY
+    })
+}
+
+fn locomotion_direction_reversed(previous: Option<Vec3>, current: Vec3) -> bool {
+    let Some(previous) = previous.filter(|velocity| velocity.xz().length() > 0.5) else {
+        return false;
+    };
+    if !previous.is_finite() || !current.is_finite() || current.xz().length() <= 0.5 {
+        return false;
+    }
+    previous.xz().normalize().dot(current.xz().normalize()) < -0.5
+}
+
 fn advance_foot_target(previous: Option<Vec3>, desired: Vec3, delta_seconds: f32) -> Vec3 {
+    advance_bounded_target(
+        previous,
+        desired,
+        delta_seconds,
+        MAX_FOOT_TARGET_SPEED,
+        MAX_FOOT_TARGET_STEP,
+    )
+}
+
+fn advance_contact_target(
+    previous: Option<Vec3>,
+    desired: Vec3,
+    delta_seconds: f32,
+    support_weight: f32,
+) -> Vec3 {
+    let firm_contact = smoothstep(0.75, 0.9, support_weight.clamp(0.0, 1.0));
+    advance_bounded_target(
+        previous,
+        desired,
+        delta_seconds,
+        MAX_FOOT_TARGET_SPEED.lerp(MAX_CONTACT_ACQUISITION_SPEED, firm_contact),
+        MAX_FOOT_TARGET_STEP.lerp(MAX_CONTACT_ACQUISITION_STEP, firm_contact),
+    )
+}
+
+fn advance_bounded_target(
+    previous: Option<Vec3>,
+    desired: Vec3,
+    delta_seconds: f32,
+    maximum_speed: f32,
+    maximum_step: f32,
+) -> Vec3 {
     let Some(previous) = previous.filter(|position| position.is_finite()) else {
         return desired;
     };
@@ -1501,13 +1818,38 @@ fn advance_foot_target(previous: Option<Vec3>, desired: Vec3, delta_seconds: f32
     if previous.distance(desired) > MAX_PLANT_DISCONTINUITY {
         return desired;
     }
-    let maximum_step = (MAX_FOOT_TARGET_SPEED * delta_seconds.max(0.0)).min(MAX_FOOT_TARGET_STEP);
+    let maximum_step = (maximum_speed * delta_seconds.max(0.0)).min(maximum_step);
     previous + (desired - previous).clamp_length_max(maximum_step)
 }
 
 fn advance_pelvis_shift(current: f32, desired: f32, delta_seconds: f32) -> f32 {
-    let maximum_step =
-        (PELVIS_CORRECTION_SPEED * delta_seconds.max(0.0)).min(MAX_PELVIS_CORRECTION_STEP);
+    advance_pelvis_shift_with_limits(
+        current,
+        desired,
+        delta_seconds,
+        PELVIS_CORRECTION_SPEED,
+        MAX_PELVIS_CORRECTION_STEP,
+    )
+}
+
+fn advance_raised_pelvis_shift(current: f32, desired: f32, delta_seconds: f32) -> f32 {
+    advance_pelvis_shift_with_limits(
+        current,
+        desired,
+        delta_seconds,
+        RAISED_PELVIS_CORRECTION_SPEED,
+        MAX_RAISED_PELVIS_CORRECTION_STEP,
+    )
+}
+
+fn advance_pelvis_shift_with_limits(
+    current: f32,
+    desired: f32,
+    delta_seconds: f32,
+    speed: f32,
+    maximum_correction_step: f32,
+) -> f32 {
+    let maximum_step = (speed * delta_seconds.max(0.0)).min(maximum_correction_step);
     current + (desired - current).clamp(-maximum_step, maximum_step)
 }
 
@@ -1578,8 +1920,19 @@ fn solve_two_bone_internal(
     maximum_target_reach: f32,
     preserve_authored_bend: bool,
 ) -> Option<TwoBoneSolution> {
-    if !root.is_finite() || !target.is_finite() || upper_length <= 0.0001 || lower_length <= 0.0001
+    if !root.is_finite()
+        || !target.is_finite()
+        || !upper_length.is_finite()
+        || !lower_length.is_finite()
+        || !maximum_target_reach.is_finite()
+        || upper_length <= 0.0001
+        || lower_length <= 0.0001
     {
+        return None;
+    }
+    let minimum_target_reach = (upper_length - lower_length).abs() + 0.0001;
+    let maximum_target_reach = maximum_target_reach.min(upper_length + lower_length - 0.0001);
+    if maximum_target_reach < minimum_target_reach {
         return None;
     }
     let target_offset = target - root;
@@ -1587,10 +1940,9 @@ fn solve_two_bone_internal(
         .try_normalize()
         .or_else(|| (current_end - root).try_normalize())
         .unwrap_or(Vec3::NEG_Y);
-    let distance = target_offset.length().clamp(
-        (upper_length - lower_length).abs() + 0.0001,
-        maximum_target_reach.min(upper_length + lower_length - 0.0001),
-    );
+    let distance = target_offset
+        .length()
+        .clamp(minimum_target_reach, maximum_target_reach);
     let end = root + target_direction * distance;
     let along = (upper_length * upper_length - lower_length * lower_length + distance * distance)
         / (2.0 * distance);
@@ -2071,6 +2423,26 @@ mod tests {
     }
 
     #[test]
+    fn two_bone_solver_rejects_invalid_lengths_and_reach_limits() {
+        let solve = |upper_length, lower_length, maximum_target_reach| {
+            solve_two_bone_with_reach(
+                Vec3::ZERO,
+                Vec3::NEG_Y,
+                Vec3::NEG_Y * 2.0,
+                Vec3::NEG_Y,
+                upper_length,
+                lower_length,
+                Vec3::Z,
+                maximum_target_reach,
+            )
+        };
+        assert!(solve(f32::NAN, 1.0, 2.0).is_none());
+        assert!(solve(1.0, f32::INFINITY, 2.0).is_none());
+        assert!(solve(1.0, 1.0, f32::NAN).is_none());
+        assert!(solve(1.0, 0.2, 0.5).is_none());
+    }
+
+    #[test]
     fn straight_chain_uses_rig_bind_space_knee_pole() {
         let solved = solve_two_bone(
             Vec3::ZERO,
@@ -2153,8 +2525,35 @@ mod tests {
             assert!(left.min(right) <= 0.0001);
         }
         assert_eq!(foot_support_weight(0.0, true, 1.0), 1.0);
+        assert!(foot_support_weight(0.04, true, 1.0) < 0.6);
+        assert_eq!(foot_support_weight(0.08, true, 1.0), 0.0);
         assert_eq!(locomotion_run_weight(2.0), 0.0);
         assert_eq!(locomotion_run_weight(5.5), 1.0);
+    }
+
+    #[test]
+    fn lateral_walk_hands_off_support_before_exhausting_hip_reach() {
+        let phase = 0.20;
+        let forward = gait_support_weights_for_velocity(phase, Vec3::NEG_Z * 2.0);
+        let lateral = gait_support_weights_for_velocity(phase, Vec3::X * 2.0);
+        assert!(forward.0 > lateral.0);
+        assert!(lateral.0 < 0.5);
+        assert!(lateral.1 > forward.1);
+
+        for phase in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 0.99] {
+            let (left, right) = gait_support_weights_for_velocity(phase, Vec3::X * 2.0);
+            assert!(left.is_finite() && right.is_finite());
+            assert!((0.0..=1.0).contains(&left));
+            assert!((0.0..=1.0).contains(&right));
+        }
+    }
+
+    #[test]
+    fn firm_support_keeps_the_world_plant_fully_locked() {
+        assert_eq!(plant_blend_weight(1.0), 1.0);
+        assert_eq!(plant_blend_weight(0.9), 1.0);
+        assert!(plant_blend_weight(0.8) > 0.9);
+        assert_eq!(plant_blend_weight(0.0), 0.0);
     }
 
     #[test]
@@ -2388,6 +2787,42 @@ mod tests {
     }
 
     #[test]
+    fn acquired_world_plant_does_not_follow_a_moving_stance_corridor() {
+        let plant = Vec3::new(-0.2, 0.0, 0.1);
+        let moved_origin = Vec3::new(0.8, 0.0, 0.0);
+        let target = horizontal_foot_target(
+            Some(plant),
+            Vec3::new(0.6, 0.0, 0.1),
+            moved_origin,
+            Quat::IDENTITY,
+            -1.0,
+            false,
+        );
+        assert_eq!(target, plant);
+
+        let acquired = horizontal_foot_target(
+            None,
+            Vec3::new(0.75, 0.0, 0.1),
+            moved_origin,
+            Quat::IDENTITY,
+            -1.0,
+            false,
+        );
+        assert!(acquired.x < moved_origin.x);
+
+        let turned = horizontal_foot_target(
+            Some(plant),
+            plant,
+            Vec3::ZERO,
+            Quat::from_rotation_y(90.0_f32.to_radians()),
+            -1.0,
+            true,
+        );
+        let turned_local = Quat::from_rotation_y(-90.0_f32.to_radians()) * turned;
+        assert!(turned_local.x <= -FOOT_TRACK_INNER);
+    }
+
+    #[test]
     fn plant_releases_only_on_a_real_discontinuity_and_reach_slides_continuously() {
         let foot = Vec3::new(-0.2, -1.8, 0.0);
         assert!(plant_is_continuous(foot, foot));
@@ -2399,6 +2834,46 @@ mod tests {
         let constrained = constrain_target_to_reach(target, root, 1.5);
         assert!(constrained.distance(root) <= 1.5001);
         assert_eq!(constrained.y, target.y);
+    }
+
+    #[test]
+    fn teleport_and_yaw_snap_start_a_new_ik_frame() {
+        assert!(!rig_frame_is_discontinuous(
+            Some(Vec3::ZERO),
+            Some(Quat::IDENTITY),
+            Vec3::new(0.1, 0.0, 0.0),
+            Quat::from_rotation_y(10.0_f32.to_radians()),
+        ));
+        assert!(rig_frame_is_discontinuous(
+            Some(Vec3::ZERO),
+            Some(Quat::IDENTITY),
+            Vec3::new(MAX_PLANT_DISCONTINUITY + 0.1, 0.0, 0.0),
+            Quat::IDENTITY,
+        ));
+        assert!(rig_frame_is_discontinuous(
+            Some(Vec3::ZERO),
+            Some(Quat::IDENTITY),
+            Vec3::ZERO,
+            Quat::from_rotation_y(90.0_f32.to_radians()),
+        ));
+        assert!(rig_frame_is_discontinuous(
+            Some(Vec3::ZERO),
+            Some(Quat::IDENTITY),
+            Vec3::NAN,
+            Quat::IDENTITY,
+        ));
+        assert!(locomotion_direction_reversed(
+            Some(Vec3::NEG_Z * 2.0),
+            Vec3::Z * 2.0,
+        ));
+        assert!(!locomotion_direction_reversed(
+            Some(Vec3::NEG_Z * 2.0),
+            Vec3::new(0.2, 0.0, 0.0),
+        ));
+        assert!(!locomotion_direction_reversed(
+            Some(Vec3::NEG_Z * 2.0),
+            Vec3::X * 2.0,
+        ));
     }
 
     #[test]
@@ -2414,6 +2889,12 @@ mod tests {
             advance_foot_target(Some(previous), Vec3::NAN, 1.0 / 64.0),
             previous
         );
+        let contact = advance_contact_target(Some(previous), desired, 1.0 / 64.0, 1.0);
+        assert!((contact.length() - MAX_CONTACT_ACQUISITION_STEP).abs() < 0.0001);
+        let contact_after_hitch = advance_contact_target(Some(previous), desired, 1.0, 1.0);
+        assert!((contact_after_hitch.length() - MAX_CONTACT_ACQUISITION_STEP).abs() < 0.0001);
+        let early_contact = advance_contact_target(Some(previous), desired, 1.0 / 64.0, 0.5);
+        assert!((early_contact.length() - 0.1875).abs() < 0.0001);
     }
 
     #[test]
@@ -2431,6 +2912,8 @@ mod tests {
 
         let after_hitch = advance_pelvis_shift(0.0, -1.0, 1.0);
         assert!((after_hitch + MAX_PELVIS_CORRECTION_STEP).abs() < 0.0001);
+        let raised_after_hitch = advance_raised_pelvis_shift(0.0, -1.0, 1.0);
+        assert!((raised_after_hitch + MAX_RAISED_PELVIS_CORRECTION_STEP).abs() < 0.0001);
     }
 
     #[test]

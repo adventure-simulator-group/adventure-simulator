@@ -689,7 +689,6 @@ pub fn set_weapon_guard(skeleton: &mut SkeletonState, weapon_guard: WeaponGuardS
     if skeleton.weapon_guard == WeaponGuardState::Lowered
         && weapon_guard == WeaponGuardState::Raised
     {
-        skeleton.gait_phase = 0.0;
         skeleton.raised_locomotion = RaisedLocomotionIntent::default();
     }
     if weapon_guard == WeaponGuardState::Lowered {
@@ -870,11 +869,16 @@ fn advance_raised_locomotion_intent(
             skeleton.gait_phase = 0.0;
             return;
         };
+        let entry_phase = guard_entry_phase(skeleton.gait_phase);
         skeleton.raised_locomotion = RaisedLocomotionIntent {
             swing_foot: initial_guard_swing_foot(observed.local_direction, skeleton.lead_foot),
             ..observed
         };
-        skeleton.gait_phase = 0.0;
+        // Keep the fractional progress of the ordinary step that was already
+        // underway. Restarting guard cadence at contact can ask an exhausted
+        // support leg to remain planted for another complete half-step,
+        // especially when guard is raised mid-stride on uneven terrain.
+        skeleton.gait_phase = entry_phase;
     }
 
     if let Some(observed) = observed {
@@ -932,6 +936,10 @@ fn advance_raised_locomotion_intent(
             .wrapping_add(handoffs);
         skeleton.raised_locomotion.local_direction = observed.local_direction;
     }
+}
+
+fn guard_entry_phase(gait_phase: f32) -> f32 {
+    (gait_phase.rem_euclid(1.0) * 2.0).fract() * 0.5
 }
 
 fn initial_guard_swing_foot(direction: Vec2, lead: LeadFoot) -> LeadFoot {
@@ -1885,14 +1893,14 @@ mod tests {
     }
 
     #[test]
-    fn entering_raised_guard_resets_to_static_guard_endpoint_once() {
+    fn changing_guard_preserves_in_flight_gait_progress() {
         let mut state = SkeletonState {
             gait_phase: 0.63,
             lead_foot: LeadFoot::Right,
             ..default()
         };
         set_weapon_guard(&mut state, WeaponGuardState::Raised);
-        assert_eq!(state.gait_phase, 0.0);
+        assert_eq!(state.gait_phase, 0.63);
         assert_eq!(state.lead_foot, LeadFoot::Right);
 
         state.gait_phase = 0.25;
@@ -1924,6 +1932,13 @@ mod tests {
         project_skeleton_locomotion(&mut state, input(Vec3::ZERO, 0.02));
         assert!(!state.raised_locomotion.active);
         assert_eq!(state.gait_phase, 0.5);
+    }
+
+    #[test]
+    fn entering_guard_preserves_progress_within_the_current_half_step() {
+        assert!((guard_entry_phase(0.20) - 0.20).abs() < 0.0001);
+        assert!((guard_entry_phase(0.70) - 0.20).abs() < 0.0001);
+        assert!((guard_entry_phase(1.95) - 0.45).abs() < 0.0001);
     }
 
     #[test]

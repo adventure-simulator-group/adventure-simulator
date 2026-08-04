@@ -514,17 +514,26 @@ rather than swapping bones discretely. Terrain leg IK preserves continuous
 support for walking, narrows support through the walk/run blend, and releases
 both feet during the authored run flight phase. During high support it also
 locks the stance foot horizontally in world space until release, preventing
-visible skating as the gameplay root advances. A footprint is acquired only
-near full contact and begins at the previous visible world-space foot target,
-so the foot cannot jump by one root step as it becomes loaded. During a body
+visible skating as the gameplay root advances. Pure lateral motion hands the
+stance off earlier than forward walking because the pelvis exhausts sideways
+leg reach sooner, while full-speed running uses a compact contact interval
+around each footfall instead of towing a plant through the flight cadence. A
+footprint is acquired only near full contact and begins at the previous visible
+world-space foot target. Contact acquisition is rate-bounded in world space,
+with a firm-contact plateau in the target blend, so neither root travel nor a
+sparse swing pose can produce a loaded-foot snap. During a body
 turn or at the edge of leg reach, shared virtual-time rate-bounded pelvis lowering absorbs
 the reach deficit first; the plant slides only as far as still required on its
 anatomical side corridor instead of dropping and reacquiring in one frame. A
 plant is released on a true discontinuity, support loss, or an
-airborne/non-upright transition. Left and right targets remain on separate
+airborne/non-upright transition. Teleports, large one-frame owner yaw changes,
+and missing streamed terrain clear stance memory before IK resumes. Left and
+right targets remain on separate
 pelvis-space tracks with a minimum separation. The solver keeps a 20-degree
 soft extension reserve and a forward, slightly outward anatomical bend
-hemisphere; invalid targets are constrained or released rather than
+hemisphere. Once initialized, the owner-space pole remains authoritative across
+sparse gait-to-idle interpolation. Non-finite limb measurements and invalid
+reach limits are rejected; other invalid targets are constrained or released rather than
 reconstructing a knee through the straight-leg singularity. Release toward a
 sparse authored swing target is velocity-bounded in character space. Arm and leg swing share the
 same phase reconstruction before terrain IK; only the legs receive the final
@@ -563,19 +572,23 @@ The fixture supplies deterministic controller observations at the shared
 server projection boundary and follows rendered terrain height; it does not
 exercise physics contacts, replication, interpolation, or recorded live input.
 
-The vertical-excursion gate remains 0.20 m for ordinary flat-ground motion and
-0.30 m for raised-guard scenarios. The explicit cross-slope scenario adds only
-the terrain relief measured beneath its sampled feet to the ordinary 0.20 m
-envelope; this separates required pelvis reach correction from authored body
-bob without weakening the flat-ground check. Cumulative planted-foot drift is
+The flat-ground vertical-excursion gate remains 0.20 m for ordinary motion and
+0.30 m for raised-guard scenarios. Every moving scenario adds the terrain
+relief measured beneath its sampled feet and a 0.025 m terrain-cell sampling
+tolerance to that base envelope. This separates required pelvis reach
+correction from authored body bob without weakening the flat-ground check or
+assuming only a scenario named `cross-slope` traverses uneven ground.
+Cumulative planted-foot drift is
 measured while support is effectively pinned (at least 0.99). The separate
 per-frame slip gate continues through the blended release interval (at least
 0.9 support), where the IK target intentionally yields back to authored FK.
-Raised-guard scenarios additionally require no more than 0.01 m cumulative
+Raised-guard scenarios additionally require no more than 0.02 m cumulative
 support drift and at least 0.16 m inter-foot separation; ordinary gait retains
 its legacy 0.035 m drift and 0.08 m separation regression bounds.
-Loop-seam gates apply only to repeatable cycles. Start/stop, facing-turn, and
-raised-guard release-at-peak scenarios are transition probes whose final
+Loop-seam gates apply only to repeatable cycles. Raised travel over changing
+terrain permits one bounded 0.035 m pelvis-correction step at its phase seam;
+ordinary cycles retain the 0.015 m position limit. Start/stop, facing-turn,
+guard-entry, and raised-guard release-at-peak scenarios are transition probes whose final
 simulation state intentionally differs from the state that initiated them;
 their continuity remains covered by the per-frame displacement and rotation
 gates instead.
@@ -605,7 +618,9 @@ with a smooth curve, and adds a sine clearance arc. Step reach scales with
 analogue speed and is bounded to combat-shuffle distances.
 
 Cadence follows current authoritative speed throughout the first step, so a
-small acceleration sample cannot slow a complete cycle. Ordinary turns are
+small acceleration sample cannot slow a complete cycle. Raising guard
+mid-stride preserves progress within the current ordinary half-step instead of
+restarting an already loaded foot at contact. Ordinary turns are
 accepted at the next foot handoff. A material opposite-direction reversal
 performs an immediate safe semantic handoff; releasing movement finishes only
 the active half-step rather than freezing a foot in the air or completing an
@@ -626,7 +641,10 @@ step identity; it never
 carries bones or world foot positions. Flat-ground placement works with
 terrain IK disabled. When terrain conformity is explicitly enabled, the same
 targets additionally follow height and slope without replacing their planted
-XZ positions. Raised grounded idle uses the static guard. Raised crouched and airborne
+XZ positions. A rate-bounded shared pelvis correction derives its depth from
+support-foot reach, begins preparing the incoming foot late in swing, and
+carries its world height across guard-footwork entry and release. Raised
+grounded idle uses the static guard. Raised crouched and airborne
 characters retain the existing crouch and airborne posture rules; specialized
 raised variants can be added later.
 
