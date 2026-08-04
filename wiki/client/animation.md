@@ -279,13 +279,13 @@ Single-pose files place their named semantic pose at frame 0:
 | `idle_relaxed` | `idle_relaxed` |
 | `crouch_idle` | `crouch_idle` |
 | `guard_lead_left` | `guard_lead_left` |
-| `guard_lead_right` | `guard_lead_right` |
+| `guard_lead_right` (optional counterpart) | `guard_lead_right` |
 | `airborne_center` | `airborne_center` |
 | `airborne_travel` | `airborne_travel` |
-| `attack_thrust_lead_left` | `attack_thrust_lead_left_contact` |
-| `attack_thrust_lead_right` | `attack_thrust_lead_right_contact` |
-| `attack_slash_lead_left` | `attack_slash_lead_left_contact` |
-| `attack_slash_lead_right` | `attack_slash_lead_right_contact` |
+| `attack_thrust_lead_left_contact` | `attack_thrust_lead_left_contact` |
+| `attack_thrust_lead_right_contact` (optional counterpart) | `attack_thrust_lead_right_contact` |
+| `attack_slash_lead_left_contact` | `attack_slash_lead_left_contact` |
+| `attack_slash_lead_right_contact` (optional counterpart) | `attack_slash_lead_right_contact` |
 | `prone_idle` | `prone_idle` |
 | `supine_idle` | `supine_idle` |
 
@@ -300,14 +300,25 @@ preview, but does not introduce additional semantic names:
 | `prone_crawl` | 0 `prone_crawl_contact`; 8 `prone_crawl_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
 | `supine_scamper` | 0 `supine_scamper_contact`; 8 `supine_scamper_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
 
-Each directional duck is a short out-and-back motion in its own file. Frame 0
-and frame 12 reproduce `crouch_idle` as unnamed endpoint references; frame
-6 is the file's named pose:
+Each guard-relative duck extreme is a single pose in its own file at frame 0.
+The runtime blends from the current guard to the extreme and back. The lead
+and final direction components are both semantic: a left-lead dodge toward
+anatomical left is not interchangeable with a left-lead dodge toward right.
 
-| File basename | Semantic pose at frame 6 |
+| File basename | Semantic pose at frame 0 |
 |---|---|
-| `duck_backward` | `duck_backward` |
-| `duck_left` | `duck_left` |
+| `duck_lead_left_backward` | `duck_lead_left_backward` |
+| `duck_lead_left_left` | `duck_lead_left_left` |
+| `duck_lead_left_right` | `duck_lead_left_right` |
+| `duck_lead_right_backward` (optional counterpart) | `duck_lead_right_backward` |
+| `duck_lead_right_left` (optional counterpart) | `duck_lead_right_left` |
+| `duck_lead_right_right` (optional counterpart) | `duck_lead_right_right` |
+
+An exact file always wins. If one side is absent, the runtime mirrors the
+opposite-side pose from the same pack before consulting its parent pack. A
+whole-body mirror swaps both the stance lead and anatomical direction, so the
+pairs are `left_backward`/`right_backward`, `left_left`/`right_right`, and
+`left_right`/`right_left`.
 
 Airborne motion uses the two single-pose files listed above. The runtime blends
 from a directional crouch/load into `airborne_center` or `airborne_travel`,
@@ -315,11 +326,12 @@ modifies the traveling pose from horizontal velocity, and returns through a
 directional crouch/load on landing. There are no separate authored launch,
 direction, or landing samples in the complete pack.
 
-Attacks likewise use the four single-pose contact files listed above: one for
-each combination of `thrust` or `slash` and left or right starting lead. There
-are no required commit or follow-through poses, and `stay` versus `switch` is
-not part of the asset name. Runtime footwork, continuation, and recovery turn
-the contact pose into a complete attack.
+Attacks likewise use the single-pose contact files listed above. There are no
+required commit or follow-through poses, and `stay` versus `switch` is not part
+of the asset name. Runtime footwork, continuation, and recovery turn the
+contact pose into a complete attack. A pack may export both lead files when
+handedness makes them distinct, or export only one and let the missing lead use
+the mirrored same-pack counterpart.
 
 Each block contact has its own file using the semantic pose name as its
 basename. Frame 0 reproduces the applicable guard, frame 6 is the named block
@@ -400,8 +412,13 @@ Locomotion semantic anchors use the **left** side as their canonical first
 half-cycle. When a sparse gait source contains only that half, the runtime
 reflects the complete bilateral limb motion—including clavicles, arms, hands,
 legs, feet, and twist bones—to construct the opposite half and closure.
-Attack and guard poses are not assumed to be whole-body mirrorable because a
-weapon may remain in the same hand.
+Guard, attack, and guard-relative duck counterparts use presence-based
+mirroring. The runtime prefers an exact pose in the requested pack, then a
+whole-body mirrored opposite-side pose from that same pack, and only then the
+parent pack and ordinary semantic fallback chain. Symmetric styles such as
+unarmed combat can therefore author one side. Handed weapon styles author both
+sides whenever reflection would move the weapon to the wrong hand or otherwise
+change the technique.
 
 ## Required semantic poses
 
@@ -524,35 +541,40 @@ Every complete combat pack provides, or inherits:
 | Pose | Animator brief |
 |---|---|
 | `guard_lead_left` | Place the left foot forward and the right foot back on two stable tracks rather than one tightrope line. Distribute weight so either foot can move without a preliminary shuffle; neither knee is locked. Turn the pelvis and torso only as required by the pack's fighting method. In the unarmed root pack, raise both hands to protect the head and torso with the dominant hand free to punch. In a weapon pack, use its normal ready grip and keep the point or striking portion controlled. |
-| `guard_lead_right` | Construct the corresponding stable guard with the right foot forward and left foot back. Preserve the same handedness and held-item hand as `guard_lead_left`; this is a change of foot lead, not a whole-body mirror. Match stance width, guard height, and overall readiness closely enough that attacks can end in either guard without a visible change of style. |
+| `guard_lead_right` | Construct the corresponding stable guard with the right foot forward and left foot back. When this pose is authored, preserve the same handedness and held-item hand as `guard_lead_left`; this is a change of foot lead, not a reflection. Match stance width, guard height, and overall readiness closely enough that attacks can end in either guard without a visible change of style. |
 
 These are stable endpoints for attacks and blocks. Which foot is forward is an
-explicit part of skeleton state. Complete one-handed guards should be authored
-for both lead feet rather than obtained by mirroring the entire body, because
-whole-body mirroring also changes the weapon hand.
+explicit part of skeleton state. If only one guard exists in a pack, the other
+lead mirrors it. Complete one-handed guards should therefore author both lead
+feet whenever whole-body mirroring would change the weapon hand incorrectly.
 
 ### Crouching and directional ducking
 
-`crouch_idle` is the center of a two-dimensional directional duck blend. The
-complete pack adds only a backward withdrawal and one anatomical-left lateral
-extreme. Begin each pose from `crouch_idle`, keep the same planted foot
-locations, and preserve the normal hand carriage.
+Directional ducking begins from the active guard rather than a neutral crouch.
+Each lead has backward, anatomical-left, and anatomical-right semantics. A
+symmetrical pack may author the three extremes for one lead; the opposite lead
+then comes from the mirrored counterpart. Both lateral extremes for a single
+lead remain distinct and cannot be constructed by mirroring each other,
+because that would also exchange the lead feet. Keep the guard's planted foot
+locations and normal hand carriage.
 
 | Pose | Animator brief |
 |---|---|
-| `duck_backward` | Withdraw the head and upper torso backward while sitting the pelvis down and back between the feet. Increase knee flexion to preserve balance and avoid creating the motion solely by arching the lower back. Keep the gaze generally forward and do not lift both toes or heels. |
-| `duck_left` | Shift the pelvis, ribcage, and especially the head toward anatomical left. Load the left leg more heavily, flex it, and allow the right leg to lengthen without moving either foot. Incline or rotate the torso only enough to keep balance and protect the head. Do not cross the legs. |
+| `duck_lead_<left\|right>_backward` | From the named guard lead, withdraw the head and upper torso backward while sitting the pelvis down and back between the feet. Increase knee flexion to preserve balance and avoid creating the motion solely by arching the lower back. Keep the gaze generally forward and do not lift both toes or heels. |
+| `duck_lead_<left\|right>_left` | From the named guard lead, shift the pelvis, ribcage, and especially the head toward anatomical left. Load the left leg more heavily, flex it, and allow the right leg to lengthen without moving either foot. Incline or rotate the torso only enough to keep balance and protect the head. Do not cross the legs. |
+| `duck_lead_<left\|right>_right` | From the named guard lead, make the corresponding anatomical-right displacement while retaining that same lead. This is a separately authored extreme when the pack supplies both lateral directions for the lead; do not derive it by reflecting the other lateral pose without also changing lead. |
 
-The runtime constructs rightward ducking by safely mirroring the lateral body
-delta while retaining handed equipment constraints. Forward/downward ducking
-comes from increasing the `crouch_idle` weight and applying a bounded forward
-head, ribcage, and pelvis displacement with planted-foot IK. Diagonal ducks
-blend these components. Direction still describes the defender's desired body
-or head displacement in local space, not merely the attacker's bearing.
+The same-pack counterpart rule mirrors an entire lead/direction pair only when
+the requested counterpart file is absent. Forward/downward ducking remains
+procedural: it applies a bounded forward head, ribcage, and pelvis displacement
+with planted-foot IK. Diagonal ducks blend these components. Direction still
+describes the defender's desired body or head displacement in local space, not
+merely the attacker's bearing.
 
 Directional ducks should preferably be authored as pose deltas or masked
-overrides so that they can be applied over the current guard without requiring
-versions for every weapon and lead foot.
+overrides over their named guard. Packs need only omit counterparts that remain
+valid under whole-body reflection; asymmetric weapons and techniques should
+export the exact opposite-lead files.
 
 ### Jumping and dodging
 
@@ -715,24 +737,26 @@ an automatic get-up or ragdoll transition rather than a player-controlled roll.
 
 ## Initial complete-pack size
 
-The humanoid unarmed root must define every required semantic pose because it
-has no fallback. Its tentative size is:
+The humanoid unarmed root must satisfy every required semantic pose because it
+has no parent pack. Exact files and the presence-based mirrored counterparts
+both satisfy that requirement. Its tentative authored size is:
 
 | Family | Authored poses |
 |---|---:|
 | Standing and locomotion | 6 |
-| Directional ducking | 2 |
+| Directional ducking | 3 |
 | Jumping and dodging | 2 |
 | Prone and supine | 8 |
-| Combat guards | 2 |
-| Thrust/punch attacks | 2 |
-| Slash/swipe attacks | 2 |
+| Combat guards | 1 |
+| Thrust/punch attacks | 1 |
+| Slash/swipe attacks | 1 |
 | Blocks | 6 |
-| **Complete unarmed root** | **30** |
+| **Complete unarmed root** | **28** |
 
 Most specialized packs should be substantially smaller because they inherit
-unchanged poses. A pack that overrides just one strike family needs two attack
-poses, not another complete set of thirty. The unarmed root supplies punch
+unchanged poses. A symmetric pack that overrides one strike family needs one
+attack pose; an asymmetric pack exports the opposite lead as well. The unarmed
+root supplies punch
 poses for unresolved thrust semantics and swipe poses for unresolved slash
 semantics.
 
