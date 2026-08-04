@@ -21,7 +21,7 @@ use serde::Serialize;
 
 use crate::animation::{
     AnimationPlayback, BoneRole, HumanoidBone, ProceduralAnimationClock, ProceduralIkState,
-    TacticalAnimationPlugin, locomotion_support_weights,
+    RaisedFootworkState, TacticalAnimationPlugin, TerrainIkEnabled, locomotion_support_weights,
 };
 use crate::{
     camera::{CameraMode, TacticalCameraPlugin, TacticalCameraSet, third_person_offset},
@@ -32,6 +32,8 @@ use crate::{
 const SAMPLE_HZ: f32 = 64.0;
 const CAPTURE_ROOT_GROUND_OFFSET_METRES: f32 = 0.95;
 const FULL_PLANT_SUPPORT_WEIGHT: f32 = 0.99;
+const RAISED_MINIMUM_INTER_FOOT_SEPARATION_METRES: f32 = 0.16;
+const RAISED_MAXIMUM_PELVIS_VERTICAL_STEP_METRES: f32 = 0.05;
 const ORDINARY_VERTICAL_RANGE_LIMIT_METRES: f32 = 0.20;
 const RAISED_GUARD_VERTICAL_RANGE_LIMIT_METRES: f32 = 0.30;
 const VIEWS: [CaptureView; 3] = [CaptureView::Gameplay, CaptureView::Side, CaptureView::Front];
@@ -107,6 +109,9 @@ pub(crate) fn run(
         .insert_resource(CameraMode { third_person: true })
         .insert_resource(WeaponGuardInputState::default())
         .insert_resource(Time::<Fixed>::from_hz(SAMPLE_HZ as f64))
+        // Deterministic captures explicitly validate the optional terrain
+        // pass; live clients and the playground keep its default-off setting.
+        .insert_resource(TerrainIkEnabled(true))
         .insert_resource(ClearColor(Color::srgb(0.08, 0.1, 0.13)))
         .insert_resource(CaptureSequence::new(output, settle_frames, scenario))
         .add_systems(Startup, setup_viewer)
@@ -160,6 +165,7 @@ struct PlannedFrame {
     camera_pitch: f32,
     action: SkeletonAction,
     weapon_guard: WeaponGuardState,
+    lead_foot: LeadFoot,
 }
 
 #[derive(Resource)]
@@ -269,6 +275,7 @@ struct ScenarioMetrics {
     loop_seam_position_metres: Option<f32>,
     loop_seam_rotation_degrees: Option<f32>,
     pelvis_vertical_range_metres: f32,
+    maximum_pelvis_vertical_step_metres: f32,
     head_vertical_range_metres: f32,
     foot_terrain_relief_metres: f32,
     minimum_knee_forward_bend_metres: f32,
@@ -311,6 +318,8 @@ struct FrameSample {
     guard_action: bool,
     left_support_weight: f32,
     right_support_weight: f32,
+    desired_left_foot_target: Option<[f32; 3]>,
+    desired_right_foot_target: Option<[f32; 3]>,
     screenshots: BTreeMap<String, String>,
     bones: BTreeMap<String, BoneSample>,
 }
@@ -336,7 +345,7 @@ fn steady_scenario_in_direction(
     cycles: f32,
     local_direction: Vec2,
 ) -> Vec<PlannedFrame> {
-    let cycle_duration = stride_length(speed) / speed;
+    let cycle_duration = stride_length(speed) * 2.0 / speed;
     let duration = cycles * cycle_duration;
     // Include the first authoritative tick after the requested final cycle.
     // Fixed-rate sampling rarely lands on the mathematical wrap exactly; the
@@ -354,6 +363,7 @@ fn steady_scenario_in_direction(
             camera_pitch: 0.0,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Lowered,
+            lead_foot: LeadFoot::Left,
         })
         .collect()
 }
@@ -387,6 +397,7 @@ fn transition_scenario() -> Vec<PlannedFrame> {
                 camera_pitch: 0.0,
                 action: SkeletonAction::None,
                 weapon_guard: WeaponGuardState::Lowered,
+                lead_foot: LeadFoot::Left,
             }
         })
         .collect()
@@ -415,8 +426,40 @@ fn capture_plan() -> Vec<PlannedFrame> {
         raised_guard_scenario("raised-guard-forward-right", Vec2::new(1.0, -1.0)),
         raised_guard_scenario("raised-guard-backward-left", Vec2::new(-1.0, 1.0)),
         raised_guard_scenario("raised-guard-backward-right", Vec2::ONE),
+        raised_guard_steady_scenario("raised-guard-half-speed", 1.0, 1.0, Vec2::X),
+        raised_guard_acceleration_scenario(),
         raised_guard_release_scenario(),
         raised_guard_reversal_scenario(),
+        raised_guard_steady_scenario_with_lead(
+            "raised-guard-right-lead-left",
+            2.0,
+            1.0,
+            Vec2::NEG_X,
+            LeadFoot::Right,
+        ),
+        raised_guard_steady_scenario_with_lead(
+            "raised-guard-right-lead-right",
+            2.0,
+            1.0,
+            Vec2::X,
+            LeadFoot::Right,
+        ),
+        raised_guard_steady_scenario_with_lead(
+            "raised-guard-right-lead-forward-right",
+            2.0,
+            1.0,
+            Vec2::new(1.0, -1.0),
+            LeadFoot::Right,
+        ),
+        raised_guard_acceleration_scenario_with_lead(
+            "raised-guard-right-lead-accelerate",
+            LeadFoot::Right,
+        ),
+        raised_guard_release_scenario_with_lead("raised-guard-right-lead-release", LeadFoot::Right),
+        raised_guard_reversal_scenario_with_lead(
+            "raised-guard-right-lead-reversal",
+            LeadFoot::Right,
+        ),
         raised_guard_transition_scenario(),
         steady_scenario_in_direction("cross-slope-walk", 2.0, 1.0, Vec2::X),
         transition_scenario(),
@@ -446,6 +489,7 @@ fn turning_scenario(name: &'static str, reversal: bool) -> Vec<PlannedFrame> {
                 camera_pitch: 0.55 * progress,
                 action: SkeletonAction::None,
                 weapon_guard: WeaponGuardState::Lowered,
+                lead_foot: LeadFoot::Left,
             }
         })
         .collect()
@@ -465,6 +509,7 @@ fn guard_plant_turn_scenario() -> Vec<PlannedFrame> {
                 camera_pitch: 0.0,
                 action: SkeletonAction::Block,
                 weapon_guard: WeaponGuardState::Lowered,
+                lead_foot: LeadFoot::Left,
             }
         })
         .collect()
@@ -472,11 +517,69 @@ fn guard_plant_turn_scenario() -> Vec<PlannedFrame> {
 
 fn raised_guard_scenario(name: &'static str, direction: Vec2) -> Vec<PlannedFrame> {
     let direction = direction.normalize_or_zero();
-    steady_scenario_in_direction(name, 2.0, 1.0, direction)
-        .into_iter()
-        .map(|mut frame| {
-            frame.weapon_guard = WeaponGuardState::Raised;
-            frame
+    raised_guard_steady_scenario(name, 2.0, 1.0, direction)
+}
+
+fn raised_guard_steady_scenario(
+    name: &'static str,
+    speed: f32,
+    cycles: f32,
+    direction: Vec2,
+) -> Vec<PlannedFrame> {
+    raised_guard_steady_scenario_with_lead(name, speed, cycles, direction, LeadFoot::Left)
+}
+
+fn raised_guard_steady_scenario_with_lead(
+    name: &'static str,
+    speed: f32,
+    cycles: f32,
+    direction: Vec2,
+    lead_foot: LeadFoot,
+) -> Vec<PlannedFrame> {
+    let duration = cycles * guard_step_length(speed) * 2.0 / speed;
+    let last_frame = (duration * SAMPLE_HZ).ceil() as usize + 1;
+    (0..=last_frame)
+        .map(|scenario_frame| PlannedFrame {
+            scenario: name,
+            scenario_frame,
+            speed,
+            time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+            local_direction: direction.normalize_or_zero(),
+            camera_yaw: 0.0,
+            camera_pitch: 0.0,
+            action: SkeletonAction::None,
+            weapon_guard: WeaponGuardState::Raised,
+            lead_foot,
+        })
+        .collect()
+}
+
+fn raised_guard_acceleration_scenario() -> Vec<PlannedFrame> {
+    raised_guard_acceleration_scenario_with_lead(
+        "raised-guard-accelerate-from-rest",
+        LeadFoot::Left,
+    )
+}
+
+fn raised_guard_acceleration_scenario_with_lead(
+    name: &'static str,
+    lead_foot: LeadFoot,
+) -> Vec<PlannedFrame> {
+    (0..=96)
+        .map(|scenario_frame| {
+            let time_seconds = scenario_frame as f32 / SAMPLE_HZ;
+            PlannedFrame {
+                scenario: name,
+                scenario_frame,
+                speed: (time_seconds / 0.5).clamp(0.0, 1.0) * 2.0,
+                time_seconds,
+                local_direction: Vec2::X,
+                camera_yaw: 0.0,
+                camera_pitch: 0.0,
+                action: SkeletonAction::None,
+                weapon_guard: WeaponGuardState::Raised,
+                lead_foot,
+            }
         })
         .collect()
 }
@@ -497,14 +600,22 @@ fn raised_guard_transition_scenario() -> Vec<PlannedFrame> {
             } else {
                 WeaponGuardState::Raised
             },
+            lead_foot: LeadFoot::Left,
         })
         .collect()
 }
 
 fn raised_guard_release_scenario() -> Vec<PlannedFrame> {
+    raised_guard_release_scenario_with_lead("raised-guard-release-at-peak", LeadFoot::Left)
+}
+
+fn raised_guard_release_scenario_with_lead(
+    name: &'static str,
+    lead_foot: LeadFoot,
+) -> Vec<PlannedFrame> {
     (0..=64)
         .map(|scenario_frame| PlannedFrame {
-            scenario: "raised-guard-release-at-peak",
+            scenario: name,
             scenario_frame,
             speed: if scenario_frame <= 20 { 2.0 } else { 0.0 },
             time_seconds: scenario_frame as f32 / SAMPLE_HZ,
@@ -513,14 +624,22 @@ fn raised_guard_release_scenario() -> Vec<PlannedFrame> {
             camera_pitch: 0.0,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Raised,
+            lead_foot,
         })
         .collect()
 }
 
 fn raised_guard_reversal_scenario() -> Vec<PlannedFrame> {
+    raised_guard_reversal_scenario_with_lead("raised-guard-left-right-reversal", LeadFoot::Left)
+}
+
+fn raised_guard_reversal_scenario_with_lead(
+    name: &'static str,
+    lead_foot: LeadFoot,
+) -> Vec<PlannedFrame> {
     (0..=64)
         .map(|scenario_frame| PlannedFrame {
-            scenario: "raised-guard-left-right-reversal",
+            scenario: name,
             scenario_frame,
             speed: 2.0,
             time_seconds: scenario_frame as f32 / SAMPLE_HZ,
@@ -533,6 +652,7 @@ fn raised_guard_reversal_scenario() -> Vec<PlannedFrame> {
             camera_pitch: 0.0,
             action: SkeletonAction::None,
             weapon_guard: WeaponGuardState::Raised,
+            lead_foot,
         })
         .collect()
 }
@@ -590,6 +710,7 @@ fn drive_sequence(
             &mut CharacterLook,
             Option<&AnimationPlayback>,
             Option<&mut ProceduralIkState>,
+            Option<&mut RaisedFootworkState>,
         ),
         With<CaptureSubject>,
     >,
@@ -600,7 +721,9 @@ fn drive_sequence(
     }
     let frame = sequence.plan[sequence.index].clone();
     let mut gait_phase = 0.0;
-    for (mut skeleton, mut transform, mut look, playback, ik_state) in &mut subjects {
+    for (mut skeleton, mut transform, mut look, playback, ik_state, raised_footwork) in
+        &mut subjects
+    {
         let Some(playback) = playback else {
             return;
         };
@@ -615,7 +738,10 @@ fn drive_sequence(
             *skeleton = SkeletonState::default();
             *guard_input = WeaponGuardInputState::default();
             if let Some(mut ik_state) = ik_state {
-                ik_state.reset();
+                *ik_state = ProceduralIkState::default();
+            }
+            if let Some(mut raised_footwork) = raised_footwork {
+                *raised_footwork = RaisedFootworkState::default();
             }
             let ground = terrain.height_at(Vec2::ZERO).unwrap_or_default();
             transform.translation = Vec3::new(0.0, ground + CAPTURE_ROOT_GROUND_OFFSET_METRES, 0.0);
@@ -630,6 +756,7 @@ fn drive_sequence(
             WeaponGuardState::Raised => 1.0,
             WeaponGuardState::Lowered => -1.0,
         };
+        skeleton.lead_foot = frame.lead_foot;
         guard_input.apply_controls(wheel, false);
         set_weapon_guard(&mut skeleton, guard_input.desired);
         let local_velocity =
@@ -817,6 +944,7 @@ fn capture_frame(
             &SkeletonState,
             &GlobalTransform,
             Option<&AnimationPlayback>,
+            Option<&RaisedFootworkState>,
         ),
         With<CaptureSubject>,
     >,
@@ -827,7 +955,8 @@ fn capture_frame(
     if !sequence.applied || sequence.capture_in_flight {
         return;
     }
-    let Ok((subject, skeleton, subject_global, playback)) = subjects.single() else {
+    let Ok((subject, skeleton, subject_global, playback, raised_footwork)) = subjects.single()
+    else {
         wait_or_fail(&mut sequence, "capture subject is missing", &mut exit);
         return;
     };
@@ -873,6 +1002,9 @@ fn capture_frame(
     if sequence.view_index == 0 {
         let (left_support_weight, right_support_weight) = locomotion_support_weights(skeleton);
         let root_distance_metres = sequence.scenario_distance;
+        let (desired_left_foot_target, desired_right_foot_target) = raised_footwork
+            .map(|state| (state.left_solve_target, state.right_solve_target))
+            .unwrap_or_default();
         sequence.samples.push(FrameSample {
             scenario: frame.scenario.to_owned(),
             scenario_frame: frame.scenario_frame,
@@ -903,6 +1035,8 @@ fn capture_frame(
                 || matches!(frame.action, SkeletonAction::Attack | SkeletonAction::Block),
             left_support_weight,
             right_support_weight,
+            desired_left_foot_target: desired_left_foot_target.map(|value| value.to_array()),
+            desired_right_foot_target: desired_right_foot_target.map(|value| value.to_array()),
             screenshots: VIEWS
                 .into_iter()
                 .map(|view| {
@@ -1062,6 +1196,9 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     let continuity_within_review_bounds = scenarios.iter().all(|metrics| {
         metrics.maximum_root_relative_step_metres <= 0.20
             && metrics.maximum_bone_rotation_step_degrees <= 60.0
+            && (!metrics.scenario.starts_with("raised-guard")
+                || metrics.maximum_pelvis_vertical_step_metres
+                    <= RAISED_MAXIMUM_PELVIS_VERTICAL_STEP_METRES)
     });
     let no_ground_penetration = scenarios
         .iter()
@@ -1080,9 +1217,10 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         let vertical_range_limit =
             vertical_range_limit(&metrics.scenario, metrics.foot_terrain_relief_metres);
         metrics.maximum_supported_foot_slip_metres_per_frame <= 0.035
-            && metrics.maximum_planted_foot_drift_metres <= 0.035
+            && metrics.maximum_planted_foot_drift_metres <= planted_drift_limit(&metrics.scenario)
             && metrics.minimum_signed_foot_track_metres >= -0.01
-            && metrics.minimum_inter_foot_separation_metres >= 0.08
+            && metrics.minimum_inter_foot_separation_metres
+                >= inter_foot_separation_limit(&metrics.scenario)
             && metrics.minimum_knee_flexion_degrees >= 4.0
             && metrics.minimum_knee_hemisphere_dot >= 0.0
             && metrics.maximum_facing_tracking_excess_degrees <= 0.2
@@ -1149,6 +1287,22 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         )
         .unwrap_or_else(|error| panic!("failed to write {failure_path:?}: {error}"));
         exit.write(AppExit::Error(1.try_into().expect("one is non-zero")));
+    }
+}
+
+fn planted_drift_limit(scenario: &str) -> f32 {
+    if scenario.starts_with("raised-guard") {
+        0.01
+    } else {
+        0.035
+    }
+}
+
+fn inter_foot_separation_limit(scenario: &str) -> f32 {
+    if scenario.starts_with("raised-guard") {
+        RAISED_MINIMUM_INTER_FOOT_SEPARATION_METRES
+    } else {
+        0.08
     }
 }
 
@@ -1253,6 +1407,7 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
                 loop_seam_position_metres: loop_position,
                 loop_seam_rotation_degrees: loop_rotation,
                 pelvis_vertical_range_metres: root_relative_vertical_range(&frames, "pelvis"),
+                maximum_pelvis_vertical_step_metres: root_relative_vertical_step(&frames, "pelvis"),
                 head_vertical_range_metres: root_relative_vertical_range(&frames, "head"),
                 foot_terrain_relief_metres: foot_terrain_relief(&frames),
                 minimum_knee_forward_bend_metres: minimum_knee_bend(&frames),
@@ -1273,6 +1428,12 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
 }
 
 fn expects_loop_seam(scenario: &str) -> bool {
+    if scenario.contains("-release")
+        || scenario.contains("-reversal")
+        || scenario.contains("accelerate")
+    {
+        return false;
+    }
     !matches!(
         scenario,
         "start-stop-transition"
@@ -1481,6 +1642,17 @@ fn root_relative_vertical_range(frames: &[&FrameSample], bone: &str) -> f32 {
     } else {
         0.0
     }
+}
+
+fn root_relative_vertical_step(frames: &[&FrameSample], bone: &str) -> f32 {
+    frames
+        .windows(2)
+        .filter_map(|pair| {
+            let previous = pair[0].bones.get(bone)?.position[1] - pair[0].root_position_metres[1];
+            let current = pair[1].bones.get(bone)?.position[1] - pair[1].root_position_metres[1];
+            Some((current - previous).abs())
+        })
+        .fold(0.0, f32::max)
 }
 
 /// Terrain height variation under the two sampled feet relative to the
@@ -1711,6 +1883,8 @@ mod tests {
             guard_action: false,
             left_support_weight: 1.0,
             right_support_weight: 1.0,
+            desired_left_foot_target: None,
+            desired_right_foot_target: None,
             screenshots,
             bones: BTreeMap::new(),
         };
@@ -1783,10 +1957,41 @@ mod tests {
                 .iter()
                 .any(|frame| { frame.weapon_guard == WeaponGuardState::Raised })
         );
+        for scenario in [
+            "raised-guard-right-lead-left",
+            "raised-guard-right-lead-right",
+            "raised-guard-right-lead-forward-right",
+            "raised-guard-right-lead-accelerate",
+            "raised-guard-right-lead-release",
+            "raised-guard-right-lead-reversal",
+        ] {
+            assert!(plan.iter().any(|frame| {
+                frame.scenario == scenario
+                    && frame.weapon_guard == WeaponGuardState::Raised
+                    && frame.lead_foot == LeadFoot::Right
+            }));
+        }
     }
 
     #[test]
-    fn raised_guard_viewer_scenarios_cover_guard_peak_return_with_fixed_lead() {
+    fn raised_guard_uses_strict_plant_and_separation_gates() {
+        assert_eq!(planted_drift_limit("raised-guard-right"), 0.01);
+        assert_eq!(inter_foot_separation_limit("raised-guard-right"), 0.16);
+        assert_eq!(planted_drift_limit("steady-walk-2.0"), 0.035);
+        assert_eq!(inter_foot_separation_limit("steady-walk-2.0"), 0.08);
+        for transition in [
+            "raised-guard-release-at-peak",
+            "raised-guard-right-lead-release",
+            "raised-guard-left-right-reversal",
+            "raised-guard-right-lead-reversal",
+            "raised-guard-accelerate-from-rest",
+        ] {
+            assert!(!expects_loop_seam(transition));
+        }
+    }
+
+    #[test]
+    fn raised_guard_viewer_scenarios_cross_complete_step_cycle_with_fixed_lead() {
         for scenario in [
             "raised-guard-forward",
             "raised-guard-backward",
@@ -1799,7 +2004,7 @@ mod tests {
         ] {
             let mut skeleton = SkeletonState::default();
             set_weapon_guard(&mut skeleton, WeaponGuardState::Raised);
-            let mut movement_progress = Vec::new();
+            let mut phases = Vec::new();
             for frame in capture_plan()
                 .into_iter()
                 .filter(|frame| frame.scenario == scenario)
@@ -1823,32 +2028,20 @@ mod tests {
                         tick: frame.scenario_frame as u64,
                     },
                 );
-                assert_eq!(skeleton.lead_foot, LeadFoot::Left);
-                movement_progress.extend(
-                    AnimationEvaluation::from_skeleton(&skeleton)
-                        .base
-                        .into_iter()
-                        .filter_map(|sample| match sample.sampling {
-                            PoseSampling::Span { progress, .. } => Some(progress),
-                            _ => None,
-                        }),
-                );
+                assert_eq!(skeleton.lead_foot, frame.lead_foot);
+                let evaluation = AnimationEvaluation::from_skeleton(&skeleton);
+                assert_eq!(evaluation.base.len(), 1);
+                assert_eq!(evaluation.base[0].pose, SemanticPose::GuardLeadLeft);
+                assert_eq!(evaluation.base[0].sampling, PoseSampling::Anchor);
+                phases.push(skeleton.gait_phase);
             }
-            assert!(movement_progress.iter().any(|&progress| progress <= 0.001));
-            let peak = movement_progress
-                .iter()
-                .position(|&progress| progress >= 0.99)
-                .expect("raised scenario reaches its directional extreme");
-            assert!(
-                movement_progress[peak + 1..]
-                    .iter()
-                    .any(|&progress| progress <= 0.05)
-            );
+            assert!(phases.windows(2).any(|pair| pair[1] < pair[0]));
+            assert!(phases.iter().any(|&phase| phase >= 0.5));
         }
     }
 
     #[test]
-    fn raised_guard_viewer_latches_release_and_reversal_until_guard_seam() {
+    fn raised_guard_viewer_finishes_release_and_reverses_at_foot_handoff() {
         let replay = |scenario: &str| {
             let mut skeleton = SkeletonState::default();
             set_weapon_guard(&mut skeleton, WeaponGuardState::Raised);
@@ -1895,14 +2088,12 @@ mod tests {
         assert_eq!(release.last().unwrap().1, 0.0);
 
         let reversal = replay("raised-guard-left-right-reversal");
-        assert!(
-            reversal.iter().any(|(frame, _, intent)| {
-                *frame >= 16 && intent.local_direction == Vec2::NEG_X
-            })
-        );
-        assert!(reversal.iter().any(|(frame, phase, intent)| {
-            *frame > 16 && *phase < 0.2 && intent.local_direction == Vec2::X
-        }));
+        let changed = reversal
+            .iter()
+            .find(|(_, _, intent)| intent.local_direction == Vec2::X)
+            .expect("reversal is accepted at a foot handoff");
+        assert!(changed.0 >= 16);
+        assert!(changed.1 < 0.08 || (0.5..0.58).contains(&changed.1));
     }
 
     #[test]
@@ -1951,6 +2142,8 @@ mod tests {
             guard_action: false,
             left_support_weight: 1.0,
             right_support_weight: 1.0,
+            desired_left_foot_target: None,
+            desired_right_foot_target: None,
             screenshots: BTreeMap::new(),
             bones,
         };
@@ -1997,6 +2190,8 @@ mod tests {
             guard_action: false,
             left_support_weight,
             right_support_weight: 0.0,
+            desired_left_foot_target: None,
+            desired_right_foot_target: None,
             screenshots: BTreeMap::new(),
             bones: BTreeMap::from([
                 ("left_foot".into(), foot(left_x, left_terrain_height)),
@@ -2027,6 +2222,21 @@ mod tests {
             ORDINARY_VERTICAL_RANGE_LIMIT_METRES
         );
         assert!((vertical_range_limit("cross-slope-walk", 0.08) - 0.28).abs() < 0.0001);
+    }
+
+    #[test]
+    fn pelvis_vertical_step_detects_a_one_frame_guard_height_snap() {
+        let mut first = foot_metric_frame(0, 0.0, 1.0, 0.0, 0.0);
+        let mut second = foot_metric_frame(1, 0.0, 1.0, 0.0, 0.0);
+        let pelvis = |height: f32| BoneSample {
+            position: Vec3::new(0.0, height, 0.0).to_array(),
+            rotation_xyzw: Quat::IDENTITY.to_array(),
+            terrain_clearance_metres: None,
+        };
+        first.bones.insert("pelvis".into(), pelvis(1.0));
+        second.bones.insert("pelvis".into(), pelvis(0.86));
+
+        assert!((root_relative_vertical_step(&[&first, &second], "pelvis") - 0.14).abs() < 0.0001);
     }
 
     #[test]

@@ -22,8 +22,8 @@ pub mod prelude {
         BODY_TURN_SPEED_RADIANS, Footwork, LeadFoot, PackValidationError, PoseSample, PoseSampling,
         Posture, RaisedLocomotionIntent, ResolvedPose, SemanticPose, SkeletonAction,
         SkeletonLocomotionInput, SkeletonState, StrikeFamily, WeaponGuardState,
-        advance_body_facing, controller_yaw, guard_shuttle_guard_weight,
-        project_skeleton_locomotion, set_weapon_guard,
+        advance_body_facing, controller_yaw, guard_step_length, project_skeleton_locomotion,
+        set_weapon_guard,
     };
     pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
     pub use crate::inventory::{

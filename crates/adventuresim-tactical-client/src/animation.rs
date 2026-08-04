@@ -19,7 +19,7 @@ mod procedural;
 #[allow(unused_imports)]
 pub(crate) use procedural::{
     BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone, HumanoidIkTargets,
-    ProceduralAnimationClock, ProceduralIkState, locomotion_support_weights,
+    ProceduralAnimationClock, ProceduralIkState, RaisedFootworkState, locomotion_support_weights,
 };
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
@@ -91,14 +91,15 @@ impl Plugin for TacticalAnimationPlugin {
     }
 }
 
-/// Runtime switch for the final terrain leg-IK pass. It defaults on in every
-/// build; the debug plugin exposes an F8 toggle without changing authored FK.
+/// Runtime switch for terrain height, slope, and pelvis conformity. Flat-ground
+/// procedural guard footwork remains active while this is disabled. Debug
+/// builds expose F8 as an explicit opt-in toggle.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TerrainIkEnabled(pub bool);
 
 impl Default for TerrainIkEnabled {
     fn default() -> Self {
-        Self(true)
+        Self(false)
     }
 }
 
@@ -1552,6 +1553,11 @@ pub fn spawn_fallback_t_pose(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn terrain_ik_defaults_off() {
+        assert!(!TerrainIkEnabled::default().0);
+    }
 
     fn spawn_test_t_pose(
         In(owner): In<Entity>,
