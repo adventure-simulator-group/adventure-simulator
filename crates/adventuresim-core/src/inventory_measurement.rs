@@ -1,6 +1,6 @@
 //! Framework-independent arithmetic for measured inventory definitions.
 //!
-//! The persistent schema described in `wiki/reference/measured-inventory.md` is not
+//! The persistent schema described in `wiki/shared/measured-inventory.md` is not
 //! implemented yet. This module is the small arithmetic boundary reducers can
 //! adopt when that schema lands.
 

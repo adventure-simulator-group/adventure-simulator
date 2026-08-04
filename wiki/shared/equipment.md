@@ -4,7 +4,7 @@ This document records the first equipment slice for issue #65: weapons,
 shields, and armor intended for northern Germany in approximately 1544. The
 definitions are canonical typed records in `content/items/catalog.yaml`,
 compiled and embedded by `adventuresim-core` as described in
-[Item definition authoring](item-authoring.md). The strategic game and the
+[Item definition authoring](../contributing/item-authoring.md). The strategic game and the
 autoresolver consume the same persisted `Item` records; there are no special
 NPC-only item rules.
 

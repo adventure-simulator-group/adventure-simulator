@@ -95,4 +95,4 @@ rights-reserved IEG map images, and raw OWDA grid/annual data; IEG's committed
 coarse CSV stays in the repository and OWDA may appear only as a bounded
 per-settlement derived profile. This engineering policy is fail-closed and does
 not itself resolve source-specific redistribution terms or the licence status of
-a future combined world-data release. See `wiki/reference/world-data-bundles.md`.
+a future combined world-data release. See `wiki/engineering/world-data/world-data-bundles.md`.

@@ -28,7 +28,7 @@ The mechanics live in the dependency-light `adventuresim-puzzles` crate and
 are re-exported by `adventuresim-core::errantry`. Each private authority also
 retains a validated generation specification, allowing the same engine to be
 parameterized and replayed exactly in the `puzzle-lab` CLI without importing
-quest presentation or persistence. See [Puzzle laboratory](puzzle-lab.md).
+quest presentation or persistence. See [Puzzle laboratory](../engineering/puzzle-lab.md).
 
 The presenter catalog is a separate boundary. The Lady Beneath the Thorn has
 closed introduction, instruction, failure, and success verse for every engine.

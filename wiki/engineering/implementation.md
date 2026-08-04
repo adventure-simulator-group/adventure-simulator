@@ -8,9 +8,9 @@ continuous simulation.
 ## Strategic layer
 
 The strategic layer is the persistent world. Players create and manage
-[characters](strategic/character.md), organize parties, travel between
-[settlements](strategic/settlement.md), investigate [quests](strategic/quests.md),
-trade, rest, train, and manage [inventory](shared/inventory.md).
+[characters](../strategic/character.md), organize parties, travel between
+[settlements](../strategic/settlement.md), investigate [quests](../strategic/quests.md),
+trade, rest, train, and manage [inventory](../shared/inventory.md).
 
 Time advances in explicit chunks when a party travels, rests, trains, works, or
 performs another strategic action. The interface is a server-rendered hypertext
@@ -45,5 +45,5 @@ combat, health, and other durable mechanics. Sharing a calculation does not
 move authority between layers.
 
 For the current technical boundaries, persistence rules, transport, and trust
-model, see [Architecture](reference/architecture.md). For deployment topology
+model, see [Architecture](architecture.md). For deployment topology
 and networking design, see [Networking](networking.md).

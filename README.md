@@ -25,7 +25,7 @@ This is all to say that we aren't building a "normal" web game that uses Wasm an
 
 Strategic balance and core-loop regression testing are supported by the NPC
 simulator documented in the
-[strategic simulation reference](wiki/reference/strategic-simulation.md).
+[strategic simulation reference](wiki/engineering/strategic-simulation.md).
 Its live mode drives the same party, quest, travel, autoresolve, loot, trade,
 and equipment reducers as players, against an explicitly disposable local
 database.

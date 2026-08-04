@@ -1,22 +1,31 @@
 # Summary
 
 [Introduction](../README.md)
+
+# World
+
 [Scenario](scenario.md)
-[Meta](meta.md)
-[Roadmap](roadmap.md)
 
 ---
 
-# Development
+# Contributing
 
-- [Implementation](implementation.md)
-- [Networking](networking.md)
-- [Architecture reference](reference/architecture.md)
-- [Development workflow](reference/developing.md)
-- [Strategic read cache](reference/strategic-read-cache.md)
-- [Strategic NPC simulation](reference/strategic-simulation.md)
-- [Project map maintenance](reference/llm/project-map-maintenance.md)
-- [Generated project map](reference/llm/project-map.md)
+- [Development workflow](engineering/developing.md)
+- [Item definition authoring](contributing/item-authoring.md)
+- [Project map maintenance](engineering/project-map-maintenance.md)
+
+# Engineering
+
+- [Implementation](engineering/implementation.md)
+- [Networking](engineering/networking.md)
+- [Architecture reference](engineering/architecture.md)
+- [Strategic read cache](engineering/strategic-read-cache.md)
+- [Strategic NPC simulation](engineering/strategic-simulation.md)
+- [Puzzle laboratory](engineering/puzzle-lab.md)
+
+# Generated reference
+
+- [Project map](generated/project-map.md)
 
 # Client
 
@@ -36,16 +45,13 @@
 - [StrataMap](shared/strata-map.md)
 - [Inventory](shared/inventory.md)
 - [WIP: Terrain](shared/terrain.md)
-- [Bestiary authority](reference/bestiary.md)
-- [Historical equipment catalog](reference/equipment.md)
-- [Item definition authoring](reference/item-authoring.md)
-- [Food and cooking](reference/food-and-cooking.md)
-- [Herbalism](reference/herbalism.md)
-- [Foraging](reference/foraging.md)
-- [Measured inventory architecture](reference/measured-inventory.md)
-- [Physiology system](reference/physiology.md)
-- [Autopsies](reference/autopsies.md)
-- [Outbreak investigations](reference/outbreaks.md)
+- [Bestiary authority](shared/bestiary.md)
+- [Historical equipment catalog](shared/equipment.md)
+- [Food and cooking](shared/food-and-cooking.md)
+- [Herbalism](shared/herbalism.md)
+- [Measured inventory architecture](shared/measured-inventory.md)
+- [Physiology system](shared/physiology.md)
+- [Fantastic diseases](shared/fantastic-diseases.md)
 
 # Strategic
 
@@ -53,35 +59,40 @@
 - [Quests](strategic/quests.md)
 - [Time](strategic/time.md)
 - [Travel](strategic/travel.md)
+- [Foraging](strategic/foraging.md)
 - [Settlement](strategic/settlement.md)
+- [Residences](strategic/residences.md)
+- [Reputation](strategic/reputation.md)
 - [Trade](strategic/trade.md)
-- [Dialogue architecture](reference/dialogue.md)
-- [Organizations](reference/organizations.md)
-- [Quest generation and investigation](reference/quest-generation-and-investigation.md)
-- [Quest authority](reference/quest-authority.md)
-- [Errantry and modular challenges](reference/errantry-and-challenges.md)
-- [Romance road encounters](reference/romance-road-encounters.md)
+- [Dialogue architecture](strategic/dialogue.md)
+- [Organizations](strategic/organizations.md)
+- [Quest generation and investigation](strategic/quest-generation-and-investigation.md)
+- [Autopsies](strategic/autopsies.md)
+- [Outbreak investigations](strategic/outbreaks.md)
+- [Quest authority](strategic/quest-authority.md)
+- [Errantry and modular challenges](strategic/errantry-and-challenges.md)
+- [Romance road encounters](strategic/romance-road-encounters.md)
 
 # Tactical
 
 - [Combat](tactical/combat.md)
 - [Stealth](tactical/stealth.md)
 
-# World Data
+# World data
 
-- [Source manifests](reference/source-manifests.md)
-- [World-data input bundles](reference/world-data-bundles.md)
-- [Canonical spatial grid](reference/spatial-grid.md)
-- [Viabundus](reference/viabundus.md)
-- [Strategic route terrain](reference/route-terrain.md)
-- [Elevation](reference/elevation.md)
-- [Surface water and road crossings](reference/hydrology.md)
-- [Historical land use](reference/historical-land-use.md)
-- [Historical drought and wetness](reference/drought.md)
-- [Forest cover](reference/forest-cover.md)
-- [Potential natural vegetation](reference/potential-vegetation.md)
-- [Tree species](reference/tree-species.md)
-- [Soil](reference/soil.md)
-- [Surface geology](reference/geology.md)
-- [Official religion in 1544](reference/religion.md)
-- [Strategic industries and commodities](reference/industries.md)
+- [World-data input bundles](engineering/world-data/world-data-bundles.md)
+- [Source manifests](engineering/world-data/source-manifests.md)
+- [Canonical spatial grid](engineering/world-data/spatial-grid.md)
+- [Viabundus](engineering/world-data/viabundus.md)
+- [Strategic route terrain](engineering/world-data/route-terrain.md)
+- [Elevation](engineering/world-data/elevation.md)
+- [Surface water and road crossings](engineering/world-data/hydrology.md)
+- [Historical land use](engineering/world-data/historical-land-use.md)
+- [Historical drought and wetness](engineering/world-data/drought.md)
+- [Forest cover](engineering/world-data/forest-cover.md)
+- [Potential natural vegetation](engineering/world-data/potential-vegetation.md)
+- [Tree species](engineering/world-data/tree-species.md)
+- [Soil](engineering/world-data/soil.md)
+- [Surface geology](engineering/world-data/geology.md)
+- [Official religion in 1544](engineering/world-data/religion.md)
+- [Strategic industries and commodities](engineering/world-data/industries.md)

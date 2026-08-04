@@ -63,7 +63,7 @@ cannot complete the case.
 Fantastic diseases use the same physical meters and transmission machinery as
 ordinary disease. Their unusually clean traditional profiles make Physiology
 more useful without making humour theory reliable for ordinary illness. See
-[Fantastic diseases](fantastic-diseases.md).
+[Fantastic diseases](../shared/fantastic-diseases.md).
 
 ## Authoring, replay, and evaluation
 

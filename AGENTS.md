@@ -5,9 +5,9 @@
 Read these before making a non-trivial change:
 
 - `README.md` for the game vision and product boundaries.
-- `wiki/reference/architecture.md` for the strategic/tactical split and persistence rules.
-- `wiki/reference/developing.md` and `justfile` for local development commands.
-- `wiki/reference/llm/project-map.md` for a concise inventory of repository files.
+- `wiki/engineering/architecture.md` for the strategic/tactical split and persistence rules.
+- `wiki/engineering/developing.md` and `justfile` for local development commands.
+- `wiki/generated/project-map.md` for a concise inventory of repository files.
 - Relevant pages in `wiki/` for gameplay, design, and technical decisions.
 
 This is a Rust workspace. The strategic layer uses SpacetimeDB; the tactical
@@ -47,7 +47,7 @@ and recreate/reseed the development database whenever the schema changes.
 
 ## Project map maintenance
 
-`wiki/reference/llm/project-map.md` is generated from the current source tree. Whenever
+`wiki/generated/project-map.md` is generated from the current source tree. Whenever
 you add, remove, rename, or substantially repurpose a repository file, run:
 
 ```powershell

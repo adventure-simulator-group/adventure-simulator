@@ -3,11 +3,11 @@
 In an outbreak investigation, Bestiary can connect physical or testimonial
 vector evidence to the kind of creature capable of carrying it. It does not
 substitute for Surgery's preservation of tissue evidence or Physiology's
-interpretation of bodily effects. See [Outbreak investigations](outbreaks.md).
+interpretation of bodily effects. See [Outbreak investigations](../strategic/outbreaks.md).
 
 Canonical authoring records live in `content/quests/bestiary.yaml`. They are
 sorted, validated, embedded and content-hashed at build time; see
-[Quest generation and investigation](quest-generation-and-investigation.md).
+[Quest generation and investigation](../strategic/quest-generation-and-investigation.md).
 Combat weaknesses use the ordinary
 physical resistance/padding model. Skeleton bone, for example, has edge
 resistance and no innate padding rather than a flat cut/blunt multiplier.

@@ -24,8 +24,8 @@ quantity-one measured rows so partial use can leave a meaningful remainder.
 Food lots additionally preserve their own preparation, age, nutrition, value,
 provenance, and hidden contamination.
 
-See [Measured inventory](../reference/measured-inventory.md) for the durable
-amount model and [Food and cooking](../reference/food-and-cooking.md) for food
+See [Measured inventory](measured-inventory.md) for the durable
+amount model and [Food and cooking](food-and-cooking.md) for food
 lot and cooking behavior.
 
 ## Equipment sets

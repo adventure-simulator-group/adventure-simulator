@@ -39,9 +39,9 @@ rather than manually approximate the shortest geometric line.
 
 The source and artifact contracts are documented separately:
 
-- [Viabundus](../reference/viabundus.md) covers the historical road and
+- [Viabundus](../engineering/world-data/viabundus.md) covers the historical road and
   settlement source.
-- [Strategic route terrain](../reference/route-terrain.md) covers compiled
+- [Strategic route terrain](../engineering/world-data/route-terrain.md) covers compiled
   elevation, water, terrain, and routing facts.
 
 ## Speed
@@ -120,7 +120,7 @@ Emergency alcohol may provide limited hydration, but its alcohol content caps
 the useful water and creates its ordinary drinking effects.
 
 See [Inventory](../shared/inventory.md) for provision storage and
-[Food and cooking](../reference/food-and-cooking.md) for authoritative food
+[Food and cooking](../shared/food-and-cooking.md) for authoritative food
 behavior.
 
 ## Weather and field shelter

@@ -6,11 +6,11 @@ and Physiology authority as any other co-present Character. Dead patients use
 the ordinary corpse interface. Neither system reads outbreak truth, identifies
 the source, or completes the quest; those conclusions require the investigation
 evidence graph and exact remediation. See
-[Outbreak investigations](outbreaks.md).
+[Outbreak investigations](../strategic/outbreaks.md).
 
 Dead subjects remain available to the medical interface. External and internal
 post-mortem interpretation, its separation from Surgery and Bestiary, and
-observer-safe corpse findings are documented in [Autopsies](autopsies.md).
+observer-safe corpse findings are documented in [Autopsies](../strategic/autopsies.md).
 
 Physiology is the skill for preventing avoidable disease exposure, observing
 health, administering prepared interventions, and improving wound recovery. It

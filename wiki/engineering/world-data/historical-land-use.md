@@ -34,7 +34,7 @@ into that directory from the pinned reviewed source-separated input bundle. Its
 HYDE component retains a separate notice and exact file inventory; the archive
 is not a combined derived world artifact. Manual browser retrieval is the
 fallback for preparing or independently auditing the HYDE component. See
-`wiki/reference/world-data-bundles.md`.
+`wiki/engineering/world-data/world-data-bundles.md`.
 
 The importer requires NetCDF-4 inputs with `time`, `lat`, and `lon` dimensions
 in that order, matching 4,320×2,160 global 5-arcminute coordinate grids. It

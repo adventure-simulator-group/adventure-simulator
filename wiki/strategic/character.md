@@ -412,7 +412,7 @@ Inspired by their Tolkien/*Warhammer* depiction. A proud, stubborn, greedy, ~~sh
 
 Dwarves who shame their kin by dishonoring the ancestors, breaking oaths, or engaging with prissy Elven nonsense like magic may be exiled at best, at worst compelled to redeem their honor by undertaking various suicide missions to retake an ancestral realm.
 
-As the race needs a lot of Dwarf-specific assets, Dwarves will not be included in the [MVP](../roadmap.md) or tentatively even the next phase.
+As the race needs a lot of Dwarf-specific assets, Dwarves will not be included in the MVP or tentatively even the next phase.
 ### Halflings
 Inspired by their Tolkien/*Warhammer* depiction. A small, jovial, provincial people generally unconcerned with the matters of the "big people." Would be found in small idyllic villages here and there. Not important enough for the MVP.
 ### Orcs/Goblins
@@ -430,7 +430,7 @@ Respawning an immortal character requires a [favor](../shared/magic.md) cost equ
 
 [^2]: Albeit with drastically diminishing returns.
 
-Immortality is based on race, not an abstract per-character flag. All immortal races are said to have "fey blood." In the current [roadmap](../roadmap.md), Elves are the only immortal race planned.
+Immortality is based on race, not an abstract per-character flag. All immortal races are said to have "fey blood." In the current roadmap, Elves are the only immortal race planned.
 ### Elves
 Inspired by their Tolkien/*Warhammer* depiction. Tall, beautiful, and haughty, Elves live in either deep forests or fictitious islands. They are generally morally good. Exceptions include the evil "Dark Elves" and the somewhat more neutral, ecoterroristic "Wood Elves."
 ### Dragons
