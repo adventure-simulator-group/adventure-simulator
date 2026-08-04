@@ -10,6 +10,10 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub enum FoodPreparation {
     Raw,
 
+    Cut,
+
+    Ground,
+
     Preserved,
 
     PanFried,
@@ -17,6 +21,8 @@ pub enum FoodPreparation {
     Stewed,
 
     Roasted,
+
+    DriedSmoked,
 
     Baked,
 }

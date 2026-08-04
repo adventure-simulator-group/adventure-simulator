@@ -1434,7 +1434,15 @@ pub struct InventoryContainment {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContainerLiquid {
     pub container_object_id: u64,
+    pub liquid_item_id: String,
     pub water_ml: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendTinctureStatus {
+    pub container_object_id: u64,
+    pub ready_at_world_minute: u64,
+    pub matured: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1446,10 +1454,13 @@ pub struct PartyItemAmount {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum FoodPreparation {
     Raw,
+    Cut,
+    Ground,
     Preserved,
     PanFried,
     Stewed,
     Roasted,
+    DriedSmoked,
     Baked,
 }
 

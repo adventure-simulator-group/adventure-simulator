@@ -1,8 +1,6 @@
 use adventuresim_core::{
     equipment::{EncumbranceSummary, INPUT_ADDRESS_MAPPINGS, InputAddressMapping},
-    herbalism::{CraftOutcome, PreparationMethod},
     item_catalog_schema::EquipmentLocation as CoreEquipmentLocation,
-    skill::Skill,
 };
 use maud::{Markup, html};
 
@@ -19,9 +17,9 @@ use super::{
     },
 };
 use crate::spacetimedb::{
-    BackendFireplaceDish, BackendFireplaceStation, Character, CharacterAttributes,
-    CharacterCondition, CharacterEquipmentGraph, CharacterLimbs, CharacterSkills, CharacterStats,
-    EquipmentBodyPart, EquipmentChannel, EquipmentLocation, FoodLot, InventoryItem,
+    BackendFireplaceDish, BackendFireplaceStation, Character, CharacterCondition,
+    CharacterEquipmentGraph, CharacterLimbs, CharacterStats, CookingMethod, EquipmentBodyPart,
+    EquipmentChannel, EquipmentLocation, FoodLot, FoodPreparation, InventoryItem,
     InventoryItemAmount, InventoryQuantityTarget, ItemDefinition, PartyInventoryItem,
     PartyItemAmount, Settlement,
 };
@@ -335,7 +333,11 @@ pub fn fireplace_page(
         } else if elapsed == u64::from(row.target_minutes) {
             "Ready"
         } else {
-            "Overcooking"
+            match row.method {
+                CookingMethod::Stew => "Ready (holding safely)",
+                CookingMethod::Roast => "Drying / smoking",
+                CookingMethod::PanFry | CookingMethod::Bake => "Burning",
+            }
         }
     });
     let scope_href = |scope: &str| {
@@ -403,7 +405,13 @@ pub fn fireplace_page(
                     div class="rest-service-heading" { strong { "Rest while cooking" } }
                     p class="small-copy" { "Target: " (row.target_minutes) " minutes · Remaining: " (u64::from(row.target_minutes).saturating_sub(elapsed)) " minutes" }
                     @if elapsed >= u64::from(row.target_minutes) {
-                        p class="strategic-warning" role="status" { "The dish is ready. More rest will overcook it." }
+                        p class="strategic-warning" role="status" {
+                            @match row.method {
+                                CookingMethod::Stew => { "The dish is ready and will hold safely in its wet pot." }
+                                CookingMethod::Roast => { "The dish is ready. More time will dry and smoke it, reducing nutrition." }
+                                CookingMethod::PanFry | CookingMethod::Bake => { "The dish is ready. More time will burn it." }
+                            }
+                        }
                     }
                     form action=(rest_action) method="post" {
                         input type="hidden" name="unit" value="minutes";
@@ -504,142 +512,6 @@ fn fireplace_inventory_row(
         td class="inventory-count" { (format!("{:.2}", amount as f32 / 1_000_000.0)) }
         td class="inventory-weight" { (definition.map_or(0.0, |d| d.weight)) }
     } }
-}
-
-pub(super) fn herbalism_activity_dialog(
-    location: &LocationView,
-    active_character: &Character,
-    skills: Option<&CharacterSkills>,
-    attributes: Option<&CharacterAttributes>,
-    inventory: &[InventoryItem],
-    item_definitions: &[ItemDefinition],
-) -> Markup {
-    let close_href = location.preserve_building(format!(
-        "{}/party/{}",
-        location.base_path(),
-        active_character.id
-    ));
-    let action = location.preserve_building(format!(
-        "{}/party/{}/herbalism",
-        location.base_path(),
-        active_character.id
-    ));
-    let capability = Skill::Herbalism.capped_rank_for_aptitude(
-        skills.map_or(0.0, |row| row.herbalism_hours),
-        attributes.map_or(0.0, |row| row.intelligence),
-    );
-    let ingredients = inventory
-        .iter()
-        .filter(|row| adventuresim_core::herbalism::normalize_ingredient(&row.item_id).is_some())
-        .collect::<Vec<_>>();
-    let encoded_preview = |item_id: &str, method: PreparationMethod| {
-        adventuresim_core::herbalism::preview(item_id, method, capability).map(|preview| {
-            let (output, degraded) = match preview.outcome {
-                CraftOutcome::Medication(id) => (item_display_name(id), false),
-                CraftOutcome::DegradedWaste(id) => (item_display_name(id), true),
-            };
-            let requirement = preview.required_consumable.map_or_else(
-                || "No additional consumable".to_string(),
-                |required| {
-                    format!(
-                        "{} × {}",
-                        item_display_name(required.item_id),
-                        required.units
-                    )
-                },
-            );
-            format!(
-                "{}|{}|{}|{}|{}|{}|{}",
-                output,
-                preview.duration_minutes,
-                preview.input_units,
-                requirement,
-                preview.expected_effect,
-                preview.risk,
-                degraded
-            )
-        })
-    };
-    html! {
-        div class="character-action-overlay" data-character-action-dialog data-initial-focus="[name=inventory_item_id]" {
-            a class="character-action-backdrop" href=(&close_href) aria-label="Close herbalism dialog" {}
-            section class="character-action-dialog herbalism-dialog" role="dialog" aria-modal="true"
-                aria-labelledby="herbalism-dialog-title" tabindex="-1" data-herbalism-activity {
-                header class="character-action-dialog-header" {
-                    h2 id="herbalism-dialog-title" { "Herbalism" }
-                    a class="character-action-dialog-close" href=(&close_href)
-                        aria-label="Close herbalism dialog" { "×" }
-                }
-                form method="post" action=(&action) data-herbalism-form {
-                    section aria-labelledby="herbal-ingredient-title" {
-                        h3 id="herbal-ingredient-title" { "Medicinal ingredient" }
-                        @if ingredients.is_empty() {
-                            (empty_state("No medicinal ingredients carried.", None, None))
-                        } @else {
-                            table class="trade-inventory-table herbalism-exchange-list" {
-                                tbody {
-                                    @for row in &ingredients {
-                                        @let definition = item_definitions.iter().find(|item| item.id == row.item_id);
-                                        @let grade = adventuresim_core::herbalism::normalize_ingredient(&row.item_id)
-                                            .map_or("Ordinary", |(_, grade)| grade.label());
-                                        tr class="trade-inventory-row trade-row-player" {
-                                            td class="inventory-item-type" { (item_type_icon(&row.item_id)) }
-                                            td class="inventory-item-name" {
-                                                label {
-                                                    input type="radio" name="inventory_item_id" value=(row.id)
-                                                        data-herbal-ingredient
-                                                        data-item-id=(&row.item_id)
-                                                        data-dry-grind=[encoded_preview(&row.item_id, PreparationMethod::DryGrind)]
-                                                        data-infuse-decoct=[encoded_preview(&row.item_id, PreparationMethod::InfuseDecoct)]
-                                                        data-tincture=[encoded_preview(&row.item_id, PreparationMethod::Tincture)];
-                                                    (item_display_name(&row.item_id))
-                                                    span class="inventory-item-quality" {
-                                                        " · " (grade)
-                                                    }
-                                                }
-                                            }
-                                            td class="inventory-count" { (row.qty) }
-                                            td class="inventory-weight" { (definition.map_or(0.0, |item| item.weight)) " kg" }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    fieldset class="herbalism-methods" {
-                        legend { "Preparation method" }
-                        @for method in PreparationMethod::ALL {
-                            @let description_id = format!("herbal-method-{}-description", method.slug());
-                            label class="btn btn-secondary"
-                                tabindex="0"
-                                aria-describedby=(&description_id)
-                                aria-disabled="true"
-                                data-method-label=(method.label())
-                                data-method-description=(method.description())
-                                data-strategic-tooltip=(method.description()) {
-                                input type="radio" name="method" value=(method.slug())
-                                    data-herbal-method;
-                                (method.label())
-                                span id=(&description_id) class="sr-only"
-                                    data-herbal-method-status {
-                                    (method.description())
-                                }
-                            }
-                        }
-                    }
-                    p class="small-copy herbalism-preview" data-herbal-preview role="status" aria-live="polite" {
-                        "Select one ingredient and one method."
-                    }
-                    div class="party-offer herbalism-actions" {
-                        a class="btn btn-secondary party-offer-cancel" href=(&close_href) { "Cancel" }
-                        button type="submit" class="btn btn-primary" disabled data-herbal-submit {
-                            "Prepare"
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 pub(super) fn filth_status_bar(
@@ -929,6 +801,22 @@ fn discard_inventory_rail(
                                 td class="inventory-item-name" {
                                     (item_name_with_food_lot(&item.item_id, &display_name, definition, food_lot))
                                     span class="inventory-row-actions" {
+                                        @if food_lot.is_some_and(|lot| matches!(lot.preparation, FoodPreparation::Raw | FoodPreparation::Cut)) {
+                                            @if food_lot.is_some_and(|lot| lot.preparation == FoodPreparation::Raw) {
+                                                form method="post" action="/api/inventory/prepare" class="inventory-edge-action" {
+                                                    input type="hidden" name="inventory_item_id" value=(item.id);
+                                                    input type="hidden" name="inventory_scope" value="personal";
+                                                    input type="hidden" name="preparation_action" value="cut";
+                                                    button type="submit" class="btn btn-secondary btn-small" aria-label=(format!("Cut {item_name}")) data-strategic-tooltip="Cut (requires a precise edged weapon)" { "Cut" }
+                                                }
+                                            }
+                                            form method="post" action="/api/inventory/prepare" class="inventory-edge-action" {
+                                                input type="hidden" name="inventory_item_id" value=(item.id);
+                                                input type="hidden" name="inventory_scope" value="personal";
+                                                input type="hidden" name="preparation_action" value="grind";
+                                                button type="submit" class="btn btn-secondary btn-small" aria-label=(format!("Grind {item_name}")) data-strategic-tooltip="Grind" { "Grind" }
+                                            }
+                                        }
                                         @if is_equipped {
                                             (disabled_transfer_button("left", "Equipped items cannot be discarded"))
                                         } @else {
@@ -2525,7 +2413,7 @@ mod tests {
             .split("pub fn fireplace_page")
             .nth(1)
             .unwrap()
-            .split("pub(super) fn herbalism_activity_dialog")
+            .split("pub(super) fn filth_status_bar")
             .next()
             .unwrap();
         assert!(fireplace.contains("data-inventory-browser=\"fireplace-vessels-left\""));
@@ -2924,8 +2812,10 @@ mod tests {
         assert!(rendered.contains(">Coin<"));
         assert!(rendered.contains("data-item-edit-url=\"https://github.com/"));
         assert!(rendered.contains("content/items/catalog.yaml#L"));
-        assert!(rendered.contains("data-currency-name=\"Lübeck mark\""));
-        assert!(!rendered.contains(">Lübeck mark<"));
+        let historical_name = adventuresim_core::strategic_currency::currency_name("lubeck_mark")
+            .expect("Lübeck mark remains an authored currency");
+        assert!(rendered.contains(&format!("data-currency-name=\"{historical_name}\"")));
+        assert!(!rendered.contains(&format!(">{historical_name}<")));
     }
 
     #[test]
@@ -3599,5 +3489,17 @@ mod tests {
         assert!(equipment_target_is_self_or_descendant(&equip, 10, 10));
         assert!(equipment_target_is_self_or_descendant(&equip, 10, 30));
         assert!(!equipment_target_is_self_or_descendant(&equip, 30, 10));
+    }
+
+    #[test]
+    fn ingredient_preparation_is_an_accessible_inner_edge_action_not_a_skill_modal() {
+        let source = include_str!("trade.rs");
+        assert!(source.contains("/api/inventory/prepare"));
+        assert!(source.contains("name=\"preparation_action\""));
+        assert!(!source.contains("name=\"action\" value=\"cut\""));
+        assert!(source.contains("aria-label=(format!(\"Cut {item_name}\"))"));
+        assert!(source.contains("data-strategic-tooltip=\"Grind\""));
+        let removed_menu_marker = ["data-herbalism", "-activity"].concat();
+        assert!(!source.contains(&removed_menu_marker));
     }
 }

@@ -251,11 +251,10 @@ pub fn party_personal_page(
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     filth: &[crate::spacetimedb::CharacterFilth],
-    herbalism: bool,
-    inventory: &[InventoryItem],
+    _inventory: &[InventoryItem],
     _inventory_amounts: &[InventoryItemAmount],
     _food_lots: &[FoodLot],
-    item_definitions: &[ItemDefinition],
+    _item_definitions: &[ItemDefinition],
     character_action_dialog: Option<Markup>,
     surgery_open: Option<&str>,
     social_open: bool,
@@ -265,12 +264,6 @@ pub fn party_personal_page(
     // fireplace portrait is the sole entry point to cooking.
     let cooking_href: Option<String> = None;
     let cooking_open = false;
-    let herbalism_href = location.preserve_building(format!(
-        "{}/party/{}?herbalism=true",
-        location.base_path(),
-        active_character.id
-    ));
-    let herbalism_open = herbalism;
     let surgery_path_template = location.preserve_building(format!(
         "{}/party/{}/surgery/__limb__",
         location.base_path(),
@@ -308,16 +301,7 @@ pub fn party_personal_page(
     let foraging_open = foraging_dialog.is_some();
     let after = html! {
         (physiology_dialog(medical, "physiology-chart-dialog", &active_character.name))
-        @if herbalism_open {
-            (super::trade::herbalism_activity_dialog(
-                location,
-                active_character,
-                skills,
-                attributes,
-                inventory,
-                item_definitions,
-            ))
-        } @else if let Some(dialog) = foraging_dialog {
+        @if let Some(dialog) = foraging_dialog {
             (dialog)
         }
     };
@@ -354,8 +338,6 @@ pub fn party_personal_page(
         skill_actions: CharacterSheetActions {
             cooking_href: cooking_href.as_deref(),
             cooking_open,
-            herbalism_href: Some(&herbalism_href),
-            herbalism_open,
             foraging_href: Some(&foraging_href),
             foraging_open,
         },

@@ -4,6 +4,7 @@ pub(super) struct ContainerSnapshot {
     edges: Vec<InventoryContainment>,
     liquids: Vec<ContainerLiquid>,
     presentations: Vec<ContainerItemPresentation>,
+    tinctures: Vec<BackendTinctureStatus>,
 }
 
 #[derive(Debug, Serialize)]
@@ -14,6 +15,7 @@ pub(super) struct ContainerItemPresentation {
     quantity: u32,
     exterior_volume_ml: u32,
     container_capacity_ml: u32,
+    tincture_vessel: bool,
 }
 
 #[derive(Deserialize)]
@@ -32,6 +34,15 @@ pub(super) struct ContainerRemoveForm {
 }
 #[derive(Deserialize)]
 pub(super) struct ContainerWaterForm { container_object_id: u64, requested_ml: u64 }
+#[derive(Deserialize)]
+pub(super) struct ContainerTinctureForm { container_object_id: u64 }
+#[derive(Deserialize)]
+pub(super) struct ContainerTinctureDoseForm {
+    container_object_id: u64,
+    #[serde(default = "default_tincture_dose")]
+    amount_milliunits: u32,
+}
+fn default_tincture_dose() -> u32 { 100 }
 
 pub(super) async fn inventory_containers(
     State(state): State<AppState>,
@@ -78,9 +89,18 @@ pub(super) async fn inventory_containers(
             .map_or_else(|| object.item_id.replace('_', " "), |lot| lot.display_name.clone());
         Some(ContainerItemPresentation { object_id: object.id, item_id: object.item_id.clone(), display_name,
             quantity, exterior_volume_ml: definition.exterior_volume_ml,
-            container_capacity_ml: definition.container_capacity_ml })
+            container_capacity_ml: definition.container_capacity_ml,
+            tincture_vessel: adventuresim_core::item_catalog::definition(&object.item_id)
+                .is_some_and(|definition| definition.tags.iter().any(|tag| tag == "tincture_vessel")) })
     }).collect();
-    Json(ContainerSnapshot { objects, edges, liquids, presentations }).into_response()
+    let existing = state.db.query::<BackendTinctureStatus>("SELECT * FROM backend_tincture_statuses")
+        .await.unwrap_or_default().into_iter().filter(|row| ids.contains(&row.container_object_id)).collect::<Vec<_>>();
+    for status in &existing {
+        let _ = state.db.call("refresh_tincture", &[json!(actor.id), json!(status.container_object_id)]).await;
+    }
+    let tinctures = state.db.query::<BackendTinctureStatus>("SELECT * FROM backend_tincture_statuses")
+        .await.unwrap_or_default().into_iter().filter(|row| ids.contains(&row.container_object_id)).collect();
+    Json(ContainerSnapshot { objects, edges, liquids, presentations, tinctures }).into_response()
 }
 
 async fn owned_container_object(
@@ -158,5 +178,58 @@ pub(super) async fn drain_inventory_container_water(
     let Some((actor, _)) = get_active_character(&state, session.character_id_u64()).await else { return StatusCode::UNAUTHORIZED.into_response(); };
     match state.db.call("pour_water_out_of_container", &[json!(actor.id), json!(form.container_object_id), json!(form.requested_ml)]).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(), Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+pub(super) async fn pour_inventory_container_tincture_spirit(
+    State(state): State<AppState>, session: Session, Form(form): Form<ContainerTinctureForm>,
+) -> Response {
+    let Some((actor, _)) = get_active_character(&state, session.character_id_u64()).await else { return StatusCode::UNAUTHORIZED.into_response(); };
+    let spirit = state.db.query::<InventoryItem>(&format!("SELECT * FROM inventory_item WHERE character_id = {}", actor.id)).await
+        .unwrap_or_default().into_iter().filter(|row| row.item_id == "tincture_spirit" && row.qty > 0).min_by_key(|row| row.id);
+    let Some(spirit) = spirit else { return (StatusCode::BAD_REQUEST, "No tincture spirit is carried").into_response(); };
+    match state.db.call("pour_tincture_spirit_into_container", &[json!(actor.id), json!(spirit.id), json!(form.container_object_id)]).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(), Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+pub(super) async fn start_inventory_container_tincture(
+    State(state): State<AppState>, session: Session, Form(form): Form<ContainerTinctureForm>,
+) -> Response {
+    let Some((actor, _)) = get_active_character(&state, session.character_id_u64()).await else { return StatusCode::UNAUTHORIZED.into_response(); };
+    match state.db.call("start_poppy_tincture", &[json!(actor.id), json!(form.container_object_id)]).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(), Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+pub(super) async fn refresh_inventory_container_tincture(
+    State(state): State<AppState>, session: Session, Form(form): Form<ContainerTinctureForm>,
+) -> Response {
+    let Some((actor, _)) = get_active_character(&state, session.character_id_u64()).await else { return StatusCode::UNAUTHORIZED.into_response(); };
+    match state.db.call("refresh_tincture", &[json!(actor.id), json!(form.container_object_id)]).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(), Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+pub(super) async fn dose_inventory_container_tincture(
+    State(state): State<AppState>, session: Session, Form(form): Form<ContainerTinctureDoseForm>,
+) -> Response {
+    let Some((actor, _)) = get_active_character(&state, session.character_id_u64()).await else { return StatusCode::UNAUTHORIZED.into_response(); };
+    match state.db.call("administer_tincture_from_container", &[json!(actor.id), json!(actor.id),
+        json!(form.container_object_id), json!(form.amount_milliunits)]).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(), Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+#[cfg(test)]
+mod preparation_ui_tests {
+    #[test]
+    fn typed_liquid_and_tincture_controls_use_closed_reducers() {
+        let route = include_str!("containers.rs");
+        let script = include_str!("../../../../static/inventory-browser.js");
+        assert!(route.contains("pour_tincture_spirit_into_container"));
+        assert!(route.contains("start_poppy_tincture"));
+        assert!(script.contains("data-container-spirit"));
+        assert!(script.contains("data-container-tincture"));
     }
 }

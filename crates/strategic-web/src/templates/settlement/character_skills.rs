@@ -938,8 +938,6 @@ fn character_aptitude(attributes: &CharacterAttributes, skill: Skill) -> f32 {
 pub(crate) struct CharacterSheetActions<'a> {
     pub(super) cooking_href: Option<&'a str>,
     pub(super) cooking_open: bool,
-    pub(super) herbalism_href: Option<&'a str>,
-    pub(super) herbalism_open: bool,
     pub(super) foraging_href: Option<&'a str>,
     pub(super) foraging_open: bool,
 }
@@ -1149,7 +1147,7 @@ fn skills_table(
                         ))
                     }
                     (party_skill_row(skills, "Cooking", "cooking", Skill::Cooking, intelligence, head_health, schedule.is_some(), actions.cooking_href.map(|href| SkillAction::Get { href, label: "Open cooking menu", open: actions.cooking_open })))
-                    (party_skill_row(skills, "Herbalism", "caduceus", Skill::Herbalism, intelligence, head_health, schedule.is_some(), actions.herbalism_href.map(|href| SkillAction::Get { href, label: "Open herbalism menu", open: actions.herbalism_open })))
+                    (party_skill_row(skills, "Herbalism", "caduceus", Skill::Herbalism, intelligence, head_health, schedule.is_some(), None))
                     (religion_skill_rows(skills, intelligence, head_health, schedule, training_religion))
                     (bestiary_skill_rows(skills, intelligence, head_health, schedule.is_some()))
                     (language_skill_rows(skills, instinct, intelligence, schedule.is_some()))
@@ -3433,11 +3431,11 @@ mod tests {
             .reading
             .expect("German primer is readable and useful");
         assert!((reading.rate - 0.5).abs() < f32::EPSILON);
-        assert!(
-            reading
-                .description
-                .contains("Vocabularius ex quo (German–Latin)")
-        );
+        let selected_title = adventuresim_core::item_catalog::definition("primer_german_latin")
+            .expect("German primer remains authored")
+            .display_name
+            .as_str();
+        assert!(reading.description.contains(selected_title));
         assert!(reading.description.contains("50%"));
     }
 

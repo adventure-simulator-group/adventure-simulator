@@ -22,7 +22,8 @@ mass, nutrition, and value remain floating fields pending the stable
 measured-object schema.
 
 Food is authoritative strategic inventory. `ItemKind::Food` identifies ordinary
-foods, while edible herbalist ingredients may retain `Ingredient`. Every
+foods, while edible or medicinal ingredients may retain `Ingredient`. Both use
+the same measured lot model and may carry zero nutrition or flavor. Every
 acquisition creates one independent quantity-one `food_lot` per purchased or
 found unit; food lots never merge merely because item IDs match. The inventory
 row identifies the batch, while mass, calories, value, quality, five flavor
@@ -52,7 +53,7 @@ Growth is evaluated lazily from strategic time and bounded; there is no spoilage
 tick. Initial loads are deterministic server-random log-scale samples. Raw meat
 grows fastest, cooked meat is heat-reduced and slower, and intact produce and
 nuts are lower-risk. Temperature, storage, and preservation remain deferred;
-undercooking and burning are modeled at fireplace retrieval.
+undercooking and method-aware late cooking are modeled at fireplace retrieval.
 
 Ingestion uses current concentration times consumed mass as a direct dose for
 existing Dysentery (`Bloody flux`), whose vector is already food/water. The
@@ -74,7 +75,9 @@ The fireplace opens a trade-style station: personal inventory is the default,
 and party inventory is an explicit alternate source and retrieval destination.
 Transfer arrows stage bounded measured portions in quarter-unit steps. `Add
 Ingredients` warns that committing is irreversible because the ingredients are
-immediately diced and consolidated into one generic meal escrow.
+immediately consolidated into one generic meal escrow. Cutting and grinding
+are ingredient-row Edge Actions; they preserve nutrition and flavor while
+reducing authored safety time to 75% and 50% respectively.
 
 Each character has private station contents at each exact fireplace even though
 everyone sees the shared environmental portrait. Settlement authority binds the
@@ -114,18 +117,21 @@ Progress is evaluated lazily from the owner's `CharacterTime`, so resting,
 travelling, or spending time elsewhere cooks the dish. The fireplace page shows
 the contributor, start-relative status, target, and remaining minutes, but never
 hidden microbial load. Its convenience rest control uses minutes and defaults
-to the remaining target time; once ready it stays visible with a warning that
-additional time overcooks. Retrieval may put the meal in personal or current
+to the remaining target time; once ready it stays visible with method-specific
+late status. Retrieval may put the meal in personal or current
 party inventory, frees the dish, and leaves the tool installed. Early retrieval
 reduces quality and interpolates calories from the raw total toward the normal
 ready retention. It geometrically interpolates microbial kill from raw load to
 the method's complete kill and linearly interpolates microbial growth from the
 raw ingredient rate to the cooked rate. This preserves meaningful Dysentery
-risk. Exact-target retrieval gives the ordinary cooking result. Late
-retrieval reduces calories linearly to zero and lowers quality to tier 1 by one
-additional target duration (twice total time); extreme elapsed values are
-bounded. Discrete quality penalties use ceiling rounding, so any early or late
-retrieval is observably worse. Fireplace waiting and retrieval award no passive
+risk. Exact-target retrieval gives the ordinary cooking result. Late pan-frying
+and baking reduce calories linearly to zero and lower quality to tier 1 by one
+additional target duration. Wet pot cooking reaches readiness and safely
+plateaus: it never burns or dries and preserves ready nutrition, quality, and
+microbial kill. Roasting never burns. Late roast time progressively changes the
+durable state to dried/smoked and approaches one additional fixed 15% nutrition
+loss without reapplying ordinary ready roast retention. Extreme elapsed values
+are bounded. Fireplace waiting and retrieval award no passive
 Cooking experience, mastery, or morale. Remainders stay as independent lots,
 and their current lot mass and value drive encumbrance and merchant quotes. A character can
 also apprentice as a cook through the inn's ordinary profession dialogue;

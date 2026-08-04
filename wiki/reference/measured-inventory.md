@@ -1,5 +1,10 @@
 # Measured inventory architecture
 
+Food and medicinal substances share the same measured lot identity. Raw, Cut,
+and Ground are mutually exclusive durable states. A container liquid is an
+authored substance ID plus exact volume; that volume consumes parent capacity
+exactly once.
+
 Status: accepted architecture for issue #150 with an initial production
 rollout for food, alcohol, and soft soap.
 

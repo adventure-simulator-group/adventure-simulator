@@ -8,6 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct ContainerLiquid {
     pub container_object_id: u64,
+    pub liquid_item_id: String,
     pub water_ml: u64,
 }
 
@@ -20,6 +21,7 @@ impl __sdk::InModule for ContainerLiquid {
 /// Provides typed access to columns for query building.
 pub struct ContainerLiquidCols {
     pub container_object_id: __sdk::__query_builder::Col<ContainerLiquid, u64>,
+    pub liquid_item_id: __sdk::__query_builder::Col<ContainerLiquid, String>,
     pub water_ml: __sdk::__query_builder::Col<ContainerLiquid, u64>,
 }
 
@@ -31,6 +33,7 @@ impl __sdk::__query_builder::HasCols for ContainerLiquid {
                 table_name,
                 "container_object_id",
             ),
+            liquid_item_id: __sdk::__query_builder::Col::new(table_name, "liquid_item_id"),
             water_ml: __sdk::__query_builder::Col::new(table_name, "water_ml"),
         }
     }

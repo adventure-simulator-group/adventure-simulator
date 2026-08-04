@@ -4,61 +4,71 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::herbal_preparation_method_type::HerbalPreparationMethod;
+use super::ingredient_preparation_action_type::IngredientPreparationAction;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct PrepareHerbalRemedyArgs {
+pub(super) struct PrepareIngredientLotArgs {
     pub character_id: u64,
+    pub inventory_scope: String,
     pub inventory_item_id: u64,
-    pub method: HerbalPreparationMethod,
+    pub action: IngredientPreparationAction,
 }
 
-impl From<PrepareHerbalRemedyArgs> for super::Reducer {
-    fn from(args: PrepareHerbalRemedyArgs) -> Self {
-        Self::PrepareHerbalRemedy {
+impl From<PrepareIngredientLotArgs> for super::Reducer {
+    fn from(args: PrepareIngredientLotArgs) -> Self {
+        Self::PrepareIngredientLot {
             character_id: args.character_id,
+            inventory_scope: args.inventory_scope,
             inventory_item_id: args.inventory_item_id,
-            method: args.method,
+            action: args.action,
         }
     }
 }
 
-impl __sdk::InModule for PrepareHerbalRemedyArgs {
+impl __sdk::InModule for PrepareIngredientLotArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `prepare_herbal_remedy`.
+/// Extension trait for access to the reducer `prepare_ingredient_lot`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait prepare_herbal_remedy {
-    /// Request that the remote module invoke the reducer `prepare_herbal_remedy` to run as soon as possible.
+pub trait prepare_ingredient_lot {
+    /// Request that the remote module invoke the reducer `prepare_ingredient_lot` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`prepare_herbal_remedy:prepare_herbal_remedy_then`] to run a callback after the reducer completes.
-    fn prepare_herbal_remedy(
+    /// /// Use [`prepare_ingredient_lot:prepare_ingredient_lot_then`] to run a callback after the reducer completes.
+    fn prepare_ingredient_lot(
         &self,
         character_id: u64,
+        inventory_scope: String,
         inventory_item_id: u64,
-        method: HerbalPreparationMethod,
+        action: IngredientPreparationAction,
     ) -> __sdk::Result<()> {
-        self.prepare_herbal_remedy_then(character_id, inventory_item_id, method, |_, _| {})
+        self.prepare_ingredient_lot_then(
+            character_id,
+            inventory_scope,
+            inventory_item_id,
+            action,
+            |_, _| {},
+        )
     }
 
-    /// Request that the remote module invoke the reducer `prepare_herbal_remedy` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `prepare_ingredient_lot` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn prepare_herbal_remedy_then(
+    fn prepare_ingredient_lot_then(
         &self,
         character_id: u64,
+        inventory_scope: String,
         inventory_item_id: u64,
-        method: HerbalPreparationMethod,
+        action: IngredientPreparationAction,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -68,12 +78,13 @@ pub trait prepare_herbal_remedy {
     ) -> __sdk::Result<()>;
 }
 
-impl prepare_herbal_remedy for super::RemoteReducers {
-    fn prepare_herbal_remedy_then(
+impl prepare_ingredient_lot for super::RemoteReducers {
+    fn prepare_ingredient_lot_then(
         &self,
         character_id: u64,
+        inventory_scope: String,
         inventory_item_id: u64,
-        method: HerbalPreparationMethod,
+        action: IngredientPreparationAction,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -82,10 +93,11 @@ impl prepare_herbal_remedy for super::RemoteReducers {
         + 'static,
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
-            PrepareHerbalRemedyArgs {
+            PrepareIngredientLotArgs {
                 character_id,
+                inventory_scope,
                 inventory_item_id,
-                method,
+                action,
             },
             callback,
         )

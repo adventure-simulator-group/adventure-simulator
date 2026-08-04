@@ -2,6 +2,38 @@
   "schema_version": 1,
   "items": [
     {
+      "id": "glass_bottle",
+      "display_name": "Glass bottle",
+      "weight_kg": 0.2,
+      "exterior_volume_ml": 250,
+      "base_value": 2,
+      "tags": ["simple", "liquid_container", "tincture_vessel"],
+      "presentation": {"icon": "help"},
+      "kind": "simple",
+      "capabilities": {"container": {"capacity_ml": 250}}
+    },
+    {
+      "id": "glass_jar",
+      "display_name": "Glass jar",
+      "weight_kg": 0.4,
+      "exterior_volume_ml": 625,
+      "base_value": 3,
+      "tags": ["simple", "liquid_container", "tincture_vessel"],
+      "presentation": {"icon": "help"},
+      "kind": "simple",
+      "capabilities": {"container": {"capacity_ml": 500}}
+    },
+    {
+      "id": "mortar_and_pestle",
+      "display_name": "Mortar and pestle",
+      "weight_kg": 1.5,
+      "exterior_volume_ml": 1875,
+      "base_value": 5,
+      "tags": ["simple", "grinding_tool"],
+      "presentation": {"icon": "help"},
+      "kind": "simple"
+    },
+    {
       "id": "tincture_spirit",
       "display_name": "Tincture spirit",
       "weight_kg": 0.12,
@@ -11,46 +43,6 @@
       "tags": ["ingredient", "alcohol", "alcoholic_solvent", "tincture_solvent"],
       "presentation": {"icon": "beer-stein"},
       "kind": "ingredient"
-    },
-    {
-      "id": "willow_bark_poor", "display_name": "Poor willow bark", "weight_kg": 0.08, "exterior_volume_ml": 100,
-      "base_value": 1, "tags": ["ingredient", "medicinal_herb", "grade_poor"],
-      "presentation": {"icon": "help"}, "kind": "ingredient"
-    },
-    {
-      "id": "willow_bark_fine", "display_name": "Fine willow bark", "weight_kg": 0.08, "exterior_volume_ml": 100,
-      "base_value": 4, "tags": ["ingredient", "medicinal_herb", "grade_fine"],
-      "presentation": {"icon": "help"}, "kind": "ingredient"
-    },
-    {
-      "id": "comfrey_poor", "display_name": "Poor comfrey", "weight_kg": 0.08, "exterior_volume_ml": 100,
-      "base_value": 1, "tags": ["ingredient", "medicinal_herb", "grade_poor"],
-      "presentation": {"icon": "help"}, "kind": "ingredient"
-    },
-    {
-      "id": "comfrey_fine", "display_name": "Fine comfrey", "weight_kg": 0.08, "exterior_volume_ml": 100,
-      "base_value": 4, "tags": ["ingredient", "medicinal_herb", "grade_fine"],
-      "presentation": {"icon": "help"}, "kind": "ingredient"
-    },
-    {
-      "id": "poppy_poor", "display_name": "Poor poppy", "weight_kg": 0.05, "exterior_volume_ml": 63,
-      "base_value": 1, "tags": ["ingredient", "medicinal_herb", "grade_poor"],
-      "presentation": {"icon": "help"}, "kind": "ingredient"
-    },
-    {
-      "id": "poppy_fine", "display_name": "Fine poppy", "weight_kg": 0.05, "exterior_volume_ml": 63,
-      "base_value": 4, "tags": ["ingredient", "medicinal_herb", "grade_fine"],
-      "presentation": {"icon": "help"}, "kind": "ingredient"
-    },
-    {
-      "id": "sage_poor", "display_name": "Poor sage", "weight_kg": 0.05, "exterior_volume_ml": 63,
-      "base_value": 1, "tags": ["ingredient", "medicinal_herb", "grade_poor"],
-      "presentation": {"icon": "help"}, "kind": "ingredient"
-    },
-    {
-      "id": "sage_fine", "display_name": "Fine sage", "weight_kg": 0.05, "exterior_volume_ml": 63,
-      "base_value": 4, "tags": ["ingredient", "medicinal_herb", "grade_fine"],
-      "presentation": {"icon": "help"}, "kind": "ingredient"
     },
     {
       "id": "spent_herb_waste", "display_name": "Spent herb waste", "weight_kg": 0.05, "exterior_volume_ml": 63,
@@ -756,11 +748,12 @@
 
       "exterior_volume_ml": 100,
       "base_value": 2,
-      "tags": ["ingredient", "medicinal_herb", "grade_ordinary"],
+      "tags": ["ingredient", "food", "medicinal_herb"],
       "presentation": {
         "icon": "help"
       },
-      "kind": "ingredient"
+      "kind": "ingredient",
+      "capabilities": {"food": {"class": "herb", "nutrition_kcal": 0, "growth_per_hour": 0.01, "cooking_minutes": 8, "flavors_kg": {"salty": 0, "spicy": 0, "sweet": 0, "sour": 0, "savory": 0}, "culinary_fat": false, "quality": 3, "value_per_unit": 2}}
     },
     {
       "id": "cooked_meal",
@@ -2431,11 +2424,12 @@
 
       "exterior_volume_ml": 63,
       "base_value": 4,
-      "tags": ["ingredient", "medicinal_herb", "grade_ordinary"],
+      "tags": ["ingredient", "food", "medicinal_herb"],
       "presentation": {
         "icon": "help"
       },
-      "kind": "ingredient"
+      "kind": "ingredient",
+      "capabilities": {"food": {"class": "herb", "nutrition_kcal": 0, "growth_per_hour": 0.01, "cooking_minutes": 6, "flavors_kg": {"salty": 0, "spicy": 0, "sweet": 0, "sour": 0, "savory": 0}, "culinary_fat": false, "quality": 3, "value_per_unit": 4}}
     },
     {
       "id": "portable_oven",
@@ -2860,8 +2854,7 @@
         "ingredient",
         "food",
         "stock_herbs",
-        "medicinal_herb",
-        "grade_ordinary"
+        "medicinal_herb"
       ],
       "presentation": {
         "icon": "help"
@@ -3699,11 +3692,12 @@
 
       "exterior_volume_ml": 125,
       "base_value": 2,
-      "tags": ["ingredient", "medicinal_herb", "grade_ordinary"],
+      "tags": ["ingredient", "food", "medicinal_herb"],
       "presentation": {
         "icon": "help"
       },
-      "kind": "ingredient"
+      "kind": "ingredient",
+      "capabilities": {"food": {"class": "herb", "nutrition_kcal": 0, "growth_per_hour": 0.006, "cooking_minutes": 20, "flavors_kg": {"salty": 0, "spicy": 0, "sweet": 0, "sour": 0, "savory": 0}, "culinary_fat": false, "quality": 3, "value_per_unit": 2}}
     },
     {
       "id": "falchion",

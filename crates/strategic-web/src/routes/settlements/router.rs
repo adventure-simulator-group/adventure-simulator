@@ -28,7 +28,6 @@ use std::collections::{HashMap, HashSet};
 #[derive(Clone, Debug, Default, Deserialize)]
 struct BuildingQuery {
     building: Option<String>,
-    herbalism: Option<bool>,
     corpse: Option<String>,
     medical: Option<String>,
     forage: Option<bool>,
@@ -38,9 +37,6 @@ struct BuildingQuery {
 }
 
 impl BuildingQuery {
-    fn herbalism(&self) -> bool {
-        self.herbalism.unwrap_or(false)
-    }
     fn valid_for<'a>(&'a self, location: &LocationView) -> Option<&'a str> {
         self.building
             .as_deref()
@@ -242,7 +238,7 @@ use crate::spacetimedb::{
     RepairOrder, ResidenceTier, RetainedProjectile, ScheduleAllocation, Settlement,
     SettlementAlias, SettlementDescription, SettlementResidenceOffer, SettlementSmith,
     SocialAddress, SocialBelief, SocialChatOutcome, StrategicEncounter, TravelEdge,
-    ContainerLiquid, InventoryContainment, InventoryObject,
+    BackendTinctureStatus, ContainerLiquid, InventoryContainment, InventoryObject,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, ChildPresentation, LocationKind, LocationView,
@@ -300,6 +296,11 @@ pub fn routes() -> Router<AppState> {
         .route("/api/inventory/containers/remove", post(remove_inventory_container_item))
         .route("/api/inventory/containers/pour", post(pour_inventory_container_water))
         .route("/api/inventory/containers/drain", post(drain_inventory_container_water))
+        .route("/api/inventory/containers/tincture-spirit", post(pour_inventory_container_tincture_spirit))
+        .route("/api/inventory/containers/tincture-start", post(start_inventory_container_tincture))
+        .route("/api/inventory/containers/tincture-refresh", post(refresh_inventory_container_tincture))
+        .route("/api/inventory/containers/tincture-dose", post(dose_inventory_container_tincture))
+        .route("/api/inventory/prepare", post(prepare_ingredient_lot))
         .route("/camp/rest", post(rest_at_camp))
         .route(
             "/camp/errantry-road-challenge",
@@ -415,10 +416,6 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/{kind}/{id}/party/{character_id}/activity",
             post(perform_immediate_activity),
-        )
-        .route(
-            "/locations/{kind}/{id}/party/{character_id}/herbalism",
-            post(prepare_herbal_remedy),
         )
         .route(
             "/locations/{kind}/{id}/party/{character_id}/religion/renounce",
