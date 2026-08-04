@@ -58,9 +58,10 @@ right retain their lateral spacing while exchanging gait roles. Authored
 upper-body carriage remains intact; explicit hand targets and weapon
 constraints apply only when gameplay supplies them. Root, pelvis, spine, neck,
 and head motion is clamped around the authored bind pose before look and final
-IK. During active locomotion, authored root/pelvis Y is normalized, then one
-phase-owned `sin²` curve supplies two contact minima and two passing/flight
-peaks per cycle without moving the gameplay controller. Idle poses blend back
+IK. During active locomotion, authored root/pelvis Y is normalized, then the
+shared gait profile supplies grounded bounce or a gravity-shaped run flight
+arc with two phase-aligned peaks per cycle without moving the gameplay
+controller. Idle poses blend back
 to their authored central-bone transforms. The 33mm hierarchy compensation is
 measured for upright, lowered-guard `humanoid_unarmed` locomotion only;
 crouching, guard movement, and specialized packs receive no inferred
@@ -119,6 +120,25 @@ blends toward run, support narrows around each foot contact. At 5.5m/s the
 quarter-cycle run flight unloads both legs for roughly 90-110ms and presents
 at least 0.10m of sole clearance. When terrain IK is explicitly enabled, high
 support retains the foot's world-space horizontal plant until release.
+
+The replicated skeleton also carries the shared 64 Hz locomotion sample tick,
+observed world velocity/acceleration, alternating contact sequence, and landing
+sequence/impact. The client transforms acceleration through the current body
+frame and advances retained lean only once per authoritative tick, including
+bounded coalesced gaps. A hard stop retains the effective authored locomotion
+pose and releases it to exact idle over a fixed-tick 0.18-second crossfade,
+preventing the sparse run/idle clips from switching in one frame. Landing
+response compresses once on a real airborne
+landing, retains both pre-compression world foot plants through recovery, and
+solves the actual hip/knee chains back to them; it never translates or stretches thigh roots. Stationary and
+stopping ordinary locomotion blends both feet back to full support.
+
+Contact and landing messages are deduplicated presentation hooks for future
+audio/VFX. Plausible contact gaps reconstruct at most eight ordered alternating
+contacts; resets, backward sequences, and larger gaps resynchronize silently.
+Missed landing updates collapse to the latest observation rather than bursting.
+An event's sample tick is the tick where its replicated sequence was observed,
+not an invented historical contact timestamp.
 
 Terrain conformity starts off. In debug builds, press `F8` to opt into its
 height, slope, and pelvis corrections. The HUD reports whether it is on or off;

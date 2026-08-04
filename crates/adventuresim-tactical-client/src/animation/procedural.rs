@@ -331,11 +331,8 @@ pub(super) fn apply_gait_mirroring(
     }
 }
 
-const WALK_HEIGHT_AMPLITUDE_METRES: f32 = 0.04;
-const RUN_HEIGHT_AMPLITUDE_METRES: f32 = 0.18;
-const GUARD_HEIGHT_AMPLITUDE_METRES: f32 = 0.03;
-const CROUCH_HEIGHT_AMPLITUDE_METRES: f32 = 0.025;
 const HEIGHT_TRANSITION_SPEED_METRES_PER_SECOND: f32 = 0.4;
+const LOCOMOTION_STOP_HEIGHT_SPEED_METRES_PER_SECOND: f32 = 0.8;
 const NORMALIZATION_TRANSITION_PER_SECOND: f32 = 8.0;
 // The upright lowered-guard humanoid_unarmed root/pelvis rotations lift its
 // pelvis by about 33 mm at passing even after local Y is normalized. This is a
@@ -350,6 +347,14 @@ pub(crate) struct LocomotionHeightState {
     displayed_wave: f32,
     wave_transition_offset: f32,
     normalization_weight: f32,
+    pub(crate) landing_compression: f32,
+    landing_recovery_metres_per_second: f32,
+    landing_left_foot_target: Option<Vec3>,
+    landing_right_foot_target: Option<Vec3>,
+    landing_plant_owner_position: Option<Vec3>,
+    landing_plant_tick: Option<u64>,
+    landing_plant_resync_tick: Option<u64>,
+    last_landing_sequence: u64,
     last_guard: Option<WeaponGuardState>,
     last_posture: Option<Posture>,
     last_action: Option<SkeletonAction>,
@@ -360,12 +365,24 @@ pub(crate) struct LocomotionHeightState {
 /// One phase-owned vertical waveform with contacts at 0/.5 and passing or
 /// flight peaks at .25/.75. This is presentation-only and is never applied to
 /// the authoritative owner/controller transform.
-pub(crate) fn locomotion_height_wave(phase: f32, amplitude: f32) -> f32 {
+fn grounded_height_wave(phase: f32, amplitude: f32) -> f32 {
     let sine = (phase.rem_euclid(1.0) * std::f32::consts::TAU).sin();
     amplitude * sine * sine
 }
 
-fn locomotion_height_amplitude(skeleton: &SkeletonState) -> f32 {
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub(crate) struct LocomotionBodyResponseState {
+    pub(crate) pitch_radians: f32,
+    pub(crate) roll_radians: f32,
+    target_pitch_radians: f32,
+    target_roll_radians: f32,
+    last_tick: Option<u64>,
+    last_posture: Option<Posture>,
+    last_action: Option<SkeletonAction>,
+    last_grounded: Option<bool>,
+}
+
+pub(crate) fn locomotion_height_wave(skeleton: &SkeletonState) -> f32 {
     if !skeleton.grounded || skeleton.action != SkeletonAction::None {
         return 0.0;
     }
@@ -373,15 +390,15 @@ fn locomotion_height_amplitude(skeleton: &SkeletonState) -> f32 {
     if speed <= 0.05 {
         return 0.0;
     }
+    let profile = locomotion_profile(skeleton);
     let moving_weight = smoothstep(0.05, 0.75, speed);
-    let amplitude = if skeleton.posture == Posture::Crouched {
-        CROUCH_HEIGHT_AMPLITUDE_METRES
-    } else if skeleton.weapon_guard == WeaponGuardState::Raised {
-        GUARD_HEIGHT_AMPLITUDE_METRES
-    } else {
-        WALK_HEIGHT_AMPLITUDE_METRES.lerp(RUN_HEIGHT_AMPLITUDE_METRES, locomotion_run_weight(speed))
-    };
-    amplitude * moving_weight
+    let grounded = grounded_height_wave(skeleton.gait_phase, profile.bounce_metres);
+    if profile.flight_apex_metres <= f32::EPSILON {
+        return grounded * moving_weight;
+    }
+    let half_step = (skeleton.gait_phase.rem_euclid(0.5) * 2.0).clamp(0.0, 1.0);
+    let flight = 4.0 * half_step * (1.0 - half_step) * profile.flight_apex_metres;
+    (grounded + flight) * moving_weight
 }
 
 fn authored_height_compensation(skeleton: &SkeletonState) -> f32 {
@@ -407,59 +424,109 @@ fn advance_towards(current: f32, target: f32, maximum_delta: f32) -> f32 {
     current + (target - current).clamp(-maximum_delta.max(0.0), maximum_delta.max(0.0))
 }
 
+fn landing_compression_for_impact(profile: LocomotionProfile, impact_speed: f32) -> f32 {
+    if impact_speed < 1.0 {
+        0.0
+    } else {
+        (impact_speed * profile.landing.compression_per_metre_per_second).clamp(
+            profile.landing.minimum_compression_metres,
+            profile.landing.maximum_compression_metres,
+        )
+    }
+}
+
 /// Normalizes authored root/pelvis height before applying the single gait
 /// waveform. XZ translation, rotations, and all authored limb transforms are
 /// retained. Action and airborne transitions blend back to authored central Y.
 pub(super) fn stabilize_locomotion_torso(
     mut commands: Commands,
-    time: Res<Time>,
-    clock: Res<ProceduralAnimationClock>,
     mut owners: Query<(Entity, &SkeletonState, Option<&mut LocomotionHeightState>)>,
     mut bones: Query<(&HumanoidBone, &AuthoredBindTransform, &mut Transform)>,
 ) {
     let mut heights = BTreeMap::new();
     for (owner, skeleton, state) in &mut owners {
-        let target_amplitude = locomotion_height_amplitude(skeleton);
+        let target_wave = locomotion_height_wave(skeleton);
         let target_authored_compensation = authored_height_compensation(skeleton);
         let target_normalization = locomotion_normalization_target(skeleton);
         let mut next = state.as_deref().copied().unwrap_or_default();
         if !next.initialized {
             next.initialized = true;
-            next.amplitude = target_amplitude;
+            next.amplitude = target_wave;
             next.authored_rise_compensation = target_authored_compensation;
             next.normalization_weight = target_normalization;
             next.last_guard = Some(skeleton.weapon_guard);
             next.last_posture = Some(skeleton.posture);
             next.last_action = Some(skeleton.action);
             next.last_grounded = Some(skeleton.grounded);
+            next.last_landing_sequence = skeleton.landing_sequence;
         }
-        let delta_seconds = match clock.fixed_step() {
-            Some((tick, _)) if next.evaluation_tick == Some(tick) => 0.0,
-            Some((tick, delta_seconds)) => {
-                next.evaluation_tick = Some(tick);
-                delta_seconds
-            }
-            None => time.delta_secs(),
+        let tick_delta =
+            presentation_tick_delta(next.evaluation_tick, skeleton.locomotion_sample_tick)
+                .unwrap_or_default();
+        next.evaluation_tick = Some(skeleton.locomotion_sample_tick);
+        let delta_seconds = tick_delta as f32 / LOCOMOTION_SAMPLE_HZ;
+        let ordinary_stop = skeleton.grounded
+            && skeleton.action == SkeletonAction::None
+            && matches!(skeleton.posture, Posture::Upright | Posture::Crouched)
+            && skeleton.animation_speed() <= 0.05;
+        next.amplitude = if ordinary_stop {
+            advance_towards(
+                next.amplitude,
+                0.0,
+                LOCOMOTION_STOP_HEIGHT_SPEED_METRES_PER_SECOND * delta_seconds,
+            )
+        } else {
+            target_wave
         };
-        next.amplitude = advance_towards(
-            next.amplitude,
-            target_amplitude,
-            HEIGHT_TRANSITION_SPEED_METRES_PER_SECOND * delta_seconds,
-        );
         next.authored_rise_compensation = advance_towards(
             next.authored_rise_compensation,
             target_authored_compensation,
             HEIGHT_TRANSITION_SPEED_METRES_PER_SECOND * delta_seconds,
         );
+        let retained_normalization =
+            target_normalization.max((next.amplitude.abs() > 0.001) as u8 as f32);
         next.normalization_weight = advance_towards(
             next.normalization_weight,
-            target_normalization,
+            retained_normalization,
             NORMALIZATION_TRANSITION_PER_SECOND * delta_seconds,
         );
-        let raw_wave = locomotion_height_wave(
-            skeleton.gait_phase,
-            next.amplitude - next.authored_rise_compensation,
-        );
+        let landing_delta = skeleton
+            .landing_sequence
+            .checked_sub(next.last_landing_sequence)
+            .filter(|delta| *delta <= 8);
+        let landed = landing_delta.is_some_and(|delta| delta > 0);
+        if skeleton.landing_sequence != next.last_landing_sequence {
+            next.last_landing_sequence = skeleton.landing_sequence;
+        }
+        if landed {
+            next.landing_compression = landing_compression_for_impact(
+                locomotion_profile(skeleton),
+                skeleton.landing_impact_speed,
+            );
+            next.landing_recovery_metres_per_second =
+                next.landing_compression / locomotion_profile(skeleton).landing.recovery_seconds;
+            next.landing_left_foot_target = None;
+            next.landing_right_foot_target = None;
+            next.landing_plant_owner_position = None;
+            next.landing_plant_tick = None;
+            next.landing_plant_resync_tick = None;
+        }
+        if !landed {
+            next.landing_compression = advance_towards(
+                next.landing_compression,
+                0.0,
+                next.landing_recovery_metres_per_second * delta_seconds,
+            );
+        }
+        if !skeleton.grounded
+            || skeleton.action != SkeletonAction::None
+            || next.landing_compression <= 0.001
+        {
+            clear_landing_foot_plants(&mut next);
+        }
+        let compensation =
+            grounded_height_wave(skeleton.gait_phase, next.authored_rise_compensation);
+        let raw_wave = next.amplitude - compensation;
         let state_changed = next.last_guard != Some(skeleton.weapon_guard)
             || next.last_posture != Some(skeleton.posture)
             || next.last_action != Some(skeleton.action)
@@ -490,7 +557,10 @@ pub(super) fn stabilize_locomotion_torso(
         let Some(&height) = heights.get(&bone.owner) else {
             continue;
         };
-        if height.normalization_weight <= f32::EPSILON && height.amplitude <= f32::EPSILON {
+        if height.normalization_weight <= f32::EPSILON
+            && height.amplitude <= f32::EPSILON
+            && height.landing_compression <= f32::EPSILON
+        {
             continue;
         }
         let (translation_limit, rotation_limit) = match bone.role {
@@ -529,6 +599,168 @@ pub(super) fn stabilize_locomotion_torso(
             height.normalization_weight.clamp(0.0, 1.0),
         );
     }
+}
+
+/// Preserves both world-space feet during the short landing-only pelvis
+/// compression by flexing the actual hip/knee chains. This is independent of
+/// the opt-in terrain solver and never translates or stretches thigh roots.
+pub(super) fn apply_landing_leg_compression(
+    mut owners: Query<
+        (&SkeletonState, &mut LocomotionHeightState, &GlobalTransform),
+        Without<HumanoidBone>,
+    >,
+    bones: Query<(Entity, &HumanoidBone, &GlobalTransform)>,
+    parents: Query<&ChildOf>,
+    mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
+) {
+    let mut rigs = BTreeMap::<Entity, BTreeMap<BoneRole, Entity>>::new();
+    let mut previous_world_positions = BTreeMap::<Entity, Vec3>::new();
+    for (entity, bone, global) in &bones {
+        rigs.entry(bone.owner)
+            .or_default()
+            .insert(bone.role, entity);
+        previous_world_positions.insert(entity, global.translation());
+    }
+    for (owner, rig) in rigs {
+        let Ok((skeleton, mut height, owner_transform)) = owners.get_mut(owner) else {
+            continue;
+        };
+        if !skeleton.grounded
+            || skeleton.action != SkeletonAction::None
+            || height.landing_compression <= 0.001
+        {
+            clear_landing_foot_plants(&mut height);
+            continue;
+        }
+        let owner_position = owner_transform.translation();
+        if height.landing_plant_resync_tick == Some(skeleton.locomotion_sample_tick) {
+            continue;
+        }
+        height.landing_plant_resync_tick = None;
+        let discontinuous = landing_plant_is_discontinuous(
+            height.landing_plant_tick,
+            skeleton.locomotion_sample_tick,
+            height.landing_plant_owner_position,
+            owner_position,
+        );
+        if discontinuous {
+            clear_landing_foot_plants(&mut height);
+            height.landing_plant_resync_tick = Some(skeleton.locomotion_sample_tick);
+            continue;
+        }
+        height.landing_plant_tick = Some(skeleton.locomotion_sample_tick);
+        height.landing_plant_owner_position = Some(owner_position);
+        let landing_compression = height.landing_compression;
+        if let Some(&pelvis) = rig.get(&BoneRole::Pelvis) {
+            let local_delta = parents
+                .get(pelvis)
+                .ok()
+                .and_then(|parent| {
+                    transforms
+                        .p0()
+                        .compute_global_transform(parent.parent())
+                        .ok()
+                })
+                .map(|parent| {
+                    parent
+                        .affine()
+                        .inverse()
+                        .transform_vector3(Vec3::NEG_Y * landing_compression)
+                })
+                .unwrap_or(Vec3::NEG_Y * landing_compression);
+            if local_delta.is_finite()
+                && let Ok(mut transform) = transforms.p1().get_mut(pelvis)
+            {
+                transform.translation += local_delta;
+            }
+        }
+        for (upper_role, lower_role, foot_role, left) in [
+            (
+                BoneRole::ThighLeft,
+                BoneRole::ShinLeft,
+                BoneRole::FootLeft,
+                true,
+            ),
+            (
+                BoneRole::ThighRight,
+                BoneRole::ShinRight,
+                BoneRole::FootRight,
+                false,
+            ),
+        ] {
+            let (Some(&upper), Some(&lower), Some(&foot)) = (
+                rig.get(&upper_role),
+                rig.get(&lower_role),
+                rig.get(&foot_role),
+            ) else {
+                continue;
+            };
+            let Some((upper_snapshot, lower_snapshot, foot_snapshot)) =
+                snapshot_chain(upper, lower, foot, &parents, &transforms.p0())
+            else {
+                continue;
+            };
+            let upper_length = upper_snapshot
+                .global
+                .translation()
+                .distance(lower_snapshot.global.translation());
+            let lower_length = lower_snapshot
+                .global
+                .translation()
+                .distance(foot_snapshot.global.translation());
+            let target = if left {
+                retain_landing_foot_target(
+                    &mut height.landing_left_foot_target,
+                    previous_world_positions[&foot],
+                )
+            } else {
+                retain_landing_foot_target(
+                    &mut height.landing_right_foot_target,
+                    previous_world_positions[&foot],
+                )
+            };
+            let side = if left { -1.0 } else { 1.0 };
+            let pole = owner_transform.rotation() * canonical_knee_pole(side);
+            if let Some(solution) = solve_landing_two_bone(
+                upper_snapshot.global.translation(),
+                lower_snapshot.global.translation(),
+                foot_snapshot.global.translation(),
+                target,
+                upper_length,
+                lower_length,
+                pole,
+                landing_compression,
+            ) {
+                apply_two_bone_solution(upper, lower, foot, solution, &parents, &mut transforms);
+            }
+        }
+    }
+}
+
+fn retain_landing_foot_target(
+    retained: &mut Option<Vec3>,
+    pre_landing_foot_position: Vec3,
+) -> Vec3 {
+    *retained.get_or_insert(pre_landing_foot_position)
+}
+
+fn landing_plant_is_discontinuous(
+    previous_tick: Option<u64>,
+    current_tick: u64,
+    previous_owner_position: Option<Vec3>,
+    current_owner_position: Vec3,
+) -> bool {
+    presentation_tick_delta(previous_tick, current_tick).is_none()
+        || previous_owner_position
+            .is_some_and(|previous| previous.distance_squared(current_owner_position) > 4.0)
+}
+
+fn clear_landing_foot_plants(height: &mut LocomotionHeightState) {
+    height.landing_left_foot_target = None;
+    height.landing_right_foot_target = None;
+    height.landing_plant_owner_position = None;
+    height.landing_plant_tick = None;
+    height.landing_plant_resync_tick = None;
 }
 
 fn clamp_rotation_from_bind(bind: Quat, animated: Quat, maximum_angle: f32) -> Quat {
@@ -653,6 +885,12 @@ const MAX_FOOT_TARGET_STEP: f32 = 0.2;
 const PELVIS_CORRECTION_SPEED: f32 = 1.6;
 const MAX_PELVIS_CORRECTION_STEP: f32 = 0.05;
 const MIN_KNEE_FLEXION: f32 = 20.0_f32.to_radians();
+// Keep the normal knee reserve while a landing visibly carries weight, then
+// release it before the pelvis reaches the authored height. The released
+// reach remains capped at the authored leg extension, preventing a final
+// recovery-frame foot lift or snap without introducing a straight-leg target.
+const LANDING_KNEE_RESERVE_RELEASE_COMPRESSION: f32 = 0.012;
+const LANDING_KNEE_RESERVE_FULL_COMPRESSION: f32 = 0.04;
 const RAISED_GUARD_PELVIS_DROP: f32 = 0.14;
 
 #[derive(Component, Debug, Clone, Copy, Default)]
@@ -777,15 +1015,13 @@ pub(super) fn apply_terrain_leg_ik(
             }
             continue;
         }
-        let phase = skeleton.gait_phase.rem_euclid(1.0);
-        let ground_speed = skeleton.animation_speed();
         let raised_guard_follower = skeleton.weapon_guard == WeaponGuardState::Raised
             && skeleton.action == SkeletonAction::None
             && skeleton.raised_locomotion.active;
         if !raised_guard_follower && let Ok(mut raised) = raised_states.get_mut(owner) {
             *raised = RaisedFootworkState::default();
         }
-        let (left_weight, right_weight) = gait_support_weights(phase, ground_speed);
+        let (left_weight, right_weight) = locomotion_support_weights(skeleton);
         let legs = [
             (
                 BoneRole::ThighLeft,
@@ -1474,23 +1710,13 @@ fn raised_footwork_posture_is_valid(skeleton: &SkeletonState) -> bool {
     skeleton.grounded && skeleton.posture == Posture::Upright
 }
 
-fn locomotion_run_weight(speed: f32) -> f32 {
-    ((speed - 2.0) / (5.5 - 2.0)).clamp(0.0, 1.0)
-}
-
-pub(crate) fn gait_support_weights(phase: f32, speed: f32) -> (f32, f32) {
-    let run_weight = locomotion_run_weight(speed);
-    let locomotion = smoothstep(0.0, 0.75, speed);
-    let gait = |phase| foot_support_weight(phase, true, run_weight);
-    (
-        1.0_f32.lerp(gait(phase.rem_euclid(1.0)), locomotion),
-        1.0_f32.lerp(gait((phase + 0.5).rem_euclid(1.0)), locomotion),
-    )
-}
-
 /// World-space plant confidence used by diagnostics. Procedural guard movement
 /// has exactly one support foot while the other follows its clearance arc.
 pub(crate) fn locomotion_support_weights(skeleton: &SkeletonState) -> (f32, f32) {
+    let speed = skeleton.animation_speed();
+    if speed <= 0.05 || !skeleton.grounded || skeleton.action != SkeletonAction::None {
+        return (1.0, 1.0);
+    }
     if skeleton.weapon_guard == WeaponGuardState::Raised
         && skeleton.action == SkeletonAction::None
         && skeleton.raised_locomotion.active
@@ -1498,32 +1724,133 @@ pub(crate) fn locomotion_support_weights(skeleton: &SkeletonState) -> (f32, f32)
         let swing_left = skeleton.raised_locomotion.swing_foot == LeadFoot::Left;
         ((!swing_left) as u8 as f32, swing_left as u8 as f32)
     } else {
-        gait_support_weights(skeleton.gait_phase, skeleton.local_velocity.xz().length())
+        let (left, right) = gait_support_weights(locomotion_profile(skeleton), skeleton.gait_phase);
+        let moving = smoothstep(0.05, 0.75, speed);
+        (1.0 - (1.0 - left) * moving, 1.0 - (1.0 - right) * moving)
     }
 }
 
-fn foot_support_weight(phase: f32, moving: bool, run_weight: f32) -> f32 {
-    if !moving {
-        return 1.0;
-    }
-    let run_weight = run_weight.clamp(0.0, 1.0);
-    // The canonical leg owns support from contact through passing, then hands
-    // off to its mirrored counterpart. This keeps the passing swing foot free
-    // instead of constraining both feet to a misleading 0.6 weight.
-    // Release over a substantial part of late stance. A four-frame release at
-    // ordinary walk speed makes the analytic knee visibly snap straight even
-    // when the foot target itself remains continuous.
-    let walk_support = (1.0 - smoothstep(0.28, 0.50, phase)).max(smoothstep(0.78, 1.0, phase));
+const MAX_PRESENTATION_SAMPLE_GAP: u64 = 32;
 
-    // A running foot supports only a compact interval around its contact.
-    // In particular, both legs must be free during the quarter-cycle flight
-    // phases; forcing a minimum IK weight there turns the authored swing into
-    // a visible kick/pop.
-    let distance_to_contact = phase.min(1.0 - phase);
-    // At 5.5 m/s fixed-rate sampling observes about 90-110 ms with both feet
-    // unloaded around each quarter-cycle flight beat.
-    let run_support = 1.0 - smoothstep(0.06, 0.16, distance_to_contact);
-    walk_support.lerp(run_support, run_weight).clamp(0.0, 1.0)
+fn presentation_tick_delta(previous: Option<u64>, current: u64) -> Option<u64> {
+    match previous {
+        None => Some(0),
+        Some(previous) if current >= previous => {
+            let delta = current - previous;
+            (delta <= MAX_PRESENTATION_SAMPLE_GAP).then_some(delta)
+        }
+        Some(_) => None,
+    }
+}
+
+/// Adds bounded inertial body response from server-observed world
+/// acceleration transformed through the current presentation body frame.
+/// Retained angles are client presentation only.
+pub(super) fn apply_locomotion_body_response(
+    mut commands: Commands,
+    mut owners: Query<
+        (
+            Entity,
+            &SkeletonState,
+            &Transform,
+            Option<&mut LocomotionBodyResponseState>,
+        ),
+        Without<HumanoidBone>,
+    >,
+    mut bones: Query<(&HumanoidBone, &mut Transform), Without<SkeletonState>>,
+) {
+    let mut responses = BTreeMap::new();
+    for (owner, skeleton, owner_transform, state) in &mut owners {
+        let mut next = state.as_deref().copied().unwrap_or_default();
+        let tick = skeleton.locomotion_sample_tick;
+        let tick_delta = presentation_tick_delta(next.last_tick, tick);
+        let discontinuous = tick_delta.is_none()
+            || next
+                .last_posture
+                .is_some_and(|value| value != skeleton.posture)
+            || next
+                .last_action
+                .is_some_and(|value| value != skeleton.action)
+            || next
+                .last_grounded
+                .is_some_and(|value| value != skeleton.grounded);
+        if discontinuous || !skeleton.grounded || skeleton.action != SkeletonAction::None {
+            next.pitch_radians = 0.0;
+            next.roll_radians = 0.0;
+            next.target_pitch_radians = 0.0;
+            next.target_roll_radians = 0.0;
+        } else if let Some(tick_delta @ 1..) = tick_delta {
+            let delta_seconds = tick_delta as f32 / LOCOMOTION_SAMPLE_HZ;
+            let body_acceleration =
+                owner_transform.rotation.inverse() * skeleton.world_acceleration;
+            if body_acceleration.xz().length() > 0.5 {
+                let combined = body_response_target(body_acceleration);
+                next.target_pitch_radians = combined.x;
+                next.target_roll_radians = combined.y;
+            } else {
+                let target_decay = 10.0_f32.to_radians() / 0.4 * delta_seconds;
+                next.target_pitch_radians =
+                    advance_towards(next.target_pitch_radians, 0.0, target_decay);
+                next.target_roll_radians =
+                    advance_towards(next.target_roll_radians, 0.0, target_decay);
+            }
+            let maximum_step = 2.0_f32.to_radians() * tick_delta as f32;
+            let current = Vec2::new(next.pitch_radians, next.roll_radians);
+            let target = Vec2::new(next.target_pitch_radians, next.target_roll_radians);
+            let advanced = current + (target - current).clamp_length_max(maximum_step);
+            next.pitch_radians = advanced.x;
+            next.roll_radians = advanced.y;
+        }
+        next.last_tick = Some(tick);
+        next.last_posture = Some(skeleton.posture);
+        next.last_action = Some(skeleton.action);
+        next.last_grounded = Some(skeleton.grounded);
+        responses.insert(owner, next);
+        if let Some(mut state) = state {
+            *state = next;
+        } else {
+            commands.entity(owner).insert(next);
+        }
+    }
+    for (bone, mut transform) in &mut bones {
+        let Some(response) = responses.get(&bone.owner) else {
+            continue;
+        };
+        let weight = match bone.role {
+            BoneRole::Pelvis => 0.20,
+            BoneRole::StomachOne => 0.25,
+            BoneRole::StomachTwo => 0.25,
+            BoneRole::Chest => 0.30,
+            _ => continue,
+        };
+        transform.rotation *= Quat::from_euler(
+            EulerRot::XYZ,
+            response.pitch_radians * weight,
+            0.0,
+            response.roll_radians * weight,
+        );
+    }
+}
+
+fn body_response_target(acceleration: Vec3) -> Vec2 {
+    // Tactical body forward is local +Z (the authored rig carries its own
+    // facing correction), so positive Z acceleration pitches into travel.
+    let pitch = if acceleration.z > 0.0 {
+        (-acceleration.z / 12.0 * 10.0_f32.to_radians()).clamp(-12.0_f32.to_radians(), 0.0)
+    } else {
+        (-acceleration.z / 12.0 * 8.0_f32.to_radians()).clamp(0.0, 10.0_f32.to_radians())
+    };
+    let roll = (-acceleration.x / 10.0 * 8.0_f32.to_radians())
+        .clamp(-10.0_f32.to_radians(), 10.0_f32.to_radians());
+    let response = Vec2::new(pitch, roll);
+    // Leave a sub-milliradian numerical margin so degree conversion cannot
+    // report a value microscopically above the documented 15-degree cap.
+    let maximum_response = 15.0_f32.to_radians() - 0.000001;
+    if response.length_squared() > maximum_response * maximum_response {
+        response.normalize_or_zero() * maximum_response
+    } else {
+        response
+    }
 }
 
 fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
@@ -1633,6 +1960,23 @@ fn maximum_reach(upper_length: f32, lower_length: f32) -> f32 {
     .sqrt()
 }
 
+fn landing_maximum_reach(
+    upper_length: f32,
+    lower_length: f32,
+    authored_reach: f32,
+    compression: f32,
+) -> f32 {
+    let reserved_reach = maximum_reach(upper_length, lower_length);
+    let full_reach = upper_length + lower_length - 0.0001;
+    let released_reach = authored_reach.clamp(reserved_reach, full_reach);
+    let reserve_weight = smoothstep(
+        LANDING_KNEE_RESERVE_RELEASE_COMPRESSION,
+        LANDING_KNEE_RESERVE_FULL_COMPRESSION,
+        compression,
+    );
+    released_reach.lerp(reserved_reach, reserve_weight)
+}
+
 fn constrain_target_to_reach(target: Vec3, root: Vec3, maximum_reach: f32) -> Vec3 {
     let vertical = target.y - root.y;
     let maximum_horizontal = (maximum_reach * maximum_reach - vertical * vertical)
@@ -1697,6 +2041,34 @@ fn solve_two_bone(
         lower_length,
         pole_direction,
         maximum_reach(upper_length, lower_length),
+        true,
+    )
+}
+
+fn solve_landing_two_bone(
+    root: Vec3,
+    current_knee: Vec3,
+    current_end: Vec3,
+    target: Vec3,
+    upper_length: f32,
+    lower_length: f32,
+    pole_direction: Vec3,
+    compression: f32,
+) -> Option<TwoBoneSolution> {
+    solve_two_bone_internal(
+        root,
+        current_knee,
+        current_end,
+        target,
+        upper_length,
+        lower_length,
+        pole_direction,
+        landing_maximum_reach(
+            upper_length,
+            lower_length,
+            root.distance(current_end),
+            compression,
+        ),
         true,
     )
 }
@@ -2293,32 +2665,20 @@ mod tests {
     }
 
     #[test]
-    fn idle_plants_both_feet_and_gait_weight_is_continuous() {
-        assert_eq!(foot_support_weight(0.25, false, 1.0), 1.0);
-        assert_eq!(foot_support_weight(0.75, false, 1.0), 1.0);
-        let before = foot_support_weight(0.5 - 0.0001, true, 0.0);
-        let after = foot_support_weight(0.5 + 0.0001, true, 0.0);
-        assert!((before - after).abs() < 0.001);
-    }
-
-    #[test]
     fn run_has_unconstrained_flight_but_walk_retains_support() {
         for phase in [0.25, 0.75] {
-            assert_eq!(foot_support_weight(phase, true, 1.0), 0.0);
-            let (left, right) = gait_support_weights(phase, 2.0);
-            assert!((left.max(right) - 1.0).abs() < 0.0001);
-            assert!(left.min(right) <= 0.0001);
+            let (run_left, run_right) = gait_support_weights(RUN_LOCOMOTION_PROFILE, phase);
+            assert_eq!((run_left, run_right), (0.0, 0.0));
+            let (walk_left, walk_right) = gait_support_weights(WALK_LOCOMOTION_PROFILE, phase);
+            assert!(walk_left + walk_right > 0.0);
         }
-        assert_eq!(foot_support_weight(0.0, true, 1.0), 1.0);
-        assert_eq!(locomotion_run_weight(2.0), 0.0);
-        assert_eq!(locomotion_run_weight(5.5), 1.0);
 
-        let phase_step = 5.5 / ((0.9 + 5.5 * 0.16) * 2.0) / 64.0;
+        let phase_step = gait_cycle_phase_delta(RUN_LOCOMOTION_PROFILE, 5.5, 1.0 / 64.0);
         let mut longest = 0_u32;
         let mut current = 0_u32;
         for frame in 0..=64 {
             let phase = frame as f32 * phase_step;
-            let (left, right) = gait_support_weights(phase, 5.5);
+            let (left, right) = gait_support_weights(RUN_LOCOMOTION_PROFILE, phase);
             if left <= 0.001 && right <= 0.001 {
                 current += 1;
                 longest = longest.max(current);
@@ -2332,16 +2692,24 @@ mod tests {
 
     #[test]
     fn phase_owned_height_has_two_contact_minima_and_two_equal_peaks() {
-        for amplitude in [
-            WALK_HEIGHT_AMPLITUDE_METRES,
-            RUN_HEIGHT_AMPLITUDE_METRES,
-            GUARD_HEIGHT_AMPLITUDE_METRES,
-            CROUCH_HEIGHT_AMPLITUDE_METRES,
-        ] {
-            assert!(locomotion_height_wave(0.0, amplitude).abs() < 0.0001);
-            assert!(locomotion_height_wave(0.5, amplitude).abs() < 0.0001);
-            assert!((locomotion_height_wave(0.25, amplitude) - amplitude).abs() < 0.0001);
-            assert!((locomotion_height_wave(0.75, amplitude) - amplitude).abs() < 0.0001);
+        for phase in [0.0, 0.5] {
+            let state = SkeletonState {
+                local_velocity: Vec3::NEG_Z * 5.5,
+                gait_phase: phase,
+                ..default()
+            };
+            assert!(locomotion_height_wave(&state).abs() < 0.0001);
+        }
+        for phase in [0.25, 0.75] {
+            let state = SkeletonState {
+                local_velocity: Vec3::NEG_Z * 5.5,
+                gait_phase: phase,
+                ..default()
+            };
+            assert!(
+                (locomotion_height_wave(&state) - RUN_LOCOMOTION_PROFILE.flight_apex_metres).abs()
+                    < 0.0001
+            );
         }
     }
 
@@ -2360,36 +2728,34 @@ mod tests {
             ..default()
         };
         assert!(
-            (locomotion_height_amplitude(&moving(
-                2.0,
-                Posture::Upright,
-                WeaponGuardState::Lowered,
-            )) - WALK_HEIGHT_AMPLITUDE_METRES)
+            (locomotion_height_wave(&SkeletonState {
+                gait_phase: 0.25,
+                ..moving(2.0, Posture::Upright, WeaponGuardState::Lowered,)
+            }) - WALK_LOCOMOTION_PROFILE.bounce_metres)
                 .abs()
                 < 0.0001
         );
         assert!(
-            (locomotion_height_amplitude(&moving(
-                5.5,
-                Posture::Upright,
-                WeaponGuardState::Lowered,
-            )) - RUN_HEIGHT_AMPLITUDE_METRES)
+            (locomotion_height_wave(&SkeletonState {
+                gait_phase: 0.25,
+                ..moving(5.5, Posture::Upright, WeaponGuardState::Lowered,)
+            }) - RUN_LOCOMOTION_PROFILE.flight_apex_metres)
                 .abs()
                 < 0.0001
         );
         assert!(
-            (locomotion_height_amplitude(
-                &moving(2.0, Posture::Upright, WeaponGuardState::Raised,)
-            ) - GUARD_HEIGHT_AMPLITUDE_METRES)
+            (locomotion_height_wave(&SkeletonState {
+                gait_phase: 0.25,
+                ..moving(2.0, Posture::Upright, WeaponGuardState::Raised)
+            }) - RAISED_GUARD_LOCOMOTION_PROFILE.bounce_metres)
                 .abs()
                 < 0.0001
         );
         assert!(
-            (locomotion_height_amplitude(&moving(
-                1.5,
-                Posture::Crouched,
-                WeaponGuardState::Lowered,
-            )) - CROUCH_HEIGHT_AMPLITUDE_METRES)
+            (locomotion_height_wave(&SkeletonState {
+                gait_phase: 0.25,
+                ..moving(1.5, Posture::Crouched, WeaponGuardState::Lowered,)
+            }) - CROUCH_LOCOMOTION_PROFILE.bounce_metres)
                 .abs()
                 < 0.0001
         );
@@ -2440,6 +2806,137 @@ mod tests {
     }
 
     #[test]
+    fn body_response_and_landing_compression_are_bounded() {
+        let forward = body_response_target(Vec3::Z * 12.0);
+        let braking = body_response_target(Vec3::NEG_Z * 12.0);
+        let lateral = body_response_target(Vec3::X * 12.0);
+        assert!((-12.0..=-8.0).contains(&forward.x.to_degrees()));
+        assert!((6.0..=10.0).contains(&braking.x.to_degrees()));
+        assert!((6.0..=10.0).contains(&lateral.y.abs().to_degrees()));
+        assert!(
+            body_response_target(Vec3::new(40.0, 0.0, 40.0))
+                .length()
+                .to_degrees()
+                <= 15.0
+        );
+        assert_eq!(
+            landing_compression_for_impact(WALK_LOCOMOTION_PROFILE, 0.5),
+            0.0
+        );
+        assert!((0.04..=0.08).contains(&landing_compression_for_impact(
+            WALK_LOCOMOTION_PROFILE,
+            4.5,
+        )));
+        assert_eq!(presentation_tick_delta(Some(10), 10), Some(0));
+        assert_eq!(presentation_tick_delta(Some(10), 14), Some(4));
+        assert_eq!(presentation_tick_delta(Some(14), 2), None);
+        assert_eq!(presentation_tick_delta(Some(2), 40), None);
+    }
+
+    #[test]
+    fn landing_leg_solve_preserves_the_foot_with_real_knee_flexion() {
+        let root = Vec3::new(0.0, 1.75, 0.0);
+        let knee = Vec3::new(0.0, 0.85, 0.08);
+        let compressed_foot = Vec3::new(0.0, -0.05, 0.0);
+        let target = compressed_foot + Vec3::Y * 0.05;
+        let upper = root.distance(knee);
+        let lower = knee.distance(compressed_foot);
+        let solution = solve_two_bone(root, knee, compressed_foot, target, upper, lower, Vec3::Z)
+            .expect("compressed leg should reach its pre-compression foot");
+        let flexion = 180.0
+            - (root - solution.knee)
+                .angle_between(solution.end - solution.knee)
+                .to_degrees();
+        assert!(solution.end.distance(target) <= 0.0001);
+        assert!(flexion >= 10.0);
+
+        let mut retained = None;
+        let first = retain_landing_foot_target(&mut retained, target);
+        let recovered_frame =
+            retain_landing_foot_target(&mut retained, Vec3::new(0.0, -0.02, 0.03));
+        assert_eq!(first, target);
+        assert_eq!(recovered_frame, first);
+        assert!(!landing_plant_is_discontinuous(
+            Some(10),
+            10,
+            Some(Vec3::ZERO),
+            Vec3::ZERO,
+        ));
+        assert!(landing_plant_is_discontinuous(
+            Some(10),
+            9,
+            Some(Vec3::ZERO),
+            Vec3::ZERO,
+        ));
+        assert!(landing_plant_is_discontinuous(
+            Some(10),
+            11,
+            Some(Vec3::ZERO),
+            Vec3::X * 3.0,
+        ));
+
+        let mut height = LocomotionHeightState {
+            landing_left_foot_target: retained,
+            landing_right_foot_target: Some(first),
+            landing_plant_owner_position: Some(Vec3::ZERO),
+            landing_plant_tick: Some(10),
+            landing_plant_resync_tick: Some(10),
+            ..default()
+        };
+        clear_landing_foot_plants(&mut height);
+        assert!(height.landing_left_foot_target.is_none());
+        assert!(height.landing_right_foot_target.is_none());
+        assert!(height.landing_plant_owner_position.is_none());
+        assert!(height.landing_plant_tick.is_none());
+        assert!(height.landing_plant_resync_tick.is_none());
+    }
+
+    #[test]
+    fn landing_knee_reserve_releases_smoothly_for_late_recovery_reach() {
+        let upper = 0.9;
+        let lower = 0.9;
+        let authored_reach = 1.79;
+        let reserved_reach = maximum_reach(upper, lower);
+
+        let peak_reach = landing_maximum_reach(upper, lower, authored_reach, 0.04);
+        assert!((peak_reach - reserved_reach).abs() <= f32::EPSILON);
+        let peak_flexion = 180.0
+            - ((upper * upper + lower * lower - peak_reach * peak_reach) / (2.0 * upper * lower))
+                .clamp(-1.0, 1.0)
+                .acos()
+                .to_degrees();
+        assert!(peak_flexion >= 10.0);
+
+        let release_samples = [0.04, 0.033, 0.026, 0.019, 0.012];
+        let reaches = release_samples
+            .map(|compression| landing_maximum_reach(upper, lower, authored_reach, compression));
+        for pair in reaches.windows(2) {
+            assert!(pair[1] >= pair[0]);
+            assert!(pair[1] - pair[0] < 0.01);
+        }
+        assert!((reaches[4] - authored_reach).abs() <= 0.0001);
+
+        let target = Vec3::ZERO;
+        let current_knee = Vec3::new(0.0, 0.89, 0.1);
+        for compression in [0.012, 0.008, 0.004, 0.001] {
+            let root = Vec3::Y * (authored_reach - compression);
+            let current_end = Vec3::NEG_Y * compression;
+            let solution = solve_landing_two_bone(
+                root,
+                current_knee,
+                current_end,
+                target,
+                upper,
+                lower,
+                Vec3::Z,
+                compression,
+            )
+            .expect("late landing recovery should remain solvable");
+            assert!(solution.end.distance(target) <= 0.0001);
+        }
+    }
+
+    #[test]
     fn raised_guard_movement_reports_exactly_one_procedural_support_foot() {
         for (lead, phase) in [
             (LeadFoot::Left, 0.0),
@@ -2473,6 +2970,26 @@ mod tests {
             ..default()
         };
         assert_eq!(locomotion_support_weights(&idle), (1.0, 1.0));
+    }
+
+    #[test]
+    fn ordinary_idle_and_stopping_restore_symmetric_terrain_support() {
+        let idle = SkeletonState {
+            gait_phase: 0.25,
+            ..default()
+        };
+        assert_eq!(locomotion_support_weights(&idle), (1.0, 1.0));
+
+        let stopping = SkeletonState {
+            gait_phase: 0.25,
+            local_velocity: Vec3::NEG_Z * 0.2,
+            ..default()
+        };
+        let (left, right) = locomotion_support_weights(&stopping);
+        let (raw_left, raw_right) =
+            gait_support_weights(locomotion_profile(&stopping), stopping.gait_phase);
+        assert!(left > raw_left && right > raw_right);
+        assert!(left > 0.5 && right > 0.5);
     }
 
     #[test]

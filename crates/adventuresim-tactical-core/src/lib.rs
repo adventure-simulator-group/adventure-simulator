@@ -19,11 +19,14 @@ pub mod prelude {
     pub use crate::AdventureSimulatorCorePlugins;
     pub use crate::animation::{
         AnimationEvaluation, AnimationPack, AnimationPackLibrary, AttackLine,
-        BODY_TURN_SPEED_RADIANS, Footwork, LeadFoot, PackValidationError, PoseSample, PoseSampling,
-        Posture, RaisedLocomotionIntent, ResolvedPose, SemanticPose, SkeletonAction,
-        SkeletonLocomotionInput, SkeletonState, StrikeFamily, WeaponGuardState,
-        advance_body_facing, controller_yaw, guard_step_length, project_skeleton_locomotion,
-        set_weapon_guard,
+        BODY_TURN_SPEED_RADIANS, CROUCH_LOCOMOTION_PROFILE, Footwork, HUMANOID_LANDING_PROFILE,
+        LOCOMOTION_SAMPLE_HZ, LandingProfile, LeadFoot, LocomotionGait, LocomotionProfile,
+        PackValidationError, PoseSample, PoseSampling, Posture, RAISED_GUARD_LOCOMOTION_PROFILE,
+        RUN_LOCOMOTION_PROFILE, RaisedLocomotionIntent, ResolvedPose, SemanticPose, SkeletonAction,
+        SkeletonLocomotionInput, SkeletonState, StrikeFamily, WALK_LOCOMOTION_PROFILE,
+        WeaponGuardState, advance_body_facing, controller_yaw, gait_cycle_phase_delta,
+        gait_support_weights, guard_step_length, locomotion_profile, ordinary_step_distance,
+        project_skeleton_locomotion, set_weapon_guard,
     };
     pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
     pub use crate::inventory::{

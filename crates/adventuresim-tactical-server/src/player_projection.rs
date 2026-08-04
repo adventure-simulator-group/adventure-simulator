@@ -568,7 +568,7 @@ pub(crate) fn update_skeleton_locomotion(
             let lowered = authoritative_weapon_guard(skeleton.weapon_guard, true);
             set_weapon_guard(&mut skeleton, lowered);
         }
-        let tick = (time.elapsed_secs_f64() * 64.0).round() as u64;
+        let tick = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
         transform.rotation = advance_body_facing(
             transform.rotation,
             controller.orientation,
