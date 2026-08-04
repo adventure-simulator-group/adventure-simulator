@@ -2272,10 +2272,10 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
                 if frame.scenario != *scenario {
                     return false;
                 }
-                let expected_contact = expected_contact_pose(frame.scenario, frame.lead_foot)
+                let expected_contact = expected_contact_pose(&frame.scenario, frame.lead_foot)
                     .expect("combat scenarios declare a contact pose")
                     .as_str();
-                let expected_guard = expected_end_guard_pose(frame.scenario, frame.lead_foot)
+                let expected_guard = expected_end_guard_pose(&frame.scenario, frame.lead_foot)
                     .expect("combat scenarios declare an end guard")
                     .as_str();
                 frame.contact_resolution.as_ref().is_some_and(|resolution| {

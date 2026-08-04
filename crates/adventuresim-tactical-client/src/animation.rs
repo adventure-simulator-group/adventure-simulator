@@ -493,6 +493,7 @@ pub(super) struct AnimationRuntime {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] // Constructed by the optional animation-viewer binary.
 pub(super) struct RuntimePoseResolution {
     pub(super) semantic: Option<SemanticPose>,
     pub(super) source_pose: Option<SemanticPose>,
@@ -502,6 +503,7 @@ pub(super) struct RuntimePoseResolution {
 }
 
 impl AnimationRuntime {
+    #[allow(dead_code)] // Used by the optional animation-viewer binary.
     pub(super) fn resolve_pose(
         &self,
         requested_pack: &str,
