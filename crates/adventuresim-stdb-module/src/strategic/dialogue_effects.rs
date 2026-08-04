@@ -223,14 +223,24 @@ pub(crate) fn exact_organization_representative(
     let organization = adventuresim_core::organization::organization(&npc.organization_id)?;
     let chapter = organization.chapter(settlement_id)?;
     let settlement = ctx.db.settlement().id().find(&settlement_id.to_owned())?;
-    if adventuresim_core::organization::chapter_effective_location_id(
+    let observed_place =
+        crate::settlement_population::canonical_npc_place(settlement_id, location_id)?;
+    let effective_location = adventuresim_core::organization::chapter_effective_location_id(
         organization,
         chapter,
         &settlement.economy,
-    ) != location_id
-    {
+    );
+    let effective_place =
+        crate::settlement_population::canonical_npc_place(settlement_id, effective_location)?;
+    if observed_place != effective_place {
         return None;
     }
+    adventuresim_core::strategic_place::StrategicFixtureId::chapter(
+        observed_place,
+        &organization.id,
+        &chapter.location_id,
+    )
+    .ok()?;
     let expected_id = adventuresim_core::organization::organization_representative_id(
         settlement_id,
         &organization.id,

@@ -104,6 +104,18 @@ addressed portrait changes the actor while the character remains at that locatio
 Service providers retain their service conversation, while ordinary residents use the
 compiled `local-resident` conversation and cannot receive service-only topics.
 
+The route location is only a candidate. The server first proves that it is a
+navigable location in the actor's current settlement, resolves its canonical
+place, and then projects the actor and every NPC at the actor's personal-time
+frontier through the shared strategic presence contract. The game does not yet
+persist within-settlement travel: a dialogue reducer may instantaneously select
+any server-validated, currently navigable venue in that settlement. The client
+cannot bypass settlement, navigability, schedule, health, or NPC checks, and the
+selection does not create navigation state. Historical death, infection-course,
+and remediation facts determine NPC suppression at the observer frontier. A service-linked chapter
+representative may share the service venue; the chapter fixture and exact
+representative fields still authorize organization business separately.
+
 The public NPC row contains only visible identity and presentation: name, age band,
 presentation, height, build, hair/facial hair, complexion, visible features, clothing,
 profession, household, and local role. Private demographic sex, the internal projection

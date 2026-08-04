@@ -2364,12 +2364,16 @@ fn require_character_residence_rest(ctx: &ReducerContext, character_id: u64) -> 
         .current_settlement_id
         .as_deref()
         .ok_or("Settlement rest requires the character to be at a settlement")?;
-    let residence =
-        crate::residence::active_residence_for_occupant(ctx, character_id, settlement_id)
+    let (residence, presence) =
+        crate::residence::active_residence_presence(ctx, character_id, settlement_id)
             .ok_or("You do not have a residence")?;
     debug_assert!(
         residence.status == crate::residence::ResidenceHoldingStatus::Active
             && residence.settlement_id == settlement_id
+            && matches!(
+                presence.place(),
+                adventuresim_core::strategic_place::StrategicPlaceId::Residence { .. }
+            )
     );
     Ok(())
 }
