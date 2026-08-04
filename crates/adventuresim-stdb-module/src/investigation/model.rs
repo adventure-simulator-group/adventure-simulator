@@ -32,21 +32,43 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 const MAX_TEXT: usize = 512;
 
+/// SpacetimeDB transport for the opaque component of a canonical
+/// `StrategicPlaceId::CaseSite`. It has no independent identity semantics;
+/// consumers must cross the centralized conversion boundary below.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, SpacetimeType)]
 pub struct CaseSiteId {
     pub value: String,
 }
 
 impl CaseSiteId {
+    pub fn try_new(value: impl Into<String>) -> Result<Self, String> {
+        let value = value.into();
+        adventuresim_core::strategic_place::StrategicPlaceId::case_site(value.clone())
+            .map_err(|_| "Case-site identity is malformed")?;
+        Ok(Self { value })
+    }
+
     pub fn as_str(&self) -> &str {
         &self.value
+    }
+
+    pub(crate) fn to_place(
+        &self,
+    ) -> Option<adventuresim_core::strategic_place::StrategicPlaceId> {
+        adventuresim_core::strategic_place::StrategicPlaceId::case_site(self.value.clone()).ok()
     }
 }
 
 impl From<String> for CaseSiteId {
     fn from(value: String) -> Self {
-        Self { value }
+        Self::try_new(value).expect("server-authored case-site component must be canonical")
     }
+}
+
+pub(crate) fn canonical_case_site_place(
+    value: &str,
+) -> Option<adventuresim_core::strategic_place::StrategicPlaceId> {
+    CaseSiteId::try_new(value.to_owned()).ok()?.to_place()
 }
 
 impl std::ops::Deref for CaseSiteId {
@@ -1047,27 +1069,88 @@ pub struct PartyCaseSiteTracking {
 #[table(accessor = character_case_site_occupancy)]
 pub struct CharacterCaseSiteOccupancy {
     #[primary_key]
+    pub id: String,
+    #[index(btree)]
     pub character_id: u64,
     #[index(btree)]
     pub gateway_bucket: u8,
     pub case_site_id: CaseSiteId,
+    pub entered_at: u64,
+    pub left_at: Option<u64>,
+}
+
+pub(crate) fn current_character_case_site_occupancy(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Option<CharacterCaseSiteOccupancy> {
+    let mut rows = ctx
+        .db
+        .character_case_site_occupancy()
+        .character_id()
+        .filter(character_id)
+        .filter(|row| row.left_at.is_none());
+    let row = rows.next()?;
+    rows.next().is_none().then_some(row)
+}
+
+pub(crate) fn character_case_site_occupancy_at(
+    ctx: &ReducerContext,
+    character_id: u64,
+    minute: u64,
+) -> Option<CharacterCaseSiteOccupancy> {
+    let mut rows = ctx
+        .db
+        .character_case_site_occupancy()
+        .character_id()
+        .filter(character_id)
+        .filter(|row| {
+            row.entered_at <= minute && row.left_at.is_none_or(|left_at| left_at > minute)
+        });
+    let row = rows.next()?;
+    rows.next().is_none().then_some(row)
 }
 
 pub(crate) fn character_case_site_id(ctx: &ReducerContext, character_id: u64) -> Option<String> {
-    ctx.db
-        .character_case_site_occupancy()
-        .character_id()
-        .find(character_id)
-        .map(|row| row.case_site_id.value)
+    current_character_case_site_occupancy(ctx, character_id).map(|row| row.case_site_id.value)
 }
 
 pub(crate) fn set_character_case_site(
     ctx: &ReducerContext,
     character_id: u64,
     case_site_id: Option<String>,
-) {
-    let previous_site = character_case_site_id(ctx, character_id);
-    if previous_site.as_deref() != case_site_id.as_deref()
+) -> Result<(), String> {
+    let case_site_id = match case_site_id {
+        Some(value) => match CaseSiteId::try_new(value) {
+            Ok(value) => Some(value),
+            Err(error) => return Err(error),
+        },
+        None => None,
+    };
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map(|row| row.minutes)
+        .ok_or("Case-site transition requires CharacterTime authority")?;
+    let mut current_rows = ctx
+        .db
+        .character_case_site_occupancy()
+        .character_id()
+        .filter(character_id)
+        .filter(|row| row.left_at.is_none())
+        .collect::<Vec<_>>();
+    if current_rows.len() > 1 {
+        return Err("Character has conflicting active case-site occupancy".into());
+    }
+    let current = current_rows.pop();
+    let previous_site = current
+        .as_ref()
+        .map(|row| row.case_site_id.value.clone());
+    if previous_site.as_deref() == case_site_id.as_ref().map(CaseSiteId::as_str) {
+        return Ok(());
+    }
+    if previous_site.as_deref() != case_site_id.as_ref().map(CaseSiteId::as_str)
         && let Some(previous_site) = previous_site.as_deref()
     {
         for membership in ctx
@@ -1087,29 +1170,28 @@ pub(crate) fn set_character_case_site(
     crate::outbreak::record_case_site_presence_transition(
         ctx,
         character_id,
-        case_site_id.as_deref(),
+        case_site_id.as_ref().map(CaseSiteId::as_str),
     );
-    if ctx
-        .db
-        .character_case_site_occupancy()
-        .character_id()
-        .find(character_id)
-        .is_some()
-    {
-        ctx.db
-            .character_case_site_occupancy()
-            .character_id()
-            .delete(character_id);
+    if let Some(mut current) = current {
+        current.left_at = Some(minute);
+        ctx.db.character_case_site_occupancy().id().update(current);
     }
-    if let Some(value) = case_site_id {
+    if let Some(case_site_id) = case_site_id {
         ctx.db
             .character_case_site_occupancy()
             .insert(CharacterCaseSiteOccupancy {
+                id: format!(
+                    "case-occupancy:{character_id}:{minute}:{}",
+                    case_site_id.as_str()
+                ),
                 character_id,
                 gateway_bucket: 0,
-                case_site_id: CaseSiteId { value },
+                case_site_id,
+                entered_at: minute,
+                left_at: None,
             });
     }
+    Ok(())
 }
 
 #[derive(Clone, Debug)]

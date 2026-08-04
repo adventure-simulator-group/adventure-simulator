@@ -290,6 +290,9 @@ pub fn track_case_site(
     case_site_id: CaseSiteId,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
+    case_site_id
+        .to_place()
+        .ok_or("Case-site identity is malformed")?;
     let character = crate::character::require_living_character(ctx, character_id)?;
     let party_id = character
         .party_id

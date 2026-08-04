@@ -3,6 +3,9 @@
 //! Canonical disease, source and remediation facts never cross a public view.
 
 use spacetimedb::{ReducerContext, Table, ViewContext, table};
+use std::str::FromStr;
+
+use adventuresim_core::strategic_place::{StrategicFixtureId, StrategicPlaceId};
 
 use crate::{
     character::{character, character_attributes, character_death},
@@ -11,7 +14,6 @@ use crate::{
     local_problem::{local_problem_receipt, local_problem_receipt__view},
     relationship::character_kinship,
     settlement_population::{settlement_resident_presence, settlement_resident_profile},
-    strategic::party_authority,
     time::character_time,
     world_actor::character_context_membership,
 };
@@ -31,8 +33,10 @@ pub struct OutbreakAuthority {
     pub transmission_route: String,
     pub source_kind: String,
     pub source_json: String,
-    pub physical_source_site_id: String,
-    pub patient_presentation_site_id: String,
+    /// Canonical `StrategicFixtureId::OutbreakSource` encoding.
+    pub physical_source_fixture_id: String,
+    /// Canonical `StrategicPlaceId::CaseSite` encoding.
+    pub patient_presentation_place_id: String,
     pub responsible_resident_character_id: Option<u64>,
     pub culpability: Option<String>,
     pub carrier_threat_id: Option<String>,
@@ -69,7 +73,8 @@ pub struct OutbreakSourcePresenceSpan {
     #[index(btree)]
     pub character_id: u64,
     #[index(btree)]
-    pub source_site_id: String,
+    /// Canonical `StrategicPlaceId::CaseSite` encoding.
+    pub source_place_id: String,
     pub started_at: u64,
     pub ended_at: Option<u64>,
 }
@@ -81,6 +86,7 @@ pub(crate) fn case_patient_visible_to_character_view(
     ctx: &ViewContext,
     character_id: u64,
     case_id: &str,
+    minute: u64,
 ) -> bool {
     let Some(authority) = ctx
         .db
@@ -97,13 +103,15 @@ pub(crate) fn case_patient_visible_to_character_view(
         .any(|receipt| {
             receipt.problem_id == authority.problem_id
                 && receipt.settlement_id == authority.settlement_id
+                && receipt.learned_at <= minute
         })
 }
 
-pub(crate) fn case_patient_visible_to_party(
+pub(crate) fn case_patient_visible_to_character(
     ctx: &ReducerContext,
-    party_id: &str,
+    character_id: u64,
     case_id: &str,
+    minute: u64,
 ) -> bool {
     let Some(authority) = ctx
         .db
@@ -113,16 +121,14 @@ pub(crate) fn case_patient_visible_to_party(
     else {
         return false;
     };
-    let Some(party) = ctx.db.party_authority().id().find(&party_id.to_owned()) else {
-        return false;
-    };
     ctx.db
         .local_problem_receipt()
         .character_id()
-        .filter(party.leader_id)
+        .filter(character_id)
         .any(|receipt| {
             receipt.problem_id == authority.problem_id
                 && receipt.settlement_id == authority.settlement_id
+                && receipt.learned_at <= minute
         })
 }
 
@@ -156,7 +162,7 @@ fn materialize_patient_corpse(
         ctx,
         exposure.patient_character_id,
         Some(outbreak.patient_presentation_site.0.clone()),
-    );
+    )?;
     let death_source_id = format!("outbreak-victim:{}", generated.canonical_case_id);
     if let Some(existing) = ctx
         .db
@@ -270,6 +276,20 @@ pub(crate) fn remediation_id(
         .ok_or("Outbreak has no exact remediation objective".into())
 }
 
+fn outbreak_source_fixture(case_id: &str, site_id: &str) -> Result<StrategicFixtureId, String> {
+    StrategicFixtureId::outbreak_source(
+        StrategicPlaceId::case_site(site_id.to_owned())
+            .map_err(|_| "Outbreak source case-site identity is malformed")?,
+        case_id.to_owned(),
+    )
+    .map_err(|_| "Outbreak source fixture identity is malformed".into())
+}
+
+fn parse_outbreak_source_fixture(value: &str, case_id: &str) -> Option<StrategicFixtureId> {
+    let fixture = StrategicFixtureId::from_str(value).ok()?;
+    (fixture.outbreak_id() == Some(case_id)).then_some(fixture)
+}
+
 pub(crate) fn materialize_generated_outbreak(
     ctx: &ReducerContext,
     generated: &adventuresim_core::quest_generation::GeneratedCase,
@@ -292,14 +312,32 @@ pub(crate) fn materialize_generated_outbreak(
         OutbreakSource::Environmental { .. } => ("environmental", None),
     };
     let responsible = outbreak.responsible_npc.as_ref();
+    let physical_source_fixture = outbreak_source_fixture(
+        &generated.canonical_case_id,
+        &outbreak.physical_source_site.0,
+    )?;
+    let patient_presentation_place =
+        StrategicPlaceId::case_site(outbreak.patient_presentation_site.0.clone())
+            .map_err(|_| "Outbreak patient case-site identity is malformed")?;
+    let disease_id = crate::disease::disease_key(outbreak.disease).to_string();
+    let transmission_route = format!("{:?}", outbreak.transmission_route).to_ascii_lowercase();
+    let source_json =
+        serde_json::to_string(&outbreak.source).map_err(|_| "Could not encode outbreak source")?;
+    let responsible_resident_character_id =
+        responsible.map(|value| value.resident_character_id.clone());
+    let culpability =
+        responsible.map(|value| format!("{:?}", value.culpability).to_ascii_lowercase());
+    let carrier_threat_id = carrier.map(str::to_owned);
+    let chronology_json = serde_json::to_string(&outbreak.exposure_chronology)
+        .map_err(|_| "Could not encode outbreak chronology")?;
+    let remediation_json = serde_json::to_string(&outbreak.remediation)
+        .map_err(|_| "Could not encode outbreak remediation")?;
     if let Some(existing) = ctx
         .db
         .outbreak_authority()
         .case_id()
         .find(&generated.canonical_case_id)
     {
-        let chronology_json = serde_json::to_string(&outbreak.exposure_chronology)
-            .map_err(|_| "Could not encode outbreak chronology")?;
         let exact_patients = outbreak.exposure_chronology.iter().all(|exposure| {
             ctx.db
                 .outbreak_patient_authority()
@@ -322,8 +360,18 @@ pub(crate) fn materialize_generated_outbreak(
         });
         return if existing.problem_id == generated.problem_id
             && existing.settlement_id == settlement_id
-            && existing.disease_id == crate::disease::disease_key(outbreak.disease)
+            && existing.disease_id == disease_id
+            && existing.transmission_route == transmission_route
+            && existing.source_kind == source_kind
+            && existing.source_json == source_json
+            && existing.physical_source_fixture_id == physical_source_fixture.to_string()
+            && existing.patient_presentation_place_id == patient_presentation_place.to_string()
+            && existing.responsible_resident_character_id == responsible_resident_character_id
+            && existing.culpability == culpability
+            && existing.carrier_threat_id == carrier_threat_id
             && existing.chronology_json == chronology_json
+            && existing.remediation_id == exact_remediation_id
+            && existing.remediation_json == remediation_json
             && exact_patients
         {
             Ok(())
@@ -344,23 +392,18 @@ pub(crate) fn materialize_generated_outbreak(
         case_id: generated.canonical_case_id.clone(),
         problem_id: generated.problem_id.clone(),
         settlement_id: settlement_id.into(),
-        disease_id: crate::disease::disease_key(outbreak.disease).into(),
-        transmission_route: format!("{:?}", outbreak.transmission_route).to_ascii_lowercase(),
+        disease_id,
+        transmission_route,
         source_kind: source_kind.into(),
-        source_json: serde_json::to_string(&outbreak.source)
-            .map_err(|_| "Could not encode outbreak source")?,
-        physical_source_site_id: outbreak.physical_source_site.0.clone(),
-        patient_presentation_site_id: outbreak.patient_presentation_site.0.clone(),
-        responsible_resident_character_id: responsible
-            .map(|value| value.resident_character_id.clone()),
-        culpability: responsible
-            .map(|value| format!("{:?}", value.culpability).to_ascii_lowercase()),
-        carrier_threat_id: carrier.map(str::to_owned),
-        chronology_json: serde_json::to_string(&outbreak.exposure_chronology)
-            .map_err(|_| "Could not encode outbreak chronology")?,
+        source_json,
+        physical_source_fixture_id: physical_source_fixture.to_string(),
+        patient_presentation_place_id: patient_presentation_place.to_string(),
+        responsible_resident_character_id,
+        culpability,
+        carrier_threat_id,
+        chronology_json,
         remediation_id: exact_remediation_id,
-        remediation_json: serde_json::to_string(&outbreak.remediation)
-            .map_err(|_| "Could not encode outbreak remediation")?,
+        remediation_json,
         remediated_at: None,
         remediated_by_party_id: None,
         remediation_source_id: None,
@@ -533,6 +576,13 @@ pub(crate) fn materialize_generated_outbreak(
             )
             .map_err(|_| "Outbreak patient ordinal exceeds its bounded roster")?,
             active: patient_active,
+            entered_at: exposure.became_symptomatic_at,
+            left_at: (!patient_active).then_some(
+                resolved_exposure
+                    .died_at
+                    .unwrap_or(course_end)
+                    .min(course_end),
+            ),
             revision: 1,
             treatment_consent: true,
         };
@@ -562,6 +612,9 @@ pub(crate) fn materialize_generated_outbreak(
                 || existing.character_id != membership.character_id
                 || existing.context_kind != membership.context_kind
                 || existing.role != membership.role
+                || existing.ordinal != membership.ordinal
+                || existing.entered_at != membership.entered_at
+                || existing.treatment_consent != membership.treatment_consent
             {
                 return Err("Outbreak Patient context provenance collision".into());
             }
@@ -618,8 +671,9 @@ pub(crate) fn commit_source_remediation(
         .case_id()
         .find(&case_id.to_owned())
         .ok_or("Outbreak authority not found")?;
+    let source_fixture = outbreak_source_fixture(case_id, source_site_id)?;
     if authority.remediation_id != remediation_id
-        || authority.physical_source_site_id != source_site_id
+        || authority.physical_source_fixture_id != source_fixture.to_string()
     {
         return Err("Intervention does not match the authoritative outbreak source".into());
     }
@@ -639,12 +693,12 @@ pub(crate) fn commit_source_remediation(
     authority.remediated_by_party_id = Some(party_id.into());
     authority.remediation_source_id = Some(source_id.into());
     ctx.db.outbreak_authority().case_id().update(authority);
-    deactivate_outbreak_patient_contexts(ctx, case_id);
+    deactivate_outbreak_patient_contexts(ctx, case_id, at_minute);
     Ok(())
 }
 
-fn deactivate_outbreak_patient_contexts(ctx: &ReducerContext, case_id: &str) {
-    crate::world_actor::deactivate_context_roster(ctx, case_id);
+fn deactivate_outbreak_patient_contexts(ctx: &ReducerContext, case_id: &str, at_minute: u64) {
+    crate::world_actor::deactivate_context_roster_at(ctx, case_id, at_minute);
     for mut patient in ctx
         .db
         .outbreak_patient_authority()
@@ -777,6 +831,8 @@ pub(crate) fn refresh_patient_context_after_time_write(
             .find(&membership_id)
         {
             membership.active = false;
+            membership.left_at = Some(minute.max(membership.entered_at));
+            membership.revision = membership.revision.saturating_add(1);
             ctx.db
                 .character_context_membership()
                 .id()
@@ -831,7 +887,7 @@ pub(crate) fn commit_carrier_remediation(
     authority.remediated_by_party_id = Some(party_id.into());
     authority.remediation_source_id = Some(source_id.into());
     ctx.db.outbreak_authority().case_id().update(authority);
-    deactivate_outbreak_patient_contexts(ctx, case_id);
+    deactivate_outbreak_patient_contexts(ctx, case_id, at_minute);
     Ok(())
 }
 
@@ -909,7 +965,13 @@ pub(crate) fn exposure_windows(
             .outbreak_source_presence_span()
             .character_id()
             .filter(character_id)
-            .filter(|span| span.source_site_id == authority.physical_source_site_id)
+            .filter(|span| {
+                parse_outbreak_source_fixture(
+                    &authority.physical_source_fixture_id,
+                    &authority.case_id,
+                )
+                .is_some_and(|fixture| fixture.place().to_string() == span.source_place_id)
+            })
             .filter_map(|span| {
                 let low = from.max(span.started_at);
                 let high = exposure_to.min(span.ended_at.unwrap_or(exposure_to));
@@ -945,8 +1007,14 @@ pub(crate) fn record_case_site_presence_transition(
     let Some(site_id) = destination_site_id else {
         return;
     };
+    let Some(destination_place) = crate::investigation::canonical_case_site_place(site_id) else {
+        return;
+    };
     if !ctx.db.outbreak_authority().iter().any(|authority| {
-        authority.physical_source_site_id == site_id && authority.remediated_at.is_none()
+        parse_outbreak_source_fixture(&authority.physical_source_fixture_id, &authority.case_id)
+            .is_some_and(|fixture| {
+                fixture.place() == &destination_place && authority.remediated_at.is_none()
+            })
     }) {
         return;
     }
@@ -963,7 +1031,7 @@ pub(crate) fn record_case_site_presence_transition(
             .insert(OutbreakSourcePresenceSpan {
                 id,
                 character_id,
-                source_site_id: site_id.into(),
+                source_place_id: destination_place.to_string(),
                 started_at: minute,
                 ended_at: None,
             });
@@ -1053,18 +1121,56 @@ mod tests {
         let production = source.split("#[cfg(test)]").next().unwrap();
         assert!(production.contains("case_patient_visible_to_character_view"));
         assert!(production.contains("local_problem_receipt()"));
+        assert!(production.contains("receipt.learned_at <= minute"));
+    }
+
+    #[test]
+    fn patient_problem_knowledge_is_frontier_bounded() {
+        let visible = |learned_at: u64, minute: u64| learned_at <= minute;
+        assert!(!visible(101, 100));
+        assert!(visible(100, 100));
     }
 
     #[test]
     fn remediation_is_exact_idempotent_and_uses_normal_outcome_authority() {
         let source = include_str!("outbreak.rs");
         assert!(source.contains("authority.remediation_id != remediation_id"));
-        assert!(source.contains("authority.physical_source_site_id != source_site_id"));
+        assert!(source.contains("physical_source_fixture_id != source_fixture.to_string()"));
+        assert!(source.contains("StrategicFixtureId::outbreak_source"));
+        assert!(source.contains("parse_outbreak_source_fixture"));
         assert!(source.contains("remediation_source_id.as_deref() == Some(source_id)"));
         let actions = include_str!("investigation/actions.rs");
         assert!(actions.contains("OutcomeFactKind::SourceRemediated"));
         let objectives = include_str!("strategic/custody_objectives.rs");
         assert!(objectives.contains("accepted_hostile_remediation"));
+    }
+
+    #[test]
+    fn generated_outbreak_retry_checks_every_immutable_authority_field() {
+        let source = include_str!("outbreak.rs");
+        let retry = source
+            .split("pub(crate) fn materialize_generated_outbreak")
+            .nth(1)
+            .and_then(|tail| tail.split("Generated outbreak provenance collision").next())
+            .expect("generated outbreak retry comparison");
+        for field in [
+            "problem_id",
+            "settlement_id",
+            "disease_id",
+            "transmission_route",
+            "source_kind",
+            "source_json",
+            "physical_source_fixture_id",
+            "patient_presentation_place_id",
+            "responsible_resident_character_id",
+            "culpability",
+            "carrier_threat_id",
+            "chronology_json",
+            "remediation_id",
+            "remediation_json",
+        ] {
+            assert!(retry.contains(field), "retry omitted {field}");
+        }
     }
 
     #[test]

@@ -15,7 +15,7 @@ use crate::capability::StrategicEquipment;
 use crate::character::character;
 use crate::condition::{character_condition as _, character_strategic_condition as _};
 use crate::disease::character_illness_status as _;
-use crate::investigation::{case_site_authority as _, character_case_site_occupancy as _};
+use crate::investigation::case_site_authority as _;
 use crate::organization::organization_membership as _;
 use crate::personality::{
     Sociability as CharacterSociability, Transparency as CharacterTransparency,
@@ -176,11 +176,8 @@ fn activity_execution_location(
             origin_settlement_id: Some(settlement_id),
         });
     }
-    if let Some(occupancy) = ctx
-        .db
-        .character_case_site_occupancy()
-        .character_id()
-        .find(character_id)
+    if let Some(occupancy) =
+        crate::investigation::current_character_case_site_occupancy(ctx, character_id)
     {
         let site = ctx
             .db
@@ -803,7 +800,6 @@ pub fn synchronize_party_for_activity(ctx: &ReducerContext, leader_id: u64) -> R
     if member_ids.is_empty() || !member_ids.contains(&leader_id) {
         return Err("Party has no living leader for activity synchronization".into());
     }
-    let leader_case_site = crate::investigation::character_case_site_id(ctx, leader_id);
     for member_id in &member_ids {
         let member = ctx
             .db
@@ -811,10 +807,14 @@ pub fn synchronize_party_for_activity(ctx: &ReducerContext, leader_id: u64) -> R
             .id()
             .find(*member_id)
             .ok_or("Party member not found")?;
+        let together_at_settlement = leader.current_settlement_id.is_some()
+            && member.current_settlement_id == leader.current_settlement_id
+            && member.current_settlement_id == party.current_settlement_id;
         if member.party_id.as_deref() != Some(party_id.as_str())
-            || member.current_settlement_id != leader.current_settlement_id
-            || member.current_settlement_id != party.current_settlement_id
-            || crate::investigation::character_case_site_id(ctx, *member_id) != leader_case_site
+            || !(together_at_settlement
+                || crate::world_actor::characters_are_contextually_present(
+                    ctx, leader_id, *member_id,
+                ))
         {
             return Err("Party members must be co-located before activity synchronization".into());
         }

@@ -273,6 +273,39 @@ fn autoresolve_info_messages(report: Option<&AutoresolveReport>) -> Vec<String> 
     messages
 }
 
+#[derive(Clone, Debug)]
+pub struct QuestCounterparty {
+    pub character: Character,
+    pub contact_ref: String,
+    pub revision: u32,
+}
+
+fn quest_counterparty_strip(case_site_id: &str, counterparties: &[QuestCounterparty]) -> Markup {
+    html! {
+        nav class="settlement-npc-strip counterparty-strip" aria-label="Counterparty" {
+            @for counterparty in counterparties {
+                div class="npc-portrait counterparty-portrait" {
+                    span class="npc-portrait-image" aria-hidden="true" { "?" }
+                    span class="npc-portrait-name" { (&counterparty.character.name) }
+                    form method="post" action=(format!("/locations/case-site/{case_site_id}/counterparty/contact")) {
+                        input type="hidden" name="target_id" value=(counterparty.character.id);
+                        input type="hidden" name="contact_ref" value=(&counterparty.contact_ref);
+                        input type="hidden" name="expected_revision" value=(counterparty.revision);
+                        input type="hidden" name="action_id" value=(format!("quest-contact:{case_site_id}:{}:{}", counterparty.revision, counterparty.character.id));
+                        button type="submit" class="btn btn-secondary btn-small" { "Talk" }
+                    }
+                    @if counterparty.character.alive {
+                        form method="post" action=(format!("/locations/case-site/{case_site_id}/counterparty/bandage")) {
+                            input type="hidden" name="patient_id" value=(counterparty.character.id);
+                            button type="submit" class="btn btn-secondary btn-small" { "Bandage" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Enemy encounter and, once resolved, its loot at an off-road quest location.
 pub fn quest_location_enemy_page(
     presentation: &CaseSitePagePresentation,
@@ -280,9 +313,7 @@ pub fn quest_location_enemy_page(
     onsite_actions: &[BackendInvestigationAction],
     active_character: Option<&Character>,
     party_members: &[Character],
-    counterparties: &[Character],
-    counterparty_contact_ref: Option<&str>,
-    counterparty_contact_revision: u32,
+    counterparties: &[QuestCounterparty],
     can_fight: bool,
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
@@ -305,27 +336,7 @@ pub fn quest_location_enemy_page(
         aside class="left-sidebar" {
             @if !resolved && !counterparties.is_empty() {
                 (sidebar_section("Counterparty", html! {
-                    nav class="settlement-npc-strip counterparty-strip" aria-label="Counterparty" {
-                        @for counterparty in counterparties {
-                            div class="npc-portrait counterparty-portrait" {
-                                span class="npc-portrait-image" aria-hidden="true" { "?" }
-                                span class="npc-portrait-name" { (&counterparty.name) }
-                                form method="post" action=(format!("/locations/case-site/{}/counterparty/contact", site.case_site_id)) {
-                                    input type="hidden" name="target_id" value=(counterparty.id);
-                                    input type="hidden" name="contact_ref" value=(counterparty_contact_ref.unwrap_or(&site.case_site_id));
-                                    input type="hidden" name="expected_revision" value=(counterparty_contact_revision);
-                                    input type="hidden" name="action_id" value=(format!("quest-contact:{}:{}:{}", site.case_site_id, counterparty_contact_revision, counterparty.id));
-                                    button type="submit" class="btn btn-secondary btn-small" { "Talk" }
-                                }
-                                @if counterparty.alive {
-                                    form method="post" action=(format!("/locations/case-site/{}/counterparty/bandage", site.case_site_id)) {
-                                        input type="hidden" name="patient_id" value=(counterparty.id);
-                                        button type="submit" class="btn btn-secondary btn-small" { "Bandage" }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    (quest_counterparty_strip(&site.case_site_id, counterparties))
                 }))
             }
             @if !resolved {
@@ -467,7 +478,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn case_site_counterparties_use_shared_contact_and_treatment_actions() {
+    fn case_site_counterparties_use_per_row_contact_and_treatment_actions() {
         let template = include_str!("quest.rs")
             .split("#[cfg(test)]")
             .next()
@@ -476,8 +487,61 @@ mod tests {
         assert!(template.contains("/counterparty/contact"));
         assert!(template.contains("/counterparty/bandage"));
         assert!(routes.contains("\"treat_limb\""));
+        let projection = routes
+            .split("let context_memberships: Vec<BackendContextCharacter>")
+            .nth(1)
+            .and_then(|tail| tail.split("let can_fight").next())
+            .expect("case-site counterparty projection");
+        assert!(!projection.contains(".first()"));
+        assert!(projection.contains("contact_ref: membership.contact_ref"));
+        assert!(projection.contains("revision: membership.revision"));
         assert!(!template.contains("examine_outbreak_patient"));
         assert!(!template.contains("outbreak_patient_examination"));
+    }
+
+    #[test]
+    fn each_counterparty_renders_its_own_contact_claim() {
+        let character = |id, name: &str| Character {
+            id,
+            name: name.into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: None,
+            current_case_site_id: Some("case-site:known".into()),
+            party_id: None,
+            age_years: 30,
+            alive: true,
+            temporary: false,
+            social_notification_count: 0,
+            automatic_social_chat_enabled: false,
+        };
+        let rows = [
+            QuestCounterparty {
+                character: character(41, "Alice"),
+                contact_ref: "claim-a".into(),
+                revision: 3,
+            },
+            QuestCounterparty {
+                character: character(42, "Bert"),
+                contact_ref: "claim-b".into(),
+                revision: 7,
+            },
+        ];
+        let markup = quest_counterparty_strip("case-site:known", &rows).into_string();
+        let cards = markup
+            .split("counterparty-portrait")
+            .skip(1)
+            .collect::<Vec<_>>();
+        assert_eq!(cards.len(), 2);
+        assert!(cards[0].contains("Alice"));
+        assert!(cards[0].contains("value=\"41\""));
+        assert!(cards[0].contains("value=\"claim-a\""));
+        assert!(cards[0].contains("value=\"3\""));
+        assert!(cards[1].contains("Bert"));
+        assert!(cards[1].contains("value=\"42\""));
+        assert!(cards[1].contains("value=\"claim-b\""));
+        assert!(cards[1].contains("value=\"7\""));
     }
 
     #[test]

@@ -1546,7 +1546,9 @@ fn action_unavailable_reason_view(
             .id()
             .find(&party_id)
             .and_then(|party| party.current_case_site_id)
-            .is_some_and(|site| site.value == required_case_site_id);
+            .and_then(|site| site.to_place())
+            .zip(canonical_case_site_place(required_case_site_id))
+            .is_some_and(|(occupied, required)| occupied == required);
     let temporal_wait_minutes = projected_party_activity_minute(ctx, &party_id)
         .map_or(0, |started_at| {
             projected_night_window_wait_minutes(ctx, capability, started_at)

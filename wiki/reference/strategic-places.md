@@ -57,7 +57,8 @@ gateway rules expose them.
 contract. Each presence names a Character, a canonical `StrategicPlaceId`, the
 authorized observer's personal-time frontier, and one closed evidence basis:
 coarse settlement membership, validated instantaneous venue selection, scheduled
-resident presence, or chronological residence occupancy. Co-presence requires
+resident presence, chronological residence occupancy, physical case-site
+occupancy, or an active revision-matched case-context membership. Co-presence requires
 the same canonical place projected for the same observer frontier. It does not
 require the observed Character's independent clock to equal the observer's;
 pairwise-soft consumers continue to inspect only the actor's chronology.
@@ -80,10 +81,21 @@ The typed basis distinguishes an owner who also occupies the home from a
 household occupant; ownership alone is neither presence nor occupancy. Private
 holding, household, and role facts remain inside the residence owner module.
 
-The current SpacetimeDB investigation module still owns its serialized
-`CaseSiteId` wrapper and generated client shape. The schema-adapter PR in this
-stack must validate that value into `StrategicPlaceId::CaseSite`, convert the
-cross-system joins, and then remove the feature-specific identity. Keeping the
-schema wrapper unchanged in this pure-core PR avoids an otherwise unrelated
-schema and generated-binding change; it is an ordered conversion boundary, not
-approval for two permanent case-site identities.
+SpacetimeDB's serialized `CaseSiteId` is only the transport for the opaque site
+component. It has no independent identity semantics: one centralized adapter
+must validate it into `StrategicPlaceId::CaseSite` before a case authority,
+party occupancy, or contextual membership can be compared. Observer-safe
+case-site presence additionally requires that observer's exact live disclosure,
+the observer's personal chronology, a living Character, and (for contextual
+actors) a matching projected membership identity and revision. Physical
+occupancy and contextual membership are chronological intervals, so a current
+row cannot authorize presence before entry or after departure. Exact leads are
+likewise effective only after their recorded minute and remain effective until
+the recorded minute of their correction. Different observers cannot reuse one
+another's disclosure.
+
+Outbreak authority persists its physical source as a canonical
+`StrategicFixtureId::OutbreakSource` encoding, and source-exposure spans persist
+the canonical case-site place encoding. Both are constructor-produced and
+parse-validated before comparison; raw generated site strings cannot directly
+join outbreak remediation, exposure, investigation, or contextual presence.

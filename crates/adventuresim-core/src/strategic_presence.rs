@@ -18,6 +18,8 @@ pub enum PresenceBasis {
     ValidatedVenueSelection,
     ScheduledResident,
     ResidenceOccupancy(ResidencePresenceRole),
+    CaseSiteOccupancy,
+    CaseContextMembership,
 }
 
 /// One character's presence projected at an explicit observer frontier.
@@ -148,6 +150,61 @@ impl StrategicPresence {
         })
     }
 
+    /// Physical party/Character occupancy at an exact case site. Observer
+    /// discovery remains the adapter's responsibility.
+    pub fn case_site_occupancy(
+        character_id: u64,
+        place: StrategicPlaceId,
+        frontier: PresenceFrontier,
+        occupied: bool,
+        alive_at_frontier: bool,
+    ) -> Result<Self, PresenceError> {
+        if !matches!(&place, StrategicPlaceId::CaseSite { .. }) {
+            return Err(PresenceError::CaseSiteRequired);
+        }
+        if !occupied || !alive_at_frontier {
+            return Err(PresenceError::Unavailable);
+        }
+        Ok(Self {
+            character_id,
+            place,
+            frontier,
+            basis: PresenceBasis::CaseSiteOccupancy,
+        })
+    }
+
+    /// Presence granted by one live contextual membership at a case site.
+    /// The expected revision prevents a stale projected context from joining.
+    pub fn case_context_membership(
+        character_id: u64,
+        place: StrategicPlaceId,
+        frontier: PresenceFrontier,
+        active: bool,
+        expected_context_id: &str,
+        actual_context_id: &str,
+        expected_revision: u32,
+        actual_revision: u32,
+        alive_at_frontier: bool,
+    ) -> Result<Self, PresenceError> {
+        if !matches!(&place, StrategicPlaceId::CaseSite { .. }) {
+            return Err(PresenceError::CaseSiteRequired);
+        }
+        if !active
+            || expected_context_id.is_empty()
+            || expected_context_id != actual_context_id
+            || expected_revision != actual_revision
+            || !alive_at_frontier
+        {
+            return Err(PresenceError::Unavailable);
+        }
+        Ok(Self {
+            character_id,
+            place,
+            frontier,
+            basis: PresenceBasis::CaseContextMembership,
+        })
+    }
+
     pub fn character_id(&self) -> u64 {
         self.character_id
     }
@@ -271,6 +328,7 @@ pub enum PresenceError {
     CoarseSettlementRequired,
     ExactVenueRequired,
     ResidenceRequired,
+    CaseSiteRequired,
     PlaceMismatch,
     InvalidSchedule,
     OutsideSchedule,
@@ -439,5 +497,77 @@ mod tests {
                 health_suppressed: true,
             }
         );
+    }
+
+    #[test]
+    fn case_occupant_and_current_context_actor_are_co_present() {
+        let frontier = frontier(1, 500);
+        let site = StrategicPlaceId::case_site("outbreak:site:well").unwrap();
+        let actor =
+            StrategicPresence::case_site_occupancy(1, site.clone(), frontier, true, true).unwrap();
+        let patient = StrategicPresence::case_context_membership(
+            2,
+            site,
+            frontier,
+            true,
+            "membership:2",
+            "membership:2",
+            4,
+            4,
+            true,
+        )
+        .unwrap();
+        assert!(are_co_present(&actor, &patient));
+    }
+
+    #[test]
+    fn case_context_rejects_mismatch_staleness_and_malformed_identity() {
+        let frontier = frontier(1, 500);
+        let first = StrategicPlaceId::case_site("case:one").unwrap();
+        let second = StrategicPlaceId::case_site("case:two").unwrap();
+        let actor =
+            StrategicPresence::case_site_occupancy(1, first.clone(), frontier, true, true).unwrap();
+        let elsewhere = StrategicPresence::case_context_membership(
+            2,
+            second,
+            frontier,
+            true,
+            "membership:2",
+            "membership:2",
+            1,
+            1,
+            true,
+        )
+        .unwrap();
+        assert!(!are_co_present(&actor, &elsewhere));
+        assert_eq!(
+            StrategicPresence::case_context_membership(
+                2,
+                first.clone(),
+                frontier,
+                true,
+                "membership:2",
+                "membership:2",
+                1,
+                2,
+                true,
+            ),
+            Err(PresenceError::Unavailable)
+        );
+        assert_eq!(
+            StrategicPresence::case_context_membership(
+                2,
+                first,
+                frontier,
+                true,
+                "membership:stale",
+                "membership:2",
+                2,
+                2,
+                true,
+            ),
+            Err(PresenceError::Unavailable)
+        );
+        assert!(StrategicPlaceId::case_site("bad site id").is_err());
     }
 }

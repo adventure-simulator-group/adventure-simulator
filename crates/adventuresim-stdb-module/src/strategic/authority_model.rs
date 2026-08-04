@@ -225,7 +225,11 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
                         .case_site_id_key()
                         .find(&site.id.value)
                         .filter(|group| {
-                            group.case_site_id_key == group.case_site_id.value
+                            crate::investigation::canonical_case_site_place(
+                                &group.case_site_id_key,
+                            )
+                            .zip(group.case_site_id.to_place())
+                            .is_some_and(|(key_place, typed_place)| key_place == typed_place)
                                 && group.case_site_id == site.id
                         })
                 })
@@ -1343,7 +1347,9 @@ fn materialize_hostile_group(
     if let Some(existing) = ctx.db.hostile_group_authority().id().find(&group.id) {
         return if existing.case_site_id == group.case_site_id
             && existing.case_site_id_key == group.case_site_id_key
-            && existing.case_site_id_key == existing.case_site_id.value
+            && crate::investigation::canonical_case_site_place(&existing.case_site_id_key)
+                .zip(existing.case_site_id.to_place())
+                .is_some_and(|(key_place, typed_place)| key_place == typed_place)
             && existing.enemy_type == group.enemy_type
             && existing.base_enemy_count == group.base_enemy_count
             && existing.base_difficulty == group.base_difficulty

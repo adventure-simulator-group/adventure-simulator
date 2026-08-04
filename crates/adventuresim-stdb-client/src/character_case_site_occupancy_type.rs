@@ -9,9 +9,12 @@ use super::case_site_id_type::CaseSiteId;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct CharacterCaseSiteOccupancy {
+    pub id: String,
     pub character_id: u64,
     pub gateway_bucket: u8,
     pub case_site_id: CaseSiteId,
+    pub entered_at: u64,
+    pub left_at: Option<u64>,
 }
 
 impl __sdk::InModule for CharacterCaseSiteOccupancy {
@@ -22,18 +25,24 @@ impl __sdk::InModule for CharacterCaseSiteOccupancy {
 ///
 /// Provides typed access to columns for query building.
 pub struct CharacterCaseSiteOccupancyCols {
+    pub id: __sdk::__query_builder::Col<CharacterCaseSiteOccupancy, String>,
     pub character_id: __sdk::__query_builder::Col<CharacterCaseSiteOccupancy, u64>,
     pub gateway_bucket: __sdk::__query_builder::Col<CharacterCaseSiteOccupancy, u8>,
     pub case_site_id: __sdk::__query_builder::Col<CharacterCaseSiteOccupancy, CaseSiteId>,
+    pub entered_at: __sdk::__query_builder::Col<CharacterCaseSiteOccupancy, u64>,
+    pub left_at: __sdk::__query_builder::Col<CharacterCaseSiteOccupancy, Option<u64>>,
 }
 
 impl __sdk::__query_builder::HasCols for CharacterCaseSiteOccupancy {
     type Cols = CharacterCaseSiteOccupancyCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         CharacterCaseSiteOccupancyCols {
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
             case_site_id: __sdk::__query_builder::Col::new(table_name, "case_site_id"),
+            entered_at: __sdk::__query_builder::Col::new(table_name, "entered_at"),
+            left_at: __sdk::__query_builder::Col::new(table_name, "left_at"),
         }
     }
 }
@@ -44,6 +53,7 @@ impl __sdk::__query_builder::HasCols for CharacterCaseSiteOccupancy {
 pub struct CharacterCaseSiteOccupancyIxCols {
     pub character_id: __sdk::__query_builder::IxCol<CharacterCaseSiteOccupancy, u64>,
     pub gateway_bucket: __sdk::__query_builder::IxCol<CharacterCaseSiteOccupancy, u8>,
+    pub id: __sdk::__query_builder::IxCol<CharacterCaseSiteOccupancy, String>,
 }
 
 impl __sdk::__query_builder::HasIxCols for CharacterCaseSiteOccupancy {
@@ -52,6 +62,7 @@ impl __sdk::__query_builder::HasIxCols for CharacterCaseSiteOccupancy {
         CharacterCaseSiteOccupancyIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
             gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
         }
     }
 }

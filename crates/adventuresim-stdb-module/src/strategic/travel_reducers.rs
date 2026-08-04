@@ -5,6 +5,9 @@ pub fn travel_to_case_site(
     case_site_id: CaseSiteId,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
+    case_site_id
+        .to_place()
+        .ok_or("Case-site identity is malformed")?;
     travel_to_case_site_impl(ctx, character_id, case_site_id.value, None)
 }
 
@@ -16,6 +19,9 @@ pub fn travel_to_case_site_planned(
     route: JourneyRoutePlan,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
+    case_site_id
+        .to_place()
+        .ok_or("Case-site identity is malformed")?;
     travel_to_case_site_impl(ctx, character_id, case_site_id.value, Some(route))
 }
 
@@ -228,9 +234,7 @@ fn travel_to_case_site_impl(
         &party,
         origin_endpoint,
         JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
-            id: CaseSiteId {
-                value: site.id.value.clone(),
-            },
+            id: CaseSiteId::try_new(site.id.value.clone())?,
             name: site.name.clone(),
         }),
         travel_minutes,
@@ -274,7 +278,7 @@ fn travel_to_case_site_impl(
                 .find(member_id)
                 .ok_or("Party member not found")?;
             member.current_settlement_id = None;
-            crate::investigation::set_character_case_site(ctx, member.id, None);
+            crate::investigation::set_character_case_site(ctx, member.id, None)?;
             ctx.db.character().id().update(member);
         }
         set_party_journey_state(
@@ -306,7 +310,7 @@ fn travel_to_case_site_impl(
                 ctx,
                 member.id,
                 Some(case_site_id.clone()),
-            );
+            )?;
             ctx.db.character().id().update(member);
             mark_case_site_visited(ctx, member_id, &site)?;
         }
@@ -512,9 +516,7 @@ fn travel_to_settlement_impl(
                     name: origin_name.clone(),
                 }),
                 "case_site" => JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
-                    id: CaseSiteId {
-                        value: origin_id.clone(),
-                    },
+                    id: CaseSiteId::try_new(origin_id.clone())?,
                     name: origin_name.clone(),
                 }),
                 _ => return Err("Journey origin kind is invalid".into()),
@@ -573,7 +575,7 @@ fn travel_to_settlement_impl(
                     .find(traveler_id)
                     .ok_or("Party member not found")?;
                 traveler.current_settlement_id = None;
-                crate::investigation::set_character_case_site(ctx, traveler.id, None);
+                crate::investigation::set_character_case_site(ctx, traveler.id, None)?;
                 ctx.db.character().id().update(traveler);
             }
             let party = party.as_mut().expect("party was just reloaded");
@@ -611,7 +613,7 @@ fn travel_to_settlement_impl(
             .find(traveler_id)
             .ok_or("Party member not found")?;
         traveler.current_settlement_id = Some(settlement_id.clone());
-        crate::investigation::set_character_case_site(ctx, traveler.id, None);
+        crate::investigation::set_character_case_site(ctx, traveler.id, None)?;
         ctx.db.character().id().update(traveler);
         crate::condition::replenish_needs_at_settlement(ctx, traveler_id)?;
         crate::condition::refresh_character_strategic_condition(ctx, traveler_id)?;
@@ -852,7 +854,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
                     .find(member_id)
                     .ok_or("Party member not found")?;
                 member.current_settlement_id = Some(destination_id.clone());
-                crate::investigation::set_character_case_site(ctx, member.id, None);
+                crate::investigation::set_character_case_site(ctx, member.id, None)?;
                 ctx.db.character().id().update(member);
                 crate::condition::replenish_needs_at_settlement(ctx, member_id)?;
                 crate::condition::refresh_character_strategic_condition(ctx, member_id)?;
@@ -884,7 +886,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
                     ctx,
                     member.id,
                     Some(destination_id.clone()),
-                );
+                )?;
                 ctx.db.character().id().update(member);
                 mark_case_site_visited(ctx, member_id, &site)?;
                 crate::condition::refresh_character_strategic_condition(ctx, member_id)?;

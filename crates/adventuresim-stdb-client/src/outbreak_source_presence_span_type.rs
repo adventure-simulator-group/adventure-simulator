@@ -9,7 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct OutbreakSourcePresenceSpan {
     pub id: String,
     pub character_id: u64,
-    pub source_site_id: String,
+    pub source_place_id: String,
     pub started_at: u64,
     pub ended_at: Option<u64>,
 }
@@ -24,7 +24,7 @@ impl __sdk::InModule for OutbreakSourcePresenceSpan {
 pub struct OutbreakSourcePresenceSpanCols {
     pub id: __sdk::__query_builder::Col<OutbreakSourcePresenceSpan, String>,
     pub character_id: __sdk::__query_builder::Col<OutbreakSourcePresenceSpan, u64>,
-    pub source_site_id: __sdk::__query_builder::Col<OutbreakSourcePresenceSpan, String>,
+    pub source_place_id: __sdk::__query_builder::Col<OutbreakSourcePresenceSpan, String>,
     pub started_at: __sdk::__query_builder::Col<OutbreakSourcePresenceSpan, u64>,
     pub ended_at: __sdk::__query_builder::Col<OutbreakSourcePresenceSpan, Option<u64>>,
 }
@@ -35,7 +35,7 @@ impl __sdk::__query_builder::HasCols for OutbreakSourcePresenceSpan {
         OutbreakSourcePresenceSpanCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
-            source_site_id: __sdk::__query_builder::Col::new(table_name, "source_site_id"),
+            source_place_id: __sdk::__query_builder::Col::new(table_name, "source_place_id"),
             started_at: __sdk::__query_builder::Col::new(table_name, "started_at"),
             ended_at: __sdk::__query_builder::Col::new(table_name, "ended_at"),
         }
@@ -48,7 +48,7 @@ impl __sdk::__query_builder::HasCols for OutbreakSourcePresenceSpan {
 pub struct OutbreakSourcePresenceSpanIxCols {
     pub character_id: __sdk::__query_builder::IxCol<OutbreakSourcePresenceSpan, u64>,
     pub id: __sdk::__query_builder::IxCol<OutbreakSourcePresenceSpan, String>,
-    pub source_site_id: __sdk::__query_builder::IxCol<OutbreakSourcePresenceSpan, String>,
+    pub source_place_id: __sdk::__query_builder::IxCol<OutbreakSourcePresenceSpan, String>,
 }
 
 impl __sdk::__query_builder::HasIxCols for OutbreakSourcePresenceSpan {
@@ -57,7 +57,7 @@ impl __sdk::__query_builder::HasIxCols for OutbreakSourcePresenceSpan {
         OutbreakSourcePresenceSpanIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            source_site_id: __sdk::__query_builder::IxCol::new(table_name, "source_site_id"),
+            source_place_id: __sdk::__query_builder::IxCol::new(table_name, "source_place_id"),
         }
     }
 }
