@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1800)
+## Files (1816)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -36,8 +36,24 @@ development, or other wiki document before changing a subsystem.
 - `assets_src/base.casc` — Repository support file.
 - `assets_src/base.glb` — Binary game or UI asset.
 - `assets_src/base.qrigcasc` — Repository support file.
+- `assets_src/biped/unarmed/attack_slash_lead_left_contact.casc` — Repository support file.
+- `assets_src/biped/unarmed/attack_slash_lead_left_contact.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/attack_thrust_lead_left_contact.casc` — Repository support file.
+- `assets_src/biped/unarmed/attack_thrust_lead_left_contact.glb` — Binary game or UI asset.
 - `assets_src/biped/unarmed/base.casc` — Repository support file.
+- `assets_src/biped/unarmed/duck_lead_left_backward.casc` — Repository support file.
+- `assets_src/biped/unarmed/duck_lead_left_backward.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/duck_lead_left_left.casc` — Repository support file.
+- `assets_src/biped/unarmed/duck_lead_left_left.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/duck_lead_left_right.casc` — Repository support file.
+- `assets_src/biped/unarmed/duck_lead_left_right.glb` — Binary game or UI asset.
 - `assets_src/biped/unarmed/guard_lead_left.casc` — Repository support file.
+- `assets_src/biped/unarmed/guard_strafe_lead_left_left.casc` — Repository support file.
+- `assets_src/biped/unarmed/guard_strafe_lead_left_left.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/guard_strafe_lead_left_right.casc` — Repository support file.
+- `assets_src/biped/unarmed/guard_strafe_lead_left_right.glb` — Binary game or UI asset.
+- `assets_src/biped/unarmed/guard_walk_lead_left.casc` — Repository support file.
+- `assets_src/biped/unarmed/guard_walk_lead_left.glb` — Binary game or UI asset.
 - `assets_src/biped/unarmed/idle_relaxed.casc` — Repository support file.
 - `assets_src/biped/unarmed/idle_relaxed.glb` — Binary game or UI asset.
 - `assets_src/biped/unarmed/run.casc` — Repository support file.
