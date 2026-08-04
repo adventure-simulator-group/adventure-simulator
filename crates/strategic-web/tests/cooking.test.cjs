@@ -38,8 +38,9 @@ test("cook exposes the shared duration formula to hover and accessibility", () =
 });
 
 test("fireplace submission is explicit and irreversible", () => {
-  assert.match(template, /Add Ingredients/);
-  assert.match(template, /Adding ingredients is irreversible/);
+  assert.match(template, /Start spit roast/);
+  assert.match(template, /Loose food selected here is immediately consolidated/);
+  assert.match(template, /any number of placed vessels/);
   assert.match(template, /inventory_scope/);
   assert.match(template, /personal/);
   assert.match(template, /party/);

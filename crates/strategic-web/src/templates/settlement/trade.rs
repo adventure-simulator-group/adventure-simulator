@@ -348,7 +348,7 @@ pub fn fireplace_page(
         div class="fireplace-layout" data-cooking-activity[dish.is_none()] data-pan-fat-ratio=(adventuresim_core::food::PAN_FRY_MIN_FAT_MASS_RATIO) {
         aside class="left-sidebar fireplace-station-sidebar" {
             (sidebar_section("Fireplace", html! {
-                p { strong { "Instrument: " } (instrument.map(item_display_name).unwrap_or_else(|| "Roasting spit".into())) }
+                p { strong { "Loose cooking: " } (instrument.map(item_display_name).unwrap_or_else(|| "Roasting spit".into())) }
                 @if let Some(row) = dish {
                     p data-fireplace-status { strong { (status.unwrap_or("Cooking")) } " · " (elapsed) "/" (row.target_minutes) " min" }
                     p class="small-copy text-muted" { "Added by " (&row.contributor_name) " at character minute " (row.started_at_minute) ". Hidden food-safety state is intentionally not shown." }
@@ -362,7 +362,7 @@ pub fn fireplace_page(
                         button class="btn btn-primary btn-block" type="submit" { "Retrieve dish" }
                     }
                 } @else {
-                    p class="small-copy text-muted" { "One dish may occupy this fireplace. With no instrument installed, ingredients roast." }
+                    p class="small-copy text-muted" { "One loose spit-roasted dish may cook alongside any number of placed vessels. Each vessel uses only its own contents." }
                 }
             }))
             @if !vessel_stations.is_empty() {
@@ -426,9 +426,9 @@ pub fn fireplace_page(
                         input type="hidden" name="inventory_scope" value=(inventory_scope);
                         input type="hidden" name="inventory_item_ids" value="" data-cooking-ids;
                         input type="hidden" name="amounts_milliunits" value="" data-cooking-amounts;
-                        p class="strategic-warning" { "Adding ingredients is irreversible: selected food is immediately diced and consolidated into one generic cooked meal." }
+                        p class="strategic-warning" { "Loose food selected here is immediately consolidated into one spit-roasted meal. Each placed vessel cooks its contained food into a separate meal." }
                         p class="small-copy text-muted cooking-preview" data-cooking-preview { "Stage at least one measured food portion." }
-                        button type="submit" class="btn btn-primary" disabled data-cook-submit { "Add Ingredients" }
+                        button type="submit" class="btn btn-primary" disabled data-cook-submit { "Start spit roast" }
                     }
                     div data-cooking-pot-empty hidden {}
                     div data-inventory-browser="cooking-pot-left" hidden { table { tbody {} } }

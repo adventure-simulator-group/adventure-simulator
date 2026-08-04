@@ -559,6 +559,48 @@
     else if (row._inventoryDetail) row._inventoryDetail.hidden = true;
   }
 
+  function ensureRowActionRail(row) {
+    let cell = row.querySelector(":scope > .inventory-actions-cell");
+    if (!cell) {
+      cell = document.createElement("td");
+      cell.className = "inventory-actions-cell";
+      cell.setAttribute("aria-label", "Item actions");
+      row.append(cell);
+    }
+    let actions = row.querySelector(".inventory-row-actions");
+    if (!actions) {
+      actions = document.createElement("span");
+      actions.className = "inventory-row-actions";
+    }
+    if (actions.parentElement !== cell) cell.prepend(actions);
+    return { cell, actions };
+  }
+
+  function bindContainerRowDragDrop(browser, row, open) {
+    row.draggable = true;
+    if (!row.dataset.containerDragBound) {
+      row.dataset.containerDragBound = "true";
+      row.addEventListener("dragstart", (event) => event.dataTransfer?.setData(
+        "application/x-adventuresim-inventory-object",
+        row.dataset.containerObjectId || row.dataset.personalInventoryId || row.dataset.partyInventoryId || "",
+      ));
+    }
+    if (row.dataset.containerDropBound) return;
+    row.dataset.containerDropBound = "true";
+    row.addEventListener("dragover", (event) => { event.preventDefault(); row.classList.add("inventory-container-drop-target"); });
+    row.addEventListener("dragleave", () => row.classList.remove("inventory-container-drop-target"));
+    row.addEventListener("drop", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      row.classList.remove("inventory-container-drop-target");
+      const child = event.dataTransfer?.getData("application/x-adventuresim-inventory-object");
+      if (child) browser.dispatchEvent(new CustomEvent("inventory-container-move", {
+        bubbles: true,
+        detail: { child, parent: open.dataset.containerOpen },
+      }));
+    });
+  }
+
   function decorateContainers(browser) {
     browser.querySelectorAll("tr.trade-inventory-row").forEach((row) => {
       const label = row.querySelector("[data-container-capacity-ml]");
@@ -574,6 +616,7 @@
         }
         const open = row.querySelector("[data-container-open]");
         if (open && row.dataset.containerObjectId) open.dataset.containerOpen = row.dataset.containerObjectId;
+        if (open) bindContainerRowDragDrop(browser, row, open);
         return;
       }
       row.dataset.containerDecorated = "true";
@@ -584,7 +627,7 @@
       meter.textContent = `${used / 1000} / ${capacity / 1000} L`;
       meter.setAttribute("aria-label", `${used} of ${capacity} milliliters used`);
       row.querySelector(".inventory-item-name")?.append(meter);
-      const actions = row.querySelector(".inventory-actions-cell") || row.lastElementChild;
+      const { cell: actions } = ensureRowActionRail(row);
       const open = document.createElement("button");
       open.type = "button";
       open.className = "inventory-container-open";
@@ -592,23 +635,7 @@
       open.textContent = "Open";
       open.setAttribute("aria-label", `Open ${label.dataset.itemName || "container"}`);
       actions?.append(open);
-      row.draggable = true;
-      row.addEventListener("dragstart", (event) => event.dataTransfer?.setData(
-        "application/x-adventuresim-inventory-object",
-        row.dataset.containerObjectId || row.dataset.personalInventoryId || row.dataset.partyInventoryId || "",
-      ));
-      row.addEventListener("dragover", (event) => { event.preventDefault(); row.classList.add("inventory-container-drop-target"); });
-      row.addEventListener("dragleave", () => row.classList.remove("inventory-container-drop-target"));
-      row.addEventListener("drop", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        row.classList.remove("inventory-container-drop-target");
-        const child = event.dataTransfer?.getData("application/x-adventuresim-inventory-object");
-        if (child) browser.dispatchEvent(new CustomEvent("inventory-container-move", {
-          bubbles: true,
-          detail: { child, parent: open.dataset.containerOpen },
-        }));
-      });
+      bindContainerRowDragDrop(browser, row, open);
     });
   }
 
@@ -619,7 +646,7 @@
   }
 
   function ensureMoveIntoControl(row, rowRef, snapshot) {
-    const actions = row.querySelector(".inventory-row-actions") || row.querySelector(".inventory-item-name");
+    const { actions } = ensureRowActionRail(row);
     if (!actions || actions.querySelector("[data-container-move-into]")) return;
     const candidates = snapshot.objects.filter((object) =>
       ["cooking_pan", "cooking_pot", "portable_oven"].includes(object.item_id)
@@ -647,6 +674,7 @@
     move.addEventListener("click", () => row.closest("[data-inventory-browser]")?.dispatchEvent(
       new CustomEvent("inventory-container-move", { bubbles: true, detail: { child: rowRef, parent: select.value } }),
     ));
+    actions.classList.add("inventory-container-move-actions");
     actions.append(select, move);
   }
 
@@ -700,7 +728,10 @@
       if (ancestors.length) {
         row.dataset.containerParentObjectId = String(ancestors[0]);
         row.dataset.containerAncestor = ancestors.join(" ");
-        row.hidden = true;
+        const openPanel = row.closest("[data-open-container-object-id]");
+        row.hidden = openPanel
+          ? row.dataset.containerParentObjectId !== openPanel.dataset.openContainerObjectId
+          : true;
         const actions = row.querySelector(".inventory-row-actions") || row.querySelector(".inventory-item-name");
         if (actions && !actions.querySelector("[data-container-remove]")) {
           const remove = document.createElement("button");
@@ -772,7 +803,12 @@
     tbody?.replaceChildren();
     sourceRows.forEach((source) => {
       if (tbody) {
-        const clone = source.cloneNode(true); clone.dataset.containerTransient = "true"; clone.hidden = false; tbody.append(clone);
+        const clone = source.cloneNode(true);
+        clone.dataset.containerTransient = "true";
+        delete clone.dataset.containerDragBound;
+        delete clone.dataset.containerDropBound;
+        clone.hidden = false;
+        tbody.append(clone);
       }
     });
     if (tbody && authoritativeContainerSnapshot) {
@@ -836,15 +872,28 @@
     }
     water.hidden = !/^\d+$/.test(id);
     counterpart.dataset.openContainerObjectId = id;
-    counterpart.addEventListener("dragover", (event) => event.preventDefault());
-    counterpart.addEventListener("drop", (event) => {
-      const child = event.dataTransfer?.getData("application/x-adventuresim-inventory-object");
-      if (/^\d+$/.test(child || "")) {
-        event.preventDefault();
-        postContainer("/api/inventory/containers/remove", { child_object_id: child })
-          .catch((error) => global.alert?.(error.message));
-      }
-    }, { once: true });
+    if (!counterpart._containerDropBound) {
+      counterpart._containerDropBound = true;
+      counterpart.addEventListener("dragover", (event) => event.preventDefault());
+      counterpart.addEventListener("drop", (event) => {
+        const child = event.dataTransfer?.getData("application/x-adventuresim-inventory-object");
+        const destination = event.target.closest?.("tr")?.querySelector?.("[data-container-open]");
+        if (child && destination?.dataset.containerOpen && destination.dataset.containerOpen !== child) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          counterpart.dispatchEvent(new CustomEvent("inventory-container-move", {
+            bubbles: true,
+            detail: { child, parent: destination.dataset.containerOpen },
+          }));
+          return;
+        }
+        if (/^\d+$/.test(child || "")) {
+          event.preventDefault();
+          postContainer("/api/inventory/containers/remove", { child_object_id: child })
+            .catch((error) => global.alert?.(error.message));
+        }
+      });
+    }
     counterpart.querySelector("[data-inventory-search]")?.focus();
   }
 

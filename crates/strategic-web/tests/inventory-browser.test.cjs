@@ -51,6 +51,8 @@ test("container browsing preserves counterpart state and accessible fallbacks", 
   assert.match(source, /inventory-container-move/);
   assert.match(source, /application\/x-adventuresim-inventory-object/);
   assert.match(source, /Container capacity exceeded|container-capacity/);
+  assert.match(source, /inventory-container-move-actions/);
+  assert.match(source, /ensureRowActionRail/);
 });
 
 test("currency rows use one aggregate parent and dedicated denomination components", () => {
@@ -204,6 +206,14 @@ test("nested container panels preserve live nodes and row drops do not bubble", 
   assert.match(source, /replaceChildren\(\.\.\.snapshot\.rows\)/);
   assert.doesNotMatch(source, /tbodyHtml/);
   assert.match(source, /event\.stopPropagation\(\)/);
+  assert.match(source, /row\.closest\("\[data-open-container-object-id\]"\)/);
+  assert.match(source, /delete clone\.dataset\.containerDragBound/);
+  assert.match(source, /delete clone\.dataset\.containerDropBound/);
+  assert.match(source, /bindContainerRowDragDrop/);
+  assert.match(source, /_containerDropBound/);
+  assert.match(source, /event\.target\.closest\?\.\("tr"\)\?\.querySelector\?\.\("\[data-container-open\]"\)/);
+  assert.match(source, /detail: \{ child, parent: destination\.dataset\.containerOpen \}/);
+  assert.match(source, /event\.stopImmediatePropagation\(\)/);
   const filter = source.indexOf(".filter((source) => !counterpart.contains(source))");
   const detach = source.indexOf("tbody?.replaceChildren()", filter);
   assert.ok(filter >= 0 && detach > filter, "counterpart rows must be excluded before detaching live nodes");
