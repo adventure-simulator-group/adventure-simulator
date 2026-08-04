@@ -867,10 +867,18 @@
     if (!water) {
       water = document.createElement("div"); water.dataset.containerWaterActions = "true";
       water.className = "inventory-container-water-actions";
-      water.innerHTML = '<button type="button" data-container-pour>Pour water in</button><button type="button" data-container-drain>Pour water out</button>';
+      water.innerHTML = '<span data-container-tincture-status></span><button type="button" data-container-pour>Pour water in</button><button type="button" data-container-drain>Pour water out</button><button type="button" data-container-spirit>Pour tincture spirit</button><button type="button" data-container-tincture>Start tincture</button><button type="button" data-container-tincture-refresh>Refresh tincture</button><button type="button" data-container-tincture-dose>Take 10% dose</button>';
       close.after(water);
     }
     water.hidden = !/^\d+$/.test(id);
+    const vessel = authoritativeContainerSnapshot?.presentations?.find((item) => String(item.object_id) === id)?.tincture_vessel === true;
+    const tincture = authoritativeContainerSnapshot?.tinctures?.find((item) => String(item.container_object_id) === id);
+    water.querySelector("[data-container-spirit]").hidden = !vessel || Boolean(tincture);
+    water.querySelector("[data-container-tincture]").hidden = !vessel || Boolean(tincture);
+    water.querySelector("[data-container-tincture-refresh]").hidden = !tincture || tincture.matured;
+    water.querySelector("[data-container-tincture-dose]").hidden = !tincture?.matured;
+    const tinctureStatus = water.querySelector("[data-container-tincture-status]");
+    tinctureStatus.textContent = tincture ? (tincture.matured ? "Tincture ready" : "Tincture maturing") : "";
     counterpart.dataset.openContainerObjectId = id;
     if (!counterpart._containerDropBound) {
       counterpart._containerDropBound = true;
@@ -972,6 +980,28 @@
         if (requested && Number(requested) > 0) postContainer(
           waterAction.matches("[data-container-pour]") ? "/api/inventory/containers/pour" : "/api/inventory/containers/drain",
           { container_object_id: browser.dataset.openContainerObjectId, requested_ml: requested },
+        ).catch((error) => global.alert?.(error.message));
+        return;
+      }
+      const tinctureAction = event.target.closest("[data-container-spirit],[data-container-tincture]");
+      if (tinctureAction) {
+        event.preventDefault();
+        postContainer(
+          tinctureAction.matches("[data-container-spirit]")
+            ? "/api/inventory/containers/tincture-spirit"
+            : "/api/inventory/containers/tincture-start",
+          { container_object_id: browser.dataset.openContainerObjectId },
+        ).catch((error) => global.alert?.(error.message));
+        return;
+      }
+      const tinctureLifecycleAction = event.target.closest("[data-container-tincture-refresh],[data-container-tincture-dose]");
+      if (tinctureLifecycleAction) {
+        event.preventDefault();
+        postContainer(
+          tinctureLifecycleAction.matches("[data-container-tincture-dose]")
+            ? "/api/inventory/containers/tincture-dose"
+            : "/api/inventory/containers/tincture-refresh",
+          { container_object_id: browser.dataset.openContainerObjectId, amount_milliunits: 100 },
         ).catch((error) => global.alert?.(error.message));
         return;
       }

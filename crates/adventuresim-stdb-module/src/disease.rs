@@ -2142,7 +2142,7 @@ fn private_variation(
     Ok((sensitivity.clamp(-2_500, 2_500), adverse))
 }
 
-fn require_intervention_relationship(
+pub(crate) fn require_intervention_relationship(
     ctx: &ReducerContext,
     actor_id: u64,
     patient_id: u64,
@@ -2297,6 +2297,53 @@ fn administer_preparation_inner(
     ctx.db.inventory_item().id().delete(inventory_item_id);
     commit_terminal_at_boundary(ctx, patient_id, now)?;
     Ok(())
+}
+
+/// Applies a pinned generic intervention component without consuming a legacy
+/// medication item. Shared carriers (notably food lots) call this with the
+/// exact proportional amount they consumed.
+pub(crate) fn administer_intervention_component(
+    ctx: &ReducerContext,
+    patient_id: u64,
+    preparation_id: &str,
+    profile_version: u16,
+    amount_milliunits: u32,
+) -> Result<(), String> {
+    if amount_milliunits == 0 {
+        return Ok(());
+    }
+    let profile = physiology::intervention_profile(preparation_id, profile_version)
+        .ok_or("Unknown medicinal component profile version")?;
+    if profile.route != physiology::InterventionRoute::Oral {
+        return Err("Only oral medicinal components can be consumed with food".into());
+    }
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(patient_id)
+        .ok_or("Patient time not found")?
+        .minutes;
+    let key = physiology_key(ctx)?;
+    let (sensitivity_bps, adverse_bps) = private_variation(ctx, patient_id, now, preparation_id)?;
+    ctx.db
+        .physiology_administration()
+        .insert(PhysiologyAdministration {
+            id: 0,
+            patient_id,
+            preparation_id: preparation_id.into(),
+            profile_version,
+            route: "oral".into(),
+            amount_milliunits,
+            region: None,
+            administered_at: now,
+            stopped_at: None,
+            sensitivity_bps,
+            adverse_bps,
+            ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
+            phenotype_key_version: key.version,
+        });
+    commit_terminal_at_boundary(ctx, patient_id, now)
 }
 
 #[reducer]

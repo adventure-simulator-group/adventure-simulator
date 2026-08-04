@@ -1,8 +1,10 @@
 # Architecture
 
-Herbal preparation is a strategic reducer. It persists catalogue-backed
-ingredient/remedy inventory rows and trained Herbalism hours only; tactical
-positions, damage, HP, enemies, and other tactical tick state remain transient.
+Ingredient preparation and medicinal transformation are strategic reducers.
+They persist measured substance lots, exclusive preparation state, private
+versioned medicinal components, and stable-container passive processes.
+Tactical positions, damage, HP, enemies, and other tactical tick state remain
+transient.
 
 Static item definitions cross the strategic boundary as a build-time embedded
 catalog. YAML is authoring input only; the flattened SpacetimeDB `Item` table

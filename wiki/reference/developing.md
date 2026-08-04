@@ -101,11 +101,10 @@ deploy a development-bootstrap module to an untrusted environment.
 ## Herbalism demo
 
 Bootstrap the isolated scenario gallery, select **Herbalism Demo**,
-and open the raised **Herbalism** skill action. Willow demonstrates public
-grade and potency, comfrey demonstrates dry/grind and excessive-heat waste,
-and poppy tincture demonstrates a strong benefit with a physiological hazard.
-The demo also carries tincture spirit so the bounded solvent requirement is
-visible in the preview and success path.
+and use Cut/Grind Edge Actions on its concrete ingredient rows. The character
+carries a knife and mortar and pestle so both timing lanes can be compared.
+Willow and comfrey demonstrate heated transformations; poppy, tincture spirit,
+glass bottles, and a jar demonstrate the six-week passive tincture path.
 The result uses the normal inventory transfer, merchant exchange, and medical
 administration paths.
 

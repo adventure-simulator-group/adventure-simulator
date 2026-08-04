@@ -16,12 +16,6 @@ use crate::{
 };
 
 pub const WATER_ITEM_ID: &str = "water";
-pub const GENERIC_CONTAINER_IDS: [&str; 3] = ["cooking_pan", "cooking_pot", "portable_oven"];
-
-fn is_generic_container(item_id: &str) -> bool {
-    GENERIC_CONTAINER_IDS.contains(&item_id)
-}
-
 fn empty_container_can_stack(has_contents: bool, is_nested: bool, has_condition: bool) -> bool {
     !has_contents && !is_nested && !has_condition
 }
@@ -55,8 +49,9 @@ pub struct InventoryContainment {
 pub struct ContainerLiquid {
     #[primary_key]
     pub container_object_id: u64,
-    /// Water is initially the only pooled liquid. Alcohol continues to use its
-    /// measured object row and therefore occupies its actual remaining volume.
+    /// Authored substance identity; liquids in one container never mix
+    /// implicitly. The volume is counted exactly once by capacity checks.
+    pub liquid_item_id: String,
     pub water_ml: u64,
 }
 
@@ -394,6 +389,7 @@ pub(crate) fn delete_subtree(ctx: &ReducerContext, root_object_id: u64) -> Resul
             _ => return Err("Inventory subtree has an unknown location".into()),
         }
         ctx.db.container_liquid().container_object_id().delete(id);
+        crate::herbalism::delete_container_medicine(ctx, id);
         ctx.db.inventory_containment().child_object_id().delete(id);
         ctx.db.inventory_object().id().delete(id);
     }
@@ -647,11 +643,10 @@ mod tests {
     }
 
     #[test]
-    fn generic_solid_containers_exclude_waterskins() {
-        assert!(super::is_generic_container("cooking_pan"));
-        assert!(super::is_generic_container("cooking_pot"));
-        assert!(super::is_generic_container("portable_oven"));
-        assert!(!super::is_generic_container("waterskin"));
+    fn generic_solid_containers_are_authoring_driven() {
+        let source = include_str!("inventory_container.rs");
+        assert!(source.contains("parent_definition.container_capacity_ml == 0"));
+        assert!(!source.contains("GENERIC_CONTAINER_IDS"));
     }
 
     #[test]
@@ -788,6 +783,7 @@ pub(crate) fn consume_contained_water(
                 .container_object_id()
                 .find(object.id)
         })
+        .filter(|liquid| liquid.liquid_item_id == WATER_ITEM_ID)
         .collect::<Vec<_>>();
     liquids.sort_by_key(|liquid| liquid.container_object_id);
     let mut remaining = requested_ml;
@@ -839,6 +835,9 @@ fn require_mutable(ctx: &ReducerContext, object_id: u64) -> Result<(), String> {
                     .is_some()
         }) {
             return Err("Container contents are locked while cooking".into());
+        }
+        if crate::herbalism::container_is_processing(ctx, id) {
+            return Err("Container contents are locked while a tincture is macerating".into());
         }
         cursor = ctx
             .db
@@ -899,8 +898,14 @@ pub fn put_inventory_item_in_container(
     crate::strategic::require_strategic_gateway(ctx)?;
     crate::character::require_living_character(ctx, character_id)?;
     let parent = ensure_object(ctx, character_id, &parent_scope, parent_row_id, true)?;
-    if !is_generic_container(&parent.item_id) {
-        return Err("Only cooking vessels can contain inventory items".into());
+    let parent_definition = ctx
+        .db
+        .item()
+        .id()
+        .find(parent.item_id.clone())
+        .ok_or("Container definition not found")?;
+    if parent_definition.container_capacity_ml == 0 {
+        return Err("That item has no authored container capability".into());
     }
     let child = ensure_object(ctx, character_id, &child_scope, child_row_id, true)?;
     require_mutable(ctx, parent.id)?;
@@ -1053,6 +1058,9 @@ pub fn pour_water_into_container(
         .container_object_id()
         .find(parent.id)
     {
+        if liquid.liquid_item_id != WATER_ITEM_ID {
+            return Err("Container already holds another liquid".into());
+        }
         liquid.water_ml = liquid
             .water_ml
             .checked_add(requested_ml)
@@ -1064,6 +1072,7 @@ pub fn pour_water_into_container(
     } else {
         ctx.db.container_liquid().insert(ContainerLiquid {
             container_object_id: parent.id,
+            liquid_item_id: WATER_ITEM_ID.into(),
             water_ml: requested_ml,
         });
     }
@@ -1094,6 +1103,9 @@ pub fn pour_water_out_of_container(
         .container_object_id()
         .find(container_object_id)
         .ok_or("Container has no water")?;
+    if liquid.liquid_item_id != WATER_ITEM_ID {
+        return Err("Container does not hold water".into());
+    }
     if liquid.water_ml < requested_ml {
         return Err("Container does not hold that much water".into());
     }

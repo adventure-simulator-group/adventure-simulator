@@ -1668,13 +1668,15 @@ pub(crate) fn seed_herbalism_demo_character(ctx: &ReducerContext) -> Result<(), 
     skills.physiology_hours = 4_000.0;
     ctx.db.character_skills().character_id().update(skills);
     for (item_id, quantity) in [
-        ("willow_bark_poor", 2),
         ("willow_bark", 2),
-        ("willow_bark_fine", 2),
-        ("comfrey_fine", 2),
+        ("comfrey", 2),
         ("poppy", 2),
         ("tincture_spirit", 4),
-        ("sage_poor", 2),
+        ("sage", 2),
+        ("glass_bottle", 2),
+        ("glass_jar", 1),
+        ("mortar_and_pestle", 1),
+        ("knife", 1),
     ] {
         if ctx
             .db

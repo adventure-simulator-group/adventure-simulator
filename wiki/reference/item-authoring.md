@@ -1,5 +1,12 @@
 # Item definition authoring
 
+An `ingredient` may also author the `food` capability, including zero nutrition
+and flavor for a medicine-only substance. This creates a measured lot without
+declaring the substance harmless. Solid and liquid containers are selected by
+their authored `container.capacity_ml`, not a cooking-vessel ID allowlist.
+Grinding tools use the `grinding_tool` tag. Bottle and jar capacity must cover
+the authored liquid volume plus direct solid contents.
+
 Every physical definition must author a positive integer
 `exterior_volume_ml`; omission, zero, and values above 1,000,000 are rejected.
 The `container.capacity_ml` capability is interior inventory capacity, not an

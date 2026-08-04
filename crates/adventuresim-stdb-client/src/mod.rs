@@ -14,6 +14,7 @@ pub mod active_pregnancy_type;
 pub mod activity_incident_entropy_type;
 pub mod add_fireplace_ingredients_reducer;
 pub mod administer_preparation_reducer;
+pub mod administer_tincture_from_container_reducer;
 pub mod admit_household_occupant_reducer;
 pub mod adopt_development_scenarios_reducer;
 pub mod advance_simulation_world_time_reducer;
@@ -140,6 +141,8 @@ pub mod backend_social_addresses_table;
 pub mod backend_social_beliefs_table;
 pub mod backend_social_chat_receipt_type;
 pub mod backend_social_chat_receipts_table;
+pub mod backend_tincture_status_type;
+pub mod backend_tincture_statuses_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_equipment_condition_and_smiths_reducer;
 pub mod backfill_solo_parties_reducer;
@@ -397,7 +400,6 @@ pub mod geologic_setting_type;
 pub mod geologic_unit_id_type;
 pub mod grant_browser_character_reducer;
 pub mod habitat_suitability_type;
-pub mod herbal_preparation_method_type;
 pub mod historical_vegetation_type;
 pub mod historical_wetland_type;
 pub mod historical_woodland_type;
@@ -425,6 +427,7 @@ pub mod infection_episode_row_type;
 pub mod inferred_geologic_setting_type;
 pub mod inferred_industry_profile_type;
 pub mod inferred_tree_species_profile_type;
+pub mod ingredient_preparation_action_type;
 pub mod inland_water_access_type;
 pub mod inland_water_size_type;
 pub mod inspect_physical_evidence_reducer;
@@ -516,6 +519,7 @@ pub mod marine_water_access_type;
 pub mod marriage_participant_type;
 pub mod marriage_status_type;
 pub mod marriage_type;
+pub mod medicinal_component_type;
 pub mod metamorphic_rock_type;
 pub mod mined_commodity_type;
 pub mod mineral_soil_texture_type;
@@ -616,12 +620,13 @@ pub mod potential_vegetation_posterior_type;
 pub mod potential_vegetation_type;
 pub mod pottery_commodity_type;
 pub mod pottery_industry_type;
+pub mod pour_tincture_spirit_into_container_reducer;
 pub mod pour_water_into_container_reducer;
 pub mod pour_water_out_of_container_reducer;
 pub mod pregnancy_status_type;
 pub mod pregnancy_type;
 pub mod prepare_development_courtship_reducer;
-pub mod prepare_herbal_remedy_reducer;
+pub mod prepare_ingredient_lot_reducer;
 pub mod present_organization_reducer;
 pub mod presentation_type;
 pub mod primary_residence_type;
@@ -648,6 +653,7 @@ pub mod recruitment_requirements_type;
 pub mod recruitment_source_id_type;
 pub mod refresh_capabilities_reducer;
 pub mod refresh_strategic_condition_reducer;
+pub mod refresh_tincture_reducer;
 pub mod register_strategic_gateway_reducer;
 pub mod reject_party_join_request_reducer;
 pub mod religion_hours_type;
@@ -805,6 +811,7 @@ pub mod spouse_leisure_slice_type;
 pub mod stage_investigation_lead_reducer;
 pub mod start_dialogue_reducer;
 pub mod start_fireplace_container_cooking_reducer;
+pub mod start_poppy_tincture_reducer;
 pub mod starting_age_tier_coordinate_type;
 pub mod starting_character_claim_type;
 pub mod stock_category_type;
@@ -838,6 +845,7 @@ pub mod tactical_server_request_type;
 pub mod tactical_server_table;
 pub mod tactical_server_type;
 pub mod temperance_type;
+pub mod tincture_process_type;
 pub mod topsoil_organic_carbon_type;
 pub mod track_case_site_reducer;
 pub mod transfer_party_item_reducer;
@@ -887,6 +895,7 @@ pub use active_pregnancy_type::ActivePregnancy;
 pub use activity_incident_entropy_type::ActivityIncidentEntropy;
 pub use add_fireplace_ingredients_reducer::add_fireplace_ingredients;
 pub use administer_preparation_reducer::administer_preparation;
+pub use administer_tincture_from_container_reducer::administer_tincture_from_container;
 pub use admit_household_occupant_reducer::admit_household_occupant;
 pub use adopt_development_scenarios_reducer::adopt_development_scenarios;
 pub use advance_simulation_world_time_reducer::advance_simulation_world_time;
@@ -1013,6 +1022,8 @@ pub use backend_social_addresses_table::*;
 pub use backend_social_beliefs_table::*;
 pub use backend_social_chat_receipt_type::BackendSocialChatReceipt;
 pub use backend_social_chat_receipts_table::*;
+pub use backend_tincture_status_type::BackendTinctureStatus;
+pub use backend_tincture_statuses_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
 pub use backfill_solo_parties_reducer::backfill_solo_parties;
@@ -1270,7 +1281,6 @@ pub use geologic_setting_type::GeologicSetting;
 pub use geologic_unit_id_type::GeologicUnitId;
 pub use grant_browser_character_reducer::grant_browser_character;
 pub use habitat_suitability_type::HabitatSuitability;
-pub use herbal_preparation_method_type::HerbalPreparationMethod;
 pub use historical_vegetation_type::HistoricalVegetation;
 pub use historical_wetland_type::HistoricalWetland;
 pub use historical_woodland_type::HistoricalWoodland;
@@ -1298,6 +1308,7 @@ pub use infection_episode_row_type::InfectionEpisodeRow;
 pub use inferred_geologic_setting_type::InferredGeologicSetting;
 pub use inferred_industry_profile_type::InferredIndustryProfile;
 pub use inferred_tree_species_profile_type::InferredTreeSpeciesProfile;
+pub use ingredient_preparation_action_type::IngredientPreparationAction;
 pub use inland_water_access_type::InlandWaterAccess;
 pub use inland_water_size_type::InlandWaterSize;
 pub use inspect_physical_evidence_reducer::inspect_physical_evidence;
@@ -1389,6 +1400,7 @@ pub use marine_water_access_type::MarineWaterAccess;
 pub use marriage_participant_type::MarriageParticipant;
 pub use marriage_status_type::MarriageStatus;
 pub use marriage_type::Marriage;
+pub use medicinal_component_type::MedicinalComponent;
 pub use metamorphic_rock_type::MetamorphicRock;
 pub use mined_commodity_type::MinedCommodity;
 pub use mineral_soil_texture_type::MineralSoilTexture;
@@ -1489,12 +1501,13 @@ pub use potential_vegetation_posterior_type::PotentialVegetationPosterior;
 pub use potential_vegetation_type::PotentialVegetation;
 pub use pottery_commodity_type::PotteryCommodity;
 pub use pottery_industry_type::PotteryIndustry;
+pub use pour_tincture_spirit_into_container_reducer::pour_tincture_spirit_into_container;
 pub use pour_water_into_container_reducer::pour_water_into_container;
 pub use pour_water_out_of_container_reducer::pour_water_out_of_container;
 pub use pregnancy_status_type::PregnancyStatus;
 pub use pregnancy_type::Pregnancy;
 pub use prepare_development_courtship_reducer::prepare_development_courtship;
-pub use prepare_herbal_remedy_reducer::prepare_herbal_remedy;
+pub use prepare_ingredient_lot_reducer::prepare_ingredient_lot;
 pub use present_organization_reducer::present_organization;
 pub use presentation_type::Presentation;
 pub use primary_residence_type::PrimaryResidence;
@@ -1521,6 +1534,7 @@ pub use recruitment_requirements_type::RecruitmentRequirements;
 pub use recruitment_source_id_type::RecruitmentSourceId;
 pub use refresh_capabilities_reducer::refresh_capabilities;
 pub use refresh_strategic_condition_reducer::refresh_strategic_condition;
+pub use refresh_tincture_reducer::refresh_tincture;
 pub use register_strategic_gateway_reducer::register_strategic_gateway;
 pub use reject_party_join_request_reducer::reject_party_join_request;
 pub use religion_hours_type::ReligionHours;
@@ -1678,6 +1692,7 @@ pub use spouse_leisure_slice_type::SpouseLeisureSlice;
 pub use stage_investigation_lead_reducer::stage_investigation_lead;
 pub use start_dialogue_reducer::start_dialogue;
 pub use start_fireplace_container_cooking_reducer::start_fireplace_container_cooking;
+pub use start_poppy_tincture_reducer::start_poppy_tincture;
 pub use starting_age_tier_coordinate_type::StartingAgeTierCoordinate;
 pub use starting_character_claim_type::StartingCharacterClaim;
 pub use stock_category_type::StockCategory;
@@ -1711,6 +1726,7 @@ pub use tactical_server_request_type::TacticalServerRequest;
 pub use tactical_server_table::*;
 pub use tactical_server_type::TacticalServer;
 pub use temperance_type::Temperance;
+pub use tincture_process_type::TinctureProcess;
 pub use topsoil_organic_carbon_type::TopsoilOrganicCarbon;
 pub use track_case_site_reducer::track_case_site;
 pub use transfer_party_item_reducer::transfer_party_item;
@@ -1792,6 +1808,12 @@ pub enum Reducer {
         route: String,
         amount_milliunits: u32,
         region: Option<String>,
+    },
+    AdministerTinctureFromContainer {
+        actor_id: u64,
+        patient_id: u64,
+        object_id: u64,
+        amount_milliunits: u32,
     },
     AdmitHouseholdOccupant {
         owner_character_id: u64,
@@ -2179,6 +2201,11 @@ pub enum Reducer {
         inventory_scope: String,
         inventory_item_id: u64,
     },
+    PourTinctureSpiritIntoContainer {
+        character_id: u64,
+        spirit_id: u64,
+        object_id: u64,
+    },
     PourWaterIntoContainer {
         character_id: u64,
         parent_scope: String,
@@ -2194,10 +2221,11 @@ pub enum Reducer {
         suitor_id: u64,
         partner_id: u64,
     },
-    PrepareHerbalRemedy {
+    PrepareIngredientLot {
         character_id: u64,
+        inventory_scope: String,
         inventory_item_id: u64,
-        method: HerbalPreparationMethod,
+        action: IngredientPreparationAction,
     },
     PresentOrganization {
         character_id: u64,
@@ -2250,6 +2278,10 @@ pub enum Reducer {
     },
     RefreshStrategicCondition {
         character_id: u64,
+    },
+    RefreshTincture {
+        character_id: u64,
+        object_id: u64,
     },
     RegisterStrategicGateway {
         terrain_package_digest: Option<String>,
@@ -2526,6 +2558,10 @@ pub enum Reducer {
         context_key: String,
         container_object_id: u64,
     },
+    StartPoppyTincture {
+        character_id: u64,
+        object_id: u64,
+    },
     StopPreparation {
         actor_id: u64,
         administration_id: u64,
@@ -2655,6 +2691,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::AcceptPartyJoinRequest { .. } => "accept_party_join_request",
             Reducer::AddFireplaceIngredients { .. } => "add_fireplace_ingredients",
             Reducer::AdministerPreparation { .. } => "administer_preparation",
+            Reducer::AdministerTinctureFromContainer { .. } => "administer_tincture_from_container",
             Reducer::AdmitHouseholdOccupant { .. } => "admit_household_occupant",
             Reducer::AdoptDevelopmentScenarios { .. } => "adopt_development_scenarios",
             Reducer::AdvanceSimulationWorldTime { .. } => "advance_simulation_world_time",
@@ -2740,10 +2777,13 @@ impl __sdk::Reducer for Reducer {
             Reducer::PerformInvestigationAction { .. } => "perform_investigation_action",
             Reducer::PerformSocialAction { .. } => "perform_social_action",
             Reducer::PlaceFireplaceContainer { .. } => "place_fireplace_container",
+            Reducer::PourTinctureSpiritIntoContainer { .. } => {
+                "pour_tincture_spirit_into_container"
+            }
             Reducer::PourWaterIntoContainer { .. } => "pour_water_into_container",
             Reducer::PourWaterOutOfContainer { .. } => "pour_water_out_of_container",
             Reducer::PrepareDevelopmentCourtship { .. } => "prepare_development_courtship",
-            Reducer::PrepareHerbalRemedy { .. } => "prepare_herbal_remedy",
+            Reducer::PrepareIngredientLot { .. } => "prepare_ingredient_lot",
             Reducer::PresentOrganization { .. } => "present_organization",
             Reducer::PromoteOrganizationMembership { .. } => "promote_organization_membership",
             Reducer::PurchaseFromHerbalist { .. } => "purchase_from_herbalist",
@@ -2756,6 +2796,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::RecoverOwnedResidence { .. } => "recover_owned_residence",
             Reducer::RefreshCapabilities { .. } => "refresh_capabilities",
             Reducer::RefreshStrategicCondition { .. } => "refresh_strategic_condition",
+            Reducer::RefreshTincture { .. } => "refresh_tincture",
             Reducer::RegisterStrategicGateway { .. } => "register_strategic_gateway",
             Reducer::RejectPartyJoinRequest { .. } => "reject_party_join_request",
             Reducer::RelinquishResidence { .. } => "relinquish_residence",
@@ -2814,6 +2855,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::StageInvestigationLead { .. } => "stage_investigation_lead",
             Reducer::StartDialogue { .. } => "start_dialogue",
             Reducer::StartFireplaceContainerCooking { .. } => "start_fireplace_container_cooking",
+            Reducer::StartPoppyTincture { .. } => "start_poppy_tincture",
             Reducer::StopPreparation { .. } => "stop_preparation",
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
             Reducer::SubmitAllRepairableItems { .. } => "submit_all_repairable_items",
@@ -2907,6 +2949,17 @@ impl __sdk::Reducer for Reducer {
                 route: route.clone(),
                 amount_milliunits: amount_milliunits.clone(),
                 region: region.clone(),
+}),
+            Reducer::AdministerTinctureFromContainer{
+                actor_id,
+                patient_id,
+                object_id,
+                amount_milliunits,
+}             => __sats::bsatn::to_vec(&administer_tincture_from_container_reducer::AdministerTinctureFromContainerArgs {
+                actor_id: actor_id.clone(),
+                patient_id: patient_id.clone(),
+                object_id: object_id.clone(),
+                amount_milliunits: amount_milliunits.clone(),
 }),
             Reducer::AdmitHouseholdOccupant{
                 owner_character_id,
@@ -3604,6 +3657,15 @@ Reducer::BeginFormalCourtship{
                 inventory_scope: inventory_scope.clone(),
                 inventory_item_id: inventory_item_id.clone(),
 }),
+            Reducer::PourTinctureSpiritIntoContainer{
+                character_id,
+                spirit_id,
+                object_id,
+}             => __sats::bsatn::to_vec(&pour_tincture_spirit_into_container_reducer::PourTinctureSpiritIntoContainerArgs {
+                character_id: character_id.clone(),
+                spirit_id: spirit_id.clone(),
+                object_id: object_id.clone(),
+}),
             Reducer::PourWaterIntoContainer{
                 character_id,
                 parent_scope,
@@ -3631,14 +3693,16 @@ Reducer::BeginFormalCourtship{
                 suitor_id: suitor_id.clone(),
                 partner_id: partner_id.clone(),
 }),
-            Reducer::PrepareHerbalRemedy{
+            Reducer::PrepareIngredientLot{
                 character_id,
+                inventory_scope,
                 inventory_item_id,
-                method,
-}             => __sats::bsatn::to_vec(&prepare_herbal_remedy_reducer::PrepareHerbalRemedyArgs {
+                action,
+}             => __sats::bsatn::to_vec(&prepare_ingredient_lot_reducer::PrepareIngredientLotArgs {
                 character_id: character_id.clone(),
+                inventory_scope: inventory_scope.clone(),
                 inventory_item_id: inventory_item_id.clone(),
-                method: method.clone(),
+                action: action.clone(),
 }),
             Reducer::PresentOrganization{
                 character_id,
@@ -3733,6 +3797,13 @@ Reducer::BeginFormalCourtship{
                 character_id,
 }             => __sats::bsatn::to_vec(&refresh_strategic_condition_reducer::RefreshStrategicConditionArgs {
                 character_id: character_id.clone(),
+}),
+            Reducer::RefreshTincture{
+                character_id,
+                object_id,
+}             => __sats::bsatn::to_vec(&refresh_tincture_reducer::RefreshTinctureArgs {
+                character_id: character_id.clone(),
+                object_id: object_id.clone(),
 }),
             Reducer::RegisterStrategicGateway{
                 terrain_package_digest,
@@ -4232,6 +4303,13 @@ Reducer::BeginFormalCourtship{
                 context_key: context_key.clone(),
                 container_object_id: container_object_id.clone(),
 }),
+            Reducer::StartPoppyTincture{
+                character_id,
+                object_id,
+}             => __sats::bsatn::to_vec(&start_poppy_tincture_reducer::StartPoppyTinctureArgs {
+                character_id: character_id.clone(),
+                object_id: object_id.clone(),
+}),
             Reducer::StopPreparation{
                 actor_id,
                 administration_id,
@@ -4511,6 +4589,7 @@ pub struct DbUpdate {
     backend_social_addresses: __sdk::TableUpdate<SocialAddress>,
     backend_social_beliefs: __sdk::TableUpdate<SocialBelief>,
     backend_social_chat_receipts: __sdk::TableUpdate<BackendSocialChatReceipt>,
+    backend_tincture_statuses: __sdk::TableUpdate<BackendTinctureStatus>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
     battle_result: __sdk::TableUpdate<BattleResult>,
@@ -4824,6 +4903,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 ),
                 "backend_social_chat_receipts" => db_update.backend_social_chat_receipts.append(
                     backend_social_chat_receipts_table::parse_table_update(table_update)?,
+                ),
+                "backend_tincture_statuses" => db_update.backend_tincture_statuses.append(
+                    backend_tincture_statuses_table::parse_table_update(table_update)?,
                 ),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -5537,6 +5619,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_social_chat_receipts",
             &self.backend_social_chat_receipts,
         );
+        diff.backend_tincture_statuses = cache.apply_diff_to_table::<BackendTinctureStatus>(
+            "backend_tincture_statuses",
+            &self.backend_tincture_statuses,
+        );
         diff.connected_players = cache
             .apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
         diff.party = cache.apply_diff_to_table::<Party>("party", &self.party);
@@ -5758,6 +5844,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_social_chat_receipts" => db_update
                     .backend_social_chat_receipts
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_tincture_statuses" => db_update
+                    .backend_tincture_statuses
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
@@ -6144,6 +6233,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_social_chat_receipts" => db_update
                     .backend_social_chat_receipts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_tincture_statuses" => db_update
+                    .backend_tincture_statuses
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -6412,6 +6504,7 @@ pub struct AppliedDiff<'r> {
     backend_social_addresses: __sdk::TableAppliedDiff<'r, SocialAddress>,
     backend_social_beliefs: __sdk::TableAppliedDiff<'r, SocialBelief>,
     backend_social_chat_receipts: __sdk::TableAppliedDiff<'r, BackendSocialChatReceipt>,
+    backend_tincture_statuses: __sdk::TableAppliedDiff<'r, BackendTinctureStatus>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
     battle_result: __sdk::TableAppliedDiff<'r, BattleResult>,
@@ -6803,6 +6896,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendSocialChatReceipt>(
             "backend_social_chat_receipts",
             &self.backend_social_chat_receipts,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendTinctureStatus>(
+            "backend_tincture_statuses",
+            &self.backend_tincture_statuses,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BattleLootItem>(
@@ -7793,6 +7891,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_social_addresses_table::register_table(client_cache);
         backend_social_beliefs_table::register_table(client_cache);
         backend_social_chat_receipts_table::register_table(client_cache);
+        backend_tincture_statuses_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
         battle_participant_table::register_table(client_cache);
         battle_result_table::register_table(client_cache);
@@ -7919,6 +8018,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_social_addresses",
         "backend_social_beliefs",
         "backend_social_chat_receipts",
+        "backend_tincture_statuses",
         "battle_loot_item",
         "battle_participant",
         "battle_result",

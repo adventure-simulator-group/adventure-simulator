@@ -8,6 +8,9 @@ pub const MAX_INITIAL_CONTAMINATION: f32 = 1.0e-5;
 pub const RECONTAMINATION_FLOOR: f32 = 1.0e-9;
 pub const MAX_CONTAMINATION: f32 = 1.0e9;
 pub const PAN_FRY_MIN_FAT_MASS_RATIO: f32 = 0.02;
+pub const CUT_COOKING_TIME_FACTOR: f32 = 0.75;
+pub const GROUND_COOKING_TIME_FACTOR: f32 = 0.50;
+pub const SMOKED_ADDITIONAL_NUTRITION_LOSS: f32 = 0.15;
 
 /// Retrieval-time effects for a dish left on a fireplace. Quality is a
 /// discrete tier adjustment applied to the ready dish. Early retrieval moves
@@ -42,6 +45,46 @@ pub fn doneness_outcome(elapsed_minutes: u64, target_minutes: u32) -> DonenessOu
             quality_penalty: ((progress - 1.0) * 4.0).ceil().clamp(0.0, 4.0) as u8,
         }
     }
+}
+
+/// Method-aware retrieval semantics. Wet cooking reaches a safe stable state;
+/// roasting trades late time for drying/smoking instead of burning. Only a
+/// pan or oven follows the destructive overcook curve.
+pub fn method_doneness_outcome(
+    method: CookingMethod,
+    elapsed_minutes: u64,
+    target_minutes: u32,
+) -> DonenessOutcome {
+    let target = u64::from(target_minutes.max(1));
+    let raw = doneness_outcome(elapsed_minutes, target_minutes);
+    if elapsed_minutes <= target {
+        return raw;
+    }
+    match method {
+        CookingMethod::Stew => DonenessOutcome {
+            progress: 1.0,
+            calorie_factor: 1.0,
+            contamination_kill_progress: 1.0,
+            quality_penalty: 0,
+        },
+        CookingMethod::Roast => {
+            let drying = ((elapsed_minutes - target) as f64 / target as f64).clamp(0.0, 1.0) as f32;
+            DonenessOutcome {
+                progress: 1.0 + drying,
+                calorie_factor: 1.0 - SMOKED_ADDITIONAL_NUTRITION_LOSS * drying,
+                contamination_kill_progress: 1.0,
+                quality_penalty: 0,
+            }
+        }
+        CookingMethod::PanFry | CookingMethod::Bake => raw,
+    }
+}
+
+pub fn preparation_safety_minutes(raw_minutes: u32, preparation_factor: f32) -> Option<u32> {
+    if !preparation_factor.is_finite() || !(0.0..=1.0).contains(&preparation_factor) {
+        return None;
+    }
+    Some(((raw_minutes as f32) * preparation_factor).ceil().max(1.0) as u32)
 }
 
 /// Geometric interpolation from the raw load to the full method kill. This is
@@ -712,6 +755,42 @@ mod tests {
         assert_eq!(partially_cooked_growth(0.08, 0.02, 0.0), 0.08);
         assert!((partially_cooked_growth(0.08, 0.02, 0.5) - 0.05).abs() < f32::EPSILON);
         assert_eq!(partially_cooked_growth(0.08, 0.02, 1.0), 0.02);
+    }
+
+    #[test]
+    fn method_aware_late_cooking_plateaus_drains_or_burns_as_authored() {
+        let stew = method_doneness_outcome(CookingMethod::Stew, 10_000, 100);
+        assert_eq!(stew.calorie_factor, 1.0);
+        assert_eq!(stew.quality_penalty, 0);
+
+        let roast_ready = method_doneness_outcome(CookingMethod::Roast, 100, 100);
+        let roast_smoked = method_doneness_outcome(CookingMethod::Roast, 200, 100);
+        let roast_extreme = method_doneness_outcome(CookingMethod::Roast, 10_000, 100);
+        assert_eq!(roast_ready.calorie_factor, 1.0);
+        assert!((roast_smoked.calorie_factor - 0.85).abs() < f32::EPSILON);
+        assert_eq!(roast_smoked, roast_extreme);
+
+        assert_eq!(
+            method_doneness_outcome(CookingMethod::PanFry, 200, 100).calorie_factor,
+            0.0
+        );
+        assert_eq!(
+            method_doneness_outcome(CookingMethod::Bake, 200, 100).calorie_factor,
+            0.0
+        );
+    }
+
+    #[test]
+    fn cut_and_ground_safety_factors_are_central_and_round_up() {
+        assert_eq!(
+            preparation_safety_minutes(21, CUT_COOKING_TIME_FACTOR),
+            Some(16)
+        );
+        assert_eq!(
+            preparation_safety_minutes(21, GROUND_COOKING_TIME_FACTOR),
+            Some(11)
+        );
+        assert_eq!(preparation_safety_minutes(21, f32::NAN), None);
     }
 
     #[test]
