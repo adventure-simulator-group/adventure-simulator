@@ -759,7 +759,8 @@
       host.append(counterpart); mount(counterpart);
     }
     counterpart._containerPanelStack ||= [];
-    const sourceRows = [...document.querySelectorAll(`tr[data-container-ancestor~="${CSS.escape(id)}"]`)];
+    const sourceRows = [...document.querySelectorAll(`tr[data-container-ancestor~="${CSS.escape(id)}"]`)]
+      .filter((source) => !counterpart.contains(source));
     const tbody = counterpart.querySelector("tbody");
     const panelRows = tbody ? [...tbody.children] : [];
     counterpart._containerPanelStack.push({
@@ -770,7 +771,7 @@
     });
     tbody?.replaceChildren();
     sourceRows.forEach((source) => {
-      if (!counterpart.contains(source) && tbody) {
+      if (tbody) {
         const clone = source.cloneNode(true); clone.dataset.containerTransient = "true"; clone.hidden = false; tbody.append(clone);
       }
     });

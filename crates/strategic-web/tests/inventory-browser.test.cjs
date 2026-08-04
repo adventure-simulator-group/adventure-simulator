@@ -204,6 +204,9 @@ test("nested container panels preserve live nodes and row drops do not bubble", 
   assert.match(source, /replaceChildren\(\.\.\.snapshot\.rows\)/);
   assert.doesNotMatch(source, /tbodyHtml/);
   assert.match(source, /event\.stopPropagation\(\)/);
+  const filter = source.indexOf(".filter((source) => !counterpart.contains(source))");
+  const detach = source.indexOf("tbody?.replaceChildren()", filter);
+  assert.ok(filter >= 0 && detach > filter, "counterpart rows must be excluded before detaching live nodes");
 });
 
 test("container decoration requires an owned or authoritative object row", () => {
