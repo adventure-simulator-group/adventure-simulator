@@ -562,7 +562,7 @@ fn setup_viewer(mut commands: Commands) {
         Transform::from_xyz(0.0, spawn_height, 0.0),
         Collider::cylinder(0.4, 1.9),
         CollisionMargin(0.01),
-        CharacterController::default(),
+        tactical_character_controller(),
     ));
     commands.spawn((
         CaptureLabel,
