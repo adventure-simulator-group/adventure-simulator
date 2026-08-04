@@ -493,14 +493,17 @@ explicit weapon or hand constraint after gait reconstruction.
 
 Walk and run use the same normalized gait phase, and speed blends continuously
 between them. A run is not merely an exaggerated walk: it retains an airborne
-phase, while walking retains ground contact. Crouched locomotion applies
-procedural pelvis lowering, additional hip and knee flexion, shortened stride,
-and foot IK to the ordinary gait instead of requiring a separate crouch-walk
-cycle.
+phase, while walking retains ground contact. Until a dedicated crouch gait is
+authored, crouched locomotion reuses the ordinary leg motion with its 0.025 m
+phase bob. It does not add a flat-ground pelvis drop or leg solve, because
+moving the pelvis alone would drive the authored feet through the floor.
 
-Ordinary tactical movement tops out at 5.5 metres per second. Analogue input
-preserves its radial magnitude, so half stick deflection requests half that run
-speed while keyboard input requests the full speed. Gait phase 0 through 1 is
+Server-authoritative tactical movement tops out at 5.5 metres per second with
+the guard lowered and 2.0 metres per second with the guard raised. Analogue
+input preserves its radial magnitude, so half stick deflection requests 2.75
+m/s lowered or 1.0 m/s raised. Radial clamping prevents diagonal overspeed,
+generic controllers without skeleton state use the lowered cap, and Ahoy still
+applies its existing crouch multiplier and acceleration/deceleration. Gait phase 0 through 1 is
 one complete left-right cycle rather than one step; phase frequency therefore
 uses twice the estimated single-step stride length. This keeps the authored
 walk/run cadence tied to ground distance without double-speed footfalls.
@@ -510,36 +513,42 @@ evaluator constructs four smooth quarters: contact to passing, passing to the
 character-space mirrored contact, mirrored contact to mirrored passing, and
 mirrored passing back to contact. It does not traverse later exported gait
 timeline data. Character-space reflection retains anatomical lateral spacing
-rather than swapping bones discretely. Terrain leg IK preserves continuous
-support for walking, narrows support through the walk/run blend, and releases
-both feet during the authored run flight phase. During high support it also
-locks the stance foot horizontally in world space until release, preventing
-visible skating as the gameplay root advances. A footprint is acquired only
-near full contact and begins at the previous visible world-space foot target,
-so the foot cannot jump by one root step as it becomes loaded. During a body
-turn or at the edge of leg reach, shared virtual-time rate-bounded pelvis lowering absorbs
-the reach deficit first; the plant slides only as far as still required on its
-anatomical side corridor instead of dropping and reacquiring in one frame. A
-plant is released on a true discontinuity, support loss, or an
-airborne/non-upright transition. Left and right targets remain on separate
-pelvis-space tracks with a minimum separation. The solver keeps a 20-degree
-soft extension reserve and a forward, slightly outward anatomical bend
-hemisphere; invalid targets are constrained or released rather than
-reconstructing a knee through the straight-leg singularity. Release toward a
-sparse authored swing target is velocity-bounded in character space. Arm and leg swing share the
-same phase reconstruction before terrain IK; only the legs receive the final
-terrain solve. An explicit hand or weapon constraint can then override the
-reconstructed arm carriage.
-Locomotion also bounds root, pelvis, torso, neck, and head excursions around
-bind before look and final IK, then restores a bounded vertical lift at each
-run flight beat.
+rather than swapping bones discretely. Support narrows through the walk/run
+blend and releases both feet for roughly 90-110 ms at each 5.5 m/s run flight
+beat; the visual gait keeps at least 0.10 m of sole clearance during that flight.
+With terrain IK explicitly enabled, high support locks the stance foot
+horizontally in world space until release. A footprint is acquired only near
+full contact. At the edge of leg reach, shared virtual-time rate-bounded pelvis
+lowering absorbs the reach deficit first, and left and right targets remain on
+separate pelvis-space tracks. The solver keeps a 20-degree soft extension
+reserve and a forward, slightly outward anatomical bend hemisphere. Arm and
+leg swing share the same phase reconstruction before optional terrain IK; only
+the legs receive that final terrain solve. An explicit hand or weapon
+constraint can then override the reconstructed arm carriage.
+Locomotion bounds root, pelvis, torso, neck, and head excursions around bind
+before look and final IK. Authored visual root/pelvis Y is normalized only
+during active grounded locomotion so it cannot double-count procedural height;
+stopping blends central bones back to the authored idle. XZ, rotations, and
+authored limb silhouettes remain intact. The measured 0.033 m hierarchy-rise
+compensation applies only to upright, lowered-guard `humanoid_unarmed`
+locomotion; crouching, guard movement, and specialized packs receive zero
+compensation until measured independently. One visual-only
+`sin²(TAU * phase)` curve owns height: contacts at phase 0 and 0.5 are minima,
+and passing/flight at 0.25 and 0.75 are maxima. Starting amplitudes are 0.04 m
+walk, 0.18 m run, 0.03 m raised guard, and 0.025 m crouch, continuously blended
+across speed and state changes. The curve never changes authoritative owner Y,
+grounded state, or posture. Guard's separate reach correction remains an
+additive baseline concern rather than a gait wave.
+When guard, crouch, grounded, or action state changes, a decaying visual offset
+preserves the previously displayed height across the edge; the new phase curve
+then resumes without resetting or delaying authoritative gait phase.
 
 Terrain conformity defaults off while its uneven-ground behavior is being
 refined. Debug clients expose `F8` as an explicit runtime opt-in. Disabling it
-leaves authored FK, gait mirroring, torso stabilization, flat-ground combat
-foot placement, and the analytic leg solve intact. Only terrain height/normal
-sampling and pelvis conformity are gated, and stale ordinary terrain plants
-are cleared without resetting unrelated arm-pole continuity.
+leaves authored FK, gait mirroring, torso stabilization, and procedural combat
+foot placement intact. Ordinary walk, run, and crouch keep their authored leg
+motion without the analytic terrain solve. Enabling it adds terrain height and
+normal sampling, world-space plants, and terrain-derived pelvis conformity.
 Debug clients also expose `F7` to toggle the connected local tactical mission
 between normal and quarter-speed game time. Both client presentation and the
 authoritative server clock change together, so movement, physics, combat, and
@@ -549,31 +558,44 @@ The native `animation-viewer` is a deterministic gameplay-presentation fixture
 for regression and visual review. It uses the gameplay player-spawn observer, character mesh,
 camera, terrain presentation, authored animation evaluator, and procedural
 passes rather than maintaining parallel fixture implementations. Locomotion is
-projected and integrated continuously at the authoritative 64Hz fixed tick over
-seeded uneven terrain. A deterministic procedural clock prevents asynchronous
+projected and integrated continuously at the authoritative 64Hz fixed tick.
+Most scenarios exercise default-off authored leg motion with fixed controller
+Y; the explicit cross-slope probe enables seeded uneven terrain IK. A deterministic procedural clock prevents asynchronous
 screenshot rendering from advancing retained IK state more than once for the
 same logical tick, while the complete FK/IK pipeline still reevaluates each
 view. The replay captures one raw gameplay-camera image plus side and front
 diagnostic images of that exact pose. Its manifest records final world-space bones, support weights,
 continuity, planted-foot drift under a stable body, signed foot tracks and separation, knee flexion
 and bend hemisphere, desired body-forward alignment, bounded per-tick turning
-residual (including look-facing guards), and terrain-relative foot clearance; those
+residual (including look-facing guards), terrain-relative foot clearance,
+phase-indexed height extrema and peak count, controller vertical range, and run
+flight duration/sole clearance; those
 signals locate suspect frames but do not replace review of the rendered mesh.
+For steady height scenarios, every complete cycle after warmup must contain
+exactly two prominent peaks in the phase 0.25 and 0.75 passing windows. A
+0.003 m prominence threshold filters sampling jitter while still rejecting an
+extra visible beat.
 The fixture supplies deterministic controller observations at the shared
-server projection boundary and follows rendered terrain height; it does not
+server projection boundary and follows rendered terrain height only in the
+cross-slope probe; it does not
 exercise physics contacts, replication, interpolation, or recorded live input.
 
 The vertical-excursion gate remains 0.20 m for ordinary flat-ground motion and
 0.30 m for raised-guard scenarios. The explicit cross-slope scenario adds only
 the terrain relief measured beneath its sampled feet to the ordinary 0.20 m
 envelope; this separates required pelvis reach correction from authored body
-bob without weakening the flat-ground check. Cumulative planted-foot drift is
-measured while support is effectively pinned (at least 0.99). The separate
-per-frame slip gate continues through the blended release interval (at least
-0.9 support), where the IK target intentionally yields back to authored FK.
-Raised-guard scenarios additionally require no more than 0.01 m cumulative
-support drift and at least 0.16 m inter-foot separation; ordinary gait retains
-its legacy 0.035 m drift and 0.08 m separation regression bounds.
+bob without weakening the flat-ground check. Cumulative planted-foot drift and
+per-frame supported slip are gated only where procedural plants exist: raised
+guard and the explicit cross-slope terrain probe. Raised-guard scenarios
+require no more than 0.01 m cumulative support drift and at least 0.16 m
+inter-foot separation; cross-slope terrain IK retains the 0.035 m drift bound.
+The analytic knee-flexion reserve and bend-hemisphere gates use that same
+procedural scope; they are not asserted against default-off authored FK.
+Ordinary default-off FK is reviewed through continuity, clearance, phase-height,
+and visual gates rather than being mislabeled as world-planted.
+Start/stop, guard-entry, and crouch-state transitions permit at most 0.04 m of
+pelvis-height change per 64 Hz sample; the pre-existing guard entry itself uses
+about 0.033 m of that budget.
 Loop-seam gates apply only to repeatable cycles. Start/stop, facing-turn, and
 raised-guard release-at-peak scenarios are transition probes whose final
 simulation state intentionally differs from the state that initiated them;

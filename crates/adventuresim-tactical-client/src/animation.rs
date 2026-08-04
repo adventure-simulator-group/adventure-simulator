@@ -19,7 +19,8 @@ mod procedural;
 #[allow(unused_imports)]
 pub(crate) use procedural::{
     BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone, HumanoidIkTargets,
-    ProceduralAnimationClock, ProceduralIkState, RaisedFootworkState, locomotion_support_weights,
+    LocomotionHeightState, ProceduralAnimationClock, ProceduralIkState, RaisedFootworkState,
+    locomotion_support_weights,
 };
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
@@ -91,9 +92,10 @@ impl Plugin for TacticalAnimationPlugin {
     }
 }
 
-/// Runtime switch for terrain height, slope, and pelvis conformity. Flat-ground
-/// procedural guard footwork remains active while this is disabled. Debug
-/// builds expose F8 as an explicit opt-in toggle.
+/// Runtime switch for terrain height, slope, and pelvis conformity. Ordinary
+/// locomotion retains authored FK and leg motion while this is disabled; only
+/// raised-guard flat footwork remains procedural. Debug builds expose F8 as an
+/// explicit opt-in toggle.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TerrainIkEnabled(pub bool);
 
