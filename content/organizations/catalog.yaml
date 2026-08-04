@@ -2,14 +2,77 @@
     {
         "id":  "merchant_guild",
         "kind":  "professional_association",
-        "roles":  [],
+        "roles":  [
+                      {
+                          "id":  "apprentice",
+                          "name":  "Apprentice",
+                          "profession":  "merchant",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "merchant",
+                          "publicly_recognizable":  true,
+                          "description":  "A learner working under company oversight.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "journeyman",
+                          "name":  "Journeyman",
+                          "profession":  "merchant",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "merchant",
+                          "publicly_recognizable":  true,
+                          "description":  "A merchant trusted to practice independently.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "command",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "master",
+                          "name":  "Master",
+                          "profession":  "merchant",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "merchant",
+                          "publicly_recognizable":  true,
+                          "description":  "A senior merchant entitled to train apprentices.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "command",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ]
+                      }
+                  ],
         "name":  "Company of Merchants",
         "description":  "A local fellowship of traders, factors, and market brokers.",
         "service_id":  "merchants",
         "starting_role":  {
                               "profession":  "merchant",
-                              "adult_rank_id":  "journeyman",
-                              "old_rank_id":  "master"
+                              "adult_role_id":  "journeyman",
+                              "old_role_id":  "master"
                           },
         "chapters":  [
                          {
@@ -55,46 +118,6 @@
                      "amount":  1,
                      "interval_days":  30
                  },
-        "ranks":  [
-                      {
-                          "id":  "apprentice",
-                          "name":  "Apprentice",
-                          "description":  "A learner working under company oversight.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  false,
-                          "practice_reward_interval_minutes":  0
-                      },
-                      {
-                          "id":  "journeyman",
-                          "name":  "Journeyman",
-                          "description":  "A merchant trusted to practice independently.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "command",
-                                                   "minimum":  2.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      },
-                      {
-                          "id":  "master",
-                          "name":  "Master",
-                          "description":  "A senior merchant entitled to train apprentices.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "command",
-                                                   "minimum":  4.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      }
-                  ],
         "activity":  {
                          "training":  [
                                           {
@@ -113,74 +136,41 @@
         "privileges":  [
 
                        ],
-        "public_threat_referrals":  false
+        "public_threat_referrals":  false,
+        "entry_role_ids":  [
+                               "apprentice"
+                           ]
     },
     {
         "id":  "weaponsmith_guild",
         "kind":  "professional_association",
-        "roles":  [],
-        "name":  "Weaponsmiths\u0027 Guild",
-        "description":  "A local fellowship governing weapon and shield work.",
-        "service_id":  "weapons",
-        "starting_role":  {
-                              "profession":  "weaponsmith",
-                              "adult_rank_id":  "journeyman",
-                              "old_rank_id":  "master"
-                          },
-        "chapters":  [
-                         {
-                             "settlement_id":  "viabundus-0",
-                             "location_id":  "organization-weaponsmith-guild",
-                             "building_name":  "Weaponsmiths Hall",
-                             "building_kind":  "workshop",
-                             "representative_title":  "guild master",
-                             "representative_profession":  "weaponsmith"
-                         },
-                         {
-                             "settlement_id":  "viabundus-2337",
-                             "location_id":  "organization-weaponsmith-guild",
-                             "building_name":  "Weaponsmiths Hall",
-                             "building_kind":  "workshop",
-                             "representative_title":  "guild master",
-                             "representative_profession":  "weaponsmith"
-                         },
-                         {
-                             "settlement_id":  "viabundus-1826",
-                             "location_id":  "organization-weaponsmith-guild",
-                             "building_name":  "Weaponsmiths Hall",
-                             "building_kind":  "workshop",
-                             "representative_title":  "guild master",
-                             "representative_profession":  "weaponsmith"
-                         }
-                     ],
-        "recognition":  {
-                            "kind":  "settlements",
-                            "settlement_ids":  [
-                                                   "viabundus-0",
-                                                   "viabundus-2337",
-                                                   "viabundus-1826"
-                                               ]
-                        },
-        "admission":  {
-                          "joining_fee":  1,
-                          "requirements":  [
-
-                                           ]
-                      },
-        "ranks":  [
+        "roles":  [
                       {
                           "id":  "apprentice",
                           "name":  "Apprentice",
+                          "profession":  "weaponsmith",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "weaponsmith",
+                          "publicly_recognizable":  true,
                           "description":  "A learner at the forge.",
                           "requirements":  [
 
                                            ],
                           "practice_allowed":  false,
-                          "practice_reward_interval_minutes":  0
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
                       },
                       {
                           "id":  "journeyman",
                           "name":  "Journeyman",
+                          "profession":  "weaponsmith",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "weaponsmith",
+                          "publicly_recognizable":  true,
                           "description":  "A smith admitted to independent work.",
                           "requirements":  [
                                                {
@@ -190,11 +180,19 @@
                                                }
                                            ],
                           "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
+                          "practice_reward_interval_minutes":  480,
+                          "privileges":  [
+
+                                         ]
                       },
                       {
                           "id":  "master",
                           "name":  "Master",
+                          "profession":  "weaponsmith",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "weaponsmith",
+                          "publicly_recognizable":  true,
                           "description":  "A guild master trusted to teach.",
                           "requirements":  [
                                                {
@@ -204,9 +202,60 @@
                                                }
                                            ],
                           "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ]
                       }
                   ],
+        "name":  "Weaponsmiths\u0027 Guild",
+        "description":  "A local fellowship governing weapon and shield work.",
+        "service_id":  "weapons",
+        "starting_role":  {
+                              "profession":  "weaponsmith",
+                              "adult_role_id":  "journeyman",
+                              "old_role_id":  "master"
+                          },
+        "chapters":  [
+                         {
+                             "settlement_id":  "viabundus-0",
+                             "location_id":  "organization-weaponsmith-guild",
+                             "building_name":  "Weaponsmiths Hall",
+                             "building_kind":  "workshop",
+                             "representative_title":  "guild master",
+                             "representative_profession":  "weaponsmith"
+                         },
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-weaponsmith-guild",
+                             "building_name":  "Weaponsmiths Hall",
+                             "building_kind":  "workshop",
+                             "representative_title":  "guild master",
+                             "representative_profession":  "weaponsmith"
+                         },
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-weaponsmith-guild",
+                             "building_name":  "Weaponsmiths Hall",
+                             "building_kind":  "workshop",
+                             "representative_title":  "guild master",
+                             "representative_profession":  "weaponsmith"
+                         }
+                     ],
+        "recognition":  {
+                            "kind":  "settlements",
+                            "settlement_ids":  [
+                                                   "viabundus-0",
+                                                   "viabundus-2337",
+                                                   "viabundus-1826"
+                                               ]
+                        },
+        "admission":  {
+                          "joining_fee":  1,
+                          "requirements":  [
+
+                                           ]
+                      },
         "activity":  {
                          "training":  [
                                           {
@@ -220,19 +269,85 @@
         "privileges":  [
 
                        ],
-        "public_threat_referrals":  false
+        "public_threat_referrals":  false,
+        "entry_role_ids":  [
+                               "apprentice"
+                           ]
     },
     {
         "id":  "armourers_guild",
         "kind":  "professional_association",
-        "roles":  [],
+        "roles":  [
+                      {
+                          "id":  "apprentice",
+                          "name":  "Apprentice",
+                          "profession":  "armourer",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "armourer",
+                          "publicly_recognizable":  true,
+                          "description":  "A learner in an armourer\u0027s shop.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "journeyman",
+                          "name":  "Journeyman",
+                          "profession":  "armourer",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "armourer",
+                          "publicly_recognizable":  true,
+                          "description":  "An armourer admitted to independent work.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "smithing",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "master",
+                          "name":  "Master",
+                          "profession":  "armourer",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "armourer",
+                          "publicly_recognizable":  true,
+                          "description":  "A guild master trusted to teach.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "smithing",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ]
+                      }
+                  ],
         "name":  "Armourers\u0027 Guild",
         "description":  "A local fellowship of makers and fitters of armor.",
         "service_id":  "armor",
         "starting_role":  {
                               "profession":  "armourer",
-                              "adult_rank_id":  "journeyman",
-                              "old_rank_id":  "master"
+                              "adult_role_id":  "journeyman",
+                              "old_role_id":  "master"
                           },
         "chapters":  [
                          {
@@ -274,46 +389,6 @@
 
                                            ]
                       },
-        "ranks":  [
-                      {
-                          "id":  "apprentice",
-                          "name":  "Apprentice",
-                          "description":  "A learner in an armourer\u0027s shop.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  false,
-                          "practice_reward_interval_minutes":  0
-                      },
-                      {
-                          "id":  "journeyman",
-                          "name":  "Journeyman",
-                          "description":  "An armourer admitted to independent work.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "smithing",
-                                                   "minimum":  2.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      },
-                      {
-                          "id":  "master",
-                          "name":  "Master",
-                          "description":  "A guild master trusted to teach.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "smithing",
-                                                   "minimum":  4.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      }
-                  ],
         "activity":  {
                          "training":  [
                                           {
@@ -327,19 +402,85 @@
         "privileges":  [
 
                        ],
-        "public_threat_referrals":  false
+        "public_threat_referrals":  false,
+        "entry_role_ids":  [
+                               "apprentice"
+                           ]
     },
     {
         "id":  "tailors_guild",
         "kind":  "professional_association",
-        "roles":  [],
+        "roles":  [
+                      {
+                          "id":  "apprentice",
+                          "name":  "Apprentice",
+                          "profession":  "tailor",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "tailor",
+                          "publicly_recognizable":  true,
+                          "description":  "A learner at the cutting table.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "journeyman",
+                          "name":  "Journeyman",
+                          "profession":  "tailor",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "tailor",
+                          "publicly_recognizable":  true,
+                          "description":  "A tailor admitted to independent work.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "tailoring",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "master",
+                          "name":  "Master",
+                          "profession":  "tailor",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "tailor",
+                          "publicly_recognizable":  true,
+                          "description":  "A guild master trusted to teach.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "tailoring",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ]
+                      }
+                  ],
         "name":  "Tailors\u0027 Guild",
         "description":  "A local fellowship of cutters, fitters, and clothing repairers.",
         "service_id":  "clothing",
         "starting_role":  {
                               "profession":  "tailor",
-                              "adult_rank_id":  "journeyman",
-                              "old_rank_id":  "master"
+                              "adult_role_id":  "journeyman",
+                              "old_role_id":  "master"
                           },
         "chapters":  [
                          {
@@ -381,46 +522,6 @@
 
                                            ]
                       },
-        "ranks":  [
-                      {
-                          "id":  "apprentice",
-                          "name":  "Apprentice",
-                          "description":  "A learner at the cutting table.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  false,
-                          "practice_reward_interval_minutes":  0
-                      },
-                      {
-                          "id":  "journeyman",
-                          "name":  "Journeyman",
-                          "description":  "A tailor admitted to independent work.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "tailoring",
-                                                   "minimum":  2.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      },
-                      {
-                          "id":  "master",
-                          "name":  "Master",
-                          "description":  "A guild master trusted to teach.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "tailoring",
-                                                   "minimum":  4.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      }
-                  ],
         "activity":  {
                          "training":  [
                                           {
@@ -434,19 +535,85 @@
         "privileges":  [
 
                        ],
-        "public_threat_referrals":  false
+        "public_threat_referrals":  false,
+        "entry_role_ids":  [
+                               "apprentice"
+                           ]
     },
     {
         "id":  "herbalists_fellowship",
         "kind":  "professional_association",
-        "roles":  [],
+        "roles":  [
+                      {
+                          "id":  "learner",
+                          "name":  "Learner",
+                          "profession":  "herbalist",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "herbalist",
+                          "publicly_recognizable":  true,
+                          "description":  "A learner gaining practical experience through shared work and mentorship.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "herbalist",
+                          "name":  "Herbalist",
+                          "profession":  "herbalist",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "herbalist",
+                          "publicly_recognizable":  true,
+                          "description":  "A herbalist recognized for independent preparation work.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "herbalism",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "elder_herbalist",
+                          "name":  "Elder Herbalist",
+                          "profession":  "herbalist",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "herbalist",
+                          "publicly_recognizable":  true,
+                          "description":  "A senior herbalist who mentors others and preserves local methods.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "herbalism",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ]
+                      }
+                  ],
         "name":  "Fellowship of Herbalists",
         "description":  "An informal local fellowship where practical gathering and remedy-making are shared through mentorship without university enrollment.",
         "service_id":  "herbalist",
         "starting_role":  {
                               "profession":  "herbalist",
-                              "adult_rank_id":  "herbalist",
-                              "old_rank_id":  "elder_herbalist"
+                              "adult_role_id":  "herbalist",
+                              "old_role_id":  "elder_herbalist"
                           },
         "chapters":  [
                          {
@@ -488,46 +655,6 @@
 
                                            ]
                       },
-        "ranks":  [
-                      {
-                          "id":  "learner",
-                          "name":  "Learner",
-                          "description":  "A learner gaining practical experience through shared work and mentorship.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  false,
-                          "practice_reward_interval_minutes":  0
-                      },
-                      {
-                          "id":  "herbalist",
-                          "name":  "Herbalist",
-                          "description":  "A herbalist recognized for independent preparation work.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "herbalism",
-                                                   "minimum":  2.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      },
-                      {
-                          "id":  "elder_herbalist",
-                          "name":  "Elder Herbalist",
-                          "description":  "A senior herbalist who mentors others and preserves local methods.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "herbalism",
-                                                   "minimum":  4.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      }
-                  ],
         "activity":  {
                          "training":  [
                                           {
@@ -541,12 +668,78 @@
         "privileges":  [
 
                        ],
-        "public_threat_referrals":  false
+        "public_threat_referrals":  false,
+        "entry_role_ids":  [
+                               "learner"
+                           ]
     },
     {
         "id":  "physicians_college",
         "kind":  "professional_association",
-        "roles":  [],
+        "roles":  [
+                      {
+                          "id":  "student",
+                          "name":  "Student",
+                          "profession":  "physician",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "physician",
+                          "publicly_recognizable":  true,
+                          "description":  "A supervised student of patient assessment and non-operative treatment.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "physician",
+                          "name":  "Physician",
+                          "profession":  "physician",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "physician",
+                          "publicly_recognizable":  true,
+                          "description":  "A physician recognized for independent practice.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "physiology",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "master_physician",
+                          "name":  "Master Physician",
+                          "profession":  "physician",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "physician",
+                          "publicly_recognizable":  true,
+                          "description":  "A senior physician and teacher of clinical practice.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "physiology",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ]
+                      }
+                  ],
         "name":  "College of Physicians",
         "description":  "A learned clinical college for observing patients, forming fallible differentials, and administering non-operative treatment.",
         "service_id":  "physician",
@@ -590,46 +783,6 @@
 
                                            ]
                       },
-        "ranks":  [
-                      {
-                          "id":  "student",
-                          "name":  "Student",
-                          "description":  "A supervised student of patient assessment and non-operative treatment.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  false,
-                          "practice_reward_interval_minutes":  0
-                      },
-                      {
-                          "id":  "physician",
-                          "name":  "Physician",
-                          "description":  "A physician recognized for independent practice.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "physiology",
-                                                   "minimum":  2.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      },
-                      {
-                          "id":  "master_physician",
-                          "name":  "Master Physician",
-                          "description":  "A senior physician and teacher of clinical practice.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "physiology",
-                                                   "minimum":  4.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      }
-                  ],
         "activity":  {
                          "training":  [
                                           {
@@ -643,12 +796,78 @@
         "privileges":  [
 
                        ],
-        "public_threat_referrals":  false
+        "public_threat_referrals":  false,
+        "entry_role_ids":  [
+                               "student"
+                           ]
     },
     {
         "id":  "surgeons_guild",
         "kind":  "professional_association",
-        "roles":  [],
+        "roles":  [
+                      {
+                          "id":  "apprentice",
+                          "name":  "Apprentice",
+                          "profession":  "surgeon",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "surgeon",
+                          "publicly_recognizable":  true,
+                          "description":  "A supervised apprentice learning operative procedures.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "surgeon",
+                          "name":  "Surgeon",
+                          "profession":  "surgeon",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "surgeon",
+                          "publicly_recognizable":  true,
+                          "description":  "A surgeon recognized for independent operative practice.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "surgery",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "master_surgeon",
+                          "name":  "Master Surgeon",
+                          "profession":  "surgeon",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "surgeon",
+                          "publicly_recognizable":  true,
+                          "description":  "A senior surgeon and teacher of extraction and stitching.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "surgery",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ]
+                      }
+                  ],
         "name":  "Surgeons\u0027 Guild",
         "description":  "A local craft fellowship for operative wound care and surgical procedures.",
         "service_id":  "surgeon",
@@ -692,46 +911,6 @@
 
                                            ]
                       },
-        "ranks":  [
-                      {
-                          "id":  "apprentice",
-                          "name":  "Apprentice",
-                          "description":  "A supervised apprentice learning operative procedures.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  false,
-                          "practice_reward_interval_minutes":  0
-                      },
-                      {
-                          "id":  "surgeon",
-                          "name":  "Surgeon",
-                          "description":  "A surgeon recognized for independent operative practice.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "surgery",
-                                                   "minimum":  2.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      },
-                      {
-                          "id":  "master_surgeon",
-                          "name":  "Master Surgeon",
-                          "description":  "A senior surgeon and teacher of extraction and stitching.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "surgery",
-                                                   "minimum":  4.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      }
-                  ],
         "activity":  {
                          "training":  [
                                           {
@@ -745,19 +924,85 @@
         "privileges":  [
 
                        ],
-        "public_threat_referrals":  false
+        "public_threat_referrals":  false,
+        "entry_role_ids":  [
+                               "apprentice"
+                           ]
     },
     {
         "id":  "cooks_guild",
         "kind":  "professional_association",
-        "roles":  [],
+        "roles":  [
+                      {
+                          "id":  "apprentice",
+                          "name":  "Apprentice",
+                          "profession":  "cook",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "cook",
+                          "publicly_recognizable":  true,
+                          "description":  "A supervised kitchen learner.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "journeyman",
+                          "name":  "Journeyman",
+                          "profession":  "cook",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "cook",
+                          "publicly_recognizable":  true,
+                          "description":  "A cook admitted to independent work.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "cooking",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "master",
+                          "name":  "Master",
+                          "profession":  "cook",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "cook",
+                          "publicly_recognizable":  true,
+                          "description":  "A senior cook and teacher.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "cooking",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ]
+                      }
+                  ],
         "name":  "Cooks\u0027 Guild",
         "description":  "A local fellowship of tavern and household cooks.",
         "service_id":  "inn",
         "starting_role":  {
                               "profession":  "cook",
-                              "adult_rank_id":  "journeyman",
-                              "old_rank_id":  "master"
+                              "adult_role_id":  "journeyman",
+                              "old_role_id":  "master"
                           },
         "chapters":  [
                          {
@@ -799,46 +1044,6 @@
 
                                            ]
                       },
-        "ranks":  [
-                      {
-                          "id":  "apprentice",
-                          "name":  "Apprentice",
-                          "description":  "A supervised kitchen learner.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  false,
-                          "practice_reward_interval_minutes":  0
-                      },
-                      {
-                          "id":  "journeyman",
-                          "name":  "Journeyman",
-                          "description":  "A cook admitted to independent work.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "cooking",
-                                                   "minimum":  2.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      },
-                      {
-                          "id":  "master",
-                          "name":  "Master",
-                          "description":  "A senior cook and teacher.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "cooking",
-                                                   "minimum":  4.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      }
-                  ],
         "activity":  {
                          "training":  [
                                           {
@@ -852,17 +1057,81 @@
         "privileges":  [
 
                        ],
-        "public_threat_referrals":  false
+        "public_threat_referrals":  false,
+        "entry_role_ids":  [
+                               "apprentice"
+                           ]
     },
     {
         "id":  "roman_catholic_learned_chapter",
         "kind":  "religious_organization",
         "roles":  [
                       {
-                          "id":  "learned_religious_practitioner",
-                          "name":  "Learned religious practitioner",
-                          "purpose":  "profession",
-                          "profession":  "learned_religious_practitioner"
+                          "id":  "novice",
+                          "name":  "Novice",
+                          "profession":  "learned_religious_practitioner",
+                          "address_priority":  400,
+                          "social_precedence":  400,
+                          "address_title":  "Father",
+                          "publicly_recognizable":  true,
+                          "description":  "A new student of doctrine.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "Latin"
+                      },
+                      {
+                          "id":  "cleric",
+                          "name":  "Cleric",
+                          "profession":  "learned_religious_practitioner",
+                          "address_priority":  400,
+                          "social_precedence":  400,
+                          "address_title":  "Father",
+                          "publicly_recognizable":  true,
+                          "description":  "A recognized teacher.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "religion",
+                                                   "leaf":  "roman_catholic",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "Latin"
+                      },
+                      {
+                          "id":  "doctor",
+                          "name":  "Doctor",
+                          "profession":  "learned_religious_practitioner",
+                          "address_priority":  400,
+                          "social_precedence":  400,
+                          "address_title":  "Father",
+                          "publicly_recognizable":  true,
+                          "description":  "A senior teacher of doctrine.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "religion",
+                                                   "leaf":  "roman_catholic",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "Latin"
                       }
                   ],
         "name":  "Confraternity of Christian Doctrine",
@@ -870,8 +1139,8 @@
         "service_id":  "religion",
         "starting_role":  {
                               "profession":  "learned_religious_practitioner",
-                              "adult_rank_id":  "cleric",
-                              "old_rank_id":  "doctor"
+                              "adult_role_id":  "cleric",
+                              "old_role_id":  "doctor"
                           },
         "chapters":  [
                          {
@@ -895,48 +1164,6 @@
                                                }
                                            ]
                       },
-        "ranks":  [
-                      {
-                          "id":  "novice",
-                          "name":  "Novice",
-                          "description":  "A new student of doctrine.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  false,
-                          "practice_reward_interval_minutes":  0
-                      },
-                      {
-                          "id":  "cleric",
-                          "name":  "Cleric",
-                          "description":  "A recognized teacher.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "religion",
-                                                   "leaf":  "roman_catholic",
-                                                   "minimum":  2.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      },
-                      {
-                          "id":  "doctor",
-                          "name":  "Doctor",
-                          "description":  "A senior teacher of doctrine.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "religion",
-                                                   "leaf":  "roman_catholic",
-                                                   "minimum":  4.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      }
-                  ],
         "activity":  {
                          "training":  [
                                           {
@@ -960,17 +1187,81 @@
         "privileges":  [
 
                        ],
-        "public_threat_referrals":  false
+        "public_threat_referrals":  false,
+        "entry_role_ids":  [
+                               "novice"
+                           ]
     },
     {
         "id":  "reformed_learned_chapter",
         "kind":  "religious_organization",
         "roles":  [
                       {
-                          "id":  "learned_religious_practitioner",
-                          "name":  "Learned religious practitioner",
-                          "purpose":  "profession",
-                          "profession":  "learned_religious_practitioner"
+                          "id":  "hearer",
+                          "name":  "Hearer",
+                          "profession":  "learned_religious_practitioner",
+                          "address_priority":  400,
+                          "social_precedence":  400,
+                          "address_title":  "Pastor",
+                          "publicly_recognizable":  true,
+                          "description":  "A new student of doctrine.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "Latin"
+                      },
+                      {
+                          "id":  "reader",
+                          "name":  "Reader",
+                          "profession":  "learned_religious_practitioner",
+                          "address_priority":  400,
+                          "social_precedence":  400,
+                          "address_title":  "Pastor",
+                          "publicly_recognizable":  true,
+                          "description":  "A recognized reader.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "religion",
+                                                   "leaf":  "reformed",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "Latin"
+                      },
+                      {
+                          "id":  "teacher",
+                          "name":  "Teacher",
+                          "profession":  "learned_religious_practitioner",
+                          "address_priority":  400,
+                          "social_precedence":  400,
+                          "address_title":  "Pastor",
+                          "publicly_recognizable":  true,
+                          "description":  "A senior teacher of doctrine.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "religion",
+                                                   "leaf":  "reformed",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "Latin"
                       }
                   ],
         "name":  "Company of Reformed Readers",
@@ -991,48 +1282,6 @@
                                                }
                                            ]
                       },
-        "ranks":  [
-                      {
-                          "id":  "hearer",
-                          "name":  "Hearer",
-                          "description":  "A new student of doctrine.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  false,
-                          "practice_reward_interval_minutes":  0
-                      },
-                      {
-                          "id":  "reader",
-                          "name":  "Reader",
-                          "description":  "A recognized reader.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "religion",
-                                                   "leaf":  "reformed",
-                                                   "minimum":  2.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      },
-                      {
-                          "id":  "teacher",
-                          "name":  "Teacher",
-                          "description":  "A senior teacher of doctrine.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "religion",
-                                                   "leaf":  "reformed",
-                                                   "minimum":  4.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      }
-                  ],
         "activity":  {
                          "training":  [
                                           {
@@ -1046,17 +1295,81 @@
         "privileges":  [
 
                        ],
-        "public_threat_referrals":  false
+        "public_threat_referrals":  false,
+        "entry_role_ids":  [
+                               "hearer"
+                           ]
     },
     {
         "id":  "orthodox_learned_brotherhood",
         "kind":  "religious_organization",
         "roles":  [
                       {
-                          "id":  "learned_religious_practitioner",
-                          "name":  "Learned religious practitioner",
-                          "purpose":  "profession",
-                          "profession":  "learned_religious_practitioner"
+                          "id":  "novice",
+                          "name":  "Novice",
+                          "profession":  "learned_religious_practitioner",
+                          "address_priority":  400,
+                          "social_precedence":  400,
+                          "address_title":  "Father",
+                          "publicly_recognizable":  true,
+                          "description":  "A new student of doctrine.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "Latin"
+                      },
+                      {
+                          "id":  "reader",
+                          "name":  "Reader",
+                          "profession":  "learned_religious_practitioner",
+                          "address_priority":  400,
+                          "social_precedence":  400,
+                          "address_title":  "Father",
+                          "publicly_recognizable":  true,
+                          "description":  "A recognized reader.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "religion",
+                                                   "leaf":  "eastern_orthodox",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "Latin"
+                      },
+                      {
+                          "id":  "teacher",
+                          "name":  "Teacher",
+                          "profession":  "learned_religious_practitioner",
+                          "address_priority":  400,
+                          "social_precedence":  400,
+                          "address_title":  "Father",
+                          "publicly_recognizable":  true,
+                          "description":  "A senior teacher of doctrine.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "religion",
+                                                   "leaf":  "eastern_orthodox",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "Latin"
                       }
                   ],
         "name":  "Brotherhood of Orthodox Readers",
@@ -1077,48 +1390,6 @@
                                                }
                                            ]
                       },
-        "ranks":  [
-                      {
-                          "id":  "novice",
-                          "name":  "Novice",
-                          "description":  "A new student of doctrine.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  false,
-                          "practice_reward_interval_minutes":  0
-                      },
-                      {
-                          "id":  "reader",
-                          "name":  "Reader",
-                          "description":  "A recognized reader.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "religion",
-                                                   "leaf":  "eastern_orthodox",
-                                                   "minimum":  2.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      },
-                      {
-                          "id":  "teacher",
-                          "name":  "Teacher",
-                          "description":  "A senior teacher of doctrine.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "religion",
-                                                   "leaf":  "eastern_orthodox",
-                                                   "minimum":  4.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      }
-                  ],
         "activity":  {
                          "training":  [
                                           {
@@ -1132,26 +1403,80 @@
         "privileges":  [
 
                        ],
-        "public_threat_referrals":  false
+        "public_threat_referrals":  false,
+        "entry_role_ids":  [
+                               "novice"
+                           ]
     },
     {
         "id":  "lutheran_learned_visitation",
         "kind":  "religious_organization",
         "roles":  [
                       {
-                          "id":  "learned_religious_practitioner",
-                          "name":  "Learned religious practitioner",
-                          "purpose":  "profession",
-                          "profession":  "learned_religious_practitioner"
+                          "id":  "hearer",
+                          "name":  "Hearer",
+                          "profession":  "learned_religious_practitioner",
+                          "address_priority":  400,
+                          "social_precedence":  400,
+                          "address_title":  "Pastor",
+                          "publicly_recognizable":  true,
+                          "description":  "A new student of doctrine.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "Latin"
+                      },
+                      {
+                          "id":  "reader",
+                          "name":  "Reader",
+                          "profession":  "learned_religious_practitioner",
+                          "address_priority":  400,
+                          "social_precedence":  400,
+                          "address_title":  "Pastor",
+                          "publicly_recognizable":  true,
+                          "description":  "A newly licensed reader of doctrine.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  240,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "Latin"
+                      },
+                      {
+                          "id":  "visitor",
+                          "name":  "Visitor",
+                          "profession":  "learned_religious_practitioner",
+                          "address_priority":  400,
+                          "social_precedence":  400,
+                          "address_title":  "Pastor",
+                          "publicly_recognizable":  true,
+                          "description":  "A master entrusted to examine doctrine and teachers.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "Latin"
                       }
                   ],
         "name":  "Lutheran Visitation of Readers",
-        "description":  "A learned Lutheran visitation represented at Goslar and GÃƒÂ¶ttingen.",
+        "description":  "A learned Lutheran visitation represented at Goslar and GÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¶ttingen.",
         "service_id":  "religion",
         "starting_role":  {
                               "profession":  "learned_religious_practitioner",
-                              "adult_rank_id":  "reader",
-                              "old_rank_id":  "visitor"
+                              "adult_role_id":  "reader",
+                              "old_role_id":  "visitor"
                           },
         "chapters":  [
                          {
@@ -1183,38 +1508,6 @@
                                                }
                                            ]
                       },
-        "ranks":  [
-                      {
-                          "id":  "hearer",
-                          "name":  "Hearer",
-                          "description":  "A new student of doctrine.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      },
-                      {
-                          "id":  "reader",
-                          "name":  "Reader",
-                          "description":  "A newly licensed reader of doctrine.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  240
-                      },
-                      {
-                          "id":  "visitor",
-                          "name":  "Visitor",
-                          "description":  "A master entrusted to examine doctrine and teachers.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      }
-                  ],
         "activity":  {
                          "training":  [
                                           {
@@ -1238,17 +1531,33 @@
         "privileges":  [
 
                        ],
-        "public_threat_referrals":  false
+        "public_threat_referrals":  false,
+        "entry_role_ids":  [
+                               "hearer"
+                           ]
     },
     {
         "id":  "anglican_learned_fellowship",
         "kind":  "religious_organization",
         "roles":  [
                       {
-                          "id":  "learned_religious_practitioner",
-                          "name":  "Learned religious practitioner",
-                          "purpose":  "profession",
-                          "profession":  "learned_religious_practitioner"
+                          "id":  "reader",
+                          "name":  "Reader",
+                          "profession":  "learned_religious_practitioner",
+                          "address_priority":  400,
+                          "social_precedence":  400,
+                          "address_title":  "Pastor",
+                          "publicly_recognizable":  true,
+                          "description":  "A student licensed to read.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "Latin"
                       }
                   ],
         "name":  "Royal Fellowship of Readers",
@@ -1269,18 +1578,6 @@
                                                }
                                            ]
                       },
-        "ranks":  [
-                      {
-                          "id":  "reader",
-                          "name":  "Reader",
-                          "description":  "A student licensed to read.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      }
-                  ],
         "activity":  {
                          "training":  [
                                           {
@@ -1294,17 +1591,33 @@
         "privileges":  [
 
                        ],
-        "public_threat_referrals":  false
+        "public_threat_referrals":  false,
+        "entry_role_ids":  [
+                               "reader"
+                           ]
     },
     {
         "id":  "islamic_learned_fellowship",
         "kind":  "religious_organization",
         "roles":  [
                       {
-                          "id":  "learned_religious_practitioner",
-                          "name":  "Learned religious practitioner",
-                          "purpose":  "profession",
-                          "profession":  "learned_religious_practitioner"
+                          "id":  "student",
+                          "name":  "Student",
+                          "profession":  "learned_religious_practitioner",
+                          "address_priority":  400,
+                          "social_precedence":  400,
+                          "address_title":  "Imam",
+                          "publicly_recognizable":  true,
+                          "description":  "A student of the tradition.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "Latin"
                       }
                   ],
         "name":  "Fellowship of Learned Readers",
@@ -1326,18 +1639,6 @@
                                                }
                                            ]
                       },
-        "ranks":  [
-                      {
-                          "id":  "student",
-                          "name":  "Student",
-                          "description":  "A student of the tradition.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      }
-                  ],
         "activity":  {
                          "training":  [
                                           {
@@ -1351,17 +1652,33 @@
         "privileges":  [
 
                        ],
-        "public_threat_referrals":  false
+        "public_threat_referrals":  false,
+        "entry_role_ids":  [
+                               "student"
+                           ]
     },
     {
         "id":  "jewish_learned_fellowship",
         "kind":  "religious_organization",
         "roles":  [
                       {
-                          "id":  "learned_religious_practitioner",
-                          "name":  "Learned religious practitioner",
-                          "purpose":  "profession",
-                          "profession":  "learned_religious_practitioner"
+                          "id":  "student",
+                          "name":  "Student",
+                          "profession":  "learned_religious_practitioner",
+                          "address_priority":  400,
+                          "social_precedence":  400,
+                          "address_title":  "Rabbi",
+                          "publicly_recognizable":  true,
+                          "description":  "A student of the tradition.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  480,
+                          "privileges":  [
+
+                                         ],
+                          "creation_literacy":  "Latin"
                       }
                   ],
         "name":  "Fellowship of Learned Readers",
@@ -1383,18 +1700,6 @@
                                                }
                                            ]
                       },
-        "ranks":  [
-                      {
-                          "id":  "student",
-                          "name":  "Student",
-                          "description":  "A student of the tradition.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  480
-                      }
-                  ],
         "activity":  {
                          "training":  [
                                           {
@@ -1423,314 +1728,481 @@
         "privileges":  [
 
                        ],
-        "public_threat_referrals":  false
+        "public_threat_referrals":  false,
+        "entry_role_ids":  [
+                               "student"
+                           ]
     },
     {
-        "id": "hunt_pale_lantern",
-        "kind": "professional_association",
-        "roles": [],
-        "name": "The Hunt of the Pale Lantern",
-        "description": "A secular fellowship investigating supernatural threats and protecting the public from them.",
-        "historical_fantasy_note": "An invented historical-fantasy institution modeled on commissioned investigators and territorial visitations.",
-        "starting_role": {
-            "profession": "witch_hunter",
-            "adult_rank_id": "hunter",
-            "old_rank_id": "huntmaster"
-        },
-        "chapters": [
-            {
-                "settlement_id": "viabundus-1826",
-                "location_id": "organization-hunt-pale-lantern",
-                "building_name": "House of the Pale Lantern",
-                "building_kind": "confraternity",
-                "representative_title": "huntmaster",
-                "representative_profession": "witch hunter"
-            },
-            {
-                "settlement_id": "viabundus-2337",
-                "location_id": "organization-hunt-pale-lantern",
-                "building_name": "House of the Pale Lantern",
-                "building_kind": "confraternity",
-                "representative_title": "huntmaster",
-                "representative_profession": "witch hunter"
-            }
-        ],
-        "recognition": {
-            "kind": "universal"
-        },
-        "dues": {
-            "amount": 2,
-            "interval_days": 30
-        },
-        "admission": {
-            "joining_fee": 3,
-            "requirements": []
-        },
-        "ranks": [
-            {
-                "id": "watcher",
-                "name": "Watcher",
-                "description": "A sworn assistant learning to recognize and record unnatural threats.",
-                "requirements": [],
-                "practice_allowed": false,
-                "practice_reward_interval_minutes": 0
-            },
-            {
-                "id": "hunter",
-                "name": "Hunter",
-                "description": "An investigator trusted to pursue supernatural threats.",
-                "requirements": [
-                    {
-                        "kind": "skill_rating",
-                        "skill": "bestiary",
-                        "leaf": "spirit",
-                        "minimum": 2.0
-                    }
-                ],
-                "practice_allowed": true,
-                "practice_reward_interval_minutes": 120
-            },
-            {
-                "id": "huntmaster",
-                "name": "Huntmaster",
-                "description": "A veteran hunter trusted to direct investigations and field parties.",
-                "requirements": [],
-                "practice_allowed": true,
-                "practice_reward_interval_minutes": 60
-            }
-        ],
-        "activity": {
-            "training": [
-                {
-                    "kind": "bestiary",
-                    "category": "spirit",
-                    "weight": 0.5
-                },
-                {
-                    "kind": "equipped_weapon_skills",
-                    "weight": 0.5
-                }
-            ],
-            "reward": "gold"
-        },
-        "privileges": [
-            "bear_arms",
-            "wear_armor"
-        ],
-        "public_threat_referrals": true
+        "id":  "hunt_pale_lantern",
+        "kind":  "professional_association",
+        "roles":  [
+                      {
+                          "id":  "watcher",
+                          "name":  "Watcher",
+                          "profession":  "witch_hunter",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "witch hunter",
+                          "publicly_recognizable":  true,
+                          "description":  "A sworn assistant learning to recognize and record unnatural threats.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "hunter",
+                          "name":  "Hunter",
+                          "profession":  "witch_hunter",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "witch hunter",
+                          "publicly_recognizable":  true,
+                          "description":  "An investigator trusted to pursue supernatural threats.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "bestiary",
+                                                   "leaf":  "spirit",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "huntmaster",
+                          "name":  "Huntmaster",
+                          "profession":  "witch_hunter",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "witch hunter",
+                          "publicly_recognizable":  true,
+                          "description":  "A veteran hunter trusted to direct investigations and field parties.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  60,
+                          "privileges":  [
+
+                                         ]
+                      }
+                  ],
+        "name":  "The Hunt of the Pale Lantern",
+        "description":  "A secular fellowship investigating supernatural threats and protecting the public from them.",
+        "historical_fantasy_note":  "An invented historical-fantasy institution modeled on commissioned investigators and territorial visitations.",
+        "starting_role":  {
+                              "profession":  "witch_hunter",
+                              "adult_role_id":  "hunter",
+                              "old_role_id":  "huntmaster"
+                          },
+        "chapters":  [
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-hunt-pale-lantern",
+                             "building_name":  "House of the Pale Lantern",
+                             "building_kind":  "confraternity",
+                             "representative_title":  "huntmaster",
+                             "representative_profession":  "witch hunter"
+                         },
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-hunt-pale-lantern",
+                             "building_name":  "House of the Pale Lantern",
+                             "building_kind":  "confraternity",
+                             "representative_title":  "huntmaster",
+                             "representative_profession":  "witch hunter"
+                         }
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "dues":  {
+                     "amount":  2,
+                     "interval_days":  30
+                 },
+        "admission":  {
+                          "joining_fee":  3,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "bestiary",
+                                              "category":  "spirit",
+                                              "weight":  0.5
+                                          },
+                                          {
+                                              "kind":  "equipped_weapon_skills",
+                                              "weight":  0.5
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+                           "bear_arms",
+                           "wear_armor"
+                       ],
+        "public_threat_referrals":  true,
+        "entry_role_ids":  [
+                               "watcher"
+                           ]
     },
     {
-        "id": "order_saint_george",
-        "kind": "professional_association",
-        "roles": [],
-        "name": "The Order of St. George",
-        "description": "A military fellowship dedicated to defending travelers and settlements from extraordinary threats.",
-        "historical_fantasy_note": "An invented historical-fantasy order named for the widely honored warrior saint.",
-        "errantry_issuance": true,
-        "starting_role": {
-            "profession": "knight",
-            "adult_rank_id": "knight",
-            "old_rank_id": "commander"
-        },
-        "chapters": [
-            {
-                "settlement_id": "viabundus-1826",
-                "location_id": "organization-order-saint-george",
-                "building_name": "St. George Commandery",
-                "building_kind": "commandery",
-                "representative_title": "order commander",
-                "representative_profession": "knight"
-            },
-            {
-                "settlement_id": "viabundus-2337",
-                "location_id": "organization-order-saint-george",
-                "building_name": "St. George Commandery",
-                "building_kind": "commandery",
-                "representative_title": "order commander",
-                "representative_profession": "knight"
-            }
-        ],
-        "recognition": {
-            "kind": "universal"
-        },
-        "admission": {
-            "joining_fee": 5,
-            "requirements": []
-        },
-        "ranks": [
-            {
-                "id": "sergeant",
-                "name": "Sergeant",
-                "description": "A serving brother-at-arms.",
-                "requirements": [],
-                "practice_allowed": false,
-                "practice_reward_interval_minutes": 0
-            },
-            {
-                "id": "knight",
-                "name": "Knight Brother",
-                "description": "A proven mounted brother.",
-                "requirements": [
-                    {
-                        "kind": "skill_rating",
-                        "skill": "sword",
-                        "minimum": 3.0
-                    }
-                ],
-                "practice_allowed": true,
-                "practice_reward_interval_minutes": 120
-            },
-            {
-                "id": "commander",
-                "name": "Commander",
-                "description": "A veteran knight entrusted with command.",
-                "requirements": [],
-                "practice_allowed": true,
-                "practice_reward_interval_minutes": 60
-            }
-        ],
-        "activity": {
-            "training": [
-                {
-                    "kind": "equipped_weapon_skills",
-                    "weight": 0.7
-                },
-                {
-                    "kind": "fixed_skill",
-                    "skill": "dodge",
-                    "weight": 0.15
-                },
-                {
-                    "kind": "fixed_skill",
-                    "skill": "block",
-                    "weight": 0.15
-                }
-            ],
-            "reward": "gold"
-        },
-        "privileges": [
-            "bear_arms",
-            "wear_armor"
-        ],
-        "public_threat_referrals": true
+        "id":  "order_saint_george",
+        "kind":  "professional_association",
+        "roles":  [
+                      {
+                          "id":  "sergeant",
+                          "name":  "Sergeant",
+                          "profession":  "knight",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "sir knight",
+                          "publicly_recognizable":  true,
+                          "description":  "A serving brother-at-arms.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "knight",
+                          "name":  "Knight Brother",
+                          "profession":  "knight",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "sir knight",
+                          "publicly_recognizable":  true,
+                          "description":  "A proven mounted brother.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "sword",
+                                                   "minimum":  3.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "commander",
+                          "name":  "Commander",
+                          "profession":  "knight",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "sir knight",
+                          "publicly_recognizable":  true,
+                          "description":  "A veteran knight entrusted with command.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  60,
+                          "privileges":  [
+
+                                         ]
+                      }
+                  ],
+        "name":  "The Order of St. George",
+        "description":  "A military fellowship dedicated to defending travelers and settlements from extraordinary threats.",
+        "historical_fantasy_note":  "An invented historical-fantasy order named for the widely honored warrior saint.",
+        "errantry_issuance":  true,
+        "starting_role":  {
+                              "profession":  "knight",
+                              "adult_role_id":  "knight",
+                              "old_role_id":  "commander"
+                          },
+        "chapters":  [
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-order-saint-george",
+                             "building_name":  "St. George Commandery",
+                             "building_kind":  "commandery",
+                             "representative_title":  "order commander",
+                             "representative_profession":  "knight"
+                         },
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-order-saint-george",
+                             "building_name":  "St. George Commandery",
+                             "building_kind":  "commandery",
+                             "representative_title":  "order commander",
+                             "representative_profession":  "knight"
+                         }
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  5,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "equipped_weapon_skills",
+                                              "weight":  0.7
+                                          },
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "dodge",
+                                              "weight":  0.15
+                                          },
+                                          {
+                                              "kind":  "fixed_skill",
+                                              "skill":  "block",
+                                              "weight":  0.15
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+                           "bear_arms",
+                           "wear_armor"
+                       ],
+        "public_threat_referrals":  true,
+        "entry_role_ids":  [
+                               "sergeant"
+                           ]
     },
     {
-        "id": "lodge_hart_king",
-        "kind": "professional_association",
-        "roles": [],
-        "name": "The Lodge of the Hart King",
-        "description": "Sworn wardens of forests, roads, game, and dangerous beasts.",
-        "historical_fantasy_note": "An invented body using period-appropriate territorial forest-office language.",
-        "starting_role": {
-            "profession": "forester",
-            "adult_rank_id": "warden",
-            "old_rank_id": "master"
-        },
-        "chapters": [
-            {
-                "settlement_id": "viabundus-2337",
-                "location_id": "organization-lodge-hart-king",
-                "building_name": "Hart King Lodge",
-                "building_kind": "lodge",
-                "representative_title": "master warden",
-                "representative_profession": "forester"
-            },
-            {
-                "settlement_id": "viabundus-0",
-                "location_id": "organization-lodge-hart-king",
-                "building_name": "Hart King Lodge",
-                "building_kind": "lodge",
-                "representative_title": "master warden",
-                "representative_profession": "forester"
-            },
-            {
-                "settlement_id": "viabundus-1826",
-                "location_id": "organization-lodge-hart-king",
-                "building_name": "Hart King Lodge",
-                "building_kind": "lodge",
-                "representative_title": "master warden",
-                "representative_profession": "forester"
-            }
-        ],
-        "recognition": {
-            "kind": "universal"
-        },
-        "admission": {
-            "joining_fee": 2,
-            "requirements": []
-        },
-        "ranks": [
-            {
-                "id": "under_warden",
-                "name": "Under-Warden",
-                "description": "A probationary forest servant.",
-                "requirements": [],
-                "practice_allowed": false,
-                "practice_reward_interval_minutes": 0
-            },
-            {
-                "id": "warden",
-                "name": "Warden",
-                "description": "A sworn forest officer.",
-                "requirements": [
-                    {
-                        "kind": "skill_rating",
-                        "skill": "terrain_forest",
-                        "minimum": 2.0
-                    }
-                ],
-                "practice_allowed": true,
-                "practice_reward_interval_minutes": 120
-            },
-            {
-                "id": "master",
-                "name": "Master",
-                "description": "A master warden entrusted with the highest game.",
-                "requirements": [
-                    {
-                        "kind": "skill_rating",
-                        "skill": "terrain_forest",
-                        "minimum": 4.0
-                    }
-                ],
-                "practice_allowed": true,
-                "practice_reward_interval_minutes": 120,
-                "privileges": [
-                    "forage_high_game"
-                ]
-            }
-        ],
-        "activity": {
-            "training": [
-                {
-                    "kind": "terrain",
-                    "terrain": "forest",
-                    "weight": 0.35
-                },
-                {
-                    "kind": "bestiary",
-                    "category": "beast",
-                    "weight": 0.35
-                },
-                {
-                    "kind": "equipped_weapon_skills",
-                    "weight": 0.3
-                }
-            ],
-            "reward": "gold"
-        },
-        "privileges": [
-            "bear_arms",
-            "forage_low_game",
-            "forage_fish",
-            "forage_plants"
-        ],
-        "public_threat_referrals": true
+        "id":  "lodge_hart_king",
+        "kind":  "professional_association",
+        "roles":  [
+                      {
+                          "id":  "under_warden",
+                          "name":  "Under-Warden",
+                          "profession":  "forester",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "forester",
+                          "publicly_recognizable":  true,
+                          "description":  "A probationary forest servant.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "warden",
+                          "name":  "Warden",
+                          "profession":  "forester",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "forester",
+                          "publicly_recognizable":  true,
+                          "description":  "A sworn forest officer.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "terrain_forest",
+                                                   "minimum":  2.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "master",
+                          "name":  "Master",
+                          "profession":  "forester",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "forester",
+                          "publicly_recognizable":  true,
+                          "description":  "A master warden entrusted with the highest game.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "terrain_forest",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+                                             "forage_high_game"
+                                         ]
+                      }
+                  ],
+        "name":  "The Lodge of the Hart King",
+        "description":  "Sworn wardens of forests, roads, game, and dangerous beasts.",
+        "historical_fantasy_note":  "An invented body using period-appropriate territorial forest-office language.",
+        "starting_role":  {
+                              "profession":  "forester",
+                              "adult_role_id":  "warden",
+                              "old_role_id":  "master"
+                          },
+        "chapters":  [
+                         {
+                             "settlement_id":  "viabundus-2337",
+                             "location_id":  "organization-lodge-hart-king",
+                             "building_name":  "Hart King Lodge",
+                             "building_kind":  "lodge",
+                             "representative_title":  "master warden",
+                             "representative_profession":  "forester"
+                         },
+                         {
+                             "settlement_id":  "viabundus-0",
+                             "location_id":  "organization-lodge-hart-king",
+                             "building_name":  "Hart King Lodge",
+                             "building_kind":  "lodge",
+                             "representative_title":  "master warden",
+                             "representative_profession":  "forester"
+                         },
+                         {
+                             "settlement_id":  "viabundus-1826",
+                             "location_id":  "organization-lodge-hart-king",
+                             "building_name":  "Hart King Lodge",
+                             "building_kind":  "lodge",
+                             "representative_title":  "master warden",
+                             "representative_profession":  "forester"
+                         }
+                     ],
+        "recognition":  {
+                            "kind":  "universal"
+                        },
+        "admission":  {
+                          "joining_fee":  2,
+                          "requirements":  [
+
+                                           ]
+                      },
+        "activity":  {
+                         "training":  [
+                                          {
+                                              "kind":  "terrain",
+                                              "terrain":  "forest",
+                                              "weight":  0.35
+                                          },
+                                          {
+                                              "kind":  "bestiary",
+                                              "category":  "beast",
+                                              "weight":  0.35
+                                          },
+                                          {
+                                              "kind":  "equipped_weapon_skills",
+                                              "weight":  0.3
+                                          }
+                                      ],
+                         "reward":  "gold"
+                     },
+        "privileges":  [
+                           "bear_arms",
+                           "forage_low_game",
+                           "forage_fish",
+                           "forage_plants"
+                       ],
+        "public_threat_referrals":  true,
+        "entry_role_ids":  [
+                               "under_warden"
+                           ]
     },
     {
         "id":  "test_catholic_polearm_cooks",
         "kind":  "professional_association",
-        "roles":  [],
+        "roles":  [
+                      {
+                          "id":  "spoon_bearer",
+                          "name":  "Spoon-Bearer",
+                          "profession":  "organization_member",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "organization member",
+                          "publicly_recognizable":  true,
+                          "description":  "A new confraternity member.",
+                          "requirements":  [
+
+                                           ],
+                          "practice_allowed":  false,
+                          "practice_reward_interval_minutes":  0,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "keeper_of_the_long_spoon",
+                          "name":  "Keeper of the Long Spoon",
+                          "profession":  "organization_member",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "organization member",
+                          "publicly_recognizable":  true,
+                          "description":  "A cook proven with both ladle and polearm.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "cooking",
+                                                   "minimum":  4.0
+                                               },
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "polearm",
+                                                   "minimum":  4.0
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ]
+                      },
+                      {
+                          "id":  "keeper_of_the_silver_spoon",
+                          "name":  "Keeper of the Silver Spoon",
+                          "profession":  "organization_member",
+                          "address_priority":  150,
+                          "social_precedence":  120,
+                          "address_title":  "organization member",
+                          "publicly_recognizable":  true,
+                          "description":  "A cook proven in exacting table service and the defence of the confraternity.",
+                          "requirements":  [
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "cooking",
+                                                   "minimum":  5
+                                               },
+                                               {
+                                                   "kind":  "skill_rating",
+                                                   "skill":  "charm",
+                                                   "minimum":  3
+                                               }
+                                           ],
+                          "practice_allowed":  true,
+                          "practice_reward_interval_minutes":  120,
+                          "privileges":  [
+
+                                         ]
+                      }
+                  ],
         "name":  "Confraternity of the Long Spoon",
         "description":  "Catalog-only validation fixture demonstrating arbitrary cross-domain requirements.",
         "historical_fantasy_note":  "Unavailable test content; it exists to prove the evaluator has no cook, Catholic, or polearm special case.",
@@ -1752,37 +2224,6 @@
                                                }
                                            ]
                       },
-        "ranks":  [
-                      {
-                          "id":  "spoon_bearer",
-                          "name":  "Spoon-Bearer",
-                          "description":  "A new confraternity member.",
-                          "requirements":  [
-
-                                           ],
-                          "practice_allowed":  false,
-                          "practice_reward_interval_minutes":  0
-                      },
-                      {
-                          "id":  "keeper_of_the_long_spoon",
-                          "name":  "Keeper of the Long Spoon",
-                          "description":  "A cook proven with both ladle and polearm.",
-                          "requirements":  [
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "cooking",
-                                                   "minimum":  4.0
-                                               },
-                                               {
-                                                   "kind":  "skill_rating",
-                                                   "skill":  "polearm",
-                                                   "minimum":  4.0
-                                               }
-                                           ],
-                          "practice_allowed":  true,
-                          "practice_reward_interval_minutes":  120
-                      }
-                  ],
         "activity":  {
                          "training":  [
                                           {
@@ -1801,6 +2242,9 @@
         "privileges":  [
 
                        ],
-        "public_threat_referrals":  false
+        "public_threat_referrals":  false,
+        "entry_role_ids":  [
+                               "spoon_bearer"
+                           ]
     }
 ]

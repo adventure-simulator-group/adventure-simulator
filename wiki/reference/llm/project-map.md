@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1717)
+## Files (1718)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -50,8 +50,9 @@ development, or other wiki document before changing a subsystem.
 - `content/encounters/wounded-courier.yaml` — Repository support file.
 - `content/encounters/wounded-knight-linden.yaml` — Repository support file.
 - `content/items/catalog.yaml` — Repository support file.
+- `content/organization-promotion-transitions.yaml` — Repository support file.
 - `content/organizations/catalog.yaml` — Repository support file.
-- `content/organizations/social-estates.yaml` — Repository support file.
+- `content/organizations/social-roles.yaml` — Repository support file.
 - `content/quests/bestiary.yaml` — Repository support file.
 - `content/quests/generation.yaml` — Repository support file.
 - `content/quests/investigation.yaml` — Repository support file.
@@ -276,6 +277,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/backend_local_problem_rumors_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_local_problem_trade_effect_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_local_problem_trade_effects_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_organization_membership_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_organization_memberships_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_physical_evidence_inspection_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_physical_evidence_inspections_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_physical_evidence_table.rs` — Generated SpacetimeDB table interface.
@@ -354,7 +357,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/character_death_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_equipped_item_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/character_equipped_item_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/character_estate_basis_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_exposure_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_familiarity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/character_filth_table.rs` — Generated SpacetimeDB table interface.
@@ -715,7 +717,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/oral_language_hours_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/order_errantry_acceptance_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/organic_soil_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/organization_membership_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/organization_membership_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/organization_presentation_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/organization_presentation_type.rs` — Generated SpacetimeDB data type.
@@ -1088,7 +1089,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/settlement_population.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/simulation.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/social.rs` — Rust source module for this component.
-- `crates/adventuresim-stdb-module/src/social_estate.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/social_roles.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/strategic/authority_model.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/strategic/autoresolve.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/strategic/challenges.rs` — Rust source module.

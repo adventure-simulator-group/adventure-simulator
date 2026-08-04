@@ -127,6 +127,7 @@ struct NpcSocialRelationshipRow {
     familiarity_band: FamiliarityBand,
     #[serde(deserialize_with = "crate::spacetimedb::deserialize_morale_band")]
     morale_band: MoraleBand,
+    uses_familiar_address: bool,
 }
 
 fn serialize_affinity_band<S>(value: &AffinityBand, serializer: S) -> Result<S::Ok, S::Error>
@@ -991,6 +992,10 @@ async fn npc_social_view(
     let morale = relationship
         .as_ref()
         .map_or(MoraleBand::Uncertain, |row| row.morale_band);
+    let familiar_address = relationship
+        .as_ref()
+        .is_some_and(|row| row.uses_familiar_address);
+    let object = if familiar_address { "thee" } else { "you" };
     let affinity_words = match affinity {
         AffinityBand::Hostile => "with open enmity",
         AffinityBand::Reserved => "with reserve",
@@ -998,10 +1003,10 @@ async fn npc_social_view(
         AffinityBand::Trusted => "as one dear and trusted",
     };
     let familiarity_words = match familiarity {
-        FamiliarityBand::New => "scarcely know thee",
-        FamiliarityBand::Known => "know thee somewhat",
-        FamiliarityBand::Familiar => "know thee well",
-        FamiliarityBand::WellKnown => "know thee as an old companion",
+        FamiliarityBand::New => format!("scarcely know {object}"),
+        FamiliarityBand::Known => format!("know {object} somewhat"),
+        FamiliarityBand::Familiar => format!("know {object} well"),
+        FamiliarityBand::WellKnown => format!("know {object} as an old companion"),
     };
     let morale_words = match morale {
         MoraleBand::Uncertain => "I cannot well name my present humour.",
@@ -1012,29 +1017,49 @@ async fn npc_social_view(
     let pledge = if let Some(days) = wedding_countdown_days {
         format!("Our wedding day shall come in {days} days.")
     } else if courtship_kind.is_some() {
-        "Our courtship yet stands, as thou knowest.".to_owned()
+        if familiar_address {
+            "Our courtship yet stands, as thou knowest.".to_owned()
+        } else {
+            "Our courtship yet stands, as you know.".to_owned()
+        }
     } else {
-        "I have no pledge that I may declare to thee.".to_owned()
+        format!("I have no pledge that I may declare to {object}.")
     };
     let about_topics = vec![
         NpcAboutTopic {
             id: "regard",
-            question: "How stand I in thy regard?",
-            answer: format!("I hold thee {affinity_words}."),
+            question: if familiar_address {
+                "How stand I in thy regard?"
+            } else {
+                "How stand I in your regard?"
+            },
+            answer: format!("I hold {object} {affinity_words}."),
         },
         NpcAboutTopic {
             id: "familiarity",
-            question: "How well knowest thou me?",
+            question: if familiar_address {
+                "How well knowest thou me?"
+            } else {
+                "How well do you know me?"
+            },
             answer: format!("I {familiarity_words}."),
         },
         NpcAboutTopic {
             id: "morale",
-            question: "How fares thy spirit?",
+            question: if familiar_address {
+                "How fares thy spirit?"
+            } else {
+                "How fares your spirit?"
+            },
             answer: morale_words.to_owned(),
         },
         NpcAboutTopic {
             id: "pledge",
-            question: "Art thou pledged to another?",
+            question: if familiar_address {
+                "Art thou pledged to another?"
+            } else {
+                "Are you pledged to another?"
+            },
             answer: pledge,
         },
     ];

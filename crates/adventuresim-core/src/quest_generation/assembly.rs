@@ -140,12 +140,12 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     label(presented_site_kind)
                 );
                 (
-                    format!("It looked like {claim}."),
+                    format!("Methought it looked like {claim}."),
                     claim,
                     TestimonyChallengeResponses {
-                        charm: Some("Your eye was keen. What made the shape seem so?".into()),
-                        command: Some("Name what you truly saw, without embellishment.".into()),
-                        bluff: Some("That shape was seen elsewhere; amend your account.".into()),
+                        charm: Some("A keen eye marked it. What made the shape seem so?".into()),
+                        command: Some("Name what was truly seen, without embellishment.".into()),
+                        bluff: Some("That shape was seen elsewhere; amend the account.".into()),
                     },
                 )
             }
@@ -155,9 +155,9 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     format!("I only heard {claim}; I never saw it clearly."),
                     claim,
                     TestimonyChallengeResponses {
-                        charm: Some("Describe the sound as carefully as you can.".into()),
+                        charm: Some("Describe the sound with all possible care.".into()),
                         command: Some(
-                            "Tell me exactly what you heard and from which direction.".into(),
+                            "Tell me exactly what was heard, and from what quarter.".into(),
                         ),
                         bluff: Some(
                             "Others heard a different sound there; account for that.".into(),
@@ -174,19 +174,19 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     format!("{claim}."),
                     claim,
                     TestimonyChallengeResponses {
-                        charm: Some("Help me follow how those signs led you that way.".into()),
+                        charm: Some("Help me follow how those signs led thither.".into()),
                         command: Some(
-                            "Separate the tracks you saw from the course you inferred.".into(),
+                            "Part the tracks observed from the course inferred.".into(),
                         ),
                         bluff: Some(
-                            "That trail turns elsewhere on my map; explain your route.".into(),
+                            "That trail turneth elsewhere upon my map; explain the route.".into(),
                         ),
                     },
                 )
             }
         };
     let true_statement = format!(
-        "I saw signs pointing toward {}, but I could not identify the culprit.",
+        "I saw signs pointing toward {}, yet could not name the culprit.",
         label(site)
     );
     let description_prop = scoped_id(&prefix, "proposition", "description");
@@ -195,28 +195,28 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let private_pattern_prop = scoped_id(&prefix, "proposition", "private-pattern-detail");
     let pattern_evidence_id = EvidenceId::new(scoped_id(&prefix, "evidence", "attack-pattern"));
     let pattern_truth = match attack_pattern {
-        AttackPattern::Nightly => "The incidents cluster after nightfall.".to_owned(),
+        AttackPattern::Nightly => "The incidents gather after nightfall.".to_owned(),
         AttackPattern::Roadside => {
-            "The incidents cluster along the road used by passing traffic.".to_owned()
+            "The incidents gather along the road used by passing traffic.".to_owned()
         }
         AttackPattern::VictimSpecific => {
             let target = pattern_target
                 .as_ref()
                 .expect("victim-specific pattern has a bound cohort");
             format!(
-                "The incidents disproportionately affect people connected with the {} trade near {}.",
+                "The incidents fall chiefly upon folk of the {} trade near {}.",
                 target.profession, target.expected_location_label
             )
         }
         AttackPattern::Irregular => {
-            "The incidents have no reliable time, place, or victim schedule.".to_owned()
+            "The incidents keep no certain time, place, nor order of victims.".to_owned()
         }
     };
     // Every primary witness volunteers this reliability-neutral account. The
     // optional exact detail is a separate private concern, so its existence
     // cannot change any part of the initial dialogue projection.
     let uncorroborated_pattern_claim =
-        "There may be a pattern, but I cannot tell which details matter.".to_owned();
+        "There may be a pattern, yet I cannot tell which details matter.".to_owned();
     let has_private_pattern_detail = hash(
         context.observer_entropy_hi ^ context.observer_entropy_lo.rotate_left(17),
         "testimony-concern:private-pattern-detail",
@@ -295,9 +295,9 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             spoken_text: uncorroborated_pattern_claim,
             challenge_text: "I cannot tell which details matter".into(),
             challenge_responses: TestimonyChallengeResponses {
-                charm: Some("Take your time—which detail first suggested a pattern?".into()),
-                command: Some("Separate what you observed from what you merely suppose.".into()),
-                bluff: Some("I know which detail matters; tell me what you withheld.".into()),
+                charm: Some("Take time—which detail first bespoke a pattern?".into()),
+                command: Some("Part what was observed from what was merely supposed.".into()),
+                bluff: Some("I know which detail mattereth; name what was withheld.".into()),
             },
             destination_stage: "textual".into(),
             site_id: None,
@@ -312,14 +312,14 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}."
             ),
             spoken_text: format!(
-                "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}. You may examine it yourself."
+                "I marked {primary_evidence_reference} worth inspecting at {evidence_site_label}. It may be examined firsthand."
             ),
             challenge_text: format!(
                 "{primary_evidence_reference} worth inspecting at {evidence_site_label}"
             ),
             challenge_responses: TestimonyChallengeResponses {
-                charm: Some("Show me how you came upon that clue.".into()),
-                command: Some("State exactly where and when you found it.".into()),
+                charm: Some("Show me how that clue came to light.".into()),
+                command: Some("State exactly where and when it was found.".into()),
                 bluff: Some("The site was searched already; tell me what I will find.".into()),
             },
             destination_stage: "exact_believed".into(),
@@ -337,7 +337,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             spoken_text: format!("What I held back is this: {pattern_truth}"),
             challenge_text: pattern_truth.trim_end_matches('.').into(),
             challenge_responses: TestimonyChallengeResponses {
-                charm: Some("Thank you for saying it. What else attends that detail?".into()),
+                charm: Some("My thanks for saying it. What else attendeth that detail?".into()),
                 command: Some("Give the whole account now.".into()),
                 bluff: Some("That confirms what I heard elsewhere; continue.".into()),
             },
@@ -984,7 +984,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
             challenge_text: common_claim.into(),
             challenge_responses: TestimonyChallengeResponses {
                 charm: Some(if corroborating {
-                    "Tell me which visit you remember most clearly.".into()
+                    "Tell me which visit is remembered most clearly.".into()
                 } else {
                     "Help me set the order of those illnesses carefully.".into()
                 }),
@@ -994,7 +994,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                     "Name each household and the day its sickness began.".into()
                 }),
                 bluff: Some(if corroborating {
-                    "The household marks disagree with your order; account for it.".into()
+                    "The household marks gainsay that order; account for it.".into()
                 } else {
                     "Another account puts the first fever elsewhere; explain that.".into()
                 }),

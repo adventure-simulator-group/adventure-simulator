@@ -218,13 +218,14 @@ fn resolve_dialogue_fragments(
     session: &DialogueSession,
     character_id: u64,
     speaker_role: &str,
+    addressee: Option<&adventuresim_dialogue::Addressee>,
     fragments: &[adventuresim_dialogue::Fragment],
 ) -> Result<Vec<adventuresim_dialogue::ResolvedFragment>, String> {
     if fragments
         .iter()
         .any(|fragment| matches!(fragment, adventuresim_dialogue::Fragment::Runtime { .. }))
     {
-        dialogue_runtime_bindings(ctx, session, character_id, speaker_role)?
+        dialogue_runtime_bindings(ctx, session, character_id, speaker_role, addressee)?
             .resolve(fragments)
             .map_err(|_| "Dialogue runtime binding is incomplete or unsafe".into())
     } else {
@@ -250,7 +251,7 @@ fn resolve_dialogue_turn(
         .iter()
         .any(|fragment| matches!(fragment, adventuresim_dialogue::Fragment::Runtime { .. }))
     {
-        dialogue_runtime_bindings(ctx, session, character_id, &turn.speaker)?
+        dialogue_runtime_bindings(ctx, session, character_id, &turn.speaker, Some(&turn.addressee))?
     } else {
         adventuresim_dialogue::RuntimeBindings::default()
     };

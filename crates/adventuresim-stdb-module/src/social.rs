@@ -22,6 +22,7 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, ta
 use crate::character::{character, character__view, character_limbs, character_stats};
 use crate::condition::character_strategic_condition__view;
 use crate::condition::{character_condition, character_morale_source__view, morale_event};
+use crate::relationship::{KinshipKind, active_courtship_between_view, character_kinship__view};
 use crate::settlement_population::settlement_resident_profile__view;
 use crate::strategic::{
     dialogue_event__view, dialogue_session__view, strategic_gateway_authority__view,
@@ -220,6 +221,9 @@ pub struct BackendSettlementResidentRelationship {
     pub affinity_band: AffinityBand,
     pub familiarity_band: FamiliarityBand,
     pub morale_band: MoraleBand,
+    /// Whether this resident uses singular familiar address for the observer,
+    /// because the pair is intimate or the resident socially outranks them.
+    pub uses_familiar_address: bool,
 }
 
 /// Private authority for social actions scoped to one live dialogue encounter.
@@ -370,6 +374,27 @@ pub fn backend_settlement_resident_relationships(
                 .character_id()
                 .find(profile.character_id)
                 .map_or(0.0, |row| row.morale + row.morale_bonus);
+            let immediate_kin = ctx
+                .db
+                .character_kinship()
+                .subject_id()
+                .filter(affinity.subject_id)
+                .any(|edge| {
+                    edge.related_id == affinity.actor_id
+                        && matches!(
+                            edge.kind,
+                            KinshipKind::Parent
+                                | KinshipKind::Child
+                                | KinshipKind::Sibling
+                                | KinshipKind::Spouse
+                        )
+                });
+            let active_courtship =
+                active_courtship_between_view(ctx, affinity.subject_id, affinity.actor_id);
+            let resident_precedence =
+                crate::social_roles::character_social_precedence_view(ctx, affinity.subject_id);
+            let observer_precedence =
+                crate::social_roles::character_social_precedence_view(ctx, affinity.actor_id);
             Some(BackendSettlementResidentRelationship {
                 observer_character_id: affinity.actor_id,
                 resident_character_id: affinity.subject_id,
@@ -379,6 +404,10 @@ pub fn backend_settlement_resident_relationships(
                 )),
                 familiarity_band: familiarity_band(shared_minutes),
                 morale_band: morale_band(morale),
+                uses_familiar_address: immediate_kin
+                    || active_courtship
+                    || shared_minutes >= 40 * 60
+                    || resident_precedence > observer_precedence,
             })
         })
         .collect()
@@ -3908,6 +3937,13 @@ mod contract_tests {
             .and_then(|tail| tail.split("fn witness_social_action_replayed").next())
             .expect("settlement NPC relationship projection");
         assert!(projection.contains("now.saturating_sub(affinity.anchor_minute)"));
+        assert!(projection.contains("KinshipKind::Parent"));
+        assert!(projection.contains("KinshipKind::Child"));
+        assert!(projection.contains("KinshipKind::Sibling"));
+        assert!(projection.contains("KinshipKind::Spouse"));
+        assert!(projection.contains("active_courtship_between_view"));
+        assert!(projection.contains("shared_minutes >= 40 * 60"));
+        assert!(projection.contains("resident_precedence > observer_precedence"));
         assert!(!projection.contains("settlement_resident_relationship"));
     }
 

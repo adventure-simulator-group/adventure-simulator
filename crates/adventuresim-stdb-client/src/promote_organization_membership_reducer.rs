@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct PromoteOrganizationMembershipArgs {
     pub character_id: u64,
     pub organization_id: String,
+    pub to_role_id: String,
 }
 
 impl From<PromoteOrganizationMembershipArgs> for super::Reducer {
@@ -16,6 +17,7 @@ impl From<PromoteOrganizationMembershipArgs> for super::Reducer {
         Self::PromoteOrganizationMembership {
             character_id: args.character_id,
             organization_id: args.organization_id,
+            to_role_id: args.to_role_id,
         }
     }
 }
@@ -39,8 +41,14 @@ pub trait promote_organization_membership {
         &self,
         character_id: u64,
         organization_id: String,
+        to_role_id: String,
     ) -> __sdk::Result<()> {
-        self.promote_organization_membership_then(character_id, organization_id, |_, _| {})
+        self.promote_organization_membership_then(
+            character_id,
+            organization_id,
+            to_role_id,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `promote_organization_membership` to run as soon as possible,
@@ -53,6 +61,7 @@ pub trait promote_organization_membership {
         &self,
         character_id: u64,
         organization_id: String,
+        to_role_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -67,6 +76,7 @@ impl promote_organization_membership for super::RemoteReducers {
         &self,
         character_id: u64,
         organization_id: String,
+        to_role_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -78,6 +88,7 @@ impl promote_organization_membership for super::RemoteReducers {
             PromoteOrganizationMembershipArgs {
                 character_id,
                 organization_id,
+                to_role_id,
             },
             callback,
         )

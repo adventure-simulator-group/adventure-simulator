@@ -48,19 +48,62 @@ fn apply_dialogue_effect(
                     })
                     .map(|organization| organization.id.clone())
                     .ok_or("No organization chapter offers that professional activity here")?;
-            crate::organization::join_organization(ctx, character_id, organization_id)
+            let entry_role_id = adventuresim_core::organization::organization(&organization_id)
+                .and_then(|definition| definition.entry_role_ids.first())
+                .cloned()
+                .ok_or("Organization has no admission role")?;
+            crate::organization::join_organization(
+                ctx,
+                character_id,
+                organization_id,
+                entry_role_id,
+            )
         }
         adventuresim_dialogue::Effect::JoinOrganization => {
             let organization_id = dialogue_organization_id(ctx, session, &live_npc)?;
-            crate::organization::join_organization(ctx, character_id, organization_id)
+            let entry_role_id = adventuresim_core::organization::organization(&organization_id)
+                .and_then(|definition| definition.entry_role_ids.first())
+                .cloned()
+                .ok_or("Organization has no admission role")?;
+            crate::organization::join_organization(
+                ctx,
+                character_id,
+                organization_id,
+                entry_role_id,
+            )
         }
         adventuresim_dialogue::Effect::PayOrganizationDues => {
             let organization_id = dialogue_organization_id(ctx, session, &live_npc)?;
             crate::organization::pay_organization_dues(ctx, character_id, organization_id)
         }
-        adventuresim_dialogue::Effect::RequestOrganizationPromotion => {
+        adventuresim_dialogue::Effect::RequestOrganizationPromotion { to_role_id } => {
             let organization_id = dialogue_organization_id(ctx, session, &live_npc)?;
-            crate::organization::promote_organization_membership(ctx, character_id, organization_id)
+            let definition = adventuresim_core::organization::organization(&organization_id)
+                .ok_or("Unknown organization")?;
+            let current = crate::social_roles::assigned_organization_role(
+                ctx,
+                character_id,
+                &organization_id,
+            )?;
+            let target = if let Some(to_role_id) = to_role_id {
+                definition
+                    .promotion_targets(&current.role_id)
+                    .find(|role| role.id == *to_role_id)
+                    .ok_or("The selected role is not a direct authored promotion")?
+            } else {
+                let mut targets = definition.promotion_targets(&current.role_id);
+                let target = targets.next().ok_or("No promotion role is available")?;
+                if targets.next().is_some() {
+                    return Err("Choose a specific promotion role".into());
+                }
+                target
+            };
+            crate::organization::promote_organization_membership(
+                ctx,
+                character_id,
+                organization_id,
+                target.id.clone(),
+            )
         }
         adventuresim_dialogue::Effect::PresentOrganization => {
             let organization_id = dialogue_organization_id(ctx, session, &live_npc)?;

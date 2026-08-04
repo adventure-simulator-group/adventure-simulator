@@ -331,7 +331,7 @@ fn normalized_curriculum(entries: &[TrainingEntry]) -> Vec<TrainingEntry> {
 }
 
 /// Apply creation-only literacy study through ordinary aptitude-aware language
-/// training. This helper is also used when relational estate is resolved only
+/// training. This helper is also used when role-authored literacy is resolved only
 /// after the candidate's settlement is known.
 pub fn apply_creation_literacy(
     written: &mut WrittenLanguageHours,

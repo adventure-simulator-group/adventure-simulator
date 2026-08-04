@@ -339,8 +339,10 @@ fn compile_organizations(root: &Path) {
     // Organization roles and kinds are validated here before embedding.
     let content = root.join("content/organizations");
     let policies_path = root.join("content/settlement-policies.yaml");
+    let promotions_path = root.join("content/organization-promotion-transitions.yaml");
     println!("cargo:rerun-if-changed={}", content.display());
     println!("cargo:rerun-if-changed={}", policies_path.display());
+    println!("cargo:rerun-if-changed={}", promotions_path.display());
     let mut files: Vec<_> = fs::read_dir(&content)
         .expect("content/organizations must exist")
         .map(|entry| entry.unwrap().path())
@@ -401,8 +403,48 @@ fn compile_organizations(root: &Path) {
     )
     .unwrap_or_else(|error| panic!("{error}"));
 
+    let promotions_text = fs::read_to_string(&promotions_path).unwrap();
+    digest.update(b"content/organization-promotion-transitions.yaml");
+    digest.update([0]);
+    digest.update(promotions_text.as_bytes());
+    let promotions: serde_json::Value = serde_json::from_str(&promotions_text)
+        .unwrap_or_else(|error| panic!("organization promotion transitions: {error}"));
+    let promotions = promotions
+        .as_array()
+        .expect("promotion transitions must be an array");
+    let mut seen = std::collections::BTreeSet::new();
+    for transition in promotions {
+        let organization_id = transition["organization_id"]
+            .as_str()
+            .expect("promotion organization_id");
+        let from = transition["from_role_id"]
+            .as_str()
+            .expect("promotion from_role_id");
+        let to = transition["to_role_id"]
+            .as_str()
+            .expect("promotion to_role_id");
+        assert!(
+            from != to && seen.insert((organization_id, from, to)),
+            "duplicate or reflexive promotion transition"
+        );
+        let organization = documents
+            .iter()
+            .find(|document| document["id"] == organization_id)
+            .expect("promotion references unknown organization");
+        let roles = organization["roles"].as_array().unwrap();
+        assert!(
+            roles.iter().any(|role| role["id"] == from),
+            "promotion references unknown source role"
+        );
+        assert!(
+            roles.iter().any(|role| role["id"] == to),
+            "promotion references unknown target role"
+        );
+    }
+
     let catalog = serde_json::json!({
         "organizations": documents,
+        "promotion_transitions": promotions,
         "settlement_policies": policies,
     });
     let json = serde_json::to_string(&catalog).unwrap();

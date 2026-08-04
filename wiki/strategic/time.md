@@ -30,7 +30,7 @@ Lazy catch-up and other solo elapsed-time actions do not project an absent
 companion forward and do not retroactively substitute the character's current
 Physiology rank. They use only recorded pair-presence history, including open
 span overlap through an already-ahead peer's current clock but never beyond
-it. Point actions can use the current rank without changing elapsed-time
+it. Point actions can use the current organization role without changing elapsed-time
 semantics. Planning fetches relevant spans through the low/high participant
 indexes, deduplicates them, compiles piecewise coverage, and caps both spans
 and exposure work.

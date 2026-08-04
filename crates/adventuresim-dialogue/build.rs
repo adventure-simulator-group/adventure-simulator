@@ -42,8 +42,20 @@ fn validate_fragment(fragment: &BuildFragment, relative: &str) {
                     | "organization_name"
                     | "organization_admission_terms"
                     | "organization_dues_terms"
-                    | "organization_rank_standing"
+                    | "organization_role_standing"
                     | "organization_representative_name"
+                    | "addressee_title"
+                    | "second_person_subject"
+                    | "second_person_object"
+                    | "second_person_possessive"
+                    | "second_person_possessive_pronoun"
+                    | "second_person_reflexive"
+                    | "second_person_be"
+                    | "second_person_have"
+                    | "second_person_do"
+                    | "second_person_will"
+                    | "second_person_may"
+                    | "second_person_should"
             ),
             "unknown runtime slot {slot} in {relative}"
         );
@@ -89,18 +101,10 @@ fn validate_condition_roles(
                     "unknown fact role {role} in {relative}"
                 );
             }
-            if let authoring_schema::FactKey::ParticipantEstate { role } = key {
-                assert!(
-                    roles
-                        .get(role)
-                        .is_some_and(|definition| definition.max == 1),
-                    "participant_estate requires a role with max=1 in {relative}:{role}"
-                );
-                assert!(
-                    key.authoring_value_is_valid(equals),
-                    "participant_estate requires a valid textual estate in {relative}:{role}"
-                );
-            }
+            assert!(
+                key.authoring_value_is_valid(equals),
+                "invalid fact value in {relative}"
+            );
         }
         Condition::Always => {}
     }
@@ -145,6 +149,19 @@ fn validate_turn_contract(
         roles.contains_key(&turn.speaker),
         "unknown speaker role {} in {relative}",
         turn.speaker
+    );
+    let addressee_role = match &turn.addressee {
+        authoring_schema::AuthoringAddressee::Participant { role }
+        | authoring_schema::AuthoringAddressee::Role { role }
+        | authoring_schema::AuthoringAddressee::Group { role } => role,
+    };
+    assert!(
+        roles.contains_key(addressee_role),
+        "unknown addressee role {addressee_role} in {relative}"
+    );
+    assert_ne!(
+        turn.speaker, *addressee_role,
+        "speaker cannot address its own role in {relative}"
     );
     assert!(
         !turn.fragments.is_empty(),
@@ -302,6 +319,20 @@ fn validate_document(document: &BuildDocument, relative: &str, global_ids: &mut 
                         conversation.roles.contains_key(&turn.speaker),
                         "unknown speaker role {relative}:{}",
                         turn.speaker
+                    );
+                    let addressee_role = match &turn.addressee {
+                        authoring_schema::AuthoringAddressee::Participant { role }
+                        | authoring_schema::AuthoringAddressee::Role { role }
+                        | authoring_schema::AuthoringAddressee::Group { role } => role,
+                    };
+                    assert!(
+                        conversation.roles.contains_key(addressee_role),
+                        "unknown addressee role {relative}:{addressee_role}"
+                    );
+                    assert_ne!(
+                        turn.speaker, *addressee_role,
+                        "speaker cannot address its own role {relative}:{}",
+                        response.id
                     );
                     assert!(
                         !turn.fragments.is_empty(),

@@ -82,7 +82,7 @@ async fn advisory_privileges(
     let memberships = state
         .db
         .query::<OrganizationMembership>(&format!(
-            "SELECT * FROM organization_membership WHERE character_id = {character_id}"
+            "SELECT * FROM backend_organization_memberships WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
@@ -130,7 +130,7 @@ fn advisory_privileges_for(
         adventuresim_core::organization::Privilege::ForagePlants,
     ]
     .into_iter()
-    .filter(|privilege| definition.has_privilege_at_rank(&membership.rank_id, *privilege))
+    .filter(|privilege| definition.has_privilege_at_role(&membership.role_id, *privilege))
     .collect()
 }
 
@@ -646,12 +646,12 @@ mod tests {
         assert!(markup.contains("Unavailable here"));
     }
 
-    fn ranger_membership(rank_id: &str, status: &str, paid_through: u64) -> OrganizationMembership {
+    fn ranger_membership(role_id: &str, status: &str, paid_through: u64) -> OrganizationMembership {
         OrganizationMembership {
             id: 1,
             character_id: 7,
             organization_id: "lodge_hart_king".into(),
-            rank_id: rank_id.into(),
+            role_id: role_id.into(),
             joined_minute: 0,
             dues_paid_through_minute: paid_through,
             status: status.into(),
@@ -661,7 +661,7 @@ mod tests {
     }
 
     #[test]
-    fn advisory_licenses_require_matching_current_presentation_and_rank() {
+    fn advisory_licenses_require_matching_current_presentation_and_role() {
         use adventuresim_core::organization::Privilege;
         let warden = ranger_membership("warden", "active", 100);
         let common = advisory_privileges_for(Some("lodge_hart_king"), &[warden.clone()], Some(100));

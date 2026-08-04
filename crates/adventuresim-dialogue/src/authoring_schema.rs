@@ -75,7 +75,15 @@ pub struct AuthoringResponse {
 #[serde(deny_unknown_fields)]
 pub struct AuthoringTurn {
     pub speaker: String,
+    pub addressee: AuthoringAddressee,
     pub fragments: Vec<AuthoringFragment>,
+}
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum AuthoringAddressee {
+    Participant { role: String },
+    Role { role: String },
+    Group { role: String },
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -130,17 +138,33 @@ pub enum AuthoringFragment {
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AuthoringEffect {
-    LearnTopic { topic: String },
-    AcceptContract { contract: String },
-    ReportContract { contract: String },
-    BeginApprenticeship { profession: String },
+    LearnTopic {
+        topic: String,
+    },
+    AcceptContract {
+        contract: String,
+    },
+    ReportContract {
+        contract: String,
+    },
+    BeginApprenticeship {
+        profession: String,
+    },
     JoinOrganization,
     PayOrganizationDues,
-    RequestOrganizationPromotion,
+    RequestOrganizationPromotion {
+        #[serde(default)]
+        to_role_id: Option<String>,
+    },
     PresentOrganization,
-    SetFlag { flag: String, value: bool },
+    SetFlag {
+        flag: String,
+        value: bool,
+    },
     ReceiveReferredTestimony,
-    InvestigationAction { action: String },
+    InvestigationAction {
+        action: String,
+    },
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -166,8 +190,9 @@ pub enum Condition {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum FactKey {
-    ParticipantEstate {
+    ParticipantRole {
         role: String,
+        profession: String,
     },
     ParticipantProfession {
         role: String,
@@ -269,19 +294,13 @@ pub enum FactKey {
 
 impl FactKey {
     pub fn authoring_value_is_valid(&self, value: &FactValue) -> bool {
-        match self {
-            Self::ParticipantEstate { .. } => matches!(
-                value,
-                FactValue::Text(estate)
-                    if matches!(estate.as_str(), "serf" | "freeman" | "burgher" | "noble")
-            ),
-            _ => true,
-        }
+        let _ = value;
+        true
     }
 
     pub fn participant_roles(&self) -> impl Iterator<Item = &str> {
         let roles: [Option<&str>; 2] = match self {
-            Self::ParticipantEstate { role }
+            Self::ParticipantRole { role, .. }
             | Self::ParticipantProfession { role }
             | Self::ParticipantOrganization { role }
             | Self::ParticipantReligion { role }

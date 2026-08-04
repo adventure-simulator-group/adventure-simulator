@@ -122,6 +122,8 @@ pub mod backend_local_problem_rumor_type;
 pub mod backend_local_problem_rumors_table;
 pub mod backend_local_problem_trade_effect_type;
 pub mod backend_local_problem_trade_effects_table;
+pub mod backend_organization_membership_type;
+pub mod backend_organization_memberships_table;
 pub mod backend_physical_evidence_inspection_type;
 pub mod backend_physical_evidence_inspections_table;
 pub mod backend_physical_evidence_table;
@@ -200,7 +202,6 @@ pub mod character_context_role_type;
 pub mod character_death_type;
 pub mod character_equipped_item_table;
 pub mod character_equipped_item_type;
-pub mod character_estate_basis_type;
 pub mod character_exposure_type;
 pub mod character_familiarity_type;
 pub mod character_filth_table;
@@ -559,7 +560,6 @@ pub mod open_corpse_reducer;
 pub mod oral_language_hours_type;
 pub mod order_errantry_acceptance_receipt_type;
 pub mod organic_soil_type;
-pub mod organization_membership_table;
 pub mod organization_membership_type;
 pub mod organization_presentation_table;
 pub mod organization_presentation_type;
@@ -1003,6 +1003,8 @@ pub use backend_local_problem_rumor_type::BackendLocalProblemRumor;
 pub use backend_local_problem_rumors_table::*;
 pub use backend_local_problem_trade_effect_type::BackendLocalProblemTradeEffect;
 pub use backend_local_problem_trade_effects_table::*;
+pub use backend_organization_membership_type::BackendOrganizationMembership;
+pub use backend_organization_memberships_table::*;
 pub use backend_physical_evidence_inspection_type::BackendPhysicalEvidenceInspection;
 pub use backend_physical_evidence_inspections_table::*;
 pub use backend_physical_evidence_table::*;
@@ -1081,7 +1083,6 @@ pub use character_context_role_type::CharacterContextRole;
 pub use character_death_type::CharacterDeath;
 pub use character_equipped_item_table::*;
 pub use character_equipped_item_type::CharacterEquippedItem;
-pub use character_estate_basis_type::CharacterEstateBasis;
 pub use character_exposure_type::CharacterExposure;
 pub use character_familiarity_type::CharacterFamiliarity;
 pub use character_filth_table::*;
@@ -1440,7 +1441,6 @@ pub use open_corpse_reducer::open_corpse;
 pub use oral_language_hours_type::OralLanguageHours;
 pub use order_errantry_acceptance_receipt_type::OrderErrantryAcceptanceReceipt;
 pub use organic_soil_type::OrganicSoil;
-pub use organization_membership_table::*;
 pub use organization_membership_type::OrganizationMembership;
 pub use organization_presentation_table::*;
 pub use organization_presentation_type::OrganizationPresentation;
@@ -2149,6 +2149,7 @@ pub enum Reducer {
     JoinOrganization {
         character_id: u64,
         organization_id: String,
+        entry_role_id: String,
     },
     KillSimulationCharacter {
         nonce: String,
@@ -2234,6 +2235,7 @@ pub enum Reducer {
     PromoteOrganizationMembership {
         character_id: u64,
         organization_id: String,
+        to_role_id: String,
     },
     PurchaseFromHerbalist {
         patient_id: u64,
@@ -3561,9 +3563,11 @@ Reducer::BeginFormalCourtship{
             Reducer::JoinOrganization{
                 character_id,
                 organization_id,
+                entry_role_id,
 }             => __sats::bsatn::to_vec(&join_organization_reducer::JoinOrganizationArgs {
                 character_id: character_id.clone(),
                 organization_id: organization_id.clone(),
+                entry_role_id: entry_role_id.clone(),
 }),
             Reducer::KillSimulationCharacter{
                 nonce,
@@ -3714,9 +3718,11 @@ Reducer::BeginFormalCourtship{
             Reducer::PromoteOrganizationMembership{
                 character_id,
                 organization_id,
+                to_role_id,
 }             => __sats::bsatn::to_vec(&promote_organization_membership_reducer::PromoteOrganizationMembershipArgs {
                 character_id: character_id.clone(),
                 organization_id: organization_id.clone(),
+                to_role_id: to_role_id.clone(),
 }),
             Reducer::PurchaseFromHerbalist{
                 patient_id,
@@ -4578,6 +4584,7 @@ pub struct DbUpdate {
     backend_local_chat_messages: __sdk::TableUpdate<BackendLocalChatMessage>,
     backend_local_problem_rumors: __sdk::TableUpdate<BackendLocalProblemRumor>,
     backend_local_problem_trade_effects: __sdk::TableUpdate<BackendLocalProblemTradeEffect>,
+    backend_organization_memberships: __sdk::TableUpdate<BackendOrganizationMembership>,
     backend_physical_evidence: __sdk::TableUpdate<BackendPhysicalEvidence>,
     backend_physical_evidence_inspections: __sdk::TableUpdate<BackendPhysicalEvidenceInspection>,
     backend_physiology_administrations: __sdk::TableUpdate<BackendPhysiologyAdministration>,
@@ -4611,7 +4618,6 @@ pub struct DbUpdate {
     limb_injury: __sdk::TableUpdate<LimbInjury>,
     local_problem_symptom: __sdk::TableUpdate<LocalProblemSymptom>,
     morale_event: __sdk::TableUpdate<MoraleEvent>,
-    organization_membership: __sdk::TableUpdate<OrganizationMembership>,
     organization_presentation: __sdk::TableUpdate<OrganizationPresentation>,
     party: __sdk::TableUpdate<Party>,
     party_action_request: __sdk::TableUpdate<PartyActionRequest>,
@@ -4864,6 +4870,11 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                         )?,
                     )
                 }
+                "backend_organization_memberships" => {
+                    db_update.backend_organization_memberships.append(
+                        backend_organization_memberships_table::parse_table_update(table_update)?,
+                    )
+                }
                 "backend_physical_evidence" => db_update.backend_physical_evidence.append(
                     backend_physical_evidence_table::parse_table_update(table_update)?,
                 ),
@@ -4972,9 +4983,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "morale_event" => db_update
                     .morale_event
                     .append(morale_event_table::parse_table_update(table_update)?),
-                "organization_membership" => db_update.organization_membership.append(
-                    organization_membership_table::parse_table_update(table_update)?,
-                ),
                 "organization_presentation" => db_update.organization_presentation.append(
                     organization_presentation_table::parse_table_update(table_update)?,
                 ),
@@ -5213,12 +5221,6 @@ impl __sdk::DbUpdate for DbUpdate {
             .with_updates_by_pk(|row| &row.problem_id);
         diff.morale_event = cache
             .apply_diff_to_table::<MoraleEvent>("morale_event", &self.morale_event)
-            .with_updates_by_pk(|row| &row.id);
-        diff.organization_membership = cache
-            .apply_diff_to_table::<OrganizationMembership>(
-                "organization_membership",
-                &self.organization_membership,
-            )
             .with_updates_by_pk(|row| &row.id);
         diff.organization_presentation = cache
             .apply_diff_to_table::<OrganizationPresentation>(
@@ -5576,6 +5578,11 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_local_problem_trade_effects",
                 &self.backend_local_problem_trade_effects,
             );
+        diff.backend_organization_memberships = cache
+            .apply_diff_to_table::<BackendOrganizationMembership>(
+                "backend_organization_memberships",
+                &self.backend_organization_memberships,
+            );
         diff.backend_physical_evidence = cache.apply_diff_to_table::<BackendPhysicalEvidence>(
             "backend_physical_evidence",
             &self.backend_physical_evidence,
@@ -5815,6 +5822,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_local_problem_trade_effects" => db_update
                     .backend_local_problem_trade_effects
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_organization_memberships" => db_update
+                    .backend_organization_memberships
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_physical_evidence" => db_update
                     .backend_physical_evidence
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -5910,9 +5920,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "morale_event" => db_update
                     .morale_event
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "organization_membership" => db_update
-                    .organization_membership
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "organization_presentation" => db_update
                     .organization_presentation
@@ -6203,6 +6210,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_local_problem_trade_effects" => db_update
                     .backend_local_problem_trade_effects
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_organization_memberships" => db_update
+                    .backend_organization_memberships
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_physical_evidence" => db_update
                     .backend_physical_evidence
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -6298,9 +6308,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "morale_event" => db_update
                     .morale_event
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "organization_membership" => db_update
-                    .organization_membership
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "organization_presentation" => db_update
                     .organization_presentation
@@ -6491,6 +6498,7 @@ pub struct AppliedDiff<'r> {
     backend_local_problem_rumors: __sdk::TableAppliedDiff<'r, BackendLocalProblemRumor>,
     backend_local_problem_trade_effects:
         __sdk::TableAppliedDiff<'r, BackendLocalProblemTradeEffect>,
+    backend_organization_memberships: __sdk::TableAppliedDiff<'r, BackendOrganizationMembership>,
     backend_physical_evidence: __sdk::TableAppliedDiff<'r, BackendPhysicalEvidence>,
     backend_physical_evidence_inspections:
         __sdk::TableAppliedDiff<'r, BackendPhysicalEvidenceInspection>,
@@ -6526,7 +6534,6 @@ pub struct AppliedDiff<'r> {
     limb_injury: __sdk::TableAppliedDiff<'r, LimbInjury>,
     local_problem_symptom: __sdk::TableAppliedDiff<'r, LocalProblemSymptom>,
     morale_event: __sdk::TableAppliedDiff<'r, MoraleEvent>,
-    organization_membership: __sdk::TableAppliedDiff<'r, OrganizationMembership>,
     organization_presentation: __sdk::TableAppliedDiff<'r, OrganizationPresentation>,
     party: __sdk::TableAppliedDiff<'r, Party>,
     party_action_request: __sdk::TableAppliedDiff<'r, PartyActionRequest>,
@@ -6848,6 +6855,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.backend_local_problem_trade_effects,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<BackendOrganizationMembership>(
+            "backend_organization_memberships",
+            &self.backend_organization_memberships,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<BackendPhysicalEvidence>(
             "backend_physical_evidence",
             &self.backend_physical_evidence,
@@ -6994,11 +7006,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<MoraleEvent>(
             "morale_event",
             &self.morale_event,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<OrganizationMembership>(
-            "organization_membership",
-            &self.organization_membership,
             event,
         );
         callbacks.invoke_table_row_callbacks::<OrganizationPresentation>(
@@ -7881,6 +7888,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_local_chat_messages_table::register_table(client_cache);
         backend_local_problem_rumors_table::register_table(client_cache);
         backend_local_problem_trade_effects_table::register_table(client_cache);
+        backend_organization_memberships_table::register_table(client_cache);
         backend_physical_evidence_table::register_table(client_cache);
         backend_physical_evidence_inspections_table::register_table(client_cache);
         backend_physiology_administrations_table::register_table(client_cache);
@@ -7913,7 +7921,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         limb_injury_table::register_table(client_cache);
         local_problem_symptom_table::register_table(client_cache);
         morale_event_table::register_table(client_cache);
-        organization_membership_table::register_table(client_cache);
         organization_presentation_table::register_table(client_cache);
         party_table::register_table(client_cache);
         party_action_request_table::register_table(client_cache);
@@ -8008,6 +8015,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_local_chat_messages",
         "backend_local_problem_rumors",
         "backend_local_problem_trade_effects",
+        "backend_organization_memberships",
         "backend_physical_evidence",
         "backend_physical_evidence_inspections",
         "backend_physiology_administrations",
@@ -8040,7 +8048,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "limb_injury",
         "local_problem_symptom",
         "morale_event",
-        "organization_membership",
         "organization_presentation",
         "party",
         "party_action_request",

@@ -671,7 +671,7 @@ fn generated_claim_boundaries_exclude_narration_and_punctuation() {
     assert!(
         primary[2]
             .spoken_text
-            .ends_with(". You may examine it yourself.")
+            .ends_with(". It may be examined firsthand.")
     );
     assert!(!primary[2].challenge_text.ends_with('.'));
 

@@ -39,6 +39,7 @@ use adventuresim_stdb_client::{
     backend_dialogue_topic_options_table::BackendDialogueTopicOptionsTableAccess,
     backend_dialogue_witness_claims_table::BackendDialogueWitnessClaimsTableAccess,
     backend_local_chat_messages_table::BackendLocalChatMessagesTableAccess,
+    backend_organization_memberships_table::BackendOrganizationMembershipsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_participant_table::BattleParticipantTableAccess,
     battle_result_table::BattleResultTableAccess,
@@ -54,7 +55,6 @@ use adventuresim_stdb_client::{
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
     item_condition_table::ItemConditionTableAccess, limb_injury_table::LimbInjuryTableAccess,
     morale_event_table::MoraleEventTableAccess,
-    organization_membership_table::OrganizationMembershipTableAccess,
     organization_presentation_table::OrganizationPresentationTableAccess,
     party_action_request_table::PartyActionRequestTableAccess,
     party_inventory_item_table::PartyInventoryItemTableAccess,
@@ -112,7 +112,7 @@ pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "limb_injury",
     "retained_projectile",
     "backend_character_training_schedules",
-    "organization_membership",
+    "backend_organization_memberships",
     "organization_presentation",
     "party",
     "party_journey",
@@ -299,7 +299,7 @@ impl LiveState {
                 .db
                 .backend_character_training_schedules()
         );
-        invalidate_on_changes!(state.0._connection.db.organization_membership());
+        invalidate_on_view_changes!(state.0._connection.db.backend_organization_memberships());
         invalidate_on_changes!(state.0._connection.db.organization_presentation());
         invalidate_on_view_changes!(state.0._connection.db.party());
         invalidate_on_view_changes!(state.0._connection.db.party_journey());
@@ -420,7 +420,7 @@ impl LiveState {
             .add_query(|query| query.from.backend_character_strategic_conditions())
             .add_query(|query| query.from.backend_character_times())
             .add_query(|query| query.from.backend_character_training_schedules())
-            .add_query(|query| query.from.organization_membership())
+            .add_query(|query| query.from.backend_organization_memberships())
             .add_query(|query| query.from.organization_presentation())
             .add_query(|query| query.from.party_journey())
             .add_query(|query| query.from.party_journey_itinerary())

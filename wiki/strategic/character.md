@@ -1,9 +1,10 @@
 # Character
 
-Literacy is not universal. A character whose authoritative relational estate
-is Noble spends part of the simulated student-age phase learning local written
-German or Low German through the normal Intelligence learning rate and cap;
-Burgher estate alone grants nothing. Merchant-family literacy is represented
+Literacy is not universal. A character whose authoritative organization role
+authors a creation-literacy entitlement spends part of the simulated
+student-age phase learning that written language through the normal
+Intelligence learning rate and cap. Noble-family roles currently author local
+written German; civic citizenship alone grants nothing. Merchant-family literacy is represented
 by the merchant starting profession. Learned religious curricula teach their
 authored languages over time (Latin and German for Catholic and Lutheran
 organizations; Hebrew, Yiddish, and German for the Jewish organization).
@@ -371,17 +372,15 @@ training budget. Written language is different: organization curricula and
 noble literacy both consume aptitude-aware historical study, and persistence
 does not patch a minimum written rank after simulation.
 
-Every confirmed, durable character also receives one relational social-estate
-basis. Estate is derived from an organization role rather than stored as a
-writable Character field: a lordship serf, explicit civic free resident,
-urban civic citizen (Burgher), or noble-house member. The deterministic,
+Every confirmed, durable character receives organization-role assignments
+rather than a scalar social estate. A lordship may make one a `serf`, an urban
+civic community may make one a `citizen`, a family may make one `noble`, and a
+religious body may make one a learned practitioner. The deterministic,
 domain-separated assignment does not alter candidate IDs, previews,
-professional membership, rank, equipment, dues, or presentation. Multiple
-orthogonal roles are supported (for example, a noble-house member who is also
-a learned religious practitioner), but estate-dependent gameplay rules are
-intentionally deferred. Denomination-specific starting organizations supply
-the professional role without changing their existing membership or
-presentation behavior.
+procedural membership, equipment, dues, or presentation. There is at most one
+role per organization instance and any number across organizations. Stable
+family organizations persist across marriage and household changes, and a
+newborn inherits birth-family organization roles separately from residence.
 
 Players may create multiple characters in the same browser. The strategic
 header's portrait menu lists the browser's remembered non-temporary characters,
