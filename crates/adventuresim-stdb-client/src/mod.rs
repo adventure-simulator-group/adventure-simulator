@@ -552,7 +552,6 @@ pub mod objective_continuity_guard_type;
 pub mod objective_continuity_kind_type;
 pub mod official_religion_type;
 pub mod open_corpse_reducer;
-pub mod open_inventory_container_reducer;
 pub mod oral_language_hours_type;
 pub mod order_errantry_acceptance_receipt_type;
 pub mod organic_soil_type;
@@ -1426,7 +1425,6 @@ pub use objective_continuity_guard_type::ObjectiveContinuityGuard;
 pub use objective_continuity_kind_type::ObjectiveContinuityKind;
 pub use official_religion_type::OfficialReligion;
 pub use open_corpse_reducer::open_corpse;
-pub use open_inventory_container_reducer::open_inventory_container;
 pub use oral_language_hours_type::OralLanguageHours;
 pub use order_errantry_acceptance_receipt_type::OrderErrantryAcceptanceReceipt;
 pub use organic_soil_type::OrganicSoil;
@@ -2153,11 +2151,6 @@ pub enum Reducer {
         expected_revision: u32,
         confirm_unauthorized: bool,
     },
-    OpenInventoryContainer {
-        character_id: u64,
-        inventory_scope: String,
-        inventory_row_id: u64,
-    },
     PayOrganizationDues {
         character_id: u64,
         organization_id: String,
@@ -2742,7 +2735,6 @@ impl __sdk::Reducer for Reducer {
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
             Reducer::OpenCorpse { .. } => "open_corpse",
-            Reducer::OpenInventoryContainer { .. } => "open_inventory_container",
             Reducer::PayOrganizationDues { .. } => "pay_organization_dues",
             Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
             Reducer::PerformInvestigationAction { .. } => "perform_investigation_action",
@@ -3560,15 +3552,6 @@ Reducer::BeginFormalCourtship{
                 action_id: action_id.clone(),
                 expected_revision: expected_revision.clone(),
                 confirm_unauthorized: confirm_unauthorized.clone(),
-}),
-            Reducer::OpenInventoryContainer{
-                character_id,
-                inventory_scope,
-                inventory_row_id,
-}             => __sats::bsatn::to_vec(&open_inventory_container_reducer::OpenInventoryContainerArgs {
-                character_id: character_id.clone(),
-                inventory_scope: inventory_scope.clone(),
-                inventory_row_id: inventory_row_id.clone(),
 }),
             Reducer::PayOrganizationDues{
                 character_id,

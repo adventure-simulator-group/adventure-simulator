@@ -296,7 +296,6 @@ pub fn routes() -> Router<AppState> {
         .route("/camp/fireplace/container/start", post(camp_fireplace_container_start))
         .route("/camp/fireplace/container/remove", post(camp_fireplace_container_remove))
         .route("/api/inventory/containers", get(inventory_containers))
-        .route("/api/inventory/containers/open", post(open_inventory_container))
         .route("/api/inventory/containers/move", post(move_inventory_container_item))
         .route("/api/inventory/containers/remove", post(remove_inventory_container_item))
         .route("/api/inventory/containers/pour", post(pour_inventory_container_water))

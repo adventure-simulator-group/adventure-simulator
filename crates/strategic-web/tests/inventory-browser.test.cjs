@@ -181,3 +181,19 @@ test("containers hydrate authoritative trees and wire accessible mutations", () 
   assert.match(source, /data-container-drain/);
   assert.match(source, /application\/x-adventuresim-inventory-object/);
 });
+
+test("container hydration is race-safe and empty-stack opening is read-only", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
+  assert.match(source, /containerHydrationGeneration/);
+  assert.match(source, /generation !== containerHydrationGeneration/);
+  assert.doesNotMatch(source, /\/api\/inventory\/containers\/open/);
+  assert.match(source, /parentLegacy/);
+  assert.match(source, /parent_scope/);
+  assert.match(source, /data-container-toggle/);
+  assert.match(source, /\/api\/inventory\/containers\/remove/);
+  assert.match(source, /authoritativeContainerSnapshot\.presentations/);
+  assert.match(source, /inventory-container-snapshot-row/);
+  assert.match(source, /inventoryCounterpart/);
+  assert.match(source, /previousId/);
+  assert.match(source, /data-container-move-into/);
+});

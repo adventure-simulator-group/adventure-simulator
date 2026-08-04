@@ -3,6 +3,17 @@ pub(super) struct ContainerSnapshot {
     objects: Vec<InventoryObject>,
     edges: Vec<InventoryContainment>,
     liquids: Vec<ContainerLiquid>,
+    presentations: Vec<ContainerItemPresentation>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct ContainerItemPresentation {
+    object_id: u64,
+    item_id: String,
+    display_name: String,
+    quantity: u32,
+    exterior_volume_ml: u32,
+    container_capacity_ml: u32,
 }
 
 #[derive(Deserialize)]
@@ -10,15 +21,15 @@ pub(super) struct ContainerMoveForm {
     #[serde(default)] child_object_id: u64,
     #[serde(default)] child_scope: String,
     #[serde(default)] child_row_id: u64,
-    parent_object_id: u64,
+    #[serde(default)] parent_object_id: u64,
+    #[serde(default)] parent_scope: String,
+    #[serde(default)] parent_row_id: u64,
 }
 
 #[derive(Deserialize)]
 pub(super) struct ContainerRemoveForm {
     child_object_id: u64,
 }
-#[derive(Deserialize)]
-pub(super) struct ContainerOpenForm { inventory_scope: String, inventory_row_id: u64 }
 #[derive(Deserialize)]
 pub(super) struct ContainerWaterForm { container_object_id: u64, requested_ml: u64 }
 
@@ -46,32 +57,30 @@ pub(super) async fn inventory_containers(
     let liquids = state.db.query::<ContainerLiquid>("SELECT * FROM container_liquid")
         .await.unwrap_or_default().into_iter()
         .filter(|row| ids.contains(&row.container_object_id)).collect();
-    Json(ContainerSnapshot { objects, edges, liquids }).into_response()
-}
-
-pub(super) async fn open_inventory_container(
-    State(state): State<AppState>, session: Session, Form(form): Form<ContainerOpenForm>,
-) -> Response {
-    let Some((actor, _)) = get_active_character(&state, session.character_id_u64()).await else {
-        return StatusCode::UNAUTHORIZED.into_response();
-    };
-    let item_id = match form.inventory_scope.as_str() {
-        "personal" => state.db.query_one::<InventoryItem>(&format!("SELECT * FROM inventory_item WHERE id = {}", form.inventory_row_id)).await.ok().flatten().map(|row| row.item_id),
-        "party" => state.db.query_one::<PartyInventoryItem>(&format!("SELECT * FROM party_inventory_item WHERE id = {}", form.inventory_row_id)).await.ok().flatten().map(|row| row.item_id),
-        _ => None,
-    };
-    let Some(item_id) = item_id else { return (StatusCode::BAD_REQUEST, "Inventory row not found").into_response(); };
-    if let Err(error) = state.db.call("open_inventory_container", &[
-        json!(actor.id), json!(form.inventory_scope), json!(form.inventory_row_id),
-    ]).await {
-        return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
-    }
-    let owner = if form.inventory_scope == "personal" { actor.id.to_string() }
-        else { actor.party_id.unwrap_or_default() };
-    let object = state.db.query::<InventoryObject>("SELECT * FROM inventory_object").await
-        .unwrap_or_default().into_iter().filter(|row| row.location_kind == form.inventory_scope
-            && row.location_owner == owner && row.item_id == item_id).max_by_key(|row| row.id);
-    match object { Some(row) => Json(row).into_response(), None => StatusCode::NOT_FOUND.into_response() }
+    let definitions = state.db.query::<ItemDefinition>("SELECT * FROM item").await.unwrap_or_default();
+    let lots = state.db.query::<FoodLot>("SELECT * FROM food_lot").await.unwrap_or_default();
+    let personal = state.db.query::<InventoryItem>(&format!("SELECT * FROM inventory_item WHERE character_id = {}", actor.id)).await.unwrap_or_default();
+    let party = if let Some(party_id) = actor.party_id.as_deref() {
+        state.db.query::<PartyInventoryItem>(&format!("SELECT * FROM party_inventory_item WHERE party_id = {}", sql_string_literal(party_id))).await.unwrap_or_default()
+    } else { Vec::new() };
+    let presentations = objects.iter().filter(|object| object.inventory_row_id > 0).filter_map(|object| {
+        let quantity = if object.location_kind == "personal" {
+            personal.iter().find(|row| row.id == object.inventory_row_id).map(|row| row.qty)
+        } else {
+            party.iter().find(|row| row.id == object.inventory_row_id).map(|row| row.quantity)
+        }?;
+        let definition = definitions.iter().find(|row| row.id == object.item_id)?;
+        let display_name = lots.iter().find(|lot| if object.location_kind == "personal" {
+            lot.inventory_item_id == Some(object.inventory_row_id)
+        } else {
+            lot.party_inventory_item_id == Some(object.inventory_row_id)
+        })
+            .map_or_else(|| object.item_id.replace('_', " "), |lot| lot.display_name.clone());
+        Some(ContainerItemPresentation { object_id: object.id, item_id: object.item_id.clone(), display_name,
+            quantity, exterior_volume_ml: definition.exterior_volume_ml,
+            container_capacity_ml: definition.container_capacity_ml })
+    }).collect();
+    Json(ContainerSnapshot { objects, edges, liquids, presentations }).into_response()
 }
 
 async fn owned_container_object(
@@ -93,8 +102,14 @@ pub(super) async fn move_inventory_container_item(
     let Some((actor, _)) = get_active_character(&state, session.character_id_u64()).await else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
-    let Some(parent) = owned_container_object(&state, &actor, form.parent_object_id).await else {
-        return (StatusCode::BAD_REQUEST, "Container is not in your inventory").into_response();
+    let parent = if form.parent_object_id > 0 {
+        let Some(parent) = owned_container_object(&state, &actor, form.parent_object_id).await else {
+            return (StatusCode::BAD_REQUEST, "Container is not in your inventory").into_response();
+        };
+        parent
+    } else {
+        InventoryObject { id: 0, item_id: String::new(), location_kind: form.parent_scope,
+            location_owner: String::new(), inventory_row_id: form.parent_row_id }
     };
     let child = if form.child_object_id > 0 {
         let Some(child) = owned_container_object(&state, &actor, form.child_object_id).await else {

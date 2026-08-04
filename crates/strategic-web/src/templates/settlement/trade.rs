@@ -322,12 +322,7 @@ pub fn fireplace_page(
     layout: impl FnOnce(Markup) -> Markup,
 ) -> Markup {
     let instrument = station.and_then(|row| row.instrument_item_id.as_deref());
-    let method = match instrument {
-        Some("cooking_pan") => "pan-fry",
-        Some("cooking_pot") => "stew",
-        Some("portable_oven") => "bake",
-        _ => "roast",
-    };
+    let method = "roast";
     let elapsed = dish.map_or(0, |row| {
         character_minute.saturating_sub(row.started_at_minute)
     });
@@ -454,12 +449,6 @@ pub fn fireplace_page(
                             }
                         } }
                     }
-                    @if instrument.is_some() {
-                        form action=(format!("{action_base}/instrument")) method="post" {
-                            input type="hidden" name="inventory_scope" value=(station.and_then(|s| s.instrument_source.as_deref()).unwrap_or("personal"));
-                            button class="btn btn-secondary btn-block" type="submit" { "Remove instrument (restore roast)" }
-                        }
-                    }
                 }
             }))
         }
@@ -477,7 +466,7 @@ fn fireplace_inventory_row(
     measured: Option<u32>,
     lot: Option<&FoodLot>,
     definitions: &[ItemDefinition],
-    installed: Option<&str>,
+    _installed: Option<&str>,
 ) -> Markup {
     let definition = definitions.iter().find(|d| d.id == item_id);
     let is_tool = matches!(item_id, "cooking_pan" | "cooking_pot" | "portable_oven");
@@ -502,11 +491,6 @@ fn fireplace_inventory_row(
                         input type="hidden" name="inventory_scope" value=(scope);
                         input type="hidden" name="inventory_item_id" value=(id);
                         button type="submit" class="btn btn-primary btn-small" { "Place over fire" }
-                    }
-                    form action=(format!("{action_base}/instrument")) method="post" {
-                        input type="hidden" name="inventory_scope" value=(scope);
-                        input type="hidden" name="inventory_item_id" value=(id);
-                        button type="submit" class="btn btn-secondary btn-small" title=(if installed.is_some() { "Install this tool and return the previous one to its original inventory" } else { "Install this cooking tool" }) { "Install" }
                     }
                 }
             }
@@ -1215,7 +1199,7 @@ pub fn party_pool_page(
                             @let target = target_quantity(personal_targets, &item.item_id);
                             @let current = inventory.iter().find(|personal| personal.item_id == item.item_id).map_or(0, |personal| personal.qty);
                             @let item_name = item_display_name(&item.item_id);
-                            tr class="trade-inventory-row" {
+                            tr class="trade-inventory-row" data-party-inventory-id=(item.id) {
                                 td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                 td class="inventory-item-name" {
                                     (item_name_with_food_lot(&item.item_id, &food_display_name, definition, food_lot))
@@ -1247,7 +1231,7 @@ pub fn party_pool_page(
                             @let target = target_quantity(party_targets, &item.item_id);
                             @let current = pooled.iter().find(|pooled| pooled.item_id == item.item_id).map_or(0, |pooled| pooled.quantity);
                             @let item_name = item_display_name(&item.item_id);
-                            tr class="trade-inventory-row" {
+                            tr class="trade-inventory-row" data-personal-inventory-id=(item.id) {
                                 td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                 td class="inventory-item-name" {
                                     (item_name_with_food_lot(&item.item_id, &food_display_name, definition, food_lot))

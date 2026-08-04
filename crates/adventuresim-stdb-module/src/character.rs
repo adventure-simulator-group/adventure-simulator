@@ -2956,6 +2956,7 @@ fn equip_equipment_internal(
     if enforce_law {
         crate::equipment_law::require_item_legal(ctx, character_id, inventory_item_id)?;
     }
+    crate::inventory_container::detach_row_for_action(ctx, "personal", inventory_item_id)?;
     let root_occupancies = placement
         .occupancy
         .iter()

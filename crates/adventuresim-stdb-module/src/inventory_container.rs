@@ -16,6 +16,11 @@ use crate::{
 };
 
 pub const WATER_ITEM_ID: &str = "water";
+pub const GENERIC_CONTAINER_IDS: [&str; 3] = ["cooking_pan", "cooking_pot", "portable_oven"];
+
+fn is_generic_container(item_id: &str) -> bool {
+    GENERIC_CONTAINER_IDS.contains(&item_id)
+}
 
 fn empty_container_can_stack(has_contents: bool, is_nested: bool, has_condition: bool) -> bool {
     !has_contents && !is_nested && !has_condition
@@ -123,6 +128,48 @@ pub(crate) fn object_is_nested(ctx: &ReducerContext, object_id: u64) -> bool {
         .child_object_id()
         .find(object_id)
         .is_some()
+}
+
+pub(crate) fn reconcile_consumed_row(
+    ctx: &ReducerContext,
+    kind: &str,
+    row_id: u64,
+    fully_consumed: bool,
+) -> Result<(), String> {
+    let Some(object) = object_for_row(ctx, kind, row_id) else {
+        return Ok(());
+    };
+    if ancestry_reaches_fireplace(ctx, object.id) {
+        return Err("Retrieve the container from its fireplace before using its contents".into());
+    }
+    if fully_consumed {
+        let parent = ctx
+            .db
+            .inventory_containment()
+            .child_object_id()
+            .find(object.id)
+            .map(|edge| edge.parent_object_id);
+        ctx.db
+            .inventory_containment()
+            .child_object_id()
+            .delete(object.id);
+        ctx.db.inventory_object().id().delete(object.id);
+        if let Some(parent_id) = parent {
+            merge_empty_container(ctx, parent_id)?;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn detach_row_for_action(
+    ctx: &ReducerContext,
+    kind: &str,
+    row_id: u64,
+) -> Result<(), String> {
+    if let Some(object) = object_for_row(ctx, kind, row_id) {
+        detach_if_nested(ctx, object.id)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn subtree_object_ids(
@@ -593,6 +640,14 @@ mod tests {
         assert!(!empty_container_can_stack(false, true, false));
         assert!(!empty_container_can_stack(false, false, true));
     }
+
+    #[test]
+    fn generic_solid_containers_exclude_waterskins() {
+        assert!(super::is_generic_container("cooking_pan"));
+        assert!(super::is_generic_container("cooking_pot"));
+        assert!(super::is_generic_container("portable_oven"));
+        assert!(!super::is_generic_container("waterskin"));
+    }
 }
 
 pub(crate) fn ensure_object(
@@ -618,28 +673,6 @@ pub(crate) fn ensure_object(
         location_owner: owner,
         inventory_row_id: row_id,
     }))
-}
-
-#[reducer]
-pub fn open_inventory_container(
-    ctx: &ReducerContext,
-    character_id: u64,
-    inventory_scope: String,
-    inventory_row_id: u64,
-) -> Result<(), String> {
-    crate::strategic::require_strategic_gateway(ctx)?;
-    crate::character::require_living_character(ctx, character_id)?;
-    let object = ensure_object(ctx, character_id, &inventory_scope, inventory_row_id, true)?;
-    let definition = ctx
-        .db
-        .item()
-        .id()
-        .find(object.item_id)
-        .ok_or("Container definition not found")?;
-    if definition.container_capacity_ml == 0 {
-        return Err("That item is not a container".into());
-    }
-    Ok(())
 }
 
 fn measured_volume_ml(
@@ -836,6 +869,9 @@ pub fn put_inventory_item_in_container(
     crate::strategic::require_strategic_gateway(ctx)?;
     crate::character::require_living_character(ctx, character_id)?;
     let parent = ensure_object(ctx, character_id, &parent_scope, parent_row_id, true)?;
+    if !is_generic_container(&parent.item_id) {
+        return Err("Only cooking vessels can contain inventory items".into());
+    }
     let child = ensure_object(ctx, character_id, &child_scope, child_row_id, true)?;
     require_mutable(ctx, parent.id)?;
     require_mutable(ctx, child.id)?;

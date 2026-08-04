@@ -706,7 +706,7 @@ pub(super) fn inventory_rail(
                         @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
                         @let display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
                         @let item_name = item_display_name(&item.item_id);
-                        tr class=(if trade_action.is_some() { "trade-inventory-row" } else { "trade-inventory-row inventory-row-readonly" }) {
+                        tr class=(if trade_action.is_some() { "trade-inventory-row" } else { "trade-inventory-row inventory-row-readonly" }) data-personal-inventory-id=(item.id) {
                             td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                             td class="inventory-item-name" {
                                 (item_name_with_food_lot(&item.item_id, &display_name, definition, food_lot))

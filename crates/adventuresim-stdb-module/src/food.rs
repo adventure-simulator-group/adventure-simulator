@@ -625,6 +625,9 @@ pub fn set_fireplace_instrument(
         return Err("Cooking is unavailable during a tactical encounter".into());
     }
     validate_fireplace_context(ctx, &actor, &context_key)?;
+    if inventory_item_id.is_some() {
+        return Err("Cooking tools must be placed as containers over the fire".into());
+    }
     let mut station = fireplace_station_for(ctx, character_id, &context_key);
     if ctx
         .db
@@ -755,6 +758,11 @@ pub fn place_fireplace_container(
         inventory_item_id,
         true,
     )?;
+    if crate::inventory_container::object_is_nested(ctx, object.id) {
+        return Err(
+            "Remove a vessel from its parent container before placing it over a fire".into(),
+        );
+    }
     method_for_instrument(Some(&object.item_id))?;
     let source = object.location_kind.clone();
     let party_id = (source == "party").then(|| object.location_owner.clone());
@@ -1358,12 +1366,24 @@ pub fn start_fireplace_container_cooking(
         if !food::is_cookable_ingredient(&child.item_id) {
             continue;
         }
-        let amount = match scope.as_str() {
-            "personal" => crate::inventory_amount::personal_amount(ctx, child.inventory_row_id),
-            "party" => crate::inventory_amount::party_amount(ctx, child.inventory_row_id),
-            _ => None,
+        let (lot, amount) = match scope.as_str() {
+            "personal" => (
+                personal_lot(ctx, child.inventory_row_id),
+                crate::inventory_amount::personal_amount(ctx, child.inventory_row_id),
+            ),
+            "party" => (
+                party_lot(ctx, child.inventory_row_id),
+                crate::inventory_amount::party_amount(ctx, child.inventory_row_id),
+            ),
+            _ => (None, None),
+        };
+        let (Some(lot), Some(amount)) = (lot, amount) else {
+            continue;
+        };
+        if lot.preparation != FoodPreparation::Raw && lot.preparation != FoodPreparation::Preserved
+        {
+            return Err("A cooked meal cannot be cooked again".into());
         }
-        .ok_or("Contained food amount state is missing")?;
         ids.push(child.inventory_row_id);
         amounts.push(amount);
         consumed_objects.push(child.id);
@@ -1405,6 +1425,7 @@ fn add_fireplace_ingredients_at(
         return Err("Cooking is unavailable during a tactical encounter".into());
     }
     validate_fireplace_context(ctx, &actor, &context_key)?;
+    let is_vessel = vessel_station.is_some();
     let station =
         vessel_station.unwrap_or_else(|| fireplace_station_for(ctx, character_id, &context_key));
     if ctx
@@ -1418,11 +1439,15 @@ fn add_fireplace_ingredients_at(
     }
     if inventory_item_ids.is_empty()
         || inventory_item_ids.len() != amounts_milliunits.len()
-        || inventory_item_ids.len() > 32
+        || !is_vessel && inventory_item_ids.len() > 32
     {
         return Err("Select between one and 32 food lots".into());
     }
-    let method = method_for_instrument(station.instrument_item_id.as_deref())?;
+    let method = if is_vessel {
+        method_for_instrument(station.instrument_item_id.as_deref())?
+    } else {
+        CookingMethod::Roast
+    };
     let check = cooking_check(ctx, character_id)?;
     initialize_character_condition(ctx, character_id)?;
     let minute = current_minute(ctx, character_id);
@@ -1955,6 +1980,7 @@ fn consume_food_amount(
     if inventory.character_id != character_id {
         return Err("Food is not in this inventory".into());
     }
+    crate::inventory_container::reconcile_consumed_row(ctx, "personal", inventory_id, false)?;
     let mut lot = lot_for_inventory(ctx, inventory_id)?;
     let mut needs = ctx
         .db
@@ -1984,6 +2010,7 @@ fn consume_food_amount(
     needs.food_balance_kcal += wanted;
     ctx.db.character_needs().character_id().update(needs);
     if ratio >= 0.999_999 {
+        crate::inventory_container::reconcile_consumed_row(ctx, "personal", inventory.id, true)?;
         ctx.db
             .inventory_item_amount()
             .inventory_item_id()
@@ -2039,6 +2066,7 @@ pub fn consume_travel_food_to_zero(ctx: &ReducerContext, character_id: u64) -> R
             .collect();
         candidates.sort_by_key(|row| (row.0, row.1));
         for (_, _, inventory, mut lot) in candidates {
+            crate::inventory_container::reconcile_consumed_row(ctx, "party", inventory.id, false)?;
             let deficit = ctx
                 .db
                 .character_needs()
@@ -2068,6 +2096,12 @@ pub fn consume_travel_food_to_zero(ctx: &ReducerContext, character_id: u64) -> R
             needs.food_balance_kcal = (needs.food_balance_kcal + wanted).min(0.0);
             ctx.db.character_needs().character_id().update(needs);
             if ratio >= 0.999_999 {
+                crate::inventory_container::reconcile_consumed_row(
+                    ctx,
+                    "party",
+                    inventory.id,
+                    true,
+                )?;
                 ctx.db
                     .party_item_amount()
                     .party_inventory_item_id()
@@ -2157,6 +2191,50 @@ mod tests {
     #[test]
     fn method_mapping_is_stable() {
         assert_eq!(CookingMethod::Roast.core(), food::CookingMethod::Roast);
+    }
+
+    #[test]
+    fn container_cooking_is_distinct_from_legacy_loose_roasting() {
+        let source = include_str!("food.rs");
+        let legacy = source
+            .split("pub fn set_fireplace_instrument")
+            .nth(1)
+            .unwrap()
+            .split("fn vessel_station_key")
+            .next()
+            .unwrap();
+        assert!(legacy.contains("Cooking tools must be placed as containers over the fire"));
+        let cooking = source
+            .split("fn add_fireplace_ingredients_at")
+            .nth(1)
+            .unwrap();
+        assert!(cooking.contains("let is_vessel = vessel_station.is_some()"));
+        assert!(cooking.contains("!is_vessel && inventory_item_ids.len() > 32"));
+        assert!(cooking.contains("CookingMethod::Roast"));
+    }
+
+    #[test]
+    fn recursive_vessel_selection_requires_authoritative_food_lots() {
+        let source = include_str!("food.rs");
+        let reducer = source
+            .split("pub fn start_fireplace_container_cooking")
+            .nth(1)
+            .unwrap()
+            .split("fn add_fireplace_ingredients_at")
+            .next()
+            .unwrap();
+        assert!(reducer.contains("subtree_object_ids"));
+        assert!(reducer.contains("personal_lot(ctx, child.inventory_row_id)"));
+        assert!(reducer.contains("party_lot(ctx, child.inventory_row_id)"));
+        assert!(reducer.contains("let (Some(lot), Some(amount))"));
+        assert!(reducer.contains("A cooked meal cannot be cooked again"));
+    }
+
+    #[test]
+    fn eating_and_travel_reconcile_stable_container_objects() {
+        let source = include_str!("food.rs");
+        assert!(source.contains("reconcile_consumed_row(ctx, \"personal\""));
+        assert!(source.contains("reconcile_consumed_row(ctx, \"party\""));
     }
 
     #[test]

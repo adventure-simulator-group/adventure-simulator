@@ -562,7 +562,7 @@
   function decorateContainers(browser) {
     browser.querySelectorAll("tr.trade-inventory-row").forEach((row) => {
       const label = row.querySelector("[data-container-capacity-ml]");
-      if (!label) return;
+      if (!label || !["cooking_pan", "cooking_pot", "portable_oven"].includes(label.dataset.itemName)) return;
       if (row.dataset.containerDecorated) {
         const used = Number(row.dataset.containerUsedMl || 0);
         const capacity = Number(label.dataset.containerCapacityMl || 0);
@@ -616,8 +616,43 @@
     return null;
   }
 
+  function ensureMoveIntoControl(row, rowRef, snapshot) {
+    const actions = row.querySelector(".inventory-row-actions") || row.querySelector(".inventory-item-name");
+    if (!actions || actions.querySelector("[data-container-move-into]")) return;
+    const candidates = snapshot.objects.filter((object) =>
+      ["cooking_pan", "cooking_pot", "portable_oven"].includes(object.item_id)
+        && String(object.id) !== String(rowRef) && object.location_kind !== "fireplace")
+      .map((object) => ({ id: String(object.id), item_id: object.item_id }));
+    document.querySelectorAll("tr.trade-inventory-row").forEach((candidateRow) => {
+      const label = candidateRow.querySelector("[data-container-capacity-ml]");
+      const id = candidateRow.dataset.containerObjectId || rowInventoryKey(candidateRow);
+      if (id && id !== String(rowRef) && label
+          && ["cooking_pan", "cooking_pot", "portable_oven"].includes(label.dataset.itemName)
+          && !candidates.some((candidate) => candidate.id === id)) {
+        candidates.push({ id, item_id: label.dataset.itemName });
+      }
+    });
+    if (!candidates.length) return;
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", "Destination container");
+    candidates.forEach((container) => {
+      const option = document.createElement("option"); option.value = String(container.id);
+      option.textContent = container.item_id.replaceAll("_", " "); select.append(option);
+    });
+    const move = document.createElement("button"); move.type = "button";
+    move.dataset.containerMoveInto = String(rowRef); move.textContent = "Move into";
+    move.setAttribute("aria-label", "Move item into selected container");
+    move.addEventListener("click", () => row.closest("[data-inventory-browser]")?.dispatchEvent(
+      new CustomEvent("inventory-container-move", { bubbles: true, detail: { child: rowRef, parent: select.value } }),
+    ));
+    actions.append(select, move);
+  }
+
+  let containerHydrationGeneration = 0;
+  let authoritativeContainerSnapshot = null;
   async function hydrateContainerState(root = document) {
     if (!global.fetch) return;
+    const generation = ++containerHydrationGeneration;
     let snapshot;
     try {
       snapshot = await global.fetch("/api/inventory/containers", { headers: { Accept: "application/json" } }).then((response) => {
@@ -625,6 +660,8 @@
         return response.json();
       });
     } catch (_) { return; }
+    if (generation !== containerHydrationGeneration) return;
+    authoritativeContainerSnapshot = snapshot;
     const objects = new Map(snapshot.objects.map((object) => [object.id, object]));
     const parents = new Map(snapshot.edges.map((edge) => [edge.child_object_id, edge.parent_object_id]));
     const liquids = new Map(snapshot.liquids.map((liquid) => [liquid.container_object_id, Number(liquid.water_ml)]));
@@ -639,9 +676,12 @@
             "application/x-adventuresim-inventory-object", rowKey,
           ));
         }
+        if (rowKey) ensureMoveIntoControl(row, rowKey, snapshot);
         return;
       }
       row.dataset.containerObjectId = String(object.id);
+      ensureMoveIntoControl(row, String(object.id), snapshot);
+      row.tabIndex = 0;
       row.draggable = true;
       if (!row.dataset.containerDragBound) {
         row.dataset.containerDragBound = "true";
@@ -673,14 +713,17 @@
         used += Number(childRow?.querySelector("[data-exterior-volume-ml]")?.dataset.exteriorVolumeMl || 0);
       });
       row.dataset.containerUsedMl = String(used);
+      if (snapshot.edges.some((edge) => edge.parent_object_id === object.id)) {
+        const actions = row.querySelector(".inventory-row-actions") || row.querySelector(".inventory-item-name");
+        if (actions && !actions.querySelector("[data-container-toggle]")) {
+          const toggle = document.createElement("button");
+          toggle.type = "button"; toggle.dataset.containerToggle = "true";
+          toggle.textContent = "Expand"; toggle.setAttribute("aria-expanded", "false");
+          toggle.setAttribute("aria-label", "Expand container contents"); actions.append(toggle);
+        }
+      }
     });
     root.querySelectorAll?.("[data-inventory-browser]").forEach(decorateContainers);
-    const pending = global.sessionStorage?.getItem("inventory-container-open");
-    if (pending) {
-      global.sessionStorage.removeItem("inventory-container-open");
-      const button = root.querySelector?.(`[data-container-open="${CSS.escape(pending)}"]`);
-      button?.click();
-    }
   }
 
   async function postContainer(path, values) {
@@ -690,28 +733,16 @@
     global.location.reload();
   }
 
-  async function postContainerOpen(scope, rowId) {
-    const body = new URLSearchParams({ inventory_scope: scope, inventory_row_id: rowId });
-    const response = await global.fetch("/api/inventory/containers/open", {
-      method: "POST", body, headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    });
-    if (!response.ok) throw new Error(await response.text());
-    return response.json();
-  }
-
   function openContainer(browser, button) {
     const id = button.dataset.containerOpen;
     if (!id) return;
-    const legacy = id.match(/^(personal|party):(\d+)$/);
-    if (legacy) {
-      postContainerOpen(legacy[1], legacy[2]).then((object) => {
-        global.sessionStorage?.setItem("inventory-container-open", String(object.id));
-        global.location.reload();
-      }).catch((error) => global.alert?.(error.message));
-      return;
-    }
-    let counterpart = [...document.querySelectorAll("[data-inventory-browser]")]
-      .find((candidate) => candidate !== browser && !candidate.hidden);
+    const paired = browser.dataset.inventoryCounterpart
+      ? document.querySelector(`[data-inventory-browser="${CSS.escape(browser.dataset.inventoryCounterpart)}"]`)
+      : null;
+    let counterpart = browser.dataset.openContainerObjectId ? browser
+      : paired && !paired.closest("[hidden]") ? paired
+      : [...document.querySelectorAll("[data-inventory-browser]")]
+        .find((candidate) => candidate !== browser && !candidate.hidden && !candidate.closest("[hidden]"));
     if (!counterpart) {
       const host = [...document.querySelectorAll(".left-sidebar,.right-sidebar,.center-content")]
         .find((candidate) => !candidate.contains(browser));
@@ -728,6 +759,8 @@
     counterpart._containerPanelStack.push({
       active: document.activeElement,
       rowHidden: [...counterpart.querySelectorAll("tr.trade-inventory-row")].map((row) => [row, row.hidden]),
+      previousId: counterpart.dataset.openContainerObjectId || "",
+      tbodyHtml: counterpart.querySelector("tbody")?.innerHTML || "",
     });
     counterpart.querySelectorAll("[data-container-transient]").forEach((row) => row.remove());
     const tbody = counterpart.querySelector("tbody");
@@ -736,9 +769,47 @@
         const clone = source.cloneNode(true); clone.dataset.containerTransient = "true"; clone.hidden = false; tbody.append(clone);
       }
     });
+    if (tbody && authoritativeContainerSnapshot) {
+      const parents = new Map(authoritativeContainerSnapshot.edges.map((edge) => [edge.child_object_id, edge.parent_object_id]));
+      const belongsToOpenTree = (objectId) => {
+        let cursor = parents.get(objectId);
+        for (let depth = 0; cursor != null && depth <= 16; depth += 1) {
+          if (String(cursor) === id) return true;
+          cursor = parents.get(cursor);
+        }
+        return false;
+      };
+      authoritativeContainerSnapshot.presentations.filter((item) => belongsToOpenTree(item.object_id)).forEach((item) => {
+        if (tbody.querySelector(`[data-container-object-id="${item.object_id}"]`)) return;
+        const row = document.createElement("tr");
+        row.className = "trade-inventory-row inventory-container-snapshot-row";
+        row.dataset.containerTransient = "true"; row.dataset.containerObjectId = String(item.object_id);
+        row.dataset.containerParentObjectId = String(parents.get(item.object_id));
+        const ancestors = []; let cursor = parents.get(item.object_id);
+        while (cursor != null && ancestors.length <= 16) { ancestors.push(cursor); cursor = parents.get(cursor); }
+        row.dataset.containerAncestor = ancestors.join(" "); row.tabIndex = 0; row.draggable = true;
+        row.addEventListener("dragstart", (event) => event.dataTransfer?.setData(
+          "application/x-adventuresim-inventory-object", String(item.object_id),
+        ));
+        row.hidden = row.dataset.containerParentObjectId !== id;
+        const name = document.createElement("td"); name.className = "inventory-item-name";
+        const label = document.createElement("span"); label.className = "inventory-item-label";
+        label.dataset.itemName = item.item_id; label.dataset.exteriorVolumeMl = String(item.exterior_volume_ml);
+        if (item.container_capacity_ml > 0) label.dataset.containerCapacityMl = String(item.container_capacity_ml);
+        label.textContent = item.display_name;
+        const actions = document.createElement("span"); actions.className = "inventory-row-actions";
+        const remove = document.createElement("button"); remove.type = "button";
+        remove.dataset.containerRemove = String(item.object_id); remove.textContent = "Remove";
+        remove.setAttribute("aria-label", `Remove ${item.display_name} from container`);
+        actions.append(remove); name.append(label, actions);
+        const quantity = document.createElement("td"); quantity.className = "inventory-count"; quantity.textContent = String(item.quantity);
+        row.append(name, quantity); tbody.append(row);
+      });
+    }
     counterpart.querySelectorAll("tr.trade-inventory-row").forEach((row) => {
       row.hidden = row.dataset.containerParentObjectId !== id;
     });
+    hydrateContainerState(counterpart);
     let close = counterpart.querySelector("[data-container-close]");
     if (!close) {
       close = document.createElement("button");
@@ -757,19 +828,38 @@
       water.innerHTML = '<button type="button" data-container-pour>Pour water in</button><button type="button" data-container-drain>Pour water out</button>';
       close.after(water);
     }
-    water.hidden = false;
+    water.hidden = !/^\d+$/.test(id);
     counterpart.dataset.openContainerObjectId = id;
+    counterpart.addEventListener("dragover", (event) => event.preventDefault());
+    counterpart.addEventListener("drop", (event) => {
+      const child = event.dataTransfer?.getData("application/x-adventuresim-inventory-object");
+      if (/^\d+$/.test(child || "")) {
+        event.preventDefault();
+        postContainer("/api/inventory/containers/remove", { child_object_id: child })
+          .catch((error) => global.alert?.(error.message));
+      }
+    }, { once: true });
     counterpart.querySelector("[data-inventory-search]")?.focus();
   }
 
   function closeContainer(browser) {
     const snapshot = browser._containerPanelStack?.pop();
     if (!snapshot) return;
-    snapshot.rowHidden.forEach(([row, hidden]) => { row.hidden = hidden; });
-    browser.querySelectorAll("[data-container-transient]").forEach((row) => row.remove());
-    browser.querySelector("[data-container-close]").hidden = true;
-    const water = browser.querySelector("[data-container-water-actions]"); if (water) water.hidden = true;
-    delete browser.dataset.openContainerObjectId;
+    const tbody = browser.querySelector("tbody");
+    if (snapshot.previousId && tbody) {
+      tbody.innerHTML = snapshot.tbodyHtml;
+      browser.dataset.openContainerObjectId = snapshot.previousId;
+      browser.querySelector("[data-container-close]").hidden = false;
+      const water = browser.querySelector("[data-container-water-actions]");
+      if (water) water.hidden = !/^\d+$/.test(snapshot.previousId);
+      hydrateContainerState(browser);
+    } else {
+      snapshot.rowHidden.forEach(([row, hidden]) => { row.hidden = hidden; });
+      browser.querySelectorAll("[data-container-transient]").forEach((row) => row.remove());
+      browser.querySelector("[data-container-close]").hidden = true;
+      const water = browser.querySelector("[data-container-water-actions]"); if (water) water.hidden = true;
+      delete browser.dataset.openContainerObjectId;
+    }
     snapshot.active?.focus?.();
     if (browser._containerHost && !browser._containerPanelStack.length) {
       browser._containerHost.hidden.forEach(([child, hidden]) => { child.hidden = hidden; });
@@ -862,6 +952,8 @@
       if (alcoholToggle) { event.preventDefault(); toggleExpanded(alcoholToggle.closest(".alcohol-parent-row"), browser); return; }
       const foodToggle = event.target.closest("[data-food-toggle]");
       if (foodToggle) { event.preventDefault(); toggleExpanded(foodToggle.closest(".food-parent-row"), browser); return; }
+      const containerToggle = event.target.closest("[data-container-toggle]");
+      if (containerToggle) { event.preventDefault(); toggleExpanded(containerToggle.closest("tr.trade-inventory-row"), browser); return; }
       const sort = event.target.closest("[data-inventory-sort]");
       if (sort) { const key = sort.dataset.inventorySort; state.direction = state.sort === key && state.direction === "asc" ? "desc" : "asc"; state.sort = key; updateHistory(browser, state); apply(browser, state); return; }
       const row = event.target.closest("tr.trade-inventory-row");
@@ -884,6 +976,7 @@
       if (!browser.dataset.inventoryMounted) mount(browser);
       else apply(browser, browser._inventoryState || parsePanelState(global.location.search, browser.dataset.inventoryBrowser, (browser.dataset.optionalColumns || "").split(",").filter(Boolean)));
     });
+    hydrateContainerState(scope);
   }
   const api = { parsePanelState, serializePanelState, compareValues, normalizeSortValue, rowValue, groupCurrencyRows, groupFoodRows, decorateContainers, hydrateContainerState, openContainer, closeContainer, mountAll, refresh, syncPanelWidth };
   global.strategicInventoryBrowser = api;
@@ -891,14 +984,17 @@
   if (global.document) {
     global.addEventListener("DOMContentLoaded", () => { mountAll(); hydrateContainerState(); });
     global.addEventListener("popstate", () => mountAll());
-    global.document.addEventListener("strategic-page-mounted", () => mountAll());
+    global.document.addEventListener("strategic-page-mounted", () => { mountAll(); hydrateContainerState(); });
     global.document.addEventListener("inventory-container-move", (event) => {
       const raw = String(event.detail.child);
       const legacy = raw.match(/^(personal|party):(\d+)$/);
+      const parentRaw = String(event.detail.parent);
+      const parentLegacy = parentRaw.match(/^(personal|party):(\d+)$/);
       postContainer("/api/inventory/containers/move", {
         child_object_id: legacy ? "0" : raw,
         child_scope: legacy?.[1] || "", child_row_id: legacy?.[2] || "0",
-        parent_object_id: event.detail.parent,
+        parent_object_id: parentLegacy ? "0" : parentRaw,
+        parent_scope: parentLegacy?.[1] || "", parent_row_id: parentLegacy?.[2] || "0",
       }).catch((error) => global.alert?.(error.message));
     });
   }

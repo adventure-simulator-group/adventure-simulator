@@ -1078,6 +1078,7 @@
 .trade-inventory-row[aria-expanded="true"] { --inventory-row-background:color-mix(in srgb, var(--accent) 14%, var(--panel-bg)); background:var(--inventory-row-background); box-shadow:inset 2px 0 color-mix(in srgb, var(--accent) 72%, transparent); }
 .inventory-container-capacity { display:block; margin-top:.12rem; color:var(--text-muted); font-size:.65rem; font-variant-numeric:tabular-nums; }
 .inventory-container-open,.inventory-container-close { min-height:2rem; padding:.25rem .45rem; border:1px solid var(--border-light); border-radius:.2rem; background:var(--building-interactive); color:var(--text-primary); cursor:pointer; }
+[data-inventory-browser] { position:relative; }
 .inventory-container-close { position:absolute; z-index:4; top:.35rem; right:.35rem; }
 .inventory-container-drop-target { outline:2px solid var(--accent-light); outline-offset:-2px; }
 tr[data-container-parent-object-id] .inventory-item-name { padding-left:1rem; }
