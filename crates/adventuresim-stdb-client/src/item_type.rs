@@ -15,6 +15,7 @@ use super::weapon_skill_distribution_type::WeaponSkillDistribution;
 pub struct Item {
     pub id: String,
     pub weight: f32,
+    pub exterior_volume_ml: u32,
     pub slot: ItemSlot,
     pub kind: ItemKind,
     pub equipment_placements: Vec<EquipmentPlacement>,
@@ -41,6 +42,7 @@ pub struct Item {
     pub base_value: Option<u32>,
     pub nutrition_kcal: f32,
     pub water_capacity_ml: u32,
+    pub container_capacity_ml: u32,
     pub alcohol_serving_ml: u32,
     pub alcohol_abv_basis_points: u16,
     pub alcohol_net_hydration_ml: u32,
@@ -66,6 +68,7 @@ impl __sdk::InModule for Item {
 pub struct ItemCols {
     pub id: __sdk::__query_builder::Col<Item, String>,
     pub weight: __sdk::__query_builder::Col<Item, f32>,
+    pub exterior_volume_ml: __sdk::__query_builder::Col<Item, u32>,
     pub slot: __sdk::__query_builder::Col<Item, ItemSlot>,
     pub kind: __sdk::__query_builder::Col<Item, ItemKind>,
     pub equipment_placements: __sdk::__query_builder::Col<Item, Vec<EquipmentPlacement>>,
@@ -92,6 +95,7 @@ pub struct ItemCols {
     pub base_value: __sdk::__query_builder::Col<Item, Option<u32>>,
     pub nutrition_kcal: __sdk::__query_builder::Col<Item, f32>,
     pub water_capacity_ml: __sdk::__query_builder::Col<Item, u32>,
+    pub container_capacity_ml: __sdk::__query_builder::Col<Item, u32>,
     pub alcohol_serving_ml: __sdk::__query_builder::Col<Item, u32>,
     pub alcohol_abv_basis_points: __sdk::__query_builder::Col<Item, u16>,
     pub alcohol_net_hydration_ml: __sdk::__query_builder::Col<Item, u32>,
@@ -113,6 +117,7 @@ impl __sdk::__query_builder::HasCols for Item {
         ItemCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             weight: __sdk::__query_builder::Col::new(table_name, "weight"),
+            exterior_volume_ml: __sdk::__query_builder::Col::new(table_name, "exterior_volume_ml"),
             slot: __sdk::__query_builder::Col::new(table_name, "slot"),
             kind: __sdk::__query_builder::Col::new(table_name, "kind"),
             equipment_placements: __sdk::__query_builder::Col::new(
@@ -142,6 +147,10 @@ impl __sdk::__query_builder::HasCols for Item {
             base_value: __sdk::__query_builder::Col::new(table_name, "base_value"),
             nutrition_kcal: __sdk::__query_builder::Col::new(table_name, "nutrition_kcal"),
             water_capacity_ml: __sdk::__query_builder::Col::new(table_name, "water_capacity_ml"),
+            container_capacity_ml: __sdk::__query_builder::Col::new(
+                table_name,
+                "container_capacity_ml",
+            ),
             alcohol_serving_ml: __sdk::__query_builder::Col::new(table_name, "alcohol_serving_ml"),
             alcohol_abv_basis_points: __sdk::__query_builder::Col::new(
                 table_name,

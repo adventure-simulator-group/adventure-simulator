@@ -1,5 +1,13 @@
 # Item definition authoring
 
+Every physical definition must author a positive integer
+`exterior_volume_ml`; omission, zero, and values above 1,000,000 are rejected.
+The `container.capacity_ml` capability is interior inventory capacity, not an
+equipment attachment slot count. Provisional cooking capacities are pan 2,500
+ml, pot 8,000 ml, and portable oven 12,000 ml. Waterskin capacity remains 4,000
+ml. These values are content-owned so they can be tuned without custody-schema
+changes.
+
 Bounded herbal grades use the ordinary base ID plus `_poor` and `_fine`
 variants tagged `medicinal_herb` and `grade_*`. Concrete remedies use
 `herbal_preparation` and `potency_*`; every medication identity needs a

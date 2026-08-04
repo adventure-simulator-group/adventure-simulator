@@ -188,7 +188,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/character-switcher.js?v=multi-character-switcher-1" defer {}
                     script src="/static/journal-tab.js?v=journal-tab-1" defer {}
                     script src="/static/numeric-editor.js?v=shared-numeric-editor-2" defer {}
-                    script src="/static/inventory-browser.js?v=coin-currencies-3-alcohol-targets-1-food-lots-4-infinite-catalog-item-yaml-editor-2" defer {}
+                    script src="/static/inventory-browser.js?v=inventory-containers-1" defer {}
                     script src="/static/party-trade.js?v=provision-party-food-1-slot-controls-1" defer {}
                     script src="/static/cooking.js?v=fireplace-station-1" defer {}
                     script src="/static/herbalism.js?v=bounded-craft-1" defer {}

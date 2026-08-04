@@ -25,6 +25,11 @@ pub(super) struct FireplaceInstrumentForm {
 #[derive(Deserialize)]
 pub(super) struct FireplaceRetrieveForm { inventory_scope: String }
 
+#[derive(Deserialize)]
+pub(super) struct FireplaceContainerPlaceForm { inventory_scope: String, inventory_item_id: u64 }
+#[derive(Deserialize)]
+pub(super) struct FireplaceContainerForm { container_object_id: u64 }
+
 fn settlement_fireplace_context(
     settlement: &Settlement,
     building: &str,
@@ -113,7 +118,7 @@ async fn fireplace_rows(
     state: &AppState,
     actor: &Character,
     context_key: &str,
-) -> (Vec<InventoryItem>, Vec<PartyInventoryItem>, Vec<InventoryItemAmount>, Vec<PartyItemAmount>, Vec<FoodLot>, Vec<ItemDefinition>, Option<BackendFireplaceStation>, Option<BackendFireplaceDish>, u64) {
+) -> (Vec<InventoryItem>, Vec<PartyInventoryItem>, Vec<InventoryItemAmount>, Vec<PartyItemAmount>, Vec<FoodLot>, Vec<ItemDefinition>, Option<BackendFireplaceStation>, Option<BackendFireplaceDish>, Vec<BackendFireplaceStation>, Vec<BackendFireplaceDish>, u64) {
     let personal = state.db.query::<InventoryItem>(&format!("SELECT * FROM inventory_item WHERE character_id = {}", actor.id)).await.unwrap_or_default();
     let party = if let Some(party_id) = actor.party_id.as_deref() {
         state.db.query::<PartyInventoryItem>(&format!("SELECT * FROM party_inventory_item WHERE party_id = {}", sql_string_literal(party_id))).await.unwrap_or_default()
@@ -125,8 +130,13 @@ async fn fireplace_rows(
     let key = format!("{}|{}", actor.id, context_key);
     let station = state.db.query_one::<BackendFireplaceStation>(&format!("SELECT * FROM backend_fireplace_stations WHERE key = {}", sql_string_literal(&key))).await.ok().flatten();
     let dish = state.db.query_one::<BackendFireplaceDish>(&format!("SELECT * FROM backend_fireplace_dishes WHERE station_key = {}", sql_string_literal(&key))).await.ok().flatten();
+    let vessel_stations = state.db.query::<BackendFireplaceStation>(&format!("SELECT * FROM backend_fireplace_stations WHERE character_id = {}", actor.id)).await.unwrap_or_default().into_iter()
+        .filter(|row| row.context_key == context_key && row.instrument_object_id.is_some()).collect::<Vec<_>>();
+    let vessel_keys = vessel_stations.iter().map(|row| row.key.as_str()).collect::<HashSet<_>>();
+    let vessel_dishes = state.db.query::<BackendFireplaceDish>("SELECT * FROM backend_fireplace_dishes").await.unwrap_or_default().into_iter()
+        .filter(|row| vessel_keys.contains(row.station_key.as_str())).collect::<Vec<_>>();
     let minute = query_single::<CharacterTime>(state, "backend_character_times", actor.id).await.map_or(0, |row| row.minutes);
-    (personal, party, personal_amounts, party_amounts, lots, definitions, station, dish, minute)
+    (personal, party, personal_amounts, party_amounts, lots, definitions, station, dish, vessel_stations, vessel_dishes, minute)
 }
 
 pub(super) async fn settlement_fireplace(
@@ -144,9 +154,12 @@ pub(super) async fn settlement_fireplace(
     Html(crate::templates::settlement::fireplace_page(
         "Fireplace", &back, &action_base, &format!("/locations/settlement/{id}/map/rest"), &actor,
         if query.inventory_scope == "party" { "party" } else { "personal" },
-        &rows.0, &rows.1, &rows.2, &rows.3, &rows.4, &rows.5, rows.6.as_ref(), rows.7.as_ref(), rows.8,
+        &rows.0, &rows.1, &rows.2, &rows.3, &rows.4, &rows.5, rows.6.as_ref(), rows.7.as_ref(), &rows.8, &rows.9, rows.10,
         |content| crate::templates::settlement_layout_with_session("Fireplace", &settlement.name, &settlement.id, &settlement.category, &active, Some(&settlement.religion_id), Some(&settlement.economy), content, Some(&actor.name)),
-    ).into_string().replace(&format!("{action_base}/ingredients"), &format!("{post_base}/ingredients?building={}", query.building)).replace(&format!("{action_base}/instrument"), &format!("{post_base}/instrument?building={}", query.building)).replace(&format!("{action_base}/retrieve"), &format!("{post_base}/retrieve?building={}", query.building))).into_response()
+    ).into_string().replace(&format!("{action_base}/ingredients"), &format!("{post_base}/ingredients?building={}", query.building)).replace(&format!("{action_base}/instrument"), &format!("{post_base}/instrument?building={}", query.building)).replace(&format!("{action_base}/retrieve"), &format!("{post_base}/retrieve?building={}", query.building))
+        .replace(&format!("{action_base}/container/place"), &format!("{post_base}/container/place?building={}", query.building))
+        .replace(&format!("{action_base}/container/start"), &format!("{post_base}/container/start?building={}", query.building))
+        .replace(&format!("{action_base}/container/remove"), &format!("{post_base}/container/remove?building={}", query.building))).into_response()
 }
 
 pub(super) async fn camp_fireplace_page(
@@ -158,7 +171,7 @@ pub(super) async fn camp_fireplace_page(
     Html(crate::templates::settlement::fireplace_page(
         "Campfire", "/camp", "/camp/fireplace", "/camp/rest", &actor,
         if query.inventory_scope == "party" { "party" } else { "personal" },
-        &rows.0, &rows.1, &rows.2, &rows.3, &rows.4, &rows.5, rows.6.as_ref(), rows.7.as_ref(), rows.8,
+        &rows.0, &rows.1, &rows.2, &rows.3, &rows.4, &rows.5, rows.6.as_ref(), rows.7.as_ref(), &rows.8, &rows.9, rows.10,
         |content| crate::templates::camp_location_layout_with_session("Campfire", "Camp", actor.party_id.as_deref().unwrap_or("camp"), true, content, Some(&actor.name)),
     ).into_string()).into_response()
 }
@@ -225,6 +238,46 @@ pub(super) async fn camp_fireplace_retrieve(State(state): State<AppState>, sessi
     let Some((actor, _)) = get_active_character(&state, session.character_id_u64()).await else { return Redirect::to("/characters").into_response(); };
     let context = match fireplace_post_context(&state, &actor, None).await { Ok(v) => v, Err(e) => return (StatusCode::BAD_REQUEST, e).into_response() };
     post_fireplace_retrieve(state, actor, context, form, "/camp/fireplace".into()).await
+}
+
+async fn post_fireplace_container(state: AppState, actor: Character, context: String, reducer: &str, args: Vec<serde_json::Value>, redirect: String) -> Response {
+    let mut reducer_args = vec![json!(actor.id), json!(context)];
+    reducer_args.extend(args);
+    match state.db.call(reducer, &reducer_args).await {
+        Ok(()) => Redirect::to(&redirect).into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+pub(super) async fn settlement_fireplace_container_place(State(state): State<AppState>, Path(id): Path<String>, Query(query): Query<FireplaceQuery>, session: Session, Form(form): Form<FireplaceContainerPlaceForm>) -> Response {
+    let Some((actor, _)) = get_active_character(&state, session.character_id_u64()).await else { return Redirect::to("/characters").into_response(); };
+    let context = match fireplace_post_context(&state, &actor, Some((&id, &query.building))).await { Ok(v) => v, Err(e) => return (StatusCode::BAD_REQUEST, e).into_response() };
+    post_fireplace_container(state, actor, context, "place_fireplace_container", vec![json!(form.inventory_scope), json!(form.inventory_item_id)], format!("/locations/settlement/{id}/fireplace?building={}", query.building)).await
+}
+pub(super) async fn camp_fireplace_container_place(State(state): State<AppState>, session: Session, Form(form): Form<FireplaceContainerPlaceForm>) -> Response {
+    let Some((actor, _)) = get_active_character(&state, session.character_id_u64()).await else { return Redirect::to("/characters").into_response(); };
+    let context = match fireplace_post_context(&state, &actor, None).await { Ok(v) => v, Err(e) => return (StatusCode::BAD_REQUEST, e).into_response() };
+    post_fireplace_container(state, actor, context, "place_fireplace_container", vec![json!(form.inventory_scope), json!(form.inventory_item_id)], "/camp/fireplace".into()).await
+}
+pub(super) async fn settlement_fireplace_container_start(State(state): State<AppState>, Path(id): Path<String>, Query(query): Query<FireplaceQuery>, session: Session, Form(form): Form<FireplaceContainerForm>) -> Response {
+    let Some((actor, _)) = get_active_character(&state, session.character_id_u64()).await else { return Redirect::to("/characters").into_response(); };
+    let context = match fireplace_post_context(&state, &actor, Some((&id, &query.building))).await { Ok(v) => v, Err(e) => return (StatusCode::BAD_REQUEST, e).into_response() };
+    post_fireplace_container(state, actor, context, "start_fireplace_container_cooking", vec![json!(form.container_object_id)], format!("/locations/settlement/{id}/fireplace?building={}", query.building)).await
+}
+pub(super) async fn camp_fireplace_container_start(State(state): State<AppState>, session: Session, Form(form): Form<FireplaceContainerForm>) -> Response {
+    let Some((actor, _)) = get_active_character(&state, session.character_id_u64()).await else { return Redirect::to("/characters").into_response(); };
+    let context = match fireplace_post_context(&state, &actor, None).await { Ok(v) => v, Err(e) => return (StatusCode::BAD_REQUEST, e).into_response() };
+    post_fireplace_container(state, actor, context, "start_fireplace_container_cooking", vec![json!(form.container_object_id)], "/camp/fireplace".into()).await
+}
+pub(super) async fn settlement_fireplace_container_remove(State(state): State<AppState>, Path(id): Path<String>, Query(query): Query<FireplaceQuery>, session: Session, Form(form): Form<FireplaceContainerForm>) -> Response {
+    let Some((actor, _)) = get_active_character(&state, session.character_id_u64()).await else { return Redirect::to("/characters").into_response(); };
+    let context = match fireplace_post_context(&state, &actor, Some((&id, &query.building))).await { Ok(v) => v, Err(e) => return (StatusCode::BAD_REQUEST, e).into_response() };
+    post_fireplace_container(state, actor, context, "retrieve_fireplace_container", vec![json!(form.container_object_id)], format!("/locations/settlement/{id}/fireplace?building={}", query.building)).await
+}
+pub(super) async fn camp_fireplace_container_remove(State(state): State<AppState>, session: Session, Form(form): Form<FireplaceContainerForm>) -> Response {
+    let Some((actor, _)) = get_active_character(&state, session.character_id_u64()).await else { return Redirect::to("/characters").into_response(); };
+    let context = match fireplace_post_context(&state, &actor, None).await { Ok(v) => v, Err(e) => return (StatusCode::BAD_REQUEST, e).into_response() };
+    post_fireplace_container(state, actor, context, "retrieve_fireplace_container", vec![json!(form.container_object_id)], "/camp/fireplace".into()).await
 }
 
 pub(super) async fn party_religion_knowledge_check(

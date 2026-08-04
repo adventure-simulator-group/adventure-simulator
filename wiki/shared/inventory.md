@@ -24,6 +24,20 @@ quantity-one measured rows so partial use can leave a meaningful remainder.
 Food lots additionally preserve their own preparation, age, nutrition, value,
 provenance, and hidden contamination.
 
+### Physical containers
+
+Generic inventory containment is a stable object graph separate from equipment
+attachment topology. Capacity and displacement use checked integer
+millilitres. An immediate child consumes its current measured liquid volume or
+authored exterior volume; grandchildren do not count twice. Nesting is bounded
+to depth 16 and self-containment or cycles are rejected.
+
+Moving, inheriting, looting, selling, or discarding a root acts on its complete
+subtree. A direct action on a nested row detaches and rehomes that child subtree
+without a remove-first step. Empty identical vessels may stack; opening or
+filling splits exactly one stable instance, and nonempty vessels stay quantity
+one.
+
 See [Measured inventory](../reference/measured-inventory.md) for the durable
 amount model and [Food and cooking](../reference/food-and-cooking.md) for food
 lot and cooking behavior.
@@ -104,6 +118,13 @@ loot, and cooking:
 - quantity targets for bulk actions;
 - keyboard-accessible item actions;
 - URL-backed search, sorting, and column preferences.
+
+Container rows show used/total litres. **Open** replaces the opposite panel;
+the top-right **Close** restores its exact prior state and focus. Expanding a
+row reveals recursive children, whose normal context actions remain available
+beside remove-from-container. Drag/drop progressively enhances the same
+keyboard-accessible actions and reports capacity overflow without partial
+movement.
 
 Quantity and desired-target columns use accessible open-chest and target
 icons rather than punctuation. Equipped rows retain the compact QWERTY badges

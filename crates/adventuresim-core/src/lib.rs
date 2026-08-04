@@ -23,6 +23,7 @@ pub mod filth;
 pub mod food;
 pub mod foraging;
 pub mod herbalism;
+pub mod inventory_containers;
 pub mod inventory_measurement;
 pub mod investigation;
 pub mod investigation_action;

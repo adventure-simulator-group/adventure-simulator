@@ -11,6 +11,7 @@ pub struct FireplaceStation {
     pub character_id: u64,
     pub context_key: String,
     pub instrument_item_id: Option<String>,
+    pub instrument_object_id: Option<u64>,
     pub instrument_source: Option<String>,
     pub instrument_party_id: Option<String>,
 }
@@ -27,6 +28,7 @@ pub struct FireplaceStationCols {
     pub character_id: __sdk::__query_builder::Col<FireplaceStation, u64>,
     pub context_key: __sdk::__query_builder::Col<FireplaceStation, String>,
     pub instrument_item_id: __sdk::__query_builder::Col<FireplaceStation, Option<String>>,
+    pub instrument_object_id: __sdk::__query_builder::Col<FireplaceStation, Option<u64>>,
     pub instrument_source: __sdk::__query_builder::Col<FireplaceStation, Option<String>>,
     pub instrument_party_id: __sdk::__query_builder::Col<FireplaceStation, Option<String>>,
 }
@@ -39,6 +41,10 @@ impl __sdk::__query_builder::HasCols for FireplaceStation {
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             context_key: __sdk::__query_builder::Col::new(table_name, "context_key"),
             instrument_item_id: __sdk::__query_builder::Col::new(table_name, "instrument_item_id"),
+            instrument_object_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "instrument_object_id",
+            ),
             instrument_source: __sdk::__query_builder::Col::new(table_name, "instrument_source"),
             instrument_party_id: __sdk::__query_builder::Col::new(
                 table_name,

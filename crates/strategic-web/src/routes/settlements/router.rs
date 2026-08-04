@@ -242,6 +242,7 @@ use crate::spacetimedb::{
     RepairOrder, ResidenceTier, RetainedProjectile, ScheduleAllocation, Settlement,
     SettlementAlias, SettlementDescription, SettlementResidenceOffer, SettlementSmith,
     SocialAddress, SocialBelief, SocialChatOutcome, StrategicEncounter, TravelEdge,
+    ContainerLiquid, InventoryContainment, InventoryObject,
 };
 use crate::templates::settlement::{
     ActivityPreviewRates, CampTravelDestination, ChildPresentation, LocationKind, LocationView,
@@ -269,6 +270,9 @@ pub fn routes() -> Router<AppState> {
         .route("/locations/settlement/{id}/fireplace/ingredients", post(settlement_fireplace_ingredients))
         .route("/locations/settlement/{id}/fireplace/instrument", post(settlement_fireplace_instrument))
         .route("/locations/settlement/{id}/fireplace/retrieve", post(settlement_fireplace_retrieve))
+        .route("/locations/settlement/{id}/fireplace/container/place", post(settlement_fireplace_container_place))
+        .route("/locations/settlement/{id}/fireplace/container/start", post(settlement_fireplace_container_start))
+        .route("/locations/settlement/{id}/fireplace/container/remove", post(settlement_fireplace_container_remove))
         .route("/locations/settlement/{id}/map", get(settlement_map))
         .route("/locations/settlement/{id}/alchemy", get(alchemy))
         .route(
@@ -288,6 +292,15 @@ pub fn routes() -> Router<AppState> {
         .route("/camp/fireplace/ingredients", post(camp_fireplace_ingredients))
         .route("/camp/fireplace/instrument", post(camp_fireplace_instrument))
         .route("/camp/fireplace/retrieve", post(camp_fireplace_retrieve))
+        .route("/camp/fireplace/container/place", post(camp_fireplace_container_place))
+        .route("/camp/fireplace/container/start", post(camp_fireplace_container_start))
+        .route("/camp/fireplace/container/remove", post(camp_fireplace_container_remove))
+        .route("/api/inventory/containers", get(inventory_containers))
+        .route("/api/inventory/containers/open", post(open_inventory_container))
+        .route("/api/inventory/containers/move", post(move_inventory_container_item))
+        .route("/api/inventory/containers/remove", post(remove_inventory_container_item))
+        .route("/api/inventory/containers/pour", post(pour_inventory_container_water))
+        .route("/api/inventory/containers/drain", post(drain_inventory_container_water))
         .route("/camp/rest", post(rest_at_camp))
         .route(
             "/camp/errantry-road-challenge",

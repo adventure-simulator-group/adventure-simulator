@@ -10,8 +10,10 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, ta
 use crate::{
     character::{character, character_attributes, character_limbs, character_skills},
     condition::{character_needs, initialize_character_condition},
+    container_liquid,
     disease::{InfectionEpisodeRow, infection_episode},
-    inventory_item, inventory_item_amount, party_item_amount,
+    inventory_containment, inventory_item, inventory_item_amount, inventory_object,
+    party_item_amount,
     strategic::{
         PartyInventoryItem, party_authority, party_inventory_item, party_journey_authority,
         settlement,
@@ -114,6 +116,9 @@ pub struct FireplaceStation {
     pub character_id: u64,
     pub context_key: String,
     pub instrument_item_id: Option<String>,
+    /// Stable root object for a placed cooking vessel. `None` is the loose
+    /// spit-roast lane or a legacy empty station.
+    pub instrument_object_id: Option<u64>,
     /// `personal` or `party`; retained so removing/replacing returns custody to
     /// the source that installed the tool.
     pub instrument_source: Option<String>,
@@ -158,6 +163,7 @@ pub struct BackendFireplaceStation {
     pub character_id: u64,
     pub context_key: String,
     pub instrument_item_id: Option<String>,
+    pub instrument_object_id: Option<u64>,
     pub instrument_source: Option<String>,
 }
 
@@ -175,6 +181,7 @@ pub fn backend_fireplace_stations(ctx: &ViewContext) -> Vec<BackendFireplaceStat
             character_id: row.character_id,
             context_key: row.context_key,
             instrument_item_id: row.instrument_item_id,
+            instrument_object_id: row.instrument_object_id,
             instrument_source: row.instrument_source,
         })
         .collect()
@@ -322,6 +329,62 @@ pub(crate) fn cleanup_fireplace_custody_for_death(ctx: &ReducerContext, characte
         .collect::<Vec<_>>()
     {
         if let Some(item_id) = station.instrument_item_id.as_deref() {
+            if let Some(object_id) = station.instrument_object_id {
+                let party_destination = station.instrument_source.as_deref() == Some("party")
+                    && station
+                        .instrument_party_id
+                        .as_deref()
+                        .is_some_and(|party_id| {
+                            ctx.db
+                                .party_authority()
+                                .id()
+                                .find(party_id.to_string())
+                                .is_some()
+                        });
+                let destination = if party_destination {
+                    station
+                        .instrument_party_id
+                        .as_deref()
+                        .map(|party_id| ("party", party_id.to_string()))
+                } else if personal_estate_exists {
+                    Some(("personal", character_id.to_string()))
+                } else {
+                    None
+                };
+                if let Some((kind, owner)) = destination
+                    && let Some(mut object) = ctx.db.inventory_object().id().find(object_id)
+                {
+                    let row_id = if kind == "party" {
+                        ctx.db
+                            .party_inventory_item()
+                            .insert(PartyInventoryItem {
+                                id: 0,
+                                party_id: owner.clone(),
+                                item_id: item_id.into(),
+                                quantity: 1,
+                            })
+                            .id
+                    } else {
+                        ctx.db
+                            .inventory_item()
+                            .insert(crate::InventoryItem {
+                                id: 0,
+                                character_id,
+                                item_id: item_id.into(),
+                                quantity: 1,
+                            })
+                            .id
+                    };
+                    object.location_kind = kind.into();
+                    object.location_owner = owner.clone();
+                    object.inventory_row_id = row_id;
+                    ctx.db.inventory_object().id().update(object);
+                    let _ =
+                        crate::inventory_container::rehome_subtree(ctx, object_id, kind, &owner);
+                }
+                ctx.db.fireplace_station().key().delete(station.key);
+                continue;
+            }
             let returned_to_exact_party = station.instrument_source.as_deref() == Some("party")
                 && station
                     .instrument_party_id
@@ -496,6 +559,7 @@ fn fireplace_station_for(
             character_id,
             context_key: context_key.into(),
             instrument_item_id: None,
+            instrument_object_id: None,
             instrument_source: None,
             instrument_party_id: None,
         })
@@ -639,6 +703,7 @@ pub fn set_fireplace_instrument(
     // stale source custody prevents a return, the staged replacement is rolled back.
     return_installed_tool(ctx, &actor, &station)?;
     station.instrument_item_id = replacement;
+    station.instrument_object_id = None;
     station.instrument_source = station.instrument_item_id.as_ref().map(|_| inventory_scope);
     station.instrument_party_id = station
         .instrument_item_id
@@ -659,6 +724,155 @@ pub fn set_fireplace_instrument(
     } else {
         ctx.db.fireplace_station().insert(station);
     }
+    Ok(())
+}
+
+fn vessel_station_key(character_id: u64, context_key: &str, object_id: u64) -> String {
+    format!("{character_id}|{context_key}|container:{object_id}")
+}
+
+/// Places one exact vessel and its entire subtree over this exact fireplace.
+/// The root legacy row is removed, so ordinary inventory/trade views cannot
+/// remotely transfer it. Children retain their stable object edges.
+#[reducer]
+pub fn place_fireplace_container(
+    ctx: &ReducerContext,
+    character_id: u64,
+    context_key: String,
+    inventory_scope: String,
+    inventory_item_id: u64,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_gateway(ctx)?;
+    let actor = crate::character::require_living_character(ctx, character_id)?;
+    if actor.in_server {
+        return Err("Cooking is unavailable during a tactical encounter".into());
+    }
+    validate_fireplace_context(ctx, &actor, &context_key)?;
+    let mut object = crate::inventory_container::ensure_object(
+        ctx,
+        character_id,
+        &inventory_scope,
+        inventory_item_id,
+        true,
+    )?;
+    method_for_instrument(Some(&object.item_id))?;
+    let source = object.location_kind.clone();
+    let party_id = (source == "party").then(|| object.location_owner.clone());
+    match source.as_str() {
+        "personal" => {
+            ctx.db.inventory_item().id().delete(object.inventory_row_id);
+        }
+        "party" => {
+            ctx.db
+                .party_inventory_item()
+                .id()
+                .delete(object.inventory_row_id);
+        }
+        _ => return Err("Container is not in carried inventory".into()),
+    }
+    let key = vessel_station_key(character_id, &context_key, object.id);
+    object.location_kind = "fireplace".into();
+    object.location_owner = context_key.clone();
+    object.inventory_row_id = 0;
+    ctx.db.inventory_object().id().update(object.clone());
+    ctx.db.fireplace_station().insert(FireplaceStation {
+        key,
+        character_id,
+        context_key,
+        instrument_item_id: Some(object.item_id),
+        instrument_object_id: Some(object.id),
+        instrument_source: Some(source),
+        instrument_party_id: party_id,
+    });
+    Ok(())
+}
+
+#[reducer]
+pub fn retrieve_fireplace_container(
+    ctx: &ReducerContext,
+    character_id: u64,
+    context_key: String,
+    container_object_id: u64,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_gateway(ctx)?;
+    let actor = crate::character::require_living_character(ctx, character_id)?;
+    validate_fireplace_context(ctx, &actor, &context_key)?;
+    let key = vessel_station_key(character_id, &context_key, container_object_id);
+    let station = ctx
+        .db
+        .fireplace_station()
+        .key()
+        .find(key.clone())
+        .ok_or("Container is not at this fireplace")?;
+    if ctx
+        .db
+        .fireplace_dish()
+        .station_key()
+        .find(key.clone())
+        .is_some()
+    {
+        return Err("Retrieve the cooked dish before removing its container".into());
+    }
+    let item_id = station
+        .instrument_item_id
+        .clone()
+        .ok_or("Fireplace vessel is missing")?;
+    let (location_kind, location_owner, inventory_row_id) =
+        match station.instrument_source.as_deref() {
+            Some("personal") => {
+                let row = ctx.db.inventory_item().insert(crate::InventoryItem {
+                    id: 0,
+                    character_id,
+                    item_id: item_id.clone(),
+                    quantity: 1,
+                });
+                ("personal".to_string(), character_id.to_string(), row.id)
+            }
+            Some("party") => {
+                let party_id = station
+                    .instrument_party_id
+                    .clone()
+                    .ok_or("Original party inventory is unavailable")?;
+                if ctx
+                    .db
+                    .party_authority()
+                    .id()
+                    .find(party_id.clone())
+                    .is_none()
+                {
+                    return Err("Original party inventory is unavailable".into());
+                }
+                let row =
+                    ctx.db
+                        .party_inventory_item()
+                        .insert(crate::strategic::PartyInventoryItem {
+                            id: 0,
+                            party_id: party_id.clone(),
+                            item_id: item_id.clone(),
+                            quantity: 1,
+                        });
+                ("party".to_string(), party_id, row.id)
+            }
+            _ => return Err("Container source inventory is unknown".into()),
+        };
+    let mut object = ctx
+        .db
+        .inventory_object()
+        .id()
+        .find(container_object_id)
+        .ok_or("Container object is missing")?;
+    object.location_kind = location_kind.clone();
+    object.location_owner = location_owner.clone();
+    object.inventory_row_id = inventory_row_id;
+    ctx.db.inventory_object().id().update(object);
+    crate::inventory_container::rehome_subtree(
+        ctx,
+        container_object_id,
+        &location_kind,
+        &location_owner,
+    )?;
+    ctx.db.fireplace_station().key().delete(key);
+    crate::inventory_container::merge_empty_container(ctx, container_object_id)?;
     Ok(())
 }
 
@@ -1089,13 +1303,110 @@ pub fn add_fireplace_ingredients(
     inventory_item_ids: Vec<u64>,
     amounts_milliunits: Vec<u32>,
 ) -> Result<(), String> {
+    add_fireplace_ingredients_at(
+        ctx,
+        character_id,
+        context_key,
+        inventory_scope,
+        inventory_item_ids,
+        amounts_milliunits,
+        None,
+    )
+}
+
+/// Starts the independent dish lane belonging to one placed vessel. Every
+/// contained cookable food lot at any nesting depth is consumed in full;
+/// non-food solids and nested containers remain in place. Container water is used by the cooking evaluator and is
+/// mandatory for pots.
+#[reducer]
+pub fn start_fireplace_container_cooking(
+    ctx: &ReducerContext,
+    character_id: u64,
+    context_key: String,
+    container_object_id: u64,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_gateway(ctx)?;
+    let actor = crate::character::require_living_character(ctx, character_id)?;
+    validate_fireplace_context(ctx, &actor, &context_key)?;
+    let key = vessel_station_key(character_id, &context_key, container_object_id);
+    let station = ctx
+        .db
+        .fireplace_station()
+        .key()
+        .find(key.clone())
+        .ok_or("Container is not over this fireplace")?;
+    if ctx.db.fireplace_dish().station_key().find(key).is_some() {
+        return Err("This container is already cooking".into());
+    }
+    let scope = station
+        .instrument_source
+        .clone()
+        .ok_or("Container source inventory is unknown")?;
+    let mut ids = Vec::new();
+    let mut amounts = Vec::new();
+    let mut consumed_objects = Vec::new();
+    for object_id in crate::inventory_container::subtree_object_ids(ctx, container_object_id)? {
+        if object_id == container_object_id {
+            continue;
+        }
+        let child = ctx
+            .db
+            .inventory_object()
+            .id()
+            .find(object_id)
+            .ok_or("Contained object is missing")?;
+        if !food::is_cookable_ingredient(&child.item_id) {
+            continue;
+        }
+        let amount = match scope.as_str() {
+            "personal" => crate::inventory_amount::personal_amount(ctx, child.inventory_row_id),
+            "party" => crate::inventory_amount::party_amount(ctx, child.inventory_row_id),
+            _ => None,
+        }
+        .ok_or("Contained food amount state is missing")?;
+        ids.push(child.inventory_row_id);
+        amounts.push(amount);
+        consumed_objects.push(child.id);
+    }
+    if ids.is_empty() {
+        return Err("Put at least one uncooked food lot in the container".into());
+    }
+    add_fireplace_ingredients_at(
+        ctx,
+        character_id,
+        context_key,
+        scope,
+        ids,
+        amounts,
+        Some(station),
+    )?;
+    for object_id in consumed_objects {
+        ctx.db
+            .inventory_containment()
+            .child_object_id()
+            .delete(object_id);
+        ctx.db.inventory_object().id().delete(object_id);
+    }
+    Ok(())
+}
+
+fn add_fireplace_ingredients_at(
+    ctx: &ReducerContext,
+    character_id: u64,
+    context_key: String,
+    inventory_scope: String,
+    inventory_item_ids: Vec<u64>,
+    amounts_milliunits: Vec<u32>,
+    vessel_station: Option<FireplaceStation>,
+) -> Result<(), String> {
     crate::strategic::require_strategic_gateway(ctx)?;
     let actor = crate::character::require_living_character(ctx, character_id)?;
     if actor.in_server {
         return Err("Cooking is unavailable during a tactical encounter".into());
     }
     validate_fireplace_context(ctx, &actor, &context_key)?;
-    let station = fireplace_station_for(ctx, character_id, &context_key);
+    let station =
+        vessel_station.unwrap_or_else(|| fireplace_station_for(ctx, character_id, &context_key));
     if ctx
         .db
         .fireplace_dish()
@@ -1234,7 +1545,21 @@ pub fn add_fireplace_ingredients(
         selected.push((id, amount, available, lot));
     }
     let ingredient_mass = mass;
-    let water_ml = if method == CookingMethod::Stew {
+    let contained_water_ml = station
+        .instrument_object_id
+        .and_then(|object_id| {
+            ctx.db
+                .container_liquid()
+                .container_object_id()
+                .find(object_id)
+        })
+        .map_or(0, |liquid| liquid.water_ml);
+    let water_ml = if station.instrument_object_id.is_some() {
+        if method == CookingMethod::Stew && contained_water_ml == 0 {
+            return Err("Stew requires water inside the cooking pot".into());
+        }
+        contained_water_ml as f32
+    } else if method == CookingMethod::Stew {
         stew_water_required_ml(&amounts_milliunits).ok_or("Stew water could not be calculated")?
     } else {
         0.0
@@ -1250,7 +1575,7 @@ pub fn add_fireplace_ingredients(
         .as_deref()
         .and_then(|id| ctx.db.party_authority().id().find(id.to_string()))
         .map_or(0.0, |p| p.pooled_water_ml);
-    if pooled + needs.carried_water_ml < water_ml {
+    if station.instrument_object_id.is_none() && pooled + needs.carried_water_ml < water_ml {
         return Err("Stew requires enough pooled or carried water".into());
     }
     mass += water_ml / 1_000.0;
@@ -1264,8 +1589,16 @@ pub fn add_fireplace_ingredients(
             && !food::pan_fry_has_enough_fat(culinary_fat_mass, ingredient_mass),
     );
     // Everything above is preflight. Mutation starts here and remains atomic.
+    if station.instrument_object_id.is_some() && contained_water_ml > 0 {
+        ctx.db
+            .container_liquid()
+            .container_object_id()
+            .delete(station.instrument_object_id.unwrap());
+    }
     if method == CookingMethod::Stew {
-        if let Some(party_id) = actor.party_id.as_deref()
+        if let Some(object_id) = station.instrument_object_id {
+            let _ = object_id; // contained water was consumed above
+        } else if let Some(party_id) = actor.party_id.as_deref()
             && let Some(mut party) = ctx.db.party_authority().id().find(party_id.to_string())
         {
             let used = water_ml.min(party.pooled_water_ml);
@@ -1383,7 +1716,14 @@ pub fn retrieve_fireplace_dish(
         return Err("Cooking is unavailable during a tactical encounter".into());
     }
     validate_fireplace_context(ctx, &actor, &context_key)?;
-    let key = station_key(character_id, &context_key);
+    let container_object_id = inventory_scope
+        .strip_prefix("container:")
+        .and_then(|id| id.parse::<u64>().ok());
+    let key = container_object_id.map_or_else(
+        || station_key(character_id, &context_key),
+        |object_id| vessel_station_key(character_id, &context_key, object_id),
+    );
+    let vessel_station = ctx.db.fireplace_station().key().find(key.clone());
     let dish = ctx
         .db
         .fireplace_dish()
@@ -1403,7 +1743,11 @@ pub fn retrieve_fireplace_dish(
         dish.ingredient_value * food::quality_value_multiplier(quality) * doneness.calorie_factor;
     let personal_id;
     let party_id;
-    match inventory_scope.as_str() {
+    let effective_scope = vessel_station
+        .as_ref()
+        .and_then(|station| station.instrument_source.as_deref())
+        .unwrap_or(&inventory_scope);
+    match effective_scope {
         "personal" => {
             let row = ctx.db.inventory_item().insert(crate::InventoryItem {
                 id: 0,
@@ -1431,6 +1775,22 @@ pub fn retrieve_fireplace_dish(
             party_id = Some(row.id);
         }
         _ => return Err("Invalid retrieval inventory".into()),
+    }
+    if let Some(parent_object_id) = container_object_id {
+        let row_id = personal_id.or(party_id).expect("cooked meal inventory row");
+        let meal = crate::inventory_container::ensure_object(
+            ctx,
+            character_id,
+            effective_scope,
+            row_id,
+            false,
+        )?;
+        ctx.db
+            .inventory_containment()
+            .insert(crate::InventoryContainment {
+                child_object_id: meal.id,
+                parent_object_id,
+            });
     }
     let lot = ctx.db.food_lot().insert(FoodLot {
         id: 0,

@@ -544,8 +544,237 @@
       row._foodComponents.forEach((component) => { component.hidden = open || row.hidden; });
       return;
     }
+    if (row.dataset.containerObjectId) {
+      const selector = open
+        ? `tr[data-container-ancestor~="${CSS.escape(row.dataset.containerObjectId)}"]`
+        : `tr[data-container-parent-object-id="${CSS.escape(row.dataset.containerObjectId)}"]`;
+      browser.querySelectorAll(selector).forEach((child) => {
+        child.hidden = open || row.hidden;
+        child.setAttribute("aria-hidden", String(open || row.hidden));
+      });
+      row.querySelector("[data-container-toggle]")?.setAttribute("aria-expanded", String(!open));
+      return;
+    }
     if (!open) createDetail(row, browser);
     else if (row._inventoryDetail) row._inventoryDetail.hidden = true;
+  }
+
+  function decorateContainers(browser) {
+    browser.querySelectorAll("tr.trade-inventory-row").forEach((row) => {
+      const label = row.querySelector("[data-container-capacity-ml]");
+      if (!label) return;
+      if (row.dataset.containerDecorated) {
+        const used = Number(row.dataset.containerUsedMl || 0);
+        const capacity = Number(label.dataset.containerCapacityMl || 0);
+        const meter = row.querySelector(".inventory-container-capacity");
+        if (meter) {
+          meter.textContent = `${used / 1000} / ${capacity / 1000} L`;
+          meter.setAttribute("aria-label", `${used} of ${capacity} milliliters used`);
+        }
+        const open = row.querySelector("[data-container-open]");
+        if (open && row.dataset.containerObjectId) open.dataset.containerOpen = row.dataset.containerObjectId;
+        return;
+      }
+      row.dataset.containerDecorated = "true";
+      const capacity = Number(label.dataset.containerCapacityMl || 0);
+      const used = Number(row.dataset.containerUsedMl || 0);
+      const meter = document.createElement("span");
+      meter.className = "inventory-container-capacity";
+      meter.textContent = `${used / 1000} / ${capacity / 1000} L`;
+      meter.setAttribute("aria-label", `${used} of ${capacity} milliliters used`);
+      row.querySelector(".inventory-item-name")?.append(meter);
+      const actions = row.querySelector(".inventory-actions-cell") || row.lastElementChild;
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "inventory-container-open";
+      open.dataset.containerOpen = row.dataset.containerObjectId || rowInventoryKey(row) || "";
+      open.textContent = "Open";
+      open.setAttribute("aria-label", `Open ${label.dataset.itemName || "container"}`);
+      actions?.append(open);
+      row.draggable = true;
+      row.addEventListener("dragstart", (event) => event.dataTransfer?.setData(
+        "application/x-adventuresim-inventory-object",
+        row.dataset.containerObjectId || row.dataset.personalInventoryId || row.dataset.partyInventoryId || "",
+      ));
+      row.addEventListener("dragover", (event) => { event.preventDefault(); row.classList.add("inventory-container-drop-target"); });
+      row.addEventListener("dragleave", () => row.classList.remove("inventory-container-drop-target"));
+      row.addEventListener("drop", (event) => {
+        event.preventDefault();
+        row.classList.remove("inventory-container-drop-target");
+        const child = event.dataTransfer?.getData("application/x-adventuresim-inventory-object");
+        if (child) browser.dispatchEvent(new CustomEvent("inventory-container-move", {
+          bubbles: true,
+          detail: { child, parent: open.dataset.containerOpen },
+        }));
+      });
+    });
+  }
+
+  function rowInventoryKey(row) {
+    if (row.dataset.personalInventoryId) return `personal:${row.dataset.personalInventoryId}`;
+    if (row.dataset.partyInventoryId) return `party:${row.dataset.partyInventoryId}`;
+    return null;
+  }
+
+  async function hydrateContainerState(root = document) {
+    if (!global.fetch) return;
+    let snapshot;
+    try {
+      snapshot = await global.fetch("/api/inventory/containers", { headers: { Accept: "application/json" } }).then((response) => {
+        if (!response.ok) throw new Error("container snapshot unavailable");
+        return response.json();
+      });
+    } catch (_) { return; }
+    const objects = new Map(snapshot.objects.map((object) => [object.id, object]));
+    const parents = new Map(snapshot.edges.map((edge) => [edge.child_object_id, edge.parent_object_id]));
+    const liquids = new Map(snapshot.liquids.map((liquid) => [liquid.container_object_id, Number(liquid.water_ml)]));
+    const byRow = new Map(snapshot.objects.map((object) => [`${object.location_kind}:${object.inventory_row_id}`, object]));
+    root.querySelectorAll?.("tr.trade-inventory-row").forEach((row) => {
+      const object = byRow.get(rowInventoryKey(row));
+      const rowKey = rowInventoryKey(row);
+      if (!object) {
+        if (rowKey && !row.dataset.containerDragBound) {
+          row.draggable = true; row.dataset.containerDragBound = "true";
+          row.addEventListener("dragstart", (event) => event.dataTransfer?.setData(
+            "application/x-adventuresim-inventory-object", rowKey,
+          ));
+        }
+        return;
+      }
+      row.dataset.containerObjectId = String(object.id);
+      row.draggable = true;
+      if (!row.dataset.containerDragBound) {
+        row.dataset.containerDragBound = "true";
+        row.addEventListener("dragstart", (event) => event.dataTransfer?.setData(
+          "application/x-adventuresim-inventory-object", String(object.id),
+        ));
+      }
+      const ancestors = [];
+      let parent = parents.get(object.id);
+      while (parent != null && ancestors.length <= 16) {
+        ancestors.push(parent); parent = parents.get(parent);
+      }
+      if (ancestors.length) {
+        row.dataset.containerParentObjectId = String(ancestors[0]);
+        row.dataset.containerAncestor = ancestors.join(" ");
+        row.hidden = true;
+        const actions = row.querySelector(".inventory-row-actions") || row.querySelector(".inventory-item-name");
+        if (actions && !actions.querySelector("[data-container-remove]")) {
+          const remove = document.createElement("button");
+          remove.type = "button"; remove.className = "inventory-container-remove";
+          remove.dataset.containerRemove = String(object.id); remove.textContent = "Remove";
+          remove.setAttribute("aria-label", "Remove item from container"); actions.append(remove);
+        }
+      }
+      let used = liquids.get(object.id) || 0;
+      snapshot.edges.filter((edge) => edge.parent_object_id === object.id).forEach((edge) => {
+        const child = objects.get(edge.child_object_id);
+        const childRow = child && root.querySelector(`tr[data-${child.location_kind}-inventory-id="${child.inventory_row_id}"]`);
+        used += Number(childRow?.querySelector("[data-exterior-volume-ml]")?.dataset.exteriorVolumeMl || 0);
+      });
+      row.dataset.containerUsedMl = String(used);
+    });
+    root.querySelectorAll?.("[data-inventory-browser]").forEach(decorateContainers);
+    const pending = global.sessionStorage?.getItem("inventory-container-open");
+    if (pending) {
+      global.sessionStorage.removeItem("inventory-container-open");
+      const button = root.querySelector?.(`[data-container-open="${CSS.escape(pending)}"]`);
+      button?.click();
+    }
+  }
+
+  async function postContainer(path, values) {
+    const body = new URLSearchParams(values);
+    const response = await global.fetch(path, { method: "POST", body, headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+    if (!response.ok) throw new Error(await response.text());
+    global.location.reload();
+  }
+
+  async function postContainerOpen(scope, rowId) {
+    const body = new URLSearchParams({ inventory_scope: scope, inventory_row_id: rowId });
+    const response = await global.fetch("/api/inventory/containers/open", {
+      method: "POST", body, headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return response.json();
+  }
+
+  function openContainer(browser, button) {
+    const id = button.dataset.containerOpen;
+    if (!id) return;
+    const legacy = id.match(/^(personal|party):(\d+)$/);
+    if (legacy) {
+      postContainerOpen(legacy[1], legacy[2]).then((object) => {
+        global.sessionStorage?.setItem("inventory-container-open", String(object.id));
+        global.location.reload();
+      }).catch((error) => global.alert?.(error.message));
+      return;
+    }
+    let counterpart = [...document.querySelectorAll("[data-inventory-browser]")]
+      .find((candidate) => candidate !== browser && !candidate.hidden);
+    if (!counterpart) {
+      const host = [...document.querySelectorAll(".left-sidebar,.right-sidebar,.center-content")]
+        .find((candidate) => !candidate.contains(browser));
+      if (!host) return;
+      const hidden = [...host.children].map((child) => [child, child.hidden]);
+      hidden.forEach(([child]) => { child.hidden = true; });
+      counterpart = document.createElement("section");
+      counterpart.dataset.inventoryBrowser = `container-${id}`;
+      counterpart.innerHTML = '<label>Search container <input type="search" data-inventory-search></label><table class="trade-inventory-table"><tbody></tbody></table>';
+      counterpart._containerHost = { host, hidden };
+      host.append(counterpart); mount(counterpart);
+    }
+    counterpart._containerPanelStack ||= [];
+    counterpart._containerPanelStack.push({
+      active: document.activeElement,
+      rowHidden: [...counterpart.querySelectorAll("tr.trade-inventory-row")].map((row) => [row, row.hidden]),
+    });
+    counterpart.querySelectorAll("[data-container-transient]").forEach((row) => row.remove());
+    const tbody = counterpart.querySelector("tbody");
+    document.querySelectorAll(`tr[data-container-ancestor~="${CSS.escape(id)}"]`).forEach((source) => {
+      if (!counterpart.contains(source) && tbody) {
+        const clone = source.cloneNode(true); clone.dataset.containerTransient = "true"; clone.hidden = false; tbody.append(clone);
+      }
+    });
+    counterpart.querySelectorAll("tr.trade-inventory-row").forEach((row) => {
+      row.hidden = row.dataset.containerParentObjectId !== id;
+    });
+    let close = counterpart.querySelector("[data-container-close]");
+    if (!close) {
+      close = document.createElement("button");
+      close.type = "button";
+      close.className = "inventory-container-close";
+      close.dataset.containerClose = "true";
+      close.textContent = "Close";
+      close.setAttribute("aria-label", "Close container inventory");
+      counterpart.prepend(close);
+    }
+    close.hidden = false;
+    let water = counterpart.querySelector("[data-container-water-actions]");
+    if (!water) {
+      water = document.createElement("div"); water.dataset.containerWaterActions = "true";
+      water.className = "inventory-container-water-actions";
+      water.innerHTML = '<button type="button" data-container-pour>Pour water in</button><button type="button" data-container-drain>Pour water out</button>';
+      close.after(water);
+    }
+    water.hidden = false;
+    counterpart.dataset.openContainerObjectId = id;
+    counterpart.querySelector("[data-inventory-search]")?.focus();
+  }
+
+  function closeContainer(browser) {
+    const snapshot = browser._containerPanelStack?.pop();
+    if (!snapshot) return;
+    snapshot.rowHidden.forEach(([row, hidden]) => { row.hidden = hidden; });
+    browser.querySelectorAll("[data-container-transient]").forEach((row) => row.remove());
+    browser.querySelector("[data-container-close]").hidden = true;
+    const water = browser.querySelector("[data-container-water-actions]"); if (water) water.hidden = true;
+    delete browser.dataset.openContainerObjectId;
+    snapshot.active?.focus?.();
+    if (browser._containerHost && !browser._containerPanelStack.length) {
+      browser._containerHost.hidden.forEach(([child, hidden]) => { child.hidden = hidden; });
+      browser.remove();
+    }
   }
 
   function mount(browser) {
@@ -555,6 +784,7 @@
       const search = browser.querySelector("[data-inventory-search]"); if (search) search.value = refreshed.query;
       browser.querySelectorAll("[data-inventory-column-options] input").forEach((input) => { input.checked = refreshed.columns.includes(input.value); });
       apply(browser, browser._inventoryState);
+      decorateContainers(browser);
       return;
     }
     browser.dataset.inventoryMounted = "true";
@@ -578,6 +808,27 @@
     search?.addEventListener("input", () => { state.query = search.value; updateHistory(browser, state, browser._searchEditing === true); browser._searchEditing = true; apply(browser, state); });
     search?.addEventListener("blur", () => { browser._searchEditing = false; });
     browser.addEventListener("click", (event) => {
+      const containerOpen = event.target.closest("[data-container-open]");
+      if (containerOpen) { event.preventDefault(); openContainer(browser, containerOpen); return; }
+      const containerClose = event.target.closest("[data-container-close]");
+      if (containerClose) { event.preventDefault(); closeContainer(browser); return; }
+      const containerRemove = event.target.closest("[data-container-remove]");
+      if (containerRemove) {
+        event.preventDefault();
+        postContainer("/api/inventory/containers/remove", { child_object_id: containerRemove.dataset.containerRemove })
+          .catch((error) => global.alert?.(error.message));
+        return;
+      }
+      const waterAction = event.target.closest("[data-container-pour],[data-container-drain]");
+      if (waterAction) {
+        event.preventDefault();
+        const requested = global.prompt?.("Milliliters", "1000");
+        if (requested && Number(requested) > 0) postContainer(
+          waterAction.matches("[data-container-pour]") ? "/api/inventory/containers/pour" : "/api/inventory/containers/drain",
+          { container_object_id: browser.dataset.openContainerObjectId, requested_ml: requested },
+        ).catch((error) => global.alert?.(error.message));
+        return;
+      }
       const coinAction = event.target.closest("[data-coin-action]");
       if (coinAction) {
         event.preventDefault(); event.stopImmediatePropagation();
@@ -622,6 +873,7 @@
       }
     });
     apply(browser, state);
+    decorateContainers(browser);
   }
 
   function mountAll(root = document) { root.querySelectorAll?.("[data-inventory-browser]").forEach(mount); }
@@ -633,12 +885,21 @@
       else apply(browser, browser._inventoryState || parsePanelState(global.location.search, browser.dataset.inventoryBrowser, (browser.dataset.optionalColumns || "").split(",").filter(Boolean)));
     });
   }
-  const api = { parsePanelState, serializePanelState, compareValues, normalizeSortValue, rowValue, groupCurrencyRows, groupFoodRows, mountAll, refresh, syncPanelWidth };
+  const api = { parsePanelState, serializePanelState, compareValues, normalizeSortValue, rowValue, groupCurrencyRows, groupFoodRows, decorateContainers, hydrateContainerState, openContainer, closeContainer, mountAll, refresh, syncPanelWidth };
   global.strategicInventoryBrowser = api;
   if (typeof module !== "undefined") module.exports = api;
   if (global.document) {
-    global.addEventListener("DOMContentLoaded", () => mountAll());
+    global.addEventListener("DOMContentLoaded", () => { mountAll(); hydrateContainerState(); });
     global.addEventListener("popstate", () => mountAll());
     global.document.addEventListener("strategic-page-mounted", () => mountAll());
+    global.document.addEventListener("inventory-container-move", (event) => {
+      const raw = String(event.detail.child);
+      const legacy = raw.match(/^(personal|party):(\d+)$/);
+      postContainer("/api/inventory/containers/move", {
+        child_object_id: legacy ? "0" : raw,
+        child_scope: legacy?.[1] || "", child_row_id: legacy?.[2] || "0",
+        parent_object_id: event.detail.parent,
+      }).catch((error) => global.alert?.(error.message));
+    });
   }
 })(typeof window === "undefined" ? globalThis : window);

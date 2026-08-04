@@ -246,6 +246,8 @@ pub mod conscience_type;
 pub mod construction_commodity_type;
 pub mod construction_industry_type;
 pub mod contact_context_character_reducer;
+pub mod container_liquid_table;
+pub mod container_liquid_type;
 pub mod contextual_contact_receipt_type;
 pub mod continue_camp_travel_reducer;
 pub mod contract_interaction_stage_type;
@@ -426,10 +428,14 @@ pub mod inferred_tree_species_profile_type;
 pub mod inland_water_access_type;
 pub mod inland_water_size_type;
 pub mod inspect_physical_evidence_reducer;
+pub mod inventory_containment_table;
+pub mod inventory_containment_type;
 pub mod inventory_item_amount_table;
 pub mod inventory_item_amount_type;
 pub mod inventory_item_table;
 pub mod inventory_item_type;
+pub mod inventory_object_table;
+pub mod inventory_object_type;
 pub mod inventory_quantity_target_table;
 pub mod inventory_quantity_target_type;
 pub mod investigation_action_attempt_type;
@@ -546,6 +552,7 @@ pub mod objective_continuity_guard_type;
 pub mod objective_continuity_kind_type;
 pub mod official_religion_type;
 pub mod open_corpse_reducer;
+pub mod open_inventory_container_reducer;
 pub mod oral_language_hours_type;
 pub mod order_errantry_acceptance_receipt_type;
 pub mod organic_soil_type;
@@ -604,11 +611,14 @@ pub mod physical_evidence_inspection_attempt_type;
 pub mod physiology_administration_type;
 pub mod physiology_key_material_type;
 pub mod physiology_presence_span_type;
+pub mod place_fireplace_container_reducer;
 pub mod potential_vegetation_class_type;
 pub mod potential_vegetation_posterior_type;
 pub mod potential_vegetation_type;
 pub mod pottery_commodity_type;
 pub mod pottery_industry_type;
+pub mod pour_water_into_container_reducer;
+pub mod pour_water_out_of_container_reducer;
 pub mod pregnancy_status_type;
 pub mod pregnancy_type;
 pub mod prepare_development_courtship_reducer;
@@ -624,6 +634,7 @@ pub mod prosperity_tier_type;
 pub mod public_threat_disclosure_type;
 pub mod purchase_from_herbalist_reducer;
 pub mod purchase_personal_storefront_with_party_stake_reducer;
+pub mod put_inventory_item_in_container_reducer;
 pub mod quarry_commodity_type;
 pub mod quarrying_industry_type;
 pub mod quest_generation_authority_type;
@@ -645,6 +656,7 @@ pub mod religious_demand_table;
 pub mod religious_demand_type;
 pub mod relinquish_residence_reducer;
 pub mod remove_household_occupant_reducer;
+pub mod remove_inventory_item_from_container_reducer;
 pub mod remove_party_member_reducer;
 pub mod rename_saved_recruitment_role_reducer;
 pub mod rent_residence_reducer;
@@ -677,6 +689,7 @@ pub mod rest_at_settlement_hours_reducer;
 pub mod rest_at_settlement_reducer;
 pub mod retained_projectile_table;
 pub mod retained_projectile_type;
+pub mod retrieve_fireplace_container_reducer;
 pub mod retrieve_fireplace_dish_reducer;
 pub mod retrieve_repaired_item_reducer;
 pub mod retrieve_repaired_items_reducer;
@@ -792,6 +805,7 @@ pub mod spouse_leisure_overlap_type;
 pub mod spouse_leisure_slice_type;
 pub mod stage_investigation_lead_reducer;
 pub mod start_dialogue_reducer;
+pub mod start_fireplace_container_cooking_reducer;
 pub mod starting_age_tier_coordinate_type;
 pub mod starting_character_claim_type;
 pub mod stock_category_type;
@@ -1106,6 +1120,8 @@ pub use conscience_type::Conscience;
 pub use construction_commodity_type::ConstructionCommodity;
 pub use construction_industry_type::ConstructionIndustry;
 pub use contact_context_character_reducer::contact_context_character;
+pub use container_liquid_table::*;
+pub use container_liquid_type::ContainerLiquid;
 pub use contextual_contact_receipt_type::ContextualContactReceipt;
 pub use continue_camp_travel_reducer::continue_camp_travel;
 pub use contract_interaction_stage_type::ContractInteractionStage;
@@ -1286,10 +1302,14 @@ pub use inferred_tree_species_profile_type::InferredTreeSpeciesProfile;
 pub use inland_water_access_type::InlandWaterAccess;
 pub use inland_water_size_type::InlandWaterSize;
 pub use inspect_physical_evidence_reducer::inspect_physical_evidence;
+pub use inventory_containment_table::*;
+pub use inventory_containment_type::InventoryContainment;
 pub use inventory_item_amount_table::*;
 pub use inventory_item_amount_type::InventoryItemAmount;
 pub use inventory_item_table::*;
 pub use inventory_item_type::InventoryItem;
+pub use inventory_object_table::*;
+pub use inventory_object_type::InventoryObject;
 pub use inventory_quantity_target_table::*;
 pub use inventory_quantity_target_type::InventoryQuantityTarget;
 pub use investigation_action_attempt_type::InvestigationActionAttempt;
@@ -1406,6 +1426,7 @@ pub use objective_continuity_guard_type::ObjectiveContinuityGuard;
 pub use objective_continuity_kind_type::ObjectiveContinuityKind;
 pub use official_religion_type::OfficialReligion;
 pub use open_corpse_reducer::open_corpse;
+pub use open_inventory_container_reducer::open_inventory_container;
 pub use oral_language_hours_type::OralLanguageHours;
 pub use order_errantry_acceptance_receipt_type::OrderErrantryAcceptanceReceipt;
 pub use organic_soil_type::OrganicSoil;
@@ -1464,11 +1485,14 @@ pub use physical_evidence_inspection_attempt_type::PhysicalEvidenceInspectionAtt
 pub use physiology_administration_type::PhysiologyAdministration;
 pub use physiology_key_material_type::PhysiologyKeyMaterial;
 pub use physiology_presence_span_type::PhysiologyPresenceSpan;
+pub use place_fireplace_container_reducer::place_fireplace_container;
 pub use potential_vegetation_class_type::PotentialVegetationClass;
 pub use potential_vegetation_posterior_type::PotentialVegetationPosterior;
 pub use potential_vegetation_type::PotentialVegetation;
 pub use pottery_commodity_type::PotteryCommodity;
 pub use pottery_industry_type::PotteryIndustry;
+pub use pour_water_into_container_reducer::pour_water_into_container;
+pub use pour_water_out_of_container_reducer::pour_water_out_of_container;
 pub use pregnancy_status_type::PregnancyStatus;
 pub use pregnancy_type::Pregnancy;
 pub use prepare_development_courtship_reducer::prepare_development_courtship;
@@ -1484,6 +1508,7 @@ pub use prosperity_tier_type::ProsperityTier;
 pub use public_threat_disclosure_type::PublicThreatDisclosure;
 pub use purchase_from_herbalist_reducer::purchase_from_herbalist;
 pub use purchase_personal_storefront_with_party_stake_reducer::purchase_personal_storefront_with_party_stake;
+pub use put_inventory_item_in_container_reducer::put_inventory_item_in_container;
 pub use quarry_commodity_type::QuarryCommodity;
 pub use quarrying_industry_type::QuarryingIndustry;
 pub use quest_generation_authority_type::QuestGenerationAuthority;
@@ -1505,6 +1530,7 @@ pub use religious_demand_table::*;
 pub use religious_demand_type::ReligiousDemand;
 pub use relinquish_residence_reducer::relinquish_residence;
 pub use remove_household_occupant_reducer::remove_household_occupant;
+pub use remove_inventory_item_from_container_reducer::remove_inventory_item_from_container;
 pub use remove_party_member_reducer::remove_party_member;
 pub use rename_saved_recruitment_role_reducer::rename_saved_recruitment_role;
 pub use rent_residence_reducer::rent_residence;
@@ -1537,6 +1563,7 @@ pub use rest_at_settlement_hours_reducer::rest_at_settlement_hours;
 pub use rest_at_settlement_reducer::rest_at_settlement;
 pub use retained_projectile_table::*;
 pub use retained_projectile_type::RetainedProjectile;
+pub use retrieve_fireplace_container_reducer::retrieve_fireplace_container;
 pub use retrieve_fireplace_dish_reducer::retrieve_fireplace_dish;
 pub use retrieve_repaired_item_reducer::retrieve_repaired_item;
 pub use retrieve_repaired_items_reducer::retrieve_repaired_items;
@@ -1652,6 +1679,7 @@ pub use spouse_leisure_overlap_type::SpouseLeisureOverlap;
 pub use spouse_leisure_slice_type::SpouseLeisureSlice;
 pub use stage_investigation_lead_reducer::stage_investigation_lead;
 pub use start_dialogue_reducer::start_dialogue;
+pub use start_fireplace_container_cooking_reducer::start_fireplace_container_cooking;
 pub use starting_age_tier_coordinate_type::StartingAgeTierCoordinate;
 pub use starting_character_claim_type::StartingCharacterClaim;
 pub use stock_category_type::StockCategory;
@@ -2125,6 +2153,11 @@ pub enum Reducer {
         expected_revision: u32,
         confirm_unauthorized: bool,
     },
+    OpenInventoryContainer {
+        character_id: u64,
+        inventory_scope: String,
+        inventory_row_id: u64,
+    },
     PayOrganizationDues {
         character_id: u64,
         organization_id: String,
@@ -2146,6 +2179,23 @@ pub enum Reducer {
         target_id: u64,
         source_id: String,
         action_kind: String,
+    },
+    PlaceFireplaceContainer {
+        character_id: u64,
+        context_key: String,
+        inventory_scope: String,
+        inventory_item_id: u64,
+    },
+    PourWaterIntoContainer {
+        character_id: u64,
+        parent_scope: String,
+        parent_row_id: u64,
+        requested_ml: u64,
+    },
+    PourWaterOutOfContainer {
+        character_id: u64,
+        container_object_id: u64,
+        requested_ml: u64,
     },
     PrepareDevelopmentCourtship {
         suitor_id: u64,
@@ -2180,6 +2230,13 @@ pub enum Reducer {
         maximum_unit_price: u64,
         maximum_personal_payment: u64,
         maximum_stake_payment: u64,
+    },
+    PutInventoryItemInContainer {
+        character_id: u64,
+        child_scope: String,
+        child_row_id: u64,
+        parent_scope: String,
+        parent_row_id: u64,
     },
     ReceiveInvestigationClaim {
         character_id: u64,
@@ -2217,6 +2274,10 @@ pub enum Reducer {
         owner_character_id: u64,
         holding_id: String,
         occupant_id: u64,
+    },
+    RemoveInventoryItemFromContainer {
+        character_id: u64,
+        child_object_id: u64,
     },
     RemovePartyMember {
         actor_character_id: u64,
@@ -2301,6 +2362,11 @@ pub enum Reducer {
         character_id: u64,
         requested_minutes: u64,
         at_inn: bool,
+    },
+    RetrieveFireplaceContainer {
+        character_id: u64,
+        context_key: String,
+        container_object_id: u64,
     },
     RetrieveFireplaceDish {
         character_id: u64,
@@ -2461,6 +2527,11 @@ pub enum Reducer {
         npc_actor_id: String,
         location_id: String,
         catalog_revision: String,
+    },
+    StartFireplaceContainerCooking {
+        character_id: u64,
+        context_key: String,
+        container_object_id: u64,
     },
     StopPreparation {
         actor_id: u64,
@@ -2671,10 +2742,14 @@ impl __sdk::Reducer for Reducer {
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
             Reducer::OpenCorpse { .. } => "open_corpse",
+            Reducer::OpenInventoryContainer { .. } => "open_inventory_container",
             Reducer::PayOrganizationDues { .. } => "pay_organization_dues",
             Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
             Reducer::PerformInvestigationAction { .. } => "perform_investigation_action",
             Reducer::PerformSocialAction { .. } => "perform_social_action",
+            Reducer::PlaceFireplaceContainer { .. } => "place_fireplace_container",
+            Reducer::PourWaterIntoContainer { .. } => "pour_water_into_container",
+            Reducer::PourWaterOutOfContainer { .. } => "pour_water_out_of_container",
             Reducer::PrepareDevelopmentCourtship { .. } => "prepare_development_courtship",
             Reducer::PrepareHerbalRemedy { .. } => "prepare_herbal_remedy",
             Reducer::PresentOrganization { .. } => "present_organization",
@@ -2683,6 +2758,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::PurchasePersonalStorefrontWithPartyStake { .. } => {
                 "purchase_personal_storefront_with_party_stake"
             }
+            Reducer::PutInventoryItemInContainer { .. } => "put_inventory_item_in_container",
             Reducer::ReceiveInvestigationClaim { .. } => "receive_investigation_claim",
             Reducer::ReceiveLocalProblemRumor { .. } => "receive_local_problem_rumor",
             Reducer::RecoverOwnedResidence { .. } => "recover_owned_residence",
@@ -2692,6 +2768,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::RejectPartyJoinRequest { .. } => "reject_party_join_request",
             Reducer::RelinquishResidence { .. } => "relinquish_residence",
             Reducer::RemoveHouseholdOccupant { .. } => "remove_household_occupant",
+            Reducer::RemoveInventoryItemFromContainer { .. } => {
+                "remove_inventory_item_from_container"
+            }
             Reducer::RemovePartyMember { .. } => "remove_party_member",
             Reducer::RenameSavedRecruitmentRole { .. } => "rename_saved_recruitment_role",
             Reducer::RentResidence { .. } => "rent_residence",
@@ -2709,6 +2788,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::RestAtResidenceHours { .. } => "rest_at_residence_hours",
             Reducer::RestAtSettlement { .. } => "rest_at_settlement",
             Reducer::RestAtSettlementHours { .. } => "rest_at_settlement_hours",
+            Reducer::RetrieveFireplaceContainer { .. } => "retrieve_fireplace_container",
             Reducer::RetrieveFireplaceDish { .. } => "retrieve_fireplace_dish",
             Reducer::RetrieveRepairedItem { .. } => "retrieve_repaired_item",
             Reducer::RetrieveRepairedItems { .. } => "retrieve_repaired_items",
@@ -2741,6 +2821,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::SponsorPartyMemberInnRest { .. } => "sponsor_party_member_inn_rest",
             Reducer::StageInvestigationLead { .. } => "stage_investigation_lead",
             Reducer::StartDialogue { .. } => "start_dialogue",
+            Reducer::StartFireplaceContainerCooking { .. } => "start_fireplace_container_cooking",
             Reducer::StopPreparation { .. } => "stop_preparation",
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
             Reducer::SubmitAllRepairableItems { .. } => "submit_all_repairable_items",
@@ -3480,6 +3561,15 @@ Reducer::BeginFormalCourtship{
                 expected_revision: expected_revision.clone(),
                 confirm_unauthorized: confirm_unauthorized.clone(),
 }),
+            Reducer::OpenInventoryContainer{
+                character_id,
+                inventory_scope,
+                inventory_row_id,
+}             => __sats::bsatn::to_vec(&open_inventory_container_reducer::OpenInventoryContainerArgs {
+                character_id: character_id.clone(),
+                inventory_scope: inventory_scope.clone(),
+                inventory_row_id: inventory_row_id.clone(),
+}),
             Reducer::PayOrganizationDues{
                 character_id,
                 organization_id,
@@ -3519,6 +3609,37 @@ Reducer::BeginFormalCourtship{
                 target_id: target_id.clone(),
                 source_id: source_id.clone(),
                 action_kind: action_kind.clone(),
+}),
+            Reducer::PlaceFireplaceContainer{
+                character_id,
+                context_key,
+                inventory_scope,
+                inventory_item_id,
+}             => __sats::bsatn::to_vec(&place_fireplace_container_reducer::PlaceFireplaceContainerArgs {
+                character_id: character_id.clone(),
+                context_key: context_key.clone(),
+                inventory_scope: inventory_scope.clone(),
+                inventory_item_id: inventory_item_id.clone(),
+}),
+            Reducer::PourWaterIntoContainer{
+                character_id,
+                parent_scope,
+                parent_row_id,
+                requested_ml,
+}             => __sats::bsatn::to_vec(&pour_water_into_container_reducer::PourWaterIntoContainerArgs {
+                character_id: character_id.clone(),
+                parent_scope: parent_scope.clone(),
+                parent_row_id: parent_row_id.clone(),
+                requested_ml: requested_ml.clone(),
+}),
+            Reducer::PourWaterOutOfContainer{
+                character_id,
+                container_object_id,
+                requested_ml,
+}             => __sats::bsatn::to_vec(&pour_water_out_of_container_reducer::PourWaterOutOfContainerArgs {
+                character_id: character_id.clone(),
+                container_object_id: container_object_id.clone(),
+                requested_ml: requested_ml.clone(),
 }),
             Reducer::PrepareDevelopmentCourtship{
                 suitor_id,
@@ -3581,6 +3702,19 @@ Reducer::BeginFormalCourtship{
                 maximum_unit_price: maximum_unit_price.clone(),
                 maximum_personal_payment: maximum_personal_payment.clone(),
                 maximum_stake_payment: maximum_stake_payment.clone(),
+}),
+            Reducer::PutInventoryItemInContainer{
+                character_id,
+                child_scope,
+                child_row_id,
+                parent_scope,
+                parent_row_id,
+}             => __sats::bsatn::to_vec(&put_inventory_item_in_container_reducer::PutInventoryItemInContainerArgs {
+                character_id: character_id.clone(),
+                child_scope: child_scope.clone(),
+                child_row_id: child_row_id.clone(),
+                parent_scope: parent_scope.clone(),
+                parent_row_id: parent_row_id.clone(),
 }),
             Reducer::ReceiveInvestigationClaim{
                 character_id,
@@ -3646,6 +3780,13 @@ Reducer::BeginFormalCourtship{
                 owner_character_id: owner_character_id.clone(),
                 holding_id: holding_id.clone(),
                 occupant_id: occupant_id.clone(),
+}),
+            Reducer::RemoveInventoryItemFromContainer{
+                character_id,
+                child_object_id,
+}             => __sats::bsatn::to_vec(&remove_inventory_item_from_container_reducer::RemoveInventoryItemFromContainerArgs {
+                character_id: character_id.clone(),
+                child_object_id: child_object_id.clone(),
 }),
             Reducer::RemovePartyMember{
                 actor_character_id,
@@ -3797,6 +3938,15 @@ Reducer::BeginFormalCourtship{
                 character_id: character_id.clone(),
                 requested_minutes: requested_minutes.clone(),
                 at_inn: at_inn.clone(),
+}),
+            Reducer::RetrieveFireplaceContainer{
+                character_id,
+                context_key,
+                container_object_id,
+}             => __sats::bsatn::to_vec(&retrieve_fireplace_container_reducer::RetrieveFireplaceContainerArgs {
+                character_id: character_id.clone(),
+                context_key: context_key.clone(),
+                container_object_id: container_object_id.clone(),
 }),
             Reducer::RetrieveFireplaceDish{
                 character_id,
@@ -4090,6 +4240,15 @@ Reducer::BeginFormalCourtship{
                 location_id: location_id.clone(),
                 catalog_revision: catalog_revision.clone(),
 }),
+            Reducer::StartFireplaceContainerCooking{
+                character_id,
+                context_key,
+                container_object_id,
+}             => __sats::bsatn::to_vec(&start_fireplace_container_cooking_reducer::StartFireplaceContainerCookingArgs {
+                character_id: character_id.clone(),
+                context_key: context_key.clone(),
+                container_object_id: container_object_id.clone(),
+}),
             Reducer::StopPreparation{
                 actor_id,
                 administration_id,
@@ -4377,10 +4536,13 @@ pub struct DbUpdate {
     character_illness_status: __sdk::TableUpdate<CharacterIllnessStatus>,
     character_settlement_reputation: __sdk::TableUpdate<CharacterSettlementReputation>,
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
+    container_liquid: __sdk::TableUpdate<ContainerLiquid>,
     equipment_occupancy: __sdk::TableUpdate<EquipmentOccupancy>,
     food_lot: __sdk::TableUpdate<FoodLot>,
+    inventory_containment: __sdk::TableUpdate<InventoryContainment>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
     inventory_item_amount: __sdk::TableUpdate<InventoryItemAmount>,
+    inventory_object: __sdk::TableUpdate<InventoryObject>,
     inventory_quantity_target: __sdk::TableUpdate<InventoryQuantityTarget>,
     item: __sdk::TableUpdate<Item>,
     item_condition: __sdk::TableUpdate<ItemCondition>,
@@ -4706,18 +4868,27 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(connected_players_table::parse_table_update(table_update)?),
+                "container_liquid" => db_update
+                    .container_liquid
+                    .append(container_liquid_table::parse_table_update(table_update)?),
                 "equipment_occupancy" => db_update
                     .equipment_occupancy
                     .append(equipment_occupancy_table::parse_table_update(table_update)?),
                 "food_lot" => db_update
                     .food_lot
                     .append(food_lot_table::parse_table_update(table_update)?),
+                "inventory_containment" => db_update.inventory_containment.append(
+                    inventory_containment_table::parse_table_update(table_update)?,
+                ),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(inventory_item_table::parse_table_update(table_update)?),
                 "inventory_item_amount" => db_update.inventory_item_amount.append(
                     inventory_item_amount_table::parse_table_update(table_update)?,
                 ),
+                "inventory_object" => db_update
+                    .inventory_object
+                    .append(inventory_object_table::parse_table_update(table_update)?),
                 "inventory_quantity_target" => db_update.inventory_quantity_target.append(
                     inventory_quantity_target_table::parse_table_update(table_update)?,
                 ),
@@ -4924,6 +5095,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.character_settlement_reputation,
             )
             .with_updates_by_pk(|row| &row.id);
+        diff.container_liquid = cache
+            .apply_diff_to_table::<ContainerLiquid>("container_liquid", &self.container_liquid)
+            .with_updates_by_pk(|row| &row.container_object_id);
         diff.equipment_occupancy = cache
             .apply_diff_to_table::<EquipmentOccupancy>(
                 "equipment_occupancy",
@@ -4933,6 +5107,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.food_lot = cache
             .apply_diff_to_table::<FoodLot>("food_lot", &self.food_lot)
             .with_updates_by_pk(|row| &row.id);
+        diff.inventory_containment = cache
+            .apply_diff_to_table::<InventoryContainment>(
+                "inventory_containment",
+                &self.inventory_containment,
+            )
+            .with_updates_by_pk(|row| &row.child_object_id);
         diff.inventory_item = cache
             .apply_diff_to_table::<InventoryItem>("inventory_item", &self.inventory_item)
             .with_updates_by_pk(|row| &row.id);
@@ -4942,6 +5122,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.inventory_item_amount,
             )
             .with_updates_by_pk(|row| &row.inventory_item_id);
+        diff.inventory_object = cache
+            .apply_diff_to_table::<InventoryObject>("inventory_object", &self.inventory_object)
+            .with_updates_by_pk(|row| &row.id);
         diff.inventory_quantity_target = cache
             .apply_diff_to_table::<InventoryQuantityTarget>(
                 "inventory_quantity_target",
@@ -5617,17 +5800,26 @@ impl __sdk::DbUpdate for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "container_liquid" => db_update
+                    .container_liquid
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "equipment_occupancy" => db_update
                     .equipment_occupancy
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "food_lot" => db_update
                     .food_lot
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "inventory_containment" => db_update
+                    .inventory_containment
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "inventory_item_amount" => db_update
                     .inventory_item_amount
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "inventory_object" => db_update
+                    .inventory_object
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "inventory_quantity_target" => db_update
                     .inventory_quantity_target
@@ -5993,17 +6185,26 @@ impl __sdk::DbUpdate for DbUpdate {
                 "connected_players" => db_update
                     .connected_players
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "container_liquid" => db_update
+                    .container_liquid
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "equipment_occupancy" => db_update
                     .equipment_occupancy
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "food_lot" => db_update
                     .food_lot
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "inventory_containment" => db_update
+                    .inventory_containment
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "inventory_item_amount" => db_update
                     .inventory_item_amount
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "inventory_object" => db_update
+                    .inventory_object
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "inventory_quantity_target" => db_update
                     .inventory_quantity_target
@@ -6236,10 +6437,13 @@ pub struct AppliedDiff<'r> {
     character_illness_status: __sdk::TableAppliedDiff<'r, CharacterIllnessStatus>,
     character_settlement_reputation: __sdk::TableAppliedDiff<'r, CharacterSettlementReputation>,
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
+    container_liquid: __sdk::TableAppliedDiff<'r, ContainerLiquid>,
     equipment_occupancy: __sdk::TableAppliedDiff<'r, EquipmentOccupancy>,
     food_lot: __sdk::TableAppliedDiff<'r, FoodLot>,
+    inventory_containment: __sdk::TableAppliedDiff<'r, InventoryContainment>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
     inventory_item_amount: __sdk::TableAppliedDiff<'r, InventoryItemAmount>,
+    inventory_object: __sdk::TableAppliedDiff<'r, InventoryObject>,
     inventory_quantity_target: __sdk::TableAppliedDiff<'r, InventoryQuantityTarget>,
     item: __sdk::TableAppliedDiff<'r, Item>,
     item_condition: __sdk::TableAppliedDiff<'r, ItemCondition>,
@@ -6658,12 +6862,22 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.connected_players,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<ContainerLiquid>(
+            "container_liquid",
+            &self.container_liquid,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<EquipmentOccupancy>(
             "equipment_occupancy",
             &self.equipment_occupancy,
             event,
         );
         callbacks.invoke_table_row_callbacks::<FoodLot>("food_lot", &self.food_lot, event);
+        callbacks.invoke_table_row_callbacks::<InventoryContainment>(
+            "inventory_containment",
+            &self.inventory_containment,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<InventoryItem>(
             "inventory_item",
             &self.inventory_item,
@@ -6672,6 +6886,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<InventoryItemAmount>(
             "inventory_item_amount",
             &self.inventory_item_amount,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<InventoryObject>(
+            "inventory_object",
+            &self.inventory_object,
             event,
         );
         callbacks.invoke_table_row_callbacks::<InventoryQuantityTarget>(
@@ -7599,10 +7818,13 @@ impl __sdk::SpacetimeModule for RemoteModule {
         character_illness_status_table::register_table(client_cache);
         character_settlement_reputation_table::register_table(client_cache);
         connected_players_table::register_table(client_cache);
+        container_liquid_table::register_table(client_cache);
         equipment_occupancy_table::register_table(client_cache);
         food_lot_table::register_table(client_cache);
+        inventory_containment_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
         inventory_item_amount_table::register_table(client_cache);
+        inventory_object_table::register_table(client_cache);
         inventory_quantity_target_table::register_table(client_cache);
         item_table::register_table(client_cache);
         item_condition_table::register_table(client_cache);
@@ -7722,10 +7944,13 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "character_illness_status",
         "character_settlement_reputation",
         "connected_players",
+        "container_liquid",
         "equipment_occupancy",
         "food_lot",
+        "inventory_containment",
         "inventory_item",
         "inventory_item_amount",
+        "inventory_object",
         "inventory_quantity_target",
         "item",
         "item_condition",

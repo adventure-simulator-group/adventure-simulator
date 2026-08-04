@@ -1,5 +1,20 @@
 # Food and cooking
 
+## Container cooking lanes
+
+Loose selected food remains the single spit-roast lane. A pan, pot, or portable
+oven is instead placed as an exact stable object at one exact fireplace and
+disappears from carried inventory until retrieved there. Multiple vessels can
+cook simultaneously beside the loose roast.
+
+Starting a vessel consumes every directly contained uncooked food lot in full;
+non-food solids remain untouched. Pan, pot, and oven select pan-fry, stew, and
+bake. Stew requires water physically inside the pot, and all contained water
+joins the meal. Contents are locked while cooking. Retrieval applies the same
+early/exact/late quality, nutrition, contamination, value, and provenance rules
+and creates one measured cooked-meal lot inside the original vessel before its
+subtree returns to the recorded personal or party inventory.
+
 This page describes current production behavior. Food rows now use the initial
 integer quantity-plus-measured-state rollout in
 [`measured-inventory.md`](measured-inventory.md), while conserved food-lot

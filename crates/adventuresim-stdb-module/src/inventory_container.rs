@@ -1,0 +1,1086 @@
+//! Stable inventory-object identity and generic litre-based containment.
+//!
+//! Inventory rows remain the existing custody/storage ABI. This module gives
+//! a row a stable object identity before it participates in containment and
+//! records edges by object identity, so a whole subtree can travel atomically.
+
+use adventuresim_core::inventory_containers::{ContainmentGraph, Object};
+use spacetimedb::{ReducerContext, Table, reducer, table};
+
+use crate::character::character as _;
+use crate::item::item as _;
+use crate::strategic::{party_authority, party_inventory_item, party_item_condition};
+use crate::{
+    character_needs, fireplace_dish, fireplace_station, inventory_item, inventory_item_amount,
+    item_condition, party_item_amount,
+};
+
+pub const WATER_ITEM_ID: &str = "water";
+
+fn empty_container_can_stack(has_contents: bool, is_nested: bool, has_condition: bool) -> bool {
+    !has_contents && !is_nested && !has_condition
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = inventory_object, public)]
+pub struct InventoryObject {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub item_id: String,
+    /// `personal`, `party`, or `fireplace`.
+    pub location_kind: String,
+    /// Character ID, party ID, or exact fireplace context key.
+    pub location_owner: String,
+    /// Current legacy inventory row while personal/party; zero at a fireplace.
+    pub inventory_row_id: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = inventory_containment, public)]
+pub struct InventoryContainment {
+    #[primary_key]
+    pub child_object_id: u64,
+    #[index(btree)]
+    pub parent_object_id: u64,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = container_liquid, public)]
+pub struct ContainerLiquid {
+    #[primary_key]
+    pub container_object_id: u64,
+    /// Water is initially the only pooled liquid. Alcohol continues to use its
+    /// measured object row and therefore occupies its actual remaining volume.
+    pub water_ml: u64,
+}
+
+pub(crate) fn object_for_row(
+    ctx: &ReducerContext,
+    kind: &str,
+    row_id: u64,
+) -> Option<InventoryObject> {
+    ctx.db
+        .inventory_object()
+        .iter()
+        .find(|object| object.location_kind == kind && object.inventory_row_id == row_id)
+}
+
+pub(crate) fn object_is_nonempty(ctx: &ReducerContext, object_id: u64) -> bool {
+    ctx.db
+        .inventory_containment()
+        .parent_object_id()
+        .filter(object_id)
+        .next()
+        .is_some()
+        || liquid_used(ctx, object_id) > 0
+}
+
+pub(crate) fn ancestry_reaches_fireplace(ctx: &ReducerContext, object_id: u64) -> bool {
+    let mut cursor = Some(object_id);
+    for _ in 0..=adventuresim_core::inventory_containers::MAX_CONTAINER_DEPTH {
+        let Some(id) = cursor else { return false };
+        let Some(object) = ctx.db.inventory_object().id().find(id) else {
+            return false;
+        };
+        if object.location_kind == "fireplace" {
+            return true;
+        }
+        cursor = ctx
+            .db
+            .inventory_containment()
+            .child_object_id()
+            .find(id)
+            .map(|edge| edge.parent_object_id);
+    }
+    true
+}
+
+pub(crate) fn detach_if_nested(ctx: &ReducerContext, object_id: u64) -> Result<bool, String> {
+    if ancestry_reaches_fireplace(ctx, object_id) {
+        return Err("Retrieve the container from its fireplace before moving its contents".into());
+    }
+    let parent = ctx
+        .db
+        .inventory_containment()
+        .child_object_id()
+        .find(object_id)
+        .map(|edge| edge.parent_object_id);
+    let removed = ctx
+        .db
+        .inventory_containment()
+        .child_object_id()
+        .delete(object_id);
+    if let Some(parent_id) = parent {
+        merge_empty_container(ctx, parent_id)?;
+    }
+    Ok(removed)
+}
+
+pub(crate) fn object_is_nested(ctx: &ReducerContext, object_id: u64) -> bool {
+    ctx.db
+        .inventory_containment()
+        .child_object_id()
+        .find(object_id)
+        .is_some()
+}
+
+pub(crate) fn subtree_object_ids(
+    ctx: &ReducerContext,
+    root_object_id: u64,
+) -> Result<Vec<u64>, String> {
+    graph(ctx)?.subtree(root_object_id).map_err(str::to_owned)
+}
+
+/// Rehomes every legacy row and linked measured/food/condition state in one
+/// reducer transaction. Descendant object owners are never left behind.
+pub(crate) fn rehome_subtree(
+    ctx: &ReducerContext,
+    root_object_id: u64,
+    destination_kind: &str,
+    destination_owner: &str,
+) -> Result<(), String> {
+    if !matches!(destination_kind, "personal" | "party") {
+        return Err("Invalid subtree destination".into());
+    }
+    let ids = subtree_object_ids(ctx, root_object_id)?;
+    for id in ids {
+        let mut object = ctx
+            .db
+            .inventory_object()
+            .id()
+            .find(id)
+            .ok_or("Inventory subtree object is missing")?;
+        if object.location_kind == destination_kind {
+            match destination_kind {
+                "personal" => {
+                    let character_id = destination_owner
+                        .parse::<u64>()
+                        .map_err(|_| "Invalid destination character")?;
+                    let mut row = ctx
+                        .db
+                        .inventory_item()
+                        .id()
+                        .find(object.inventory_row_id)
+                        .ok_or("Inventory subtree row is missing")?;
+                    row.character_id = character_id;
+                    ctx.db.inventory_item().id().update(row);
+                }
+                "party" => {
+                    let mut row = ctx
+                        .db
+                        .party_inventory_item()
+                        .id()
+                        .find(object.inventory_row_id)
+                        .ok_or("Party inventory subtree row is missing")?;
+                    row.party_id = destination_owner.into();
+                    ctx.db.party_inventory_item().id().update(row);
+                }
+                _ => unreachable!(),
+            }
+        } else {
+            match (object.location_kind.as_str(), destination_kind) {
+                ("personal", "party") => {
+                    let source = ctx
+                        .db
+                        .inventory_item()
+                        .id()
+                        .find(object.inventory_row_id)
+                        .ok_or("Inventory subtree row is missing")?;
+                    if source.quantity != 1 {
+                        return Err("Stable inventory objects must be quantity one".into());
+                    }
+                    let destination = ctx.db.party_inventory_item().insert(
+                        crate::strategic::PartyInventoryItem {
+                            id: 0,
+                            party_id: destination_owner.into(),
+                            item_id: source.item_id.clone(),
+                            quantity: 1,
+                        },
+                    );
+                    if crate::food::personal_lot(ctx, source.id).is_some() {
+                        crate::food::move_or_split_to_party(ctx, source.id, destination.id, 1, 1)?;
+                    }
+                    if crate::inventory_amount::personal_amount(ctx, source.id).is_some() {
+                        crate::inventory_amount::move_personal_to_party(
+                            ctx,
+                            source.id,
+                            destination.id,
+                        )?;
+                    }
+                    if let Some(condition) =
+                        ctx.db.item_condition().inventory_item_id().find(source.id)
+                    {
+                        ctx.db
+                            .item_condition()
+                            .inventory_item_id()
+                            .delete(source.id);
+                        ctx.db.party_item_condition().insert(
+                            crate::strategic::PartyItemCondition {
+                                party_inventory_item_id: destination.id,
+                                tier_1: condition.tier_1,
+                                tier_2: condition.tier_2,
+                                tier_3: condition.tier_3,
+                                tier_4: condition.tier_4,
+                                tier_5: condition.tier_5,
+                            },
+                        );
+                    }
+                    ctx.db.inventory_item().id().delete(source.id);
+                    object.inventory_row_id = destination.id;
+                }
+                ("party", "personal") => {
+                    let character_id = destination_owner
+                        .parse::<u64>()
+                        .map_err(|_| "Invalid destination character")?;
+                    let source = ctx
+                        .db
+                        .party_inventory_item()
+                        .id()
+                        .find(object.inventory_row_id)
+                        .ok_or("Party inventory subtree row is missing")?;
+                    if source.quantity != 1 {
+                        return Err("Stable inventory objects must be quantity one".into());
+                    }
+                    let destination = ctx.db.inventory_item().insert(crate::InventoryItem {
+                        id: 0,
+                        character_id,
+                        item_id: source.item_id.clone(),
+                        quantity: 1,
+                    });
+                    if crate::food::party_lot(ctx, source.id).is_some() {
+                        crate::food::move_or_split_to_personal(
+                            ctx,
+                            source.id,
+                            destination.id,
+                            1,
+                            1,
+                        )?;
+                    }
+                    if crate::inventory_amount::party_amount(ctx, source.id).is_some() {
+                        crate::inventory_amount::move_party_to_personal(
+                            ctx,
+                            source.id,
+                            destination.id,
+                        )?;
+                    }
+                    if let Some(condition) = ctx
+                        .db
+                        .party_item_condition()
+                        .party_inventory_item_id()
+                        .find(source.id)
+                    {
+                        ctx.db
+                            .party_item_condition()
+                            .party_inventory_item_id()
+                            .delete(source.id);
+                        ctx.db
+                            .item_condition()
+                            .insert(crate::repair::ItemCondition {
+                                inventory_item_id: destination.id,
+                                tier_1: condition.tier_1,
+                                tier_2: condition.tier_2,
+                                tier_3: condition.tier_3,
+                                tier_4: condition.tier_4,
+                                tier_5: condition.tier_5,
+                            });
+                    }
+                    ctx.db.party_inventory_item().id().delete(source.id);
+                    object.inventory_row_id = destination.id;
+                }
+                _ => return Err("Inventory subtree has an unsupported location transition".into()),
+            }
+        }
+        object.location_kind = destination_kind.into();
+        object.location_owner = destination_owner.into();
+        ctx.db.inventory_object().id().update(object);
+    }
+    Ok(())
+}
+
+pub(crate) fn delete_subtree(ctx: &ReducerContext, root_object_id: u64) -> Result<(), String> {
+    let mut ids = subtree_object_ids(ctx, root_object_id)?;
+    ids.reverse();
+    for id in ids {
+        let object = ctx
+            .db
+            .inventory_object()
+            .id()
+            .find(id)
+            .ok_or("Inventory subtree object is missing")?;
+        match object.location_kind.as_str() {
+            "personal" => {
+                ctx.db
+                    .inventory_item_amount()
+                    .inventory_item_id()
+                    .delete(object.inventory_row_id);
+                ctx.db
+                    .item_condition()
+                    .inventory_item_id()
+                    .delete(object.inventory_row_id);
+                crate::food::delete_personal_food_lot(ctx, object.inventory_row_id);
+                ctx.db.inventory_item().id().delete(object.inventory_row_id);
+            }
+            "party" => {
+                ctx.db
+                    .party_item_amount()
+                    .party_inventory_item_id()
+                    .delete(object.inventory_row_id);
+                ctx.db
+                    .party_item_condition()
+                    .party_inventory_item_id()
+                    .delete(object.inventory_row_id);
+                crate::food::delete_party_food_lot(ctx, object.inventory_row_id);
+                ctx.db
+                    .party_inventory_item()
+                    .id()
+                    .delete(object.inventory_row_id);
+            }
+            "fireplace" => {
+                return Err("A container at a fireplace must be retrieved before deletion".into());
+            }
+            _ => return Err("Inventory subtree has an unknown location".into()),
+        }
+        ctx.db.container_liquid().container_object_id().delete(id);
+        ctx.db.inventory_containment().child_object_id().delete(id);
+        ctx.db.inventory_object().id().delete(id);
+    }
+    Ok(())
+}
+
+fn require_owned_row(
+    ctx: &ReducerContext,
+    character_id: u64,
+    kind: &str,
+    row_id: u64,
+) -> Result<(String, String, u32), String> {
+    match kind {
+        "personal" => {
+            let row = ctx
+                .db
+                .inventory_item()
+                .id()
+                .find(row_id)
+                .ok_or("Inventory item not found")?;
+            if row.character_id != character_id
+                || crate::character::inventory_item_is_equipped(ctx, character_id, row_id)
+            {
+                return Err("Item is equipped or belongs to another character".into());
+            }
+            Ok((row.item_id, character_id.to_string(), row.quantity))
+        }
+        "party" => {
+            let actor = ctx
+                .db
+                .character()
+                .id()
+                .find(character_id)
+                .ok_or("Character not found")?;
+            let party_id = actor.party_id.ok_or("Character has no party inventory")?;
+            let row = ctx
+                .db
+                .party_inventory_item()
+                .id()
+                .find(row_id)
+                .ok_or("Party inventory item not found")?;
+            if row.party_id != party_id {
+                return Err("Item belongs to another party".into());
+            }
+            Ok((row.item_id, party_id, row.quantity))
+        }
+        _ => Err("Invalid inventory scope".into()),
+    }
+}
+
+fn split_one(ctx: &ReducerContext, kind: &str, row_id: u64) -> Result<u64, String> {
+    // Companion rows describe this exact legacy row, rather than one arbitrary
+    // member of its stack. Splitting without a domain-specific proportional
+    // split would silently duplicate or strand food, measured amount, or
+    // condition state. Valid authored creation already keeps these instances
+    // quantity-one; reject corrupt/legacy stacks atomically.
+    let has_companion = match kind {
+        "personal" => {
+            crate::food::personal_lot(ctx, row_id).is_some()
+                || crate::inventory_amount::personal_amount(ctx, row_id).is_some()
+                || ctx
+                    .db
+                    .item_condition()
+                    .inventory_item_id()
+                    .find(row_id)
+                    .is_some()
+        }
+        "party" => {
+            crate::food::party_lot(ctx, row_id).is_some()
+                || crate::inventory_amount::party_amount(ctx, row_id).is_some()
+                || ctx
+                    .db
+                    .party_item_condition()
+                    .party_inventory_item_id()
+                    .find(row_id)
+                    .is_some()
+        }
+        _ => return Err("Invalid inventory scope".into()),
+    };
+    if has_companion {
+        return Err("Cannot split a stacked item with measured, food, or condition state".into());
+    }
+    match kind {
+        "personal" => {
+            let mut row = ctx
+                .db
+                .inventory_item()
+                .id()
+                .find(row_id)
+                .ok_or("Inventory item not found")?;
+            if row.quantity <= 1 {
+                return Ok(row_id);
+            }
+            row.quantity -= 1;
+            let character_id = row.character_id;
+            let item_id = row.item_id.clone();
+            ctx.db.inventory_item().id().update(row);
+            Ok(ctx
+                .db
+                .inventory_item()
+                .insert(crate::InventoryItem {
+                    id: 0,
+                    character_id,
+                    item_id,
+                    quantity: 1,
+                })
+                .id)
+        }
+        "party" => {
+            let mut row = ctx
+                .db
+                .party_inventory_item()
+                .id()
+                .find(row_id)
+                .ok_or("Party inventory item not found")?;
+            if row.quantity <= 1 {
+                return Ok(row_id);
+            }
+            row.quantity -= 1;
+            let party_id = row.party_id.clone();
+            let item_id = row.item_id.clone();
+            ctx.db.party_inventory_item().id().update(row);
+            Ok(ctx
+                .db
+                .party_inventory_item()
+                .insert(crate::strategic::PartyInventoryItem {
+                    id: 0,
+                    party_id,
+                    item_id,
+                    quantity: 1,
+                })
+                .id)
+        }
+        _ => Err("Invalid inventory scope".into()),
+    }
+}
+
+pub(crate) fn merge_empty_container(ctx: &ReducerContext, emptied_id: u64) -> Result<(), String> {
+    let Some(emptied) = ctx.db.inventory_object().id().find(emptied_id) else {
+        return Ok(());
+    };
+    if !empty_container_can_stack(
+        object_is_nonempty(ctx, emptied_id),
+        object_is_nested(ctx, emptied_id),
+        false,
+    ) {
+        return Ok(());
+    }
+    let mergeable_object = |row_id| {
+        object_for_row(ctx, &emptied.location_kind, row_id).is_none_or(|object| {
+            !object_is_nonempty(ctx, object.id) && !object_is_nested(ctx, object.id)
+        })
+    };
+    let merged_object_id;
+    match emptied.location_kind.as_str() {
+        "personal" => {
+            let source = ctx
+                .db
+                .inventory_item()
+                .id()
+                .find(emptied.inventory_row_id)
+                .ok_or("Emptied container row is missing")?;
+            let Some(mut target) = ctx.db.inventory_item().iter().find(|row| {
+                row.id != source.id
+                    && row.character_id == source.character_id
+                    && row.item_id == source.item_id
+                    && mergeable_object(row.id)
+            }) else {
+                return Ok(());
+            };
+            if ctx
+                .db
+                .item_condition()
+                .inventory_item_id()
+                .find(target.id)
+                .is_some()
+                || ctx
+                    .db
+                    .item_condition()
+                    .inventory_item_id()
+                    .find(source.id)
+                    .is_some()
+            {
+                return Ok(());
+            }
+            merged_object_id = object_for_row(ctx, "personal", target.id).map(|row| row.id);
+            target.quantity = target
+                .quantity
+                .checked_add(source.quantity)
+                .ok_or("Container stack quantity overflow")?;
+            ctx.db.inventory_item().id().update(target);
+            ctx.db.inventory_item().id().delete(source.id);
+        }
+        "party" => {
+            let source = ctx
+                .db
+                .party_inventory_item()
+                .id()
+                .find(emptied.inventory_row_id)
+                .ok_or("Emptied party container row is missing")?;
+            let Some(mut target) = ctx.db.party_inventory_item().iter().find(|row| {
+                row.id != source.id
+                    && row.party_id == source.party_id
+                    && row.item_id == source.item_id
+                    && mergeable_object(row.id)
+            }) else {
+                return Ok(());
+            };
+            if ctx
+                .db
+                .party_item_condition()
+                .party_inventory_item_id()
+                .find(target.id)
+                .is_some()
+                || ctx
+                    .db
+                    .party_item_condition()
+                    .party_inventory_item_id()
+                    .find(source.id)
+                    .is_some()
+            {
+                return Ok(());
+            }
+            merged_object_id = object_for_row(ctx, "party", target.id).map(|row| row.id);
+            target.quantity = target
+                .quantity
+                .checked_add(source.quantity)
+                .ok_or("Container stack quantity overflow")?;
+            ctx.db.party_inventory_item().id().update(target);
+            ctx.db.party_inventory_item().id().delete(source.id);
+        }
+        _ => return Ok(()),
+    }
+    if let Some(other_id) = merged_object_id {
+        ctx.db.inventory_object().id().delete(other_id);
+    }
+    ctx.db.inventory_object().id().delete(emptied.id);
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::empty_container_can_stack;
+
+    #[test]
+    fn only_empty_root_containers_without_instance_condition_stack() {
+        assert!(empty_container_can_stack(false, false, false));
+        assert!(!empty_container_can_stack(true, false, false));
+        assert!(!empty_container_can_stack(false, true, false));
+        assert!(!empty_container_can_stack(false, false, true));
+    }
+}
+
+pub(crate) fn ensure_object(
+    ctx: &ReducerContext,
+    character_id: u64,
+    kind: &str,
+    row_id: u64,
+    split_stack: bool,
+) -> Result<InventoryObject, String> {
+    if let Some(object) = object_for_row(ctx, kind, row_id) {
+        return Ok(object);
+    }
+    let (item_id, owner, quantity) = require_owned_row(ctx, character_id, kind, row_id)?;
+    let row_id = if split_stack && quantity > 1 {
+        split_one(ctx, kind, row_id)?
+    } else {
+        row_id
+    };
+    Ok(ctx.db.inventory_object().insert(InventoryObject {
+        id: 0,
+        item_id,
+        location_kind: kind.into(),
+        location_owner: owner,
+        inventory_row_id: row_id,
+    }))
+}
+
+#[reducer]
+pub fn open_inventory_container(
+    ctx: &ReducerContext,
+    character_id: u64,
+    inventory_scope: String,
+    inventory_row_id: u64,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_gateway(ctx)?;
+    crate::character::require_living_character(ctx, character_id)?;
+    let object = ensure_object(ctx, character_id, &inventory_scope, inventory_row_id, true)?;
+    let definition = ctx
+        .db
+        .item()
+        .id()
+        .find(object.item_id)
+        .ok_or("Container definition not found")?;
+    if definition.container_capacity_ml == 0 {
+        return Err("That item is not a container".into());
+    }
+    Ok(())
+}
+
+fn measured_volume_ml(
+    ctx: &ReducerContext,
+    object: &InventoryObject,
+    definition: &crate::Item,
+) -> u64 {
+    let amount = match object.location_kind.as_str() {
+        "personal" => ctx
+            .db
+            .inventory_item_amount()
+            .inventory_item_id()
+            .find(object.inventory_row_id)
+            .map(|row| row.remaining_milliunits),
+        "party" => ctx
+            .db
+            .party_item_amount()
+            .party_inventory_item_id()
+            .find(object.inventory_row_id)
+            .map(|row| row.remaining_milliunits),
+        _ => None,
+    };
+    let Some(amount) = amount else { return 0 };
+    let full_ml = if definition.alcohol_serving_ml > 0 {
+        definition.alcohol_serving_ml
+    } else {
+        definition.exterior_volume_ml
+    };
+    u64::from(full_ml) * u64::from(amount)
+        / u64::from(crate::inventory_amount::FULL_AMOUNT_MILLIUNITS)
+}
+
+fn graph(ctx: &ReducerContext) -> Result<ContainmentGraph, String> {
+    let objects = ctx
+        .db
+        .inventory_object()
+        .iter()
+        .map(|object| {
+            let definition = ctx
+                .db
+                .item()
+                .id()
+                .find(object.item_id.clone())
+                .ok_or_else(|| format!("Unknown item {}", object.item_id))?;
+            Ok(Object {
+                id: object.id,
+                exterior_volume_ml: u64::from(definition.exterior_volume_ml),
+                capacity_ml: u64::from(definition.container_capacity_ml),
+                measured_volume_ml: measured_volume_ml(ctx, &object, &definition),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let mut graph = ContainmentGraph::new(objects).map_err(str::to_owned)?;
+    for edge in ctx.db.inventory_containment().iter() {
+        graph
+            .insert(edge.child_object_id, edge.parent_object_id)
+            .map_err(str::to_owned)?;
+    }
+    Ok(graph)
+}
+
+fn liquid_used(ctx: &ReducerContext, container_object_id: u64) -> u64 {
+    ctx.db
+        .container_liquid()
+        .container_object_id()
+        .find(container_object_id)
+        .map_or(0, |row| row.water_ml)
+}
+
+pub(crate) fn consume_contained_water(
+    ctx: &ReducerContext,
+    kind: &str,
+    owner: &str,
+    requested_ml: u64,
+) -> u64 {
+    let mut liquids = ctx
+        .db
+        .inventory_object()
+        .iter()
+        .filter(|object| object.location_kind == kind && object.location_owner == owner)
+        .filter_map(|object| {
+            ctx.db
+                .container_liquid()
+                .container_object_id()
+                .find(object.id)
+        })
+        .collect::<Vec<_>>();
+    liquids.sort_by_key(|liquid| liquid.container_object_id);
+    let mut remaining = requested_ml;
+    for mut liquid in liquids {
+        let consumed = remaining.min(liquid.water_ml);
+        liquid.water_ml -= consumed;
+        remaining -= consumed;
+        if liquid.water_ml == 0 {
+            ctx.db
+                .container_liquid()
+                .container_object_id()
+                .delete(liquid.container_object_id);
+        } else {
+            ctx.db
+                .container_liquid()
+                .container_object_id()
+                .update(liquid);
+        }
+        if remaining == 0 {
+            break;
+        }
+    }
+    requested_ml - remaining
+}
+
+fn require_mutable(ctx: &ReducerContext, object_id: u64) -> Result<(), String> {
+    let mut cursor = Some(object_id);
+    for _ in 0..=adventuresim_core::inventory_containers::MAX_CONTAINER_DEPTH {
+        let Some(id) = cursor else { return Ok(()) };
+        if ctx
+            .db
+            .inventory_object()
+            .id()
+            .find(id)
+            .is_some_and(|object| object.location_kind == "fireplace")
+        {
+            return Err(
+                "Retrieve the container from its fireplace before changing its contents".into(),
+            );
+        }
+        if ctx.db.fireplace_station().iter().any(|station| {
+            station.instrument_object_id == Some(id)
+                && ctx
+                    .db
+                    .fireplace_dish()
+                    .station_key()
+                    .find(station.key)
+                    .is_some()
+        }) {
+            return Err("Container contents are locked while cooking".into());
+        }
+        cursor = ctx
+            .db
+            .inventory_containment()
+            .child_object_id()
+            .find(id)
+            .map(|edge| edge.parent_object_id);
+    }
+    Err("Container ancestry exceeds the maximum depth".into())
+}
+
+fn require_container_capacity(
+    ctx: &ReducerContext,
+    container_object_id: u64,
+    additional_ml: u64,
+) -> Result<(), String> {
+    let object = ctx
+        .db
+        .inventory_object()
+        .id()
+        .find(container_object_id)
+        .ok_or("Container object not found")?;
+    let definition = ctx
+        .db
+        .item()
+        .id()
+        .find(object.item_id)
+        .ok_or("Container definition not found")?;
+    if definition.container_capacity_ml == 0 {
+        return Err("That item is not a container".into());
+    }
+    let used = graph(ctx)?
+        .used_ml(container_object_id)
+        .map_err(str::to_owned)?
+        .checked_add(liquid_used(ctx, container_object_id))
+        .ok_or("Container volume overflow")?;
+    if used
+        .checked_add(additional_ml)
+        .is_none_or(|next| next > u64::from(definition.container_capacity_ml))
+    {
+        return Err(format!(
+            "Container capacity exceeded: {used} ml used of {} ml",
+            definition.container_capacity_ml
+        ));
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn put_inventory_item_in_container(
+    ctx: &ReducerContext,
+    character_id: u64,
+    child_scope: String,
+    child_row_id: u64,
+    parent_scope: String,
+    parent_row_id: u64,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_gateway(ctx)?;
+    crate::character::require_living_character(ctx, character_id)?;
+    let parent = ensure_object(ctx, character_id, &parent_scope, parent_row_id, true)?;
+    let child = ensure_object(ctx, character_id, &child_scope, child_row_id, true)?;
+    require_mutable(ctx, parent.id)?;
+    require_mutable(ctx, child.id)?;
+    if parent.location_kind != child.location_kind || parent.location_owner != child.location_owner
+    {
+        return Err("Move the item to the container owner's inventory first".into());
+    }
+    if ctx
+        .db
+        .inventory_containment()
+        .child_object_id()
+        .find(child.id)
+        .is_some()
+    {
+        ctx.db
+            .inventory_containment()
+            .child_object_id()
+            .delete(child.id);
+    }
+    let mut model = graph(ctx)?;
+    model.insert(child.id, parent.id).map_err(str::to_owned)?;
+    let definition = ctx
+        .db
+        .item()
+        .id()
+        .find(parent.item_id.clone())
+        .ok_or("Container definition not found")?;
+    let used = model
+        .used_ml(parent.id)
+        .map_err(str::to_owned)?
+        .checked_add(liquid_used(ctx, parent.id))
+        .ok_or("Container volume overflow")?;
+    if used > u64::from(definition.container_capacity_ml) {
+        return Err(format!(
+            "Container capacity exceeded: {used} ml used of {} ml",
+            definition.container_capacity_ml
+        ));
+    }
+    ctx.db.inventory_containment().insert(InventoryContainment {
+        child_object_id: child.id,
+        parent_object_id: parent.id,
+    });
+    Ok(())
+}
+
+#[reducer]
+pub fn remove_inventory_item_from_container(
+    ctx: &ReducerContext,
+    character_id: u64,
+    child_object_id: u64,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_gateway(ctx)?;
+    crate::character::require_living_character(ctx, character_id)?;
+    let child = ctx
+        .db
+        .inventory_object()
+        .id()
+        .find(child_object_id)
+        .ok_or("Contained object not found")?;
+    require_mutable(ctx, child_object_id)?;
+    let actor = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let owned = child.location_kind == "personal"
+        && child.location_owner == character_id.to_string()
+        || child.location_kind == "party"
+            && actor.party_id.as_deref() == Some(&child.location_owner);
+    if !owned {
+        return Err("Contained object belongs to another inventory".into());
+    }
+    let former_parent = ctx
+        .db
+        .inventory_containment()
+        .child_object_id()
+        .find(child_object_id)
+        .ok_or("Object is not inside a container")?
+        .parent_object_id;
+    ctx.db
+        .inventory_containment()
+        .child_object_id()
+        .delete(child_object_id);
+    merge_empty_container(ctx, former_parent)?;
+    Ok(())
+}
+
+#[reducer]
+pub fn pour_water_into_container(
+    ctx: &ReducerContext,
+    character_id: u64,
+    parent_scope: String,
+    parent_row_id: u64,
+    requested_ml: u64,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_gateway(ctx)?;
+    if requested_ml == 0 {
+        return Err("Water amount must be positive".into());
+    }
+    let parent = ensure_object(ctx, character_id, &parent_scope, parent_row_id, true)?;
+    require_mutable(ctx, parent.id)?;
+    require_container_capacity(ctx, parent.id, requested_ml)?;
+    let available = match parent.location_kind.as_str() {
+        "personal" => ctx
+            .db
+            .character_needs()
+            .character_id()
+            .find(character_id)
+            .map_or(0, |row| row.carried_water_ml.max(0.0).floor() as u64),
+        "party" => ctx
+            .db
+            .party_authority()
+            .id()
+            .find(parent.location_owner.clone())
+            .map_or(0, |row| row.pooled_water_ml.max(0.0).floor() as u64),
+        _ => 0,
+    };
+    if requested_ml > available {
+        return Err("Not enough carried water".into());
+    }
+    match parent.location_kind.as_str() {
+        "personal" => {
+            let mut row = ctx
+                .db
+                .character_needs()
+                .character_id()
+                .find(character_id)
+                .ok_or("Character needs not initialized")?;
+            row.carried_water_ml -= requested_ml as f32;
+            ctx.db.character_needs().character_id().update(row);
+        }
+        "party" => {
+            let mut row = ctx
+                .db
+                .party_authority()
+                .id()
+                .find(parent.location_owner.clone())
+                .ok_or("Party not found")?;
+            row.pooled_water_ml -= requested_ml as f32;
+            ctx.db.party_authority().id().update(row);
+        }
+        _ => return Err("Cannot pour water into a container at this location".into()),
+    }
+    if let Some(mut liquid) = ctx
+        .db
+        .container_liquid()
+        .container_object_id()
+        .find(parent.id)
+    {
+        liquid.water_ml = liquid
+            .water_ml
+            .checked_add(requested_ml)
+            .ok_or("Water volume overflow")?;
+        ctx.db
+            .container_liquid()
+            .container_object_id()
+            .update(liquid);
+    } else {
+        ctx.db.container_liquid().insert(ContainerLiquid {
+            container_object_id: parent.id,
+            water_ml: requested_ml,
+        });
+    }
+    Ok(())
+}
+
+#[reducer]
+pub fn pour_water_out_of_container(
+    ctx: &ReducerContext,
+    character_id: u64,
+    container_object_id: u64,
+    requested_ml: u64,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_gateway(ctx)?;
+    if requested_ml == 0 {
+        return Err("Water amount must be positive".into());
+    }
+    let object = ctx
+        .db
+        .inventory_object()
+        .id()
+        .find(container_object_id)
+        .ok_or("Container object not found")?;
+    require_mutable(ctx, container_object_id)?;
+    let mut liquid = ctx
+        .db
+        .container_liquid()
+        .container_object_id()
+        .find(container_object_id)
+        .ok_or("Container has no water")?;
+    if liquid.water_ml < requested_ml {
+        return Err("Container does not hold that much water".into());
+    }
+    let actor = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    match object.location_kind.as_str() {
+        "personal" if object.location_owner == character_id.to_string() => {
+            let mut row = ctx
+                .db
+                .character_needs()
+                .character_id()
+                .find(character_id)
+                .ok_or("Character needs not initialized")?;
+            if row.carried_water_ml + requested_ml as f32
+                > crate::condition::water_capacity_ml(ctx, character_id) as f32
+            {
+                return Err("Personal waterskins do not have enough free capacity".into());
+            }
+            row.carried_water_ml += requested_ml as f32;
+            ctx.db.character_needs().character_id().update(row);
+        }
+        "party" if actor.party_id.as_deref() == Some(&object.location_owner) => {
+            let mut row = ctx
+                .db
+                .party_authority()
+                .id()
+                .find(object.location_owner.clone())
+                .ok_or("Party not found")?;
+            if row.pooled_water_ml + requested_ml as f32
+                > crate::condition::party_water_capacity_ml(ctx, &object.location_owner) as f32
+            {
+                return Err("Party waterskins do not have enough free capacity".into());
+            }
+            row.pooled_water_ml += requested_ml as f32;
+            ctx.db.party_authority().id().update(row);
+        }
+        _ => return Err("Container belongs to another inventory".into()),
+    }
+    liquid.water_ml -= requested_ml;
+    if liquid.water_ml == 0 {
+        ctx.db
+            .container_liquid()
+            .container_object_id()
+            .delete(container_object_id);
+        merge_empty_container(ctx, container_object_id)?;
+    } else {
+        ctx.db
+            .container_liquid()
+            .container_object_id()
+            .update(liquid);
+    }
+    Ok(())
+}

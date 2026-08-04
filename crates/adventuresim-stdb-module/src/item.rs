@@ -244,6 +244,8 @@ pub struct Item {
     #[primary_key]
     pub id: String,
     pub weight: f32,
+    /// Exterior displacement for generic inventory containment.
+    pub exterior_volume_ml: u32,
     pub slot: ItemSlot,
     pub kind: ItemKind,
     pub equipment_placements: Vec<EquipmentPlacement>,
@@ -273,6 +275,9 @@ pub struct Item {
     pub nutrition_kcal: f32,
     /// Water capacity contributed while this item is in personal inventory.
     pub water_capacity_ml: u32,
+    /// Generic interior inventory capacity. This remains independent of
+    /// equipment attachment points and their slot counts.
+    pub container_capacity_ml: u32,
     /// Potable liquid in one discrete serving.
     pub alcohol_serving_ml: u32,
     /// Alcohol by volume in basis points (500 = 5%).
@@ -305,6 +310,7 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
     let mut item = Item {
         id: definition.id.clone(),
         weight: definition.weight_kg,
+        exterior_volume_ml: definition.exterior_volume_ml,
         base_value: Some(definition.base_value),
         ..Item::default()
     };
@@ -504,7 +510,12 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
         item.quality = book.quality;
     }
     if let Some(container) = definition.capabilities.container {
-        item.water_capacity_ml = container.capacity_ml;
+        item.water_capacity_ml = if definition.id == "waterskin" {
+            container.capacity_ml
+        } else {
+            0
+        };
+        item.container_capacity_ml = container.capacity_ml;
     }
     if let Some(alcohol) = definition.capabilities.alcohol {
         item.alcohol_serving_ml = alcohol.serving_ml;

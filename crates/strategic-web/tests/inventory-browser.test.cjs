@@ -42,6 +42,17 @@ test("destination refresh is exposed for generated row insertion", () => {
   assert.equal(typeof syncPanelWidth, "function");
 });
 
+test("container browsing preserves counterpart state and accessible fallbacks", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
+  assert.match(source, /data-container-open/);
+  assert.match(source, /data-container-close/);
+  assert.match(source, /_containerPanelStack/);
+  assert.match(source, /snapshot\.active\?\.focus/);
+  assert.match(source, /inventory-container-move/);
+  assert.match(source, /application\/x-adventuresim-inventory-object/);
+  assert.match(source, /Container capacity exceeded|container-capacity/);
+});
+
 test("currency rows use one aggregate parent and dedicated denomination components", () => {
   const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
   assert.match(source, /groupCurrencyRows\(browser\)/);
@@ -157,4 +168,16 @@ test("food lots use a disclosure parent without becoming fungible", () => {
   assert.match(source, /data-food-lot=\\?"true/);
   assert.match(source, /food-component-row/);
   assert.match(source, /Show food lots/);
+});
+
+test("containers hydrate authoritative trees and wire accessible mutations", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
+  assert.match(source, /\/api\/inventory\/containers/);
+  assert.match(source, /data-container-parent-object-id/);
+  assert.match(source, /inventory-container-move/);
+  assert.match(source, /data-container-close/);
+  assert.match(source, /data-container-remove/);
+  assert.match(source, /data-container-pour/);
+  assert.match(source, /data-container-drain/);
+  assert.match(source, /application\/x-adventuresim-inventory-object/);
 });
