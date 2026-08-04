@@ -30,6 +30,10 @@ pub mod prelude {
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentTopology, EquipmentTopologyOccupancy,
         InventoryItems, ItemOf, ItemProperties, ItemQuantity, ShieldItem, WeaponItem,
     };
+    pub use crate::physics::{
+        TACTICAL_RUN_SPEED_METRES_PER_SECOND, tactical_character_controller,
+        tactical_movement_speed,
+    };
     pub use crate::player::{
         Attributes, BestiaryCategories, CharacterId, ControlledPlayer, Limbs, Player, Skills,
         Stats, TacticalCombatState, TacticalPlayerView, TacticalPlayerViewer,

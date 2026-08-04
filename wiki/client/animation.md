@@ -498,6 +498,13 @@ procedural pelvis lowering, additional hip and knee flexion, shortened stride,
 and foot IK to the ordinary gait instead of requiring a separate crouch-walk
 cycle.
 
+Ordinary tactical movement tops out at 5.5 metres per second. Analogue input
+preserves its radial magnitude, so half stick deflection requests half that run
+speed while keyboard input requests the full speed. Gait phase 0 through 1 is
+one complete left-right cycle rather than one step; phase frequency therefore
+uses twice the estimated single-step stride length. This keeps the authored
+walk/run cadence tied to ground distance without double-speed footfalls.
+
 Contact and passing/flight anchors are authoritative sparse gait inputs. The
 evaluator constructs four smooth quarters: contact to passing, passing to the
 character-space mirrored contact, mirrored contact to mirrored passing, and
@@ -568,7 +575,8 @@ their continuity remains covered by the per-frame displacement and rotation
 gates instead.
 
 During ordinary lowered-guard travel the server advances the replicated body's authored +Z
-axis toward authoritative horizontal velocity at a bounded turn rate. Camera
+axis toward authoritative horizontal velocity at a bounded turn rate that can
+complete a 180-degree reversal in 0.25 seconds. Camera
 pitch is removed before planar gait projection. Camera yaw intentionally maps
 raw movement input into world movement, but it is not applied again by either
 the client root or authored-rig child. At idle, the last body yaw is retained;
