@@ -57,6 +57,7 @@ pub mod starting_character;
 pub mod strategic_currency;
 pub mod strategic_economy;
 pub mod strategic_inventory;
+pub mod strategic_place;
 pub mod strategic_schedule;
 pub mod strategic_state;
 pub mod strategic_time;
@@ -90,6 +91,7 @@ pub mod prelude {
     pub use crate::skill::*;
     pub use crate::social::*;
     pub use crate::strategic_economy::*;
+    pub use crate::strategic_place::*;
     pub use crate::strategic_schedule::*;
     pub use crate::strategic_time::*;
     pub use crate::survival::*;

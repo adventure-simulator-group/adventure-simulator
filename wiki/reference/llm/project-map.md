@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1718)
+## Files (1720)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -137,6 +137,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/strategic_currency.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_economy.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_inventory.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/strategic_place.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_schedule.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_state.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/strategic_time.rs` — Rust source module for this component.
@@ -1701,6 +1702,7 @@ development, or other wiki document before changing a subsystem.
 - `wiki/reference/soil.md` — Project documentation.
 - `wiki/reference/source-manifests.md` — Project documentation.
 - `wiki/reference/spatial-grid.md` — Project documentation.
+- `wiki/reference/strategic-places.md` — Project documentation.
 - `wiki/reference/strategic-read-cache.md` — Project documentation.
 - `wiki/reference/strategic-simulation.md` — Project documentation.
 - `wiki/reference/tree-species.md` — Project documentation.
