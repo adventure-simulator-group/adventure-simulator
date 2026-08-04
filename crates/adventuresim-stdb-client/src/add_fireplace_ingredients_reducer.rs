@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub(super) struct AddFireplaceIngredientsArgs {
     pub character_id: u64,
-    pub context_key: String,
+    pub fireplace_fixture_id: String,
     pub inventory_scope: String,
     pub inventory_item_ids: Vec<u64>,
     pub amounts_milliunits: Vec<u32>,
@@ -18,7 +18,7 @@ impl From<AddFireplaceIngredientsArgs> for super::Reducer {
     fn from(args: AddFireplaceIngredientsArgs) -> Self {
         Self::AddFireplaceIngredients {
             character_id: args.character_id,
-            context_key: args.context_key,
+            fireplace_fixture_id: args.fireplace_fixture_id,
             inventory_scope: args.inventory_scope,
             inventory_item_ids: args.inventory_item_ids,
             amounts_milliunits: args.amounts_milliunits,
@@ -44,14 +44,14 @@ pub trait add_fireplace_ingredients {
     fn add_fireplace_ingredients(
         &self,
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         inventory_scope: String,
         inventory_item_ids: Vec<u64>,
         amounts_milliunits: Vec<u32>,
     ) -> __sdk::Result<()> {
         self.add_fireplace_ingredients_then(
             character_id,
-            context_key,
+            fireplace_fixture_id,
             inventory_scope,
             inventory_item_ids,
             amounts_milliunits,
@@ -68,7 +68,7 @@ pub trait add_fireplace_ingredients {
     fn add_fireplace_ingredients_then(
         &self,
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         inventory_scope: String,
         inventory_item_ids: Vec<u64>,
         amounts_milliunits: Vec<u32>,
@@ -85,7 +85,7 @@ impl add_fireplace_ingredients for super::RemoteReducers {
     fn add_fireplace_ingredients_then(
         &self,
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         inventory_scope: String,
         inventory_item_ids: Vec<u64>,
         amounts_milliunits: Vec<u32>,
@@ -99,7 +99,7 @@ impl add_fireplace_ingredients for super::RemoteReducers {
         self.imp.invoke_reducer_with_callback(
             AddFireplaceIngredientsArgs {
                 character_id,
-                context_key,
+                fireplace_fixture_id,
                 inventory_scope,
                 inventory_item_ids,
                 amounts_milliunits,

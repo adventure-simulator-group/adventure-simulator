@@ -99,3 +99,16 @@ Outbreak authority persists its physical source as a canonical
 the canonical case-site place encoding. Both are constructor-produced and
 parse-validated before comparison; raw generated site strings cannot directly
 join outbreak remediation, exposure, investigation, or contextual presence.
+
+Journey authority supplies the exact coordinates of a reached camp: party ID,
+journey departure minute, and reached movement minute. The camp adapter returns
+that canonical `StrategicPlaceId::JourneyCamp` only while the party is
+coherently off-settlement at that reached stop. The party destination must equal
+the active journey destination, the journey must use a supported canonical plan
+version and remain incomplete, and the current movement minute must be an
+actually reached stop. Legacy and unknown plan versions cannot mint a place;
+forecast intervals do not prove that a camp exists. Fireplace custody and reducer transport persist the
+canonical `StrategicFixtureId::Fireplace` encoding, and the fixture's embedded
+place is parse-validated before current-camp or exact settlement-venue authority
+is checked. The former `camp|...` and `settlement|...` context strings are not
+accepted aliases.

@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub(super) struct RetrieveFireplaceContainerArgs {
     pub character_id: u64,
-    pub context_key: String,
+    pub fireplace_fixture_id: String,
     pub container_object_id: u64,
 }
 
@@ -16,7 +16,7 @@ impl From<RetrieveFireplaceContainerArgs> for super::Reducer {
     fn from(args: RetrieveFireplaceContainerArgs) -> Self {
         Self::RetrieveFireplaceContainer {
             character_id: args.character_id,
-            context_key: args.context_key,
+            fireplace_fixture_id: args.fireplace_fixture_id,
             container_object_id: args.container_object_id,
         }
     }
@@ -40,12 +40,12 @@ pub trait retrieve_fireplace_container {
     fn retrieve_fireplace_container(
         &self,
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         container_object_id: u64,
     ) -> __sdk::Result<()> {
         self.retrieve_fireplace_container_then(
             character_id,
-            context_key,
+            fireplace_fixture_id,
             container_object_id,
             |_, _| {},
         )
@@ -60,7 +60,7 @@ pub trait retrieve_fireplace_container {
     fn retrieve_fireplace_container_then(
         &self,
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         container_object_id: u64,
 
         callback: impl FnOnce(
@@ -75,7 +75,7 @@ impl retrieve_fireplace_container for super::RemoteReducers {
     fn retrieve_fireplace_container_then(
         &self,
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         container_object_id: u64,
 
         callback: impl FnOnce(
@@ -87,7 +87,7 @@ impl retrieve_fireplace_container for super::RemoteReducers {
         self.imp.invoke_reducer_with_callback(
             RetrieveFireplaceContainerArgs {
                 character_id,
-                context_key,
+                fireplace_fixture_id,
                 container_object_id,
             },
             callback,

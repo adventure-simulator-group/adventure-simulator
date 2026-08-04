@@ -80,13 +80,20 @@ are ingredient-row Edge Actions; they preserve nutrition and flavor while
 reducing authored safety time to 75% and 50% respectively.
 
 Each character has private station contents at each exact fireplace even though
-everyone sees the shared environmental portrait. Settlement authority binds the
-station to the current settlement and building; camp authority also includes
-the party, journey departure minute, and reached movement minute, preventing a
-station from leaking between camps or journeys. Tactical actors and stale or
-remote contexts are rejected. A station holds at most one dish and one installed
+everyone sees the shared environmental portrait. Station custody persists a
+canonical fireplace fixture ID rather than a route-shaped context key.
+Settlement authority separately proves the fixture's exact current venue and
+that building's availability; camp authority separately proves the fixture's
+party, journey departure minute, and reached movement minute, preventing a
+station from leaking between camps or journeys. Non-canonical fixture strings,
+tactical actors, and stale or remote places are rejected. A station holds at
+most one dish and one installed
 instrument. Trading a pan, pot, or portable oven into an idle station selects
-pan-fry, stew, or bake; no instrument selects roast. Replacing or removing a tool
+pan-fry, stew, or bake; no instrument selects roast. A dish captures its exact
+personal character or party inventory source before ingredients are consumed.
+Retrieval returns the cooked meal only to that immutable source, even if the
+character later changes parties; a caller-selected destination cannot redirect
+it, and a missing original party fails closed. Replacing or removing a tool
 returns it to its recorded personal or party source. If that source is no longer
 available, the tool stays installed rather than being lost. Party-sourced tools
 remember the exact originating party rather than following the character into a

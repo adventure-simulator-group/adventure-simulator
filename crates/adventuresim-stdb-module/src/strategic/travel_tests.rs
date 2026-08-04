@@ -120,6 +120,34 @@ mod departure_invariant_tests {
         assert!(!refresh.contains("journey.total_minutes.saturating_mul(2)"));
     }
 
+    #[test]
+    fn canonical_camp_identity_requires_coherent_current_journey_authority() {
+        let camp_source = include_str!("journey_camp.rs");
+        let predicate = camp_source
+            .split("pub(crate) fn party_journey_is_current_camp")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn current_journey_camp_place").next())
+            .expect("current camp predicate");
+        assert!(predicate.contains("camp_destination.as_ref() == Some(&journey.destination)"));
+        assert!(predicate.contains("journey_plan_version_is_canonical"));
+        assert!(predicate.contains("journey.completed_minutes < journey.total_minutes"));
+        assert!(predicate.contains("camp_stop_minutes"));
+        assert!(!predicate.contains("forecast_camp_stop_minutes"));
+
+        let travel_source = include_str!("travel_reducers.rs");
+        let continuation = travel_source
+            .split("pub fn continue_camp_travel")
+            .nth(1)
+            .expect("camp continuation reducer");
+        let custody = continuation
+            .find("require_clear_current_camp_fireplace")
+            .expect("pre-refresh custody gate");
+        let refresh = continuation
+            .find("refresh_party_journey_forecast")
+            .expect("journey forecast refresh");
+        assert!(custody < refresh);
+    }
+
     fn route_fixture() -> JourneyRoutePlan {
         let origin = (10.0, 53.0);
         let destination = (10.01, 53.0);

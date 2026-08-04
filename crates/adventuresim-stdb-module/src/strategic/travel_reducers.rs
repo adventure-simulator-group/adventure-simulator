@@ -786,21 +786,12 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         .camp_destination
         .clone()
         .ok_or("The party is not camped")?;
-    // This also upgrades pre elapsed-itinerary rows before any celestial or
-    // progress coordinates are used.
+    let camp_place = current_journey_camp_place(ctx, &party_id)?;
+    crate::food::require_clear_current_camp_fireplace(ctx, &camp_place)?;
+    // Refresh only after the exact pre-refresh camp and every persisted
+    // fireplace custody row have been validated. Legacy itinerary repair can
+    // never mint a new identity around existing custody.
     refresh_party_journey_forecast(ctx, &party_id)?;
-    let journey = ctx
-        .db
-        .party_journey_authority()
-        .party_id()
-        .find(&party_id)
-        .ok_or("Journey not found")?;
-    crate::food::require_clear_current_camp_fireplace(
-        ctx,
-        &party_id,
-        journey.departure_minute,
-        journey.completed_minutes,
-    )?;
     let proposed_leg_minutes = party.camp_remaining_minutes.min(party_next_walking_minutes(
         ctx,
         &party.id,

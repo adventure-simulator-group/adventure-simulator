@@ -11,6 +11,7 @@ use super::cooking_method_type::CookingMethod;
 pub struct BackendFireplaceDish {
     pub station_key: String,
     pub character_id: u64,
+    pub fireplace_fixture_id: String,
     pub contributor_name: String,
     pub method: CookingMethod,
     pub started_at_minute: u64,
@@ -28,6 +29,7 @@ impl __sdk::InModule for BackendFireplaceDish {
 pub struct BackendFireplaceDishCols {
     pub station_key: __sdk::__query_builder::Col<BackendFireplaceDish, String>,
     pub character_id: __sdk::__query_builder::Col<BackendFireplaceDish, u64>,
+    pub fireplace_fixture_id: __sdk::__query_builder::Col<BackendFireplaceDish, String>,
     pub contributor_name: __sdk::__query_builder::Col<BackendFireplaceDish, String>,
     pub method: __sdk::__query_builder::Col<BackendFireplaceDish, CookingMethod>,
     pub started_at_minute: __sdk::__query_builder::Col<BackendFireplaceDish, u64>,
@@ -41,6 +43,10 @@ impl __sdk::__query_builder::HasCols for BackendFireplaceDish {
         BackendFireplaceDishCols {
             station_key: __sdk::__query_builder::Col::new(table_name, "station_key"),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            fireplace_fixture_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "fireplace_fixture_id",
+            ),
             contributor_name: __sdk::__query_builder::Col::new(table_name, "contributor_name"),
             method: __sdk::__query_builder::Col::new(table_name, "method"),
             started_at_minute: __sdk::__query_builder::Col::new(table_name, "started_at_minute"),

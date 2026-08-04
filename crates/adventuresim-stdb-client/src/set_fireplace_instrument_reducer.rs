@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub(super) struct SetFireplaceInstrumentArgs {
     pub character_id: u64,
-    pub context_key: String,
+    pub fireplace_fixture_id: String,
     pub inventory_scope: String,
     pub inventory_item_id: Option<u64>,
 }
@@ -17,7 +17,7 @@ impl From<SetFireplaceInstrumentArgs> for super::Reducer {
     fn from(args: SetFireplaceInstrumentArgs) -> Self {
         Self::SetFireplaceInstrument {
             character_id: args.character_id,
-            context_key: args.context_key,
+            fireplace_fixture_id: args.fireplace_fixture_id,
             inventory_scope: args.inventory_scope,
             inventory_item_id: args.inventory_item_id,
         }
@@ -42,13 +42,13 @@ pub trait set_fireplace_instrument {
     fn set_fireplace_instrument(
         &self,
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         inventory_scope: String,
         inventory_item_id: Option<u64>,
     ) -> __sdk::Result<()> {
         self.set_fireplace_instrument_then(
             character_id,
-            context_key,
+            fireplace_fixture_id,
             inventory_scope,
             inventory_item_id,
             |_, _| {},
@@ -64,7 +64,7 @@ pub trait set_fireplace_instrument {
     fn set_fireplace_instrument_then(
         &self,
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         inventory_scope: String,
         inventory_item_id: Option<u64>,
 
@@ -80,7 +80,7 @@ impl set_fireplace_instrument for super::RemoteReducers {
     fn set_fireplace_instrument_then(
         &self,
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         inventory_scope: String,
         inventory_item_id: Option<u64>,
 
@@ -93,7 +93,7 @@ impl set_fireplace_instrument for super::RemoteReducers {
         self.imp.invoke_reducer_with_callback(
             SetFireplaceInstrumentArgs {
                 character_id,
-                context_key,
+                fireplace_fixture_id,
                 inventory_scope,
                 inventory_item_id,
             },

@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1721)
+## Files (1722)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -534,6 +534,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/finalize_party_offer_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/finalize_storefront_trade_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/finish_world_data_import_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/fireplace_dish_inventory_source_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/fireplace_dish_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/fireplace_station_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/fish_commodity_type.rs` — Generated SpacetimeDB data type.

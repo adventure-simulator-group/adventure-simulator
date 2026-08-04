@@ -344,6 +344,55 @@ fn record_party_journey_camp(
     Ok(())
 }
 
+pub(crate) fn journey_plan_version_is_canonical(plan_version: u8) -> bool {
+    matches!(plan_version, 1 | 2)
+}
+
+/// One predicate shared by every authoritative consumer that treats a party
+/// and journey row as an exact reached camp.
+pub(crate) fn party_journey_is_current_camp(party: &Party, journey: &PartyJourney) -> bool {
+    party.current_settlement_id.is_none()
+        && party.current_case_site_id.is_none()
+        && party.camp_destination.as_ref() == Some(&journey.destination)
+        && journey_plan_version_is_canonical(journey.plan_version)
+        && journey.completed_minutes < journey.total_minutes
+        && journey
+            .camp_stop_minutes
+            .contains(&journey.completed_minutes)
+}
+
+/// Canonical identity for the party's currently reached journey camp.
+///
+/// The identity names the camp only. This adapter proves that the named camp
+/// is the party's coherent current off-settlement location before returning
+/// it to presence and fixture consumers.
+pub(crate) fn current_journey_camp_place(
+    ctx: &ReducerContext,
+    party_id: &str,
+) -> Result<adventuresim_core::strategic_place::StrategicPlaceId, String> {
+    let party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(party_id.to_string())
+        .ok_or("Party not found")?;
+    let journey = ctx
+        .db
+        .party_journey_authority()
+        .party_id()
+        .find(party_id.to_string())
+        .ok_or("Journey camp not found")?;
+    if !party_journey_is_current_camp(&party, &journey) {
+        return Err("This is not the party's current journey camp".into());
+    }
+    adventuresim_core::strategic_place::StrategicPlaceId::journey_camp(
+        party_id,
+        journey.departure_minute,
+        journey.completed_minutes,
+    )
+    .map_err(|_| "Journey camp has an invalid canonical identity".into())
+}
+
 fn record_party_journey_interruption(ctx: &ReducerContext, party_id: &str, movement_minutes: u64) {
     if let Some(mut journey) = ctx
         .db

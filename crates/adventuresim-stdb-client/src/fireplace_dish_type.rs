@@ -5,12 +5,15 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::cooking_method_type::CookingMethod;
+use super::fireplace_dish_inventory_source_type::FireplaceDishInventorySource;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct FireplaceDish {
     pub station_key: String,
     pub character_id: u64,
+    pub fireplace_fixture_id: String,
+    pub inventory_source: FireplaceDishInventorySource,
     pub contributor_name: String,
     pub method: CookingMethod,
     pub cooking_check: f32,
@@ -47,6 +50,8 @@ impl __sdk::InModule for FireplaceDish {
 pub struct FireplaceDishCols {
     pub station_key: __sdk::__query_builder::Col<FireplaceDish, String>,
     pub character_id: __sdk::__query_builder::Col<FireplaceDish, u64>,
+    pub fireplace_fixture_id: __sdk::__query_builder::Col<FireplaceDish, String>,
+    pub inventory_source: __sdk::__query_builder::Col<FireplaceDish, FireplaceDishInventorySource>,
     pub contributor_name: __sdk::__query_builder::Col<FireplaceDish, String>,
     pub method: __sdk::__query_builder::Col<FireplaceDish, CookingMethod>,
     pub cooking_check: __sdk::__query_builder::Col<FireplaceDish, f32>,
@@ -79,6 +84,11 @@ impl __sdk::__query_builder::HasCols for FireplaceDish {
         FireplaceDishCols {
             station_key: __sdk::__query_builder::Col::new(table_name, "station_key"),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            fireplace_fixture_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "fireplace_fixture_id",
+            ),
+            inventory_source: __sdk::__query_builder::Col::new(table_name, "inventory_source"),
             contributor_name: __sdk::__query_builder::Col::new(table_name, "contributor_name"),
             method: __sdk::__query_builder::Col::new(table_name, "method"),
             cooking_check: __sdk::__query_builder::Col::new(table_name, "cooking_check"),

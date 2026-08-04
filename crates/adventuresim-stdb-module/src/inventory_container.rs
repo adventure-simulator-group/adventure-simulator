@@ -29,7 +29,7 @@ pub struct InventoryObject {
     pub item_id: String,
     /// `personal`, `party`, or `fireplace`.
     pub location_kind: String,
-    /// Character ID, party ID, or exact fireplace context key.
+    /// Character ID, party ID, or canonical fireplace fixture ID.
     pub location_owner: String,
     /// Current legacy inventory row while personal/party; zero at a fireplace.
     pub inventory_row_id: u64,

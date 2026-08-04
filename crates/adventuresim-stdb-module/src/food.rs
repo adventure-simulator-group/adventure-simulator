@@ -5,6 +5,7 @@ use adventuresim_core::{
     durability::{DamageBins, effective_weapon_stat},
     food, herbalism,
     prelude::{PlayerSkills, Skill, apply_direct_training},
+    strategic_place::{StrategicFixtureId, StrategicPlaceId},
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
@@ -345,7 +346,8 @@ pub struct FireplaceStation {
     pub key: String,
     #[index(btree)]
     pub character_id: u64,
-    pub context_key: String,
+    /// Canonical `StrategicFixtureId::Fireplace` encoding.
+    pub fireplace_fixture_id: String,
     pub instrument_item_id: Option<String>,
     /// Stable root object for a placed cooking vessel. `None` is the loose
     /// spit-roast lane or a legacy empty station.
@@ -358,6 +360,35 @@ pub struct FireplaceStation {
 
 /// Irreversibly consolidated meal escrow. Hidden microbial load stays in this
 /// private table and is copied to FoodContamination only on retrieval.
+#[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum FireplaceDishInventorySource {
+    Personal { character_id: u64 },
+    Party { party_id: String },
+}
+
+fn dish_inventory_destination(
+    source: &FireplaceDishInventorySource,
+    dish_character_id: u64,
+    requested_scope: &str,
+    container_selector: bool,
+) -> Result<(&'static str, String), String> {
+    let destination = match source {
+        FireplaceDishInventorySource::Personal { character_id }
+            if *character_id == dish_character_id =>
+        {
+            ("personal", character_id.to_string())
+        }
+        FireplaceDishInventorySource::Personal { .. } => {
+            return Err("Dish personal custody conflicts with its owner".into());
+        }
+        FireplaceDishInventorySource::Party { party_id } => ("party", party_id.clone()),
+    };
+    if !container_selector && !matches!(requested_scope, "personal" | "party") {
+        return Err("Invalid fireplace dish selector".into());
+    }
+    Ok(destination)
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor = fireplace_dish)]
 pub struct FireplaceDish {
@@ -365,6 +396,10 @@ pub struct FireplaceDish {
     pub station_key: String,
     #[index(btree)]
     pub character_id: u64,
+    /// Canonical `StrategicFixtureId::Fireplace` encoding shared with its station.
+    pub fireplace_fixture_id: String,
+    /// Immutable inventory authority captured before ingredients are consumed.
+    pub inventory_source: FireplaceDishInventorySource,
     pub contributor_name: String,
     pub method: CookingMethod,
     pub cooking_check: f32,
@@ -395,7 +430,7 @@ pub struct FireplaceDish {
 pub struct BackendFireplaceStation {
     pub key: String,
     pub character_id: u64,
-    pub context_key: String,
+    pub fireplace_fixture_id: String,
     pub instrument_item_id: Option<String>,
     pub instrument_object_id: Option<u64>,
     pub instrument_source: Option<String>,
@@ -413,7 +448,7 @@ pub fn backend_fireplace_stations(ctx: &ViewContext) -> Vec<BackendFireplaceStat
         .map(|row| BackendFireplaceStation {
             key: row.key,
             character_id: row.character_id,
-            context_key: row.context_key,
+            fireplace_fixture_id: row.fireplace_fixture_id,
             instrument_item_id: row.instrument_item_id,
             instrument_object_id: row.instrument_object_id,
             instrument_source: row.instrument_source,
@@ -425,6 +460,7 @@ pub fn backend_fireplace_stations(ctx: &ViewContext) -> Vec<BackendFireplaceStat
 pub struct BackendFireplaceDish {
     pub station_key: String,
     pub character_id: u64,
+    pub fireplace_fixture_id: String,
     pub contributor_name: String,
     pub method: CookingMethod,
     pub started_at_minute: u64,
@@ -444,6 +480,7 @@ pub fn backend_fireplace_dishes(ctx: &ViewContext) -> Vec<BackendFireplaceDish> 
         .map(|row| BackendFireplaceDish {
             station_key: row.station_key,
             character_id: row.character_id,
+            fireplace_fixture_id: row.fireplace_fixture_id,
             contributor_name: row.contributor_name,
             method: row.method,
             started_at_minute: row.started_at_minute,
@@ -453,27 +490,74 @@ pub fn backend_fireplace_dishes(ctx: &ViewContext) -> Vec<BackendFireplaceDish> 
         .collect()
 }
 
-fn station_key(character_id: u64, context_key: &str) -> String {
-    format!("{character_id}|{context_key}")
+fn station_key(character_id: u64, fireplace_fixture_id: &str) -> String {
+    format!("{character_id}|{fireplace_fixture_id}")
+}
+
+fn parse_persisted_fireplace_fixture(
+    fireplace_fixture_id: &str,
+) -> Result<StrategicFixtureId, String> {
+    match fireplace_fixture_id
+        .parse::<StrategicFixtureId>()
+        .map_err(|_| "Persisted fireplace custody has an invalid canonical fixture")?
+    {
+        fixture @ StrategicFixtureId::Fireplace { .. } => Ok(fixture),
+        _ => Err("Persisted fireplace custody names a non-fireplace fixture".into()),
+    }
+}
+
+fn validate_persisted_station_fixture(
+    station: &FireplaceStation,
+) -> Result<StrategicFixtureId, String> {
+    let fixture = parse_persisted_fireplace_fixture(&station.fireplace_fixture_id)?;
+    let expected_key = match station.instrument_object_id {
+        Some(object_id) => vessel_station_key(
+            station.character_id,
+            &station.fireplace_fixture_id,
+            object_id,
+        ),
+        None => station_key(station.character_id, &station.fireplace_fixture_id),
+    };
+    if station.key != expected_key {
+        return Err("Persisted fireplace station conflicts with its canonical fixture".into());
+    }
+    Ok(fixture)
+}
+
+fn validate_persisted_dish_fixture(
+    ctx: &ReducerContext,
+    dish: &FireplaceDish,
+) -> Result<StrategicFixtureId, String> {
+    let fixture = parse_persisted_fireplace_fixture(&dish.fireplace_fixture_id)?;
+    let station = ctx
+        .db
+        .fireplace_station()
+        .key()
+        .find(dish.station_key.clone())
+        .ok_or("Persisted fireplace dish has no station authority")?;
+    let station_fixture = validate_persisted_station_fixture(&station)?;
+    if station.character_id != dish.character_id || station_fixture != fixture {
+        return Err("Persisted fireplace dish conflicts with its station authority".into());
+    }
+    Ok(fixture)
 }
 
 pub(crate) fn require_clear_current_camp_fireplace(
     ctx: &ReducerContext,
-    party_id: &str,
-    departure_minute: u64,
-    movement_minute: u64,
+    camp_place: &StrategicPlaceId,
 ) -> Result<(), String> {
-    let context = format!("camp|{party_id}|{departure_minute}|{movement_minute}");
-    let occupied = ctx
-        .db
-        .fireplace_station()
-        .iter()
-        .any(|row| row.context_key == context && row.instrument_item_id.is_some())
-        || ctx
-            .db
-            .fireplace_dish()
-            .iter()
-            .any(|row| row.station_key.ends_with(&format!("|{context}")));
+    if !matches!(camp_place, StrategicPlaceId::JourneyCamp { .. }) {
+        return Err("Camp custody gate requires an exact journey camp".into());
+    }
+    let mut occupied = false;
+    for station in ctx.db.fireplace_station().iter() {
+        let fixture = validate_persisted_station_fixture(&station)?;
+        occupied |= fixture.place() == camp_place && station.instrument_item_id.is_some();
+    }
+    for dish in ctx.db.fireplace_dish().iter() {
+        let fixture = validate_persisted_dish_fixture(ctx, &dish)?;
+        occupied |= fixture.place() == camp_place;
+    }
     if occupied {
         Err("Retrieve every dish and remove every cooking instrument before breaking camp".into())
     } else {
@@ -492,10 +576,7 @@ pub(crate) fn require_members_clear_current_camp_fireplace(
         .id()
         .find(party_id.to_string())
         .ok_or("Party not found")?;
-    if party.current_settlement_id.is_some()
-        || party.current_case_site_id.is_some()
-        || party.camp_destination.is_none()
-    {
+    if party.camp_destination.is_none() {
         return Ok(());
     }
     let journey = ctx
@@ -504,30 +585,25 @@ pub(crate) fn require_members_clear_current_camp_fireplace(
         .party_id()
         .find(party_id.to_string())
         .ok_or("Journey camp not found")?;
-    if !journey
-        .camp_stop_minutes
-        .contains(&journey.completed_minutes)
-    {
-        return Ok(());
+    if !crate::strategic::party_journey_is_current_camp(&party, &journey) {
+        return Err("Party has incoherent current journey camp authority".into());
     }
-    let context = format!(
-        "camp|{party_id}|{}|{}",
-        journey.departure_minute, journey.completed_minutes
-    );
-    let context_suffix = format!("|{context}");
-    let occupied = character_ids.iter().copied().any(|character_id| {
-        ctx.db
-            .fireplace_station()
-            .character_id()
-            .filter(character_id)
-            .any(|row| row.context_key == context && row.instrument_item_id.is_some())
-            || ctx
-                .db
-                .fireplace_dish()
-                .character_id()
-                .filter(character_id)
-                .any(|row| row.station_key.ends_with(&context_suffix))
-    });
+    let place = crate::strategic::current_journey_camp_place(ctx, party_id)?;
+    let member_ids = character_ids
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut occupied = false;
+    for station in ctx.db.fireplace_station().iter() {
+        let fixture = validate_persisted_station_fixture(&station)?;
+        occupied |= member_ids.contains(&station.character_id)
+            && fixture.place() == &place
+            && station.instrument_item_id.is_some();
+    }
+    for dish in ctx.db.fireplace_dish().iter() {
+        let fixture = validate_persisted_dish_fixture(ctx, &dish)?;
+        occupied |= member_ids.contains(&dish.character_id) && fixture.place() == &place;
+    }
     if occupied {
         Err("Retrieve this member's dish and remove their cooking instrument before they leave the camp party".into())
     } else {
@@ -649,141 +725,157 @@ pub(crate) fn cleanup_fireplace_custody_for_death(ctx: &ReducerContext, characte
     }
 }
 
-fn validate_fireplace_context(
+fn validate_fireplace_fixture(
     ctx: &ReducerContext,
     actor: &crate::Character,
-    context_key: &str,
+    fireplace_fixture_id: &str,
 ) -> Result<(), String> {
-    let parts = context_key.split('|').collect::<Vec<_>>();
-    match parts.as_slice() {
-        ["settlement", settlement_id, building]
-            if !building.is_empty() && !matches!(*building, "public-square" | "map") =>
-        {
-            if actor.current_settlement_id.as_deref() != Some(*settlement_id) {
+    let fixture = fireplace_fixture_id
+        .parse::<StrategicFixtureId>()
+        .map_err(|_| "Invalid canonical fireplace identity")?;
+    let StrategicFixtureId::Fireplace { place } = fixture else {
+        return Err("Fixture is not a fireplace".into());
+    };
+    match place {
+        StrategicPlaceId::SettlementVenue {
+            settlement_id,
+            kind,
+        } => {
+            if actor.current_settlement_id.as_deref() != Some(settlement_id.as_str()) {
                 return Err("The character is not at this settlement fireplace".into());
             }
             let settlement = ctx
                 .db
                 .settlement()
                 .id()
-                .find((*settlement_id).to_string())
+                .find(settlement_id.as_str().to_string())
                 .ok_or("Settlement not found")?;
-            let standard_available = match *building {
-                "residences" => Some(true),
-                "keep" => Some(matches!(
+            let available = match kind {
+                adventuresim_core::strategic_place::SettlementVenueKind::Residences => true,
+                adventuresim_core::strategic_place::SettlementVenueKind::Keep => matches!(
                     settlement.category,
                     crate::strategic::SettlementCategory::Town
                         | crate::strategic::SettlementCategory::City
                         | crate::strategic::SettlementCategory::Capital
-                )),
-                "market" => Some(
+                ),
+                adventuresim_core::strategic_place::SettlementVenueKind::Market => {
                     adventuresim_core::organization::service_npc_location_available(
                         &settlement.economy,
                         "merchants",
-                    ),
-                ),
-                "forge" => Some(
+                    )
+                }
+                adventuresim_core::strategic_place::SettlementVenueKind::Forge => {
                     adventuresim_core::organization::service_npc_location_available(
                         &settlement.economy,
                         "weapons",
-                    ),
-                ),
-                "armoury" => Some(
+                    )
+                }
+                adventuresim_core::strategic_place::SettlementVenueKind::Armoury => {
                     adventuresim_core::organization::service_npc_location_available(
                         &settlement.economy,
                         "armor",
-                    ),
-                ),
-                "tailor" => Some(
+                    )
+                }
+                adventuresim_core::strategic_place::SettlementVenueKind::Tailor => {
                     adventuresim_core::organization::service_npc_location_available(
                         &settlement.economy,
                         "clothing",
-                    ),
-                ),
-                "herbalist" => Some(
+                    )
+                }
+                adventuresim_core::strategic_place::SettlementVenueKind::Herbalist => {
                     adventuresim_core::organization::service_npc_location_available(
                         &settlement.economy,
                         "herbalist",
-                    ),
-                ),
-                "inn" => Some(
+                    )
+                }
+                adventuresim_core::strategic_place::SettlementVenueKind::Inn => {
                     adventuresim_core::organization::service_npc_location_available(
                         &settlement.economy,
                         "inn",
-                    ),
-                ),
-                "church" => Some(
+                    )
+                }
+                adventuresim_core::strategic_place::SettlementVenueKind::Church => {
                     adventuresim_core::organization::service_npc_location_available(
                         &settlement.economy,
                         "religion",
-                    ),
-                ),
-                "bookstore" => Some(
+                    )
+                }
+                adventuresim_core::strategic_place::SettlementVenueKind::Bookstore => {
                     adventuresim_core::organization::service_npc_location_available(
                         &settlement.economy,
                         "books",
-                    ),
-                ),
-                _ => None,
+                    )
+                }
+                adventuresim_core::strategic_place::SettlementVenueKind::PublicSquare => false,
             };
-            let available = standard_available.unwrap_or_else(|| {
-                adventuresim_core::organization::organization_chapter_at(settlement_id, building)
-                    .is_some_and(|(organization, chapter)| {
-                        adventuresim_core::organization::chapter_has_standalone_building(
-                            organization,
-                            chapter,
-                            &settlement.economy,
-                        )
-                    })
+            if !available {
+                return Err("This settlement building has no fireplace".into());
+            }
+            Ok(())
+        }
+        StrategicPlaceId::ChapterVenue {
+            settlement_id,
+            organization_id,
+            authored_location_id,
+        } => {
+            if actor.current_settlement_id.as_deref() != Some(settlement_id.as_str()) {
+                return Err("The character is not at this settlement fireplace".into());
+            }
+            let settlement = ctx
+                .db
+                .settlement()
+                .id()
+                .find(settlement_id.as_str().to_string())
+                .ok_or("Settlement not found")?;
+            let available = adventuresim_core::organization::organization_chapter_at(
+                settlement_id.as_str(),
+                authored_location_id.as_str(),
+            )
+            .is_some_and(|(organization, chapter)| {
+                organization.id == organization_id.as_str()
+                    && chapter.location_id == authored_location_id.as_str()
+                    && adventuresim_core::organization::chapter_has_standalone_building(
+                        organization,
+                        chapter,
+                        &settlement.economy,
+                    )
             });
             if !available {
                 return Err("This settlement building has no fireplace".into());
             }
             Ok(())
         }
-        ["camp", party_id, departure, movement] => {
-            let departure = departure
-                .parse::<u64>()
-                .map_err(|_| "Invalid camp fireplace")?;
-            let movement = movement
-                .parse::<u64>()
-                .map_err(|_| "Invalid camp fireplace")?;
-            if actor.party_id.as_deref() != Some(*party_id) {
+        StrategicPlaceId::JourneyCamp {
+            party_id,
+            departure_minute,
+            movement_minute,
+        } => {
+            if actor.party_id.as_deref() != Some(party_id.as_str()) {
                 return Err("The character is not in this camp's party".into());
             }
-            let party = ctx
-                .db
-                .party_authority()
-                .id()
-                .find((*party_id).to_string())
-                .ok_or("Party not found")?;
-            let journey = ctx
-                .db
-                .party_journey_authority()
-                .party_id()
-                .find((*party_id).to_string())
-                .ok_or("Journey camp not found")?;
-            if party.current_settlement_id.is_some()
-                || party.current_case_site_id.is_some()
-                || party.camp_destination.is_none()
-                || journey.departure_minute != departure
-                || journey.completed_minutes != movement
-                || !journey.camp_stop_minutes.contains(&movement)
+            let current = crate::strategic::current_journey_camp_place(ctx, party_id.as_str())?;
+            if current
+                != StrategicPlaceId::journey_camp(
+                    party_id.as_str(),
+                    departure_minute,
+                    movement_minute,
+                )
+                .map_err(|_| "Invalid canonical camp identity")?
             {
                 return Err("This is not the party's current journey camp".into());
             }
             Ok(())
         }
-        _ => Err("Invalid fireplace context".into()),
+        _ => Err("Invalid fireplace place".into()),
     }
 }
 
 fn fireplace_station_for(
     ctx: &ReducerContext,
     character_id: u64,
-    context_key: &str,
+    fireplace_fixture_id: &str,
 ) -> FireplaceStation {
-    let key = station_key(character_id, context_key);
+    let key = station_key(character_id, fireplace_fixture_id);
     ctx.db
         .fireplace_station()
         .key()
@@ -791,7 +883,7 @@ fn fireplace_station_for(
         .unwrap_or(FireplaceStation {
             key,
             character_id,
-            context_key: context_key.into(),
+            fireplace_fixture_id: fireplace_fixture_id.into(),
             instrument_item_id: None,
             instrument_object_id: None,
             instrument_source: None,
@@ -849,7 +941,7 @@ fn return_installed_tool(
 pub fn set_fireplace_instrument(
     ctx: &ReducerContext,
     character_id: u64,
-    context_key: String,
+    fireplace_fixture_id: String,
     inventory_scope: String,
     inventory_item_id: Option<u64>,
 ) -> Result<(), String> {
@@ -858,11 +950,11 @@ pub fn set_fireplace_instrument(
     if actor.in_server {
         return Err("Cooking is unavailable during a tactical encounter".into());
     }
-    validate_fireplace_context(ctx, &actor, &context_key)?;
+    validate_fireplace_fixture(ctx, &actor, &fireplace_fixture_id)?;
     if inventory_item_id.is_some() {
         return Err("Cooking tools must be placed as containers over the fire".into());
     }
-    let mut station = fireplace_station_for(ctx, character_id, &context_key);
+    let mut station = fireplace_station_for(ctx, character_id, &fireplace_fixture_id);
     if ctx
         .db
         .fireplace_dish()
@@ -964,8 +1056,8 @@ pub fn set_fireplace_instrument(
     Ok(())
 }
 
-fn vessel_station_key(character_id: u64, context_key: &str, object_id: u64) -> String {
-    format!("{character_id}|{context_key}|container:{object_id}")
+fn vessel_station_key(character_id: u64, fireplace_fixture_id: &str, object_id: u64) -> String {
+    format!("{character_id}|{fireplace_fixture_id}|container:{object_id}")
 }
 
 /// Places one exact vessel and its entire subtree over this exact fireplace.
@@ -975,7 +1067,7 @@ fn vessel_station_key(character_id: u64, context_key: &str, object_id: u64) -> S
 pub fn place_fireplace_container(
     ctx: &ReducerContext,
     character_id: u64,
-    context_key: String,
+    fireplace_fixture_id: String,
     inventory_scope: String,
     inventory_item_id: u64,
 ) -> Result<(), String> {
@@ -984,7 +1076,7 @@ pub fn place_fireplace_container(
     if actor.in_server {
         return Err("Cooking is unavailable during a tactical encounter".into());
     }
-    validate_fireplace_context(ctx, &actor, &context_key)?;
+    validate_fireplace_fixture(ctx, &actor, &fireplace_fixture_id)?;
     let mut object = crate::inventory_container::ensure_object(
         ctx,
         character_id,
@@ -1012,15 +1104,15 @@ pub fn place_fireplace_container(
         }
         _ => return Err("Container is not in carried inventory".into()),
     }
-    let key = vessel_station_key(character_id, &context_key, object.id);
+    let key = vessel_station_key(character_id, &fireplace_fixture_id, object.id);
     object.location_kind = "fireplace".into();
-    object.location_owner = context_key.clone();
+    object.location_owner = fireplace_fixture_id.clone();
     object.inventory_row_id = 0;
     ctx.db.inventory_object().id().update(object.clone());
     ctx.db.fireplace_station().insert(FireplaceStation {
         key,
         character_id,
-        context_key,
+        fireplace_fixture_id,
         instrument_item_id: Some(object.item_id),
         instrument_object_id: Some(object.id),
         instrument_source: Some(source),
@@ -1033,13 +1125,16 @@ pub fn place_fireplace_container(
 pub fn retrieve_fireplace_container(
     ctx: &ReducerContext,
     character_id: u64,
-    context_key: String,
+    fireplace_fixture_id: String,
     container_object_id: u64,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_gateway(ctx)?;
     let actor = crate::character::require_living_character(ctx, character_id)?;
-    validate_fireplace_context(ctx, &actor, &context_key)?;
-    let key = vessel_station_key(character_id, &context_key, container_object_id);
+    if actor.in_server {
+        return Err("Cooking is unavailable during a tactical encounter".into());
+    }
+    validate_fireplace_fixture(ctx, &actor, &fireplace_fixture_id)?;
+    let key = vessel_station_key(character_id, &fireplace_fixture_id, container_object_id);
     let station = ctx
         .db
         .fireplace_station()
@@ -1545,7 +1640,7 @@ fn stew_water_required_ml(amounts_milliunits: &[u32]) -> Option<f32> {
 pub fn add_fireplace_ingredients(
     ctx: &ReducerContext,
     character_id: u64,
-    context_key: String,
+    fireplace_fixture_id: String,
     inventory_scope: String,
     inventory_item_ids: Vec<u64>,
     amounts_milliunits: Vec<u32>,
@@ -1553,7 +1648,7 @@ pub fn add_fireplace_ingredients(
     add_fireplace_ingredients_at(
         ctx,
         character_id,
-        context_key,
+        fireplace_fixture_id,
         inventory_scope,
         inventory_item_ids,
         amounts_milliunits,
@@ -1569,13 +1664,13 @@ pub fn add_fireplace_ingredients(
 pub fn start_fireplace_container_cooking(
     ctx: &ReducerContext,
     character_id: u64,
-    context_key: String,
+    fireplace_fixture_id: String,
     container_object_id: u64,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_gateway(ctx)?;
     let actor = crate::character::require_living_character(ctx, character_id)?;
-    validate_fireplace_context(ctx, &actor, &context_key)?;
-    let key = vessel_station_key(character_id, &context_key, container_object_id);
+    validate_fireplace_fixture(ctx, &actor, &fireplace_fixture_id)?;
+    let key = vessel_station_key(character_id, &fireplace_fixture_id, container_object_id);
     let station = ctx
         .db
         .fireplace_station()
@@ -1643,7 +1738,7 @@ pub fn start_fireplace_container_cooking(
     add_fireplace_ingredients_at(
         ctx,
         character_id,
-        context_key,
+        fireplace_fixture_id,
         scope,
         ids,
         amounts,
@@ -1662,7 +1757,7 @@ pub fn start_fireplace_container_cooking(
 fn add_fireplace_ingredients_at(
     ctx: &ReducerContext,
     character_id: u64,
-    context_key: String,
+    fireplace_fixture_id: String,
     inventory_scope: String,
     inventory_item_ids: Vec<u64>,
     amounts_milliunits: Vec<u32>,
@@ -1673,10 +1768,51 @@ fn add_fireplace_ingredients_at(
     if actor.in_server {
         return Err("Cooking is unavailable during a tactical encounter".into());
     }
-    validate_fireplace_context(ctx, &actor, &context_key)?;
+    validate_fireplace_fixture(ctx, &actor, &fireplace_fixture_id)?;
     let is_vessel = vessel_station.is_some();
-    let station =
-        vessel_station.unwrap_or_else(|| fireplace_station_for(ctx, character_id, &context_key));
+    let station = vessel_station
+        .unwrap_or_else(|| fireplace_station_for(ctx, character_id, &fireplace_fixture_id));
+    let station_fixture = validate_persisted_station_fixture(&station)?;
+    if station_fixture.to_string() != fireplace_fixture_id {
+        return Err("Fireplace station conflicts with the requested canonical fixture".into());
+    }
+    let inventory_source = match inventory_scope.as_str() {
+        "personal" => {
+            if is_vessel && station.instrument_source.as_deref() != Some("personal") {
+                return Err("Container source inventory conflicts with the cooking scope".into());
+            }
+            FireplaceDishInventorySource::Personal { character_id }
+        }
+        "party" => {
+            let party_id = if is_vessel {
+                if station.instrument_source.as_deref() != Some("party") {
+                    return Err(
+                        "Container source inventory conflicts with the cooking scope".into(),
+                    );
+                }
+                station
+                    .instrument_party_id
+                    .clone()
+                    .ok_or("Container's original party inventory is unavailable")?
+            } else {
+                actor
+                    .party_id
+                    .clone()
+                    .ok_or("Character has no party inventory")?
+            };
+            if ctx
+                .db
+                .party_authority()
+                .id()
+                .find(party_id.clone())
+                .is_none()
+            {
+                return Err("Original party inventory is unavailable".into());
+            }
+            FireplaceDishInventorySource::Party { party_id }
+        }
+        _ => return Err("Invalid cooking inventory".into()),
+    };
     if ctx
         .db
         .fireplace_dish()
@@ -1976,6 +2112,8 @@ fn add_fireplace_ingredients_at(
     ctx.db.fireplace_dish().insert(FireplaceDish {
         station_key: station.key.clone(),
         character_id,
+        fireplace_fixture_id: fireplace_fixture_id.clone(),
+        inventory_source,
         contributor_name: actor.name,
         method,
         cooking_check: check,
@@ -2017,7 +2155,7 @@ fn add_fireplace_ingredients_at(
 pub fn retrieve_fireplace_dish(
     ctx: &ReducerContext,
     character_id: u64,
-    context_key: String,
+    fireplace_fixture_id: String,
     inventory_scope: String,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_gateway(ctx)?;
@@ -2025,13 +2163,17 @@ pub fn retrieve_fireplace_dish(
     if actor.in_server {
         return Err("Cooking is unavailable during a tactical encounter".into());
     }
-    validate_fireplace_context(ctx, &actor, &context_key)?;
-    let container_object_id = inventory_scope
-        .strip_prefix("container:")
-        .and_then(|id| id.parse::<u64>().ok());
+    validate_fireplace_fixture(ctx, &actor, &fireplace_fixture_id)?;
+    let container_object_id = match inventory_scope.strip_prefix("container:") {
+        Some(id) => Some(
+            id.parse::<u64>()
+                .map_err(|_| "Invalid fireplace dish selector")?,
+        ),
+        None => None,
+    };
     let key = container_object_id.map_or_else(
-        || station_key(character_id, &context_key),
-        |object_id| vessel_station_key(character_id, &context_key, object_id),
+        || station_key(character_id, &fireplace_fixture_id),
+        |object_id| vessel_station_key(character_id, &fireplace_fixture_id, object_id),
     );
     let vessel_station = ctx.db.fireplace_station().key().find(key.clone());
     let dish = ctx
@@ -2040,6 +2182,33 @@ pub fn retrieve_fireplace_dish(
         .station_key()
         .find(key)
         .ok_or("No dish is in this fireplace")?;
+    if validate_persisted_dish_fixture(ctx, &dish)?.to_string() != fireplace_fixture_id {
+        return Err("Dish custody conflicts with the requested canonical fixture".into());
+    }
+    let (source_kind, source_owner) = dish_inventory_destination(
+        &dish.inventory_source,
+        character_id,
+        &inventory_scope,
+        container_object_id.is_some(),
+    )?;
+    if source_kind == "party"
+        && ctx
+            .db
+            .party_authority()
+            .id()
+            .find(source_owner.clone())
+            .is_none()
+    {
+        return Err("Dish's original party inventory is unavailable".into());
+    }
+    if let Some(object_id) = container_object_id
+        && vessel_station
+            .as_ref()
+            .and_then(|station| station.instrument_object_id)
+            != Some(object_id)
+    {
+        return Err("Dish selector conflicts with its fireplace container".into());
+    }
     let minute = current_minute(ctx, character_id);
     let elapsed = minute.saturating_sub(dish.started_at_minute);
     let doneness = food::method_doneness_outcome(dish.method.core(), elapsed, dish.target_minutes);
@@ -2053,11 +2222,7 @@ pub fn retrieve_fireplace_dish(
         dish.ingredient_value * food::quality_value_multiplier(quality) * doneness.calorie_factor;
     let personal_id;
     let party_id;
-    let effective_scope = vessel_station
-        .as_ref()
-        .and_then(|station| station.instrument_source.as_deref())
-        .unwrap_or(&inventory_scope);
-    match effective_scope {
+    match source_kind {
         "personal" => {
             let row = ctx.db.inventory_item().insert(crate::InventoryItem {
                 id: 0,
@@ -2070,13 +2235,9 @@ pub fn retrieve_fireplace_dish(
             party_id = None;
         }
         "party" => {
-            let owner = actor
-                .party_id
-                .as_deref()
-                .ok_or("Character has no party inventory")?;
             let row = ctx.db.party_inventory_item().insert(PartyInventoryItem {
                 id: 0,
-                party_id: owner.into(),
+                party_id: source_owner.clone(),
                 item_id: "cooked_meal".into(),
                 quantity: 1,
             });
@@ -2088,13 +2249,13 @@ pub fn retrieve_fireplace_dish(
     }
     if let Some(parent_object_id) = container_object_id {
         let row_id = personal_id.or(party_id).expect("cooked meal inventory row");
-        let meal = crate::inventory_container::ensure_object(
-            ctx,
-            character_id,
-            effective_scope,
-            row_id,
-            false,
-        )?;
+        let meal = ctx.db.inventory_object().insert(crate::InventoryObject {
+            id: 0,
+            item_id: "cooked_meal".into(),
+            location_kind: source_kind.into(),
+            location_owner: source_owner,
+            inventory_row_id: row_id,
+        });
         ctx.db
             .inventory_containment()
             .insert(crate::InventoryContainment {
@@ -2644,8 +2805,21 @@ mod tests {
             })
             .expect("gateway dish projection");
         assert!(!dish_projection.contains("raw_contamination"));
-        assert!(source.contains("journey.departure_minute != departure"));
-        assert!(source.contains("journey.completed_minutes != movement"));
+        assert!(source.contains("parse::<StrategicFixtureId>()"));
+        assert!(source.contains("current_journey_camp_place"));
+        assert!(source.contains("fireplace_fixture_id"));
+        assert!(!source.contains("pub context_key: String"));
+        let camp_custody = source
+            .split("pub(crate) fn require_clear_current_camp_fireplace")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub(crate) fn require_members_clear_current_camp_fireplace")
+                    .next()
+            })
+            .expect("camp fireplace custody guard");
+        assert!(camp_custody.contains("validate_persisted_station_fixture"));
+        assert!(camp_custody.contains("validate_persisted_dish_fixture"));
+        assert!(!camp_custody.contains("ends_with"));
         assert!(source.contains("This fireplace already holds a dish"));
         assert!(source.contains("Food lot selections must be unique and positive"));
         assert!(source.contains("Retrieve the current dish before changing instruments"));
@@ -2672,6 +2846,40 @@ mod tests {
     }
 
     #[test]
+    fn dish_retrieval_is_bound_to_immutable_source_custody() {
+        let party_source = FireplaceDishInventorySource::Party {
+            party_id: "party-before-transfer".into(),
+        };
+        assert_eq!(
+            dish_inventory_destination(&party_source, 7, "party", false),
+            Ok(("party", "party-before-transfer".into()))
+        );
+        assert_eq!(
+            dish_inventory_destination(&party_source, 7, "personal", false),
+            Ok(("party", "party-before-transfer".into()))
+        );
+        assert_eq!(
+            dish_inventory_destination(&party_source, 7, "container:42", true),
+            Ok(("party", "party-before-transfer".into()))
+        );
+
+        let personal_source = FireplaceDishInventorySource::Personal { character_id: 7 };
+        assert!(dish_inventory_destination(&personal_source, 8, "personal", false).is_err());
+    }
+
+    #[test]
+    fn fireplace_container_retrieval_rejects_tactical_actors() {
+        let source = include_str!("food.rs");
+        let retrieval = source
+            .split("pub fn retrieve_fireplace_container")
+            .nth(1)
+            .and_then(|tail| tail.split("fn preparation_skill_check").next())
+            .expect("container retrieval reducer");
+        assert!(retrieval.contains("if actor.in_server"));
+        assert!(retrieval.contains("Cooking is unavailable during a tactical encounter"));
+    }
+
+    #[test]
     fn party_exit_and_death_have_explicit_fireplace_custody_policy() {
         let food_source = include_str!("food.rs");
         let party_source = include_str!("strategic/inventory_trade.rs");
@@ -2695,7 +2903,7 @@ mod tests {
         let cleanup = food_source
             .split("pub(crate) fn cleanup_fireplace_custody_for_death")
             .nth(1)
-            .and_then(|tail| tail.split("fn validate_fireplace_context").next())
+            .and_then(|tail| tail.split("fn validate_fireplace_fixture").next())
             .expect("death fireplace cleanup");
         assert!(cleanup.contains("fireplace_dish()"));
         assert!(cleanup.contains(".character_id()"));

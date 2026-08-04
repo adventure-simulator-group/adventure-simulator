@@ -377,6 +377,7 @@ pub mod finalize_merchant_trade_reducer;
 pub mod finalize_party_offer_reducer;
 pub mod finalize_storefront_trade_reducer;
 pub mod finish_world_data_import_reducer;
+pub mod fireplace_dish_inventory_source_type;
 pub mod fireplace_dish_type;
 pub mod fireplace_station_type;
 pub mod fish_commodity_type;
@@ -1258,6 +1259,7 @@ pub use finalize_merchant_trade_reducer::finalize_merchant_trade;
 pub use finalize_party_offer_reducer::finalize_party_offer;
 pub use finalize_storefront_trade_reducer::finalize_storefront_trade;
 pub use finish_world_data_import_reducer::finish_world_data_import;
+pub use fireplace_dish_inventory_source_type::FireplaceDishInventorySource;
 pub use fireplace_dish_type::FireplaceDish;
 pub use fireplace_station_type::FireplaceStation;
 pub use fish_commodity_type::FishCommodity;
@@ -1795,7 +1797,7 @@ pub enum Reducer {
     },
     AddFireplaceIngredients {
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         inventory_scope: String,
         inventory_item_ids: Vec<u64>,
         amounts_milliunits: Vec<u32>,
@@ -2198,7 +2200,7 @@ pub enum Reducer {
     },
     PlaceFireplaceContainer {
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         inventory_scope: String,
         inventory_item_id: u64,
     },
@@ -2392,12 +2394,12 @@ pub enum Reducer {
     },
     RetrieveFireplaceContainer {
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         container_object_id: u64,
     },
     RetrieveFireplaceDish {
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         inventory_scope: String,
     },
     RetrieveRepairedItem {
@@ -2477,7 +2479,7 @@ pub enum Reducer {
     },
     SetFireplaceInstrument {
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         inventory_scope: String,
         inventory_item_id: Option<u64>,
     },
@@ -2557,7 +2559,7 @@ pub enum Reducer {
     },
     StartFireplaceContainerCooking {
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         container_object_id: u64,
     },
     StartPoppyTincture {
@@ -2924,13 +2926,13 @@ impl __sdk::Reducer for Reducer {
 }),
             Reducer::AddFireplaceIngredients{
                 character_id,
-                context_key,
+                fireplace_fixture_id,
                 inventory_scope,
                 inventory_item_ids,
                 amounts_milliunits,
 }             => __sats::bsatn::to_vec(&add_fireplace_ingredients_reducer::AddFireplaceIngredientsArgs {
                 character_id: character_id.clone(),
-                context_key: context_key.clone(),
+                fireplace_fixture_id: fireplace_fixture_id.clone(),
                 inventory_scope: inventory_scope.clone(),
                 inventory_item_ids: inventory_item_ids.clone(),
                 amounts_milliunits: amounts_milliunits.clone(),
@@ -3652,12 +3654,12 @@ Reducer::BeginFormalCourtship{
 }),
             Reducer::PlaceFireplaceContainer{
                 character_id,
-                context_key,
+                fireplace_fixture_id,
                 inventory_scope,
                 inventory_item_id,
 }             => __sats::bsatn::to_vec(&place_fireplace_container_reducer::PlaceFireplaceContainerArgs {
                 character_id: character_id.clone(),
-                context_key: context_key.clone(),
+                fireplace_fixture_id: fireplace_fixture_id.clone(),
                 inventory_scope: inventory_scope.clone(),
                 inventory_item_id: inventory_item_id.clone(),
 }),
@@ -4001,20 +4003,20 @@ Reducer::BeginFormalCourtship{
 }),
             Reducer::RetrieveFireplaceContainer{
                 character_id,
-                context_key,
+                fireplace_fixture_id,
                 container_object_id,
 }             => __sats::bsatn::to_vec(&retrieve_fireplace_container_reducer::RetrieveFireplaceContainerArgs {
                 character_id: character_id.clone(),
-                context_key: context_key.clone(),
+                fireplace_fixture_id: fireplace_fixture_id.clone(),
                 container_object_id: container_object_id.clone(),
 }),
             Reducer::RetrieveFireplaceDish{
                 character_id,
-                context_key,
+                fireplace_fixture_id,
                 inventory_scope,
 }             => __sats::bsatn::to_vec(&retrieve_fireplace_dish_reducer::RetrieveFireplaceDishArgs {
                 character_id: character_id.clone(),
-                context_key: context_key.clone(),
+                fireplace_fixture_id: fireplace_fixture_id.clone(),
                 inventory_scope: inventory_scope.clone(),
 }),
             Reducer::RetrieveRepairedItem{
@@ -4154,12 +4156,12 @@ Reducer::BeginFormalCourtship{
 }),
             Reducer::SetFireplaceInstrument{
                 character_id,
-                context_key,
+                fireplace_fixture_id,
                 inventory_scope,
                 inventory_item_id,
 }             => __sats::bsatn::to_vec(&set_fireplace_instrument_reducer::SetFireplaceInstrumentArgs {
                 character_id: character_id.clone(),
-                context_key: context_key.clone(),
+                fireplace_fixture_id: fireplace_fixture_id.clone(),
                 inventory_scope: inventory_scope.clone(),
                 inventory_item_id: inventory_item_id.clone(),
 }),
@@ -4302,11 +4304,11 @@ Reducer::BeginFormalCourtship{
 }),
             Reducer::StartFireplaceContainerCooking{
                 character_id,
-                context_key,
+                fireplace_fixture_id,
                 container_object_id,
 }             => __sats::bsatn::to_vec(&start_fireplace_container_cooking_reducer::StartFireplaceContainerCookingArgs {
                 character_id: character_id.clone(),
-                context_key: context_key.clone(),
+                fireplace_fixture_id: fireplace_fixture_id.clone(),
                 container_object_id: container_object_id.clone(),
 }),
             Reducer::StartPoppyTincture{
