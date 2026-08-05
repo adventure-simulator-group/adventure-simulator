@@ -162,10 +162,17 @@ fn case_reputation_separates_canonical_and_public_battle_identity() {
         .next()
         .and_then(|tail| tail.split("fn hostile_resolution_for_objective").next())
         .expect("case finale");
-    assert!(finale.contains("crate::reputation::award_case_resolution"));
+    assert!(finale.contains("crate::world_event::commit_generated_case_resolution"));
     assert!(finale.contains("&case.id"));
     assert!(finale.contains("&authority.public_case_id"));
     assert!(finale.contains("&authority.settlement_id"));
+    let unified = finale
+        .find("crate::world_event::commit_generated_case_resolution")
+        .expect("unified consequence boundary");
+    let execution = finale
+        .find("case_finale_execution().insert")
+        .expect("finale execution receipt");
+    assert!(unified < execution);
 }
 
 #[test]

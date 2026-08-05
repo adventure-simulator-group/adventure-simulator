@@ -1153,21 +1153,13 @@ fn execute_case_finale(
         .find(&finale.case_id)
         .ok_or("Finale case not found")?;
     let now = crate::time::refresh_clock(ctx)?;
-    if finale.kind == FinaleKind::ResolveLocalProblem
+    let resolved_local_problem_id = if finale.kind == FinaleKind::ResolveLocalProblem
         && case.resolution_status == CaseResolutionStatus::Resolved
-        && let Some(problem_id) = case.local_problem_id.as_ref()
     {
-        crate::local_problem::apply_outcome(
-            ctx,
-            problem_id,
-            &crate::local_problem::LocalProblemOutcomeInput {
-                source_outcome_id: source_id.to_string(),
-                at_minute: now,
-                mitigation_bps: 10_000,
-                resolve: true,
-            },
-        )?;
-    }
+        case.local_problem_id.as_deref()
+    } else {
+        None
+    };
     if case.resolution_status == CaseResolutionStatus::Resolved {
         let quest_authority = ctx
             .db
@@ -1185,14 +1177,30 @@ fn execute_case_finale(
                     })
             });
         if let Some(authority) = quest_authority {
-            crate::reputation::award_case_resolution(
+            crate::world_event::commit_generated_case_resolution(
                 ctx,
+                &finale.id,
+                source_id,
                 &case.id,
                 &authority.public_case_id,
                 party_id,
                 &authority.settlement_id,
+                resolved_local_problem_id,
                 500,
                 now,
+            )?;
+        } else if let Some(problem_id) = resolved_local_problem_id {
+            // Preserve the legacy local-problem outcome for malformed or old
+            // private authority that has no generated reputation jurisdiction.
+            crate::local_problem::apply_outcome(
+                ctx,
+                problem_id,
+                &crate::local_problem::LocalProblemOutcomeInput {
+                    source_outcome_id: source_id.to_string(),
+                    at_minute: now,
+                    mitigation_bps: 10_000,
+                    resolve: true,
+                },
             )?;
         }
     }

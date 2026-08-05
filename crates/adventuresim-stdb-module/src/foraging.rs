@@ -1021,26 +1021,14 @@ pub fn forage_current_vicinity(
             .find(character_id)
             .and_then(|character| character.current_settlement_id)
         {
-            crate::reputation::record_event(
+            crate::world_event::commit_noticed_illegal_foraging(
                 ctx,
-                format!("forage:{character_id}:{request_id}"),
                 character_id,
                 &settlement_id,
-                "illegal_foraging",
                 &request_id,
-                0,
                 (infamy_gained * 100.0).round() as i32,
                 completed_at,
             )?;
-            crate::reputation::record_discovered_offense(
-                ctx,
-                format!("offense:forage:{character_id}:{request_id}"),
-                character_id,
-                &settlement_id,
-                "illegal_foraging",
-                1,
-                completed_at,
-            );
         }
     }
     let attempt = ForageAttemptAuthority {
