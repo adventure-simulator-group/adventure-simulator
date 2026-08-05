@@ -31,7 +31,7 @@ use crate::{
     repair::{item_condition, repair_order},
     settlement_population::settlement_resident_presence,
     strategic::{
-        inventory_quantity_target, party_authority, party_member, settlement,
+        inventory_quantity_target, party_authority, party_member, settlement, strategic_encounter,
         strategic_gateway_authority__view,
     },
     surgery::{limb_injury, retained_projectile},
@@ -1641,9 +1641,12 @@ pub(crate) fn seed_religion_scholar_character(ctx: &ReducerContext) -> Result<()
 }
 
 /// Seed an isolated, selectable character for exercising every bounded
-/// Herbalism method and public grade in the strategic UI.
+/// Herbalism method, public grade, and terrain-backed foraging flow in the
+/// strategic UI.
 pub(crate) fn seed_herbalism_demo_character(ctx: &ReducerContext) -> Result<(), String> {
     const HERBALISM_DEMO_CHARACTER_ID: u64 = 9_999_999_999_999_986;
+    const HERBALISM_DEMO_SETTLEMENT_ID: &str = "dev-scenario-foraging";
+    crate::strategic::ensure_foraging_demo_settlement(ctx)?;
     if ctx
         .db
         .character()
@@ -1653,10 +1656,61 @@ pub(crate) fn seed_herbalism_demo_character(ctx: &ReducerContext) -> Result<(), 
     {
         insert_new_character(
             ctx,
-            "Herbalism Demo".to_string(),
+            "Herbalism and Foraging Demo".to_string(),
             HERBALISM_DEMO_CHARACTER_ID,
             false,
         )?;
+    }
+    // Pin this durable visual fixture and its solo party to an empirically
+    // sampled final-pack woodland cell so the integrated Forage action is
+    // always demonstrable after a normal seed.
+    let mut character = ctx
+        .db
+        .character()
+        .id()
+        .find(HERBALISM_DEMO_CHARACTER_ID)
+        .ok_or_else(|| "Herbalism and foraging demo character is missing".to_string())?;
+    character.name = "Herbalism and Foraging Demo".into();
+    let party_id = character
+        .party_id
+        .clone()
+        .ok_or_else(|| "Herbalism and foraging demo has no solo party".to_string())?;
+    let mut party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id)
+        .ok_or_else(|| "Herbalism and foraging demo party is missing".to_string())?;
+    let members = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(&party_id)
+        .collect::<Vec<_>>();
+    if !party.is_solo
+        || party.leader_id != HERBALISM_DEMO_CHARACTER_ID
+        || members.len() != 1
+        || members[0].character_id != HERBALISM_DEMO_CHARACTER_ID
+    {
+        return Err("Herbalism and foraging demo no longer has its isolated solo party".into());
+    }
+    crate::investigation::set_character_case_site(ctx, HERBALISM_DEMO_CHARACTER_ID, None)?;
+    character.current_settlement_id = Some(HERBALISM_DEMO_SETTLEMENT_ID.into());
+    ctx.db.character().id().update(character);
+    party.current_settlement_id = Some(HERBALISM_DEMO_SETTLEMENT_ID.into());
+    party.current_case_site_id = None;
+    party.camp_destination = None;
+    party.camp_remaining_minutes = 0;
+    ctx.db.party_authority().id().update(party);
+    crate::strategic::finish_party_journey(ctx, &party_id);
+    if ctx
+        .db
+        .strategic_encounter()
+        .party_id()
+        .find(&party_id)
+        .is_some()
+    {
+        ctx.db.strategic_encounter().party_id().delete(&party_id);
     }
     let mut skills = ctx
         .db
@@ -1687,7 +1741,7 @@ pub(crate) fn seed_herbalism_demo_character(ctx: &ReducerContext) -> Result<(), 
             .is_none()
         {
             add_inventory_item(ctx, HERBALISM_DEMO_CHARACTER_ID, item_id, quantity)
-                .ok_or_else(|| format!("Failed to add {item_id} to Herbalism Demo"))?;
+                .ok_or_else(|| format!("Failed to add {item_id} to Herbalism and Foraging Demo"))?;
         }
     }
     crate::capability::refresh_character_capability(ctx, HERBALISM_DEMO_CHARACTER_ID)?;
@@ -3245,6 +3299,58 @@ mod starting_character_boundary_tests {
                 9_000,
                 9_000 + 30 * adventuresim_core::strategic_time::MINUTES_PER_DAY
             )
+        );
+    }
+
+    #[test]
+    fn herbalism_foraging_demo_resets_mutually_exclusive_presence() {
+        let source = include_str!("character.rs");
+        let fixture = source
+            .split("pub(crate) fn seed_herbalism_demo_character")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn seed_bestiary_scholar_character")
+            .next()
+            .unwrap();
+        for required in [
+            "if !party.is_solo",
+            "party.leader_id != HERBALISM_DEMO_CHARACTER_ID",
+            "members.len() != 1",
+            "members[0].character_id != HERBALISM_DEMO_CHARACTER_ID",
+            "set_character_case_site(ctx, HERBALISM_DEMO_CHARACTER_ID, None)",
+            "ensure_foraging_demo_settlement(ctx)",
+            "character.current_settlement_id = Some(HERBALISM_DEMO_SETTLEMENT_ID.into())",
+            "party.current_settlement_id = Some(HERBALISM_DEMO_SETTLEMENT_ID.into())",
+            "party.current_case_site_id = None",
+            "party.camp_destination = None",
+            "party.camp_remaining_minutes = 0",
+            "finish_party_journey(ctx, &party_id)",
+            "strategic_encounter().party_id().delete(&party_id)",
+        ] {
+            assert!(fixture.contains(required), "missing reset step: {required}");
+        }
+        let validation = fixture.find("if !party.is_solo").unwrap();
+        let first_reset = fixture
+            .find("set_character_case_site(ctx, HERBALISM_DEMO_CHARACTER_ID, None)")
+            .unwrap();
+        assert!(
+            validation < first_reset,
+            "party ownership must be validated first"
+        );
+        let scenarios = include_str!("strategic/development_scenarios.rs");
+        let settlement = scenarios
+            .split("pub(crate) fn ensure_foraging_demo_settlement")
+            .nth(1)
+            .unwrap()
+            .split("fn ensure_scenario_character_at")
+            .next()
+            .unwrap();
+        assert!(settlement.contains("const ID: &str = \"dev-scenario-foraging\""));
+        assert!(settlement.contains("settlement.coord_x = 9.75"));
+        assert!(settlement.contains("settlement.coord_y = 51.75"));
+        assert!(
+            settlement.find("settlement.coord_y = 51.75").unwrap()
+                < settlement.find("ensure_settlement_activity").unwrap()
         );
     }
 

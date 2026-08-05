@@ -824,7 +824,7 @@ pub(crate) fn record_party_camp_rest(
     Ok(())
 }
 
-fn finish_party_journey(ctx: &ReducerContext, party_id: &str) {
+pub(crate) fn finish_party_journey(ctx: &ReducerContext, party_id: &str) {
     let party_id = party_id.to_string();
     if ctx
         .db

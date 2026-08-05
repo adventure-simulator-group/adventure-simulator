@@ -2177,6 +2177,12 @@ pub struct BackendForageReceipt {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendForageAttemptState {
+    pub character_id: u64,
+    pub next_generation: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorldClock {
     pub id: u64,
     pub official_minutes: u64,

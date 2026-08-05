@@ -13,6 +13,7 @@ pub(super) struct ForageCurrentVicinityArgs {
     pub request_id: String,
     pub source_ids: Vec<String>,
     pub requested_minutes: u64,
+    pub attempt_generation: u64,
     pub attestation: ForageEnvironmentAttestation,
 }
 
@@ -23,6 +24,7 @@ impl From<ForageCurrentVicinityArgs> for super::Reducer {
             request_id: args.request_id,
             source_ids: args.source_ids,
             requested_minutes: args.requested_minutes,
+            attempt_generation: args.attempt_generation,
             attestation: args.attestation,
         }
     }
@@ -49,6 +51,7 @@ pub trait forage_current_vicinity {
         request_id: String,
         source_ids: Vec<String>,
         requested_minutes: u64,
+        attempt_generation: u64,
         attestation: ForageEnvironmentAttestation,
     ) -> __sdk::Result<()> {
         self.forage_current_vicinity_then(
@@ -56,6 +59,7 @@ pub trait forage_current_vicinity {
             request_id,
             source_ids,
             requested_minutes,
+            attempt_generation,
             attestation,
             |_, _| {},
         )
@@ -73,6 +77,7 @@ pub trait forage_current_vicinity {
         request_id: String,
         source_ids: Vec<String>,
         requested_minutes: u64,
+        attempt_generation: u64,
         attestation: ForageEnvironmentAttestation,
 
         callback: impl FnOnce(
@@ -90,6 +95,7 @@ impl forage_current_vicinity for super::RemoteReducers {
         request_id: String,
         source_ids: Vec<String>,
         requested_minutes: u64,
+        attempt_generation: u64,
         attestation: ForageEnvironmentAttestation,
 
         callback: impl FnOnce(
@@ -104,6 +110,7 @@ impl forage_current_vicinity for super::RemoteReducers {
                 request_id,
                 source_ids,
                 requested_minutes,
+                attempt_generation,
                 attestation,
             },
             callback,

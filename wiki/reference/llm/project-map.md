@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1737)
+## Files (1741)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -266,6 +266,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/backend_fireplace_dishes_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_fireplace_station_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_fireplace_stations_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_forage_attempt_state_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_forage_attempt_states_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_forage_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_forage_receipts_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_ingredient_preparation_plan_type.rs` — Generated SpacetimeDB data type.
@@ -552,8 +554,10 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/food_lot_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/food_preparation_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forage_attempt_authority_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/forage_attempt_state_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forage_current_vicinity_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/forage_environment_attestation_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/forage_harvest_material_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forest_commodity_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forest_cover_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forestry_industry_type.rs` — Generated SpacetimeDB data type.
