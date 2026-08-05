@@ -60,6 +60,14 @@ This state is synchronized over the network. A client does not need to know
 whether another character is an NPC or player; it needs only the replicated
 physical state and presentation intent.
 
+The client copies each received skeleton into a presentation-only shadow.
+While grounded locomotion remains semantically continuous, that shadow advances
+gait phase every render frame from the latest measured speed and exponentially
+smooths displayed velocity. A new authoritative sample corrects the predicted
+phase along the shortest circular path. Posture/action changes, backward or
+large tick gaps, and large phase errors resynchronize immediately. Contact and
+landing sequences remain authoritative and are never predicted.
+
 Weapon guard is a two-state authoritative stance intent: `lowered` is the
 default and `raised` is the direct-control Aim state. Every unreliable input
 request carries the client's complete desired state rather than an edge event.
@@ -509,36 +517,56 @@ crouch, and raised-guard profiles own reference speed, step distance, support,
 flight, bounce, and compression metadata used by both authoritative projection
 and client presentation. This keeps cadence tied to actual post-physics ground
 distance without duplicated timing formulas or double-speed footfalls.
+The server retains each player's latest validated analogue movement request
+until a later request explicitly replaces or clears it. Before every movement
+step, the server restores Ahoy's disposable fixed-loop accumulator from that
+state. Missing packets on the unreliable input channel therefore cannot erase
+movement intent for one fixed tick. Intent drives the controller but does not
+select an authored gait. Measured post-physics planar velocity owns idle/walk/run
+selection and stride cadence, while measured acceleration is used only for
+procedural body response. The debug game-clock switch therefore cannot directly
+select a different gait.
 
 Contact and passing/flight anchors are authoritative sparse gait inputs. The
 evaluator constructs four smooth quarters: contact to passing, passing to the
 character-space mirrored contact, mirrored contact to mirrored passing, and
 mirrored passing back to contact. It does not traverse later exported gait
-timeline data. Character-space reflection retains anatomical lateral spacing
+timeline data or any baked in-between frames between the two anchors. The
+client pauses distinct Bevy graph nodes at the exact catalog frames and blends
+their bone transforms using the evaluator's quarter-cycle weight. Character-space reflection retains anatomical lateral spacing
 rather than swapping bones discretely. Support narrows through the walk/run
 blend and releases both feet for roughly 90-110 ms at each 5.5 m/s run flight
 beat; the visual gait keeps at least 0.10 m of sole clearance during that flight.
-With terrain IK explicitly enabled, high support locks the stance foot
-horizontally in world space until release. A footprint is acquired only near
-full contact. At the edge of leg reach, shared virtual-time rate-bounded pelvis
+With terrain IK explicitly enabled, only a leg with meaningful gait support is
+sent through the analytic terrain solver. The unsupported swing leg remains in
+authored FK, avoiding an unnecessary knee-pole reconstruction, while high
+support locks the stance foot horizontally in world space until release. Both
+legs are supported at idle; action poses opt out of ordinary terrain IK because
+they do not yet publish explicit foot-contact semantics. A footprint is
+acquired only near full contact. At the edge of leg reach, shared
+virtual-time rate-bounded pelvis
 lowering absorbs the reach deficit first, and left and right targets remain on
 separate pelvis-space tracks. The solver keeps a 20-degree soft extension
 reserve and a forward, slightly outward anatomical bend hemisphere. Arm and
 leg swing share the same phase reconstruction before optional terrain IK; only
 the legs receive that final terrain solve. An explicit hand or weapon
 constraint can then override the reconstructed arm carriage.
-Locomotion bounds root, pelvis, torso, neck, and head excursions around bind
-before look and final IK. Authored visual root/pelvis Y is normalized only
+Locomotion bounds root, pelvis, torso, neck, and head translations around bind
+before look and final IK while preserving authored rotations. Authored visual
+root/pelvis Y is normalized only
 during active grounded locomotion so it cannot double-count procedural height;
 stopping blends central bones back to the authored idle. XZ, rotations, and
-authored limb silhouettes remain intact. The measured 0.033 m hierarchy-rise
+authored limb silhouettes remain intact. At each authoritative contact edge, a
+visual-only whole-rig translation calibrates the supported sole to the rig
+floor and retains that baseline through the stride. This does not rotate or
+solve either leg and does not move the gameplay controller. The measured 0.033 m hierarchy-rise
 compensation applies only to upright, lowered-guard `humanoid_unarmed`
 locomotion; crouching, guard movement, and specialized packs receive zero
 compensation until measured independently. One visual-only profile evaluation
 owns height: contacts at phase 0 and 0.5 are minima, grounded gaits use smooth
 compression/recovery curves, and running uses a gravity-shaped parabolic arc
 across each full contact-to-contact half-step so the sole is already elevated
-when shared support releases. Its 0.16 m run apex and 0.04 m walk,
+when shared support releases. Its 0.09 m run apex and 0.04 m walk,
 0.03 m raised-guard, and 0.025 m crouch bounce are continuously blended
 across speed and state changes. The curve never changes authoritative owner Y,
 grounded state, or posture. Guard's separate reach correction remains an
@@ -576,9 +604,10 @@ the replicated sequence state, not a reconstructed historical event time.
 
 Terrain conformity defaults off while its uneven-ground behavior is being
 refined. Debug clients expose `F8` as an explicit runtime opt-in. Disabling it
-leaves authored FK, gait mirroring, torso stabilization, and procedural combat
-foot placement intact. Ordinary walk, run, and crouch keep their authored leg
-motion without the analytic terrain solve. Enabling it adds terrain height and
+leaves authored FK, gait mirroring, torso stabilization, contact-edge visual
+grounding, and procedural combat foot placement intact. Ordinary walk, run,
+and crouch keep their authored leg motion without the analytic terrain solve.
+Enabling it adds terrain height and
 normal sampling, world-space plants, and terrain-derived pelvis conformity.
 Debug clients also expose `F7` to toggle the connected local tactical mission
 between normal and quarter-speed game time. Both client presentation and the
@@ -599,8 +628,8 @@ diagnostic images of that exact pose. Its manifest records final world-space bon
 continuity, planted-foot drift under a stable body, signed foot tracks and separation, knee flexion
 and bend hemisphere, desired body-forward alignment, bounded per-tick turning
 residual (including look-facing guards), terrain-relative foot clearance,
-phase-indexed height extrema and peak count, controller vertical range, run
-flight duration/sole clearance, authoritative acceleration, retained lean,
+phase-indexed height extrema and peak count, contact-phase sole clearance,
+controller vertical range, run flight duration/sole clearance, authoritative acceleration, retained lean,
 landing compression, contact identity, landing identity, and fixed tick; those
 signals locate suspect frames but do not replace review of the rendered mesh.
 For steady height scenarios, every complete cycle after warmup must contain
@@ -616,12 +645,15 @@ the gate compares bones within 0.5 mm/0.1 degrees and requires unchanged
 contact/landing sequences and event counts. Success also gates lean and phase
 continuity, hard-stop pelvis continuity from the moving-to-zero edge through
 settling, two ordered contacts per cycle and
-shared step distance, event order/count/deduplication, landing knee flex, foot
+shared step distance, event order/count/deduplication, contact soles from
+-0.02 m to 0.04 m, run flight soles from 0.10 m to 0.30 m, landing knee flex, foot
 preservation within 1 cm, and landing penetration no lower than -1 cm.
 The fixture supplies deterministic controller observations at the shared
 server projection boundary and follows rendered terrain height only in the
-cross-slope probe; it does not
-exercise physics contacts, replication, interpolation, or recorded live input.
+cross-slope probe. Its replication-presentation probe withholds three of every
+four projected skeleton samples while accelerating and turning, so render-side
+phase prediction and resynchronization are exercised. It still does not run
+physics contacts, the network transport itself, or recorded live input.
 
 The vertical-excursion gate remains 0.20 m for ordinary flat-ground motion and
 0.30 m for raised-guard scenarios. The explicit cross-slope scenario adds only

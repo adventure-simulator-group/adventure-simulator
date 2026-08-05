@@ -687,7 +687,7 @@ pub const RUN_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
     step_distance: 1.78,
     support_phase_radius: 0.175,
     bounce_metres: 0.0,
-    flight_apex_metres: 0.16,
+    flight_apex_metres: 0.09,
     landing: HUMANOID_LANDING_PROFILE,
 };
 pub const CROUCH_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
@@ -1001,6 +1001,7 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
         .active
         .then_some(skeleton.raised_locomotion.swing_foot);
     let local_velocity = controller_yaw(input.orientation).inverse() * input.linear_velocity;
+    let physical_speed = local_velocity.xz().length();
     let contiguous_sample = input.tick == skeleton.locomotion_sample_tick.wrapping_add(1);
     skeleton.world_acceleration = if contiguous_sample {
         ((input.linear_velocity - previous_world_velocity) * LOCOMOTION_SAMPLE_HZ)
@@ -1026,7 +1027,7 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
         Posture::Airborne
     };
 
-    let ground_speed = local_velocity.xz().length();
+    let ground_speed = physical_speed;
     if skeleton.weapon_guard == WeaponGuardState::Raised && skeleton.posture == Posture::Upright {
         advance_raised_locomotion_intent(skeleton, local_velocity, input.delta_seconds);
         let handoffs = skeleton
@@ -1197,8 +1198,8 @@ pub enum PoseSampling {
     /// Sample the complete cyclic motion containing this pose. The client
     /// maps normalized gait phase across the motion's catalog frame range.
     Cycle { progress: f32 },
-    /// Sample between two semantic anchors. The client uses one exact clip
-    /// time when both anchors belong to the same motion and blends otherwise.
+    /// Blend two semantic anchor poses. The client samples both catalog frames
+    /// exactly and never evaluates exported in-between keys.
     Span { end: SemanticPose, progress: f32 },
 }
 
@@ -1408,11 +1409,10 @@ fn gait_pair(phase: f32, contact: SemanticPose, passing: SemanticPose) -> Vec<Po
     // itself. The 20%-cycle windows keep interpolation around the pose where
     // the legs are closest and preserve the authored contact silhouettes.
     let mirror = gait_mirror(phase);
-    // Contact and passing are authoritative timestamps in the same sparse
-    // motion file. Sample the interval directly instead of asking Bevy to
-    // blend two times on one animation-graph node: a node has only one seek
-    // position, so the latter sample would overwrite the former and create a
-    // hard quarter-cycle pose swap.
+    // Contact and passing are authoritative sparse poses. The client gives
+    // each catalog frame its own Bevy graph node, samples both endpoints
+    // exactly, and uses this progress as their blend weight. Exported
+    // in-between keys therefore cannot change procedural gait timing.
     vec![PoseSample {
         pose: start,
         sampling: PoseSampling::Span { end, progress },
@@ -1915,7 +1915,41 @@ mod tests {
             gait_support_weights(RUN_LOCOMOTION_PROFILE, 0.25),
             (0.0, 0.0)
         );
-        assert_eq!(RUN_LOCOMOTION_PROFILE.flight_apex_metres, 0.16);
+        assert_eq!(RUN_LOCOMOTION_PROFILE.flight_apex_metres, 0.09);
+    }
+
+    #[test]
+    fn locomotion_style_uses_current_physical_speed() {
+        let mut state = SkeletonState::default();
+        project_skeleton_locomotion(
+            &mut state,
+            SkeletonLocomotionInput {
+                orientation: Quat::IDENTITY,
+                linear_velocity: Vec3::NEG_Z * 2.0,
+                grounded: true,
+                crouching: false,
+                delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                tick: 1,
+            },
+        );
+
+        assert_eq!(
+            state.animation_speed(),
+            WALK_LOCOMOTION_PROFILE.reference_speed
+        );
+        let evaluation = AnimationEvaluation::from_skeleton(&state);
+        assert!(evaluation.base.iter().all(|sample| matches!(
+            sample.pose,
+            SemanticPose::WalkContact | SemanticPose::WalkPassing
+        )));
+        assert_eq!(
+            evaluation
+                .base
+                .iter()
+                .map(|sample| sample.weight)
+                .sum::<f32>(),
+            1.0
+        );
     }
 
     #[test]

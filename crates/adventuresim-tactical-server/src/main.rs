@@ -32,7 +32,7 @@ use crate::{
     },
     player_projection::{
         PlayerProjectionSet, on_client_disconnected, on_join_request, on_player_input,
-        spawn_connected_players, update_skeleton_locomotion,
+        restore_authoritative_movement_intent, spawn_connected_players, update_skeleton_locomotion,
     },
     stdb::{SpacetimeDb, SpacetimeDbReady},
 };
@@ -124,7 +124,11 @@ fn main() {
     .add_systems(OnEnter(ServerState::Running), on_server_started)
     .add_systems(
         FixedPostUpdate,
-        update_skeleton_locomotion.after(AhoySystems::MoveCharacters),
+        (
+            restore_authoritative_movement_intent
+                .before(AdventureSimulatorPhysicsSet::ApplyMovementSpeed),
+            update_skeleton_locomotion.after(AhoySystems::MoveCharacters),
+        ),
     )
     .add_observer(on_join_request)
     .add_observer(on_player_input)

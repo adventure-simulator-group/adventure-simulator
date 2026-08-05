@@ -49,19 +49,23 @@ Use these conventions:
   semantic anchors;
 - locomotion uses only its contact and passing/flight anchor frames. The
   runtime constructs contact -> passing -> mirrored contact -> mirrored
-  passing -> contact with smooth quarter-cycle interpolation; later exporter
-  keys cannot become accidental runtime gait poses; and
+  passing -> contact by sampling the two exact catalog frames on distinct Bevy
+  graph nodes and blending their transforms with smooth quarter-cycle weights;
+  every exported in-between key and every later exporter key is ignored; and
 - packs in one fallback chain use identical bone names and hierarchy.
 
 Lower-body reflection is evaluated in character space so anatomical left and
 right retain their lateral spacing while exchanging gait roles. Authored
 upper-body carriage remains intact; explicit hand targets and weapon
 constraints apply only when gameplay supplies them. Root, pelvis, spine, neck,
-and head motion is clamped around the authored bind pose before look and final
-IK. During active locomotion, authored root/pelvis Y is normalized, then the
+and head translations are clamped around the authored bind pose before look
+and final IK, while authored joint rotations remain intact. During active
+locomotion, authored root/pelvis Y is normalized, then the
 shared gait profile supplies grounded bounce or a gravity-shaped run flight
 arc with two phase-aligned peaks per cycle without moving the gameplay
-controller. Idle poses blend back
+controller. A contact-edge calibration translates the complete visual rig so
+the supported sole meets the rig floor, then retains that baseline through the
+stride without reconstructing either leg. Idle poses blend back
 to their authored central-bone transforms. The 33mm hierarchy compensation is
 measured for upright, lowered-guard `humanoid_unarmed` locomotion only;
 crouching, guard movement, and specialized packs receive no inferred
@@ -76,7 +80,10 @@ terrain-IK plugins,
 then advances the shared authoritative locomotion projector at its real 64Hz
 fixed tick. Default-off scenarios retain authored ordinary leg motion with a
 vertically fixed gameplay root; the explicit cross-slope scenario opts into
-the seeded terrain-IK pass. Coverage includes two-cycle 2.0m/s walk, 3.75m/s
+the seeded terrain-IK pass. A replication-presentation scenario exposes only
+every fourth projected skeleton sample while accelerating through the walk/run
+blend and turning, exercising the same client-side prediction used in gameplay.
+Coverage includes two-cycle 2.0m/s walk, 3.75m/s
 blend, 5.5m/s run, crouch, raised-guard full/half-speed movement, and
 start/stop, guard-entry, guard-release, and crouch-enter/exit transitions. Every logical tick is captured first from the raw
 gameplay third-person camera, then from side and front diagnostic cameras with
@@ -100,7 +107,8 @@ Use `--asset-root` when invoking it outside the repository root,
 at normal speed before using slow motion. The manifest tracks pelvis, chest,
 head, shoulders, elbows, hands, hips, knees, and feet; finite transforms; loop
 seams; per-frame displacement and rotation spikes; knee direction;
-terrain-relative foot clearance/support/slip; controller-height stability;
+terrain-relative foot clearance/support/slip; contact-sole grounding;
+controller-height stability;
 phase-indexed contact/pass height; visual peak count; run flight duration and
 sole clearance; and pelvis/head stability. These
 values are regression signals and do not establish biomechanical correctness
@@ -111,15 +119,20 @@ supported-foot per-frame slip and planted-interval drift, and records the
 responsible frames.
 
 The fixture synthesizes deterministic controller observations at the shared
-server projection boundary; it does not replay network packets or run the
-physics character controller. Only the cross-slope probe follows rendered
+server projection boundary; its sparse-sample scenario models packet
+coalescing but does not run the transport or physics character controller.
+Only the cross-slope probe follows rendered
 terrain height; flat scenarios verify that animation never changes controller Y.
 
 Walk support telemetry remains continuous through its cycle. As locomotion
 blends toward run, support narrows around each foot contact. At 5.5m/s the
 quarter-cycle run flight unloads both legs for roughly 90-110ms and presents
-at least 0.10m of sole clearance. When terrain IK is explicitly enabled, high
-support retains the foot's world-space horizontal plant until release.
+0.10-0.30m of sole clearance. Contact-phase sole clearance must remain between
+-0.02m and 0.04m. When terrain IK is explicitly enabled, high
+support retains the foot's world-space horizontal plant until release. Only a
+meaningfully supported leg enters the analytic terrain solve; the swing leg
+keeps its authored FK and action poses opt out until they expose explicit foot
+contact semantics. Idle continues to support both feet.
 
 The replicated skeleton also carries the shared 64 Hz locomotion sample tick,
 observed world velocity/acceleration, alternating contact sequence, and landing
@@ -133,6 +146,13 @@ landing, retains both pre-compression world foot plants through recovery, and
 solves the actual hip/knee chains back to them; it never translates or stretches thigh roots. Stationary and
 stopping ordinary locomotion blends both feet back to full support.
 
+Rendering uses a client-only shadow of `SkeletonState`. Between authoritative
+samples it advances gait phase from the most recently measured physical speed
+and smooths the displayed local/world velocity. Each new sample applies a
+bounded circular phase correction; posture, actions, contacts, landings, and
+large discontinuities snap to authority. This removes packet-cadence pose
+holds without predicting gameplay events or changing the replicated component.
+
 Contact and landing messages are deduplicated presentation hooks for future
 audio/VFX. Plausible contact gaps reconstruct at most eight ordered alternating
 contacts; resets, backward sequences, and larger gaps resynchronize silently.
@@ -145,6 +165,14 @@ height, slope, and pelvis corrections. The HUD reports whether it is on or off;
 authored FK, gait mirroring, torso stabilization, and procedural guard stepping
 remain active. Ordinary flat-ground locomotion does not run the terrain leg
 solver while the toggle is off.
+
+In debug builds, `F7` switches both peers between normal and quarter-speed game
+time. The server retains the latest validated analogue movement request across
+missing unreliable input packets and restores Ahoy's fixed-loop input from it
+before each movement step. That intent drives the controller only. Current
+post-physics planar speed selects the idle/walk/run blend and determines stride
+cadence, while acceleration is reserved for procedural body response. The
+clock toggle therefore cannot directly change walk/run selection.
 
 The procedural humanoid pass recognizes these case-sensitive bone names:
 
