@@ -2153,18 +2153,10 @@ pub(crate) fn require_intervention_relationship(
     if actor_id == patient_id {
         return Ok(());
     }
-    let actor_site = crate::investigation::character_case_site_id(ctx, actor.id);
-    let patient_site = crate::investigation::character_case_site_id(ctx, patient.id);
-    let ordinary_relationship = physiology::intervention_relationship_allowed(
-        actor.id,
-        patient.id,
-        actor.party_id.as_deref(),
-        patient.party_id.as_deref(),
-        actor.current_settlement_id.as_deref(),
-        patient.current_settlement_id.as_deref(),
-        actor_site.as_deref(),
-        patient_site.as_deref(),
-    );
+    let ordinary_relationship = actor.party_id.is_some()
+        && actor.party_id == patient.party_id
+        && actor.current_settlement_id.is_some()
+        && actor.current_settlement_id == patient.current_settlement_id;
     let contextual_relationship =
         crate::world_actor::contextual_interaction_is_authorized(ctx, actor_id, patient_id, true);
     let has_active_patient_context = ctx

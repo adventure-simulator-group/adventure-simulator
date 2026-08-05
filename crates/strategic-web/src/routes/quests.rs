@@ -33,7 +33,7 @@ use crate::spacetimedb::{
     Settlement,
 };
 use crate::templates::quest::{
-    CaseSitePagePresentation, CaseSiteRecoveryNotice, quest_location_enemy_page,
+    CaseSitePagePresentation, CaseSiteRecoveryNotice, QuestCounterparty, quest_location_enemy_page,
     quest_location_map_page,
 };
 
@@ -1117,15 +1117,16 @@ async fn render_quest_location(
         ))
         .await
         .unwrap_or_default();
-    let counterparty_contact = context_memberships
-        .first()
-        .map(|row| (row.contact_ref.clone(), row.revision));
     let mut counterparties = Vec::new();
     for membership in context_memberships.into_iter().filter(|row| row.alive) {
         if let Ok(Some(counterparty)) =
             super::data::character(&state, membership.character_id).await
         {
-            counterparties.push(counterparty);
+            counterparties.push(QuestCounterparty {
+                character: counterparty,
+                contact_ref: membership.contact_ref,
+                revision: membership.revision,
+            });
         }
     }
     let onsite_actions = onsite_investigation_actions(
@@ -1204,12 +1205,6 @@ async fn render_quest_location(
             character.as_ref(),
             &party_members,
             &counterparties,
-            counterparty_contact
-                .as_ref()
-                .map(|(contact_ref, _)| contact_ref.as_str()),
-            counterparty_contact
-                .as_ref()
-                .map_or(1, |(_, revision)| *revision),
             can_fight,
             resolved,
             autoresolve_report.as_ref(),

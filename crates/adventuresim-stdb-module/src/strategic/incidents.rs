@@ -121,7 +121,7 @@ fn create_strategic_incident(
                 ctx,
                 member.id,
                 Some(case_site_id.clone()),
-            );
+            )?;
             ctx.db.character().id().update(member);
         }
     }

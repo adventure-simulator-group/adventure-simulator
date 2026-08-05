@@ -19,7 +19,6 @@ use crate::{
         character, character__view, character_attributes, character_limbs, character_skills,
     },
     condition::character_condition,
-    investigation::character_case_site_occupancy,
     item::inventory_item,
     outbreak::outbreak_patient_authority,
     settlement_population::{SettlementResidentProfile, settlement_resident_profile},
@@ -279,11 +278,7 @@ fn require_corpse_access(
         corpse.buried,
         corpse.exhumed,
     );
-    let actor_site = ctx
-        .db
-        .character_case_site_occupancy()
-        .character_id()
-        .find(actor_id)
+    let actor_site = crate::investigation::current_character_case_site_occupancy(ctx, actor_id)
         .map(|row| row.case_site_id.value);
     let together = match location {
         CorpseLocation::Scene => actor_site.as_deref() == Some(corpse.case_site_id.as_str()),

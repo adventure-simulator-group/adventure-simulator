@@ -821,11 +821,8 @@ fn infection_control_check(ctx: &ReducerContext, actor_id: u64, surgical_skill: 
 fn require_together(ctx: &ReducerContext, actor_id: u64, patient_id: u64) -> Result<(), String> {
     let actor = crate::require_living_character(ctx, actor_id)?;
     let patient = crate::require_living_character(ctx, patient_id)?;
-    let actor_site = crate::investigation::character_case_site_id(ctx, actor.id);
-    let patient_site = crate::investigation::character_case_site_id(ctx, patient.id);
     let same_place = actor.current_settlement_id.is_some()
         && actor.current_settlement_id == patient.current_settlement_id
-        || actor_site.is_some() && actor_site == patient_site
         || crate::world_actor::characters_are_contextually_present(ctx, actor_id, patient_id);
     if !same_place {
         return Err("Surgeon and patient must be together".into());

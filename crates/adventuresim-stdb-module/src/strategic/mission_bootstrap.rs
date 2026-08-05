@@ -517,7 +517,7 @@ pub fn seed_standalone_tactical_mission(
         ctx,
         character_id,
         Some(case_site.id.value.clone()),
-    );
+    )?;
     let capability_id = format!("mission-approach:standalone:{mission_id}");
     if ctx
         .db

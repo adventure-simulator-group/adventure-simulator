@@ -1551,11 +1551,9 @@ pub fn discover_investigation_lead(
 }
 
 fn same_place(ctx: &ReducerContext, left: &crate::Character, right: &crate::Character) -> bool {
-    let left_site = character_case_site_id(ctx, left.id);
-    let right_site = character_case_site_id(ctx, right.id);
     (left.current_settlement_id.is_some()
         && left.current_settlement_id == right.current_settlement_id)
-        || (left_site.is_some() && left_site == right_site)
+        || crate::world_actor::characters_are_contextually_present(ctx, left.id, right.id)
 }
 
 #[reducer]

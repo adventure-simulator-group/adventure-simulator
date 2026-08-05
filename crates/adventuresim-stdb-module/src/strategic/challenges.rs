@@ -2482,7 +2482,7 @@ fn materialize_order_errantry(
                 .find(member_id)
                 .ok_or("Party member not found")?;
             member.current_settlement_id = None;
-            crate::investigation::set_character_case_site(ctx, member_id, None);
+            crate::investigation::set_character_case_site(ctx, member_id, None)?;
             ctx.db.character().id().update(member);
         }
         bind_errantry_trials_to_current_camp(ctx, &party_id)?;

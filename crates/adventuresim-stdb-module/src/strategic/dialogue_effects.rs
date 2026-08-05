@@ -532,11 +532,9 @@ fn apply_dialogue_investigation_action(
 }
 
 fn same_location(ctx: &ReducerContext, left: &crate::Character, right: &crate::Character) -> bool {
-    let left_site = crate::investigation::character_case_site_id(ctx, left.id);
-    let right_site = crate::investigation::character_case_site_id(ctx, right.id);
-    left.current_settlement_id == right.current_settlement_id
-        && left_site == right_site
-        && (left.current_settlement_id.is_some() || left_site.is_some())
+    (left.current_settlement_id.is_some()
+        && left.current_settlement_id == right.current_settlement_id)
+        || crate::world_actor::characters_are_contextually_present(ctx, left.id, right.id)
 }
 
 fn player_conversation_parties(

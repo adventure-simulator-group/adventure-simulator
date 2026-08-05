@@ -235,6 +235,14 @@ impl StrategicPlaceId {
             Self::CaseSite { .. } | Self::JourneyCamp { .. } => None,
         }
     }
+
+    /// Opaque case-site component when this is an exact case-site place.
+    pub fn case_site_id(&self) -> Option<&str> {
+        match self {
+            Self::CaseSite { site_id } => Some(site_id.as_str()),
+            _ => None,
+        }
+    }
 }
 
 /// One existing environmental or institutional fixture at an exact place.
@@ -329,6 +337,13 @@ impl StrategicFixtureId {
             | Self::Chapter { place, .. }
             | Self::OutbreakSource { place, .. }
             | Self::Fireplace { place } => place,
+        }
+    }
+
+    pub fn outbreak_id(&self) -> Option<&str> {
+        match self {
+            Self::OutbreakSource { outbreak_id, .. } => Some(outbreak_id.as_str()),
+            _ => None,
         }
     }
 }
