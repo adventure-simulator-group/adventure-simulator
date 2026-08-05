@@ -4,25 +4,32 @@ use adventuresim_core::{
     disease::{self, DiseaseId},
     durability::{DamageBins, effective_weapon_stat},
     food, herbalism,
+    physical_object::{OperationalCustody, PhysicalObjectId},
     prelude::{PlayerSkills, Skill, apply_direct_training},
     strategic_place::{StrategicFixtureId, StrategicPlaceId},
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 use crate::{
-    character::{character, character_attributes, character_limbs, character_skills},
+    character::{
+        character, character__view as _, character_attributes, character_attributes__view as _,
+        character_limbs, character_skills, character_skills__view as _,
+    },
     condition::{character_needs, initialize_character_condition},
     container_liquid,
     disease::{InfectionEpisodeRow, infection_episode},
+    inventory_container::{inventory_containment__view as _, inventory_object__view as _},
     inventory_containment, inventory_item, inventory_item_amount, inventory_object,
-    item::item,
+    item::{inventory_item__view as _, item, item__view as _},
     medicinal_component, party_item_amount,
-    repair::item_condition,
+    repair::{item_condition, item_condition__view as _},
     strategic::{
-        PartyInventoryItem, party_authority, party_inventory_item, party_item_condition,
-        party_journey_authority, settlement,
+        PartyInventoryItem, party_authority, party_authority__view as _, party_inventory_item,
+        party_inventory_item__view as _, party_item_condition, party_item_condition__view as _,
+        party_journey_authority, road_challenge_authority__view as _, settlement,
+        strategic_encounter__view as _,
     },
-    time::character_time,
+    time::{character_time, character_time__view as _},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, SpacetimeType)]
@@ -65,12 +72,24 @@ fn preparation_skill_check(
 }
 
 fn carried_item_rows(ctx: &ReducerContext, character_id: u64) -> Vec<(String, u64, String)> {
+    let Some(actor) = ctx.db.character().id().find(character_id) else {
+        return Vec::new();
+    };
     let mut rows = ctx
         .db
         .inventory_item()
         .character_id()
         .filter(character_id)
-        .filter(|row| !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", row.id))
+        .filter(|row| {
+            crate::inventory_container::object_for_row(ctx, "personal", row.id)
+                .ok()
+                .flatten()
+                .is_some_and(|object| {
+                    crate::object_custody::require_actor_carried_object(ctx, &actor, &object)
+                        .is_ok()
+                        && !crate::inventory_container::ancestry_reaches_fireplace(ctx, object.id)
+                })
+        })
         .map(|row| ("personal".into(), row.id, row.item_id))
         .collect::<Vec<_>>();
     if let Some(party_id) = ctx
@@ -86,7 +105,18 @@ fn carried_item_rows(ctx: &ReducerContext, character_id: u64) -> Vec<(String, u6
                 .party_id()
                 .filter(&party_id)
                 .filter(|row| {
-                    !crate::inventory_container::row_is_fireplace_rooted(ctx, "party", row.id)
+                    crate::inventory_container::object_for_row(ctx, "party", row.id)
+                        .ok()
+                        .flatten()
+                        .is_some_and(|object| {
+                            crate::object_custody::require_actor_carried_object(
+                                ctx, &actor, &object,
+                            )
+                            .is_ok()
+                                && !crate::inventory_container::ancestry_reaches_fireplace(
+                                    ctx, object.id,
+                                )
+                        })
                 })
                 .map(|row| ("party".into(), row.id, row.item_id)),
         );
@@ -94,15 +124,15 @@ fn carried_item_rows(ctx: &ReducerContext, character_id: u64) -> Vec<(String, u6
     rows
 }
 
-fn qualifying_cutting_weapon(ctx: &ReducerContext, character_id: u64) -> bool {
+fn qualifying_cutting_weapon_binding(ctx: &ReducerContext, character_id: u64) -> Option<String> {
     carried_item_rows(ctx, character_id)
         .into_iter()
-        .any(|(scope, row_id, item_id)| {
+        .filter_map(|(scope, row_id, item_id)| {
             let Some(item) = ctx.db.item().id().find(item_id) else {
-                return false;
+                return None;
             };
             if !item.slash || item.accuracy < 0.5 {
-                return false;
+                return None;
             }
             let damage = if scope == "personal" {
                 ctx.db
@@ -120,14 +150,144 @@ fn qualifying_cutting_weapon(ctx: &ReducerContext, character_id: u64) -> bool {
                     })
             }
             .unwrap_or_default();
-            effective_weapon_stat(item.accuracy, damage, item.edge_sensitivity) >= 0.5
+            (effective_weapon_stat(item.accuracy, damage, item.edge_sensitivity) >= 0.5).then(
+                || {
+                    format!(
+                        "{scope}|{row_id}|{}|{}|{}|{:?}",
+                        item.id,
+                        item.accuracy.to_bits(),
+                        item.edge_sensitivity.to_bits(),
+                        damage.0.map(f32::to_bits)
+                    )
+                },
+            )
         })
+        .min()
 }
 
-fn has_grinding_tool(ctx: &ReducerContext, character_id: u64) -> bool {
+fn grinding_tool_binding(ctx: &ReducerContext, character_id: u64) -> String {
     carried_item_rows(ctx, character_id)
-        .iter()
-        .any(|(_, _, item_id)| item_id == "mortar_and_pestle")
+        .into_iter()
+        .filter(|(_, _, item_id)| item_id == "mortar_and_pestle")
+        .map(|(scope, row_id, item_id)| format!("{scope}|{row_id}|{item_id}"))
+        .min()
+        .unwrap_or_else(|| "hands".into())
+}
+
+fn preparation_terminal_minute(
+    ctx: &ReducerContext,
+    character_id: u64,
+    current_minute: u64,
+    duration: u64,
+) -> Result<Option<u64>, String> {
+    let (injury_safe, injury_terminal) =
+        crate::surgery::preview_injury_terminal_boundary(ctx, character_id, duration, true)?;
+    let (disease_safe, disease_terminal) =
+        crate::disease::preview_disease_terminal_boundary(ctx, character_id, injury_safe, true)?;
+    let safe = injury_safe.min(disease_safe);
+    Ok((safe < duration || injury_terminal || disease_terminal)
+        .then_some(current_minute.saturating_add(safe)))
+}
+
+fn next_preparation_attempt_generation(
+    ctx: &ReducerContext,
+    character_id: u64,
+    inventory_scope: &str,
+    inventory_item_id: u64,
+    food_lot_id: u64,
+    material_object_id: u64,
+    expected_revision: u64,
+    action: IngredientPreparationAction,
+) -> Result<u64, String> {
+    let key = preparation_attempt_state_key(
+        character_id,
+        inventory_scope,
+        inventory_item_id,
+        food_lot_id,
+        material_object_id,
+        expected_revision,
+        action,
+    );
+    match ctx
+        .db
+        .ingredient_preparation_attempt_state()
+        .key()
+        .find(&key)
+    {
+        Some(state) if state.completed => {
+            Err("Ingredient preparation was already completed".into())
+        }
+        Some(state) => Ok(state.next_generation),
+        None => Ok(0),
+    }
+}
+
+fn preparation_attempt_state_key(
+    character_id: u64,
+    inventory_scope: &str,
+    inventory_item_id: u64,
+    food_lot_id: u64,
+    material_object_id: u64,
+    expected_revision: u64,
+    action: IngredientPreparationAction,
+) -> String {
+    use sha2::Digest as _;
+    let mut hash = sha2::Sha256::new();
+    hash.update(b"ingredient-preparation-attempt-state-v1");
+    hash.update(character_id.to_le_bytes());
+    hash.update((inventory_scope.len() as u64).to_le_bytes());
+    hash.update(inventory_scope.as_bytes());
+    hash.update(inventory_item_id.to_le_bytes());
+    hash.update(food_lot_id.to_le_bytes());
+    hash.update(material_object_id.to_le_bytes());
+    hash.update(expected_revision.to_le_bytes());
+    hash.update([match action {
+        IngredientPreparationAction::Cut => 1,
+        IngredientPreparationAction::Grind => 2,
+    }]);
+    encode_digest(&hash.finalize())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_preparation_attempt_state(
+    ctx: &ReducerContext,
+    character_id: u64,
+    inventory_scope: &str,
+    inventory_item_id: u64,
+    food_lot_id: u64,
+    material_object_id: u64,
+    expected_revision: u64,
+    action: IngredientPreparationAction,
+    next_generation: u64,
+    completed: bool,
+) {
+    let state = IngredientPreparationAttemptState {
+        key: preparation_attempt_state_key(
+            character_id,
+            inventory_scope,
+            inventory_item_id,
+            food_lot_id,
+            material_object_id,
+            expected_revision,
+            action,
+        ),
+        next_generation,
+        completed,
+    };
+    if ctx
+        .db
+        .ingredient_preparation_attempt_state()
+        .key()
+        .find(&state.key)
+        .is_some()
+    {
+        ctx.db
+            .ingredient_preparation_attempt_state()
+            .key()
+            .update(state);
+    } else {
+        ctx.db.ingredient_preparation_attempt_state().insert(state);
+    }
 }
 
 /// Physically prepares one exact personal or party measured lot. Physical preparation
@@ -138,101 +298,302 @@ pub fn prepare_ingredient_lot(
     character_id: u64,
     inventory_scope: String,
     inventory_item_id: u64,
+    food_lot_id: u64,
+    material_object_id: u64,
+    request_id: String,
+    expected_revision: u64,
+    attempt_generation: u64,
     action: IngredientPreparationAction,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_gateway(ctx)?;
+    // Exact replay is resolved solely from the immutable submitted tuple and
+    // durable receipt, before consulting any mutable live state.
+    if let Some(receipt) = ctx
+        .db
+        .ingredient_preparation_receipt()
+        .request_id()
+        .find(&request_id)
+    {
+        return if receipt.actor_character_id == character_id
+            && receipt.inventory_scope == inventory_scope
+            && receipt.inventory_item_id == inventory_item_id
+            && receipt.food_lot_id == food_lot_id
+            && receipt.material_object_id == material_object_id
+            && receipt.expected_revision == expected_revision
+            && receipt.attempt_generation == attempt_generation
+            && receipt.action == action
+        {
+            Ok(())
+        } else {
+            Err("Ingredient preparation request id collides with a different attempt".into())
+        };
+    }
     let actor = crate::character::require_living_character(ctx, character_id)?;
     if actor.in_server {
         return Err("Ingredient preparation is unavailable during a tactical encounter".into());
     }
     crate::strategic::require_character_no_unresolved_encounter(ctx, character_id)?;
-    let mut lot = match inventory_scope.as_str() {
-        "personal" => {
-            let inventory = ctx
-                .db
-                .inventory_item()
-                .id()
-                .find(inventory_item_id)
-                .ok_or("Ingredient lot not found")?;
-            if inventory.character_id != character_id
-                || crate::inventory_container::row_is_fireplace_rooted(
-                    ctx,
-                    "personal",
-                    inventory_item_id,
-                )
-            {
-                return Err("Ingredient lot is not in this character's carried inventory".into());
-            }
-            personal_lot(ctx, inventory_item_id)
-        }
-        "party" => {
-            let party_id = actor
-                .party_id
-                .as_deref()
-                .ok_or("Character has no party inventory")?;
-            let inventory = ctx
-                .db
-                .party_inventory_item()
-                .id()
-                .find(inventory_item_id)
-                .ok_or("Party ingredient lot not found")?;
-            if inventory.party_id != party_id
-                || crate::inventory_container::row_is_fireplace_rooted(
-                    ctx,
-                    "party",
-                    inventory_item_id,
-                )
-            {
-                return Err("Ingredient lot is not in this character's party inventory".into());
-            }
-            party_lot(ctx, inventory_item_id)
-        }
-        _ => return Err("Ingredient preparation scope must be personal or party".into()),
+    let current_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character time not found")?
+        .minutes;
+    let expected_generation = next_preparation_attempt_generation(
+        ctx,
+        character_id,
+        &inventory_scope,
+        inventory_item_id,
+        food_lot_id,
+        material_object_id,
+        expected_revision,
+        action,
+    )?;
+    if attempt_generation != expected_generation {
+        return Err("Ingredient preparation attempt generation is stale".into());
     }
-    .ok_or("Measured ingredient lot metadata not found")?;
-    let (skill, physical, next, prefix) = match action {
-        IngredientPreparationAction::Cut => {
-            if lot.preparation != FoodPreparation::Raw {
-                return Err("Only a raw ingredient can be cut".into());
-            }
-            if !qualifying_cutting_weapon(ctx, character_id) {
-                return Err("Cutting requires a carried edged weapon with current precision of at least 0.5".into());
-            }
-            (
-                Skill::Knife,
-                herbalism::PhysicalPreparation::Cut,
-                FoodPreparation::Cut,
-                "Cut",
-            )
-        }
-        IngredientPreparationAction::Grind => {
-            if !matches!(lot.preparation, FoodPreparation::Raw | FoodPreparation::Cut) {
-                return Err("Only a raw or cut ingredient can be ground".into());
-            }
-            (
-                Skill::Bludgeon,
-                herbalism::PhysicalPreparation::Ground,
-                FoodPreparation::Ground,
-                "Ground",
-            )
+    let authority = load_preparation_authority(
+        ctx,
+        &actor,
+        &inventory_scope,
+        inventory_item_id,
+        food_lot_id,
+        material_object_id,
+        &request_id,
+        expected_revision,
+        action,
+        current_minute,
+    )?;
+    let terminal_minute = preparation_terminal_minute(
+        ctx,
+        character_id,
+        current_minute,
+        u64::from(authority.duration),
+    )?;
+    let authority_digest = preparation_authority_digest(
+        &actor,
+        &authority,
+        action,
+        current_minute,
+        terminal_minute,
+        attempt_generation,
+    );
+    let canonical_request = preparation_request_id(
+        character_id,
+        &inventory_scope,
+        inventory_item_id,
+        food_lot_id,
+        material_object_id,
+        expected_revision,
+        action,
+        attempt_generation,
+        &authority.place.to_string(),
+        &authority.custody_binding,
+    );
+    if request_id != canonical_request {
+        return Err(
+            "Ingredient preparation request does not match its authoritative inputs".into(),
+        );
+    }
+    let planned = match build_preparation_planner(
+        &actor,
+        &authority,
+        &request_id,
+        action,
+        current_minute,
+        terminal_minute,
+        attempt_generation,
+    )? {
+        adventuresim_core::strategic_action::PlanningOutcome::Ready(plan) => plan,
+        adventuresim_core::strategic_action::PlanningOutcome::Rejected(_) => {
+            return Err("Ingredient preparation is unavailable".into());
         }
     };
-    let check = preparation_skill_check(ctx, character_id, skill)?;
-    let duration = herbalism::physical_preparation_minutes(
-        physical,
-        check,
-        has_grinding_tool(ctx, character_id),
-    );
-    // Safe-prefix boundary: no lot mutation or training occurs when clipped.
-    if !crate::time::advance_character_wait_time(ctx, character_id, u64::from(duration))? {
+    let fresh = load_preparation_authority(
+        ctx,
+        &actor,
+        &inventory_scope,
+        inventory_item_id,
+        food_lot_id,
+        material_object_id,
+        &request_id,
+        expected_revision,
+        action,
+        current_minute,
+    )?;
+    let fresh_terminal =
+        preparation_terminal_minute(ctx, character_id, current_minute, u64::from(fresh.duration))?;
+    let replanned = build_preparation_planner(
+        &actor,
+        &fresh,
+        &request_id,
+        action,
+        current_minute,
+        fresh_terminal,
+        attempt_generation,
+    )?;
+    let fresh_snapshot = match &replanned {
+        adventuresim_core::strategic_action::PlanningOutcome::Ready(plan) => plan.snapshot(),
+        adventuresim_core::strategic_action::PlanningOutcome::Rejected(_) => {
+            return Err("Ingredient preparation prerequisites changed before commit".into());
+        }
+    };
+    let provenance = planned.provenance();
+    adventuresim_core::strategic_action::validate_commit(
+        &planned,
+        &replanned,
+        fresh_snapshot,
+        &adventuresim_core::strategic_action::CommitAttempt {
+            request_id: provenance.request_id.clone(),
+            action_id: provenance.action_id.clone(),
+            authority_binding: provenance.authority_binding,
+        },
+        None,
+    )
+    .map_err(|_| "Ingredient preparation authority changed before commit")?;
+    adventuresim_core::material::validate_material_commit(
+        &authority.material_receipt,
+        &[fresh.material_snapshot.clone()],
+    )
+    .map_err(|_| "Ingredient material changed before commit")?;
+
+    let mut effect_duration = None;
+    let mut effect_commit = None;
+    for effect in planned.effects() {
+        match effect {
+            adventuresim_core::strategic_action::ActionEffect::Domain(
+                herbalism::PreparationPlanEffect::AttemptWait {
+                    actor,
+                    requested_minutes,
+                },
+            ) => effect_duration = Some((actor.get(), *requested_minutes)),
+            adventuresim_core::strategic_action::ActionEffect::Domain(
+                herbalism::PreparationPlanEffect::CommitPreparation {
+                    action,
+                    expected_revision,
+                    next_display_name,
+                },
+            ) => effect_commit = Some((*action, *expected_revision, next_display_name.clone())),
+            _ => return Err("Ingredient preparation planner emitted an unsupported effect".into()),
+        }
+    }
+    let (effect_actor, duration) =
+        effect_duration.ok_or("Ingredient preparation planner omitted its wait effect")?;
+    let core_action = match action {
+        IngredientPreparationAction::Cut => herbalism::PreparationAction::Cut,
+        IngredientPreparationAction::Grind => herbalism::PreparationAction::Grind,
+    };
+    if effect_actor != character_id || duration != u64::from(authority.duration) {
+        return Err("Ingredient preparation planner effects do not match authority".into());
+    }
+    if let Some((effect_action, effect_revision, _)) = &effect_commit
+        && (*effect_action != core_action || *effect_revision != expected_revision)
+    {
+        return Err("Ingredient preparation planner effects do not match authority".into());
+    }
+
+    let survived = crate::time::advance_character_wait_time(ctx, character_id, duration)?;
+    if !survived && effect_commit.is_some() {
+        return Err("Ingredient preparation wait diverged from its authoritative plan".into());
+    }
+    // A clipped or clock-exhausted interval is a durable terminal attempt.
+    // The material remains untouched; this request exact-replays while the
+    // gateway publishes a distinct next server-owned generation.
+    if !survived || effect_commit.is_none() {
+        let next_generation = attempt_generation
+            .checked_add(1)
+            .ok_or("Ingredient preparation attempt generation is exhausted")?;
+        record_preparation_attempt_state(
+            ctx,
+            character_id,
+            &inventory_scope,
+            inventory_item_id,
+            food_lot_id,
+            material_object_id,
+            expected_revision,
+            action,
+            next_generation,
+            false,
+        );
+        ctx.db
+            .ingredient_preparation_receipt()
+            .insert(IngredientPreparationReceipt {
+                request_id,
+                actor_character_id: character_id,
+                inventory_scope,
+                inventory_item_id,
+                food_lot_id,
+                material_object_id,
+                expected_revision,
+                attempt_generation,
+                action,
+                canonical_place: authority.place.to_string(),
+                custody_binding: authority.custody_binding,
+                authority_input_digest: encode_digest(&authority_digest),
+                duration_minutes: authority.duration,
+                interrupted: true,
+                resulting_revision: expected_revision,
+                material_input_digest: encode_digest(
+                    authority.material_receipt.input_digest().bytes(),
+                ),
+            });
         return Ok(());
     }
-    lot.preparation = next;
-    let base_name = lot
-        .display_name
-        .trim_start_matches("Cut ")
-        .trim_start_matches("Ground ");
-    lot.display_name = format!("{prefix} {base_name}");
+    let (_, _, next_display_name) = effect_commit.expect("completion effect checked");
+    let post_actor = crate::character::require_living_character(ctx, character_id)?;
+    if post_actor.in_server {
+        return Err("Ingredient preparation became unavailable during its wait".into());
+    }
+    crate::strategic::require_character_no_unresolved_encounter(ctx, character_id)?;
+    let post_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character time disappeared after preparation wait")?
+        .minutes;
+    let post = load_preparation_authority(
+        ctx,
+        &post_actor,
+        &inventory_scope,
+        inventory_item_id,
+        food_lot_id,
+        material_object_id,
+        &request_id,
+        expected_revision,
+        action,
+        post_minute,
+    )?;
+    if post.place != authority.place
+        || !preparation_lot_truth_unchanged(&authority.lot, &post.lot)
+        || post.custody_binding != authority.custody_binding
+        || post.material_source_digest != authority.material_source_digest
+        || post.object.item_id != authority.object.item_id
+        || post.object.location_kind != authority.object.location_kind
+        || post.object.location_owner != authority.object.location_owner
+        || post.object.inventory_row_id != authority.object.inventory_row_id
+        || post.skill != authority.skill
+        || post.tool_binding != authority.tool_binding
+        || post.duration != authority.duration
+        || post.next != authority.next
+    {
+        return Err("Ingredient preparation authority changed during its wait".into());
+    }
+    adventuresim_core::material::validate_material_commit(
+        &post.material_receipt,
+        &[post.material_snapshot.clone()],
+    )
+    .map_err(|_| "Ingredient material changed during preparation")?;
+    let committed_material_digest = encode_digest(post.material_receipt.input_digest().bytes());
+    let mut lot = post.lot;
+    lot.preparation = post.next;
+    lot.display_name = next_display_name;
+    lot.material_revision = lot
+        .material_revision
+        .checked_add(1)
+        .ok_or("Ingredient material revision is exhausted")?;
+    let resulting_revision = lot.material_revision;
     ctx.db.food_lot().id().update(lot);
     let mut skills = ctx
         .db
@@ -246,20 +607,57 @@ pub fn prepare_ingredient_lot(
         .character_id()
         .find(character_id)
         .ok_or("Character attributes disappeared before preparation training")?;
-    let hours = match skill {
+    let hours = match authority.skill {
         Skill::Knife => &mut skills.knife_hours,
         Skill::Bludgeon => &mut skills.bludgeon_hours,
         _ => unreachable!(),
     };
-    let gain = apply_direct_training(skill, hours, duration as f32 / 60.0, &attributes);
+    let gain = apply_direct_training(
+        authority.skill,
+        hours,
+        authority.duration as f32 / 60.0,
+        &attributes,
+    );
     ctx.db.character_skills().character_id().update(skills);
     crate::condition::record_mastery_training_morale(
         ctx,
         character_id,
-        u64::from(duration),
+        duration,
         gain.excess_effective_hours,
     );
     crate::capability::refresh_character_capability(ctx, character_id)?;
+    record_preparation_attempt_state(
+        ctx,
+        character_id,
+        &inventory_scope,
+        inventory_item_id,
+        food_lot_id,
+        material_object_id,
+        expected_revision,
+        action,
+        attempt_generation,
+        true,
+    );
+    ctx.db
+        .ingredient_preparation_receipt()
+        .insert(IngredientPreparationReceipt {
+            request_id,
+            actor_character_id: character_id,
+            inventory_scope,
+            inventory_item_id,
+            food_lot_id,
+            material_object_id,
+            expected_revision,
+            attempt_generation,
+            action,
+            canonical_place: authority.place.to_string(),
+            custody_binding: authority.custody_binding,
+            authority_input_digest: encode_digest(&authority_digest),
+            duration_minutes: authority.duration,
+            interrupted: false,
+            resulting_revision,
+            material_input_digest: committed_material_digest,
+        });
     Ok(())
 }
 
@@ -307,6 +705,8 @@ pub struct FoodLot {
     pub id: u64,
     pub inventory_item_id: Option<u64>,
     pub party_inventory_item_id: Option<u64>,
+    #[index(btree)]
+    pub material_revision: u64,
     pub display_name: String,
     pub preparation: FoodPreparation,
     pub ingredient_item_ids: Vec<String>,
@@ -334,6 +734,1129 @@ pub struct FoodContamination {
     pub concentration_anchor: f32,
     pub growth_per_hour: f32,
     pub anchor_minute: u64,
+}
+
+fn preparation_request_id(
+    character_id: u64,
+    inventory_scope: &str,
+    inventory_item_id: u64,
+    food_lot_id: u64,
+    material_object_id: u64,
+    revision: u64,
+    action: IngredientPreparationAction,
+    attempt_generation: u64,
+    canonical_place: &str,
+    direct_custody_binding: &str,
+) -> String {
+    use sha2::Digest as _;
+    let mut hash = sha2::Sha256::new();
+    hash.update(b"ingredient-preparation-request-v2");
+    hash.update(character_id.to_le_bytes());
+    hash.update((inventory_scope.len() as u64).to_le_bytes());
+    hash.update(inventory_scope.as_bytes());
+    hash.update(inventory_item_id.to_le_bytes());
+    hash.update(food_lot_id.to_le_bytes());
+    hash.update(material_object_id.to_le_bytes());
+    hash.update(revision.to_le_bytes());
+    hash.update([match action {
+        IngredientPreparationAction::Cut => 1,
+        IngredientPreparationAction::Grind => 2,
+    }]);
+    hash.update(attempt_generation.to_le_bytes());
+    hash.update((canonical_place.len() as u64).to_le_bytes());
+    hash.update(canonical_place.as_bytes());
+    hash.update((direct_custody_binding.len() as u64).to_le_bytes());
+    hash.update(direct_custody_binding.as_bytes());
+    encode_digest(&hash.finalize())
+}
+
+fn preparation_place(
+    ctx: &ReducerContext,
+    actor: &crate::Character,
+) -> Result<adventuresim_core::strategic_place::StrategicPlaceId, String> {
+    if let Some(settlement_id) = actor.current_settlement_id.as_deref() {
+        return adventuresim_core::strategic_place::StrategicPlaceId::settlement(settlement_id)
+            .map_err(|_| "Ingredient preparation settlement identity is malformed".into());
+    }
+    if let Some(site_id) = crate::investigation::character_case_site_id(ctx, actor.id) {
+        return adventuresim_core::strategic_place::StrategicPlaceId::case_site(site_id)
+            .map_err(|_| "Ingredient preparation case-site identity is malformed".into());
+    }
+    let party_id = actor
+        .party_id
+        .as_deref()
+        .ok_or("Ingredient preparation requires a canonical strategic place")?;
+    crate::strategic::current_journey_camp_place(ctx, party_id)
+}
+
+fn encode_digest(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn preparation_material_source_digest(ctx: &ReducerContext, food_lot_id: u64) -> String {
+    use sha2::Digest as _;
+    let mut hash = sha2::Sha256::new();
+    hash.update(b"ingredient-material-source-v1");
+    if let Some(row) = ctx.db.food_contamination().food_lot_id().find(food_lot_id) {
+        hash.update(row.concentration_anchor.to_bits().to_le_bytes());
+        hash.update(row.growth_per_hour.to_bits().to_le_bytes());
+        hash.update(row.anchor_minute.to_le_bytes());
+    }
+    let mut components = ctx
+        .db
+        .medicinal_component()
+        .iter()
+        .filter(|row| row.carrier_kind == "food_lot" && row.carrier_id == food_lot_id)
+        .map(|row| {
+            format!(
+                "{}\0{}\0{}",
+                row.intervention_profile_id,
+                row.profile_version,
+                row.potency_units.to_bits()
+            )
+        })
+        .collect::<Vec<_>>();
+    components.sort();
+    for component in components {
+        hash.update((component.len() as u64).to_le_bytes());
+        hash.update(component.as_bytes());
+    }
+    encode_digest(&hash.finalize())
+}
+
+fn preparation_material_current_digest(
+    ctx: &ReducerContext,
+    food_lot_id: u64,
+    current_minute: u64,
+) -> String {
+    use sha2::Digest as _;
+    let mut hash = sha2::Sha256::new();
+    hash.update(b"ingredient-material-current-v1");
+    hash.update(preparation_material_source_digest(ctx, food_lot_id).as_bytes());
+    if let Some(row) = ctx.db.food_contamination().food_lot_id().find(food_lot_id) {
+        let current = food::contamination_at(
+            row.concentration_anchor,
+            row.growth_per_hour,
+            current_minute.saturating_sub(row.anchor_minute),
+        );
+        hash.update(current.to_bits().to_le_bytes());
+    }
+    encode_digest(&hash.finalize())
+}
+
+#[derive(Clone)]
+struct PreparationAuthority {
+    inventory_scope: String,
+    inventory_item_id: u64,
+    lot: FoodLot,
+    object: crate::InventoryObject,
+    custody_binding: String,
+    place: adventuresim_core::strategic_place::StrategicPlaceId,
+    skill: Skill,
+    next: FoodPreparation,
+    prefix: &'static str,
+    tool_binding: String,
+    duration: u32,
+    material_source_digest: String,
+    material_current_digest: String,
+    material_snapshot: adventuresim_core::material::PrivateMaterialSnapshot<
+        herbalism::IngredientMaterialPreparation,
+        herbalism::MedicinalMaterialComponent,
+        herbalism::IngredientContaminant,
+    >,
+    material_receipt: adventuresim_core::material::MaterialTransformationReceipt<
+        herbalism::IngredientMaterialPreparation,
+        herbalism::MedicinalMaterialComponent,
+        herbalism::IngredientContaminant,
+        herbalism::PreparationConservationPolicy,
+        herbalism::PreparationMaterialReceipt,
+    >,
+}
+
+fn preparation_lot_truth_unchanged(before: &FoodLot, after: &FoodLot) -> bool {
+    before.id == after.id
+        && before.inventory_item_id == after.inventory_item_id
+        && before.party_inventory_item_id == after.party_inventory_item_id
+        && before.material_revision == after.material_revision
+        && before.display_name == after.display_name
+        && before.preparation == after.preparation
+        && before.ingredient_item_ids == after.ingredient_item_ids
+        && before
+            .ingredient_quantities
+            .iter()
+            .map(|value| value.to_bits())
+            .eq(after
+                .ingredient_quantities
+                .iter()
+                .map(|value| value.to_bits()))
+        && before.salty_kg.to_bits() == after.salty_kg.to_bits()
+        && before.spicy_kg.to_bits() == after.spicy_kg.to_bits()
+        && before.sweet_kg.to_bits() == after.sweet_kg.to_bits()
+        && before.sour_kg.to_bits() == after.sour_kg.to_bits()
+        && before.savory_kg.to_bits() == after.savory_kg.to_bits()
+        && before.quality == after.quality
+        && before.mass_kg.to_bits() == after.mass_kg.to_bits()
+        && before.nutrition_kcal.to_bits() == after.nutrition_kcal.to_bits()
+        && before.total_value.to_bits() == after.total_value.to_bits()
+        && before.created_at_minute == after.created_at_minute
+}
+
+fn material_snapshot(
+    ctx: &ReducerContext,
+    lot: &FoodLot,
+    object: &crate::InventoryObject,
+    custody: adventuresim_core::physical_object::OperationalCustody,
+    current_minute: u64,
+) -> Result<
+    adventuresim_core::material::PrivateMaterialSnapshot<
+        herbalism::IngredientMaterialPreparation,
+        herbalism::MedicinalMaterialComponent,
+        herbalism::IngredientContaminant,
+    >,
+    String,
+> {
+    use adventuresim_core::material::{
+        ContaminantLoad, ExtensiveComponent, MaterialIdentity, MaterialLotId, MaterialMeasure,
+        MaterialPreparation, PrivateMaterialSnapshot, PrivateMaterialTruth,
+    };
+    use std::num::NonZeroU64;
+
+    let mass_milligrams = ((lot.mass_kg.max(0.0) as f64) * 1_000_000.0).round() as u64;
+    let measure = MaterialMeasure::try_new(mass_milligrams, 0)
+        .map_err(|error| format!("Ingredient material measure is invalid: {error:?}"))?;
+    let components = ctx
+        .db
+        .medicinal_component()
+        .iter()
+        .filter(|row| row.carrier_kind == "food_lot" && row.carrier_id == lot.id)
+        .filter_map(|row| {
+            NonZeroU64::new((f64::from(row.potency_units.max(0.0)) * 1_000_000.0).round() as u64)
+                .map(|magnitude| ExtensiveComponent {
+                    component: herbalism::MedicinalMaterialComponent {
+                        intervention_profile_id: row.intervention_profile_id,
+                        profile_version: row.profile_version,
+                    },
+                    magnitude,
+                })
+        })
+        .collect::<Vec<_>>();
+    let contaminants = ctx
+        .db
+        .food_contamination()
+        .food_lot_id()
+        .find(lot.id)
+        .and_then(|row| {
+            let current = food::contamination_at(
+                row.concentration_anchor,
+                row.growth_per_hour,
+                current_minute.saturating_sub(row.anchor_minute),
+            );
+            let load = f64::from(current.max(0.0)) * mass_milligrams as f64;
+            NonZeroU64::new(load.round() as u64).map(|load| ContaminantLoad {
+                contaminant: herbalism::IngredientContaminant::Microbial,
+                load,
+            })
+        })
+        .into_iter()
+        .collect();
+    PrivateMaterialSnapshot::try_new(
+        MaterialIdentity::try_new(
+            MaterialLotId::try_new(lot.id).map_err(|error| format!("Invalid lot: {error:?}"))?,
+            adventuresim_core::physical_object::PhysicalObjectId::try_new(object.id)
+                .map_err(|error| error.to_string())?,
+            custody,
+        )
+        .map_err(|error| error.to_string())?,
+        measure,
+        match lot.preparation {
+            FoodPreparation::Raw => MaterialPreparation::Raw,
+            FoodPreparation::Cut => MaterialPreparation::Cut,
+            FoodPreparation::Ground => MaterialPreparation::Ground,
+            _ => return Err("Ingredient preparation state is unsupported".into()),
+        },
+        PrivateMaterialTruth::try_new(components, contaminants)
+            .map_err(|error| format!("Ingredient private material is invalid: {error:?}"))?,
+        lot.material_revision,
+    )
+    .map_err(|error| format!("Ingredient material snapshot is invalid: {error:?}"))
+}
+
+fn preparation_material_receipt(
+    snapshot: &adventuresim_core::material::PrivateMaterialSnapshot<
+        herbalism::IngredientMaterialPreparation,
+        herbalism::MedicinalMaterialComponent,
+        herbalism::IngredientContaminant,
+    >,
+    request_id: &str,
+    action: IngredientPreparationAction,
+) -> Result<
+    adventuresim_core::material::MaterialTransformationReceipt<
+        herbalism::IngredientMaterialPreparation,
+        herbalism::MedicinalMaterialComponent,
+        herbalism::IngredientContaminant,
+        herbalism::PreparationConservationPolicy,
+        herbalism::PreparationMaterialReceipt,
+    >,
+    String,
+> {
+    use adventuresim_core::material::{
+        MaterialActionProvenance, MaterialPreparation, MaterialProcessId, MaterialRequestId,
+        MaterialTransformationReceipt, Portion, ProcessConservationPolicy, ProducedMaterial,
+        RoundingTolerance, SourceLotContribution,
+    };
+    use sha2::Digest as _;
+
+    let request_hash: [u8; 32] = sha2::Sha256::digest(request_id.as_bytes()).into();
+    let provenance = MaterialActionProvenance {
+        request_id: MaterialRequestId::try_new(request_hash)
+            .map_err(|error| format!("Invalid material request: {error:?}"))?,
+        process_id: MaterialProcessId::try_new(snapshot.identity().lot_id().get())
+            .map_err(|error| format!("Invalid material process: {error:?}"))?,
+    };
+    let (source, remainder) = SourceLotContribution::from_snapshot(
+        snapshot,
+        Portion::try_new(1, 1).map_err(|error| format!("Invalid whole portion: {error:?}"))?,
+    )
+    .map_err(|error| format!("Invalid preparation source: {error:?}"))?;
+    if remainder.is_some() {
+        return Err("Whole-lot preparation unexpectedly produced a remainder".into());
+    }
+    let output = adventuresim_core::material::PrivateMaterialSnapshot::try_new(
+        snapshot.identity().clone(),
+        snapshot.measure(),
+        match action {
+            IngredientPreparationAction::Cut => MaterialPreparation::Cut,
+            IngredientPreparationAction::Grind => MaterialPreparation::Ground,
+        },
+        snapshot.private_truth().clone(),
+        snapshot
+            .revision()
+            .checked_add(1)
+            .ok_or("Ingredient material revision is exhausted")?,
+    )
+    .map_err(|error| format!("Invalid preparation output: {error:?}"))?;
+    MaterialTransformationReceipt::try_new(
+        provenance,
+        vec![source],
+        vec![
+            ProducedMaterial::try_new(output)
+                .map_err(|error| format!("Invalid preparation product: {error:?}"))?,
+        ],
+        ProcessConservationPolicy::try_new(
+            herbalism::PreparationConservationPolicy::Exact,
+            adventuresim_core::material::MaterialMeasure::ZERO,
+            RoundingTolerance::exact(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .map_err(|error| format!("Invalid preparation conservation: {error:?}"))?,
+        herbalism::PreparationMaterialReceipt {
+            action: match action {
+                IngredientPreparationAction::Cut => herbalism::PreparationAction::Cut,
+                IngredientPreparationAction::Grind => herbalism::PreparationAction::Grind,
+            },
+        },
+    )
+    .map_err(|error| format!("Ingredient conservation failed: {error:?}"))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn load_preparation_authority(
+    ctx: &ReducerContext,
+    actor: &crate::Character,
+    inventory_scope: &str,
+    inventory_item_id: u64,
+    food_lot_id: u64,
+    material_object_id: u64,
+    request_id: &str,
+    expected_revision: u64,
+    action: IngredientPreparationAction,
+    current_minute: u64,
+) -> Result<PreparationAuthority, String> {
+    let lot = ctx
+        .db
+        .food_lot()
+        .id()
+        .find(food_lot_id)
+        .ok_or("Ingredient lot not found")?;
+    if lot.material_revision == 0 || lot.material_revision != expected_revision {
+        return Err("Ingredient preparation revision is stale".into());
+    }
+    let linked_row = match inventory_scope {
+        "personal" if lot.inventory_item_id == Some(inventory_item_id) => true,
+        "party" if lot.party_inventory_item_id == Some(inventory_item_id) => true,
+        "personal" | "party" => false,
+        _ => return Err("Ingredient preparation scope must be personal or party".into()),
+    };
+    if !linked_row {
+        return Err("Ingredient lot does not match the selected inventory row".into());
+    }
+    let object =
+        crate::inventory_container::object_for_row(ctx, inventory_scope, inventory_item_id)?
+            .ok_or("Ingredient lot has no stable material object")?;
+    if object.id != material_object_id {
+        return Err("Ingredient material object is stale or ambiguous".into());
+    }
+    let resolved = crate::object_custody::require_actor_carried_object(ctx, actor, &object)?;
+    if crate::inventory_container::ancestry_reaches_fireplace(ctx, object.id) {
+        return Err("Ingredient lot is not in carried preparation custody".into());
+    }
+    let (skill, physical, next, prefix, tool_binding) = match action {
+        IngredientPreparationAction::Cut => {
+            if lot.preparation != FoodPreparation::Raw {
+                return Err("Only a raw ingredient can be cut".into());
+            }
+            let tool_binding = qualifying_cutting_weapon_binding(ctx, actor.id).ok_or(
+                "Cutting requires a carried edged weapon with current precision of at least 0.5",
+            )?;
+            (
+                Skill::Knife,
+                herbalism::PhysicalPreparation::Cut,
+                FoodPreparation::Cut,
+                "Cut",
+                tool_binding,
+            )
+        }
+        IngredientPreparationAction::Grind => {
+            if !matches!(lot.preparation, FoodPreparation::Raw | FoodPreparation::Cut) {
+                return Err("Only a raw or cut ingredient can be ground".into());
+            }
+            (
+                Skill::Bludgeon,
+                herbalism::PhysicalPreparation::Ground,
+                FoodPreparation::Ground,
+                "Ground",
+                grinding_tool_binding(ctx, actor.id),
+            )
+        }
+    };
+    let duration = herbalism::physical_preparation_minutes(
+        physical,
+        preparation_skill_check(ctx, actor.id, skill)?,
+        tool_binding != "hands",
+    );
+    let place = preparation_place(ctx, actor)?;
+    let custody_binding =
+        crate::object_custody::canonical_custody_binding(resolved.object.custody());
+    let snapshot = material_snapshot(
+        ctx,
+        &lot,
+        &object,
+        resolved.object.custody().clone(),
+        current_minute,
+    )?;
+    let material_receipt = preparation_material_receipt(&snapshot, request_id, action)?;
+    Ok(PreparationAuthority {
+        inventory_scope: inventory_scope.into(),
+        inventory_item_id,
+        lot,
+        object,
+        custody_binding,
+        place,
+        skill,
+        next,
+        prefix,
+        tool_binding,
+        duration,
+        material_source_digest: preparation_material_source_digest(ctx, food_lot_id),
+        material_current_digest: preparation_material_current_digest(
+            ctx,
+            food_lot_id,
+            current_minute,
+        ),
+        material_snapshot: snapshot,
+        material_receipt,
+    })
+}
+
+fn build_preparation_planner(
+    actor: &crate::Character,
+    authority: &PreparationAuthority,
+    request_id: &str,
+    action: IngredientPreparationAction,
+    current_minute: u64,
+    terminal_minute: Option<u64>,
+    attempt_generation: u64,
+) -> Result<herbalism::PreparationPlanningOutcome, String> {
+    use adventuresim_core::{
+        physical_object::{CustodyCharacterId, PhysicalObjectId},
+        strategic_action::{
+            ActionCoordinates, ActionDefinitionId, ActionRequestId, ActionTarget,
+            AuthoritativeSnapshot, AuthorityBinding, PlanProvenance, RequestedDuration,
+            SnapshotDigest, SnapshotRevision,
+        },
+    };
+    let actor_id = CustodyCharacterId::try_new(actor.id).map_err(|error| error.to_string())?;
+    let object_id =
+        PhysicalObjectId::try_new(authority.object.id).map_err(|error| error.to_string())?;
+    let coordinates = ActionCoordinates::try_new(
+        actor_id,
+        ActionTarget::Object(object_id),
+        authority.place.clone(),
+        None,
+        Vec::new(),
+    )
+    .map_err(|_| "Ingredient preparation coordinates are inconsistent")?;
+    let rights_question =
+        herbalism::preparation_rights_question(actor_id, object_id, authority.place.clone())
+            .map_err(|_| "Ingredient preparation rights question is inconsistent")?;
+    let rights = herbalism::decide_preparation_rights(
+        &rights_question,
+        true,
+        authority.lot.material_revision,
+    );
+    let digest = preparation_authority_digest(
+        actor,
+        authority,
+        action,
+        current_minute,
+        terminal_minute,
+        attempt_generation,
+    );
+    let prefix = authority.prefix;
+    let base_name = authority
+        .lot
+        .display_name
+        .trim_start_matches("Cut ")
+        .trim_start_matches("Ground ");
+    Ok(herbalism::build_preparation_plan(
+        herbalism::PreparationPlanAuthority {
+            coordinates,
+            provenance: PlanProvenance {
+                request_id: ActionRequestId::try_new(request_id)
+                    .map_err(|_| "Ingredient preparation request is malformed")?,
+                action_id: ActionDefinitionId::try_new(match action {
+                    IngredientPreparationAction::Cut => "ingredient-preparation:cut",
+                    IngredientPreparationAction::Grind => "ingredient-preparation:grind",
+                })
+                .map_err(|_| "Ingredient preparation definition is malformed")?,
+                input_digest: SnapshotDigest(digest),
+                authority_binding: AuthorityBinding(digest),
+            },
+            snapshot: AuthoritativeSnapshot {
+                revision: SnapshotRevision(authority.lot.material_revision),
+                digest: SnapshotDigest(digest),
+            },
+            current_minute,
+            duration: RequestedDuration::try_new(u64::from(authority.duration))
+                .map_err(|_| "Ingredient preparation duration must be positive")?,
+            terminal_minute,
+            rights,
+            custody_matches: true,
+            revision_current: true,
+            transition_allowed: true,
+            required_tool_available: true,
+            action: match action {
+                IngredientPreparationAction::Cut => herbalism::PreparationAction::Cut,
+                IngredientPreparationAction::Grind => herbalism::PreparationAction::Grind,
+            },
+            expected_revision: authority.lot.material_revision,
+            next_display_name: format!("{prefix} {base_name}"),
+        },
+    ))
+}
+
+fn preparation_authority_digest(
+    actor: &crate::Character,
+    authority: &PreparationAuthority,
+    action: IngredientPreparationAction,
+    current_minute: u64,
+    terminal_minute: Option<u64>,
+    attempt_generation: u64,
+) -> [u8; 32] {
+    preparation_authority_digest_parts(
+        actor,
+        &authority.inventory_scope,
+        authority.inventory_item_id,
+        &authority.lot,
+        &authority.object,
+        &authority.custody_binding,
+        &authority.place,
+        authority.skill,
+        authority.next,
+        authority.prefix,
+        &authority.tool_binding,
+        authority.duration,
+        &authority.material_source_digest,
+        &authority.material_current_digest,
+        action,
+        current_minute,
+        terminal_minute,
+        attempt_generation,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn preparation_authority_digest_parts(
+    actor: &crate::Character,
+    inventory_scope: &str,
+    inventory_item_id: u64,
+    lot: &FoodLot,
+    object: &crate::InventoryObject,
+    custody_binding: &str,
+    place: &adventuresim_core::strategic_place::StrategicPlaceId,
+    skill: Skill,
+    next: FoodPreparation,
+    prefix: &str,
+    tool_binding: &str,
+    duration: u32,
+    material_source_digest: &str,
+    material_current_digest: &str,
+    action: IngredientPreparationAction,
+    current_minute: u64,
+    terminal_minute: Option<u64>,
+    attempt_generation: u64,
+) -> [u8; 32] {
+    use sha2::Digest as _;
+    let mut hash = sha2::Sha256::new();
+    let mut frame = |bytes: &[u8]| {
+        hash.update((bytes.len() as u64).to_le_bytes());
+        hash.update(bytes);
+    };
+    frame(b"ingredient-preparation-plan-v2");
+    frame(inventory_scope.as_bytes());
+    frame(&inventory_item_id.to_le_bytes());
+    frame(place.to_string().as_bytes());
+    frame(custody_binding.as_bytes());
+    frame(&actor.id.to_le_bytes());
+    frame(&lot.id.to_le_bytes());
+    frame(&object.id.to_le_bytes());
+    frame(&lot.material_revision.to_le_bytes());
+    frame(lot.display_name.as_bytes());
+    frame(&[lot.preparation as u8]);
+    frame(&[lot.quality]);
+    frame(&lot.created_at_minute.to_le_bytes());
+    frame(&duration.to_le_bytes());
+    frame(&current_minute.to_le_bytes());
+    frame(&terminal_minute.unwrap_or(u64::MAX).to_le_bytes());
+    frame(&attempt_generation.to_le_bytes());
+    frame(&[match skill {
+        Skill::Knife => 1,
+        Skill::Bludgeon => 2,
+        _ => 0,
+    }]);
+    frame(&[next as u8]);
+    frame(prefix.as_bytes());
+    frame(tool_binding.as_bytes());
+    frame(object.item_id.as_bytes());
+    frame(object.location_kind.as_bytes());
+    frame(object.location_owner.as_bytes());
+    frame(&object.inventory_row_id.to_le_bytes());
+    frame(&lot.mass_kg.to_bits().to_le_bytes());
+    frame(&lot.nutrition_kcal.to_bits().to_le_bytes());
+    frame(&lot.total_value.to_bits().to_le_bytes());
+    for value in [
+        lot.salty_kg,
+        lot.spicy_kg,
+        lot.sweet_kg,
+        lot.sour_kg,
+        lot.savory_kg,
+    ] {
+        frame(&value.to_bits().to_le_bytes());
+    }
+    for item_id in &lot.ingredient_item_ids {
+        frame(item_id.as_bytes());
+    }
+    for quantity in &lot.ingredient_quantities {
+        frame(&quantity.to_bits().to_le_bytes());
+    }
+    frame(material_source_digest.as_bytes());
+    frame(material_current_digest.as_bytes());
+    frame(&[match action {
+        IngredientPreparationAction::Cut => 1,
+        IngredientPreparationAction::Grind => 2,
+    }]);
+    hash.finalize().into()
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = ingredient_preparation_receipt)]
+pub struct IngredientPreparationReceipt {
+    #[primary_key]
+    pub request_id: String,
+    pub actor_character_id: u64,
+    pub inventory_scope: String,
+    pub inventory_item_id: u64,
+    pub food_lot_id: u64,
+    pub material_object_id: u64,
+    pub expected_revision: u64,
+    pub attempt_generation: u64,
+    pub action: IngredientPreparationAction,
+    pub canonical_place: String,
+    pub custody_binding: String,
+    pub authority_input_digest: String,
+    pub duration_minutes: u32,
+    pub interrupted: bool,
+    pub resulting_revision: u64,
+    pub material_input_digest: String,
+}
+
+/// Minimal server-owned liveness cursor. It lets the gateway issue a fresh
+/// request after a clipped terminal attempt without exposing private receipts.
+#[derive(Clone, Debug)]
+#[table(accessor = ingredient_preparation_attempt_state)]
+pub struct IngredientPreparationAttemptState {
+    #[primary_key]
+    pub key: String,
+    pub next_generation: u64,
+    pub completed: bool,
+}
+
+/// Gateway-only public projection of the exact reducer tuple and preview. The
+/// reducer still rebuilds and revalidates the private strategic/material plan
+/// in its transaction; this view prevents the browser from inventing object
+/// identity, revision, request identity, or duration.
+#[derive(Clone, Debug, SpacetimeType)]
+pub struct BackendIngredientPreparationPlan {
+    pub actor_character_id: u64,
+    pub inventory_scope: String,
+    pub inventory_item_id: u64,
+    pub food_lot_id: u64,
+    pub material_object_id: u64,
+    pub request_id: String,
+    pub expected_revision: u64,
+    pub attempt_generation: u64,
+    pub action: IngredientPreparationAction,
+    pub duration_minutes: u32,
+    pub next_display_name: String,
+}
+
+fn view_object_for_row(
+    ctx: &ViewContext,
+    scope: &str,
+    row_id: u64,
+) -> Option<crate::InventoryObject> {
+    let mut matches = ctx
+        .db
+        .inventory_object()
+        .location_kind()
+        .filter(scope)
+        .filter(|object| object.location_kind == scope && object.inventory_row_id == row_id);
+    let object = matches.next()?;
+    matches.next().is_none().then_some(object)
+}
+
+fn view_ancestry_reaches_fireplace(ctx: &ViewContext, object_id: u64) -> bool {
+    let mut cursor = Some(object_id);
+    for _ in 0..=adventuresim_core::inventory_containers::MAX_CONTAINER_DEPTH {
+        let Some(id) = cursor else { return false };
+        let Some(object) = ctx.db.inventory_object().id().find(id) else {
+            return true;
+        };
+        if object.location_kind == "fireplace" {
+            return true;
+        }
+        cursor = ctx
+            .db
+            .inventory_containment()
+            .child_object_id()
+            .find(id)
+            .map(|edge| edge.parent_object_id);
+    }
+    true
+}
+
+fn view_carried_item_rows(
+    ctx: &ViewContext,
+    actor: &crate::Character,
+) -> Vec<(String, u64, String)> {
+    let mut rows = ctx
+        .db
+        .inventory_item()
+        .character_id()
+        .filter(actor.id)
+        .filter(|row| {
+            view_object_for_row(ctx, "personal", row.id).is_some_and(|object| {
+                !view_ancestry_reaches_fireplace(ctx, object.id)
+                    && view_carried_custody_is_fully_resolved(ctx, actor, "personal", &object)
+            })
+        })
+        .map(|row| ("personal".into(), row.id, row.item_id))
+        .collect::<Vec<_>>();
+    if let Some(party_id) = actor.party_id.as_deref() {
+        rows.extend(
+            ctx.db
+                .party_inventory_item()
+                .party_id()
+                .filter(party_id)
+                .filter(|row| {
+                    view_object_for_row(ctx, "party", row.id).is_some_and(|object| {
+                        !view_ancestry_reaches_fireplace(ctx, object.id)
+                            && view_carried_custody_is_fully_resolved(ctx, actor, "party", &object)
+                    })
+                })
+                .map(|row| ("party".into(), row.id, row.item_id)),
+        );
+    }
+    rows
+}
+
+fn view_cutting_weapon_binding(ctx: &ViewContext, actor: &crate::Character) -> Option<String> {
+    view_carried_item_rows(ctx, actor)
+        .into_iter()
+        .filter_map(|(scope, row_id, item_id)| {
+            let Some(item) = ctx.db.item().id().find(item_id) else {
+                return None;
+            };
+            if !item.slash || item.accuracy < 0.5 {
+                return None;
+            }
+            let damage = if scope == "personal" {
+                ctx.db
+                    .item_condition()
+                    .inventory_item_id()
+                    .find(row_id)
+                    .map(|condition| condition.bins())
+            } else {
+                ctx.db
+                    .party_item_condition()
+                    .party_inventory_item_id()
+                    .find(row_id)
+                    .map(|condition| {
+                        DamageBins([
+                            condition.tier_1,
+                            condition.tier_2,
+                            condition.tier_3,
+                            condition.tier_4,
+                            condition.tier_5,
+                        ])
+                        .normalized()
+                    })
+            }
+            .unwrap_or_default();
+            (effective_weapon_stat(item.accuracy, damage, item.edge_sensitivity) >= 0.5).then(
+                || {
+                    format!(
+                        "{scope}|{row_id}|{}|{}|{}|{:?}",
+                        item.id,
+                        item.accuracy.to_bits(),
+                        item.edge_sensitivity.to_bits(),
+                        damage.0.map(f32::to_bits)
+                    )
+                },
+            )
+        })
+        .min()
+}
+
+fn view_preparation_skill_check(ctx: &ViewContext, character_id: u64, skill: Skill) -> Option<f32> {
+    let skills = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(character_id)?;
+    let attributes = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)?;
+    Some(skill.capped_training_rank(skills.effective_skill_hours(skill), &attributes))
+}
+
+fn view_carried_custody_is_fully_resolved(
+    ctx: &ViewContext,
+    actor: &crate::Character,
+    scope: &str,
+    object: &crate::InventoryObject,
+) -> bool {
+    let expected_owner = match scope {
+        "personal" => actor.id.to_string(),
+        "party" => match actor.party_id.as_deref() {
+            Some(party_id) => party_id.into(),
+            None => return false,
+        },
+        _ => return false,
+    };
+    let mut cursor = object.clone();
+    for _ in 0..=adventuresim_core::inventory_containers::MAX_CONTAINER_DEPTH {
+        if cursor.location_kind != scope || cursor.location_owner != expected_owner {
+            return false;
+        }
+        if !view_object_for_row(ctx, scope, cursor.inventory_row_id)
+            .is_some_and(|unique| unique.id == cursor.id)
+        {
+            return false;
+        }
+        let row_matches = match scope {
+            "personal" => ctx
+                .db
+                .inventory_item()
+                .id()
+                .find(cursor.inventory_row_id)
+                .is_some_and(|row| {
+                    row.character_id == actor.id
+                        && row.item_id == cursor.item_id
+                        && row.quantity == 1
+                }),
+            "party" => ctx
+                .db
+                .party_inventory_item()
+                .id()
+                .find(cursor.inventory_row_id)
+                .is_some_and(|row| {
+                    row.party_id == expected_owner
+                        && row.item_id == cursor.item_id
+                        && row.quantity == 1
+                }),
+            _ => false,
+        };
+        if !row_matches {
+            return false;
+        }
+        let parent = ctx
+            .db
+            .inventory_containment()
+            .child_object_id()
+            .find(cursor.id)
+            .map(|edge| edge.parent_object_id);
+        let Some(parent_id) = parent else { return true };
+        let Some(parent) = ctx.db.inventory_object().id().find(parent_id) else {
+            return false;
+        };
+        cursor = parent;
+    }
+    false
+}
+
+fn view_direct_custody(
+    ctx: &ViewContext,
+    actor: &crate::Character,
+    scope: &str,
+    object: &crate::InventoryObject,
+) -> Option<OperationalCustody> {
+    if let Some(edge) = ctx
+        .db
+        .inventory_containment()
+        .child_object_id()
+        .find(object.id)
+    {
+        return PhysicalObjectId::try_new(edge.parent_object_id)
+            .ok()
+            .map(OperationalCustody::Container);
+    }
+    match scope {
+        "personal" => OperationalCustody::character(actor.id).ok(),
+        "party" => OperationalCustody::party(actor.party_id.clone()?).ok(),
+        _ => None,
+    }
+}
+
+fn view_next_preparation_generation(
+    ctx: &ViewContext,
+    actor_id: u64,
+    scope: &str,
+    row_id: u64,
+    lot_id: u64,
+    object_id: u64,
+    revision: u64,
+    action: IngredientPreparationAction,
+) -> Option<u64> {
+    let key =
+        preparation_attempt_state_key(actor_id, scope, row_id, lot_id, object_id, revision, action);
+    match ctx
+        .db
+        .ingredient_preparation_attempt_state()
+        .key()
+        .find(&key)
+    {
+        Some(state) if state.completed => None,
+        Some(state) => Some(state.next_generation),
+        None => Some(0),
+    }
+}
+
+#[view(accessor = backend_ingredient_preparation_plans, public)]
+pub fn backend_ingredient_preparation_plans(
+    ctx: &ViewContext,
+) -> Vec<BackendIngredientPreparationPlan> {
+    if !crate::strategic::strategic_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    let actors = ctx
+        .db
+        .character()
+        .scan_id()
+        .filter(0u64..)
+        .filter(|actor| {
+            actor.alive
+                && !actor.in_server
+                && actor.current_settlement_id.is_some()
+                && !actor.party_id.as_deref().is_some_and(|party_id| {
+                    ctx.db
+                        .strategic_encounter()
+                        .party_id()
+                        .find(&party_id.to_string())
+                        .is_some_and(|encounter| encounter.status == "awaiting_choice")
+                        || ctx
+                            .db
+                            .party_authority()
+                            .id()
+                            .find(party_id.to_string())
+                            .is_some_and(|party| {
+                                ctx.db
+                                    .road_challenge_authority()
+                                    .party_id()
+                                    .filter(&party_id.to_string())
+                                    .any(|challenge| {
+                                        challenge.open
+                                            && crate::strategic::party_at_bound_road_challenge_view(
+                                                ctx, &party, &challenge,
+                                            )
+                                    })
+                            })
+                })
+        })
+        .collect::<Vec<_>>();
+    let mut plans = Vec::new();
+    for actor in actors {
+        let Some(_) = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(actor.id)
+            .map(|time| time.minutes)
+        else {
+            continue;
+        };
+        let Some(place) = actor.current_settlement_id.as_deref().and_then(|id| {
+            adventuresim_core::strategic_place::StrategicPlaceId::settlement(id).ok()
+        }) else {
+            continue;
+        };
+        let carried = view_carried_item_rows(ctx, &actor);
+        let cutting_weapon = view_cutting_weapon_binding(ctx, &actor);
+        let grinding_tool = carried
+            .iter()
+            .filter(|(_, _, item_id)| item_id == "mortar_and_pestle")
+            .map(|(scope, row_id, item_id)| format!("{scope}|{row_id}|{item_id}"))
+            .min()
+            .unwrap_or_else(|| "hands".into());
+        for lot in ctx
+            .db
+            .food_lot()
+            .material_revision()
+            .filter(1u64..)
+            .filter(|lot| lot.material_revision > 0)
+        {
+            let row = if let Some(row_id) = lot.inventory_item_id
+                && ctx
+                    .db
+                    .inventory_item()
+                    .id()
+                    .find(row_id)
+                    .is_some_and(|row| row.character_id == actor.id && row.quantity == 1)
+            {
+                Some(("personal", row_id))
+            } else if let Some(row_id) = lot.party_inventory_item_id
+                && actor.party_id.as_deref().is_some_and(|party_id| {
+                    ctx.db
+                        .party_inventory_item()
+                        .id()
+                        .find(row_id)
+                        .is_some_and(|row| row.party_id == party_id && row.quantity == 1)
+                })
+            {
+                Some(("party", row_id))
+            } else {
+                None
+            };
+            let Some((scope, row_id)) = row else { continue };
+            let Some(object) = view_object_for_row(ctx, scope, row_id) else {
+                continue;
+            };
+            if view_ancestry_reaches_fireplace(ctx, object.id)
+                || !view_carried_custody_is_fully_resolved(ctx, &actor, scope, &object)
+            {
+                continue;
+            }
+            let Some(direct_custody) = view_direct_custody(ctx, &actor, scope, &object) else {
+                continue;
+            };
+            let custody_binding = crate::object_custody::canonical_custody_binding(&direct_custody);
+            let actions = match lot.preparation {
+                FoodPreparation::Raw => [
+                    cutting_weapon.clone().map(|tool_binding| {
+                        (
+                            IngredientPreparationAction::Cut,
+                            Skill::Knife,
+                            herbalism::PhysicalPreparation::Cut,
+                            "Cut",
+                            tool_binding,
+                        )
+                    }),
+                    Some((
+                        IngredientPreparationAction::Grind,
+                        Skill::Bludgeon,
+                        herbalism::PhysicalPreparation::Ground,
+                        "Ground",
+                        grinding_tool.clone(),
+                    )),
+                ],
+                FoodPreparation::Cut => [
+                    None,
+                    Some((
+                        IngredientPreparationAction::Grind,
+                        Skill::Bludgeon,
+                        herbalism::PhysicalPreparation::Ground,
+                        "Ground",
+                        grinding_tool.clone(),
+                    )),
+                ],
+                _ => [None, None],
+            };
+            for (action, skill, physical, prefix, tool_binding) in actions.into_iter().flatten() {
+                let Some(check) = view_preparation_skill_check(ctx, actor.id, skill) else {
+                    continue;
+                };
+                let base_name = lot
+                    .display_name
+                    .trim_start_matches("Cut ")
+                    .trim_start_matches("Ground ");
+                let Some(attempt_generation) = view_next_preparation_generation(
+                    ctx,
+                    actor.id,
+                    scope,
+                    row_id,
+                    lot.id,
+                    object.id,
+                    lot.material_revision,
+                    action,
+                ) else {
+                    continue;
+                };
+                let duration = herbalism::physical_preparation_minutes(
+                    physical,
+                    check,
+                    tool_binding != "hands",
+                );
+                plans.push(BackendIngredientPreparationPlan {
+                    actor_character_id: actor.id,
+                    inventory_scope: scope.into(),
+                    inventory_item_id: row_id,
+                    food_lot_id: lot.id,
+                    material_object_id: object.id,
+                    request_id: preparation_request_id(
+                        actor.id,
+                        scope,
+                        row_id,
+                        lot.id,
+                        object.id,
+                        lot.material_revision,
+                        action,
+                        attempt_generation,
+                        &place.to_string(),
+                        &custody_binding,
+                    ),
+                    expected_revision: lot.material_revision,
+                    attempt_generation,
+                    action,
+                    duration_minutes: duration,
+                    next_display_name: format!("{prefix} {base_name}"),
+                });
+            }
+        }
+    }
+    plans
 }
 
 /// Private character-owned state for one exact physical fireplace context.
@@ -1281,6 +2804,53 @@ fn current_minute(ctx: &ReducerContext, character_id: u64) -> u64 {
         .map_or(0, |row| row.minutes)
 }
 
+fn ensure_food_material_object(
+    ctx: &ReducerContext,
+    scope: &str,
+    row_id: u64,
+) -> Result<crate::InventoryObject, String> {
+    let (item_id, location_owner, quantity) = match scope {
+        "personal" => {
+            let row = ctx
+                .db
+                .inventory_item()
+                .id()
+                .find(row_id)
+                .ok_or("Food inventory row is missing")?;
+            (row.item_id, row.character_id.to_string(), row.quantity)
+        }
+        "party" => {
+            let row = ctx
+                .db
+                .party_inventory_item()
+                .id()
+                .find(row_id)
+                .ok_or("Party food inventory row is missing")?;
+            (row.item_id, row.party_id, row.quantity)
+        }
+        _ => return Err("Food material object requires carried custody".into()),
+    };
+    if quantity != 1 {
+        return Err("Every food lot requires a quantity-one stable inventory object".into());
+    }
+    if let Some(object) = crate::inventory_container::object_for_row(ctx, scope, row_id)? {
+        if object.item_id != item_id
+            || object.location_kind != scope
+            || object.location_owner != location_owner
+        {
+            return Err("Food inventory row has a mismatched stable object identity".into());
+        }
+        return Ok(object);
+    }
+    Ok(ctx.db.inventory_object().insert(crate::InventoryObject {
+        id: 0,
+        item_id,
+        location_kind: scope.into(),
+        location_owner,
+        inventory_row_id: row_id,
+    }))
+}
+
 pub fn create_personal_food_lot(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1290,10 +2860,12 @@ pub fn create_personal_food_lot(
 ) -> Result<FoodLot, String> {
     let definition = food::definition(item_id).ok_or("Food definition not found")?;
     let minute = current_minute(ctx, character_id);
+    ensure_food_material_object(ctx, "personal", inventory_item_id)?;
     let lot = ctx.db.food_lot().insert(FoodLot {
         id: 0,
         inventory_item_id: Some(inventory_item_id),
         party_inventory_item_id: None,
+        material_revision: 1,
         display_name: definition.name.into(),
         preparation: if definition.class == food::FoodClass::Ration {
             FoodPreparation::Preserved
@@ -1332,10 +2904,12 @@ pub fn create_party_food_lot(
     minute: u64,
 ) -> Option<FoodLot> {
     let definition = food::definition(item_id)?;
+    ensure_food_material_object(ctx, "party", inventory_item_id).ok()?;
     let lot = ctx.db.food_lot().insert(FoodLot {
         id: 0,
         inventory_item_id: None,
         party_inventory_item_id: Some(inventory_item_id),
+        material_revision: 1,
         display_name: definition.name.into(),
         preparation: if definition.class == food::FoodClass::Ration {
             FoodPreparation::Preserved
@@ -1411,7 +2985,7 @@ pub fn remove_party_lot_quantity(
         .find(|lot| lot.party_inventory_item_id == Some(inventory_item_id))
         .ok_or("Food lot metadata not found")?;
     let keep = 1.0 - removed as f32 / original as f32;
-    retain_lot_fraction(&mut lot, keep);
+    retain_lot_fraction(&mut lot, keep)?;
     ctx.db.food_lot().id().update(lot);
     Ok(())
 }
@@ -1434,7 +3008,11 @@ fn split_ingredient_quantities(
     (source, child)
 }
 
-fn retain_lot_fraction(lot: &mut FoodLot, retained: f32) {
+fn retain_lot_fraction(lot: &mut FoodLot, retained: f32) -> Result<(), String> {
+    lot.material_revision = lot
+        .material_revision
+        .checked_add(1)
+        .ok_or("Food material revision is exhausted")?;
     lot.mass_kg = food::retained_component(lot.mass_kg, retained);
     lot.nutrition_kcal = food::retained_component(lot.nutrition_kcal, retained);
     lot.total_value = food::retained_component(lot.total_value, retained);
@@ -1446,6 +3024,7 @@ fn retain_lot_fraction(lot: &mut FoodLot, retained: f32) {
     for quantity in &mut lot.ingredient_quantities {
         *quantity = food::retained_component(*quantity, retained);
     }
+    Ok(())
 }
 
 pub fn personal_lot(ctx: &ReducerContext, inventory_item_id: u64) -> Option<FoodLot> {
@@ -1505,11 +3084,11 @@ pub fn split_lot(
     let mut child = source.clone();
     child.id = 0;
     child.inventory_item_id = Some(destination_inventory_id);
-    retain_lot_fraction(&mut child, ratio);
+    retain_lot_fraction(&mut child, ratio)?;
     let (source_ingredients, child_ingredients) =
         split_ingredient_quantities(&source.ingredient_quantities, taken, original);
     child.ingredient_quantities = child_ingredients;
-    retain_lot_fraction(&mut source, 1.0 - ratio);
+    retain_lot_fraction(&mut source, 1.0 - ratio)?;
     source.ingredient_quantities = source_ingredients;
     let contamination = ctx
         .db
@@ -1517,6 +3096,7 @@ pub fn split_lot(
         .food_lot_id()
         .find(source.id)
         .ok_or("Food contamination state not found")?;
+    ensure_food_material_object(ctx, "personal", destination_inventory_id)?;
     let child = ctx.db.food_lot().insert(child);
     crate::herbalism::split_food_medicine(ctx, source.id, child.id, ratio)?;
     ctx.db.food_contamination().insert(FoodContamination {
@@ -1542,7 +3122,7 @@ pub fn remove_lot_quantity(
     }
     let mut lot = lot_for_inventory(ctx, inventory_item_id)?;
     let keep = 1.0 - removed as f32 / original as f32;
-    retain_lot_fraction(&mut lot, keep);
+    retain_lot_fraction(&mut lot, keep)?;
     ctx.db.food_lot().id().update(lot);
     Ok(())
 }
@@ -1566,11 +3146,11 @@ pub fn move_or_split_to_party(
     child.id = 0;
     child.inventory_item_id = None;
     child.party_inventory_item_id = Some(destination_party_id);
-    retain_lot_fraction(&mut child, ratio);
+    retain_lot_fraction(&mut child, ratio)?;
     let (source_ingredients, child_ingredients) =
         split_ingredient_quantities(&source.ingredient_quantities, taken, original);
     child.ingredient_quantities = child_ingredients;
-    retain_lot_fraction(&mut source, 1.0 - ratio);
+    retain_lot_fraction(&mut source, 1.0 - ratio)?;
     source.ingredient_quantities = source_ingredients;
     let hidden = ctx
         .db
@@ -1578,6 +3158,7 @@ pub fn move_or_split_to_party(
         .food_lot_id()
         .find(source.id)
         .ok_or("Food contamination state not found")?;
+    ensure_food_material_object(ctx, "party", destination_party_id)?;
     let child = ctx.db.food_lot().insert(child);
     crate::herbalism::split_food_medicine(ctx, source.id, child.id, ratio)?;
     ctx.db.food_contamination().insert(FoodContamination {
@@ -1612,11 +3193,11 @@ pub fn move_or_split_to_personal(
     child.id = 0;
     child.party_inventory_item_id = None;
     child.inventory_item_id = Some(destination_inventory_id);
-    retain_lot_fraction(&mut child, ratio);
+    retain_lot_fraction(&mut child, ratio)?;
     let (source_ingredients, child_ingredients) =
         split_ingredient_quantities(&source.ingredient_quantities, taken, original);
     child.ingredient_quantities = child_ingredients;
-    retain_lot_fraction(&mut source, 1.0 - ratio);
+    retain_lot_fraction(&mut source, 1.0 - ratio)?;
     source.ingredient_quantities = source_ingredients;
     let hidden = ctx
         .db
@@ -1624,6 +3205,7 @@ pub fn move_or_split_to_personal(
         .food_lot_id()
         .find(source.id)
         .ok_or("Food contamination state not found")?;
+    ensure_food_material_object(ctx, "personal", destination_inventory_id)?;
     let child = ctx.db.food_lot().insert(child);
     crate::herbalism::split_food_medicine(ctx, source.id, child.id, ratio)?;
     ctx.db.food_contamination().insert(FoodContamination {
@@ -2124,7 +3706,7 @@ fn add_fireplace_ingredients_at(
                 _ => unreachable!(),
             }
         } else {
-            retain_lot_fraction(&mut lot, 1.0 - amount as f32 / available as f32);
+            retain_lot_fraction(&mut lot, 1.0 - amount as f32 / available as f32)?;
             ctx.db.food_lot().id().update(lot);
             match inventory_scope.as_str() {
                 "personal" => {
@@ -2312,10 +3894,17 @@ pub fn retrieve_fireplace_dish(
                 parent_object_id,
             });
     }
+    if let Some(row_id) = personal_id {
+        ensure_food_material_object(ctx, "personal", row_id)?;
+    }
+    if let Some(row_id) = party_id {
+        ensure_food_material_object(ctx, "party", row_id)?;
+    }
     let lot = ctx.db.food_lot().insert(FoodLot {
         id: 0,
         inventory_item_id: personal_id,
         party_inventory_item_id: party_id,
+        material_revision: 1,
         display_name: dish.display_name,
         preparation: if dish.method == CookingMethod::Roast
             && elapsed > u64::from(dish.target_minutes)
@@ -2554,7 +4143,7 @@ fn consume_food_amount(
             .inventory_item_id()
             .find(inventory.id)
             .ok_or("Food amount state is missing")?;
-        retain_lot_fraction(&mut lot, retained);
+        retain_lot_fraction(&mut lot, retained)?;
         ctx.db.food_lot().id().update(lot);
         ctx.db
             .inventory_item_amount()
@@ -2650,7 +4239,7 @@ pub fn consume_travel_food_to_zero(ctx: &ReducerContext, character_id: u64) -> R
                     .party_inventory_item_id()
                     .find(inventory.id)
                     .ok_or("Party food amount state is missing")?;
-                retain_lot_fraction(&mut lot, retained);
+                retain_lot_fraction(&mut lot, retained)?;
                 ctx.db.food_lot().id().update(lot);
                 ctx.db.party_item_amount().party_inventory_item_id().update(
                     crate::PartyItemAmount {
@@ -2730,6 +4319,153 @@ mod tests {
     }
 
     #[test]
+    fn preparation_adapter_revalidates_and_persists_terminal_attempts() {
+        let source = include_str!("food.rs");
+        let reducer = source
+            .split("pub fn prepare_ingredient_lot")
+            .nth(1)
+            .and_then(|tail| tail.split("pub enum CookingMethod").next())
+            .expect("preparation reducer");
+        assert!(reducer.contains("preparation_request_id"));
+        assert!(reducer.matches("load_preparation_authority").count() >= 2);
+        assert!(reducer.contains("validate_commit"));
+        assert!(reducer.contains("validate_material_commit"));
+        assert!(reducer.contains("ingredient_preparation_receipt"));
+        assert!(reducer.contains("interrupted: true"));
+        assert!(reducer.contains("interrupted: false"));
+        assert!(reducer.contains("receipt.inventory_scope == inventory_scope"));
+        assert!(reducer.contains("receipt.inventory_item_id == inventory_item_id"));
+        assert!(reducer.contains("receipt.attempt_generation == attempt_generation"));
+        assert!(reducer.contains("effect_commit.is_none()"));
+        assert!(reducer.contains("let post = load_preparation_authority"));
+        assert!(
+            reducer.contains("post.material_source_digest != authority.material_source_digest")
+        );
+        assert!(reducer.contains("checked_add(1)"));
+        assert!(
+            source.contains("#[view(accessor = backend_ingredient_preparation_plans, public)]")
+        );
+        assert!(source.contains("preparation_authority_digest_parts("));
+        assert!(source.contains("view_carried_custody_is_fully_resolved"));
+        assert!(source.contains("view_direct_custody"));
+        assert!(source.contains("party_at_bound_road_challenge_view"));
+        assert!(source.contains("Some((\"party\", row_id))"));
+        assert!(!source.contains("view_actor_has_stable_preparation_interval"));
+    }
+
+    #[test]
+    fn request_identity_binds_generation_and_submitted_locator() {
+        let first = preparation_request_id(
+            1,
+            "personal",
+            2,
+            3,
+            4,
+            5,
+            IngredientPreparationAction::Cut,
+            0,
+            "settlement:test",
+            "character:1",
+        );
+        let next = preparation_request_id(
+            1,
+            "personal",
+            2,
+            3,
+            4,
+            5,
+            IngredientPreparationAction::Cut,
+            1,
+            "settlement:test",
+            "character:1",
+        );
+        let forged_row = preparation_request_id(
+            1,
+            "personal",
+            99,
+            3,
+            4,
+            5,
+            IngredientPreparationAction::Cut,
+            0,
+            "settlement:test",
+            "character:1",
+        );
+        let nested = preparation_request_id(
+            1,
+            "personal",
+            2,
+            3,
+            4,
+            5,
+            IngredientPreparationAction::Cut,
+            0,
+            "settlement:test",
+            "container:9",
+        );
+        assert_ne!(first, next);
+        assert_ne!(first, forged_row);
+        assert_ne!(first, nested);
+    }
+
+    #[test]
+    fn grown_contamination_and_terminal_boundaries_are_planning_inputs() {
+        let source = include_str!("food.rs");
+        assert!(source.contains("current_minute.saturating_sub(row.anchor_minute)"));
+        assert!(source.contains("preparation_terminal_minute("));
+        assert!(source.contains("preview_disease_terminal_boundary"));
+        assert!(source.contains("preview_injury_terminal_boundary"));
+        assert!(source.contains("terminal_minute,"));
+        assert!(source.contains("Ingredient preparation wait diverged"));
+        let planner = source
+            .split("fn preparation_terminal_minute")
+            .nth(1)
+            .and_then(|tail| tail.split("fn next_preparation_attempt_generation").next())
+            .expect("terminal preview");
+        assert!(!planner.contains("clip_elapsed_for_disease"));
+        assert!(!planner.contains("preview_elapsed_for_injuries"));
+    }
+
+    #[test]
+    fn material_revision_overflow_fails_closed() {
+        let mut lot = FoodLot {
+            id: 1,
+            inventory_item_id: Some(2),
+            party_inventory_item_id: None,
+            material_revision: u64::MAX,
+            display_name: "test".into(),
+            preparation: FoodPreparation::Raw,
+            ingredient_item_ids: Vec::new(),
+            ingredient_quantities: Vec::new(),
+            salty_kg: 0.0,
+            spicy_kg: 0.0,
+            sweet_kg: 0.0,
+            sour_kg: 0.0,
+            savory_kg: 0.0,
+            quality: 1,
+            mass_kg: 1.0,
+            nutrition_kcal: 1.0,
+            total_value: 1.0,
+            created_at_minute: 0,
+        };
+        assert!(retain_lot_fraction(&mut lot, 0.5).is_err());
+        assert_eq!(lot.material_revision, u64::MAX);
+    }
+
+    #[test]
+    fn every_food_lot_constructor_establishes_stable_identity_and_revision() {
+        let source = include_str!("food.rs");
+        assert_eq!(
+            source.matches("ctx.db.food_lot().insert(FoodLot {").count(),
+            3
+        );
+        assert_eq!(source.matches("ctx.db.food_lot().insert(child)").count(), 3);
+        assert!(source.matches("material_revision: 1").count() >= 4);
+        assert!(source.matches("ensure_food_material_object").count() >= 8);
+        assert!(!source.contains("material_revision: 0"));
+    }
+
+    #[test]
     fn container_cooking_is_distinct_from_legacy_loose_roasting() {
         let source = include_str!("food.rs");
         let legacy = source
@@ -2792,6 +4528,7 @@ mod tests {
             id: 1,
             inventory_item_id: Some(2),
             party_inventory_item_id: None,
+            material_revision: 1,
             display_name: "Roasted test".into(),
             preparation: FoodPreparation::Roasted,
             ingredient_item_ids: vec!["salt".into()],
@@ -2807,7 +4544,7 @@ mod tests {
             total_value: 10.0,
             created_at_minute: 0,
         };
-        retain_lot_fraction(&mut lot, 0.25);
+        retain_lot_fraction(&mut lot, 0.25).unwrap();
         assert_eq!(lot.quality, 4);
         assert_eq!(lot.salty_kg, 0.25);
         assert_eq!(lot.spicy_kg, 0.2);
@@ -3001,7 +4738,7 @@ mod tests {
             .nth(1)
             .unwrap();
         let wait = reducer.find("advance_character_wait_time").unwrap();
-        assert!(wait < reducer.find("lot.preparation = next").unwrap());
+        assert!(wait < reducer.find("lot.preparation = authority.next").unwrap());
         assert!(wait < reducer.find("apply_direct_training").unwrap());
         assert!(source.contains(
             "effective_weapon_stat(item.accuracy, damage, item.edge_sensitivity) >= 0.5"

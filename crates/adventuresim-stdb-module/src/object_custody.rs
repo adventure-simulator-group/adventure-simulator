@@ -73,6 +73,19 @@ pub(crate) fn encode_custody(custody: &OperationalCustody) -> PersistedOperation
     }
 }
 
+/// Stable public binding for the immediate operational custodian.
+pub(crate) fn canonical_custody_binding(custody: &OperationalCustody) -> String {
+    match custody {
+        OperationalCustody::Character(character_id) => {
+            format!("character:{}", character_id.get())
+        }
+        OperationalCustody::Party(party_id) => format!("party:{}", party_id.as_str()),
+        OperationalCustody::Container(object_id) => format!("container:{}", object_id.get()),
+        OperationalCustody::Place(place_id) => format!("place:{place_id}"),
+        OperationalCustody::Fixture(fixture_id) => format!("fixture:{fixture_id}"),
+    }
+}
+
 pub(crate) fn carried_scope_custody(
     ctx: &ReducerContext,
     actor: &Character,

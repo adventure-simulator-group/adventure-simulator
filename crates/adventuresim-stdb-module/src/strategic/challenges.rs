@@ -757,7 +757,7 @@ fn party_at_bound_trial_camp(
             .is_some_and(|encounter| encounter.status == "awaiting_choice")
 }
 
-fn party_at_bound_road_challenge_view(
+pub(crate) fn party_at_bound_road_challenge_view(
     ctx: &ViewContext,
     party: &Party,
     challenge: &RoadChallengeAuthority,

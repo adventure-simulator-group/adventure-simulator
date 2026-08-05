@@ -106,6 +106,8 @@ pub mod backend_fireplace_station_type;
 pub mod backend_fireplace_stations_table;
 pub mod backend_forage_receipt_type;
 pub mod backend_forage_receipts_table;
+pub mod backend_ingredient_preparation_plan_type;
+pub mod backend_ingredient_preparation_plans_table;
 pub mod backend_investigation_action_outcome_type;
 pub mod backend_investigation_action_outcomes_table;
 pub mod backend_investigation_action_type;
@@ -429,6 +431,8 @@ pub mod inferred_geologic_setting_type;
 pub mod inferred_industry_profile_type;
 pub mod inferred_tree_species_profile_type;
 pub mod ingredient_preparation_action_type;
+pub mod ingredient_preparation_attempt_state_type;
+pub mod ingredient_preparation_receipt_type;
 pub mod inland_water_access_type;
 pub mod inland_water_size_type;
 pub mod inspect_physical_evidence_reducer;
@@ -988,6 +992,8 @@ pub use backend_fireplace_station_type::BackendFireplaceStation;
 pub use backend_fireplace_stations_table::*;
 pub use backend_forage_receipt_type::BackendForageReceipt;
 pub use backend_forage_receipts_table::*;
+pub use backend_ingredient_preparation_plan_type::BackendIngredientPreparationPlan;
+pub use backend_ingredient_preparation_plans_table::*;
 pub use backend_investigation_action_outcome_type::BackendInvestigationActionOutcome;
 pub use backend_investigation_action_outcomes_table::*;
 pub use backend_investigation_action_type::BackendInvestigationAction;
@@ -1311,6 +1317,8 @@ pub use inferred_geologic_setting_type::InferredGeologicSetting;
 pub use inferred_industry_profile_type::InferredIndustryProfile;
 pub use inferred_tree_species_profile_type::InferredTreeSpeciesProfile;
 pub use ingredient_preparation_action_type::IngredientPreparationAction;
+pub use ingredient_preparation_attempt_state_type::IngredientPreparationAttemptState;
+pub use ingredient_preparation_receipt_type::IngredientPreparationReceipt;
 pub use inland_water_access_type::InlandWaterAccess;
 pub use inland_water_size_type::InlandWaterSize;
 pub use inspect_physical_evidence_reducer::inspect_physical_evidence;
@@ -2228,6 +2236,11 @@ pub enum Reducer {
         character_id: u64,
         inventory_scope: String,
         inventory_item_id: u64,
+        food_lot_id: u64,
+        material_object_id: u64,
+        request_id: String,
+        expected_revision: u64,
+        attempt_generation: u64,
         action: IngredientPreparationAction,
     },
     PresentOrganization {
@@ -3703,11 +3716,21 @@ Reducer::BeginFormalCourtship{
                 character_id,
                 inventory_scope,
                 inventory_item_id,
+                food_lot_id,
+                material_object_id,
+                request_id,
+                expected_revision,
+                attempt_generation,
                 action,
 }             => __sats::bsatn::to_vec(&prepare_ingredient_lot_reducer::PrepareIngredientLotArgs {
                 character_id: character_id.clone(),
                 inventory_scope: inventory_scope.clone(),
                 inventory_item_id: inventory_item_id.clone(),
+                food_lot_id: food_lot_id.clone(),
+                material_object_id: material_object_id.clone(),
+                request_id: request_id.clone(),
+                expected_revision: expected_revision.clone(),
+                attempt_generation: attempt_generation.clone(),
                 action: action.clone(),
 }),
             Reducer::PresentOrganization{
@@ -4578,6 +4601,7 @@ pub struct DbUpdate {
     backend_fireplace_dishes: __sdk::TableUpdate<BackendFireplaceDish>,
     backend_fireplace_stations: __sdk::TableUpdate<BackendFireplaceStation>,
     backend_forage_receipts: __sdk::TableUpdate<BackendForageReceipt>,
+    backend_ingredient_preparation_plans: __sdk::TableUpdate<BackendIngredientPreparationPlan>,
     backend_investigation_action_outcomes: __sdk::TableUpdate<BackendInvestigationActionOutcome>,
     backend_investigation_actions: __sdk::TableUpdate<BackendInvestigationAction>,
     backend_investigation_cases: __sdk::TableUpdate<BackendInvestigationCaseSummary>,
@@ -4840,6 +4864,13 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_forage_receipts" => db_update.backend_forage_receipts.append(
                     backend_forage_receipts_table::parse_table_update(table_update)?,
                 ),
+                "backend_ingredient_preparation_plans" => {
+                    db_update.backend_ingredient_preparation_plans.append(
+                        backend_ingredient_preparation_plans_table::parse_table_update(
+                            table_update,
+                        )?,
+                    )
+                }
                 "backend_investigation_action_outcomes" => {
                     db_update.backend_investigation_action_outcomes.append(
                         backend_investigation_action_outcomes_table::parse_table_update(
@@ -5543,6 +5574,11 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_forage_receipts",
             &self.backend_forage_receipts,
         );
+        diff.backend_ingredient_preparation_plans = cache
+            .apply_diff_to_table::<BackendIngredientPreparationPlan>(
+                "backend_ingredient_preparation_plans",
+                &self.backend_ingredient_preparation_plans,
+            );
         diff.backend_investigation_action_outcomes = cache
             .apply_diff_to_table::<BackendInvestigationActionOutcome>(
                 "backend_investigation_action_outcomes",
@@ -5799,6 +5835,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_ingredient_preparation_plans" => db_update
+                    .backend_ingredient_preparation_plans
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_investigation_action_outcomes" => db_update
                     .backend_investigation_action_outcomes
@@ -6188,6 +6227,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_ingredient_preparation_plans" => db_update
+                    .backend_ingredient_preparation_plans
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_investigation_action_outcomes" => db_update
                     .backend_investigation_action_outcomes
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -6490,6 +6532,8 @@ pub struct AppliedDiff<'r> {
     backend_fireplace_dishes: __sdk::TableAppliedDiff<'r, BackendFireplaceDish>,
     backend_fireplace_stations: __sdk::TableAppliedDiff<'r, BackendFireplaceStation>,
     backend_forage_receipts: __sdk::TableAppliedDiff<'r, BackendForageReceipt>,
+    backend_ingredient_preparation_plans:
+        __sdk::TableAppliedDiff<'r, BackendIngredientPreparationPlan>,
     backend_investigation_action_outcomes:
         __sdk::TableAppliedDiff<'r, BackendInvestigationActionOutcome>,
     backend_investigation_actions: __sdk::TableAppliedDiff<'r, BackendInvestigationAction>,
@@ -6815,6 +6859,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendForageReceipt>(
             "backend_forage_receipts",
             &self.backend_forage_receipts,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendIngredientPreparationPlan>(
+            "backend_ingredient_preparation_plans",
+            &self.backend_ingredient_preparation_plans,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendInvestigationActionOutcome>(
@@ -7882,6 +7931,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_fireplace_dishes_table::register_table(client_cache);
         backend_fireplace_stations_table::register_table(client_cache);
         backend_forage_receipts_table::register_table(client_cache);
+        backend_ingredient_preparation_plans_table::register_table(client_cache);
         backend_investigation_action_outcomes_table::register_table(client_cache);
         backend_investigation_actions_table::register_table(client_cache);
         backend_investigation_cases_table::register_table(client_cache);
@@ -8009,6 +8059,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_fireplace_dishes",
         "backend_fireplace_stations",
         "backend_forage_receipts",
+        "backend_ingredient_preparation_plans",
         "backend_investigation_action_outcomes",
         "backend_investigation_actions",
         "backend_investigation_cases",

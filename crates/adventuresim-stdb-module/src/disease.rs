@@ -1999,13 +1999,13 @@ pub fn clip_elapsed_for_disease_in_plan(
 
 /// Side-effect-free party preflight. Acquisition and notice delivery happen
 /// only in the subsequent committed interval.
-fn preview_elapsed_for_disease_planned(
+fn preview_disease_boundary_planned(
     ctx: &ReducerContext,
     character_id: u64,
     requested: u64,
     allow_healing: bool,
     plan: Option<&PartyDiseaseIntervalPlan>,
-) -> Result<u64, String> {
+) -> Result<(u64, bool), String> {
     let owned_plan;
     let plan = if let Some(plan) = plan {
         plan
@@ -2027,15 +2027,30 @@ fn preview_elapsed_for_disease_planned(
         .map_or(3.0, |a| a.immunity);
     let mut episodes = character_episodes(ctx, character_id)?;
     episodes.extend(plan.proposals_for(character_id, now, now.saturating_add(requested)));
-    Ok(first_private_terminal(
+    let terminal = first_private_terminal(
         ctx,
         character_id,
         &episodes,
         now,
         now.saturating_add(requested),
         immunity,
-    )?
-    .map_or(requested, |(minute, _)| minute.saturating_sub(now)))
+    )?;
+    Ok((
+        terminal.map_or(requested, |(minute, _)| minute.saturating_sub(now)),
+        terminal.is_some(),
+    ))
+}
+
+/// Side-effect-free terminal preview. The boolean is necessary because a
+/// terminal crossing exactly at the requested endpoint has the same elapsed
+/// duration as ordinary completion but must still suppress completion effects.
+pub fn preview_disease_terminal_boundary(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested: u64,
+    allow_healing: bool,
+) -> Result<(u64, bool), String> {
+    preview_disease_boundary_planned(ctx, character_id, requested, allow_healing, None)
 }
 
 pub fn preview_elapsed_for_disease(
@@ -2044,7 +2059,8 @@ pub fn preview_elapsed_for_disease(
     requested: u64,
     allow_healing: bool,
 ) -> Result<u64, String> {
-    preview_elapsed_for_disease_planned(ctx, character_id, requested, allow_healing, None)
+    preview_disease_boundary_planned(ctx, character_id, requested, allow_healing, None)
+        .map(|preview| preview.0)
 }
 
 pub fn preview_elapsed_for_disease_in_plan(
@@ -2054,7 +2070,8 @@ pub fn preview_elapsed_for_disease_in_plan(
     allow_healing: bool,
     plan: &PartyDiseaseIntervalPlan,
 ) -> Result<u64, String> {
-    preview_elapsed_for_disease_planned(ctx, character_id, requested, allow_healing, Some(plan))
+    preview_disease_boundary_planned(ctx, character_id, requested, allow_healing, Some(plan))
+        .map(|preview| preview.0)
 }
 
 pub fn finish_disease_interval(
@@ -3008,6 +3025,31 @@ mod fantastic_differential_tests {
                     assert!(source.contains(&format!(r#""id":"{site}""#)), "{site}");
                 }
             }
+        }
+    }
+
+    #[test]
+    fn disease_terminal_preview_is_side_effect_free() {
+        let source = include_str!("disease.rs");
+        let preview = source
+            .split("fn preview_disease_boundary_planned")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub fn preview_disease_terminal_boundary")
+                    .next()
+            })
+            .expect("disease terminal preview");
+        for forbidden in [
+            "persist_acquisition_episodes",
+            "persist_",
+            "blood_exposure_attempts_through",
+            "cursor",
+            "notice(",
+            ".insert(",
+            ".update(",
+            ".delete(",
+        ] {
+            assert!(!preview.contains(forbidden), "preview contains {forbidden}");
         }
     }
 }

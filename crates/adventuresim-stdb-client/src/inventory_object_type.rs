@@ -47,6 +47,7 @@ impl __sdk::__query_builder::HasCols for InventoryObject {
 /// Provides typed access to indexed columns for query building.
 pub struct InventoryObjectIxCols {
     pub id: __sdk::__query_builder::IxCol<InventoryObject, u64>,
+    pub location_kind: __sdk::__query_builder::IxCol<InventoryObject, String>,
 }
 
 impl __sdk::__query_builder::HasIxCols for InventoryObject {
@@ -54,6 +55,7 @@ impl __sdk::__query_builder::HasIxCols for InventoryObject {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         InventoryObjectIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            location_kind: __sdk::__query_builder::IxCol::new(table_name, "location_kind"),
         }
     }
 }

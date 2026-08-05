@@ -31,6 +31,7 @@ pub struct InventoryObject {
     pub id: u64,
     pub item_id: String,
     /// `personal`, `party`, or `fireplace`.
+    #[index(btree)]
     pub location_kind: String,
     /// Character ID, party ID, or canonical fireplace fixture ID.
     pub location_owner: String,

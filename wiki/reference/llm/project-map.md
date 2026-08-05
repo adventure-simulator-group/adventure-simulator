@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1733)
+## Files (1737)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -268,6 +268,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/backend_fireplace_stations_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_forage_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_forage_receipts_table.rs` — Generated SpacetimeDB table interface.
+- `crates/adventuresim-stdb-client/src/backend_ingredient_preparation_plan_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/backend_ingredient_preparation_plans_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_investigation_action_outcome_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/backend_investigation_action_outcomes_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/backend_investigation_action_type.rs` — Generated SpacetimeDB data type.
@@ -591,6 +593,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/inferred_industry_profile_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/inferred_tree_species_profile_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/ingredient_preparation_action_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/ingredient_preparation_attempt_state_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/ingredient_preparation_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/inland_water_access_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/inland_water_size_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/inspect_physical_evidence_reducer.rs` — Generated SpacetimeDB reducer interface.
