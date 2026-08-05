@@ -485,7 +485,8 @@ fn require_live_dialogue_presence(
     session: &DialogueSession,
     character_id: u64,
 ) -> Result<crate::settlement_population::SettlementResidentProfile, String> {
-    require_navigable_npc_location(ctx, &session.settlement_id, &session.location_id)?;
+    let exact_place =
+        require_navigable_npc_place(ctx, &session.settlement_id, &session.location_id)?;
     let character = ctx
         .db
         .character()
@@ -513,7 +514,24 @@ fn require_live_dialogue_presence(
         .character_time()
         .character_id()
         .find(character_id)
-        .map_or(720, |time| time.minutes);
+        .map(|time| time.minutes)
+        .ok_or("Dialogue participant has no personal time authority")?;
+    let actor_settlement_presence =
+        adventuresim_core::strategic_presence::StrategicPresence::settlement_membership(
+            character_id,
+            session.settlement_id.clone(),
+            adventuresim_core::strategic_presence::PresenceFrontier {
+                observer_character_id: character_id,
+                personal_minute: minute,
+            },
+        )
+        .map_err(|_| "Dialogue settlement identity is invalid")?;
+    let actor_presence =
+        adventuresim_core::strategic_presence::StrategicPresence::validated_venue_selection(
+            &actor_settlement_presence,
+            exact_place,
+        )
+        .map_err(|_| "Dialogue location is not in the actor's settlement")?;
     let mut primary = None;
     for participant in npc_participants {
         let npc_character_id = participant
@@ -532,10 +550,18 @@ fn require_live_dialogue_presence(
             .character_id()
             .find(npc.character_id)
             .ok_or("Dialogue NPC has no authoritative presence")?;
+        let npc_presence = crate::settlement_population::npc_strategic_presence_at(
+            ctx,
+            &presence,
+            character_id,
+            minute,
+        )
+        .ok_or("Dialogue NPC is not present at the session location and time")?;
         if npc.home_settlement_id != session.settlement_id
-            || presence.settlement_id != session.settlement_id
-            || presence.location_id != session.location_id
-            || !crate::settlement_population::npc_is_present(ctx, &presence, minute)
+            || !adventuresim_core::strategic_presence::are_co_present(
+                &actor_presence,
+                npc_presence.presence(),
+            )
         {
             return Err("Dialogue NPC is not present at the session location and time".into());
         }
@@ -581,4 +607,14 @@ fn require_navigable_npc_location(
     } else {
         Err("NPC location is not available in this settlement".into())
     }
+}
+
+fn require_navigable_npc_place(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    location_id: &str,
+) -> Result<adventuresim_core::strategic_place::StrategicPlaceId, String> {
+    require_navigable_npc_location(ctx, settlement_id, location_id)?;
+    crate::settlement_population::canonical_npc_place(settlement_id, location_id)
+        .ok_or_else(|| "NPC location has no canonical strategic place".into())
 }

@@ -68,6 +68,12 @@ so spouses and dependent children receive the same tier benefit without
 pretending to own the home. Public admission requires living co-located
 characters and an active shared household or spouse/parent/child relationship;
 an existing place in another home is rejected rather than silently stolen.
+Residence rest and comfort resolve the same chronological occupancy through
+the shared strategic presence contract. The resulting exact-place basis marks
+the legal owner only when that owner is also an occupant; ownership without an
+occupancy transition does not establish presence or access. Public admission
+continues to require only coarse same-settlement co-location and never upgrades
+that fact into presence at the target residence.
 Wedding and birth settlement use a private atomic move after establishing the
 new household or kinship. Both resolve holding activity, household membership,
 and occupancy at the ceremony or due minute, so a parent whose personal clock

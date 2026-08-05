@@ -51,6 +51,35 @@ settlement service availability remains an economy-profile fact, and private
 case/outbreak sites remain undiscoverable until their existing knowledge and
 gateway rules expose them.
 
+## Presence and co-presence
+
+`adventuresim-core::strategic_presence` is the shared fail-closed projection
+contract. Each presence names a Character, a canonical `StrategicPlaceId`, the
+authorized observer's personal-time frontier, and one closed evidence basis:
+coarse settlement membership, validated instantaneous venue selection, scheduled
+resident presence, or chronological residence occupancy. Co-presence requires
+the same canonical place projected for the same observer frontier. It does not
+require the observed Character's independent clock to equal the observer's;
+pairwise-soft consumers continue to inspect only the actor's chronology.
+
+A coarse settlement membership never equals an exact venue. The strategic
+layer does not currently persist within-settlement travel or interior position.
+A reducer request may therefore select any currently navigable venue inside the
+actor's authoritative current settlement. A browser route or location parameter
+is only that candidate: server-side navigability must resolve its canonical venue
+before the selection becomes exact actor presence. This preserves instantaneous
+venue selection without inventing durable navigation state. NPC presence then
+applies historical alive, schedule, health, and context-suppression authority at
+that actor-relative minute. Service-linked
+chapter representatives therefore share the ordinary service place, while a
+standalone chapter retains its authored chapter place.
+
+Residence access projects an exact residence place only from an effective
+occupancy transition and active holding at the occupant's personal frontier.
+The typed basis distinguishes an owner who also occupies the home from a
+household occupant; ownership alone is neither presence nor occupancy. Private
+holding, household, and role facts remain inside the residence owner module.
+
 The current SpacetimeDB investigation module still owns its serialized
 `CaseSiteId` wrapper and generated client shape. The schema-adapter PR in this
 stack must validate that value into `StrategicPlaceId::CaseSite`, convert the
