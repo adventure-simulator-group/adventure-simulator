@@ -32,6 +32,7 @@ pub mod item_catalog_schema;
 #[cfg(test)]
 mod item_catalog_validation;
 pub mod item_references;
+pub mod knowledge;
 pub mod leadership;
 pub mod life_simulation;
 pub mod local_problem;
