@@ -80,10 +80,7 @@ terrain-IK plugins,
 then advances the shared authoritative locomotion projector at its real 64Hz
 fixed tick. Default-off scenarios retain authored ordinary leg motion with a
 vertically fixed gameplay root; the explicit cross-slope scenario opts into
-the seeded terrain-IK pass. A replication-presentation scenario exposes only
-every fourth projected skeleton sample while accelerating through the walk/run
-blend and turning, exercising the same client-side prediction used in gameplay.
-Coverage includes two-cycle 2.0m/s walk, 3.75m/s
+the seeded terrain-IK pass. Coverage includes two-cycle 2.0m/s walk, 3.75m/s
 blend, 5.5m/s run, crouch, raised-guard full/half-speed movement, and
 start/stop, guard-entry, guard-release, and crouch-enter/exit transitions. Every logical tick is captured first from the raw
 gameplay third-person camera, then from side and front diagnostic cameras with
@@ -119,9 +116,8 @@ supported-foot per-frame slip and planted-interval drift, and records the
 responsible frames.
 
 The fixture synthesizes deterministic controller observations at the shared
-server projection boundary; its sparse-sample scenario models packet
-coalescing but does not run the transport or physics character controller.
-Only the cross-slope probe follows rendered
+server projection boundary; it does not run the transport or physics character
+controller. Only the cross-slope probe follows rendered
 terrain height; flat scenarios verify that animation never changes controller Y.
 
 ## Real-client animation diagnostics
@@ -153,16 +149,18 @@ swapchain presentation. This is
 the diagnostic boundary immediately after pose evaluation; it does not replace
 the real network or animation path.
 
-The supervised `animation` and `combat` profiles also write
-`animation-state.jsonl` continuously, so an interactive screen recording can
-be aligned with the exact real-client frames afterward. Only `diagnostic` adds
-the generated input script and exits automatically.
+Only the bounded `diagnostic` profile enables the per-frame JSONL log by
+default. Interactive `animation` and `combat` sessions avoid an unbounded log;
+launch the native client with an explicit `--animation-log PATH` when a manual
+session needs one.
 
-On Windows the supervised launcher also starts PresentMon when it is available
-and writes `presentmon-<session>.csv` beside the JSONL log. This records ETW
-display/presentation timing independently of Bevy's update loop. Pass
-`presentation_trace=off` to disable it or `presentation_trace=required` to fail
-startup when PresentMon cannot run. `PRESENTMON_PATH` overrides discovery.
+On Windows the bounded diagnostic launcher also starts PresentMon when it is
+available and writes `presentmon-<session>.csv` beside the JSONL log. This
+records ETW display/presentation timing independently of Bevy's update loop.
+Pass `presentation_trace=off` to disable it or
+`presentation_trace=required` to fail startup when PresentMon cannot run (or
+to force it for an interactive profile). `PRESENTMON_PATH` overrides PATH and
+standard-location discovery.
 
 For presentation A/B tests, pass `present_mode=auto-vsync`,
 `auto-no-vsync`, `fifo`, `fifo-relaxed`, `mailbox`, or `immediate` to
@@ -178,12 +176,15 @@ The native client also accepts custom files through `--input-script PATH` and
   "commands": [
     { "type": "rotate", "degrees_right": 90.0 },
     { "type": "move", "direction": "forward", "input_speed": 0.5, "duration_seconds": 2.0 },
+    { "type": "wait_for_signal", "path": "C:/capture/ready.json" },
     { "type": "wait", "duration_seconds": 0.5 }
   ]
 }
 ```
 
-Movement directions are `forward`, `backward`, `left`, and `right`. Add
+Movement directions are `forward`, `backward`, `left`, and `right`.
+`wait_for_signal` holds neutral input until its file exists, which lets a
+capture supervisor release movement only after recording is ready. Add
 `--exit-after-script` for bounded unattended captures.
 
 The gameplay camera already runs with MSAA disabled. For matched performance
@@ -196,9 +197,7 @@ just tactical-play diagnostic 24920 minimal
 ```
 
 The normal client uses a 64×64 generated atmosphere environment map.
-`no-environment-light` keeps the rendered atmosphere but omits that lighting;
-`high-environment-light` restores Bevy's expensive 512×512 default for
-comparison.
+`no-environment-light` keeps the rendered atmosphere but omits that lighting.
 
 The same presets are available on the native client through
 `--graphics-preset`.

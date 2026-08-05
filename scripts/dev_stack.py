@@ -174,10 +174,9 @@ class ObsCapture:
     process: subprocess.Popen[str]
     websocket: ObsWebSocket
     metadata_file: Path
-    scene_name: str
 
 
-def tactical_window_capture_geometry(process_id: int) -> dict[str, int]:
+def tactical_window_capture_geometry(process_id: int) -> dict[str, object]:
     if os.name != "nt":
         raise RuntimeError("cropped display capture is currently supported only on Windows")
     import ctypes
@@ -195,6 +194,17 @@ def tactical_window_capture_geometry(process_id: int) -> dict[str, int]:
             ("rcMonitor", Rect),
             ("rcWork", Rect),
             ("dwFlags", wintypes.DWORD),
+            ("szDevice", wintypes.WCHAR * 32),
+        ]
+
+    class DisplayDevice(ctypes.Structure):
+        _fields_ = [
+            ("cb", wintypes.DWORD),
+            ("DeviceName", wintypes.WCHAR * 32),
+            ("DeviceString", wintypes.WCHAR * 128),
+            ("StateFlags", wintypes.DWORD),
+            ("DeviceID", wintypes.WCHAR * 128),
+            ("DeviceKey", wintypes.WCHAR * 128),
         ]
 
     user32 = ctypes.windll.user32
@@ -234,6 +244,12 @@ def tactical_window_capture_geometry(process_id: int) -> dict[str, int]:
         raise RuntimeError("could not identify the tactical client's monitor")
     monitor_width = info.rcMonitor.right - info.rcMonitor.left
     monitor_height = info.rcMonitor.bottom - info.rcMonitor.top
+    monitor_device = DisplayDevice(cb=ctypes.sizeof(DisplayDevice))
+    monitor_name = ""
+    if user32.EnumDisplayDevicesW(
+        info.szDevice, 0, ctypes.byref(monitor_device), 1
+    ):
+        monitor_name = monitor_device.DeviceString
     left = origin.x - info.rcMonitor.left
     top = origin.y - info.rcMonitor.top
     if (
@@ -251,7 +267,44 @@ def tactical_window_capture_geometry(process_id: int) -> dict[str, int]:
         "height": height,
         "monitor_width": monitor_width,
         "monitor_height": monitor_height,
+        "monitor_left": info.rcMonitor.left,
+        "monitor_top": info.rcMonitor.top,
+        "monitor_name": monitor_name,
     }
+
+
+def select_obs_monitor_id(
+    property_items: list[dict[str, object]],
+    geometry: dict[str, object],
+    configured_id: str | None = None,
+) -> str:
+    available = [item for item in property_items if item.get("itemEnabled", True)]
+    if configured_id:
+        exact = [
+            item for item in available
+            if str(item.get("itemValue", "")) == configured_id
+        ]
+        if len(exact) == 1:
+            return str(exact[0]["itemValue"])
+        raise RuntimeError("OBS_MONITOR_ID does not identify an available display")
+
+    monitor_name = str(geometry.get("monitor_name", "")).strip().casefold()
+    resolution = f"{geometry['monitor_width']}x{geometry['monitor_height']}".casefold()
+    origin = f"{geometry['monitor_left']},{geometry['monitor_top']}".casefold()
+    matches = []
+    for item in available:
+        name = str(item.get("itemName", "")).casefold()
+        if monitor_name and monitor_name in name:
+            matches.append(item)
+        elif not monitor_name and resolution in name and origin in name:
+            matches.append(item)
+    if len(matches) == 1:
+        return str(matches[0]["itemValue"])
+    descriptions = ", ".join(str(item.get("itemName", "?")) for item in available)
+    raise RuntimeError(
+        "could not uniquely match the tactical window's monitor in OBS; "
+        f"set OBS_MONITOR_ID. Available displays: {descriptions or 'none'}"
+    )
 
 
 def set_window_topmost(window_handle: int, topmost: bool) -> None:
@@ -1313,19 +1366,17 @@ def launch_recorded_tactical_client(
         "--present-mode", str(config.get("present_mode", "auto-vsync")),
     ]
     suffix = str(config["session_id"])[:12]
-    animation_log = run_dir / f"animation-state-{suffix}.jsonl"
-    command.extend(["--animation-log", str(animation_log)])
-    client_config["animation_log"] = str(animation_log)
-    config["animation_log"] = str(animation_log)
     if config["play_mode"] == TacticalPlayMode.DIAGNOSTIC.value:
+        animation_log = run_dir / f"animation-state-{suffix}.jsonl"
+        command.extend(["--animation-log", str(animation_log)])
+        client_config["animation_log"] = str(animation_log)
+        config["animation_log"] = str(animation_log)
         input_script = run_dir / f"animation-input-script-{suffix}.json"
         commands: list[dict[str, object]] = []
         if config.get("window_capture") != "off":
-            # OBS can take its full 12-second control-socket deadline plus
-            # frontend stabilization time on the integrated GPU. Keep the
-            # movement segment gated until capture setup has either succeeded
-            # or failed, even when the game itself starts unusually quickly.
-            commands.append({"type": "wait", "duration_seconds": 20.0})
+            capture_ready = run_dir / f"capture-ready-{suffix}.json"
+            commands.append({"type": "wait_for_signal", "path": str(capture_ready)})
+            config["capture_ready_signal"] = str(capture_ready)
         commands.extend([
             {"type": "rotate", "degrees_right": 90.0},
             {
@@ -1369,12 +1420,20 @@ def launch_recorded_tactical_client(
     return process
 
 
+def release_capture_gate(config: dict[str, object]) -> None:
+    signal = config.get("capture_ready_signal")
+    if signal:
+        atomic_write_json(Path(str(signal)), {"ready": True})
+
+
 def find_presentmon() -> Path | None:
     configured = os.environ.get("PRESENTMON_PATH")
+    program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
     candidates = [
         Path(configured) if configured else None,
-        Path(r"C:\Program Files\AMD\CNext\CNext\PresentMon-x64.exe"),
-        Path(r"C:\Program Files\PresentMon\PresentMon.exe"),
+        Path(found) if (found := shutil.which("PresentMon")) else None,
+        program_files / "AMD" / "CNext" / "CNext" / "PresentMon-x64.exe",
+        program_files / "PresentMon" / "PresentMon.exe",
     ]
     return next((candidate for candidate in candidates if candidate and candidate.is_file()), None)
 
@@ -1430,9 +1489,12 @@ def launch_presentmon(
 
 def find_obs() -> Path | None:
     configured = os.environ.get("OBS_PATH")
+    program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
     candidates = [
         Path(configured) if configured else None,
-        Path(r"C:\Program Files\obs-studio\bin\64bit\obs64.exe"),
+        Path(found) if (found := shutil.which("obs64")) else None,
+        Path(found) if (found := shutil.which("obs")) else None,
+        program_files / "obs-studio" / "bin" / "64bit" / "obs64.exe",
     ]
     return next((candidate for candidate in candidates if candidate and candidate.is_file()), None)
 
@@ -1444,6 +1506,9 @@ def unused_loopback_port() -> int:
 
 
 def obs_websocket_config() -> Path:
+    configured = os.environ.get("OBS_WEBSOCKET_CONFIG")
+    if configured:
+        return Path(configured)
     roaming = os.environ.get("APPDATA")
     if not roaming:
         raise RuntimeError("APPDATA is required to locate OBS settings")
@@ -1454,6 +1519,73 @@ def replace_file_bytes(path: Path, content: bytes) -> None:
     temporary = path.with_name(f".{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
     temporary.write_bytes(content)
     os.replace(temporary, path)
+
+
+def configure_obs_workspace(
+    websocket: ObsWebSocket,
+    run_dir: Path,
+    config: dict[str, object],
+) -> None:
+    profile_name = os.environ.get("OBS_PROFILE", "Adventure Simulator Diagnostics")
+    collection_name = os.environ.get(
+        "OBS_COLLECTION", "Adventure Simulator Diagnostics"
+    )
+    profiles = websocket.request("GetProfileList")
+    original_profile = str(profiles.get("currentProfileName", ""))
+    available_profiles = {str(profile) for profile in profiles.get("profiles", [])}
+    config["obs_original_profile"] = original_profile
+    config["obs_capture_profile"] = profile_name
+    if profile_name not in available_profiles:
+        websocket.request("CreateProfile", {"profileName": profile_name})
+    elif original_profile != profile_name:
+        websocket.request("SetCurrentProfile", {"profileName": profile_name})
+    time.sleep(0.25)
+    websocket.request("SetRecordDirectory", {"recordDirectory": str(run_dir)})
+
+    collections = websocket.request("GetSceneCollectionList")
+    original_collection = str(collections.get("currentSceneCollectionName", ""))
+    available_collections = {
+        str(collection) for collection in collections.get("sceneCollections", [])
+    }
+    config["obs_original_collection"] = original_collection
+    config["obs_capture_collection"] = collection_name
+    if collection_name not in available_collections:
+        websocket.request(
+            "CreateSceneCollection", {"sceneCollectionName": collection_name}
+        )
+    elif original_collection != collection_name:
+        websocket.request(
+            "SetCurrentSceneCollection", {"sceneCollectionName": collection_name}
+        )
+    time.sleep(0.25)
+
+
+def restore_obs_workspace(
+    websocket: ObsWebSocket,
+    config: dict[str, object],
+    *,
+    remove_capture_scene: bool,
+) -> None:
+    scene_name = config.get("obs_capture_scene")
+    original_scene = config.get("obs_original_scene")
+    if original_scene:
+        websocket.request("SetCurrentProgramScene", {"sceneName": original_scene})
+    if remove_capture_scene and scene_name:
+        websocket.request("RemoveScene", {"sceneName": scene_name})
+
+    original_collection = config.get("obs_original_collection")
+    capture_collection = config.get("obs_capture_collection")
+    if original_collection and original_collection != capture_collection:
+        websocket.request(
+            "SetCurrentSceneCollection",
+            {"sceneCollectionName": original_collection},
+        )
+        time.sleep(0.25)
+    original_profile = config.get("obs_original_profile")
+    capture_profile = config.get("obs_capture_profile")
+    if original_profile and original_profile != capture_profile:
+        websocket.request("SetCurrentProfile", {"profileName": original_profile})
+        time.sleep(0.25)
 
 
 def launch_obs_capture(
@@ -1486,9 +1618,20 @@ def launch_obs_capture(
         "capture_source": capture_source,
     }
     metadata_file = run_dir / "obs.identity.json"
-    websocket_config = obs_websocket_config()
-    original_config = websocket_config.read_bytes()
-    temporary_config = json.loads(original_config)
+    try:
+        websocket_config = obs_websocket_config()
+        original_config = websocket_config.read_bytes()
+        temporary_config = json.loads(original_config)
+    except (OSError, json.JSONDecodeError, RuntimeError) as error:
+        location = locals().get("websocket_config", "the configured OBS settings")
+        message = (
+            f"OBS WebSocket configuration is unavailable at {location}; "
+            "start OBS Studio once or set OBS_WEBSOCKET_CONFIG"
+        )
+        if mode == "required":
+            raise RuntimeError(message) from error
+        print(f"Window capture unavailable: {message}")
+        return None
     temporary_config.update({
         "alerts_enabled": False,
         "auth_required": True,
@@ -1504,7 +1647,7 @@ def launch_obs_capture(
     try:
         process = spawn_recorded([
             str(executable), "--multi", "--minimize-to-tray",
-            "--profile", "Untitled", "--collection", "Untitled",
+            "--disable-missing-files-check", "--only-bundled-plugins",
             "--websocket_ipv4_only", "--websocket_port", str(port),
             "--websocket_password", password,
         ], metadata_file, run_dir / "obs-launch.log", capture_config,
@@ -1530,26 +1673,28 @@ def launch_obs_capture(
     # accepting scene mutations on slower integrated-GPU startup paths.
     time.sleep(1.0)
     try:
+        configure_obs_workspace(websocket, run_dir, config)
         original_scene = websocket.request("GetCurrentProgramScene").get("currentProgramSceneName")
         scenes = websocket.request("GetSceneList").get("scenes", [])
+        scene_names = {str(scene.get("sceneName", "")) for scene in scenes}
+        idle_scene = "Adventure Simulator Diagnostics"
+        if idle_scene not in scene_names:
+            websocket.request("CreateScene", {"sceneName": idle_scene})
+            scene_names.add(idle_scene)
         stale_scenes = [
             scene.get("sceneName") for scene in scenes
             if str(scene.get("sceneName", "")).startswith("Adventure Simulator diagnostic ")
         ]
         if original_scene in stale_scenes:
-            available = [
-                str(scene.get("sceneName")) for scene in scenes
-                if scene.get("sceneName") not in stale_scenes
-            ]
-            if not available:
-                raise RuntimeError("OBS has no non-diagnostic scene to restore after capture")
-            original_scene = "Scene 2" if "Scene 2" in available else available[0]
+            original_scene = idle_scene
             websocket.request(
                 "SetCurrentProgramScene", {"sceneName": original_scene}
             )
         for stale_scene in stale_scenes:
             websocket.request("RemoveScene", {"sceneName": stale_scene})
         websocket.request("CreateScene", {"sceneName": scene_name})
+        config["obs_original_scene"] = original_scene
+        config["obs_capture_scene"] = scene_name
         if capture_source == "window":
             created = websocket.request("CreateInput", {
                 "sceneName": scene_name,
@@ -1574,10 +1719,27 @@ def launch_obs_capture(
         elif capture_source == "display":
             geometry = tactical_window_capture_geometry(int(config["client_pid"]))
             set_window_topmost(geometry["window_handle"], True)
-            created = websocket.request("CreateSceneItem", {
+            config["display_capture_window"] = geometry["window_handle"]
+            created = websocket.request("CreateInput", {
                 "sceneName": scene_name,
-                "sourceName": "Display Capture",
+                "inputName": input_name,
+                "inputKind": "monitor_capture",
+                "inputSettings": {},
                 "sceneItemEnabled": True,
+            })
+            properties = websocket.request("GetInputPropertiesListPropertyItems", {
+                "inputName": input_name,
+                "propertyName": "monitor_id",
+            })
+            monitor_id = select_obs_monitor_id(
+                properties.get("propertyItems", []),
+                geometry,
+                os.environ.get("OBS_MONITOR_ID"),
+            )
+            websocket.request("SetInputSettings", {
+                "inputName": input_name,
+                "inputSettings": {"monitor_id": monitor_id},
+                "overlay": True,
             })
             crop = {
                 "cropLeft": geometry["left"],
@@ -1586,7 +1748,7 @@ def launch_obs_capture(
                 "cropBottom": geometry["bottom"],
             }
             config["display_capture_geometry"] = geometry
-            config["display_capture_window"] = geometry["window_handle"]
+            config["display_capture_monitor_id"] = monitor_id
         else:
             raise RuntimeError(f"unsupported OBS capture source: {capture_source}")
         video = websocket.request("GetVideoSettings")
@@ -1606,31 +1768,44 @@ def launch_obs_capture(
         websocket.request("SetCurrentProgramScene", {"sceneName": scene_name})
         websocket.request("StartRecord")
     except Exception as error:
+        try:
+            restore_obs_workspace(
+                websocket,
+                config,
+                remove_capture_scene=bool(config.get("obs_capture_scene")),
+            )
+        except Exception as cleanup_error:
+            print(f"Window capture cleanup warning: {cleanup_error}", file=sys.stderr)
+        display_window = config.pop("display_capture_window", None)
+        if display_window is not None:
+            try:
+                set_window_topmost(int(display_window), False)
+            except RuntimeError as cleanup_error:
+                print(f"Window capture cleanup warning: {cleanup_error}", file=sys.stderr)
         websocket.close()
         stop_recorded(metadata_file, capture_config)
         if mode == "required":
             raise
         print(f"Window capture unavailable: OBS setup failed: {error}")
         return None
-    config["obs_original_scene"] = original_scene
-    config["obs_capture_scene"] = scene_name
     print(f"Window capture: OBS recording via {capture_source} source")
-    return ObsCapture(process, websocket, metadata_file, scene_name)
+    return ObsCapture(process, websocket, metadata_file)
 
 
 def stop_obs_capture(capture: ObsCapture, run_dir: Path, config: dict[str, object]) -> Path:
     output_path: Path | None = None
     try:
-        result = capture.websocket.request("StopRecord")
-        recorded = result.get("outputPath")
-        if recorded:
-            output_path = Path(str(recorded))
-        original_scene = config.get("obs_original_scene")
-        if original_scene:
-            capture.websocket.request(
-                "SetCurrentProgramScene", {"sceneName": original_scene}
+        try:
+            result = capture.websocket.request("StopRecord")
+            recorded = result.get("outputPath")
+            if recorded:
+                output_path = Path(str(recorded))
+        finally:
+            restore_obs_workspace(
+                capture.websocket,
+                config,
+                remove_capture_scene=True,
             )
-        capture.websocket.request("RemoveScene", {"sceneName": capture.scene_name})
         # StopRecord returns before Hybrid MP4 finishes flushing and before
         # frontend scene changes are durably saved. Give both bounded time.
         time.sleep(2.0)
@@ -1661,6 +1836,15 @@ def stop_obs_capture(capture: ObsCapture, run_dir: Path, config: dict[str, objec
             time.sleep(0.25)
     config["window_capture_file"] = str(destination)
     return destination
+
+
+def effective_presentation_trace(
+    mode: TacticalPlayMode,
+    requested: str,
+) -> str:
+    if mode is not TacticalPlayMode.DIAGNOSTIC and requested == "auto":
+        return "off"
+    return requested
 
 
 def tactical_play(
@@ -1797,10 +1981,16 @@ def tactical_play(
             if launch_client:
                 client_process = launch_recorded_tactical_client(run_dir, config)
                 presentmon_process = launch_presentmon(
-                    run_dir, client_process, config, presentation_trace
+                    run_dir,
+                    client_process,
+                    config,
+                    effective_presentation_trace(mode, presentation_trace),
                 )
                 if mode is TacticalPlayMode.DIAGNOSTIC:
-                    obs_capture = launch_obs_capture(run_dir, config, window_capture)
+                    try:
+                        obs_capture = launch_obs_capture(run_dir, config, window_capture)
+                    finally:
+                        release_capture_gate(config)
 
             print("")
             print(f"Database: ready at {server_url} ({database})")
@@ -2061,7 +2251,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--graphics-preset",
         choices=(
             "default", "no-shadows", "no-ssao", "no-bloom", "no-atmosphere",
-            "no-environment-light", "high-environment-light", "minimal"
+            "no-environment-light", "minimal"
         ),
         default="default",
     )

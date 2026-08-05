@@ -1,12 +1,4 @@
-use std::{
-    fs::File,
-    path::Path,
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
-    time::Instant,
-};
+use std::{fs::File, path::Path};
 
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::*;
@@ -22,7 +14,7 @@ use bevy::{
 use serde::Deserialize;
 
 use crate::{
-    animation::{AnimationDiagnosticLog, DiagnosticInputStatus},
+    animation::{AnimationDiagnosticLog, DiagnosticInputStatus, RenderScheduleTelemetry},
     player::ClientPlayer,
 };
 
@@ -46,6 +38,9 @@ enum ScriptCommand {
     },
     Wait {
         duration_seconds: f32,
+    },
+    WaitForSignal {
+        path: String,
     },
 }
 
@@ -86,33 +81,6 @@ pub(crate) struct DiagnosticPlugin {
     log: Option<File>,
     exit_after_script: bool,
     render_schedule: Option<RenderScheduleTelemetry>,
-}
-
-#[derive(Resource, Clone, Debug)]
-pub(crate) struct RenderScheduleTelemetry(Arc<RenderScheduleShared>);
-
-#[derive(Debug)]
-struct RenderScheduleShared {
-    started: Instant,
-    count: AtomicU64,
-    elapsed_micros: AtomicU64,
-}
-
-impl RenderScheduleTelemetry {
-    fn new() -> Self {
-        Self(Arc::new(RenderScheduleShared {
-            started: Instant::now(),
-            count: AtomicU64::new(0),
-            elapsed_micros: AtomicU64::new(0),
-        }))
-    }
-
-    pub(crate) fn snapshot(&self) -> (u64, u64) {
-        (
-            self.0.count.load(Ordering::Acquire),
-            self.0.elapsed_micros.load(Ordering::Acquire),
-        )
-    }
 }
 
 impl DiagnosticPlugin {
@@ -223,12 +191,7 @@ fn suppress_physical_input(
 }
 
 fn record_render_schedule_completion(telemetry: Res<RenderScheduleTelemetry>) {
-    let elapsed = telemetry.0.started.elapsed().as_micros();
-    telemetry
-        .0
-        .elapsed_micros
-        .store(elapsed.min(u64::MAX as u128) as u64, Ordering::Release);
-    telemetry.0.count.fetch_add(1, Ordering::Release);
+    telemetry.record_completion();
 }
 
 fn validate_script(script: &InputScript) -> Result<(), String> {
@@ -257,6 +220,9 @@ fn validate_script(script: &InputScript) -> Result<(), String> {
                 if !duration_seconds.is_finite() || *duration_seconds <= 0.0 =>
             {
                 return Err("wait duration_seconds must be positive".to_owned());
+            }
+            ScriptCommand::WaitForSignal { path } if path.trim().is_empty() => {
+                return Err("wait_for_signal path must not be empty".to_owned());
             }
             _ => {}
         }
@@ -310,6 +276,26 @@ fn drive_scripted_input(
             continue;
         }
 
+        if let ScriptCommand::WaitForSignal { path } = &command {
+            let request = PlayerInputRequest {
+                look: script.look,
+                ..default()
+            };
+            input_override.0 = Some(request);
+            *status = DiagnosticInputStatus {
+                command_index: script.command_index,
+                command_kind: "wait_for_signal".to_owned(),
+                command_elapsed_seconds: script.command_elapsed,
+                request,
+            };
+            if Path::new(path).is_file() {
+                script.command_index += 1;
+                script.command_elapsed = 0.0;
+                continue;
+            }
+            return;
+        }
+
         script.command_elapsed += delta;
         let (kind, duration, movement) = match command {
             ScriptCommand::Move {
@@ -322,7 +308,7 @@ fn drive_scripted_input(
                 Some(direction.vector() * input_speed),
             ),
             ScriptCommand::Wait { duration_seconds } => ("wait", duration_seconds, None),
-            ScriptCommand::Rotate { .. } => unreachable!(),
+            ScriptCommand::Rotate { .. } | ScriptCommand::WaitForSignal { .. } => unreachable!(),
         };
         let request = PlayerInputRequest {
             movement,
@@ -365,6 +351,13 @@ mod tests {
             r#"{"commands":[{"type":"move","input_speed":1.1,"duration_seconds":2.0}]}"#,
         )
         .unwrap();
+        assert!(validate_script(&script).is_err());
+    }
+
+    #[test]
+    fn signal_wait_requires_a_path() {
+        let script: InputScript =
+            serde_json::from_str(r#"{"commands":[{"type":"wait_for_signal","path":""}]}"#).unwrap();
         assert!(validate_script(&script).is_err());
     }
 

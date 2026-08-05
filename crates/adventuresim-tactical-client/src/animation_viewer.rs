@@ -670,7 +670,6 @@ fn capture_plan() -> Vec<PlannedFrame> {
         dynamics_speed_scenario("hard-stop", true),
         dynamics_turn_scenario("dynamics-turn-90", std::f32::consts::FRAC_PI_2),
         dynamics_turn_scenario("dynamics-turn-180", std::f32::consts::PI),
-        replicated_speed_turn_scenario(),
         airborne_landing_scenario(),
         steady_scenario("cadence-contact", 2.0, 2.0),
         steady_scenario_in_direction("cross-slope-walk", 2.0, 1.0, Vec2::X),
@@ -679,28 +678,6 @@ fn capture_plan() -> Vec<PlannedFrame> {
     .into_iter()
     .flatten()
     .collect()
-}
-
-fn replicated_speed_turn_scenario() -> Vec<PlannedFrame> {
-    (0_usize..=96)
-        .map(|scenario_frame| {
-            let speed = 5.5 * smoothstep01(scenario_frame as f32 / 32.0);
-            let turn = smoothstep01((scenario_frame.saturating_sub(32)) as f32 / 32.0);
-            PlannedFrame {
-                scenario: "replicated-speed-turn",
-                scenario_frame,
-                speed,
-                time_seconds: scenario_frame as f32 / SAMPLE_HZ,
-                local_direction: Vec2::NEG_Y,
-                camera_yaw: std::f32::consts::FRAC_PI_2 * turn,
-                camera_pitch: 0.0,
-                crouching: false,
-                action: SkeletonAction::None,
-                weapon_guard: WeaponGuardState::Lowered,
-                lead_foot: LeadFoot::Left,
-            }
-        })
-        .collect()
 }
 
 fn turning_scenario(name: &'static str, reversal: bool) -> Vec<PlannedFrame> {
@@ -1082,25 +1059,17 @@ fn drive_sequence(
             delta_seconds,
         );
         sequence.scenario_distance += frame.speed * delta_seconds;
-        let sparse_replication = frame.scenario == "replicated-speed-turn";
-        if !sparse_replication || frame.scenario_frame % 4 == 0 {
-            let projection_delta = if sparse_replication && frame.scenario_frame > 0 {
-                4.0 / SAMPLE_HZ
-            } else {
-                delta_seconds
-            };
-            project_skeleton_locomotion(
-                &mut skeleton,
-                SkeletonLocomotionInput {
-                    orientation,
-                    linear_velocity: world_velocity,
-                    grounded,
-                    crouching: frame.crouching,
-                    delta_seconds: projection_delta,
-                    tick: sequence.simulation_tick,
-                },
-            );
-        }
+        project_skeleton_locomotion(
+            &mut skeleton,
+            SkeletonLocomotionInput {
+                orientation,
+                linear_velocity: world_velocity,
+                grounded,
+                crouching: frame.crouching,
+                delta_seconds,
+                tick: sequence.simulation_tick,
+            },
+        );
         gait_phase = skeleton.gait_phase;
     }
     for mut label in &mut labels {

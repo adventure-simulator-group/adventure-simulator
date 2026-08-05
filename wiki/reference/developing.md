@@ -577,32 +577,44 @@ Scripted diagnostic mode forces the default third-person camera and suppresses
 live keyboard and mouse buttons, motion, and scrolling so activity in another
 application cannot alter the capture. Third person is also the normal tactical
 client's default; F9 still toggles camera mode outside scripted diagnostics.
-The interactive `animation` and `combat` profiles write the same JSONL log
-continuously, allowing a screen recording to be aligned with its exact
-real-client frame state; only `diagnostic` supplies scripted input and exits
-automatically.
-On Windows, `presentation_trace=auto` also records a
-`presentmon-<session>.csv` ETW trace when PresentMon is installed. Use
-`presentation_trace=required` for a capture that must include independent
-display timing, or `off` to disable it. The JSONL includes wall-clock time and
-the render thread's latest render-schedule completion counter for correlation;
-only PresentMon confirms that a frame reached the Windows presentation path.
+Only `diagnostic` enables the per-frame JSONL log by default, supplies scripted
+input, and exits automatically. Interactive `animation` and `combat` profiles
+avoid unbounded diagnostic files; use the native client's explicit
+`--animation-log PATH` option when an interactive recording needs correlation.
+On Windows, `presentation_trace=auto` records a
+`presentmon-<session>.csv` ETW trace for the bounded diagnostic profile when
+PresentMon is installed. Use `presentation_trace=required` for a capture that
+must include independent display timing (including an interactive profile), or
+`off` to disable it. The JSONL includes wall-clock time and the render thread's
+latest render-schedule completion counter for correlation; only PresentMon
+confirms that a frame reached the Windows presentation path.
 On Windows, the diagnostic profile also uses OBS Studio capture when it is
-installed. The supervisor creates a temporary scene containing only the
-tactical client, records across a bounded capture-startup pre-roll, stops when the
-input script exits, and moves the finalized video to
-`<capture-source>-capture-<session>.<extension>` in the same run directory. This
-does not control or stop an OBS process that was already running. Set the sixth
+installed. The supervisor uses a dedicated OBS profile and scene collection,
+creates the required capture source, and releases the scripted movement only
+after recording has started. It stops when the input script exits and moves the
+finalized video to `<capture-source>-capture-<session>.<extension>` in the same
+run directory. This does not control or stop an OBS process that was already
+running, and it restores the previously selected profile, scene collection,
+scene, and exact WebSocket configuration bytes after capture. Set the sixth
 `just tactical-play` argument to `off` to disable capture or `required` to fail
-when OBS is unavailable; set `OBS_PATH` when OBS is installed elsewhere. The
+when OBS is unavailable. OBS 28 or newer must have been started once so its
+built-in WebSocket configuration exists. The launcher searches PATH and the
+standard Windows install location; `OBS_PATH` and `OBS_WEBSOCKET_CONFIG`
+override those paths. `OBS_PROFILE` and `OBS_COLLECTION` rename the dedicated
+workspace (both default to `Adventure Simulator Diagnostics`). The
 seventh argument selects `window` (the default Windows Graphics Capture path)
-or `display`. Display capture reuses OBS's `Display Capture` source and crops it
-to the tactical client area's live Win32 coordinates, allowing the final DWM
+or `display`. Display capture creates a monitor source, automatically matches
+the monitor containing the tactical window, and crops it to the client area's
+live Win32 coordinates, allowing the final DWM
 desktop composition to be compared with the application's WGC surface. The
 client is temporarily topmost without being focused during display capture so
 activity in another application cannot occlude the measured pixels. The
 temporary window source forces Windows Graphics Capture because OBS's
 automatic BitBlt choice can return stale frames for Bevy's Vulkan window.
+Set `OBS_MONITOR_ID` to an OBS `monitor_id` value when identical monitor names
+make automatic selection ambiguous. OBS capture requires no external ffmpeg;
+the lifecycle script uses Python's standard library, with `PYTHON_BIN` available
+when Python is installed outside PATH.
 The fifth `just tactical-play` argument selects `auto-vsync`,
 `auto-no-vsync`, `fifo`, `fifo-relaxed`, `mailbox`, or `immediate` for
 swapchain frame-pacing comparisons; normal launches default to `auto-vsync`.
@@ -614,8 +626,7 @@ Pass a fourth argument of `no-shadows`, `no-ssao`, `no-bloom`,
 `no-atmosphere`, or `minimal` to compare GPU-oriented rendering presets; MSAA
 is already disabled in every tactical preset.
 The normal client uses a 64×64 generated atmosphere environment map. Use
-`no-environment-light` to omit it or `high-environment-light` to restore Bevy's
-512×512 default for comparison while retaining the visible sky.
+`no-environment-light` to omit it while retaining the visible sky.
 
 This builds the native tactical server and client before creating a mission,
 starts a worktree-isolated SpacetimeDB instance, publishes and seeds it, starts

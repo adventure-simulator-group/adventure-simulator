@@ -95,7 +95,6 @@ enum GraphicsPreset {
     NoBloom,
     NoAtmosphere,
     NoEnvironmentLight,
-    HighEnvironmentLight,
     Minimal,
 }
 
@@ -108,11 +107,7 @@ impl GraphicsPreset {
                 self,
                 Self::NoAtmosphere | Self::NoEnvironmentLight | Self::Minimal
             ),
-            environment_map_size: if matches!(self, Self::HighEnvironmentLight) {
-                512
-            } else {
-                64
-            },
+            environment_map_size: 64,
             bloom_enabled: !matches!(self, Self::NoBloom | Self::Minimal),
             ssao_enabled: !matches!(self, Self::NoSsao | Self::Minimal),
         }
@@ -296,9 +291,6 @@ mod graphics_preset_tests {
         assert!(normal.atmosphere_enabled);
         assert!(normal.environment_light_enabled);
         assert_eq!(normal.environment_map_size, 64);
-
-        let high = GraphicsPreset::HighEnvironmentLight.presentation();
-        assert_eq!(high.environment_map_size, 512);
     }
 
     #[test]

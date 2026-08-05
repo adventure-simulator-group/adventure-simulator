@@ -4,6 +4,14 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
     str::FromStr,
 };
+#[cfg(not(target_family = "wasm"))]
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Instant,
+};
 
 use adventuresim_tactical_core::prelude::*;
 #[cfg(not(target_family = "wasm"))]
@@ -49,6 +57,44 @@ pub(crate) struct DiagnosticInputStatus {
 pub(crate) struct AnimationDiagnosticLog {
     pub(crate) writer: BufWriter<std::fs::File>,
     pub(crate) frame: u64,
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[derive(Resource, Clone, Debug)]
+pub(crate) struct RenderScheduleTelemetry(Arc<RenderScheduleShared>);
+
+#[cfg(not(target_family = "wasm"))]
+#[derive(Debug)]
+struct RenderScheduleShared {
+    started: Instant,
+    count: AtomicU64,
+    elapsed_micros: AtomicU64,
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl RenderScheduleTelemetry {
+    pub(crate) fn new() -> Self {
+        Self(Arc::new(RenderScheduleShared {
+            started: Instant::now(),
+            count: AtomicU64::new(0),
+            elapsed_micros: AtomicU64::new(0),
+        }))
+    }
+
+    pub(crate) fn record_completion(&self) {
+        let elapsed = self.0.started.elapsed().as_micros();
+        self.0
+            .elapsed_micros
+            .store(elapsed.min(u64::MAX as u128) as u64, Ordering::Release);
+        self.0.count.fetch_add(1, Ordering::Release);
+    }
+
+    pub(crate) fn snapshot(&self) -> (u64, u64) {
+        (
+            self.0.count.load(Ordering::Acquire),
+            self.0.elapsed_micros.load(Ordering::Acquire),
+        )
+    }
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -1275,7 +1321,7 @@ fn log_animation_diagnostics(
     time: Res<Time>,
     mut log: Option<ResMut<AnimationDiagnosticLog>>,
     input: Option<Res<DiagnosticInputStatus>>,
-    render_schedule: Option<Res<crate::diagnostics::RenderScheduleTelemetry>>,
+    render_schedule: Option<Res<RenderScheduleTelemetry>>,
     players: Query<
         (
             &Transform,
