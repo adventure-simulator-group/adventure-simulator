@@ -55,6 +55,7 @@ pub mod simulation_security;
 pub mod skill;
 pub mod social;
 pub mod starting_character;
+pub mod strategic_action;
 pub mod strategic_currency;
 pub mod strategic_economy;
 pub mod strategic_inventory;
