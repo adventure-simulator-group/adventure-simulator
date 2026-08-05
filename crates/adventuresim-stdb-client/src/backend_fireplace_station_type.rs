@@ -12,7 +12,6 @@ pub struct BackendFireplaceStation {
     pub fireplace_fixture_id: String,
     pub instrument_item_id: Option<String>,
     pub instrument_object_id: Option<u64>,
-    pub instrument_source: Option<String>,
 }
 
 impl __sdk::InModule for BackendFireplaceStation {
@@ -28,7 +27,6 @@ pub struct BackendFireplaceStationCols {
     pub fireplace_fixture_id: __sdk::__query_builder::Col<BackendFireplaceStation, String>,
     pub instrument_item_id: __sdk::__query_builder::Col<BackendFireplaceStation, Option<String>>,
     pub instrument_object_id: __sdk::__query_builder::Col<BackendFireplaceStation, Option<u64>>,
-    pub instrument_source: __sdk::__query_builder::Col<BackendFireplaceStation, Option<String>>,
 }
 
 impl __sdk::__query_builder::HasCols for BackendFireplaceStation {
@@ -46,7 +44,6 @@ impl __sdk::__query_builder::HasCols for BackendFireplaceStation {
                 table_name,
                 "instrument_object_id",
             ),
-            instrument_source: __sdk::__query_builder::Col::new(table_name, "instrument_source"),
         }
     }
 }

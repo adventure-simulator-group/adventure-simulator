@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::persisted_operational_custody_type::PersistedOperationalCustody;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct FireplaceStation {
@@ -12,8 +14,7 @@ pub struct FireplaceStation {
     pub fireplace_fixture_id: String,
     pub instrument_item_id: Option<String>,
     pub instrument_object_id: Option<u64>,
-    pub instrument_source: Option<String>,
-    pub instrument_party_id: Option<String>,
+    pub instrument_return_custody: Option<PersistedOperationalCustody>,
 }
 
 impl __sdk::InModule for FireplaceStation {
@@ -29,8 +30,8 @@ pub struct FireplaceStationCols {
     pub fireplace_fixture_id: __sdk::__query_builder::Col<FireplaceStation, String>,
     pub instrument_item_id: __sdk::__query_builder::Col<FireplaceStation, Option<String>>,
     pub instrument_object_id: __sdk::__query_builder::Col<FireplaceStation, Option<u64>>,
-    pub instrument_source: __sdk::__query_builder::Col<FireplaceStation, Option<String>>,
-    pub instrument_party_id: __sdk::__query_builder::Col<FireplaceStation, Option<String>>,
+    pub instrument_return_custody:
+        __sdk::__query_builder::Col<FireplaceStation, Option<PersistedOperationalCustody>>,
 }
 
 impl __sdk::__query_builder::HasCols for FireplaceStation {
@@ -48,10 +49,9 @@ impl __sdk::__query_builder::HasCols for FireplaceStation {
                 table_name,
                 "instrument_object_id",
             ),
-            instrument_source: __sdk::__query_builder::Col::new(table_name, "instrument_source"),
-            instrument_party_id: __sdk::__query_builder::Col::new(
+            instrument_return_custody: __sdk::__query_builder::Col::new(
                 table_name,
-                "instrument_party_id",
+                "instrument_return_custody",
             ),
         }
     }

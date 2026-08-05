@@ -25,7 +25,9 @@ An item definition opts into measurement through a profile/capability. The
 inventory row continues to carry `quantity`; an optional, separate measured
 state row carries `remaining_amount`. A row with measured state is always
 quantity one. A definition without a measurement profile can never have
-measured state.
+measured state. Its physical carrier is identified only by `InventoryObject.id`;
+measurement must not introduce a second physical or "measured object" ID.
+Material-lot or batch identity remains a separate conserved referent.
 
 Capabilities compose. Measurement, armor, weapon, food, alcohol, durability,
 and similar profiles are authored as typed capability payloads in the embedded
@@ -112,8 +114,8 @@ MeasurementProfile {
     standard_basis: MeasurementBasis,
 }
 
-MeasuredObject {
-    id: u64,                         // stable across every custody transfer
+MeasuredState {
+    physical_object_id: u64,         // InventoryObject.id; stable across custody transfer
     item_id: String,
     kind: MeasurementKind,           // immutable snapshot, not a live definition lookup
     unit: MeasurementUnit,           // immutable interpretation of remaining_amount
@@ -125,7 +127,8 @@ MeasuredObject {
 }
 
 FoodMeasuredObject {
-    measured_object_id: u64,         // primary key; optional family capability
+    physical_object_id: u64,         // primary key; optional family capability
+    material_lot_id: u64,            // distinct batch/provenance identity
     initial_nutrition: IntegerNutrition,
     ingredient_provenance: Vec<IntegerIngredientShare>,
     preparation: Preparation,
@@ -135,13 +138,13 @@ FoodMeasuredObject {
 
 PersonalMeasuredState {
     inventory_item_id: u64,          // primary key, current custody row
-    measured_object_id: u64,         // unique stable object
+    physical_object_id: u64,         // unique InventoryObject.id carrier
     remaining_amount: u64,           // mutable, inclusive 0..=object.capacity
 }
 
 PartyMeasuredState {
     party_inventory_item_id: u64,    // primary key, current custody row
-    measured_object_id: u64,         // unique stable object
+    physical_object_id: u64,         // unique InventoryObject.id carrier
     remaining_amount: u64,           // mutable, inclusive 0..=object.capacity
 }
 ```
@@ -153,7 +156,8 @@ linked by `item_id`; their existence is independently validated against the
 measurement profile.
 
 The definition profile supplies the standard immutable basis for ordinary
-goods. Opening a sealed unit creates a stable `MeasuredObject` and copies its
+goods. Opening a sealed unit attaches stable `MeasuredState` to its existing
+physical object and copies its
 kind, unit, and numeric basis. A recipe or other transformation instead creates
 a derived object whose kind, unit, integer capacity, contents mass, contents
 value, and family metadata are calculated from its actual inputs. The evaluator

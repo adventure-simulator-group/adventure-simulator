@@ -1501,7 +1501,6 @@ pub struct BackendFireplaceStation {
     pub instrument_item_id: Option<String>,
     #[serde(default)]
     pub instrument_object_id: Option<u64>,
-    pub instrument_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

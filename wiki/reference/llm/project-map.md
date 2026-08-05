@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1722)
+## Files (1725)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -109,6 +109,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/npc_policy.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/organization.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/organization_catalog_validation.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/physical_object.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/physiology.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/provisioning.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/quest_catalog.rs` — Rust source module for this component.
@@ -534,7 +535,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/finalize_party_offer_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/finalize_storefront_trade_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/finish_world_data_import_reducer.rs` — Generated SpacetimeDB reducer interface.
-- `crates/adventuresim-stdb-client/src/fireplace_dish_inventory_source_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/fireplace_dish_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/fireplace_station_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/fish_commodity_type.rs` — Generated SpacetimeDB data type.
@@ -767,6 +767,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/perform_immediate_activity_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/perform_investigation_action_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/perform_social_action_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/persisted_operational_custody_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/personality_axis_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/personality_development_event_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/physical_evidence_inspection_action_receipt_type.rs` — Generated SpacetimeDB data type.
@@ -1082,6 +1083,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/local_problem.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/npc_adventurer.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/npc_causal.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/object_custody.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/organization.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/outbreak.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/personality.rs` — Rust source module for this component.
@@ -1693,6 +1695,7 @@ development, or other wiki document before changing a subsystem.
 - `wiki/reference/measured-inventory.md` — Project documentation.
 - `wiki/reference/organizations.md` — Project documentation.
 - `wiki/reference/outbreaks.md` — Project documentation.
+- `wiki/reference/physical-objects-and-custody.md` — Project documentation.
 - `wiki/reference/physiology.md` — Project documentation.
 - `wiki/reference/potential-vegetation.md` — Project documentation.
 - `wiki/reference/puzzle-lab.md` — Project documentation.

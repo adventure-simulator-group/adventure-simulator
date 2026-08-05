@@ -5,7 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::cooking_method_type::CookingMethod;
-use super::fireplace_dish_inventory_source_type::FireplaceDishInventorySource;
+use super::persisted_operational_custody_type::PersistedOperationalCustody;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -13,7 +13,7 @@ pub struct FireplaceDish {
     pub station_key: String,
     pub character_id: u64,
     pub fireplace_fixture_id: String,
-    pub inventory_source: FireplaceDishInventorySource,
+    pub return_custody: PersistedOperationalCustody,
     pub contributor_name: String,
     pub method: CookingMethod,
     pub cooking_check: f32,
@@ -51,7 +51,7 @@ pub struct FireplaceDishCols {
     pub station_key: __sdk::__query_builder::Col<FireplaceDish, String>,
     pub character_id: __sdk::__query_builder::Col<FireplaceDish, u64>,
     pub fireplace_fixture_id: __sdk::__query_builder::Col<FireplaceDish, String>,
-    pub inventory_source: __sdk::__query_builder::Col<FireplaceDish, FireplaceDishInventorySource>,
+    pub return_custody: __sdk::__query_builder::Col<FireplaceDish, PersistedOperationalCustody>,
     pub contributor_name: __sdk::__query_builder::Col<FireplaceDish, String>,
     pub method: __sdk::__query_builder::Col<FireplaceDish, CookingMethod>,
     pub cooking_check: __sdk::__query_builder::Col<FireplaceDish, f32>,
@@ -88,7 +88,7 @@ impl __sdk::__query_builder::HasCols for FireplaceDish {
                 table_name,
                 "fireplace_fixture_id",
             ),
-            inventory_source: __sdk::__query_builder::Col::new(table_name, "inventory_source"),
+            return_custody: __sdk::__query_builder::Col::new(table_name, "return_custody"),
             contributor_name: __sdk::__query_builder::Col::new(table_name, "contributor_name"),
             method: __sdk::__query_builder::Col::new(table_name, "method"),
             cooking_check: __sdk::__query_builder::Col::new(table_name, "cooking_check"),

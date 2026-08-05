@@ -4,7 +4,10 @@
 //! a row a stable object identity before it participates in containment and
 //! records edges by object identity, so a whole subtree can travel atomically.
 
-use adventuresim_core::inventory_containers::{ContainmentGraph, Object};
+use adventuresim_core::{
+    inventory_containers::{ContainmentGraph, Object},
+    physical_object::{OperationalCustody, PhysicalObjectId},
+};
 use spacetimedb::{ReducerContext, Table, reducer, table};
 
 use crate::character::character as _;
@@ -59,11 +62,20 @@ pub(crate) fn object_for_row(
     ctx: &ReducerContext,
     kind: &str,
     row_id: u64,
-) -> Option<InventoryObject> {
-    ctx.db
+) -> Result<Option<InventoryObject>, String> {
+    if !matches!(kind, "personal" | "party") {
+        return Err("Physical object row lookup requires carried custody".into());
+    }
+    let mut matches = ctx
+        .db
         .inventory_object()
         .iter()
-        .find(|object| object.location_kind == kind && object.inventory_row_id == row_id)
+        .filter(|object| object.location_kind == kind && object.inventory_row_id == row_id);
+    let first = matches.next();
+    if matches.next().is_some() {
+        return Err("Inventory row has duplicate physical object identities".into());
+    }
+    Ok(first)
 }
 
 pub(crate) fn object_is_nonempty(ctx: &ReducerContext, object_id: u64) -> bool {
@@ -98,7 +110,8 @@ pub(crate) fn ancestry_reaches_fireplace(ctx: &ReducerContext, object_id: u64) -
 
 pub(crate) fn row_is_fireplace_rooted(ctx: &ReducerContext, kind: &str, row_id: u64) -> bool {
     object_for_row(ctx, kind, row_id)
-        .is_some_and(|object| ancestry_reaches_fireplace(ctx, object.id))
+        .map(|object| object.is_some_and(|object| ancestry_reaches_fireplace(ctx, object.id)))
+        .unwrap_or(true)
 }
 
 pub(crate) fn detach_if_nested(ctx: &ReducerContext, object_id: u64) -> Result<bool, String> {
@@ -136,7 +149,7 @@ pub(crate) fn reconcile_consumed_row(
     row_id: u64,
     fully_consumed: bool,
 ) -> Result<(), String> {
-    let Some(object) = object_for_row(ctx, kind, row_id) else {
+    let Some(object) = object_for_row(ctx, kind, row_id)? else {
         return Ok(());
     };
     if ancestry_reaches_fireplace(ctx, object.id) {
@@ -166,7 +179,7 @@ pub(crate) fn detach_row_for_action(
     kind: &str,
     row_id: u64,
 ) -> Result<(), String> {
-    if let Some(object) = object_for_row(ctx, kind, row_id) {
+    if let Some(object) = object_for_row(ctx, kind, row_id)? {
         detach_if_nested(ctx, object.id)?;
     }
     Ok(())
@@ -176,7 +189,84 @@ pub(crate) fn subtree_object_ids(
     ctx: &ReducerContext,
     root_object_id: u64,
 ) -> Result<Vec<u64>, String> {
-    graph(ctx)?.subtree(root_object_id).map_err(str::to_owned)
+    let root_object_id =
+        PhysicalObjectId::try_new(root_object_id).map_err(|error| error.to_string())?;
+    graph(ctx)?
+        .subtree(root_object_id)
+        .map(|ids| ids.into_iter().map(PhysicalObjectId::get).collect())
+        .map_err(str::to_owned)
+}
+
+/// Validates an entire custody move before its caller creates a replacement
+/// root row or changes an installed fixture. This keeps death cleanup and
+/// other exceptional returns fail-closed even before reducer rollback applies.
+pub(crate) fn prevalidate_rehome_subtree(
+    ctx: &ReducerContext,
+    root_object_id: u64,
+    destination_kind: &str,
+    destination_owner: &str,
+) -> Result<(), String> {
+    match destination_kind {
+        "personal" => {
+            let character_id = destination_owner
+                .parse::<u64>()
+                .map_err(|_| "Invalid destination character")?;
+            if destination_owner != character_id.to_string()
+                || ctx.db.character().id().find(character_id).is_none()
+            {
+                return Err("Destination character custody is unavailable".into());
+            }
+        }
+        "party" => {
+            if ctx
+                .db
+                .party_authority()
+                .id()
+                .find(destination_owner.to_string())
+                .is_none()
+            {
+                return Err("Destination party custody is unavailable".into());
+            }
+        }
+        _ => return Err("Invalid subtree destination".into()),
+    }
+
+    for id in subtree_object_ids(ctx, root_object_id)? {
+        let object = ctx
+            .db
+            .inventory_object()
+            .id()
+            .find(id)
+            .ok_or("Inventory subtree object is missing")?;
+        crate::object_custody::resolve_object_custody(ctx, &object)?;
+        match object.location_kind.as_str() {
+            "personal" => {
+                let row = ctx
+                    .db
+                    .inventory_item()
+                    .id()
+                    .find(object.inventory_row_id)
+                    .ok_or("Inventory subtree row is missing")?;
+                if row.quantity != 1 {
+                    return Err("Stable inventory objects must be quantity one".into());
+                }
+            }
+            "party" => {
+                let row = ctx
+                    .db
+                    .party_inventory_item()
+                    .id()
+                    .find(object.inventory_row_id)
+                    .ok_or("Party inventory subtree row is missing")?;
+                if row.quantity != 1 {
+                    return Err("Stable inventory objects must be quantity one".into());
+                }
+            }
+            "fireplace" if id == root_object_id && object.inventory_row_id == 0 => {}
+            _ => return Err("Inventory subtree has an unsupported location transition".into()),
+        }
+    }
+    Ok(())
 }
 
 /// Rehomes every legacy row and linked measured/food/condition state in one
@@ -187,9 +277,7 @@ pub(crate) fn rehome_subtree(
     destination_kind: &str,
     destination_owner: &str,
 ) -> Result<(), String> {
-    if !matches!(destination_kind, "personal" | "party") {
-        return Err("Invalid subtree destination".into());
-    }
+    prevalidate_rehome_subtree(ctx, root_object_id, destination_kind, destination_owner)?;
     let ids = subtree_object_ids(ctx, root_object_id)?;
     for id in ids {
         let mut object = ctx
@@ -346,8 +434,21 @@ pub(crate) fn rehome_subtree(
 }
 
 pub(crate) fn delete_subtree(ctx: &ReducerContext, root_object_id: u64) -> Result<(), String> {
-    let mut ids = subtree_object_ids(ctx, root_object_id)?;
-    ids.reverse();
+    let ids = subtree_object_ids(ctx, root_object_id)?;
+    let root = ctx
+        .db
+        .inventory_object()
+        .id()
+        .find(root_object_id)
+        .ok_or("Inventory subtree root object is missing")?;
+    let root_custody = crate::object_custody::resolve_object_custody(ctx, &root)?.root;
+    if !matches!(
+        root_custody,
+        OperationalCustody::Character(_) | OperationalCustody::Party(_)
+    ) {
+        return Err("A fixture-held subtree must be retrieved before deletion".into());
+    }
+    let mut objects = Vec::with_capacity(ids.len());
     for id in ids {
         let object = ctx
             .db
@@ -355,6 +456,18 @@ pub(crate) fn delete_subtree(ctx: &ReducerContext, root_object_id: u64) -> Resul
             .id()
             .find(id)
             .ok_or("Inventory subtree object is missing")?;
+        require_exact_carried_backing(ctx, &object, &root_custody)?;
+        if !matches!(object.location_kind.as_str(), "personal" | "party") {
+            return Err("Inventory subtree has an unsupported deletion location".into());
+        }
+        objects.push(object);
+    }
+
+    // Only mutate after every descendant, including aliases outside the
+    // subtree, has passed strict custody and backing-row validation.
+    objects.reverse();
+    for object in objects {
+        let id = object.id;
         match object.location_kind.as_str() {
             "personal" => {
                 ctx.db
@@ -383,15 +496,29 @@ pub(crate) fn delete_subtree(ctx: &ReducerContext, root_object_id: u64) -> Resul
                     .id()
                     .delete(object.inventory_row_id);
             }
-            "fireplace" => {
-                return Err("A container at a fireplace must be retrieved before deletion".into());
-            }
-            _ => return Err("Inventory subtree has an unknown location".into()),
+            _ => unreachable!("preflight accepts only carried deletion locations"),
         }
         ctx.db.container_liquid().container_object_id().delete(id);
         crate::herbalism::delete_container_medicine(ctx, id);
         ctx.db.inventory_containment().child_object_id().delete(id);
         ctx.db.inventory_object().id().delete(id);
+    }
+    Ok(())
+}
+
+fn require_exact_carried_backing(
+    ctx: &ReducerContext,
+    object: &InventoryObject,
+    expected_root: &OperationalCustody,
+) -> Result<(), String> {
+    let resolved = crate::object_custody::resolve_object_custody(ctx, object)?;
+    if &resolved.root != expected_root {
+        return Err("Physical object has conflicting authenticated root custody".into());
+    }
+    let exact = object_for_row(ctx, &object.location_kind, object.inventory_row_id)?
+        .ok_or("Physical object has no backing identity")?;
+    if exact.id != object.id {
+        return Err("Physical object conflicts with its backing identity".into());
     }
     Ok(())
 }
@@ -531,6 +658,11 @@ pub(crate) fn merge_empty_container(ctx: &ReducerContext, emptied_id: u64) -> Re
     let Some(emptied) = ctx.db.inventory_object().id().find(emptied_id) else {
         return Ok(());
     };
+    let expected = crate::object_custody::carried_location_custody(
+        &emptied.location_kind,
+        &emptied.location_owner,
+    )?;
+    require_exact_carried_backing(ctx, &emptied, &expected)?;
     if !empty_container_can_stack(
         object_is_nonempty(ctx, emptied_id),
         object_is_nested(ctx, emptied_id),
@@ -538,10 +670,14 @@ pub(crate) fn merge_empty_container(ctx: &ReducerContext, emptied_id: u64) -> Re
     ) {
         return Ok(());
     }
-    let mergeable_object = |row_id| {
-        object_for_row(ctx, &emptied.location_kind, row_id).is_none_or(|object| {
-            !object_is_nonempty(ctx, object.id) && !object_is_nested(ctx, object.id)
-        })
+    let mergeable_object = |row_id| -> Result<bool, String> {
+        match object_for_row(ctx, &emptied.location_kind, row_id)? {
+            Some(object) => {
+                require_exact_carried_backing(ctx, &object, &expected)?;
+                Ok(!object_is_nonempty(ctx, object.id) && !object_is_nested(ctx, object.id))
+            }
+            None => Ok(true),
+        }
     };
     let merged_object_id;
     match emptied.location_kind.as_str() {
@@ -552,12 +688,25 @@ pub(crate) fn merge_empty_container(ctx: &ReducerContext, emptied_id: u64) -> Re
                 .id()
                 .find(emptied.inventory_row_id)
                 .ok_or("Emptied container row is missing")?;
-            let Some(mut target) = ctx.db.inventory_item().iter().find(|row| {
-                row.id != source.id
-                    && row.character_id == source.character_id
-                    && row.item_id == source.item_id
-                    && mergeable_object(row.id)
-            }) else {
+            let mut targets = ctx
+                .db
+                .inventory_item()
+                .iter()
+                .filter(|row| {
+                    row.id != source.id
+                        && row.character_id == source.character_id
+                        && row.item_id == source.item_id
+                })
+                .collect::<Vec<_>>();
+            targets.sort_by_key(|row| row.id);
+            let mut target = None;
+            for row in targets {
+                if mergeable_object(row.id)? {
+                    target = Some(row);
+                    break;
+                }
+            }
+            let Some(mut target) = target else {
                 return Ok(());
             };
             if ctx
@@ -575,7 +724,7 @@ pub(crate) fn merge_empty_container(ctx: &ReducerContext, emptied_id: u64) -> Re
             {
                 return Ok(());
             }
-            merged_object_id = object_for_row(ctx, "personal", target.id).map(|row| row.id);
+            merged_object_id = object_for_row(ctx, "personal", target.id)?.map(|row| row.id);
             target.quantity = target
                 .quantity
                 .checked_add(source.quantity)
@@ -590,12 +739,25 @@ pub(crate) fn merge_empty_container(ctx: &ReducerContext, emptied_id: u64) -> Re
                 .id()
                 .find(emptied.inventory_row_id)
                 .ok_or("Emptied party container row is missing")?;
-            let Some(mut target) = ctx.db.party_inventory_item().iter().find(|row| {
-                row.id != source.id
-                    && row.party_id == source.party_id
-                    && row.item_id == source.item_id
-                    && mergeable_object(row.id)
-            }) else {
+            let mut targets = ctx
+                .db
+                .party_inventory_item()
+                .iter()
+                .filter(|row| {
+                    row.id != source.id
+                        && row.party_id == source.party_id
+                        && row.item_id == source.item_id
+                })
+                .collect::<Vec<_>>();
+            targets.sort_by_key(|row| row.id);
+            let mut target = None;
+            for row in targets {
+                if mergeable_object(row.id)? {
+                    target = Some(row);
+                    break;
+                }
+            }
+            let Some(mut target) = target else {
                 return Ok(());
             };
             if ctx
@@ -613,7 +775,7 @@ pub(crate) fn merge_empty_container(ctx: &ReducerContext, emptied_id: u64) -> Re
             {
                 return Ok(());
             }
-            merged_object_id = object_for_row(ctx, "party", target.id).map(|row| row.id);
+            merged_object_id = object_for_row(ctx, "party", target.id)?.map(|row| row.id);
             target.quantity = target
                 .quantity
                 .checked_add(source.quantity)
@@ -668,8 +830,58 @@ mod tests {
             .split("fn require_mutable")
             .next()
             .unwrap();
-        assert!(drain.contains("!ancestry_reaches_fireplace"));
+        assert!(drain.contains("carried_location_custody"));
+        assert!(drain.contains("resolve_object_custody"));
         assert!(drain.contains("merge_empty_container(ctx, liquid.container_object_id)"));
+    }
+
+    #[test]
+    fn direct_object_mutators_require_resolved_actor_custody() {
+        let source = include_str!("inventory_container.rs");
+        for reducer in [
+            "pub fn remove_inventory_item_from_container",
+            "pub fn pour_water_out_of_container",
+        ] {
+            let body = source.split(reducer).nth(1).expect("direct object reducer");
+            assert!(body.contains("require_actor_carried_object"));
+        }
+        assert!(source.contains("duplicate physical object identities"));
+    }
+
+    #[test]
+    fn empty_container_merge_authenticates_exact_root_before_mutation() {
+        let source = include_str!("inventory_container.rs");
+        let merge = source
+            .split("pub(crate) fn merge_empty_container")
+            .nth(1)
+            .and_then(|tail| tail.split("#[cfg(test)]").next())
+            .expect("empty-container merge");
+        let source_validation = merge
+            .find("require_exact_carried_backing(ctx, &emptied, &expected)?")
+            .unwrap();
+        let target_validation = merge
+            .find("require_exact_carried_backing(ctx, &object, &expected)?")
+            .unwrap();
+        let first_delete = merge.find(".delete(source.id)").unwrap();
+        assert!(source_validation < first_delete);
+        assert!(target_validation < first_delete);
+    }
+
+    #[test]
+    fn subtree_alias_failure_is_preflighted_before_every_delete() {
+        let source = include_str!("inventory_container.rs");
+        let deletion = source
+            .split("pub(crate) fn delete_subtree")
+            .nth(1)
+            .and_then(|tail| tail.split("fn require_exact_carried_backing").next())
+            .expect("subtree deletion");
+        let descendant_validation = deletion
+            .find("require_exact_carried_backing(ctx, &object, &root_custody)?")
+            .unwrap();
+        let completed_preflight = deletion.find("objects.reverse()").unwrap();
+        let first_delete = deletion.find(".delete(").unwrap();
+        assert!(descendant_validation < completed_preflight);
+        assert!(completed_preflight < first_delete);
     }
 }
 
@@ -680,7 +892,14 @@ pub(crate) fn ensure_object(
     row_id: u64,
     split_stack: bool,
 ) -> Result<InventoryObject, String> {
-    if let Some(object) = object_for_row(ctx, kind, row_id) {
+    if let Some(object) = object_for_row(ctx, kind, row_id)? {
+        let actor = ctx
+            .db
+            .character()
+            .id()
+            .find(character_id)
+            .ok_or("Character not found")?;
+        crate::object_custody::require_actor_carried_object(ctx, &actor, &object)?;
         return Ok(object);
     }
     let (item_id, owner, quantity) = require_owned_row(ctx, character_id, kind, row_id)?;
@@ -689,13 +908,21 @@ pub(crate) fn ensure_object(
     } else {
         row_id
     };
-    Ok(ctx.db.inventory_object().insert(InventoryObject {
+    let object = ctx.db.inventory_object().insert(InventoryObject {
         id: 0,
         item_id,
         location_kind: kind.into(),
         location_owner: owner,
         inventory_row_id: row_id,
-    }))
+    });
+    let actor = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    crate::object_custody::require_actor_carried_object(ctx, &actor, &object)?;
+    Ok(object)
 }
 
 fn measured_volume_ml(
@@ -741,7 +968,7 @@ fn graph(ctx: &ReducerContext) -> Result<ContainmentGraph, String> {
                 .find(object.item_id.clone())
                 .ok_or_else(|| format!("Unknown item {}", object.item_id))?;
             Ok(Object {
-                id: object.id,
+                id: PhysicalObjectId::try_new(object.id).map_err(|error| error.to_string())?,
                 exterior_volume_ml: u64::from(definition.exterior_volume_ml),
                 capacity_ml: u64::from(definition.container_capacity_ml),
                 measured_volume_ml: measured_volume_ml(ctx, &object, &definition),
@@ -751,7 +978,12 @@ fn graph(ctx: &ReducerContext) -> Result<ContainmentGraph, String> {
     let mut graph = ContainmentGraph::new(objects).map_err(str::to_owned)?;
     for edge in ctx.db.inventory_containment().iter() {
         graph
-            .insert(edge.child_object_id, edge.parent_object_id)
+            .insert(
+                PhysicalObjectId::try_new(edge.child_object_id)
+                    .map_err(|error| error.to_string())?,
+                PhysicalObjectId::try_new(edge.parent_object_id)
+                    .map_err(|error| error.to_string())?,
+            )
             .map_err(str::to_owned)?;
     }
     Ok(graph)
@@ -771,20 +1003,25 @@ pub(crate) fn consume_contained_water(
     owner: &str,
     requested_ml: u64,
 ) -> Result<u64, String> {
-    let mut liquids = ctx
+    let expected_custody = crate::object_custody::carried_location_custody(kind, owner)?;
+    let mut liquids = Vec::new();
+    for liquid in ctx
         .db
-        .inventory_object()
+        .container_liquid()
         .iter()
-        .filter(|object| object.location_kind == kind && object.location_owner == owner)
-        .filter(|object| !ancestry_reaches_fireplace(ctx, object.id))
-        .filter_map(|object| {
-            ctx.db
-                .container_liquid()
-                .container_object_id()
-                .find(object.id)
-        })
         .filter(|liquid| liquid.liquid_item_id == WATER_ITEM_ID)
-        .collect::<Vec<_>>();
+    {
+        let object = ctx
+            .db
+            .inventory_object()
+            .id()
+            .find(liquid.container_object_id)
+            .ok_or("Contained water has no physical container object")?;
+        let resolved = crate::object_custody::resolve_object_custody(ctx, &object)?;
+        if resolved.root == expected_custody {
+            liquids.push(liquid);
+        }
+    }
     liquids.sort_by_key(|liquid| liquid.container_object_id);
     let mut remaining = requested_ml;
     for mut liquid in liquids {
@@ -869,10 +1106,12 @@ fn require_container_capacity(
     if definition.container_capacity_ml == 0 {
         return Err("That item is not a container".into());
     }
+    let container_object_id =
+        PhysicalObjectId::try_new(container_object_id).map_err(|error| error.to_string())?;
     let used = graph(ctx)?
         .used_ml(container_object_id)
         .map_err(str::to_owned)?
-        .checked_add(liquid_used(ctx, container_object_id))
+        .checked_add(liquid_used(ctx, container_object_id.get()))
         .ok_or("Container volume overflow")?;
     if used
         .checked_add(additional_ml)
@@ -927,7 +1166,12 @@ pub fn put_inventory_item_in_container(
             .delete(child.id);
     }
     let mut model = graph(ctx)?;
-    model.insert(child.id, parent.id).map_err(str::to_owned)?;
+    model
+        .insert(
+            PhysicalObjectId::try_new(child.id).map_err(|error| error.to_string())?,
+            PhysicalObjectId::try_new(parent.id).map_err(|error| error.to_string())?,
+        )
+        .map_err(str::to_owned)?;
     let definition = ctx
         .db
         .item()
@@ -935,7 +1179,7 @@ pub fn put_inventory_item_in_container(
         .find(parent.item_id.clone())
         .ok_or("Container definition not found")?;
     let used = model
-        .used_ml(parent.id)
+        .used_ml(PhysicalObjectId::try_new(parent.id).map_err(|error| error.to_string())?)
         .map_err(str::to_owned)?
         .checked_add(liquid_used(ctx, parent.id))
         .ok_or("Container volume overflow")?;
@@ -966,20 +1210,14 @@ pub fn remove_inventory_item_from_container(
         .id()
         .find(child_object_id)
         .ok_or("Contained object not found")?;
-    require_mutable(ctx, child_object_id)?;
     let actor = ctx
         .db
         .character()
         .id()
         .find(character_id)
         .ok_or("Character not found")?;
-    let owned = child.location_kind == "personal"
-        && child.location_owner == character_id.to_string()
-        || child.location_kind == "party"
-            && actor.party_id.as_deref() == Some(&child.location_owner);
-    if !owned {
-        return Err("Contained object belongs to another inventory".into());
-    }
+    crate::object_custody::require_actor_carried_object(ctx, &actor, &child)?;
+    require_mutable(ctx, child_object_id)?;
     let former_parent = ctx
         .db
         .inventory_containment()
@@ -1096,6 +1334,13 @@ pub fn pour_water_out_of_container(
         .id()
         .find(container_object_id)
         .ok_or("Container object not found")?;
+    let actor = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let resolved = crate::object_custody::require_actor_carried_object(ctx, &actor, &object)?;
     require_mutable(ctx, container_object_id)?;
     let mut liquid = ctx
         .db
@@ -1109,14 +1354,8 @@ pub fn pour_water_out_of_container(
     if liquid.water_ml < requested_ml {
         return Err("Container does not hold that much water".into());
     }
-    let actor = ctx
-        .db
-        .character()
-        .id()
-        .find(character_id)
-        .ok_or("Character not found")?;
-    match object.location_kind.as_str() {
-        "personal" if object.location_owner == character_id.to_string() => {
+    match resolved.root {
+        adventuresim_core::physical_object::OperationalCustody::Character(_) => {
             let mut row = ctx
                 .db
                 .character_needs()
@@ -1131,15 +1370,15 @@ pub fn pour_water_out_of_container(
             row.carried_water_ml += requested_ml as f32;
             ctx.db.character_needs().character_id().update(row);
         }
-        "party" if actor.party_id.as_deref() == Some(&object.location_owner) => {
+        adventuresim_core::physical_object::OperationalCustody::Party(party_id) => {
             let mut row = ctx
                 .db
                 .party_authority()
                 .id()
-                .find(object.location_owner.clone())
+                .find(party_id.as_str().to_string())
                 .ok_or("Party not found")?;
             if row.pooled_water_ml + requested_ml as f32
-                > crate::condition::party_water_capacity_ml(ctx, &object.location_owner) as f32
+                > crate::condition::party_water_capacity_ml(ctx, party_id.as_str()) as f32
             {
                 return Err("Party waterskins do not have enough free capacity".into());
             }

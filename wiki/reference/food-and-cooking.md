@@ -90,11 +90,12 @@ tactical actors, and stale or remote places are rejected. A station holds at
 most one dish and one installed
 instrument. Trading a pan, pot, or portable oven into an idle station selects
 pan-fry, stew, or bake; no instrument selects roast. A dish captures its exact
-personal character or party inventory source before ingredients are consumed.
-Retrieval returns the cooked meal only to that immutable source, even if the
+operational character or party return custody before ingredients are consumed,
+using the shared physical-object custody vocabulary. Retrieval returns the
+cooked meal only to that immutable custody, even if the
 character later changes parties; a caller-selected destination cannot redirect
 it, and a missing original party fails closed. Replacing or removing a tool
-returns it to its recorded personal or party source. If that source is no longer
+returns it to its recorded character or exact party custody. If that custody is no longer
 available, the tool stays installed rather than being lost. Party-sourced tools
 remember the exact originating party rather than following the character into a
 new party. Equipped tools are ineligible, and instruments cannot change while a

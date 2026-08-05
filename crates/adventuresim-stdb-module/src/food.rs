@@ -350,43 +350,22 @@ pub struct FireplaceStation {
     pub fireplace_fixture_id: String,
     pub instrument_item_id: Option<String>,
     /// Stable root object for a placed cooking vessel. `None` is the loose
-    /// spit-roast lane or a legacy empty station.
+    /// spit-roast lane or an empty station.
     pub instrument_object_id: Option<u64>,
-    /// `personal` or `party`; retained so removing/replacing returns custody to
-    /// the source that installed the tool.
-    pub instrument_source: Option<String>,
-    pub instrument_party_id: Option<String>,
-}
-
-/// Irreversibly consolidated meal escrow. Hidden microbial load stays in this
-/// private table and is copied to FoodContamination only on retrieval.
-#[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
-pub enum FireplaceDishInventorySource {
-    Personal { character_id: u64 },
-    Party { party_id: String },
+    /// Exact immutable carried custody to which removal returns the tool.
+    pub instrument_return_custody: Option<crate::PersistedOperationalCustody>,
 }
 
 fn dish_inventory_destination(
-    source: &FireplaceDishInventorySource,
+    source: &crate::PersistedOperationalCustody,
     dish_character_id: u64,
     requested_scope: &str,
     container_selector: bool,
 ) -> Result<(&'static str, String), String> {
-    let destination = match source {
-        FireplaceDishInventorySource::Personal { character_id }
-            if *character_id == dish_character_id =>
-        {
-            ("personal", character_id.to_string())
-        }
-        FireplaceDishInventorySource::Personal { .. } => {
-            return Err("Dish personal custody conflicts with its owner".into());
-        }
-        FireplaceDishInventorySource::Party { party_id } => ("party", party_id.clone()),
-    };
     if !container_selector && !matches!(requested_scope, "personal" | "party") {
         return Err("Invalid fireplace dish selector".into());
     }
-    Ok(destination)
+    crate::object_custody::carried_destination(source, dish_character_id)
 }
 
 #[derive(Clone, Debug)]
@@ -398,8 +377,8 @@ pub struct FireplaceDish {
     pub character_id: u64,
     /// Canonical `StrategicFixtureId::Fireplace` encoding shared with its station.
     pub fireplace_fixture_id: String,
-    /// Immutable inventory authority captured before ingredients are consumed.
-    pub inventory_source: FireplaceDishInventorySource,
+    /// Immutable operational return custody captured before ingredients are consumed.
+    pub return_custody: crate::PersistedOperationalCustody,
     pub contributor_name: String,
     pub method: CookingMethod,
     pub cooking_check: f32,
@@ -433,7 +412,6 @@ pub struct BackendFireplaceStation {
     pub fireplace_fixture_id: String,
     pub instrument_item_id: Option<String>,
     pub instrument_object_id: Option<u64>,
-    pub instrument_source: Option<String>,
 }
 
 #[view(accessor = backend_fireplace_stations, public)]
@@ -451,7 +429,6 @@ pub fn backend_fireplace_stations(ctx: &ViewContext) -> Vec<BackendFireplaceStat
             fireplace_fixture_id: row.fireplace_fixture_id,
             instrument_item_id: row.instrument_item_id,
             instrument_object_id: row.instrument_object_id,
-            instrument_source: row.instrument_source,
         })
         .collect()
 }
@@ -507,6 +484,7 @@ fn parse_persisted_fireplace_fixture(
 }
 
 fn validate_persisted_station_fixture(
+    ctx: &ReducerContext,
     station: &FireplaceStation,
 ) -> Result<StrategicFixtureId, String> {
     let fixture = parse_persisted_fireplace_fixture(&station.fireplace_fixture_id)?;
@@ -520,6 +498,24 @@ fn validate_persisted_station_fixture(
     };
     if station.key != expected_key {
         return Err("Persisted fireplace station conflicts with its canonical fixture".into());
+    }
+    if station.instrument_item_id.is_some() != station.instrument_return_custody.is_some() {
+        return Err("Persisted fireplace station has ambiguous return custody".into());
+    }
+    if let Some(custody) = station.instrument_return_custody.as_ref() {
+        crate::object_custody::carried_destination(custody, station.character_id)?;
+    }
+    if let Some(object_id) = station.instrument_object_id {
+        let object = ctx
+            .db
+            .inventory_object()
+            .id()
+            .find(object_id)
+            .ok_or("Persisted fireplace station object is missing")?;
+        if station.instrument_item_id.as_deref() != Some(object.item_id.as_str()) {
+            return Err("Persisted fireplace station conflicts with its object identity".into());
+        }
+        crate::object_custody::require_object_at_fixture(ctx, &object, &fixture)?;
     }
     Ok(fixture)
 }
@@ -535,10 +531,11 @@ fn validate_persisted_dish_fixture(
         .key()
         .find(dish.station_key.clone())
         .ok_or("Persisted fireplace dish has no station authority")?;
-    let station_fixture = validate_persisted_station_fixture(&station)?;
+    let station_fixture = validate_persisted_station_fixture(ctx, &station)?;
     if station.character_id != dish.character_id || station_fixture != fixture {
         return Err("Persisted fireplace dish conflicts with its station authority".into());
     }
+    crate::object_custody::carried_destination(&dish.return_custody, dish.character_id)?;
     Ok(fixture)
 }
 
@@ -551,7 +548,7 @@ pub(crate) fn require_clear_current_camp_fireplace(
     }
     let mut occupied = false;
     for station in ctx.db.fireplace_station().iter() {
-        let fixture = validate_persisted_station_fixture(&station)?;
+        let fixture = validate_persisted_station_fixture(ctx, &station)?;
         occupied |= fixture.place() == camp_place && station.instrument_item_id.is_some();
     }
     for dish in ctx.db.fireplace_dish().iter() {
@@ -595,7 +592,7 @@ pub(crate) fn require_members_clear_current_camp_fireplace(
         .collect::<std::collections::BTreeSet<_>>();
     let mut occupied = false;
     for station in ctx.db.fireplace_station().iter() {
-        let fixture = validate_persisted_station_fixture(&station)?;
+        let fixture = validate_persisted_station_fixture(ctx, &station)?;
         occupied |= member_ids.contains(&station.character_id)
             && fixture.place() == &place
             && station.instrument_item_id.is_some();
@@ -617,8 +614,91 @@ pub(crate) fn require_members_clear_current_camp_fireplace(
 /// even that character row is absent, the tool is abandoned with the station.
 /// A stale party reference can therefore never lock travel or leak another
 /// player's dish.
-pub(crate) fn cleanup_fireplace_custody_for_death(ctx: &ReducerContext, character_id: u64) {
+pub(crate) fn cleanup_fireplace_custody_for_death(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<(), String> {
+    enum StationCleanup {
+        Delete {
+            station_key: String,
+        },
+        Abandon,
+        Return {
+            station_key: String,
+            item_id: String,
+            object_id: Option<u64>,
+            kind: &'static str,
+            owner: String,
+        },
+    }
+
     let personal_estate_exists = ctx.db.character().id().find(character_id).is_some();
+    let stations = ctx
+        .db
+        .fireplace_station()
+        .character_id()
+        .filter(character_id)
+        .collect::<Vec<_>>();
+    let mut cleanup = Vec::with_capacity(stations.len());
+
+    // Resolve and validate every return before deleting a dish, changing an
+    // object row, or removing a station.
+    for station in &stations {
+        validate_persisted_station_fixture(ctx, station)?;
+        let Some(item_id) = station.instrument_item_id.as_deref() else {
+            cleanup.push(StationCleanup::Delete {
+                station_key: station.key.clone(),
+            });
+            continue;
+        };
+        let recorded_destination = crate::object_custody::carried_destination(
+            station
+                .instrument_return_custody
+                .as_ref()
+                .ok_or("Fireplace instrument return custody is missing")?,
+            character_id,
+        )?;
+        let exact_party = (recorded_destination.0 == "party")
+            .then_some(&recorded_destination.1)
+            .filter(|party_id| {
+                ctx.db
+                    .party_authority()
+                    .id()
+                    .find((*party_id).clone())
+                    .is_some()
+            });
+        let destination = if let Some(party_id) = exact_party {
+            Some(("party", party_id.clone()))
+        } else if personal_estate_exists {
+            Some(("personal", character_id.to_string()))
+        } else {
+            None
+        };
+        let Some((kind, owner)) = destination else {
+            cleanup.push(StationCleanup::Abandon);
+            continue;
+        };
+        if let Some(object_id) = station.instrument_object_id {
+            let object = ctx
+                .db
+                .inventory_object()
+                .id()
+                .find(object_id)
+                .ok_or("Fireplace instrument object is missing")?;
+            if object.item_id != item_id {
+                return Err("Fireplace instrument conflicts with its physical object".into());
+            }
+            crate::inventory_container::prevalidate_rehome_subtree(ctx, object_id, kind, &owner)?;
+        }
+        cleanup.push(StationCleanup::Return {
+            station_key: station.key.clone(),
+            item_id: item_id.into(),
+            object_id: station.instrument_object_id,
+            kind,
+            owner,
+        });
+    }
+
     for dish in ctx
         .db
         .fireplace_dish()
@@ -631,98 +711,67 @@ pub(crate) fn cleanup_fireplace_custody_for_death(ctx: &ReducerContext, characte
             .station_key()
             .delete(dish.station_key);
     }
-    for station in ctx
-        .db
-        .fireplace_station()
-        .character_id()
-        .filter(character_id)
-        .collect::<Vec<_>>()
-    {
-        if let Some(item_id) = station.instrument_item_id.as_deref() {
-            if let Some(object_id) = station.instrument_object_id {
-                let party_destination = station.instrument_source.as_deref() == Some("party")
-                    && station
-                        .instrument_party_id
-                        .as_deref()
-                        .is_some_and(|party_id| {
-                            ctx.db
-                                .party_authority()
-                                .id()
-                                .find(party_id.to_string())
-                                .is_some()
-                        });
-                let destination = if party_destination {
-                    station
-                        .instrument_party_id
-                        .as_deref()
-                        .map(|party_id| ("party", party_id.to_string()))
-                } else if personal_estate_exists {
-                    Some(("personal", character_id.to_string()))
-                } else {
-                    None
-                };
-                if let Some((kind, owner)) = destination
-                    && let Some(mut object) = ctx.db.inventory_object().id().find(object_id)
-                {
-                    let row_id = if kind == "party" {
-                        ctx.db
-                            .party_inventory_item()
-                            .insert(PartyInventoryItem {
-                                id: 0,
-                                party_id: owner.clone(),
-                                item_id: item_id.into(),
-                                quantity: 1,
-                            })
-                            .id
-                    } else {
-                        ctx.db
-                            .inventory_item()
-                            .insert(crate::InventoryItem {
-                                id: 0,
-                                character_id,
-                                item_id: item_id.into(),
-                                quantity: 1,
-                            })
-                            .id
-                    };
-                    object.location_kind = kind.into();
-                    object.location_owner = owner.clone();
-                    object.inventory_row_id = row_id;
-                    ctx.db.inventory_object().id().update(object);
-                    let _ =
-                        crate::inventory_container::rehome_subtree(ctx, object_id, kind, &owner);
-                }
-                ctx.db.fireplace_station().key().delete(station.key);
-                continue;
+    for plan in cleanup {
+        let StationCleanup::Return {
+            station_key,
+            item_id,
+            object_id,
+            kind,
+            owner,
+        } = plan
+        else {
+            if let StationCleanup::Delete { station_key } = plan {
+                ctx.db.fireplace_station().key().delete(station_key);
             }
-            let returned_to_exact_party = station.instrument_source.as_deref() == Some("party")
-                && station
-                    .instrument_party_id
-                    .as_deref()
-                    .is_some_and(|party_id| {
-                        ctx.db
-                            .party_authority()
-                            .id()
-                            .find(party_id.to_string())
-                            .is_some()
-                            && crate::strategic::add_to_party_inventory_checked(
-                                ctx, party_id, item_id, 1,
-                            )
-                            .is_ok()
-                    });
-            if !returned_to_exact_party && personal_estate_exists {
-                // Personal-origin tools and any invalid exact-party return become
-                // part of the dead character's estate inventory.
-                ctx.db.inventory_item().insert(crate::InventoryItem {
-                    id: 0,
-                    character_id,
-                    item_id: item_id.into(),
-                    quantity: 1,
-                });
-            }
+            // Abandoned tools remain installed at their station.
+            continue;
+        };
+        if let Some(object_id) = object_id {
+            let row_id = if kind == "party" {
+                ctx.db
+                    .party_inventory_item()
+                    .insert(PartyInventoryItem {
+                        id: 0,
+                        party_id: owner.clone(),
+                        item_id: item_id.clone(),
+                        quantity: 1,
+                    })
+                    .id
+            } else {
+                ctx.db
+                    .inventory_item()
+                    .insert(crate::InventoryItem {
+                        id: 0,
+                        character_id,
+                        item_id: item_id.clone(),
+                        quantity: 1,
+                    })
+                    .id
+            };
+            let mut object = ctx
+                .db
+                .inventory_object()
+                .id()
+                .find(object_id)
+                .ok_or("Fireplace instrument object is missing")?;
+            object.location_kind = kind.into();
+            object.location_owner = owner.clone();
+            object.inventory_row_id = row_id;
+            ctx.db.inventory_object().id().update(object);
+            crate::inventory_container::rehome_subtree(ctx, object_id, kind, &owner)?;
+        } else if kind == "party" {
+            crate::strategic::add_to_party_inventory_checked(ctx, &owner, &item_id, 1)?;
+        } else {
+            ctx.db.inventory_item().insert(crate::InventoryItem {
+                id: 0,
+                character_id,
+                item_id,
+                quantity: 1,
+            });
         }
-        ctx.db.fireplace_station().key().delete(station.key);
+        ctx.db.fireplace_station().key().delete(station_key);
     }
+    Ok(())
 }
 
 fn validate_fireplace_fixture(
@@ -886,8 +935,7 @@ fn fireplace_station_for(
             fireplace_fixture_id: fireplace_fixture_id.into(),
             instrument_item_id: None,
             instrument_object_id: None,
-            instrument_source: None,
-            instrument_party_id: None,
+            instrument_return_custody: None,
         })
 }
 
@@ -909,8 +957,12 @@ fn return_installed_tool(
     let Some(item_id) = station.instrument_item_id.as_deref() else {
         return Ok(());
     };
-    match station.instrument_source.as_deref() {
-        Some("personal") => {
+    let custody = station
+        .instrument_return_custody
+        .as_ref()
+        .ok_or("The instrument's return custody is unknown; it remains installed")?;
+    match crate::object_custody::carried_destination(custody, actor.id)? {
+        ("personal", _) => {
             ctx.db.inventory_item().insert(crate::InventoryItem {
                 id: 0,
                 character_id: actor.id,
@@ -919,21 +971,23 @@ fn return_installed_tool(
             });
             Ok(())
         }
-        Some("party") => {
-            let party_id = station.instrument_party_id.as_deref().ok_or("The original party inventory is no longer available; the instrument remains installed")?;
+        ("party", party_id) => {
             if ctx
                 .db
                 .party_authority()
                 .id()
-                .find(party_id.to_string())
+                .find(party_id.clone())
                 .is_none()
             {
                 return Err("The original party inventory is no longer available; the instrument remains installed".into());
             }
-            crate::strategic::add_to_party_inventory_checked(ctx, party_id, item_id, 1)
+            crate::strategic::add_to_party_inventory_checked(ctx, &party_id, item_id, 1)
                 .map_err(|_| "The original party inventory is no longer available; the instrument remains installed".to_string())
         }
-        _ => Err("The instrument's original inventory is unknown; it remains installed".into()),
+        _ => Err(
+            "The instrument's return custody is not a carried inventory; it remains installed"
+                .into(),
+        ),
     }
 }
 
@@ -964,16 +1018,12 @@ pub fn set_fireplace_instrument(
     {
         return Err("Retrieve the current dish before changing instruments".into());
     }
-    let replacement_party_id = if inventory_item_id.is_some() && inventory_scope == "party" {
-        Some(
-            actor
-                .party_id
-                .clone()
-                .ok_or("Character has no party inventory")?,
-        )
-    } else {
-        None
-    };
+    let replacement_custody = inventory_item_id
+        .is_some()
+        .then(|| crate::object_custody::carried_scope_custody(ctx, &actor, &inventory_scope))
+        .transpose()?
+        .as_ref()
+        .map(crate::object_custody::encode_custody);
     let replacement = if let Some(id) = inventory_item_id {
         let item_id = match inventory_scope.as_str() {
             "personal" => {
@@ -1033,11 +1083,7 @@ pub fn set_fireplace_instrument(
     return_installed_tool(ctx, &actor, &station)?;
     station.instrument_item_id = replacement;
     station.instrument_object_id = None;
-    station.instrument_source = station.instrument_item_id.as_ref().map(|_| inventory_scope);
-    station.instrument_party_id = station
-        .instrument_item_id
-        .as_ref()
-        .and(replacement_party_id);
+    station.instrument_return_custody = replacement_custody;
     let existed = ctx
         .db
         .fireplace_station()
@@ -1090,9 +1136,15 @@ pub fn place_fireplace_container(
         );
     }
     method_for_instrument(Some(&object.item_id))?;
-    let source = object.location_kind.clone();
-    let party_id = (source == "party").then(|| object.location_owner.clone());
-    match source.as_str() {
+    let source_custody =
+        crate::object_custody::carried_scope_custody(ctx, &actor, &inventory_scope)?;
+    let resolved = crate::object_custody::resolve_object_custody(ctx, &object)?;
+    if resolved.root != source_custody {
+        return Err("Container custody conflicts with the selected inventory".into());
+    }
+    let persisted_source = crate::object_custody::encode_custody(&source_custody);
+    let (source, _) = crate::object_custody::carried_destination(&persisted_source, character_id)?;
+    match source {
         "personal" => {
             ctx.db.inventory_item().id().delete(object.inventory_row_id);
         }
@@ -1115,8 +1167,7 @@ pub fn place_fireplace_container(
         fireplace_fixture_id,
         instrument_item_id: Some(object.item_id),
         instrument_object_id: Some(object.id),
-        instrument_source: Some(source),
-        instrument_party_id: party_id,
+        instrument_return_custody: Some(persisted_source),
     });
     Ok(())
 }
@@ -1154,58 +1205,67 @@ pub fn retrieve_fireplace_container(
         .instrument_item_id
         .clone()
         .ok_or("Fireplace vessel is missing")?;
-    let (location_kind, location_owner, inventory_row_id) =
-        match station.instrument_source.as_deref() {
-            Some("personal") => {
-                let row = ctx.db.inventory_item().insert(crate::InventoryItem {
+    let fixture = validate_persisted_station_fixture(ctx, &station)?;
+    let return_custody = station
+        .instrument_return_custody
+        .as_ref()
+        .ok_or("Container return custody is unknown")?;
+    let (location_kind, location_owner) =
+        crate::object_custody::carried_destination(return_custody, character_id)?;
+    crate::inventory_container::prevalidate_rehome_subtree(
+        ctx,
+        container_object_id,
+        location_kind,
+        &location_owner,
+    )?;
+    let inventory_row_id = match location_kind {
+        "personal" => {
+            let row = ctx.db.inventory_item().insert(crate::InventoryItem {
+                id: 0,
+                character_id,
+                item_id: item_id.clone(),
+                quantity: 1,
+            });
+            row.id
+        }
+        "party" => {
+            if ctx
+                .db
+                .party_authority()
+                .id()
+                .find(location_owner.clone())
+                .is_none()
+            {
+                return Err("Original party inventory is unavailable".into());
+            }
+            let row = ctx
+                .db
+                .party_inventory_item()
+                .insert(crate::strategic::PartyInventoryItem {
                     id: 0,
-                    character_id,
+                    party_id: location_owner.clone(),
                     item_id: item_id.clone(),
                     quantity: 1,
                 });
-                ("personal".to_string(), character_id.to_string(), row.id)
-            }
-            Some("party") => {
-                let party_id = station
-                    .instrument_party_id
-                    .clone()
-                    .ok_or("Original party inventory is unavailable")?;
-                if ctx
-                    .db
-                    .party_authority()
-                    .id()
-                    .find(party_id.clone())
-                    .is_none()
-                {
-                    return Err("Original party inventory is unavailable".into());
-                }
-                let row =
-                    ctx.db
-                        .party_inventory_item()
-                        .insert(crate::strategic::PartyInventoryItem {
-                            id: 0,
-                            party_id: party_id.clone(),
-                            item_id: item_id.clone(),
-                            quantity: 1,
-                        });
-                ("party".to_string(), party_id, row.id)
-            }
-            _ => return Err("Container source inventory is unknown".into()),
-        };
+            row.id
+        }
+        _ => return Err("Container return custody is not a carried inventory".into()),
+    };
     let mut object = ctx
         .db
         .inventory_object()
         .id()
         .find(container_object_id)
         .ok_or("Container object is missing")?;
-    object.location_kind = location_kind.clone();
+    crate::object_custody::require_object_at_fixture(ctx, &object, &fixture)?;
+    object.location_kind = location_kind.into();
     object.location_owner = location_owner.clone();
     object.inventory_row_id = inventory_row_id;
     ctx.db.inventory_object().id().update(object);
     crate::inventory_container::rehome_subtree(
         ctx,
         container_object_id,
-        &location_kind,
+        location_kind,
         &location_owner,
     )?;
     ctx.db.fireplace_station().key().delete(key);
@@ -1677,13 +1737,22 @@ pub fn start_fireplace_container_cooking(
         .key()
         .find(key.clone())
         .ok_or("Container is not over this fireplace")?;
+    let fixture = validate_persisted_station_fixture(ctx, &station)?;
+    let object = ctx
+        .db
+        .inventory_object()
+        .id()
+        .find(container_object_id)
+        .ok_or("Container object is missing")?;
+    crate::object_custody::require_object_at_fixture(ctx, &object, &fixture)?;
     if ctx.db.fireplace_dish().station_key().find(key).is_some() {
         return Err("This container is already cooking".into());
     }
-    let scope = station
-        .instrument_source
-        .clone()
-        .ok_or("Container source inventory is unknown")?;
+    let return_custody = station
+        .instrument_return_custody
+        .as_ref()
+        .ok_or("Container return custody is unknown")?;
+    let (scope, _) = crate::object_custody::carried_destination(return_custody, character_id)?;
     let mut ids = Vec::new();
     let mut amounts = Vec::new();
     let mut consumed_objects = Vec::new();
@@ -1705,7 +1774,7 @@ pub fn start_fireplace_container_cooking(
         if !food::is_cookable_ingredient(&child.item_id) {
             continue;
         }
-        let (lot, amount) = match scope.as_str() {
+        let (lot, amount) = match scope {
             "personal" => (
                 personal_lot(ctx, child.inventory_row_id),
                 crate::inventory_amount::personal_amount(ctx, child.inventory_row_id),
@@ -1739,7 +1808,7 @@ pub fn start_fireplace_container_cooking(
         ctx,
         character_id,
         fireplace_fixture_id,
-        scope,
+        scope.into(),
         ids,
         amounts,
         Some(station),
@@ -1772,46 +1841,26 @@ fn add_fireplace_ingredients_at(
     let is_vessel = vessel_station.is_some();
     let station = vessel_station
         .unwrap_or_else(|| fireplace_station_for(ctx, character_id, &fireplace_fixture_id));
-    let station_fixture = validate_persisted_station_fixture(&station)?;
+    let station_fixture = validate_persisted_station_fixture(ctx, &station)?;
     if station_fixture.to_string() != fireplace_fixture_id {
         return Err("Fireplace station conflicts with the requested canonical fixture".into());
     }
-    let inventory_source = match inventory_scope.as_str() {
-        "personal" => {
-            if is_vessel && station.instrument_source.as_deref() != Some("personal") {
-                return Err("Container source inventory conflicts with the cooking scope".into());
-            }
-            FireplaceDishInventorySource::Personal { character_id }
+    let return_custody = if is_vessel {
+        let custody = station
+            .instrument_return_custody
+            .clone()
+            .ok_or("Container return custody is unknown")?;
+        let (kind, owner) = crate::object_custody::carried_destination(&custody, character_id)?;
+        if kind != inventory_scope {
+            return Err("Container return custody conflicts with the cooking scope".into());
         }
-        "party" => {
-            let party_id = if is_vessel {
-                if station.instrument_source.as_deref() != Some("party") {
-                    return Err(
-                        "Container source inventory conflicts with the cooking scope".into(),
-                    );
-                }
-                station
-                    .instrument_party_id
-                    .clone()
-                    .ok_or("Container's original party inventory is unavailable")?
-            } else {
-                actor
-                    .party_id
-                    .clone()
-                    .ok_or("Character has no party inventory")?
-            };
-            if ctx
-                .db
-                .party_authority()
-                .id()
-                .find(party_id.clone())
-                .is_none()
-            {
-                return Err("Original party inventory is unavailable".into());
-            }
-            FireplaceDishInventorySource::Party { party_id }
+        if kind == "party" && ctx.db.party_authority().id().find(owner).is_none() {
+            return Err("Original party inventory is unavailable".into());
         }
-        _ => return Err("Invalid cooking inventory".into()),
+        custody
+    } else {
+        let custody = crate::object_custody::carried_scope_custody(ctx, &actor, &inventory_scope)?;
+        crate::object_custody::encode_custody(&custody)
     };
     if ctx
         .db
@@ -2113,7 +2162,7 @@ fn add_fireplace_ingredients_at(
         station_key: station.key.clone(),
         character_id,
         fireplace_fixture_id: fireplace_fixture_id.clone(),
-        inventory_source,
+        return_custody,
         contributor_name: actor.name,
         method,
         cooking_check: check,
@@ -2186,7 +2235,7 @@ pub fn retrieve_fireplace_dish(
         return Err("Dish custody conflicts with the requested canonical fixture".into());
     }
     let (source_kind, source_owner) = dish_inventory_destination(
-        &dish.inventory_source,
+        &dish.return_custody,
         character_id,
         &inventory_scope,
         container_object_id.is_some(),
@@ -2824,7 +2873,8 @@ mod tests {
         assert!(source.contains("Food lot selections must be unique and positive"));
         assert!(source.contains("Retrieve the current dish before changing instruments"));
         assert!(source.contains("original party inventory is no longer available"));
-        assert!(source.contains("instrument_party_id"));
+        assert!(source.contains("instrument_return_custody"));
+        assert!(!source.contains("instrument_party_id"));
     }
 
     #[test]
@@ -2847,9 +2897,10 @@ mod tests {
 
     #[test]
     fn dish_retrieval_is_bound_to_immutable_source_custody() {
-        let party_source = FireplaceDishInventorySource::Party {
-            party_id: "party-before-transfer".into(),
-        };
+        let party_source = crate::object_custody::encode_custody(
+            &adventuresim_core::physical_object::OperationalCustody::party("party-before-transfer")
+                .unwrap(),
+        );
         assert_eq!(
             dish_inventory_destination(&party_source, 7, "party", false),
             Ok(("party", "party-before-transfer".into()))
@@ -2863,7 +2914,9 @@ mod tests {
             Ok(("party", "party-before-transfer".into()))
         );
 
-        let personal_source = FireplaceDishInventorySource::Personal { character_id: 7 };
+        let personal_source = crate::object_custody::encode_custody(
+            &adventuresim_core::physical_object::OperationalCustody::character(7).unwrap(),
+        );
         assert!(dish_inventory_destination(&personal_source, 8, "personal", false).is_err());
     }
 
@@ -2910,6 +2963,10 @@ mod tests {
         assert!(cleanup.contains("add_to_party_inventory_checked"));
         assert!(cleanup.contains("ctx.db.inventory_item().insert"));
         assert!(cleanup.contains("fireplace_station().key().delete"));
+        assert!(cleanup.contains("prevalidate_rehome_subtree"));
+        assert!(cleanup.contains("rehome_subtree(ctx, object_id, kind, &owner)?"));
+        assert!(!cleanup.contains("let _ ="));
+        assert!(cleanup.contains("Abandoned tools remain installed at their station"));
     }
 
     #[test]
