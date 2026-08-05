@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1731)
+## Files (1733)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -100,6 +100,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/item_catalog_schema.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/item_catalog_validation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/item_references.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/knowledge.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/leadership.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/life_simulation.rs` — Rust source module for this component.
@@ -1696,6 +1697,7 @@ development, or other wiki document before changing a subsystem.
 - `wiki/reference/item-authoring.md` — Project documentation.
 - `wiki/reference/llm/project-map-maintenance.md` — Project documentation.
 - `wiki/reference/measured-inventory.md` — Project documentation.
+- `wiki/reference/observer-knowledge.md` — Project documentation.
 - `wiki/reference/organizations.md` — Project documentation.
 - `wiki/reference/outbreaks.md` — Project documentation.
 - `wiki/reference/physical-materials.md` — Project documentation.
