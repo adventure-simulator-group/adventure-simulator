@@ -8,14 +8,14 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub(super) struct SurrenderToAuthorityArgs {
     pub character_id: u64,
-    pub incident_id: String,
+    pub action_token: String,
 }
 
 impl From<SurrenderToAuthorityArgs> for super::Reducer {
     fn from(args: SurrenderToAuthorityArgs) -> Self {
         Self::SurrenderToAuthority {
             character_id: args.character_id,
-            incident_id: args.incident_id,
+            action_token: args.action_token,
         }
     }
 }
@@ -35,8 +35,8 @@ pub trait surrender_to_authority {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`surrender_to_authority:surrender_to_authority_then`] to run a callback after the reducer completes.
-    fn surrender_to_authority(&self, character_id: u64, incident_id: String) -> __sdk::Result<()> {
-        self.surrender_to_authority_then(character_id, incident_id, |_, _| {})
+    fn surrender_to_authority(&self, character_id: u64, action_token: String) -> __sdk::Result<()> {
+        self.surrender_to_authority_then(character_id, action_token, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `surrender_to_authority` to run as soon as possible,
@@ -48,7 +48,7 @@ pub trait surrender_to_authority {
     fn surrender_to_authority_then(
         &self,
         character_id: u64,
-        incident_id: String,
+        action_token: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -62,7 +62,7 @@ impl surrender_to_authority for super::RemoteReducers {
     fn surrender_to_authority_then(
         &self,
         character_id: u64,
-        incident_id: String,
+        action_token: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -73,7 +73,7 @@ impl surrender_to_authority for super::RemoteReducers {
         self.imp.invoke_reducer_with_callback(
             SurrenderToAuthorityArgs {
                 character_id,
-                incident_id,
+                action_token,
             },
             callback,
         )

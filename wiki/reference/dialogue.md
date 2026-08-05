@@ -221,6 +221,9 @@ name a known contact or describe them,
 give their occupation/relationship and expected location, and retain explicit
 uncertainty. Truthfulness, private motives, hidden causes, and undiscovered
 evidence never participate in topic eligibility.
+The named contact need not be standing at that expected location when another
+local repeats the rumor; questioning the contact still requires ordinary live
+co-presence at the referred location.
 When the addressed NPC is the named contact, the referral switches to
 first-person wording and presents the testimony subject as an inline clickable
 phrase. A different same-named NPC is still explicitly disambiguated.

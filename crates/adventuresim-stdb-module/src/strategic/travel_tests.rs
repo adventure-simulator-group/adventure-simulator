@@ -63,6 +63,135 @@ mod departure_invariant_tests {
     }
 
     #[test]
+    fn colocated_case_site_return_is_an_instant_exact_location_transition() {
+        assert_eq!(straight_line_distance_m(10.0, 53.0, 10.0, 53.0, true), 0);
+
+        let source = include_str!("travel_reducers.rs");
+        let travel = source
+            .split("fn travel_to_settlement_impl")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn set_party_camp_fatigue_percent").next())
+            .expect("settlement travel implementation");
+        let zero_return = travel
+            .split("if zero_distance_case_site_return")
+            .nth(1)
+            .and_then(|tail| tail.split("synchronize_party_departure_time").next())
+            .expect("zero-distance case-site return branch");
+
+        assert!(travel.contains("party.leader_id != character_id"));
+        assert!(travel.contains("require_no_unresolved_encounter(ctx, &party.id)?"));
+        assert!(travel.contains("require_party_ready(ctx, &party.id)?"));
+        assert!(travel.contains("if !zero_distance_return"));
+        assert!(travel.contains("let Some(route) = route.as_ref()"));
+        assert!(zero_return.contains("current_strategic_place(ctx, character_id)?"));
+        assert!(zero_return.contains("complete_settlement_arrival("));
+        assert!(zero_return.contains("None,"));
+        assert!(zero_return.contains("false,"));
+        for forbidden in [
+            "synchronize_party_departure_time",
+            "start_party_journey",
+            "prepare_party_waterskins",
+            "prepare_character_waterskins",
+            "advance_party_movement_until_encounter",
+            "record_party_journey_camp",
+            "commit_encounter_scan",
+        ] {
+            assert!(
+                !zero_return.contains(forbidden),
+                "instant return must not call {forbidden}"
+            );
+        }
+
+        let arrival = source
+            .split("fn complete_settlement_arrival")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn travel_to_settlement").next())
+            .expect("shared settlement arrival helper");
+        assert!(arrival.contains("traveler.current_settlement_id = Some"));
+        assert!(arrival.contains("set_character_case_site(ctx, traveler.id, None)"));
+        assert!(arrival.contains("if rest_temporary_companions"));
+        assert!(arrival.contains("incident.party_id == party.id"));
+        assert!(arrival.contains("incident.case_site_id.value == site_id"));
+        assert!(arrival.contains("incident.status == IncidentStatus::Pending"));
+        assert!(arrival.contains("IncidentStatus::Avoided"));
+    }
+
+    #[test]
+    fn affordable_arrest_surrender_then_colocated_return_is_a_complete_reducer_chain() {
+        let incidents = include_str!("incidents.rs");
+        let surrender = incidents
+            .split("pub fn surrender_to_authority")
+            .nth(1)
+            .and_then(|tail| tail.split("fn finish_strategic_incident").next())
+            .expect("authority surrender reducer");
+        assert!(surrender.contains(".action_token()"));
+        assert!(surrender.contains("consume_personal_currency"));
+        assert!(surrender.contains("settle_offenses"));
+        assert!(surrender.contains("IncidentStatus::Resolved"));
+        assert!(!surrender.contains("set_character_case_site"));
+
+        let places = include_str!("../foraging.rs");
+        let provenance = places
+            .split("fn actor_party_owns_incident_site")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("fn actor_party_has_pending_incident_at_current_site")
+                    .next()
+            })
+            .expect("terminal incident site provenance");
+        for exact_gate in [
+            "membership.character_id == character_id",
+            "party.current_case_site_id",
+            "incident.case_site_id.value == case_site_id",
+        ] {
+            assert!(provenance.contains(exact_gate));
+        }
+        assert!(!provenance.contains("IncidentStatus::Pending"));
+
+        let travel = include_str!("travel_reducers.rs");
+        let zero_return = travel
+            .split("if zero_distance_case_site_return")
+            .nth(1)
+            .and_then(|tail| tail.split("synchronize_party_departure_time").next())
+            .expect("zero-distance return branch");
+        assert!(zero_return.contains("current_strategic_place(ctx, character_id)?"));
+        assert!(zero_return.contains("complete_settlement_arrival("));
+        assert!(zero_return.contains("None,"));
+        assert!(!zero_return.contains("advance_travel_time"));
+        let arrival = travel
+            .split("fn complete_settlement_arrival")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn travel_to_settlement").next())
+            .expect("settlement arrival");
+        assert!(arrival.contains("set_character_case_site(ctx, traveler.id, None)"));
+        assert!(arrival.contains("set_party_journey_state(party, Some(settlement_id.to_owned()), None, None, 0)"));
+    }
+
+    #[test]
+    fn combat_resolved_activity_incident_retains_exact_onsite_return_provenance() {
+        let incidents = include_str!("incidents.rs");
+        let combat_completion = incidents
+            .split("pub(crate) fn finish_incident_for_hostile_group")
+            .nth(1)
+            .and_then(|tail| tail.split("fn incident_group_matches").next())
+            .expect("combat incident completion");
+        assert!(combat_completion.contains("IncidentStatus::Resolved"));
+        assert!(!combat_completion.contains("set_character_case_site"));
+
+        let places = include_str!("../foraging.rs");
+        let provenance = places
+            .split("fn actor_party_owns_incident_site")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("fn actor_party_has_pending_incident_at_current_site")
+                    .next()
+            })
+            .expect("terminal incident site provenance");
+        assert!(!provenance.contains("IncidentStatus::Pending"));
+        assert!(provenance.contains("incident.case_site_id.value == case_site_id"));
+    }
+
+    #[test]
     fn only_the_exact_departing_incident_site_may_be_avoided() {
         assert!(pending_incident_allows_departure(None, std::iter::empty()));
         assert!(pending_incident_allows_departure(

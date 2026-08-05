@@ -142,6 +142,11 @@ fn authority_enforcement_is_charge_scoped_and_resistance_is_retry_stable() {
     assert!(surrender.contains("unsettled_arrest_charges"));
     assert!(surrender.contains("authority_fine"));
     assert!(surrender.contains("settle_offenses(ctx, offenses)"));
+    assert!(surrender.contains(".action_token()"));
+    assert!(surrender.contains("incident.party_id != party_id"));
+    assert!(surrender.contains("membership.character_id == character_id"));
+    assert!(surrender.contains("party.current_case_site_id"));
+    assert!(surrender.contains("site == incident.case_site_id"));
     assert!(!surrender.contains("local_reputation"));
 
     let completion = source
@@ -658,4 +663,66 @@ fn physical_proof_and_participant_projection_fail_closed() {
         "joined player must receive view rows"
     );
     assert!(!viewers.contains(&33), "outsider must receive no view rows");
+}
+
+#[test]
+fn authority_arrest_action_projection_is_gateway_only_exact_and_redacted() {
+    let source = STRATEGIC_SOURCE;
+    let projection = source
+        .split("pub fn backend_authority_arrest_actions")
+        .nth(1)
+        .and_then(|tail| tail.split("#[spacetimedb::reducer]").next())
+        .expect("authority arrest action projection");
+    let gate = projection.find("strategic_view_is_gateway(ctx)").unwrap();
+    let private_read = projection.find("strategic_incident__view").unwrap();
+    assert!(gate < private_read);
+    for exact_filter in [
+        "StrategicIncidentKind::AuthorityArrest",
+        "StrategicIncidentStatus::Pending",
+        "party.current_case_site_id.as_deref()",
+        "incident.case_site_id.as_str()",
+        "member.character_id == incident.instigator_id",
+        "character.alive",
+        "character.party_id.as_deref() == Some(party.id.as_str())",
+        "authority_fine_for_charges",
+        "affordable: funds >= fine",
+    ] {
+        assert!(projection.contains(exact_filter), "missing exact filter: {exact_filter}");
+    }
+    assert!(!projection.contains("strategic_incident__view(ctx).iter()"));
+
+    let row = source
+        .split("pub struct BackendAuthorityArrestAction")
+        .nth(1)
+        .and_then(|tail| tail.split("}").next())
+        .expect("public authority action row");
+    for field in [
+        "action_token",
+        "party_id",
+        "case_site_id",
+        "origin_settlement_id",
+        "instigator_id",
+        "fine",
+        "affordable",
+    ] {
+        assert!(row.contains(field), "missing public field: {field}");
+    }
+    for private_field in ["incident_id", "source_id", "hostile", "offense", "severity", "created_minute"] {
+        assert!(!row.contains(private_field), "private field leaked: {private_field}");
+    }
+    assert!(projection.contains("action_token: incident.action_token"));
+    assert!(!projection.contains("action_token: incident.id"));
+
+    let creation = source
+        .split("ctx.db.strategic_incident().insert(StrategicIncident")
+        .nth(1)
+        .and_then(|tail| tail.split("});").next())
+        .expect("incident creation");
+    let token_assignment = creation
+        .lines()
+        .find(|line| line.contains("action_token:"))
+        .expect("opaque action token assignment");
+    assert!(token_assignment.contains("ctx.random::<u64>()"));
+    assert!(!token_assignment.contains("source_id"));
+    assert!(!token_assignment.contains("incident_id"));
 }

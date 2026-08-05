@@ -1514,18 +1514,29 @@ fn surface_new_problem(
     ) else {
         return Ok(false);
     };
-    let Some(presence) = ctx
-        .db
-        .settlement_resident_presence()
-        .character_id()
-        .find(witness.resident_character_id)
-        .filter(|presence| {
-            presence.settlement_id == settlement_id
-                && presence.location_id == witness.expected_location
-        })
-    else {
+    let Some(settlement) = ctx.db.settlement().id().find(settlement_id.to_owned()) else {
         return Ok(false);
     };
+    let has_keep = matches!(
+        settlement.category,
+        crate::strategic::SettlementCategory::Town
+            | crate::strategic::SettlementCategory::City
+            | crate::strategic::SettlementCategory::Capital
+    );
+    let expected_location_is_navigable =
+        adventuresim_core::settlement_economy::npc_location_is_navigable(
+            &settlement.economy,
+            has_keep,
+            settlement_id,
+            &witness.expected_location,
+        );
+    if !rumor_contact_is_valid(
+        &contact.home_settlement_id,
+        settlement_id,
+        expected_location_is_navigable,
+    ) {
+        return Ok(false);
+    }
     let Some(symptom) = ctx
         .db
         .local_problem_symptom()
@@ -1564,7 +1575,7 @@ fn surface_new_problem(
         source_resident_character_id,
         discovery_session_id: session_id.into(),
         contact_resident_character_id: contact.character_id,
-        expected_location_id: presence.location_id,
+        expected_location_id: witness.expected_location.clone(),
         safe_summary: symptom.public_summary,
         learned_at: observer_minute,
         official_learned_at: official_world_minute,
@@ -1580,6 +1591,14 @@ fn surface_new_problem(
             fragments_json: referral_fragments_json(presentation)?,
         });
     Ok(true)
+}
+
+fn rumor_contact_is_valid(
+    contact_home_settlement_id: &str,
+    problem_settlement_id: &str,
+    expected_location_is_navigable: bool,
+) -> bool {
+    contact_home_settlement_id == problem_settlement_id && expected_location_is_navigable
 }
 
 /// Development-gallery seam that establishes the same receipt, referral, and
@@ -1997,7 +2016,7 @@ mod tests {
     use crate::local_problem::{
         BoundedHearingGraph, MAX_HEARING_DISTANCE_M, MAX_HEARING_GRAPH_EDGES,
         MAX_HEARING_GRAPH_NODES, dialogue_capable_inn_contact, public_threat_in_hearing_range,
-        referral_fragments_json, stable_eligible_candidates,
+        referral_fragments_json, rumor_contact_is_valid, stable_eligible_candidates,
     };
     use adventuresim_core::threat_escalation::{
         MAX_PUBLIC_THREAT_CANDIDATES, bounded_public_threat_candidates as bounded_public_candidates,
@@ -2221,6 +2240,13 @@ mod tests {
     }
 
     #[test]
+    fn initial_rumor_uses_persistent_local_identity_and_authored_navigable_location() {
+        assert!(rumor_contact_is_valid("ironforge", "ironforge", true));
+        assert!(!rumor_contact_is_valid("lubeck", "ironforge", true));
+        assert!(!rumor_contact_is_valid("ironforge", "ironforge", false));
+    }
+
+    #[test]
     fn discovery_uses_world_time_for_problem_windows_and_observer_time_for_records() {
         let source = include_str!("local_problem.rs");
         let surface = source
@@ -2373,7 +2399,10 @@ mod tests {
         ] {
             assert!(authority.contains(binding), "{binding}");
         }
-        assert!(surface.contains("presence.location_id == witness.expected_location"));
+        assert!(surface.contains("contact.home_settlement_id"));
+        assert!(surface.contains("npc_location_is_navigable"));
+        assert!(surface.contains("expected_location_id: witness.expected_location.clone()"));
+        assert!(!new_problem.contains("settlement_resident_presence()"));
         assert!(surface.contains("stable_eligible_candidates"));
         let selector = source
             .split("fn stable_eligible_candidates")
@@ -2484,7 +2513,9 @@ mod tests {
         assert!(surface.contains(
             "settlement_resident_profile().character_id().find(witness.resident_character_id)"
         ));
-        assert!(surface.contains("presence.location_id == witness.expected_location"));
+        assert!(surface.contains("contact.home_settlement_id"));
+        assert!(surface.contains("npc_location_is_navigable"));
+        assert!(surface.contains("expected_location_id: witness.expected_location.clone()"));
         assert!(surface.contains("contact_resident_character_id: contact.character_id"));
         assert!(surface.contains("discovery_session_id: session_id.into()"));
 

@@ -578,7 +578,16 @@ impl LiveRunner {
                 true,
                 cb,
             ));
-        self.call(result)?;
+        if let Err(error) = result {
+            if merchant_provider_unavailable_failure(&error) {
+                return Ok(TravelProvisionDecision::Deferred(
+                    "journey_payer_provider_projection_unavailable",
+                ));
+            }
+            return self
+                .call(Err(error))
+                .map(|_| TravelProvisionDecision::Ready);
+        }
         let after_party_coin = self
             .connection
             .db

@@ -314,6 +314,10 @@ fn recovery_outcomes_resume_same_cycle_but_consume_evacuation_or_hold() {
         ExpeditionRecoveryOutcome::Resumed,
         ExpeditionRecoveryOutcome::Evacuated
     );
+    assert_ne!(
+        ExpeditionRecoveryOutcome::Returned,
+        ExpeditionRecoveryOutcome::Evacuated
+    );
     let source = LIVE_CORE_SOURCE;
     let production = source.split("#[cfg(test)]").next().unwrap();
     let cycle = production
@@ -325,6 +329,8 @@ fn recovery_outcomes_resume_same_cycle_but_consume_evacuation_or_hold() {
     assert!(cycle.contains("if !recovery_started_in_budget"));
     assert!(cycle.contains("recovery_outcome == ExpeditionRecoveryOutcome::Resumed"));
     assert!(cycle.contains("&& recovery_started_in_budget"));
+    assert!(cycle.contains("ExpeditionRecoveryOutcome::Returned =>"));
+    assert!(cycle.contains("ensure_settlement_activity_after_idle_site_return"));
     assert!(cycle.contains("ExpeditionRecoveryOutcome::Evacuated =>"));
     assert!(cycle.contains("ExpeditionRecoveryOutcome::Held =>"));
     let resumed = cycle.find("ExpeditionRecoveryOutcome::Resumed").unwrap();
@@ -779,6 +785,135 @@ fn investigation_trace_distinguishes_planned_interval_clipping_from_public_outco
 }
 
 #[test]
+fn idle_ready_case_site_return_is_safe_public_travel_not_health_evacuation() {
+    let expedition = include_str!("../expedition.rs");
+    let idle_return = expedition
+        .split("fn return_idle_ready_party_from_case_site")
+        .nth(1)
+        .and_then(|tail| tail.split("pub(super) fn recover_or_evacuate_off_settlement").next())
+        .expect("idle case-site return policy");
+    for active_semantic in [
+        "party.camp_destination.is_some()",
+        "self.active_direct_contract(&party).is_some()",
+        "pin.generated_case && !pin.case_resolved",
+    ] {
+        assert!(idle_return.contains(active_semantic), "{active_semantic}");
+    }
+    assert!(idle_return.contains("member_ids.contains(&pin.owner_character_id)"));
+    assert!(idle_return.contains("pin.case_site_id == current_site_id"));
+    assert!(idle_return.contains("self.public_expedition_return_settlement(party_id)"));
+    assert!(idle_return.contains("expedition_party_can_resume(&members)"));
+    assert!(idle_return.contains("expedition_supplies_cover_one_rest_day(&members, supplies)"));
+    assert!(idle_return.contains("validate_party_departure_readiness(party_id)"));
+    let thermal = idle_return
+        .find("generated_action_return_thermal_decision")
+        .expect("public return thermal forecast");
+    let reducer = idle_return
+        .find("travel_to_settlement_then(return_actor_id")
+        .expect("ordinary travel reducer");
+    let camps = idle_return
+        .find("self.travel_camps(party_id)")
+        .expect("persisted camp loop");
+    assert!(thermal < reducer && reducer < camps);
+    assert!(idle_return.contains("journey_held_no_unique_public_idle_site_origin"));
+    assert!(idle_return.contains("journey_held_idle_site_return_condition_not_ready"));
+    assert!(idle_return.contains("journey_held_idle_site_return_supplies_unavailable"));
+    assert!(idle_return.contains("journey_held_idle_site_return_departure_not_ready"));
+    assert!(idle_return.contains("ExpeditionRecoveryOutcome::Returned"));
+    assert!(idle_return.contains("phase=idle_case_site_return"));
+    assert!(!idle_return.contains("quests_suppressed_for_health"));
+    assert!(!idle_return.contains("expedition_recovery_plans"));
+
+    let recovery = expedition
+        .split("pub(super) fn recover_or_evacuate_off_settlement")
+        .nth(1)
+        .expect("off-settlement orchestration");
+    assert!(
+        recovery.find("return_idle_ready_party_from_case_site").unwrap()
+            < recovery.find("expedition_recovery_plans").unwrap()
+    );
+}
+
+#[test]
+fn observed_activity_origin_is_exact_ephemeral_fallback_return_provenance() {
+    let mut observations = HashMap::new();
+    observations.insert(
+        ("party-a".to_owned(), "incident-site".to_owned()),
+        "origin-a".to_owned(),
+    );
+    assert_eq!(
+        observed_activity_return_origin(&observations, "party-a", Some("incident-site")),
+        Some("origin-a".to_owned())
+    );
+    assert_eq!(
+        observed_activity_return_origin(&observations, "party-b", Some("incident-site")),
+        None
+    );
+    assert_eq!(
+        observed_activity_return_origin(&observations, "party-a", Some("different-site")),
+        None
+    );
+    assert_eq!(
+        observed_activity_return_origin(&observations, "party-a", None),
+        None
+    );
+
+    let expedition = include_str!("../expedition.rs");
+    let return_origin = expedition
+        .split("pub(super) fn public_expedition_return_settlement")
+        .nth(1)
+        .and_then(|tail| tail.split("pub(super) fn public_journey_is_evacuation").next())
+        .expect("public return-origin policy");
+    let journey = return_origin.find(".party_journey()").unwrap();
+    let pins = return_origin.find(".backend_case_site_pins()").unwrap();
+    let observed = return_origin
+        .find("observed_activity_return_origin")
+        .unwrap();
+    assert!(journey < pins && pins < observed);
+    assert!(return_origin.contains("if !origins.is_empty()"));
+    assert!(return_origin.contains("Some(current_site)"));
+
+    let idle_return = expedition
+        .split("fn return_idle_ready_party_from_case_site")
+        .nth(1)
+        .and_then(|tail| tail.split("pub(super) fn recover_or_evacuate_off_settlement").next())
+        .unwrap();
+    assert!(idle_return.contains("self.public_expedition_return_settlement(party_id)"));
+    assert!(
+        idle_return.find("pin.generated_case && !pin.case_resolved").unwrap()
+            < idle_return.find("self.public_expedition_return_settlement(party_id)").unwrap()
+    );
+    assert!(idle_return.contains("travel_to_settlement_then"));
+    assert!(idle_return.contains("self.travel_camps(party_id)"));
+    assert!(idle_return.contains("let observed_unpinned_activity_return = return_pin.is_none()"));
+    assert!(idle_return.contains("!observed_unpinned_activity_return"));
+    assert_eq!(idle_return.matches("if !observed_unpinned_activity_return").count(), 2);
+    let supplies = idle_return
+        .find("expedition_supplies_cover_one_rest_day(&members, supplies)")
+        .unwrap();
+    let readiness = idle_return
+        .find("validate_party_departure_readiness(party_id)")
+        .unwrap();
+    let leader = idle_return.find("self.current_leader(party_id)").unwrap();
+    assert!(idle_return[..supplies].contains("if !observed_unpinned_activity_return"));
+    assert!(idle_return[..readiness].contains("if !observed_unpinned_activity_return"));
+    assert!(readiness < leader);
+
+    let recovery = expedition
+        .split("pub(super) fn recover_or_evacuate_off_settlement")
+        .nth(1)
+        .expect("health evacuation policy");
+    let safe_gate = recovery
+        .split("let evacuation_safe")
+        .nth(1)
+        .and_then(|tail| tail.split("if !evacuation_safe").next())
+        .unwrap();
+    assert!(recovery.contains("let observed_activity_return = observed_activity_return_origin"));
+    assert!(safe_gate.contains("observed_activity_return"));
+    assert!(recovery.contains("travel_to_settlement_then(evacuation_actor_id"));
+}
+
+#[test]
 fn nonterminal_settlement_investigation_does_not_require_case_site_occupancy() {
     let source = LIVE_CORE_SOURCE;
     let post_action = source
@@ -789,4 +924,95 @@ fn nonterminal_settlement_investigation_does_not_require_case_site_occupancy() {
     assert!(post_action.contains("continue;"));
     assert!(post_action.contains("current_case_site_id"));
     assert!(post_action.find("continue;").unwrap() < post_action.find("current_case_site_id").unwrap());
+}
+
+#[test]
+fn authority_surrender_selection_is_exact_affordable_controlled_and_unambiguous() {
+    fn action(
+        action_token: &str,
+        party_id: &str,
+        case_site_id: &str,
+        instigator_id: u64,
+        affordable: bool,
+    ) -> BackendAuthorityArrestAction {
+        BackendAuthorityArrestAction {
+            action_token: action_token.into(),
+            party_id: party_id.into(),
+            case_site_id: case_site_id.into(),
+            origin_settlement_id: "origin".into(),
+            instigator_id,
+            fine: 12,
+            affordable,
+        }
+    }
+
+    let controlled = HashSet::from([7]);
+    let selected = expedition::select_affordable_authority_surrender_action(
+        [
+            action("wrong-party", "party-b", "site-a", 7, true),
+            action("wrong-site", "party-a", "site-b", 7, true),
+            action("uncontrolled", "party-a", "site-a", 8, true),
+            action("unaffordable", "party-a", "site-a", 7, false),
+            action("exact", "party-a", "site-a", 7, true),
+        ],
+        "party-a",
+        "site-a",
+        &controlled,
+    )
+    .expect("one exact surrender action");
+    assert_eq!(selected.action_token, "exact");
+
+    assert!(expedition::select_affordable_authority_surrender_action(
+        [
+            action("first", "party-a", "site-a", 7, true),
+            action("second", "party-a", "site-a", 7, true),
+        ],
+        "party-a",
+        "site-a",
+        &controlled,
+    )
+    .is_none());
+}
+
+#[test]
+fn authority_surrender_precedes_recovery_and_uses_only_public_confirmation() {
+    let expedition = include_str!("../expedition.rs");
+    let surrender = expedition
+        .split("fn surrender_affordable_authority_arrest")
+        .nth(1)
+        .and_then(|tail| tail.split("fn return_idle_ready_party_from_case_site").next())
+        .expect("authority surrender policy");
+    assert!(surrender.contains("backend_authority_arrest_actions()"));
+    assert!(surrender.contains("select_affordable_authority_surrender_action"));
+    assert!(surrender.contains("character.alive"));
+    assert!(surrender.contains("character.party_id.as_deref() == Some(party_id)"));
+    assert!(surrender.contains("surrender_to_authority_then"));
+    assert!(surrender.contains("self.call(result)?"));
+    assert!(surrender.contains("action_remains"));
+    assert!(surrender.contains("party_by_id(party_id)?"));
+    assert!(surrender.contains("site.value == current_site_id"));
+    assert!(surrender.contains("journey_held_authority_surrender_not_publicly_confirmed"));
+    assert!(surrender.find("if action_remains").unwrap() < surrender.find("authority_surrenders =").unwrap());
+    assert!(!surrender.contains("strategic_incident"));
+
+    let recovery = expedition
+        .split("pub(super) fn recover_or_evacuate_off_settlement")
+        .nth(1)
+        .expect("off-settlement recovery policy");
+    assert!(
+        recovery.find("surrender_affordable_authority_arrest").unwrap()
+            < recovery.find("expedition_member_observations").unwrap()
+    );
+    assert!(
+        recovery.find("surrender_affordable_authority_arrest").unwrap()
+            < recovery.find("return_idle_ready_party_from_case_site").unwrap()
+    );
+
+    let bootstrap = include_str!("../bootstrap.rs");
+    assert_eq!(
+        bootstrap
+            .matches("query.from.backend_authority_arrest_actions()")
+            .count(),
+        2
+    );
 }

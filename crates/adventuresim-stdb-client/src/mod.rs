@@ -37,6 +37,8 @@ pub mod autoresolve_mission_reducer;
 pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
+pub mod backend_authority_arrest_action_type;
+pub mod backend_authority_arrest_actions_table;
 pub mod backend_automatic_social_chats_table;
 pub mod backend_bestiary_deduction_type;
 pub mod backend_bestiary_deductions_table;
@@ -947,6 +949,8 @@ pub use autoresolve_mission_reducer::autoresolve_mission;
 pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
+pub use backend_authority_arrest_action_type::BackendAuthorityArrestAction;
+pub use backend_authority_arrest_actions_table::*;
 pub use backend_automatic_social_chats_table::*;
 pub use backend_bestiary_deduction_type::BackendBestiaryDeduction;
 pub use backend_bestiary_deductions_table::*;
@@ -2666,7 +2670,7 @@ pub enum Reducer {
     },
     SurrenderToAuthority {
         character_id: u64,
-        incident_id: String,
+        action_token: String,
     },
     SyncDevelopmentClockToCharacter {
         character_id: u64,
@@ -4471,10 +4475,10 @@ Reducer::BeginFormalCourtship{
 }),
             Reducer::SurrenderToAuthority{
                 character_id,
-                incident_id,
+                action_token,
 }             => __sats::bsatn::to_vec(&surrender_to_authority_reducer::SurrenderToAuthorityArgs {
                 character_id: character_id.clone(),
-                incident_id: incident_id.clone(),
+                action_token: action_token.clone(),
 }),
             Reducer::SyncDevelopmentClockToCharacter{
                 character_id,
@@ -4634,6 +4638,7 @@ Reducer::VoteForPartyLeader{
 pub struct DbUpdate {
     alcohol_consumption: __sdk::TableUpdate<AlcoholConsumption>,
     autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
+    backend_authority_arrest_actions: __sdk::TableUpdate<BackendAuthorityArrestAction>,
     backend_automatic_social_chats: __sdk::TableUpdate<AutomaticSocialChat>,
     backend_bestiary_deductions: __sdk::TableUpdate<BackendBestiaryDeduction>,
     backend_browser_character_access: __sdk::TableUpdate<BackendBrowserCharacterAccess>,
@@ -4774,6 +4779,11 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(autoresolve_report_table::parse_table_update(table_update)?),
+                "backend_authority_arrest_actions" => {
+                    db_update.backend_authority_arrest_actions.append(
+                        backend_authority_arrest_actions_table::parse_table_update(table_update)?,
+                    )
+                }
                 "backend_automatic_social_chats" => {
                     db_update.backend_automatic_social_chats.append(
                         backend_automatic_social_chats_table::parse_table_update(table_update)?,
@@ -5474,6 +5484,11 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.world_node = cache
             .apply_diff_to_table::<WorldNode>("world_node", &self.world_node)
             .with_updates_by_pk(|row| &row.id);
+        diff.backend_authority_arrest_actions = cache
+            .apply_diff_to_table::<BackendAuthorityArrestAction>(
+                "backend_authority_arrest_actions",
+                &self.backend_authority_arrest_actions,
+            );
         diff.backend_automatic_social_chats = cache.apply_diff_to_table::<AutomaticSocialChat>(
             "backend_automatic_social_chats",
             &self.backend_automatic_social_chats,
@@ -5789,6 +5804,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "autoresolve_report" => db_update
                     .autoresolve_report
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_authority_arrest_actions" => db_update
+                    .backend_authority_arrest_actions
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_automatic_social_chats" => db_update
                     .backend_automatic_social_chats
@@ -6184,6 +6202,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_authority_arrest_actions" => db_update
+                    .backend_authority_arrest_actions
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_automatic_social_chats" => db_update
                     .backend_automatic_social_chats
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -6576,6 +6597,7 @@ impl __sdk::DbUpdate for DbUpdate {
 pub struct AppliedDiff<'r> {
     alcohol_consumption: __sdk::TableAppliedDiff<'r, AlcoholConsumption>,
     autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
+    backend_authority_arrest_actions: __sdk::TableAppliedDiff<'r, BackendAuthorityArrestAction>,
     backend_automatic_social_chats: __sdk::TableAppliedDiff<'r, AutomaticSocialChat>,
     backend_bestiary_deductions: __sdk::TableAppliedDiff<'r, BackendBestiaryDeduction>,
     backend_browser_character_access: __sdk::TableAppliedDiff<'r, BackendBrowserCharacterAccess>,
@@ -6732,6 +6754,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<AutoresolveReport>(
             "autoresolve_report",
             &self.autoresolve_report,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendAuthorityArrestAction>(
+            "backend_authority_arrest_actions",
+            &self.backend_authority_arrest_actions,
             event,
         );
         callbacks.invoke_table_row_callbacks::<AutomaticSocialChat>(
@@ -7985,6 +8012,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         alcohol_consumption_table::register_table(client_cache);
         autoresolve_report_table::register_table(client_cache);
+        backend_authority_arrest_actions_table::register_table(client_cache);
         backend_automatic_social_chats_table::register_table(client_cache);
         backend_bestiary_deductions_table::register_table(client_cache);
         backend_browser_character_access_table::register_table(client_cache);
@@ -8114,6 +8142,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
         "alcohol_consumption",
         "autoresolve_report",
+        "backend_authority_arrest_actions",
         "backend_automatic_social_chats",
         "backend_bestiary_deductions",
         "backend_browser_character_access",

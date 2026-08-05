@@ -1,4 +1,43 @@
 impl LiveRunner {
+    pub(super) fn public_contract_issuer_available(
+        &self,
+        character_id: u64,
+        quest: &BackendContract,
+    ) -> bool {
+        self.visible_npc_candidates(character_id, None, None)
+            .into_iter()
+            .any(|candidate| {
+                candidate.resident_character_id == quest.issuer_resident_character_id
+            })
+    }
+
+    pub(super) fn defer_unavailable_contract_issuer(
+        &mut self,
+        party_id: &str,
+        leader_agent: u32,
+        quest: &BackendContract,
+        provenance: &str,
+    ) -> Result<(), String> {
+        self.event(
+            leader_agent,
+            CoreLoopEventKind::QuestSuppressed,
+            format!(
+                "quest={};reason=contract_issuer_unavailable;provenance={}",
+                bounded_event_field(&quest.id),
+                bounded_event_field(provenance),
+            ),
+        );
+        if self
+            .party_by_id(party_id)?
+            .current_settlement_id
+            .as_deref()
+            == Some(quest.settlement_id.as_str())
+        {
+            self.settlement_activity_day(leader_agent)?;
+        }
+        Ok(())
+    }
+
     fn abandon_unsafe_active_contract(
         &mut self,
         party_id: &str,
@@ -151,6 +190,14 @@ impl LiveRunner {
             return Ok(());
         }
         if !resuming_contract {
+            if !self.public_contract_issuer_available(leader, &quest) {
+                return self.defer_unavailable_contract_issuer(
+                    party_id,
+                    leader_agent,
+                    &quest,
+                    "public_presence_projection",
+                );
+            }
             if let TravelProvisionDecision::Deferred(reason) = self.provision_case_site_journey(
                 party_id,
                 leader,
@@ -170,8 +217,14 @@ impl LiveRunner {
                 self.settlement_activity_day(leader_agent)?;
                 return Ok(());
             }
-            self.metrics.quests_attempted += 1;
-            self.metrics.direct_contracts_attempted += 1;
+            if !self.public_contract_issuer_available(leader, &quest) {
+                return self.defer_unavailable_contract_issuer(
+                    party_id,
+                    leader_agent,
+                    &quest,
+                    "public_presence_projection",
+                );
+            }
             let result = reducer_call!(self, "interact_accept_contract", |cb| self
                 .connection
                 .reducers
@@ -181,7 +234,19 @@ impl LiveRunner {
                     ContractInteractionStage::Accept,
                     cb,
                 ));
-            self.call(result)?;
+            if let Err(error) = result {
+                if contract_issuer_unavailable_failure(&error) {
+                    return self.defer_unavailable_contract_issuer(
+                        party_id,
+                        leader_agent,
+                        &quest,
+                        "authoritative_interaction_rejection",
+                    );
+                }
+                return self.call(Err(error));
+            }
+            self.metrics.quests_attempted += 1;
+            self.metrics.direct_contracts_attempted += 1;
             let result = reducer_call!(self, "accept_quest", |cb| self
                 .connection
                 .reducers
@@ -215,6 +280,7 @@ impl LiveRunner {
                         travel_at_night,
                     )?,
                     DepartureReadiness::WaitForSafeDeparture {
+                        reason,
                         wait_minutes,
                         walking_minutes_per_day,
                         travel_at_night,
@@ -225,6 +291,7 @@ impl LiveRunner {
                                 leader,
                                 leader_agent,
                                 &quest.case_id,
+                                reason,
                                 wait_minutes,
                                 walking_minutes_per_day,
                                 travel_at_night,
@@ -770,7 +837,12 @@ impl LiveRunner {
                     cb,
                 )
         );
-        self.call(result)?;
+        if let Err(error) = result {
+            if merchant_provider_unavailable_failure(&error) {
+                return Ok(());
+            }
+            return self.call(Err(error));
+        }
         let purse_after_trade = self.personal_gold(character_id);
         let stake_after_trade = self
             .connection

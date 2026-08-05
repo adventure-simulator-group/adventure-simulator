@@ -1270,6 +1270,7 @@ pub fn resolve_strategic_encounter(
         .strategic_encounter()
         .party_id()
         .update(encounter.clone());
+    establish_resolved_encounter_journey_camp(ctx, &encounter)?;
     crate::world_actor::deactivate_context_roster(ctx, &encounter.encounter_id);
     ctx.db
         .strategic_encounter_resolution_receipt()

@@ -21,6 +21,7 @@ struct LiveRunner {
     generated_dialogue_no_progress:
         HashMap<PublicDialogueAttemptKey, PublicDialogueProgressFingerprint>,
     generated_defeat_fingerprints: HashMap<(u64, String), PublicCombatFingerprint>,
+    observed_activity_site_origins: HashMap<(String, String), String>,
     failure_recorder: FailureRecorder,
 }
 
