@@ -763,3 +763,30 @@ fn active_journey_recovery_preserves_authoritative_camp_progress_and_redirect() 
     assert!(recovery.contains("public_journey_is_evacuation(party_id)"));
     assert!(recovery.contains("travel_to_settlement_then"));
 }
+#[test]
+fn investigation_trace_distinguishes_planned_interval_clipping_from_public_outcomes() {
+    let source = LIVE_CORE_SOURCE;
+    let action = source
+        .split("let action_elapsed_before")
+        .nth(1)
+        .and_then(|tail| tail.split("observe_generated_case_transition").next())
+        .expect("generated investigation action trace");
+    assert!(action.contains("outcomes.is_empty()"));
+    assert!(action.contains("planned_interval_clipped"));
+    assert!(action.contains("completed_with_public_outcome"));
+    assert!(action.contains("requested_min_minutes"));
+    assert!(action.contains("actual_minutes"));
+}
+
+#[test]
+fn nonterminal_settlement_investigation_does_not_require_case_site_occupancy() {
+    let source = LIVE_CORE_SOURCE;
+    let post_action = source
+        .split("if at_settlement {\n                    // Settlement-bound actions")
+        .nth(1)
+        .and_then(|tail| tail.split("let return_pin").next())
+        .expect("post-action settlement/site branch");
+    assert!(post_action.contains("continue;"));
+    assert!(post_action.contains("current_case_site_id"));
+    assert!(post_action.find("continue;").unwrap() < post_action.find("current_case_site_id").unwrap());
+}

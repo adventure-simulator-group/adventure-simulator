@@ -215,6 +215,10 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.backend_character_times())
         .add_query(|query| query.from.backend_character_training_schedules())
         .add_query(|query| query.from.inventory_item())
+        .add_query(|query| query.from.inventory_item_amount())
+        .add_query(|query| query.from.inventory_object())
+        .add_query(|query| query.from.inventory_containment())
+        .add_query(|query| query.from.container_liquid())
         .add_query(|query| query.from.food_lot())
         .add_query(|query| query.from.item())
         .add_query(|query| query.from.item_condition())
@@ -222,6 +226,7 @@ fn run_core_loop_inner(
         .add_query(|query| query.from.local_problem_symptom())
         .add_query(|query| query.from.party())
         .add_query(|query| query.from.party_inventory_item())
+        .add_query(|query| query.from.party_item_amount())
         .add_query(|query| query.from.party_journey())
         .add_query(|query| query.from.party_journey_itinerary())
         .add_query(|query| query.from.party_join_request())
@@ -603,6 +608,23 @@ fn run_core_loop_inner(
         .ensure_settlement_activity_then(settlement.clone(), cb));
     runner.call(result)?;
 
+    // Character clocks are absolute world minutes. Capture the post-bootstrap
+    // baseline so a mature imported/disposable world does not make a fresh
+    // simulation appear to have already exhausted its duration budget.
+    let simulation_start_minutes = runner
+        .character_ids
+        .iter()
+        .map(|character_id| {
+            runner
+                .connection
+                .db
+                .backend_character_times()
+                .iter()
+                .find(|row| row.character_id == *character_id)
+                .map(|row| (*character_id, row.minutes))
+                .ok_or("missing simulation-start character clock")
+        })
+        .collect::<Result<HashMap<_, _>, _>>()?;
     let duration_minutes = u64::from(config.duration_days) * 1_440;
     for cycle in 0..config.cycles {
         let mut active = false;
@@ -637,15 +659,20 @@ fn run_core_loop_inner(
             let Some((pre_recovery_leader, _)) = runner.current_leader(party_id) else {
                 continue;
             };
-            let recovery_started_in_budget = runner
+            let recovery_started_at = runner
                 .connection
                 .db
                 .backend_character_times()
                 .iter()
                 .find(|row| row.character_id == pre_recovery_leader)
                 .ok_or("missing pre-recovery leader clock")?
-                .minutes
-                < duration_minutes;
+                .minutes;
+            let recovery_started_in_budget = simulation_elapsed_minutes(
+                *simulation_start_minutes
+                    .get(&pre_recovery_leader)
+                    .ok_or("missing simulation-start leader clock")?,
+                recovery_started_at,
+            ) < duration_minutes;
             if !recovery_started_in_budget {
                 continue;
             }
@@ -686,6 +713,12 @@ fn run_core_loop_inner(
                 .find(|row| row.character_id == leader)
                 .ok_or("missing leader clock")?
                 .minutes;
+            let elapsed = simulation_elapsed_minutes(
+                *simulation_start_minutes
+                    .get(&leader)
+                    .ok_or("missing simulation-start leader clock")?,
+                elapsed,
+            );
             if elapsed >= duration_minutes
                 && !(recovery_outcome == ExpeditionRecoveryOutcome::Resumed
                     && recovery_started_in_budget)
@@ -1115,7 +1148,12 @@ fn run_core_loop_inner(
                 worst_equipment_condition,
                 outstanding_repair_orders,
                 alive: character.alive,
-                elapsed_minutes,
+                elapsed_minutes: simulation_elapsed_minutes(
+                    *simulation_start_minutes
+                        .get(&character.id)
+                        .ok_or("missing simulation-start final character clock")?,
+                    elapsed_minutes,
+                ),
                 personal_gold_coin,
                 party_treasury,
                 party_stake,

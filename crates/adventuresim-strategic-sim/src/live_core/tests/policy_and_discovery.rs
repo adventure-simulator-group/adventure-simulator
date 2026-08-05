@@ -735,19 +735,49 @@ fn discovery_follows_only_new_or_updated_public_witness_referrals() {
     );
 }
 
+fn semantic_dialogue_lead() -> PublicDialogueLeadSemantic {
+    PublicDialogueLeadSemantic {
+        summary: "A witness may know more.".into(),
+        source_label: "local testimony".into(),
+        confidence_bps: 6_000,
+        destination_stage: "referred_contact".into(),
+        directions: "Ask at the inn.".into(),
+        exact_location_id: String::new(),
+        latitude_e7: 0,
+        longitude_e7: 0,
+        witness_name: "Agnes".into(),
+        witness_description: "A local weaver.".into(),
+        witness_occupation_or_relationship: "weaver".into(),
+        expected_location: "inn".into(),
+        current_learned_location: String::new(),
+        contradiction_group: "witness:agnes".into(),
+        corrected_by: String::new(),
+    }
+}
+
+fn semantic_dialogue_action() -> PublicDialogueActionSemantic {
+    PublicDialogueActionSemantic {
+        action_id: "action:inspect".into(),
+        method: "inspect".into(),
+        summary: "Inspect the mill.".into(),
+        known_prerequisites: "Bring light.".into(),
+        duration_min_minutes: 30,
+        duration_max_minutes: 60,
+        uncertainty_bps: 2_000,
+        skill_contributions: "observation".into(),
+        weather_available: true,
+        required_case_site_id: "site:mill".into(),
+        available: true,
+        can_travel_to_required_site: true,
+        unavailable_reason_code: String::new(),
+    }
+}
+
 #[test]
 fn dialogue_topics_suppress_no_progress_and_reenable_after_public_change() {
     let initial = PublicDialogueProgressFingerprint {
-        cases: vec![("journal:case".into(), "open".into(), 10)],
-        leads: vec![(
-            "lead:witness".into(),
-            10,
-            "A witness may know more.".into(),
-            "Agnes".into(),
-            String::new(),
-            "inn".into(),
-            String::new(),
-        )],
+        cases: vec![("journal:case".into(), "open".into())],
+        leads: vec![semantic_dialogue_lead()],
         actions: Vec::new(),
         outcomes: Vec::new(),
         sites: Vec::new(),
@@ -760,13 +790,92 @@ fn dialogue_topics_suppress_no_progress_and_reenable_after_public_change() {
     ));
 
     let mut progressed = initial.clone();
-    progressed
-        .actions
-        .push(("action:inspect".into(), 1, true, true, String::new(), 0));
+    progressed.actions.push(semantic_dialogue_action());
     assert!(public_dialogue_topic_made_progress(&initial, &progressed));
     assert!(public_dialogue_topic_attempt_allowed(
         Some(&initial),
         &progressed
+    ));
+}
+
+#[test]
+fn public_dialogue_presence_rejects_suppression_and_replans_authority_races() {
+    assert!(npc_is_publicly_present(480, 1_020, false, false, 900));
+    assert!(!npc_is_publicly_present(480, 1_020, true, false, 900));
+    assert!(!npc_is_publicly_present(480, 1_020, false, true, 900));
+    assert!(dialogue_contact_presence_changed(
+        "start_dialogue failed: Dialogue actor is not present at this time"
+    ));
+    assert!(!dialogue_contact_presence_changed(
+        "start_dialogue failed: Dialogue conversation is not valid for this NPC"
+    ));
+}
+
+#[test]
+fn repeated_testimony_metadata_does_not_count_as_dialogue_progress() {
+    fn semantic_fingerprint(
+        case_updated_at: u64,
+        lead_id: &str,
+        lead_recorded_at: u64,
+    ) -> PublicDialogueProgressFingerprint {
+        let _publication_metadata = (case_updated_at, lead_id, lead_recorded_at);
+        PublicDialogueProgressFingerprint {
+            cases: vec![("journal:case".into(), "open".into())],
+            leads: vec![semantic_dialogue_lead()],
+            actions: Vec::new(),
+            outcomes: Vec::new(),
+            sites: Vec::new(),
+        }
+    }
+
+    let original = semantic_fingerprint(10, "lead:first", 10);
+    let republished = semantic_fingerprint(20, "lead:duplicate", 20);
+
+    assert!(!public_dialogue_topic_made_progress(
+        &original,
+        &republished
+    ));
+    assert!(!public_dialogue_topic_attempt_allowed(
+        Some(&original),
+        &republished
+    ));
+
+    let fingerprint_source = LIVE_CORE_SOURCE
+        .split("pub(super) fn public_dialogue_progress_fingerprint")
+        .nth(1)
+        .and_then(|tail| tail.split("pub(super) fn generated_actor_ready_after_time").next())
+        .expect("public dialogue progress fingerprint");
+    for publication_field in [
+        "latest_update_at",
+        "recorded_at",
+        "expected_version",
+        "wait_minutes",
+    ] {
+        assert!(
+            !fingerprint_source.contains(publication_field),
+            "{publication_field} is publication metadata, not semantic investigation progress"
+        );
+    }
+}
+
+#[test]
+fn policy_relevant_lead_and_action_changes_count_as_dialogue_progress() {
+    let baseline = PublicDialogueProgressFingerprint {
+        cases: vec![("journal:case".into(), "open".into())],
+        leads: vec![semantic_dialogue_lead()],
+        actions: vec![semantic_dialogue_action()],
+        outcomes: Vec::new(),
+        sites: Vec::new(),
+    };
+    let mut changed_lead = baseline.clone();
+    changed_lead.leads[0].confidence_bps = 8_000;
+    assert!(public_dialogue_topic_made_progress(&baseline, &changed_lead));
+
+    let mut changed_action = baseline.clone();
+    changed_action.actions[0].weather_available = false;
+    assert!(public_dialogue_topic_made_progress(
+        &baseline,
+        &changed_action
     ));
 }
 

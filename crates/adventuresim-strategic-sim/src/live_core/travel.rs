@@ -454,6 +454,8 @@ impl LiveRunner {
                                     && npc_is_publicly_present(
                                         presence.start_minute,
                                         presence.end_minute,
+                                        presence.context_suppressed,
+                                        presence.health_suppressed,
                                         payer_minute,
                                     )
                             })
@@ -888,8 +890,13 @@ impl LiveRunner {
                         "narrative_encounter_has_no_actionable_leader",
                     );
                 };
-                let choice = match select_public_narrative_encounter_choice(
+                let profile = self
+                    .profiles
+                    .get(leader_agent as usize)
+                    .ok_or("narrative encounter leader profile is unavailable")?;
+                let policy_choice = match select_public_narrative_encounter_choice(
                     &challenge.presentation_json,
+                    profile,
                 ) {
                     Ok(Some(choice)) => choice,
                     Ok(None) => {
@@ -925,6 +932,7 @@ impl LiveRunner {
                         );
                     }
                 };
+                let choice = policy_choice.choice.clone();
                 let action_id = format!(
                     "sim-road-{}-r{}",
                     blake3::hash(challenge.id.as_bytes()).to_hex(),
@@ -950,9 +958,14 @@ impl LiveRunner {
                     leader_agent,
                     CoreLoopEventKind::Encounter,
                     format!(
-                        "kind=narrative;id={};revision={revision};choice={};status=resolved",
+                        "kind=narrative;id={};revision={revision};choice={};status=resolved;reason={};visible_alternatives={};eligible_meaningful_alternatives={}",
                         bounded_event_field(&challenge_id),
                         bounded_event_field(&choice),
+                        policy_choice.reason,
+                        bounded_event_field(&policy_choice.visible_alternatives.join(",")),
+                        bounded_event_field(
+                            &policy_choice.eligible_meaningful_alternatives.join(",")
+                        ),
                     ),
                 );
                 continue;

@@ -674,6 +674,86 @@ fn nighttime_projection_wait_is_exact_and_bounded() {
 }
 
 #[test]
+fn locate_contact_projection_mirrors_public_scheduled_presence() {
+    let presence = crate::SettlementResidentPresence {
+        character_id: 9,
+        settlement_id: "lubeck".into(),
+        location_id: "market".into(),
+        start_minute: 480,
+        end_minute: 1_020,
+        is_default: false,
+        context_suppressed: false,
+        health_suppressed: false,
+    };
+    assert_eq!(public_contact_schedule_wait_minutes(&presence, 600), Some(0));
+    assert_eq!(public_contact_schedule_wait_minutes(&presence, 1_020), Some(900));
+
+    let mut suppressed = presence.clone();
+    suppressed.health_suppressed = true;
+    assert_eq!(public_contact_schedule_wait_minutes(&suppressed, 600), None);
+
+    let source = INVESTIGATION_SOURCE;
+    let projection = source
+        .split("fn projected_contact_presence_availability")
+        .nth(1)
+        .and_then(|tail| tail.split("fn night_window_wait_minutes").next())
+        .expect("public contact presence projection");
+    assert!(projection.contains("InvestigationActionKind::LocateContact"));
+    assert!(projection.contains("settlement_resident_presence()"));
+    assert!(projection.contains("contact_schedule_window"));
+    assert!(projection.contains("contact_not_present"));
+
+    let reducer = source
+        .split("fn validate_action_position")
+        .nth(1)
+        .and_then(|tail| tail.split("fn validate_generated_pattern_condition").next())
+        .expect("reducer contact presence validation");
+    assert!(reducer.contains("InvestigationActionKind::LocateContact"));
+    assert!(reducer.contains("npc_is_present"));
+}
+
+#[test]
+fn locate_contact_stale_target_beats_off_hours_schedule_wait() {
+    use adventuresim_core::quest_generation::{WitnessCandidate, WitnessDemographic};
+
+    let candidate = |location: &str, presence_version: u64| WitnessCandidate {
+        resident_character_id: 9,
+        display_name: "Ada".into(),
+        demographic: WitnessDemographic::Laborer,
+        age_band: "adult".into(),
+        sex: "female".into(),
+        profession: "weaver".into(),
+        visible_description: String::new(),
+        expected_location: location.into(),
+        expected_location_label: location.into(),
+        presence_version,
+        allowed_circumstances: Default::default(),
+    };
+    let expected = candidate("market", 7);
+    assert!(!referred_contact_target_matches(
+        &expected,
+        &candidate("inn", 7),
+        "lubeck",
+        "lubeck",
+    ));
+    assert!(!referred_contact_target_matches(
+        &expected,
+        &candidate("market", 8),
+        "lubeck",
+        "lubeck",
+    ));
+
+    let projection = INVESTIGATION_SOURCE
+        .split("fn projected_contact_presence_availability")
+        .nth(1)
+        .and_then(|tail| tail.split("fn night_window_wait_minutes").next())
+        .expect("locate-contact projection");
+    let validates_target = projection.find("referred_contact_is_current_view").unwrap();
+    let computes_wait = projection.find("public_contact_schedule_wait_minutes").unwrap();
+    assert!(validates_target < computes_wait);
+}
+
+#[test]
 fn progressed_single_patrol_frontier_is_valid_after_public_night_wait() {
     let mut inspect = InvestigationActionCapability {
         id: "inspect".into(),

@@ -206,9 +206,23 @@ pub(crate) fn advance_party_journey_delay(
         .party_id()
         .find(&party_id.to_string())
         .ok_or("Travel delay requires a durable journey")?;
-    journey.completed_elapsed_minutes = journey.completed_elapsed_minutes.saturating_add(minutes);
+    (journey.completed_elapsed_minutes, journey.total_elapsed_minutes) =
+        journey_elapsed_after_delay(
+            journey.completed_elapsed_minutes,
+            journey.total_elapsed_minutes,
+            minutes,
+        );
     ctx.db.party_journey_authority().party_id().update(journey);
-    Ok(())
+    // Narrative and combat delays consume real time without movement. Rebuild
+    // the remaining itinerary from that later frontier so future camp windows
+    // and the total elapsed forecast remain canonical.
+    refresh_party_journey_forecast(ctx, party_id)
+}
+
+fn journey_elapsed_after_delay(completed: u64, total: u64, delay: u64) -> (u64, u64) {
+    let remaining = total.saturating_sub(completed);
+    let completed = completed.saturating_add(delay);
+    (completed, completed.saturating_add(remaining))
 }
 
 pub(crate) fn build_strategic_encounter(

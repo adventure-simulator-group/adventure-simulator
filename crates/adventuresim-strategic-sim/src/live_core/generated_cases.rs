@@ -422,7 +422,13 @@ impl LiveRunner {
             .iter()
             .filter(|presence| {
                 presence.settlement_id == settlement_id
-                    && npc_is_publicly_present(presence.start_minute, presence.end_minute, minute)
+                    && npc_is_publicly_present(
+                        presence.start_minute,
+                        presence.end_minute,
+                        presence.context_suppressed,
+                        presence.health_suppressed,
+                        minute,
+                    )
             })
             .filter_map(|presence| {
                 self.connection
@@ -453,7 +459,7 @@ impl LiveRunner {
         cycle: u32,
         candidate: &PublicNpcCandidate,
         purpose: &str,
-    ) -> Result<String, String> {
+    ) -> Result<Option<String>, String> {
         self.dialogue_nonce = self.dialogue_nonce.saturating_add(1);
         let session_id = format!(
             "dialogue:{character_id}:sim-{cycle}-{}-{purpose}",
@@ -471,6 +477,15 @@ impl LiveRunner {
                 adventuresim_dialogue::CATALOG_DIGEST.to_owned(),
                 cb,
             ));
+        if result
+            .as_ref()
+            .is_err_and(|error| dialogue_contact_presence_changed(error))
+        {
+            // The public presence row can change between selection and the
+            // authoritative reducer call. Treat that observer-safe mismatch
+            // as a replan instead of weakening authority or aborting the run.
+            return Ok(None);
+        }
         self.call(result)?;
         let session_is_owned = self
             .connection
@@ -481,7 +496,7 @@ impl LiveRunner {
         if !session_is_owned {
             return Err("dialogue reducer completed without an owner-scoped session".into());
         }
-        Ok(session_id)
+        Ok(Some(session_id))
     }
 
     pub(super) fn official_world_minute(&self) -> u64 {
@@ -640,8 +655,26 @@ impl LiveRunner {
                 before.len().min(32),
             ),
         );
-        if let Err(error) = self.start_public_dialogue(character_id, cycle, &candidate, "discover")
-        {
+        let dialogue_start =
+            self.start_public_dialogue(character_id, cycle, &candidate, "discover");
+        if matches!(&dialogue_start, Ok(None)) {
+            self.metrics.generated_discovery_decisions_unproductive = self
+                .metrics
+                .generated_discovery_decisions_unproductive
+                .saturating_add(1);
+            self.event(
+                agent,
+                CoreLoopEventKind::GeneratedDiscoveryResult,
+                format!(
+                    "official_minute={official_minute};active_symptom_count={};oldest_symptom_age_bucket={oldest_symptom_age_bucket};visible_candidate_count={};location_class={location_class};owner_open_case_count={};public_backoff=false;dialogue_success=false;session_success=false;new_open_cases=0;rumor_delivered=false;result=unproductive;reason=contact_presence_changed;fallback=settlement_activity;activity_fallback=true",
+                    public_count_bucket(active_symptom_count),
+                    visible_candidate_count.min(32),
+                    before.len().min(32),
+                ),
+            );
+            return Ok(GeneratedDiscoveryOutcome::NoVisibleContacts);
+        }
+        if let Err(error) = dialogue_start {
             let dialogue_succeeded =
                 error == "dialogue reducer completed without an owner-scoped session";
             self.event(
@@ -819,7 +852,11 @@ impl LiveRunner {
             }) {
                 continue;
             }
-            let session_id = self.start_public_dialogue(character_id, cycle, &candidate, "case")?;
+            let Some(session_id) =
+                self.start_public_dialogue(character_id, cycle, &candidate, "case")?
+            else {
+                continue;
+            };
             let mut options = self
                 .connection
                 .db
@@ -923,7 +960,10 @@ impl LiveRunner {
             .backend_investigation_cases()
             .iter()
             .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
-            .map(|row| (row.case_id, row.status, row.latest_update_at))
+            // A journal timestamp can advance when dialogue republishes an
+            // already-known fact. Only a changed public case status is new
+            // investigative knowledge.
+            .map(|row| (row.case_id, row.status))
             .collect::<Vec<_>>();
         cases.sort();
         let mut leads = self
@@ -932,34 +972,49 @@ impl LiveRunner {
             .backend_investigation_leads()
             .iter()
             .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
-            .map(|row| {
-                (
-                    row.lead_id,
-                    row.recorded_at,
-                    row.summary,
-                    row.witness_name,
-                    row.corrected_by,
-                    row.expected_location,
-                    row.current_learned_location,
-                )
+            .map(|row| PublicDialogueLeadSemantic {
+                summary: row.summary,
+                source_label: row.source_label,
+                confidence_bps: row.confidence_bps,
+                destination_stage: row.destination_stage,
+                directions: row.directions,
+                exact_location_id: row.exact_location_id,
+                latitude_e7: row.latitude_e_7,
+                longitude_e7: row.longitude_e_7,
+                witness_name: row.witness_name,
+                witness_description: row.witness_description,
+                witness_occupation_or_relationship: row.witness_occupation_or_relationship,
+                expected_location: row.expected_location,
+                current_learned_location: row.current_learned_location,
+                contradiction_group: row.contradiction_group,
+                corrected_by: row.corrected_by,
             })
             .collect::<Vec<_>>();
         leads.sort();
+        // Repeating the same testimony may republish it with a fresh row ID
+        // and timestamp. Treat identical public knowledge as one fact so the
+        // dialogue no-progress guard remains stable.
+        leads.dedup();
         let mut actions = self
             .connection
             .db
             .backend_investigation_actions()
             .iter()
             .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
-            .map(|row| {
-                (
-                    row.action_id,
-                    row.expected_version,
-                    row.available,
-                    row.can_travel_to_required_site,
-                    row.unavailable_reason_code,
-                    row.wait_minutes,
-                )
+            .map(|row| PublicDialogueActionSemantic {
+                action_id: row.action_id,
+                method: row.method,
+                summary: row.summary,
+                known_prerequisites: row.known_prerequisites,
+                duration_min_minutes: row.duration_min_minutes,
+                duration_max_minutes: row.duration_max_minutes,
+                uncertainty_bps: row.uncertainty_bps,
+                skill_contributions: row.skill_contributions,
+                weather_available: row.weather_available,
+                required_case_site_id: row.required_case_site_id,
+                available: row.available,
+                can_travel_to_required_site: row.can_travel_to_required_site,
+                unavailable_reason_code: row.unavailable_reason_code,
             })
             .collect::<Vec<_>>();
         actions.sort();
@@ -969,7 +1024,7 @@ impl LiveRunner {
             .backend_investigation_action_outcomes()
             .iter()
             .filter(|row| row.owner_character_id == character_id && row.case_id == case_id)
-            .map(|row| (row.outcome_id, row.action_id, row.recorded_at))
+            .map(|row| (row.outcome_id, row.action_id))
             .collect::<Vec<_>>();
         outcomes.sort();
         let mut sites = self
@@ -1272,9 +1327,10 @@ impl LiveRunner {
         agent: u32,
         case_id: &str,
         action_id: &str,
+        reason_code: &str,
         wait_minutes: u32,
     ) -> Result<bool, String> {
-        let wait_minutes = projected_investigation_wait_minutes("night_window", wait_minutes)
+        let wait_minutes = projected_investigation_wait_minutes(reason_code, wait_minutes)
             .ok_or("projected investigation wait hint was invalid")?;
         let at_settlement = self
             .party_for(owner_character_id)?
@@ -1333,9 +1389,10 @@ impl LiveRunner {
             agent,
             CoreLoopEventKind::GeneratedInvestigationWait,
             format!(
-                "case={};action={};reason=night_window;wait_minutes={wait_minutes};mode={wait_mode}",
+                "case={};action={};reason={};wait_minutes={wait_minutes};mode={wait_mode}",
                 bounded_event_field(case_id),
                 bounded_event_field(action_id),
+                bounded_event_field(reason_code),
             ),
         );
         self.generated_actor_ready_after_time(party_id, owner_character_id, case_id)
@@ -1696,6 +1753,7 @@ impl LiveRunner {
                     &action,
                     "initial",
                 )?;
+                let action_elapsed_before = self.public_party_elapsed_max(party_id);
                 let result = reducer_call!(self, "perform_investigation_action", |cb| self
                     .connection
                     .reducers
@@ -1720,6 +1778,17 @@ impl LiveRunner {
                     })
                     .collect::<Vec<_>>();
                 outcomes.sort_by_key(|row| (row.recorded_at, row.outcome_id.clone()));
+                let action_elapsed_after = self.public_party_elapsed_max(party_id);
+                let actual_minutes = action_elapsed_after.saturating_sub(action_elapsed_before);
+                let outcome_class = if outcomes.is_empty() {
+                    // The ordinary completed failure path always publishes a
+                    // safe outcome. No new outcome after a successful reducer
+                    // call therefore identifies the authoritative planned
+                    // interval being clipped at a condition/death boundary.
+                    "planned_interval_clipped"
+                } else {
+                    "completed_with_public_outcome"
+                };
                 let wording = outcomes
                     .last()
                     .map_or("No new public outcome wording", |row| row.wording.as_str());
@@ -1728,12 +1797,14 @@ impl LiveRunner {
                     agent,
                     CoreLoopEventKind::GeneratedInvestigationAction,
                     format!(
-                        "case={};subject={};action={};method={};summary={};outcome={}",
+                        "case={};subject={};action={};method={};summary={};outcome_class={outcome_class};requested_min_minutes={};requested_max_minutes={};actual_minutes={actual_minutes};outcome={}",
                         bounded_event_field(case_id),
                         bounded_event_field(subject),
                         bounded_event_field(&action.action_id),
                         bounded_event_field(&action.method),
                         bounded_event_field(&action.summary),
+                        action.duration_min_minutes,
+                        action.duration_max_minutes,
                         bounded_event_field(wording)
                     ),
                 );
@@ -1744,6 +1815,13 @@ impl LiveRunner {
                         character_id,
                         case_id,
                     );
+                }
+                if at_settlement {
+                    // Settlement-bound actions such as locating a referred
+                    // contact do not create case-site occupancy. Re-read the
+                    // public action set in place; reserved-return validation
+                    // applies only to an action performed at a case site.
+                    continue;
                 }
                 let occupied_site_id = self
                     .party_by_id(party_id)?
@@ -1985,6 +2063,7 @@ impl LiveRunner {
                     agent,
                     case_id,
                     &action.action_id,
+                    &action.unavailable_reason_code,
                     wait_minutes,
                 )? {
                     return Ok(false);
