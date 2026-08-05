@@ -12,6 +12,11 @@ pub(super) struct PrepareIngredientLotArgs {
     pub character_id: u64,
     pub inventory_scope: String,
     pub inventory_item_id: u64,
+    pub food_lot_id: u64,
+    pub material_object_id: u64,
+    pub request_id: String,
+    pub expected_revision: u64,
+    pub attempt_generation: u64,
     pub action: IngredientPreparationAction,
 }
 
@@ -21,6 +26,11 @@ impl From<PrepareIngredientLotArgs> for super::Reducer {
             character_id: args.character_id,
             inventory_scope: args.inventory_scope,
             inventory_item_id: args.inventory_item_id,
+            food_lot_id: args.food_lot_id,
+            material_object_id: args.material_object_id,
+            request_id: args.request_id,
+            expected_revision: args.expected_revision,
+            attempt_generation: args.attempt_generation,
             action: args.action,
         }
     }
@@ -46,12 +56,22 @@ pub trait prepare_ingredient_lot {
         character_id: u64,
         inventory_scope: String,
         inventory_item_id: u64,
+        food_lot_id: u64,
+        material_object_id: u64,
+        request_id: String,
+        expected_revision: u64,
+        attempt_generation: u64,
         action: IngredientPreparationAction,
     ) -> __sdk::Result<()> {
         self.prepare_ingredient_lot_then(
             character_id,
             inventory_scope,
             inventory_item_id,
+            food_lot_id,
+            material_object_id,
+            request_id,
+            expected_revision,
+            attempt_generation,
             action,
             |_, _| {},
         )
@@ -68,6 +88,11 @@ pub trait prepare_ingredient_lot {
         character_id: u64,
         inventory_scope: String,
         inventory_item_id: u64,
+        food_lot_id: u64,
+        material_object_id: u64,
+        request_id: String,
+        expected_revision: u64,
+        attempt_generation: u64,
         action: IngredientPreparationAction,
 
         callback: impl FnOnce(
@@ -84,6 +109,11 @@ impl prepare_ingredient_lot for super::RemoteReducers {
         character_id: u64,
         inventory_scope: String,
         inventory_item_id: u64,
+        food_lot_id: u64,
+        material_object_id: u64,
+        request_id: String,
+        expected_revision: u64,
+        attempt_generation: u64,
         action: IngredientPreparationAction,
 
         callback: impl FnOnce(
@@ -97,6 +127,11 @@ impl prepare_ingredient_lot for super::RemoteReducers {
                 character_id,
                 inventory_scope,
                 inventory_item_id,
+                food_lot_id,
+                material_object_id,
+                request_id,
+                expected_revision,
+                attempt_generation,
                 action,
             },
             callback,

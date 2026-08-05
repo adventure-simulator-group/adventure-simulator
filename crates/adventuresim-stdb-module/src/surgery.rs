@@ -389,6 +389,33 @@ pub fn preview_elapsed_for_injuries_with_rest_minutes(
     recovery_minutes: u64,
 ) -> Result<u64, String> {
     crate::condition::apply_blood_loss(ctx, character_id, 0.0)?;
+    preview_injury_boundary_with_rest_minutes(ctx, character_id, requested, recovery_minutes)
+        .map(|preview| preview.0)
+}
+
+/// Side-effect-free injury terminal preview. The boolean preserves a blood
+/// terminal reached exactly at the requested endpoint, where elapsed alone is
+/// indistinguishable from ordinary completion.
+pub fn preview_injury_terminal_boundary(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested: u64,
+    allow_recovery: bool,
+) -> Result<(u64, bool), String> {
+    preview_injury_boundary_with_rest_minutes(
+        ctx,
+        character_id,
+        requested,
+        if allow_recovery { requested } else { 0 },
+    )
+}
+
+fn preview_injury_boundary_with_rest_minutes(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested: u64,
+    recovery_minutes: u64,
+) -> Result<(u64, bool), String> {
     let blood = ctx
         .db
         .character_condition()
@@ -412,14 +439,14 @@ pub fn preview_elapsed_for_injuries_with_rest_minutes(
             }
         })
         .collect::<Vec<_>>();
-    Ok(simulate_blood_interval(
+    let interval = simulate_blood_interval(
         blood,
         &cuts,
         requested,
         crate::condition::BLOOD_RECOVERY_FRACTION_PER_DAY * recovery_minutes.min(requested) as f32
             / requested.max(1) as f32,
-    )
-    .elapsed)
+    );
+    Ok((interval.elapsed, interval.terminal))
 }
 
 /// Advance authoritative wounds for one personal-clock interval. This is the
@@ -1172,6 +1199,52 @@ mod tests {
         );
         assert_eq!(whole.elapsed, first.elapsed + second.elapsed);
         assert_eq!(whole.terminal, second.terminal);
+    }
+
+    #[test]
+    fn injury_terminal_preview_is_side_effect_free() {
+        let source = include_str!("surgery.rs");
+        let preview = source
+            .split("fn preview_injury_boundary_with_rest_minutes")
+            .nth(1)
+            .and_then(|tail| tail.split("/// Advance authoritative wounds").next())
+            .expect("injury terminal preview");
+        for forbidden in [
+            "apply_blood_loss",
+            "initialize_character_condition",
+            "backfill_character_injuries",
+            "store_injury",
+            ".insert(",
+            ".update(",
+            ".delete(",
+            "refresh",
+            "death",
+        ] {
+            assert!(!preview.contains(forbidden), "preview contains {forbidden}");
+        }
+    }
+
+    #[test]
+    fn legacy_elapsed_previews_retain_committing_blood_normalization() {
+        let source = include_str!("surgery.rs");
+        let wrappers = source
+            .split("pub fn preview_elapsed_for_injuries")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("/// Side-effect-free injury terminal preview")
+                    .next()
+            })
+            .expect("legacy injury preview wrappers");
+        assert!(wrappers.contains("preview_elapsed_for_injuries_with_rest_minutes"));
+        assert!(wrappers.contains("crate::condition::apply_blood_loss"));
+
+        let preparation = include_str!("food.rs")
+            .split("fn preparation_terminal_minute")
+            .nth(1)
+            .and_then(|tail| tail.split("fn next_preparation_attempt_generation").next())
+            .expect("preparation terminal preview");
+        assert!(preparation.contains("preview_injury_terminal_boundary"));
+        assert!(!preparation.contains("preview_elapsed_for_injuries"));
     }
 
     #[test]

@@ -1469,6 +1469,7 @@ pub struct FoodLot {
     pub id: u64,
     pub inventory_item_id: Option<u64>,
     pub party_inventory_item_id: Option<u64>,
+    pub material_revision: u64,
     pub display_name: String,
     pub preparation: FoodPreparation,
     pub ingredient_item_ids: Vec<String>,
@@ -1483,6 +1484,27 @@ pub struct FoodLot {
     pub nutrition_kcal: f32,
     pub total_value: f32,
     pub created_at_minute: u64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum IngredientPreparationAction {
+    Cut,
+    Grind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendIngredientPreparationPlan {
+    pub actor_character_id: u64,
+    pub inventory_scope: String,
+    pub inventory_item_id: u64,
+    pub food_lot_id: u64,
+    pub material_object_id: u64,
+    pub request_id: String,
+    pub expected_revision: u64,
+    pub attempt_generation: u64,
+    pub action: IngredientPreparationAction,
+    pub duration_minutes: u32,
+    pub next_display_name: String,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

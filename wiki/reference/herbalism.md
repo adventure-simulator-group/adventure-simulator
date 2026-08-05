@@ -23,6 +23,37 @@ Grinding takes 20 minutes, needs no tool, trains Bludgeon, and receives the
 same 6%-per-rank reduction. A carried mortar and pestle halves the result.
 A clipped terminal-time action changes and trains nothing.
 
+Each measured lot has a stable inventory-object identity and a nonzero material
+revision from creation. The strategic gateway publishes the exact Cut/Grind
+request tuple and calculated duration used by the contextual inventory edge
+action; the browser does not derive a lot ID, object ID, revision, or request
+ID. At commit, the reducer rebuilds the typed plan and revalidates actor, place,
+object custody, revision, transition, tool, duration, rights, mass, private
+medicinal components, and contamination. The transformation conserves all
+extensive and private material exactly.
+
+The request identity binds only public authority: actor, submitted inventory
+scope and row, lot, stable object, revision, action, attempt generation,
+canonical place, and immediate resolved custody. Private medicinal and
+microbial truth is excluded from the public request ID. It remains bound to the
+private plan and receipt and is revalidated transactionally after the wait;
+microbial truth is evaluated from its anchor and growth rate at the actor's
+current minute. The gateway publishes fully resolved personal- and party-held
+actions in their contextual inventory surfaces.
+
+Preparation attempts have private durable receipts. An exact retry is a
+no-op, reuse of a request ID for different inputs is rejected, and stale
+revisions fail closed. A terminal-time interruption records the attempt;
+preparation state, material, revision, and training remain unchanged, and an
+exact retry is resolved from that receipt.
+The server advances a private attempt generation after such a clipped attempt,
+so the old request remains an exact no-op while the gateway issues a distinct
+next request at the unchanged material revision. Terminal boundaries are part
+of the typed plan and therefore produce a wait-only plan with no preparation
+commit effect. After a successful wait, the reducer reloads place, custody,
+lot, tool, action, and private source rows in the same transaction before
+material or training commit; a mismatch fails and rolls back the interval.
+
 Cut lots use 75% and ground lots 50% of their authored cooking safety time.
 Prepared food remains edible. Medicinal-only substances may contribute zero
 nutrition and flavor; food capability never removes authored toxicity.

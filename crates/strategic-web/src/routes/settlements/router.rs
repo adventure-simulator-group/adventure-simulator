@@ -226,6 +226,7 @@ use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendChallenge,
+    BackendIngredientPreparationPlan,
     BackendCharacterRelationshipStatus, BackendCharacterResidenceStatus, BackendCorpse,
     BackendFamilyChild,
     BackendLocalProblemTradeEffect, BackendPhysiologyAdministration, BackendPhysiologyChart,

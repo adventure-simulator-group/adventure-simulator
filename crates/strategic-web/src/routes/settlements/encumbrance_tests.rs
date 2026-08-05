@@ -181,6 +181,7 @@ mod encumbrance_tests {
             id: 5,
             inventory_item_id: Some(40),
             party_inventory_item_id: None,
+            material_revision: 1,
             display_name: "Large stew".into(),
             preparation: FoodPreparation::Stewed,
             ingredient_item_ids: vec!["raw_venison".into()],
