@@ -79,6 +79,12 @@ current party, character, location, time, custody, and source identity before
 changing state. Shared-core functions perform deterministic calculations, but
 do not grant authority by themselves.
 
+Strategic systems share a closed, versioned vocabulary for place and fixture
+identity. A coarse settlement identity is not an exact venue, and constructing
+an inn, chapter, residence, case-site, camp, source, or fireplace identity does
+not establish existence, presence, visibility, knowledge, ownership, or
+permission. See [Strategic place and fixture identities](strategic-places.md).
+
 Errantry challenges follow this boundary. The private seed and canonical
 assignment remain in durable strategic authority; the gateway receives only
 formal clues, allowed interactions, presentation, revision, and safe feedback.
