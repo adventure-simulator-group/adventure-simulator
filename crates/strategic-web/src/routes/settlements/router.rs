@@ -196,12 +196,17 @@ mod building_query_tests {
         let private_dish = ["SELECT * FROM fireplace_", "dish WHERE"].concat();
         assert!(!source.contains(&private_station));
         assert!(!source.contains(&private_dish));
-        assert!(source.contains("party.camp_destination.is_none()"));
         assert!(source.contains(
-            "journey.camp_stop_minutes.contains(&journey.completed_minutes)"
+            "party.camp_destination.as_ref() == Some(&journey.destination)"
         ));
+        assert!(source.contains("matches!(journey.plan_version, 1 | 2)"));
+        assert!(source.contains("journey.completed_minutes < journey.total_minutes"));
+        assert!(source.contains("camp_stop_minutes"));
         assert!(source.contains("service_npc_location_available"));
         assert!(source.contains("chapter_has_standalone_building"));
+        assert!(source.contains("StrategicFixtureId::fireplace"));
+        assert!(source.contains("StrategicPlaceId::journey_camp"));
+        assert!(!source.contains("format!(\"camp|"));
     }
 }
 

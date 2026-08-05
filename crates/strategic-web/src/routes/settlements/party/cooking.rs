@@ -93,7 +93,38 @@ fn settlement_fireplace_context(
     if !available {
         return Err("This settlement building has no fireplace");
     }
-    Ok(format!("settlement|{}|{building}", settlement.id))
+    let place = if let Some(kind) =
+        adventuresim_core::strategic_place::SettlementVenueKind::from_id(building)
+    {
+        adventuresim_core::strategic_place::StrategicPlaceId::settlement_venue(
+            &settlement.id,
+            kind,
+        )
+    } else {
+        let (organization, chapter) =
+            adventuresim_core::organization::organization_chapter_at(&settlement.id, building)
+                .ok_or("This settlement page has no canonical fireplace place")?;
+        adventuresim_core::strategic_place::StrategicPlaceId::chapter_venue(
+            &settlement.id,
+            &organization.id,
+            &chapter.location_id,
+        )
+    }
+    .map_err(|_| "This settlement page has no canonical fireplace place")?;
+    adventuresim_core::strategic_place::StrategicFixtureId::fireplace(place)
+        .map(|fixture| fixture.to_string())
+        .map_err(|_| "This settlement page has no fireplace")
+}
+
+fn party_journey_is_current_camp(party: &Party, journey: &PartyJourney) -> bool {
+    party.current_settlement_id.is_none()
+        && party.current_case_site_id.is_none()
+        && party.camp_destination.as_ref() == Some(&journey.destination)
+        && matches!(journey.plan_version, 1 | 2)
+        && journey.completed_minutes < journey.total_minutes
+        && journey
+            .camp_stop_minutes
+            .contains(&journey.completed_minutes)
 }
 
 async fn camp_fireplace_context(state: &AppState, actor: &Character) -> Result<String, &'static str> {
@@ -104,20 +135,24 @@ async fn camp_fireplace_context(state: &AppState, actor: &Character) -> Result<S
     let journey = state.db.query_one::<PartyJourney>(&format!(
         "SELECT * FROM party_journey WHERE party_id = {}", sql_string_literal(party_id)
     )).await.map_err(|_| "Journey state unavailable")?.ok_or("Journey state unavailable")?;
-    if party.current_settlement_id.is_some()
-        || party.current_case_site_id.is_some()
-        || party.camp_destination.is_none()
-        || !journey.camp_stop_minutes.contains(&journey.completed_minutes)
-    {
+    if !party_journey_is_current_camp(&party, &journey) {
         return Err("This is not the party's current journey camp");
     }
-    Ok(format!("camp|{}|{}|{}", party_id, journey.departure_minute, journey.completed_minutes))
+    let place = adventuresim_core::strategic_place::StrategicPlaceId::journey_camp(
+        party_id,
+        journey.departure_minute,
+        journey.completed_minutes,
+    )
+    .map_err(|_| "This journey camp has no canonical identity")?;
+    adventuresim_core::strategic_place::StrategicFixtureId::fireplace(place)
+        .map(|fixture| fixture.to_string())
+        .map_err(|_| "This journey camp has no fireplace")
 }
 
 async fn fireplace_rows(
     state: &AppState,
     actor: &Character,
-    context_key: &str,
+    fireplace_fixture_id: &str,
 ) -> (Vec<InventoryItem>, Vec<PartyInventoryItem>, Vec<InventoryItemAmount>, Vec<PartyItemAmount>, Vec<FoodLot>, Vec<ItemDefinition>, Option<BackendFireplaceStation>, Option<BackendFireplaceDish>, Vec<BackendFireplaceStation>, Vec<BackendFireplaceDish>, u64) {
     let personal = state.db.query::<InventoryItem>(&format!("SELECT * FROM inventory_item WHERE character_id = {}", actor.id)).await.unwrap_or_default();
     let party = if let Some(party_id) = actor.party_id.as_deref() {
@@ -127,11 +162,11 @@ async fn fireplace_rows(
     let party_amounts = state.db.query::<PartyItemAmount>("SELECT * FROM party_item_amount").await.unwrap_or_default();
     let lots = state.db.query::<FoodLot>("SELECT * FROM food_lot").await.unwrap_or_default();
     let definitions = state.db.query::<ItemDefinition>("SELECT * FROM item").await.unwrap_or_default();
-    let key = format!("{}|{}", actor.id, context_key);
+    let key = format!("{}|{}", actor.id, fireplace_fixture_id);
     let station = state.db.query_one::<BackendFireplaceStation>(&format!("SELECT * FROM backend_fireplace_stations WHERE key = {}", sql_string_literal(&key))).await.ok().flatten();
     let dish = state.db.query_one::<BackendFireplaceDish>(&format!("SELECT * FROM backend_fireplace_dishes WHERE station_key = {}", sql_string_literal(&key))).await.ok().flatten();
     let vessel_stations = state.db.query::<BackendFireplaceStation>(&format!("SELECT * FROM backend_fireplace_stations WHERE character_id = {}", actor.id)).await.unwrap_or_default().into_iter()
-        .filter(|row| row.context_key == context_key && row.instrument_object_id.is_some()).collect::<Vec<_>>();
+        .filter(|row| row.fireplace_fixture_id == fireplace_fixture_id && row.instrument_object_id.is_some()).collect::<Vec<_>>();
     let vessel_keys = vessel_stations.iter().map(|row| row.key.as_str()).collect::<HashSet<_>>();
     let vessel_dishes = state.db.query::<BackendFireplaceDish>("SELECT * FROM backend_fireplace_dishes").await.unwrap_or_default().into_iter()
         .filter(|row| vessel_keys.contains(row.station_key.as_str())).collect::<Vec<_>>();

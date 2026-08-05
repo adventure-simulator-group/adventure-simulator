@@ -1497,7 +1497,7 @@ pub enum CookingMethod {
 pub struct BackendFireplaceStation {
     pub key: String,
     pub character_id: u64,
-    pub context_key: String,
+    pub fireplace_fixture_id: String,
     pub instrument_item_id: Option<String>,
     #[serde(default)]
     pub instrument_object_id: Option<u64>,
@@ -1508,6 +1508,7 @@ pub struct BackendFireplaceStation {
 pub struct BackendFireplaceDish {
     pub station_key: String,
     pub character_id: u64,
+    pub fireplace_fixture_id: String,
     pub contributor_name: String,
     pub method: CookingMethod,
     pub started_at_minute: u64,

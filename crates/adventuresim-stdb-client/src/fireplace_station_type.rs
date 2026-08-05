@@ -9,7 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct FireplaceStation {
     pub key: String,
     pub character_id: u64,
-    pub context_key: String,
+    pub fireplace_fixture_id: String,
     pub instrument_item_id: Option<String>,
     pub instrument_object_id: Option<u64>,
     pub instrument_source: Option<String>,
@@ -26,7 +26,7 @@ impl __sdk::InModule for FireplaceStation {
 pub struct FireplaceStationCols {
     pub key: __sdk::__query_builder::Col<FireplaceStation, String>,
     pub character_id: __sdk::__query_builder::Col<FireplaceStation, u64>,
-    pub context_key: __sdk::__query_builder::Col<FireplaceStation, String>,
+    pub fireplace_fixture_id: __sdk::__query_builder::Col<FireplaceStation, String>,
     pub instrument_item_id: __sdk::__query_builder::Col<FireplaceStation, Option<String>>,
     pub instrument_object_id: __sdk::__query_builder::Col<FireplaceStation, Option<u64>>,
     pub instrument_source: __sdk::__query_builder::Col<FireplaceStation, Option<String>>,
@@ -39,7 +39,10 @@ impl __sdk::__query_builder::HasCols for FireplaceStation {
         FireplaceStationCols {
             key: __sdk::__query_builder::Col::new(table_name, "key"),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
-            context_key: __sdk::__query_builder::Col::new(table_name, "context_key"),
+            fireplace_fixture_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "fireplace_fixture_id",
+            ),
             instrument_item_id: __sdk::__query_builder::Col::new(table_name, "instrument_item_id"),
             instrument_object_id: __sdk::__query_builder::Col::new(
                 table_name,

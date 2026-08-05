@@ -8,7 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub(super) struct RetrieveFireplaceDishArgs {
     pub character_id: u64,
-    pub context_key: String,
+    pub fireplace_fixture_id: String,
     pub inventory_scope: String,
 }
 
@@ -16,7 +16,7 @@ impl From<RetrieveFireplaceDishArgs> for super::Reducer {
     fn from(args: RetrieveFireplaceDishArgs) -> Self {
         Self::RetrieveFireplaceDish {
             character_id: args.character_id,
-            context_key: args.context_key,
+            fireplace_fixture_id: args.fireplace_fixture_id,
             inventory_scope: args.inventory_scope,
         }
     }
@@ -40,10 +40,15 @@ pub trait retrieve_fireplace_dish {
     fn retrieve_fireplace_dish(
         &self,
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         inventory_scope: String,
     ) -> __sdk::Result<()> {
-        self.retrieve_fireplace_dish_then(character_id, context_key, inventory_scope, |_, _| {})
+        self.retrieve_fireplace_dish_then(
+            character_id,
+            fireplace_fixture_id,
+            inventory_scope,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `retrieve_fireplace_dish` to run as soon as possible,
@@ -55,7 +60,7 @@ pub trait retrieve_fireplace_dish {
     fn retrieve_fireplace_dish_then(
         &self,
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         inventory_scope: String,
 
         callback: impl FnOnce(
@@ -70,7 +75,7 @@ impl retrieve_fireplace_dish for super::RemoteReducers {
     fn retrieve_fireplace_dish_then(
         &self,
         character_id: u64,
-        context_key: String,
+        fireplace_fixture_id: String,
         inventory_scope: String,
 
         callback: impl FnOnce(
@@ -82,7 +87,7 @@ impl retrieve_fireplace_dish for super::RemoteReducers {
         self.imp.invoke_reducer_with_callback(
             RetrieveFireplaceDishArgs {
                 character_id,
-                context_key,
+                fireplace_fixture_id,
                 inventory_scope,
             },
             callback,

@@ -775,6 +775,32 @@ mod tests {
     }
 
     #[test]
+    fn camp_fireplaces_are_exact_across_journeys_and_reached_stops() {
+        let first = StrategicPlaceId::journey_camp("party-7", 14_400, 480).unwrap();
+        let later_stop = StrategicPlaceId::journey_camp("party-7", 14_400, 960).unwrap();
+        let later_journey = StrategicPlaceId::journey_camp("party-7", 20_000, 480).unwrap();
+
+        let first_fireplace = StrategicFixtureId::fireplace(first.clone()).unwrap();
+        assert_ne!(
+            first_fireplace,
+            StrategicFixtureId::fireplace(later_stop).unwrap()
+        );
+        assert_ne!(
+            first_fireplace,
+            StrategicFixtureId::fireplace(later_journey).unwrap()
+        );
+        assert_eq!(
+            first_fireplace.to_string().parse::<StrategicFixtureId>(),
+            Ok(first_fireplace)
+        );
+        assert!(
+            "camp|party-7|14400|480"
+                .parse::<StrategicFixtureId>()
+                .is_err()
+        );
+    }
+
+    #[test]
     fn invalid_fixture_associations_fail_closed() {
         let settlement = StrategicPlaceId::settlement("lubeck").unwrap();
         assert_eq!(
