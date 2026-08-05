@@ -28,6 +28,15 @@ fn outbreak_catalog_covers_sources_and_all_initial_diseases() {
             practice: OutbreakSanitationPractice::ContaminatedWell
         }
     ));
+    for site in cases.iter().flat_map(|case| &case.sites) {
+        assert!(
+            crate::quest_catalog::catalog()
+                .site(site.kind.as_str())
+                .is_some(),
+            "generated outbreak site {} is absent from the startup catalog",
+            site.kind.as_str()
+        );
+    }
     assert!(cases.iter().any(|case| matches!(
         case.outbreak.as_ref().unwrap().source,
         OutbreakSource::Sanitation { .. }
