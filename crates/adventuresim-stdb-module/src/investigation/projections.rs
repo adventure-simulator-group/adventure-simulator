@@ -966,12 +966,38 @@ fn observer_pattern_route_has_live_corroborated_clue(
     owner_character_id: u64,
     case_id: &str,
     evidence_id: &str,
+    observer_personal_minute: u64,
     knowledge: impl IntoIterator<Item = InvestigationEvidenceKnowledge>,
 ) -> bool {
-    knowledge.into_iter().any(|knowledge| {
-        knowledge.owner_character_id == owner_character_id
-            && knowledge.case_id == case_id
-            && knowledge.evidence_id == evidence_id
+    let mut numeric_ids = BTreeMap::new();
+    let mut adapted = Vec::new();
+    for row in knowledge {
+        if row.owner_character_id != owner_character_id {
+            continue;
+        }
+        let Ok(record) = inv::adapt_evidence_knowledge(
+            &row.id,
+            row.owner_character_id,
+            &row.case_id,
+            &row.evidence_id,
+            &row.source_id,
+            row.learned_at,
+            observer_personal_minute,
+        ) else {
+            return false;
+        };
+        let numeric_id = record.record().envelope().record_id().get();
+        if numeric_ids
+            .insert(numeric_id, record.persisted_id().to_owned())
+            .is_some_and(|prior| prior != record.persisted_id())
+        {
+            return false;
+        }
+        adapted.push(record);
+    }
+    adapted.into_iter().any(|record| {
+        let proposition = record.record().envelope().proposition();
+        proposition.case_id.as_str() == case_id && proposition.evidence_id.as_str() == evidence_id
     })
 }
 
@@ -1007,6 +1033,11 @@ fn capability_has_live_pattern_support_view(
         capability.owner_character_id,
         &observer_case_id,
         &evidence_id,
+        ctx.db
+            .character_time()
+            .character_id()
+            .find(capability.owner_character_id)
+            .map_or(0, |time| time.minutes),
         ctx.db
             .investigation_evidence_knowledge()
             .owner_character_id()
@@ -1356,6 +1387,7 @@ fn projected_night_window_wait_minutes(
         capability.owner_character_id,
         &capability.case_id,
         &evidence_id,
+        started_at,
         ctx.db
             .investigation_evidence_knowledge()
             .owner_character_id()

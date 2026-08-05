@@ -200,7 +200,9 @@
             duration_minutes: 1,
             success,
             resulting_uncertainty_bps: 9_000,
-            private_resolution_json: "{}".into(),
+            private_resolution_json: format!(
+                r#"{{"result":"no_new_information","success":{success},"cost":{{"minutes":1,"fatigue":0,"food_units":0,"water_units":0}},"resulting_uncertainty_bps":9000,"risk_bps":0,"risk_triggered":false,"effective_skill_bps":0}}"#
+            ),
         }
     }
 

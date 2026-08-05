@@ -59,6 +59,41 @@ fn bounded_progress_history_is_exact_contiguous_and_nontransferable() {
         contiguous_failed_attempts("cap-a", 7, "reacquire_tracks", 3, success_break),
         0
     );
+    let mut interrupted = failed_attempt("a2", "cap-a", 7, "reacquire_tracks", 2, false);
+    interrupted.private_resolution_json = serde_json::json!({
+        "status": "interrupted",
+        "requested_minutes": 120,
+        "completion_effects_applied": false,
+    })
+    .to_string();
+    assert_eq!(
+        contiguous_failed_attempts(
+            "cap-a",
+            7,
+            "reacquire_tracks",
+            3,
+            [
+                failed_attempt("a0", "cap-a", 7, "reacquire_tracks", 0, false),
+                failed_attempt("a1", "cap-a", 7, "reacquire_tracks", 1, false),
+                interrupted,
+            ],
+        ),
+        0,
+        "an interrupted terminal receipt breaks rather than advances bounded progress"
+    );
+    let mut malformed = failed_attempt("a2", "cap-a", 7, "reacquire_tracks", 2, false);
+    malformed.private_resolution_json = "{}".into();
+    assert_eq!(
+        contiguous_failed_attempts(
+            "cap-a",
+            7,
+            "reacquire_tracks",
+            3,
+            [malformed],
+        ),
+        0,
+        "malformed private receipts fail closed"
+    );
 }
 
 #[test]
