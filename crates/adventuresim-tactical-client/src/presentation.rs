@@ -14,44 +14,98 @@ use bevy::{
     prelude::*,
 };
 
-pub struct TacticalPresentationPlugin;
+#[derive(Debug, Clone, Copy)]
+pub struct TacticalPresentationPlugin {
+    pub shadows_enabled: bool,
+    pub atmosphere_enabled: bool,
+    pub environment_light_enabled: bool,
+    pub environment_map_size: u32,
+    pub bloom_enabled: bool,
+    pub ssao_enabled: bool,
+}
+
+impl Default for TacticalPresentationPlugin {
+    fn default() -> Self {
+        Self {
+            shadows_enabled: true,
+            atmosphere_enabled: true,
+            environment_light_enabled: true,
+            environment_map_size: 64,
+            bloom_enabled: true,
+            ssao_enabled: true,
+        }
+    }
+}
 
 impl Plugin for TacticalPresentationPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_tactical_presentation)
-            .add_observer(on_game_scene_added);
+        app.insert_resource(TacticalGraphicsSettings {
+            shadows_enabled: self.shadows_enabled,
+            atmosphere_enabled: self.atmosphere_enabled,
+            environment_light_enabled: self.environment_light_enabled,
+            environment_map_size: self.environment_map_size,
+            bloom_enabled: self.bloom_enabled,
+            ssao_enabled: self.ssao_enabled,
+        })
+        .add_systems(Startup, setup_tactical_presentation)
+        .add_observer(on_game_scene_added);
     }
+}
+
+#[derive(Resource, Debug, Clone, Copy)]
+struct TacticalGraphicsSettings {
+    shadows_enabled: bool,
+    atmosphere_enabled: bool,
+    environment_light_enabled: bool,
+    environment_map_size: u32,
+    bloom_enabled: bool,
+    ssao_enabled: bool,
 }
 
 fn setup_tactical_presentation(
     mut commands: Commands,
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
+    settings: Res<TacticalGraphicsSettings>,
 ) {
     commands.spawn((
         Name::new("Tactical sunlight"),
         Transform::from_xyz(200.0, 1000.0, 100.0).looking_at(Vec3::ZERO, Vec3::Y),
         DirectionalLight {
-            shadows_enabled: true,
+            shadows_enabled: settings.shadows_enabled,
             illuminance: lux::DIRECT_SUNLIGHT,
             ..default()
         },
     ));
 
-    commands.spawn((
+    let mut camera = commands.spawn((
         Name::new("Tactical gameplay camera"),
         Camera3d::default(),
         Projection::Perspective(PerspectiveProjection {
             fov: 80.0_f32.to_radians(),
             ..default()
         }),
-        Atmosphere::earthlike(scattering_mediums.add(ScatteringMedium::default())),
-        AtmosphereEnvironmentMapLight::default(),
         Exposure::SUNLIGHT,
         Tonemapping::AcesFitted,
-        Bloom::NATURAL,
+        // Gameplay MSAA is deliberately off even in the full preset.
         Msaa::Off,
-        ScreenSpaceAmbientOcclusion::default(),
     ));
+    if settings.atmosphere_enabled {
+        camera.insert(Atmosphere::earthlike(
+            scattering_mediums.add(ScatteringMedium::default()),
+        ));
+        if settings.environment_light_enabled {
+            camera.insert(AtmosphereEnvironmentMapLight {
+                size: UVec2::splat(settings.environment_map_size),
+                ..default()
+            });
+        }
+    }
+    if settings.bloom_enabled {
+        camera.insert(Bloom::NATURAL);
+    }
+    if settings.ssao_enabled {
+        camera.insert(ScreenSpaceAmbientOcclusion::default());
+    }
 }
 
 fn on_game_scene_added(

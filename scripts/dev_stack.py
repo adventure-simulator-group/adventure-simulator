@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from enum import Enum
@@ -13,7 +14,9 @@ import os
 import secrets
 from pathlib import Path
 import re
+import shutil
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -42,8 +45,246 @@ class TacticalPlayMode(str, Enum):
     """Safe fixtures exposed by the supervised native tactical launcher."""
 
     ANIMATION = "animation"
+    DIAGNOSTIC = "diagnostic"
     COMBAT = "combat"
     NETWORKING = "networking"
+
+
+class ObsWebSocket:
+    """Small obs-websocket v5 client used only by the supervised capture path."""
+
+    def __init__(self, port: int, password: str, timeout: float = 15.0):
+        self.socket = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+        self.socket.settimeout(timeout)
+        key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
+        request = (
+            f"GET / HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+            "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
+        )
+        self.socket.sendall(request.encode("ascii"))
+        response = b""
+        while b"\r\n\r\n" not in response:
+            response += self.socket.recv(4096)
+        headers, self._buffer = response.split(b"\r\n\r\n", 1)
+        if not headers.startswith(b"HTTP/1.1 101"):
+            self.close()
+            raise RuntimeError("OBS rejected its local WebSocket connection")
+        hello = self.receive()
+        if hello.get("op") != 0:
+            raise RuntimeError("OBS did not send the expected WebSocket greeting")
+        identify: dict[str, object] = {"rpcVersion": 1}
+        authentication = hello.get("d", {}).get("authentication")
+        if authentication:
+            secret = base64.b64encode(hashlib.sha256(
+                (password + authentication["salt"]).encode("utf-8")
+            ).digest()).decode("ascii")
+            identify["authentication"] = base64.b64encode(hashlib.sha256(
+                (secret + authentication["challenge"]).encode("utf-8")
+            ).digest()).decode("ascii")
+        self.send({"op": 1, "d": identify})
+        if self.receive().get("op") != 2:
+            raise RuntimeError("OBS WebSocket authentication failed")
+
+    def close(self) -> None:
+        try:
+            self.socket.close()
+        except OSError:
+            pass
+
+    def _send_frame(self, opcode: int, payload: bytes) -> None:
+        mask = secrets.token_bytes(4)
+        length = len(payload)
+        header = bytearray([0x80 | opcode])
+        if length < 126:
+            header.append(0x80 | length)
+        elif length <= 0xFFFF:
+            header.append(0x80 | 126)
+            header.extend(struct.pack("!H", length))
+        else:
+            header.append(0x80 | 127)
+            header.extend(struct.pack("!Q", length))
+        masked = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
+        self.socket.sendall(bytes(header) + mask + masked)
+
+    def send(self, value: dict[str, object]) -> None:
+        self._send_frame(1, json.dumps(value, separators=(",", ":")).encode("utf-8"))
+
+    def _receive_exact(self, length: int) -> bytes:
+        value = self._buffer[:length]
+        self._buffer = self._buffer[length:]
+        while len(value) < length:
+            chunk = self.socket.recv(length - len(value))
+            if not chunk:
+                raise RuntimeError("OBS closed its WebSocket connection")
+            value += chunk
+        return value
+
+    def receive(self) -> dict[str, object]:
+        fragments = bytearray()
+        while True:
+            first, second = self._receive_exact(2)
+            opcode = first & 0x0F
+            length = second & 0x7F
+            if length == 126:
+                length = struct.unpack("!H", self._receive_exact(2))[0]
+            elif length == 127:
+                length = struct.unpack("!Q", self._receive_exact(8))[0]
+            mask = self._receive_exact(4) if second & 0x80 else None
+            payload = self._receive_exact(length)
+            if mask:
+                payload = bytes(
+                    value ^ mask[index % 4] for index, value in enumerate(payload)
+                )
+            if opcode == 8:
+                raise RuntimeError("OBS closed its WebSocket connection")
+            if opcode == 9:
+                self._send_frame(10, payload)
+                continue
+            if opcode in {0, 1}:
+                fragments.extend(payload)
+                if first & 0x80:
+                    return json.loads(fragments.decode("utf-8"))
+
+    def request(self, request_type: str, data: dict[str, object] | None = None) -> dict[str, object]:
+        request_id = secrets.token_hex(8)
+        self.send({
+            "op": 6,
+            "d": {
+                "requestType": request_type,
+                "requestId": request_id,
+                "requestData": data or {},
+            },
+        })
+        while True:
+            message = self.receive()
+            body = message.get("d", {})
+            if message.get("op") != 7 or body.get("requestId") != request_id:
+                continue
+            status = body.get("requestStatus", {})
+            if not status.get("result"):
+                raise RuntimeError(
+                    f"OBS {request_type} failed: {status.get('comment', 'unknown error')}"
+                )
+            return body.get("responseData", {})
+
+
+@dataclass
+class ObsCapture:
+    process: subprocess.Popen[str]
+    websocket: ObsWebSocket
+    metadata_file: Path
+    scene_name: str
+
+
+def tactical_window_capture_geometry(process_id: int) -> dict[str, int]:
+    if os.name != "nt":
+        raise RuntimeError("cropped display capture is currently supported only on Windows")
+    import ctypes
+    from ctypes import wintypes
+
+    class Rect(ctypes.Structure):
+        _fields_ = [
+            ("left", wintypes.LONG), ("top", wintypes.LONG),
+            ("right", wintypes.LONG), ("bottom", wintypes.LONG),
+        ]
+
+    class MonitorInfo(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", wintypes.DWORD),
+            ("rcMonitor", Rect),
+            ("rcWork", Rect),
+            ("dwFlags", wintypes.DWORD),
+        ]
+
+    user32 = ctypes.windll.user32
+    matching: list[int] = []
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    @callback_type
+    def find_window(window: int, _parameter: int) -> bool:
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(window, ctypes.byref(owner))
+        if owner.value != process_id or not user32.IsWindowVisible(window):
+            return True
+        title_length = user32.GetWindowTextLengthW(window)
+        title = ctypes.create_unicode_buffer(title_length + 1)
+        user32.GetWindowTextW(window, title, len(title))
+        if title.value == "Adventure Simulator - Tactical":
+            matching.append(window)
+        return True
+
+    user32.EnumWindows(find_window, 0)
+    if len(matching) != 1:
+        raise RuntimeError(
+            f"expected one visible tactical window for pid {process_id}, found {len(matching)}"
+        )
+    window = matching[0]
+    client = Rect()
+    if not user32.GetClientRect(window, ctypes.byref(client)):
+        raise RuntimeError("could not read the tactical client rectangle")
+    origin = wintypes.POINT(client.left, client.top)
+    if not user32.ClientToScreen(window, ctypes.byref(origin)):
+        raise RuntimeError("could not map the tactical client rectangle to the monitor")
+    width = client.right - client.left
+    height = client.bottom - client.top
+    monitor = user32.MonitorFromWindow(window, 2)
+    info = MonitorInfo(cbSize=ctypes.sizeof(MonitorInfo))
+    if not monitor or not user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+        raise RuntimeError("could not identify the tactical client's monitor")
+    monitor_width = info.rcMonitor.right - info.rcMonitor.left
+    monitor_height = info.rcMonitor.bottom - info.rcMonitor.top
+    left = origin.x - info.rcMonitor.left
+    top = origin.y - info.rcMonitor.top
+    if (
+        width <= 0 or height <= 0 or left < 0 or top < 0
+        or left + width > monitor_width or top + height > monitor_height
+    ):
+        raise RuntimeError("tactical client rectangle lies outside its monitor")
+    return {
+        "window_handle": window,
+        "left": left,
+        "top": top,
+        "right": monitor_width - left - width,
+        "bottom": monitor_height - top - height,
+        "width": width,
+        "height": height,
+        "monitor_width": monitor_width,
+        "monitor_height": monitor_height,
+    }
+
+
+def set_window_topmost(window_handle: int, topmost: bool) -> None:
+    if os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    is_window = ctypes.windll.user32.IsWindow
+    is_window.argtypes = [wintypes.HWND]
+    is_window.restype = wintypes.BOOL
+    if not is_window(window_handle):
+        return
+
+    # Keep the diagnostic visible in the monitor duplication stream without
+    # activating it, so unrelated mouse/keyboard work remains uninterrupted.
+    set_window_pos = ctypes.windll.user32.SetWindowPos
+    set_window_pos.argtypes = [
+        wintypes.HWND,
+        wintypes.HWND,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        wintypes.UINT,
+    ]
+    set_window_pos.restype = wintypes.BOOL
+    insert_after = -1 if topmost else -2  # HWND_TOPMOST / HWND_NOTOPMOST
+    flags = 0x0001 | 0x0002 | 0x0010  # NOSIZE | NOMOVE | NOACTIVATE
+    if not set_window_pos(
+        window_handle, insert_after, 0, 0, 0, 0, flags
+    ):
+        raise RuntimeError("could not update the tactical window's topmost state")
 
 
 def cargo_target_dir() -> Path:
@@ -636,6 +877,7 @@ def spawn_recorded(
     config: dict[str, object],
     *,
     environment: dict[str, str] | None = None,
+    working_directory: Path = ROOT,
 ) -> subprocess.Popen[str]:
     if metadata_file.exists():
         try:
@@ -649,7 +891,7 @@ def spawn_recorded(
     try:
         process = subprocess.Popen(
             command,
-            cwd=ROOT,
+            cwd=working_directory,
             env=environment,
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -1014,6 +1256,11 @@ def tactical_session_config(
     character_id: int,
     enemy_count: int,
     session_id: str,
+    graphics_preset: str = "default",
+    present_mode: str = "auto-vsync",
+    window_capture: str = "auto",
+    capture_source: str = "window",
+    render_backend: str = "auto",
 ) -> dict[str, object]:
     return {
         "repository": str(ROOT.resolve()),
@@ -1030,6 +1277,11 @@ def tactical_session_config(
         "native_client": mode is not TacticalPlayMode.NETWORKING,
         "browser_client": False,
         "session_id": session_id,
+        "graphics_preset": graphics_preset,
+        "present_mode": present_mode,
+        "window_capture": window_capture,
+        "capture_source": capture_source,
+        "render_backend": render_backend,
     }
 
 
@@ -1052,16 +1304,62 @@ def launch_recorded_tactical_client(
         "executable": str(executable),
         "character_id": config["character_id"],
         "server_addr": f"127.0.0.1:{config['tactical_port']}",
+        "render_backend": config.get("render_backend", "auto"),
     }
+    command = [
+        str(executable), "--id", str(config["character_id"]),
+        "--server-addr", str(client_config["server_addr"]),
+        "--graphics-preset", str(config.get("graphics_preset", "default")),
+        "--present-mode", str(config.get("present_mode", "auto-vsync")),
+    ]
+    suffix = str(config["session_id"])[:12]
+    animation_log = run_dir / f"animation-state-{suffix}.jsonl"
+    command.extend(["--animation-log", str(animation_log)])
+    client_config["animation_log"] = str(animation_log)
+    config["animation_log"] = str(animation_log)
+    if config["play_mode"] == TacticalPlayMode.DIAGNOSTIC.value:
+        input_script = run_dir / f"animation-input-script-{suffix}.json"
+        commands: list[dict[str, object]] = []
+        if config.get("window_capture") != "off":
+            # OBS can take its full 12-second control-socket deadline plus
+            # frontend stabilization time on the integrated GPU. Keep the
+            # movement segment gated until capture setup has either succeeded
+            # or failed, even when the game itself starts unusually quickly.
+            commands.append({"type": "wait", "duration_seconds": 20.0})
+        commands.extend([
+            {"type": "rotate", "degrees_right": 90.0},
+            {
+                "type": "move", "direction": "forward",
+                "input_speed": 0.5, "duration_seconds": 2.0,
+            },
+            {
+                "type": "move", "direction": "forward",
+                "input_speed": 1.0, "duration_seconds": 2.0,
+            },
+            {"type": "wait", "duration_seconds": 0.5},
+        ])
+        atomic_write_json(input_script, {
+            "commands": commands
+        })
+        command.extend([
+            "--input-script", str(input_script),
+            "--exit-after-script",
+        ])
+        client_config["input_script"] = str(input_script)
+        config["input_script"] = str(input_script)
+    environment = os.environ.copy()
+    if config.get("render_backend", "auto") == "auto":
+        environment.pop("WGPU_BACKEND", None)
+    else:
+        environment["WGPU_BACKEND"] = str(config["render_backend"])
     process = spawn_recorded(
-        [
-            str(executable), "--id", str(config["character_id"]),
-            "--server-addr", str(client_config["server_addr"]),
-        ],
+        command,
         run_dir / "client.identity.json",
         run_dir / "client.log",
         client_config,
+        environment=environment,
     )
+    config["client_pid"] = process.pid
     time.sleep(0.5)
     if process.poll() is not None:
         raise RuntimeError(
@@ -1071,7 +1369,310 @@ def launch_recorded_tactical_client(
     return process
 
 
-def tactical_play(mode: TacticalPlayMode, base_port: int) -> int:
+def find_presentmon() -> Path | None:
+    configured = os.environ.get("PRESENTMON_PATH")
+    candidates = [
+        Path(configured) if configured else None,
+        Path(r"C:\Program Files\AMD\CNext\CNext\PresentMon-x64.exe"),
+        Path(r"C:\Program Files\PresentMon\PresentMon.exe"),
+    ]
+    return next((candidate for candidate in candidates if candidate and candidate.is_file()), None)
+
+
+def launch_presentmon(
+    run_dir: Path,
+    client_process: subprocess.Popen[str],
+    config: dict[str, object],
+    mode: str,
+) -> subprocess.Popen[str] | None:
+    if mode == "off":
+        return None
+    executable = find_presentmon()
+    if executable is None:
+        if mode == "required":
+            raise RuntimeError(
+                "presentation tracing requested but PresentMon was not found; "
+                "set PRESENTMON_PATH"
+            )
+        print("Presentation trace: PresentMon not found; continuing without ETW capture")
+        return None
+    suffix = str(config["session_id"])[:12]
+    output_file = run_dir / f"presentmon-{suffix}.csv"
+    trace_config = {
+        "role": "presentmon",
+        "repository": str(ROOT.resolve()),
+        "worktree_fingerprint": config["worktree_fingerprint"],
+        "session_id": config["session_id"],
+        "executable": str(executable),
+        "client_pid": client_process.pid,
+        "output_file": str(output_file),
+    }
+    process = spawn_recorded([
+        str(executable),
+        "--process_id", str(client_process.pid),
+        "--output_file", str(output_file),
+        "--date_time",
+        "--track_gpu_video",
+        "--no_console_stats",
+        "--terminate_on_proc_exit",
+        "--session_name", f"AdventureSimulator-{suffix}",
+    ], run_dir / "presentmon.identity.json", run_dir / "presentmon.log", trace_config)
+    time.sleep(0.25)
+    if process.poll() is not None:
+        message = f"PresentMon exited during launch:\n{log_tail(run_dir / 'presentmon.log')}"
+        if mode == "required":
+            raise RuntimeError(message)
+        print(f"Presentation trace unavailable: {message}")
+        return None
+    config["presentmon_csv"] = str(output_file)
+    return process
+
+
+def find_obs() -> Path | None:
+    configured = os.environ.get("OBS_PATH")
+    candidates = [
+        Path(configured) if configured else None,
+        Path(r"C:\Program Files\obs-studio\bin\64bit\obs64.exe"),
+    ]
+    return next((candidate for candidate in candidates if candidate and candidate.is_file()), None)
+
+
+def unused_loopback_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        return int(listener.getsockname()[1])
+
+
+def obs_websocket_config() -> Path:
+    roaming = os.environ.get("APPDATA")
+    if not roaming:
+        raise RuntimeError("APPDATA is required to locate OBS settings")
+    return Path(roaming) / "obs-studio" / "plugin_config" / "obs-websocket" / "config.json"
+
+
+def replace_file_bytes(path: Path, content: bytes) -> None:
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
+    temporary.write_bytes(content)
+    os.replace(temporary, path)
+
+
+def launch_obs_capture(
+    run_dir: Path,
+    config: dict[str, object],
+    mode: str,
+) -> ObsCapture | None:
+    if mode == "off":
+        return None
+    executable = find_obs()
+    if executable is None:
+        if mode == "required":
+            raise RuntimeError("window capture requested but OBS Studio was not found; set OBS_PATH")
+        print("Window capture: OBS Studio not found; continuing without video")
+        return None
+    port = unused_loopback_port()
+    password = secrets.token_urlsafe(24)
+    suffix = str(config["session_id"])[:12]
+    capture_source = str(config.get("capture_source", "window"))
+    scene_name = f"Adventure Simulator diagnostic {suffix}"
+    input_name = f"Tactical client {suffix}"
+    capture_config = {
+        "role": f"obs-{capture_source}-capture",
+        "repository": str(ROOT.resolve()),
+        "worktree_fingerprint": config["worktree_fingerprint"],
+        "session_id": config["session_id"],
+        "executable": str(executable),
+        "websocket_port": port,
+        "scene_name": scene_name,
+        "capture_source": capture_source,
+    }
+    metadata_file = run_dir / "obs.identity.json"
+    websocket_config = obs_websocket_config()
+    original_config = websocket_config.read_bytes()
+    temporary_config = json.loads(original_config)
+    temporary_config.update({
+        "alerts_enabled": False,
+        "auth_required": True,
+        "first_load": False,
+        "server_enabled": True,
+        "server_password": password,
+        "server_port": port,
+    })
+    replace_file_bytes(
+        websocket_config,
+        (json.dumps(temporary_config, sort_keys=True) + "\n").encode("utf-8"),
+    )
+    try:
+        process = spawn_recorded([
+            str(executable), "--multi", "--minimize-to-tray",
+            "--profile", "Untitled", "--collection", "Untitled",
+            "--websocket_ipv4_only", "--websocket_port", str(port),
+            "--websocket_password", password,
+        ], metadata_file, run_dir / "obs-launch.log", capture_config,
+            working_directory=executable.parent)
+        websocket = None
+        deadline = time.monotonic() + 12.0
+        while time.monotonic() < deadline and process.poll() is None:
+            try:
+                websocket = ObsWebSocket(port, password)
+                break
+            except (ConnectionError, OSError, RuntimeError, socket.timeout):
+                time.sleep(0.25)
+    finally:
+        replace_file_bytes(websocket_config, original_config)
+    if websocket is None:
+        stop_recorded(metadata_file, capture_config)
+        message = f"OBS did not expose its control socket; see {run_dir / 'obs-launch.log'}"
+        if mode == "required":
+            raise RuntimeError(message)
+        print(f"Window capture unavailable: {message}")
+        return None
+    # The socket becomes available slightly before the OBS frontend finishes
+    # accepting scene mutations on slower integrated-GPU startup paths.
+    time.sleep(1.0)
+    try:
+        original_scene = websocket.request("GetCurrentProgramScene").get("currentProgramSceneName")
+        scenes = websocket.request("GetSceneList").get("scenes", [])
+        stale_scenes = [
+            scene.get("sceneName") for scene in scenes
+            if str(scene.get("sceneName", "")).startswith("Adventure Simulator diagnostic ")
+        ]
+        if original_scene in stale_scenes:
+            available = [
+                str(scene.get("sceneName")) for scene in scenes
+                if scene.get("sceneName") not in stale_scenes
+            ]
+            if not available:
+                raise RuntimeError("OBS has no non-diagnostic scene to restore after capture")
+            original_scene = "Scene 2" if "Scene 2" in available else available[0]
+            websocket.request(
+                "SetCurrentProgramScene", {"sceneName": original_scene}
+            )
+        for stale_scene in stale_scenes:
+            websocket.request("RemoveScene", {"sceneName": stale_scene})
+        websocket.request("CreateScene", {"sceneName": scene_name})
+        if capture_source == "window":
+            created = websocket.request("CreateInput", {
+                "sceneName": scene_name,
+                "inputName": input_name,
+                "inputKind": "window_capture",
+                "inputSettings": {
+                    "window": (
+                        "Adventure Simulator - Tactical:Window Class:"
+                        "adventuresim-tactical-client.exe"
+                    ),
+                    # OBS automatic selection chooses BitBlt for Bevy's winit
+                    # window class, which can return the same stale Vulkan frame
+                    # for seconds. METHOD_WGC is value 2 in win-capture.
+                    "method": 2,
+                    "client_area": True,
+                    "cursor": False,
+                    "capture_audio": False,
+                },
+                "sceneItemEnabled": True,
+            })
+            crop = None
+        elif capture_source == "display":
+            geometry = tactical_window_capture_geometry(int(config["client_pid"]))
+            set_window_topmost(geometry["window_handle"], True)
+            created = websocket.request("CreateSceneItem", {
+                "sceneName": scene_name,
+                "sourceName": "Display Capture",
+                "sceneItemEnabled": True,
+            })
+            crop = {
+                "cropLeft": geometry["left"],
+                "cropTop": geometry["top"],
+                "cropRight": geometry["right"],
+                "cropBottom": geometry["bottom"],
+            }
+            config["display_capture_geometry"] = geometry
+            config["display_capture_window"] = geometry["window_handle"]
+        else:
+            raise RuntimeError(f"unsupported OBS capture source: {capture_source}")
+        video = websocket.request("GetVideoSettings")
+        transform = {
+            "boundsType": "OBS_BOUNDS_SCALE_INNER",
+            "boundsWidth": float(video["baseWidth"]),
+            "boundsHeight": float(video["baseHeight"]),
+            "alignment": 5,
+        }
+        if crop:
+            transform.update(crop)
+        websocket.request("SetSceneItemTransform", {
+            "sceneName": scene_name,
+            "sceneItemId": created["sceneItemId"],
+            "sceneItemTransform": transform,
+        })
+        websocket.request("SetCurrentProgramScene", {"sceneName": scene_name})
+        websocket.request("StartRecord")
+    except Exception as error:
+        websocket.close()
+        stop_recorded(metadata_file, capture_config)
+        if mode == "required":
+            raise
+        print(f"Window capture unavailable: OBS setup failed: {error}")
+        return None
+    config["obs_original_scene"] = original_scene
+    config["obs_capture_scene"] = scene_name
+    print(f"Window capture: OBS recording via {capture_source} source")
+    return ObsCapture(process, websocket, metadata_file, scene_name)
+
+
+def stop_obs_capture(capture: ObsCapture, run_dir: Path, config: dict[str, object]) -> Path:
+    output_path: Path | None = None
+    try:
+        result = capture.websocket.request("StopRecord")
+        recorded = result.get("outputPath")
+        if recorded:
+            output_path = Path(str(recorded))
+        original_scene = config.get("obs_original_scene")
+        if original_scene:
+            capture.websocket.request(
+                "SetCurrentProgramScene", {"sceneName": original_scene}
+            )
+        capture.websocket.request("RemoveScene", {"sceneName": capture.scene_name})
+        # StopRecord returns before Hybrid MP4 finishes flushing and before
+        # frontend scene changes are durably saved. Give both bounded time.
+        time.sleep(2.0)
+    finally:
+        capture.websocket.close()
+        stop_recorded(capture.metadata_file)
+        display_window = config.pop("display_capture_window", None)
+        if display_window is not None:
+            try:
+                set_window_topmost(int(display_window), False)
+            except RuntimeError as error:
+                print(f"Window capture cleanup warning: {error}", file=sys.stderr)
+    if output_path is None or not output_path.is_file():
+        raise RuntimeError("OBS stopped without returning a finalized recording")
+    suffix = output_path.suffix or ".mp4"
+    capture_source = str(config.get("capture_source", "window"))
+    destination = run_dir / (
+        f"{capture_source}-capture-{str(config['session_id'])[:12]}{suffix}"
+    )
+    deadline = time.monotonic() + 10.0
+    while True:
+        try:
+            shutil.move(str(output_path), destination)
+            break
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"OBS recording remained locked: {output_path}")
+            time.sleep(0.25)
+    config["window_capture_file"] = str(destination)
+    return destination
+
+
+def tactical_play(
+    mode: TacticalPlayMode,
+    base_port: int,
+    graphics_preset: str = "default",
+    presentation_trace: str = "auto",
+    present_mode: str = "auto-vsync",
+    window_capture: str = "auto",
+    capture_source: str = "window",
+    render_backend: str = "auto",
+) -> int:
     launch_client = mode is not TacticalPlayMode.NETWORKING
     code = build_tactical_play(launch_client)
     if code:
@@ -1088,7 +1689,8 @@ def tactical_play(mode: TacticalPlayMode, base_port: int) -> int:
     character_id = 0
     enemy_count = 1
     config = tactical_session_config(
-        values, mode, mission_id, character_id, enemy_count, session_id
+        values, mode, mission_id, character_id, enemy_count, session_id, graphics_preset,
+        present_mode, window_capture, capture_source, render_backend,
     )
     session_file = run_dir / "tactical-session.json"
 
@@ -1114,6 +1716,9 @@ def tactical_play(mode: TacticalPlayMode, base_port: int) -> int:
             f"127.0.0.1:{values['spacetime_port']}", "--data-dir", str(data_dir),
         ], stdb_metadata, stdb_log, stdb_config)
         server_process = None
+        client_process = None
+        presentmon_process = None
+        obs_capture = None
         wrote_env = False
         try:
             listener = wait_for_spacetime(
@@ -1190,7 +1795,12 @@ def tactical_play(mode: TacticalPlayMode, base_port: int) -> int:
                 mission_id, int(values["tactical_port"]),
             )
             if launch_client:
-                launch_recorded_tactical_client(run_dir, config)
+                client_process = launch_recorded_tactical_client(run_dir, config)
+                presentmon_process = launch_presentmon(
+                    run_dir, client_process, config, presentation_trace
+                )
+                if mode is TacticalPlayMode.DIAGNOSTIC:
+                    obs_capture = launch_obs_capture(run_dir, config, window_capture)
 
             print("")
             print(f"Database: ready at {server_url} ({database})")
@@ -1199,13 +1809,35 @@ def tactical_play(mode: TacticalPlayMode, base_port: int) -> int:
             print(f"Server: listening at ws://127.0.0.1:{values['tactical_port']}")
             if launch_client:
                 print(f"Client: launched, character {character_id} (native)")
+                if presentmon_process is not None:
+                    print(f"Presentation trace: {config['presentmon_csv']}")
+                if obs_capture is not None:
+                    print("Window capture: active (final path reported after the script)")
             else:
                 print("Client: not launched (networking profile)")
             print(f"Combat: {'enabled' if combat_scale else 'disabled'}")
             print("Browser client: unavailable in tactical-only mode")
             print(f"Logs: {run_dir}")
-            print("Press Ctrl+C to stop this profile's recorded processes.")
+            if mode is TacticalPlayMode.DIAGNOSTIC:
+                print("Waiting for the bounded diagnostic client to finish...")
+            else:
+                print("Press Ctrl+C to stop this profile's recorded processes.")
             while server_process.poll() is None:
+                if client_process is not None and mode is TacticalPlayMode.DIAGNOSTIC:
+                    client_code = client_process.poll()
+                    if client_code is not None:
+                        if client_code:
+                            raise RuntimeError(
+                                f"diagnostic client exited with code {client_code}; "
+                                f"see {run_dir / 'client.log'}\n"
+                                f"{log_tail(run_dir / 'client.log')}"
+                            )
+                        if obs_capture is not None:
+                            video_path = stop_obs_capture(obs_capture, run_dir, config)
+                            obs_capture = None
+                            print(f"Window capture complete: {video_path}")
+                        print(f"Diagnostic capture complete: {config['animation_log']}")
+                        return 0
                 time.sleep(0.25)
             raise RuntimeError(
                 f"recorded tactical server exited; see {server_log}\n{log_tail(server_log)}"
@@ -1215,7 +1847,13 @@ def tactical_play(mode: TacticalPlayMode, base_port: int) -> int:
             return 0
         finally:
             try:
+                if obs_capture is not None:
+                    try:
+                        stop_obs_capture(obs_capture, run_dir, config)
+                    except (OSError, RuntimeError) as error:
+                        print(f"Window capture cleanup warning: {error}", file=sys.stderr)
                 stop_recorded(run_dir / "client.identity.json")
+                stop_recorded(run_dir / "presentmon.identity.json")
                 stop_recorded(run_dir / "server.identity.json", None)
             finally:
                 if wrote_env:
@@ -1419,6 +2057,34 @@ def create_parser() -> argparse.ArgumentParser:
         "mode", choices=[mode.value for mode in TacticalPlayMode]
     )
     tactical_play_parser.add_argument("base_port", type=int, nargs="?", default=24920)
+    tactical_play_parser.add_argument(
+        "--graphics-preset",
+        choices=(
+            "default", "no-shadows", "no-ssao", "no-bloom", "no-atmosphere",
+            "no-environment-light", "high-environment-light", "minimal"
+        ),
+        default="default",
+    )
+    tactical_play_parser.add_argument(
+        "--presentation-trace", choices=("off", "auto", "required"), default="auto"
+    )
+    tactical_play_parser.add_argument(
+        "--present-mode",
+        choices=(
+            "auto-vsync", "auto-no-vsync", "fifo", "fifo-relaxed", "mailbox",
+            "immediate",
+        ),
+        default="auto-vsync",
+    )
+    tactical_play_parser.add_argument(
+        "--window-capture", choices=("off", "auto", "required"), default="auto"
+    )
+    tactical_play_parser.add_argument(
+        "--capture-source", choices=("window", "display"), default="window"
+    )
+    tactical_play_parser.add_argument(
+        "--render-backend", choices=("auto", "vulkan", "dx12"), default="auto"
+    )
     sub.add_parser("tactical-status")
     sub.add_parser("tactical-client")
     return parser
@@ -1452,7 +2118,11 @@ def main() -> int:
         if args.command == "canonical-spawner":
             return canonical_spawner(args.action)
         if args.command == "tactical-play":
-            return tactical_play(TacticalPlayMode(args.mode), args.base_port)
+            return tactical_play(
+                TacticalPlayMode(args.mode), args.base_port, args.graphics_preset,
+                args.presentation_trace, args.present_mode, args.window_capture,
+                args.capture_source, args.render_backend,
+            )
         if args.command == "tactical-status":
             return tactical_status()
         if args.command == "tactical-client":

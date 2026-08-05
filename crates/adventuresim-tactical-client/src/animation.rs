@@ -1,9 +1,13 @@
+#[cfg(not(target_family = "wasm"))]
+use std::io::{BufWriter, Write};
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
     str::FromStr,
 };
 
 use adventuresim_tactical_core::prelude::*;
+#[cfg(not(target_family = "wasm"))]
+use adventuresim_tactical_netcode::message::PlayerInputRequest;
 use adventuresim_tactical_netcode::message::SuccessfulAttackResponse;
 use bevy::{
     animation::{AnimatedBy, AnimationTargetId},
@@ -31,6 +35,40 @@ const PRESENTATION_CROSSFADE_SECONDS: f32 = 0.18;
 // lower face so the first-person camera lands at the authored head.
 const PLAYER_VISUAL_Y_OFFSET: f32 = -0.95;
 
+#[cfg(not(target_family = "wasm"))]
+#[derive(Resource, Debug, Clone, Default, serde::Serialize)]
+pub(crate) struct DiagnosticInputStatus {
+    pub command_index: usize,
+    pub command_kind: String,
+    pub command_elapsed_seconds: f32,
+    pub request: PlayerInputRequest,
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[derive(Resource)]
+pub(crate) struct AnimationDiagnosticLog {
+    pub(crate) writer: BufWriter<std::fs::File>,
+    pub(crate) frame: u64,
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl AnimationDiagnosticLog {
+    pub(crate) fn write(&mut self, mut value: serde_json::Value) {
+        value["frame"] = self.frame.into();
+        serde_json::to_writer(&mut self.writer, &value)
+            .expect("animation diagnostic log should remain writable");
+        self.writer
+            .write_all(b"\n")
+            .expect("animation diagnostic log should remain writable");
+        if self.frame % 60 == 59 {
+            self.writer
+                .flush()
+                .expect("animation diagnostic log should remain writable");
+        }
+        self.frame += 1;
+    }
+}
+
 fn animation_asset_path(path: &str) -> String {
     #[cfg(not(target_family = "wasm"))]
     {
@@ -45,7 +83,7 @@ fn animation_asset_path(path: &str) -> String {
 pub struct TacticalAnimationPlugin;
 
 const PRESENTATION_VELOCITY_RESPONSE_PER_SECOND: f32 = 18.0;
-const PRESENTATION_PHASE_CORRECTION_FRACTION: f32 = 0.35;
+const PRESENTATION_PHASE_CORRECTION_RATE_PER_SECOND: f32 = 0.30;
 const PRESENTATION_PHASE_SNAP_ERROR: f32 = 0.20;
 const MAX_PRESENTATION_SOURCE_GAP_TICKS: u64 = 32;
 
@@ -57,6 +95,7 @@ pub(crate) struct PresentedSkeleton {
     state: SkeletonState,
     source_tick: u64,
     presentation_tick: Option<u64>,
+    phase_error_remaining: f32,
 }
 
 impl std::ops::Deref for PresentedSkeleton {
@@ -112,13 +151,22 @@ fn advance_presented_skeleton(
         .rem_euclid(1.0);
         let error = circular_phase_delta(predicted, authoritative.gait_phase);
         let discontinuous = error.abs() > PRESENTATION_PHASE_SNAP_ERROR;
-        next.gait_phase = if source_changed && discontinuous {
-            authoritative.gait_phase
-        } else if source_changed {
-            (predicted + error * PRESENTATION_PHASE_CORRECTION_FRACTION).rem_euclid(1.0)
+        if source_changed && discontinuous {
+            next.gait_phase = authoritative.gait_phase;
+            presented.phase_error_remaining = 0.0;
         } else {
-            predicted
-        };
+            if source_changed {
+                presented.phase_error_remaining = error;
+            }
+            let maximum_correction = PRESENTATION_PHASE_CORRECTION_RATE_PER_SECOND * delta_seconds;
+            let correction = presented
+                .phase_error_remaining
+                .clamp(-maximum_correction, maximum_correction);
+            next.gait_phase = (predicted + correction).rem_euclid(1.0);
+            presented.phase_error_remaining -= correction;
+        }
+    } else {
+        presented.phase_error_remaining = 0.0;
     }
 
     presented.state = next;
@@ -137,6 +185,7 @@ fn update_presented_skeletons(
                 state: authoritative.clone(),
                 source_tick: authoritative.locomotion_sample_tick,
                 presentation_tick: procedural_clock.fixed_step().map(|(tick, _)| tick),
+                phase_error_remaining: 0.0,
             });
             continue;
         };
@@ -233,6 +282,7 @@ impl Plugin for TacticalAnimationPlugin {
                     procedural::capture_humanoid_rig_axes,
                     capture_authored_bind_transforms,
                     evaluate_skeletons,
+                    log_animation_diagnostics,
                     tick_impact_reactions,
                     sync_animation_graphs,
                     drive_fk_players,
@@ -1220,6 +1270,85 @@ fn evaluate_skeletons(
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
+fn log_animation_diagnostics(
+    time: Res<Time>,
+    mut log: Option<ResMut<AnimationDiagnosticLog>>,
+    input: Option<Res<DiagnosticInputStatus>>,
+    render_schedule: Option<Res<crate::diagnostics::RenderScheduleTelemetry>>,
+    players: Query<
+        (
+            &Transform,
+            &SkeletonState,
+            &PresentedSkeleton,
+            &AnimationPlayback,
+        ),
+        (With<Player>, With<crate::player::ClientPlayer>),
+    >,
+) {
+    let Some(log) = log.as_mut() else {
+        return;
+    };
+    let render_schedule_completion = render_schedule.as_deref().map(|telemetry| {
+        let (count, elapsed_micros) = telemetry.snapshot();
+        serde_json::json!({
+            "count": count,
+            "elapsed_micros": elapsed_micros,
+        })
+    });
+    let wall_clock_unix_micros = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_micros().min(u64::MAX as u128) as u64)
+        .unwrap_or_default();
+    for (transform, authoritative, presented, playback) in &players {
+        let evaluation = AnimationEvaluation::from_skeleton(presented);
+        let transition = playback.presentation_transition.as_ref().map(|transition| {
+            serde_json::json!({
+                "elapsed_seconds": transition.elapsed_seconds,
+                "progress": (transition.elapsed_seconds / PRESENTATION_CROSSFADE_SECONDS)
+                    .clamp(0.0, 1.0),
+            })
+        });
+        let clips = playback
+            .clips
+            .iter()
+            .map(|clip| {
+                serde_json::json!({
+                    "weight": clip.weight,
+                    "time_seconds": clip.time_seconds,
+                    "mirrored_weight": clip.mirrored_weight,
+                })
+            })
+            .collect::<Vec<_>>();
+        log.write(serde_json::json!({
+            "elapsed_seconds": time.elapsed_secs_f64(),
+            "wall_clock_unix_micros": wall_clock_unix_micros,
+            "render_delta_seconds": time.delta_secs(),
+            "render_schedule_completion": render_schedule_completion,
+            "input": input.as_deref(),
+            "controller_transform": {
+                "translation": transform.translation.to_array(),
+                "rotation_xyzw": transform.rotation.to_array(),
+            },
+            "authoritative": authoritative,
+            "presented": &presented.state,
+            "presentation_phase_error_remaining": presented.phase_error_remaining,
+            "evaluation": evaluation,
+            "playback": {
+                "use_authored_bind_pose": playback.use_authored_bind_pose,
+                "lower_body_mirror": playback.lower_body_mirror,
+                "whole_body_mirror": playback.whole_body_mirror,
+                "ordinary_locomotion_active": playback.ordinary_locomotion_active,
+                "transition": transition,
+                "clips": clips,
+            },
+        }));
+    }
+}
+
+#[cfg(target_family = "wasm")]
+fn log_animation_diagnostics() {}
+
 fn update_presentation_crossfade(
     playback: &mut AnimationPlayback,
     target: PlaybackPose,
@@ -1883,6 +2012,7 @@ mod tests {
             state: authoritative.clone(),
             source_tick: 0,
             presentation_tick: None,
+            phase_error_remaining: 0.0,
         };
         let mut replicated = authoritative.clone();
         let mut previous_phase = presented.gait_phase;
@@ -1919,6 +2049,46 @@ mod tests {
     }
 
     #[test]
+    fn presentation_phase_correction_is_rate_limited_across_packet_jitter() {
+        let velocity = Vec3::NEG_Z * 5.5;
+        let authoritative = SkeletonState {
+            local_velocity: velocity,
+            world_velocity: velocity,
+            gait_phase: 0.12,
+            locomotion_sample_tick: 1,
+            ..default()
+        };
+        let mut presented = PresentedSkeleton {
+            state: SkeletonState {
+                local_velocity: velocity,
+                world_velocity: velocity,
+                ..default()
+            },
+            source_tick: 0,
+            presentation_tick: None,
+            phase_error_remaining: 0.0,
+        };
+        let render_deltas = [1.0 / 60.0, 1.0 / 90.0, 1.0 / 45.0, 1.0 / 72.0];
+        let mut previous_phase = presented.gait_phase;
+
+        for delta_seconds in render_deltas.into_iter().cycle().take(16) {
+            advance_presented_skeleton(&mut presented, &authoritative, delta_seconds);
+            let actual = circular_phase_delta(previous_phase, presented.gait_phase);
+            let predicted = gait_cycle_phase_delta(
+                locomotion_profile(&presented.state),
+                presented.animation_speed(),
+                delta_seconds,
+            );
+            let maximum = predicted
+                + PRESENTATION_PHASE_CORRECTION_RATE_PER_SECOND * delta_seconds
+                + 0.000_01;
+            assert!(actual >= 0.0, "phase moved backwards by {actual}");
+            assert!(actual <= maximum, "phase step {actual} exceeded {maximum}");
+            previous_phase = presented.gait_phase;
+        }
+    }
+
+    #[test]
     fn presentation_velocity_smooths_a_sparse_turn_without_changing_authority() {
         let authoritative = SkeletonState {
             local_velocity: Vec3::NEG_Z * 5.5,
@@ -1929,6 +2099,7 @@ mod tests {
             state: authoritative.clone(),
             source_tick: 0,
             presentation_tick: None,
+            phase_error_remaining: 0.0,
         };
         let turned = SkeletonState {
             local_velocity: Vec3::X * 5.5,

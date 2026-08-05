@@ -171,7 +171,7 @@ pub(crate) fn run(
             PlayerPlugin,
             TacticalAnimationPlugin,
             TacticalCameraPlugin,
-            TacticalPresentationPlugin,
+            TacticalPresentationPlugin::default(),
         ))
         .insert_resource(LocalCharacterId(0))
         .insert_resource(CameraMode { third_person: true })

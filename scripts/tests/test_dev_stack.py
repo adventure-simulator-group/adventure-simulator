@@ -365,13 +365,58 @@ class WorkflowTests(unittest.TestCase):
     def test_tactical_play_parser_profiles(self):
         parser = dev_stack.create_parser()
         animation = parser.parse_args(["tactical-play", "animation"])
+        diagnostic = parser.parse_args(["tactical-play", "diagnostic"])
+        no_shadows = parser.parse_args([
+            "tactical-play", "diagnostic", "25020", "--graphics-preset", "no-shadows"
+        ])
+        traced = parser.parse_args([
+            "tactical-play", "animation", "--presentation-trace", "required"
+        ])
+        no_vsync = parser.parse_args([
+            "tactical-play", "animation", "--present-mode", "auto-no-vsync"
+        ])
+        captured = parser.parse_args([
+            "tactical-play", "diagnostic", "--window-capture", "required"
+        ])
+        display_dx12 = parser.parse_args([
+            "tactical-play", "diagnostic", "--capture-source", "display",
+            "--render-backend", "dx12",
+        ])
         networking = parser.parse_args(["tactical-play", "networking", "25000"])
         self.assertEqual(animation.base_port, 24920)
+        self.assertEqual(animation.presentation_trace, "auto")
+        self.assertEqual(diagnostic.mode, "diagnostic")
+        self.assertEqual(no_shadows.graphics_preset, "no-shadows")
+        self.assertEqual(traced.presentation_trace, "required")
+        self.assertEqual(no_vsync.present_mode, "auto-no-vsync")
+        self.assertEqual(diagnostic.window_capture, "auto")
+        self.assertEqual(diagnostic.capture_source, "window")
+        self.assertEqual(diagnostic.render_backend, "auto")
+        self.assertEqual(captured.window_capture, "required")
+        self.assertEqual(display_dx12.capture_source, "display")
+        self.assertEqual(display_dx12.render_backend, "dx12")
         self.assertEqual(networking.base_port, 25000)
+
+    def test_presentmon_path_can_be_configured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "PresentMon.exe"
+            executable.touch()
+            with mock.patch.dict(os.environ, {"PRESENTMON_PATH": str(executable)}):
+                self.assertEqual(dev_stack.find_presentmon(), executable)
+
+    def test_obs_path_can_be_configured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "obs64.exe"
+            executable.touch()
+            with mock.patch.dict(os.environ, {"OBS_PATH": str(executable)}):
+                self.assertEqual(dev_stack.find_obs(), executable)
 
     def test_visual_and_networking_profiles_disable_combat(self):
         self.assertEqual(
             dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.ANIMATION), 0
+        )
+        self.assertEqual(
+            dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.DIAGNOSTIC), 0
         )
         self.assertEqual(
             dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.NETWORKING), 0

@@ -124,6 +124,85 @@ coalescing but does not run the transport or physics character controller.
 Only the cross-slope probe follows rendered
 terrain height; flat scenarios verify that animation never changes controller Y.
 
+## Real-client animation diagnostics
+
+Use the supervised diagnostic profile when a problem appears in gameplay but
+not in `animation-viewer`:
+
+```powershell
+just tactical-play diagnostic
+```
+
+This launches the ordinary native client, server, transport, replicated
+physics controller, and rendering stack. Once the controlled character is
+available, the client turns 90 degrees right, holds forward at 0.5 analogue
+input for two seconds, holds forward at full input for two seconds, stops for
+half a second, and exits. The supervisor then stops its isolated server and
+database and returns successfully. The profile run directory contains the generated
+`animation-input-script.json`, the per-render-frame `animation-state.jsonl`,
+and the ordinary client/server logs. `just tactical-status` prints that run
+directory.
+
+The JSONL record includes the requested command and input, controller
+transform, replicated authoritative `SkeletonState`, client-predicted
+presentation shadow, semantic `AnimationEvaluation`, resolved clip weights
+and sample times, mirror coordinates, pending phase-correction error, any
+presentation crossfade, wall-clock time, and the latest render-schedule
+completion counter. PresentMon remains the independent authority for actual
+swapchain presentation. This is
+the diagnostic boundary immediately after pose evaluation; it does not replace
+the real network or animation path.
+
+The supervised `animation` and `combat` profiles also write
+`animation-state.jsonl` continuously, so an interactive screen recording can
+be aligned with the exact real-client frames afterward. Only `diagnostic` adds
+the generated input script and exits automatically.
+
+On Windows the supervised launcher also starts PresentMon when it is available
+and writes `presentmon-<session>.csv` beside the JSONL log. This records ETW
+display/presentation timing independently of Bevy's update loop. Pass
+`presentation_trace=off` to disable it or `presentation_trace=required` to fail
+startup when PresentMon cannot run. `PRESENTMON_PATH` overrides discovery.
+
+For presentation A/B tests, pass `present_mode=auto-vsync`,
+`auto-no-vsync`, `fifo`, `fifo-relaxed`, `mailbox`, or `immediate` to
+`just tactical-play`. The default remains `auto-vsync`; unsupported explicit
+modes are reported by the graphics backend rather than silently selected by
+the launcher.
+
+The native client also accepts custom files through `--input-script PATH` and
+`--animation-log PATH`. A script has this shape:
+
+```json
+{
+  "commands": [
+    { "type": "rotate", "degrees_right": 90.0 },
+    { "type": "move", "direction": "forward", "input_speed": 0.5, "duration_seconds": 2.0 },
+    { "type": "wait", "duration_seconds": 0.5 }
+  ]
+}
+```
+
+Movement directions are `forward`, `backward`, `left`, and `right`. Add
+`--exit-after-script` for bounded unattended captures.
+
+The gameplay camera already runs with MSAA disabled. For matched performance
+diagnostics, pass `graphics_preset=no-shadows`, `no-ssao`, `no-bloom`, or
+`no-atmosphere` to disable one cost independently. `minimal` omits all four:
+
+```powershell
+just tactical-play diagnostic 24920 no-shadows
+just tactical-play diagnostic 24920 minimal
+```
+
+The normal client uses a 64×64 generated atmosphere environment map.
+`no-environment-light` keeps the rendered atmosphere but omits that lighting;
+`high-environment-light` restores Bevy's expensive 512×512 default for
+comparison.
+
+The same presets are available on the native client through
+`--graphics-preset`.
+
 Walk support telemetry remains continuous through its cycle. As locomotion
 blends toward run, support narrows around each foot contact. At 5.5m/s the
 quarter-cycle run flight unloads both legs for roughly 90-110ms and presents

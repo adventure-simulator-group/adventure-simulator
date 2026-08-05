@@ -1191,7 +1191,7 @@ pub fn guard_step_length(speed: f32) -> f32 {
 }
 
 /// One weighted authored pose contributing to the FK result.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum PoseSampling {
     /// Sample the pose's authoritative catalog frame.
     Anchor,
@@ -1203,7 +1203,7 @@ pub enum PoseSampling {
     Span { end: SemanticPose, progress: f32 },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PoseSample {
     pub pose: SemanticPose,
     pub sampling: PoseSampling,
@@ -1214,7 +1214,7 @@ pub struct PoseSample {
 }
 
 /// Client-side blend coordinates derived from authoritative state.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AnimationEvaluation {
     pub base: Vec<PoseSample>,
     pub action: Vec<PoseSample>,
