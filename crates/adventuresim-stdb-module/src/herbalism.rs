@@ -101,19 +101,6 @@ fn require_tincture_vessel(
     Ok(object)
 }
 
-fn actor_has_custody(ctx: &ReducerContext, actor_id: u64, object: &crate::InventoryObject) -> bool {
-    (object.location_kind == "personal" && object.location_owner == actor_id.to_string())
-        || (object.location_kind == "party"
-            && ctx
-                .db
-                .character()
-                .id()
-                .find(actor_id)
-                .and_then(|row| row.party_id)
-                .as_deref()
-                == Some(object.location_owner.as_str()))
-}
-
 pub(crate) fn container_is_processing(ctx: &ReducerContext, object_id: u64) -> bool {
     ctx.db
         .tincture_process()
@@ -291,7 +278,18 @@ pub fn pour_tincture_spirit_into_container(
         return Err("Select one carried 150 ml tincture-spirit serving".into());
     }
     let object = require_tincture_vessel(ctx, object_id)?;
-    if object.location_kind != "personal" || object.location_owner != character_id.to_string() {
+    let actor = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let custody = crate::object_custody::require_actor_carried_object(ctx, &actor, &object)?;
+    if !matches!(
+        custody.root,
+        adventuresim_core::physical_object::OperationalCustody::Character(id)
+            if id.get() == character_id
+    ) {
         return Err("Tincture vessel is not in this character's personal custody".into());
     }
     if crate::inventory_container::object_is_nonempty(ctx, object_id) {
@@ -333,7 +331,18 @@ pub fn start_poppy_tincture(
     }
     crate::strategic::require_character_no_unresolved_encounter(ctx, character_id)?;
     let object = require_tincture_vessel(ctx, object_id)?;
-    if object.location_kind != "personal" || object.location_owner != character_id.to_string() {
+    let actor = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let custody = crate::object_custody::require_actor_carried_object(ctx, &actor, &object)?;
+    if !matches!(
+        custody.root,
+        adventuresim_core::physical_object::OperationalCustody::Character(id)
+            if id.get() == character_id
+    ) {
         return Err("Tincture vessel is not in this character's personal custody".into());
     }
     if ctx
@@ -369,9 +378,13 @@ pub fn start_poppy_tincture(
         .id()
         .find(direct[0].child_object_id)
         .ok_or("Tincture ingredient is missing")?;
-    if ingredient.location_kind != "personal"
-        || ingredient.location_owner != character_id.to_string()
-        || ingredient.item_id != "poppy"
+    let ingredient_custody =
+        crate::object_custody::require_actor_carried_object(ctx, &actor, &ingredient)?;
+    if !matches!(
+        ingredient_custody.root,
+        adventuresim_core::physical_object::OperationalCustody::Character(id)
+            if id.get() == character_id
+    ) || ingredient.item_id != "poppy"
     {
         return Err("This tincture recipe requires carried poppy".into());
     }
@@ -465,9 +478,13 @@ pub fn refresh_tincture(
     crate::strategic::require_strategic_gateway(ctx)?;
     crate::character::require_living_character(ctx, character_id)?;
     let object = require_tincture_vessel(ctx, object_id)?;
-    if !actor_has_custody(ctx, character_id, &object) {
-        return Err("Tincture vessel is outside this character's custody".into());
-    }
+    let actor = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    crate::object_custody::require_actor_carried_object(ctx, &actor, &object)?;
     materialize_mature_tincture(ctx, object_id, crate::time::refresh_clock(ctx)?);
     Ok(())
 }
@@ -486,9 +503,13 @@ pub fn administer_tincture_from_container(
         return Err("Tincture dose must be between 1 and 1000 milliunits".into());
     }
     let object = require_tincture_vessel(ctx, object_id)?;
-    if !actor_has_custody(ctx, actor_id, &object) {
-        return Err("Tincture vessel is outside the actor's custody".into());
-    }
+    let actor = ctx
+        .db
+        .character()
+        .id()
+        .find(actor_id)
+        .ok_or("Character not found")?;
+    crate::object_custody::require_actor_carried_object(ctx, &actor, &object)?;
     materialize_mature_tincture(ctx, object_id, crate::time::refresh_clock(ctx)?);
     let process = ctx
         .db

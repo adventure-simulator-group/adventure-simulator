@@ -34,13 +34,11 @@ pub fn transfer_party_item(
         return Err("Unequip an item before transferring it".into());
     }
 
-    let container_object = crate::inventory_container::object_for_row(ctx, "personal", source_item.id);
-    if let Some(object) = container_object.clone()
-        && (crate::inventory_container::object_is_nonempty(ctx, object.id)
-            || crate::inventory_container::object_is_nested(ctx, object.id))
-    {
-        if quantity != 1 || source_item.quantity != 1 {
-            return Err("A filled container must move as one exact object".into());
+    let container_object =
+        crate::inventory_container::object_for_row(ctx, "personal", source_item.id)?;
+    if let Some(object) = container_object {
+        if !physical_object_row_is_atomic(true, quantity, source_item.quantity) {
+            return Err("A physical object must move as one exact inventory row".into());
         }
         crate::inventory_container::detach_if_nested(ctx, object.id)?;
         crate::inventory_container::rehome_subtree(
@@ -134,9 +132,6 @@ pub fn transfer_party_item(
 
     if source_item.quantity == quantity {
         ctx.db.inventory_item().id().delete(inventory_item_id);
-        if let Some(object) = container_object {
-            ctx.db.inventory_object().id().delete(object.id);
-        }
     } else {
         let mut updated = source_item.clone();
         updated.quantity -= quantity;
@@ -302,6 +297,80 @@ mod durable_custody_tests {
                 "{start} must preserve condition custody for repairable clothing"
             );
         }
+    }
+}
+
+fn physical_object_row_is_atomic(has_object: bool, quantity: u32, row_quantity: u32) -> bool {
+    !has_object || (quantity == 1 && row_quantity == 1)
+}
+
+#[cfg(test)]
+mod physical_object_custody_tests {
+    use super::physical_object_row_is_atomic;
+
+    fn section<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+        source
+            .split(start)
+            .nth(1)
+            .unwrap()
+            .split(end)
+            .next()
+            .unwrap()
+    }
+
+    #[test]
+    fn empty_root_objects_keep_identity_across_every_trade_path() {
+        assert!(physical_object_row_is_atomic(false, 1, 20));
+        assert!(physical_object_row_is_atomic(true, 1, 1));
+        assert!(!physical_object_row_is_atomic(true, 1, 2));
+        assert!(!physical_object_row_is_atomic(true, 2, 2));
+
+        let source = crate::strategic::STRATEGIC_SOURCE;
+        for (start, end) in [
+            (
+                "#[reducer]\npub fn transfer_party_item",
+                "fn objective_item_value",
+            ),
+            (
+                "#[reducer]\npub fn deposit_party_inventory_item",
+                "pub(crate) fn consume_personal_gold",
+            ),
+            (
+                "#[reducer]\npub fn withdraw_party_inventory_item",
+                "#[reducer]\npub fn liquidate_party_inventory",
+            ),
+        ] {
+            let transfer = section(source, start, end);
+            assert!(transfer.contains("if let Some(object)"));
+            assert!(transfer.contains("rehome_subtree"));
+            assert!(!transfer.contains("object.filter(|_| container_subtree)"));
+        }
+
+        for (start, end) in [
+            (
+                "#[reducer]\npub fn liquidate_party_inventory",
+                "#[reducer]\npub fn discard_inventory_items",
+            ),
+            (
+                "#[reducer]\npub fn discard_inventory_items",
+                "#[reducer]\npub fn finalize_party_offer",
+            ),
+        ] {
+            let destruction = section(source, start, end);
+            assert!(destruction.contains("if let Some(object) = object"));
+            assert!(destruction.contains("delete_subtree"));
+            assert!(!destruction.contains("object.filter(|_| subtree)"));
+            assert!(!destruction.contains("object.filter(|object|"));
+        }
+
+        let storefront = section(
+            source,
+            "fn finalize_storefront_trade_impl(ctx: &ReducerContext",
+            "#[reducer]",
+        );
+        assert!(storefront.contains("physical_object_row_is_atomic(container_object.is_some()"));
+        assert!(storefront.contains("if let Some(object) = object"));
+        assert!(storefront.contains("delete_subtree"));
     }
 }
 
@@ -1243,12 +1312,19 @@ pub fn deposit_party_inventory_item(
     if crate::character::inventory_item_is_equipped(ctx, character_id, inventory_item_id) {
         return Err("Unequip an item before depositing it".into());
     }
-    if let Some(object) = crate::inventory_container::object_for_row(ctx, "personal", inventory.id)
-        && (crate::inventory_container::object_is_nonempty(ctx, object.id)
-            || crate::inventory_container::object_is_nested(ctx, object.id))
+    if let Some(object) =
+        crate::inventory_container::object_for_row(ctx, "personal", inventory.id)?
     {
-        if quantity != 1 || inventory.quantity != 1 { return Err("A contained subtree must be deposited as one exact object".into()); }
-        let value = personal_subtree_value(ctx, object.id)?;
+        if !physical_object_row_is_atomic(true, quantity, inventory.quantity) {
+            return Err("A physical object must be deposited as one exact inventory row".into());
+        }
+        let has_subtree = crate::inventory_container::object_is_nonempty(ctx, object.id)
+            || crate::inventory_container::object_is_nested(ctx, object.id);
+        let value = if has_subtree {
+            personal_subtree_value(ctx, object.id)?
+        } else {
+            personal_inventory_value(ctx, &inventory, quantity)?
+        };
         crate::inventory_container::detach_if_nested(ctx, object.id)?;
         crate::inventory_container::rehome_subtree(ctx, object.id, "party", &party_id)?;
         credit_party_stake(ctx, &party_id, character_id, value)?;
@@ -1504,12 +1580,17 @@ pub fn withdraw_party_inventory_item(
     if quantity == 0 || inventory.party_id != party_id || inventory.quantity < quantity {
         return Err("Invalid party inventory withdrawal".into());
     }
-    let container_object = crate::inventory_container::object_for_row(ctx, "party", inventory.id);
+    let container_object =
+        crate::inventory_container::object_for_row(ctx, "party", inventory.id)?;
     let container_subtree = container_object.as_ref().is_some_and(|object|
         crate::inventory_container::object_is_nonempty(ctx, object.id)
             || crate::inventory_container::object_is_nested(ctx, object.id));
-    if container_subtree && (quantity != 1 || inventory.quantity != 1) {
-        return Err("A contained subtree must be withdrawn as one exact object".into());
+    if !physical_object_row_is_atomic(
+        container_object.is_some(),
+        quantity,
+        inventory.quantity,
+    ) {
+        return Err("A physical object must be withdrawn as one exact inventory row".into());
     }
     let cost = if let Some(object) = container_object.as_ref().filter(|_| container_subtree) {
         party_subtree_value(ctx, object.id)?
@@ -1529,7 +1610,7 @@ pub fn withdraw_party_inventory_item(
         stake.value = stake.value.saturating_sub(cost);
         ctx.db.party_stake().id().update(stake.clone());
     }
-    if let Some(object) = container_object.filter(|_| container_subtree) {
+    if let Some(object) = container_object {
         crate::inventory_container::detach_if_nested(ctx, object.id)?;
         crate::inventory_container::rehome_subtree(ctx, object.id, "personal", &character_id.to_string())?;
         crate::capability::refresh_character_capability(ctx, character_id)?;
@@ -1656,12 +1737,12 @@ pub fn liquidate_party_inventory(
         {
             return Err("Invalid party asset liquidation".into());
         }
-        let object = crate::inventory_container::object_for_row(ctx, "party", entry.id);
+        let object = crate::inventory_container::object_for_row(ctx, "party", entry.id)?;
         let subtree = object.as_ref().is_some_and(|object|
             crate::inventory_container::object_is_nonempty(ctx, object.id)
                 || crate::inventory_container::object_is_nested(ctx, object.id));
-        if subtree && (quantity != 1 || entry.quantity != 1) {
-            return Err("A contained subtree must be liquidated as one exact object".into());
+        if !physical_object_row_is_atomic(object.is_some(), quantity, entry.quantity) {
+            return Err("A physical object must be liquidated as one exact inventory row".into());
         }
         let line_value = if let Some(object) = object.as_ref().filter(|_| subtree) {
             party_subtree_value(ctx, object.id)?
@@ -1669,12 +1750,12 @@ pub fn liquidate_party_inventory(
         proceeds = proceeds
             .checked_add(line_value)
             .ok_or("Party asset liquidation total overflow")?;
-        staged.push((entry, quantity, object, subtree));
+        staged.push((entry, quantity, object));
     }
     let proceeds =
         u32::try_from(proceeds).map_err(|_| "Party asset liquidation exceeds currency limits")?;
-    for (mut entry, quantity, object, subtree) in staged {
-        if let Some(object) = object.filter(|_| subtree) {
+    for (mut entry, quantity, object) in staged {
+        if let Some(object) = object {
             crate::inventory_container::detach_if_nested(ctx, object.id)?;
             crate::inventory_container::delete_subtree(ctx, object.id)?;
             continue;
@@ -1735,22 +1816,15 @@ pub fn discard_inventory_items(
         if crate::character::inventory_item_is_equipped(ctx, character_id, inventory_item_id) {
             return Err("Unequip an item before discarding it".into());
         }
-        let object = crate::inventory_container::object_for_row(ctx, "personal", item.id);
-        if object.as_ref().is_some_and(|object|
-            crate::inventory_container::object_is_nonempty(ctx, object.id)
-                || crate::inventory_container::object_is_nested(ctx, object.id))
-            && (quantity != 1 || item.quantity != 1)
-        {
-            return Err("A contained subtree must be discarded as one exact object".into());
+        let object = crate::inventory_container::object_for_row(ctx, "personal", item.id)?;
+        if !physical_object_row_is_atomic(object.is_some(), quantity, item.quantity) {
+            return Err("A physical object must be discarded as one exact inventory row".into());
         }
         staged.push((item, quantity, object));
     }
 
     for (mut item, quantity, object) in staged {
-        if let Some(object) = object.filter(|object|
-            crate::inventory_container::object_is_nonempty(ctx, object.id)
-                || crate::inventory_container::object_is_nested(ctx, object.id))
-        {
+        if let Some(object) = object {
             crate::inventory_container::detach_if_nested(ctx, object.id)?;
             crate::inventory_container::delete_subtree(ctx, object.id)?;
             continue;
@@ -2252,7 +2326,7 @@ fn finalize_storefront_trade_impl(ctx: &ReducerContext, execution: StorefrontTra
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
         let container_object = crate::inventory_container::object_for_row(
             ctx, if party_scope { "party" } else { "personal" }, *inventory_id,
-        );
+        )?;
         let container_subtree = container_object.as_ref().is_some_and(|object|
             crate::inventory_container::object_is_nonempty(ctx, object.id)
                 || crate::inventory_container::object_is_nested(ctx, object.id));
@@ -2294,8 +2368,8 @@ fn finalize_storefront_trade_impl(ctx: &ReducerContext, execution: StorefrontTra
         {
             return Err("Invalid merchant sale".into());
         }
-        if container_subtree && (*quantity != 1 || available != 1) {
-            return Err("A contained subtree must be sold as one exact object".into());
+        if !physical_object_row_is_atomic(container_object.is_some(), *quantity, available) {
+            return Err("A physical object must be sold as one exact inventory row".into());
         }
         if !party_scope
             && crate::character::inventory_item_is_equipped(ctx, character_id, *inventory_id)
@@ -2375,11 +2449,8 @@ fn finalize_storefront_trade_impl(ctx: &ReducerContext, execution: StorefrontTra
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
         let object = crate::inventory_container::object_for_row(
             ctx, if party_scope { "party" } else { "personal" }, *inventory_id,
-        );
-        if let Some(object) = object.filter(|object|
-            crate::inventory_container::object_is_nonempty(ctx, object.id)
-                || crate::inventory_container::object_is_nested(ctx, object.id))
-        {
+        )?;
+        if let Some(object) = object {
             crate::inventory_container::detach_if_nested(ctx, object.id)?;
             crate::inventory_container::delete_subtree(ctx, object.id)?;
             continue;

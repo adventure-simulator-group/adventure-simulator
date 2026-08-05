@@ -41,6 +41,7 @@ pub mod npc_policy;
 pub mod organization;
 #[cfg(test)]
 mod organization_catalog_validation;
+pub mod physical_object;
 pub mod physiology;
 pub mod provisioning;
 pub mod quest_catalog;

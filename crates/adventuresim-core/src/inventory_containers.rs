@@ -4,11 +4,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::physical_object::PhysicalObjectId;
+
 pub const MAX_CONTAINER_DEPTH: usize = 16;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Object {
-    pub id: u64,
+    pub id: PhysicalObjectId,
     /// Exterior displacement when this object is an immediate child.
     pub exterior_volume_ml: u64,
     /// Interior capacity; zero means this object is not a container.
@@ -19,8 +21,8 @@ pub struct Object {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ContainmentGraph {
-    objects: BTreeMap<u64, Object>,
-    parent_by_child: BTreeMap<u64, u64>,
+    objects: BTreeMap<PhysicalObjectId, Object>,
+    parent_by_child: BTreeMap<PhysicalObjectId, PhysicalObjectId>,
 }
 
 impl ContainmentGraph {
@@ -40,17 +42,17 @@ impl ContainmentGraph {
         Ok(graph)
     }
 
-    pub fn parent(&self, child: u64) -> Option<u64> {
+    pub fn parent(&self, child: PhysicalObjectId) -> Option<PhysicalObjectId> {
         self.parent_by_child.get(&child).copied()
     }
 
-    pub fn is_nonempty(&self, container: u64) -> bool {
+    pub fn is_nonempty(&self, container: PhysicalObjectId) -> bool {
         self.parent_by_child
             .values()
             .any(|parent| *parent == container)
     }
 
-    pub fn used_ml(&self, container: u64) -> Result<u64, &'static str> {
+    pub fn used_ml(&self, container: PhysicalObjectId) -> Result<u64, &'static str> {
         let mut used = 0u64;
         for child in self
             .parent_by_child
@@ -73,7 +75,11 @@ impl ContainmentGraph {
         Ok(used)
     }
 
-    pub fn insert(&mut self, child: u64, parent: u64) -> Result<(), &'static str> {
+    pub fn insert(
+        &mut self,
+        child: PhysicalObjectId,
+        parent: PhysicalObjectId,
+    ) -> Result<(), &'static str> {
         if child == parent {
             return Err("A container cannot contain itself");
         }
@@ -140,11 +146,11 @@ impl ContainmentGraph {
         Ok(())
     }
 
-    pub fn remove(&mut self, child: u64) -> bool {
+    pub fn remove(&mut self, child: PhysicalObjectId) -> bool {
         self.parent_by_child.remove(&child).is_some()
     }
 
-    pub fn subtree(&self, root: u64) -> Result<Vec<u64>, &'static str> {
+    pub fn subtree(&self, root: PhysicalObjectId) -> Result<Vec<PhysicalObjectId>, &'static str> {
         if !self.objects.contains_key(&root) {
             return Err("Unknown inventory object");
         }
@@ -177,7 +183,7 @@ mod tests {
 
     fn object(id: u64, exterior: u64, capacity: u64) -> Object {
         Object {
-            id,
+            id: PhysicalObjectId::try_new(id).unwrap(),
             exterior_volume_ml: exterior,
             capacity_ml: capacity,
             measured_volume_ml: 0,
@@ -188,9 +194,12 @@ mod tests {
     fn exact_fit_succeeds_and_one_ml_over_fails() {
         let mut exact =
             ContainmentGraph::new([object(1, 100, 1_000), object(2, 1_000, 0)]).unwrap();
-        assert_eq!(exact.insert(2, 1), Ok(()));
+        assert_eq!(exact.insert(object_id(2), object_id(1)), Ok(()));
         let mut over = ContainmentGraph::new([object(1, 100, 999), object(2, 1_000, 0)]).unwrap();
-        assert_eq!(over.insert(2, 1), Err("Container capacity exceeded"));
+        assert_eq!(
+            over.insert(object_id(2), object_id(1)),
+            Err("Container capacity exceeded")
+        );
     }
 
     #[test]
@@ -199,37 +208,52 @@ mod tests {
             object(1, 500, 1_000),
             object(2, 900, 800),
             Object {
-                id: 3,
+                id: PhysicalObjectId::try_new(3).unwrap(),
                 exterior_volume_ml: 1_000,
                 capacity_ml: 0,
                 measured_volume_ml: 700,
             },
         ])
         .unwrap();
-        graph.insert(3, 2).unwrap();
-        graph.insert(2, 1).unwrap();
-        assert_eq!(graph.used_ml(2), Ok(700));
-        assert_eq!(graph.used_ml(1), Ok(900));
+        graph.insert(object_id(3), object_id(2)).unwrap();
+        graph.insert(object_id(2), object_id(1)).unwrap();
+        assert_eq!(graph.used_ml(object_id(2)), Ok(700));
+        assert_eq!(graph.used_ml(object_id(1)), Ok(900));
     }
 
     #[test]
     fn rejects_self_cycles_and_excessive_ancestry() {
         let mut graph = ContainmentGraph::new((1..=18).map(|id| object(id, 1, 2))).unwrap();
-        assert!(graph.insert(1, 1).is_err());
+        assert!(graph.insert(object_id(1), object_id(1)).is_err());
         for id in 2..=17 {
-            graph.insert(id - 1, id).unwrap();
+            graph.insert(object_id(id - 1), object_id(id)).unwrap();
         }
-        assert!(graph.insert(17, 1).is_err());
-        assert!(graph.insert(17, 18).is_err());
+        assert!(graph.insert(object_id(17), object_id(1)).is_err());
+        assert!(graph.insert(object_id(17), object_id(18)).is_err());
     }
 
     #[test]
     fn subtree_is_atomic_and_deterministic() {
         let mut graph = ContainmentGraph::new((1..=4).map(|id| object(id, 1, 10))).unwrap();
-        graph.insert(2, 1).unwrap();
-        graph.insert(3, 1).unwrap();
-        graph.insert(4, 2).unwrap();
-        assert_eq!(graph.subtree(1).unwrap(), vec![1, 2, 3, 4]);
-        assert!(graph.is_nonempty(1));
+        graph.insert(object_id(2), object_id(1)).unwrap();
+        graph.insert(object_id(3), object_id(1)).unwrap();
+        graph.insert(object_id(4), object_id(2)).unwrap();
+        assert_eq!(
+            graph.subtree(object_id(1)).unwrap(),
+            vec![object_id(1), object_id(2), object_id(3), object_id(4)]
+        );
+        assert!(graph.is_nonempty(object_id(1)));
+    }
+
+    fn object_id(id: u64) -> PhysicalObjectId {
+        PhysicalObjectId::try_new(id).unwrap()
+    }
+
+    #[test]
+    fn duplicate_physical_object_ids_are_rejected() {
+        assert_eq!(
+            ContainmentGraph::new([object(1, 100, 100), object(1, 100, 100)]),
+            Err("Duplicate inventory object identity")
+        );
     }
 }
