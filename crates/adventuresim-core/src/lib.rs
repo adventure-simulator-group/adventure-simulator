@@ -73,6 +73,7 @@ pub mod surgery;
 pub mod survival;
 pub mod threat_escalation;
 mod threat_escalation_limits;
+pub mod water_source;
 pub mod weather;
 pub mod world_event;
 

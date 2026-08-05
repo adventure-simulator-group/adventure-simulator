@@ -10,6 +10,7 @@ use adventuresim_core::{
 };
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
+use crate::outbreak::container_water_provenance as _;
 use crate::{
     character::{
         character, character__view as _, character_attributes, character_attributes__view as _,
@@ -17,7 +18,6 @@ use crate::{
     },
     condition::{character_needs, initialize_character_condition},
     container_liquid,
-    disease::{InfectionEpisodeRow, infection_episode},
     inventory_container::{inventory_containment__view as _, inventory_object__view as _},
     inventory_containment, inventory_item, inventory_item_amount, inventory_object,
     item::{inventory_item__view as _, item, item__view as _},
@@ -734,6 +734,15 @@ pub struct FoodContamination {
     pub concentration_anchor: f32,
     pub growth_per_hour: f32,
     pub anchor_minute: u64,
+}
+
+/// Private source-material provenance carried through cooking into consumption.
+#[derive(Clone, Debug)]
+#[table(accessor = food_water_material_provenance)]
+pub struct FoodWaterMaterialProvenance {
+    #[primary_key]
+    pub food_lot_id: u64,
+    pub material_lot_id: u64,
 }
 
 fn preparation_request_id(
@@ -1923,6 +1932,7 @@ pub struct FireplaceDish {
     pub raw_contamination: f32,
     pub raw_growth_per_hour: f32,
     pub cooked_growth_per_hour: f32,
+    pub water_material_lot_id: Option<u64>,
     pub medicinal_profile_ids: Vec<String>,
     pub medicinal_profile_versions: Vec<u16>,
     pub medicinal_potency_units: Vec<f32>,
@@ -2949,6 +2959,10 @@ pub fn delete_personal_food_lot(ctx: &ReducerContext, inventory_item_id: u64) {
         .collect::<Vec<_>>()
     {
         crate::herbalism::delete_food_medicine(ctx, lot.id);
+        ctx.db
+            .food_water_material_provenance()
+            .food_lot_id()
+            .delete(lot.id);
         ctx.db.food_contamination().food_lot_id().delete(lot.id);
         ctx.db.food_lot().id().delete(lot.id);
     }
@@ -2963,6 +2977,10 @@ pub fn delete_party_food_lot(ctx: &ReducerContext, inventory_item_id: u64) {
         .collect::<Vec<_>>()
     {
         crate::herbalism::delete_food_medicine(ctx, lot.id);
+        ctx.db
+            .food_water_material_provenance()
+            .food_lot_id()
+            .delete(lot.id);
         ctx.db.food_contamination().food_lot_id().delete(lot.id);
         ctx.db.food_lot().id().delete(lot.id);
     }
@@ -3098,6 +3116,7 @@ pub fn split_lot(
         .ok_or("Food contamination state not found")?;
     ensure_food_material_object(ctx, "personal", destination_inventory_id)?;
     let child = ctx.db.food_lot().insert(child);
+    copy_food_water_material_provenance(ctx, source.id, child.id);
     crate::herbalism::split_food_medicine(ctx, source.id, child.id, ratio)?;
     ctx.db.food_contamination().insert(FoodContamination {
         food_lot_id: child.id,
@@ -3160,6 +3179,7 @@ pub fn move_or_split_to_party(
         .ok_or("Food contamination state not found")?;
     ensure_food_material_object(ctx, "party", destination_party_id)?;
     let child = ctx.db.food_lot().insert(child);
+    copy_food_water_material_provenance(ctx, source.id, child.id);
     crate::herbalism::split_food_medicine(ctx, source.id, child.id, ratio)?;
     ctx.db.food_contamination().insert(FoodContamination {
         food_lot_id: child.id,
@@ -3207,6 +3227,7 @@ pub fn move_or_split_to_personal(
         .ok_or("Food contamination state not found")?;
     ensure_food_material_object(ctx, "personal", destination_inventory_id)?;
     let child = ctx.db.food_lot().insert(child);
+    copy_food_water_material_provenance(ctx, source.id, child.id);
     crate::herbalism::split_food_medicine(ctx, source.id, child.id, ratio)?;
     ctx.db.food_contamination().insert(FoodContamination {
         food_lot_id: child.id,
@@ -3214,6 +3235,26 @@ pub fn move_or_split_to_personal(
     });
     ctx.db.food_lot().id().update(source);
     Ok(())
+}
+
+fn copy_food_water_material_provenance(
+    ctx: &ReducerContext,
+    source_food_lot_id: u64,
+    destination_food_lot_id: u64,
+) {
+    if let Some(provenance) = ctx
+        .db
+        .food_water_material_provenance()
+        .food_lot_id()
+        .find(source_food_lot_id)
+    {
+        ctx.db
+            .food_water_material_provenance()
+            .insert(FoodWaterMaterialProvenance {
+                food_lot_id: destination_food_lot_id,
+                material_lot_id: provenance.material_lot_id,
+            });
+    }
 }
 
 fn item_quantity(ctx: &ReducerContext, character_id: u64, item_id: &str) -> u32 {
@@ -3628,6 +3669,12 @@ fn add_fireplace_ingredients_at(
         })
         .filter(|liquid| liquid.liquid_item_id == crate::inventory_container::WATER_ITEM_ID)
         .map_or(0, |liquid| liquid.water_ml);
+    let contained_water_material = match station.instrument_object_id {
+        Some(object_id) if contained_water_ml > 0 => {
+            crate::outbreak::contained_water_contamination(ctx, object_id, minute)?
+        }
+        _ => None,
+    };
     let water_ml = if station.instrument_object_id.is_some() {
         if method == CookingMethod::Stew && contained_water_ml == 0 {
             return Err("Stew requires water inside the cooking pot".into());
@@ -3653,6 +3700,12 @@ fn add_fireplace_ingredients_at(
         return Err("Stew requires enough pooled or carried water".into());
     }
     mass += water_ml / 1_000.0;
+    if let Some((_material_lot_id, current, water_growth)) = contained_water_material {
+        let water_mass_kg = water_ml / 1_000.0;
+        loads.push(current * water_mass_kg);
+        growth.push(water_growth);
+        growth_mass += water_growth.max(0.0) * water_mass_kg;
+    }
     let target = food::cooking_duration_minutes_for_check(method.core(), &safety, mass, check)
         .ok_or("Cooking duration could not be calculated")?;
     let flavor_quality = food::aggregate_flavor_quality(method.core(), flavors, mass);
@@ -3666,6 +3719,10 @@ fn add_fireplace_ingredients_at(
     if station.instrument_object_id.is_some() && contained_water_ml > 0 {
         ctx.db
             .container_liquid()
+            .container_object_id()
+            .delete(station.instrument_object_id.unwrap());
+        ctx.db
+            .container_water_provenance()
             .container_object_id()
             .delete(station.instrument_object_id.unwrap());
     }
@@ -3731,10 +3788,17 @@ fn add_fireplace_ingredients_at(
     }
     name_parts.sort();
     name_parts.dedup();
-    // Water adds mass but never microbial load.
     let raw_contamination = food::microbial_concentration(loads.iter().sum(), mass);
-    let raw_growth_per_hour = if ingredient_mass > 0.0 {
-        growth_mass / ingredient_mass
+    // Preserve the legacy clean-water growth basis while allowing a tainted
+    // material lot to contribute its own growth rate and mass.
+    let growth_basis_mass = ingredient_mass
+        + if contained_water_material.is_some() {
+            water_ml / 1_000.0
+        } else {
+            0.0
+        };
+    let raw_growth_per_hour = if growth_basis_mass > 0.0 {
+        growth_mass / growth_basis_mass
     } else {
         0.0
     };
@@ -3766,6 +3830,8 @@ fn add_fireplace_ingredients_at(
         raw_contamination,
         raw_growth_per_hour,
         cooked_growth_per_hour: food::cooked_growth_per_hour(&growth, method.core()),
+        water_material_lot_id: contained_water_material
+            .map(|(material_lot_id, _, _)| material_lot_id),
         medicinal_profile_ids: medicinal.keys().cloned().collect(),
         medicinal_profile_versions: vec![1; medicinal.len()],
         medicinal_potency_units: medicinal.values().copied().collect(),
@@ -3926,6 +3992,14 @@ pub fn retrieve_fireplace_dish(
         total_value: value,
         created_at_minute: minute,
     });
+    if let Some(material_lot_id) = dish.water_material_lot_id {
+        ctx.db
+            .food_water_material_provenance()
+            .insert(FoodWaterMaterialProvenance {
+                food_lot_id: lot.id,
+                material_lot_id,
+            });
+    }
     let medicinal_heat_factor = if doneness.progress < 1.0 {
         doneness.progress
     } else if matches!(dish.method, CookingMethod::PanFry | CookingMethod::Bake) {
@@ -4068,14 +4142,38 @@ fn expose_to_dysentery(
         prior,
         protected_dose,
     ) {
-        ctx.db.infection_episode().insert(InfectionEpisodeRow {
-            id: 0,
+        let provenance = ctx
+            .db
+            .food_water_material_provenance()
+            .food_lot_id()
+            .find(lot_id);
+        let material_lot_id = provenance
+            .as_ref()
+            .map_or(lot_id, |row| row.material_lot_id);
+        let disease_id = if let Some(provenance) = provenance {
+            let (settlement_id, disease_id) =
+                crate::outbreak::water_material_outbreak_context(ctx, provenance.material_lot_id)?;
+            let _ = settlement_id;
+            if disease_id != "dysentery" {
+                return Err("Food-water material disease authority conflicts".into());
+            }
+            disease_id
+        } else {
+            "dysentery".into()
+        };
+        let consumption_id = format!("food:{lot_id}:{minute}");
+        let episode_id = seed.max(1);
+        let place = crate::foraging::current_strategic_place(ctx, character_id)?;
+        crate::world_event::commit_food_water_infection(
+            ctx,
+            &consumption_id,
             character_id,
-            disease_id: "dysentery".into(),
-            contracted_at: minute,
-            ruleset_version: adventuresim_core::physiology::PHYSIOLOGY_RULESET_VERSION,
-            phenotype_key_version: adventuresim_core::physiology::PHENOTYPE_KEY_VERSION,
-        });
+            &place.to_string(),
+            material_lot_id,
+            &disease_id,
+            episode_id,
+            minute,
+        )?;
     }
     Ok(())
 }
@@ -4463,6 +4561,18 @@ mod tests {
         assert!(source.matches("material_revision: 1").count() >= 4);
         assert!(source.matches("ensure_food_material_object").count() >= 8);
         assert!(!source.contains("material_revision: 0"));
+    }
+
+    #[test]
+    fn every_partial_food_split_copies_water_material_provenance() {
+        let source = include_str!("food.rs");
+        assert_eq!(
+            source
+                .matches("copy_food_water_material_provenance(ctx, source.id, child.id)")
+                .count(),
+            3
+        );
+        assert!(source.contains("food_water_material_provenance().insert"));
     }
 
     #[test]

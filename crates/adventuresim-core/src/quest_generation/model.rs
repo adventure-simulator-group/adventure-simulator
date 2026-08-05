@@ -128,7 +128,8 @@ macro_rules! open_catalog_id {
 open_catalog_id!(SiteKind {
     Cave => "cave", Crypt => "crypt", ForestCamp => "forest_camp",
     OccupiedHouse => "occupied_house", Riverside => "riverside",
-    Graveyard => "graveyard", Roadside => "roadside", AbandonedFarm => "abandoned_farm"
+    Graveyard => "graveyard", Roadside => "roadside", AbandonedFarm => "abandoned_farm",
+    Well => "well"
 });
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

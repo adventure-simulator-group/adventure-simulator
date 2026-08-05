@@ -1390,7 +1390,11 @@ fn materialize_preferred_generated_fixture(
         .ok_or("Current settlement not found")?;
 
     let now_minute = crate::time::refresh_clock(ctx)?.max(4_000);
-    let entropy = character_id ^ seed_salt;
+    let base_entropy = character_id ^ seed_salt;
+    let entropy = (0..6u64)
+        .map(|offset| base_entropy.wrapping_add(offset))
+        .find(|entropy| entropy.rotate_left(11) % 6 == 0)
+        .expect("six consecutive seeds cover the outbreak disease selector");
     let context = qg::GenerationContext {
         seed: entropy.rotate_left(11),
         observer_entropy_hi: entropy.rotate_left(23),
@@ -1560,6 +1564,15 @@ fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<String,
         .any(|row| row.item_id == "surgery_kit")
     {
         crate::add_inventory_item(ctx, character_id, "surgery_kit", 1);
+    }
+    if !ctx
+        .db
+        .inventory_item()
+        .character_id()
+        .filter(character_id)
+        .any(|row| row.item_id == "cooking_pot")
+    {
+        crate::add_inventory_item(ctx, character_id, "cooking_pot", 1);
     }
 
     materialize_preferred_generated_fixture(

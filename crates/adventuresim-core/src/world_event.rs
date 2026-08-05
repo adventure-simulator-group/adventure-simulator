@@ -20,6 +20,9 @@ pub enum WorldEventSource {
         finale_id: String,
         source_id: String,
     },
+    FoodWaterExposure {
+        consumption_id: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -38,6 +41,7 @@ pub enum WorldEventSubject {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum WorldEventPlace {
     Settlement { settlement_id: String },
+    Strategic { place_id: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -48,6 +52,10 @@ pub enum WorldEventPayloadRef {
     GeneratedCaseResolution {
         canonical_case_id: String,
         finale_id: String,
+    },
+    FoodWaterInfection {
+        material_lot_id: u64,
+        disease_id: String,
     },
 }
 
@@ -96,6 +104,29 @@ pub enum WorldEventConsequence {
         party_id: String,
         minute: u64,
     },
+    InfectionEpisode {
+        episode_id: u64,
+        character_id: u64,
+        disease_id: String,
+        contracted_at: u64,
+        material_lot_id: u64,
+    },
+}
+
+pub fn plan_food_water_infection(
+    episode_id: u64,
+    character_id: u64,
+    disease_id: &str,
+    contracted_at: u64,
+    material_lot_id: u64,
+) -> Vec<WorldEventConsequence> {
+    vec![WorldEventConsequence::InfectionEpisode {
+        episode_id,
+        character_id,
+        disease_id: disease_id.into(),
+        contracted_at,
+        material_lot_id,
+    }]
 }
 
 pub fn plan_noticed_illegal_foraging(
@@ -217,6 +248,7 @@ impl WorldEventEnvelope {
                 validate_id(finale_id)?;
                 validate_id(source_id)?;
             }
+            WorldEventSource::FoodWaterExposure { consumption_id } => validate_id(consumption_id)?,
         }
         match &self.actor {
             WorldEventActor::Character { character_id } if *character_id == 0 => {
@@ -247,8 +279,10 @@ impl WorldEventEnvelope {
             }
             prior = Some(subject);
         }
-        let WorldEventPlace::Settlement { settlement_id } = &self.place;
-        validate_id(settlement_id)?;
+        match &self.place {
+            WorldEventPlace::Settlement { settlement_id } => validate_id(settlement_id)?,
+            WorldEventPlace::Strategic { place_id } => validate_id(place_id)?,
+        }
         match (&self.source, &self.actor, &self.payload) {
             (
                 WorldEventSource::ForagingAction { request_id: source },
@@ -270,6 +304,16 @@ impl WorldEventEnvelope {
                 && self.subjects.iter().any(|subject| matches!(subject,
                     WorldEventSubject::Case { canonical_case_id: subject_id } if subject_id == canonical_case_id
                 )) => {}
+            (
+                WorldEventSource::FoodWaterExposure { .. },
+                WorldEventActor::Character { character_id },
+                WorldEventPayloadRef::FoodWaterInfection {
+                    material_lot_id,
+                    disease_id,
+                },
+            ) if *material_lot_id != 0
+                && validate_id(disease_id).is_ok()
+                && self.subjects == [WorldEventSubject::Character { character_id: *character_id }] => {}
             _ => return Err(WorldEventError::InconsistentDomainReference),
         }
         Ok(())

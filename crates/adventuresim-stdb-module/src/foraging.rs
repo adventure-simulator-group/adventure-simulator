@@ -338,6 +338,13 @@ fn expected_location(
     })
 }
 
+pub(crate) fn current_strategic_place(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<StrategicPlaceId, String> {
+    Ok(expected_location(ctx, character_id)?.place)
+}
+
 fn validate_attestation(
     ctx: &ReducerContext,
     character_id: u64,

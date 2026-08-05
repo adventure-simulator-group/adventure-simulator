@@ -271,12 +271,19 @@ fn persist_action_result_lead(
             } => Some(&evidence_id.0),
             _ => None,
         }) {
+            let source_id = crate::outbreak::source_material_knowledge_provenance(
+                ctx,
+                &capability.generated_case_id,
+                &capability.target_id,
+            )
+            ?
+            .unwrap_or_else(|| attempt_id.to_owned());
             record_evidence_knowledge(
                 ctx,
                 capability.owner_character_id,
                 &capability.case_id,
                 evidence_id,
-                attempt_id,
+                &source_id,
             )?;
         }
     }

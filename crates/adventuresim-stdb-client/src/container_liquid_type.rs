@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct ContainerLiquid {
     pub container_object_id: u64,
     pub liquid_item_id: String,
+    pub fixture_drawn: bool,
     pub water_ml: u64,
 }
 
@@ -22,6 +23,7 @@ impl __sdk::InModule for ContainerLiquid {
 pub struct ContainerLiquidCols {
     pub container_object_id: __sdk::__query_builder::Col<ContainerLiquid, u64>,
     pub liquid_item_id: __sdk::__query_builder::Col<ContainerLiquid, String>,
+    pub fixture_drawn: __sdk::__query_builder::Col<ContainerLiquid, bool>,
     pub water_ml: __sdk::__query_builder::Col<ContainerLiquid, u64>,
 }
 
@@ -34,6 +36,7 @@ impl __sdk::__query_builder::HasCols for ContainerLiquid {
                 "container_object_id",
             ),
             liquid_item_id: __sdk::__query_builder::Col::new(table_name, "liquid_item_id"),
+            fixture_drawn: __sdk::__query_builder::Col::new(table_name, "fixture_drawn"),
             water_ml: __sdk::__query_builder::Col::new(table_name, "water_ml"),
         }
     }

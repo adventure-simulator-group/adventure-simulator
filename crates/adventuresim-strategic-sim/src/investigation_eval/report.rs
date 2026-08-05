@@ -1070,7 +1070,7 @@ mod tests {
             Box::new(MockLlmPolicy) as Box<dyn QuestPolicy>,
         ] {
             let bundle = evaluate_cases(
-                &[EvalCaseConfig::fixture(97, TemplateFamily::Outbreak)],
+                &[EvalCaseConfig::fixture(0, TemplateFamily::Outbreak)],
                 policy.as_mut(),
                 &limits,
             )
@@ -1078,6 +1078,23 @@ mod tests {
             assert_eq!(bundle.public.metrics.cases, 1);
             assert_eq!(bundle.public.metrics.solved, 1);
         }
+
+        // The same generated fixture composes with shared material and cooking
+        // rules: closing the source changes future availability, not the held
+        // draw, and the ordinary stew heat path changes that draw's load.
+        let (source_after, held_ml) =
+            adventuresim_core::water_source::conserved_collection(500_000, 0, 1_000)
+                .expect("bounded fixture draw");
+        let raw = adventuresim_core::food::microbial_concentration(12.0, 1.0);
+        let cooked = adventuresim_core::food::cooked_contamination(
+            raw,
+            adventuresim_core::food::CookingMethod::Stew,
+        );
+        let source_open = false;
+        assert_eq!(source_after, 499_000);
+        assert_eq!(held_ml, 1_000);
+        assert!(!source_open);
+        assert!(cooked < raw);
     }
 
     #[test]

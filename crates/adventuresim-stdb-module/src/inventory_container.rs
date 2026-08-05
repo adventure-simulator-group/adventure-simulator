@@ -12,6 +12,7 @@ use spacetimedb::{ReducerContext, Table, reducer, table};
 
 use crate::character::character as _;
 use crate::item::item as _;
+use crate::outbreak::container_water_provenance as _;
 use crate::strategic::{party_authority, party_inventory_item, party_item_condition};
 use crate::{
     character_needs, fireplace_dish, fireplace_station, inventory_item, inventory_item_amount,
@@ -56,6 +57,9 @@ pub struct ContainerLiquid {
     /// Authored substance identity; liquids in one container never mix
     /// implicitly. The volume is counted exactly once by capacity checks.
     pub liquid_item_id: String,
+    /// Coarse public handling rule. It never identifies a source, lot, case,
+    /// contaminant, or outbreak.
+    pub fixture_drawn: bool,
     pub water_ml: u64,
 }
 
@@ -500,6 +504,10 @@ pub(crate) fn delete_subtree(ctx: &ReducerContext, root_object_id: u64) -> Resul
             _ => unreachable!("preflight accepts only carried deletion locations"),
         }
         ctx.db.container_liquid().container_object_id().delete(id);
+        ctx.db
+            .container_water_provenance()
+            .container_object_id()
+            .delete(id);
         crate::herbalism::delete_container_medicine(ctx, id);
         ctx.db.inventory_containment().child_object_id().delete(id);
         ctx.db.inventory_object().id().delete(id);
@@ -884,6 +892,22 @@ mod tests {
         assert!(descendant_validation < completed_preflight);
         assert!(completed_preflight < first_delete);
     }
+
+    #[test]
+    fn fixture_water_handling_is_public_and_cannot_be_laundered() {
+        let source = include_str!("inventory_container.rs");
+        assert!(source.contains("pub fixture_drawn: bool"));
+        assert!(source.contains("Fixture-collected water cannot be mixed with pooled water"));
+        assert!(source.contains("Container is unavailable for pooled water"));
+        let deletion = source
+            .split("pub(crate) fn delete_subtree")
+            .nth(1)
+            .unwrap()
+            .split("fn require_exact_carried_backing")
+            .next()
+            .unwrap();
+        assert_eq!(deletion.matches("container_water_provenance()").count(), 1);
+    }
 }
 
 pub(crate) fn ensure_object(
@@ -1006,6 +1030,7 @@ pub(crate) fn consume_contained_water(
 ) -> Result<u64, String> {
     let expected_custody = crate::object_custody::carried_location_custody(kind, owner)?;
     let mut liquids = Vec::new();
+    let mut fixture_drawn_available = false;
     for liquid in ctx
         .db
         .container_liquid()
@@ -1020,7 +1045,11 @@ pub(crate) fn consume_contained_water(
             .ok_or("Contained water has no physical container object")?;
         let resolved = crate::object_custody::resolve_object_custody(ctx, &object)?;
         if resolved.root == expected_custody {
-            liquids.push(liquid);
+            if liquid.fixture_drawn {
+                fixture_drawn_available = true;
+            } else {
+                liquids.push(liquid);
+            }
         }
     }
     liquids.sort_by_key(|liquid| liquid.container_object_id);
@@ -1045,10 +1074,13 @@ pub(crate) fn consume_contained_water(
             break;
         }
     }
+    if remaining > 0 && fixture_drawn_available {
+        return Err("Fixture-collected water must be cooked before drinking".into());
+    }
     Ok(requested_ml - remaining)
 }
 
-fn require_mutable(ctx: &ReducerContext, object_id: u64) -> Result<(), String> {
+pub(crate) fn require_mutable(ctx: &ReducerContext, object_id: u64) -> Result<(), String> {
     let mut cursor = Some(object_id);
     for _ in 0..=adventuresim_core::inventory_containers::MAX_CONTAINER_DEPTH {
         let Some(id) = cursor else { return Ok(()) };
@@ -1087,7 +1119,7 @@ fn require_mutable(ctx: &ReducerContext, object_id: u64) -> Result<(), String> {
     Err("Container ancestry exceeds the maximum depth".into())
 }
 
-fn require_container_capacity(
+pub(crate) fn require_container_capacity(
     ctx: &ReducerContext,
     container_object_id: u64,
     additional_ml: u64,
@@ -1138,6 +1170,15 @@ pub fn put_inventory_item_in_container(
     crate::strategic::require_strategic_gateway(ctx)?;
     crate::character::require_living_character(ctx, character_id)?;
     let parent = ensure_object(ctx, character_id, &parent_scope, parent_row_id, true)?;
+    if ctx
+        .db
+        .container_water_provenance()
+        .container_object_id()
+        .find(parent.id)
+        .is_some()
+    {
+        return Err("Container is unavailable for pooled water".into());
+    }
     let parent_definition = ctx
         .db
         .item()
@@ -1249,6 +1290,24 @@ pub fn pour_water_into_container(
     }
     let parent = ensure_object(ctx, character_id, &parent_scope, parent_row_id, true)?;
     require_mutable(ctx, parent.id)?;
+    if ctx
+        .db
+        .container_liquid()
+        .container_object_id()
+        .find(parent.id)
+        .is_some_and(|liquid| liquid.fixture_drawn)
+    {
+        return Err("Fixture-collected water cannot be mixed with pooled water".into());
+    }
+    if ctx
+        .db
+        .container_water_provenance()
+        .container_object_id()
+        .find(parent.id)
+        .is_some()
+    {
+        return Err("Fixture-collected water cannot be mixed with pooled water".into());
+    }
     require_container_capacity(ctx, parent.id, requested_ml)?;
     let available = match parent.location_kind.as_str() {
         "personal" => ctx
@@ -1312,6 +1371,7 @@ pub fn pour_water_into_container(
         ctx.db.container_liquid().insert(ContainerLiquid {
             container_object_id: parent.id,
             liquid_item_id: WATER_ITEM_ID.into(),
+            fixture_drawn: false,
             water_ml: requested_ml,
         });
     }
@@ -1335,6 +1395,15 @@ pub fn pour_water_out_of_container(
         .id()
         .find(container_object_id)
         .ok_or("Container object not found")?;
+    if ctx
+        .db
+        .container_liquid()
+        .container_object_id()
+        .find(container_object_id)
+        .is_some_and(|liquid| liquid.fixture_drawn)
+    {
+        return Err("Container is unavailable for pooled water".into());
+    }
     let actor = ctx
         .db
         .character()

@@ -6,12 +6,13 @@ fn outbreak(seed: u64) -> GeneratedCase {
 fn outbreak_catalog_covers_sources_and_all_initial_diseases() {
     use crate::disease::DiseaseId;
 
-    let cases = (0..10).map(outbreak).collect::<Vec<_>>();
+    let cases = (0..12).map(outbreak).collect::<Vec<_>>();
     let diseases = cases
         .iter()
         .map(|case| case.outbreak.as_ref().unwrap().disease)
         .collect::<Vec<_>>();
     for disease in [
+        DiseaseId::Dysentery,
         DiseaseId::Influenza,
         DiseaseId::Mahrdruck,
         DiseaseId::ShroudFever,
@@ -20,6 +21,13 @@ fn outbreak_catalog_covers_sources_and_all_initial_diseases() {
     ] {
         assert!(diseases.contains(&disease));
     }
+    let water = outbreak(0);
+    assert!(matches!(
+        water.outbreak.as_ref().unwrap().source,
+        OutbreakSource::Sanitation {
+            practice: OutbreakSanitationPractice::ContaminatedWell
+        }
+    ));
     assert!(cases.iter().any(|case| matches!(
         case.outbreak.as_ref().unwrap().source,
         OutbreakSource::Sanitation { .. }

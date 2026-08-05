@@ -35,6 +35,7 @@ pub struct FireplaceDish {
     pub raw_contamination: f32,
     pub raw_growth_per_hour: f32,
     pub cooked_growth_per_hour: f32,
+    pub water_material_lot_id: Option<u64>,
     pub medicinal_profile_ids: Vec<String>,
     pub medicinal_profile_versions: Vec<u16>,
     pub medicinal_potency_units: Vec<f32>,
@@ -73,6 +74,7 @@ pub struct FireplaceDishCols {
     pub raw_contamination: __sdk::__query_builder::Col<FireplaceDish, f32>,
     pub raw_growth_per_hour: __sdk::__query_builder::Col<FireplaceDish, f32>,
     pub cooked_growth_per_hour: __sdk::__query_builder::Col<FireplaceDish, f32>,
+    pub water_material_lot_id: __sdk::__query_builder::Col<FireplaceDish, Option<u64>>,
     pub medicinal_profile_ids: __sdk::__query_builder::Col<FireplaceDish, Vec<String>>,
     pub medicinal_profile_versions: __sdk::__query_builder::Col<FireplaceDish, Vec<u16>>,
     pub medicinal_potency_units: __sdk::__query_builder::Col<FireplaceDish, Vec<f32>>,
@@ -124,6 +126,10 @@ impl __sdk::__query_builder::HasCols for FireplaceDish {
             cooked_growth_per_hour: __sdk::__query_builder::Col::new(
                 table_name,
                 "cooked_growth_per_hour",
+            ),
+            water_material_lot_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "water_material_lot_id",
             ),
             medicinal_profile_ids: __sdk::__query_builder::Col::new(
                 table_name,
