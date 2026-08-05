@@ -74,6 +74,7 @@ pub mod survival;
 pub mod threat_escalation;
 mod threat_escalation_limits;
 pub mod weather;
+pub mod world_event;
 
 pub mod prelude {
     pub use crate::activity::*;

@@ -85,6 +85,29 @@ an inn, chapter, residence, case-site, camp, source, or fireplace identity does
 not establish existence, presence, visibility, knowledge, ownership, or
 permission. See [Strategic place and fixture identities](strategic-places.md).
 
+Consequences shared by multiple strategic domains may pass through a closed,
+versioned world-event envelope. The envelope records the directed actor and
+subjects, canonical settlement jurisdiction, occurrence minute, exact source
+identity, and a typed domain payload reference. It is private canonical
+authority: it is not an observation, knowledge grant, permission, public log,
+subscription, or asynchronous bus. Rights and knowledge decisions still occur
+in their owning reducers before an envelope is committed.
+
+The private event receipt first exact-matches a digest of stable reducer inputs,
+before reading mutable participant or consequence state. An exact retry is a
+successful no-op even if party membership later changes; reuse of an event ID
+with different fame, infamy, source, place, time, or other request provenance
+fails. On first application, the receipt also binds the complete envelope,
+affected-character snapshot, and closed ordered consequence plan. Every
+pre-existing subordinate row must exactly match its immutable authored fields
+before any consequence runs, which permits safe adoption of matching legacy
+rows but rejects collisions. New consequences run in their established order
+inside the originating SpacetimeDB transaction, and the receipt is inserted
+last so a failed consequence leaves neither partial state nor replay authority.
+Reputation continues to use its existing immutable-event spillover formula and
+caps; private offenses and local-problem outcomes retain their existing domain
+tables and visibility.
+
 Errantry challenges follow this boundary. The private seed and canonical
 assignment remain in durable strategic authority; the gateway receives only
 formal clues, allowed interactions, presentation, revision, and safe feedback.

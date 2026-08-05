@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1741)
+## Files (1754)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -153,6 +153,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/threat_escalation.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/threat_escalation_limits.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/weather.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/world_event.rs` — Rust source module for this component.
 - `crates/adventuresim-dialogue/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-dialogue/build.rs` — Rust source module.
 - `crates/adventuresim-dialogue/src/authoring_schema.rs` — Rust source module for this component.
@@ -779,7 +780,17 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/perform_immediate_activity_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/perform_investigation_action_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/perform_social_action_reducer.rs` — Generated SpacetimeDB reducer interface.
+- `crates/adventuresim-stdb-client/src/persisted_case_resolution_payload_ref_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/persisted_foraging_event_source_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/persisted_foraging_payload_ref_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/persisted_generated_finale_event_source_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/persisted_operational_custody_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/persisted_world_event_actor_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/persisted_world_event_envelope_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/persisted_world_event_payload_ref_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/persisted_world_event_place_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/persisted_world_event_source_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/persisted_world_event_subject_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/personality_axis_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/personality_development_event_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/physical_evidence_inspection_action_receipt_type.rs` — Generated SpacetimeDB data type.
@@ -1054,6 +1065,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/world_clock_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/world_data_import_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/world_data_import_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/world_event_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/world_node_import_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/world_node_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/world_node_type.rs` — Generated SpacetimeDB data type.
@@ -1139,6 +1151,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/tactical.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/time.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/src/world_actor.rs` — Rust source module for this component.
+- `crates/adventuresim-stdb-module/src/world_event.rs` — Rust source module for this component.
 - `crates/adventuresim-stdb-module/static/tactical.html` — Browser UI page.
 - `crates/adventuresim-strategic-sim/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-strategic-sim/fixtures/quest-analysis-failure-v3.json` — Repository support file.
