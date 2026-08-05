@@ -1079,22 +1079,53 @@ mod tests {
             assert_eq!(bundle.public.metrics.solved, 1);
         }
 
-        // The same generated fixture composes with shared material and cooking
-        // rules: closing the source changes future availability, not the held
-        // draw, and the ordinary stew heat path changes that draw's load.
-        let (source_after, held_ml) =
-            adventuresim_core::water_source::conserved_collection(500_000, 0, 1_000)
-                .expect("bounded fixture draw");
-        let raw = adventuresim_core::food::microbial_concentration(12.0, 1.0);
-        let cooked = adventuresim_core::food::cooked_contamination(
-            raw,
-            adventuresim_core::food::CookingMethod::Stew,
+        use adventuresim_core::water_source::{OutbreakWaterFlow, OutbreakWaterFlowError};
+        let mut source = OutbreakWaterFlow::new(500_000);
+        let receipt = source.draw("draw-1", 1_000, 12_000_000).unwrap();
+        assert_eq!(source.draw("draw-1", 1_000, 12_000_000), Ok(receipt));
+        assert_eq!(
+            source.draw("draw-1", 999, 12_000_000),
+            Err(OutbreakWaterFlowError::ReplayCollision)
         );
-        let source_open = false;
-        assert_eq!(source_after, 499_000);
-        assert_eq!(held_ml, 1_000);
-        assert!(!source_open);
-        assert!(cooked < raw);
+        let mut pot = OutbreakWaterFlow::new(0);
+        source.transfer_all(&mut pot);
+        assert_eq!(
+            (pot.holding_ml, pot.holding_load_microunits),
+            (1_000, 12_000_000)
+        );
+        pot.cook_all(1, 10_000);
+        let load_before_split = pot.food_load_microunits;
+        let mut serving = pot.split_food(1, 2).unwrap();
+        assert_eq!(
+            pot.food_load_microunits + serving.food_load_microunits,
+            load_before_split
+        );
+        let event = serving.consume_all().expect("typed food-water event");
+        event.validate().unwrap();
+        let digest = serving.contribution_digest.clone().unwrap();
+        assert!(matches!(
+            event.payload,
+            adventuresim_core::world_event::WorldEventPayloadRef::FoodWaterInfection {
+                contribution_digest,
+                consumed_fraction_bps: 10_000,
+                ..
+            } if contribution_digest == digest
+        ));
+        source.close_source();
+        assert_eq!(
+            source.draw("draw-after-close", 1, 0),
+            Err(OutbreakWaterFlowError::Closed)
+        );
+        assert_eq!(
+            pot.food_ml, 500,
+            "food held before closure remains available"
+        );
+
+        let mut clean = OutbreakWaterFlow::new(500_000);
+        clean.draw("clean", 1_000, 0).unwrap();
+        let mut tainted = OutbreakWaterFlow::new(500_000);
+        tainted.draw("tainted", 1_000, 12_000_000).unwrap();
+        assert_eq!(clean.public_projection(), tainted.public_projection());
     }
 
     #[test]

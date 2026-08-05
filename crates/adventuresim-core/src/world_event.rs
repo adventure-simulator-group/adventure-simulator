@@ -54,7 +54,13 @@ pub enum WorldEventPayloadRef {
         finale_id: String,
     },
     FoodWaterInfection {
-        material_lot_id: u64,
+        carrier_id: u64,
+        contribution_digest: String,
+        dose_microunits: u64,
+        protected_dose_microunits: u64,
+        immunity_milli: u32,
+        prior_immunity_milli: u32,
+        consumed_fraction_bps: u16,
         disease_id: String,
     },
 }
@@ -109,7 +115,7 @@ pub enum WorldEventConsequence {
         character_id: u64,
         disease_id: String,
         contracted_at: u64,
-        material_lot_id: u64,
+        contribution_digest: String,
     },
 }
 
@@ -118,14 +124,14 @@ pub fn plan_food_water_infection(
     character_id: u64,
     disease_id: &str,
     contracted_at: u64,
-    material_lot_id: u64,
+    contribution_digest: &str,
 ) -> Vec<WorldEventConsequence> {
     vec![WorldEventConsequence::InfectionEpisode {
         episode_id,
         character_id,
         disease_id: disease_id.into(),
         contracted_at,
-        material_lot_id,
+        contribution_digest: contribution_digest.into(),
     }]
 }
 
@@ -308,10 +314,22 @@ impl WorldEventEnvelope {
                 WorldEventSource::FoodWaterExposure { .. },
                 WorldEventActor::Character { character_id },
                 WorldEventPayloadRef::FoodWaterInfection {
-                    material_lot_id,
+                    carrier_id,
+                    contribution_digest,
+                    dose_microunits,
+                    protected_dose_microunits,
+                    immunity_milli,
+                    prior_immunity_milli,
+                    consumed_fraction_bps,
                     disease_id,
                 },
-            ) if *material_lot_id != 0
+            ) if *carrier_id != 0
+                && *dose_microunits != 0
+                && *protected_dose_microunits <= *dose_microunits
+                && *immunity_milli <= 100_000
+                && *prior_immunity_milli <= 100_000
+                && *consumed_fraction_bps <= 10_000
+                && validate_id(contribution_digest).is_ok()
                 && validate_id(disease_id).is_ok()
                 && self.subjects == [WorldEventSubject::Character { character_id: *character_id }] => {}
             _ => return Err(WorldEventError::InconsistentDomainReference),

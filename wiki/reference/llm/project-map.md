@@ -421,7 +421,6 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/contact_context_character_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/container_liquid_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/container_liquid_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/container_water_provenance_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/contextual_contact_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/continue_camp_travel_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/contract_interaction_stage_type.rs` — Generated SpacetimeDB data type.
@@ -553,11 +552,11 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/fishing_industry_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/flow_persistence_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/flowing_water_access_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/food_contamination_provenance_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/food_contamination_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/food_lot_table.rs` — Generated SpacetimeDB table interface.
 - `crates/adventuresim-stdb-client/src/food_lot_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/food_preparation_type.rs` — Generated SpacetimeDB data type.
-- `crates/adventuresim-stdb-client/src/food_water_material_provenance_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forage_attempt_authority_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forage_attempt_state_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/forage_current_vicinity_reducer.rs` — Generated SpacetimeDB reducer interface.
@@ -1064,6 +1063,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-client/src/vote_for_party_leader_reducer.rs` — Generated SpacetimeDB reducer interface.
 - `crates/adventuresim-stdb-client/src/water_collection_receipt_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/water_distance_meters_type.rs` — Generated SpacetimeDB data type.
+- `crates/adventuresim-stdb-client/src/water_holding_contribution_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/water_material_lot_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/water_output_lot_type.rs` — Generated SpacetimeDB data type.
 - `crates/adventuresim-stdb-client/src/weapon_skill_distribution_type.rs` — Generated SpacetimeDB data type.

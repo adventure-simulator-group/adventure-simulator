@@ -7,7 +7,13 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct PersistedFoodWaterPayloadRef {
-    pub material_lot_id: u64,
+    pub carrier_id: u64,
+    pub contribution_digest: String,
+    pub dose_microunits: u64,
+    pub protected_dose_microunits: u64,
+    pub immunity_milli: u32,
+    pub prior_immunity_milli: u32,
+    pub consumed_fraction_bps: u16,
     pub disease_id: String,
 }
 

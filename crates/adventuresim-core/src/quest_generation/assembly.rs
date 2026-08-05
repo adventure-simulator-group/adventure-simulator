@@ -964,6 +964,13 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
         ),
         _ => unreachable!("bounded outbreak disease catalog"),
     };
+    let has_collectible_water_source = disease == DiseaseId::Dysentery
+        && matches!(
+            source,
+            OutbreakSource::Sanitation {
+                practice: OutbreakSanitationPractice::ContaminatedWell
+            }
+        );
     debug_assert!(crate::disease::definition(disease).supports(transmission_route));
 
     let canonical_case_id = format!(
@@ -1112,18 +1119,21 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
             corrects_proposition_id: None,
         },
     ];
-    evidence.push(GeneratedEvidence {
-        id: source_evidence_id.clone(),
-        kind: EvidenceKind::LedgerEntry,
-        proposition_id: "outbreak:source-material".into(),
-        site_id: source_site.clone(),
-        portrait_label: "material traces at the suspected source".into(),
-        portrait_icon: "water-drop".into(),
-        base_description: "Direct inspection records a bounded sample provenance.".into(),
-        inspection_topics: Vec::new(),
-        safe_description: "The inspected material can be compared with testimony and symptoms.".into(),
-        corrects_proposition_id: None,
-    });
+    if has_collectible_water_source {
+        evidence.push(GeneratedEvidence {
+            id: source_evidence_id.clone(),
+            kind: EvidenceKind::LedgerEntry,
+            proposition_id: "outbreak:source-material".into(),
+            site_id: source_site.clone(),
+            portrait_label: "material traces at the suspected source".into(),
+            portrait_icon: "water-drop".into(),
+            base_description: "Direct inspection records a bounded sample provenance.".into(),
+            inspection_topics: Vec::new(),
+            safe_description: "The inspected material can be compared with testimony and symptoms."
+                .into(),
+            corrects_proposition_id: None,
+        });
+    }
     let exact = GeneratedActionOutput::Destination {
         stage: GeneratedDestinationStage::Exact,
         site_id: Some(source_site.clone()),
@@ -1192,10 +1202,14 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                 active_initially: false,
                 safe_summary: "Apply the supported physical source intervention.".into(),
                 track_segment_id: None,
-                outputs: vec![
-                    GeneratedActionOutput::Evidence { evidence_id: source_evidence_id.clone() },
-                    GeneratedActionOutput::Remediation { remediation_id: remediation_ref.clone() },
-                ],
+                outputs: if has_collectible_water_source {
+                    vec![
+                        GeneratedActionOutput::Evidence { evidence_id: source_evidence_id.clone() },
+                        GeneratedActionOutput::Remediation { remediation_id: remediation_ref.clone() },
+                    ]
+                } else {
+                    vec![GeneratedActionOutput::Remediation { remediation_id: remediation_ref.clone() }]
+                },
             },
             GeneratedAction {
                 id: social_remediation,
@@ -1208,10 +1222,14 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                 active_initially: false,
                 safe_summary: "Apply the supported physical source intervention.".into(),
                 track_segment_id: None,
-                outputs: vec![
-                    GeneratedActionOutput::Evidence { evidence_id: source_evidence_id },
-                    GeneratedActionOutput::Remediation { remediation_id: remediation_ref.clone() },
-                ],
+                outputs: if has_collectible_water_source {
+                    vec![
+                        GeneratedActionOutput::Evidence { evidence_id: source_evidence_id },
+                        GeneratedActionOutput::Remediation { remediation_id: remediation_ref.clone() },
+                    ]
+                } else {
+                    vec![GeneratedActionOutput::Remediation { remediation_id: remediation_ref.clone() }]
+                },
             },
         ]);
     }

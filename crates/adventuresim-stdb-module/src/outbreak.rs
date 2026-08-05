@@ -126,15 +126,190 @@ pub struct WaterOutputLot {
     pub anchor_minute: u64,
 }
 
-/// Private provenance for the public `ContainerLiquid` amount row.
+/// Private exact material contributions in containers and legacy water pools.
 #[derive(Clone, Debug)]
-#[table(accessor = container_water_provenance)]
-pub struct ContainerWaterProvenance {
+#[table(accessor = water_holding_contribution)]
+pub struct WaterHoldingContribution {
     #[primary_key]
-    pub container_object_id: u64,
+    pub id: String,
+    #[index(btree)]
+    pub holding_key: String,
     pub material_lot_id: u64,
-    pub source_fixture_id: String,
+    pub amount_ml: u64,
+    pub contaminant_load_microunits: u64,
     pub collected_at: u64,
+}
+
+fn water_holding_key(kind: &str, id: &str) -> String {
+    format!("{kind}:{id}")
+}
+
+fn water_holding_contribution_id(kind: &str, id: &str, material_lot_id: u64) -> String {
+    format!("{}:{material_lot_id}", water_holding_key(kind, id))
+}
+
+pub(crate) fn delete_water_holding_contributions(ctx: &ReducerContext, kind: &str, id: &str) {
+    let key = water_holding_key(kind, id);
+    for row in ctx
+        .db
+        .water_holding_contribution()
+        .holding_key()
+        .filter(&key)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.water_holding_contribution().id().delete(row.id);
+    }
+}
+
+pub(crate) fn move_water_holding_contributions(
+    ctx: &ReducerContext,
+    source_kind: &str,
+    source_id: &str,
+    destination_kind: &str,
+    destination_id: &str,
+    moved_water_ml: u64,
+) -> Result<Vec<(u64, u64, u64)>, String> {
+    let source_key = water_holding_key(source_kind, source_id);
+    let mut rows = ctx
+        .db
+        .water_holding_contribution()
+        .holding_key()
+        .filter(&source_key)
+        .collect::<Vec<_>>();
+    rows.sort_by_key(|row| row.material_lot_id);
+    let mut remaining = moved_water_ml;
+    let mut moved = Vec::new();
+    for mut row in rows {
+        if remaining == 0 {
+            break;
+        }
+        let amount_before = row.amount_ml;
+        let load_before = row.contaminant_load_microunits;
+        let amount = remaining.min(amount_before);
+        let moved_load = if amount == amount_before {
+            load_before
+        } else {
+            (u128::from(load_before) * u128::from(amount) / u128::from(amount_before)) as u64
+        };
+        remaining -= amount;
+        row.amount_ml -= amount;
+        row.contaminant_load_microunits -= moved_load;
+        if row.amount_ml == 0 {
+            ctx.db.water_holding_contribution().id().delete(row.id);
+        } else {
+            ctx.db.water_holding_contribution().id().update(row.clone());
+        }
+        let destination_row_id =
+            water_holding_contribution_id(destination_kind, destination_id, row.material_lot_id);
+        if let Some(mut destination) = ctx
+            .db
+            .water_holding_contribution()
+            .id()
+            .find(&destination_row_id)
+        {
+            destination.amount_ml = destination
+                .amount_ml
+                .checked_add(amount)
+                .ok_or("Water material amount overflow")?;
+            destination.contaminant_load_microunits = destination
+                .contaminant_load_microunits
+                .checked_add(moved_load)
+                .ok_or("Water contaminant load overflow")?;
+            ctx.db.water_holding_contribution().id().update(destination);
+        } else {
+            ctx.db
+                .water_holding_contribution()
+                .insert(WaterHoldingContribution {
+                    id: destination_row_id,
+                    holding_key: water_holding_key(destination_kind, destination_id),
+                    material_lot_id: row.material_lot_id,
+                    amount_ml: amount,
+                    contaminant_load_microunits: moved_load,
+                    collected_at: row.collected_at,
+                });
+        }
+        moved.push((row.material_lot_id, amount, moved_load));
+    }
+    Ok(moved)
+}
+
+pub(crate) fn consume_water_holding_contributions(
+    ctx: &ReducerContext,
+    source_kind: &str,
+    source_id: &str,
+    consumed_water_ml: u64,
+    consumer_character_id: u64,
+) -> Result<(), String> {
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(consumer_character_id)
+        .map_or(0, |row| row.minutes);
+    let sink = format!("consume:{consumer_character_id}:{}", minute);
+    let moved = move_water_holding_contributions(
+        ctx,
+        source_kind,
+        source_id,
+        "consumed",
+        &sink,
+        consumed_water_ml,
+    )?;
+    delete_water_holding_contributions(ctx, "consumed", &sink);
+    if !moved.is_empty() {
+        expose_to_water_contributions(ctx, consumer_character_id, &moved)?;
+    }
+    Ok(())
+}
+
+fn expose_to_water_contributions(
+    ctx: &ReducerContext,
+    character_id: u64,
+    moved: &[(u64, u64, u64)],
+) -> Result<(), String> {
+    use sha2::{Digest as _, Sha256};
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |row| row.minutes);
+    let mut digest = Sha256::new();
+    let mut dose = 0.0_f32;
+    for &(output_lot_id, amount_ml, anchor_load) in moved {
+        let lot = ctx
+            .db
+            .water_output_lot()
+            .id()
+            .find(output_lot_id)
+            .ok_or("Consumed water material provenance is incomplete")?;
+        digest.update(output_lot_id.to_le_bytes());
+        digest.update(amount_ml.to_le_bytes());
+        digest.update(anchor_load.to_le_bytes());
+        let anchor_concentration = anchor_load as f32 / (amount_ml.max(1) as f32 * 1_000.0);
+        let current = adventuresim_core::food::contamination_at(
+            anchor_concentration,
+            lot.growth_per_hour,
+            minute.saturating_sub(lot.anchor_minute),
+        );
+        dose += current * amount_ml as f32 / 1_000.0;
+    }
+    let bytes: [u8; 32] = digest.finalize().into();
+    let contribution_digest = bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let carrier_id = u64::from_le_bytes(bytes[..8].try_into().unwrap()).max(1);
+    crate::food::expose_food_water_dysentery(
+        ctx,
+        character_id,
+        &format!("water:{minute}:{contribution_digest}"),
+        carrier_id,
+        minute,
+        dose,
+        &contribution_digest,
+        10_000,
+    )
 }
 
 #[derive(Clone, Debug)]
@@ -266,12 +441,9 @@ pub fn collect_fixture_water_into_container(
         .container_liquid()
         .container_object_id()
         .find(object.id);
-    let existing_provenance = ctx
-        .db
-        .container_water_provenance()
-        .container_object_id()
-        .find(object.id);
-    let material_compatible = existing_liquid.is_none() && existing_provenance.is_none();
+    let material_compatible = existing_liquid
+        .as_ref()
+        .is_none_or(|liquid| liquid.liquid_item_id == crate::inventory_container::WATER_ITEM_ID);
     let container_before = existing_liquid.as_ref().map_or(0, |liquid| liquid.water_ml);
     let conserved = conserved_collection(source.available_ml, container_before, requested_ml);
     let question = water_collection_question(
@@ -428,13 +600,10 @@ pub fn collect_fixture_water_into_container(
             .container_liquid()
             .container_object_id()
             .find(object.id)
-            .is_some()
-        || ctx
-            .db
-            .container_water_provenance()
-            .container_object_id()
-            .find(object.id)
-            .is_some()
+            .map(|liquid| (liquid.liquid_item_id, liquid.water_ml))
+            != existing_liquid
+                .as_ref()
+                .map(|liquid| (liquid.liquid_item_id.clone(), liquid.water_ml))
     {
         return Err("Water collection is unavailable".into());
     }
@@ -463,18 +632,19 @@ pub fn collect_fixture_water_into_container(
         ctx.db.container_liquid().insert(crate::ContainerLiquid {
             container_object_id: object.id,
             liquid_item_id: crate::inventory_container::WATER_ITEM_ID.into(),
-            fixture_drawn: true,
             water_ml: container_after,
         });
-        ctx.db
-            .container_water_provenance()
-            .insert(ContainerWaterProvenance {
-                container_object_id: object.id,
-                material_lot_id: output_lot_id,
-                source_fixture_id: source_fixture_id.clone(),
-                collected_at: plan.time().end_minute,
-            });
     }
+    ctx.db
+        .water_holding_contribution()
+        .insert(WaterHoldingContribution {
+            id: water_holding_contribution_id("container", &object.id.to_string(), output_lot_id),
+            holding_key: water_holding_key("container", &object.id.to_string()),
+            material_lot_id: output_lot_id,
+            amount_ml: requested_ml,
+            contaminant_load_microunits,
+            collected_at: plan.time().end_minute,
+        });
     ctx.db.water_output_lot().insert(WaterOutputLot {
         id: output_lot_id,
         container_object_id: object.id,
@@ -510,66 +680,38 @@ pub(crate) fn contained_water_contamination(
     ctx: &ReducerContext,
     container_object_id: u64,
     minute: u64,
-) -> Result<Option<(u64, f32, f32)>, String> {
-    let Some(provenance) = ctx
+) -> Result<Vec<(u64, f32, f32, u64)>, String> {
+    let key = water_holding_key("container", &container_object_id.to_string());
+    let mut result = Vec::new();
+    for contribution in ctx
         .db
-        .container_water_provenance()
-        .container_object_id()
-        .find(container_object_id)
-    else {
-        return Ok(None);
-    };
-    let lot = ctx
-        .db
-        .water_output_lot()
-        .id()
-        .find(provenance.material_lot_id)
-        .ok_or("Contained water material provenance is incomplete")?;
-    let source_lot = ctx
-        .db
-        .water_material_lot()
-        .id()
-        .find(lot.source_material_lot_id)
-        .ok_or("Contained water source material is incomplete")?;
-    if lot.container_object_id != container_object_id
-        || source_lot.source_fixture_id != provenance.source_fixture_id
+        .water_holding_contribution()
+        .holding_key()
+        .filter(&key)
     {
-        return Err("Contained water material provenance conflicts".into());
+        let lot = ctx
+            .db
+            .water_output_lot()
+            .id()
+            .find(contribution.material_lot_id)
+            .ok_or("Contained water material provenance is incomplete")?;
+        if lot.id != contribution.material_lot_id {
+            return Err("Contained water material provenance conflicts".into());
+        }
+        if contribution.amount_ml == 0 {
+            return Err("Contained water material has zero measure".into());
+        }
+        let held_anchor_concentration = contribution.contaminant_load_microunits as f32
+            / (contribution.amount_ml as f32 * 1_000.0);
+        let current = adventuresim_core::food::contamination_at(
+            held_anchor_concentration,
+            lot.growth_per_hour,
+            minute.saturating_sub(lot.anchor_minute),
+        );
+        result.push((lot.id, current, lot.growth_per_hour, contribution.amount_ml));
     }
-    let current = adventuresim_core::food::contamination_at(
-        lot.concentration_anchor,
-        lot.growth_per_hour,
-        minute.saturating_sub(lot.anchor_minute),
-    );
-    Ok(Some((lot.id, current, lot.growth_per_hour)))
-}
-
-pub(crate) fn water_material_outbreak_context(
-    ctx: &ReducerContext,
-    material_lot_id: u64,
-) -> Result<(String, String), String> {
-    let output = ctx
-        .db
-        .water_output_lot()
-        .id()
-        .find(material_lot_id)
-        .ok_or("Water output material provenance is incomplete")?;
-    let lot = ctx
-        .db
-        .water_material_lot()
-        .id()
-        .find(output.source_material_lot_id)
-        .ok_or("Water material provenance is incomplete")?;
-    let authority = ctx
-        .db
-        .outbreak_authority()
-        .case_id()
-        .find(&lot.outbreak_case_id)
-        .ok_or("Water material outbreak authority is missing")?;
-    if authority.physical_source_fixture_id != lot.source_fixture_id {
-        return Err("Water material outbreak authority conflicts".into());
-    }
-    Ok((authority.settlement_id, authority.disease_id))
+    result.sort_by_key(|row| row.0);
+    Ok(result)
 }
 
 pub(crate) fn source_material_knowledge_provenance(
@@ -931,7 +1073,8 @@ pub(crate) fn materialize_generated_outbreak(
                             && episode.contracted_at == exposure.exposed_at
                     })
         });
-        let expects_water = matches!(
+        let expects_water = outbreak.disease == adventuresim_core::disease::DiseaseId::Dysentery
+            && matches!(
             outbreak.source,
             adventuresim_core::quest_generation::OutbreakSource::Sanitation {
                 practice: adventuresim_core::quest_generation::OutbreakSanitationPractice::ContaminatedWell
@@ -1008,7 +1151,8 @@ pub(crate) fn materialize_generated_outbreak(
         remediation_source_id: None,
     });
 
-    if matches!(
+    if outbreak.disease == adventuresim_core::disease::DiseaseId::Dysentery
+        && matches!(
         outbreak.source,
         adventuresim_core::quest_generation::OutbreakSource::Sanitation {
             practice:
@@ -1309,7 +1453,8 @@ pub(crate) fn commit_source_remediation(
     let outbreak_source: adventuresim_core::quest_generation::OutbreakSource =
         serde_json::from_str(&authority.source_json)
             .map_err(|_| "Outbreak source authority is malformed")?;
-    let expects_water = matches!(
+    let expects_water = authority.disease_id == "dysentery"
+        && matches!(
         outbreak_source,
         adventuresim_core::quest_generation::OutbreakSource::Sanitation {
             practice:
@@ -1478,7 +1623,7 @@ mod water_integration_contract_tests {
             .split('}')
             .next()
             .unwrap();
-        assert!(public_row.contains("fixture_drawn: bool"));
+        assert!(!public_row.contains("fixture_drawn"));
         assert!(!public_row.contains("material_lot"));
         assert!(!public_row.contains("contamin"));
     }

@@ -74,7 +74,13 @@ pub struct PersistedCaseResolutionPayloadRef {
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, SpacetimeType)]
 pub struct PersistedFoodWaterPayloadRef {
-    pub material_lot_id: u64,
+    pub carrier_id: u64,
+    pub contribution_digest: String,
+    pub dose_microunits: u64,
+    pub protected_dose_microunits: u64,
+    pub immunity_milli: u32,
+    pub prior_immunity_milli: u32,
+    pub consumed_fraction_bps: u16,
     pub disease_id: String,
 }
 
@@ -241,10 +247,22 @@ fn persist(envelope: &WorldEventEnvelope) -> PersistedWorldEventEnvelope {
                 },
             ),
             WorldEventPayloadRef::FoodWaterInfection {
-                material_lot_id,
+                carrier_id,
+                contribution_digest,
+                dose_microunits,
+                protected_dose_microunits,
+                immunity_milli,
+                prior_immunity_milli,
+                consumed_fraction_bps,
                 disease_id,
             } => PersistedWorldEventPayloadRef::FoodWaterInfection(PersistedFoodWaterPayloadRef {
-                material_lot_id: *material_lot_id,
+                carrier_id: *carrier_id,
+                contribution_digest: contribution_digest.clone(),
+                dose_microunits: *dose_microunits,
+                protected_dose_microunits: *protected_dose_microunits,
+                immunity_milli: *immunity_milli,
+                prior_immunity_milli: *prior_immunity_milli,
+                consumed_fraction_bps: *consumed_fraction_bps,
                 disease_id: disease_id.clone(),
             }),
         },
@@ -536,8 +554,9 @@ fn validate_semantic_binding(
                 WorldEventSource::FoodWaterExposure { consumption_id },
                 WorldEventActor::Character { character_id },
                 WorldEventPayloadRef::FoodWaterInfection {
-                    material_lot_id,
+                    contribution_digest,
                     disease_id,
+                    ..
                 },
             ) = (&envelope.source, &envelope.actor, &envelope.payload)
             else {
@@ -551,7 +570,7 @@ fn validate_semantic_binding(
                 *character_id,
                 disease_id,
                 envelope.occurred_at_minute,
-                *material_lot_id,
+                contribution_digest,
             )
         }
     };
@@ -897,7 +916,13 @@ pub(crate) fn commit_food_water_infection(
     consumption_id: &str,
     character_id: u64,
     strategic_place_id: &str,
-    material_lot_id: u64,
+    carrier_id: u64,
+    contribution_digest: &str,
+    dose: f32,
+    protected_dose: f32,
+    immunity: f32,
+    prior_immunity: f32,
+    consumed_fraction_bps: u16,
     disease_id: &str,
     episode_id: u64,
     minute: u64,
@@ -915,7 +940,13 @@ pub(crate) fn commit_food_water_infection(
         },
         occurred_at_minute: minute,
         payload: WorldEventPayloadRef::FoodWaterInfection {
-            material_lot_id,
+            carrier_id,
+            contribution_digest: contribution_digest.into(),
+            dose_microunits: (dose.max(0.0) * 1_000_000.0).round() as u64,
+            protected_dose_microunits: (protected_dose.max(0.0) * 1_000_000.0).round() as u64,
+            immunity_milli: (immunity.clamp(0.0, 100.0) * 1_000.0).round() as u32,
+            prior_immunity_milli: (prior_immunity.clamp(0.0, 100.0) * 1_000.0).round() as u32,
+            consumed_fraction_bps,
             disease_id: disease_id.into(),
         },
     };
@@ -924,7 +955,7 @@ pub(crate) fn commit_food_water_infection(
         character_id,
         disease_id,
         minute,
-        material_lot_id,
+        contribution_digest,
     );
     let request = WorldEventRequest::FoodWaterInfection {
         envelope: envelope.clone(),

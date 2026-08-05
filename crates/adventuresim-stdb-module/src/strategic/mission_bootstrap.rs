@@ -1391,10 +1391,14 @@ fn materialize_preferred_generated_fixture(
 
     let now_minute = crate::time::refresh_clock(ctx)?.max(4_000);
     let base_entropy = character_id ^ seed_salt;
-    let entropy = (0..6u64)
-        .map(|offset| base_entropy.wrapping_add(offset))
-        .find(|entropy| entropy.rotate_left(11) % 6 == 0)
-        .expect("six consecutive seeds cover the outbreak disease selector");
+    let entropy = if family == qg::TemplateFamily::Outbreak {
+        (0..6u64)
+            .map(|offset| base_entropy.wrapping_add(offset))
+            .find(|entropy| entropy.rotate_left(11) % 6 == 0)
+            .expect("six consecutive seeds cover the outbreak disease selector")
+    } else {
+        base_entropy
+    };
     let context = qg::GenerationContext {
         seed: entropy.rotate_left(11),
         observer_entropy_hi: entropy.rotate_left(23),
@@ -1574,6 +1578,14 @@ fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<String,
     {
         crate::add_inventory_item(ctx, character_id, "cooking_pot", 1);
     }
+    let cooking_pot = ctx
+        .db
+        .inventory_item()
+        .character_id()
+        .filter(character_id)
+        .find(|row| row.item_id == "cooking_pot")
+        .ok_or("Outbreak demo cooking pot was not materialized")?;
+    crate::inventory_container::ensure_object(ctx, character_id, "personal", cooking_pot.id, false)?;
 
     materialize_preferred_generated_fixture(
         ctx,

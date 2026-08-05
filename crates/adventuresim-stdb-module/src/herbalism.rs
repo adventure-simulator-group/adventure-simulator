@@ -313,7 +313,6 @@ pub fn pour_tincture_spirit_into_container(
     ctx.db.container_liquid().insert(crate::ContainerLiquid {
         container_object_id: object_id,
         liquid_item_id: "tincture_spirit".into(),
-        fixture_drawn: false,
         water_ml: 150,
     });
     Ok(())

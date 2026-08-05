@@ -108,7 +108,7 @@ when promoting replay candidates.
 ## Development demo
 
 Run the single isolated strategic scenario-gallery command, then select the
-**Undiscovered outbreak** scenario character. Use browser-local developer mode
+**Discovered outbreak** scenario character. Use browser-local developer mode
 to expose the gallery and inspector. Bootstrap has already raised useful
 investigation skills, supplied a surgery kit, and materialized one deterministic
 generated outbreak in a scenario-owned settlement, with private progressing patients and an
