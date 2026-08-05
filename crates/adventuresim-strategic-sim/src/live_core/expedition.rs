@@ -153,7 +153,14 @@ impl LiveRunner {
             .db
             .inventory_item()
             .iter()
-            .filter(|row| member_ids.contains(&row.character_id))
+            .filter(|row| {
+                member_ids.contains(&row.character_id)
+                    && self.public_row_is_carried(
+                        "personal",
+                        &row.character_id.to_string(),
+                        row.id,
+                    )
+            })
             .map(|row| row.id)
             .collect::<HashSet<_>>();
         let party_inventory_ids = self
@@ -161,7 +168,10 @@ impl LiveRunner {
             .db
             .party_inventory_item()
             .iter()
-            .filter(|row| row.party_id == party_id)
+            .filter(|row| {
+                row.party_id == party_id
+                    && self.public_row_is_carried("party", party_id, row.id)
+            })
             .map(|row| row.id)
             .collect::<HashSet<_>>();
         let stored_food_kcal = self
@@ -193,9 +203,16 @@ impl LiveRunner {
             .iter()
             .find(|party| party.id == party_id)
             .map_or(0.0, |party| party.pooled_water_ml.max(0.0));
+        let contained_water_ml = member_ids
+            .iter()
+            .map(|character_id| {
+                self.public_contained_water_ml("personal", &character_id.to_string())
+            })
+            .sum::<f32>()
+            + self.public_contained_water_ml("party", party_id);
         ExpeditionSuppliesObservation {
             stored_food_kcal,
-            portable_water_ml: carried_water_ml + pooled_water_ml,
+            portable_water_ml: carried_water_ml + pooled_water_ml + contained_water_ml,
         }
     }
 

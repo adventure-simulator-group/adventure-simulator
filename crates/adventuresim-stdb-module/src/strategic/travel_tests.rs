@@ -6,13 +6,20 @@ mod departure_invariant_tests {
         JourneyTerrainKind, JourneyTerrainSpan, JourneyTerrainWeights, Party, PartyJourneyRoute,
         common_movement_prefix, core_encounter_terrain, departure_requires_ready_party,
         departure_snapshot_allows_travel, party_can_continue_travel,
-        pending_incident_allows_departure, reconstruct_legacy_journey_coordinates,
+        journey_elapsed_after_delay, pending_incident_allows_departure,
+        reconstruct_legacy_journey_coordinates,
         route_position_at_minute, set_party_journey_state, straight_line_distance_m,
         authoritative_straight_line_case_route,
         terrain_training_exposure, validate_camp_redirect_weather_interval,
         validate_journey_route_payload, validate_route_departure_weather_interval,
         zero_boundary_requires_settlement,
     };
+
+    #[test]
+    fn journey_delay_preserves_remaining_elapsed_forecast() {
+        assert_eq!(journey_elapsed_after_delay(240, 260, 180), (420, 440));
+        assert_eq!(journey_elapsed_after_delay(420, 260, 180), (600, 600));
+    }
 
     fn endpoint_name(endpoint: &JourneyEndpoint) -> &str {
         match endpoint {
@@ -146,6 +153,27 @@ mod departure_invariant_tests {
             .find("refresh_party_journey_forecast")
             .expect("journey forecast refresh");
         assert!(custody < refresh);
+    }
+
+    #[test]
+    fn every_uninterrupted_departure_camp_records_even_zero_movement_identity() {
+        let travel_source = include_str!("travel_reducers.rs");
+        assert_eq!(
+            travel_source.matches("record_party_journey_camp(ctx,").count(),
+            3,
+            "case-site departure, settlement departure, and continuation share the camp invariant",
+        );
+        assert!(
+            !travel_source.contains("if leg_minutes > 0 {\n                record_party_journey_camp"),
+            "an initial nighttime camp at movement minute zero is still a reached camp",
+        );
+        let camp_source = include_str!("journey_camp.rs");
+        let recorder = camp_source
+            .split("fn record_party_journey_camp")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn journey_plan_version_is_canonical").next())
+            .expect("journey camp recorder");
+        assert!(recorder.contains("camp_stop_minutes.push(journey.completed_minutes)"));
     }
 
     fn route_fixture() -> JourneyRoutePlan {

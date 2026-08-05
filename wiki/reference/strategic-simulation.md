@@ -168,6 +168,18 @@ protective response exists. Evacuation never attacks. The encounter event
 records the stable reason, evacuation flag, public run eligibility, and
 projected choice set.
 
+Absolute character clocks are sampled after bootstrap and all duration gates
+and final elapsed-time fields use monotonic deltas from that baseline. A fresh
+run in a mature world therefore receives its configured duration instead of
+being mistaken for a run that already exhausted it. For narrative road
+challenges, public available choice IDs are joined to the public authored
+catalog. The policy may select a uniquely identified, check-free, non-combat
+route only when it positively aligns with the leader's personality. Public
+requirements and availability are legality gates, not evidence that spending
+resources is desirable. Checked and combat-starting routes are rejected; the catalog's
+unconditional unchecked `ignore` remains the fallback. Telemetry records the
+visible alternatives, conservative meaningful candidates, and selection reason.
+
 Generated investigation actions are ranked by a stable pure score. It considers
 projected availability and progress (perform, travel, or bounded wait), the
 owner profile's fit for the projected method, public uncertainty, public
@@ -364,7 +376,11 @@ same-named public candidates are tried in stable order and only the candidate
 whose projected session exposes `referred-testimony` for the selected public
 case is selected. Public presence is filtered through the settlement's visible
 NPC locations before any dialogue attempt, so a resident scheduled at a hidden
-service location cannot become a reducer-failing contact. Investigation
+service location or carrying a public context/health suppression cannot become
+a reducer-failing contact. If that public presence changes between selection
+and the authoritative dialogue reducer, the runner records an observer-safe
+replan and resumes settlement activity instead of weakening the reducer's
+presence check or aborting the run. Investigation
 actions and their outcomes are likewise
 filtered by exact owner and public case before reducers receive the projected
 action ID, method, and version. Exact site travel selects only the pin matching
@@ -394,6 +410,19 @@ error.
 
 The state machine is bounded per cycle and falls back to sustainable settlement
 activity when no legal projected step is available.
+
+Dialogue retries use a semantic fingerprint of the owner-visible case status,
+deduplicated lead meaning, actionable projection state, outcomes, and site
+state. Publication timestamps, projection versions, wait countdowns, and fresh
+row IDs for repeated testimony do not count as investigation progress, so an
+unchanged witness topic is not reopened each cycle or allowed to exhaust the
+bounded dialogue-session history.
+
+Travel encounter delays consume ordinary character time and needs without
+granting movement. The journey authority extends its elapsed total by that
+delay and refreshes the remaining camp forecast, preserving both the delay's
+realism and the invariant that an active journey cannot have completed elapsed
+time beyond its total forecast.
 
 Reports separately count direct-contract attempts/completions, generated case
 intakes and owner-projection continuations, generated cases discovered, completed by the
@@ -458,9 +487,27 @@ minimum carrying margin, and peak exposure. Death events include the authoritati
 source ID, and strategic minute, and the
 structured failure artifact carry the same observer-safe survival context so a policy mistake can be
 distinguished from an authoritative reducer or mechanics failure without importing private state.
-The current simulator subscriptions also omit measured personal/party inventory-amount projections;
-load accounting therefore uses the public stack/item rows and cannot yet reproduce fractional
-contents mass for every non-food measured container.
+The simulator subscribes to public physical-object, containment, measured
+amount, and container-liquid projections. Load and recovery-supply accounting
+resolve ultimate personal or party custody, include nested objects and
+contained water, scale measured non-food material mass, and reject malformed or
+fixture-rooted object graphs. This is observer-safe accounting, not custody
+authority.
+
+Completed investigation failures publish an ordinary public outcome. When a
+successful reducer call advances the public party clock but publishes no new
+outcome, the trace instead records `planned_interval_clipped`, the projected
+duration band, and actual elapsed minutes. This preserves an authoritative
+condition or death interruption rather than calling it an unproductive agent
+decision.
+`locate_contact` availability also mirrors the referred resident's public
+scheduled presence at the projected party minute. An ordinary schedule gap
+publishes a bounded wait; public health/context suppression fails closed
+without exposing private outbreak state.
+
+Foraging remains intentionally outside autonomous policy. Its ordinary gateway
+flow requires authoritative terrain attestation; the simulator neither forges
+that attestation nor reads private terrain or resource authority to bypass it.
 
 Medical needs are evaluated before repairs, and repairs before equipment upgrades. The disposable
 fixture accepts a validated disease scenario ID, defaulting to influenza, behind the same claimed-run

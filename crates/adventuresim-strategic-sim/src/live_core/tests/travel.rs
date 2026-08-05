@@ -160,14 +160,21 @@ fn all_nonterminal_encounters_follow_authoritative_public_post_state() {
 }
 
 #[test]
-fn narrative_encounter_policy_uses_only_the_available_public_ignore_choice() {
+fn narrative_encounter_policy_uses_safe_meaningful_choices_and_keeps_ignore_fallback() {
+    let mut profile = generate_profile(42, 0);
+    profile.personality = crate::Personality::neutral();
     let presentation = adventuresim_core::road_encounter_catalog::EncounterPresentation {
         cast: Vec::new(),
         opening: Vec::new(),
         choices: vec![
             adventuresim_core::road_encounter_catalog::PresentationChoice {
-                id: "attempt_checked_action".into(),
+                id: "expose_charter".into(),
                 label: "Attempt a difficult checked action".into(),
+                available: true,
+            },
+            adventuresim_core::road_encounter_catalog::PresentationChoice {
+                id: "challenge_to_arms".into(),
+                label: "Start a fight".into(),
                 available: true,
             },
             adventuresim_core::road_encounter_catalog::PresentationChoice {
@@ -180,7 +187,9 @@ fn narrative_encounter_policy_uses_only_the_available_public_ignore_choice() {
     };
     let json = serde_json::to_string(&presentation).unwrap();
     assert_eq!(
-        select_public_narrative_encounter_choice(&json).unwrap(),
+        select_public_narrative_encounter_choice(&json, &profile)
+            .unwrap()
+            .map(|choice| choice.choice),
         Some("ignore".into())
     );
 
@@ -189,7 +198,7 @@ fn narrative_encounter_policy_uses_only_the_available_public_ignore_choice() {
         opening: Vec::new(),
         choices: vec![
             adventuresim_core::road_encounter_catalog::PresentationChoice {
-                id: "attempt_checked_action".into(),
+                id: "expose_charter".into(),
                 label: "Attempt a difficult checked action".into(),
                 available: true,
             },
@@ -203,7 +212,8 @@ fn narrative_encounter_policy_uses_only_the_available_public_ignore_choice() {
     };
     assert_eq!(
         select_public_narrative_encounter_choice(
-            &serde_json::to_string(&unavailable_ignore).unwrap()
+            &serde_json::to_string(&unavailable_ignore).unwrap(),
+            &profile,
         )
         .unwrap(),
         None
@@ -212,7 +222,7 @@ fn narrative_encounter_policy_uses_only_the_available_public_ignore_choice() {
         cast: Vec::new(),
         opening: Vec::new(),
         choices: vec![adventuresim_core::road_encounter_catalog::PresentationChoice {
-            id: "attempt_checked_action".into(),
+            id: "expose_charter".into(),
             label: "Attempt a difficult checked action".into(),
             available: true,
         }],
@@ -220,21 +230,53 @@ fn narrative_encounter_policy_uses_only_the_available_public_ignore_choice() {
     };
     assert_eq!(
         select_public_narrative_encounter_choice(
-            &serde_json::to_string(&missing_ignore).unwrap()
+            &serde_json::to_string(&missing_ignore).unwrap(),
+            &profile,
         )
         .unwrap(),
         None
     );
-    assert!(select_public_narrative_encounter_choice("not-json").is_err());
+    assert!(select_public_narrative_encounter_choice("not-json", &profile).is_err());
+
+    let available_barter = adventuresim_core::road_encounter_catalog::EncounterPresentation {
+        cast: Vec::new(),
+        opening: Vec::new(),
+        choices: vec![
+            adventuresim_core::road_encounter_catalog::PresentationChoice {
+                id: "barter_rations".into(),
+                label: "Barter rations".into(),
+                available: true,
+            },
+            adventuresim_core::road_encounter_catalog::PresentationChoice {
+                id: "ignore".into(),
+                label: "Continue on the road".into(),
+                available: true,
+            },
+        ],
+        response: Vec::new(),
+    };
+    let selected = select_public_narrative_encounter_choice(
+        &serde_json::to_string(&available_barter).unwrap(),
+        &profile,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(selected.choice, "ignore");
+    assert_eq!(
+        selected.reason,
+        "unconditional_check_free_noncombat_fallback"
+    );
+    assert!(selected.eligible_meaningful_alternatives.is_empty());
+    assert_eq!(selected.visible_alternatives, vec!["barter_rations", "ignore"]);
 
     let selector = LIVE_CORE_SOURCE
         .split("fn select_public_narrative_encounter_choice")
         .nth(1)
         .and_then(|tail| tail.split("struct PublicCombatFingerprint").next())
         .expect("public narrative selector");
-    assert!(selector.contains("choice.id == \"ignore\" && choice.available"));
-    assert!(!selector.contains("definitions()"));
-    assert!(!selector.contains("encounter("));
+    assert!(selector.contains("definitions()"));
+    assert!(selector.contains("!choice.checks.is_empty()"));
+    assert!(selector.contains("EncounterTransition::StartCombat"));
 }
 
 #[test]
@@ -590,7 +632,8 @@ fn travel_driver_uses_public_itinerary_and_observer_safe_provisioning() {
     assert!(coherent_camp.contains("projected_camp_rest_minutes("));
     assert!(travel.contains("let Some((travel_actor, travel_agent, _)) ="));
     assert!(travel.contains("self.expedition_recovery_actor(party_id)"));
-    assert!(travel.contains("self.event(\n                    travel_agent,"));
+    assert!(travel.contains("CoreLoopEventKind::Travel"));
+    assert!(travel.contains("travel_agent,"));
     assert!(travel.contains("rest_at_camp_with_party_shelter"));
     assert!(!travel.contains("rest_at_camp_with_party_shelter(\n                travel_actor,\n                1_440"));
     assert!(source.contains(

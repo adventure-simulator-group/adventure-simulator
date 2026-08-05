@@ -77,9 +77,95 @@ impl LiveRunner {
             .sum()
     }
 
-    fn public_stack_weight_kg(&self, item_id: &str, quantity: u32) -> f32 {
-        self.item_definition(item_id)
-            .map_or(0.0, |item| item.weight.max(0.0) * quantity as f32)
+    fn public_object_root_matches(&self, object_id: u64, kind: &str, owner: &str) -> bool {
+        let mut cursor = object_id;
+        let mut visited = HashSet::new();
+        for _ in 0..=adventuresim_core::inventory_containers::MAX_CONTAINER_DEPTH {
+            if !visited.insert(cursor) {
+                return false;
+            }
+            let Some(object) = self
+                .connection
+                .db
+                .inventory_object()
+                .iter()
+                .find(|object| object.id == cursor)
+            else {
+                return false;
+            };
+            if object.location_kind != kind || object.location_owner != owner {
+                return false;
+            }
+            let parent = self
+                .connection
+                .db
+                .inventory_containment()
+                .iter()
+                .find(|edge| edge.child_object_id == cursor)
+                .map(|edge| edge.parent_object_id);
+            let Some(parent) = parent else {
+                return true;
+            };
+            cursor = parent;
+        }
+        false
+    }
+
+    fn public_row_is_carried(&self, kind: &str, owner: &str, row_id: u64) -> bool {
+        let objects = self
+            .connection
+            .db
+            .inventory_object()
+            .iter()
+            .filter(|object| object.location_kind == kind && object.inventory_row_id == row_id)
+            .collect::<Vec<_>>();
+        match objects.as_slice() {
+            [] => true,
+            [object] => self.public_object_root_matches(object.id, kind, owner),
+            _ => false,
+        }
+    }
+
+    fn public_measured_stack_weight_kg(
+        &self,
+        kind: &str,
+        row_id: u64,
+        item_id: &str,
+        quantity: u32,
+    ) -> f32 {
+        let remaining = match kind {
+            "personal" => self
+                .connection
+                .db
+                .inventory_item_amount()
+                .iter()
+                .find(|amount| amount.inventory_item_id == row_id)
+                .map(|amount| amount.remaining_milliunits),
+            "party" => self
+                .connection
+                .db
+                .party_item_amount()
+                .iter()
+                .find(|amount| amount.party_inventory_item_id == row_id)
+                .map(|amount| amount.remaining_milliunits),
+            _ => None,
+        };
+        self.item_definition(item_id).map_or(0.0, |item| {
+            item.weight.max(0.0) * public_effective_inventory_quantity(quantity, remaining)
+        })
+    }
+
+    fn public_contained_water_ml(&self, kind: &str, owner: &str) -> f32 {
+        self.connection
+            .db
+            .container_liquid()
+            .iter()
+            .filter(|liquid| liquid.liquid_item_id == "water")
+            .filter(|liquid| {
+                self.public_object_root_matches(liquid.container_object_id, kind, owner)
+            })
+            .map(|liquid| liquid.water_ml as f32)
+            .sum()
     }
 
     fn public_personal_load_kg(&self, character_id: u64) -> f32 {
@@ -95,7 +181,14 @@ impl LiveRunner {
             .db
             .inventory_item()
             .iter()
-            .filter(|row| row.character_id == character_id)
+            .filter(|row| {
+                row.character_id == character_id
+                    && self.public_row_is_carried(
+                        "personal",
+                        &character_id.to_string(),
+                        row.id,
+                    )
+            })
             .map(|row| {
                 self.connection
                     .db
@@ -103,7 +196,14 @@ impl LiveRunner {
                     .iter()
                     .find(|lot| lot.inventory_item_id == Some(row.id))
                     .map_or_else(
-                        || self.public_stack_weight_kg(&row.item_id, row.quantity),
+                        || {
+                            self.public_measured_stack_weight_kg(
+                                "personal",
+                                row.id,
+                                &row.item_id,
+                                row.quantity,
+                            )
+                        },
                         |lot| lot.mass_kg.max(0.0),
                     )
             })
@@ -112,7 +212,9 @@ impl LiveRunner {
         // plus carried water. A character's own body mass is combat data, not
         // cargo, and including it creates a false overweight feedback loop
         // when a staggered condition temporarily halves carrying capacity.
-        water_weight + inventory_weight
+        water_weight
+            + inventory_weight
+            + self.public_contained_water_ml("personal", &character_id.to_string()) / 1_000.0
     }
 
     fn public_character_capacity_kg(&self, character_id: u64) -> f32 {
@@ -164,7 +266,10 @@ impl LiveRunner {
             .db
             .party_inventory_item()
             .iter()
-            .filter(|row| row.party_id == party_id)
+            .filter(|row| {
+                row.party_id == party_id
+                    && self.public_row_is_carried("party", party_id, row.id)
+            })
             .map(|row| {
                 self.connection
                     .db
@@ -172,7 +277,14 @@ impl LiveRunner {
                     .iter()
                     .find(|lot| lot.party_inventory_item_id == Some(row.id))
                     .map_or_else(
-                        || self.public_stack_weight_kg(&row.item_id, row.quantity),
+                        || {
+                            self.public_measured_stack_weight_kg(
+                                "party",
+                                row.id,
+                                &row.item_id,
+                                row.quantity,
+                            )
+                        },
                         |lot| lot.mass_kg.max(0.0),
                     )
             })
@@ -181,7 +293,9 @@ impl LiveRunner {
             .iter()
             .map(|id| self.public_character_capacity_kg(*id))
             .sum::<f32>();
-        let load = personal_load + pooled_load;
+        let load = personal_load
+            + pooled_load
+            + self.public_contained_water_ml("party", party_id) / 1_000.0;
         (
             load,
             capacity,
@@ -394,7 +508,15 @@ impl LiveRunner {
                     .settlement_resident_presence()
                     .iter()
                     .find(|presence| presence.character_id == npc.character_id)
-                    .map(|presence| (npc.character_id, presence.start_minute, presence.end_minute))
+                    .map(|presence| {
+                        (
+                            npc.character_id,
+                            presence.start_minute,
+                            presence.end_minute,
+                            presence.context_suppressed,
+                            presence.health_suppressed,
+                        )
+                    })
             })
             .collect::<Vec<_>>();
         visible_unique_default_provider(&providers, minute)

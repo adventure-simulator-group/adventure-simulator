@@ -296,9 +296,10 @@ fn travel_to_case_site_impl(
             record_party_journey_interruption(ctx, &party_id, leg_minutes);
             commit_encounter_scan(ctx, &party_id, next_roll, encounter, narrative)?;
         } else {
-            if leg_minutes > 0 {
-                record_party_journey_camp(ctx, &party_id, leg_minutes)?;
-            }
+            // A departure outside the walking window reaches a real initial
+            // camp at movement minute zero. Persist that reached identity just
+            // like every later camp so rest/continue and fixture custody agree.
+            record_party_journey_camp(ctx, &party_id, leg_minutes)?;
             commit_encounter_scan(ctx, &party_id, next_roll, None, None)?;
         }
         return Ok(());
@@ -594,9 +595,7 @@ fn travel_to_settlement_impl(
                 record_party_journey_interruption(ctx, &party.id, leg_minutes);
                 commit_encounter_scan(ctx, &party.id, next_roll, encounter, narrative)?;
             } else {
-                if leg_minutes > 0 {
-                    record_party_journey_camp(ctx, &party.id, leg_minutes)?;
-                }
+                record_party_journey_camp(ctx, &party.id, leg_minutes)?;
                 commit_encounter_scan(ctx, &party.id, next_roll, None, None)?;
             }
             return Ok(());
@@ -821,9 +820,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
             record_party_journey_interruption(ctx, &party_id, leg_minutes);
             commit_encounter_scan(ctx, &party_id, next_roll, encounter, narrative)?;
         } else {
-            if leg_minutes > 0 {
-                record_party_journey_camp(ctx, &party_id, leg_minutes)?;
-            }
+            record_party_journey_camp(ctx, &party_id, leg_minutes)?;
             commit_encounter_scan(ctx, &party_id, next_roll, None, None)?;
         }
         return Ok(());

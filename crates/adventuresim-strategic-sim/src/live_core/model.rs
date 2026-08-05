@@ -1,4 +1,7 @@
-use crate::{ActivityPreference, AgentProfile, BuildRole, EquipmentStyle, generate_profile};
+use crate::{
+    ActivityPreference, AgentProfile, BuildRole, Conscience, Conviction, Drive, EquipmentStyle,
+    Nerve, SelfRegard, Sociability, Transparency, generate_profile,
+};
 use adventuresim_core::simulation_security::{
     SIM_BOOTSTRAP_TOKEN_ENV as BOOTSTRAP_TOKEN_ENV,
     SIM_BOOTSTRAP_TOKEN_HEX_LEN as BOOTSTRAP_TOKEN_HEX_LEN,
@@ -61,12 +64,17 @@ use adventuresim_stdb_client::{
     ensure_settlement_activity_reducer::ensure_settlement_activity,
     equip_item_at_placement_reducer::equip_item_at_placement, equip_item_reducer::equip_item,
     equipment_occupancy_table::EquipmentOccupancyTableAccess, field_shelter_type::FieldShelter,
+    container_liquid_table::ContainerLiquidTableAccess,
     finalize_merchant_trade_reducer::finalize_merchant_trade, food_lot_table::FoodLotTableAccess,
-    inventory_item_table::InventoryItemTableAccess, item_condition_table::ItemConditionTableAccess,
+    inventory_containment_table::InventoryContainmentTableAccess,
+    inventory_item_amount_table::InventoryItemAmountTableAccess,
+    inventory_item_table::InventoryItemTableAccess, inventory_object_table::InventoryObjectTableAccess,
+    item_condition_table::ItemConditionTableAccess,
     item_table::ItemTableAccess, limb_injury_table::LimbInjuryTableAccess,
     liquidate_party_inventory_reducer::liquidate_party_inventory,
     local_problem_symptom_table::LocalProblemSymptomTableAccess,
     party_inventory_item_table::PartyInventoryItemTableAccess,
+    party_item_amount_table::PartyItemAmountTableAccess,
     party_join_request_table::PartyJoinRequestTableAccess,
     party_journey_itinerary_table::PartyJourneyItineraryTableAccess,
     party_journey_table::PartyJourneyTableAccess, party_member_table::PartyMemberTableAccess,
@@ -1718,16 +1726,139 @@ fn select_expedition_encounter_choice(
     })
 }
 
+fn simulation_elapsed_minutes(starting_minute: u64, current_minute: u64) -> u64 {
+    current_minute.saturating_sub(starting_minute)
+}
+
+fn public_effective_inventory_quantity(quantity: u32, measured_amount: Option<u32>) -> f32 {
+    measured_amount.map_or(quantity as f32, |amount| {
+        amount as f32
+            / adventuresim_core::inventory_measurement::FULL_AMOUNT_MILLIUNITS as f32
+    })
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct NarrativeEncounterPolicyChoice {
+    choice: String,
+    reason: &'static str,
+    visible_alternatives: Vec<String>,
+    eligible_meaningful_alternatives: Vec<String>,
+}
+
+fn narrative_axis_fit(
+    profile: &AgentProfile,
+    development: &adventuresim_core::road_encounter_catalog::PersonalityDevelopment,
+) -> i32 {
+    use adventuresim_core::road_encounter_catalog::PersonalityAxisId;
+    let preferred_sign = match development.axis {
+        PersonalityAxisId::Nerve => match profile.personality.nerve {
+            Nerve::Brave => 1,
+            Nerve::Fearful => -1,
+            Nerve::Neutral => 0,
+        },
+        PersonalityAxisId::Drive => match profile.personality.drive {
+            Drive::Ambitious => 1,
+            Drive::Content => -1,
+            Drive::Neutral => 0,
+        },
+        PersonalityAxisId::Sociability => match profile.personality.sociability {
+            Sociability::Gregarious => 1,
+            Sociability::Solitary => -1,
+            Sociability::Neutral => 0,
+        },
+        PersonalityAxisId::Conscience => match profile.personality.conscience {
+            Conscience::Compassionate => 1,
+            Conscience::Callous | Conscience::Cruel => -1,
+            Conscience::Neutral => 0,
+        },
+        PersonalityAxisId::SelfRegard => match profile.personality.self_regard {
+            SelfRegard::Proud => 1,
+            SelfRegard::Humble => -1,
+            SelfRegard::Neutral => 0,
+        },
+        PersonalityAxisId::Conviction => match profile.personality.conviction {
+            Conviction::Zealous => 1,
+            Conviction::Irreverent => -1,
+            Conviction::Neutral => 0,
+        },
+        PersonalityAxisId::Transparency => match profile.personality.transparency {
+            Transparency::Open => 1,
+            Transparency::Guarded => -1,
+            Transparency::Neutral => 0,
+        },
+        PersonalityAxisId::Courtship => 0,
+    };
+    preferred_sign * i32::from(development.delta.signum())
+}
+
 fn select_public_narrative_encounter_choice(
     presentation_json: &str,
-) -> Result<Option<String>, serde_json::Error> {
+    profile: &AgentProfile,
+) -> Result<Option<NarrativeEncounterPolicyChoice>, serde_json::Error> {
     let presentation: adventuresim_core::road_encounter_catalog::EncounterPresentation =
         serde_json::from_str(presentation_json)?;
-    Ok(presentation
+    let mut visible_alternatives = presentation
         .choices
-        .into_iter()
-        .find(|choice| choice.id == "ignore" && choice.available)
-        .map(|choice| choice.id))
+        .iter()
+        .filter(|choice| choice.available)
+        .map(|choice| choice.id.clone())
+        .collect::<Vec<_>>();
+    visible_alternatives.sort();
+    let ignore = visible_alternatives.iter().any(|choice| choice == "ignore");
+    let mut meaningful = presentation
+        .choices
+        .iter()
+        .filter(|choice| choice.available && choice.id != "ignore")
+        .filter_map(|presented| {
+            let mut authored = adventuresim_core::road_encounter_catalog::definitions()
+                .iter()
+                .flat_map(|definition| definition.choices.iter())
+                .filter(|choice| choice.id == presented.id);
+            let choice = authored.next()?;
+            if authored.next().is_some()
+                || !choice.checks.is_empty()
+                || matches!(
+                    choice.transition.as_ref(),
+                    Some(adventuresim_core::road_encounter_catalog::EncounterTransition::StartCombat { .. })
+                )
+            {
+                return None;
+            }
+            let personality_fit = choice
+                .personality
+                .iter()
+                .map(|development| narrative_axis_fit(profile, development))
+                .sum::<i32>();
+            // Public availability and authored requirements prove only that
+            // a choice is legal. They do not establish that spending its
+            // resources is preferable to continuing safely.
+            (personality_fit > 0).then_some((presented.id.clone(), personality_fit))
+        })
+        .collect::<Vec<_>>();
+    meaningful.sort_by(|left, right| {
+        right
+            .1
+            .cmp(&left.1)
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    let eligible_meaningful_alternatives = meaningful
+        .iter()
+        .map(|(choice, _)| choice.clone())
+        .collect::<Vec<_>>();
+    if let Some((choice, _)) = meaningful.into_iter().next() {
+        return Ok(Some(NarrativeEncounterPolicyChoice {
+            choice,
+            reason: "personality_aligned_check_free_noncombat",
+            visible_alternatives,
+            eligible_meaningful_alternatives,
+        }));
+    }
+    Ok(ignore.then_some(NarrativeEncounterPolicyChoice {
+        choice: "ignore".into(),
+        reason: "unconditional_check_free_noncombat_fallback",
+        visible_alternatives,
+        eligible_meaningful_alternatives,
+    }))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -2264,11 +2395,22 @@ fn storefront_offer_unchanged(
     current.as_ref() == Some(selected)
 }
 
-fn visible_unique_default_provider(providers: &[(u64, u16, u16)], minute: u64) -> Option<u64> {
-    let [(provider, start_minute, end_minute)] = providers else {
+fn visible_unique_default_provider(
+    providers: &[(u64, u16, u16, bool, bool)],
+    minute: u64,
+) -> Option<u64> {
+    let [(provider, start_minute, end_minute, context_suppressed, health_suppressed)] = providers
+    else {
         return None;
     };
-    npc_is_publicly_present(*start_minute, *end_minute, minute).then_some(*provider)
+    npc_is_publicly_present(
+        *start_minute,
+        *end_minute,
+        *context_suppressed,
+        *health_suppressed,
+        minute,
+    )
+    .then_some(*provider)
 }
 
 fn retain_navigable_public_npc_candidates(
@@ -2439,11 +2581,47 @@ fn new_or_updated_public_discovery_referral(
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PublicDialogueProgressFingerprint {
-    cases: Vec<(String, String, u64)>,
-    leads: Vec<(String, u64, String, String, String, String, String)>,
-    actions: Vec<(String, u32, bool, bool, String, u32)>,
-    outcomes: Vec<(String, String, u64)>,
+    cases: Vec<(String, String)>,
+    leads: Vec<PublicDialogueLeadSemantic>,
+    actions: Vec<PublicDialogueActionSemantic>,
+    outcomes: Vec<(String, String)>,
     sites: Vec<(String, String, bool, bool, bool)>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct PublicDialogueLeadSemantic {
+    summary: String,
+    source_label: String,
+    confidence_bps: u16,
+    destination_stage: String,
+    directions: String,
+    exact_location_id: String,
+    latitude_e7: i32,
+    longitude_e7: i32,
+    witness_name: String,
+    witness_description: String,
+    witness_occupation_or_relationship: String,
+    expected_location: String,
+    current_learned_location: String,
+    contradiction_group: String,
+    corrected_by: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct PublicDialogueActionSemantic {
+    action_id: String,
+    method: String,
+    summary: String,
+    known_prerequisites: String,
+    duration_min_minutes: u32,
+    duration_max_minutes: u32,
+    uncertainty_bps: u16,
+    skill_contributions: String,
+    weather_available: bool,
+    required_case_site_id: String,
+    available: bool,
+    can_travel_to_required_site: bool,
+    unavailable_reason_code: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -2501,7 +2679,16 @@ impl GeneratedDiscoveryOutcome {
     }
 }
 
-fn npc_is_publicly_present(start_minute: u16, end_minute: u16, minute: u64) -> bool {
+fn npc_is_publicly_present(
+    start_minute: u16,
+    end_minute: u16,
+    context_suppressed: bool,
+    health_suppressed: bool,
+    minute: u64,
+) -> bool {
+    if context_suppressed || health_suppressed {
+        return false;
+    }
     let minute = minute % 1_440;
     let start = u64::from(start_minute);
     let end = u64::from(end_minute);
@@ -2613,9 +2800,17 @@ fn occupied_case_pin_matches(
 }
 
 fn projected_investigation_wait_minutes(reason_code: &str, wait_minutes: u32) -> Option<u32> {
-    (reason_code == "night_window"
+    (matches!(reason_code, "night_window" | "contact_schedule_window")
         && (1..=MAX_PROJECTED_INVESTIGATION_WAIT_MINUTES).contains(&wait_minutes))
     .then_some(wait_minutes)
+}
+
+fn dialogue_contact_presence_changed(error: &str) -> bool {
+    matches!(
+        error,
+        "start_dialogue failed: Dialogue actor has no authoritative presence"
+            | "start_dialogue failed: Dialogue actor is not present at this time"
+    )
 }
 
 fn projected_case_site_journey_minutes(

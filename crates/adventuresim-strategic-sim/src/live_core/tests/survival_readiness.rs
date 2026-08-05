@@ -227,20 +227,29 @@ fn one_generated_action_attempt_takes_its_reserved_return_before_another_attempt
     let action_event = attempted_action
         .find("CoreLoopEventKind::GeneratedInvestigationAction")
         .expect("public action progress event");
-    let return_safety = attempted_action
+    let settlement_continue = attempted_action
+        .find("if at_settlement {")
+        .expect("settlement action continuation branch");
+    let occupied_site = attempted_action
+        .find("let occupied_site_id")
+        .expect("off-settlement occupancy boundary");
+    let off_settlement_return = &attempted_action[occupied_site..];
+    let return_safety = off_settlement_return
         .find("generated_action_return_thermal_decision(party_id, &return_pin, 0)")
         .expect("authoritative reserved-return safety recheck");
-    let return_reducer = attempted_action
+    let return_reducer = off_settlement_return
         .find("evacuate_generated_party_to_origin(")
         .expect("reserved return execution");
-    let progress_exit = attempted_action
+    let progress_exit = off_settlement_return
         .rfind("return Ok(true)")
         .expect("public-progress exit after reserved return");
-    assert!(action_event < return_safety && return_safety < return_reducer);
+    assert!(action_event < settlement_continue && settlement_continue < occupied_site);
+    assert!(return_safety < return_reducer);
     assert!(return_reducer < progress_exit);
-    assert!(!attempted_action.contains("generated_actor_ready_after_time"));
-    assert!(!attempted_action.contains("continue;"));
-    assert!(attempted_action.contains("plan=one_attempt_then_reserved_return"));
+    assert!(attempted_action[settlement_continue..occupied_site].contains("continue;"));
+    assert!(!off_settlement_return.contains("generated_actor_ready_after_time"));
+    assert!(!off_settlement_return.contains("continue;"));
+    assert!(off_settlement_return.contains("plan=one_attempt_then_reserved_return"));
     let evacuation = generated
         .split("fn evacuate_generated_party_to_origin")
         .nth(1)
@@ -578,8 +587,48 @@ fn public_encumbrance_counts_carried_mass_but_not_body_mass() {
         .expect("public personal-load projection");
     assert!(load.contains("carried_water_ml"));
     assert!(load.contains("inventory_weight"));
-    assert!(load.contains("water_weight + inventory_weight"));
+    assert!(load.contains("public_contained_water_ml"));
+    assert!(load.contains("public_measured_stack_weight_kg"));
+    assert!(load.contains("public_row_is_carried"));
     assert!(!load.contains("body_weight_kg"));
+}
+
+#[test]
+fn public_supply_and_load_accounting_include_nested_measured_objects() {
+    let source = LIVE_CORE_SOURCE;
+    for public_surface in [
+        ".inventory_object()",
+        ".inventory_containment()",
+        ".inventory_item_amount()",
+        ".party_item_amount()",
+        ".container_liquid()",
+    ] {
+        assert!(source.contains(public_surface), "{public_surface}");
+    }
+    let supplies = source
+        .split("fn expedition_supplies")
+        .nth(1)
+        .and_then(|tail| tail.split("fn emit_expedition_diagnostics").next())
+        .expect("public expedition supply observation");
+    assert!(supplies.contains("public_row_is_carried"));
+    assert!(supplies.contains("contained_water_ml"));
+}
+
+#[test]
+fn measured_inventory_amount_replaces_stack_quantity_at_canonical_scale() {
+    use adventuresim_core::inventory_measurement::FULL_AMOUNT_MILLIUNITS;
+
+    assert_eq!(public_effective_inventory_quantity(3, None), 3.0);
+    assert_eq!(
+        public_effective_inventory_quantity(3, Some(FULL_AMOUNT_MILLIUNITS)),
+        1.0,
+        "a measured row is one measured object, not quantity times its amount"
+    );
+    assert_eq!(
+        public_effective_inventory_quantity(7, Some(FULL_AMOUNT_MILLIUNITS / 2)),
+        0.5,
+        "half of a measured object remains half regardless of the legacy stack quantity"
+    );
 }
 
 #[test]
@@ -749,14 +798,24 @@ fn equipment_storefront_requires_service_and_matching_stock_category() {
 #[test]
 fn staggered_default_providers_remain_ambiguous_before_hours_filtering() {
     assert_eq!(
-        visible_unique_default_provider(&[(7, 0, 720), (8, 720, 1_440)], 300),
+        visible_unique_default_provider(
+            &[(7, 0, 720, false, false), (8, 720, 1_440, false, false)],
+            300
+        ),
         None
     );
     assert_eq!(
-        visible_unique_default_provider(&[(7, 0, 720)], 300),
+        visible_unique_default_provider(&[(7, 0, 720, false, false)], 300),
         Some(7)
     );
-    assert_eq!(visible_unique_default_provider(&[(7, 0, 720)], 900), None);
+    assert_eq!(
+        visible_unique_default_provider(&[(7, 0, 720, false, false)], 900),
+        None
+    );
+    assert_eq!(
+        visible_unique_default_provider(&[(7, 0, 720, true, false)], 300),
+        None
+    );
 }
 
 #[test]
