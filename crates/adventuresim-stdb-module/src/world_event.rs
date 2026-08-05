@@ -8,13 +8,14 @@ use adventuresim_core::world_event::{
     WORLD_EVENT_SCHEMA_REVISION, WorldEventActor, WorldEventConsequence, WorldEventEnvelope,
     WorldEventOffenseKind as ExistingOffenseKind, WorldEventPayloadRef, WorldEventPlace,
     WorldEventReputationMeaning as ReputationMeaning, WorldEventSource, WorldEventSubject,
-    plan_generated_case_resolution, plan_noticed_illegal_foraging,
+    plan_food_water_infection, plan_generated_case_resolution, plan_noticed_illegal_foraging,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, table};
 use std::collections::BTreeSet;
 
+use crate::disease::infection_episode;
 use crate::local_problem::local_problem_outcome_receipt;
 use crate::reputation::{case_reputation_participant, discovered_offense, reputation_event};
 
@@ -30,11 +31,16 @@ pub struct PersistedGeneratedFinaleEventSource {
     pub finale_id: String,
     pub source_id: String,
 }
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, SpacetimeType)]
+pub struct PersistedFoodWaterEventSource {
+    pub consumption_id: String,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, SpacetimeType)]
 pub enum PersistedWorldEventSource {
     ForagingAction(PersistedForagingEventSource),
     GeneratedCaseFinale(PersistedGeneratedFinaleEventSource),
+    FoodWaterExposure(PersistedFoodWaterEventSource),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, SpacetimeType)]
@@ -53,6 +59,7 @@ pub enum PersistedWorldEventSubject {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, SpacetimeType)]
 pub enum PersistedWorldEventPlace {
     Settlement { settlement_id: String },
+    Strategic { place_id: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, SpacetimeType)]
@@ -65,11 +72,23 @@ pub struct PersistedCaseResolutionPayloadRef {
     pub canonical_case_id: String,
     pub finale_id: String,
 }
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, SpacetimeType)]
+pub struct PersistedFoodWaterPayloadRef {
+    pub carrier_id: u64,
+    pub contribution_digest: String,
+    pub dose_microunits: u64,
+    pub protected_dose_microunits: u64,
+    pub immunity_milli: u32,
+    pub prior_immunity_milli: u32,
+    pub consumed_fraction_bps: u16,
+    pub disease_id: String,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, SpacetimeType)]
 pub enum PersistedWorldEventPayloadRef {
     NoticedIllegalForaging(PersistedForagingPayloadRef),
     GeneratedCaseResolution(PersistedCaseResolutionPayloadRef),
+    FoodWaterInfection(PersistedFoodWaterPayloadRef),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, SpacetimeType)]
@@ -104,6 +123,7 @@ pub struct WorldEventReceipt {
 enum ConsequenceOrder {
     NoticedIllegalForaging,
     GeneratedCaseResolution,
+    FoodWaterInfection,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -117,26 +137,36 @@ enum WorldEventRequest {
         public_case_id: String,
         fame: i32,
     },
+    FoodWaterInfection {
+        envelope: WorldEventEnvelope,
+        episode_id: u64,
+    },
 }
 
 impl WorldEventRequest {
     fn envelope(&self) -> &WorldEventEnvelope {
         match self {
             Self::NoticedIllegalForaging { envelope, .. }
-            | Self::GeneratedCaseResolution { envelope, .. } => envelope,
+            | Self::GeneratedCaseResolution { envelope, .. }
+            | Self::FoodWaterInfection { envelope, .. } => envelope,
         }
     }
 }
 
-fn consequence_identity(consequence: &WorldEventConsequence) -> (&'static str, &str) {
+fn consequence_identity(consequence: &WorldEventConsequence) -> (&'static str, String) {
     match consequence {
-        WorldEventConsequence::Reputation { event_id, .. } => ("reputation", event_id),
-        WorldEventConsequence::DiscoveredOffense { offense_id, .. } => ("offense", offense_id),
+        WorldEventConsequence::Reputation { event_id, .. } => ("reputation", event_id.clone()),
+        WorldEventConsequence::DiscoveredOffense { offense_id, .. } => {
+            ("offense", offense_id.clone())
+        }
         WorldEventConsequence::LocalProblemOutcome {
             source_outcome_id, ..
-        } => ("local_problem", source_outcome_id),
+        } => ("local_problem", source_outcome_id.clone()),
         WorldEventConsequence::CaseParticipantSnapshot { snapshot_id, .. } => {
-            ("case_participant", snapshot_id)
+            ("case_participant", snapshot_id.clone())
+        }
+        WorldEventConsequence::InfectionEpisode { episode_id, .. } => {
+            ("infection_episode", episode_id.to_string())
         }
     }
 }
@@ -159,6 +189,11 @@ fn persist(envelope: &WorldEventEnvelope) -> PersistedWorldEventEnvelope {
                     source_id: source_id.clone(),
                 },
             ),
+            WorldEventSource::FoodWaterExposure { consumption_id } => {
+                PersistedWorldEventSource::FoodWaterExposure(PersistedFoodWaterEventSource {
+                    consumption_id: consumption_id.clone(),
+                })
+            }
         },
         actor: match &envelope.actor {
             WorldEventActor::Character { character_id } => PersistedWorldEventActor::Character {
@@ -191,6 +226,9 @@ fn persist(envelope: &WorldEventEnvelope) -> PersistedWorldEventEnvelope {
             WorldEventPlace::Settlement { settlement_id } => PersistedWorldEventPlace::Settlement {
                 settlement_id: settlement_id.clone(),
             },
+            WorldEventPlace::Strategic { place_id } => PersistedWorldEventPlace::Strategic {
+                place_id: place_id.clone(),
+            },
         },
         occurred_at_minute: envelope.occurred_at_minute,
         payload: match &envelope.payload {
@@ -208,6 +246,25 @@ fn persist(envelope: &WorldEventEnvelope) -> PersistedWorldEventEnvelope {
                     finale_id: finale_id.clone(),
                 },
             ),
+            WorldEventPayloadRef::FoodWaterInfection {
+                carrier_id,
+                contribution_digest,
+                dose_microunits,
+                protected_dose_microunits,
+                immunity_milli,
+                prior_immunity_milli,
+                consumed_fraction_bps,
+                disease_id,
+            } => PersistedWorldEventPayloadRef::FoodWaterInfection(PersistedFoodWaterPayloadRef {
+                carrier_id: *carrier_id,
+                contribution_digest: contribution_digest.clone(),
+                dose_microunits: *dose_microunits,
+                protected_dose_microunits: *protected_dose_microunits,
+                immunity_milli: *immunity_milli,
+                prior_immunity_milli: *prior_immunity_milli,
+                consumed_fraction_bps: *consumed_fraction_bps,
+                disease_id: disease_id.clone(),
+            }),
         },
     }
 }
@@ -354,6 +411,28 @@ fn apply_consequences(
                 &party_id,
                 minute,
             ),
+            WorldEventConsequence::InfectionEpisode {
+                episode_id,
+                character_id,
+                disease_id,
+                contracted_at,
+                ..
+            } => {
+                if ctx.db.infection_episode().id().find(episode_id).is_none() {
+                    ctx.db
+                        .infection_episode()
+                        .insert(crate::disease::InfectionEpisodeRow {
+                            id: episode_id,
+                            character_id,
+                            disease_id,
+                            contracted_at,
+                            ruleset_version:
+                                adventuresim_core::physiology::PHYSIOLOGY_RULESET_VERSION,
+                            phenotype_key_version:
+                                adventuresim_core::physiology::PHENOTYPE_KEY_VERSION,
+                        });
+                }
+            }
         }
     }
     Ok(())
@@ -370,7 +449,7 @@ fn validate_consequences(
     validate_consequence_order(order, consequences)?;
     for consequence in consequences {
         let identity = consequence_identity(consequence);
-        if !identities.insert((identity.0, identity.1.to_owned())) {
+        if !identities.insert(identity) {
             return Err("World event repeats a consequence identity".into());
         }
     }
@@ -464,6 +543,36 @@ fn validate_semantic_binding(
                 envelope.occurred_at_minute,
             )
         }
+        WorldEventRequest::FoodWaterInfection {
+            envelope: requested,
+            episode_id,
+        } => {
+            if envelope != requested {
+                return Err("Food-water infection envelope differs from its request".into());
+            }
+            let (
+                WorldEventSource::FoodWaterExposure { consumption_id },
+                WorldEventActor::Character { character_id },
+                WorldEventPayloadRef::FoodWaterInfection {
+                    contribution_digest,
+                    disease_id,
+                    ..
+                },
+            ) = (&envelope.source, &envelope.actor, &envelope.payload)
+            else {
+                return Err("Food-water infection request is not canonical".into());
+            };
+            if envelope.id != format!("food-water-infection:{character_id}:{consumption_id}") {
+                return Err("Food-water infection identity is not canonical".into());
+            }
+            adventuresim_core::world_event::plan_food_water_infection(
+                *episode_id,
+                *character_id,
+                disease_id,
+                envelope.occurred_at_minute,
+                contribution_digest,
+            )
+        }
     };
     if consequences == expected {
         Ok(())
@@ -504,6 +613,26 @@ fn preflight_consequences(
                         && existing.raw_fame == *raw_fame
                         && existing.raw_infamy == *raw_infamy
                         && existing.occurred_at_minute == *minute
+                }),
+            WorldEventConsequence::InfectionEpisode {
+                episode_id,
+                character_id,
+                disease_id,
+                contracted_at,
+                ..
+            } => ctx
+                .db
+                .infection_episode()
+                .id()
+                .find(*episode_id)
+                .map(|existing| {
+                    existing.character_id == *character_id
+                        && existing.disease_id == *disease_id
+                        && existing.contracted_at == *contracted_at
+                        && existing.ruleset_version
+                            == adventuresim_core::physiology::PHYSIOLOGY_RULESET_VERSION
+                        && existing.phenotype_key_version
+                            == adventuresim_core::physiology::PHENOTYPE_KEY_VERSION
                 }),
             WorldEventConsequence::DiscoveredOffense {
                 offense_id,
@@ -652,6 +781,10 @@ fn validate_consequence_order(
             }
             Ok(())
         }
+        ConsequenceOrder::FoodWaterInfection => match consequences {
+            [WorldEventConsequence::InfectionEpisode { .. }] => Ok(()),
+            _ => Err("Food-water infection consequences are not canonical".into()),
+        },
     }
 }
 
@@ -777,6 +910,63 @@ pub(crate) fn commit_generated_case_resolution(
     .map(|_| ())
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn commit_food_water_infection(
+    ctx: &ReducerContext,
+    consumption_id: &str,
+    character_id: u64,
+    strategic_place_id: &str,
+    carrier_id: u64,
+    contribution_digest: &str,
+    dose: f32,
+    protected_dose: f32,
+    immunity: f32,
+    prior_immunity: f32,
+    consumed_fraction_bps: u16,
+    disease_id: &str,
+    episode_id: u64,
+    minute: u64,
+) -> Result<(), String> {
+    let envelope = WorldEventEnvelope {
+        schema_revision: WORLD_EVENT_SCHEMA_REVISION,
+        id: format!("food-water-infection:{character_id}:{consumption_id}"),
+        source: WorldEventSource::FoodWaterExposure {
+            consumption_id: consumption_id.into(),
+        },
+        actor: WorldEventActor::Character { character_id },
+        subjects: vec![WorldEventSubject::Character { character_id }],
+        place: WorldEventPlace::Strategic {
+            place_id: strategic_place_id.into(),
+        },
+        occurred_at_minute: minute,
+        payload: WorldEventPayloadRef::FoodWaterInfection {
+            carrier_id,
+            contribution_digest: contribution_digest.into(),
+            dose_microunits: (dose.max(0.0) * 1_000_000.0).round() as u64,
+            protected_dose_microunits: (protected_dose.max(0.0) * 1_000_000.0).round() as u64,
+            immunity_milli: (immunity.clamp(0.0, 100.0) * 1_000.0).round() as u32,
+            prior_immunity_milli: (prior_immunity.clamp(0.0, 100.0) * 1_000.0).round() as u32,
+            consumed_fraction_bps,
+            disease_id: disease_id.into(),
+        },
+    };
+    let consequences = plan_food_water_infection(
+        episode_id,
+        character_id,
+        disease_id,
+        minute,
+        contribution_digest,
+    );
+    let request = WorldEventRequest::FoodWaterInfection {
+        envelope: envelope.clone(),
+        episode_id,
+    };
+    commit_world_event(ctx, request, || {
+        (envelope, ConsequenceOrder::FoodWaterInfection, consequences)
+    })
+    .map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -813,7 +1003,10 @@ mod tests {
             severity: 1,
             minute: 60,
         };
-        assert_eq!(consequence_identity(&consequence), ("offense", "offense:1"));
+        assert_eq!(
+            consequence_identity(&consequence),
+            ("offense", "offense:1".into())
+        );
     }
 
     #[test]

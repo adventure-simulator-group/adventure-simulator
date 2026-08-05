@@ -239,6 +239,7 @@ pub mod choose_dialogue_topic_reducer;
 pub mod claim_simulation_run_reducer;
 pub mod clear_browser_character_selection_reducer;
 pub mod clear_organization_presentation_reducer;
+pub mod collect_fixture_water_into_container_reducer;
 pub mod commitment_event_type;
 pub mod commitment_kind_type;
 pub mod commitment_status_type;
@@ -387,6 +388,7 @@ pub mod fish_commodity_type;
 pub mod fishing_industry_type;
 pub mod flow_persistence_type;
 pub mod flowing_water_access_type;
+pub mod food_contamination_provenance_type;
 pub mod food_contamination_type;
 pub mod food_lot_table;
 pub mod food_lot_type;
@@ -575,6 +577,7 @@ pub mod other_non_textured_soil_type;
 pub mod outbreak_authority_type;
 pub mod outbreak_patient_authority_type;
 pub mod outbreak_source_presence_span_type;
+pub mod outbreak_water_source_type;
 pub mod outcome_source_authority_type;
 pub mod outlook_type;
 pub mod palmer_drought_severity_index_type;
@@ -616,6 +619,8 @@ pub mod perform_immediate_activity_reducer;
 pub mod perform_investigation_action_reducer;
 pub mod perform_social_action_reducer;
 pub mod persisted_case_resolution_payload_ref_type;
+pub mod persisted_food_water_event_source_type;
+pub mod persisted_food_water_payload_ref_type;
 pub mod persisted_foraging_event_source_type;
 pub mod persisted_foraging_payload_ref_type;
 pub mod persisted_generated_finale_event_source_type;
@@ -890,7 +895,11 @@ pub mod update_recruitment_role_reducer;
 pub mod update_training_schedule_reducer;
 pub mod upgrade_manual_surgery_reducer;
 pub mod vote_for_party_leader_reducer;
+pub mod water_collection_receipt_type;
 pub mod water_distance_meters_type;
+pub mod water_holding_contribution_type;
+pub mod water_material_lot_type;
+pub mod water_output_lot_type;
 pub mod weapon_skill_distribution_type;
 pub mod western_christian_arrangement_type;
 pub mod withdraw_party_inventory_item_reducer;
@@ -1140,6 +1149,7 @@ pub use choose_dialogue_topic_reducer::choose_dialogue_topic;
 pub use claim_simulation_run_reducer::claim_simulation_run;
 pub use clear_browser_character_selection_reducer::clear_browser_character_selection;
 pub use clear_organization_presentation_reducer::clear_organization_presentation;
+pub use collect_fixture_water_into_container_reducer::collect_fixture_water_into_container;
 pub use commitment_event_type::CommitmentEvent;
 pub use commitment_kind_type::CommitmentKind;
 pub use commitment_status_type::CommitmentStatus;
@@ -1288,6 +1298,7 @@ pub use fish_commodity_type::FishCommodity;
 pub use fishing_industry_type::FishingIndustry;
 pub use flow_persistence_type::FlowPersistence;
 pub use flowing_water_access_type::FlowingWaterAccess;
+pub use food_contamination_provenance_type::FoodContaminationProvenance;
 pub use food_contamination_type::FoodContamination;
 pub use food_lot_table::*;
 pub use food_lot_type::FoodLot;
@@ -1476,6 +1487,7 @@ pub use other_non_textured_soil_type::OtherNonTexturedSoil;
 pub use outbreak_authority_type::OutbreakAuthority;
 pub use outbreak_patient_authority_type::OutbreakPatientAuthority;
 pub use outbreak_source_presence_span_type::OutbreakSourcePresenceSpan;
+pub use outbreak_water_source_type::OutbreakWaterSource;
 pub use outcome_source_authority_type::OutcomeSourceAuthority;
 pub use outlook_type::Outlook;
 pub use palmer_drought_severity_index_type::PalmerDroughtSeverityIndex;
@@ -1517,6 +1529,8 @@ pub use perform_immediate_activity_reducer::perform_immediate_activity;
 pub use perform_investigation_action_reducer::perform_investigation_action;
 pub use perform_social_action_reducer::perform_social_action;
 pub use persisted_case_resolution_payload_ref_type::PersistedCaseResolutionPayloadRef;
+pub use persisted_food_water_event_source_type::PersistedFoodWaterEventSource;
+pub use persisted_food_water_payload_ref_type::PersistedFoodWaterPayloadRef;
 pub use persisted_foraging_event_source_type::PersistedForagingEventSource;
 pub use persisted_foraging_payload_ref_type::PersistedForagingPayloadRef;
 pub use persisted_generated_finale_event_source_type::PersistedGeneratedFinaleEventSource;
@@ -1791,7 +1805,11 @@ pub use update_recruitment_role_reducer::update_recruitment_role;
 pub use update_training_schedule_reducer::update_training_schedule;
 pub use upgrade_manual_surgery_reducer::upgrade_manual_surgery;
 pub use vote_for_party_leader_reducer::vote_for_party_leader;
+pub use water_collection_receipt_type::WaterCollectionReceipt;
 pub use water_distance_meters_type::WaterDistanceMeters;
+pub use water_holding_contribution_type::WaterHoldingContribution;
+pub use water_material_lot_type::WaterMaterialLot;
+pub use water_output_lot_type::WaterOutputLot;
 pub use weapon_skill_distribution_type::WeaponSkillDistribution;
 pub use western_christian_arrangement_type::WesternChristianArrangement;
 pub use withdraw_party_inventory_item_reducer::withdraw_party_inventory_item;
@@ -1981,6 +1999,14 @@ pub enum Reducer {
     },
     ClearOrganizationPresentation {
         character_id: u64,
+    },
+    CollectFixtureWaterIntoContainer {
+        request_id: String,
+        character_id: u64,
+        capability_id: String,
+        expected_capability_version: u32,
+        container_object_id: u64,
+        requested_ml: u64,
     },
     ConfigureSimulationCharacter {
         nonce: String,
@@ -2774,6 +2800,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::ClaimSimulationRun { .. } => "claim_simulation_run",
             Reducer::ClearBrowserCharacterSelection { .. } => "clear_browser_character_selection",
             Reducer::ClearOrganizationPresentation { .. } => "clear_organization_presentation",
+            Reducer::CollectFixtureWaterIntoContainer { .. } => {
+                "collect_fixture_water_into_container"
+            }
             Reducer::ConfigureSimulationCharacter { .. } => "configure_simulation_character",
             Reducer::ContactContextCharacter { .. } => "contact_context_character",
             Reducer::ContinueCampTravel { .. } => "continue_camp_travel",
@@ -3237,6 +3266,21 @@ Reducer::BeginFormalCourtship{
                 character_id,
 }             => __sats::bsatn::to_vec(&clear_organization_presentation_reducer::ClearOrganizationPresentationArgs {
                 character_id: character_id.clone(),
+}),
+            Reducer::CollectFixtureWaterIntoContainer{
+                request_id,
+                character_id,
+                capability_id,
+                expected_capability_version,
+                container_object_id,
+                requested_ml,
+}             => __sats::bsatn::to_vec(&collect_fixture_water_into_container_reducer::CollectFixtureWaterIntoContainerArgs {
+                request_id: request_id.clone(),
+                character_id: character_id.clone(),
+                capability_id: capability_id.clone(),
+                expected_capability_version: expected_capability_version.clone(),
+                container_object_id: container_object_id.clone(),
+                requested_ml: requested_ml.clone(),
 }),
             Reducer::ConfigureSimulationCharacter{
                 nonce,

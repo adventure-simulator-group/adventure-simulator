@@ -5,6 +5,7 @@
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::persisted_case_resolution_payload_ref_type::PersistedCaseResolutionPayloadRef;
+use super::persisted_food_water_payload_ref_type::PersistedFoodWaterPayloadRef;
 use super::persisted_foraging_payload_ref_type::PersistedForagingPayloadRef;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -13,6 +14,8 @@ pub enum PersistedWorldEventPayloadRef {
     NoticedIllegalForaging(PersistedForagingPayloadRef),
 
     GeneratedCaseResolution(PersistedCaseResolutionPayloadRef),
+
+    FoodWaterInfection(PersistedFoodWaterPayloadRef),
 }
 
 impl __sdk::InModule for PersistedWorldEventPayloadRef {

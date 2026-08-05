@@ -500,6 +500,7 @@ pub(crate) fn delete_subtree(ctx: &ReducerContext, root_object_id: u64) -> Resul
             _ => unreachable!("preflight accepts only carried deletion locations"),
         }
         ctx.db.container_liquid().container_object_id().delete(id);
+        crate::outbreak::delete_water_holding_contributions(ctx, "container", &id.to_string());
         crate::herbalism::delete_container_medicine(ctx, id);
         ctx.db.inventory_containment().child_object_id().delete(id);
         ctx.db.inventory_object().id().delete(id);
@@ -884,6 +885,27 @@ mod tests {
         assert!(descendant_validation < completed_preflight);
         assert!(completed_preflight < first_delete);
     }
+
+    #[test]
+    fn public_water_handling_is_provenance_agnostic() {
+        let source = include_str!("inventory_container.rs");
+        assert!(!source.contains("pub fixture_drawn: bool"));
+        assert!(!source.contains("Fixture-collected water cannot be mixed with pooled water"));
+        assert!(source.contains("move_water_holding_contributions"));
+        let deletion = source
+            .split("pub(crate) fn delete_subtree")
+            .nth(1)
+            .unwrap()
+            .split("fn require_exact_carried_backing")
+            .next()
+            .unwrap();
+        assert_eq!(
+            deletion
+                .matches("delete_water_holding_contributions")
+                .count(),
+            1
+        );
+    }
 }
 
 pub(crate) fn ensure_object(
@@ -1000,6 +1022,7 @@ fn liquid_used(ctx: &ReducerContext, container_object_id: u64) -> u64 {
 
 pub(crate) fn consume_contained_water(
     ctx: &ReducerContext,
+    consumer_character_id: u64,
     kind: &str,
     owner: &str,
     requested_ml: u64,
@@ -1027,6 +1050,14 @@ pub(crate) fn consume_contained_water(
     let mut remaining = requested_ml;
     for mut liquid in liquids {
         let consumed = remaining.min(liquid.water_ml);
+        crate::outbreak::consume_water_holding_contributions(
+            ctx,
+            "container",
+            &liquid.container_object_id.to_string(),
+            liquid.water_ml as f32,
+            consumed as f32,
+            consumer_character_id,
+        )?;
         liquid.water_ml -= consumed;
         remaining -= consumed;
         if liquid.water_ml == 0 {
@@ -1048,7 +1079,7 @@ pub(crate) fn consume_contained_water(
     Ok(requested_ml - remaining)
 }
 
-fn require_mutable(ctx: &ReducerContext, object_id: u64) -> Result<(), String> {
+pub(crate) fn require_mutable(ctx: &ReducerContext, object_id: u64) -> Result<(), String> {
     let mut cursor = Some(object_id);
     for _ in 0..=adventuresim_core::inventory_containers::MAX_CONTAINER_DEPTH {
         let Some(id) = cursor else { return Ok(()) };
@@ -1087,7 +1118,7 @@ fn require_mutable(ctx: &ReducerContext, object_id: u64) -> Result<(), String> {
     Err("Container ancestry exceeds the maximum depth".into())
 }
 
-fn require_container_capacity(
+pub(crate) fn require_container_capacity(
     ctx: &ReducerContext,
     container_object_id: u64,
     additional_ml: u64,
@@ -1268,7 +1299,7 @@ pub fn pour_water_into_container(
     if requested_ml > available {
         return Err("Not enough carried water".into());
     }
-    match parent.location_kind.as_str() {
+    let source_total_ml = match parent.location_kind.as_str() {
         "personal" => {
             let mut row = ctx
                 .db
@@ -1276,8 +1307,10 @@ pub fn pour_water_into_container(
                 .character_id()
                 .find(character_id)
                 .ok_or("Character needs not initialized")?;
+            let total = row.carried_water_ml;
             row.carried_water_ml -= requested_ml as f32;
             ctx.db.character_needs().character_id().update(row);
+            total
         }
         "party" => {
             let mut row = ctx
@@ -1286,11 +1319,22 @@ pub fn pour_water_into_container(
                 .id()
                 .find(parent.location_owner.clone())
                 .ok_or("Party not found")?;
+            let total = row.pooled_water_ml;
             row.pooled_water_ml -= requested_ml as f32;
             ctx.db.party_authority().id().update(row);
+            total
         }
         _ => return Err("Cannot pour water into a container at this location".into()),
-    }
+    };
+    crate::outbreak::move_water_holding_contributions(
+        ctx,
+        parent.location_kind.as_str(),
+        &parent.location_owner,
+        "container",
+        &parent.id.to_string(),
+        (source_total_ml * 1_000.0).round() as u64,
+        requested_ml.saturating_mul(1_000),
+    )?;
     if let Some(mut liquid) = ctx
         .db
         .container_liquid()
@@ -1355,7 +1399,16 @@ pub fn pour_water_out_of_container(
     if liquid.water_ml < requested_ml {
         return Err("Container does not hold that much water".into());
     }
-    match resolved.root {
+    let (destination_kind, destination_id) = match &resolved.root {
+        adventuresim_core::physical_object::OperationalCustody::Character(character) => {
+            ("personal", character.get().to_string())
+        }
+        adventuresim_core::physical_object::OperationalCustody::Party(party) => {
+            ("party", party.as_str().to_owned())
+        }
+        _ => return Err("Container belongs to another inventory".into()),
+    };
+    match &resolved.root {
         adventuresim_core::physical_object::OperationalCustody::Character(_) => {
             let mut row = ctx
                 .db
@@ -1388,6 +1441,15 @@ pub fn pour_water_out_of_container(
         }
         _ => return Err("Container belongs to another inventory".into()),
     }
+    crate::outbreak::move_water_holding_contributions(
+        ctx,
+        "container",
+        &container_object_id.to_string(),
+        destination_kind,
+        &destination_id,
+        liquid.water_ml.saturating_mul(1_000),
+        requested_ml.saturating_mul(1_000),
+    )?;
     liquid.water_ml -= requested_ml;
     if liquid.water_ml == 0 {
         ctx.db

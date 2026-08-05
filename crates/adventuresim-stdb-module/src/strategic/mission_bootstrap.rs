@@ -1392,7 +1392,7 @@ fn materialize_preferred_generated_fixture(
     let now_minute = crate::time::refresh_clock(ctx)?.max(4_000);
     let entropy = character_id ^ seed_salt;
     let context = qg::GenerationContext {
-        seed: entropy.rotate_left(11),
+        seed: preferred_fixture_seed(entropy, family),
         observer_entropy_hi: entropy.rotate_left(23),
         observer_entropy_lo: entropy.rotate_right(17),
         settlement_id: settlement_id.clone(),
@@ -1449,6 +1449,18 @@ fn materialize_preferred_generated_fixture(
         return Err("Development quest fixture local-problem binding is inconsistent".into());
     }
     Ok(generated.problem_id)
+}
+
+fn preferred_fixture_seed(
+    entropy: u64,
+    family: adventuresim_core::quest_generation::TemplateFamily,
+) -> u64 {
+    let seed = entropy.rotate_left(11);
+    if family == adventuresim_core::quest_generation::TemplateFamily::Outbreak {
+        seed - seed % 6
+    } else {
+        seed
+    }
 }
 
 fn ordinary_generated_site_distance_m(seed: u64, index: usize) -> u64 {
@@ -1561,6 +1573,23 @@ fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<String,
     {
         crate::add_inventory_item(ctx, character_id, "surgery_kit", 1);
     }
+    if !ctx
+        .db
+        .inventory_item()
+        .character_id()
+        .filter(character_id)
+        .any(|row| row.item_id == "cooking_pot")
+    {
+        crate::add_inventory_item(ctx, character_id, "cooking_pot", 1);
+    }
+    let cooking_pot = ctx
+        .db
+        .inventory_item()
+        .character_id()
+        .filter(character_id)
+        .find(|row| row.item_id == "cooking_pot")
+        .ok_or("Outbreak demo cooking pot was not materialized")?;
+    crate::inventory_container::ensure_object(ctx, character_id, "personal", cooking_pot.id, false)?;
 
     materialize_preferred_generated_fixture(
         ctx,
@@ -2177,6 +2206,23 @@ pub fn spawn_developer_quest(
 #[cfg(test)]
 mod developer_quest_source_tests {
     use super::*;
+
+    #[test]
+    fn outbreak_demo_seed_selects_the_waterborne_fixture() {
+        let entropy = 9_999_999_999_999_959u64 ^ 0x4f55_5442_5245_414b;
+        let seed = preferred_fixture_seed(
+            entropy,
+            adventuresim_core::quest_generation::TemplateFamily::Outbreak,
+        );
+        assert_eq!(seed % 6, 0);
+        assert_eq!(
+            preferred_fixture_seed(
+                entropy,
+                adventuresim_core::quest_generation::TemplateFamily::RecurringDepredation,
+            ),
+            entropy.rotate_left(11)
+        );
+    }
 
     #[test]
     fn fresh_development_world_seeds_an_exact_order_errantry_issuer() {

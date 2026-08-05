@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::persisted_food_water_event_source_type::PersistedFoodWaterEventSource;
 use super::persisted_foraging_event_source_type::PersistedForagingEventSource;
 use super::persisted_generated_finale_event_source_type::PersistedGeneratedFinaleEventSource;
 
@@ -13,6 +14,8 @@ pub enum PersistedWorldEventSource {
     ForagingAction(PersistedForagingEventSource),
 
     GeneratedCaseFinale(PersistedGeneratedFinaleEventSource),
+
+    FoodWaterExposure(PersistedFoodWaterEventSource),
 }
 
 impl __sdk::InModule for PersistedWorldEventSource {

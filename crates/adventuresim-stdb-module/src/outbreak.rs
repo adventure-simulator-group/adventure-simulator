@@ -2,7 +2,7 @@
 //!
 //! Canonical disease, source and remediation facts never cross a public view.
 
-use spacetimedb::{ReducerContext, Table, ViewContext, table};
+use spacetimedb::{ReducerContext, Table, ViewContext, reducer, table};
 use std::str::FromStr;
 
 use adventuresim_core::strategic_place::{StrategicFixtureId, StrategicPlaceId};
@@ -11,6 +11,8 @@ use crate::{
     character::{character, character_attributes, character_death},
     corpse::strategic_corpse,
     disease::infection_episode,
+    inventory_container::{container_liquid, inventory_object},
+    investigation::investigation_action_capability,
     local_problem::{local_problem_receipt, local_problem_receipt__view},
     relationship::character_kinship,
     settlement_population::{settlement_resident_presence, settlement_resident_profile},
@@ -77,6 +79,743 @@ pub struct OutbreakSourcePresenceSpan {
     pub source_place_id: String,
     pub started_at: u64,
     pub ended_at: Option<u64>,
+}
+
+/// Private material truth for one ordinary collectible water source.
+#[derive(Clone, Debug)]
+#[table(accessor = water_material_lot)]
+pub struct WaterMaterialLot {
+    #[primary_key]
+    pub id: u64,
+    #[unique]
+    pub source_fixture_id: String,
+    pub outbreak_case_id: String,
+    pub liquid_item_id: String,
+    pub concentration_anchor: f32,
+    pub growth_per_hour: f32,
+    pub anchor_minute: u64,
+}
+
+/// Private fixture stock. Public views expose neither contamination nor its
+/// relationship to an outbreak.
+#[derive(Clone, Debug)]
+#[table(accessor = outbreak_water_source)]
+pub struct OutbreakWaterSource {
+    #[primary_key]
+    pub fixture_id: String,
+    #[unique]
+    pub material_lot_id: u64,
+    pub available_ml: u64,
+    pub revision: u64,
+    pub disabled_at: Option<u64>,
+}
+
+/// Private immutable output identity for one successful fixture draw.
+#[derive(Clone, Debug)]
+#[table(accessor = water_output_lot)]
+pub struct WaterOutputLot {
+    #[primary_key]
+    pub id: u64,
+    #[index(btree)]
+    pub container_object_id: u64,
+    pub source_material_lot_id: u64,
+    pub amount_ml: u64,
+    pub contaminant_load_microunits: u64,
+    pub concentration_anchor: f32,
+    pub growth_per_hour: f32,
+    pub anchor_minute: u64,
+}
+
+/// Private exact material contributions in containers and legacy water pools.
+#[derive(Clone, Debug)]
+#[table(accessor = water_holding_contribution)]
+pub struct WaterHoldingContribution {
+    #[primary_key]
+    pub id: String,
+    #[index(btree)]
+    pub holding_key: String,
+    pub material_lot_id: u64,
+    pub amount_microliters: u64,
+    pub contaminant_load_microunits: u64,
+    pub collected_at: u64,
+}
+
+fn water_holding_key(kind: &str, id: &str) -> String {
+    format!("{kind}:{id}")
+}
+
+fn water_holding_contribution_id(kind: &str, id: &str, material_lot_id: u64) -> String {
+    format!("{}:{material_lot_id}", water_holding_key(kind, id))
+}
+
+pub(crate) fn delete_water_holding_contributions(ctx: &ReducerContext, kind: &str, id: &str) {
+    let key = water_holding_key(kind, id);
+    for row in ctx
+        .db
+        .water_holding_contribution()
+        .holding_key()
+        .filter(&key)
+        .collect::<Vec<_>>()
+    {
+        ctx.db.water_holding_contribution().id().delete(row.id);
+    }
+}
+
+pub(crate) fn move_water_holding_contributions(
+    ctx: &ReducerContext,
+    source_kind: &str,
+    source_id: &str,
+    destination_kind: &str,
+    destination_id: &str,
+    source_total_microliters: u64,
+    moved_water_microliters: u64,
+) -> Result<Vec<(u64, u64, u64)>, String> {
+    if moved_water_microliters > source_total_microliters {
+        return Err("Water material transfer exceeds public volume".into());
+    }
+    let source_key = water_holding_key(source_kind, source_id);
+    let mut rows = ctx
+        .db
+        .water_holding_contribution()
+        .holding_key()
+        .filter(&source_key)
+        .collect::<Vec<_>>();
+    rows.sort_by_key(|row| row.material_lot_id);
+    let mut moved = Vec::new();
+    for mut row in rows {
+        let amount_before = row.amount_microliters;
+        let load_before = row.contaminant_load_microunits;
+        let (amount, moved_load) = adventuresim_core::water_source::proportional_material_transfer(
+            source_total_microliters,
+            moved_water_microliters,
+            amount_before,
+            load_before,
+        )
+        .ok_or("Water material transfer exceeds public volume")?;
+        if amount == 0 {
+            continue;
+        }
+        row.amount_microliters -= amount;
+        row.contaminant_load_microunits -= moved_load;
+        if row.amount_microliters == 0 {
+            ctx.db.water_holding_contribution().id().delete(row.id);
+        } else {
+            ctx.db.water_holding_contribution().id().update(row.clone());
+        }
+        let destination_row_id =
+            water_holding_contribution_id(destination_kind, destination_id, row.material_lot_id);
+        if let Some(mut destination) = ctx
+            .db
+            .water_holding_contribution()
+            .id()
+            .find(&destination_row_id)
+        {
+            destination.amount_microliters = destination
+                .amount_microliters
+                .checked_add(amount)
+                .ok_or("Water material amount overflow")?;
+            destination.contaminant_load_microunits = destination
+                .contaminant_load_microunits
+                .checked_add(moved_load)
+                .ok_or("Water contaminant load overflow")?;
+            ctx.db.water_holding_contribution().id().update(destination);
+        } else {
+            ctx.db
+                .water_holding_contribution()
+                .insert(WaterHoldingContribution {
+                    id: destination_row_id,
+                    holding_key: water_holding_key(destination_kind, destination_id),
+                    material_lot_id: row.material_lot_id,
+                    amount_microliters: amount,
+                    contaminant_load_microunits: moved_load,
+                    collected_at: row.collected_at,
+                });
+        }
+        moved.push((row.material_lot_id, amount, moved_load));
+    }
+    Ok(moved)
+}
+
+pub(crate) fn consume_water_holding_contributions(
+    ctx: &ReducerContext,
+    source_kind: &str,
+    source_id: &str,
+    source_total_ml: f32,
+    consumed_water_ml: f32,
+    consumer_character_id: u64,
+) -> Result<(), String> {
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(consumer_character_id)
+        .map_or(0, |row| row.minutes);
+    let sink = format!("consume:{consumer_character_id}:{}", minute);
+    let moved = move_water_holding_contributions(
+        ctx,
+        source_kind,
+        source_id,
+        "consumed",
+        &sink,
+        (source_total_ml.max(0.0) * 1_000.0).round() as u64,
+        (consumed_water_ml.max(0.0) * 1_000.0).round() as u64,
+    )?;
+    delete_water_holding_contributions(ctx, "consumed", &sink);
+    if !moved.is_empty() {
+        expose_to_water_contributions(ctx, consumer_character_id, &moved)?;
+    }
+    Ok(())
+}
+
+fn expose_to_water_contributions(
+    ctx: &ReducerContext,
+    character_id: u64,
+    moved: &[(u64, u64, u64)],
+) -> Result<(), String> {
+    use sha2::{Digest as _, Sha256};
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |row| row.minutes);
+    let mut digest = Sha256::new();
+    let mut dose = 0.0_f32;
+    for &(output_lot_id, amount_microliters, anchor_load) in moved {
+        let lot = ctx
+            .db
+            .water_output_lot()
+            .id()
+            .find(output_lot_id)
+            .ok_or("Consumed water material provenance is incomplete")?;
+        digest.update(output_lot_id.to_le_bytes());
+        digest.update(amount_microliters.to_le_bytes());
+        digest.update(anchor_load.to_le_bytes());
+        let amount_ml = amount_microliters as f32 / 1_000.0;
+        let anchor_concentration = anchor_load as f32 / (amount_ml.max(0.001) * 1_000.0);
+        let current = adventuresim_core::food::contamination_at(
+            anchor_concentration,
+            lot.growth_per_hour,
+            minute.saturating_sub(lot.anchor_minute),
+        );
+        dose += current * amount_ml / 1_000.0;
+    }
+    let bytes: [u8; 32] = digest.finalize().into();
+    let contribution_digest = bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let carrier_id = u64::from_le_bytes(bytes[..8].try_into().unwrap()).max(1);
+    crate::food::expose_food_water_dysentery(
+        ctx,
+        character_id,
+        &format!("water:{minute}:{contribution_digest}"),
+        carrier_id,
+        minute,
+        dose,
+        &contribution_digest,
+        10_000,
+    )
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = water_collection_receipt)]
+pub struct WaterCollectionReceipt {
+    #[primary_key]
+    pub request_id: String,
+    pub character_id: u64,
+    pub capability_id: String,
+    pub capability_version: u32,
+    pub source_fixture_id: String,
+    pub container_object_id: u64,
+    pub material_lot_id: u64,
+    pub source_material_lot_id: u64,
+    pub source_revision_before: u64,
+    pub source_amount_before_ml: u64,
+    pub source_amount_after_ml: u64,
+    pub contaminant_load_microunits: u64,
+    pub amount_ml: u64,
+    pub collected_at: u64,
+}
+
+#[reducer]
+pub fn collect_fixture_water_into_container(
+    ctx: &ReducerContext,
+    request_id: String,
+    character_id: u64,
+    capability_id: String,
+    expected_capability_version: u32,
+    container_object_id: u64,
+    requested_ml: u64,
+) -> Result<(), String> {
+    use adventuresim_core::{
+        material::MaterialLotId,
+        physical_object::{CustodyCharacterId, PhysicalObjectId},
+        rights::RightsDecisionKind,
+        strategic_action::{
+            ActionCoordinates, ActionTarget, AuthoritativeSnapshot, AuthorityBinding, PlanInput,
+            PlanProvenance, PlanningOutcome, PublicRejection, RequestedDuration, SnapshotDigest,
+            SnapshotRevision, TimeBoundaries, ToolReference,
+        },
+        water_source::{
+            WaterCollectionAuthority, build_water_collection_plan, conserved_collection,
+            decide_public_water_collection, water_collection_question,
+            water_container_alter_question,
+        },
+    };
+    use sha2::{Digest as _, Sha256};
+
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    if request_id.is_empty() || request_id.len() > 192 || requested_ml == 0 {
+        return Err("Invalid water collection request".into());
+    }
+    if let Some(existing) = ctx
+        .db
+        .water_collection_receipt()
+        .request_id()
+        .find(&request_id)
+    {
+        return if existing.character_id == character_id
+            && existing.capability_id == capability_id
+            && existing.capability_version == expected_capability_version
+            && existing.container_object_id == container_object_id
+            && existing.amount_ml == requested_ml
+        {
+            Ok(())
+        } else {
+            Err("Water collection request conflicts with an earlier action".into())
+        };
+    }
+    let capability = ctx
+        .db
+        .investigation_action_capability()
+        .id()
+        .find(&capability_id)
+        .filter(|capability| {
+            capability.owner_character_id == character_id
+                && capability.active
+                && capability.version == expected_capability_version
+                && capability.provenance_kind == "generated"
+                && capability.target_kind == "site"
+        })
+        .ok_or("Water collection action is unavailable")?;
+    let authority = ctx
+        .db
+        .outbreak_authority()
+        .case_id()
+        .find(&capability.generated_case_id)
+        .ok_or("Water collection action is unavailable")?;
+    let source_fixture_id = authority.physical_source_fixture_id.clone();
+    let mut source = ctx
+        .db
+        .outbreak_water_source()
+        .fixture_id()
+        .find(&source_fixture_id)
+        .ok_or("Water collection is unavailable")?;
+    let lot = ctx
+        .db
+        .water_material_lot()
+        .id()
+        .find(&source.material_lot_id)
+        .ok_or("Water collection is unavailable")?;
+    if lot.outbreak_case_id != authority.case_id {
+        return Err("Water collection action is unavailable".into());
+    }
+    let fixture = parse_outbreak_source_fixture(&source_fixture_id, &authority.case_id)
+        .ok_or("Water collection is unavailable")?;
+    if fixture.place().case_site_id() != Some(capability.target_id.as_str()) {
+        return Err("Water collection action is unavailable".into());
+    }
+    let exact_presence = crate::investigation::character_case_site_id(ctx, character_id).as_deref()
+        == fixture.place().case_site_id();
+    let actor = crate::character::require_living_character(ctx, character_id)?;
+    let object = ctx
+        .db
+        .inventory_object()
+        .id()
+        .find(container_object_id)
+        .ok_or("Container object not found")?;
+    let resolved_custody =
+        crate::object_custody::require_actor_carried_object(ctx, &actor, &object);
+    let container_custody = resolved_custody.is_ok();
+    let mutable = crate::inventory_container::require_mutable(ctx, object.id).is_ok();
+    let capacity_available =
+        crate::inventory_container::require_container_capacity(ctx, object.id, requested_ml)
+            .is_ok();
+    let existing_liquid = ctx
+        .db
+        .container_liquid()
+        .container_object_id()
+        .find(object.id);
+    let material_compatible = existing_liquid
+        .as_ref()
+        .is_none_or(|liquid| liquid.liquid_item_id == crate::inventory_container::WATER_ITEM_ID);
+    let container_before = existing_liquid.as_ref().map_or(0, |liquid| liquid.water_ml);
+    let conserved = conserved_collection(source.available_ml, container_before, requested_ml);
+    let question = water_collection_question(
+        CustodyCharacterId::try_new(character_id)
+            .map_err(|_| "Water collector identity is malformed")?,
+        fixture.clone(),
+    )
+    .map_err(|_| "Water collection rights question is malformed")?;
+    let rights = decide_public_water_collection(
+        &question,
+        source.disabled_at.is_none(),
+        source.disabled_at.unwrap_or(lot.anchor_minute),
+    );
+    let container_question = water_container_alter_question(
+        CustodyCharacterId::try_new(character_id).map_err(|_| "Invalid water collector")?,
+        PhysicalObjectId::try_new(object.id).map_err(|_| "Invalid container identity")?,
+        fixture.place().clone(),
+    )
+    .map_err(|_| "Water collection is unavailable")?;
+    let container_rights =
+        decide_public_water_collection(&container_question, container_custody, lot.anchor_minute);
+    let mut hash = Sha256::new();
+    hash.update(b"water-collection-snapshot-v1");
+    hash.update(request_id.as_bytes());
+    hash.update(source_fixture_id.as_bytes());
+    hash.update(container_object_id.to_le_bytes());
+    hash.update(requested_ml.to_le_bytes());
+    hash.update(source.available_ml.to_le_bytes());
+    hash.update(container_before.to_le_bytes());
+    hash.update(lot.id.to_le_bytes());
+    let digest: [u8; 32] = hash.finalize().into();
+    let coordinates = ActionCoordinates::try_new(
+        CustodyCharacterId::try_new(character_id).map_err(|_| "Invalid water collector")?,
+        ActionTarget::Fixture(fixture.clone()),
+        fixture.place().clone(),
+        Some(fixture.clone()),
+        resolved_custody
+            .as_ref()
+            .ok()
+            .and_then(|custody| {
+                ToolReference::try_new(
+                    PhysicalObjectId::try_new(object.id).ok()?,
+                    custody.root.clone(),
+                )
+                .ok()
+            })
+            .into_iter()
+            .collect(),
+    )
+    .map_err(|_| "Water collection coordinates are inconsistent")?;
+    let snapshot = AuthoritativeSnapshot {
+        revision: SnapshotRevision(lot.anchor_minute),
+        digest: SnapshotDigest(digest),
+    };
+    let action_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |time| time.minutes);
+    let plan = build_water_collection_plan(WaterCollectionAuthority {
+        coordinates: coordinates.clone(),
+        plan: PlanInput {
+            coordinates,
+            provenance: PlanProvenance {
+                request_id: adventuresim_core::strategic_action::ActionRequestId::try_new(
+                    request_id.clone(),
+                )
+                .map_err(|_| "Invalid water request identity")?,
+                action_id: adventuresim_core::strategic_action::ActionDefinitionId::try_new(
+                    "collect-fixture-water",
+                )
+                .unwrap(),
+                input_digest: SnapshotDigest(digest),
+                authority_binding: AuthorityBinding(digest),
+            },
+            snapshot,
+            current_minute: action_minute,
+            duration: RequestedDuration::try_new(5).unwrap(),
+            boundaries: TimeBoundaries {
+                terminal_minute: None,
+                interruption: None,
+            },
+            requirements: Vec::new(),
+            sanitized_rejection: PublicRejection::Unavailable,
+        },
+        container_object_id: PhysicalObjectId::try_new(object.id)
+            .map_err(|_| "Container identity is malformed")?,
+        material_lot_id: MaterialLotId::try_new(lot.id)
+            .map_err(|_| "Water material identity is malformed")?,
+        amount_ml: requested_ml,
+        rights_allowed: rights.kind() == RightsDecisionKind::Allowed
+            && container_rights.kind() == RightsDecisionKind::Allowed,
+        exact_presence,
+        source_available: source.disabled_at.is_none() && conserved.is_some(),
+        container_custody,
+        mutable,
+        capacity_available,
+        material_compatible,
+    });
+    let PlanningOutcome::Ready(plan) = plan else {
+        return Err("Water collection is unavailable".into());
+    };
+    let output_lot_id = water_output_lot_id(&request_id, lot.id, object.id);
+    if ctx.db.water_output_lot().id().find(output_lot_id).is_some() {
+        return Err("Water collection output identity conflicts".into());
+    }
+    crate::time::advance_character_time(ctx, character_id, plan.time().elapsed_minutes)?;
+    let (source_after, container_after) = conserved.unwrap();
+    let actor = crate::character::require_living_character(ctx, character_id)?;
+    if crate::investigation::character_case_site_id(ctx, character_id).as_deref()
+        != fixture.place().case_site_id()
+        || crate::object_custody::require_actor_carried_object(ctx, &actor, &object).is_err()
+        || crate::inventory_container::require_mutable(ctx, object.id).is_err()
+        || crate::inventory_container::require_container_capacity(ctx, object.id, requested_ml)
+            .is_err()
+        || ctx
+            .db
+            .outbreak_water_source()
+            .fixture_id()
+            .find(&source_fixture_id)
+            .is_none_or(|current| {
+                current.available_ml != source.available_ml
+                    || current.revision != source.revision
+                    || current.material_lot_id != source.material_lot_id
+                    || current.disabled_at.is_some()
+            })
+        || ctx
+            .db
+            .water_material_lot()
+            .id()
+            .find(lot.id)
+            .is_none_or(|current| {
+                current.source_fixture_id != lot.source_fixture_id
+                    || current.outbreak_case_id != lot.outbreak_case_id
+                    || current.concentration_anchor != lot.concentration_anchor
+                    || current.growth_per_hour != lot.growth_per_hour
+                    || current.anchor_minute != lot.anchor_minute
+            })
+        || ctx
+            .db
+            .investigation_action_capability()
+            .id()
+            .find(&capability_id)
+            .is_none_or(|current| {
+                current.owner_character_id != character_id
+                    || !current.active
+                    || current.version != expected_capability_version
+                    || current.generated_case_id != authority.case_id
+                    || current.target_id != capability.target_id
+            })
+        || ctx
+            .db
+            .container_liquid()
+            .container_object_id()
+            .find(object.id)
+            .map(|liquid| (liquid.liquid_item_id, liquid.water_ml))
+            != existing_liquid
+                .as_ref()
+                .map(|liquid| (liquid.liquid_item_id.clone(), liquid.water_ml))
+    {
+        return Err("Water collection is unavailable".into());
+    }
+    let source_before = source.available_ml;
+    let source_revision_before = source.revision;
+    let current_concentration = adventuresim_core::food::contamination_at(
+        lot.concentration_anchor,
+        lot.growth_per_hour,
+        plan.time().end_minute.saturating_sub(lot.anchor_minute),
+    );
+    let contaminant_load_microunits =
+        (current_concentration.max(0.0) * requested_ml as f32 * 1_000.0).round() as u64;
+    source.available_ml = source_after;
+    source.revision = source
+        .revision
+        .checked_add(1)
+        .ok_or("Water source revision overflow")?;
+    ctx.db.outbreak_water_source().fixture_id().update(source);
+    if let Some(mut liquid) = existing_liquid {
+        liquid.water_ml = container_after;
+        ctx.db
+            .container_liquid()
+            .container_object_id()
+            .update(liquid);
+    } else {
+        ctx.db.container_liquid().insert(crate::ContainerLiquid {
+            container_object_id: object.id,
+            liquid_item_id: crate::inventory_container::WATER_ITEM_ID.into(),
+            water_ml: container_after,
+        });
+    }
+    ctx.db
+        .water_holding_contribution()
+        .insert(WaterHoldingContribution {
+            id: water_holding_contribution_id("container", &object.id.to_string(), output_lot_id),
+            holding_key: water_holding_key("container", &object.id.to_string()),
+            material_lot_id: output_lot_id,
+            amount_microliters: requested_ml.saturating_mul(1_000),
+            contaminant_load_microunits,
+            collected_at: plan.time().end_minute,
+        });
+    ctx.db.water_output_lot().insert(WaterOutputLot {
+        id: output_lot_id,
+        container_object_id: object.id,
+        source_material_lot_id: lot.id,
+        amount_ml: requested_ml,
+        contaminant_load_microunits,
+        concentration_anchor: current_concentration,
+        growth_per_hour: lot.growth_per_hour,
+        anchor_minute: plan.time().end_minute,
+    });
+    ctx.db
+        .water_collection_receipt()
+        .insert(WaterCollectionReceipt {
+            request_id,
+            character_id,
+            capability_id,
+            capability_version: expected_capability_version,
+            source_fixture_id,
+            container_object_id: object.id,
+            material_lot_id: output_lot_id,
+            source_material_lot_id: lot.id,
+            source_revision_before,
+            source_amount_before_ml: source_before,
+            source_amount_after_ml: source_after,
+            contaminant_load_microunits,
+            amount_ml: requested_ml,
+            collected_at: plan.time().end_minute,
+        });
+    Ok(())
+}
+
+pub(crate) fn contained_water_contamination(
+    ctx: &ReducerContext,
+    container_object_id: u64,
+    minute: u64,
+) -> Result<Vec<(u64, f32, f32, u64)>, String> {
+    water_holding_contamination(
+        ctx,
+        "container",
+        &container_object_id.to_string(),
+        ctx.db
+            .container_liquid()
+            .container_object_id()
+            .find(container_object_id)
+            .map_or(0, |liquid| liquid.water_ml.saturating_mul(1_000)),
+        u64::MAX,
+        minute,
+    )
+}
+
+pub(crate) fn water_holding_contamination(
+    ctx: &ReducerContext,
+    kind: &str,
+    id: &str,
+    source_total_microliters: u64,
+    moved_microliters: u64,
+    minute: u64,
+) -> Result<Vec<(u64, f32, f32, u64)>, String> {
+    let key = water_holding_key(kind, id);
+    let mut contributions = ctx
+        .db
+        .water_holding_contribution()
+        .holding_key()
+        .filter(&key)
+        .collect::<Vec<_>>();
+    contributions.sort_by_key(|row| row.material_lot_id);
+    let mut result = Vec::new();
+    for contribution in contributions {
+        let lot = ctx
+            .db
+            .water_output_lot()
+            .id()
+            .find(contribution.material_lot_id)
+            .ok_or("Contained water material provenance is incomplete")?;
+        if lot.id != contribution.material_lot_id {
+            return Err("Contained water material provenance conflicts".into());
+        }
+        if contribution.amount_microliters == 0 {
+            return Err("Contained water material has zero measure".into());
+        }
+        let (amount_microliters, selected_load) =
+            adventuresim_core::water_source::proportional_material_transfer(
+                source_total_microliters,
+                moved_microliters.min(source_total_microliters),
+                contribution.amount_microliters,
+                contribution.contaminant_load_microunits,
+            )
+            .ok_or("Water material preview exceeds public volume")?;
+        if amount_microliters == 0 {
+            continue;
+        }
+        let amount_ml = amount_microliters as f32 / 1_000.0;
+        let held_anchor_concentration = selected_load as f32 / (amount_ml as f32 * 1_000.0);
+        let current = adventuresim_core::food::contamination_at(
+            held_anchor_concentration,
+            lot.growth_per_hour,
+            minute.saturating_sub(lot.anchor_minute),
+        );
+        result.push((lot.id, current, lot.growth_per_hour, amount_microliters));
+    }
+    result.sort_by_key(|row| row.0);
+    Ok(result)
+}
+
+pub(crate) fn source_material_knowledge_provenance(
+    ctx: &ReducerContext,
+    case_id: &str,
+    site_id: &str,
+) -> Result<Option<String>, String> {
+    let Some(authority) = ctx
+        .db
+        .outbreak_authority()
+        .case_id()
+        .find(&case_id.to_owned())
+    else {
+        return Ok(None);
+    };
+    let outbreak_source: adventuresim_core::quest_generation::OutbreakSource =
+        serde_json::from_str(&authority.source_json)
+            .map_err(|_| "Generated outbreak source authority is malformed")?;
+    if !matches!(
+        outbreak_source,
+        adventuresim_core::quest_generation::OutbreakSource::Sanitation {
+            practice:
+                adventuresim_core::quest_generation::OutbreakSanitationPractice::ContaminatedWell
+        }
+    ) {
+        return Ok(None);
+    }
+    let fixture = parse_outbreak_source_fixture(&authority.physical_source_fixture_id, case_id)
+        .ok_or("Generated outbreak source fixture is malformed")?;
+    if fixture.place().case_site_id() != Some(site_id) {
+        return Ok(None);
+    }
+    let source = ctx
+        .db
+        .outbreak_water_source()
+        .fixture_id()
+        .find(&authority.physical_source_fixture_id)
+        .ok_or("Generated outbreak water material is missing")?;
+    let lot = ctx
+        .db
+        .water_material_lot()
+        .id()
+        .find(source.material_lot_id)
+        .ok_or("Generated outbreak water material is missing")?;
+    if lot.source_fixture_id != authority.physical_source_fixture_id
+        || lot.outbreak_case_id != authority.case_id
+    {
+        return Err("Generated outbreak water material conflicts".into());
+    }
+    use sha2::Digest as _;
+    let digest: [u8; 32] = sha2::Sha256::digest(
+        format!(
+            "{}:{}",
+            authority.physical_source_fixture_id, source.material_lot_id
+        )
+        .as_bytes(),
+    )
+    .into();
+    let short = digest[..16]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    Ok(Some(format!("source-material:{short}")))
 }
 
 /// Case-site Patient rows are visible only to a party whose leader has learned
@@ -285,6 +1024,23 @@ fn outbreak_source_fixture(case_id: &str, site_id: &str) -> Result<StrategicFixt
     .map_err(|_| "Outbreak source fixture identity is malformed".into())
 }
 
+fn water_material_lot_id(case_id: &str) -> u64 {
+    use sha2::{Digest as _, Sha256};
+    let digest = Sha256::digest(format!("outbreak-water-material-v1\0{case_id}").as_bytes());
+    u64::from_le_bytes(digest[..8].try_into().unwrap()).max(1)
+}
+
+fn water_output_lot_id(request_id: &str, source_lot_id: u64, container_object_id: u64) -> u64 {
+    use sha2::Digest as _;
+    let mut hash = sha2::Sha256::new();
+    hash.update(b"water-output-lot-v1");
+    hash.update(request_id.as_bytes());
+    hash.update(source_lot_id.to_le_bytes());
+    hash.update(container_object_id.to_le_bytes());
+    let bytes: [u8; 32] = hash.finalize().into();
+    u64::from_le_bytes(bytes[..8].try_into().expect("eight bytes")).max(1)
+}
+
 fn parse_outbreak_source_fixture(value: &str, case_id: &str) -> Option<StrategicFixtureId> {
     let fixture = StrategicFixtureId::from_str(value).ok()?;
     (fixture.outbreak_id() == Some(case_id)).then_some(fixture)
@@ -358,6 +1114,32 @@ pub(crate) fn materialize_generated_outbreak(
                             && episode.contracted_at == exposure.exposed_at
                     })
         });
+        let expects_water = outbreak.disease == adventuresim_core::disease::DiseaseId::Dysentery
+            && matches!(
+            outbreak.source,
+            adventuresim_core::quest_generation::OutbreakSource::Sanitation {
+                practice: adventuresim_core::quest_generation::OutbreakSanitationPractice::ContaminatedWell
+            }
+        );
+        let material_lot_id = water_material_lot_id(&generated.canonical_case_id);
+        let exact_water = ctx
+            .db
+            .outbreak_water_source()
+            .fixture_id()
+            .find(&physical_source_fixture.to_string())
+            .is_some_and(|source| {
+                source.material_lot_id == material_lot_id
+                    && ctx
+                        .db
+                        .water_material_lot()
+                        .id()
+                        .find(&source.material_lot_id)
+                        .is_some_and(|lot| {
+                            lot.source_fixture_id == source.fixture_id
+                                && lot.outbreak_case_id == generated.canonical_case_id
+                                && lot.liquid_item_id == crate::inventory_container::WATER_ITEM_ID
+                        })
+            });
         return if existing.problem_id == generated.problem_id
             && existing.settlement_id == settlement_id
             && existing.disease_id == disease_id
@@ -373,6 +1155,7 @@ pub(crate) fn materialize_generated_outbreak(
             && existing.remediation_id == exact_remediation_id
             && existing.remediation_json == remediation_json
             && exact_patients
+            && exact_water == expects_water
         {
             Ok(())
         } else {
@@ -408,6 +1191,34 @@ pub(crate) fn materialize_generated_outbreak(
         remediated_by_party_id: None,
         remediation_source_id: None,
     });
+
+    if outbreak.disease == adventuresim_core::disease::DiseaseId::Dysentery
+        && matches!(
+        outbreak.source,
+        adventuresim_core::quest_generation::OutbreakSource::Sanitation {
+            practice:
+                adventuresim_core::quest_generation::OutbreakSanitationPractice::ContaminatedWell
+        }
+    ) {
+        let fixture_id = physical_source_fixture.to_string();
+        let material_lot_id = water_material_lot_id(&generated.canonical_case_id);
+        ctx.db.water_material_lot().insert(WaterMaterialLot {
+            id: material_lot_id.clone(),
+            source_fixture_id: fixture_id.clone(),
+            outbreak_case_id: generated.canonical_case_id.clone(),
+            liquid_item_id: crate::inventory_container::WATER_ITEM_ID.into(),
+            concentration_anchor: 12.0,
+            growth_per_hour: 0.0,
+            anchor_minute: now_minute,
+        });
+        ctx.db.outbreak_water_source().insert(OutbreakWaterSource {
+            fixture_id,
+            material_lot_id,
+            available_ml: 500_000,
+            revision: 1,
+            disabled_at: None,
+        });
+    }
 
     for exposure in &outbreak.exposure_chronology {
         if ctx
@@ -680,19 +1491,67 @@ pub(crate) fn commit_source_remediation(
     if authority.source_kind == "threat_vector" {
         return Err("A carrier outbreak must be remediated through its hostile outcome".into());
     }
+    let outbreak_source: adventuresim_core::quest_generation::OutbreakSource =
+        serde_json::from_str(&authority.source_json)
+            .map_err(|_| "Outbreak source authority is malformed")?;
+    let expects_water = authority.disease_id == "dysentery"
+        && matches!(
+        outbreak_source,
+        adventuresim_core::quest_generation::OutbreakSource::Sanitation {
+            practice:
+                adventuresim_core::quest_generation::OutbreakSanitationPractice::ContaminatedWell
+        }
+    );
+    let mut water_source = ctx
+        .db
+        .outbreak_water_source()
+        .fixture_id()
+        .find(&authority.physical_source_fixture_id);
+    if expects_water {
+        let source = water_source
+            .as_ref()
+            .ok_or("Outbreak water source authority is missing")?;
+        let lot = ctx
+            .db
+            .water_material_lot()
+            .id()
+            .find(source.material_lot_id)
+            .ok_or("Outbreak water material authority is missing")?;
+        if lot.source_fixture_id != authority.physical_source_fixture_id
+            || lot.outbreak_case_id != authority.case_id
+        {
+            return Err("Outbreak water material authority conflicts".into());
+        }
+    } else if water_source.is_some() {
+        return Err("Outbreak source has unexpected water authority".into());
+    }
     if authority.remediated_at.is_some() {
         return if authority.remediation_source_id.as_deref() == Some(source_id)
             && authority.remediated_by_party_id.as_deref() == Some(party_id)
+            && authority.remediated_at == Some(at_minute)
+            && water_source
+                .as_ref()
+                .is_none_or(|source| source.disabled_at == authority.remediated_at)
         {
             Ok(())
         } else {
             Err("Outbreak source was already remediated by different authority".into())
         };
     }
+    if water_source
+        .as_ref()
+        .is_some_and(|source| source.disabled_at.is_some())
+    {
+        return Err("Outbreak water source state conflicts with remediation".into());
+    }
     authority.remediated_at = Some(at_minute);
     authority.remediated_by_party_id = Some(party_id.into());
     authority.remediation_source_id = Some(source_id.into());
     ctx.db.outbreak_authority().case_id().update(authority);
+    if let Some(mut source) = water_source.take() {
+        source.disabled_at = Some(at_minute);
+        ctx.db.outbreak_water_source().fixture_id().update(source);
+    }
     deactivate_outbreak_patient_contexts(ctx, case_id, at_minute);
     Ok(())
 }
@@ -771,6 +1630,44 @@ pub(crate) fn patient_presence_suppression_at(
         aggregate.health_suppressed |= suppression.health_suppressed;
     }
     Some(aggregate)
+}
+
+#[cfg(test)]
+mod water_integration_contract_tests {
+    #[test]
+    fn collection_input_is_observer_safe_and_replay_precedes_private_reads() {
+        let source = include_str!("outbreak.rs");
+        let reducer = source
+            .split("pub fn collect_fixture_water_into_container")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn contained_water_contamination")
+            .next()
+            .unwrap();
+        let signature = reducer.split(") -> Result<(), String>").next().unwrap();
+        assert!(signature.contains("capability_id: String"));
+        assert!(signature.contains("expected_capability_version: u32"));
+        assert!(!signature.contains("source_fixture_id"));
+        assert!(
+            reducer.find("water_collection_receipt()").unwrap()
+                < reducer.find("outbreak_water_source()").unwrap()
+        );
+    }
+
+    #[test]
+    fn private_truth_does_not_control_public_fixture_handling() {
+        let container = include_str!("inventory_container.rs");
+        let public_row = container
+            .split("pub struct ContainerLiquid")
+            .nth(1)
+            .unwrap()
+            .split('}')
+            .next()
+            .unwrap();
+        assert!(!public_row.contains("fixture_drawn"));
+        assert!(!public_row.contains("material_lot"));
+        assert!(!public_row.contains("contamin"));
+    }
 }
 
 /// Release a recovered or dead patient from case-site presentation whenever

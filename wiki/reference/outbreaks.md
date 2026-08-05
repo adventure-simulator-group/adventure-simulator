@@ -60,6 +60,34 @@ defeating/driving off the exact carrier group records `SourceRemediated` only
 when it matches private outbreak authority. Diagnosis or an unrelated battle
 cannot complete the case.
 
+### Fixture-drawn water
+
+A generated dysentery outbreak may materialize its ordinary source-site fixture
+as a finite water source. Collection is an ordinary five-minute strategic
+action issued through an observer-owned investigation capability: the client
+never supplies or receives the private case, fixture, source-lot, or contaminant
+identity. Fixture use and alteration of the carried container are authorized
+separately, and volume plus microbial load are conserved through an immutable
+draw receipt and a distinct output material lot.
+
+Containers disclose only the coarse rule that their water was fixture-drawn;
+clean and contaminated fixture water have the same actions, errors, timing, and
+public shape. In this bounded integration, fixture-drawn water cannot be mixed
+with or poured into legacy pooled water and cannot satisfy ordinary hydration.
+It must be cooked in the existing fireplace flow. Cooking consumes that exact
+container lot, applies the existing method/doneness heat kill, and carries its
+private contribution into the resulting `FoodContamination`. Food splitting,
+party transfer, eating, protection, and dysentery acquisition continue through
+their existing systems. A successful infection is recorded as a private typed
+world event at the eater's actual strategic place.
+
+Closing the well disables only future draws. Water already collected, food
+already cooked, infection episodes, and evidence already learned remain
+unchanged. Direct source inspection records a bounded digest as ordinary
+observer-owned evidence provenance, allowing testimony, physiology, and
+material investigation to converge without exposing the private outbreak
+truth or maintaining a second disease state.
+
 Fantastic diseases use the same physical meters and transmission machinery as
 ordinary disease. Their unusually clean traditional profiles make Physiology
 more useful without making humour theory reliable for ordinary illness. See
@@ -80,7 +108,7 @@ when promoting replay candidates.
 ## Development demo
 
 Run the single isolated strategic scenario-gallery command, then select the
-**Undiscovered outbreak** scenario character. Use browser-local developer mode
+**Discovered outbreak** scenario character. Use browser-local developer mode
 to expose the gallery and inspector. Bootstrap has already raised useful
 investigation skills, supplied a surgery kit, and materialized one deterministic
 generated outbreak in a scenario-owned settlement, with private progressing patients and an

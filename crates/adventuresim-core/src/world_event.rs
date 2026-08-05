@@ -20,6 +20,9 @@ pub enum WorldEventSource {
         finale_id: String,
         source_id: String,
     },
+    FoodWaterExposure {
+        consumption_id: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -38,6 +41,7 @@ pub enum WorldEventSubject {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum WorldEventPlace {
     Settlement { settlement_id: String },
+    Strategic { place_id: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -48,6 +52,16 @@ pub enum WorldEventPayloadRef {
     GeneratedCaseResolution {
         canonical_case_id: String,
         finale_id: String,
+    },
+    FoodWaterInfection {
+        carrier_id: u64,
+        contribution_digest: String,
+        dose_microunits: u64,
+        protected_dose_microunits: u64,
+        immunity_milli: u32,
+        prior_immunity_milli: u32,
+        consumed_fraction_bps: u16,
+        disease_id: String,
     },
 }
 
@@ -96,6 +110,29 @@ pub enum WorldEventConsequence {
         party_id: String,
         minute: u64,
     },
+    InfectionEpisode {
+        episode_id: u64,
+        character_id: u64,
+        disease_id: String,
+        contracted_at: u64,
+        contribution_digest: String,
+    },
+}
+
+pub fn plan_food_water_infection(
+    episode_id: u64,
+    character_id: u64,
+    disease_id: &str,
+    contracted_at: u64,
+    contribution_digest: &str,
+) -> Vec<WorldEventConsequence> {
+    vec![WorldEventConsequence::InfectionEpisode {
+        episode_id,
+        character_id,
+        disease_id: disease_id.into(),
+        contracted_at,
+        contribution_digest: contribution_digest.into(),
+    }]
 }
 
 pub fn plan_noticed_illegal_foraging(
@@ -217,6 +254,7 @@ impl WorldEventEnvelope {
                 validate_id(finale_id)?;
                 validate_id(source_id)?;
             }
+            WorldEventSource::FoodWaterExposure { consumption_id } => validate_id(consumption_id)?,
         }
         match &self.actor {
             WorldEventActor::Character { character_id } if *character_id == 0 => {
@@ -247,8 +285,10 @@ impl WorldEventEnvelope {
             }
             prior = Some(subject);
         }
-        let WorldEventPlace::Settlement { settlement_id } = &self.place;
-        validate_id(settlement_id)?;
+        match &self.place {
+            WorldEventPlace::Settlement { settlement_id } => validate_id(settlement_id)?,
+            WorldEventPlace::Strategic { place_id } => validate_id(place_id)?,
+        }
         match (&self.source, &self.actor, &self.payload) {
             (
                 WorldEventSource::ForagingAction { request_id: source },
@@ -270,6 +310,28 @@ impl WorldEventEnvelope {
                 && self.subjects.iter().any(|subject| matches!(subject,
                     WorldEventSubject::Case { canonical_case_id: subject_id } if subject_id == canonical_case_id
                 )) => {}
+            (
+                WorldEventSource::FoodWaterExposure { .. },
+                WorldEventActor::Character { character_id },
+                WorldEventPayloadRef::FoodWaterInfection {
+                    carrier_id,
+                    contribution_digest,
+                    dose_microunits,
+                    protected_dose_microunits,
+                    immunity_milli,
+                    prior_immunity_milli,
+                    consumed_fraction_bps,
+                    disease_id,
+                },
+            ) if *carrier_id != 0
+                && *dose_microunits != 0
+                && *protected_dose_microunits <= *dose_microunits
+                && *immunity_milli <= 100_000
+                && *prior_immunity_milli <= 100_000
+                && *consumed_fraction_bps <= 10_000
+                && validate_id(contribution_digest).is_ok()
+                && validate_id(disease_id).is_ok()
+                && self.subjects == [WorldEventSubject::Character { character_id: *character_id }] => {}
             _ => return Err(WorldEventError::InconsistentDomainReference),
         }
         Ok(())

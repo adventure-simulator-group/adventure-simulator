@@ -500,6 +500,14 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     },
                 ) => true,
                 (
+                    OutbreakSource::Sanitation {
+                        practice: OutbreakSanitationPractice::ContaminatedWell,
+                    },
+                    OutbreakRemediation::Sanitation {
+                        action: OutbreakSanitationAction::CloseWell,
+                    },
+                ) => true,
+                (
                     OutbreakSource::Environmental { reservoir: left },
                     OutbreakRemediation::RemoveEnvironmentalSource { reservoir: right },
                 ) if left == right => true,

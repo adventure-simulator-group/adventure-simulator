@@ -37,7 +37,8 @@
     {"id":"riverside","label":"a secluded bend in the river","terrain":"road","habitat":"open"},
     {"id":"graveyard","label":"the old graveyard","terrain":"settlement","habitat":"graveyard"},
     {"id":"roadside","label":"a lonely stretch of road","terrain":"road","habitat":"road"},
-    {"id":"abandoned_farm","label":"an abandoned farm","terrain":"forest","habitat":"ruin"}
+    {"id":"abandoned_farm","label":"an abandoned farm","terrain":"forest","habitat":"ruin"},
+    {"id":"well","label":"the settlement well","terrain":"settlement","habitat":"open"}
   ],
   "descriptions": [
     {"id":"armed_people","text":"a group of armed figures"},{"id":"small_upright_figures","text":"several small figures moving upright"},{"id":"large_upright_beast","text":"a large shape that seemed to stand upright"},{"id":"gaunt_human","text":"a gaunt, human-shaped figure"},{"id":"walking_dead","text":"a person moving with a stiff, shambling gait"},{"id":"large_animal","text":"the silhouette of a large animal"},{"id":"doglike_beast","text":"a low, dog-shaped beast"},{"id":"unseen_night_visitor","text":"something hidden in the darkness"}

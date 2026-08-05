@@ -322,6 +322,22 @@ pub fn cooked_contamination(current: f32, method: CookingMethod) -> f32 {
         .min(MAX_CONTAMINATION)
 }
 
+pub fn scale_contamination_contributions(
+    raw_concentration: f32,
+    surviving_concentration: f32,
+    contribution_loads: &[f32],
+) -> Vec<f32> {
+    let survival = if raw_concentration > 0.0 {
+        (surviving_concentration / raw_concentration).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    contribution_loads
+        .iter()
+        .map(|load| load * survival)
+        .collect()
+}
+
 pub fn cooked_growth_per_hour(input_growth: &[f32], method: CookingMethod) -> f32 {
     let slowest = input_growth
         .iter()
@@ -802,5 +818,14 @@ mod tests {
         assert_eq!(stew, 0.02);
         assert_eq!(microbial_concentration(load, 0.0), 0.0);
         assert_eq!(microbial_concentration(f32::NAN, 1.0), 0.0);
+    }
+
+    #[test]
+    fn cooked_contribution_loads_use_the_same_geometric_survival_factor() {
+        let raw = 12.0;
+        let surviving = partially_cooked_contamination(raw, CookingMethod::Stew, 0.5);
+        let scaled = scale_contamination_contributions(raw, surviving, &[8.0, 4.0]);
+        assert!((scaled.iter().sum::<f32>() - surviving).abs() < 1e-5);
+        assert!((scaled[0] / scaled[1] - 2.0).abs() < 1e-5);
     }
 }
