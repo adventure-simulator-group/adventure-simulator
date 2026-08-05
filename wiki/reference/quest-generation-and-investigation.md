@@ -763,12 +763,52 @@ text use the site's safe generated name; opaque site IDs remain navigation
 authority and are not shown as destination labels. Watches, patrols, and
 ambush preparation remain strategic actions; they do not persist tactical tick
 state and cannot fabricate a combat result.
+After caller authorization, an exact existing attempt receipt is terminal
+before living-character, party, or current leader checks; death and party
+changes cannot make a committed request spend time again. A terminal injury or
+disease clip writes an interrupted receipt in the same transaction as its time
+effects. That receipt records no successful resolution, consequence, lead, or
+uncertainty change. Its capability revision advances so a surviving observer
+may make a distinct later request, while an exact retry of the clipped version
+returns before interval effects.
+Interrupted receipts and malformed private receipt payloads break the
+contiguous completed-failure chain and grant no bounded-progress credit.
 Before spending time the reducer revalidates party readiness, co-location,
 journey and camp state, unresolved encounters, predecessor knowledge,
 position, and typed prerequisites. Party clocks synchronize first, with night
 defined as before 06:00 or from 20:00 onward. Browser estimates are broad
 method-derived duration ranges; exact terrain, needs, fatigue, success, and
 risk remain authoritative.
+
+Exact-site attempts additionally pass through the shared strategic-action
+planner using the canonical case-site place, the current opaque capability
+revision, a private leader-or-approval rights decision, and a reducer-authored
+snapshot/binding. The reducer replans at the final mutation boundary and
+applies only the closed investigation interval and resolution effects. This
+does not change replay receipts, deterministic formulas, mutation order, or
+the public action DTO. Area and route actions remain on their existing path
+until those domains have a canonical strategic-place identity; they must not
+invent a case-site identity merely to enter the planner.
+The rights provenance digest comes from that exact checked typed question
+(actor subject, investigation resource and operation, and exact place or
+explicit global jurisdiction), not from a parallel action tuple.
+
+The planner's participant boundary suppresses completion effects, while the
+domain interval effect intentionally retains the historical per-member full
+duration request. Injury or disease clipping can therefore leave unequal
+party clocks before the existing leadership/objective normalization. Changing
+that behavior requires a separate party-time contract rather than an adapter
+side effect.
+
+Evidence-custody rows have an observer-private knowledge adapter with typed
+subject, proposition, source, confidence, visibility, chronology, and initial
+revision. Its numeric record key is only a deterministic adapter key; the
+existing string primary key remains authoritative and adapters must reject a
+collision between distinct persisted IDs. This adds no public evidence fields
+and does not make hidden evidence authority sufficient proof by itself. Route
+eligibility hydrates the record against the observer's exact personal clock;
+malformed, future, cross-observer, or colliding records fail the entire check
+closed.
 
 Location is revalidated at execution, not merely at issuance. Contact actions
 use the referred NPC's current settlement and presence window (or the same

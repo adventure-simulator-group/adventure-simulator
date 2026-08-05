@@ -609,6 +609,11 @@ fn capability_has_live_pattern_support_reducer(
         &observer_case_id,
         &evidence_id,
         ctx.db
+            .character_time()
+            .character_id()
+            .find(capability.owner_character_id)
+            .map_or(0, |time| time.minutes),
+        ctx.db
             .investigation_evidence_knowledge()
             .owner_character_id()
             .filter(capability.owner_character_id),
