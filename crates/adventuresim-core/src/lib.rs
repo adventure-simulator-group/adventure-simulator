@@ -35,6 +35,7 @@ pub mod item_references;
 pub mod leadership;
 pub mod life_simulation;
 pub mod local_problem;
+pub mod material;
 pub mod mission;
 pub mod morale;
 pub mod npc_policy;
