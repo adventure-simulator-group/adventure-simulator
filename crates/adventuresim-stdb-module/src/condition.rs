@@ -647,11 +647,13 @@ fn apply_elapsed_needs_with_provision(
                 party.pooled_water_ml,
                 needs.carried_water_ml,
             );
+            let pooled_drunk = (pooled_drunk.max(0.0) * 1_000.0).floor() / 1_000.0;
             crate::outbreak::consume_water_holding_contributions(
                 ctx,
                 "party",
                 &party_id,
-                pooled_drunk.max(0.0).floor() as u64,
+                party.pooled_water_ml,
+                pooled_drunk,
                 character_id,
             )?;
             party.pooled_water_ml -= pooled_drunk;
@@ -669,11 +671,13 @@ fn apply_elapsed_needs_with_provision(
         let drunk = (-needs.water_balance_ml)
             .max(0.0)
             .min(needs.carried_water_ml);
+        let drunk = (drunk * 1_000.0).floor() / 1_000.0;
         crate::outbreak::consume_water_holding_contributions(
             ctx,
             "personal",
             &character_id.to_string(),
-            drunk.max(0.0).floor() as u64,
+            needs.carried_water_ml,
+            drunk,
             character_id,
         )?;
         needs.carried_water_ml -= drunk;

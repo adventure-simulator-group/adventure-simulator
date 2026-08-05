@@ -135,7 +135,7 @@ pub struct WaterHoldingContribution {
     #[index(btree)]
     pub holding_key: String,
     pub material_lot_id: u64,
-    pub amount_ml: u64,
+    pub amount_microliters: u64,
     pub contaminant_load_microunits: u64,
     pub collected_at: u64,
 }
@@ -167,8 +167,12 @@ pub(crate) fn move_water_holding_contributions(
     source_id: &str,
     destination_kind: &str,
     destination_id: &str,
-    moved_water_ml: u64,
+    source_total_microliters: u64,
+    moved_water_microliters: u64,
 ) -> Result<Vec<(u64, u64, u64)>, String> {
+    if moved_water_microliters > source_total_microliters {
+        return Err("Water material transfer exceeds public volume".into());
+    }
     let source_key = water_holding_key(source_kind, source_id);
     let mut rows = ctx
         .db
@@ -177,24 +181,23 @@ pub(crate) fn move_water_holding_contributions(
         .filter(&source_key)
         .collect::<Vec<_>>();
     rows.sort_by_key(|row| row.material_lot_id);
-    let mut remaining = moved_water_ml;
     let mut moved = Vec::new();
     for mut row in rows {
-        if remaining == 0 {
-            break;
-        }
-        let amount_before = row.amount_ml;
+        let amount_before = row.amount_microliters;
         let load_before = row.contaminant_load_microunits;
-        let amount = remaining.min(amount_before);
-        let moved_load = if amount == amount_before {
-            load_before
-        } else {
-            (u128::from(load_before) * u128::from(amount) / u128::from(amount_before)) as u64
-        };
-        remaining -= amount;
-        row.amount_ml -= amount;
+        let (amount, moved_load) = adventuresim_core::water_source::proportional_material_transfer(
+            source_total_microliters,
+            moved_water_microliters,
+            amount_before,
+            load_before,
+        )
+        .ok_or("Water material transfer exceeds public volume")?;
+        if amount == 0 {
+            continue;
+        }
+        row.amount_microliters -= amount;
         row.contaminant_load_microunits -= moved_load;
-        if row.amount_ml == 0 {
+        if row.amount_microliters == 0 {
             ctx.db.water_holding_contribution().id().delete(row.id);
         } else {
             ctx.db.water_holding_contribution().id().update(row.clone());
@@ -207,8 +210,8 @@ pub(crate) fn move_water_holding_contributions(
             .id()
             .find(&destination_row_id)
         {
-            destination.amount_ml = destination
-                .amount_ml
+            destination.amount_microliters = destination
+                .amount_microliters
                 .checked_add(amount)
                 .ok_or("Water material amount overflow")?;
             destination.contaminant_load_microunits = destination
@@ -223,7 +226,7 @@ pub(crate) fn move_water_holding_contributions(
                     id: destination_row_id,
                     holding_key: water_holding_key(destination_kind, destination_id),
                     material_lot_id: row.material_lot_id,
-                    amount_ml: amount,
+                    amount_microliters: amount,
                     contaminant_load_microunits: moved_load,
                     collected_at: row.collected_at,
                 });
@@ -237,7 +240,8 @@ pub(crate) fn consume_water_holding_contributions(
     ctx: &ReducerContext,
     source_kind: &str,
     source_id: &str,
-    consumed_water_ml: u64,
+    source_total_ml: f32,
+    consumed_water_ml: f32,
     consumer_character_id: u64,
 ) -> Result<(), String> {
     let minute = ctx
@@ -253,7 +257,8 @@ pub(crate) fn consume_water_holding_contributions(
         source_id,
         "consumed",
         &sink,
-        consumed_water_ml,
+        (source_total_ml.max(0.0) * 1_000.0).round() as u64,
+        (consumed_water_ml.max(0.0) * 1_000.0).round() as u64,
     )?;
     delete_water_holding_contributions(ctx, "consumed", &sink);
     if !moved.is_empty() {
@@ -276,7 +281,7 @@ fn expose_to_water_contributions(
         .map_or(0, |row| row.minutes);
     let mut digest = Sha256::new();
     let mut dose = 0.0_f32;
-    for &(output_lot_id, amount_ml, anchor_load) in moved {
+    for &(output_lot_id, amount_microliters, anchor_load) in moved {
         let lot = ctx
             .db
             .water_output_lot()
@@ -284,15 +289,16 @@ fn expose_to_water_contributions(
             .find(output_lot_id)
             .ok_or("Consumed water material provenance is incomplete")?;
         digest.update(output_lot_id.to_le_bytes());
-        digest.update(amount_ml.to_le_bytes());
+        digest.update(amount_microliters.to_le_bytes());
         digest.update(anchor_load.to_le_bytes());
-        let anchor_concentration = anchor_load as f32 / (amount_ml.max(1) as f32 * 1_000.0);
+        let amount_ml = amount_microliters as f32 / 1_000.0;
+        let anchor_concentration = anchor_load as f32 / (amount_ml.max(0.001) * 1_000.0);
         let current = adventuresim_core::food::contamination_at(
             anchor_concentration,
             lot.growth_per_hour,
             minute.saturating_sub(lot.anchor_minute),
         );
-        dose += current * amount_ml as f32 / 1_000.0;
+        dose += current * amount_ml / 1_000.0;
     }
     let bytes: [u8; 32] = digest.finalize().into();
     let contribution_digest = bytes
@@ -641,7 +647,7 @@ pub fn collect_fixture_water_into_container(
             id: water_holding_contribution_id("container", &object.id.to_string(), output_lot_id),
             holding_key: water_holding_key("container", &object.id.to_string()),
             material_lot_id: output_lot_id,
-            amount_ml: requested_ml,
+            amount_microliters: requested_ml.saturating_mul(1_000),
             contaminant_load_microunits,
             collected_at: plan.time().end_minute,
         });
@@ -681,14 +687,38 @@ pub(crate) fn contained_water_contamination(
     container_object_id: u64,
     minute: u64,
 ) -> Result<Vec<(u64, f32, f32, u64)>, String> {
-    let key = water_holding_key("container", &container_object_id.to_string());
-    let mut result = Vec::new();
-    for contribution in ctx
+    water_holding_contamination(
+        ctx,
+        "container",
+        &container_object_id.to_string(),
+        ctx.db
+            .container_liquid()
+            .container_object_id()
+            .find(container_object_id)
+            .map_or(0, |liquid| liquid.water_ml.saturating_mul(1_000)),
+        u64::MAX,
+        minute,
+    )
+}
+
+pub(crate) fn water_holding_contamination(
+    ctx: &ReducerContext,
+    kind: &str,
+    id: &str,
+    source_total_microliters: u64,
+    moved_microliters: u64,
+    minute: u64,
+) -> Result<Vec<(u64, f32, f32, u64)>, String> {
+    let key = water_holding_key(kind, id);
+    let mut contributions = ctx
         .db
         .water_holding_contribution()
         .holding_key()
         .filter(&key)
-    {
+        .collect::<Vec<_>>();
+    contributions.sort_by_key(|row| row.material_lot_id);
+    let mut result = Vec::new();
+    for contribution in contributions {
         let lot = ctx
             .db
             .water_output_lot()
@@ -698,17 +728,28 @@ pub(crate) fn contained_water_contamination(
         if lot.id != contribution.material_lot_id {
             return Err("Contained water material provenance conflicts".into());
         }
-        if contribution.amount_ml == 0 {
+        if contribution.amount_microliters == 0 {
             return Err("Contained water material has zero measure".into());
         }
-        let held_anchor_concentration = contribution.contaminant_load_microunits as f32
-            / (contribution.amount_ml as f32 * 1_000.0);
+        let (amount_microliters, selected_load) =
+            adventuresim_core::water_source::proportional_material_transfer(
+                source_total_microliters,
+                moved_microliters.min(source_total_microliters),
+                contribution.amount_microliters,
+                contribution.contaminant_load_microunits,
+            )
+            .ok_or("Water material preview exceeds public volume")?;
+        if amount_microliters == 0 {
+            continue;
+        }
+        let amount_ml = amount_microliters as f32 / 1_000.0;
+        let held_anchor_concentration = selected_load as f32 / (amount_ml as f32 * 1_000.0);
         let current = adventuresim_core::food::contamination_at(
             held_anchor_concentration,
             lot.growth_per_hour,
             minute.saturating_sub(lot.anchor_minute),
         );
-        result.push((lot.id, current, lot.growth_per_hour, contribution.amount_ml));
+        result.push((lot.id, current, lot.growth_per_hour, amount_microliters));
     }
     result.sort_by_key(|row| row.0);
     Ok(result)

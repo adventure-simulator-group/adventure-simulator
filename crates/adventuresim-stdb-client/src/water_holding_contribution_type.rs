@@ -10,7 +10,7 @@ pub struct WaterHoldingContribution {
     pub id: String,
     pub holding_key: String,
     pub material_lot_id: u64,
-    pub amount_ml: u64,
+    pub amount_microliters: u64,
     pub contaminant_load_microunits: u64,
     pub collected_at: u64,
 }
@@ -26,7 +26,7 @@ pub struct WaterHoldingContributionCols {
     pub id: __sdk::__query_builder::Col<WaterHoldingContribution, String>,
     pub holding_key: __sdk::__query_builder::Col<WaterHoldingContribution, String>,
     pub material_lot_id: __sdk::__query_builder::Col<WaterHoldingContribution, u64>,
-    pub amount_ml: __sdk::__query_builder::Col<WaterHoldingContribution, u64>,
+    pub amount_microliters: __sdk::__query_builder::Col<WaterHoldingContribution, u64>,
     pub contaminant_load_microunits: __sdk::__query_builder::Col<WaterHoldingContribution, u64>,
     pub collected_at: __sdk::__query_builder::Col<WaterHoldingContribution, u64>,
 }
@@ -38,7 +38,7 @@ impl __sdk::__query_builder::HasCols for WaterHoldingContribution {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             holding_key: __sdk::__query_builder::Col::new(table_name, "holding_key"),
             material_lot_id: __sdk::__query_builder::Col::new(table_name, "material_lot_id"),
-            amount_ml: __sdk::__query_builder::Col::new(table_name, "amount_ml"),
+            amount_microliters: __sdk::__query_builder::Col::new(table_name, "amount_microliters"),
             contaminant_load_microunits: __sdk::__query_builder::Col::new(
                 table_name,
                 "contaminant_load_microunits",

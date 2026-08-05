@@ -1054,7 +1054,8 @@ pub(crate) fn consume_contained_water(
             ctx,
             "container",
             &liquid.container_object_id.to_string(),
-            consumed,
+            liquid.water_ml as f32,
+            consumed as f32,
             consumer_character_id,
         )?;
         liquid.water_ml -= consumed;
@@ -1298,7 +1299,7 @@ pub fn pour_water_into_container(
     if requested_ml > available {
         return Err("Not enough carried water".into());
     }
-    match parent.location_kind.as_str() {
+    let source_total_ml = match parent.location_kind.as_str() {
         "personal" => {
             let mut row = ctx
                 .db
@@ -1306,8 +1307,10 @@ pub fn pour_water_into_container(
                 .character_id()
                 .find(character_id)
                 .ok_or("Character needs not initialized")?;
+            let total = row.carried_water_ml;
             row.carried_water_ml -= requested_ml as f32;
             ctx.db.character_needs().character_id().update(row);
+            total
         }
         "party" => {
             let mut row = ctx
@@ -1316,18 +1319,21 @@ pub fn pour_water_into_container(
                 .id()
                 .find(parent.location_owner.clone())
                 .ok_or("Party not found")?;
+            let total = row.pooled_water_ml;
             row.pooled_water_ml -= requested_ml as f32;
             ctx.db.party_authority().id().update(row);
+            total
         }
         _ => return Err("Cannot pour water into a container at this location".into()),
-    }
+    };
     crate::outbreak::move_water_holding_contributions(
         ctx,
         parent.location_kind.as_str(),
         &parent.location_owner,
         "container",
         &parent.id.to_string(),
-        requested_ml,
+        (source_total_ml * 1_000.0).round() as u64,
+        requested_ml.saturating_mul(1_000),
     )?;
     if let Some(mut liquid) = ctx
         .db
@@ -1441,7 +1447,8 @@ pub fn pour_water_out_of_container(
         &container_object_id.to_string(),
         destination_kind,
         &destination_id,
-        requested_ml,
+        liquid.water_ml.saturating_mul(1_000),
+        requested_ml.saturating_mul(1_000),
     )?;
     liquid.water_ml -= requested_ml;
     if liquid.water_ml == 0 {

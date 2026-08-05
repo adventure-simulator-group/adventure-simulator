@@ -3749,7 +3749,7 @@ fn add_fireplace_ingredients_at(
         })
         .filter(|liquid| liquid.liquid_item_id == crate::inventory_container::WATER_ITEM_ID)
         .map_or(0, |liquid| liquid.water_ml);
-    let contained_water_materials = match station.instrument_object_id {
+    let mut contained_water_materials = match station.instrument_object_id {
         Some(object_id) if contained_water_ml > 0 => {
             crate::outbreak::contained_water_contamination(ctx, object_id, minute)?
         }
@@ -3779,16 +3779,50 @@ fn add_fireplace_ingredients_at(
     if station.instrument_object_id.is_none() && pooled + needs.carried_water_ml < water_ml {
         return Err("Stew requires enough pooled or carried water".into());
     }
+    let pooled_water_used =
+        if station.instrument_object_id.is_none() && method == CookingMethod::Stew {
+            water_ml.min(pooled)
+        } else {
+            0.0
+        };
+    let personal_water_used =
+        if station.instrument_object_id.is_none() && method == CookingMethod::Stew {
+            water_ml - pooled_water_used
+        } else {
+            0.0
+        };
+    if let Some(party_id) = actor.party_id.as_deref()
+        && pooled_water_used > 0.0
+    {
+        contained_water_materials.extend(crate::outbreak::water_holding_contamination(
+            ctx,
+            "party",
+            party_id,
+            (pooled * 1_000.0).round() as u64,
+            (pooled_water_used * 1_000.0).round() as u64,
+            minute,
+        )?);
+    }
+    if personal_water_used > 0.0 {
+        contained_water_materials.extend(crate::outbreak::water_holding_contamination(
+            ctx,
+            "personal",
+            &character_id.to_string(),
+            (needs.carried_water_ml * 1_000.0).round() as u64,
+            (personal_water_used * 1_000.0).round() as u64,
+            minute,
+        )?);
+    }
     mass += water_ml / 1_000.0;
     let contributed_water_ml = contained_water_materials
         .iter()
         .map(|row| row.3)
         .sum::<u64>();
-    if contributed_water_ml > contained_water_ml {
+    if contributed_water_ml > (water_ml * 1_000.0).round() as u64 {
         return Err("Contained water material exceeds its public volume".into());
     }
     for (material_lot_id, current, water_growth, amount_ml) in &contained_water_materials {
-        let water_mass_kg = *amount_ml as f32 / 1_000.0;
+        let water_mass_kg = *amount_ml as f32 / 1_000_000.0;
         let water_load = current * water_mass_kg;
         loads.push(water_load);
         growth.push(*water_growth);
@@ -3823,11 +3857,44 @@ fn add_fireplace_ingredients_at(
         } else if let Some(party_id) = actor.party_id.as_deref()
             && let Some(mut party) = ctx.db.party_authority().id().find(party_id.to_string())
         {
-            let used = water_ml.min(party.pooled_water_ml);
+            let used = pooled_water_used;
+            let sink = format!("stew:{}", station.key);
+            crate::outbreak::move_water_holding_contributions(
+                ctx,
+                "party",
+                party_id,
+                "cooking",
+                &sink,
+                (party.pooled_water_ml * 1_000.0).round() as u64,
+                (used * 1_000.0).round() as u64,
+            )?;
+            if personal_water_used > 0.0 {
+                crate::outbreak::move_water_holding_contributions(
+                    ctx,
+                    "personal",
+                    &character_id.to_string(),
+                    "cooking",
+                    &sink,
+                    (needs.carried_water_ml * 1_000.0).round() as u64,
+                    (personal_water_used * 1_000.0).round() as u64,
+                )?;
+            }
+            crate::outbreak::delete_water_holding_contributions(ctx, "cooking", &sink);
             party.pooled_water_ml -= used;
             ctx.db.party_authority().id().update(party);
-            needs.carried_water_ml -= water_ml - used;
+            needs.carried_water_ml -= personal_water_used;
         } else {
+            let sink = format!("stew:{}", station.key);
+            crate::outbreak::move_water_holding_contributions(
+                ctx,
+                "personal",
+                &character_id.to_string(),
+                "cooking",
+                &sink,
+                (needs.carried_water_ml * 1_000.0).round() as u64,
+                (personal_water_used * 1_000.0).round() as u64,
+            )?;
+            crate::outbreak::delete_water_holding_contributions(ctx, "cooking", &sink);
             needs.carried_water_ml -= water_ml;
         }
         ctx.db.character_needs().character_id().update(needs);
@@ -3884,7 +3951,7 @@ fn add_fireplace_ingredients_at(
     // material lot to contribute its own growth rate and mass.
     let growth_basis_mass = ingredient_mass
         + if !contained_water_materials.is_empty() {
-            contributed_water_ml as f32 / 1_000.0
+            contributed_water_ml as f32 / 1_000_000.0
         } else {
             0.0
         };
@@ -4012,6 +4079,27 @@ pub fn retrieve_fireplace_dish(
         * food::doneness_nutrition_factor(dish.ready_nutrition_retention, doneness);
     let value =
         dish.ingredient_value * food::quality_value_multiplier(quality) * doneness.calorie_factor;
+    let cooked_contamination = food::partially_cooked_contamination(
+        dish.raw_contamination,
+        dish.method.core(),
+        doneness.contamination_kill_progress,
+    );
+    let cooked_contribution_loads = food::scale_contamination_contributions(
+        dish.raw_contamination,
+        cooked_contamination,
+        &dish.contamination_contribution_loads,
+    );
+    let cooked_contribution_digest = contamination_provenance_digest(
+        &dish.contamination_contribution_ids,
+        &cooked_contribution_loads,
+    );
+    let surviving_load = cooked_contribution_loads.iter().sum::<f32>();
+    let expected_surviving_load = cooked_contamination * dish.mass_kg;
+    if (surviving_load - expected_surviving_load).abs()
+        > expected_surviving_load.abs().max(1.0) * 1e-5
+    {
+        return Err("Cooked contamination contribution loads do not conserve".into());
+    }
     let personal_id;
     let party_id;
     match source_kind {
@@ -4093,8 +4181,8 @@ pub fn retrieve_fireplace_dish(
             .insert(FoodContaminationProvenance {
                 food_lot_id: lot.id,
                 contribution_ids: dish.contamination_contribution_ids,
-                contribution_loads: dish.contamination_contribution_loads,
-                contribution_digest: dish.contamination_contribution_digest,
+                contribution_loads: cooked_contribution_loads,
+                contribution_digest: cooked_contribution_digest,
             });
     }
     let medicinal_heat_factor = if doneness.progress < 1.0 {
@@ -4126,11 +4214,7 @@ pub fn retrieve_fireplace_dish(
     }
     ctx.db.food_contamination().insert(FoodContamination {
         food_lot_id: lot.id,
-        concentration_anchor: food::partially_cooked_contamination(
-            dish.raw_contamination,
-            dish.method.core(),
-            doneness.contamination_kill_progress,
-        ),
+        concentration_anchor: cooked_contamination,
         growth_per_hour: food::partially_cooked_growth(
             dish.raw_growth_per_hour,
             dish.cooked_growth_per_hour,
