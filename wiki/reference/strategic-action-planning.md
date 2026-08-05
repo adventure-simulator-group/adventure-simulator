@@ -64,10 +64,9 @@ duration once. Domains must use `permits_completion_effects` before emitting
 completion-only consequences; interrupted, terminal, exhausted-clock, and
 zero-elapsed plans remain non-completions.
 
-## Planned integrations
+## Domain integrations
 
-This foundation intentionally converts no reducers. Follow-up stacked changes
-will provide independent adapters for:
+The foundation is adopted through independent, domain-owned adapters for:
 
 - investigation inspection, with private case/evidence prerequisites and
   typed journal/evidence effects;
@@ -76,5 +75,7 @@ will provide independent adapters for:
 - cooking and ingredient preparation, with exact fixture/tool custody,
   duration clipping, and typed dish, lot, medicine, and training effects.
 
-Those adapters should remove only the duplicate validation they replace. They
-must keep their existing privacy, replay, and transactional domain authority.
+Adapters remove only the duplicate validation they replace. They keep their
+existing privacy, replay, and transactional domain authority; a custom durable
+receipt may carry richer material or knowledge facts than the generic commit
+receipt while preserving the same exact-replay and collision laws.

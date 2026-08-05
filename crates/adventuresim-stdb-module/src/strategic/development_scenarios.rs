@@ -207,6 +207,35 @@ fn ensure_scenario_settlement(ctx: &ReducerContext, id: &str, name: &str) -> Res
     ensure_settlement_activity(ctx, id.into())
 }
 
+pub(crate) fn ensure_foraging_demo_settlement(ctx: &ReducerContext) -> Result<(), String> {
+    const ID: &str = "dev-scenario-foraging";
+    let (mut settlement, exists) = if let Some(existing) = ctx.db.settlement().id().find(&ID.to_owned()) {
+        (existing, true)
+    } else {
+        (
+            ctx.db
+                .settlement()
+                .id()
+                .find(&"riverdale".to_owned())
+                .ok_or("Foraging demo settlement template is missing")?,
+            false,
+        )
+    };
+    // Empirically sampled from the pinned final terrain pack: uncultivated
+    // deep woods with no crossing or wetland fraction.
+    settlement.id = ID.into();
+    settlement.name = "Foraging Demo Woods".into();
+    settlement.coord_x = 9.75;
+    settlement.coord_y = 51.75;
+    settlement.source_node_id = None;
+    if exists {
+        ctx.db.settlement().id().update(settlement);
+    } else {
+        ctx.db.settlement().insert(settlement);
+    }
+    ensure_settlement_activity(ctx, ID.into())
+}
+
 fn ensure_scenario_character_at(
     ctx: &ReducerContext,
     character_id: u64,
@@ -245,7 +274,7 @@ pub(crate) fn materialize_development_scenario_gallery(
         ("health-wounded-party", "Health", "Wounds and surgery", "Treat wounds, retained projectiles, splints, and damaged equipment.", 9_999_999_999_999_999, "/characters"),
         ("knowledge-religion", "Knowledge", "Religion knowledge", "Inspect the complete bounded religion skill presentation.", 9_999_999_999_999_988, "/characters"),
         ("knowledge-bestiary", "Knowledge", "Bestiary knowledge", "Inspect broad bestiary category knowledge and evidence.", 9_999_999_999_999_987, "/characters"),
-        ("knowledge-herbalism", "Knowledge", "Herbalism methods", "Exercise every bounded herbalism method and public grade.", 9_999_999_999_999_986, "/characters"),
+        ("knowledge-herbalism", "Knowledge", "Herbalism and foraging", "Exercise every bounded herbalism method, public grade, and the terrain-backed foraging flow.", 9_999_999_999_999_986, "/characters"),
         ("social-affinity", "Social", "Affinity and courtship", "Exercise visible affinity, belief, morale, and social actions.", 9_999_999_999_999_977, "/characters"),
         ("social-prayer", "Social", "Zealous prayer", "Exercise conviction-sensitive prayer interactions.", 9_999_999_999_999_975, "/characters"),
     ];

@@ -335,8 +335,8 @@ pub fn bootstrap_development_world(
     crate::character::seed_damaged_character(ctx)?;
     crate::character::seed_religion_scholar_character(ctx)?;
     crate::character::seed_bestiary_scholar_character(ctx)?;
-    crate::character::seed_herbalism_demo_character(ctx)?;
     crate::social::seed_social_demo(ctx)?;
+    crate::character::seed_herbalism_demo_character(ctx)?;
     materialize_development_scenario_gallery(ctx)?;
     Ok(())
 }
@@ -2249,6 +2249,14 @@ mod developer_quest_source_tests {
         );
         assert!(
             bootstrap.find("seed_social_demo(ctx)").unwrap()
+                < bootstrap
+                    .find("seed_herbalism_demo_character(ctx)")
+                    .unwrap()
+        );
+        assert!(
+            bootstrap
+                .find("seed_herbalism_demo_character(ctx)")
+                .unwrap()
                 < bootstrap
                     .find("materialize_development_scenario_gallery(ctx)")
                     .unwrap()

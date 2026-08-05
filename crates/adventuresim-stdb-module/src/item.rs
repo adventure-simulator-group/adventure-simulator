@@ -633,6 +633,25 @@ pub(crate) fn add_inventory_item_checked(
     Ok(first)
 }
 
+/// Foraging receipts bind every concrete harvested unit to an object and
+/// material lot. Preserve the shared grant helper's stacking semantics for
+/// every other caller while intentionally issuing one validated unit here.
+pub(crate) fn add_foraged_inventory_item_checked_rows(
+    ctx: &ReducerContext,
+    character_id: u64,
+    item_id: &str,
+    quantity: u32,
+) -> Result<Vec<u64>, String> {
+    let mut rows = Vec::with_capacity(quantity as usize);
+    for _ in 0..quantity {
+        rows.push(
+            add_inventory_item_checked(ctx, character_id, item_id, 1)?
+                .ok_or("Foraged inventory insertion returned no row")?,
+        );
+    }
+    Ok(rows)
+}
+
 pub fn add_inventory_item(
     ctx: &ReducerContext,
     character_id: u64,
@@ -972,6 +991,18 @@ mod tests {
                 .kind,
             adventuresim_core::item_catalog::ItemKind::Ingredient
         );
+    }
+
+    #[test]
+    fn foraging_specific_insertion_issues_each_harvested_unit_separately() {
+        let source = include_str!("item.rs");
+        let helper = source
+            .split("pub(crate) fn add_foraged_inventory_item_checked_rows")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn add_inventory_item").next())
+            .expect("foraging-specific insertion helper");
+        assert!(helper.contains("for _ in 0..quantity"));
+        assert!(helper.contains("add_inventory_item_checked(ctx, character_id, item_id, 1)"));
     }
 
     #[test]

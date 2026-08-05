@@ -104,6 +104,8 @@ pub mod backend_fireplace_dish_type;
 pub mod backend_fireplace_dishes_table;
 pub mod backend_fireplace_station_type;
 pub mod backend_fireplace_stations_table;
+pub mod backend_forage_attempt_state_type;
+pub mod backend_forage_attempt_states_table;
 pub mod backend_forage_receipt_type;
 pub mod backend_forage_receipts_table;
 pub mod backend_ingredient_preparation_plan_type;
@@ -390,8 +392,10 @@ pub mod food_lot_table;
 pub mod food_lot_type;
 pub mod food_preparation_type;
 pub mod forage_attempt_authority_type;
+pub mod forage_attempt_state_type;
 pub mod forage_current_vicinity_reducer;
 pub mod forage_environment_attestation_type;
+pub mod forage_harvest_material_type;
 pub mod forest_commodity_type;
 pub mod forest_cover_type;
 pub mod forestry_industry_type;
@@ -990,6 +994,8 @@ pub use backend_fireplace_dish_type::BackendFireplaceDish;
 pub use backend_fireplace_dishes_table::*;
 pub use backend_fireplace_station_type::BackendFireplaceStation;
 pub use backend_fireplace_stations_table::*;
+pub use backend_forage_attempt_state_type::BackendForageAttemptState;
+pub use backend_forage_attempt_states_table::*;
 pub use backend_forage_receipt_type::BackendForageReceipt;
 pub use backend_forage_receipts_table::*;
 pub use backend_ingredient_preparation_plan_type::BackendIngredientPreparationPlan;
@@ -1276,8 +1282,10 @@ pub use food_lot_table::*;
 pub use food_lot_type::FoodLot;
 pub use food_preparation_type::FoodPreparation;
 pub use forage_attempt_authority_type::ForageAttemptAuthority;
+pub use forage_attempt_state_type::ForageAttemptState;
 pub use forage_current_vicinity_reducer::forage_current_vicinity;
 pub use forage_environment_attestation_type::ForageEnvironmentAttestation;
+pub use forage_harvest_material_type::ForageHarvestMaterial;
 pub use forest_commodity_type::ForestCommodity;
 pub use forest_cover_type::ForestCover;
 pub use forestry_industry_type::ForestryIndustry;
@@ -2120,6 +2128,7 @@ pub enum Reducer {
         request_id: String,
         source_ids: Vec<String>,
         requested_minutes: u64,
+        attempt_generation: u64,
         attestation: ForageEnvironmentAttestation,
     },
     GrantBrowserCharacter {
@@ -3507,12 +3516,14 @@ Reducer::BeginFormalCourtship{
                 request_id,
                 source_ids,
                 requested_minutes,
+                attempt_generation,
                 attestation,
 }             => __sats::bsatn::to_vec(&forage_current_vicinity_reducer::ForageCurrentVicinityArgs {
                 character_id: character_id.clone(),
                 request_id: request_id.clone(),
                 source_ids: source_ids.clone(),
                 requested_minutes: requested_minutes.clone(),
+                attempt_generation: attempt_generation.clone(),
                 attestation: attestation.clone(),
 }),
             Reducer::GrantBrowserCharacter{
@@ -4600,6 +4611,7 @@ pub struct DbUpdate {
     backend_family_children: __sdk::TableUpdate<BackendFamilyChild>,
     backend_fireplace_dishes: __sdk::TableUpdate<BackendFireplaceDish>,
     backend_fireplace_stations: __sdk::TableUpdate<BackendFireplaceStation>,
+    backend_forage_attempt_states: __sdk::TableUpdate<BackendForageAttemptState>,
     backend_forage_receipts: __sdk::TableUpdate<BackendForageReceipt>,
     backend_ingredient_preparation_plans: __sdk::TableUpdate<BackendIngredientPreparationPlan>,
     backend_investigation_action_outcomes: __sdk::TableUpdate<BackendInvestigationActionOutcome>,
@@ -4860,6 +4872,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 ),
                 "backend_fireplace_stations" => db_update.backend_fireplace_stations.append(
                     backend_fireplace_stations_table::parse_table_update(table_update)?,
+                ),
+                "backend_forage_attempt_states" => db_update.backend_forage_attempt_states.append(
+                    backend_forage_attempt_states_table::parse_table_update(table_update)?,
                 ),
                 "backend_forage_receipts" => db_update.backend_forage_receipts.append(
                     backend_forage_receipts_table::parse_table_update(table_update)?,
@@ -5570,6 +5585,11 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_fireplace_stations",
             &self.backend_fireplace_stations,
         );
+        diff.backend_forage_attempt_states = cache
+            .apply_diff_to_table::<BackendForageAttemptState>(
+                "backend_forage_attempt_states",
+                &self.backend_forage_attempt_states,
+            );
         diff.backend_forage_receipts = cache.apply_diff_to_table::<BackendForageReceipt>(
             "backend_forage_receipts",
             &self.backend_forage_receipts,
@@ -5832,6 +5852,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_fireplace_stations" => db_update
                     .backend_fireplace_stations
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_forage_attempt_states" => db_update
+                    .backend_forage_attempt_states
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
@@ -6224,6 +6247,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_fireplace_stations" => db_update
                     .backend_fireplace_stations
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_forage_attempt_states" => db_update
+                    .backend_forage_attempt_states
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -6531,6 +6557,7 @@ pub struct AppliedDiff<'r> {
     backend_family_children: __sdk::TableAppliedDiff<'r, BackendFamilyChild>,
     backend_fireplace_dishes: __sdk::TableAppliedDiff<'r, BackendFireplaceDish>,
     backend_fireplace_stations: __sdk::TableAppliedDiff<'r, BackendFireplaceStation>,
+    backend_forage_attempt_states: __sdk::TableAppliedDiff<'r, BackendForageAttemptState>,
     backend_forage_receipts: __sdk::TableAppliedDiff<'r, BackendForageReceipt>,
     backend_ingredient_preparation_plans:
         __sdk::TableAppliedDiff<'r, BackendIngredientPreparationPlan>,
@@ -6854,6 +6881,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendFireplaceStation>(
             "backend_fireplace_stations",
             &self.backend_fireplace_stations,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendForageAttemptState>(
+            "backend_forage_attempt_states",
+            &self.backend_forage_attempt_states,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendForageReceipt>(
@@ -7930,6 +7962,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_family_children_table::register_table(client_cache);
         backend_fireplace_dishes_table::register_table(client_cache);
         backend_fireplace_stations_table::register_table(client_cache);
+        backend_forage_attempt_states_table::register_table(client_cache);
         backend_forage_receipts_table::register_table(client_cache);
         backend_ingredient_preparation_plans_table::register_table(client_cache);
         backend_investigation_action_outcomes_table::register_table(client_cache);
@@ -8058,6 +8091,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_family_children",
         "backend_fireplace_dishes",
         "backend_fireplace_stations",
+        "backend_forage_attempt_states",
         "backend_forage_receipts",
         "backend_ingredient_preparation_plans",
         "backend_investigation_action_outcomes",

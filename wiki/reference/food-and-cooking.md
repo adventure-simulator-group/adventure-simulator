@@ -183,6 +183,9 @@ nutrition multiplier.
 
 Raw wild foods gathered through current-vicinity foraging enter personal
 inventory through the same validated non-fungible food-lot path as other food.
+Every harvested unit receives a stable physical-object identity and a private
+request/place provenance receipt, so later preparation can bind the exact
+material revision rather than a fungible catalog quantity.
 Watercress and seaweed extend Plants for wet-ground and coast foraging.
 Venison is High Game, fowl is Low Game, fish requires wet ground or coast, and
 minimal beast meat keeps Harmful Beasts functional. All use authoritative
