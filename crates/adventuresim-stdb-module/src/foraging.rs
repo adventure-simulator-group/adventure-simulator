@@ -22,11 +22,11 @@ use crate::{
         character, character_attributes, character_limbs, character_skills, character_stats,
     },
     food::food_lot,
-    investigation::{character_case_site_id, exact_case_site_for_observer},
+    investigation::{case_site_authority, character_case_site_id, exact_case_site_for_observer},
     strategic::{
-        party_authority, party_journey_authority, party_journey_route_authority,
-        route_position_at_minute, settlement, strategic_gateway_authority,
-        strategic_gateway_authority__view,
+        IncidentStatus, party_authority, party_journey_authority, party_journey_route_authority,
+        party_member, route_position_at_minute, settlement, strategic_gateway_authority,
+        strategic_gateway_authority__view, strategic_incident,
     },
     time::character_time,
 };
@@ -251,6 +251,60 @@ struct ForageVicinityAuthority {
     settlement: bool,
 }
 
+fn actor_party_owns_incident_site(
+    ctx: &ReducerContext,
+    character_id: u64,
+    party_id: &str,
+    case_site_id: &str,
+) -> bool {
+    let party_membership_matches = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(party_id)
+        .any(|membership| membership.character_id == character_id);
+    let party_site_matches = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(party_id.to_owned())
+        .and_then(|party| party.current_case_site_id)
+        .is_some_and(|site| site.value == case_site_id);
+    party_membership_matches
+        && party_site_matches
+        && ctx
+            .db
+            .strategic_incident()
+            .party_id()
+            .filter(party_id)
+            .any(|incident| incident.case_site_id.value == case_site_id)
+}
+
+fn actor_party_has_pending_incident_at_current_site(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> bool {
+    let Some(actor) = ctx.db.character().id().find(character_id) else {
+        return false;
+    };
+    let (Some(party_id), Some(case_site_id)) = (
+        actor.party_id.as_deref(),
+        character_case_site_id(ctx, character_id),
+    ) else {
+        return false;
+    };
+    actor_party_owns_incident_site(ctx, character_id, party_id, &case_site_id)
+        && ctx
+            .db
+            .strategic_incident()
+            .party_id()
+            .filter(party_id)
+            .any(|incident| {
+                incident.status == IncidentStatus::Pending
+                    && incident.case_site_id.value == case_site_id
+            })
+}
+
 fn expected_location(
     ctx: &ReducerContext,
     character_id: u64,
@@ -283,7 +337,15 @@ fn expected_location(
         });
     }
     if let Some(site_id) = character_case_site_id(ctx, character_id) {
-        let (site, _) = exact_case_site_for_observer(ctx, character_id, &site_id)
+        let exact_investigation_site =
+            exact_case_site_for_observer(ctx, character_id, &site_id).map(|(site, _)| site);
+        let exact_incident_site = actor.party_id.as_deref().and_then(|party_id| {
+            actor_party_owns_incident_site(ctx, character_id, party_id, &site_id)
+                .then(|| ctx.db.case_site_authority().id_key().find(site_id.clone()))
+                .flatten()
+        });
+        let site = exact_investigation_site
+            .or(exact_incident_site)
             .ok_or("Current case site is not exact for this character")?;
         let place = crate::investigation::canonical_case_site_place(&site_id)
             .ok_or("Case site has an invalid canonical identity")?;
@@ -762,6 +824,10 @@ pub fn forage_current_vicinity(
         } else {
             Err("Forage request id collides with a different attempt".into())
         };
+    }
+
+    if actor_party_has_pending_incident_at_current_site(ctx, character_id) {
+        return Err("Foraging is unavailable during a pending strategic incident".into());
     }
 
     crate::condition::require_character_ready(ctx, character_id)?;
@@ -1257,5 +1323,71 @@ mod tests {
         ] {
             assert!(!projection.contains(private), "leaked {private}");
         }
+    }
+
+    #[test]
+    fn incident_site_provenance_survives_resolution_but_remains_exact() {
+        let source = include_str!("foraging.rs");
+        let authority = source
+            .split("fn actor_party_owns_incident_site")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("fn actor_party_has_pending_incident_at_current_site")
+                    .next()
+            })
+            .expect("incident site provenance authority");
+        for exact_boundary in [
+            ".party_member()",
+            "membership.character_id == character_id",
+            ".party_authority()",
+            "party.current_case_site_id",
+            ".strategic_incident()",
+            "incident.case_site_id.value == case_site_id",
+        ] {
+            assert!(authority.contains(exact_boundary), "{exact_boundary}");
+        }
+        assert!(!authority.contains("IncidentStatus::Pending"));
+
+        let location = source
+            .split("fn expected_location")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn current_strategic_place").next())
+            .expect("shared expected location resolver");
+        let investigation = location.find("exact_case_site_for_observer").unwrap();
+        let incident = location.find("actor_party_owns_incident_site").unwrap();
+        let authority_site = location
+            .find("case_site_authority().id_key().find")
+            .unwrap();
+        assert!(investigation < incident && incident < authority_site);
+        assert!(location.contains("actor.party_id.as_deref()"));
+        assert!(location.contains(".or(exact_incident_site)"));
+        assert!(!location.contains("starts_with(\"case-site:incident:"));
+        assert!(!location.contains("split(\"incident:"));
+    }
+
+    #[test]
+    fn fresh_forage_rejects_pending_exact_incident_after_immutable_replay() {
+        let source = include_str!("foraging.rs");
+        let pending = source
+            .split("fn actor_party_has_pending_incident_at_current_site")
+            .nth(1)
+            .and_then(|tail| tail.split("fn expected_location").next())
+            .expect("pending incident forage gate");
+        assert!(pending.contains("actor_party_owns_incident_site"));
+        assert!(pending.contains("incident.status == IncidentStatus::Pending"));
+        assert!(pending.contains("incident.case_site_id.value == case_site_id"));
+
+        let reducer = source
+            .split("pub fn forage_current_vicinity")
+            .nth(1)
+            .and_then(|tail| tail.split("#[cfg(test)]").next())
+            .expect("forage reducer");
+        let replay = reducer.find("forage_attempt_authority()").unwrap();
+        let pending_gate = reducer
+            .find("actor_party_has_pending_incident_at_current_site")
+            .unwrap();
+        let readiness = reducer.find("require_character_ready").unwrap();
+        assert!(replay < pending_gate && pending_gate < readiness);
+        assert!(reducer.contains("Foraging is unavailable during a pending strategic incident"));
     }
 }

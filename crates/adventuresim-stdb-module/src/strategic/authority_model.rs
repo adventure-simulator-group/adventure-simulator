@@ -427,6 +427,10 @@ pub struct StrategicIncident {
     pub id: IncidentId,
     #[unique]
     pub source_id: IncidentSourceId,
+    /// Random, unlinkable capability used by the trusted gateway to invoke
+    /// public incident actions without disclosing the source-derived ID.
+    #[unique]
+    pub action_token: String,
     #[index(btree)]
     pub party_id: String,
     pub settlement_id: String,

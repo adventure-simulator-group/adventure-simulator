@@ -230,6 +230,43 @@ fn activity_schedule_is_installed_before_the_logged_rest_attempt() {
 }
 
 #[test]
+fn settlement_activity_stops_when_an_incident_relocates_the_party() {
+    let source = LIVE_CORE_SOURCE;
+    let activity = source
+        .split("fn settlement_activity_day")
+        .nth(1)
+        .and_then(|tail| tail.split("/// NPCs use the same custody").next())
+        .expect("settlement activity policy");
+    let member_loop = activity.find("for agent in self.party_agents").unwrap();
+    let first_location_check = activity
+        .find("party_is_still_at_original_settlement")
+        .unwrap();
+    let first_medical = activity.find("ensure_medically_safe(agent)").unwrap();
+    assert!(member_loop < first_location_check && first_location_check < first_medical);
+
+    let activity_rest = activity.find("rest_at_settlement_hours_then").unwrap();
+    let post_rest_location_check = activity[activity_rest..]
+        .find("party_is_still_at_original_settlement")
+        .map(|offset| activity_rest + offset)
+        .unwrap();
+    let post_activity_observation = activity.find("let after = self.activity_observation").unwrap();
+    assert!(activity_rest < post_rest_location_check);
+    assert!(post_rest_location_check < post_activity_observation);
+    assert!(
+        activity
+            .matches("party_is_still_at_original_settlement")
+            .count()
+            >= 6
+    );
+    assert!(activity.contains("return Ok(())"));
+    assert!(!activity.contains("simulation character is not at a settlement"));
+    assert!(!activity.contains("travel_to_settlement"));
+    assert!(activity.contains("observed_activity_site_origins"));
+    assert!(activity.contains("(party_id.to_owned(), case_site_id.value)"));
+    assert!(activity.contains("original_settlement_id.to_owned()"));
+}
+
+#[test]
 fn each_active_cycle_advances_world_time_before_refreshing_npc_activity() {
     let source = LIVE_CORE_SOURCE;
     let loop_start = source
@@ -700,7 +737,7 @@ fn public_discovery_backoff_expires_or_invalidates_on_public_change() {
 }
 
 #[test]
-fn discovery_follows_only_new_or_updated_public_witness_referrals() {
+fn discovery_prioritizes_new_referrals_and_retries_unresolved_public_referrals() {
     let referral = |recorded_at, corrected_by: &str| PublicDiscoveryReferral {
         owner_character_id: 7,
         case_id: "journal:case".into(),
@@ -715,22 +752,60 @@ fn discovery_follows_only_new_or_updated_public_witness_referrals() {
     let original = referral(10, "");
     let before = HashMap::from([(original.lead_id.clone(), original.clone())]);
 
+    assert_eq!(
+        public_discovery_referral_to_follow(7, &before, &HashSet::new(), [original.clone()]),
+        Some(original.clone()),
+        "an unresolved public referral remains actionable on a later cycle"
+    );
     assert!(
-        new_or_updated_public_discovery_referral(7, &before, [original.clone()]).is_none(),
-        "an unchanged referral must not be treated as a new discovery"
+        public_discovery_referral_to_follow(
+            7,
+            &before,
+            &HashSet::from([original.case_id.clone()]),
+            [original.clone()],
+        )
+        .is_none(),
+        "an already-open case does not repeat its discovery referral"
     );
     let updated = referral(11, "");
+    let mut newer_unresolved = referral(12, "");
+    newer_unresolved.case_id = "journal:other-case".into();
+    newer_unresolved.lead_id = "lead:other-referral".into();
+    let priority_before = HashMap::from([
+        (original.lead_id.clone(), original),
+        (
+            newer_unresolved.lead_id.clone(),
+            newer_unresolved.clone(),
+        ),
+    ]);
     assert_eq!(
-        new_or_updated_public_discovery_referral(7, &before, [updated.clone()]),
-        Some(updated)
+        public_discovery_referral_to_follow(
+            7,
+            &priority_before,
+            &HashSet::new(),
+            [newer_unresolved, updated.clone()],
+        ),
+        Some(updated),
+        "a newly updated referral takes priority over a newer unchanged referral"
     );
     assert!(
-        new_or_updated_public_discovery_referral(7, &HashMap::new(), [referral(12, "replacement")])
-            .is_none(),
+        public_discovery_referral_to_follow(
+            7,
+            &HashMap::new(),
+            &HashSet::new(),
+            [referral(12, "replacement")],
+        )
+        .is_none(),
         "corrected referrals are not actionable"
     );
     assert!(
-        new_or_updated_public_discovery_referral(8, &HashMap::new(), [referral(12, "")]).is_none(),
+        public_discovery_referral_to_follow(
+            8,
+            &HashMap::new(),
+            &HashSet::new(),
+            [referral(12, "")],
+        )
+        .is_none(),
         "another owner's referral is not actionable"
     );
 }
@@ -916,10 +991,10 @@ fn discovery_logging_uses_only_the_owner_visible_case_postcondition() {
     assert_eq!(discovery.matches("start_public_dialogue(").count(), 1);
     assert!(discovery.contains("owned_open_generated_cases(character_id)"));
     assert!(discovery.contains("backend_investigation_leads()"));
-    assert!(discovery.contains("new_or_updated_public_discovery_referral"));
+    assert!(discovery.contains("public_discovery_referral_to_follow"));
     assert!(discovery.contains("&[\"referred-testimony\"]"));
     let referral = discovery
-        .find("new_or_updated_public_discovery_referral")
+        .find("public_discovery_referral_to_follow")
         .expect("public referral postcondition");
     let testimony = discovery[referral..]
         .find("try_generated_dialogue_topic")

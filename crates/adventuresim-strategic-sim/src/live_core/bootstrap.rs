@@ -188,6 +188,7 @@ fn run_core_loop_inner(
         // particular, never transport backend infection episodes, committed
         // cuts, or full medical examinations into the simulator process.
         .add_query(|query| query.from.autoresolve_report())
+        .add_query(|query| query.from.backend_authority_arrest_actions())
         .add_query(|query| query.from.backend_case_battles())
         .add_query(|query| query.from.backend_case_site_pins())
         .add_query(|query| query.from.backend_dialogue_sessions())
@@ -282,6 +283,7 @@ fn run_core_loop_inner(
         generated_discovery_backoff: HashMap::new(),
         generated_dialogue_no_progress: HashMap::new(),
         generated_defeat_fingerprints: HashMap::new(),
+        observed_activity_site_origins: HashMap::new(),
         failure_recorder,
     };
     if runner
@@ -363,6 +365,7 @@ fn run_core_loop_inner(
         .on_error(move |_, error| {
             let _ = gateway_subscription_error_tx.send(Err(error.to_string()));
         })
+        .add_query(|query| query.from.backend_authority_arrest_actions())
         .add_query(|query| query.from.backend_case_battles())
         .add_query(|query| query.from.backend_case_site_pins())
         .add_query(|query| query.from.backend_contracts())
@@ -679,6 +682,21 @@ fn run_core_loop_inner(
             let recovery_outcome = runner.recover_or_evacuate_off_settlement(party_id, cycle)?;
             match recovery_outcome {
                 ExpeditionRecoveryOutcome::None | ExpeditionRecoveryOutcome::Resumed => {}
+                ExpeditionRecoveryOutcome::Returned => {
+                    active = true;
+                    let result = reducer_call!(
+                        runner,
+                        "ensure_settlement_activity_after_idle_site_return",
+                        |cb| {
+                            runner
+                                .connection
+                                .reducers
+                                .ensure_settlement_activity_then(settlement.clone(), cb)
+                        }
+                    );
+                    runner.call(result)?;
+                    continue;
+                }
                 ExpeditionRecoveryOutcome::Evacuated => {
                     active = true;
                     let result = reducer_call!(

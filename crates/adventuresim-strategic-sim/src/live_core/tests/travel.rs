@@ -789,6 +789,102 @@ fn direct_contract_provisions_before_acceptance_then_abandons_after_one_defeat()
 }
 
 #[test]
+fn direct_contract_acceptance_revalidates_the_publicly_present_issuer_before_spending_and_interaction()
+{
+    let source = LIVE_CORE_SOURCE;
+    let issuer = source
+        .split("fn public_contract_issuer_available")
+        .nth(1)
+        .and_then(|tail| tail.split("fn defer_unavailable_contract_issuer").next())
+        .expect("public contract issuer availability policy");
+    assert!(issuer.contains("visible_npc_candidates(character_id, None, None)"));
+    assert!(issuer.contains("candidate.resident_character_id == quest.issuer_resident_character_id"));
+
+    let deferral = source
+        .split("fn defer_unavailable_contract_issuer")
+        .nth(1)
+        .and_then(|tail| tail.split("fn abandon_unsafe_active_contract").next())
+        .expect("contract issuer deferral policy");
+    assert!(deferral.contains("reason=contract_issuer_unavailable"));
+    assert!(deferral.contains("provenance"));
+    assert!(deferral.contains("bounded_event_field(&quest.id)"));
+    assert!(deferral.contains("current_settlement_id"));
+    assert!(deferral.contains("Some(quest.settlement_id.as_str())"));
+    assert!(deferral.contains("settlement_activity_day(leader_agent)"));
+    assert!(!deferral.contains("simulate_contract_issuer_interaction"));
+
+    let cycle = source
+        .split("fn cycle")
+        .nth(1)
+        .and_then(|tail| tail.split("fn try_upgrade").next())
+        .expect("direct contract driver");
+    let issuer_checks = cycle
+        .match_indices("public_contract_issuer_available(leader, &quest)")
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    assert_eq!(issuer_checks.len(), 2);
+    let provision = cycle.find("provision_case_site_journey").unwrap();
+    let interaction = cycle.find("simulate_contract_issuer_interaction_then").unwrap();
+    assert!(issuer_checks[0] < provision);
+    assert!(provision < issuer_checks[1] && issuer_checks[1] < interaction);
+}
+
+#[test]
+fn authoritative_contract_issuer_rejection_defers_accept_and_report_without_failure_metrics() {
+    assert!(contract_issuer_unavailable_failure(
+        "interact_accept_contract failed: Contract issuer is not available for interaction"
+    ));
+    assert!(contract_issuer_unavailable_failure(
+        "interact_report_contract failed: Contract issuer is not available for interaction"
+    ));
+    assert!(!contract_issuer_unavailable_failure(
+        "interact_accept_contract failed: Contract is not offered"
+    ));
+    assert!(!contract_issuer_unavailable_failure(
+        "accept_quest failed: Contract issuer is not available for interaction"
+    ));
+    assert!(!contract_issuer_unavailable_failure(
+        "interact_accept_contract failed: Contract issuer is not available for interaction now"
+    ));
+
+    let source = LIVE_CORE_SOURCE;
+    let accept = source
+        .split("fn cycle")
+        .nth(1)
+        .and_then(|tail| tail.split("fn try_upgrade").next())
+        .expect("direct contract acceptance driver");
+    let interaction = accept
+        .find("simulate_contract_issuer_interaction_then")
+        .unwrap();
+    let classifier = accept[interaction..]
+        .find("contract_issuer_unavailable_failure(&error)")
+        .unwrap()
+        + interaction;
+    let attempts = accept.find("self.metrics.quests_attempted += 1").unwrap();
+    let accept_reducer = accept.find("accept_contract_then").unwrap();
+    assert!(interaction < classifier && classifier < attempts && attempts < accept_reducer);
+    assert!(accept.contains("authoritative_interaction_rejection"));
+    assert!(accept.contains("return self.call(Err(error))"));
+
+    let report = source
+        .split("pub(super) fn turn_in_ready_direct_contract")
+        .nth(1)
+        .expect("direct contract report driver");
+    let report_interaction = report
+        .find("simulate_contract_issuer_interaction_then")
+        .unwrap();
+    let report_classifier = report
+        .find("contract_issuer_unavailable_failure(&error)")
+        .unwrap();
+    let turn_in = report.find("report_contract_then").unwrap();
+    let completion = report.find("self.metrics.quests_completed += 1").unwrap();
+    assert!(report_interaction < report_classifier && report_classifier < turn_in);
+    assert!(turn_in < completion);
+    assert!(report.contains("authoritative_interaction_rejection"));
+    assert!(report.contains("return self.call(Err(error))"));
+}
+
+#[test]
 fn recovery_audit_separates_public_before_and_after_observations() {
     let source = LIVE_CORE_SOURCE;
     let recovery = source

@@ -709,9 +709,10 @@ impl LiveRunner {
             .cloned()
             .collect::<Vec<_>>();
         if discovered.is_empty()
-            && let Some(referral) = new_or_updated_public_discovery_referral(
+            && let Some(referral) = public_discovery_referral_to_follow(
                 character_id,
                 &before_referrals,
+                &before,
                 self.connection
                     .db
                     .backend_investigation_leads()
@@ -1578,7 +1579,15 @@ impl LiveRunner {
             let profile = &self.profiles[agent as usize];
             sort_generated_actions(profile, &mut actions);
             if !at_settlement {
-            let ready_action_index = actions.iter().position(|action| {
+                let Some(occupied_site_id) = self
+                    .party_by_id(party_id)?
+                    .current_case_site_id
+                    .map(|site| site.value)
+                else {
+                    return Ok(false);
+                };
+                actions.retain(|action| action.required_case_site_id == occupied_site_id);
+                let ready_action_index = actions.iter().position(|action| {
                     if !action.available {
                         return false;
                     }
@@ -1856,6 +1865,40 @@ impl LiveRunner {
                     );
                     return Ok(true);
                 }
+                let mut next_actions = self
+                    .connection
+                    .db
+                    .backend_investigation_actions()
+                    .iter()
+                    .filter(|row| {
+                        row.owner_character_id == character_id
+                            && row.case_id == case_id
+                            && row.available
+                            && row.required_case_site_id == occupied_site_id
+                    })
+                    .collect::<Vec<_>>();
+                sort_generated_actions(&self.profiles[agent as usize], &mut next_actions);
+                if let Some(next_action) = next_actions.into_iter().find(|next_action| {
+                    self.generated_action_return_thermal_decision(
+                        party_id,
+                        &return_pin,
+                        u64::from(next_action.duration_max_minutes),
+                    ) == OnSiteActionDecision::Ready
+                }) {
+                    self.event(
+                        agent,
+                        CoreLoopEventKind::QuestDecision,
+                        format!(
+                            "generated_case={};action={};plan=continue_same_site;next_action={};next_expected_version={};next_max_minutes={}",
+                            bounded_event_field(case_id),
+                            bounded_event_field(&action.action_id),
+                            bounded_event_field(&next_action.action_id),
+                            next_action.expected_version,
+                            next_action.duration_max_minutes,
+                        ),
+                    );
+                    continue;
+                }
                 let return_completed = self.evacuate_generated_party_to_origin(
                     party_id,
                     character_id,
@@ -1917,7 +1960,11 @@ impl LiveRunner {
                 if route_origin.current_settlement_id.is_some()
                     ^ route_origin.current_case_site_id.is_some()
                 {
-                    match self.validate_case_site_thermal_readiness(party_id, agent, &pin) {
+                    let mut readiness =
+                        self.validate_case_site_thermal_readiness(party_id, agent, &pin);
+                    let mut followed_safe_wait = false;
+                    loop {
+                        match readiness {
                         DepartureReadiness::Ready => {}
                         DepartureReadiness::ReadyWithItinerary {
                             walking_minutes_per_day,
@@ -1932,20 +1979,36 @@ impl LiveRunner {
                             )?;
                         }
                         DepartureReadiness::WaitForSafeDeparture {
+                            reason,
                             wait_minutes,
                             walking_minutes_per_day,
                             travel_at_night,
                             ..
                         } => {
-                            if route_origin.current_settlement_id.is_some() {
-                                self.wait_for_safe_departure_at_settlement(
+                            if !followed_safe_wait
+                                && route_origin.current_settlement_id.is_some()
+                                && self.wait_for_safe_departure_at_settlement(
                                     character_id,
                                     agent,
                                     case_id,
+                                    reason,
                                     wait_minutes,
                                     walking_minutes_per_day,
                                     travel_at_night,
-                                )?;
+                                )?
+                            {
+                                followed_safe_wait = true;
+                                if !self.ensure_medically_safe(agent)?
+                                    || matches!(
+                                        self.validate_party_departure_readiness(party_id),
+                                        DepartureReadiness::Deferred(_)
+                                    )
+                                {
+                                    return Ok(false);
+                                }
+                                readiness = self
+                                    .validate_case_site_thermal_readiness(party_id, agent, &pin);
+                                continue;
                             }
                             return Ok(false);
                         }
@@ -1955,11 +2018,13 @@ impl LiveRunner {
                                 CoreLoopEventKind::QuestSuppressed,
                                 format!(
                                     "generated_case={};reason={reason};phase=route_thermal_readiness",
-                                    bounded_event_field(case_id)
+                                    bounded_event_field(case_id),
                                 ),
                             );
                             return Ok(false);
                         }
+                        }
+                        break;
                     }
                 }
                 if matches!(
@@ -2373,6 +2438,14 @@ impl LiveRunner {
             );
             return Ok(());
         }
+        if !self.public_contract_issuer_available(leader, quest) {
+            return self.defer_unavailable_contract_issuer(
+                party_id,
+                leader_agent,
+                quest,
+                "public_presence_projection",
+            );
+        }
         let result = reducer_call!(self, "interact_report_contract", |cb| self
             .connection
             .reducers
@@ -2382,7 +2455,17 @@ impl LiveRunner {
                 ContractInteractionStage::Report,
                 cb,
             ));
-        self.call(result)?;
+        if let Err(error) = result {
+            if contract_issuer_unavailable_failure(&error) {
+                return self.defer_unavailable_contract_issuer(
+                    party_id,
+                    leader_agent,
+                    quest,
+                    "authoritative_interaction_rejection",
+                );
+            }
+            return self.call(Err(error));
+        }
         let result = reducer_call!(self, "turn_in_quest", |cb| self
             .connection
             .reducers

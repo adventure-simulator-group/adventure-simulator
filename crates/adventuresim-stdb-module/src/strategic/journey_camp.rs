@@ -411,6 +411,53 @@ fn record_party_journey_interruption(ctx: &ReducerContext, party_id: &str, movem
     }
 }
 
+/// Promote the exact movement boundary of a finally resolved interruption to
+/// a reached journey stop. Until resolution the encounter, rather than camp
+/// activity or onward movement, owns this location.
+fn establish_resolved_encounter_journey_camp(
+    ctx: &ReducerContext,
+    encounter: &StrategicEncounter,
+) -> Result<(), String> {
+    if encounter.status != "resolved" {
+        return Ok(());
+    }
+    let Some(party) = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&encounter.party_id)
+    else {
+        return Ok(());
+    };
+    let Some(mut journey) = ctx
+        .db
+        .party_journey_authority()
+        .party_id()
+        .find(&encounter.party_id)
+    else {
+        return Ok(());
+    };
+    let exact_incomplete_stop = party.id == encounter.party_id
+        && journey.party_id == encounter.party_id
+        && party.current_settlement_id.is_none()
+        && party.current_case_site_id.is_none()
+        && party.camp_destination.as_ref() == Some(&journey.destination)
+        && journey_plan_version_is_canonical(journey.plan_version)
+        && journey.completed_minutes < journey.total_minutes
+        && encounter.journey_movement_minute == journey.completed_minutes;
+    if !exact_incomplete_stop
+        || journey
+            .camp_stop_minutes
+            .contains(&journey.completed_minutes)
+    {
+        return Ok(());
+    }
+    journey.camp_stop_minutes.push(journey.completed_minutes);
+    ctx.db.party_journey_authority().party_id().update(journey);
+    bind_errantry_trials_to_current_camp(ctx, &encounter.party_id)?;
+    Ok(())
+}
+
 /// Award conserved terrain exposure for the exact movement interval about to
 /// be advanced. Camp time never reaches this function. The persisted route is
 /// the departure snapshot, so chunked/offline continuation cannot change the

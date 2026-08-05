@@ -26,6 +26,7 @@ use adventuresim_stdb_client::{
     advance_simulation_world_time_reducer::advance_simulation_world_time,
     autoresolve_mission_reducer::autoresolve_mission,
     autoresolve_report_table::AutoresolveReportTableAccess,
+    backend_authority_arrest_actions_table::BackendAuthorityArrestActionsTableAccess,
     backend_case_battles_table::BackendCaseBattlesTableAccess,
     backend_case_site_pins_table::BackendCaseSitePinsTableAccess,
     backend_character_attributes_table::BackendCharacterAttributesTableAccess,
@@ -104,6 +105,7 @@ use adventuresim_stdb_client::{
     start_dialogue_reducer::start_dialogue, store_battle_loot_reducer::store_battle_loot,
     strategic_encounter_table::StrategicEncounterTableAccess,
     submit_item_for_repair_reducer::submit_item_for_repair,
+    surrender_to_authority_reducer::surrender_to_authority,
     synchronize_party_for_activity_reducer::synchronize_party_for_activity,
     travel_to_case_site_reducer::travel_to_case_site,
     travel_to_settlement_reducer::travel_to_settlement, treat_limb_reducer::treat_limb,
@@ -320,6 +322,8 @@ pub struct CoreLoopMetrics {
     pub expedition_holds: u32,
     pub expedition_passive_rest_attempts: u32,
     pub expedition_passive_rest_minutes: u64,
+    pub authority_surrenders: u32,
+    pub authority_fines_paid: u64,
     pub generated_unique_party_cases_discovered: u32,
     pub generated_exact_site_ready: u32,
     pub generated_finance_blocked_cycles: u32,
@@ -417,6 +421,8 @@ pub enum CoreLoopEventKind {
     Death,
     QuestDecision,
     SafeDepartureWait,
+    SafeDepartureWaitRelocated,
+    AuthoritySurrender,
     GeneratedDiscoveryAttempt,
     GeneratedDiscoveryResult,
     GeneratedCaseIntake,
@@ -742,6 +748,7 @@ enum DepartureReadiness {
         case_site_recovery_minutes: u64,
     },
     WaitForSafeDeparture {
+        reason: &'static str,
         wait_minutes: u64,
         walking_minutes_per_day: u16,
         travel_at_night: bool,
@@ -931,7 +938,7 @@ fn select_generated_case_site_plan<T>(
     let windows =
         generated_action_walking_windows(current_walking_minutes, movement_minutes, action_minutes);
     for travel_at_night in [current_travel_at_night, !current_travel_at_night] {
-        for &walking_minutes in &windows {
+        for (window_index, &walking_minutes) in windows.iter().enumerate() {
             if adventuresim_core::strategic_time::is_walking_time(
                 starting_minute,
                 walking_minutes,
@@ -940,16 +947,23 @@ fn select_generated_case_site_plan<T>(
             {
                 return Some(plan);
             }
-            if let Some(wait_minutes) =
-                adventuresim_core::strategic_time::minutes_until_next_walking_start(
+            let candidate_waits = if window_index < 4 {
+                generated_safe_departure_waits(
                     starting_minute,
                     walking_minutes,
                     travel_at_night,
                 )
-                .and_then(representable_safe_departure_wait_minutes)
-                && let Some(plan) = evaluate(walking_minutes, travel_at_night, wait_minutes)
-            {
-                return Some(plan);
+            } else {
+                generated_daily_walking_start_waits(
+                    starting_minute,
+                    walking_minutes,
+                    travel_at_night,
+                )
+            };
+            for wait_minutes in candidate_waits {
+                if let Some(plan) = evaluate(walking_minutes, travel_at_night, wait_minutes) {
+                    return Some(plan);
+                }
             }
         }
     }
@@ -957,11 +971,20 @@ fn select_generated_case_site_plan<T>(
 }
 
 fn joint_case_site_plan_failure_reason(
-    candidate_complete_projection: bool,
+    complete_candidate_count: u32,
+    thermally_safe_complete_candidate_count: u32,
     candidate_projection_unavailable: bool,
+    candidate_fatigue_unsafe: bool,
+    candidate_site_mismatch: bool,
 ) -> &'static str {
-    if candidate_complete_projection || !candidate_projection_unavailable {
-        "route_action_plan_intrinsic"
+    if complete_candidate_count > 0 && thermally_safe_complete_candidate_count == 0 {
+        "route_thermal_unsafe_all_public_windows"
+    } else if thermally_safe_complete_candidate_count > 0 && candidate_fatigue_unsafe {
+        "route_fatigue_recovery_required"
+    } else if candidate_site_mismatch {
+        "route_action_site_mismatch"
+    } else if complete_candidate_count > 0 || !candidate_projection_unavailable {
+        "route_action_not_survivable"
     } else {
         "route_weather_projection_unavailable"
     }
@@ -975,6 +998,58 @@ fn safe_departure_wait_minutes(
     (!immediate_safe && delayed_safe)
         .then_some(wait_minutes?)
         .filter(|minutes| (60..=1_440).contains(minutes))
+}
+
+const MAX_CASE_SITE_SAFE_WINDOW_SEARCH_DAYS: u64 = 7;
+const MAX_CASE_SITE_SAFE_WINDOW_SEARCH_MINUTES: u64 =
+    MAX_CASE_SITE_SAFE_WINDOW_SEARCH_DAYS * 1_440;
+
+fn generated_safe_departure_waits(
+    starting_minute: u64,
+    walking_minutes: u16,
+    travel_at_night: bool,
+) -> Vec<u64> {
+    let mut waits = (60..=MAX_CASE_SITE_SAFE_WINDOW_SEARCH_MINUTES)
+        .step_by(60)
+        .filter(|wait| {
+            adventuresim_core::strategic_time::is_walking_time(
+                starting_minute.saturating_add(*wait),
+                walking_minutes,
+                travel_at_night,
+            )
+        })
+        .collect::<Vec<_>>();
+    waits.extend(generated_daily_walking_start_waits(
+        starting_minute,
+        walking_minutes,
+        travel_at_night,
+    ));
+    waits.sort_unstable();
+    waits.dedup();
+    waits
+}
+
+fn generated_daily_walking_start_waits(
+    starting_minute: u64,
+    walking_minutes: u16,
+    travel_at_night: bool,
+) -> Vec<u64> {
+    (0..=MAX_CASE_SITE_SAFE_WINDOW_SEARCH_DAYS)
+        .filter_map(|day_offset| {
+            let day_wait = day_offset * 1_440;
+            adventuresim_core::strategic_time::minutes_until_next_walking_start(
+                starting_minute.saturating_add(day_wait),
+                walking_minutes,
+                travel_at_night,
+            )
+            .and_then(|wait| forecast_safe_departure_wait_minutes(day_wait.saturating_add(wait)))
+        })
+        .collect()
+}
+
+fn forecast_safe_departure_wait_minutes(next_walking_start: u64) -> Option<u64> {
+    (next_walking_start <= MAX_CASE_SITE_SAFE_WINDOW_SEARCH_MINUTES)
+        .then_some(next_walking_start.max(60))
 }
 
 fn representable_safe_departure_wait_minutes(next_walking_start: u64) -> Option<u64> {
@@ -1041,6 +1116,7 @@ struct ExpeditionSuppliesObservation {
 enum ExpeditionRecoveryOutcome {
     None,
     Resumed,
+    Returned,
     Evacuated,
     Held,
 }
@@ -1134,6 +1210,17 @@ fn expedition_supplies_cover_one_rest_day(
             >= living * adventuresim_core::provisioning::STRATEGIC_TRAVEL_KCAL_PER_DAY
         && supplies.portable_water_ml
             >= living * adventuresim_core::provisioning::STRATEGIC_TRAVEL_WATER_ML_PER_DAY
+}
+
+fn observed_activity_return_origin(
+    observations: &HashMap<(String, String), String>,
+    party_id: &str,
+    current_case_site_id: Option<&str>,
+) -> Option<String> {
+    let site_id = current_case_site_id?;
+    observations
+        .get(&(party_id.to_owned(), site_id.to_owned()))
+        .cloned()
 }
 
 fn passive_no_actionable_rest_allowed(
@@ -2562,21 +2649,34 @@ impl From<BackendInvestigationLead> for PublicDiscoveryReferral {
     }
 }
 
-fn new_or_updated_public_discovery_referral(
+fn public_discovery_referral_to_follow(
     owner_character_id: u64,
     before: &HashMap<String, PublicDiscoveryReferral>,
+    open_cases: &HashSet<String>,
     after: impl IntoIterator<Item = PublicDiscoveryReferral>,
 ) -> Option<PublicDiscoveryReferral> {
-    after
-        .into_iter()
-        .filter(|lead| {
-            lead.owner_character_id == owner_character_id
-                && !lead.case_id.is_empty()
-                && !lead.witness_name.is_empty()
-                && lead.corrected_by.is_empty()
-                && before.get(&lead.lead_id) != Some(lead)
-        })
-        .max_by_key(|lead| (lead.recorded_at, lead.lead_id.clone()))
+    let mut newest_changed: Option<PublicDiscoveryReferral> = None;
+    let mut newest_unresolved: Option<PublicDiscoveryReferral> = None;
+    for lead in after.into_iter().filter(|lead| {
+        lead.owner_character_id == owner_character_id
+            && !lead.case_id.is_empty()
+            && !lead.witness_name.is_empty()
+            && lead.corrected_by.is_empty()
+    }) {
+        let later_than_changed = newest_changed.as_ref().is_none_or(|current| {
+            (lead.recorded_at, &lead.lead_id) > (current.recorded_at, &current.lead_id)
+        });
+        let later_than_unresolved = newest_unresolved.as_ref().is_none_or(|current| {
+            (lead.recorded_at, &lead.lead_id) > (current.recorded_at, &current.lead_id)
+        });
+        if before.get(&lead.lead_id) != Some(&lead) && later_than_changed {
+            newest_changed = Some(lead.clone());
+        }
+        if !open_cases.contains(&lead.case_id) && later_than_unresolved {
+            newest_unresolved = Some(lead);
+        }
+    }
+    newest_changed.or(newest_unresolved)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -3045,6 +3145,39 @@ fn victim_cohort_state_changed_failure(error: &str) -> bool {
     error
         .strip_prefix("perform_investigation_action failed: ")
         .is_some_and(|detail| VICTIM_COHORT_STATE_CHANGED_DETAILS.contains(&detail))
+}
+
+const CONTRACT_ISSUER_UNAVAILABLE_DETAIL: &str =
+    "Contract issuer is not available for interaction";
+
+fn contract_issuer_unavailable_failure(error: &str) -> bool {
+    ["interact_accept_contract", "interact_report_contract"]
+        .into_iter()
+        .any(|operation| {
+            error
+                .strip_prefix(&format!("{operation} failed: "))
+                .is_some_and(|detail| detail == CONTRACT_ISSUER_UNAVAILABLE_DETAIL)
+        })
+}
+
+const MERCHANT_PROVIDER_UNAVAILABLE_DETAIL: &str =
+    "Merchant service provider is not available";
+const MERCHANT_PROVIDER_RACE_OPERATIONS: [&str; 5] = [
+    "purchase_party_tent",
+    "purchase_journey_provisions",
+    "purchase_ammunition",
+    "purchase_first_aid_material",
+    "purchase_personal_storefront_with_party_stake",
+];
+
+fn merchant_provider_unavailable_failure(error: &str) -> bool {
+    MERCHANT_PROVIDER_RACE_OPERATIONS
+        .into_iter()
+        .any(|operation| {
+            error
+                .strip_prefix(&format!("{operation} failed: "))
+                .is_some_and(|detail| detail == MERCHANT_PROVIDER_UNAVAILABLE_DETAIL)
+        })
 }
 
 #[derive(Clone)]
