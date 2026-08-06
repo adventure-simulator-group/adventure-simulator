@@ -278,12 +278,35 @@ pub fn commit_hit_injury(
     blunt_damage: f32,
     projectile: Option<ProjectileKind>,
 ) -> Result<(), String> {
+    commit_aggregated_hit_injury(
+        ctx,
+        character_id,
+        limb,
+        cut_damage,
+        blunt_damage,
+        blunt_damage,
+        projectile,
+    )
+}
+
+/// Commit bounded aggregate damage while preserving the largest blunt hit as
+/// the only fracture-driving value.
+pub(crate) fn commit_aggregated_hit_injury(
+    ctx: &ReducerContext,
+    character_id: u64,
+    limb: LimbRegion,
+    cut_damage: f32,
+    blunt_damage: f32,
+    max_single_hit_blunt_damage: f32,
+    projectile: Option<ProjectileKind>,
+) -> Result<(), String> {
     backfill_character_injuries(ctx, character_id);
     let mut injury = injury_for(ctx, character_id, limb);
     injury.cut_damage += cut_damage.max(0.0);
     injury.bruise_damage += blunt_damage.max(0.0);
-    injury.fracture_damage =
-        (injury.fracture_damage + fracture_from_single_hit(blunt_damage)).min(injury.bruise_damage);
+    injury.fracture_damage = (injury.fracture_damage
+        + fracture_from_single_hit(max_single_hit_blunt_damage))
+    .min(injury.bruise_damage);
     if cut_damage > 0.0 {
         injury.infection_origin_minute.get_or_insert_with(|| {
             ctx.db

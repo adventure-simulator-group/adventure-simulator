@@ -41,7 +41,9 @@ Mission requests bind a party, its expected living member count, a scene, a
 one-use tactical-server claim, and private strategic mission authority. The
 registered tactical child keeps live
 simulation state in memory and calls `end_tactical_server` with its terminal
-resolution.
+resolution and a bounded Party-only consequence receipt. The reducer validates
+membership, enrollment, inventory custody, uniqueness, numeric ranges, and
+record caps before applying any durable consequences transactionally.
 
 The module then validates that server and mission, selects only a compatible
 private strategic outcome, and commits durable consequences idempotently.
