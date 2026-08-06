@@ -148,7 +148,9 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 Name::new("controls"),
                 Text::new(""),
                 children![
-                    TextSpan::new("WASD to move | Space to jump | Mouse to look around\n"),
+                    TextSpan::new(
+                        "WASD to move | Space to jump | Mouse to look around | F9 to toggle camera\n"
+                    ),
                     #[cfg(feature = "debug")]
                     TextSpan::new(
                         "DEBUG: F2 to toggle body | F3 to toggle hitbox | F4 to toggle hitscan"

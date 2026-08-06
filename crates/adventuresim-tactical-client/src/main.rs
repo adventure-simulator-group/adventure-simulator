@@ -32,6 +32,7 @@ use console_error_panic_hook;
 use wasm_bindgen::prelude::*;
 
 mod animation;
+mod camera;
 #[cfg(feature = "debug")]
 mod debug;
 mod player;
@@ -97,6 +98,7 @@ fn run(args: Args) {
         ui::UiPlugin,
         player::PlayerPlugin,
         animation::TacticalAnimationPlugin,
+        camera::TacticalCameraPlugin,
     ))
     .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
     .add_systems(Startup, (setup_scene, setup_client))
