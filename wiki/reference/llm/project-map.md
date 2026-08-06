@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1836)
+## Files (1839)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -37,6 +37,9 @@ development, or other wiki document before changing a subsystem.
 - `assets/animations/biped/unarmed/duck_lead_left_backward.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/duck_lead_left_left.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/duck_lead_left_right.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/guard_strafe_lead_left_left.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/guard_strafe_lead_left_right.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/guard_walk_lead_left.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/idle_relaxed.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/run.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/walk.glb` — Binary game or UI asset.

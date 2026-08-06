@@ -19,11 +19,12 @@ mod procedural;
 #[allow(unused_imports)]
 pub(crate) use procedural::{
     BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone, HumanoidIkTargets,
-    ProceduralAnimationClock, ProceduralIkState, gait_support_weights,
+    ProceduralAnimationClock, ProceduralIkState, locomotion_support_weights,
 };
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
 const ANIMATION_FPS: f32 = 30.0;
+const GUARD_PRESENTATION_CROSSFADE_SECONDS: f32 = 0.18;
 // Player transforms sit at the center of the 1.9 m server collider, while
 // authored rigs use a floor-level origin. Keep visual feet on the collider's
 // lower face so the first-person camera lands at the authored head.
@@ -239,6 +240,17 @@ impl AnimationPackCatalog {
             builder.motion(pose, 0);
             builder.pose(pose, 0, pose)?;
         }
+        for motion in [
+            "guard_walk_lead_left",
+            "guard_walk_lead_right",
+            "guard_strafe_lead_left_left",
+            "guard_strafe_lead_left_right",
+            "guard_strafe_lead_right_left",
+            "guard_strafe_lead_right_right",
+        ] {
+            builder.motion(motion, 0);
+            builder.pose(motion, 0, motion)?;
+        }
         for (motion, last_frame, anchors) in [
             ("walk", 32, [(0, "walk_contact"), (8, "walk_passing")]),
             ("run", 20, [(0, "run_contact"), (5, "run_flight")]),
@@ -401,6 +413,9 @@ pub(super) struct AnimationPlayback {
     use_authored_bind_pose: bool,
     pub(super) lower_body_mirror: f32,
     pub(super) whole_body_mirror: f32,
+    weapon_guard: WeaponGuardState,
+    guard_transition: Option<GuardPlaybackTransition>,
+    evaluation_tick: Option<u64>,
 }
 
 impl AnimationPlayback {
@@ -417,6 +432,9 @@ impl Default for AnimationPlayback {
             use_authored_bind_pose: true,
             lower_body_mirror: 0.0,
             whole_body_mirror: 0.0,
+            weapon_guard: WeaponGuardState::Lowered,
+            guard_transition: None,
+            evaluation_tick: None,
         }
     }
 }
@@ -427,6 +445,20 @@ struct WeightedClip {
     weight: f32,
     time_seconds: f32,
     mirrored_weight: f32,
+}
+
+#[derive(Debug, Clone)]
+struct PlaybackPose {
+    clips: Vec<WeightedClip>,
+    use_authored_bind_pose: bool,
+    lower_body_mirror: f32,
+    whole_body_mirror: f32,
+}
+
+#[derive(Debug, Clone)]
+struct GuardPlaybackTransition {
+    from: PlaybackPose,
+    elapsed_seconds: f32,
 }
 
 #[derive(Component)]
@@ -814,6 +846,8 @@ fn evaluate_skeletons(
     mut commands: Commands,
     catalog: Res<AnimationPackCatalog>,
     runtime: Res<AnimationRuntime>,
+    time: Res<Time>,
+    procedural_clock: Res<ProceduralAnimationClock>,
     players: Query<(Entity, &SkeletonState, Option<&mut AnimationPlayback>), With<Player>>,
 ) {
     for (entity, skeleton, playback) in players {
@@ -823,6 +857,33 @@ fn evaluate_skeletons(
         } else {
             &evaluation.action
         };
+        let coherent_guard_parity = samples
+            .iter()
+            .map(guard_locomotion_resolution_pose)
+            .collect::<Option<Vec<_>>>()
+            .map(|resolution_poses| {
+                let exact = guard_parity_score(
+                    &runtime,
+                    &catalog,
+                    &skeleton.animation_pack,
+                    samples,
+                    &resolution_poses,
+                    false,
+                );
+                let mirrored = guard_parity_score(
+                    &runtime,
+                    &catalog,
+                    &skeleton.animation_pack,
+                    samples,
+                    &resolution_poses,
+                    true,
+                );
+                // Preserve the most requested directional semantics and guard
+                // endpoints. Exact orientation wins a complete tie, retaining
+                // exact cardinal authorship without sacrificing a coherent
+                // opposite-side diagonal set.
+                mirrored > exact
+            });
         let mut weighted = Vec::<WeightedClip>::new();
         let mut mirror_weight = 0.0;
         let mut resolved_weight = 0.0;
@@ -834,12 +895,13 @@ fn evaluate_skeletons(
                 &catalog,
                 &skeleton.animation_pack,
                 *sample,
+                coherent_guard_parity,
             );
             let added = (weighted.iter().map(|clip| clip.weight).sum::<f32>() - before).max(0.0);
             resolved_weight += added;
             mirror_weight += added * sample.mirror_lower_body.clamp(0.0, 1.0);
         }
-        let next = AnimationPlayback {
+        let target = PlaybackPose {
             use_authored_bind_pose: weighted.is_empty(),
             whole_body_mirror: {
                 let total = weighted.iter().map(|clip| clip.weight).sum::<f32>();
@@ -862,9 +924,128 @@ fn evaluate_skeletons(
             },
         };
         if let Some(mut playback) = playback {
-            *playback = next;
+            update_guard_crossfade(
+                &mut playback,
+                target,
+                skeleton.weapon_guard,
+                &procedural_clock,
+                time.delta_secs(),
+            );
         } else {
-            commands.entity(entity).insert(next);
+            commands.entity(entity).insert(AnimationPlayback {
+                clips: target.clips,
+                use_authored_bind_pose: target.use_authored_bind_pose,
+                lower_body_mirror: target.lower_body_mirror,
+                whole_body_mirror: target.whole_body_mirror,
+                weapon_guard: skeleton.weapon_guard,
+                guard_transition: None,
+                evaluation_tick: procedural_clock.fixed_step().map(|(tick, _)| tick),
+            });
+        }
+    }
+}
+
+fn update_guard_crossfade(
+    playback: &mut AnimationPlayback,
+    target: PlaybackPose,
+    weapon_guard: WeaponGuardState,
+    procedural_clock: &ProceduralAnimationClock,
+    render_delta_seconds: f32,
+) {
+    let delta_seconds = match procedural_clock.fixed_step() {
+        Some((tick, _)) if playback.evaluation_tick == Some(tick) => 0.0,
+        Some((tick, delta_seconds)) => {
+            playback.evaluation_tick = Some(tick);
+            delta_seconds
+        }
+        None => render_delta_seconds.max(0.0),
+    };
+    let guard_changed = playback.weapon_guard != weapon_guard;
+    if guard_changed {
+        playback.guard_transition = Some(GuardPlaybackTransition {
+            from: playback_pose(playback),
+            elapsed_seconds: 0.0,
+        });
+        playback.weapon_guard = weapon_guard;
+    }
+
+    let mut transition_complete = false;
+    let resolved = if let Some(transition) = playback.guard_transition.as_mut() {
+        // The state change is first presented at the exact old pose. Time
+        // begins accumulating on the next simulation/render observation, so
+        // a replicated guard edge cannot consume the preceding frame's dt.
+        if !guard_changed {
+            transition.elapsed_seconds += delta_seconds;
+        }
+        let progress =
+            (transition.elapsed_seconds / GUARD_PRESENTATION_CROSSFADE_SECONDS).clamp(0.0, 1.0);
+        let pose = blend_playback_poses(&transition.from, &target, progress);
+        transition_complete = progress >= 1.0;
+        pose
+    } else {
+        target
+    };
+    if transition_complete {
+        playback.guard_transition = None;
+    }
+    apply_playback_pose(playback, resolved);
+}
+
+fn playback_pose(playback: &AnimationPlayback) -> PlaybackPose {
+    PlaybackPose {
+        clips: playback.clips.clone(),
+        use_authored_bind_pose: playback.use_authored_bind_pose,
+        lower_body_mirror: playback.lower_body_mirror,
+        whole_body_mirror: playback.whole_body_mirror,
+    }
+}
+
+fn apply_playback_pose(playback: &mut AnimationPlayback, pose: PlaybackPose) {
+    playback.clips = pose.clips;
+    playback.use_authored_bind_pose = pose.use_authored_bind_pose;
+    playback.lower_body_mirror = pose.lower_body_mirror;
+    playback.whole_body_mirror = pose.whole_body_mirror;
+}
+
+fn blend_playback_poses(from: &PlaybackPose, to: &PlaybackPose, progress: f32) -> PlaybackPose {
+    let progress = progress.clamp(0.0, 1.0);
+    let mut clips = Vec::new();
+    append_scaled_playback_clips(&mut clips, &from.clips, 1.0 - progress);
+    append_scaled_playback_clips(&mut clips, &to.clips, progress);
+    PlaybackPose {
+        use_authored_bind_pose: clips.is_empty(),
+        clips,
+        lower_body_mirror: from.lower_body_mirror.lerp(to.lower_body_mirror, progress),
+        whole_body_mirror: from.whole_body_mirror.lerp(to.whole_body_mirror, progress),
+    }
+}
+
+fn append_scaled_playback_clips(
+    combined: &mut Vec<WeightedClip>,
+    source: &[WeightedClip],
+    scale: f32,
+) {
+    if scale <= f32::EPSILON {
+        return;
+    }
+    for source_clip in source {
+        let weight = source_clip.weight * scale;
+        if weight <= f32::EPSILON {
+            continue;
+        }
+        if let Some(existing) = combined.iter_mut().find(|existing| {
+            existing.clip.node == source_clip.clip.node
+                && (existing.time_seconds - source_clip.time_seconds).abs() < 0.0001
+        }) {
+            existing.weight += weight;
+            existing.mirrored_weight += source_clip.mirrored_weight * scale;
+        } else {
+            combined.push(WeightedClip {
+                clip: source_clip.clip.clone(),
+                weight,
+                time_seconds: source_clip.time_seconds,
+                mirrored_weight: source_clip.mirrored_weight * scale,
+            });
         }
     }
 }
@@ -947,6 +1128,7 @@ struct ResolvedAnchor<'a> {
     clip: &'a LoadedClip,
     anchor: &'a PoseAnchor,
     pack_id: &'a str,
+    semantic: SemanticPose,
     mirrored: bool,
 }
 
@@ -975,8 +1157,140 @@ fn resolve_anchor<'a>(
         clip,
         anchor,
         pack_id,
+        semantic: resolved_pose,
         mirrored,
     })
+}
+
+fn is_guard_locomotion_pose(pose: SemanticPose) -> bool {
+    matches!(
+        pose,
+        SemanticPose::GuardLeadLeft
+            | SemanticPose::GuardLeadRight
+            | SemanticPose::GuardWalkLeadLeft
+            | SemanticPose::GuardWalkLeadRight
+            | SemanticPose::GuardStrafeLeadLeftLeft
+            | SemanticPose::GuardStrafeLeadLeftRight
+            | SemanticPose::GuardStrafeLeadRightLeft
+            | SemanticPose::GuardStrafeLeadRightRight
+    )
+}
+
+fn is_guard_movement_pose(pose: SemanticPose) -> bool {
+    matches!(
+        pose,
+        SemanticPose::GuardWalkLeadLeft
+            | SemanticPose::GuardWalkLeadRight
+            | SemanticPose::GuardStrafeLeadLeftLeft
+            | SemanticPose::GuardStrafeLeadLeftRight
+            | SemanticPose::GuardStrafeLeadRightLeft
+            | SemanticPose::GuardStrafeLeadRightRight
+    )
+}
+
+fn guard_locomotion_resolution_pose(sample: &PoseSample) -> Option<SemanticPose> {
+    if let PoseSampling::Span { end, .. } = sample.sampling
+        && is_guard_movement_pose(end)
+    {
+        Some(end)
+    } else {
+        is_guard_locomotion_pose(sample.pose).then_some(sample.pose)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+struct GuardParityScore {
+    movement_semantics: usize,
+    guard_semantics: usize,
+    resolved_anchors: usize,
+}
+
+fn parity_pose(pose: SemanticPose, mirrored: bool) -> SemanticPose {
+    if mirrored {
+        pose.mirrored_counterpart().unwrap_or(pose)
+    } else {
+        pose
+    }
+}
+
+fn guard_parity_score(
+    runtime: &AnimationRuntime,
+    catalog: &AnimationPackCatalog,
+    pack: &str,
+    samples: &[PoseSample],
+    movement_poses: &[SemanticPose],
+    mirrored: bool,
+) -> GuardParityScore {
+    let movements = movement_poses.iter().copied().collect::<BTreeSet<_>>();
+    let guards = samples
+        .iter()
+        .map(|sample| sample.pose)
+        .collect::<BTreeSet<_>>();
+    let mut score = GuardParityScore::default();
+    for pose in movements {
+        if let Some(resolved) = resolve_anchor_with_parity(runtime, catalog, pack, pose, mirrored) {
+            score.resolved_anchors += 1;
+            score.movement_semantics += (resolved.semantic == parity_pose(pose, mirrored)) as usize;
+        }
+    }
+    for pose in guards {
+        if let Some(resolved) = resolve_anchor_with_parity(runtime, catalog, pack, pose, mirrored) {
+            score.resolved_anchors += 1;
+            score.guard_semantics += (resolved.semantic == parity_pose(pose, mirrored)) as usize;
+        }
+    }
+    score
+}
+
+fn resolve_anchor_with_parity<'a>(
+    runtime: &'a AnimationRuntime,
+    catalog: &'a AnimationPackCatalog,
+    requested_pack: &str,
+    requested_pose: SemanticPose,
+    mirrored: bool,
+) -> Option<ResolvedAnchor<'a>> {
+    // The core resolver deliberately chooses same-pack counterparts on a
+    // per-request basis. Guard diagonals instead require one forced parity for
+    // the post-FK whole-body mirror, so this centralized traversal preserves
+    // the core pack-before-semantic-fallback ordering while suppressing any
+    // per-contribution parity switch.
+    let mut semantic = Some(if mirrored {
+        requested_pose
+            .mirrored_counterpart()
+            .unwrap_or(requested_pose)
+    } else {
+        requested_pose
+    });
+    let mut semantic_seen = BTreeSet::new();
+    while let Some(pose) = semantic {
+        if !semantic_seen.insert(pose) {
+            break;
+        }
+        let mut pack_id = Some(requested_pack.to_owned());
+        let mut pack_seen = BTreeSet::new();
+        while let Some(id) = pack_id {
+            if !pack_seen.insert(id.clone()) {
+                break;
+            }
+            let (canonical_id, pack) = catalog.packs.get_key_value(&id)?;
+            if let Some(anchor) = pack.poses.get(&pose)
+                && let Some(clip) = runtime
+                    .clips
+                    .get(&(canonical_id.clone(), anchor.motion.clone()))
+            {
+                return Some(ResolvedAnchor {
+                    clip,
+                    anchor,
+                    pack_id: canonical_id,
+                    semantic: pose,
+                    mirrored,
+                });
+            }
+            pack_id = pack.fallback.clone();
+        }
+        semantic = pose.fallback();
+    }
+    None
 }
 
 fn append_weighted(
@@ -1012,8 +1326,13 @@ fn append_resolved_sample(
     catalog: &AnimationPackCatalog,
     pack: &str,
     sample: PoseSample,
+    forced_mirror_parity: Option<bool>,
 ) {
-    let Some(start) = resolve_anchor(runtime, catalog, pack, sample.pose) else {
+    let start = match forced_mirror_parity {
+        Some(mirrored) => resolve_anchor_with_parity(runtime, catalog, pack, sample.pose, mirrored),
+        None => resolve_anchor(runtime, catalog, pack, sample.pose),
+    };
+    let Some(start) = start else {
         return;
     };
     match sample.sampling {
@@ -1032,7 +1351,13 @@ fn append_resolved_sample(
         PoseSampling::Span { end, progress } => {
             let end_pose = end;
             let progress = progress.clamp(0.0, 1.0);
-            let Some(end) = resolve_anchor(runtime, catalog, pack, end_pose) else {
+            let end = match forced_mirror_parity {
+                Some(mirrored) => {
+                    resolve_anchor_with_parity(runtime, catalog, pack, end_pose, mirrored)
+                }
+                None => resolve_anchor(runtime, catalog, pack, end_pose),
+            };
+            let Some(end) = end else {
                 append_weighted(
                     weighted,
                     &start,
@@ -1271,6 +1596,18 @@ mod tests {
                 frame: 0,
             }
         );
+        for pose in [
+            SemanticPose::GuardWalkLeadLeft,
+            SemanticPose::GuardWalkLeadRight,
+            SemanticPose::GuardStrafeLeadLeftLeft,
+            SemanticPose::GuardStrafeLeadLeftRight,
+            SemanticPose::GuardStrafeLeadRightLeft,
+            SemanticPose::GuardStrafeLeadRightRight,
+        ] {
+            let anchor = &root.poses[&pose];
+            assert_eq!(anchor.frame, 0);
+            assert_eq!(root.motions[&anchor.motion].last_frame, 0);
+        }
     }
 
     #[test]
@@ -1371,6 +1708,7 @@ mod tests {
                 weight: 1.0,
                 mirror_lower_body: 0.0,
             },
+            None,
         );
         assert_eq!(weighted.len(), 1);
         assert!((weighted[0].time_seconds - 4.0 / 30.0).abs() < 0.0001);
@@ -1392,6 +1730,7 @@ mod tests {
                 weight: 1.0,
                 mirror_lower_body: 0.0,
             },
+            None,
         );
         assert_eq!(weighted.len(), 1);
         assert!((weighted[0].time_seconds - 16.0 / ANIMATION_FPS).abs() < 0.0001);
@@ -1420,6 +1759,7 @@ mod tests {
                 weight: 1.0,
                 mirror_lower_body: 0.0,
             },
+            None,
         );
         assert!(
             weighted
@@ -1455,6 +1795,7 @@ mod tests {
                 weight: 1.0,
                 mirror_lower_body: 0.0,
             },
+            None,
         );
         assert_eq!(weighted.len(), 1);
         assert!((weighted[0].time_seconds - 2.0 / ANIMATION_FPS).abs() < 0.0001);
@@ -1563,6 +1904,7 @@ mod tests {
                 weight: 1.0,
                 mirror_lower_body: 0.0,
             },
+            None,
         );
         assert_eq!(weighted.len(), 1);
         assert!(weighted[0].time_seconds.abs() < 0.0001);
@@ -1598,9 +1940,239 @@ mod tests {
                 weight: 0.75,
                 mirror_lower_body: 0.0,
             },
+            None,
         );
         assert_eq!(weighted.len(), 1);
         assert!((weighted[0].mirrored_weight - 0.75).abs() < 0.0001);
+    }
+
+    #[test]
+    fn partial_guard_diagonal_assets_keep_one_coherent_exact_orientation() {
+        let catalog = AnimationPackCatalog::default();
+        let runtime = runtime_with_available([
+            SemanticPose::GuardLeadLeft,
+            SemanticPose::GuardWalkLeadLeft,
+            SemanticPose::GuardStrafeLeadRightRight,
+        ]);
+        let requested = [
+            (SemanticPose::GuardWalkLeadLeft, 0.25),
+            (SemanticPose::GuardStrafeLeadLeftLeft, 0.75),
+        ];
+        let samples = requested.map(|(pose, weight)| PoseSample {
+            pose: SemanticPose::GuardLeadLeft,
+            sampling: PoseSampling::Span {
+                end: pose,
+                progress: 0.5,
+            },
+            weight,
+            mirror_lower_body: 0.0,
+        });
+        let movement = requested.map(|item| item.0);
+        let exact = guard_parity_score(
+            &runtime,
+            &catalog,
+            HUMANOID_UNARMED_PACK,
+            &samples,
+            &movement,
+            false,
+        );
+        let mirrored = guard_parity_score(
+            &runtime,
+            &catalog,
+            HUMANOID_UNARMED_PACK,
+            &samples,
+            &movement,
+            true,
+        );
+        let parity = mirrored > exact;
+        assert!(!parity);
+
+        let mut weighted = Vec::new();
+        for sample in samples {
+            append_resolved_sample(
+                &mut weighted,
+                &runtime,
+                &catalog,
+                HUMANOID_UNARMED_PACK,
+                sample,
+                Some(parity),
+            );
+        }
+        assert!(!weighted.is_empty());
+        assert!(weighted.iter().all(|clip| clip.mirrored_weight == 0.0));
+        assert!((weighted.iter().map(|clip| clip.weight).sum::<f32>() - 1.0).abs() < 0.0001);
+        let exact_nodes = [
+            runtime.clips[&(
+                HUMANOID_UNARMED_PACK.to_owned(),
+                "guard_lead_left".to_owned(),
+            )]
+                .node,
+            runtime.clips[&(
+                HUMANOID_UNARMED_PACK.to_owned(),
+                "guard_walk_lead_left".to_owned(),
+            )]
+                .node,
+        ];
+        assert!(
+            weighted
+                .iter()
+                .all(|clip| exact_nodes.contains(&clip.clip.node))
+        );
+    }
+
+    #[test]
+    fn coherent_opposite_parity_preserves_complete_diagonal_semantics() {
+        let catalog = AnimationPackCatalog::default();
+        let runtime = runtime_with_available([
+            SemanticPose::GuardLeadLeft,
+            SemanticPose::GuardLeadRight,
+            SemanticPose::GuardWalkLeadLeft,
+            SemanticPose::GuardWalkLeadRight,
+            SemanticPose::GuardStrafeLeadRightRight,
+        ]);
+        let samples = [
+            PoseSample {
+                pose: SemanticPose::GuardLeadLeft,
+                sampling: PoseSampling::Span {
+                    end: SemanticPose::GuardWalkLeadLeft,
+                    progress: 0.5,
+                },
+                weight: 0.5,
+                mirror_lower_body: 0.0,
+            },
+            PoseSample {
+                pose: SemanticPose::GuardLeadLeft,
+                sampling: PoseSampling::Span {
+                    end: SemanticPose::GuardStrafeLeadLeftLeft,
+                    progress: 0.5,
+                },
+                weight: 0.5,
+                mirror_lower_body: 0.0,
+            },
+        ];
+        let movement = [
+            SemanticPose::GuardWalkLeadLeft,
+            SemanticPose::GuardStrafeLeadLeftLeft,
+        ];
+        let exact = guard_parity_score(
+            &runtime,
+            &catalog,
+            HUMANOID_UNARMED_PACK,
+            &samples,
+            &movement,
+            false,
+        );
+        let mirrored = guard_parity_score(
+            &runtime,
+            &catalog,
+            HUMANOID_UNARMED_PACK,
+            &samples,
+            &movement,
+            true,
+        );
+        assert!(mirrored > exact);
+
+        let mut weighted = Vec::new();
+        for sample in samples {
+            append_resolved_sample(
+                &mut weighted,
+                &runtime,
+                &catalog,
+                HUMANOID_UNARMED_PACK,
+                sample,
+                Some(true),
+            );
+        }
+        let expected_nodes = [
+            runtime.clips[&(
+                HUMANOID_UNARMED_PACK.to_owned(),
+                "guard_lead_right".to_owned(),
+            )]
+                .node,
+            runtime.clips[&(
+                HUMANOID_UNARMED_PACK.to_owned(),
+                "guard_walk_lead_right".to_owned(),
+            )]
+                .node,
+            runtime.clips[&(
+                HUMANOID_UNARMED_PACK.to_owned(),
+                "guard_strafe_lead_right_right".to_owned(),
+            )]
+                .node,
+        ];
+        assert!(
+            weighted
+                .iter()
+                .all(|clip| expected_nodes.contains(&clip.clip.node))
+        );
+        assert!(
+            weighted
+                .iter()
+                .all(|clip| (clip.mirrored_weight - clip.weight).abs() < 0.0001)
+        );
+    }
+
+    #[test]
+    fn exact_cardinal_guard_motion_wins_a_complete_parity_tie() {
+        let catalog = AnimationPackCatalog::default();
+        let runtime = runtime_with_available([
+            SemanticPose::GuardLeadLeft,
+            SemanticPose::GuardLeadRight,
+            SemanticPose::GuardWalkLeadLeft,
+            SemanticPose::GuardWalkLeadRight,
+        ]);
+        let samples = [PoseSample {
+            pose: SemanticPose::GuardLeadLeft,
+            sampling: PoseSampling::Span {
+                end: SemanticPose::GuardWalkLeadLeft,
+                progress: 0.5,
+            },
+            weight: 1.0,
+            mirror_lower_body: 0.0,
+        }];
+        let movement = [SemanticPose::GuardWalkLeadLeft];
+        let exact = guard_parity_score(
+            &runtime,
+            &catalog,
+            HUMANOID_UNARMED_PACK,
+            &samples,
+            &movement,
+            false,
+        );
+        let mirrored = guard_parity_score(
+            &runtime,
+            &catalog,
+            HUMANOID_UNARMED_PACK,
+            &samples,
+            &movement,
+            true,
+        );
+        assert_eq!(exact, mirrored);
+        assert!(!(mirrored > exact));
+    }
+
+    #[test]
+    fn absent_guard_locomotion_assets_degrade_without_a_partial_clip() {
+        let catalog = AnimationPackCatalog::default();
+        let runtime = runtime_with_available([]);
+        let mut weighted = Vec::new();
+        append_resolved_sample(
+            &mut weighted,
+            &runtime,
+            &catalog,
+            HUMANOID_UNARMED_PACK,
+            PoseSample {
+                pose: SemanticPose::GuardLeadLeft,
+                sampling: PoseSampling::Span {
+                    end: SemanticPose::GuardStrafeLeadLeftRight,
+                    progress: 0.5,
+                },
+                weight: 1.0,
+                mirror_lower_body: 0.0,
+            },
+            Some(false),
+        );
+        assert!(weighted.is_empty());
     }
 
     #[test]
@@ -1688,6 +2260,108 @@ mod tests {
             .run_system_cached(reset_authored_bind_before_fk)
             .unwrap();
         assert_eq!(*world.get::<Transform>(node).unwrap(), bind);
+    }
+
+    fn mirror_test_pose(mirror: f32) -> PlaybackPose {
+        PlaybackPose {
+            clips: Vec::new(),
+            use_authored_bind_pose: true,
+            lower_body_mirror: mirror,
+            whole_body_mirror: mirror,
+        }
+    }
+
+    #[test]
+    fn guard_crossfade_activates_at_the_current_effective_pose() {
+        let mut playback = AnimationPlayback {
+            lower_body_mirror: 0.8,
+            whole_body_mirror: 0.8,
+            ..default()
+        };
+        let mut clock = ProceduralAnimationClock::default();
+        clock.set_fixed_tick(10, 0.1);
+
+        update_guard_crossfade(
+            &mut playback,
+            mirror_test_pose(0.2),
+            WeaponGuardState::Raised,
+            &clock,
+            0.0,
+        );
+
+        assert!(playback.guard_transition.is_some());
+        assert!((playback.lower_body_mirror - 0.8).abs() < 0.0001);
+        assert!((playback.whole_body_mirror - 0.8).abs() < 0.0001);
+    }
+
+    #[test]
+    fn guard_crossfade_completes_at_the_latest_target_pose() {
+        let mut playback = AnimationPlayback {
+            lower_body_mirror: 0.8,
+            whole_body_mirror: 0.8,
+            ..default()
+        };
+        let mut clock = ProceduralAnimationClock::default();
+        clock.set_fixed_tick(10, 0.1);
+        update_guard_crossfade(
+            &mut playback,
+            mirror_test_pose(0.2),
+            WeaponGuardState::Raised,
+            &clock,
+            0.0,
+        );
+        clock.set_fixed_tick(11, GUARD_PRESENTATION_CROSSFADE_SECONDS);
+        update_guard_crossfade(
+            &mut playback,
+            mirror_test_pose(0.2),
+            WeaponGuardState::Raised,
+            &clock,
+            0.0,
+        );
+
+        assert!(playback.guard_transition.is_none());
+        assert!((playback.lower_body_mirror - 0.2).abs() < 0.0001);
+        assert!((playback.whole_body_mirror - 0.2).abs() < 0.0001);
+    }
+
+    #[test]
+    fn reversing_guard_mid_crossfade_has_no_presentation_jump() {
+        let mut playback = AnimationPlayback {
+            lower_body_mirror: 0.8,
+            whole_body_mirror: 0.8,
+            ..default()
+        };
+        let mut clock = ProceduralAnimationClock::default();
+        clock.set_fixed_tick(10, 0.09);
+        update_guard_crossfade(
+            &mut playback,
+            mirror_test_pose(0.2),
+            WeaponGuardState::Raised,
+            &clock,
+            0.0,
+        );
+        clock.set_fixed_tick(11, 0.09);
+        update_guard_crossfade(
+            &mut playback,
+            mirror_test_pose(0.2),
+            WeaponGuardState::Raised,
+            &clock,
+            0.0,
+        );
+        let before_reversal = playback.lower_body_mirror;
+
+        clock.set_fixed_tick(12, 0.09);
+        update_guard_crossfade(
+            &mut playback,
+            mirror_test_pose(0.8),
+            WeaponGuardState::Lowered,
+            &clock,
+            0.0,
+        );
+
+        let transition = playback.guard_transition.as_ref().unwrap();
+        assert!((playback.lower_body_mirror - before_reversal).abs() < 0.0001);
+        assert!((transition.from.lower_body_mirror - before_reversal).abs() < 0.0001);
     }
 
     #[test]

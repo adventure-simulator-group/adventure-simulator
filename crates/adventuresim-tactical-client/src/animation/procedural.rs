@@ -342,9 +342,10 @@ pub(super) fn stabilize_locomotion_torso(
         let Ok(skeleton) = owners.get(bone.owner) else {
             continue;
         };
+        let animation_speed = skeleton.animation_speed();
         if !skeleton.grounded
             || skeleton.action != SkeletonAction::None
-            || skeleton.local_velocity.xz().length() <= 0.05
+            || animation_speed <= 0.05
             || !matches!(skeleton.posture, Posture::Upright | Posture::Crouched)
         {
             continue;
@@ -366,8 +367,7 @@ pub(super) fn stabilize_locomotion_torso(
         transform.rotation =
             clamp_rotation_from_bind(bind.local.rotation, transform.rotation, rotation_limit);
         if bone.role == BoneRole::Root {
-            let speed = skeleton.local_velocity.xz().length();
-            let run = locomotion_run_weight(speed);
+            let run = locomotion_run_weight(animation_speed);
             let flight = (skeleton.gait_phase.rem_euclid(1.0) * std::f32::consts::TAU)
                 .sin()
                 .abs();
@@ -478,6 +478,10 @@ impl ProceduralAnimationClock {
     pub(crate) fn set_fixed_tick(&mut self, tick: u64, delta_seconds: f32) {
         self.fixed_tick = Some((tick, delta_seconds.max(0.0)));
     }
+
+    pub(crate) fn fixed_step(&self) -> Option<(u64, f32)> {
+        self.fixed_tick
+    }
 }
 
 const MIN_INTER_FOOT_SEPARATION: f32 = 0.16;
@@ -581,8 +585,18 @@ pub(super) fn apply_terrain_leg_ik(
             continue;
         }
         let phase = skeleton.gait_phase.rem_euclid(1.0);
-        let ground_speed = skeleton.local_velocity.xz().length();
-        let (left_weight, right_weight) = gait_support_weights(phase, ground_speed);
+        let ground_speed = skeleton.animation_speed();
+        let raised_guard_follower = skeleton.weapon_guard == WeaponGuardState::Raised
+            && skeleton.action == SkeletonAction::None
+            && skeleton.raised_locomotion.active;
+        let (left_weight, right_weight) = if raised_guard_follower {
+            // Fixed-lead guard poses already provide safe authored XZ tracks.
+            // Follow both feet vertically over terrain, but never turn their
+            // current authored positions into alternating world-space plants.
+            (1.0, 1.0)
+        } else {
+            gait_support_weights(phase, ground_speed)
+        };
         let legs = [
             (
                 BoneRole::ThighLeft,
@@ -603,6 +617,10 @@ pub(super) fn apply_terrain_leg_ik(
             .get_mut(owner)
             .map(|state| state.0)
             .unwrap_or_default();
+        if raised_guard_follower {
+            memory.left_foot_plant = None;
+            memory.right_foot_plant = None;
+        }
         let state_delta_seconds = match clock.fixed_tick {
             Some((tick, _)) if memory.evaluation_tick == Some(tick) => 0.0,
             Some((tick, delta_seconds)) => {
@@ -746,7 +764,7 @@ pub(super) fn apply_terrain_leg_ik(
             // approaching the ground. Capturing that stale position early
             // makes the pelvis outrun it, forcing the reach limiter to drag a
             // fully weighted foot and drive the knee toward extension.
-            if weight >= 0.95 && plant.is_none() {
+            if weight >= 0.95 && plant.is_none() && !raised_guard_follower {
                 let visible_contact = if left {
                     memory.left_foot_world_target
                 } else {
@@ -917,6 +935,21 @@ pub(crate) fn gait_support_weights(phase: f32, speed: f32) -> (f32, f32) {
         1.0_f32.lerp(gait(phase.rem_euclid(1.0)), locomotion),
         1.0_f32.lerp(gait((phase + 0.5).rem_euclid(1.0)), locomotion),
     )
+}
+
+/// World-space plant confidence used by diagnostics. Raised guard movement
+/// follows authored foot XZ positions instead of alternating retained plants,
+/// so neither side is reported as pinned even though both receive full terrain
+/// height/reach correction inside the IK solver.
+pub(crate) fn locomotion_support_weights(skeleton: &SkeletonState) -> (f32, f32) {
+    if skeleton.weapon_guard == WeaponGuardState::Raised
+        && skeleton.action == SkeletonAction::None
+        && skeleton.raised_locomotion.active
+    {
+        (0.0, 0.0)
+    } else {
+        gait_support_weights(skeleton.gait_phase, skeleton.local_velocity.xz().length())
+    }
 }
 
 fn foot_support_weight(phase: f32, moving: bool, run_weight: f32) -> f32 {
@@ -1603,6 +1636,36 @@ mod tests {
         assert_eq!(foot_support_weight(0.0, true, 1.0), 1.0);
         assert_eq!(locomotion_run_weight(2.0), 0.0);
         assert_eq!(locomotion_run_weight(5.5), 1.0);
+    }
+
+    #[test]
+    fn raised_guard_movement_never_reports_alternating_world_plants() {
+        for (lead, phase) in [
+            (LeadFoot::Left, 0.0),
+            (LeadFoot::Left, 0.5),
+            (LeadFoot::Right, 0.25),
+            (LeadFoot::Right, 0.75),
+        ] {
+            let skeleton = SkeletonState {
+                weapon_guard: WeaponGuardState::Raised,
+                lead_foot: lead,
+                gait_phase: phase,
+                local_velocity: Vec3::NEG_Z * 2.0,
+                raised_locomotion: RaisedLocomotionIntent {
+                    active: true,
+                    local_direction: Vec2::NEG_Y,
+                    speed: 2.0,
+                },
+                ..default()
+            };
+            assert_eq!(locomotion_support_weights(&skeleton), (0.0, 0.0));
+        }
+        let idle = SkeletonState {
+            weapon_guard: WeaponGuardState::Raised,
+            local_velocity: Vec3::ZERO,
+            ..default()
+        };
+        assert_eq!(locomotion_support_weights(&idle), (1.0, 1.0));
     }
 
     #[test]

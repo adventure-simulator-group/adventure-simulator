@@ -471,27 +471,39 @@ pub(crate) fn on_player_input(
             &mut AccumulatedInput,
             &mut CharacterLook,
             &TacticalCombatState,
+            &mut SkeletonState,
         ),
         With<Player>,
     >,
 ) {
-    let Some(validated) = validate_player_input(input.look, input.movement, input.jump) else {
+    let Some(validated) =
+        validate_player_input(input.look, input.movement, input.jump, input.weapon_guard)
+    else {
         return;
     };
     let Some(entity) = input.client_id.entity() else {
         return;
     };
-    let Ok((mut accumulated_input, mut look, combat_state)) = players.get_mut(entity) else {
+    let Ok((mut accumulated_input, mut look, combat_state, mut skeleton)) = players.get_mut(entity)
+    else {
         return;
     };
     if combat_state.is_incapacitated() {
         accumulated_input.last_movement = None;
         accumulated_input.jumped = None;
+        set_weapon_guard(
+            &mut skeleton,
+            authoritative_weapon_guard(validated.weapon_guard, true),
+        );
         return;
     }
     look.yaw = validated.yaw;
     look.pitch = validated.pitch;
     accumulated_input.last_movement = validated.movement;
+    set_weapon_guard(
+        &mut skeleton,
+        authoritative_weapon_guard(validated.weapon_guard, false),
+    );
     if validated.jump {
         accumulated_input.jumped = Some(Stopwatch::new());
     }
@@ -503,12 +515,14 @@ struct ValidatedPlayerInput {
     yaw: f32,
     pitch: f32,
     jump: bool,
+    weapon_guard: WeaponGuardState,
 }
 
 fn validate_player_input(
     look: Vec2,
     movement: Option<Vec2>,
     jump: bool,
+    weapon_guard: WeaponGuardState,
 ) -> Option<ValidatedPlayerInput> {
     if !look.is_finite() || movement.is_some_and(|movement| !movement.is_finite()) {
         return None;
@@ -519,7 +533,19 @@ fn validate_player_input(
             - std::f32::consts::PI,
         pitch: look.y.clamp(-1.5, 1.5),
         jump,
+        weapon_guard,
     })
+}
+
+fn authoritative_weapon_guard(
+    requested: WeaponGuardState,
+    incapacitated: bool,
+) -> WeaponGuardState {
+    if incapacitated {
+        WeaponGuardState::Lowered
+    } else {
+        requested
+    }
 }
 
 /// Projects authoritative controller motion into the compact presentation
@@ -532,17 +558,23 @@ pub(crate) fn update_skeleton_locomotion(
             &LinearVelocity,
             &mut SkeletonState,
             &mut Transform,
+            &TacticalCombatState,
         ),
         With<Player>,
     >,
 ) {
-    for (controller, velocity, mut skeleton, mut transform) in &mut players {
+    for (controller, velocity, mut skeleton, mut transform, combat_state) in &mut players {
+        if combat_state.is_incapacitated() {
+            let lowered = authoritative_weapon_guard(skeleton.weapon_guard, true);
+            set_weapon_guard(&mut skeleton, lowered);
+        }
         let tick = (time.elapsed_secs_f64() * 64.0).round() as u64;
         transform.rotation = advance_body_facing(
             transform.rotation,
             controller.orientation,
             velocity.0,
             skeleton.action,
+            skeleton.weapon_guard,
             time.delta_secs(),
         );
         project_skeleton_locomotion(
@@ -599,7 +631,10 @@ fn player_spawn_offset(collider: &Collider) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{mission_enemy_health_scale, mission_enemy_scale, validate_player_input};
+    use super::{
+        WeaponGuardState, authoritative_weapon_guard, mission_enemy_health_scale,
+        mission_enemy_scale, validate_player_input,
+    };
     use bevy::prelude::*;
 
     #[test]
@@ -620,24 +655,37 @@ mod tests {
 
     #[test]
     fn player_input_rejects_non_finite_look_or_movement_as_one_update() {
-        let mut controller_input = (Vec2::new(0.4, -0.2), Some(Vec2::new(0.25, 0.5)), false);
+        let mut controller_input = (
+            Vec2::new(0.4, -0.2),
+            Some(Vec2::new(0.25, 0.5)),
+            false,
+            WeaponGuardState::Lowered,
+        );
         for (look, movement) in [
             (Vec2::new(f32::NAN, 0.0), Some(Vec2::ZERO)),
             (Vec2::new(0.0, f32::INFINITY), Some(Vec2::ZERO)),
             (Vec2::ZERO, Some(Vec2::new(f32::NEG_INFINITY, 0.0))),
             (Vec2::ZERO, Some(Vec2::new(0.0, f32::NAN))),
         ] {
-            if let Some(validated) = validate_player_input(look, movement, true) {
+            if let Some(validated) =
+                validate_player_input(look, movement, true, WeaponGuardState::Raised)
+            {
                 controller_input = (
                     Vec2::new(validated.yaw, validated.pitch),
                     validated.movement,
                     validated.jump,
+                    validated.weapon_guard,
                 );
             }
         }
         assert_eq!(
             controller_input,
-            (Vec2::new(0.4, -0.2), Some(Vec2::new(0.25, 0.5)), false)
+            (
+                Vec2::new(0.4, -0.2),
+                Some(Vec2::new(0.25, 0.5)),
+                false,
+                WeaponGuardState::Lowered,
+            )
         );
     }
 
@@ -647,11 +695,25 @@ mod tests {
             Vec2::new(std::f32::consts::TAU * 4.0 + 0.25, 99.0),
             Some(Vec2::splat(10.0)),
             true,
+            WeaponGuardState::Raised,
         )
         .unwrap();
         assert!((validated.yaw - 0.25).abs() < 0.0001);
         assert_eq!(validated.pitch, 1.5);
         assert!(validated.movement.unwrap().length() <= 1.0001);
         assert!(validated.yaw.is_finite() && validated.pitch.is_finite());
+        assert_eq!(validated.weapon_guard, WeaponGuardState::Raised);
+    }
+
+    #[test]
+    fn authoritative_guard_accepts_active_input_but_incapacitation_forces_lowered() {
+        assert_eq!(
+            authoritative_weapon_guard(WeaponGuardState::Raised, false),
+            WeaponGuardState::Raised
+        );
+        assert_eq!(
+            authoritative_weapon_guard(WeaponGuardState::Raised, true),
+            WeaponGuardState::Lowered
+        );
     }
 }
