@@ -403,7 +403,7 @@ fn exact_hostile_negotiation_authority(
                 && capability.hostile_group_id == group.id
                 && capability.case_site_id == group.case_site_id
                 && capability.resolution == HostileResolutionKind::DrivenOff
-                && crate::strategic::inventory_trade::mission_approach_capability_is_pending(
+                && mission_approach_capability_is_pending(
                     ctx,
                     &capability,
                     &party.id,
