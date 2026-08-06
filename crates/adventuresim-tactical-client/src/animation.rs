@@ -4,6 +4,7 @@ use std::{
 };
 
 use adventuresim_tactical_core::prelude::*;
+use adventuresim_tactical_netcode::message::SuccessfulAttackResponse;
 use bevy::{
     animation::{AnimatedBy, AnimationTargetId},
     app::AnimationSystems,
@@ -14,6 +15,9 @@ use bevy::{
 };
 
 mod procedural;
+
+#[allow(unused_imports)]
+pub(crate) use procedural::{BoneRole, HumanoidBone};
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
 const ANIMATION_FPS: f32 = 30.0;
@@ -25,6 +29,7 @@ impl Plugin for TacticalAnimationPlugin {
         app.init_resource::<AnimationPackCatalog>()
             .init_resource::<AnimationRuntime>()
             .add_systems(Startup, request_animation_packs)
+            .add_observer(on_successful_attack)
             .add_systems(
                 Update,
                 (
@@ -34,6 +39,7 @@ impl Plugin for TacticalAnimationPlugin {
                     identify_animation_players,
                     procedural::bind_humanoid_bones,
                     evaluate_skeletons,
+                    tick_impact_reactions,
                     sync_animation_graphs,
                     drive_fk_players,
                     update_rig_visibility,
@@ -44,6 +50,8 @@ impl Plugin for TacticalAnimationPlugin {
                 PostUpdate,
                 (
                     procedural::apply_head_and_torso_look,
+                    procedural::apply_lower_body_mirroring,
+                    procedural::apply_impact_reaction,
                     procedural::apply_terrain_leg_ik,
                 )
                     .chain()
@@ -324,6 +332,7 @@ impl AnimationPackCatalog {
 #[derive(Debug, Clone)]
 struct LoadedClip {
     node: AnimationNodeIndex,
+    duration_seconds: f32,
 }
 
 #[derive(Resource, Default)]
@@ -344,9 +353,17 @@ struct AnimationRuntime {
 }
 
 #[derive(Component, Debug)]
-struct AnimationPlayback {
+pub(super) struct AnimationPlayback {
     clips: Vec<WeightedClip>,
     use_bind_pose_t: bool,
+    pub(super) lower_body_mirror: f32,
+}
+
+impl AnimationPlayback {
+    #[allow(dead_code)] // Used by the standalone animation-viewer binary.
+    pub(super) fn authored_pose_is_ready(&self) -> bool {
+        !self.use_bind_pose_t && !self.clips.is_empty()
+    }
 }
 
 impl Default for AnimationPlayback {
@@ -354,6 +371,7 @@ impl Default for AnimationPlayback {
         Self {
             clips: Vec::new(),
             use_bind_pose_t: true,
+            lower_body_mirror: 0.0,
         }
     }
 }
@@ -382,6 +400,13 @@ struct AnimationPlayerOwner(pub Entity);
 
 #[derive(Component, Default)]
 struct AnimationGraphRevision(u64);
+
+#[derive(Component, Debug, Clone, Copy)]
+pub(super) struct ImpactReaction {
+    pub(super) remaining: f32,
+    pub(super) duration: f32,
+    pub(super) strength: f32,
+}
 
 fn request_animation_packs(
     catalog: Res<AnimationPackCatalog>,
@@ -535,7 +560,19 @@ fn collect_loaded_packs(
     runtime.clips = ordered
         .into_iter()
         .zip(nodes)
-        .map(|((key, _handle), node)| (key, LoadedClip { node }))
+        .map(|((key, handle), node)| {
+            let duration_seconds = clips
+                .get(&handle)
+                .map(AnimationClip::duration)
+                .unwrap_or_default();
+            (
+                key,
+                LoadedClip {
+                    node,
+                    duration_seconds,
+                },
+            )
+        })
         .collect();
     runtime.graph = Some(graphs.add(graph));
     runtime.revision = runtime.revision.wrapping_add(1);
@@ -726,7 +763,10 @@ fn evaluate_skeletons(
             &evaluation.action
         };
         let mut weighted = Vec::<WeightedClip>::new();
+        let mut mirror_weight = 0.0;
+        let mut resolved_weight = 0.0;
         for sample in samples {
+            let before = weighted.iter().map(|clip| clip.weight).sum::<f32>();
             append_resolved_sample(
                 &mut weighted,
                 &runtime,
@@ -734,10 +774,18 @@ fn evaluate_skeletons(
                 &skeleton.animation_pack,
                 *sample,
             );
+            let added = (weighted.iter().map(|clip| clip.weight).sum::<f32>() - before).max(0.0);
+            resolved_weight += added;
+            mirror_weight += added * sample.mirror_lower_body.clamp(0.0, 1.0);
         }
         let next = AnimationPlayback {
             use_bind_pose_t: weighted.is_empty(),
             clips: weighted,
+            lower_body_mirror: if resolved_weight > f32::EPSILON {
+                (mirror_weight / resolved_weight).clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
         };
         if let Some(mut playback) = playback {
             *playback = next;
@@ -747,11 +795,34 @@ fn evaluate_skeletons(
     }
 }
 
+fn on_successful_attack(event: On<SuccessfulAttackResponse>, mut commands: Commands) {
+    let strength = (event.total_damage() / 100.0).clamp(0.15, 1.0);
+    for entity in &event.hit {
+        commands.entity(*entity).insert(ImpactReaction {
+            remaining: 0.22,
+            duration: 0.22,
+            strength,
+        });
+    }
+}
+
+fn tick_impact_reactions(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut reactions: Query<(Entity, &mut ImpactReaction)>,
+) {
+    for (entity, mut reaction) in &mut reactions {
+        reaction.remaining -= time.delta_secs();
+        if reaction.remaining <= 0.0 {
+            commands.entity(entity).remove::<ImpactReaction>();
+        }
+    }
+}
+
 #[derive(Clone)]
 struct ResolvedAnchor<'a> {
     clip: &'a LoadedClip,
     anchor: &'a PoseAnchor,
-    source: &'a MotionSource,
     pack_id: &'a str,
 }
 
@@ -770,14 +841,13 @@ fn resolve_anchor<'a>(
     };
     let pack = catalog.packs.get(pack_id)?;
     let anchor = pack.poses.get(&resolved_pose)?;
-    let source = pack.motions.get(&anchor.motion)?;
+    pack.motions.get(&anchor.motion)?;
     let clip = runtime
         .clips
         .get(&(pack_id.to_owned(), anchor.motion.clone()))?;
     Some(ResolvedAnchor {
         clip,
         anchor,
-        source,
         pack_id,
     })
 }
@@ -822,10 +892,10 @@ fn append_resolved_sample(
             frame_seconds(start.anchor.frame),
             sample.weight,
         ),
-        PoseSampling::Cycle { phase } => append_weighted(
+        PoseSampling::Cycle { progress } => append_weighted(
             weighted,
             &start,
-            frame_seconds(start.source.last_frame) * phase.rem_euclid(1.0),
+            start.clip.duration_seconds * progress.rem_euclid(1.0),
             sample.weight,
         ),
         PoseSampling::Span { end, progress } => {
@@ -1125,11 +1195,17 @@ mod tests {
         };
         for pose in poses {
             let anchor = &catalog.packs[HUMANOID_UNARMED_PACK].poses[&pose];
+            let duration_seconds = catalog.packs[HUMANOID_UNARMED_PACK].motions[&anchor.motion]
+                .last_frame as f32
+                / ANIMATION_FPS;
             let next_node = AnimationNodeIndex::new(runtime.clips.len());
             runtime
                 .clips
                 .entry((HUMANOID_UNARMED_PACK.to_owned(), anchor.motion.clone()))
-                .or_insert(LoadedClip { node: next_node });
+                .or_insert(LoadedClip {
+                    node: next_node,
+                    duration_seconds,
+                });
         }
         runtime
     }
@@ -1152,11 +1228,32 @@ mod tests {
                     progress: 0.5,
                 },
                 weight: 1.0,
-                mirror_lower_body: false,
+                mirror_lower_body: 0.0,
             },
         );
         assert_eq!(weighted.len(), 1);
         assert!((weighted[0].time_seconds - 4.0 / 30.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn complete_cycle_uses_the_motion_frame_range() {
+        let catalog = AnimationPackCatalog::default();
+        let runtime = runtime_with_available([SemanticPose::WalkContact]);
+        let mut weighted = Vec::new();
+        append_resolved_sample(
+            &mut weighted,
+            &runtime,
+            &catalog,
+            HUMANOID_UNARMED_PACK,
+            PoseSample {
+                pose: SemanticPose::WalkContact,
+                sampling: PoseSampling::Cycle { progress: 0.5 },
+                weight: 1.0,
+                mirror_lower_body: 0.0,
+            },
+        );
+        assert_eq!(weighted.len(), 1);
+        assert!((weighted[0].time_seconds - 16.0 / ANIMATION_FPS).abs() < 0.0001);
     }
 
     #[test]
@@ -1179,7 +1276,7 @@ mod tests {
                     progress: 0.5,
                 },
                 weight: 1.0,
-                mirror_lower_body: false,
+                mirror_lower_body: 0.0,
             },
         );
         assert_eq!(weighted.len(), 1);
@@ -1282,13 +1379,13 @@ mod tests {
             HUMANOID_UNARMED_PACK,
             PoseSample {
                 pose: SemanticPose::RunContact,
-                sampling: PoseSampling::Cycle { phase: 0.25 },
+                sampling: PoseSampling::Anchor,
                 weight: 1.0,
-                mirror_lower_body: false,
+                mirror_lower_body: 0.0,
             },
         );
         assert_eq!(weighted.len(), 1);
-        assert!((weighted[0].time_seconds - 8.0 / 30.0).abs() < 0.0001);
+        assert!(weighted[0].time_seconds.abs() < 0.0001);
     }
 
     #[test]

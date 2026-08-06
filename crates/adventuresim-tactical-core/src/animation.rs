@@ -589,11 +589,12 @@ impl SkeletonState {
 pub enum PoseSampling {
     /// Sample the pose's authoritative catalog frame.
     Anchor,
+    /// Sample the complete cyclic motion containing this pose. The client
+    /// maps normalized gait phase across the motion's catalog frame range.
+    Cycle { progress: f32 },
     /// Sample between two semantic anchors. The client uses one exact clip
     /// time when both anchors belong to the same motion and blends otherwise.
     Span { end: SemanticPose, progress: f32 },
-    /// Sample a complete authored cycle from its first anchor through closure.
-    Cycle { phase: f32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -601,7 +602,9 @@ pub struct PoseSample {
     pub pose: SemanticPose,
     pub sampling: PoseSampling,
     pub weight: f32,
-    pub mirror_lower_body: bool,
+    /// Continuous weight for exchanging and reflecting the authored left/right
+    /// leg transforms when a resolved source lacks an authored opposite half.
+    pub mirror_lower_body: f32,
 }
 
 /// Client-side blend coordinates derived from authoritative state.
@@ -674,7 +677,7 @@ fn gait_or_idle(
             pose: idle,
             sampling: PoseSampling::Anchor,
             weight: 1.0,
-            mirror_lower_body: false,
+            mirror_lower_body: 0.0,
         }]
     } else {
         gait_pair(phase, contact, passing)
@@ -728,7 +731,7 @@ fn weighted_pair(a: SemanticPose, b: SemanticPose, b_weight: f32) -> Vec<PoseSam
             pose: a,
             sampling: PoseSampling::Anchor,
             weight: 1.0 - b_weight,
-            mirror_lower_body: false,
+            mirror_lower_body: 0.0,
         });
     }
     if b_weight > 0.0 {
@@ -736,21 +739,20 @@ fn weighted_pair(a: SemanticPose, b: SemanticPose, b_weight: f32) -> Vec<PoseSam
             pose: b,
             sampling: PoseSampling::Anchor,
             weight: b_weight,
-            mirror_lower_body: false,
+            mirror_lower_body: 0.0,
         });
     }
     samples
 }
 
-fn gait_pair(phase: f32, contact: SemanticPose, passing: SemanticPose) -> Vec<PoseSample> {
-    let _ = passing;
+fn gait_pair(phase: f32, contact: SemanticPose, _passing: SemanticPose) -> Vec<PoseSample> {
     vec![PoseSample {
         pose: contact,
         sampling: PoseSampling::Cycle {
-            phase: phase.rem_euclid(1.0),
+            progress: phase.rem_euclid(1.0),
         },
         weight: 1.0,
-        mirror_lower_body: false,
+        mirror_lower_body: 0.0,
     }]
 }
 
@@ -786,7 +788,7 @@ fn airborne_sample(direction: Vec2, vertical_velocity: f32) -> PoseSample {
         pose,
         sampling: PoseSampling::Span { end, progress },
         weight: 1.0,
-        mirror_lower_body: false,
+        mirror_lower_body: 0.0,
     }
 }
 
@@ -801,7 +803,7 @@ fn out_and_back(start: SemanticPose, middle: SemanticPose, phase: f32) -> PoseSa
         pose,
         sampling: PoseSampling::Span { end, progress },
         weight: 1.0,
-        mirror_lower_body: false,
+        mirror_lower_body: 0.0,
     }
 }
 
@@ -821,7 +823,7 @@ fn through_transition(
         pose,
         sampling: PoseSampling::Span { end, progress },
         weight: 1.0,
-        mirror_lower_body: false,
+        mirror_lower_body: 0.0,
     }
 }
 
@@ -892,7 +894,7 @@ fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
             progress: blend,
         },
         weight: 1.0,
-        mirror_lower_body: false,
+        mirror_lower_body: 0.0,
     }]
 }
 
@@ -1050,14 +1052,35 @@ mod tests {
         assert_eq!(evaluation.base.len(), 2);
         assert!(evaluation.base.iter().any(|sample| {
             sample.pose == SemanticPose::WalkContact
-                && sample.sampling == (PoseSampling::Cycle { phase: 0.25 })
+                && sample.sampling == (PoseSampling::Cycle { progress: 0.25 })
                 && sample.weight == 0.5
         }));
         assert!(evaluation.base.iter().any(|sample| {
             sample.pose == SemanticPose::RunContact
-                && sample.sampling == (PoseSampling::Cycle { phase: 0.25 })
+                && sample.sampling == (PoseSampling::Cycle { progress: 0.25 })
                 && sample.weight == 0.5
         }));
+    }
+
+    #[test]
+    fn gait_samples_the_complete_authored_cycle() {
+        let samples = [0.0, 0.25, 0.5, 0.75]
+            .map(|phase| gait_pair(phase, SemanticPose::WalkContact, SemanticPose::WalkPassing)[0]);
+        assert!(
+            samples
+                .iter()
+                .all(|sample| sample.pose == SemanticPose::WalkContact)
+        );
+        assert_eq!(
+            samples.map(|sample| sample.sampling),
+            [
+                PoseSampling::Cycle { progress: 0.0 },
+                PoseSampling::Cycle { progress: 0.25 },
+                PoseSampling::Cycle { progress: 0.5 },
+                PoseSampling::Cycle { progress: 0.75 },
+            ]
+        );
+        assert!(samples.iter().all(|sample| sample.mirror_lower_body == 0.0));
     }
 
     #[test]
@@ -1080,7 +1103,7 @@ mod tests {
                     progress: 0.0,
                 },
                 weight: 1.0,
-                mirror_lower_body: false,
+                mirror_lower_body: 0.0,
             }]
         );
 
