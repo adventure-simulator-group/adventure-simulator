@@ -122,7 +122,10 @@ fn main() {
         ),
     )
     .add_systems(OnEnter(ServerState::Running), on_server_started)
-    .add_systems(FixedPostUpdate, update_skeleton_locomotion)
+    .add_systems(
+        FixedPostUpdate,
+        update_skeleton_locomotion.after(AhoySystems::MoveCharacters),
+    )
     .add_observer(on_join_request)
     .add_observer(on_player_input)
     .add_observer(on_client_disconnected);

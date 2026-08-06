@@ -19,7 +19,7 @@ mod procedural;
 #[allow(unused_imports)]
 pub(crate) use procedural::{
     BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone, HumanoidIkTargets,
-    ProceduralIkState, gait_support_weights,
+    ProceduralAnimationClock, ProceduralIkState, gait_support_weights,
 };
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
@@ -47,6 +47,7 @@ impl Plugin for TacticalAnimationPlugin {
         app.init_resource::<AnimationPackCatalog>()
             .init_resource::<AnimationRuntime>()
             .init_resource::<TerrainIkEnabled>()
+            .init_resource::<ProceduralAnimationClock>()
             .add_systems(Startup, request_animation_packs)
             .add_observer(on_successful_attack)
             .add_systems(
@@ -75,7 +76,6 @@ impl Plugin for TacticalAnimationPlugin {
                 PostUpdate,
                 (
                     restore_authored_bind_pose,
-                    procedural::apply_locomotion_facing,
                     procedural::apply_gait_mirroring,
                     procedural::stabilize_locomotion_torso,
                     procedural::apply_head_and_torso_look,

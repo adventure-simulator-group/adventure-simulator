@@ -305,7 +305,8 @@ fn spawn_connected_player(
         } else {
             TacticalCombatSide::Party
         },
-        Transform::from_xyz(spawn_position.x, spawn_height, spawn_position.y),
+        Transform::from_xyz(spawn_position.x, spawn_height, spawn_position.y)
+            .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
         (
             player_collider.clone(),
             CollisionMargin(0.01),
@@ -474,6 +475,9 @@ pub(crate) fn on_player_input(
         With<Player>,
     >,
 ) {
+    let Some(validated) = validate_player_input(input.look, input.movement, input.jump) else {
+        return;
+    };
     let Some(entity) = input.client_id.entity() else {
         return;
     };
@@ -485,12 +489,37 @@ pub(crate) fn on_player_input(
         accumulated_input.jumped = None;
         return;
     }
-    look.yaw = input.look.x;
-    look.pitch = input.look.y.clamp(-1.5, 1.5);
-    accumulated_input.last_movement = input.movement.map(|m| m.clamp_length_max(1.0));
-    if input.jump {
+    look.yaw = validated.yaw;
+    look.pitch = validated.pitch;
+    accumulated_input.last_movement = validated.movement;
+    if validated.jump {
         accumulated_input.jumped = Some(Stopwatch::new());
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ValidatedPlayerInput {
+    movement: Option<Vec2>,
+    yaw: f32,
+    pitch: f32,
+    jump: bool,
+}
+
+fn validate_player_input(
+    look: Vec2,
+    movement: Option<Vec2>,
+    jump: bool,
+) -> Option<ValidatedPlayerInput> {
+    if !look.is_finite() || movement.is_some_and(|movement| !movement.is_finite()) {
+        return None;
+    }
+    Some(ValidatedPlayerInput {
+        movement: movement.map(|movement| movement.clamp_length_max(1.0)),
+        yaw: (look.x + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
+            - std::f32::consts::PI,
+        pitch: look.y.clamp(-1.5, 1.5),
+        jump,
+    })
 }
 
 /// Projects authoritative controller motion into the compact presentation
@@ -502,12 +531,20 @@ pub(crate) fn update_skeleton_locomotion(
             &CharacterControllerState,
             &LinearVelocity,
             &mut SkeletonState,
+            &mut Transform,
         ),
         With<Player>,
     >,
 ) {
-    for (controller, velocity, mut skeleton) in &mut players {
+    for (controller, velocity, mut skeleton, mut transform) in &mut players {
         let tick = (time.elapsed_secs_f64() * 64.0).round() as u64;
+        transform.rotation = advance_body_facing(
+            transform.rotation,
+            controller.orientation,
+            velocity.0,
+            skeleton.action,
+            time.delta_secs(),
+        );
         project_skeleton_locomotion(
             &mut skeleton,
             SkeletonLocomotionInput {
@@ -562,7 +599,8 @@ fn player_spawn_offset(collider: &Collider) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{mission_enemy_health_scale, mission_enemy_scale};
+    use super::{mission_enemy_health_scale, mission_enemy_scale, validate_player_input};
+    use bevy::prelude::*;
 
     #[test]
     fn same_durable_enemy_identity_projects_different_mission_strength() {
@@ -578,5 +616,42 @@ mod tests {
     fn zero_combat_scale_keeps_test_enemy_alive() {
         assert_eq!(mission_enemy_health_scale(0, 0.0), 1.0);
         assert_eq!(mission_enemy_health_scale(5_000, 0.5), 0.5);
+    }
+
+    #[test]
+    fn player_input_rejects_non_finite_look_or_movement_as_one_update() {
+        let mut controller_input = (Vec2::new(0.4, -0.2), Some(Vec2::new(0.25, 0.5)), false);
+        for (look, movement) in [
+            (Vec2::new(f32::NAN, 0.0), Some(Vec2::ZERO)),
+            (Vec2::new(0.0, f32::INFINITY), Some(Vec2::ZERO)),
+            (Vec2::ZERO, Some(Vec2::new(f32::NEG_INFINITY, 0.0))),
+            (Vec2::ZERO, Some(Vec2::new(0.0, f32::NAN))),
+        ] {
+            if let Some(validated) = validate_player_input(look, movement, true) {
+                controller_input = (
+                    Vec2::new(validated.yaw, validated.pitch),
+                    validated.movement,
+                    validated.jump,
+                );
+            }
+        }
+        assert_eq!(
+            controller_input,
+            (Vec2::new(0.4, -0.2), Some(Vec2::new(0.25, 0.5)), false)
+        );
+    }
+
+    #[test]
+    fn player_input_normalizes_finite_boundaries_before_controller_state() {
+        let validated = validate_player_input(
+            Vec2::new(std::f32::consts::TAU * 4.0 + 0.25, 99.0),
+            Some(Vec2::splat(10.0)),
+            true,
+        )
+        .unwrap();
+        assert!((validated.yaw - 0.25).abs() < 0.0001);
+        assert_eq!(validated.pitch, 1.5);
+        assert!(validated.movement.unwrap().length() <= 1.0001);
+        assert!(validated.yaw.is_finite() && validated.pitch.is_finite());
     }
 }

@@ -83,8 +83,8 @@ The animation evaluator consumes skeleton state in this order:
 4. Interpolate authored poses using continuous blend coordinates.
 5. Apply masked or additive layers such as directional ducking and impact
    flinches.
-6. Apply procedural facing, foot placement, hip correction, terrain IK,
-   hand/weapon constraints, and head/torso look.
+6. Apply foot placement, hip correction, terrain IK, hand/weapon constraints,
+   and head/torso look. Body facing is already present on the replicated root.
 7. Apply optional secondary animation.
 
 Overgrowth similarly supplies named blend coordinates such as movement speed,
@@ -440,7 +440,19 @@ rather than swapping bones discretely. Terrain leg IK preserves continuous
 support for walking, narrows support through the walk/run blend, and releases
 both feet during the authored run flight phase. During high support it also
 locks the stance foot horizontally in world space until release, preventing
-visible skating as the gameplay root advances. Arm and leg swing share the
+visible skating as the gameplay root advances. A footprint is acquired only
+near full contact and begins at the previous visible world-space foot target,
+so the foot cannot jump by one root step as it becomes loaded. During a body
+turn or at the edge of leg reach, shared virtual-time rate-bounded pelvis lowering absorbs
+the reach deficit first; the plant slides only as far as still required on its
+anatomical side corridor instead of dropping and reacquiring in one frame. A
+plant is released on a true discontinuity, support loss, or an
+airborne/non-upright transition. Left and right targets remain on separate
+pelvis-space tracks with a minimum separation. The solver keeps a 20-degree
+soft extension reserve and a forward, slightly outward anatomical bend
+hemisphere; invalid targets are constrained or released rather than
+reconstructing a knee through the straight-leg singularity. Release toward a
+sparse authored swing target is velocity-bounded in character space. Arm and leg swing share the
 same phase reconstruction before terrain IK; only the legs receive the final
 terrain solve. An explicit hand or weapon constraint can then override the
 reconstructed arm carriage.
@@ -461,17 +473,33 @@ for regression and visual review. It uses the gameplay player-spawn observer, ch
 camera, terrain presentation, authored animation evaluator, and procedural
 passes rather than maintaining parallel fixture implementations. Locomotion is
 projected and integrated continuously at the authoritative 64Hz fixed tick over
-seeded uneven terrain. For each logical tick the replay freezes simulation and
-captures one raw gameplay-camera image plus side and front diagnostic images of
-that exact pose. Its manifest records final world-space bones, support weights,
-continuity, planted-foot drift, and terrain-relative foot clearance; those
+seeded uneven terrain. A deterministic procedural clock prevents asynchronous
+screenshot rendering from advancing retained IK state more than once for the
+same logical tick, while the complete FK/IK pipeline still reevaluates each
+view. The replay captures one raw gameplay-camera image plus side and front
+diagnostic images of that exact pose. Its manifest records final world-space bones, support weights,
+continuity, planted-foot drift under a stable body, signed foot tracks and separation, knee flexion
+and bend hemisphere, desired body-forward alignment, bounded per-tick turning
+residual (including look-facing guards), and terrain-relative foot clearance; those
 signals locate suspect frames but do not replace review of the rendered mesh.
 The fixture supplies deterministic controller observations at the shared
 server projection boundary and follows rendered terrain height; it does not
 exercise physics contacts, replication, interpolation, or recorded live input.
 
-During ordinary travel the body turns toward its velocity, so forward walk and
-run also serve diagonal and lateral travel. During combat, the torso remains
+During ordinary travel the server advances the replicated body's authored +Z
+axis toward authoritative horizontal velocity at a bounded turn rate. Camera
+pitch is removed before planar gait projection. Camera yaw intentionally maps
+raw movement input into world movement, but it is not applied again by either
+the client root or authored-rig child. At idle, the last body yaw is retained;
+an exact reversal uses a deterministic turn side. Attack and block are the
+current guard boundary and retain look/aim facing while moving. This root is
+shared by local players, remote players, bots, fallback bodies, authored rigs,
+and the viewer, with the authored +Z/controller -Z half-turn represented once.
+The viewer additionally replays gradual turns, an exact reversal, planted
+guard rotation, camera pitch, and cross-slope terrain.
+
+During ordinary travel forward walk and run therefore also serve diagonal and
+lateral travel. During combat, the torso remains
 oriented toward the opponent and a procedural stance-step planner provides
 advancing, retreating, strafing, and diagonal movement without directional
 gait cycles. It maintains a world-space target for each planted foot, chooses
