@@ -116,7 +116,7 @@ pub(crate) struct SemanticGraphTelemetry {
 }
 
 #[derive(Resource)]
-pub(super) struct SemanticGraphLibrary {
+pub(crate) struct SemanticGraphLibrary {
     pub(super) ordinary: Handle<DependencyAnimationGraph>,
     pub(super) raised: Handle<DependencyAnimationGraph>,
     contexts: HashMap<(Entity, SemanticGraphPath), GraphContextArena>,
@@ -501,4 +501,102 @@ pub(super) fn route_semantic_graph_for_test(
     resources: SystemResources,
 ) -> SemanticGraphTrace {
     route_semantic_graph(&mut graphs, &resources, entity, &skeleton)
+}
+
+#[cfg(any(test, feature = "animation-graph-editor"))]
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct EditorGraphPreflightRoute {
+    pub(crate) label: &'static str,
+    pub(crate) requested_path: SemanticGraphPath,
+    pub(crate) selected_path: SemanticGraphPath,
+    pub(crate) sample_count: usize,
+}
+
+/// Validate and query the exact graph assets installed by
+/// `SemanticGraphLibrary`, using representative states for both migrated
+/// gameplay routes. The editor calls this before it installs its UI plugin so
+/// graph asset, schema, or query failures cannot be hidden by a successful
+/// catalog-only preflight.
+#[cfg(any(test, feature = "animation-graph-editor"))]
+pub(crate) fn editor_graph_preflight(
+    mut graphs: ResMut<SemanticGraphLibrary>,
+    resources: SystemResources,
+) -> Result<Vec<EditorGraphPreflightRoute>, Vec<String>> {
+    let graph_assets = [
+        (
+            SemanticGraphPath::OrdinaryLocomotion,
+            graphs.ordinary.clone(),
+        ),
+        (SemanticGraphPath::RaisedGuardAttack, graphs.raised.clone()),
+    ];
+    let mut errors = Vec::new();
+    for (path, handle) in &graph_assets {
+        match resources.animation_graph_assets.get(handle) {
+            Some(graph) => {
+                if let Err(error) = graph.validate() {
+                    errors.push(format!(
+                        "{} graph schema is invalid: {error}",
+                        path.as_str()
+                    ));
+                }
+            }
+            None => errors.push(format!("{} graph asset did not load", path.as_str())),
+        }
+    }
+
+    let mut ordinary = SkeletonState::default()
+        .with_local_velocity(Vec3::NEG_Z * 3.75)
+        .with_world_velocity(Vec3::NEG_Z * 3.75);
+    ordinary.gait_phase = 0.25;
+
+    let mut right_attack = SkeletonState::default()
+        .with_weapon_guard(WeaponGuardState::Raised)
+        .with_lead_foot(LeadFoot::Right);
+    right_attack.begin_attack(AttackSpec::default(), 10, 20);
+    right_attack.advance_action(15);
+
+    let cases = [
+        (
+            "ordinary locomotion at 3.75 m/s",
+            ordinary,
+            SemanticGraphPath::OrdinaryLocomotion,
+        ),
+        (
+            "raised right-lead attack at contact approach",
+            right_attack,
+            SemanticGraphPath::RaisedGuardAttack,
+        ),
+    ];
+    let mut routes = Vec::new();
+    for (label, skeleton, expected_path) in cases {
+        let presented = PresentedSkeleton::new(skeleton, None);
+        let legacy = AnimationEvaluation::from_skeleton(&presented);
+        let trace = route_semantic_graph(&mut graphs, &resources, Entity::PLACEHOLDER, &presented);
+        if trace.requested_path != expected_path
+            || trace.path != expected_path
+            || !trace.runtime_evaluated
+            || trace.evaluation != legacy
+        {
+            errors.push(format!(
+                "{label} graph query failed: requested {}, selected {}, runtime success {}, legacy parity {}",
+                trace.requested_path.as_str(),
+                trace.path.as_str(),
+                trace.runtime_evaluated,
+                trace.evaluation == legacy
+            ));
+            continue;
+        }
+        routes.push(EditorGraphPreflightRoute {
+            label,
+            requested_path: trace.requested_path,
+            selected_path: trace.path,
+            sample_count: selected_samples(&trace.evaluation).len(),
+        });
+    }
+
+    if errors.is_empty() {
+        Ok(routes)
+    } else {
+        Err(errors)
+    }
 }

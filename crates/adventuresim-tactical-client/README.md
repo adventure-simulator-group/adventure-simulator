@@ -67,6 +67,28 @@ mirroring, body response, terrain IK/attack footwork, and weapon constraints
 still run after FK; graph root motion, events, inertialization, and IK remain
 unused.
 
+The visual graph editor is an opt-in native authoring tool, not a shipping
+client feature:
+
+```powershell
+just animation-graph-editor assets
+just animation-graph-preview steady-walk-2.0 target/animation-captures/graph-preview
+```
+
+Editor startup reports every code-owned missing motion, validates anchor frames,
+resolves the deterministic ordinary and raised/right-attack catalog routes, and
+prints exact or same-pack mirrored fallback choices. It then validates and
+queries the same centralized sparse-blend graph assets used by gameplay for a
+representative ordinary stride and right-lead attack before opening the upstream editor.
+Missing optional catalog motions are warnings; an invalid anchor or a missing
+motion required by either deterministic route is fatal; graph asset, schema, or
+query failure is also fatal. It registers Adventure Simulator's sparse semantic
+blend node. The preview recipe uses
+the real deterministic gameplay viewer and its `manifest.json`/`failure.txt`
+gates; editor clip preview is useful for authoring but is not acceptance
+evidence. `animation-graph-editor` is disabled by default, native-target-only,
+and absent from server and ordinary Wasm dependency graphs.
+
 ## Animation export contract
 
 The humanoid base rig is independent from authored motions:

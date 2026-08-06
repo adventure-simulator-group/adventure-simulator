@@ -623,6 +623,34 @@ For normal native tactical development, use the supervised launcher:
 just tactical-play animation
 ```
 
+For animation-graph authoring, launch the optional native editor from the
+repository root:
+
+```powershell
+just animation-graph-editor assets
+```
+
+The launcher first reports missing optional semantic motion files and validates anchor frame bounds, the
+ordinary locomotion route, the raised/right-attack route, and exact/mirrored
+catalog fallback resolution. It then validates and queries the same centralized
+runtime graph assets used by gameplay for a representative ordinary stride and
+right-lead attack. Missing optional files are warnings; invalid anchors, files
+required by either deterministic route, and graph load/schema/query failures are
+fatal. It prints catalog problems together and does not open the UI with a
+broken required route. The editor feature is disabled by default and is
+not part of the Wasm or server build.
+
+Use the gameplay capture fixture for deterministic preview evidence rather than
+treating the editor viewport as final output:
+
+```powershell
+just animation-graph-preview steady-walk-2.0 target/animation-captures/graph-preview
+```
+
+Choose any scenario accepted by `animation-viewer`; the output retains its
+scenario telemetry, semantic-route counts, `manifest.json`, `failure.txt`, PNG
+sequences, and HTML review surface.
+
 Use `just tactical-play diagnostic` to run the same native gameplay client
 with a bounded analogue-input script and a per-render-frame animation-state
 JSONL log. The generated script, `animation-state-<session>.jsonl`, and process

@@ -65,7 +65,7 @@ impl Default for TerrainIkEnabled {
     }
 }
 
-mod catalog;
+pub(crate) mod catalog;
 pub use catalog::AnimationPackCatalog;
 use catalog::*;
 

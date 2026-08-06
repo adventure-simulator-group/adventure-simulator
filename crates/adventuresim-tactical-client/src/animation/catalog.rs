@@ -1,5 +1,8 @@
 use std::{collections::BTreeMap, str::FromStr};
 
+#[cfg(any(test, feature = "animation-graph-editor"))]
+use std::path::{Path, PathBuf};
+
 use adventuresim_tactical_core::prelude::*;
 use bevy::prelude::*;
 
@@ -293,5 +296,201 @@ impl AnimationPackCatalog {
         Ok(Self {
             packs: BTreeMap::from([(id, pack)]),
         })
+    }
+}
+
+#[cfg(any(test, feature = "animation-graph-editor"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EditorRouteResolution {
+    pub route: &'static str,
+    pub requested: SemanticPose,
+    pub resolved_pack: String,
+    pub resolved_pose: SemanticPose,
+    pub mirrored: bool,
+    pub motion_path: PathBuf,
+    pub frame: u16,
+}
+
+#[cfg(any(test, feature = "animation-graph-editor"))]
+#[derive(Debug, Clone)]
+pub(crate) struct EditorValidationReport {
+    pub pack_count: usize,
+    pub motion_count: usize,
+    pub missing_motion_count: usize,
+    pub warnings: Vec<String>,
+    pub route_resolutions: Vec<EditorRouteResolution>,
+}
+
+/// Validate the code-owned semantic catalog against an editor asset root and
+/// resolve the same deterministic ordinary and raised/attack samples used by
+/// the capture viewer. Errors are returned together so the native tool can
+/// print a complete actionable preflight instead of failing at the first file.
+#[cfg(any(test, feature = "animation-graph-editor"))]
+pub(crate) fn validate_editor_asset_root(
+    asset_root: &Path,
+) -> Result<EditorValidationReport, Vec<String>> {
+    let catalog = AnimationPackCatalog::default();
+    let mut errors = Vec::new();
+    let mut warnings = Vec::new();
+    let mut motion_count = 0;
+    let mut missing_motion_count = 0;
+
+    for (pack_id, pack) in &catalog.packs {
+        motion_count += pack.motions.len();
+        for (motion_id, motion) in &pack.motions {
+            let full_path = asset_root.join(&motion.path);
+            if !full_path.is_file() {
+                missing_motion_count += 1;
+                warnings.push(format!(
+                    "pack {pack_id} motion {motion_id} is missing {}",
+                    full_path.display()
+                ));
+            }
+        }
+        for (pose, anchor) in &pack.poses {
+            match pack.motions.get(&anchor.motion) {
+                Some(motion) if anchor.frame <= motion.last_frame => {}
+                Some(motion) => errors.push(format!(
+                    "pack {pack_id} pose {} frame {} exceeds {} frame {}",
+                    pose.as_str(),
+                    anchor.frame,
+                    anchor.motion,
+                    motion.last_frame
+                )),
+                None => errors.push(format!(
+                    "pack {pack_id} pose {} references unknown motion {}",
+                    pose.as_str(),
+                    anchor.motion
+                )),
+            }
+        }
+    }
+
+    let ordinary = SkeletonState::default()
+        .with_local_velocity(Vec3::NEG_Z * 2.0)
+        .with_world_velocity(Vec3::NEG_Z * 2.0);
+    let mut raised_attack = SkeletonState::default().with_lead_foot(LeadFoot::Right);
+    raised_attack.begin_attack(AttackSpec::default(), 10, 20);
+    raised_attack.advance_action(20);
+
+    let mut route_resolutions = Vec::new();
+    for (route, state) in [
+        ("ordinary_locomotion", ordinary),
+        ("raised_guard_attack", raised_attack),
+    ] {
+        let evaluation = AnimationEvaluation::from_skeleton(&state);
+        let samples = if evaluation.action.is_empty() {
+            &evaluation.base
+        } else {
+            &evaluation.action
+        };
+        if samples.is_empty() {
+            errors.push(format!("route {route} produced no semantic samples"));
+            continue;
+        }
+        for sample in samples {
+            match resolve_editor_pose(&catalog, HUMANOID_UNARMED_PACK, sample.pose, asset_root) {
+                Some(resolution) => {
+                    if !resolution.motion_path.is_file() {
+                        errors.push(format!(
+                            "required route {route} resolves {} to missing {}",
+                            sample.pose.as_str(),
+                            resolution.motion_path.display()
+                        ));
+                    }
+                    route_resolutions.push(EditorRouteResolution {
+                        route,
+                        requested: sample.pose,
+                        ..resolution
+                    });
+                }
+                None => errors.push(format!(
+                    "route {route} cannot resolve semantic pose {} from pack {HUMANOID_UNARMED_PACK}",
+                    sample.pose.as_str()
+                )),
+            }
+            if let PoseSampling::Span { end, progress } = sample.sampling
+                && progress > f32::EPSILON
+            {
+                match resolve_editor_pose(&catalog, HUMANOID_UNARMED_PACK, end, asset_root) {
+                    Some(resolution) => {
+                        if !resolution.motion_path.is_file() {
+                            errors.push(format!(
+                                "required route {route} resolves span endpoint {} to missing {}",
+                                end.as_str(),
+                                resolution.motion_path.display()
+                            ));
+                        }
+                        route_resolutions.push(EditorRouteResolution {
+                            route,
+                            requested: end,
+                            ..resolution
+                        });
+                    }
+                    None => errors.push(format!(
+                        "route {route} cannot resolve span endpoint {} from pack {HUMANOID_UNARMED_PACK}",
+                        end.as_str()
+                    )),
+                }
+            }
+        }
+    }
+
+    // The raised/right attack deliberately proves same-pack semantic mirroring
+    // because the root pack authors the left contact and resolves its right
+    // counterpart without introducing an independent authority path.
+    if !route_resolutions
+        .iter()
+        .any(|resolution| resolution.route == "raised_guard_attack" && resolution.mirrored)
+    {
+        errors.push("raised_guard_attack did not exercise mirrored fallback resolution".into());
+    }
+
+    if errors.is_empty() {
+        Ok(EditorValidationReport {
+            pack_count: catalog.packs.len(),
+            motion_count,
+            missing_motion_count,
+            warnings,
+            route_resolutions,
+        })
+    } else {
+        Err(errors)
+    }
+}
+
+#[cfg(any(test, feature = "animation-graph-editor"))]
+fn resolve_editor_pose(
+    catalog: &AnimationPackCatalog,
+    requested_pack: &str,
+    requested_pose: SemanticPose,
+    asset_root: &Path,
+) -> Option<EditorRouteResolution> {
+    let mut pack_id = requested_pack;
+    loop {
+        let pack = catalog.packs.get(pack_id)?;
+        let resolved = pack
+            .poses
+            .get(&requested_pose)
+            .map(|anchor| (requested_pose, anchor, false))
+            .or_else(|| {
+                let counterpart = requested_pose.mirrored_counterpart()?;
+                pack.poses
+                    .get(&counterpart)
+                    .map(|anchor| (counterpart, anchor, true))
+            });
+        if let Some((resolved_pose, anchor, mirrored)) = resolved {
+            let motion = pack.motions.get(&anchor.motion)?;
+            return Some(EditorRouteResolution {
+                route: "",
+                requested: requested_pose,
+                resolved_pack: pack_id.to_owned(),
+                resolved_pose,
+                mirrored,
+                motion_path: asset_root.join(&motion.path),
+                frame: anchor.frame,
+            });
+        }
+        pack_id = pack.fallback.as_deref()?;
     }
 }
