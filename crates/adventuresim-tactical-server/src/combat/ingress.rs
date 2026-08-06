@@ -5,6 +5,7 @@ pub(super) fn on_defender_response(
     mut cmd: Commands,
     time: Res<Time<()>>,
     states: Query<&TacticalCombatState>,
+    mut skeletons: Query<&mut SkeletonState>,
 ) {
     let Some(entity) = event.client_id.entity() else {
         warn!(
@@ -14,11 +15,23 @@ pub(super) fn on_defender_response(
         return;
     };
 
-    if states
-        .get(entity)
-        .is_ok_and(TacticalCombatState::is_incapacitated)
-    {
+    let Ok(combat_state) = states.get(entity) else {
         return;
+    };
+    if combat_state.is_incapacitated() {
+        return;
+    }
+
+    if let Ok(mut skeleton) = skeletons.get_mut(entity) {
+        let start = animation_tick(&time);
+        skeleton.begin_action(
+            match **event {
+                DefendRequest::Dodge => SkeletonAction::Dodge,
+                DefendRequest::Parry => SkeletonAction::Block,
+            },
+            start,
+            start + 8,
+        );
     }
 
     cmd.entity(entity).insert(PendingDefenderResponse {
@@ -30,6 +43,7 @@ pub(super) fn on_defender_response(
 pub(super) fn on_melee_attack_started(
     event: On<MeleeAttackStartedIntent>,
     mut authorities: Query<&mut MeleeAttackAuthority>,
+    mut skeletons: Query<&mut SkeletonState>,
     time: Res<Time<()>>,
 ) {
     let Ok(mut authority) = authorities.get_mut(event.attacker) else {
@@ -41,6 +55,14 @@ pub(super) fn on_melee_attack_started(
         event.windup,
         MELEE_WINDUP_NETWORK_ALLOWANCE,
     );
+    if let Ok(mut skeleton) = skeletons.get_mut(event.attacker) {
+        let start = animation_tick(&time);
+        skeleton.begin_action(
+            SkeletonAction::Attack,
+            start,
+            start + duration_ticks(event.windup),
+        );
+    }
 }
 
 pub(super) fn resolve_defender_response(
@@ -77,6 +99,7 @@ pub(super) fn on_melee_action_request(
     mut cmd: Commands,
     time: Res<Time<()>>,
     mut authorities: Query<&mut MeleeAttackAuthority>,
+    mut skeletons: Query<&mut SkeletonState>,
 ) {
     let Some(attacker) = event.client_id.entity() else {
         debug!(
@@ -96,6 +119,14 @@ pub(super) fn on_melee_action_request(
                 CLIENT_MELEE_WINDUP,
                 MELEE_WINDUP_NETWORK_ALLOWANCE,
             );
+            if let Ok(mut skeleton) = skeletons.get_mut(attacker) {
+                let start = animation_tick(&time);
+                skeleton.begin_action(
+                    SkeletonAction::Attack,
+                    start,
+                    start + duration_ticks(CLIENT_MELEE_WINDUP),
+                );
+            }
         }
         MeleeActionRequest::Complete {
             target,
@@ -121,6 +152,8 @@ pub(super) fn on_melee_action_request(
 pub(super) fn on_ranged_action_request(
     event: On<FromClient<RangedActionRequest>>,
     mut cmd: Commands,
+    time: Res<Time<()>>,
+    mut skeletons: Query<&mut SkeletonState>,
 ) {
     let Some(attacker) = event.client_id.entity() else {
         debug!(
@@ -131,6 +164,14 @@ pub(super) fn on_ranged_action_request(
     };
     match **event {
         RangedActionRequest::Start => {
+            if let Ok(mut skeleton) = skeletons.get_mut(attacker) {
+                let start = animation_tick(&time);
+                skeleton.begin_action(
+                    SkeletonAction::Attack,
+                    start,
+                    start + duration_ticks(CLIENT_RANGED_WINDUP),
+                );
+            }
             cmd.trigger(RangedAttackStartedIntent {
                 attacker,
                 target: None,
@@ -169,6 +210,7 @@ pub(super) fn on_ranged_action_request(
 pub(super) fn on_ranged_attack_started(
     event: On<RangedAttackStartedIntent>,
     mut authorities: Query<&mut RangedAttackAuthority>,
+    mut skeletons: Query<&mut SkeletonState>,
     time: Res<Time<()>>,
 ) {
     let Ok(mut authority) = authorities.get_mut(event.attacker) else {
@@ -179,6 +221,22 @@ pub(super) fn on_ranged_attack_started(
         event.windup,
         RANGED_NETWORK_ALLOWANCE,
     );
+    if let Ok(mut skeleton) = skeletons.get_mut(event.attacker) {
+        let start = animation_tick(&time);
+        skeleton.begin_action(
+            SkeletonAction::Attack,
+            start,
+            start + duration_ticks(event.windup),
+        );
+    }
+}
+
+fn animation_tick(time: &Time<()>) -> u64 {
+    (time.elapsed_secs_f64() * 64.0).round() as u64
+}
+
+fn duration_ticks(duration: CombatDuration) -> u64 {
+    (duration.as_secs_f32() * 64.0).round().max(1.0) as u64
 }
 
 pub(super) fn authoritative_line_of_sight(

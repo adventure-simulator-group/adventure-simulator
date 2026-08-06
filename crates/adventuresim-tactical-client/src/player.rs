@@ -268,10 +268,14 @@ fn update_attack_state_system(
 fn on_attack_fired_hook(
     event: On<Fire<Attack>>,
     mut cmd: Commands,
-    q_character: Query<Has<AttackState>>,
+    mut q_character: Query<(Has<AttackState>, &mut SkeletonState)>,
     viewer: TacticalPlayerViewer,
+    time: Res<Time>,
 ) {
-    if q_character.get(event.context).unwrap_or_default() {
+    let Ok((attacking, mut skeleton)) = q_character.get_mut(event.context) else {
+        return;
+    };
+    if attacking {
         // already in attack
         return;
     }
@@ -292,6 +296,8 @@ fn on_attack_fired_hook(
     }
     cmd.entity(event.context)
         .insert(AttackState::new(PRE_HIT_DELAY, reach, ranged));
+    let start = (time.elapsed_secs_f64() * 64.0).round() as u64;
+    skeleton.begin_action(SkeletonAction::Attack, start, start + 19);
     if ranged {
         cmd.client_trigger(RangedActionRequest::Start);
     } else {
@@ -310,10 +316,28 @@ fn update_character_look_rotation(
     }
 }
 
-fn on_dodge_fired(_event: On<Fire<Dodge>>, mut cmd: Commands) {
+fn on_dodge_fired(
+    event: On<Fire<Dodge>>,
+    mut cmd: Commands,
+    time: Res<Time>,
+    mut skeletons: Query<&mut SkeletonState>,
+) {
+    if let Ok(mut skeleton) = skeletons.get_mut(event.context) {
+        let start = (time.elapsed_secs_f64() * 64.0).round() as u64;
+        skeleton.begin_action(SkeletonAction::Dodge, start, start + 8);
+    }
     cmd.client_trigger(DefendRequest::Dodge);
 }
 
-fn on_parry_fired(_event: On<Fire<Parry>>, mut cmd: Commands) {
+fn on_parry_fired(
+    event: On<Fire<Parry>>,
+    mut cmd: Commands,
+    time: Res<Time>,
+    mut skeletons: Query<&mut SkeletonState>,
+) {
+    if let Ok(mut skeleton) = skeletons.get_mut(event.context) {
+        let start = (time.elapsed_secs_f64() * 64.0).round() as u64;
+        skeleton.begin_action(SkeletonAction::Block, start, start + 8);
+    }
     cmd.client_trigger(DefendRequest::Parry);
 }

@@ -517,6 +517,8 @@ pub(crate) fn update_skeleton_locomotion(
                 LeadFoot::Right
             };
         }
+        let tick = (time.elapsed_secs_f64() * 64.0).round() as u64;
+        skeleton.advance_action(tick);
     }
 }
 
