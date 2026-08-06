@@ -154,6 +154,18 @@ projectile does not unbalance its attacker. Current projectile energy defaults
 to 40 joules per kilogram of ranged weapon, giving the one-kilogram short bow a
 40-joule baseline until ammunition carries its own mass and velocity.
 
+The tactical implementation sends firing start and completion on one ordered
+stream. The server derives the attacker from the connection and validates
+opposing sides, incapacitation, a held ranged weapon, arrow availability,
+weapon range, line of sight, windup, and cooldown. A validated shot consumes one
+transient `arrow`, including a client-reported miss; Party use is carried in the
+bounded terminal consequence receipt. Finite hit precision is intentionally
+trusted from the client and remains bounded by the shared combat calculation.
+Server-controlled offensive AI uses the same ranged windup, completion,
+validation, and ammo-consumption path. It faces the nearest viable target,
+maintains a bounded standoff distance while arrows remain, and returns to its
+melee pursuit/attack cadence when it cannot make a ranged attack.
+
 ## Incapacitation
 A character's incapacitation represents the sum of all disabling effects on them and corresponds to the state of their animation. When above half, they are "staggered" and each additional 1% of incapacitation causes a 2% penalty to movement and attribute checks, and when above 100% they are completely incapacitated (which also causes knockdown). Most negative effects that a character has can affect their incapacitation, past a certain threshold. Your incapacitation is displayed as a wheel in the center of the screen. If it is at 0%, the wheel is invisible, and as it increases it starts from 12 o'clock and extends as an arc clockwise. Each factor that contributes to incapacitation has a different color to differentiate them.
 
