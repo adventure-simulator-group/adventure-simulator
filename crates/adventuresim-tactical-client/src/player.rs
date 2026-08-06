@@ -5,7 +5,7 @@ use adventuresim_tactical_netcode::{
 };
 use bevy::prelude::*;
 
-use crate::animation::spawn_fallback_t_pose;
+use crate::{animation::spawn_fallback_t_pose, camera::CameraAimState};
 
 const BODY_PART_HITBOXES: &[(BodyPart, Vec3, Vec3)] = &[
     (
@@ -210,11 +210,17 @@ fn update_attack_state_system(
     mut cmd: Commands,
     spatial: SpatialQuery,
     time: Res<Time>,
-    mut q_attacker: Query<(Entity, &mut AttackState, &CharacterControllerCamera)>,
+    aim: Res<CameraAimState>,
+    mut q_attacker: Query<(
+        Entity,
+        &Transform,
+        &mut AttackState,
+        &CharacterControllerCamera,
+    )>,
     q_camera: Query<&Transform>,
     q_collider: Query<(&ColliderOf, &LimbHitbox)>,
 ) {
-    for (attacker, mut state, camera) in &mut q_attacker {
+    for (attacker, attacker_transform, mut state, camera) in &mut q_attacker {
         state.pre_hit_timer.tick(time.delta());
         if !state.pre_hit_timer.is_finished() {
             continue;
@@ -227,21 +233,65 @@ fn update_attack_state_system(
             continue;
         };
 
-        let origin = camera_transform.translation;
-        let direction = camera_transform.forward();
-        let filter = SpatialQueryFilter::from_mask(HITBOX_LAYER);
+        let camera_origin = camera_transform.translation;
+        let camera_direction = camera_transform.forward();
+        let target_filter = SpatialQueryFilter::from_mask(HITBOX_LAYER);
         let reach = if state.ranged {
             state.reach
         } else {
             melee_interaction_range(state.reach)
         };
+        let selection_distance = camera_origin.distance(attacker_transform.translation) + reach;
 
-        if let Some(hit) = spatial.cast_ray(origin, direction, reach, true, &filter) {
-            let Ok((target, body_part)) = q_collider.get(hit.entity).map(|(c, h)| (c.body, h.0))
-            else {
-                break;
-            };
+        let intended = spatial.cast_ray(
+            camera_origin,
+            camera_direction,
+            selection_distance,
+            true,
+            &target_filter,
+        );
+        let Some(intended) = intended else {
+            if state.ranged {
+                cmd.client_trigger(RangedActionRequest::CompleteMiss);
+            }
+            cmd.trigger(HitPerformed {
+                entity: attacker,
+                direction: camera_direction,
+                origin: camera_origin,
+                length: selection_distance,
+            });
+            continue;
+        };
+        let Ok((target, body_part)) = q_collider
+            .get(intended.entity)
+            .map(|(collider, limb)| (collider.body, limb.0))
+        else {
+            continue;
+        };
+        let intended_point = camera_origin + *camera_direction * intended.distance;
+        let origin = if state.ranged && aim.active {
+            aim.muzzle_origin
+        } else {
+            attacker_transform.translation + Vec3::Y * 0.5
+        };
+        let delta = intended_point - origin;
+        let direction = Dir3::new(delta).unwrap_or(camera_direction);
+        let obstruction_filter = SpatialQueryFilter::from_excluded_entities([attacker]);
+        let obstruction = spatial.cast_ray(
+            origin,
+            direction,
+            delta.length().min(reach),
+            true,
+            &obstruction_filter,
+        );
+        let unobstructed = obstruction.is_some_and(|hit| {
+            hit.entity == target
+                || q_collider
+                    .get(hit.entity)
+                    .is_ok_and(|(collider, _)| collider.body == target)
+        });
 
+        if unobstructed {
             if state.ranged {
                 cmd.client_trigger(RangedActionRequest::CompleteHit {
                     target,
@@ -259,7 +309,7 @@ fn update_attack_state_system(
                 entity: attacker,
                 direction,
                 origin,
-                length: hit.distance,
+                length: obstruction.map_or(delta.length(), |hit| hit.distance),
             });
         } else {
             if state.ranged {
@@ -269,7 +319,7 @@ fn update_attack_state_system(
                 entity: attacker,
                 direction,
                 origin,
-                length: reach,
+                length: obstruction.map_or(delta.length().min(reach), |hit| hit.distance),
             });
         }
     }
