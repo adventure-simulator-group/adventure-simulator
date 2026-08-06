@@ -68,13 +68,13 @@ guard only in transient tactical `SkeletonState`, and replicates it with the
 rest of that state. It is never persisted to SpacetimeDB. Incapacitation
 forces the authoritative state back to `lowered`.
 
-Raised upright locomotion also carries a transient latched direction and
-cadence. Once a guard shuttle leaves its static endpoint, the authority keeps
-that intent until it returns to guard even if gameplay velocity stops or
-changes. Input observed during the pulse is accepted only at that seam. This
-prevents release or reversal from replacing a movement extreme halfway through
-the blend. Lowering, incapacitation, crouching, or leaving the ground clears
-the latch.
+Raised upright locomotion also carries transient procedural step intent and
+cadence. Speed follows the controller throughout a step. Ordinary turns are
+accepted at the next foot handoff, while a material opposite-direction reversal
+performs an immediate safe semantic handoff so the support foot agrees with the
+already-reversed gameplay root. Releasing movement completes only the active
+half-step. Lowering, incapacitation, crouching, or leaving the ground clears the
+intent.
 
 A discrete raised/lowered change is presentation-crossfaded from the currently
 displayed effective pose over 0.18 seconds. This includes resolved fallback
@@ -534,9 +534,12 @@ Locomotion also bounds root, pelvis, torso, neck, and head excursions around
 bind before look and final IK, then restores a bounded vertical lift at each
 run flight beat.
 
-Debug clients expose `F8` as a runtime terrain leg-IK toggle. Disabling it
-leaves authored FK, gait mirroring, and torso stabilization intact and clears
-stored foot plants so re-enabling IK cannot snap to an obsolete target.
+Terrain conformity defaults off while its uneven-ground behavior is being
+refined. Debug clients expose `F8` as an explicit runtime opt-in. Disabling it
+leaves authored FK, gait mirroring, torso stabilization, flat-ground combat
+foot placement, and the analytic leg solve intact. Only terrain height/normal
+sampling and pelvis conformity are gated, and stale ordinary terrain plants
+are cleared without resetting unrelated arm-pole continuity.
 Debug clients also expose `F7` to toggle the connected local tactical mission
 between normal and quarter-speed game time. Both client presentation and the
 authoritative server clock change together, so movement, physics, combat, and
@@ -568,6 +571,9 @@ bob without weakening the flat-ground check. Cumulative planted-foot drift is
 measured while support is effectively pinned (at least 0.99). The separate
 per-frame slip gate continues through the blended release interval (at least
 0.9 support), where the IK target intentionally yields back to authored FK.
+Raised-guard scenarios additionally require no more than 0.01 m cumulative
+support drift and at least 0.16 m inter-foot separation; ordinary gait retains
+its legacy 0.035 m drift and 0.08 m separation regression bounds.
 Loop-seam gates apply only to repeatable cycles. Start/stop, facing-turn, and
 raised-guard release-at-peak scenarios are transition probes whose final
 simulation state intentionally differs from the state that initiated them;
@@ -586,29 +592,41 @@ shared by local players, remote players, bots, fallback bodies, authored rigs,
 and the viewer, with the authored +Z/controller -Z half-turn represented once.
 The viewer additionally replays gradual turns, an exact reversal, planted
 guard rotation, camera pitch, cross-slope terrain, every raised cardinal and
-diagonal direction, release at the directional peak, and a mid-pulse lateral
+diagonal direction, release during a step, and a mid-step lateral
 reversal.
 
 During lowered travel, forward walk and run continue to serve diagonal and
-lateral travel. Raised upright grounded movement instead freezes the current
-lead and evaluates a synchronized fixed-lead shuttle. Phase zero is the static
-guard, phase one-half is the directional authored extreme, and the pulse then
-returns smoothly to guard with zero velocity at both endpoints. Forward and
-backward magnitude select the same-lead guard-walk pose; signed lateral
-magnitude selects the corresponding same-lead strafe. Diagonals blend those
-contributions with L1-normalized weights, so forward/back and lateral weights
-always sum to one and sample the same pulse. Neither retreat nor the return
-half swaps lead, mirrors the lower body, or constructs an opposite-foot step.
-Direction and speed are latched for the whole out-and-back pulse. Releasing at
-the extreme therefore completes the return to guard; changing direction waits
-until that guard seam before starting the next pulse.
+lateral travel. Raised upright grounded movement freezes the current lead and
+samples only its static guard pose. A client-only procedural lower-body pass
+alternates one swing foot with exactly one world-space support foot. Each
+compact step projects authoritative local velocity from the step origin,
+retains the authored guard's separated stance tracks, interpolates horizontally
+with a smooth curve, and adds a sine clearance arc. Step reach scales with
+analogue speed and is bounded to combat-shuffle distances.
 
-Ordinary alternating world-space foot plants are disabled while a moving
-raised guard follows the authored pose. Both feet retain their authored XZ
-tracks while terrain IK follows their current positions vertically and keeps
-the existing reach, knee-pole, and minimum-separation constraints. This avoids
-turning the fixed-lead shuttle back into a crossing gait. Raised grounded idle
-may plant both feet in its static guard. Raised crouched and airborne
+Cadence follows current authoritative speed throughout the first step, so a
+small acceleration sample cannot slow a complete cycle. Ordinary turns are
+accepted at the next foot handoff. A material opposite-direction reversal
+performs an immediate safe semantic handoff; releasing movement finishes only
+the active half-step rather than freezing a foot in the air or completing an
+entire two-step pulse. The guard lead never doubles as swing-side state and
+remains fixed across forward, backward, lateral, and diagonal motion. Authored
+guard walk and strafe files remain available for comparison but are not sampled
+by continuous raised locomotion.
+
+Semantic intent carries a wrapping step sequence and a swing side separate
+from guard lead. The sequence increments at every handoff, allowing a client
+that receives coalesced updates to reset safely even when normalized phase
+returns to the same parity after a skipped full cycle. World-space targets
+remain client-only.
+
+Procedural guard plants and targets stay entirely client-side. Replicated
+`SkeletonState` carries only semantic direction, speed, phase, swing side, and
+step identity; it never
+carries bones or world foot positions. Flat-ground placement works with
+terrain IK disabled. When terrain conformity is explicitly enabled, the same
+targets additionally follow height and slope without replacing their planted
+XZ positions. Raised grounded idle uses the static guard. Raised crouched and airborne
 characters retain the existing crouch and airborne posture rules; specialized
 raised variants can be added later.
 

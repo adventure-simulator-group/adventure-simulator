@@ -463,6 +463,7 @@ struct PoleMemory {
     left_arm: Option<Vec3>,
     right_arm: Option<Vec3>,
     pelvis_shift: f32,
+    raised_pelvis_shift: f32,
     evaluation_tick: Option<u64>,
 }
 
@@ -485,6 +486,10 @@ impl ProceduralAnimationClock {
 }
 
 const MIN_INTER_FOOT_SEPARATION: f32 = 0.16;
+// Cascadeur's final ankle bones sit about 15 mm inside analytic targets after
+// the complete hierarchy solve. Keep a measured planning allowance so the
+// rendered bones, not merely abstract targets, retain the 0.16 m contract.
+const GUARD_TARGET_INTER_FOOT_SEPARATION: f32 = MIN_INTER_FOOT_SEPARATION + 0.04;
 const FOOT_TRACK_INNER: f32 = MIN_INTER_FOOT_SEPARATION * 0.5;
 const FOOT_TRACK_OUTER: f32 = 0.55;
 const MAX_PLANT_DISCONTINUITY: f32 = 2.0;
@@ -493,13 +498,52 @@ const MAX_FOOT_TARGET_STEP: f32 = 0.2;
 const PELVIS_CORRECTION_SPEED: f32 = 1.6;
 const MAX_PELVIS_CORRECTION_STEP: f32 = 0.05;
 const MIN_KNEE_FLEXION: f32 = 20.0_f32.to_radians();
+const RAISED_GUARD_PELVIS_DROP: f32 = 0.14;
 
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub(crate) struct ProceduralIkState(PoleMemory);
 
-impl ProceduralIkState {
-    pub(crate) fn reset(&mut self) {
-        self.0 = PoleMemory::default();
+/// Client-only world-space plants for combat-stance locomotion. The replicated
+/// skeleton chooses cadence and direction; exact feet remain presentation
+/// state so they never become tactical authority.
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct RaisedFootworkState {
+    initialized: bool,
+    half_step: u8,
+    lead: LeadFoot,
+    swing_left: bool,
+    step_origin: Vec3,
+    step_rotation: Quat,
+    swing_stance_local: Vec3,
+    swing_start: Vec3,
+    swing_end: Vec3,
+    left_plant: Vec3,
+    right_plant: Vec3,
+    evaluation_tick: Option<u64>,
+    step_sequence: u32,
+    pub(crate) left_solve_target: Option<Vec3>,
+    pub(crate) right_solve_target: Option<Vec3>,
+}
+
+impl Default for RaisedFootworkState {
+    fn default() -> Self {
+        Self {
+            initialized: false,
+            half_step: 0,
+            lead: LeadFoot::Left,
+            swing_left: false,
+            step_origin: Vec3::ZERO,
+            step_rotation: Quat::IDENTITY,
+            swing_stance_local: Vec3::ZERO,
+            swing_start: Vec3::ZERO,
+            swing_end: Vec3::ZERO,
+            left_plant: Vec3::ZERO,
+            right_plant: Vec3::ZERO,
+            evaluation_tick: None,
+            step_sequence: 0,
+            left_solve_target: None,
+            right_solve_target: None,
+        }
     }
 }
 
@@ -547,20 +591,11 @@ pub(super) fn apply_terrain_leg_ik(
     bones: Query<(Entity, &HumanoidBone, Option<&SoleUpAxis>)>,
     parents: Query<&ChildOf>,
     mut ik_states: Query<&mut ProceduralIkState>,
+    mut raised_states: Query<&mut RaisedFootworkState>,
     mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
     mut commands: Commands,
 ) {
-    if !enabled.0 {
-        // Discard plant targets while disabled so re-enabling IK starts from
-        // the current authored pose instead of snapping to a stale footprint.
-        for mut state in &mut ik_states {
-            state.0 = PoleMemory::default();
-        }
-        return;
-    }
-    let Some(terrain) = terrain.iter().next() else {
-        return;
-    };
+    let terrain = terrain.iter().next();
     let mut rigs = BTreeMap::<Entity, BTreeMap<BoneRole, Entity>>::new();
     let mut sole_axes = BTreeMap::<Entity, Vec3>::new();
     {
@@ -578,9 +613,12 @@ pub(super) fn apply_terrain_leg_ik(
         let Ok(skeleton) = owners.get(owner) else {
             continue;
         };
-        if !skeleton.grounded || skeleton.posture != Posture::Upright {
+        if !raised_footwork_posture_is_valid(skeleton) {
             if let Ok(mut state) = ik_states.get_mut(owner) {
                 state.0 = PoleMemory::default();
+            }
+            if let Ok(mut state) = raised_states.get_mut(owner) {
+                *state = RaisedFootworkState::default();
             }
             continue;
         }
@@ -589,14 +627,10 @@ pub(super) fn apply_terrain_leg_ik(
         let raised_guard_follower = skeleton.weapon_guard == WeaponGuardState::Raised
             && skeleton.action == SkeletonAction::None
             && skeleton.raised_locomotion.active;
-        let (left_weight, right_weight) = if raised_guard_follower {
-            // Fixed-lead guard poses already provide safe authored XZ tracks.
-            // Follow both feet vertically over terrain, but never turn their
-            // current authored positions into alternating world-space plants.
-            (1.0, 1.0)
-        } else {
-            gait_support_weights(phase, ground_speed)
-        };
+        if !raised_guard_follower && let Ok(mut raised) = raised_states.get_mut(owner) {
+            *raised = RaisedFootworkState::default();
+        }
+        let (left_weight, right_weight) = gait_support_weights(phase, ground_speed);
         let legs = [
             (
                 BoneRole::ThighLeft,
@@ -617,10 +651,6 @@ pub(super) fn apply_terrain_leg_ik(
             .get_mut(owner)
             .map(|state| state.0)
             .unwrap_or_default();
-        if raised_guard_follower {
-            memory.left_foot_plant = None;
-            memory.right_foot_plant = None;
-        }
         let state_delta_seconds = match clock.fixed_tick {
             Some((tick, _)) if memory.evaluation_tick == Some(tick) => 0.0,
             Some((tick, delta_seconds)) => {
@@ -629,6 +659,42 @@ pub(super) fn apply_terrain_leg_ik(
             }
             None => time.delta_secs(),
         };
+        let desired_raised_pelvis_shift = if raised_guard_follower {
+            -RAISED_GUARD_PELVIS_DROP
+        } else {
+            0.0
+        };
+        if state_delta_seconds > 0.0 {
+            memory.raised_pelvis_shift = advance_pelvis_shift(
+                memory.raised_pelvis_shift,
+                desired_raised_pelvis_shift,
+                state_delta_seconds,
+            );
+        }
+        let raised_pelvis_shift = memory.raised_pelvis_shift;
+        if raised_pelvis_shift < -0.001
+            && let Some(&pelvis) = rig.get(&BoneRole::Pelvis)
+        {
+            let local_delta = parents
+                .get(pelvis)
+                .ok()
+                .and_then(|parent| {
+                    transforms
+                        .p0()
+                        .compute_global_transform(parent.parent())
+                        .ok()
+                })
+                .map(|parent| {
+                    parent
+                        .affine()
+                        .inverse()
+                        .transform_vector3(Vec3::Y * raised_pelvis_shift)
+                })
+                .unwrap_or(Vec3::Y * raised_pelvis_shift);
+            if let Ok(mut transform) = transforms.p1().get_mut(pelvis) {
+                transform.translation += local_delta;
+            }
+        }
         // Pole, plant, and pelvis reach all belong to the server-owned
         // authored-body frame. The child rig carries no locomotion yaw.
         let (rig_origin, rig_rotation) = rig_scenes
@@ -637,6 +703,332 @@ pub(super) fn apply_terrain_leg_ik(
             .and_then(|(entity, _)| transforms.p0().compute_global_transform(entity).ok())
             .map(|global| (global.translation(), global.rotation()))
             .unwrap_or((Vec3::ZERO, Quat::IDENTITY));
+
+        if raised_guard_follower {
+            // The authored guard is nearly straight-legged. Smoothly lower its
+            // pelvis so a world-planted support foot remains within physical
+            // reach without a one-frame stance-height snap at starts or stops.
+            let left = (
+                rig.get(&BoneRole::ThighLeft),
+                rig.get(&BoneRole::ShinLeft),
+                rig.get(&BoneRole::FootLeft),
+            );
+            let right = (
+                rig.get(&BoneRole::ThighRight),
+                rig.get(&BoneRole::ShinRight),
+                rig.get(&BoneRole::FootRight),
+            );
+            let (Some(&left_upper), Some(&left_lower), Some(&left_foot)) = left else {
+                continue;
+            };
+            let (Some(&right_upper), Some(&right_lower), Some(&right_foot)) = right else {
+                continue;
+            };
+            let Some((_, _, left_foot_snapshot)) = snapshot_chain(
+                left_upper,
+                left_lower,
+                left_foot,
+                &parents,
+                &transforms.p0(),
+            ) else {
+                continue;
+            };
+            let Some((_, _, right_foot_snapshot)) = snapshot_chain(
+                right_upper,
+                right_lower,
+                right_foot,
+                &parents,
+                &transforms.p0(),
+            ) else {
+                continue;
+            };
+            let mut footwork = raised_states
+                .get_mut(owner)
+                .map(|state| *state)
+                .unwrap_or_default();
+            let tick = clock.fixed_tick.map(|(tick, _)| tick);
+            let advances = match tick {
+                Some(tick) => footwork.evaluation_tick != Some(tick),
+                None => state_delta_seconds > 0.0,
+            };
+            if let Some(tick) = tick {
+                footwork.evaluation_tick = Some(tick);
+            }
+            let phase = skeleton.gait_phase.rem_euclid(1.0);
+            let half_step = (phase >= 0.5) as u8;
+            let swing_left = skeleton.raised_locomotion.swing_foot == LeadFoot::Left;
+            // Pelvis lowering must not lower the semantic movement plane.
+            // Recover the pre-drop authored ankle positions for persistent
+            // flat plants; the analytic solve bends the lowered legs to them.
+            let left_authored =
+                left_foot_snapshot.global.translation() + Vec3::Y * -raised_pelvis_shift;
+            let right_authored =
+                right_foot_snapshot.global.translation() + Vec3::Y * -raised_pelvis_shift;
+            let visible_left = memory.left_foot_world_target.unwrap_or(left_authored);
+            let visible_right = memory.right_foot_world_target.unwrap_or(right_authored);
+            let discontinuous =
+                footwork.initialized && rig_origin.distance_squared(footwork.step_origin) > 4.0;
+            let sequence_delta = guard_step_sequence_delta(
+                footwork.step_sequence,
+                skeleton.raised_locomotion.step_sequence,
+            );
+            let skipped_handoff = footwork.initialized && sequence_delta > 1;
+            if !footwork.initialized
+                || footwork.lead != skeleton.lead_foot
+                || discontinuous
+                || skipped_handoff
+            {
+                footwork = RaisedFootworkState {
+                    initialized: true,
+                    half_step,
+                    lead: skeleton.lead_foot,
+                    swing_left,
+                    step_origin: rig_origin,
+                    step_rotation: rig_rotation,
+                    swing_stance_local: rig_rotation.inverse()
+                        * ((if swing_left {
+                            left_authored
+                        } else {
+                            right_authored
+                        }) - rig_origin),
+                    swing_start: if swing_left {
+                        visible_left
+                    } else {
+                        visible_right
+                    },
+                    swing_end: if swing_left {
+                        left_authored
+                    } else {
+                        right_authored
+                    },
+                    left_plant: visible_left,
+                    right_plant: visible_right,
+                    evaluation_tick: tick,
+                    step_sequence: skeleton.raised_locomotion.step_sequence,
+                    left_solve_target: None,
+                    right_solve_target: None,
+                };
+            } else if advances && sequence_delta == 1 {
+                if footwork.swing_left {
+                    footwork.left_plant = footwork.left_solve_target.unwrap_or(footwork.swing_end);
+                } else {
+                    footwork.right_plant =
+                        footwork.right_solve_target.unwrap_or(footwork.swing_end);
+                }
+                footwork.half_step = half_step;
+                footwork.step_sequence = skeleton.raised_locomotion.step_sequence;
+                footwork.swing_left = swing_left;
+                footwork.step_origin = rig_origin;
+                footwork.step_rotation = rig_rotation;
+                footwork.swing_stance_local = rig_rotation.inverse()
+                    * ((if swing_left {
+                        left_authored
+                    } else {
+                        right_authored
+                    }) - rig_origin);
+                footwork.swing_start = if swing_left {
+                    footwork.left_plant
+                } else {
+                    footwork.right_plant
+                };
+            }
+            let local_direction = skeleton
+                .raised_locomotion
+                .local_direction
+                .normalize_or_zero();
+            // Semantic controller axes are opposite the authored rig's X/Z
+            // axes. The owner carries the single 180-degree body conversion.
+            let rig_local_direction = -local_direction;
+            let step_length = guard_step_length(skeleton.raised_locomotion.speed);
+            let opposite_plant = if footwork.swing_left {
+                footwork.right_plant
+            } else {
+                footwork.left_plant
+            };
+            footwork.swing_end = plan_guard_step_endpoint(
+                footwork.step_origin,
+                footwork.step_rotation,
+                footwork.swing_stance_local,
+                rig_local_direction,
+                step_length,
+                footwork.swing_left,
+                opposite_plant,
+            );
+            let step_progress = (phase * 2.0).fract();
+            let horizontal_progress = smoothstep(0.0, 1.0, step_progress);
+            let mut swing_target = footwork
+                .swing_start
+                .lerp(footwork.swing_end, horizontal_progress);
+            let mut left_target = footwork.left_plant;
+            let mut right_target = footwork.right_plant;
+            let support_target = if footwork.swing_left {
+                right_target
+            } else {
+                left_target
+            };
+            swing_target = constrain_guard_swing_to_live_corridor(
+                swing_target,
+                support_target,
+                rig_origin,
+                rig_rotation,
+                footwork.swing_stance_local.x.signum(),
+            );
+            let mut terrain_swing_end = footwork.swing_end;
+            if enabled.0
+                && let Some(terrain) = terrain
+            {
+                left_target = terrain_conformed_guard_target(
+                    left_target,
+                    terrain.height_at(left_target.xz()),
+                );
+                right_target = terrain_conformed_guard_target(
+                    right_target,
+                    terrain.height_at(right_target.xz()),
+                );
+                terrain_swing_end = terrain_conformed_guard_target(
+                    terrain_swing_end,
+                    terrain.height_at(terrain_swing_end.xz()),
+                );
+                swing_target.y = footwork
+                    .swing_start
+                    .y
+                    .lerp(terrain_swing_end.y, horizontal_progress);
+            }
+            swing_target.y += (std::f32::consts::PI * step_progress).sin() * 0.10;
+            if footwork.swing_left {
+                left_target = swing_target;
+            } else {
+                right_target = swing_target;
+            }
+
+            for (upper, lower, foot, target, left, support) in [
+                (
+                    left_upper,
+                    left_lower,
+                    left_foot,
+                    left_target,
+                    true,
+                    !footwork.swing_left,
+                ),
+                (
+                    right_upper,
+                    right_lower,
+                    right_foot,
+                    right_target,
+                    false,
+                    footwork.swing_left,
+                ),
+            ] {
+                let Some((upper_snapshot, lower_snapshot, foot_snapshot)) =
+                    snapshot_chain(upper, lower, foot, &parents, &transforms.p0())
+                else {
+                    continue;
+                };
+                let upper_length = upper_snapshot
+                    .global
+                    .translation()
+                    .distance(lower_snapshot.global.translation());
+                let lower_length = lower_snapshot
+                    .global
+                    .translation()
+                    .distance(foot_snapshot.global.translation());
+                let side = anatomical_side(
+                    rig_rotation,
+                    rig_origin,
+                    upper_snapshot.global.translation(),
+                    left,
+                );
+                let remembered = if left {
+                    memory.left_leg
+                } else {
+                    memory.right_leg
+                };
+                let canonical_pole = canonical_knee_pole(side);
+                let remembered = remembered.filter(|pole| pole.dot(canonical_pole) > 0.2);
+                let pole = pole_to_world(rig_rotation, remembered.unwrap_or(canonical_pole));
+                if let Some(solution) = solve_two_bone_with_reach(
+                    upper_snapshot.global.translation(),
+                    lower_snapshot.global.translation(),
+                    foot_snapshot.global.translation(),
+                    target,
+                    upper_length,
+                    lower_length,
+                    pole,
+                    (upper_length + lower_length) * 0.999,
+                ) {
+                    apply_two_bone_solution(
+                        upper,
+                        lower,
+                        foot,
+                        solution,
+                        &parents,
+                        &mut transforms,
+                    );
+                    let bend = (solution.knee - upper_snapshot.global.translation())
+                        .reject_from_normalized(solution.end_direction);
+                    if let Some(valid) = bend.try_normalize() {
+                        if left {
+                            memory.left_leg = Some(pole_to_owner(rig_rotation, valid));
+                        } else {
+                            memory.right_leg = Some(pole_to_owner(rig_rotation, valid));
+                        }
+                    }
+                }
+                if enabled.0
+                    && support
+                    && let Some(terrain) = terrain
+                    && let Some(normal) = terrain.normal_at(target.xz())
+                    && let Some(&sole_axis) = sole_axes.get(&foot)
+                {
+                    align_foot_to_slope(foot, sole_axis, normal, 1.0, &parents, &mut transforms);
+                }
+                if left {
+                    footwork.left_solve_target = Some(target);
+                    memory.left_foot_world_target = Some(target);
+                    memory.left_support_weight = Some(support as u8 as f32);
+                } else {
+                    footwork.right_solve_target = Some(target);
+                    memory.right_foot_world_target = Some(target);
+                    memory.right_support_weight = Some(support as u8 as f32);
+                }
+            }
+            if let Ok(mut state) = raised_states.get_mut(owner) {
+                *state = footwork;
+            } else {
+                commands.entity(owner).insert(footwork);
+            }
+            if let Ok(mut state) = ik_states.get_mut(owner) {
+                state.0 = memory;
+            } else {
+                commands.entity(owner).insert(ProceduralIkState(memory));
+            }
+            continue;
+        }
+
+        if !enabled.0 {
+            // Terrain IK is opt-in. Clear only leg targets so enabling it later
+            // cannot resurrect stale plants; arm pole continuity is unrelated.
+            memory.left_foot_plant = None;
+            memory.right_foot_plant = None;
+            memory.left_foot_target = None;
+            memory.right_foot_target = None;
+            memory.left_foot_world_target = None;
+            memory.right_foot_world_target = None;
+            memory.left_support_weight = None;
+            memory.right_support_weight = None;
+            memory.left_release_active = false;
+            memory.right_release_active = false;
+            memory.pelvis_shift = 0.0;
+            if let Ok(mut state) = ik_states.get_mut(owner) {
+                state.0 = memory;
+            } else {
+                commands.entity(owner).insert(ProceduralIkState(memory));
+            }
+            continue;
+        }
+        let Some(terrain) = terrain else {
+            continue;
+        };
         let mut desired_hip_shift = 0.0_f32;
         for (upper_role, lower_role, foot_role, weight, left) in legs {
             let (Some(&upper), Some(&lower), Some(&foot)) = (
@@ -923,6 +1315,10 @@ pub(super) fn apply_terrain_leg_ik(
     }
 }
 
+fn raised_footwork_posture_is_valid(skeleton: &SkeletonState) -> bool {
+    skeleton.grounded && skeleton.posture == Posture::Upright
+}
+
 fn locomotion_run_weight(speed: f32) -> f32 {
     ((speed - 2.0) / (5.5 - 2.0)).clamp(0.0, 1.0)
 }
@@ -937,16 +1333,15 @@ pub(crate) fn gait_support_weights(phase: f32, speed: f32) -> (f32, f32) {
     )
 }
 
-/// World-space plant confidence used by diagnostics. Raised guard movement
-/// follows authored foot XZ positions instead of alternating retained plants,
-/// so neither side is reported as pinned even though both receive full terrain
-/// height/reach correction inside the IK solver.
+/// World-space plant confidence used by diagnostics. Procedural guard movement
+/// has exactly one support foot while the other follows its clearance arc.
 pub(crate) fn locomotion_support_weights(skeleton: &SkeletonState) -> (f32, f32) {
     if skeleton.weapon_guard == WeaponGuardState::Raised
         && skeleton.action == SkeletonAction::None
         && skeleton.raised_locomotion.active
     {
-        (0.0, 0.0)
+        let swing_left = skeleton.raised_locomotion.swing_foot == LeadFoot::Left;
+        ((!swing_left) as u8 as f32, swing_left as u8 as f32)
     } else {
         gait_support_weights(skeleton.gait_phase, skeleton.local_velocity.xz().length())
     }
@@ -999,6 +1394,79 @@ fn constrain_foot_to_track(world: Vec3, rig_origin: Vec3, rig_rotation: Quat, si
     let signed_x = (local.x * side).clamp(FOOT_TRACK_INNER, FOOT_TRACK_OUTER);
     local.x = signed_x * side;
     rig_origin + rig_rotation * local
+}
+
+fn plan_guard_step_endpoint(
+    step_origin: Vec3,
+    step_rotation: Quat,
+    mut stance_local: Vec3,
+    local_direction: Vec2,
+    step_length: f32,
+    left: bool,
+    opposite_plant: Vec3,
+) -> Vec3 {
+    // Cascadeur's authored lateral axis is opposite the conventional Bevy
+    // anatomical assumption. Derive the corridor from the actual pose rather
+    // than assigning a sign from the semantic bone name.
+    let side = if stance_local.x.abs() > 0.001 {
+        stance_local.x.signum()
+    } else if left {
+        -1.0
+    } else {
+        1.0
+    };
+    let lateral_travel = local_direction.x * step_length;
+    let authored_track = (stance_local.x * side)
+        .abs()
+        .clamp(FOOT_TRACK_INNER, FOOT_TRACK_OUTER);
+    let moving_toward_side = lateral_travel * side > 0.001;
+    let mut track = if lateral_travel.abs() <= 0.001 {
+        authored_track
+    } else if moving_toward_side {
+        (lateral_travel.abs() + FOOT_TRACK_INNER).min(FOOT_TRACK_OUTER)
+    } else {
+        FOOT_TRACK_INNER
+    };
+    let future_origin = step_origin
+        + step_rotation * Vec3::new(local_direction.x, 0.0, local_direction.y) * step_length;
+    let opposite_local = step_rotation.inverse() * (opposite_plant - future_origin);
+    // Separation is an anatomical lateral-track contract. Fore/aft spacing
+    // must not be credited toward it or feet can converge onto one tightrope.
+    let separation_track = opposite_local.x * side + GUARD_TARGET_INTER_FOOT_SEPARATION;
+    track = track
+        .max(separation_track)
+        .clamp(FOOT_TRACK_INNER, FOOT_TRACK_OUTER);
+    stance_local.x = track * side;
+    future_origin + step_rotation * stance_local
+}
+
+fn guard_step_sequence_delta(previous: u32, current: u32) -> u32 {
+    current.wrapping_sub(previous)
+}
+
+fn constrain_guard_swing_to_live_corridor(
+    target: Vec3,
+    support: Vec3,
+    rig_origin: Vec3,
+    rig_rotation: Quat,
+    side: f32,
+) -> Vec3 {
+    let mut local = rig_rotation.inverse() * (target - rig_origin);
+    let support_local = rig_rotation.inverse() * (support - rig_origin);
+    let required_track = support_local.x * side + GUARD_TARGET_INTER_FOOT_SEPARATION;
+    let signed_track = (local.x * side)
+        .max(FOOT_TRACK_INNER)
+        .max(required_track)
+        .min(FOOT_TRACK_OUTER);
+    local.x = signed_track * side;
+    rig_origin + rig_rotation * local
+}
+
+fn terrain_conformed_guard_target(mut flat_target: Vec3, terrain_height: Option<f32>) -> Vec3 {
+    if let Some(height) = terrain_height {
+        flat_target.y = height + 0.085;
+    }
+    flat_target
 }
 
 fn maximum_reach(upper_length: f32, lower_length: f32) -> f32 {
@@ -1063,6 +1531,53 @@ fn solve_two_bone(
     lower_length: f32,
     pole_direction: Vec3,
 ) -> Option<TwoBoneSolution> {
+    solve_two_bone_internal(
+        root,
+        current_knee,
+        current_end,
+        target,
+        upper_length,
+        lower_length,
+        pole_direction,
+        maximum_reach(upper_length, lower_length),
+        true,
+    )
+}
+
+fn solve_two_bone_with_reach(
+    root: Vec3,
+    current_knee: Vec3,
+    current_end: Vec3,
+    target: Vec3,
+    upper_length: f32,
+    lower_length: f32,
+    pole_direction: Vec3,
+    maximum_target_reach: f32,
+) -> Option<TwoBoneSolution> {
+    solve_two_bone_internal(
+        root,
+        current_knee,
+        current_end,
+        target,
+        upper_length,
+        lower_length,
+        pole_direction,
+        maximum_target_reach,
+        false,
+    )
+}
+
+fn solve_two_bone_internal(
+    root: Vec3,
+    current_knee: Vec3,
+    current_end: Vec3,
+    target: Vec3,
+    upper_length: f32,
+    lower_length: f32,
+    pole_direction: Vec3,
+    maximum_target_reach: f32,
+    preserve_authored_bend: bool,
+) -> Option<TwoBoneSolution> {
     if !root.is_finite() || !target.is_finite() || upper_length <= 0.0001 || lower_length <= 0.0001
     {
         return None;
@@ -1074,7 +1589,7 @@ fn solve_two_bone(
         .unwrap_or(Vec3::NEG_Y);
     let distance = target_offset.length().clamp(
         (upper_length - lower_length).abs() + 0.0001,
-        maximum_reach(upper_length, lower_length),
+        maximum_target_reach.min(upper_length + lower_length - 0.0001),
     );
     let end = root + target_direction * distance;
     let along = (upper_length * upper_length - lower_length * lower_length + distance * distance)
@@ -1091,18 +1606,22 @@ fn solve_two_bone(
     // Preserve authored continuity only while it remains in the anatomical
     // hemisphere. Never flip a valid authored bend through a straight-leg
     // singularity merely to satisfy a pole chosen on the opposite side.
-    let stabilized_authored_bend = authored_bend.zip(pole_bend).and_then(|(authored, pole)| {
-        let alignment = authored.dot(pole);
-        (alignment > 0.05)
-            .then(|| {
-                pole.lerp(authored, smoothstep(0.05, 0.5, alignment))
-                    .try_normalize()
-            })
-            .flatten()
-    });
+    let stabilized_authored_bend = preserve_authored_bend
+        .then_some(authored_bend)
+        .flatten()
+        .zip(pole_bend)
+        .and_then(|(authored, pole)| {
+            let alignment = authored.dot(pole);
+            (alignment > 0.05)
+                .then(|| {
+                    pole.lerp(authored, smoothstep(0.05, 0.5, alignment))
+                        .try_normalize()
+                })
+                .flatten()
+        });
     let bend = stabilized_authored_bend
         .or(pole_bend)
-        .or(authored_bend)
+        .or(preserve_authored_bend.then_some(authored_bend).flatten())
         .or_else(|| target_direction.any_orthonormal_vector().try_normalize())?;
     let knee = root + target_direction * along + bend * height;
     (knee.is_finite() && end.is_finite()).then_some(TwoBoneSolution {
@@ -1639,7 +2158,7 @@ mod tests {
     }
 
     #[test]
-    fn raised_guard_movement_never_reports_alternating_world_plants() {
+    fn raised_guard_movement_reports_exactly_one_procedural_support_foot() {
         for (lead, phase) in [
             (LeadFoot::Left, 0.0),
             (LeadFoot::Left, 0.5),
@@ -1655,10 +2174,16 @@ mod tests {
                     active: true,
                     local_direction: Vec2::NEG_Y,
                     speed: 2.0,
+                    swing_foot: lead,
+                    step_sequence: 0,
                 },
                 ..default()
             };
-            assert_eq!(locomotion_support_weights(&skeleton), (0.0, 0.0));
+            let (left, right) = locomotion_support_weights(&skeleton);
+            assert_eq!(left + right, 1.0);
+            let expected_swing_left = lead == LeadFoot::Left;
+            assert_eq!(left, (!expected_swing_left) as u8 as f32);
+            assert_eq!(right, expected_swing_left as u8 as f32);
         }
         let idle = SkeletonState {
             weapon_guard: WeaponGuardState::Raised,
@@ -1666,6 +2191,98 @@ mod tests {
             ..default()
         };
         assert_eq!(locomotion_support_weights(&idle), (1.0, 1.0));
+    }
+
+    #[test]
+    fn analog_guard_speed_scales_step_reach_without_unbounded_strides() {
+        assert!(guard_step_length(1.0) < guard_step_length(2.0));
+        assert_eq!(guard_step_length(0.0), 0.28);
+        assert_eq!(guard_step_length(100.0), 0.42);
+    }
+
+    #[test]
+    fn guard_step_planner_preserves_tracks_and_separation_in_all_directions() {
+        let origin = Vec3::ZERO;
+        let rotation = Quat::IDENTITY;
+        let step = guard_step_length(2.0);
+        for direction in [
+            Vec2::X,
+            Vec2::NEG_X,
+            Vec2::Y,
+            Vec2::NEG_Y,
+            Vec2::ONE.normalize(),
+            Vec2::new(-1.0, -1.0).normalize(),
+        ] {
+            for left in [true, false] {
+                let side = if left { -1.0 } else { 1.0 };
+                let stance = Vec3::new(0.12 * side, -0.85, if left { -0.2 } else { 0.2 });
+                let opposite = Vec3::new(-0.12 * side, -0.85, -stance.z);
+                let target = plan_guard_step_endpoint(
+                    origin, rotation, stance, direction, step, left, opposite,
+                );
+                let future_origin = Vec3::new(direction.x, 0.0, direction.y) * step;
+                let local = rotation.inverse() * (target - future_origin);
+                assert!(local.x * side >= FOOT_TRACK_INNER - 0.0001);
+                assert!(local.x * side <= FOOT_TRACK_OUTER + 0.0001);
+                let separation = target.xz().distance(opposite.xz());
+                assert!(
+                    separation >= GUARD_TARGET_INTER_FOOT_SEPARATION - 0.0001,
+                    "direction={direction:?} left={left} target={target:?} opposite={opposite:?} separation={separation}"
+                );
+                assert!(
+                    (target.x - opposite.x).abs() >= GUARD_TARGET_INTER_FOOT_SEPARATION - 0.0001
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn live_swing_corridor_preserves_separation_between_handoffs() {
+        let root = Vec3::new(-0.2, 2.8, 0.0);
+        let rotation = Quat::from_rotation_y(std::f32::consts::PI);
+        let support = Vec3::new(0.21, 1.95, 0.02);
+        let unconstrained = Vec3::new(0.18, 2.02, 0.02);
+        let constrained =
+            constrain_guard_swing_to_live_corridor(unconstrained, support, root, rotation, 1.0);
+        let local = rotation.inverse() * (constrained - root);
+        assert!(local.x >= FOOT_TRACK_INNER);
+        assert!(
+            constrained.xz().distance(support.xz()) >= GUARD_TARGET_INTER_FOOT_SEPARATION - 0.0001
+        );
+        assert!((constrained.x - support.x).abs() >= GUARD_TARGET_INTER_FOOT_SEPARATION - 0.0001);
+    }
+
+    #[test]
+    fn skipped_full_cycle_has_distinct_semantic_step_identity() {
+        assert_eq!(guard_step_sequence_delta(41, 42), 1);
+        assert_eq!(guard_step_sequence_delta(41, 43), 2);
+        assert_eq!(guard_step_sequence_delta(u32::MAX, 0), 1);
+    }
+
+    #[test]
+    fn terrain_height_is_transient_during_an_active_guard_step() {
+        let flat = Vec3::new(0.2, -0.85, 0.3);
+        let elevated = terrain_conformed_guard_target(flat, Some(1.25));
+        assert_eq!(elevated.y, 1.335);
+        assert_eq!(terrain_conformed_guard_target(flat, None), flat);
+        assert_eq!(flat.y, -0.85);
+    }
+
+    #[test]
+    fn inactive_postures_require_raised_footwork_reset() {
+        for (grounded, posture) in [
+            (false, Posture::Airborne),
+            (true, Posture::Crouched),
+            (true, Posture::Prone),
+        ] {
+            let skeleton = SkeletonState {
+                grounded,
+                posture,
+                weapon_guard: WeaponGuardState::Raised,
+                ..default()
+            };
+            assert!(!raised_footwork_posture_is_valid(&skeleton));
+        }
     }
 
     #[test]
