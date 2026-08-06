@@ -2229,7 +2229,6 @@ impl LiveRunner {
                             row.owner_character_id == character_id
                                 && row.case_site_id == pin.case_site_id
                         })
-                        .cloned()
                     {
                         let action_id = format!(
                             "sim-hostile-parley-{}-{}",
