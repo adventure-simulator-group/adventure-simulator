@@ -462,7 +462,13 @@ pub fn replay_case(recorded: &ReplayCase) -> Result<PublicQuestTrace, String> {
         || environment.developer_analysis().generator_manifest_digest
             != recorded.generator_manifest_digest
     {
-        return Err("replay fixture generator revision or manifest mismatch".into());
+        return Err(format!(
+            "replay fixture generator revision or manifest mismatch: recorded catalog={}, current catalog={}, recorded manifest={}, current manifest={}",
+            recorded.catalog_revision,
+            environment.developer_analysis().catalog_revision,
+            recorded.generator_manifest_digest,
+            environment.developer_analysis().generator_manifest_digest,
+        ));
     }
     for decision in recorded.decisions.iter().take(MAX_REPLAY_DECISIONS) {
         environment.apply(decision)?;
