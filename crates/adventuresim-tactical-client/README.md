@@ -22,6 +22,35 @@ not move animation or movement authority: `SkeletonState` and controller state
 remain server-owned, while authored pose evaluation, lighting, and the Bevy
 world-asset scene attachment are client presentation. Native and Wasm builds
 share those semantics through their existing explicit feature sets.
+The animation-graph runtime is pinned to an immutable reviewed fork revision.
+Its editor is a native-only optional feature and its Avian support is a
+separate opt-in feature; neither editor nor physics code enters the browser
+build. Merely linking the runtime does not install its plugin or replace the
+legacy evaluator.
+
+The exact graph revision is hosted in a private sibling repository. Local
+development therefore needs a Git credential that can read
+`adventure-simulator-group/bevy_animation_graph`; with GitHub CLI, run `gh auth
+setup-git` after authenticating an account with that repository's read access
+and set `CARGO_NET_GIT_FETCH_WITH_CLI=true` when Cargo's embedded Git transport
+cannot use the credential helper. Verify the lock and credential from a fresh,
+empty Cargo home with:
+
+```powershell
+$fetchCargoHome = Join-Path $env:TEMP ("animation-graph-fetch-" + [guid]::NewGuid())
+New-Item -ItemType Directory -Path $fetchCargoHome | Out-Null
+$env:CARGO_HOME = $fetchCargoHome
+$env:CARGO_NET_GIT_FETCH_WITH_CLI = "true"
+cargo fetch --locked
+```
+
+CI must provision a GitHub App token, fine-grained PAT, or deploy credential
+with explicit read access to the sibling repository. A workflow's ordinary
+repo-scoped `GITHUB_TOKEN` is insufficient for another private repository, and
+GitHub does not expose repository secrets to untrusted fork pull requests.
+Those runs must use a trusted internal branch/check or report the private-fetch
+check as unavailable; do not weaken the exact pin or make the dependency public
+to bypass credential provisioning.
 
 ## Animation export contract
 
