@@ -1,7 +1,7 @@
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::FromClient,
-    message::{AttackStartedRequest, DefendRequest},
+    message::{DefendRequest, MeleeActionPhase, MeleeActionRequest},
 };
 use bevy::prelude::*;
 use std::cmp::Ordering;
@@ -9,7 +9,8 @@ use std::cmp::Ordering;
 use crate::{
     MissionState,
     combat::{
-        MeleeAttackIntent, MeleeAttackStartedIntent, PendingDefenderResponse, TacticalCombatSide,
+        Incapacitated, MeleeAttackIntent, MeleeAttackStartedIntent, PendingDefenderResponse,
+        TacticalCombatSide,
     },
 };
 
@@ -63,9 +64,8 @@ enum OffensiveMeleePhase {
 #[derive(Component)]
 pub struct CountedEnemyDeath;
 
-/// Emitted only by the server's authoritative combat/death pipeline. Combat
-/// damage is not implemented yet, so no client-controlled path can emit it and
-/// incomplete missions fail closed at timeout.
+/// Reserved for the future terminal-outcome pipeline. Incapacitation is now
+/// authoritative but is not counted as a mission death in this branch.
 #[derive(Event)]
 pub struct AuthoritativeEnemyDeath(pub Entity);
 
@@ -115,14 +115,17 @@ pub fn mission_objective_satisfied(required: u32, killed: u32) -> bool {
 /// correctly reads the attack only some of the time. A decision to react is
 /// committed only after a random delay (see [`REACTION_DELAY_SECS`]).
 fn on_attack_started(
-    event: On<FromClient<AttackStartedRequest>>,
+    event: On<FromClient<MeleeActionRequest>>,
     mut cmd: Commands,
     q_character: Query<(&CharacterLook, &Transform, &TacticalCombatSide)>,
     q_bots: Query<
         (Entity, &CharacterLook, &Transform, &TacticalCombatSide),
-        With<OffensiveMeleeAi>,
+        (With<OffensiveMeleeAi>, Without<Incapacitated>),
     >,
 ) {
+    if event.phase != MeleeActionPhase::Start {
+        return;
+    }
     let Some(attacker) = event.client_id.entity() else {
         return;
     };
@@ -145,7 +148,7 @@ fn on_targeted_attack_started(
     event: On<MeleeAttackStartedIntent>,
     mut cmd: Commands,
     q_character: Query<&CharacterLook>,
-    q_ai: Query<&CharacterLook, With<OffensiveMeleeAi>>,
+    q_ai: Query<&CharacterLook, (With<OffensiveMeleeAi>, Without<Incapacitated>)>,
 ) {
     let Ok([attacker_look, defender_look]) = q_character.get_many([event.attacker, event.target])
     else {
@@ -200,15 +203,21 @@ fn drive_offensive_melee_ai(
     mut cmd: Commands,
     time: Res<Time<()>>,
     viewer: TacticalPlayerViewer,
-    candidates: Query<(Entity, &Transform, &TacticalCombatSide), With<Player>>,
-    mut ai: Query<(
-        Entity,
-        &Transform,
-        &TacticalCombatSide,
-        &mut CharacterLook,
-        &mut input::AccumulatedInput,
-        &mut OffensiveMeleeAi,
-    )>,
+    candidates: Query<
+        (Entity, &Transform, &TacticalCombatSide),
+        (With<Player>, Without<Incapacitated>),
+    >,
+    mut ai: Query<
+        (
+            Entity,
+            &Transform,
+            &TacticalCombatSide,
+            &mut CharacterLook,
+            &mut input::AccumulatedInput,
+            &mut OffensiveMeleeAi,
+        ),
+        Without<Incapacitated>,
+    >,
 ) {
     for (entity, transform, side, mut look, mut input, mut controller) in &mut ai {
         let target = candidates
@@ -258,6 +267,7 @@ fn drive_offensive_melee_ai(
                 cmd.trigger(MeleeAttackStartedIntent {
                     attacker: entity,
                     target,
+                    windup_secs: AI_WINDUP_SECS,
                 });
                 controller.phase = OffensiveMeleePhase::Windup(Timer::from_seconds(
                     AI_WINDUP_SECS,
@@ -308,7 +318,7 @@ fn roll_defend_choice() -> Option<DefendRequest> {
 fn tick_bot_reactions(
     mut cmd: Commands,
     time: Res<Time<()>>,
-    mut q_reacting: Query<(Entity, &mut PendingBotReaction)>,
+    mut q_reacting: Query<(Entity, &mut PendingBotReaction), Without<Incapacitated>>,
 ) {
     for (bot, mut reaction) in &mut q_reacting {
         reaction.timer.tick(time.delta());
@@ -338,6 +348,31 @@ mod tests {
         attacks.0.push((event.attacker, event.target));
     }
 
+    fn apply_deterministic_test_hit(
+        event: On<MeleeAttackIntent>,
+        mut combatants: Query<(&mut Limbs, &mut TacticalCombatState)>,
+    ) {
+        let Ok([attacker, defender]) = combatants.get_many_mut([event.attacker, event.target])
+        else {
+            return;
+        };
+        let (_, mut attacker_state) = attacker;
+        let (mut defender_limbs, mut defender_state) = defender;
+        crate::combat::apply_transient_attack_result(
+            &mut attacker_state,
+            &mut defender_limbs,
+            &mut defender_state,
+            AttackResult::ToDefender {
+                cut_damage: 160.0,
+                blunt_damage: 0.0,
+                balance_damage: 0.0,
+                contact_force: 160.0,
+                armor_contact: false,
+            },
+            BodyPart::Chest,
+        );
+    }
+
     fn spawn_test_ai(world: &mut World, side: TacticalCombatSide, position: Vec3) -> Entity {
         // Temporary characters receive this production loadout from
         // `insert_new_character` when no authored starting package is given.
@@ -350,6 +385,7 @@ mod tests {
                 CharacterLook::default(),
                 input::AccumulatedInput::default(),
                 OffensiveMeleeAi::default(),
+                TacticalCombatState::default(),
             ))
             .id();
         let weapon = world.spawn(ItemOf(actor)).id();
@@ -514,5 +550,94 @@ mod tests {
             second
         };
         assert_eq!(selected, Some(expected));
+    }
+
+    #[test]
+    fn ai_duel_stops_incapacitated_combatants() {
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .init_resource::<RecordedAttacks>()
+            .add_observer(record_attack)
+            .add_observer(apply_deterministic_test_hit)
+            .add_systems(
+                Update,
+                (
+                    drive_offensive_melee_ai,
+                    crate::combat::update_tactical_combat_state,
+                )
+                    .chain(),
+            );
+        let party = spawn_test_ai(
+            app.world_mut(),
+            TacticalCombatSide::Party,
+            Vec3::new(0.0, 0.0, -3.0),
+        );
+        let enemy = spawn_test_ai(
+            app.world_mut(),
+            TacticalCombatSide::Enemy,
+            Vec3::new(0.0, 0.0, 3.0),
+        );
+
+        for _ in 0..30 {
+            app.world_mut()
+                .resource_mut::<Time<()>>()
+                .advance_by(Duration::from_millis(100));
+            app.update();
+            let snapshots: Vec<_> = [party, enemy]
+                .into_iter()
+                .map(|actor| {
+                    let entity = app.world().entity(actor);
+                    (
+                        actor,
+                        entity
+                            .get::<input::AccumulatedInput>()
+                            .unwrap()
+                            .last_movement,
+                        entity.get::<CharacterLook>().unwrap().yaw,
+                    )
+                })
+                .collect();
+            for (actor, movement, yaw) in snapshots {
+                if movement.is_some() {
+                    let forward = Vec3::new(-yaw.sin(), 0.0, -yaw.cos());
+                    app.world_mut()
+                        .entity_mut(actor)
+                        .get_mut::<Transform>()
+                        .unwrap()
+                        .translation += forward * 0.5;
+                }
+            }
+            if [party, enemy].into_iter().any(|actor| {
+                app.world()
+                    .entity(actor)
+                    .get::<TacticalCombatState>()
+                    .is_some_and(|state| state.incapacitated)
+            }) {
+                break;
+            }
+        }
+
+        let incapacitated: Vec<_> = [party, enemy]
+            .into_iter()
+            .filter(|actor| {
+                app.world()
+                    .entity(*actor)
+                    .get::<TacticalCombatState>()
+                    .unwrap()
+                    .incapacitated
+            })
+            .collect();
+        assert!(!incapacitated.is_empty());
+        for actor in incapacitated {
+            assert_eq!(
+                app.world()
+                    .entity(actor)
+                    .get::<input::AccumulatedInput>()
+                    .unwrap()
+                    .last_movement,
+                None
+            );
+        }
+        assert!(!app.world().resource::<RecordedAttacks>().0.is_empty());
     }
 }

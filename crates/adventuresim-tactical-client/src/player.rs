@@ -1,8 +1,7 @@
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::ClientTriggerExt,
-    message::{AttackStartedRequest, DefendRequest},
-    prelude::AttackRequest,
+    message::{DefendRequest, MeleeActionRequest},
 };
 use bevy::prelude::*;
 
@@ -256,11 +255,11 @@ fn update_attack_state_system(
                 break;
             };
 
-            cmd.client_trigger(AttackRequest {
+            cmd.client_trigger(MeleeActionRequest::complete(
                 target,
                 body_part,
-                hit_precision: HIT_PRECISION,
-            });
+                HIT_PRECISION,
+            ));
             cmd.trigger(HitPerformed {
                 entity: attacker,
                 direction,
@@ -298,7 +297,7 @@ fn on_attack_fired_hook(
 
     cmd.entity(event.context)
         .insert(AttackState::new(PRE_HIT_DELAY, reach));
-    cmd.client_trigger(AttackStartedRequest);
+    cmd.client_trigger(MeleeActionRequest::start());
 }
 
 fn update_character_look_rotation(

@@ -4,9 +4,66 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     body::{BodyPart, BodySide, LimbWeights, PlayerBody},
+    morale::{blood_loss_incapacitation, pain_incapacitation},
     prelude::{LimbAttribute, PlayerAttributes, PlayerEquipment, PlayerEssentials},
     skill::{PlayerSkills, Skill},
 };
+
+/// Blood-volume fraction lost per point of limb health removed by combat.
+pub const BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
+/// Combat recovers this much imbalance per second for each effective point of
+/// Balance skill.
+pub const BALANCE_RECOVERY_PER_SKILL_SECOND: f32 = 0.03;
+
+#[must_use]
+pub fn apply_clamped_limb_damage(health: &mut f32, damage: f32) -> f32 {
+    let applied = damage.max(0.0).min(health.max(0.0));
+    *health = (*health - applied).max(0.0);
+    applied
+}
+
+#[must_use]
+pub fn recover_combat_imbalance(imbalance: f32, balance_check: f32, seconds: f32) -> f32 {
+    (imbalance - BALANCE_RECOVERY_PER_SKILL_SECOND * balance_check.max(0.25) * seconds.max(0.0))
+        .max(0.0)
+}
+
+#[must_use]
+pub fn combat_incapacitation(
+    starting_incapacitation: f32,
+    starting_blood_fraction: f32,
+    blood_loss_fraction: f32,
+    total_limb_damage: f32,
+    will_check: f32,
+    imbalance: f32,
+) -> f32 {
+    let pain = pain_incapacitation(total_limb_damage, will_check);
+    let remaining_blood = (starting_blood_fraction - blood_loss_fraction).clamp(0.0, 1.0);
+    starting_incapacitation.max(0.0)
+        + pain
+        + blood_loss_incapacitation(remaining_blood, 1.0)
+        + imbalance.max(0.0)
+}
+
+/// Derives tactical/autoresolve starting state from the authoritative strategic
+/// snapshot without double-counting pain or blood loss, which combat recomputes.
+#[must_use]
+pub fn derive_combat_starting_condition(
+    strategic_incapacitation: f32,
+    strategic_pain: f32,
+    strategic_blood_loss: f32,
+    current_blood: f32,
+    maximum_blood: f32,
+) -> (f32, f32) {
+    let starting_incapacitation =
+        (strategic_incapacitation - strategic_pain - strategic_blood_loss).max(0.0);
+    let starting_blood_fraction = if maximum_blood.is_finite() && maximum_blood > 0.0 {
+        (current_blood / maximum_blood).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    (starting_incapacitation, starting_blood_fraction)
+}
 
 const UPPER_MUSCLE_KG_PER_STRENGTH: f32 = 5.0;
 const MUSCLE_KG_TO_JOULES: f32 = 2.0;
@@ -653,5 +710,17 @@ mod tests {
         assert_eq!(precision_damage_multiplier(6.0, 0.0), 2.0);
         assert_eq!(precision_damage_multiplier(6.0, 3.5), 3.5);
         assert_eq!(precision_damage_multiplier(1.25, 7.0), 1.25);
+    }
+
+    #[test]
+    fn depleted_strategic_snapshot_excludes_recomputed_sources() {
+        let (starting, blood_fraction) =
+            derive_combat_starting_condition(1.35, 0.25, 0.5, 2_500.0, 5_000.0);
+        assert!((starting - 0.6).abs() < 0.0001);
+        assert!((blood_fraction - 0.5).abs() < 0.0001);
+        assert_eq!(
+            derive_combat_starting_condition(0.2, 0.3, 0.4, 1.0, 0.0),
+            (0.0, 1.0)
+        );
     }
 }

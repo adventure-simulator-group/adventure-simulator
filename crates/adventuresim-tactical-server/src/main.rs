@@ -22,7 +22,7 @@ use clap::{ArgAction, Parser};
 
 use crate::{
     bot::{MissionEnemy, OffensiveMeleeAi},
-    combat::TacticalCombatSide,
+    combat::{MeleeAttackAuthority, TacticalCombatSide},
     stdb::{SpacetimeDb, SpacetimeDbReady},
     terrain::TerrainGenerator,
 };
@@ -293,6 +293,7 @@ fn spawn_connected_player(
         smithing_hours: player.skills.smithing_hours,
     };
     let mut limbs = Limbs {
+        body_weight_kg: player.body_weight_kg,
         left_arm: player.limbs.left_arm_health,
         right_arm: player.limbs.right_arm_health,
         left_leg: player.limbs.left_leg_health,
@@ -389,6 +390,14 @@ fn spawn_connected_player(
     };
     let name = format!("{tag}#{} {}", player.character.id, player.character.name);
 
+    let (starting_incapacitation, starting_blood_fraction) = derive_combat_starting_condition(
+        player.strategic_incapacitation,
+        player.strategic_pain,
+        player.strategic_blood_loss,
+        player.current_blood_ml,
+        player.maximum_blood_ml,
+    );
+
     cmd.entity(entity).remove::<LoadingPlayer>().insert((
         Name::new(name),
         Replicated,
@@ -404,6 +413,12 @@ fn spawn_connected_player(
         MissionOpeningAwareness {
             party_has_surprise: player.party_has_surprise,
         },
+        TacticalCombatState {
+            starting_incapacitation,
+            starting_blood_fraction,
+            ..default()
+        },
+        MeleeAttackAuthority::default(),
         if player.mission_side == TacticalMissionSide::Enemy {
             TacticalCombatSide::Enemy
         } else {
@@ -677,15 +692,27 @@ fn on_join_request(
 
 fn on_player_input(
     input: On<FromClient<PlayerInputRequest>>,
-    mut players: Query<(&mut AccumulatedInput, &mut CharacterLook), With<Player>>,
+    mut players: Query<
+        (
+            &mut AccumulatedInput,
+            &mut CharacterLook,
+            &TacticalCombatState,
+        ),
+        With<Player>,
+    >,
 ) {
     let Some(entity) = input.client_id.entity() else {
         return;
     };
 
-    let Ok((mut accumulated_input, mut look)) = players.get_mut(entity) else {
+    let Ok((mut accumulated_input, mut look, combat_state)) = players.get_mut(entity) else {
         return;
     };
+    if combat_state.incapacitated {
+        accumulated_input.last_movement = None;
+        accumulated_input.jumped = None;
+        return;
+    }
 
     look.yaw = input.look.x;
     look.pitch = input.look.y.clamp(-1.5, 1.5);

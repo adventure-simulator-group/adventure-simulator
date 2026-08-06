@@ -18,6 +18,11 @@ full animation and secondary physics on the headless server is not an intended
 authority boundary, while character and equipment statistics still bound the
 combat calculation.
 
+Client windup start and completion are variants of one mapped ordered melee
+action protocol, so completion cannot overtake start on a separate event
+stream. An observed windup expires one second after it becomes ready, bounding
+delayed or replayed completions.
+
 ### Current offensive AI
 
 Each AI melee combatant has an explicit Party or Enemy allegiance and chooses
@@ -32,11 +37,29 @@ the existing client windup message does not yet identify a target, that legacy
 path offers a defensive reaction only to the nearest opposing AI instead of
 every frontal AI.
 
-This is an iteration harness rather than complete enemy decision-making. It
-does not pathfind around terrain or other combatants, handle ranged weapons,
-apply damage, recognize incapacitation, validate every attack condition, or
-persist tactical state. Targets therefore remain viable until they despawn or
-change allegiance.
+Before resolution, the headless server rejects self or friendly attacks,
+missing allegiance or combat state, incapacitated participants, non-finite
+precision, missing weapons, attacks beyond shared interaction range plus a
+small 0.25-meter network-motion allowance, requests outside a fresh
+server-observed windup/cooldown, and blocked authoritative physics line of
+sight. Cheap state, timing, and range checks run before the physics cast. Finite
+client-reported precision remains trusted rather than reconstructed.
+
+Accepted contacts clamp damage against the targeted limb's remaining health
+and accumulate blood loss and imbalance. Incapacitation is the shared
+autoresolve sum of projected strategic starting condition, pain, blood loss,
+and temporary imbalance. Tactical enrollment carries authoritative body weight,
+blood volume, and strategic condition inputs; pain and blood are recomputed in
+combat instead of double-counted. Balance skill recovers imbalance continuously.
+An actor over the threshold stops moving, attacking, defending, and being
+selected by offensive AI; an imbalance-only incapacitation can recover and
+return the actor to combat. Limb and live combat-state replication provide
+basic client feedback, but all of this remains transient server memory.
+
+This is still an iteration harness rather than complete enemy decision-making.
+It does not pathfind around terrain or other combatants, handle ranged weapons,
+finish missions from incapacitation, persist injuries, or create strategic
+outcome receipts.
 
 ### Skill check algorithm
 Broadly speaking, the flow goes like this:
