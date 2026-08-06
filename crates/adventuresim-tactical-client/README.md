@@ -58,7 +58,13 @@ right retain their lateral spacing while exchanging gait roles. Authored
 upper-body carriage remains intact; explicit hand targets and weapon
 constraints apply only when gameplay supplies them. Root, pelvis, spine, neck,
 and head motion is clamped around the authored bind pose before look and final
-IK, with a bounded procedural lift preserving the run's airborne beats.
+IK. During active locomotion, authored root/pelvis Y is normalized, then one
+phase-owned `sin²` curve supplies two contact minima and two passing/flight
+peaks per cycle without moving the gameplay controller. Idle poses blend back
+to their authored central-bone transforms. The 33mm hierarchy compensation is
+measured for upright, lowered-guard `humanoid_unarmed` locomotion only;
+crouching, guard movement, and specialized packs receive no inferred
+compensation.
 
 ## Deterministic animation capture
 
@@ -67,10 +73,11 @@ fixture rather than a separate pose renderer. It installs the gameplay player,
 camera, scene presentation, authored FK, procedural mirroring, look, and
 terrain-IK plugins,
 then advances the shared authoritative locomotion projector at its real 64Hz
-fixed tick. It continuously moves the gameplay root over the same seeded hilly
-terrain representation used by the tactical client through two-cycle 2.0m/s
-walk, 3.75m/s blend, and 5.5m/s run scenarios plus a four-second
-start/run/stop transition. Every logical tick is captured first from the raw
+fixed tick. Default-off scenarios retain authored ordinary leg motion with a
+vertically fixed gameplay root; the explicit cross-slope scenario opts into
+the seeded terrain-IK pass. Coverage includes two-cycle 2.0m/s walk, 3.75m/s
+blend, 5.5m/s run, crouch, raised-guard full/half-speed movement, and
+start/stop, guard-entry, guard-release, and crouch-enter/exit transitions. Every logical tick is captured first from the raw
 gameplay third-person camera, then from side and front diagnostic cameras with
 a skeleton overlay and yellow supported-foot / pink swing-foot markers. The
 simulation is frozen while those three views are rendered, so they describe
@@ -92,7 +99,9 @@ Use `--asset-root` when invoking it outside the repository root,
 at normal speed before using slow motion. The manifest tracks pelvis, chest,
 head, shoulders, elbows, hands, hips, knees, and feet; finite transforms; loop
 seams; per-frame displacement and rotation spikes; knee direction;
-terrain-relative foot clearance/support/slip; and pelvis/head stability. These
+terrain-relative foot clearance/support/slip; controller-height stability;
+phase-indexed contact/pass height; visual peak count; run flight duration and
+sole clearance; and pelvis/head stability. These
 values are regression signals and do not establish biomechanical correctness
 without visual review.
 Capture fails for teleport-scale continuity, ground penetration, duplicate
@@ -102,21 +111,20 @@ responsible frames.
 
 The fixture synthesizes deterministic controller observations at the shared
 server projection boundary; it does not replay network packets or run the
-physics character controller. Its root follows the rendered terrain height so
-the final client animation passes can be reviewed repeatably on slopes.
+physics character controller. Only the cross-slope probe follows rendered
+terrain height; flat scenarios verify that animation never changes controller Y.
 
-Walk keeps at least partial terrain support throughout its cycle. As locomotion
-blends toward run, support narrows around each foot contact until the authored
-run's quarter-cycle flight phases have zero leg-IK weight. This prevents terrain
-IK from converting a deliberately airborne swing into a kick or pop.
-When support is high, terrain IK retains the foot's world-space horizontal
-plant until support releases; this prevents the character-following camera
-from concealing conveyor-belt foot skating.
+Walk support telemetry remains continuous through its cycle. As locomotion
+blends toward run, support narrows around each foot contact. At 5.5m/s the
+quarter-cycle run flight unloads both legs for roughly 90-110ms and presents
+at least 0.10m of sole clearance. When terrain IK is explicitly enabled, high
+support retains the foot's world-space horizontal plant until release.
 
 Terrain conformity starts off. In debug builds, press `F8` to opt into its
 height, slope, and pelvis corrections. The HUD reports whether it is on or off;
-authored FK, gait mirroring, torso stabilization, and flat-ground procedural
-guard stepping remain active for a useful before/after comparison.
+authored FK, gait mirroring, torso stabilization, and procedural guard stepping
+remain active. Ordinary flat-ground locomotion does not run the terrain leg
+solver while the toggle is off.
 
 The procedural humanoid pass recognizes these case-sensitive bone names:
 
