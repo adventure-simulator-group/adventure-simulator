@@ -17,6 +17,8 @@ pub(super) use solver::*;
 struct LegIkMemory {
     left_leg: Option<Vec3>,
     right_leg: Option<Vec3>,
+    left_terrain_pole_world: Option<Vec3>,
+    right_terrain_pole_world: Option<Vec3>,
     left_foot_plant: Option<Vec3>,
     right_foot_plant: Option<Vec3>,
     left_foot_target: Option<Vec3>,
@@ -29,6 +31,9 @@ struct LegIkMemory {
     right_release_active: bool,
     pelvis_shift: f32,
     raised_pelvis_shift: f32,
+    terrain_blend: f32,
+    rig_origin: Option<Vec3>,
+    rig_rotation: Option<Quat>,
     evaluation_tick: Option<u64>,
 }
 
@@ -65,11 +70,17 @@ pub(super) const GUARD_TARGET_INTER_FOOT_SEPARATION: f32 = MIN_INTER_FOOT_SEPARA
 pub(super) const FOOT_TRACK_INNER: f32 = MIN_INTER_FOOT_SEPARATION * 0.5;
 pub(super) const FOOT_TRACK_OUTER: f32 = 0.55;
 const MAX_PLANT_DISCONTINUITY: f32 = 2.0;
-const MAX_FOOT_TARGET_SPEED: f32 = 12.0;
+const MAX_OWNER_TRANSLATION_PER_TICK: f32 = 0.5;
+// A player can legitimately snap-turn by 90 degrees in one input sample. Only
+// discard retained plants for rotations that are unmistakably teleport-like.
+const MAX_OWNER_ROTATION_PER_TICK_DEGREES: f32 = 120.0;
+const MAX_FOOT_TARGET_SPEED: f32 = 5.0;
 pub(super) const MAX_FOOT_TARGET_STEP: f32 = 0.2;
 const PELVIS_CORRECTION_SPEED: f32 = 1.6;
 pub(super) const MAX_PELVIS_CORRECTION_STEP: f32 = 0.05;
+const TERRAIN_IK_BLEND_SPEED: f32 = 4.0;
 const MIN_KNEE_FLEXION: f32 = 20.0_f32.to_radians();
+const MIN_TERRAIN_KNEE_FLEXION: f32 = 8.0_f32.to_radians();
 // Keep the normal knee reserve while a landing visibly carries weight, then
 // release it before the pelvis reaches the authored height. The released
 // reach remains capped at the authored leg extension, preventing a final
@@ -78,7 +89,8 @@ const LANDING_KNEE_RESERVE_RELEASE_COMPRESSION: f32 = 0.012;
 const LANDING_KNEE_RESERVE_FULL_COMPRESSION: f32 = 0.04;
 const RAISED_GUARD_PELVIS_DROP: f32 = 0.14;
 /// Measured vertical distance from the Cascadeur ankle bone to its sole.
-pub(super) const MEASURED_ANKLE_SOLE_OFFSET_METRES: f32 = 0.085;
+pub(crate) const MEASURED_ANKLE_SOLE_OFFSET_METRES: f32 = 0.085;
+const SWING_SOLE_CLEARANCE_METRES: f32 = 0.02;
 
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub(crate) struct LegIkState(LegIkMemory);
@@ -183,7 +195,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
         let Ok(skeleton) = owners.get(owner) else {
             continue;
         };
-        if !raised_footwork_posture_is_valid(skeleton) {
+        if !terrain_ik_posture_is_valid(skeleton) {
             if let Ok(mut state) = ik_states.get_mut(owner) {
                 state.0 = LegIkMemory::default();
             }
@@ -192,7 +204,8 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             }
             continue;
         }
-        let raised_guard_follower = skeleton.weapon_guard() == WeaponGuardState::Raised
+        let raised_guard_follower = raised_footwork_posture_is_valid(skeleton)
+            && skeleton.weapon_guard() == WeaponGuardState::Raised
             && skeleton.action_kind() == SkeletonAction::None
             && skeleton.raised_locomotion().is_moving();
         if !raised_guard_follower && let Ok(mut raised) = raised_states.get_mut(owner) {
@@ -215,10 +228,18 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 false,
             ),
         ];
-        let mut memory = ik_states
-            .get_mut(owner)
-            .map(|state| state.0)
-            .unwrap_or_default();
+        let (mut memory, memory_was_missing) = match ik_states.get_mut(owner) {
+            Ok(state) => (state.0, false),
+            Err(_) => (
+                // Startup is not a toggle transition: establish the configured
+                // mode immediately so the first supported frame can plant.
+                LegIkMemory {
+                    terrain_blend: if enabled.0 { 1.0 } else { 0.0 },
+                    ..default()
+                },
+                true,
+            ),
+        };
         let state_delta_seconds = match clock.fixed_tick {
             Some((tick, _)) if memory.evaluation_tick == Some(tick) => 0.0,
             Some((tick, delta_seconds)) => {
@@ -227,6 +248,47 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             }
             None => time.delta_secs(),
         };
+        if state_delta_seconds > 0.0 {
+            let desired = if enabled.0 { 1.0 } else { 0.0 };
+            memory.terrain_blend += (desired - memory.terrain_blend).clamp(
+                -TERRAIN_IK_BLEND_SPEED * state_delta_seconds,
+                TERRAIN_IK_BLEND_SPEED * state_delta_seconds,
+            );
+        }
+        let terrain_blend = memory.terrain_blend.clamp(0.0, 1.0);
+        // Plant and pelvis reach belong to the server-owned authored-body
+        // frame. Terrain knee poles retain their world bend plane separately
+        // so a sharp owner turn cannot corkscrew a planted knee.
+        let (rig_origin, rig_rotation) = rig
+            .rig_scene()
+            .and_then(|entity| transforms.p0().compute_global_transform(entity).ok())
+            .map(|global| (global.translation(), global.rotation()))
+            .unwrap_or((Vec3::ZERO, Quat::IDENTITY));
+        if state_delta_seconds > 0.0 {
+            let owner_discontinuous = memory.rig_origin.is_some_and(|previous| {
+                previous.distance(rig_origin) > MAX_OWNER_TRANSLATION_PER_TICK
+            }) || memory.rig_rotation.is_some_and(|previous| {
+                previous.angle_between(rig_rotation).to_degrees()
+                    > MAX_OWNER_ROTATION_PER_TICK_DEGREES
+            });
+            if owner_discontinuous {
+                memory.left_foot_plant = None;
+                memory.right_foot_plant = None;
+                memory.left_foot_target = None;
+                memory.right_foot_target = None;
+                memory.left_foot_world_target = None;
+                memory.right_foot_world_target = None;
+                memory.left_support_weight = None;
+                memory.right_support_weight = None;
+                memory.left_terrain_pole_world = None;
+                memory.right_terrain_pole_world = None;
+                memory.left_release_active = false;
+                memory.right_release_active = false;
+                memory.pelvis_shift = 0.0;
+            }
+            memory.rig_origin = Some(rig_origin);
+            memory.rig_rotation = Some(rig_rotation);
+        }
         let desired_raised_pelvis_shift = if raised_guard_follower {
             -RAISED_GUARD_PELVIS_DROP
         } else {
@@ -263,14 +325,6 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 transform.translation += local_delta;
             }
         }
-        // Pole, plant, and pelvis reach all belong to the server-owned
-        // authored-body frame. The child rig carries no locomotion yaw.
-        let (rig_origin, rig_rotation) = rig
-            .rig_scene()
-            .and_then(|entity| transforms.p0().compute_global_transform(entity).ok())
-            .map(|global| (global.translation(), global.rotation()))
-            .unwrap_or((Vec3::ZERO, Quat::IDENTITY));
-
         if raised_guard_follower {
             // The authored guard is nearly straight-legged. Smoothly lower its
             // pelvis so a world-planted support foot remains within physical
@@ -533,7 +587,9 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     );
                     let bend = (solution.knee - upper_snapshot.global.translation())
                         .reject_from_normalized(solution.end_direction);
-                    if let Some(valid) = bend.try_normalize() {
+                    if state_delta_seconds > 0.0
+                        && let Some(valid) = bend.try_normalize()
+                    {
                         if left {
                             memory.left_leg = Some(pole_to_owner(rig_rotation, valid));
                         } else {
@@ -572,9 +628,14 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             continue;
         }
 
-        if !enabled.0 {
-            // Terrain IK is opt-in. Clear only leg targets so enabling it later
-            // cannot resurrect stale plants; arm pole continuity is unrelated.
+        if !enabled.0
+            && terrain_blend <= 0.001
+            && !memory.left_release_active
+            && !memory.right_release_active
+        {
+            // Once the bounded release finishes, clear leg targets so a later
+            // re-enable cannot resurrect stale plants. Arm pole continuity is
+            // unrelated.
             memory.left_foot_plant = None;
             memory.right_foot_plant = None;
             memory.left_foot_target = None;
@@ -583,6 +644,8 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             memory.right_foot_world_target = None;
             memory.left_support_weight = None;
             memory.right_support_weight = None;
+            memory.left_terrain_pole_world = None;
+            memory.right_terrain_pole_world = None;
             memory.left_release_active = false;
             memory.right_release_active = false;
             memory.pelvis_shift = 0.0;
@@ -622,13 +685,12 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 memory.right_foot_plant
             };
             let Some(plant) = plant else { continue };
-            let side = anatomical_side(
-                rig_rotation,
-                rig_origin,
-                upper_snapshot.global.translation(),
-                left,
-            );
-            let horizontal_target = constrain_foot_to_track(plant, rig_origin, rig_rotation, side);
+            // A remembered plant is world-space. Do not reproject it through
+            // the rotating/moving anatomical corridor every frame: that made
+            // a visibly planted foot skate during turns. New contacts are
+            // constrained when acquired, and reach limiting below remains the
+            // only reason an established plant may yield.
+            let horizontal_target = plant;
             let Some(height) = terrain.height_at(horizontal_target.xz()) else {
                 continue;
             };
@@ -641,7 +703,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 .global
                 .translation()
                 .distance(foot_snapshot.global.translation());
-            let reach = maximum_reach(upper_length, lower_length);
+            let reach = terrain_maximum_reach(upper_length, lower_length);
             let horizontal_distance = (horizontal_target - upper_snapshot.global.translation())
                 .xz()
                 .length();
@@ -651,10 +713,13 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             let reach_shift = target_y + maximum_vertical - upper_snapshot.global.translation().y;
             desired_hip_shift = desired_hip_shift.min((reach_shift * weight).clamp(-0.25, 0.0));
         }
+        desired_hip_shift *= terrain_blend;
         // Couple both legs through one bounded, continuous pelvis correction.
         // The authored pose is restored each frame, so this retained scalar is
         // the only temporal state and cannot accumulate transform drift.
-        if state_delta_seconds > 0.0 {
+        if memory_was_missing {
+            memory.pelvis_shift = desired_hip_shift;
+        } else if state_delta_seconds > 0.0 {
             memory.pelvis_shift =
                 advance_pelvis_shift(memory.pelvis_shift, desired_hip_shift, state_delta_seconds);
         }
@@ -720,22 +785,77 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 plant = None;
             }
             if !terrain_leg_has_support(weight) {
+                // Continue the bounded release all the way to authored swing.
+                // Clearing the retained target at the old 0.05 threshold made
+                // the foot teleport on the first nominally unloaded frame.
+                let mut desired_target = foot_position;
+                if let Some(height) = terrain.height_at(foot_position.xz()) {
+                    let minimum_ankle_y =
+                        height + MEASURED_ANKLE_SOLE_OFFSET_METRES + SWING_SOLE_CLEARANCE_METRES;
+                    desired_target.y = desired_target
+                        .y
+                        .max(foot_position.y.lerp(minimum_ankle_y, terrain_blend));
+                }
+                let desired_owner_target = rig_rotation.inverse() * (desired_target - rig_origin);
+                let previous_owner_target = if left {
+                    memory.left_foot_target
+                } else {
+                    memory.right_foot_target
+                };
+                let owner_target = advance_foot_target(
+                    previous_owner_target,
+                    desired_owner_target,
+                    state_delta_seconds,
+                );
+                let mut target = rig_origin + rig_rotation * owner_target;
+                if let Some(height) = terrain.height_at(target.xz()) {
+                    target.y = target.y.max(
+                        height
+                            + MEASURED_ANKLE_SOLE_OFFSET_METRES
+                            + SWING_SOLE_CLEARANCE_METRES * terrain_blend,
+                    );
+                }
+                let canonical_pole = canonical_knee_pole(side);
+                let canonical_world = pole_to_world(rig_rotation, canonical_pole);
+                let remembered = if left {
+                    memory.left_terrain_pole_world
+                } else {
+                    memory.right_terrain_pole_world
+                }
+                .filter(|pole| pole.dot(canonical_world) > 0.2);
+                let pole = remembered.unwrap_or(canonical_world);
+                if let Some(solution) = solve_two_bone(
+                    upper_snapshot.global.translation(),
+                    lower_snapshot.global.translation(),
+                    foot_position,
+                    target,
+                    upper_length,
+                    lower_length,
+                    pole,
+                ) {
+                    apply_two_bone_solution(
+                        upper,
+                        lower,
+                        foot,
+                        solution,
+                        &parents,
+                        &mut transforms,
+                    );
+                }
+                let release_active = owner_target.distance_squared(desired_owner_target) > 0.000001;
                 if left {
                     memory.left_foot_plant = None;
-                    memory.left_foot_target = None;
-                    memory.left_foot_world_target = None;
+                    memory.left_foot_target = Some(owner_target);
+                    memory.left_foot_world_target = Some(target);
                     memory.left_support_weight = Some(0.0);
-                    memory.left_release_active = false;
+                    memory.left_release_active = release_active;
                 } else {
                     memory.right_foot_plant = None;
-                    memory.right_foot_target = None;
-                    memory.right_foot_world_target = None;
+                    memory.right_foot_target = Some(owner_target);
+                    memory.right_foot_world_target = Some(target);
                     memory.right_support_weight = Some(0.0);
-                    memory.right_release_active = false;
+                    memory.right_release_active = release_active;
                 }
-                // A zero-support swing leg is already in its authored FK pose.
-                // Solving it back to the same ankle target can still replace
-                // the authored knee bend with the analytic pole solution.
                 continue;
             }
             // Do not memorize a footprint while the swing foot is merely
@@ -756,12 +876,19 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     side,
                 ));
             }
-            let mut horizontal_target = constrain_foot_to_track(
-                plant.unwrap_or(foot_position),
-                rig_origin,
-                rig_rotation,
-                side,
-            );
+            let mut horizontal_target = plant.unwrap_or_else(|| {
+                constrain_foot_to_track(foot_position, rig_origin, rig_rotation, side)
+            });
+            let plant_local = rig_rotation.inverse() * (horizontal_target - rig_origin);
+            if plant_local.x * side < FOOT_TRACK_INNER {
+                // A retained world plant can rotate through the body's center
+                // during an exact reversal. Move only the offending lateral
+                // component back to its anatomical corridor; target velocity
+                // limiting below keeps that correction continuous.
+                horizontal_target =
+                    constrain_foot_to_track(horizontal_target, rig_origin, rig_rotation, side);
+                plant = plant.map(|_| horizontal_target);
+            }
             let Some(height) = terrain.height_at(horizontal_target.xz()) else {
                 continue;
             };
@@ -779,10 +906,17 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             planted_target = constrain_target_to_reach(
                 planted_target,
                 upper_snapshot.global.translation(),
-                maximum_reach(upper_length, lower_length),
+                terrain_maximum_reach(upper_length, lower_length),
             );
             horizontal_target.x = planted_target.x;
             horizontal_target.z = planted_target.z;
+            // Reach limiting may have moved the target into another triangle.
+            // Resample that actual point instead of retaining a height from the
+            // old XZ and a normal from the new one.
+            let Some(height) = terrain.height_at(horizontal_target.xz()) else {
+                continue;
+            };
+            planted_target.y = height + sole_offset;
             plant = plant.map(|_| horizontal_target);
             if left {
                 memory.left_foot_plant = plant;
@@ -794,14 +928,19 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             // released. Follow that desired pose at a bounded velocity so the
             // final IK target cannot teleport, while still converging all the
             // way back to the unconstrained authored swing during flight.
-            let mut desired_target = foot_position.lerp(planted_target, weight);
+            // Keep the foot fully pinned throughout the viewer's supported
+            // interval, then ease it into authored swing. Blending directly by
+            // the raw support weight began dragging a nominally planted foot
+            // as soon as confidence dipped below one.
+            let solve_weight = smoothstep(0.05, 0.9, weight) * terrain_blend;
+            let mut desired_target = foot_position.lerp(planted_target, solve_weight);
             // An unloaded sparse swing pose can dip below uneven terrain,
             // especially when the forward gait is reused in reverse. Preserve
             // exact stance contact while giving the free foot a small
             // support-weighted clearance floor.
             desired_target.y = desired_target
                 .y
-                .max(planted_target.y + 0.05 * (1.0 - weight));
+                .max(planted_target.y + 0.05 * (1.0 - solve_weight));
             let desired_owner_target = rig_rotation.inverse() * (desired_target - rig_origin);
             let (previous_owner_target, previous_support, mut release_active) = if left {
                 (
@@ -820,12 +959,25 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 if weight + 0.001 < previous_support {
                     release_active = true;
                 } else if weight > previous_support + 0.001 {
-                    // Contact acquisition should lock immediately. The long
-                    // swing interval has already brought the authored foot
-                    // close to its next plant, and filtering acquisition is
-                    // perceived as skating under load.
-                    release_active = false;
+                    // Normal contact acquisition is already close enough to
+                    // lock in one tick. A hard stop can instead change both
+                    // support weights from zero to one while the authored idle
+                    // foot is far away; keep that exceptional acquisition
+                    // bounded rather than teleporting to the new plant.
+                    let maximum_step = MAX_FOOT_TARGET_SPEED * state_delta_seconds.max(0.0);
+                    release_active = previous_owner_target.is_some_and(|previous| {
+                        previous.distance(desired_owner_target) > maximum_step + 0.001
+                    });
                 }
+            }
+            let maximum_step = MAX_FOOT_TARGET_SPEED * state_delta_seconds.max(0.0);
+            if previous_owner_target.is_some_and(|previous| {
+                previous.distance(desired_owner_target) > maximum_step + 0.001
+            }) {
+                // Reach correction can move a nominally planted target when a
+                // sharp turn carries the hip past it. Bound that correction
+                // just like a sparse authored swing or hard-stop acquisition.
+                release_active = true;
             }
             let owner_target = if release_active {
                 advance_foot_target(
@@ -852,45 +1004,76 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 }
                 memory.right_release_active = release_active;
             }
-            let target = rig_origin + rig_rotation * owner_target;
+            let mut target = rig_origin + rig_rotation * owner_target;
+            if let Some(height) = terrain.height_at(target.xz()) {
+                target.y = target.y.max(
+                    height
+                        + MEASURED_ANKLE_SOLE_OFFSET_METRES
+                        + SWING_SOLE_CLEARANCE_METRES * (1.0 - solve_weight),
+                );
+            }
             if left {
                 memory.left_foot_world_target = Some(target);
             } else {
                 memory.right_foot_world_target = Some(target);
             }
-            let remembered = if left {
-                memory.left_leg
-            } else {
-                memory.right_leg
-            };
             let canonical_pole = canonical_knee_pole(side);
-            let remembered = remembered.filter(|pole| pole.dot(canonical_pole) > 0.2);
-            let pole = pole_to_world(rig_rotation, remembered.unwrap_or(canonical_pole));
-            if let Some(solution) = solve_two_bone(
-                upper_snapshot.global.translation(),
-                lower_snapshot.global.translation(),
-                foot_position,
-                target,
-                upper_length,
-                lower_length,
-                pole,
-            ) {
+            let canonical_world = pole_to_world(rig_rotation, canonical_pole);
+            let remembered = if left {
+                memory.left_terrain_pole_world
+            } else {
+                memory.right_terrain_pole_world
+            }
+            .filter(|pole| pole.dot(canonical_world) > 0.2);
+            let pole = remembered.unwrap_or(canonical_world);
+            let solution = if skeleton.posture() == Posture::Crouched {
+                solve_two_bone_preserving_with_reach(
+                    upper_snapshot.global.translation(),
+                    lower_snapshot.global.translation(),
+                    foot_position,
+                    target,
+                    upper_length,
+                    lower_length,
+                    pole,
+                    terrain_maximum_reach(upper_length, lower_length),
+                )
+            } else {
+                solve_two_bone(
+                    upper_snapshot.global.translation(),
+                    lower_snapshot.global.translation(),
+                    foot_position,
+                    target,
+                    upper_length,
+                    lower_length,
+                    pole,
+                )
+            };
+            if let Some(solution) = solution {
                 apply_two_bone_solution(upper, lower, foot, solution, &parents, &mut transforms);
                 let bend = (solution.knee - upper_snapshot.global.translation())
                     .reject_from_normalized(solution.end_direction);
-                if let Some(valid) = bend.try_normalize() {
+                if state_delta_seconds > 0.0
+                    && let Some(valid) = bend.try_normalize()
+                {
                     if left {
-                        memory.left_leg = Some(pole_to_owner(rig_rotation, valid));
+                        memory.left_terrain_pole_world = Some(valid);
                     } else {
-                        memory.right_leg = Some(pole_to_owner(rig_rotation, valid));
+                        memory.right_terrain_pole_world = Some(valid);
                     }
                 }
             }
-            if weight > 0.001
+            if solve_weight > 0.001
                 && let Some(normal) = terrain.normal_at(horizontal_target.xz())
                 && let Some(sole_axis) = rig.sole_axis(left)
             {
-                align_foot_to_slope(foot, sole_axis, normal, weight, &parents, &mut transforms);
+                align_foot_to_slope(
+                    foot,
+                    sole_axis,
+                    normal,
+                    solve_weight,
+                    &parents,
+                    &mut transforms,
+                );
             }
         }
         if let Ok(mut state) = ik_states.get_mut(owner) {
@@ -905,8 +1088,21 @@ pub(super) fn raised_footwork_posture_is_valid(skeleton: &SkeletonState) -> bool
     skeleton.is_grounded() && skeleton.posture() == Posture::Upright
 }
 
+pub(super) fn terrain_ik_posture_is_valid(skeleton: &SkeletonState) -> bool {
+    skeleton.is_grounded()
+        && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
+        && skeleton.action_kind() == SkeletonAction::None
+}
+
 pub(super) fn terrain_leg_has_support(weight: f32) -> bool {
     weight > 0.05
+}
+
+fn terrain_maximum_reach(upper_length: f32, lower_length: f32) -> f32 {
+    (upper_length * upper_length
+        + lower_length * lower_length
+        + 2.0 * upper_length * lower_length * MIN_TERRAIN_KNEE_FLEXION.cos())
+    .sqrt()
 }
 
 /// World-space plant confidence used by diagnostics. Procedural guard movement

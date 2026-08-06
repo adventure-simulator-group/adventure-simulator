@@ -206,7 +206,7 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                         "DEBUG: F2 to toggle body | F3 to toggle hitbox | F4 to toggle hitscan"
                     ),
                     (GameSpeedDebugSpan, TextSpan::new(" | F7 game speed: 1x")),
-                    (TerrainIkDebugSpan, TextSpan::new(" | F8 terrain IK: OFF")),
+                    (TerrainIkDebugSpan, TextSpan::new(" | F8 terrain IK: ON")),
                     (CameraDebugSpan, TextSpan::new(" | F6 camera rig: OFF"))
                 ],
             ),

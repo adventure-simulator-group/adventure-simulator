@@ -558,17 +558,20 @@ than pulling both legs toward their reflected counterparts. Character-space refl
 rather than swapping bones discretely. Support narrows through the walk/run
 blend and releases both feet for roughly 90-110 ms at each 5.5 m/s run flight
 beat; the visual gait keeps at least 0.10 m of sole clearance during that flight.
-With terrain IK explicitly enabled, only a leg with meaningful gait support is
-sent through the analytic terrain solver. The unsupported swing leg remains in
-authored FK, avoiding an unnecessary knee-pole reconstruction, while high
-support locks the stance foot horizontally in world space until release. Both
+With terrain IK enabled, a supported leg is sent through the analytic terrain
+solver, while an unsupported swing leg follows its authored target through a
+rate-bounded release. This preserves authored swing character without allowing
+sparse poses to teleport or pass through uneven terrain. High support locks the
+stance foot horizontally in world space until release. Both
 legs are supported at idle; action poses opt out of ordinary terrain IK because
 they do not yet publish explicit foot-contact semantics. A footprint is
 acquired only near full contact. At the edge of leg reach, shared
 virtual-time rate-bounded pelvis
 lowering absorbs the reach deficit first, and left and right targets remain on
-separate pelvis-space tracks. The solver keeps a 20-degree soft extension
-reserve and a forward, slightly outward anatomical bend hemisphere. Arm and
+separate pelvis-space tracks. Upright motion keeps a 20-degree soft extension
+reserve. Crouch may use the remaining anatomically valid reach down to eight
+degrees to conform without dragging a compact stance. Both use a forward,
+slightly outward anatomical bend hemisphere. Arm and
 leg swing share the same phase reconstruction before optional terrain IK; only
 the legs receive that final terrain solve. An explicit hand or weapon
 constraint can then override the reconstructed arm carriage.
@@ -623,12 +626,12 @@ resynchronizes instead of producing a phantom burst; missed landing changes
 collapse to one latest observation. `sample_tick` is the observation tick of
 the replicated sequence state, not a reconstructed historical event time.
 
-Terrain conformity defaults off while its uneven-ground behavior is being
-refined. Debug clients expose `F8` as an explicit runtime opt-in. Disabling it
+Terrain conformity defaults on. Debug clients expose `F8` as a runtime A/B
+toggle. Disabling it
 leaves authored FK, gait endpoint blending, torso stabilization, contact-edge visual
 grounding, and procedural combat foot placement intact. Ordinary walk, run,
 and crouch keep their authored leg motion without the analytic terrain solve.
-Enabling it adds terrain height and
+The enabled path adds terrain height and
 normal sampling, world-space plants, and terrain-derived pelvis conformity.
 Debug clients also expose `F7` to toggle the connected local tactical mission
 between normal and quarter-speed game time. Both client presentation and the
@@ -640,8 +643,10 @@ for regression and visual review. It uses the gameplay player-spawn observer, ch
 camera, terrain presentation, authored animation evaluator, and procedural
 passes rather than maintaining parallel fixture implementations. Locomotion is
 projected and integrated continuously at the authoritative 64Hz fixed tick.
-Most scenarios exercise default-off authored leg motion with fixed controller
-Y; the explicit cross-slope probe enables seeded uneven terrain IK. A deterministic procedural clock prevents asynchronous
+Non-terrain scenarios can still exercise authored leg motion with fixed
+controller Y. The terrain suite enables seeded uneven-ground IK for cross-slope,
+uphill, downhill, diagonal, crouched, mid-stride toggle, hard-stop, gradual
+90-degree turn, and exact 180-degree reversal probes. A deterministic procedural clock prevents asynchronous
 screenshot rendering from advancing retained IK state more than once for the
 same logical tick, while the complete FK/IK pipeline still reevaluates each
 view. The replay captures one raw gameplay-camera image plus side and front
@@ -677,17 +682,20 @@ phase prediction and resynchronization are exercised. It still does not run
 physics contacts, the network transport itself, or recorded live input.
 
 The vertical-excursion gate remains 0.20 m for ordinary flat-ground motion and
-0.30 m for raised-guard scenarios. The explicit cross-slope scenario adds only
+0.30 m for raised-guard scenarios. Each explicit terrain scenario adds only
 the terrain relief measured beneath its sampled feet to the ordinary 0.20 m
 envelope; this separates required pelvis reach correction from authored body
 bob without weakening the flat-ground check. Cumulative planted-foot drift and
 per-frame supported slip are gated only where procedural plants exist: raised
-guard and the explicit cross-slope terrain probe. Raised-guard scenarios
+guard and the terrain probes. Raised-guard scenarios
 require no more than 0.01 m cumulative support drift and at least 0.16 m
-inter-foot separation; cross-slope terrain IK retains the 0.035 m drift bound.
+inter-foot separation; steady upright terrain IK retains the 0.035 m drift
+bound. Crouch permits 0.051 m for compact reach correction. The instantaneous
+5.5 m/s-to-idle hard-stop probe instead gates the bounded braking step at 0.085
+m per frame and 0.35 m total before the new idle plants settle.
 The analytic knee-flexion reserve and bend-hemisphere gates use that same
-procedural scope; they are not asserted against default-off authored FK.
-Ordinary default-off FK is reviewed through continuity, clearance, phase-height,
+procedural scope; they are not asserted against authored FK-only motion.
+Ordinary FK-only motion is reviewed through continuity, clearance, phase-height,
 and visual gates rather than being mislabeled as world-planted.
 Start/stop, guard-entry, and crouch-state transitions permit at most 0.04 m of
 pelvis-height change per 64 Hz sample; the pre-existing guard entry itself uses
@@ -742,9 +750,9 @@ Procedural guard plants and targets stay entirely client-side. Replicated
 `SkeletonState` carries a tagged planted/moving intent whose moving payload has
 semantic direction, speed, swing side, and step identity; it never
 carries bones or world foot positions. Flat-ground placement works with
-terrain IK disabled. Raised planning and terrain conformity intentionally
+terrain IK disabled through `F8`. Raised planning and terrain conformity intentionally
 share one ordered solver pass so pole, plant, and pelvis memory are sampled
-once per frame. When terrain conformity is explicitly enabled, the same
+once per frame. When terrain conformity is enabled, the same
 targets additionally follow height and slope without replacing their planted
 XZ positions. Raised grounded idle uses the static guard. Raised crouched and airborne
 characters retain the existing crouch and airborne posture rules; specialized

@@ -19,7 +19,8 @@ mod procedural;
 pub(crate) use procedural::{
     ArmIkState, BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone,
     HumanoidIkTargets, LegIkState, LocomotionBodyResponseState, LocomotionHeightState,
-    ProceduralAnimationClock, RaisedFootworkState, locomotion_support_weights,
+    MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock, RaisedFootworkState,
+    locomotion_support_weights,
 };
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
@@ -52,16 +53,14 @@ fn animation_asset_path(path: &str) -> String {
 mod presentation;
 pub(crate) use presentation::*;
 
-/// Runtime switch for terrain height, slope, and pelvis conformity. Ordinary
-/// locomotion retains authored FK and leg motion while this is disabled; only
-/// raised-guard flat footwork remains procedural. Debug builds expose F8 as an
-/// explicit opt-in toggle.
+/// Runtime switch for terrain height, slope, and pelvis conformity. This is on
+/// by default; debug builds expose F8 to compare against authored FK.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TerrainIkEnabled(pub bool);
 
 impl Default for TerrainIkEnabled {
     fn default() -> Self {
-        Self(false)
+        Self(true)
     }
 }
 

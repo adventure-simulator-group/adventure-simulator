@@ -247,7 +247,7 @@ mod tests {
             .resource_mut::<ButtonInput<KeyCode>>()
             .press(KeyCode::F8);
         app.update();
-        assert!(app.world().resource::<TerrainIkEnabled>().0);
+        assert!(!app.world().resource::<TerrainIkEnabled>().0);
 
         {
             let mut keyboard = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
@@ -257,6 +257,6 @@ mod tests {
             keyboard.press(KeyCode::F8);
         }
         app.update();
-        assert!(!app.world().resource::<TerrainIkEnabled>().0);
+        assert!(app.world().resource::<TerrainIkEnabled>().0);
     }
 }

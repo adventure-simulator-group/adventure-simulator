@@ -778,7 +778,8 @@ struct BoneSnapshot {
 mod ik;
 pub(crate) use ik::{
     ArmIkState, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidIkTargets, LegIkState,
-    ProceduralAnimationClock, RaisedFootworkState, locomotion_support_weights,
+    MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock, RaisedFootworkState,
+    locomotion_support_weights,
 };
 #[cfg(test)]
 use ik::{
@@ -788,14 +789,14 @@ use ik::{
     constrain_guard_swing_to_live_corridor, constrain_target_to_reach, guard_step_sequence_delta,
     landing_maximum_reach, maximum_reach, plan_guard_step_endpoint, plant_is_continuous,
     raised_footwork_posture_is_valid, secondary_grip_world, solve_two_bone,
-    terrain_conformed_guard_target, terrain_leg_has_support,
-};
-use ik::{
-    MEASURED_ANKLE_SOLE_OFFSET_METRES, apply_two_bone_solution, canonical_knee_pole,
-    presentation_tick_delta, smoothstep, snapshot_chain, solve_landing_two_bone,
+    terrain_conformed_guard_target, terrain_ik_posture_is_valid, terrain_leg_has_support,
 };
 pub(super) use ik::{
     apply_arm_and_weapon_constraints, apply_locomotion_body_response, apply_terrain_leg_ik,
+};
+use ik::{
+    apply_two_bone_solution, canonical_knee_pole, presentation_tick_delta, smoothstep,
+    snapshot_chain, solve_landing_two_bone,
 };
 
 #[cfg(test)]
@@ -1393,6 +1394,16 @@ mod legacy_tests {
     }
 
     #[test]
+    fn terrain_ik_accepts_grounded_crouch_but_not_airborne() {
+        let crouched = SkeletonState::default()
+            .with_body_state(BodyState::Grounded(GroundedPosture::Crouched));
+        assert!(terrain_ik_posture_is_valid(&crouched));
+
+        let airborne = SkeletonState::default().with_body_state(BodyState::Airborne);
+        assert!(!terrain_ik_posture_is_valid(&airborne));
+    }
+
+    #[test]
     fn remembered_pole_follows_owner_yaw() {
         let original_yaw = Quat::from_rotation_y(0.3);
         let owner_local = Vec3::new(0.2, -0.1, -0.97).normalize();
@@ -1503,7 +1514,7 @@ mod legacy_tests {
         let previous = Vec3::ZERO;
         let desired = Vec3::X;
         let advanced = advance_foot_target(Some(previous), desired, 1.0 / 64.0);
-        assert!((advanced.length() - 0.1875).abs() < 0.0001);
+        assert!((advanced.length() - 0.078125).abs() < 0.0001);
         let hitch_advanced = advance_foot_target(Some(previous), desired, 1.0);
         assert!((hitch_advanced.length() - MAX_FOOT_TARGET_STEP).abs() < 0.0001);
         assert_eq!(advance_foot_target(None, desired, 1.0 / 64.0), desired);

@@ -158,6 +158,29 @@ pub(in crate::animation::procedural) fn solve_two_bone_with_reach(
     )
 }
 
+pub(in crate::animation::procedural) fn solve_two_bone_preserving_with_reach(
+    root: Vec3,
+    current_knee: Vec3,
+    current_end: Vec3,
+    target: Vec3,
+    upper_length: f32,
+    lower_length: f32,
+    pole_direction: Vec3,
+    maximum_target_reach: f32,
+) -> Option<TwoBoneSolution> {
+    solve_two_bone_internal(
+        root,
+        current_knee,
+        current_end,
+        target,
+        upper_length,
+        lower_length,
+        pole_direction,
+        maximum_target_reach,
+        true,
+    )
+}
+
 fn solve_two_bone_internal(
     root: Vec3,
     current_knee: Vec3,
