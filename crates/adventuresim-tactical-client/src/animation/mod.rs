@@ -20,7 +20,7 @@ pub(crate) use procedural::{
     ArmIkState, BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone,
     HumanoidIkTargets, LegIkState, LocomotionBodyResponseState, LocomotionHeightState,
     MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock, RaisedFootworkState,
-    locomotion_support_weights,
+    SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
 };
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
@@ -258,11 +258,19 @@ fn evaluate_skeletons(
             },
             clips: weighted,
         };
-        let ordinary_locomotion_active = skeleton.is_grounded()
+        let ordinary_locomotion_candidate = skeleton.is_grounded()
             && skeleton.action_kind() == SkeletonAction::None
-            && skeleton.weapon_guard() == WeaponGuardState::Lowered
-            && skeleton.animation_speed() > 0.05;
+            && skeleton.weapon_guard() == WeaponGuardState::Lowered;
         if let Some(mut playback) = playback {
+            // Hysteresis prevents sub-threshold velocity noise from repeatedly
+            // restarting the idle/locomotion presentation transition.
+            let locomotion_threshold = if playback.ordinary_locomotion_active {
+                0.03
+            } else {
+                0.08
+            };
+            let ordinary_locomotion_active =
+                ordinary_locomotion_candidate && skeleton.animation_speed() > locomotion_threshold;
             update_presentation_crossfade(
                 &mut playback,
                 target,
@@ -272,6 +280,8 @@ fn evaluate_skeletons(
                 time.delta_secs(),
             );
         } else {
+            let ordinary_locomotion_active =
+                ordinary_locomotion_candidate && skeleton.animation_speed() > 0.05;
             commands.entity(entity).insert(AnimationPlayback {
                 clips: target.clips,
                 use_authored_bind_pose: target.use_authored_bind_pose,
@@ -302,9 +312,9 @@ fn update_presentation_crossfade(
         None => render_delta_seconds.max(0.0),
     };
     let guard_changed = playback.weapon_guard != weapon_guard;
-    let locomotion_released =
-        playback.ordinary_locomotion_active && !ordinary_locomotion_active && !guard_changed;
-    let transition_started = guard_changed || locomotion_released;
+    let locomotion_changed =
+        playback.ordinary_locomotion_active != ordinary_locomotion_active && !guard_changed;
+    let transition_started = guard_changed || locomotion_changed;
     if transition_started {
         playback.presentation_transition = Some(PlaybackTransition {
             from: playback_pose(playback),

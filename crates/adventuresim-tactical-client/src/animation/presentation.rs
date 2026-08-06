@@ -278,6 +278,11 @@ impl Plugin for TacticalAnimationPlugin {
                     .chain()
                     .after(AnimationSystems)
                     .before(TransformSystems::Propagate),
+            )
+            .add_systems(
+                PostUpdate,
+                procedural::refresh_raised_support_after_propagation
+                    .after(TransformSystems::Propagate),
             );
     }
 }
