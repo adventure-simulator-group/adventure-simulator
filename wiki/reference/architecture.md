@@ -295,10 +295,27 @@ from starting incapacitation before recomputing them live. Actors currently
 over the threshold stop moving, attacking, defending, and participating in
 offensive AI target selection; imbalance-only incapacitation can recover.
 
-These per-tick effects remain in memory only. Incapacitation does not yet emit a
-terminal mission result or persist strategic wounds; required-kill missions
-still await the outcome and receipt branches. Ranged AI and durable combat
-consequences also remain unimplemented.
+These per-tick effects remain in memory only. A mission enemy's first transition
+into incapacitation counts as its defeat; recovery and later incapacitation do
+not count it again. Once all required enemies are defeated, the tactical server
+immediately reports `Defeated`. Once every loaded Party combatant is
+incapacitated, it immediately reports `Failed`; simultaneous defeat also fails
+deterministically. Strategic authority binds the expected living Party count
+into the request and active server records, and the trusted dispatcher passes
+it to the child. Resolution waits until every expected adventurer has loaded at
+least once, no player is still loading, and all required enemies have loaded.
+Enrollment is then sealed. Once enrollment has begun, an empty Party has a
+ten-second reconnection grace before `Failed`, including when every client
+disconnects before the seal. A timeout-disabled development server where nobody
+ever joins remains available. Terminal submission retries a frozen result after
+synchronous errors no more than once per second, before reevaluating combat
+predicates, and exits only after successful submission. A configured timeout
+remains a bounded `Failed` fallback.
+
+The strategic reducer selects and commits the durable outcome; the tactical
+server's XP argument is deliberately ignored. Tactical combat still does not
+persist strategic wounds or create an authenticated combat receipt. Ranged AI
+and durable combat consequences also remain unimplemented.
 
 Mission, hostile-group, battle, and outcome-source identities are separate.
 Tactical success never chooses a case objective, capture subject, contract

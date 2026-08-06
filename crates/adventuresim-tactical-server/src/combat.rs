@@ -71,6 +71,11 @@ fn consume_melee_authority(authority: &mut MeleeAttackAuthority, target: Entity,
 #[derive(Component, Debug)]
 pub struct Incapacitated;
 
+/// Emitted once per transition from active to incapacitated. Mission systems
+/// decide whether that transition constitutes a counted tactical defeat.
+#[derive(Event, Clone, Copy, Debug)]
+pub struct TacticalCombatantDefeated(pub Entity);
+
 /// A server-internal melee request. Both network clients and server-owned AI
 /// enter combat resolution through this seam.
 #[derive(Event, Clone, Copy, Debug)]
@@ -561,9 +566,12 @@ pub(crate) fn update_tactical_combat_state(
                 input.last_movement = None;
                 input.jumped = None;
             }
-            cmd.entity(entity)
-                .remove::<PendingDefenderResponse>()
-                .insert(Incapacitated);
+            if !was_incapacitated {
+                cmd.entity(entity)
+                    .remove::<PendingDefenderResponse>()
+                    .insert(Incapacitated);
+                cmd.trigger(TacticalCombatantDefeated(entity));
+            }
         } else if was_incapacitated {
             cmd.entity(entity).remove::<Incapacitated>();
         }
