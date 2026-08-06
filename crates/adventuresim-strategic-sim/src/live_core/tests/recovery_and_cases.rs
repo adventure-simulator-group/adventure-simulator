@@ -917,7 +917,7 @@ fn observed_activity_origin_is_exact_ephemeral_fallback_return_provenance() {
 fn nonterminal_settlement_investigation_does_not_require_case_site_occupancy() {
     let source = include_str!("../generated_cases.rs");
     let post_action = source
-        .split("if at_settlement {\n                    // Settlement-bound actions")
+        .split("// Settlement-bound actions such as locating a referred")
         .nth(1)
         .and_then(|tail| tail.split("let return_pin").next())
         .expect("post-action settlement/site branch");
