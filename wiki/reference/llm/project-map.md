@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1842)
+## Files (1845)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -43,7 +43,9 @@ development, or other wiki document before changing a subsystem.
 - `assets/animations/biped/unarmed/guard_walk_lead_left.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/idle_relaxed.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/run.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/run_mirrored.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/walk.glb` — Binary game or UI asset.
+- `assets/animations/biped/unarmed/walk_mirrored.glb` — Binary game or UI asset.
 - `assets/world-data/ieg-religion-1544.csv` — Repository support file.
 - `assets_src/base.blend` — Repository support file.
 - `assets_src/base.blend1` — Repository support file.
@@ -1754,6 +1756,7 @@ development, or other wiki document before changing a subsystem.
 - `scripts/init_world_data.py` — Development or documentation automation script.
 - `scripts/init_world_runtime.py` — Development or documentation automation script.
 - `scripts/just_tasks.py` — Development or documentation automation script.
+- `scripts/mirror_gait_assets.py` — Development or documentation automation script.
 - `scripts/prepare_animation_motion.py` — Development or documentation automation script.
 - `scripts/prepare_rig_base.py` — Development or documentation automation script.
 - `scripts/quest_web_eval.mjs` — Repository support file.

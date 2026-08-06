@@ -86,7 +86,7 @@ intent.
 
 A discrete raised/lowered change is presentation-crossfaded from the currently
 displayed effective pose over 0.18 seconds. This includes resolved fallback
-clips and their lower- or whole-body mirror contribution, so an incomplete
+clips and their whole-body mirror contribution, so an incomplete
 guard asset set does not hard-cut from locomotion to a relaxed fallback. The
 crossfade clock advances once per simulation sample in deterministic capture
 tools (and by render delta in gameplay); changing direction or gait phase does
@@ -455,9 +455,10 @@ opponent-side contact plane. The engine remains responsible for authoritative
 collision and damage.
 
 Locomotion semantic anchors use the **left** side as their canonical first
-half-cycle. When a sparse gait source contains only that half, the runtime
-reflects the complete bilateral limb motion—including clavicles, arms, hands,
-legs, feet, and twist bones—to construct the opposite half and closure.
+half-cycle. When a sparse gait source contains only that half, generated
+mirrored clips reflect the complete bilateral limb motion—including clavicles,
+arms, hands, legs, feet, and twist bones—to construct the opposite half and
+closure before runtime FK blending.
 Guard, attack, and guard-relative duck counterparts use presence-based
 mirroring. The runtime prefers an exact pose in the requested pack, then a
 whole-body mirrored opposite-side pose from that same pack, and only then the
@@ -533,7 +534,11 @@ character-space mirrored contact, mirrored contact to mirrored passing, and
 mirrored passing back to contact. It does not traverse later exported gait
 timeline data or any baked in-between frames between the two anchors. The
 client pauses distinct Bevy graph nodes at the exact catalog frames and blends
-their bone transforms using the evaluator's quarter-cycle weight. Character-space reflection retains anatomical lateral spacing
+their bone transforms using the evaluator's linear quarter-cycle weight.
+Each graph contribution is a complete unmirrored or pre-mirrored endpoint.
+Parity is never averaged into a fractional post-FK reflection: at the middle
+of passing-to-opposite-contact, Bevy blends half of each complete pose rather
+than pulling both legs toward their reflected counterparts. Character-space reflection retains anatomical lateral spacing
 rather than swapping bones discretely. Support narrows through the walk/run
 blend and releases both feet for roughly 90-110 ms at each 5.5 m/s run flight
 beat; the visual gait keeps at least 0.10 m of sole clearance during that flight.
@@ -604,7 +609,7 @@ the replicated sequence state, not a reconstructed historical event time.
 
 Terrain conformity defaults off while its uneven-ground behavior is being
 refined. Debug clients expose `F8` as an explicit runtime opt-in. Disabling it
-leaves authored FK, gait mirroring, torso stabilization, contact-edge visual
+leaves authored FK, gait endpoint blending, torso stabilization, contact-edge visual
 grounding, and procedural combat foot placement intact. Ordinary walk, run,
 and crouch keep their authored leg motion without the analytic terrain solve.
 Enabling it adds terrain height and

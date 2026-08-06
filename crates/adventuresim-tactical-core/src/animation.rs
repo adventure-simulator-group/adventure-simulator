@@ -1208,9 +1208,10 @@ pub struct PoseSample {
     pub pose: SemanticPose,
     pub sampling: PoseSampling,
     pub weight: f32,
-    /// Continuous weight for exchanging and reflecting the authored left/right
-    /// leg transforms when a resolved source lacks an authored opposite half.
-    pub mirror_lower_body: f32,
+    /// Selects the pre-mirrored gait clip for this complete anchor pose.
+    /// Mirroring is deliberately binary: fractional reflection after FK blend
+    /// collapses the forward/back separation of bilateral limbs.
+    pub mirror_lower_body: bool,
 }
 
 /// Client-side blend coordinates derived from authoritative state.
@@ -1287,7 +1288,7 @@ fn raised_guard_locomotion_samples(
         pose: guard_pose(lead),
         sampling: PoseSampling::Anchor,
         weight: 1.0,
-        mirror_lower_body: 0.0,
+        mirror_lower_body: false,
     }]
 }
 
@@ -1303,7 +1304,7 @@ fn gait_or_idle(
             pose: idle,
             sampling: PoseSampling::Anchor,
             weight: 1.0,
-            mirror_lower_body: 0.0,
+            mirror_lower_body: false,
         }]
     } else {
         gait_pair(phase, contact, passing)
@@ -1318,13 +1319,7 @@ fn locomotion_samples(speed: f32, phase: f32, crouch: f32) -> Vec<PoseSample> {
     let run = ((speed - WALK_REFERENCE_SPEED) / (RUN_REFERENCE_SPEED - WALK_REFERENCE_SPEED))
         .clamp(0.0, 1.0);
     let mut samples = Vec::with_capacity(8);
-    let mut idle = weighted_pair(SemanticPose::IdleRelaxed, SemanticPose::CrouchIdle, crouch);
-    // The idle lower body is authored symmetrically. Give every contribution
-    // the same reflection coordinate before Bevy blends it, so the client
-    // never has to average incompatible mirrored and unmirrored semantics.
-    for sample in &mut idle {
-        sample.mirror_lower_body = gait_mirror(phase);
-    }
+    let idle = weighted_pair(SemanticPose::IdleRelaxed, SemanticPose::CrouchIdle, crouch);
     append_scaled(&mut samples, idle, 1.0 - locomotion);
     append_scaled(
         &mut samples,
@@ -1364,7 +1359,7 @@ fn weighted_pair(a: SemanticPose, b: SemanticPose, b_weight: f32) -> Vec<PoseSam
             pose: a,
             sampling: PoseSampling::Anchor,
             weight: 1.0 - b_weight,
-            mirror_lower_body: 0.0,
+            mirror_lower_body: false,
         });
     }
     if b_weight > 0.0 {
@@ -1372,53 +1367,39 @@ fn weighted_pair(a: SemanticPose, b: SemanticPose, b_weight: f32) -> Vec<PoseSam
             pose: b,
             sampling: PoseSampling::Anchor,
             weight: b_weight,
-            mirror_lower_body: 0.0,
+            mirror_lower_body: false,
         });
     }
     samples
 }
 
-fn gait_mirror(phase: f32) -> f32 {
-    let phase = phase.rem_euclid(1.0);
-    if phase < 0.15 {
-        0.0
-    } else if phase < 0.35 {
-        smoothstep01((phase - 0.15) / 0.20)
-    } else if phase < 0.65 {
-        1.0
-    } else if phase < 0.85 {
-        1.0 - smoothstep01((phase - 0.65) / 0.20)
-    } else {
-        0.0
-    }
-}
-
 fn gait_pair(phase: f32, contact: SemanticPose, passing: SemanticPose) -> Vec<PoseSample> {
-    let phase = phase.rem_euclid(1.0);
-    let quarter = phase * 4.0;
-    let index = quarter.floor() as u8;
-    let progress = smoothstep01(quarter.fract());
-    let (start, end) = match index {
-        0 => (contact, passing),
-        1 => (passing, contact),
-        2 => (contact, passing),
-        _ => (passing, contact),
+    let quarter = phase.rem_euclid(1.0) * 4.0;
+    let progress = quarter.fract();
+    let (start, start_mirrored, end, end_mirrored) = match quarter.floor() as u8 {
+        0 => (contact, false, passing, false),
+        1 => (passing, false, contact, true),
+        2 => (contact, true, passing, true),
+        _ => (passing, true, contact, false),
     };
-    // Swap anatomical sides only near each passing pose. A hard swap pops,
-    // while blending throughout contact folds the planted stride through
-    // itself. The 20%-cycle windows keep interpolation around the pose where
-    // the legs are closest and preserve the authored contact silhouettes.
-    let mirror = gait_mirror(phase);
-    // Contact and passing are authoritative sparse poses. The client gives
-    // each catalog frame its own Bevy graph node, samples both endpoints
-    // exactly, and uses this progress as their blend weight. Exported
-    // in-between keys therefore cannot change procedural gait timing.
-    vec![PoseSample {
-        pose: start,
-        sampling: PoseSampling::Span { end, progress },
-        weight: 1.0,
-        mirror_lower_body: mirror,
-    }]
+    let mut samples = Vec::with_capacity(2);
+    if progress < 1.0 {
+        samples.push(PoseSample {
+            pose: start,
+            sampling: PoseSampling::Anchor,
+            weight: 1.0 - progress,
+            mirror_lower_body: start_mirrored,
+        });
+    }
+    if progress > 0.0 {
+        samples.push(PoseSample {
+            pose: end,
+            sampling: PoseSampling::Anchor,
+            weight: progress,
+            mirror_lower_body: end_mirrored,
+        });
+    }
+    samples
 }
 
 fn smoothstep01(value: f32) -> f32 {
@@ -1458,7 +1439,7 @@ fn airborne_sample(direction: Vec2, vertical_velocity: f32) -> PoseSample {
         pose,
         sampling: PoseSampling::Span { end, progress },
         weight: 1.0,
-        mirror_lower_body: 0.0,
+        mirror_lower_body: false,
     }
 }
 
@@ -1473,7 +1454,7 @@ fn out_and_back(start: SemanticPose, middle: SemanticPose, phase: f32) -> PoseSa
         pose,
         sampling: PoseSampling::Span { end, progress },
         weight: 1.0,
-        mirror_lower_body: 0.0,
+        mirror_lower_body: false,
     }
 }
 
@@ -1493,7 +1474,7 @@ fn through_transition(
         pose,
         sampling: PoseSampling::Span { end, progress },
         weight: 1.0,
-        mirror_lower_body: 0.0,
+        mirror_lower_body: false,
     }
 }
 
@@ -1572,7 +1553,7 @@ fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
             progress: blend,
         },
         weight: 1.0,
-        mirror_lower_body: 0.0,
+        mirror_lower_body: false,
     }]
 }
 
@@ -2144,20 +2125,14 @@ mod tests {
         assert_eq!(evaluation.base.len(), 2);
         assert!(evaluation.base.iter().any(|sample| {
             sample.pose == SemanticPose::WalkPassing
-                && sample.sampling
-                    == PoseSampling::Span {
-                        end: SemanticPose::WalkContact,
-                        progress: 0.0,
-                    }
+                && sample.sampling == PoseSampling::Anchor
+                && !sample.mirror_lower_body
                 && sample.weight == 0.5
         }));
         assert!(evaluation.base.iter().any(|sample| {
             sample.pose == SemanticPose::RunFlight
-                && sample.sampling
-                    == PoseSampling::Span {
-                        end: SemanticPose::RunContact,
-                        progress: 0.0,
-                    }
+                && sample.sampling == PoseSampling::Anchor
+                && !sample.mirror_lower_body
                 && sample.weight == 0.5
         }));
     }
@@ -2393,19 +2368,19 @@ mod tests {
     }
 
     #[test]
-    fn low_speed_idle_and_gait_contributions_share_mirror_semantics() {
+    fn low_speed_idle_remains_unmirrored_while_gait_uses_endpoint_parity() {
         let evaluation = AnimationEvaluation::from_skeleton(&SkeletonState {
             local_velocity: Vec3::new(0.25, 0.0, 0.0),
-            gait_phase: 0.25,
+            gait_phase: 0.375,
             ..default()
         });
         assert!(evaluation.base.len() >= 2);
-        let mirror = evaluation.base[0].mirror_lower_body;
+        assert!(!evaluation.base[0].mirror_lower_body);
         assert!(
             evaluation
                 .base
                 .iter()
-                .all(|sample| (sample.mirror_lower_body - mirror).abs() < 0.0001)
+                .any(|sample| sample.mirror_lower_body)
         );
     }
 
@@ -2424,43 +2399,80 @@ mod tests {
         );
         assert_eq!(
             samples.map(|sample| sample.sampling),
-            [
-                PoseSampling::Span {
-                    end: SemanticPose::WalkPassing,
-                    progress: 0.0,
-                },
-                PoseSampling::Span {
-                    end: SemanticPose::WalkContact,
-                    progress: 0.0,
-                },
-                PoseSampling::Span {
-                    end: SemanticPose::WalkPassing,
-                    progress: 0.0,
-                },
-                PoseSampling::Span {
-                    end: SemanticPose::WalkContact,
-                    progress: 0.0,
-                },
+            [PoseSampling::Anchor; 4]
+        );
+        assert_eq!(
+            samples.map(|sample| sample.mirror_lower_body),
+            [false, false, true, true]
+        );
+        let between = gait_pair(0.375, SemanticPose::WalkContact, SemanticPose::WalkPassing);
+        assert_eq!(between.len(), 2);
+        assert_eq!(
+            between
+                .iter()
+                .map(|sample| (sample.pose, sample.mirror_lower_body, sample.weight))
+                .collect::<Vec<_>>(),
+            vec![
+                (SemanticPose::WalkPassing, false, 0.5),
+                (SemanticPose::WalkContact, true, 0.5),
             ]
         );
-        for (actual, expected) in samples
-            .map(|sample| sample.mirror_lower_body)
-            .into_iter()
-            .zip([0.0, 0.5, 1.0, 0.5])
-        {
-            assert!((actual - expected).abs() < 0.0001);
+    }
+
+    #[test]
+    fn gait_never_fractionally_mirrors_an_fk_blend() {
+        for frame in 0..=256 {
+            let samples = gait_pair(
+                frame as f32 / 256.0,
+                SemanticPose::RunContact,
+                SemanticPose::RunFlight,
+            );
+            assert!(samples.len() <= 2);
+            assert!((samples.iter().map(|sample| sample.weight).sum::<f32>() - 1.0).abs() < 0.0001);
+            assert!(
+                samples
+                    .iter()
+                    .all(|sample| sample.sampling == PoseSampling::Anchor)
+            );
         }
-        let between = gait_pair(0.375, SemanticPose::WalkContact, SemanticPose::WalkPassing);
-        assert_eq!(between.len(), 1);
-        assert_eq!(
-            between[0].sampling,
-            PoseSampling::Span {
-                end: SemanticPose::WalkContact,
-                progress: 0.5,
-            }
-        );
-        assert_eq!(between[0].weight, 1.0);
-        assert_eq!(between[0].mirror_lower_body, 1.0);
+    }
+
+    #[test]
+    fn gait_anchor_weights_advance_uniformly_at_recording_cadences() {
+        // A full-speed gait cycle occupies about 20 frames at 30 FPS and 40
+        // frames at 60 FPS. Uniform phase samples must produce uniform pose
+        // travel instead of easing to a near-stop at every sparse anchor.
+        for frames_per_cycle in [20, 40] {
+            let step = 1.0 / frames_per_cycle as f32;
+            let samples = (0..frames_per_cycle)
+                .map(|frame| {
+                    let phase = frame as f32 * step;
+                    let quarter = phase.rem_euclid(1.0) * 4.0;
+                    let gait =
+                        gait_pair(phase, SemanticPose::WalkContact, SemanticPose::WalkPassing);
+                    let end_weight = gait.get(1).map_or(0.0, |sample| sample.weight);
+                    (quarter.floor() as u8, end_weight)
+                })
+                .collect::<Vec<_>>();
+            let travel = samples
+                .windows(2)
+                .map(|pair| {
+                    let (before_segment, before) = pair[0];
+                    let (after_segment, after) = pair[1];
+                    if before_segment == after_segment {
+                        (after - before).abs()
+                    } else {
+                        assert_eq!((after_segment + 4 - before_segment) % 4, 1);
+                        1.0 - before + after
+                    }
+                })
+                .collect::<Vec<_>>();
+            let expected = 4.0 * step;
+            assert!(
+                travel.iter().all(|delta| (delta - expected).abs() < 0.0001),
+                "nonuniform gait travel at {frames_per_cycle} frames/cycle: {travel:?}"
+            );
+        }
     }
 
     #[test]
@@ -2483,7 +2495,7 @@ mod tests {
                     progress: 0.0,
                 },
                 weight: 1.0,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             }]
         );
 

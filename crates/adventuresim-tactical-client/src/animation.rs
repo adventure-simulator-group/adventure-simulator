@@ -129,7 +129,12 @@ fn animation_asset_path(path: &str) -> String {
 pub struct TacticalAnimationPlugin;
 
 const PRESENTATION_VELOCITY_RESPONSE_PER_SECOND: f32 = 18.0;
-const PRESENTATION_PHASE_CORRECTION_RATE_PER_SECOND: f32 = 0.30;
+// Replicated phase samples naturally arrive a few render frames behind the
+// presentation clock. Treat that delivery-time offset as jitter unless it
+// persists beyond a meaningful fraction of a quarter-cycle.
+const PRESENTATION_PHASE_CORRECTION_RATE_PER_SECOND: f32 = 0.05;
+const PRESENTATION_PHASE_DRIFT_DEADBAND: f32 = 0.04;
+const PRESENTATION_PHASE_DRIFT_MEASUREMENT_BLEND: f32 = 0.15;
 const PRESENTATION_PHASE_SNAP_ERROR: f32 = 0.20;
 const MAX_PRESENTATION_SOURCE_GAP_TICKS: u64 = 32;
 
@@ -142,6 +147,10 @@ pub(crate) struct PresentedSkeleton {
     source_tick: u64,
     presentation_tick: Option<u64>,
     phase_error_remaining: f32,
+    last_phase_prediction_delta: f32,
+    last_phase_correction_delta: f32,
+    last_phase_measurement_error: Option<f32>,
+    last_phase_source_changed: bool,
 }
 
 impl std::ops::Deref for PresentedSkeleton {
@@ -174,6 +183,10 @@ fn advance_presented_skeleton(
 ) {
     let delta_seconds = delta_seconds.clamp(0.0, 0.1);
     let source_changed = presented.source_tick != authoritative.locomotion_sample_tick;
+    presented.last_phase_prediction_delta = 0.0;
+    presented.last_phase_correction_delta = 0.0;
+    presented.last_phase_measurement_error = None;
+    presented.last_phase_source_changed = source_changed;
     let source_gap = authoritative
         .locomotion_sample_tick
         .checked_sub(presented.source_tick);
@@ -192,17 +205,30 @@ fn advance_presented_skeleton(
             .lerp(authoritative.world_velocity, response);
 
         let speed = next.animation_speed();
-        let predicted = (previous.gait_phase
-            + gait_cycle_phase_delta(locomotion_profile(&next), speed, delta_seconds))
-        .rem_euclid(1.0);
+        let prediction_delta =
+            gait_cycle_phase_delta(locomotion_profile(&next), speed, delta_seconds);
+        let predicted = (previous.gait_phase + prediction_delta).rem_euclid(1.0);
+        presented.last_phase_prediction_delta = prediction_delta;
         let error = circular_phase_delta(predicted, authoritative.gait_phase);
         let discontinuous = error.abs() > PRESENTATION_PHASE_SNAP_ERROR;
         if source_changed && discontinuous {
             next.gait_phase = authoritative.gait_phase;
             presented.phase_error_remaining = 0.0;
+            presented.last_phase_measurement_error = Some(error);
         } else {
             if source_changed {
-                presented.phase_error_remaining = error;
+                presented.last_phase_measurement_error = Some(error);
+                let measured_drift = if error.abs() <= PRESENTATION_PHASE_DRIFT_DEADBAND {
+                    0.0
+                } else {
+                    error - error.signum() * PRESENTATION_PHASE_DRIFT_DEADBAND
+                };
+                // Keep one continuous correction accumulator. Replacing it
+                // with every packet's error makes packet timing modulate the
+                // displayed gait speed even when physical speed is constant.
+                presented.phase_error_remaining += (measured_drift
+                    - presented.phase_error_remaining)
+                    * PRESENTATION_PHASE_DRIFT_MEASUREMENT_BLEND;
             }
             let maximum_correction = PRESENTATION_PHASE_CORRECTION_RATE_PER_SECOND * delta_seconds;
             let correction = presented
@@ -210,6 +236,7 @@ fn advance_presented_skeleton(
                 .clamp(-maximum_correction, maximum_correction);
             next.gait_phase = (predicted + correction).rem_euclid(1.0);
             presented.phase_error_remaining -= correction;
+            presented.last_phase_correction_delta = correction;
         }
     } else {
         presented.phase_error_remaining = 0.0;
@@ -232,6 +259,10 @@ fn update_presented_skeletons(
                 source_tick: authoritative.locomotion_sample_tick,
                 presentation_tick: procedural_clock.fixed_step().map(|(tick, _)| tick),
                 phase_error_remaining: 0.0,
+                last_phase_prediction_delta: 0.0,
+                last_phase_correction_delta: 0.0,
+                last_phase_measurement_error: None,
+                last_phase_source_changed: false,
             });
             continue;
         };
@@ -346,7 +377,7 @@ impl Plugin for TacticalAnimationPlugin {
                 PostUpdate,
                 (
                     restore_authored_bind_pose,
-                    procedural::apply_gait_mirroring,
+                    procedural::apply_pose_mirroring,
                     procedural::stabilize_locomotion_torso,
                     procedural::apply_landing_leg_compression,
                     procedural::apply_locomotion_body_response,
@@ -613,6 +644,12 @@ impl AnimationPackCatalog {
                 builder.pose(motion, frame, pose)?;
             }
         }
+        // These clips contain character-space reflected copies of the sparse
+        // gait anchors. They deliberately have no independent semantics: the
+        // evaluator selects them only as the mirrored endpoint of a gait
+        // blend, before Bevy combines transforms.
+        builder.motion("walk_mirrored", 32);
+        builder.motion("run_mirrored", 20);
         for (motion, pose) in [
             ("duck_lead_left_backward", "duck_lead_left_backward"),
             ("duck_lead_left_left", "duck_lead_left_left"),
@@ -756,7 +793,6 @@ struct AnimationRuntime {
 pub(super) struct AnimationPlayback {
     clips: Vec<WeightedClip>,
     use_authored_bind_pose: bool,
-    pub(super) lower_body_mirror: f32,
     pub(super) whole_body_mirror: f32,
     weapon_guard: WeaponGuardState,
     ordinary_locomotion_active: bool,
@@ -776,7 +812,6 @@ impl Default for AnimationPlayback {
         Self {
             clips: Vec::new(),
             use_authored_bind_pose: true,
-            lower_body_mirror: 0.0,
             whole_body_mirror: 0.0,
             weapon_guard: WeaponGuardState::Lowered,
             ordinary_locomotion_active: false,
@@ -798,7 +833,6 @@ struct WeightedClip {
 struct PlaybackPose {
     clips: Vec<WeightedClip>,
     use_authored_bind_pose: bool,
-    lower_body_mirror: f32,
     whole_body_mirror: f32,
 }
 
@@ -1000,10 +1034,11 @@ fn collect_loaded_packs(
                     .expect("processed motion already passed catalog-range validation");
             let node = graph.add_clip(handle.clone(), 1.0, graph.root);
             let pack = &catalog.packs[&key.0];
+            let anchor_motion = key.1.strip_suffix("_mirrored").unwrap_or(&key.1);
             let anchor_frames = pack
                 .poses
                 .values()
-                .filter(|anchor| anchor.motion == key.1)
+                .filter(|anchor| anchor.motion == anchor_motion)
                 .map(|anchor| anchor.frame)
                 .chain(
                     pack.references
@@ -1250,10 +1285,7 @@ fn evaluate_skeletons(
                 mirrored > exact
             });
         let mut weighted = Vec::<WeightedClip>::new();
-        let mut mirror_weight = 0.0;
-        let mut resolved_weight = 0.0;
         for sample in samples {
-            let before = weighted.iter().map(|clip| clip.weight).sum::<f32>();
             append_resolved_sample(
                 &mut weighted,
                 &runtime,
@@ -1262,9 +1294,6 @@ fn evaluate_skeletons(
                 *sample,
                 coherent_guard_parity,
             );
-            let added = (weighted.iter().map(|clip| clip.weight).sum::<f32>() - before).max(0.0);
-            resolved_weight += added;
-            mirror_weight += added * sample.mirror_lower_body.clamp(0.0, 1.0);
         }
         let target = PlaybackPose {
             use_authored_bind_pose: weighted.is_empty(),
@@ -1282,11 +1311,6 @@ fn evaluate_skeletons(
                 }
             },
             clips: weighted,
-            lower_body_mirror: if resolved_weight > f32::EPSILON {
-                (mirror_weight / resolved_weight).clamp(0.0, 1.0)
-            } else {
-                0.0
-            },
         };
         let ordinary_locomotion_active = skeleton.grounded
             && skeleton.action == SkeletonAction::None
@@ -1305,7 +1329,6 @@ fn evaluate_skeletons(
             commands.entity(entity).insert(AnimationPlayback {
                 clips: target.clips,
                 use_authored_bind_pose: target.use_authored_bind_pose,
-                lower_body_mirror: target.lower_body_mirror,
                 whole_body_mirror: target.whole_body_mirror,
                 weapon_guard: skeleton.weapon_guard,
                 ordinary_locomotion_active,
@@ -1379,10 +1402,13 @@ fn log_animation_diagnostics(
             "authoritative": authoritative,
             "presented": &presented.state,
             "presentation_phase_error_remaining": presented.phase_error_remaining,
+            "presentation_phase_prediction_delta": presented.last_phase_prediction_delta,
+            "presentation_phase_correction_delta": presented.last_phase_correction_delta,
+            "presentation_phase_measurement_error": presented.last_phase_measurement_error,
+            "presentation_phase_source_changed": presented.last_phase_source_changed,
             "evaluation": evaluation,
             "playback": {
                 "use_authored_bind_pose": playback.use_authored_bind_pose,
-                "lower_body_mirror": playback.lower_body_mirror,
                 "whole_body_mirror": playback.whole_body_mirror,
                 "ordinary_locomotion_active": playback.ordinary_locomotion_active,
                 "transition": transition,
@@ -1451,7 +1477,6 @@ fn playback_pose(playback: &AnimationPlayback) -> PlaybackPose {
     PlaybackPose {
         clips: playback.clips.clone(),
         use_authored_bind_pose: playback.use_authored_bind_pose,
-        lower_body_mirror: playback.lower_body_mirror,
         whole_body_mirror: playback.whole_body_mirror,
     }
 }
@@ -1459,7 +1484,6 @@ fn playback_pose(playback: &AnimationPlayback) -> PlaybackPose {
 fn apply_playback_pose(playback: &mut AnimationPlayback, pose: PlaybackPose) {
     playback.clips = pose.clips;
     playback.use_authored_bind_pose = pose.use_authored_bind_pose;
-    playback.lower_body_mirror = pose.lower_body_mirror;
     playback.whole_body_mirror = pose.whole_body_mirror;
 }
 
@@ -1471,7 +1495,6 @@ fn blend_playback_poses(from: &PlaybackPose, to: &PlaybackPose, progress: f32) -
     PlaybackPose {
         use_authored_bind_pose: clips.is_empty(),
         clips,
-        lower_body_mirror: from.lower_body_mirror.lerp(to.lower_body_mirror, progress),
         whole_body_mirror: from.whole_body_mirror.lerp(to.whole_body_mirror, progress),
     }
 }
@@ -1616,6 +1639,19 @@ fn resolve_anchor<'a>(
         semantic: resolved_pose,
         mirrored,
     })
+}
+
+fn select_gait_endpoint_parity<'a>(
+    runtime: &'a AnimationRuntime,
+    resolved: ResolvedAnchor<'a>,
+    mirrored: bool,
+) -> Option<ResolvedAnchor<'a>> {
+    if !mirrored {
+        return Some(resolved);
+    }
+    let motion = format!("{}_mirrored", resolved.anchor.motion);
+    let clip = runtime.clips.get(&(resolved.pack_id.to_owned(), motion))?;
+    Some(ResolvedAnchor { clip, ..resolved })
 }
 
 fn is_guard_locomotion_pose(pose: SemanticPose) -> bool {
@@ -1819,7 +1855,9 @@ fn append_resolved_sample(
         Some(mirrored) => resolve_anchor_with_parity(runtime, catalog, pack, sample.pose, mirrored),
         None => resolve_anchor(runtime, catalog, pack, sample.pose),
     };
-    let Some(start) = start else {
+    let Some(start) = start.and_then(|resolved| {
+        select_gait_endpoint_parity(runtime, resolved, sample.mirror_lower_body)
+    }) else {
         return;
     };
     match sample.sampling {
@@ -2059,6 +2097,10 @@ mod tests {
             source_tick: 0,
             presentation_tick: None,
             phase_error_remaining: 0.0,
+            last_phase_prediction_delta: 0.0,
+            last_phase_correction_delta: 0.0,
+            last_phase_measurement_error: None,
+            last_phase_source_changed: false,
         };
         let mut replicated = authoritative.clone();
         let mut previous_phase = presented.gait_phase;
@@ -2113,6 +2155,10 @@ mod tests {
             source_tick: 0,
             presentation_tick: None,
             phase_error_remaining: 0.0,
+            last_phase_prediction_delta: 0.0,
+            last_phase_correction_delta: 0.0,
+            last_phase_measurement_error: None,
+            last_phase_source_changed: false,
         };
         let render_deltas = [1.0 / 60.0, 1.0 / 90.0, 1.0 / 45.0, 1.0 / 72.0];
         let mut previous_phase = presented.gait_phase;
@@ -2135,6 +2181,91 @@ mod tests {
     }
 
     #[test]
+    fn presentation_phase_ignores_minor_authoritative_packet_jitter() {
+        let velocity = Vec3::NEG_Z * 5.5;
+        let mut authoritative = SkeletonState {
+            local_velocity: velocity,
+            world_velocity: velocity,
+            ..default()
+        };
+        let mut presented = PresentedSkeleton {
+            state: authoritative.clone(),
+            source_tick: 0,
+            presentation_tick: None,
+            phase_error_remaining: 0.0,
+            last_phase_prediction_delta: 0.0,
+            last_phase_correction_delta: 0.0,
+            last_phase_measurement_error: None,
+            last_phase_source_changed: false,
+        };
+        let delta_seconds = 1.0 / 60.0;
+
+        for tick in 1..=32 {
+            let previous_phase = presented.gait_phase;
+            let predicted_delta = gait_cycle_phase_delta(
+                locomotion_profile(&presented.state),
+                presented.animation_speed(),
+                delta_seconds,
+            );
+            let jitter = if tick % 2 == 0 { 0.03 } else { -0.03 };
+            authoritative.gait_phase = (previous_phase + predicted_delta + jitter).rem_euclid(1.0);
+            authoritative.locomotion_sample_tick = tick;
+
+            advance_presented_skeleton(&mut presented, &authoritative, delta_seconds);
+
+            let actual_delta = circular_phase_delta(previous_phase, presented.gait_phase);
+            assert!((actual_delta - predicted_delta).abs() < 0.000_01);
+            assert_eq!(presented.last_phase_correction_delta, 0.0);
+            assert_eq!(presented.phase_error_remaining, 0.0);
+            assert!(presented.last_phase_source_changed);
+            assert!(presented.last_phase_measurement_error.is_some());
+        }
+    }
+
+    #[test]
+    fn presentation_phase_filters_persistent_drift_before_bounded_correction() {
+        let velocity = Vec3::NEG_Z * 5.5;
+        let mut authoritative = SkeletonState {
+            local_velocity: velocity,
+            world_velocity: velocity,
+            ..default()
+        };
+        let mut presented = PresentedSkeleton {
+            state: authoritative.clone(),
+            source_tick: 0,
+            presentation_tick: None,
+            phase_error_remaining: 0.0,
+            last_phase_prediction_delta: 0.0,
+            last_phase_correction_delta: 0.0,
+            last_phase_measurement_error: None,
+            last_phase_source_changed: false,
+        };
+        let delta_seconds = 1.0 / 60.0;
+        let maximum_correction = PRESENTATION_PHASE_CORRECTION_RATE_PER_SECOND * delta_seconds;
+
+        for tick in 1..=8 {
+            let predicted_delta = gait_cycle_phase_delta(
+                locomotion_profile(&presented.state),
+                presented.animation_speed(),
+                delta_seconds,
+            );
+            authoritative.gait_phase =
+                (presented.gait_phase + predicted_delta + 0.10).rem_euclid(1.0);
+            authoritative.locomotion_sample_tick = tick;
+
+            advance_presented_skeleton(&mut presented, &authoritative, delta_seconds);
+
+            assert!(presented.last_phase_correction_delta > 0.0);
+            assert!(presented.last_phase_correction_delta <= maximum_correction + 0.000_01);
+            let measured = presented
+                .last_phase_measurement_error
+                .expect("new authoritative sample should be measured");
+            assert!((measured - 0.10).abs() < 0.000_01);
+            assert!(presented.phase_error_remaining < 0.10 - PRESENTATION_PHASE_DRIFT_DEADBAND);
+        }
+    }
+
+    #[test]
     fn presentation_velocity_smooths_a_sparse_turn_without_changing_authority() {
         let authoritative = SkeletonState {
             local_velocity: Vec3::NEG_Z * 5.5,
@@ -2146,6 +2277,10 @@ mod tests {
             source_tick: 0,
             presentation_tick: None,
             phase_error_remaining: 0.0,
+            last_phase_prediction_delta: 0.0,
+            last_phase_correction_delta: 0.0,
+            last_phase_measurement_error: None,
+            last_phase_source_changed: false,
         };
         let turned = SkeletonState {
             local_velocity: Vec3::X * 5.5,
@@ -2339,7 +2474,7 @@ mod tests {
                     progress: 0.5,
                 },
                 weight: 1.0,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
             None,
         );
@@ -2356,6 +2491,40 @@ mod tests {
     }
 
     #[test]
+    fn mirrored_gait_endpoint_uses_a_distinct_pre_fk_clip_node() {
+        let catalog = AnimationPackCatalog::default();
+        let mut runtime =
+            runtime_with_available([SemanticPose::RunContact, SemanticPose::RunFlight]);
+        let mirrored_node = AnimationNodeIndex::new(9_001);
+        runtime.clips.insert(
+            (HUMANOID_UNARMED_PACK.to_owned(), "run_mirrored".to_owned()),
+            LoadedClip {
+                node: AnimationNodeIndex::new(9_000),
+                anchor_nodes: BTreeMap::from([(0, mirrored_node)]),
+                cycle_duration_seconds: 20.0 / ANIMATION_FPS,
+            },
+        );
+        let mut weighted = Vec::new();
+        append_resolved_sample(
+            &mut weighted,
+            &runtime,
+            &catalog,
+            HUMANOID_UNARMED_PACK,
+            PoseSample {
+                pose: SemanticPose::RunContact,
+                sampling: PoseSampling::Anchor,
+                weight: 0.5,
+                mirror_lower_body: true,
+            },
+            None,
+        );
+
+        assert_eq!(weighted.len(), 1);
+        assert_eq!(weighted[0].clip.node, mirrored_node);
+        assert!((weighted[0].weight - 0.5).abs() < 0.0001);
+    }
+
+    #[test]
     fn complete_cycle_uses_the_motion_frame_range() {
         let catalog = AnimationPackCatalog::default();
         let runtime = runtime_with_available([SemanticPose::WalkContact]);
@@ -2369,7 +2538,7 @@ mod tests {
                 pose: SemanticPose::WalkContact,
                 sampling: PoseSampling::Cycle { progress: 0.5 },
                 weight: 1.0,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
             None,
         );
@@ -2398,7 +2567,7 @@ mod tests {
                 pose: SemanticPose::RunContact,
                 sampling: PoseSampling::Cycle { progress: 0.999 },
                 weight: 1.0,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
             None,
         );
@@ -2434,7 +2603,7 @@ mod tests {
                     progress: 0.5,
                 },
                 weight: 1.0,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
             None,
         );
@@ -2561,7 +2730,7 @@ mod tests {
                 pose: SemanticPose::RunContact,
                 sampling: PoseSampling::Anchor,
                 weight: 1.0,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
             None,
         );
@@ -2597,7 +2766,7 @@ mod tests {
                 pose: SemanticPose::GuardLeadRight,
                 sampling: PoseSampling::Anchor,
                 weight: 0.75,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
             None,
         );
@@ -2624,7 +2793,7 @@ mod tests {
                 progress: 0.5,
             },
             weight,
-            mirror_lower_body: 0.0,
+            mirror_lower_body: false,
         });
         let movement = requested.map(|item| item.0);
         let exact = guard_parity_score(
@@ -2697,7 +2866,7 @@ mod tests {
                     progress: 0.5,
                 },
                 weight: 0.5,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
             PoseSample {
                 pose: SemanticPose::GuardLeadLeft,
@@ -2706,7 +2875,7 @@ mod tests {
                     progress: 0.5,
                 },
                 weight: 0.5,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
         ];
         let movement = [
@@ -2787,7 +2956,7 @@ mod tests {
                 progress: 0.5,
             },
             weight: 1.0,
-            mirror_lower_body: 0.0,
+            mirror_lower_body: false,
         }];
         let movement = [SemanticPose::GuardWalkLeadLeft];
         let exact = guard_parity_score(
@@ -2827,7 +2996,7 @@ mod tests {
                     progress: 0.5,
                 },
                 weight: 1.0,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
             Some(false),
         );
@@ -2925,7 +3094,6 @@ mod tests {
         PlaybackPose {
             clips: Vec::new(),
             use_authored_bind_pose: true,
-            lower_body_mirror: mirror,
             whole_body_mirror: mirror,
         }
     }
@@ -2933,7 +3101,6 @@ mod tests {
     #[test]
     fn guard_crossfade_activates_at_the_current_effective_pose() {
         let mut playback = AnimationPlayback {
-            lower_body_mirror: 0.8,
             whole_body_mirror: 0.8,
             ..default()
         };
@@ -2950,14 +3117,12 @@ mod tests {
         );
 
         assert!(playback.presentation_transition.is_some());
-        assert!((playback.lower_body_mirror - 0.8).abs() < 0.0001);
         assert!((playback.whole_body_mirror - 0.8).abs() < 0.0001);
     }
 
     #[test]
     fn guard_crossfade_completes_at_the_latest_target_pose() {
         let mut playback = AnimationPlayback {
-            lower_body_mirror: 0.8,
             whole_body_mirror: 0.8,
             ..default()
         };
@@ -2982,14 +3147,12 @@ mod tests {
         );
 
         assert!(playback.presentation_transition.is_none());
-        assert!((playback.lower_body_mirror - 0.2).abs() < 0.0001);
         assert!((playback.whole_body_mirror - 0.2).abs() < 0.0001);
     }
 
     #[test]
     fn hard_stop_retains_then_releases_the_effective_locomotion_pose() {
         let mut playback = AnimationPlayback {
-            lower_body_mirror: 0.8,
             whole_body_mirror: 0.8,
             ordinary_locomotion_active: true,
             ..default()
@@ -3005,7 +3168,7 @@ mod tests {
             0.0,
         );
         assert!(playback.presentation_transition.is_some());
-        assert!((playback.lower_body_mirror - 0.8).abs() < 0.0001);
+        assert!((playback.whole_body_mirror - 0.8).abs() < 0.0001);
 
         update_presentation_crossfade(
             &mut playback,
@@ -3015,7 +3178,7 @@ mod tests {
             &clock,
             1.0,
         );
-        assert!((playback.lower_body_mirror - 0.8).abs() < 0.0001);
+        assert!((playback.whole_body_mirror - 0.8).abs() < 0.0001);
 
         clock.set_fixed_tick(11, PRESENTATION_CROSSFADE_SECONDS);
         update_presentation_crossfade(
@@ -3027,14 +3190,12 @@ mod tests {
             0.0,
         );
         assert!(playback.presentation_transition.is_none());
-        assert!(playback.lower_body_mirror.abs() < 0.0001);
         assert!(playback.whole_body_mirror.abs() < 0.0001);
     }
 
     #[test]
     fn reversing_guard_mid_crossfade_has_no_presentation_jump() {
         let mut playback = AnimationPlayback {
-            lower_body_mirror: 0.8,
             whole_body_mirror: 0.8,
             ..default()
         };
@@ -3057,7 +3218,7 @@ mod tests {
             &clock,
             0.0,
         );
-        let before_reversal = playback.lower_body_mirror;
+        let before_reversal = playback.whole_body_mirror;
 
         clock.set_fixed_tick(12, 0.09);
         update_presentation_crossfade(
@@ -3070,8 +3231,8 @@ mod tests {
         );
 
         let transition = playback.presentation_transition.as_ref().unwrap();
-        assert!((playback.lower_body_mirror - before_reversal).abs() < 0.0001);
-        assert!((transition.from.lower_body_mirror - before_reversal).abs() < 0.0001);
+        assert!((playback.whole_body_mirror - before_reversal).abs() < 0.0001);
+        assert!((transition.from.whole_body_mirror - before_reversal).abs() < 0.0001);
     }
 
     #[test]

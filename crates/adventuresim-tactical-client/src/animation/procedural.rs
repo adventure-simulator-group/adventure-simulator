@@ -185,16 +185,10 @@ pub(super) fn apply_head_and_torso_look(
     }
 }
 
-/// Applies pack fallback reflection and constructs the opposite gait half-cycle.
-/// Whole-body reflection includes the central chain and swaps every bilateral
-/// limb; gait reflection is limited to bilateral limbs. Applying both is an
-/// involution, so their bilateral weights compose as an XOR blend.
-///
-/// Gait mirroring transitions only around the authored passing pose, where the
-/// limbs are nearest neutral; interpolating throughout contact folds a planted
-/// stride through itself. The playback field retains its historical
-/// `lower_body_mirror` name, but drives arms and legs together.
-pub(super) fn apply_gait_mirroring(
+/// Applies whole-body reflection for same-pack semantic pose fallbacks.
+/// Ordinary gait parity is already baked into distinct endpoint clips before
+/// FK blending and must never pass through this post-blend operation.
+pub(super) fn apply_pose_mirroring(
     playbacks: Query<&AnimationPlayback>,
     rig_scenes: Query<(Entity, &AnimationRigScene)>,
     parents: Query<&ChildOf>,
@@ -245,8 +239,7 @@ pub(super) fn apply_gait_mirroring(
             continue;
         };
         let whole_body_weight = playback.whole_body_mirror.clamp(0.0, 1.0);
-        let gait_weight = playback.lower_body_mirror.clamp(0.0, 1.0);
-        if whole_body_weight <= f32::EPSILON && gait_weight <= f32::EPSILON {
+        if whole_body_weight <= f32::EPSILON {
             continue;
         }
         let Some(rig_global) = rig_globals.get(&owner) else {
@@ -275,8 +268,6 @@ pub(super) fn apply_gait_mirroring(
                 mirror_weights.insert(bone.entity, whole_body_weight);
             }
         }
-        let bilateral_weight =
-            whole_body_weight + gait_weight - 2.0 * whole_body_weight * gait_weight;
         for (left_role, right_role) in [
             (BoneRole::ClavicleLeft, BoneRole::ClavicleRight),
             (BoneRole::UpperArmLeft, BoneRole::UpperArmRight),
@@ -303,8 +294,8 @@ pub(super) fn apply_gait_mirroring(
                 right.entity,
                 mirrored_global_affine(left.global, *rig_global),
             );
-            mirror_weights.insert(left.entity, bilateral_weight);
-            mirror_weights.insert(right.entity, bilateral_weight);
+            mirror_weights.insert(left.entity, whole_body_weight);
+            mirror_weights.insert(right.entity, whole_body_weight);
         }
         let mut bones = transforms.p2();
         for bone in rig.values() {
@@ -3357,7 +3348,7 @@ mod tests {
     }
 
     #[test]
-    fn gait_mirror_is_an_involution() {
+    fn pose_mirror_is_an_involution() {
         let original = Transform::from_xyz(0.3, -0.8, 0.2).with_rotation(Quat::from_euler(
             EulerRot::XYZ,
             0.2,

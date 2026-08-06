@@ -23,6 +23,7 @@ import tempfile
 import time
 import urllib.request
 from urllib.parse import urlparse
+import zlib
 
 
 PROFILE_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
@@ -305,6 +306,115 @@ def select_obs_monitor_id(
         "could not uniquely match the tactical window's monitor in OBS; "
         f"set OBS_MONITOR_ID. Available displays: {descriptions or 'none'}"
     )
+
+
+def obs_screenshot_has_visible_pixels(image_data: str) -> bool:
+    try:
+        encoded = image_data.split(",", 1)[1]
+        payload = base64.b64decode(encoded, validate=True)
+        if payload[:8] != b"\x89PNG\r\n\x1a\n":
+            return False
+        offset = 8
+        idat = bytearray()
+        width = height = bit_depth = color_type = interlace = None
+        while offset + 12 <= len(payload):
+            length = struct.unpack_from(">I", payload, offset)[0]
+            kind = payload[offset + 4:offset + 8]
+            data_start = offset + 8
+            data_end = data_start + length
+            if data_end + 4 > len(payload):
+                return False
+            data = payload[data_start:data_end]
+            if kind == b"IHDR":
+                width, height, bit_depth, color_type, compression, filtering, interlace = (
+                    struct.unpack(">IIBBBBB", data)
+                )
+                if compression != 0 or filtering != 0:
+                    return False
+            elif kind == b"IDAT":
+                idat.extend(data)
+            elif kind == b"IEND":
+                break
+            offset = data_end + 4
+        channels = {0: 1, 2: 3, 4: 2, 6: 4}.get(color_type)
+        if (
+            width is None or height is None or width <= 0 or height <= 0
+            or bit_depth != 8 or interlace != 0 or channels is None
+        ):
+            return False
+        decoded = zlib.decompress(bytes(idat))
+        stride = width * channels
+        if len(decoded) != height * (stride + 1):
+            return False
+        previous = bytearray(stride)
+        cursor = 0
+        for _ in range(height):
+            filter_kind = decoded[cursor]
+            cursor += 1
+            filtered = decoded[cursor:cursor + stride]
+            cursor += stride
+            scanline = bytearray(stride)
+            for index, value in enumerate(filtered):
+                left = scanline[index - channels] if index >= channels else 0
+                above = previous[index]
+                upper_left = previous[index - channels] if index >= channels else 0
+                if filter_kind == 0:
+                    predictor = 0
+                elif filter_kind == 1:
+                    predictor = left
+                elif filter_kind == 2:
+                    predictor = above
+                elif filter_kind == 3:
+                    predictor = (left + above) // 2
+                elif filter_kind == 4:
+                    estimate = left + above - upper_left
+                    distances = (
+                        abs(estimate - left), abs(estimate - above),
+                        abs(estimate - upper_left),
+                    )
+                    predictor = (left, above, upper_left)[distances.index(min(distances))]
+                else:
+                    return False
+                scanline[index] = (value + predictor) & 0xFF
+            for pixel in range(0, stride, channels):
+                if color_type in {0, 4}:
+                    brightness = scanline[pixel]
+                    alpha = scanline[pixel + 1] if color_type == 4 else 255
+                else:
+                    brightness = max(scanline[pixel:pixel + 3])
+                    alpha = scanline[pixel + 3] if color_type == 6 else 255
+                if alpha > 0 and brightness > 8:
+                    return True
+            previous = scanline
+        return False
+    except (IndexError, TypeError, ValueError, struct.error, zlib.error):
+        return False
+
+
+def wait_for_obs_source_ready(
+    websocket: ObsWebSocket,
+    source_name: str,
+    timeout_seconds: float = 10.0,
+) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    last_error: RuntimeError | None = None
+    while True:
+        try:
+            screenshot = websocket.request("GetSourceScreenshot", {
+                "sourceName": source_name,
+                "imageFormat": "png",
+                "imageWidth": 64,
+                "imageHeight": 36,
+                "imageCompressionQuality": -1,
+            })
+            if obs_screenshot_has_visible_pixels(str(screenshot.get("imageData", ""))):
+                return
+        except RuntimeError as error:
+            last_error = error
+        if time.monotonic() >= deadline:
+            detail = f": {last_error}" if last_error else ""
+            raise RuntimeError(f"OBS capture source remained black{detail}")
+        time.sleep(0.1)
 
 
 def set_window_topmost(window_handle: int, topmost: bool) -> None:
@@ -1766,6 +1876,8 @@ def launch_obs_capture(
             "sceneItemTransform": transform,
         })
         websocket.request("SetCurrentProgramScene", {"sceneName": scene_name})
+        wait_for_obs_source_ready(websocket, input_name)
+        config["obs_source_ready"] = True
         websocket.request("StartRecord")
     except Exception as error:
         try:

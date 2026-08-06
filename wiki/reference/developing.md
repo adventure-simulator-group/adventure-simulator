@@ -561,6 +561,17 @@ timeout fails closed without presenting an uncommitted result.
 
 ## Testing a Single Server
 
+After changing the canonical unarmed `walk.glb` or `run.glb`, regenerate the
+complete mirrored gait endpoint clips with:
+
+```powershell
+python scripts/mirror_gait_assets.py
+python scripts/mirror_gait_assets.py --check
+```
+
+The generator requires Python 3 and NumPy. Runtime locomotion blends these
+binary-parity endpoint clips; it does not fractionally mirror an FK result.
+
 For normal native tactical development, use the supervised launcher:
 
 ```bash
@@ -585,15 +596,17 @@ On Windows, `presentation_trace=auto` records a
 `presentmon-<session>.csv` ETW trace for the bounded diagnostic profile when
 PresentMon is installed. Use `presentation_trace=required` for a capture that
 must include independent display timing (including an interactive profile), or
-`off` to disable it. The JSONL includes wall-clock time and the render thread's
-latest render-schedule completion counter for correlation; only PresentMon
-confirms that a frame reached the Windows presentation path.
+`off` to disable it. The JSONL includes wall-clock time, the render thread's
+latest render-schedule completion counter, each frame's predicted gait-phase
+travel and bounded drift correction, and new authoritative phase measurements.
+Only PresentMon confirms that a frame reached the Windows presentation path.
 On Windows, the diagnostic profile also uses OBS Studio capture when it is
 installed. The supervisor uses a dedicated OBS profile and scene collection,
 creates the required capture source, and releases the scripted movement only
-after recording has started. It stops when the input script exits and moves the
-finalized video to `<capture-source>-capture-<session>.<extension>` in the same
-run directory. This does not control or stop an OBS process that was already
+after a low-resolution OBS source screenshot contains nonblack pixels and
+recording has started. It stops when the input script exits and moves the finalized
+video to `<capture-source>-capture-<session>.<extension>` in the same run directory.
+This does not control or stop an OBS process that was already
 running, and it restores the previously selected profile, scene collection,
 scene, and exact WebSocket configuration bytes after capture. Set the sixth
 `just tactical-play` argument to `off` to disable capture or `required` to fail

@@ -50,7 +50,8 @@ Use these conventions:
 - locomotion uses only its contact and passing/flight anchor frames. The
   runtime constructs contact -> passing -> mirrored contact -> mirrored
   passing -> contact by sampling the two exact catalog frames on distinct Bevy
-  graph nodes and blending their transforms with smooth quarter-cycle weights;
+  graph nodes, selecting pre-mirrored endpoint clips, and blending complete
+  poses with linear quarter-cycle weights;
   every exported in-between key and every later exporter key is ignored; and
 - packs in one fallback chain use identical bone names and hierarchy.
 
@@ -60,7 +61,12 @@ upper-body carriage remains intact; explicit hand targets and weapon
 constraints apply only when gameplay supplies them. Root, pelvis, spine, neck,
 and head translations are clamped around the authored bind pose before look
 and final IK, while authored joint rotations remain intact. During active
-locomotion, authored root/pelvis Y is normalized, then the
+locomotion, sparse anchor blending advances linearly with phase so the pose
+cannot ease to a hold and then accelerate between anchors. Gait parity is
+binary per endpoint and is applied before blending; the runtime never
+fractionally reflects an already blended skeleton, which would collapse the
+forward/back separation of bilateral limbs.
+Authored root/pelvis Y is normalized, then the
 shared gait profile supplies grounded bounce or a gravity-shaped run flight
 arc with two phase-aligned peaks per cycle without moving the gameplay
 controller. A contact-edge calibration translates the complete visual rig so
@@ -73,9 +79,14 @@ compensation.
 
 ## Deterministic animation capture
 
+Regenerate the mirrored endpoint clips after changing `walk.glb` or `run.glb`
+with `python scripts/mirror_gait_assets.py`; CI-style verification uses the
+same command with `--check`. The generator requires Python 3 and NumPy.
+
 The native `animation-viewer` binary is a deterministic gameplay-presentation
 fixture rather than a separate pose renderer. It installs the gameplay player,
-camera, scene presentation, authored FK, procedural mirroring, look, and
+camera, scene presentation, authored FK, pre-mirrored gait endpoints,
+whole-body fallback mirroring, look, and
 terrain-IK plugins,
 then advances the shared authoritative locomotion projector at its real 64Hz
 fixed tick. Default-off scenarios retain authored ordinary leg motion with a
@@ -142,10 +153,11 @@ directory.
 The JSONL record includes the requested command and input, controller
 transform, replicated authoritative `SkeletonState`, client-predicted
 presentation shadow, semantic `AnimationEvaluation`, resolved clip weights
-and sample times, mirror coordinates, pending phase-correction error, any
-presentation crossfade, wall-clock time, and the latest render-schedule
-completion counter. PresentMon remains the independent authority for actual
-swapchain presentation. This is
+and sample times, endpoint parity, whole-body mirror coordinates,
+phase prediction/correction deltas,
+authoritative phase measurements, pending drift correction, any presentation
+crossfade, wall-clock time, and the latest render-schedule completion counter.
+PresentMon remains the independent authority for actual swapchain presentation. This is
 the diagnostic boundary immediately after pose evaluation; it does not replace
 the real network or animation path.
 
@@ -226,10 +238,12 @@ stopping ordinary locomotion blends both feet back to full support.
 
 Rendering uses a client-only shadow of `SkeletonState`. Between authoritative
 samples it advances gait phase from the most recently measured physical speed
-and smooths the displayed local/world velocity. Each new sample applies a
-bounded circular phase correction; posture, actions, contacts, landings, and
-large discontinuities snap to authority. This removes packet-cadence pose
-holds without predicting gameplay events or changing the replicated component.
+and smooths the displayed local/world velocity. Minor authoritative phase
+differences are treated as packet-timing jitter. Larger persistent drift is
+low-pass filtered before a slow bounded circular correction is applied, while
+posture, actions, contacts, landings, and large discontinuities snap to
+authority. This removes packet-cadence pose holds and packet-by-packet speed
+modulation without predicting gameplay events or changing the replicated component.
 
 Contact and landing messages are deduplicated presentation hooks for future
 audio/VFX. Plausible contact gaps reconstruct at most eight ordered alternating
@@ -240,7 +254,7 @@ not an invented historical contact timestamp.
 
 Terrain conformity starts off. In debug builds, press `F8` to opt into its
 height, slope, and pelvis corrections. The HUD reports whether it is on or off;
-authored FK, gait mirroring, torso stabilization, and procedural guard stepping
+authored FK, gait endpoint blending, torso stabilization, and procedural guard stepping
 remain active. Ordinary flat-ground locomotion does not run the terrain leg
 solver while the toggle is off.
 

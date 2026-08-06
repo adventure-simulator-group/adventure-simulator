@@ -512,6 +512,46 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "uniquely match"):
             dev_stack.select_obs_monitor_id(items, geometry)
 
+    def test_obs_screenshot_readiness_requires_nonblack_pixels(self):
+        def png_data_url(rgb):
+            def chunk(kind, data):
+                return (
+                    dev_stack.struct.pack(">I", len(data))
+                    + kind
+                    + data
+                    + b"\0\0\0\0"
+                )
+
+            header = dev_stack.struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+            payload = (
+                b"\x89PNG\r\n\x1a\n"
+                + chunk(b"IHDR", header)
+                + chunk(b"IDAT", dev_stack.zlib.compress(b"\0" + bytes(rgb)))
+                + chunk(b"IEND", b"")
+            )
+            return "data:image/png;base64," + dev_stack.base64.b64encode(payload).decode()
+
+        black = png_data_url((0, 0, 0))
+        visible = png_data_url((12, 24, 36))
+        self.assertFalse(dev_stack.obs_screenshot_has_visible_pixels(black))
+        self.assertTrue(dev_stack.obs_screenshot_has_visible_pixels(visible))
+        self.assertFalse(dev_stack.obs_screenshot_has_visible_pixels("not an image"))
+
+        class FakeWebSocket:
+            def __init__(self):
+                self.calls = 0
+
+            def request(self, request_type, data=None):
+                self.calls += 1
+                self.assert_request = (request_type, data)
+                return {"imageData": visible if self.calls >= 3 else black}
+
+        websocket = FakeWebSocket()
+        with mock.patch.object(dev_stack.time, "sleep"):
+            dev_stack.wait_for_obs_source_ready(websocket, "Tactical client", 1.0)
+        self.assertEqual(websocket.calls, 3)
+        self.assertEqual(websocket.assert_request[0], "GetSourceScreenshot")
+
     def test_obs_workspace_uses_portable_named_profile_and_collection(self):
         class FakeWebSocket:
             def __init__(self):
