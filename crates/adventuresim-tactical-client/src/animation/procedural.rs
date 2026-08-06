@@ -118,6 +118,43 @@ pub(super) fn bind_humanoid_bones(
     }
 }
 
+#[derive(Component, Debug, Clone, Copy)]
+pub(super) struct SoleUpAxis(Vec3);
+
+/// Captures the foot's bind-space sole normal from the authored global bind
+/// transform. The Cascadeur rig's local +Y points ankle-to-toe, so assuming a
+/// cardinal local up axis would pitch the feet even on flat terrain.
+pub(super) fn capture_humanoid_rig_axes(
+    mut commands: Commands,
+    feet: Query<(Entity, &HumanoidBone), (Added<HumanoidBone>, Without<SoleUpAxis>)>,
+    helper: TransformHelper,
+) {
+    for (entity, bone) in &feet {
+        if !matches!(bone.role, BoneRole::FootLeft | BoneRole::FootRight) {
+            continue;
+        }
+        let Ok(global) = helper.compute_global_transform(entity) else {
+            continue;
+        };
+        let axis = sole_up_axis_from_bind(global.rotation());
+        if let Some(axis) = axis.try_normalize() {
+            commands.entity(entity).insert(SoleUpAxis(axis));
+        }
+    }
+}
+
+fn sole_up_axis_from_bind(bind_world_rotation: Quat) -> Vec3 {
+    bind_world_rotation.inverse() * Vec3::Y
+}
+
+fn pole_to_world(owner_rotation: Quat, owner_local_pole: Vec3) -> Vec3 {
+    owner_rotation * owner_local_pole
+}
+
+fn pole_to_owner(owner_rotation: Quat, world_pole: Vec3) -> Vec3 {
+    owner_rotation.inverse() * world_pole
+}
+
 /// Procedural facing is an additive post-FK layer. Animation evaluation writes
 /// these local transforms again on the next frame, so the offsets do not drift.
 pub(super) fn apply_head_and_torso_look(
@@ -128,19 +165,21 @@ pub(super) fn apply_head_and_torso_look(
         let Ok((look, skeleton)) = owners.get(bone.owner) else {
             continue;
         };
-        let pitch = look.pitch.clamp(-0.75, 0.75);
+        let pitch = look.pitch.clamp(-0.65, 0.65);
         let directional_yaw = skeleton.action_direction.x.clamp(-1.0, 1.0) * 0.35;
-        match bone.role {
-            BoneRole::Head => {
-                transform.rotation *=
-                    Quat::from_euler(EulerRot::YXZ, directional_yaw, pitch * 0.7, 0.0);
-            }
-            BoneRole::Chest => {
-                transform.rotation *=
-                    Quat::from_euler(EulerRot::YXZ, directional_yaw * 0.35, pitch * 0.2, 0.0);
-            }
-            _ => {}
-        }
+        let weight = match bone.role {
+            BoneRole::StomachOne => 0.08,
+            BoneRole::StomachTwo => 0.12,
+            BoneRole::Chest => 0.16,
+            BoneRole::NeckOne => 0.18,
+            BoneRole::NeckTwo => 0.2,
+            BoneRole::Head => 0.26,
+            _ => continue,
+        };
+        // Owner yaw is already on the character transform. Only the bounded
+        // local action offset and vertical look are distributed here.
+        transform.rotation *=
+            Quat::from_euler(EulerRot::YXZ, directional_yaw * weight, pitch * weight, 0.0);
     }
 }
 
@@ -282,7 +321,10 @@ pub(super) fn apply_impact_reaction(
         let Ok(reaction) = reactions.get(bone.owner) else {
             continue;
         };
-        if !matches!(bone.role, BoneRole::Chest | BoneRole::Head) {
+        if !matches!(
+            bone.role,
+            BoneRole::Chest | BoneRole::NeckTwo | BoneRole::Head
+        ) {
             continue;
         }
         let progress = 1.0 - (reaction.remaining / reaction.duration).clamp(0.0, 1.0);
@@ -296,11 +338,53 @@ pub(super) fn apply_impact_reaction(
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct BoneSnapshot {
     entity: Entity,
     global: GlobalTransform,
     parent_rotation: Quat,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct PoleMemory {
+    left_leg: Option<Vec3>,
+    right_leg: Option<Vec3>,
+    left_arm: Option<Vec3>,
+    right_arm: Option<Vec3>,
+}
+
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub(super) struct ProceduralIkState(PoleMemory);
+
+/// Client-only world-space target for a hand. It is presentation data and is
+/// deliberately absent from replicated `SkeletonState`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct HandIkTarget {
+    pub translation: Vec3,
+    pub rotation: Option<Quat>,
+    pub weight: f32,
+}
+
+/// Optional client-only direct hand targets.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub(crate) struct HumanoidIkTargets {
+    pub left: Option<HandIkTarget>,
+    pub right: Option<HandIkTarget>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HandSide {
+    Left,
+    Right,
+}
+
+/// Constrains a client-side held item to an authored weapon socket. The
+/// optional point is in weapon-local space and becomes an off-hand IK target.
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct HeldWeaponConstraint {
+    pub owner: Entity,
+    pub primary_hand: HandSide,
+    pub secondary_grip_local: Option<Vec3>,
 }
 
 /// Places the planted foot on the terrain with an analytic two-bone solve,
@@ -309,33 +393,25 @@ struct BoneSnapshot {
 pub(super) fn apply_terrain_leg_ik(
     terrain: Query<&SceneTerrain>,
     owners: Query<&SkeletonState>,
-    bones: Query<(Entity, &HumanoidBone)>,
+    bones: Query<(Entity, &HumanoidBone, Option<&SoleUpAxis>)>,
     parents: Query<&ChildOf>,
+    mut ik_states: Query<&mut ProceduralIkState>,
     mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
+    mut commands: Commands,
 ) {
     let Some(terrain) = terrain.iter().next() else {
         return;
     };
-    let mut rigs = BTreeMap::<Entity, BTreeMap<BoneRole, BoneSnapshot>>::new();
+    let mut rigs = BTreeMap::<Entity, BTreeMap<BoneRole, Entity>>::new();
+    let mut sole_axes = BTreeMap::<Entity, Vec3>::new();
     {
-        let helper = transforms.p0();
-        for (entity, bone) in &bones {
-            let Ok(global) = helper.compute_global_transform(entity) else {
-                continue;
-            };
-            rigs.entry(bone.owner).or_default().insert(
-                bone.role,
-                BoneSnapshot {
-                    entity,
-                    global,
-                    parent_rotation: parents
-                        .get(entity)
-                        .ok()
-                        .and_then(|parent| helper.compute_global_transform(parent.parent()).ok())
-                        .map(|global| global.rotation())
-                        .unwrap_or(Quat::IDENTITY),
-                },
-            );
+        for (entity, bone, sole_axis) in &bones {
+            rigs.entry(bone.owner)
+                .or_default()
+                .insert(bone.role, entity);
+            if let Some(axis) = sole_axis {
+                sole_axes.insert(entity, axis.0);
+            }
         }
     }
 
@@ -346,155 +422,615 @@ pub(super) fn apply_terrain_leg_ik(
         if !skeleton.grounded || matches!(skeleton.posture, Posture::Prone | Posture::Supine) {
             continue;
         }
-        let plant_left = skeleton.gait_phase.rem_euclid(1.0) < 0.5;
+        let phase = skeleton.gait_phase.rem_euclid(1.0);
+        let moving = skeleton.local_velocity.xz().length_squared() > 0.0025;
+        let left_weight = foot_plant_weight(phase, moving);
+        let right_weight = foot_plant_weight((phase + 0.5).rem_euclid(1.0), moving);
         let legs = [
             (
                 BoneRole::ThighLeft,
                 BoneRole::ShinLeft,
                 BoneRole::FootLeft,
-                plant_left,
+                left_weight,
+                Vec3::Z,
+                true,
             ),
             (
                 BoneRole::ThighRight,
                 BoneRole::ShinRight,
                 BoneRole::FootRight,
-                !plant_left,
+                right_weight,
+                Vec3::Z,
+                false,
             ),
         ];
         let mut hip_shift = 0.0_f32;
-        for (_, _, foot_role, _) in legs {
-            let Some(foot) = rig.get(&foot_role) else {
+        for (_, _, foot_role, weight, _, _) in legs {
+            let Some(&foot) = rig.get(&foot_role) else {
                 continue;
             };
-            let position = foot.global.translation();
+            let Ok(global) = transforms.p0().compute_global_transform(foot) else {
+                continue;
+            };
+            let position = global.translation();
             if let Some(height) = terrain.height_at(position.xz()) {
-                hip_shift = hip_shift.min((height - position.y).clamp(-0.2, 0.0));
+                let desired_ankle = height + ankle_sole_offset(global.rotation());
+                hip_shift =
+                    hip_shift.min(((desired_ankle - position.y) * weight).clamp(-0.18, 0.0));
             }
         }
         if hip_shift < -0.001
-            && let Some(pelvis) = rig.get(&BoneRole::Pelvis)
-            && let Ok(mut transform) = transforms.p1().get_mut(pelvis.entity)
+            && let Some(&pelvis) = rig.get(&BoneRole::Pelvis)
         {
-            transform.translation.y += hip_shift;
+            let local_delta = parents
+                .get(pelvis)
+                .ok()
+                .and_then(|parent| {
+                    transforms
+                        .p0()
+                        .compute_global_transform(parent.parent())
+                        .ok()
+                })
+                .map(|parent| {
+                    parent
+                        .affine()
+                        .inverse()
+                        .transform_vector3(Vec3::Y * hip_shift)
+                })
+                .unwrap_or(Vec3::Y * hip_shift);
+            if local_delta.is_finite()
+                && let Ok(mut transform) = transforms.p1().get_mut(pelvis)
+            {
+                transform.translation += local_delta;
+            }
         }
-        let root_offset = Vec3::Y * hip_shift;
-        for (upper_role, lower_role, foot_role, planted) in legs {
-            let (Some(upper), Some(lower), Some(foot)) = (
+        let owner_rotation = transforms
+            .p0()
+            .compute_global_transform(owner)
+            .map(|global| global.rotation())
+            .unwrap_or(Quat::IDENTITY);
+        let mut memory = ik_states
+            .get_mut(owner)
+            .map(|state| state.0)
+            .unwrap_or_default();
+        for (upper_role, lower_role, foot_role, weight, owner_pole, left) in legs {
+            let (Some(&upper), Some(&lower), Some(&foot)) = (
                 rig.get(&upper_role),
                 rig.get(&lower_role),
                 rig.get(&foot_role),
             ) else {
                 continue;
             };
-            let foot_position = foot.global.translation();
+            let Some((upper_snapshot, lower_snapshot, foot_snapshot)) =
+                snapshot_chain(upper, lower, foot, &parents, &transforms.p0())
+            else {
+                continue;
+            };
+            let foot_position = foot_snapshot.global.translation();
             let Some(height) = terrain.height_at(foot_position.xz()) else {
                 continue;
             };
-            let weight = if planted { 1.0 } else { 0.35 };
-            let correction = (height - foot_position.y).clamp(-0.35, 0.35) * weight;
-            if correction.abs() < 0.001 {
-                continue;
-            }
-            let target = foot_position + Vec3::Y * correction;
-            solve_and_apply_leg(
-                *upper,
-                *lower,
-                *foot,
+            let desired_y = height + ankle_sole_offset(foot_snapshot.global.rotation());
+            let target = foot_position
+                + Vec3::Y * ((desired_y - foot_position.y).clamp(-0.35, 0.35) * weight);
+            let remembered = if left {
+                memory.left_leg
+            } else {
+                memory.right_leg
+            };
+            let pole = pole_to_world(owner_rotation, remembered.unwrap_or(owner_pole));
+            if let Some(solution) = solve_two_bone(
+                upper_snapshot.global.translation(),
+                lower_snapshot.global.translation(),
+                foot_position,
                 target,
-                root_offset,
-                &mut transforms.p1(),
-            );
+                upper_snapshot
+                    .global
+                    .translation()
+                    .distance(lower_snapshot.global.translation()),
+                lower_snapshot.global.translation().distance(foot_position),
+                pole,
+            ) {
+                apply_two_bone_solution(upper, lower, foot, solution, &parents, &mut transforms);
+                let bend = (solution.knee - upper_snapshot.global.translation())
+                    .reject_from_normalized(solution.end_direction);
+                if let Some(valid) = bend.try_normalize() {
+                    if left {
+                        memory.left_leg = Some(pole_to_owner(owner_rotation, valid));
+                    } else {
+                        memory.right_leg = Some(pole_to_owner(owner_rotation, valid));
+                    }
+                }
+            }
+            if weight > 0.001
+                && let Some(normal) = terrain.normal_at(foot_position.xz())
+                && let Some(&sole_axis) = sole_axes.get(&foot)
+            {
+                align_foot_to_slope(foot, sole_axis, normal, weight, &parents, &mut transforms);
+            }
+        }
+        if let Ok(mut state) = ik_states.get_mut(owner) {
+            state.0 = memory;
+        } else {
+            commands.entity(owner).insert(ProceduralIkState(memory));
         }
     }
 }
 
-fn solve_and_apply_leg(
-    upper: BoneSnapshot,
-    lower: BoneSnapshot,
-    foot: BoneSnapshot,
-    target: Vec3,
-    root_offset: Vec3,
-    transforms: &mut Query<&mut Transform>,
-) {
-    let root = upper.global.translation() + root_offset;
-    let knee = lower.global.translation() + root_offset;
-    let end = foot.global.translation() + root_offset;
-    let upper_length = root.distance(knee);
-    let lower_length = knee.distance(end);
-    let Some(knee_target) =
-        solve_two_bone_knee(root, knee, end, target, upper_length, lower_length)
-    else {
-        return;
-    };
-
-    let current_upper = knee - root;
-    let desired_upper = knee_target - root;
-    let (Some(current_upper), Some(desired_upper)) =
-        (current_upper.try_normalize(), desired_upper.try_normalize())
-    else {
-        return;
-    };
-    let upper_delta = Quat::from_rotation_arc(current_upper, desired_upper);
-    let upper_world = upper.global.rotation();
-    let new_upper_world = upper_delta * upper_world;
-    if let Ok(mut transform) = transforms.get_mut(upper.entity) {
-        transform.rotation = upper.parent_rotation.inverse() * new_upper_world;
+fn foot_plant_weight(phase: f32, moving: bool) -> f32 {
+    if !moving {
+        return 1.0;
     }
-
-    let current_lower = upper_delta * (end - knee);
-    let desired_lower = target - knee_target;
-    let (Some(current_lower), Some(desired_lower)) =
-        (current_lower.try_normalize(), desired_lower.try_normalize())
-    else {
-        return;
-    };
-    let lower_delta = Quat::from_rotation_arc(current_lower, desired_lower);
-    let new_lower_world = lower_delta * upper_delta * lower.global.rotation();
-    if let Ok(mut transform) = transforms.get_mut(lower.entity) {
-        transform.rotation = new_upper_world.inverse() * new_lower_world;
-    }
+    let contact = (phase * std::f32::consts::TAU).cos() * 0.5 + 0.5;
+    (0.2 + contact * 0.8).clamp(0.0, 1.0)
 }
 
-fn solve_two_bone_knee(
+fn ankle_sole_offset(_rotation: Quat) -> f32 {
+    0.085
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TwoBoneSolution {
+    knee: Vec3,
+    end: Vec3,
+    end_direction: Vec3,
+}
+
+fn solve_two_bone(
     root: Vec3,
     current_knee: Vec3,
     current_end: Vec3,
     target: Vec3,
     upper_length: f32,
     lower_length: f32,
-) -> Option<Vec3> {
-    if upper_length <= f32::EPSILON || lower_length <= f32::EPSILON {
+    pole_direction: Vec3,
+) -> Option<TwoBoneSolution> {
+    if !root.is_finite() || !target.is_finite() || upper_length <= 0.0001 || lower_length <= 0.0001
+    {
         return None;
     }
     let target_offset = target - root;
-    let raw_distance = target_offset.length();
-    let target_direction = target_offset.try_normalize()?;
-    let distance = raw_distance.clamp(
+    let target_direction = target_offset
+        .try_normalize()
+        .or_else(|| (current_end - root).try_normalize())
+        .unwrap_or(Vec3::NEG_Y);
+    let distance = target_offset.length().clamp(
         (upper_length - lower_length).abs() + 0.0001,
         upper_length + lower_length - 0.0001,
     );
+    let end = root + target_direction * distance;
     let along = (upper_length * upper_length - lower_length * lower_length + distance * distance)
         / (2.0 * distance);
     let height = (upper_length * upper_length - along * along)
         .max(0.0)
         .sqrt();
-    let current_plane_normal = (current_knee - root).cross(current_end - current_knee);
-    let plane_normal = current_plane_normal.try_normalize().unwrap_or(Vec3::X);
-    let bend = plane_normal
-        .cross(target_direction)
+    let bend = (current_knee - root)
+        .reject_from_normalized(target_direction)
         .try_normalize()
-        .unwrap_or(Vec3::Z);
-    let sign = if (current_knee - root).dot(bend) < 0.0 {
-        -1.0
-    } else {
-        1.0
+        .or_else(|| {
+            pole_direction
+                .reject_from_normalized(target_direction)
+                .try_normalize()
+        })
+        .or_else(|| target_direction.any_orthonormal_vector().try_normalize())?;
+    let knee = root + target_direction * along + bend * height;
+    (knee.is_finite() && end.is_finite()).then_some(TwoBoneSolution {
+        knee,
+        end,
+        end_direction: target_direction,
+    })
+}
+
+fn snapshot(
+    entity: Entity,
+    parents: &Query<&ChildOf>,
+    helper: &TransformHelper,
+) -> Option<BoneSnapshot> {
+    let global = helper.compute_global_transform(entity).ok()?;
+    let parent_rotation = parents
+        .get(entity)
+        .ok()
+        .and_then(|parent| helper.compute_global_transform(parent.parent()).ok())
+        .map(|global| global.rotation())
+        .unwrap_or(Quat::IDENTITY);
+    Some(BoneSnapshot {
+        entity,
+        global,
+        parent_rotation,
+    })
+}
+
+fn snapshot_chain(
+    upper: Entity,
+    lower: Entity,
+    end: Entity,
+    parents: &Query<&ChildOf>,
+    helper: &TransformHelper,
+) -> Option<(BoneSnapshot, BoneSnapshot, BoneSnapshot)> {
+    Some((
+        snapshot(upper, parents, helper)?,
+        snapshot(lower, parents, helper)?,
+        snapshot(end, parents, helper)?,
+    ))
+}
+
+fn aim_world_rotation(current: BoneSnapshot, from: Vec3, to: Vec3) -> Option<Quat> {
+    let from = from.try_normalize()?;
+    let to = to.try_normalize()?;
+    let world = Quat::from_rotation_arc(from, to) * current.global.rotation();
+    let local = current.parent_rotation.inverse() * world;
+    local.is_finite().then_some(local.normalize())
+}
+
+fn apply_two_bone_solution(
+    upper: Entity,
+    lower: Entity,
+    end: Entity,
+    solution: TwoBoneSolution,
+    parents: &Query<&ChildOf>,
+    transforms: &mut ParamSet<(TransformHelper, Query<&mut Transform>)>,
+) {
+    let Some((upper_before, lower_before, _)) =
+        snapshot_chain(upper, lower, end, parents, &transforms.p0())
+    else {
+        return;
     };
-    Some(root + target_direction * along + bend * height * sign)
+    let Some(rotation) = aim_world_rotation(
+        upper_before,
+        lower_before.global.translation() - upper_before.global.translation(),
+        solution.knee - upper_before.global.translation(),
+    ) else {
+        return;
+    };
+    if let Ok(mut transform) = transforms.p1().get_mut(upper_before.entity) {
+        transform.rotation = rotation;
+    }
+
+    // Recompute through the actual twist hierarchy after rotating the major
+    // upper bone. The twist local transforms remain untouched.
+    let Some((_, lower_after, end_after)) =
+        snapshot_chain(upper, lower, end, parents, &transforms.p0())
+    else {
+        return;
+    };
+    let Some(rotation) = aim_world_rotation(
+        lower_after,
+        end_after.global.translation() - lower_after.global.translation(),
+        solution.end - solution.knee,
+    ) else {
+        return;
+    };
+    if let Ok(mut transform) = transforms.p1().get_mut(lower_after.entity) {
+        transform.rotation = rotation;
+    }
+}
+
+fn align_foot_to_slope(
+    foot: Entity,
+    sole_up_local: Vec3,
+    normal: Vec3,
+    weight: f32,
+    parents: &Query<&ChildOf>,
+    transforms: &mut ParamSet<(TransformHelper, Query<&mut Transform>)>,
+) {
+    let Some(snapshot) = snapshot(foot, parents, &transforms.p0()) else {
+        return;
+    };
+    let Some(normal) = normal.try_normalize() else {
+        return;
+    };
+    let current_up = snapshot.global.rotation() * sole_up_local;
+    let angle = current_up.angle_between(normal).min(28.0_f32.to_radians()) * weight;
+    let axis = current_up.cross(normal).try_normalize();
+    let Some(axis) = axis else { return };
+    let world = Quat::from_axis_angle(axis, angle) * snapshot.global.rotation();
+    let local = snapshot.parent_rotation.inverse() * world;
+    if local.is_finite()
+        && let Ok(mut transform) = transforms.p1().get_mut(foot)
+    {
+        transform.rotation = local.normalize();
+    }
+}
+
+/// Applies optional client-only hand targets and held-item constraints. Missing
+/// targets, sockets, or arm bones are intentionally inert.
+pub(super) fn apply_arm_and_weapon_constraints(
+    bones: Query<(Entity, &HumanoidBone)>,
+    parents: Query<&ChildOf>,
+    targets: Query<&HumanoidIkTargets>,
+    mut ik_states: Query<&mut ProceduralIkState>,
+    weapon_constraints: Query<(Entity, &HeldWeaponConstraint)>,
+    mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
+    mut commands: Commands,
+) {
+    let mut rigs = BTreeMap::<Entity, BTreeMap<BoneRole, Entity>>::new();
+    for (entity, bone) in &bones {
+        rigs.entry(bone.owner)
+            .or_default()
+            .insert(bone.role, entity);
+    }
+
+    // Move an explicitly targeted primary hand first. The socket is a child of
+    // that hand, so the weapon placement below observes the same-frame result.
+    for (_, constraint) in &weapon_constraints {
+        let Some(rig) = rigs.get(&constraint.owner) else {
+            continue;
+        };
+        let explicit = targets.get(constraint.owner).copied().unwrap_or_default();
+        let (target, roles, left) = match constraint.primary_hand {
+            HandSide::Left => (
+                explicit.left,
+                (
+                    BoneRole::UpperArmLeft,
+                    BoneRole::ForearmLeft,
+                    BoneRole::HandLeft,
+                ),
+                true,
+            ),
+            HandSide::Right => (
+                explicit.right,
+                (
+                    BoneRole::UpperArmRight,
+                    BoneRole::ForearmRight,
+                    BoneRole::HandRight,
+                ),
+                false,
+            ),
+        };
+        let Some(target) = target else { continue };
+        let mut memory = ik_states
+            .get_mut(constraint.owner)
+            .map(|state| state.0)
+            .unwrap_or_default();
+        apply_hand_target(
+            constraint.owner,
+            rig,
+            roles,
+            target,
+            left,
+            &mut memory,
+            &parents,
+            &mut transforms,
+        );
+        if let Ok(mut state) = ik_states.get_mut(constraint.owner) {
+            state.0 = memory;
+        }
+    }
+
+    let mut derived_targets = BTreeMap::<Entity, HumanoidIkTargets>::new();
+    for (weapon, constraint) in &weapon_constraints {
+        let Some(rig) = rigs.get(&constraint.owner) else {
+            continue;
+        };
+        let socket_role = match constraint.primary_hand {
+            HandSide::Left => BoneRole::WeaponLeft,
+            HandSide::Right => BoneRole::WeaponRight,
+        };
+        let Some(&socket) = rig.get(&socket_role) else {
+            continue;
+        };
+        let Ok(socket_global) = transforms.p0().compute_global_transform(socket) else {
+            continue;
+        };
+        set_world_transform(
+            weapon,
+            socket_global.compute_transform(),
+            &parents,
+            &mut transforms,
+        );
+        if let Some(grip) = constraint.secondary_grip_local {
+            let Ok(weapon_global) = transforms.p0().compute_global_transform(weapon) else {
+                continue;
+            };
+            let target = HandIkTarget {
+                translation: secondary_grip_world(weapon_global, grip),
+                rotation: None,
+                weight: 1.0,
+            };
+            let entry = derived_targets.entry(constraint.owner).or_default();
+            match constraint.primary_hand {
+                HandSide::Left => entry.right = Some(target),
+                HandSide::Right => entry.left = Some(target),
+            }
+        }
+    }
+
+    for (owner, rig) in rigs {
+        let explicit = targets.get(owner).copied().unwrap_or_default();
+        let derived = derived_targets.get(&owner).copied().unwrap_or_default();
+        let combined = HumanoidIkTargets {
+            left: derived.left.or(explicit.left),
+            right: derived.right.or(explicit.right),
+        };
+        let mut memory = ik_states
+            .get_mut(owner)
+            .map(|state| state.0)
+            .unwrap_or_default();
+        for (upper_role, lower_role, hand_role, target, left) in [
+            (
+                BoneRole::UpperArmLeft,
+                BoneRole::ForearmLeft,
+                BoneRole::HandLeft,
+                combined.left,
+                true,
+            ),
+            (
+                BoneRole::UpperArmRight,
+                BoneRole::ForearmRight,
+                BoneRole::HandRight,
+                combined.right,
+                false,
+            ),
+        ] {
+            let Some(target) = target else { continue };
+            apply_hand_target(
+                owner,
+                &rig,
+                (upper_role, lower_role, hand_role),
+                target,
+                left,
+                &mut memory,
+                &parents,
+                &mut transforms,
+            );
+        }
+        if let Ok(mut state) = ik_states.get_mut(owner) {
+            state.0 = memory;
+        } else {
+            commands.entity(owner).insert(ProceduralIkState(memory));
+        }
+    }
+}
+
+fn apply_hand_target(
+    owner: Entity,
+    rig: &BTreeMap<BoneRole, Entity>,
+    (upper_role, lower_role, hand_role): (BoneRole, BoneRole, BoneRole),
+    target: HandIkTarget,
+    left: bool,
+    memory: &mut PoleMemory,
+    parents: &Query<&ChildOf>,
+    transforms: &mut ParamSet<(TransformHelper, Query<&mut Transform>)>,
+) {
+    let weight = target.weight.clamp(0.0, 1.0);
+    if weight <= f32::EPSILON {
+        return;
+    }
+    let (Some(&upper), Some(&lower), Some(&hand)) = (
+        rig.get(&upper_role),
+        rig.get(&lower_role),
+        rig.get(&hand_role),
+    ) else {
+        return;
+    };
+    let Some((upper_snapshot, lower_snapshot, hand_snapshot)) =
+        snapshot_chain(upper, lower, hand, parents, &transforms.p0())
+    else {
+        return;
+    };
+    let blended_target = hand_snapshot
+        .global
+        .translation()
+        .lerp(target.translation, weight);
+    let remembered = if left {
+        memory.left_arm
+    } else {
+        memory.right_arm
+    };
+    let owner_rotation = transforms
+        .p0()
+        .compute_global_transform(owner)
+        .map(|global| global.rotation())
+        .unwrap_or(Quat::IDENTITY);
+    if let Some(solution) = solve_two_bone(
+        upper_snapshot.global.translation(),
+        lower_snapshot.global.translation(),
+        hand_snapshot.global.translation(),
+        blended_target,
+        upper_snapshot
+            .global
+            .translation()
+            .distance(lower_snapshot.global.translation()),
+        lower_snapshot
+            .global
+            .translation()
+            .distance(hand_snapshot.global.translation()),
+        pole_to_world(owner_rotation, remembered.unwrap_or(Vec3::NEG_Y)),
+    ) {
+        apply_two_bone_solution(upper, lower, hand, solution, parents, transforms);
+        let bend = (solution.knee - upper_snapshot.global.translation())
+            .reject_from_normalized(solution.end_direction);
+        if let Some(valid) = bend.try_normalize() {
+            if left {
+                memory.left_arm = Some(pole_to_owner(owner_rotation, valid));
+            } else {
+                memory.right_arm = Some(pole_to_owner(owner_rotation, valid));
+            }
+        }
+        if let Some(rotation) = target.rotation {
+            set_bone_world_rotation(hand, rotation, parents, transforms);
+        }
+    }
+}
+
+fn secondary_grip_world(weapon: GlobalTransform, local_grip: Vec3) -> Vec3 {
+    weapon.transform_point(local_grip)
+}
+
+fn set_bone_world_rotation(
+    entity: Entity,
+    world_rotation: Quat,
+    parents: &Query<&ChildOf>,
+    transforms: &mut ParamSet<(TransformHelper, Query<&mut Transform>)>,
+) {
+    let parent_rotation = parents
+        .get(entity)
+        .ok()
+        .and_then(|parent| {
+            transforms
+                .p0()
+                .compute_global_transform(parent.parent())
+                .ok()
+        })
+        .map(|global| global.rotation())
+        .unwrap_or(Quat::IDENTITY);
+    let local = parent_rotation.inverse() * world_rotation;
+    if local.is_finite()
+        && let Ok(mut transform) = transforms.p1().get_mut(entity)
+    {
+        transform.rotation = local.normalize();
+    }
+}
+
+fn set_world_transform(
+    entity: Entity,
+    world: Transform,
+    parents: &Query<&ChildOf>,
+    transforms: &mut ParamSet<(TransformHelper, Query<&mut Transform>)>,
+) {
+    let local = parents
+        .get(entity)
+        .ok()
+        .and_then(|parent| {
+            transforms
+                .p0()
+                .compute_global_transform(parent.parent())
+                .ok()
+        })
+        .map(|parent| GlobalTransform::from(world).reparented_to(&parent))
+        .unwrap_or(world);
+    if local.translation.is_finite()
+        && local.rotation.is_finite()
+        && let Ok(mut transform) = transforms.p1().get_mut(entity)
+    {
+        *transform = local;
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn apply_test_two_bone(
+        In((upper, lower, end, solution)): In<(Entity, Entity, Entity, TwoBoneSolution)>,
+        parents: Query<&ChildOf>,
+        mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
+    ) {
+        apply_two_bone_solution(upper, lower, end, solution, &parents, &mut transforms);
+    }
+
+    fn test_joint_positions(
+        In((lower, end)): In<(Entity, Entity)>,
+        helper: TransformHelper,
+    ) -> (Vec3, Vec3) {
+        (
+            helper
+                .compute_global_transform(lower)
+                .unwrap()
+                .translation(),
+            helper.compute_global_transform(end).unwrap().translation(),
+        )
+    }
 
     #[test]
     fn two_bone_solver_preserves_segment_lengths_and_reaches_target() {
@@ -502,23 +1038,161 @@ mod tests {
         let knee = Vec3::new(0.0, -1.0, 0.15);
         let end = Vec3::new(0.0, -2.0, 0.0);
         let target = Vec3::new(0.3, -1.85, 0.0);
-        let solved = solve_two_bone_knee(root, knee, end, target, 1.0, 1.0).unwrap();
-        assert!((root.distance(solved) - 1.0).abs() < 0.0001);
-        assert!((solved.distance(target) - 1.0).abs() < 0.0001);
+        let solved = solve_two_bone(root, knee, end, target, 1.0, 1.0, Vec3::NEG_Z).unwrap();
+        assert!((root.distance(solved.knee) - 1.0).abs() < 0.0001);
+        assert!((solved.knee.distance(solved.end) - 1.0).abs() < 0.0001);
+        assert!(solved.end.abs_diff_eq(target, 0.0001));
     }
 
     #[test]
     fn two_bone_solver_clamps_unreachable_target_without_nan() {
-        let solved = solve_two_bone_knee(
+        let solved = solve_two_bone(
             Vec3::ZERO,
             Vec3::new(0.0, -1.0, 0.1),
             Vec3::new(0.0, -2.0, 0.0),
             Vec3::new(0.0, -20.0, 0.0),
             1.0,
             1.0,
+            Vec3::NEG_Z,
         )
         .unwrap();
-        assert!(solved.is_finite());
+        assert!(solved.knee.is_finite() && solved.end.is_finite());
+        assert!(solved.end.length() < 2.0);
+    }
+
+    #[test]
+    fn straight_chain_uses_rig_bind_space_knee_pole() {
+        let solved = solve_two_bone(
+            Vec3::ZERO,
+            Vec3::NEG_Y,
+            Vec3::NEG_Y * 2.0,
+            Vec3::new(0.0, -1.8, 0.0),
+            1.0,
+            1.0,
+            Vec3::Z,
+        )
+        .unwrap();
+        assert!(solved.knee.z > 0.0);
+        assert!(solved.knee.is_finite());
+    }
+
+    #[test]
+    fn authored_knee_bend_wins_over_fallback_pole() {
+        let solved = solve_two_bone(
+            Vec3::ZERO,
+            Vec3::new(0.0, -1.0, 0.1),
+            Vec3::NEG_Y * 2.0,
+            Vec3::new(0.0, -1.8, 0.0),
+            1.0,
+            1.0,
+            Vec3::NEG_Z,
+        )
+        .unwrap();
+        assert!(solved.knee.z > 0.0);
+    }
+
+    #[test]
+    fn actual_twist_hierarchy_names_are_recognized() {
+        for name in [
+            "pelvis",
+            "stomach_01",
+            "neck_02",
+            "thigh_twist.L",
+            "shin_twist.R",
+            "forearm_twist.L",
+            "weapon.R",
+            "toe.L",
+        ] {
+            assert!(BoneRole::from_name(name).is_some(), "missing {name}");
+        }
+        assert_eq!(BoneRole::from_name("weapon"), None);
+        assert_eq!(BoneRole::from_name("Cylinder"), None);
+    }
+
+    #[test]
+    fn idle_plants_both_feet_and_gait_weight_is_continuous() {
+        assert_eq!(foot_plant_weight(0.25, false), 1.0);
+        assert_eq!(foot_plant_weight(0.75, false), 1.0);
+        let before = foot_plant_weight(0.5 - 0.0001, true);
+        let after = foot_plant_weight(0.5 + 0.0001, true);
+        assert!((before - after).abs() < 0.001);
+    }
+
+    #[test]
+    fn cascadeur_foot_bind_axis_keeps_flat_ground_unchanged() {
+        // Actual left-foot global bind rotation from assets_src/base.glb.
+        let bind = Quat::from_xyzw(0.8856122, 0.00000032, 0.00000032, 0.46442544).normalize();
+        let sole_up = sole_up_axis_from_bind(bind).normalize();
+        assert!(sole_up.y < -0.5 && sole_up.z < -0.8);
+        assert!((bind * sole_up).abs_diff_eq(Vec3::Y, 0.0001));
+        assert!((bind * Vec3::Y).dot(Vec3::Y) < 0.0);
+    }
+
+    #[test]
+    fn remembered_pole_follows_owner_yaw() {
+        let original_yaw = Quat::from_rotation_y(0.3);
+        let owner_local = Vec3::new(0.2, -0.1, -0.97).normalize();
+        let saved = pole_to_owner(original_yaw, pole_to_world(original_yaw, owner_local));
+        assert!(saved.abs_diff_eq(owner_local, 0.0001));
+        let new_yaw = Quat::from_rotation_y(1.4);
+        let expected = new_yaw * owner_local;
+        assert!(pole_to_world(new_yaw, saved).abs_diff_eq(expected, 0.0001));
+    }
+
+    #[test]
+    fn secondary_grip_uses_final_weapon_transform() {
+        let before = GlobalTransform::from(Transform::from_xyz(1.0, 0.0, 0.0));
+        let after = GlobalTransform::from(
+            Transform::from_xyz(2.0, 0.0, 0.0).with_rotation(Quat::from_rotation_y(0.5)),
+        );
+        let grip = Vec3::new(0.0, 0.0, 0.5);
+        assert_ne!(
+            secondary_grip_world(before, grip),
+            secondary_grip_world(after, grip)
+        );
+        assert!(secondary_grip_world(after, grip).abs_diff_eq(after.transform_point(grip), 0.0001));
+    }
+
+    #[test]
+    fn lower_joint_solves_through_twist_intermediate_parent() {
+        let mut world = World::new();
+        let upper = world.spawn(Transform::default()).id();
+        let upper_twist = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
+        let lower = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
+        let lower_twist = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
+        let end = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
+        world.entity_mut(upper).add_child(upper_twist);
+        world.entity_mut(upper_twist).add_child(lower);
+        world.entity_mut(lower).add_child(lower_twist);
+        world.entity_mut(lower_twist).add_child(end);
+        let upper_twist_bind = *world.get::<Transform>(upper_twist).unwrap();
+        let lower_twist_bind = *world.get::<Transform>(lower_twist).unwrap();
+        let solution = solve_two_bone(
+            Vec3::ZERO,
+            Vec3::NEG_Y,
+            Vec3::NEG_Y * 2.0,
+            Vec3::new(0.45, -1.75, 0.0),
+            1.0,
+            1.0,
+            Vec3::NEG_Z,
+        )
+        .unwrap();
+        world
+            .run_system_cached_with(apply_test_two_bone, (upper, lower, end, solution))
+            .unwrap();
+        let (knee, ankle) = world
+            .run_system_cached_with(test_joint_positions, (lower, end))
+            .unwrap();
+        assert!(knee.abs_diff_eq(solution.knee, 0.0002));
+        assert!(ankle.abs_diff_eq(solution.end, 0.0002));
+        assert_eq!(
+            *world.get::<Transform>(upper_twist).unwrap(),
+            upper_twist_bind
+        );
+        assert_eq!(
+            *world.get::<Transform>(lower_twist).unwrap(),
+            lower_twist_bind
+        );
     }
 
     #[test]

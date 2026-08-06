@@ -27,9 +27,9 @@ impl SceneTerrain {
         let width = width + 1;
         let depth = depth + 1;
 
-        let heightmap = (0..=(width * depth))
+        let heightmap = (0..(width * depth))
             .map(move |i| {
-                let coords = Vec2::new((i % width) as f32, (i / depth) as f32);
+                let coords = Vec2::new((i % width) as f32, (i / width) as f32);
                 op(coords)
             })
             .collect();
@@ -50,11 +50,11 @@ impl SceneTerrain {
     }
 
     pub fn width(&self) -> f32 {
-        self.grid_width() as f32 * self.scale
+        self.grid_width().saturating_sub(1) as f32 * self.scale
     }
 
     pub fn depth(&self) -> f32 {
-        self.grid_depth() as f32 * self.scale
+        self.grid_depth().saturating_sub(1) as f32 * self.scale
     }
 
     pub fn grid_scale(&self) -> f32 {
@@ -62,22 +62,46 @@ impl SceneTerrain {
     }
 
     pub fn height_at(&self, pos: Vec2) -> Option<f32> {
+        if self.scale <= 0.0 || self.grid_width() < 2 || self.grid_depth() < 2 {
+            return None;
+        }
         // offset pos because floor's origin is at the center
         let pos = pos + Vec2::new(self.width(), self.depth()) * 0.5;
-
-        let min_x = (pos.x / self.scale) as usize;
-        let min_y = (pos.y / self.scale) as usize;
+        let grid = pos / self.scale;
+        if grid.x < 0.0
+            || grid.y < 0.0
+            || grid.x > (self.grid_width() - 1) as f32
+            || grid.y > (self.grid_depth() - 1) as f32
+        {
+            return None;
+        }
+        // The final vertex has no cell to its right/below. Sample its adjacent
+        // cell with a coordinate of one so edges remain well-defined.
+        let min_x = (grid.x.floor() as usize).min(self.grid_width() - 2);
+        let min_y = (grid.y.floor() as usize).min(self.grid_depth() - 2);
+        let fraction = grid - Vec2::new(min_x as f32, min_y as f32);
 
         let x0y0 = *self.heightmap.get(min_x + min_y * self.width)?;
         let x1y0 = *self.heightmap.get(min_x + 1 + min_y * self.width)?;
         let x0y1 = *self.heightmap.get(min_x + (min_y + 1) * self.width)?;
         let x1y1 = *self.heightmap.get(min_x + 1 + (min_y + 1) * self.width)?;
 
-        let y0 = x0y0.lerp(x1y0, pos.x % self.scale);
-        let y1 = x0y1.lerp(x1y1, pos.x % self.scale);
+        let y0 = x0y0.lerp(x1y0, fraction.x);
+        let y1 = x0y1.lerp(x1y1, fraction.x);
 
-        let height = y0.lerp(y1, pos.y % self.scale);
+        let height = y0.lerp(y1, fraction.y);
         Some(height)
+    }
+
+    /// Returns a finite, normalized terrain normal using bounded samples.
+    pub fn normal_at(&self, pos: Vec2) -> Option<Vec3> {
+        let radius = self.scale.max(0.001);
+        let center = self.height_at(pos)?;
+        let left = self.height_at(pos - Vec2::X * radius).unwrap_or(center);
+        let right = self.height_at(pos + Vec2::X * radius).unwrap_or(center);
+        let back = self.height_at(pos - Vec2::Y * radius).unwrap_or(center);
+        let forward = self.height_at(pos + Vec2::Y * radius).unwrap_or(center);
+        Vec3::new(left - right, 2.0 * radius, back - forward).try_normalize()
     }
 
     pub fn collider(&self) -> Collider {
@@ -103,7 +127,10 @@ impl SceneTerrain {
     }
 
     fn mesh_components(&self) -> (Vec<[f32; 3]>, Vec<u32>, Vec<[f32; 2]>) {
-        let mesh_offset = Vec2::new(self.grid_width() as f32, self.grid_depth() as f32) * -0.5;
+        let mesh_offset = Vec2::new(
+            self.grid_width().saturating_sub(1) as f32,
+            self.grid_depth().saturating_sub(1) as f32,
+        ) * -0.5;
 
         let mut positions = Vec::with_capacity(self.heightmap.len());
         let mut uvs = Vec::with_capacity(self.heightmap.len());
@@ -140,5 +167,28 @@ impl SceneTerrain {
         }
 
         (positions, indices, uvs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn height_interpolation_respects_non_unit_grid_scale() {
+        let terrain = SceneTerrain::new(2, 2, 2.0, |point| point.x + point.y * 2.0);
+        assert!((terrain.height_at(Vec2::new(-1.0, -1.0)).unwrap() - 1.5).abs() < 0.0001);
+        assert_eq!(terrain.height_at(Vec2::new(-3.0, 0.0)), None);
+    }
+
+    #[test]
+    fn normals_are_finite_at_center_and_boundary() {
+        let terrain = SceneTerrain::new(2, 2, 2.0, |point| point.x * 0.25);
+        for position in [Vec2::ZERO, Vec2::new(2.0, 2.0)] {
+            let normal = terrain.normal_at(position).unwrap();
+            assert!(normal.is_finite());
+            assert!((normal.length() - 1.0).abs() < 0.0001);
+            assert!(normal.y > 0.0);
+        }
     }
 }

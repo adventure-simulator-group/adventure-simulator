@@ -17,10 +17,16 @@ use bevy::{
 mod procedural;
 
 #[allow(unused_imports)]
-pub(crate) use procedural::{BoneRole, HumanoidBone};
+pub(crate) use procedural::{
+    BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone, HumanoidIkTargets,
+};
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
 const ANIMATION_FPS: f32 = 30.0;
+// Player transforms sit at the center of the 1.9 m server collider, while
+// authored rigs use a floor-level origin. Keep visual feet on the collider's
+// lower face so the first-person camera lands at the authored head.
+const PLAYER_VISUAL_Y_OFFSET: f32 = -0.95;
 
 pub struct TacticalAnimationPlugin;
 
@@ -38,6 +44,7 @@ impl Plugin for TacticalAnimationPlugin {
                     establish_animation_targets,
                     identify_animation_players,
                     procedural::bind_humanoid_bones,
+                    procedural::capture_humanoid_rig_axes,
                     capture_authored_bind_transforms,
                     evaluate_skeletons,
                     tick_impact_reactions,
@@ -59,6 +66,7 @@ impl Plugin for TacticalAnimationPlugin {
                     procedural::apply_lower_body_mirroring,
                     procedural::apply_impact_reaction,
                     procedural::apply_terrain_leg_ik,
+                    procedural::apply_arm_and_weapon_constraints,
                 )
                     .chain()
                     .after(AnimationSystems)
@@ -636,6 +644,7 @@ fn attach_loaded_rig_scenes(
                 Name::new("Authored animation rig"),
                 AnimationRigScene(player),
                 SceneRoot(scene.clone()),
+                Transform::from_xyz(0.0, PLAYER_VISUAL_Y_OFFSET, 0.0),
                 Visibility::Hidden,
             ));
         });
@@ -1113,7 +1122,7 @@ pub fn spawn_fallback_t_pose(
         .spawn((
             Name::new("Fallback bind-pose T rig"),
             FallbackAnimationRig(owner),
-            Transform::default(),
+            Transform::from_xyz(0.0, PLAYER_VISUAL_Y_OFFSET, 0.0),
             Visibility::Inherited,
         ))
         .with_children(|rig| {
@@ -1409,13 +1418,14 @@ mod tests {
         world.flush();
 
         assert!(world.get::<AnimationRigAttached>(owner).is_some());
+        let rig = world
+            .query::<(Entity, &AnimationRigScene)>()
+            .iter(&world)
+            .find_map(|(entity, scene)| (scene.0 == owner).then_some(entity))
+            .expect("client authored rig");
         assert_eq!(
-            world
-                .query::<&AnimationRigScene>()
-                .iter(&world)
-                .filter(|scene| scene.0 == owner)
-                .count(),
-            1
+            world.get::<Transform>(rig).unwrap().translation.y,
+            PLAYER_VISUAL_Y_OFFSET
         );
     }
 
@@ -1543,5 +1553,18 @@ mod tests {
             .run_system_cached(reset_authored_bind_before_fk)
             .unwrap();
         assert_eq!(*world.get::<Transform>(node).unwrap(), bind);
+    }
+
+    #[test]
+    fn client_constraint_api_is_reexported() {
+        let _: Option<HandIkTarget> = None;
+        let _: HumanoidIkTargets = default();
+        let _ = [HandSide::Left, HandSide::Right];
+        let constraint = HeldWeaponConstraint {
+            owner: Entity::PLACEHOLDER,
+            primary_hand: HandSide::Right,
+            secondary_grip_local: None,
+        };
+        assert_eq!(constraint.primary_hand, HandSide::Right);
     }
 }
