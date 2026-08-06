@@ -11,7 +11,14 @@ pub type ControlledPlayer = Actions<Player>;
 /// Component for a player entity, for both client-controlled
 /// active player and other players.
 #[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq, Eq)]
-#[require(CharacterId, Limbs, Skills, Attributes, Stats)]
+#[require(
+    CharacterId,
+    Limbs,
+    Skills,
+    Attributes,
+    Stats,
+    crate::animation::SkeletonState
+)]
 #[component(immutable)]
 pub struct Player {
     pub name: String,

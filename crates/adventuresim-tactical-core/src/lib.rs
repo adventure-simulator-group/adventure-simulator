@@ -6,6 +6,7 @@
 //! It defines how the tactical world works in minimal environemnt,
 //! which can be extended by networking and visuals in other crates.
 
+pub mod animation;
 pub mod combat;
 pub mod inventory;
 pub mod physics;
@@ -16,6 +17,11 @@ pub use avian3d;
 
 pub mod prelude {
     pub use crate::AdventureSimulatorCorePlugins;
+    pub use crate::animation::{
+        AnimationEvaluation, AnimationPack, AnimationPackLibrary, AttackLine, Footwork, LeadFoot,
+        PackValidationError, PoseSample, PoseSampling, Posture, ResolvedPose, SemanticPose,
+        SkeletonAction, SkeletonState, StrikeFamily,
+    };
     pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
     pub use crate::inventory::{
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentTopology, EquipmentTopologyOccupancy,
