@@ -379,6 +379,10 @@ pub(crate) fn materialize_development_scenario_gallery(
         )
         .accepted
     );
+    debug_assert!(
+        adventuresim_core::strategic_action::assess_hostile_surrender(5.0, 1.0, 0.0, 50, 6_000)
+            .accepts_demand
+    );
     let threat_problem_id = materialize_preferred_generated_fixture(
         ctx,
         THREAT_ID,
@@ -391,7 +395,7 @@ pub(crate) fn materialize_development_scenario_gallery(
         &threat_problem_id,
         "quest-recurring-threat",
     )?;
-    register_development_scenario(ctx, "quest-recurring-threat", "Quests", "Combat or negotiated withdrawal", "Follow a deterministic sapient hostile threat to its case site, then resolve it through ordinary combat or a pre-combat demand to withdraw.", THREAT_ID, "/quests")?;
+    register_development_scenario(ctx, "quest-recurring-threat", "Quests", "Combat, withdrawal, or surrender", "Follow a deterministic sapient hostile threat to its case site, then resolve it through ordinary combat, negotiated withdrawal, or whole-group pre-combat surrender.", THREAT_ID, "/quests")?;
     register_development_subject(ctx, "quest-recurring-threat", "generated_problem", &threat_problem_id)?;
 
     for (offset, kind) in [
@@ -686,7 +690,7 @@ mod development_scenario_source_tests {
         assert!(source.contains("&outbreak_problem_id,\n        \"quest-outbreak\""));
         assert!(source.contains("&threat_problem_id,\n        \"quest-recurring-threat\""));
         assert!(source.contains("\"Discovered outbreak\""));
-        assert!(source.contains("\"Combat or negotiated withdrawal\""));
+        assert!(source.contains("\"Combat, withdrawal, or surrender\""));
         assert!(source.contains("ensure_recurring_threat_provisions(ctx, THREAT_ID)"));
         assert!(source.contains("STANDARD_TRAVEL_RATION_ID"));
         assert!(source.contains("STANDARD_WATERSKIN_ID"));

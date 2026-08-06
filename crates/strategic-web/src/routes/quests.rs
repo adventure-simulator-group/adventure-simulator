@@ -26,15 +26,16 @@ use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BackendContextCharacter,
-    BackendCorpse, BackendHostileNegotiation, BackendInvestigationAction, BattleLootItem,
-    BattleResult, Character, CharacterAttributes, CharacterLimbs, CharacterStats,
+    BackendCorpse, BackendHostileNegotiation, BackendHostileSurrender, BackendInvestigationAction,
+    BattleLootItem, BattleResult, Character, CharacterAttributes, CharacterLimbs, CharacterStats,
     CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, ContractPresentation,
     ContractPresentationStatus, FoodLot, InventoryQuantityTarget, ItemDefinition, Party,
     PartyInventoryItem, PartyStake, Settlement,
 };
 use crate::templates::quest::{
     CaseSitePagePresentation, CaseSiteRecoveryNotice, HostileNegotiationPresentation,
-    QuestCounterparty, quest_location_enemy_page, quest_location_map_page,
+    HostileSurrenderPresentation, QuestCounterparty, quest_location_enemy_page,
+    quest_location_map_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -59,6 +60,14 @@ pub fn routes() -> Router<AppState> {
             "/locations/case-site/{id}/hostile/withdrawal",
             post(negotiate_hostile_withdrawal),
         )
+        .route(
+            "/locations/case-site/{id}/hostile/surrender/demand",
+            post(demand_hostile_surrender),
+        )
+        .route(
+            "/locations/case-site/{id}/hostile/surrender/offer",
+            post(answer_hostile_surrender_offer),
+        )
         .route("/corpses/{corpse_id}/action", post(perform_corpse_action))
         .route(
             "/locations/case-site/{id}/loot",
@@ -74,6 +83,78 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/quests/{id}/autoresolve", post(autoresolve_quest))
         .route("/quests/{id}/loot/store", post(store_battle_loot))
+}
+
+#[derive(Deserialize)]
+struct HostileSurrenderForm {
+    spokesman_id: u64,
+    context_ref: String,
+    expected_revision: u32,
+    action_id: String,
+    accept: Option<bool>,
+}
+
+async fn call_hostile_surrender(
+    state: &AppState,
+    actor_id: u64,
+    case_site_id: &str,
+    form: HostileSurrenderForm,
+    offer: bool,
+) -> Response {
+    let mut args = vec![
+        json!(actor_id),
+        json!(case_site_id),
+        json!(form.spokesman_id),
+        json!(form.context_ref),
+        json!(form.expected_revision),
+    ];
+    if offer {
+        args.push(json!(form.accept.unwrap_or(false)));
+    }
+    args.push(json!(form.action_id));
+    let reducer = if offer {
+        "answer_hostile_surrender_offer"
+    } else {
+        "demand_hostile_surrender"
+    };
+    match state.db.call(reducer, &args).await {
+        Ok(()) => {
+            Redirect::to(&format!("/locations/case-site/{case_site_id}/enemy")).into_response()
+        }
+        Err(error) if error.to_string().contains("stale") => StatusCode::CONFLICT.into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+async fn demand_hostile_surrender(
+    State(state): State<AppState>,
+    Path(case_site_id): Path<String>,
+    session: Session,
+    Form(form): Form<HostileSurrenderForm>,
+) -> Response {
+    let Some(actor_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    call_hostile_surrender(&state, actor_id, &case_site_id, form, false).await
+}
+
+async fn answer_hostile_surrender_offer(
+    State(state): State<AppState>,
+    Path(case_site_id): Path<String>,
+    session: Session,
+    Form(form): Form<HostileSurrenderForm>,
+) -> Response {
+    let Some(actor_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    if form.accept.is_none() {
+        return (
+            StatusCode::BAD_REQUEST,
+            "Surrender offer requires an answer",
+        )
+            .into_response();
+    }
+    call_hostile_surrender(&state, actor_id, &case_site_id, form, true).await
 }
 
 #[derive(Deserialize)]
@@ -1204,6 +1285,27 @@ async fn render_quest_location(
                     latest_response: row.latest_response,
                 })
         });
+    let hostile_surrender = state
+        .db
+        .query::<BackendHostileSurrender>(&format!(
+            "SELECT * FROM backend_hostile_surrenders WHERE owner_character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .find(|row| row.case_site_id == site.case_site_id)
+        .and_then(|row| {
+            counterparties
+                .iter()
+                .find(|counterparty| counterparty.character.id == row.spokesman_id)
+                .map(|counterparty| HostileSurrenderPresentation {
+                    spokesman: counterparty.character.clone(),
+                    context_ref: row.context_ref,
+                    expected_revision: row.expected_revision,
+                    mode: row.mode,
+                    latest_response: row.latest_response,
+                })
+        });
     let onsite_actions = onsite_investigation_actions(
         state
             .db
@@ -1281,6 +1383,7 @@ async fn render_quest_location(
             &party_members,
             &counterparties,
             hostile_negotiation.as_ref(),
+            hostile_surrender.as_ref(),
             can_fight,
             resolved,
             autoresolve_report.as_ref(),

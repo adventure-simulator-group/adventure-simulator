@@ -1127,6 +1127,23 @@ pub struct BackendHostileNegotiation {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum HostileSurrenderMode {
+    Demand,
+    Offer,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendHostileSurrender {
+    pub owner_character_id: u64,
+    pub case_site_id: String,
+    pub spokesman_id: u64,
+    pub context_ref: String,
+    pub expected_revision: u32,
+    pub mode: HostileSurrenderMode,
+    pub latest_response: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CharacterContextRole {
     Counterparty,
     Patient,

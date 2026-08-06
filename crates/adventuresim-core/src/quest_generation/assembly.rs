@@ -522,6 +522,14 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                         },
                     }],
                 },
+                ObjectivePath {
+                    objectives: vec![Objective {
+                        id: ObjectiveId::new(scoped_id(&prefix, "objective", "surrender")).unwrap(),
+                        requirement: ObjectiveRequirement::Surrender {
+                            hostile_group_id: hostile_id.clone(),
+                        },
+                    }],
+                },
             ])
             .expect("generated objective"),
             vec![

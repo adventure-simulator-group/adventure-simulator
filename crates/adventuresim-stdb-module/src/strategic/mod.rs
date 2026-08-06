@@ -24,6 +24,7 @@ pub(crate) const STRATEGIC_SOURCE: &str = concat!(
     include_str!("governance.rs"),
     include_str!("inventory_trade.rs"),
     include_str!("hostile_negotiation.rs"),
+    include_str!("hostile_surrender.rs"),
     include_str!("contracts.rs"),
     include_str!("travel_planning.rs"),
     include_str!("incidents.rs"),
@@ -50,6 +51,7 @@ include!("dialogue_effects.rs");
 include!("governance.rs");
 include!("inventory_trade.rs");
 include!("hostile_negotiation.rs");
+include!("hostile_surrender.rs");
 include!("contracts.rs");
 include!("travel_planning.rs");
 include!("incidents.rs");

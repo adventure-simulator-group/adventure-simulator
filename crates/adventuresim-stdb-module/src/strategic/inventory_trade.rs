@@ -1022,6 +1022,12 @@ pub(crate) fn commit_hostile_resolution_authority(
         }
     }
     if mission_id.is_none() {
+        if !matches!(
+            resolution,
+            HostileResolutionKind::DrivenOff | HostileResolutionKind::Surrendered
+        ) {
+            return Err("Pre-combat hostile resolution is unavailable for this outcome".into());
+        }
         let party = ctx
             .db
             .party_authority()
@@ -1040,7 +1046,7 @@ pub(crate) fn commit_hostile_resolution_authority(
             .any(|capability| {
                 capability.active
                     && capability.case_id == case_id
-                    && capability.resolution == HostileResolutionKind::DrivenOff
+                    && capability.resolution == resolution
                     && capability.case_site_id == *case_site_id
                     && capability.hostile_group_id == hostile_group_id
                     && mission_approach_capability_is_pending(ctx, &capability, party_id)
@@ -1062,6 +1068,7 @@ pub(crate) fn commit_hostile_resolution_authority(
     group.disposition = match resolution {
         HostileResolutionKind::Defeated => HostileGroupDisposition::Defeated,
         HostileResolutionKind::DrivenOff => HostileGroupDisposition::DrivenOff,
+        HostileResolutionKind::Surrendered => HostileGroupDisposition::Surrendered,
         HostileResolutionKind::Captured => HostileGroupDisposition::Captured,
         HostileResolutionKind::CaptureTargetKilled => unreachable!(),
     };
@@ -1078,6 +1085,17 @@ pub(crate) fn commit_hostile_resolution_authority(
                 &site.case_id,
                 party_id,
                 adventuresim_core::case::OutcomeFactKind::HostilesDrivenOff {
+                    hostile_group_id: group.id.clone(),
+                },
+            )?;
+        }
+        HostileResolutionKind::Surrendered => {
+            ingest_case_outcome_fact(
+                ctx,
+                &format!("{receipt_id}:surrender"),
+                &site.case_id,
+                party_id,
+                adventuresim_core::case::OutcomeFactKind::HostilesSurrendered {
                     hostile_group_id: group.id.clone(),
                 },
             )?;

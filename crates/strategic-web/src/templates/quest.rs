@@ -40,6 +40,15 @@ pub struct HostileNegotiationPresentation {
     pub latest_response: Option<String>,
 }
 
+#[derive(Clone, Debug)]
+pub struct HostileSurrenderPresentation {
+    pub spokesman: Character,
+    pub context_ref: String,
+    pub expected_revision: u32,
+    pub mode: crate::spacetimedb::HostileSurrenderMode,
+    pub latest_response: Option<String>,
+}
+
 pub fn quest_location_map_page(
     presentation: &CaseSitePagePresentation,
     site: &BackendCaseSitePin,
@@ -94,6 +103,7 @@ pub fn quest_location_map_page(
             autoresolve_report,
             None,
             None,
+            None,
             false,
             recovery_notice,
             true,
@@ -133,6 +143,7 @@ fn quest_location_center(
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
     hostile_negotiation: Option<&HostileNegotiationPresentation>,
+    hostile_surrender: Option<&HostileSurrenderPresentation>,
     travel_planner: Option<Markup>,
     show_combat_actions: bool,
     recovery_notice: Option<&CaseSiteRecoveryNotice>,
@@ -278,6 +289,37 @@ fn quest_location_center(
                     }
                 }
             }
+            @if let Some(surrender) = hostile_surrender.filter(|_| !resolved) {
+                section class="settlement-chat-area hostile-surrender-dock"
+                    aria-label="Hostile surrender" {
+                    h3 { "Surrender with " (&surrender.spokesman.name) }
+                    @if let Some(response) = surrender.latest_response.as_deref() {
+                        p class="chat-message" { (response) }
+                    }
+                    @if surrender.mode == crate::spacetimedb::HostileSurrenderMode::Offer {
+                        p { "The hostile group offers to surrender as a whole." }
+                        @for (accept, label) in [(true, "Accept surrender"), (false, "Refuse surrender")] {
+                            form method="post" action=(format!("/locations/case-site/{}/hostile/surrender/offer", site.case_site_id)) {
+                                input type="hidden" name="spokesman_id" value=(surrender.spokesman.id);
+                                input type="hidden" name="context_ref" value=(&surrender.context_ref);
+                                input type="hidden" name="expected_revision" value=(surrender.expected_revision);
+                                input type="hidden" name="accept" value=(accept);
+                                input type="hidden" name="action_id" value=(crate::templates::fresh_request_token("hostile-surrender-offer"));
+                                button type="submit" class="btn btn-secondary" { (label) }
+                            }
+                        }
+                    } @else {
+                        p class="text-muted" { "Demand that the whole hostile group yield before combat." }
+                        form method="post" action=(format!("/locations/case-site/{}/hostile/surrender/demand", site.case_site_id)) {
+                            input type="hidden" name="spokesman_id" value=(surrender.spokesman.id);
+                            input type="hidden" name="context_ref" value=(&surrender.context_ref);
+                            input type="hidden" name="expected_revision" value=(surrender.expected_revision);
+                            input type="hidden" name="action_id" value=(crate::templates::fresh_request_token("hostile-surrender-demand"));
+                            button type="submit" class="btn btn-secondary" { "Demand surrender" }
+                        }
+                    }
+                }
+            }
             @if let Some(travel_planner) = travel_planner { (travel_planner) }
             (settlement_chat_area_with_info(&presentation.title, active_character, &autoresolve_messages))
         }
@@ -368,6 +410,7 @@ pub fn quest_location_enemy_page(
     party_members: &[Character],
     counterparties: &[QuestCounterparty],
     hostile_negotiation: Option<&HostileNegotiationPresentation>,
+    hostile_surrender: Option<&HostileSurrenderPresentation>,
     can_fight: bool,
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
@@ -450,6 +493,7 @@ pub fn quest_location_enemy_page(
             resolved,
             autoresolve_report,
             hostile_negotiation,
+            hostile_surrender,
             None,
             true,
             recovery_notice,
@@ -757,6 +801,7 @@ mod tests {
             None,
             Some(&negotiation),
             None,
+            None,
             true,
             None,
             false,
@@ -816,6 +861,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             true,
             None,
             false,
@@ -866,6 +912,7 @@ mod tests {
             &[],
             false,
             true,
+            None,
             None,
             None,
             None,
@@ -929,6 +976,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             false,
             Some(&notice),
             false,
@@ -956,6 +1004,7 @@ mod tests {
             &[],
             false,
             false,
+            None,
             None,
             None,
             None,

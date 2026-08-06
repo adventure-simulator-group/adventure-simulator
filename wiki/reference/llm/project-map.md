@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1871)
+## Files (1872)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -1207,6 +1207,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/strategic/encounters.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/strategic/governance.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/strategic/hostile_negotiation.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/hostile_surrender.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/strategic/incidents.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/strategic/inventory_trade.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/strategic/journey_camp.rs` — Rust source module.

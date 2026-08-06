@@ -1208,7 +1208,7 @@ impl MissionAuthority {
             status: match self.status { MissionAttemptStatus::Bound => Status::Bound, MissionAttemptStatus::Committed => Status::Committed, MissionAttemptStatus::Failed => Status::Failed, MissionAttemptStatus::Cancelled => Status::Cancelled },
             case_site_id: self.case_site_id.as_ref().map(|id| id.value.clone()),
             hostile_group_id: self.hostile_group_id.clone(),
-            resolution: self.committed_resolution.map(|resolution| match resolution { HostileResolutionKind::Defeated => Resolution::Defeated, HostileResolutionKind::DrivenOff => Resolution::DrivenOff, HostileResolutionKind::Captured => Resolution::Captured, HostileResolutionKind::CaptureTargetKilled => Resolution::CaptureTargetKilled }),
+            resolution: self.committed_resolution.map(|resolution| match resolution { HostileResolutionKind::Defeated => Resolution::Defeated, HostileResolutionKind::DrivenOff => Resolution::DrivenOff, HostileResolutionKind::Surrendered => Resolution::Surrendered, HostileResolutionKind::Captured => Resolution::Captured, HostileResolutionKind::CaptureTargetKilled => Resolution::CaptureTargetKilled }),
             subject_id: self.committed_capture_subject_id.clone(),
             custody_version: self.committed_capture_custody_version,
         }).map_err(|error| error.to_string())
@@ -1229,6 +1229,7 @@ pub enum MissionAttemptStatus {
 pub enum HostileResolutionKind {
     Defeated,
     DrivenOff,
+    Surrendered,
     Captured,
     CaptureTargetKilled,
 }
@@ -1281,6 +1282,7 @@ pub enum HostileGroupDisposition {
     Active,
     Defeated,
     DrivenOff,
+    Surrendered,
     Captured,
 }
 
