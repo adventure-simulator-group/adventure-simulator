@@ -271,10 +271,21 @@ identity is available, then installs reducer subscriptions and opens the
 tactical WebSocket listener. Bot creation and player joins use that cached
 ready identity and never call the SDK's panicking pre-handshake accessor.
 
+Tactical combatants carry an explicit transient Party or Enemy allegiance,
+independent of whether a client or the server controls them. Temporary mission
+characters are Enemy melee AI and connected adventurers are Party. Offensive
+AI deterministically selects the nearest opposing combatant, turns and pursues
+in a straight line through normal controller input, stops at the same shared
+body-and-arms plus weapon interaction range used by client hit detection, then
+uses a server-owned windup and cooldown to enter the same internal
+melee-resolution seam as client requests. This direct pursuit intentionally has
+no pathfinding yet.
+
 The current combat prototype calculates attacks but does not yet apply tactical
-damage, so no client-controlled path can emit authoritative enemy deaths.
+damage or incapacitation, so no attack path can emit authoritative enemy deaths.
 Required-kill missions therefore fail closed unless the server's future combat
-pipeline emits the internal authoritative death event.
+pipeline emits the internal authoritative death event. Ranged AI and durable
+combat consequences also remain unimplemented.
 
 Mission, hostile-group, battle, and outcome-source identities are separate.
 Tactical success never chooses a case objective, capture subject, contract
