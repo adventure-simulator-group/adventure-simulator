@@ -441,6 +441,7 @@ pub struct ThreatProfile {
     pub primary_category: BestiaryCategory,
     pub secondary_categories: &'static [BestiaryCategory],
     pub combat: CombatProfile,
+    pub negotiation: crate::quest_catalog::MonsterNegotiation,
     pub investigation: InvestigationProfile,
 }
 
@@ -600,6 +601,7 @@ fn compile_profile(
                 baseline_enemy_power: crate::threat_escalation::BASELINE_ORC_POWER,
             },
         },
+        negotiation: authored.negotiation,
         investigation: InvestigationProfile {
             habitats: &[],
             activity: ActivityTime::Any,
@@ -1517,6 +1519,21 @@ mod tests {
         assert_eq!(ThreatId::WildMan.display_name(2), "Wild men");
         assert_eq!(ThreatId::Wolf.display_name(2), "Wolves");
         assert_eq!(ThreatId::Bandit.display_name(1), "Bandit");
+    }
+
+    #[test]
+    fn initial_negotiation_slice_is_authored_only_for_bandits_and_smugglers() {
+        let negotiable = ALL_THREATS
+            .iter()
+            .copied()
+            .filter(|threat| profile(*threat).negotiation.negotiable)
+            .collect::<Vec<_>>();
+        assert!(negotiable == vec![ThreatId::Bandit, ThreatId::Smuggler]);
+        assert!(
+            negotiable
+                .iter()
+                .all(|threat| profile(*threat).negotiation.sapient)
+        );
     }
 
     #[test]

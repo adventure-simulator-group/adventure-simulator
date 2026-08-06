@@ -111,6 +111,8 @@ pub mod backend_forage_attempt_state_type;
 pub mod backend_forage_attempt_states_table;
 pub mod backend_forage_receipt_type;
 pub mod backend_forage_receipts_table;
+pub mod backend_hostile_negotiation_type;
+pub mod backend_hostile_negotiations_table;
 pub mod backend_ingredient_preparation_plan_type;
 pub mod backend_ingredient_preparation_plans_table;
 pub mod backend_investigation_action_outcome_type;
@@ -418,7 +420,10 @@ pub mod historical_wetland_type;
 pub mod historical_woodland_type;
 pub mod hostile_group_authority_type;
 pub mod hostile_group_disposition_type;
+pub mod hostile_negotiation_outcome_type;
+pub mod hostile_negotiation_receipt_type;
 pub mod hostile_resolution_kind_type;
+pub mod hostile_resolution_receipt_type;
 pub mod household_member_type;
 pub mod household_role_type;
 pub mod household_type;
@@ -558,6 +563,7 @@ pub mod narrative_encounter_origin_type;
 pub mod narrative_encounter_private_authority_type;
 pub mod narrative_encounter_trigger_type;
 pub mod native_range_evidence_type;
+pub mod negotiate_hostile_withdrawal_reducer;
 pub mod nerve_type;
 pub mod npc_adventuring_party_authority_type;
 pub mod npc_age_band_type;
@@ -1032,6 +1038,8 @@ pub use backend_forage_attempt_state_type::BackendForageAttemptState;
 pub use backend_forage_attempt_states_table::*;
 pub use backend_forage_receipt_type::BackendForageReceipt;
 pub use backend_forage_receipts_table::*;
+pub use backend_hostile_negotiation_type::BackendHostileNegotiation;
+pub use backend_hostile_negotiations_table::*;
 pub use backend_ingredient_preparation_plan_type::BackendIngredientPreparationPlan;
 pub use backend_ingredient_preparation_plans_table::*;
 pub use backend_investigation_action_outcome_type::BackendInvestigationActionOutcome;
@@ -1339,7 +1347,10 @@ pub use historical_wetland_type::HistoricalWetland;
 pub use historical_woodland_type::HistoricalWoodland;
 pub use hostile_group_authority_type::HostileGroupAuthority;
 pub use hostile_group_disposition_type::HostileGroupDisposition;
+pub use hostile_negotiation_outcome_type::HostileNegotiationOutcome;
+pub use hostile_negotiation_receipt_type::HostileNegotiationReceipt;
 pub use hostile_resolution_kind_type::HostileResolutionKind;
+pub use hostile_resolution_receipt_type::HostileResolutionReceipt;
 pub use household_member_type::HouseholdMember;
 pub use household_role_type::HouseholdRole;
 pub use household_type::Household;
@@ -1479,6 +1490,7 @@ pub use narrative_encounter_origin_type::NarrativeEncounterOrigin;
 pub use narrative_encounter_private_authority_type::NarrativeEncounterPrivateAuthority;
 pub use narrative_encounter_trigger_type::NarrativeEncounterTrigger;
 pub use native_range_evidence_type::NativeRangeEvidence;
+pub use negotiate_hostile_withdrawal_reducer::negotiate_hostile_withdrawal;
 pub use nerve_type::Nerve;
 pub use npc_adventuring_party_authority_type::NpcAdventuringPartyAuthority;
 pub use npc_age_band_type::NpcAgeBand;
@@ -2256,6 +2268,14 @@ pub enum Reducer {
         party_inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     },
+    NegotiateHostileWithdrawal {
+        actor_id: u64,
+        case_site_id: String,
+        spokesman_id: u64,
+        context_ref: String,
+        expected_revision: u32,
+        action_id: String,
+    },
     OpenCorpse {
         actor_id: u64,
         corpse_id: String,
@@ -2873,6 +2893,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
+            Reducer::NegotiateHostileWithdrawal { .. } => "negotiate_hostile_withdrawal",
             Reducer::OpenCorpse { .. } => "open_corpse",
             Reducer::PayOrganizationDues { .. } => "pay_organization_dues",
             Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
@@ -3713,6 +3734,21 @@ Reducer::BeginFormalCourtship{
                 settlement_id: settlement_id.clone(),
                 party_inventory_item_ids: party_inventory_item_ids.clone(),
                 quantities: quantities.clone(),
+}),
+            Reducer::NegotiateHostileWithdrawal{
+                actor_id,
+                case_site_id,
+                spokesman_id,
+                context_ref,
+                expected_revision,
+                action_id,
+}             => __sats::bsatn::to_vec(&negotiate_hostile_withdrawal_reducer::NegotiateHostileWithdrawalArgs {
+                actor_id: actor_id.clone(),
+                case_site_id: case_site_id.clone(),
+                spokesman_id: spokesman_id.clone(),
+                context_ref: context_ref.clone(),
+                expected_revision: expected_revision.clone(),
+                action_id: action_id.clone(),
 }),
             Reducer::OpenCorpse{
                 actor_id,
@@ -4711,6 +4747,7 @@ pub struct DbUpdate {
     backend_fireplace_stations: __sdk::TableUpdate<BackendFireplaceStation>,
     backend_forage_attempt_states: __sdk::TableUpdate<BackendForageAttemptState>,
     backend_forage_receipts: __sdk::TableUpdate<BackendForageReceipt>,
+    backend_hostile_negotiations: __sdk::TableUpdate<BackendHostileNegotiation>,
     backend_ingredient_preparation_plans: __sdk::TableUpdate<BackendIngredientPreparationPlan>,
     backend_investigation_action_outcomes: __sdk::TableUpdate<BackendInvestigationActionOutcome>,
     backend_investigation_actions: __sdk::TableUpdate<BackendInvestigationAction>,
@@ -4981,6 +5018,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 ),
                 "backend_forage_receipts" => db_update.backend_forage_receipts.append(
                     backend_forage_receipts_table::parse_table_update(table_update)?,
+                ),
+                "backend_hostile_negotiations" => db_update.backend_hostile_negotiations.append(
+                    backend_hostile_negotiations_table::parse_table_update(table_update)?,
                 ),
                 "backend_ingredient_preparation_plans" => {
                     db_update.backend_ingredient_preparation_plans.append(
@@ -5702,6 +5742,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_forage_receipts",
             &self.backend_forage_receipts,
         );
+        diff.backend_hostile_negotiations = cache.apply_diff_to_table::<BackendHostileNegotiation>(
+            "backend_hostile_negotiations",
+            &self.backend_hostile_negotiations,
+        );
         diff.backend_ingredient_preparation_plans = cache
             .apply_diff_to_table::<BackendIngredientPreparationPlan>(
                 "backend_ingredient_preparation_plans",
@@ -5969,6 +6013,9 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_hostile_negotiations" => db_update
+                    .backend_hostile_negotiations
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_ingredient_preparation_plans" => db_update
                     .backend_ingredient_preparation_plans
@@ -6367,6 +6414,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_hostile_negotiations" => db_update
+                    .backend_hostile_negotiations
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_ingredient_preparation_plans" => db_update
                     .backend_ingredient_preparation_plans
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -6674,6 +6724,7 @@ pub struct AppliedDiff<'r> {
     backend_fireplace_stations: __sdk::TableAppliedDiff<'r, BackendFireplaceStation>,
     backend_forage_attempt_states: __sdk::TableAppliedDiff<'r, BackendForageAttemptState>,
     backend_forage_receipts: __sdk::TableAppliedDiff<'r, BackendForageReceipt>,
+    backend_hostile_negotiations: __sdk::TableAppliedDiff<'r, BackendHostileNegotiation>,
     backend_ingredient_preparation_plans:
         __sdk::TableAppliedDiff<'r, BackendIngredientPreparationPlan>,
     backend_investigation_action_outcomes:
@@ -7011,6 +7062,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendForageReceipt>(
             "backend_forage_receipts",
             &self.backend_forage_receipts,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendHostileNegotiation>(
+            "backend_hostile_negotiations",
+            &self.backend_hostile_negotiations,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendIngredientPreparationPlan>(
@@ -8085,6 +8141,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_fireplace_stations_table::register_table(client_cache);
         backend_forage_attempt_states_table::register_table(client_cache);
         backend_forage_receipts_table::register_table(client_cache);
+        backend_hostile_negotiations_table::register_table(client_cache);
         backend_ingredient_preparation_plans_table::register_table(client_cache);
         backend_investigation_action_outcomes_table::register_table(client_cache);
         backend_investigation_actions_table::register_table(client_cache);
@@ -8215,6 +8272,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_fireplace_stations",
         "backend_forage_attempt_states",
         "backend_forage_receipts",
+        "backend_hostile_negotiations",
         "backend_ingredient_preparation_plans",
         "backend_investigation_action_outcomes",
         "backend_investigation_actions",

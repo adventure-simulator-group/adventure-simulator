@@ -87,11 +87,12 @@ marks only affected objective leaves impossible. Alternative branches remain
 available until the objective expression itself can no longer be satisfied.
 
 Mission creation selects one eligible unresolved hostile approach rather than
-choosing by objective precedence. The current kill-based tactical server and
-autoresolver select `Defeated`. Investigation actions may prepare an ambush or
-establish awareness, but they cannot emit `DrivenOff` or `Captured`; those
-objectives remain pending until #207 adds an authoritative tactical producer.
-Every shared hostile-result commit rechecks its selected resolution.
+choosing by objective precedence. The tactical server and autoresolver can
+select `Defeated`; an eligible pre-combat hostile conversation can select the
+same generated case's existing `DrivenOff` approach. Investigation actions may
+prepare an ambush or establish awareness, but they do not directly emit a
+hostile resolution. Every shared hostile-result commit rechecks its selected
+resolution.
 `CaptureTargetKilled` is never a successful result, and only `Defeated` may
 produce battle loot.
 
@@ -99,6 +100,9 @@ Recurring generated cases bind `Defeat` and `DriveOff` alternatives to the same
 hostile-group/site identity. Once an observer knows and enters the exact site,
 the existing #217 mission seam materializes those leaves as weighted
 `MissionOutcomeCandidate` rows; generation adds no parallel combat resolver.
+Battle and conversation producers converge on one exact, idempotent hostile
+resolution seam. Tactical-only battle, participant morale, corpse, and loot
+artifacts remain outside that seam.
 
 ---
 

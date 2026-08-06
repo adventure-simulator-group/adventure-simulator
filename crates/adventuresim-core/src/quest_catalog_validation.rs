@@ -32,8 +32,10 @@ const MONSTER_KEYS: &[&str] = &[
     "primary_category",
     "secondary_categories",
     "combat",
+    "negotiation",
     "investigation",
 ];
+const NEGOTIATION_KEYS: &[&str] = &["sapient", "negotiable"];
 const COMBAT_KEYS: &[&str] = &[
     "rig",
     "speed_m_per_minute",
@@ -508,6 +510,19 @@ pub fn validate_documents(documents: &[Value], files: &[String]) -> Result<(), S
                                 .ok_or_else(|| format!("{at}.combat: missing"))?,
                             &format!("{at}.combat"),
                         )?;
+                        if let Some(negotiation) = item.get("negotiation") {
+                            let negotiation = object(negotiation, &format!("{at}.negotiation"))?;
+                            keys(negotiation, NEGOTIATION_KEYS, &format!("{at}.negotiation"))?;
+                            let sapient =
+                                boolean(negotiation, "sapient", &format!("{at}.negotiation"))?;
+                            let negotiable =
+                                boolean(negotiation, "negotiable", &format!("{at}.negotiation"))?;
+                            if negotiable && !sapient {
+                                return Err(format!(
+                                    "{at}.negotiation: negotiable threats must be sapient"
+                                ));
+                            }
+                        }
                         keys(combat, COMBAT_KEYS, &format!("{at}.combat"))?;
                         enum_value(
                             string(combat, "rig", &at)?,

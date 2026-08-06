@@ -601,7 +601,11 @@ fn character_case_site_occupancy_at_view(
     rows.next().is_none().then_some(row)
 }
 
-fn character_alive_at_for_view(ctx: &ViewContext, character_id: u64, minute: u64) -> bool {
+pub(crate) fn character_alive_at_for_view(
+    ctx: &ViewContext,
+    character_id: u64,
+    minute: u64,
+) -> bool {
     ctx.db.character().id().find(character_id).is_some()
         && ctx
             .db

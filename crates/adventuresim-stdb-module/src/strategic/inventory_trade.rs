@@ -829,21 +829,51 @@ pub(crate) fn complete_bound_mission_success(
     mission.committed_capture_custody_version = selected.capture_custody_version;
     mission.parsed_state()?;
     ctx.db.mission_authority().id().update(mission);
-    for mut capability in ctx
-        .db
-        .mission_approach_capability()
-        .hostile_group_id()
-        .filter(&selected.hostile_group_id)
-        .filter(|capability| capability.case_site_id == selected.case_site_id)
-        .collect::<Vec<_>>()
-    {
-        capability.active = false;
-        ctx.db.mission_approach_capability().id().update(capability);
-    }
-    if committed {
-        finish_incident_for_hostile_group(ctx, &selected.hostile_group_id)?;
-    }
     Ok(committed)
+}
+
+pub(crate) fn mission_approach_capability_is_pending(
+    ctx: &ReducerContext,
+    capability: &MissionApproachCapability,
+    party_id: &str,
+) -> Result<bool, String> {
+    let Some(case) = ctx.db.case_authority().id().find(&capability.case_id) else {
+        return Ok(false);
+    };
+    if case.generated_case_id.is_empty() || case.resolution_status != CaseResolutionStatus::Open {
+        return Ok(false);
+    }
+    let expression: adventuresim_core::case::ObjectiveExpression =
+        serde_json::from_str(&case.objective_expression_json)
+            .map_err(|_| "Case objective authority is invalid")?;
+    let facts = ctx
+        .db
+        .case_outcome_fact()
+        .case_id()
+        .filter(&case.id)
+        .map(|row| {
+            serde_json::from_str::<adventuresim_core::case::OutcomeFact>(&row.fact_json)
+                .map_err(|_| "Stored outcome fact is invalid".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let core_case_id =
+        adventuresim_core::case::CaseId::new(case.id.clone()).map_err(|_| "Case ID is invalid")?;
+    let evaluation = expression.evaluate(&core_case_id, party_id, &facts);
+    let Some(path) = expression.alternatives.get(usize::from(capability.path_index)) else {
+        return Ok(false);
+    };
+    let Some(objective_index) = path
+        .objectives
+        .iter()
+        .position(|objective| objective.id.as_str() == capability.objective_id)
+    else {
+        return Ok(false);
+    };
+    Ok(evaluation
+        .alternatives
+        .get(usize::from(capability.path_index))
+        .and_then(|path| path.get(objective_index))
+        .is_some_and(|progress| progress.state == adventuresim_core::case::EvaluationState::Pending))
 }
 
 pub(crate) fn fail_bound_mission_attempt(
@@ -883,6 +913,240 @@ struct HostileBattleCommit<'a> {
     capture_subject_id: Option<&'a str>,
     dropped_items: Vec<(String, u32)>,
     include_random_gold: bool,
+}
+
+pub(crate) struct HostileResolutionCommit<'a> {
+    pub receipt_id: &'a str,
+    pub party_id: &'a str,
+    pub mission_id: Option<&'a str>,
+    pub hostile_group_id: &'a str,
+    pub observer_character_id: u64,
+    pub case_id: &'a str,
+    pub case_site_id: &'a CaseSiteId,
+    pub resolution: HostileResolutionKind,
+    pub capture_subject_id: Option<&'a str>,
+}
+
+/// Commit the exact persistent hostile outcome without assuming a battle.
+/// Callers remain responsible for any tactical-only artifacts.
+pub(crate) fn commit_hostile_resolution_authority(
+    ctx: &ReducerContext,
+    commit: HostileResolutionCommit<'_>,
+) -> Result<bool, String> {
+    let HostileResolutionCommit {
+        receipt_id,
+        party_id,
+        mission_id,
+        hostile_group_id,
+        observer_character_id,
+        case_id,
+        case_site_id,
+        resolution,
+        capture_subject_id,
+    } = commit;
+    validate_hostile_resolution_contract(None, None, resolution, capture_subject_id, false)
+        .map_err(str::to_string)?;
+    if let Some(existing) = ctx
+        .db
+        .hostile_resolution_receipt()
+        .id()
+        .find(&receipt_id.to_string())
+    {
+        return if existing.party_id == party_id
+            && existing.mission_id.as_deref() == mission_id
+            && existing.hostile_group_id == hostile_group_id
+            && existing.observer_character_id == observer_character_id
+            && existing.case_id == case_id
+            && existing.case_site_id == *case_site_id
+            && existing.resolution == resolution
+            && existing.capture_subject_id.as_deref() == capture_subject_id
+        {
+            Ok(false)
+        } else {
+            Err("Conflicting hostile resolution retry".into())
+        };
+    }
+    let mut group = ctx
+        .db
+        .hostile_group_authority()
+        .id()
+        .find(&hostile_group_id.to_string())
+        .ok_or("Hostile group not found")?;
+    if group.disposition != HostileGroupDisposition::Active {
+        return Err("Hostile group is already resolved".into());
+    }
+    let site = ctx
+        .db
+        .case_site_authority()
+        .id_key()
+        .find(&case_site_id.value)
+        .filter(|site| site.id == *case_site_id && site.case_id == case_id)
+        .ok_or("Hostile resolution case-site authority is stale")?;
+    if group.case_site_id != *case_site_id {
+        return Err("Hostile resolution does not match the hostile-group site".into());
+    }
+    if let Some(mission_id) = mission_id {
+        let mission = ctx
+            .db
+            .mission_authority()
+            .id()
+            .find(&mission_id.to_string())
+            .ok_or("Mission authority not found")?;
+        if mission.party_id != party_id
+            || mission.hostile_group_id.as_deref() != Some(hostile_group_id)
+            || mission.observer_character_id != observer_character_id
+            || mission.case_id != case_id
+            || mission.case_site_id.as_ref() != Some(case_site_id)
+            || mission.status != MissionAttemptStatus::Bound
+        {
+            return Err("Hostile resolution does not match bound mission authority".into());
+        }
+        let exact_candidate = ctx
+            .db
+            .mission_outcome_candidate()
+            .mission_id()
+            .filter(&mission.id)
+            .filter_map(|candidate| {
+                mission_candidate_is_current(ctx, &mission, &candidate)
+                    .ok()
+                    .filter(|current| *current)
+                    .map(|_| candidate)
+            })
+            .any(|candidate| {
+                candidate.hostile_group_id == hostile_group_id
+                    && candidate.resolution == resolution
+                    && candidate.capture_subject_id.as_deref() == capture_subject_id
+            });
+        if !exact_candidate {
+            return Err("Hostile resolution is not an exact current mission candidate".into());
+        }
+    }
+    if mission_id.is_none() {
+        let party = ctx
+            .db
+            .party_authority()
+            .id()
+            .find(&party_id.to_string())
+            .filter(|party| party.leader_id == observer_character_id)
+            .ok_or("Hostile resolution observer is not the party leader")?;
+        if party.current_case_site_id.as_ref() != Some(case_site_id) {
+            return Err("Party is no longer present at the hostile-group site".into());
+        }
+        let exact_capability = ctx
+            .db
+            .mission_approach_capability()
+            .observer_character_id()
+            .filter(observer_character_id)
+            .any(|capability| {
+                capability.active
+                    && capability.case_id == case_id
+                    && capability.resolution == HostileResolutionKind::DrivenOff
+                    && capability.case_site_id == *case_site_id
+                    && capability.hostile_group_id == hostile_group_id
+                    && mission_approach_capability_is_pending(ctx, &capability, party_id)
+                        .unwrap_or(false)
+            });
+        let exact_approach = exact_capability
+            || generated_hostile_resolution_available(
+                ctx,
+                observer_character_id,
+                party_id,
+                &site,
+                &group,
+                resolution,
+            );
+        if !exact_approach {
+            return Err("Hostile group has no exact current drive-off approach".into());
+        }
+    }
+    group.disposition = match resolution {
+        HostileResolutionKind::Defeated => HostileGroupDisposition::Defeated,
+        HostileResolutionKind::DrivenOff => HostileGroupDisposition::DrivenOff,
+        HostileResolutionKind::Captured => HostileGroupDisposition::Captured,
+        HostileResolutionKind::CaptureTargetKilled => unreachable!(),
+    };
+    ctx.db.hostile_group_authority().id().update(group.clone());
+    crate::world_actor::deactivate_context_roster(ctx, &group.id);
+    match resolution {
+        HostileResolutionKind::Defeated => {
+            ingest_hostile_group_defeat_fact(ctx, receipt_id, party_id, &group, group.enemy_count)?
+        }
+        HostileResolutionKind::DrivenOff => {
+            ingest_case_outcome_fact(
+                ctx,
+                &format!("{receipt_id}:drive-off"),
+                &site.case_id,
+                party_id,
+                adventuresim_core::case::OutcomeFactKind::HostilesDrivenOff {
+                    hostile_group_id: group.id.clone(),
+                },
+            )?;
+        }
+        HostileResolutionKind::Captured => {
+            let subject_id =
+                capture_subject_id.ok_or("Capture result has no mission-bound subject")?;
+            let current = ctx
+                .db
+                .case_custody()
+                .object_id()
+                .find(&subject_id.to_string())
+                .ok_or("Captured subject has no custody authority")?;
+            let site = ctx
+                .db
+                .case_site_authority()
+                .id_key()
+                .find(&group.case_site_id.value)
+                .ok_or("Hostile group case site not found")?;
+            if current.case_id != site.case_id
+                || current.holder_kind != CustodyHolderKind::Site
+                || current.holder_id != group.case_site_id.value
+            {
+                return Err("Capture subject is not bound to this mission site and case".into());
+            }
+            transition_case_custody(
+                ctx,
+                &format!("{receipt_id}:capture"),
+                &current.case_id,
+                party_id,
+                CustodyObjectKind::Subject,
+                subject_id,
+                CustodyHolderKind::Party,
+                party_id,
+                current.version.saturating_add(1),
+                Some(adventuresim_core::case::OutcomeFactKind::SubjectCaptured {
+                    subject_id: adventuresim_core::case::SubjectId::new(subject_id)
+                        .map_err(|_| "Capture subject ID is invalid")?,
+                }),
+            )?;
+        }
+        HostileResolutionKind::CaptureTargetKilled => unreachable!(),
+    }
+    for mut capability in ctx
+        .db
+        .mission_approach_capability()
+        .hostile_group_id()
+        .filter(&hostile_group_id.to_string())
+        .filter(|capability| capability.case_site_id == group.case_site_id)
+        .collect::<Vec<_>>()
+    {
+        capability.active = false;
+        ctx.db.mission_approach_capability().id().update(capability);
+    }
+    finish_incident_for_hostile_group(ctx, hostile_group_id)?;
+    ctx.db
+        .hostile_resolution_receipt()
+        .insert(HostileResolutionReceipt {
+            id: receipt_id.to_string(),
+            party_id: party_id.to_string(),
+            mission_id: mission_id.map(str::to_string),
+            hostile_group_id: hostile_group_id.to_string(),
+            observer_character_id,
+            case_id: case_id.to_string(),
+            case_site_id: case_site_id.clone(),
+            resolution,
+            capture_subject_id: capture_subject_id.map(str::to_string),
+        });
+    Ok(true)
 }
 
 fn commit_hostile_battle_resolution(
@@ -1085,80 +1349,42 @@ fn commit_hostile_battle_resolution(
             quantity,
         });
     }
-    if let Some(mut group) = group {
-        group.disposition = match resolution {
-            HostileResolutionKind::Defeated => HostileGroupDisposition::Defeated,
-            HostileResolutionKind::DrivenOff => HostileGroupDisposition::DrivenOff,
-            HostileResolutionKind::Captured => HostileGroupDisposition::Captured,
-            HostileResolutionKind::CaptureTargetKilled => unreachable!(),
+    if let Some(group) = group {
+        let site = ctx
+            .db
+            .case_site_authority()
+            .id_key()
+            .find(&group.case_site_id.value)
+            .ok_or("Hostile group case site not found")?;
+        let observer_character_id = if let Some(mission_id) = mission_id {
+            ctx.db
+                .mission_authority()
+                .id()
+                .find(&mission_id.to_string())
+                .ok_or("Mission authority not found")?
+                .observer_character_id
+        } else {
+            ctx.db
+                .party_authority()
+                .id()
+                .find(&party_id.to_string())
+                .ok_or("Party authority not found")?
+                .leader_id
         };
-        ctx.db.hostile_group_authority().id().update(group.clone());
-        crate::world_actor::deactivate_context_roster(ctx, &group.id);
-        match resolution {
-            HostileResolutionKind::Defeated => ingest_hostile_group_defeat_fact(
-                ctx,
-                outcome_source_id,
+        commit_hostile_resolution_authority(
+            ctx,
+            HostileResolutionCommit {
+                receipt_id: outcome_source_id,
                 party_id,
-                &group,
-                group.enemy_count,
-            )?,
-            HostileResolutionKind::DrivenOff => {
-                let site = ctx
-                    .db
-                    .case_site_authority()
-                    .id_key()
-                    .find(&group.case_site_id.value)
-                    .ok_or("Hostile group case site not found")?;
-                ingest_case_outcome_fact(
-                    ctx,
-                    &format!("{outcome_source_id}:drive-off"),
-                    &site.case_id,
-                    party_id,
-                    adventuresim_core::case::OutcomeFactKind::HostilesDrivenOff {
-                        hostile_group_id: group.id.clone(),
-                    },
-                )?;
-            }
-            HostileResolutionKind::Captured => {
-                let subject_id =
-                    capture_subject_id.ok_or("Capture result has no mission-bound subject")?;
-                let current = ctx
-                    .db
-                    .case_custody()
-                    .object_id()
-                    .find(&subject_id.to_string())
-                    .ok_or("Captured subject has no custody authority")?;
-                if current.case_id
-                    != ctx
-                        .db
-                        .case_site_authority()
-                        .id_key()
-                        .find(&group.case_site_id.value)
-                        .ok_or("Hostile group case site not found")?
-                        .case_id
-                    || current.holder_kind != CustodyHolderKind::Site
-                    || current.holder_id != group.case_site_id.value
-                {
-                    return Err("Capture subject is not bound to this mission site and case".into());
-                }
-                transition_case_custody(
-                    ctx,
-                    &format!("{outcome_source_id}:capture"),
-                    &current.case_id,
-                    party_id,
-                    CustodyObjectKind::Subject,
-                    subject_id,
-                    CustodyHolderKind::Party,
-                    party_id,
-                    current.version.saturating_add(1),
-                    Some(adventuresim_core::case::OutcomeFactKind::SubjectCaptured {
-                        subject_id: adventuresim_core::case::SubjectId::new(subject_id)
-                            .map_err(|_| "Capture subject ID is invalid")?,
-                    }),
-                )?;
-            }
-            HostileResolutionKind::CaptureTargetKilled => unreachable!(),
-        }
+                mission_id,
+                hostile_group_id: &group.id,
+                observer_character_id,
+                case_id: &site.case_id,
+                case_site_id: &site.id,
+                resolution,
+                capture_subject_id,
+            },
+        )?;
     }
     Ok(true)
 }

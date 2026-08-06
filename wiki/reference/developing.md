@@ -28,6 +28,18 @@ appends exactly one incident at the official current minute through the same
 materializer as scheduled progression; it does not advance the world clock or
 run settlement-wide activity.
 
+The **Combat or negotiated withdrawal** scenario chooses a deterministic
+authored-negotiable hostile threat. Follow its ordinary journal and site flow;
+at the finale, the enemy page exposes both the existing combat controls and the
+hostile conversation dock. The scenario character has enough social training
+to exercise acceptance reliably and carries ordinary party rations, filled
+waterskins, and a field tent with enough surplus and shelter for the normal
+outbound and return journeys. Its generated finale site uses a fixture-only
+nearby distance of about 1 km so unrelated random road encounters do not
+dominate this focused demo; ordinary generated quests and travel risk are
+unchanged. Reset the isolated profile to restore the unresolved branch after
+either outcome.
+
 Scenario adoption is available only to the registered strategic gateway in a
 module compiled with the development capability. Each opaque browser owner
 receives owner-scoped access to the shared registered primaries; scenario

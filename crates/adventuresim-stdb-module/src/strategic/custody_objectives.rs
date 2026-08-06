@@ -1290,6 +1290,28 @@ pub(crate) fn generated_case_site_combat_eligible<'a>(
     facts: &[adventuresim_core::case::OutcomeFact],
     party_id: &str,
 ) -> Option<&'a HostileGroupAuthority> {
+    generated_case_site_hostile_resolution_eligible(
+        generated,
+        case,
+        case_site,
+        hostile_groups,
+        finales,
+        facts,
+        party_id,
+        None,
+    )
+}
+
+pub(crate) fn generated_case_site_hostile_resolution_eligible<'a>(
+    generated: &adventuresim_core::quest_generation::GeneratedCase,
+    case: &CaseAuthority,
+    case_site: &CaseSiteAuthority,
+    hostile_groups: &'a [HostileGroupAuthority],
+    finales: &[CaseFinaleAuthority],
+    facts: &[adventuresim_core::case::OutcomeFact],
+    party_id: &str,
+    required_resolution: Option<HostileResolutionKind>,
+) -> Option<&'a HostileGroupAuthority> {
     if case.provenance_kind != "generated"
         || case.generated_case_id != case.id
         || case.id != generated.canonical_case_id
@@ -1354,7 +1376,9 @@ pub(crate) fn generated_case_site_combat_eligible<'a>(
                                 &objective.requirement,
                                 hostile_group_id,
                             )
-                            .is_some()
+                            .is_some_and(|(resolution, _)| {
+                                required_resolution.is_none_or(|required| required == resolution)
+                            })
                     });
             hostile_pending
                 && finales.iter().any(|finale| {

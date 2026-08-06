@@ -1115,6 +1115,17 @@ pub enum BackendContextualDecision {
     EmergencyTreatment,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendHostileNegotiation {
+    pub owner_character_id: u64,
+    pub case_site_id: String,
+    pub spokesman_id: u64,
+    pub context_ref: String,
+    pub expected_revision: u32,
+    pub decision: BackendContextualDecision,
+    pub latest_response: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CharacterContextRole {
     Counterparty,

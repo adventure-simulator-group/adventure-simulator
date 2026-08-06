@@ -1379,7 +1379,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
     qg::validate(&generated)
         .map_err(|errors| format!("Generated quest manifest is invalid: {}", errors.join("; ")))?;
 
-    materialize_generated_quest(ctx, &settlement, &context, &generated, None)
+    materialize_generated_quest(ctx, &settlement, &context, &generated, None, None)
 }
 
 fn materialize_preferred_generated_fixture(
@@ -1404,7 +1404,7 @@ fn materialize_preferred_generated_fixture(
 
     let now_minute = crate::time::refresh_clock(ctx)?.max(4_000);
     let entropy = character_id ^ seed_salt;
-    let context = qg::GenerationContext {
+    let initial_context = qg::GenerationContext {
         seed: preferred_fixture_seed(entropy, family),
         observer_entropy_hi: entropy.rotate_left(23),
         observer_entropy_lo: entropy.rotate_right(17),
@@ -1419,8 +1419,19 @@ fn materialize_preferred_generated_fixture(
         requested_family: Some(family),
         witness_candidates: generated_witness_candidates(ctx, &settlement_id),
     };
-    let generated = qg::generate(&context)
-        .map_err(|error| format!("Development quest fixture generation failed: {error:?}"))?;
+    let (context, generated) = (0..64_u64)
+        .find_map(|offset| {
+            let mut candidate = initial_context.clone();
+            candidate.seed = candidate.seed.wrapping_add(offset);
+            let generated = qg::generate(&candidate).ok()?;
+            let suitable = family != qg::TemplateFamily::RecurringDepredation
+                || generated.hostile_groups.iter().any(|(_, _, threat, _)| {
+                    *threat == adventuresim_core::bestiary::ThreatId::Bandit
+                        || *threat == adventuresim_core::bestiary::ThreatId::Smuggler
+                });
+            suitable.then_some((candidate, generated))
+        })
+        .ok_or("Development quest fixture exhausted negotiable generated threats")?;
     let witness = generated
         .witnesses
         .first()
@@ -1442,7 +1453,15 @@ fn materialize_preferred_generated_fixture(
         qg::validate(&generated).map_err(|errors| {
             format!("Development quest fixture manifest is invalid: {}", errors.join("; "))
         })?;
-        materialize_generated_quest(ctx, &settlement, &context, &generated, None)?;
+        let fixture_site_distance_m = preferred_fixture_site_distance_m(family);
+        materialize_generated_quest(
+            ctx,
+            &settlement,
+            &context,
+            &generated,
+            None,
+            fixture_site_distance_m,
+        )?;
     }
     crate::local_problem::prefer_next_rumor(
         ctx,
@@ -1535,7 +1554,7 @@ fn materialize_simulation_acceptance_outbreak(
                 errors.join("; ")
             )
         })?;
-        materialize_generated_quest(ctx, &settlement, &context, &generated, None)?;
+        materialize_generated_quest(ctx, &settlement, &context, &generated, None, None)?;
         crate::local_problem::prefer_next_rumor(
             ctx,
             character_id,
@@ -1880,6 +1899,7 @@ fn materialize_generated_quest(
     context: &adventuresim_core::quest_generation::GenerationContext,
     generated: &adventuresim_core::quest_generation::GeneratedCase,
     context_snapshot_override: Option<&str>,
+    fixture_site_distance_m: Option<u64>,
 ) -> Result<(), String> {
     let settlement_id = context.settlement_id.as_str();
     let seed = context.seed;
@@ -1945,7 +1965,8 @@ fn materialize_generated_quest(
     let geographic = settlement.source_node_id.is_some();
     let mut site_rows = BTreeMap::new();
     for (index, site) in generated.sites.iter().enumerate() {
-        let distance_m = ordinary_generated_site_distance_m(seed, index);
+        let distance_m = fixture_site_distance_m
+            .unwrap_or_else(|| ordinary_generated_site_distance_m(seed, index));
         let angle_seed = seed.rotate_left((index as u32).saturating_mul(11));
         let angle = (angle_seed as f64 / u64::MAX as f64) * std::f64::consts::TAU;
         let distance_km = distance_m as f64 / 1_000.0;
@@ -2213,7 +2234,15 @@ pub fn spawn_developer_quest(
         &base,
         &generated,
         Some(&context_snapshot_json),
+        None,
     )
+}
+
+fn preferred_fixture_site_distance_m(
+    family: adventuresim_core::quest_generation::TemplateFamily,
+) -> Option<u64> {
+    (family == adventuresim_core::quest_generation::TemplateFamily::RecurringDepredation)
+        .then_some(1_000)
 }
 
 #[cfg(test)]
@@ -2235,6 +2264,20 @@ mod developer_quest_source_tests {
             ),
             entropy.rotate_left(11)
         );
+    }
+
+    #[test]
+    fn only_the_recurring_threat_gallery_fixture_gets_the_nearby_site_override() {
+        use adventuresim_core::quest_generation::TemplateFamily;
+        assert_eq!(
+            preferred_fixture_site_distance_m(TemplateFamily::RecurringDepredation),
+            Some(1_000)
+        );
+        assert_eq!(
+            preferred_fixture_site_distance_m(TemplateFamily::Outbreak),
+            None
+        );
+        assert!(ordinary_generated_site_distance_m(0, 0) >= 4_000);
     }
 
     #[test]

@@ -85,6 +85,12 @@ presence, privacy, procedure, retry, and commit validation. This is not a
 universal permission table: medical emergency doctrine remains in Surgery and
 contact consequences remain in social/context authority.
 
+Hostile-group terminal outcomes share a battle-independent exact commit seam.
+Tactical victory may surround that seam with battle results, participant
+morale, corpses, and loot; accepted pre-combat withdrawal calls only the seam
+and emits the existing `HostilesDrivenOff` case fact. This keeps durable case
+resolution strategic without inventing tactical state for a conversation.
+
 Strategic systems share a closed, versioned vocabulary for place and fixture
 identity. A coarse settlement identity is not an exact venue, and constructing
 an inn, chapter, residence, case-site, camp, source, or fireplace identity does

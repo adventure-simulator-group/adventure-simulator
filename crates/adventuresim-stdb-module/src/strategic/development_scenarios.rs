@@ -264,6 +264,53 @@ fn ensure_scenario_character_at(
     )
 }
 
+const RECURRING_THREAT_RATIONS: u32 = 10;
+const RECURRING_THREAT_WATERSKINS: u32 = 4;
+const RECURRING_THREAT_FIELD_TENTS: u32 = 1;
+
+fn ensure_recurring_threat_provisions(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<(), String> {
+    let party_id = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .and_then(|character| character.party_id)
+        .ok_or("Recurring-threat scenario character has no party")?;
+    for (item_id, target_quantity) in [
+        (
+            adventuresim_core::provisioning::STANDARD_TRAVEL_RATION_ID,
+            RECURRING_THREAT_RATIONS,
+        ),
+        (
+            adventuresim_core::provisioning::STANDARD_WATERSKIN_ID,
+            RECURRING_THREAT_WATERSKINS,
+        ),
+        (
+            adventuresim_core::item_references::FIELD_TENT_ID,
+            RECURRING_THREAT_FIELD_TENTS,
+        ),
+    ] {
+        let current_quantity = ctx
+            .db
+            .party_inventory_item()
+            .party_id()
+            .filter(&party_id)
+            .filter(|row| row.item_id == item_id)
+            .map(|row| row.quantity)
+            .sum::<u32>();
+        add_to_party_inventory_checked(
+            ctx,
+            &party_id,
+            item_id,
+            target_quantity.saturating_sub(current_quantity),
+        )?;
+    }
+    Ok(())
+}
+
 /// Register every fixture from the one strategic bootstrap and materialize
 /// feature states against distinct primary characters.
 pub(crate) fn materialize_development_scenario_gallery(
@@ -305,6 +352,33 @@ pub(crate) fn materialize_development_scenario_gallery(
     const THREAT_SETTLEMENT: &str = "dev-scenario-recurring-threat";
     ensure_scenario_settlement(ctx, THREAT_SETTLEMENT, "Threat Scenario Hamlet")?;
     ensure_scenario_character_at(ctx, THREAT_ID, "Threat Investigator", THREAT_SETTLEMENT)?;
+    if let Some(mut attributes) = ctx.db.character_attributes().character_id().find(THREAT_ID) {
+        attributes.instinct = 5.0;
+        ctx.db
+            .character_attributes()
+            .character_id()
+            .update(attributes);
+    }
+    if let Some(mut skills) = ctx.db.character_skills().character_id().find(THREAT_ID) {
+        skills.charm_hours = skills.charm_hours.max(10_000.0);
+        skills.command_hours = skills.command_hours.max(10_000.0);
+        skills.oral_languages.east_central = 10_000.0;
+        skills.oral_languages.west_central = 10_000.0;
+        skills.oral_languages.low = 10_000.0;
+        skills.oral_languages.yiddish = 10_000.0;
+        skills.oral_languages.latin = 10_000.0;
+        skills.oral_languages.romani = 10_000.0;
+        skills.oral_languages.elven = 10_000.0;
+        skills.oral_languages.dwarfish = 10_000.0;
+        ctx.db.character_skills().character_id().update(skills);
+    }
+    ensure_recurring_threat_provisions(ctx, THREAT_ID)?;
+    debug_assert!(
+        adventuresim_core::strategic_action::assess_negotiated_withdrawal(
+            5.0, 1.0, 0.0, 50,
+        )
+        .accepted
+    );
     let threat_problem_id = materialize_preferred_generated_fixture(
         ctx,
         THREAT_ID,
@@ -317,7 +391,7 @@ pub(crate) fn materialize_development_scenario_gallery(
         &threat_problem_id,
         "quest-recurring-threat",
     )?;
-    register_development_scenario(ctx, "quest-recurring-threat", "Quests", "Discovered recurring hostile threat", "Continue a deterministic local threat from its ordinary rumor-derived journal entry, or trigger an isolated follow-up attack in the scenario inspector.", THREAT_ID, "/quests")?;
+    register_development_scenario(ctx, "quest-recurring-threat", "Quests", "Combat or negotiated withdrawal", "Follow a deterministic sapient hostile threat to its case site, then resolve it through ordinary combat or a pre-combat demand to withdraw.", THREAT_ID, "/quests")?;
     register_development_subject(ctx, "quest-recurring-threat", "generated_problem", &threat_problem_id)?;
 
     for (offset, kind) in [
@@ -612,7 +686,12 @@ mod development_scenario_source_tests {
         assert!(source.contains("&outbreak_problem_id,\n        \"quest-outbreak\""));
         assert!(source.contains("&threat_problem_id,\n        \"quest-recurring-threat\""));
         assert!(source.contains("\"Discovered outbreak\""));
-        assert!(source.contains("\"Discovered recurring hostile threat\""));
+        assert!(source.contains("\"Combat or negotiated withdrawal\""));
+        assert!(source.contains("ensure_recurring_threat_provisions(ctx, THREAT_ID)"));
+        assert!(source.contains("STANDARD_TRAVEL_RATION_ID"));
+        assert!(source.contains("STANDARD_WATERSKIN_ID"));
+        assert!(source.contains("FIELD_TENT_ID"));
+        assert!(source.contains("add_to_party_inventory_checked"));
         assert!(source.contains("let occurrence_id = materialize_development_road_encounter"));
         assert!(!source.contains(".find(|problem| problem.recurring_hostile"));
     }
