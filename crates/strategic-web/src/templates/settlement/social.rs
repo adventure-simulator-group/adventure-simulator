@@ -276,7 +276,7 @@ pub fn party_social_dialog(
                         aria-controls=(format!("conversation-panel-{id}-{}", selected.id))
                         aria-selected=(if selected_tab { "true" } else { "false" }) tabindex=(if selected_tab { "0" } else { "-1" })
                         data-conversation-tab=(id) data-strategic-tooltip=(if id == "about" { "About this person" } else { label }) {
-                        (decorative_game_icon(icon)) span class="visually-hidden" { (label) }
+                        (decorative_game_icon(icon)) span class="sr-only" { (label) }
                       }
                     }
                   }
@@ -627,7 +627,7 @@ fn chat_area(
                           aria-controls=(format!("dialogue-category-panel-{id}")) aria-selected=(if selected_tab { "true" } else { "false" })
                           tabindex=(if selected_tab { "0" } else { "-1" }) data-dialogue-category=(id)
                           data-strategic-tooltip=(if id == "about" { "About this person" } else { label }) {
-                          (decorative_game_icon(icon)) span class="visually-hidden" { (label) }
+                          (decorative_game_icon(icon)) span class="sr-only" { (label) }
                         }
                       }
                     }
@@ -1141,6 +1141,9 @@ mod tests {
             assert!(markup.contains(&format!("aria-label=\"{label}\" title=\"{label}\"")));
             assert!(!markup.contains(&format!(">{label}</")));
         }
+        assert_eq!(markup.matches("class=\"conversation-tab\"").count(), 4);
+        assert_eq!(markup.matches("class=\"sr-only\"").count(), 4);
+        assert!(!markup.contains("class=\"visually-hidden\""));
     }
 
     #[test]
