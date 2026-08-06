@@ -59,8 +59,8 @@ bevy_ahoy = { version = "0.2.0", default-features = false, features = ["serializ
 bevy_enhanced_input = { version = "0.26.0", default-features = false }
 bevy_flair = "0.8.0"
 noiz = "0.5.0"
-bevy_animation_graph = { git = "https://github.com/adventure-simulator-group/bevy_animation_graph", rev = "07cc881457c1f9a1f843e0f4b95cbfe28b71c921", default-features = false }
-bevy_animation_graph_editor = { git = "https://github.com/adventure-simulator-group/bevy_animation_graph", rev = "07cc881457c1f9a1f843e0f4b95cbfe28b71c921", default-features = false }
+bevy_animation_graph = { git = "https://github.com/adventure-simulator-group/bevy_animation_graph", rev = "dbd9801ce08a5794a7ebc8fe35470cbe5bbe5a88", default-features = false }
+bevy_animation_graph_editor = { git = "https://github.com/adventure-simulator-group/bevy_animation_graph", rev = "dbd9801ce08a5794a7ebc8fe35470cbe5bbe5a88", default-features = false }
 
 serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
 serde_json = "1"

@@ -163,12 +163,13 @@ compensation.
 ## Native ragdoll fixture
 
 `just ragdoll-viewer` launches the existing Cascadeur `humanoid_unarmed` rig
-over a complete Avian solver. Press `T` to switch between animated kinematic
-bodies and a passive ragdoll, and `R` to reset to animation. A deterministic
-three-quarter camera follows the client-only solved pelvis, keeping the
-rendered rig and passive fall in frame without requiring a gameplay controller
-or collider. The fixture maps pelvis, chest, head, major limbs, hands, and
-feet. Twist bones, toes, clavicles, neck intermediates, and weapon sockets stay
+over a complete Avian solver. Press `T` to cycle animated, active-motor, and
+zero-strength passive modes, and `R` to reset to animation. A deterministic
+three-quarter camera follows the client-only solved pelvis, keeping the rig and
+passive fall in frame without requiring a gameplay controller or collider. The active profile drives the revolute knee and elbow hinges;
+Avian does not expose an equivalent spherical-joint motor, so hips, shoulders,
+spine, and neck remain limit-only. The fixture maps pelvis, chest, head, major
+limbs, hands, and feet. Twist bones, toes, clavicles, neck intermediates, and weapon sockets stay
 under authored hierarchy control rather than receiving duplicate rigid bodies.
 
 This is a native presentation fixture, not a new gameplay authority. Its
@@ -176,6 +177,13 @@ solver bodies collide with terrain but not one another, never replace the
 replicated player root or gameplay hitbox, and are discarded with the client.
 The ordinary live client deliberately retains its collider-query-only physics
 configuration.
+
+`just ragdoll-capture` deterministically settles each mode for an exact number
+of fixed solver ticks, independent of render-frame cadence, and captures it. It
+writes three screenshots and `manifest.json`, including bounded motor strength,
+driven-hinge count, finite/convergence error metrics, and the explicit passive
+zero-strength gate. A failed gate leaves `failure.txt`; screenshots still need
+visual review.
 
 ## Deterministic animation capture
 
