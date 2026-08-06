@@ -2220,16 +2220,14 @@ impl LiveRunner {
             });
             if let Some(pin) = pin {
                 if pin.combat_available {
-                    if let Some(negotiation) = self
-                        .connection
-                        .db
-                        .backend_hostile_negotiations()
-                        .iter()
-                        .find(|row| {
+                    let negotiation = {
+                        let table = self.connection.db.backend_hostile_negotiations();
+                        table.iter().find(|row| {
                             row.owner_character_id == character_id
                                 && row.case_site_id == pin.case_site_id
                         })
-                    {
+                    };
+                    if let Some(negotiation) = negotiation {
                         let action_id = format!(
                             "sim-hostile-parley-{}-{}",
                             self.sequence.saturating_add(1),
