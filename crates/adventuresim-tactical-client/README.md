@@ -6,6 +6,16 @@ Bevy. Skeletal animation is presentation-only: the server replicates compact
 the client selects and blends authored poses, then applies procedural look and
 terrain leg IK.
 
+The gameplay camera is likewise client presentation. A single retained rig
+blends from centered lowered-guard exploration to raised-guard right-shoulder
+aiming without smoothing manual yaw or pitch. Focus translation uses bounded
+anisotropic critical damping and a screen-space sweet spot. A sphere sweep
+retracts the boom around hard geometry, with hysteretic recovery and
+tight-space shoulder recentering. Raised aiming resolves the center-screen
+camera target and the subsequent muzzle path separately. Debug builds use
+`F6` to show rig, collision, smoothing, occlusion classification, and aim-ray
+telemetry.
+
 ## Animation export contract
 
 The humanoid base rig is independent from authored motions:

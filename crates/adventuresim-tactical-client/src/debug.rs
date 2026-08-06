@@ -6,6 +6,7 @@ use bevy::{color::palettes::tailwind, prelude::*};
 
 use crate::{
     animation::TerrainIkEnabled,
+    camera::{CameraAimState, CameraDebugEnabled, CameraRigConfig, CameraRigDebugState},
     player::{ClientPlayer, HitPerformed, LimbHitbox},
 };
 
@@ -18,6 +19,7 @@ impl Plugin for DebugPlugin {
             .register_required_components_with::<Collider, _>(|| DebugRender::none())
             .add_systems(Update, toggle_debug_visuals)
             .add_systems(Update, draw_debug_rays)
+            .add_systems(Update, draw_camera_rig)
             .add_observer(on_hit_performed);
     }
 }
@@ -171,6 +173,59 @@ fn draw_debug_rays(
                 color.set_alpha(alpha);
             }
         }
+    }
+}
+
+fn draw_camera_rig(
+    enabled: Res<CameraDebugEnabled>,
+    rig: Res<CameraRigDebugState>,
+    aim: Res<CameraAimState>,
+    config: Res<CameraRigConfig>,
+    mut gizmos: Gizmos,
+) {
+    if !enabled.0 || !rig.active {
+        return;
+    }
+    gizmos.line(rig.subject, rig.focus, tailwind::LIME_400);
+    gizmos.line(rig.focus, rig.shoulder, tailwind::SKY_300);
+    gizmos.line(rig.shoulder, rig.desired_endpoint, tailwind::AMBER_300);
+    gizmos.line(rig.shoulder, rig.final_endpoint, tailwind::CYAN_300);
+    if rig.collision_entity.is_some() {
+        gizmos.line(
+            rig.final_endpoint,
+            rig.final_endpoint + rig.collision_normal * 0.6,
+            tailwind::RED_400,
+        );
+    }
+    if rig.soft_occluder.is_some() {
+        gizmos.line(
+            rig.soft_occluder_point - Vec3::Y * 0.25,
+            rig.soft_occluder_point + Vec3::Y * 0.25,
+            tailwind::ORANGE_400,
+        );
+    }
+    let radius = Vec3::splat(config.collision_radius);
+    gizmos.line(
+        rig.final_endpoint - Vec3::X * radius.x,
+        rig.final_endpoint + Vec3::X * radius.x,
+        tailwind::CYAN_200,
+    );
+    gizmos.line(
+        rig.final_endpoint - Vec3::Y * radius.y,
+        rig.final_endpoint + Vec3::Y * radius.y,
+        tailwind::CYAN_200,
+    );
+    if aim.active {
+        gizmos.line(aim.camera_origin, aim.camera_target, tailwind::PURPLE_300);
+        gizmos.line(
+            aim.muzzle_origin,
+            aim.actual_target,
+            if aim.blocked {
+                tailwind::RED_500
+            } else {
+                tailwind::GREEN_400
+            },
+        );
     }
 }
 

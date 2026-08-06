@@ -21,9 +21,12 @@ use bevy_flair::prelude::*;
 #[cfg(feature = "debug")]
 use crate::animation::TerrainIkEnabled;
 #[cfg(feature = "debug")]
+use crate::camera::{CameraDebugEnabled, CameraRigDebugState};
+#[cfg(feature = "debug")]
 use crate::debug::DebugGameSpeed;
 use crate::{
     Args,
+    camera::CameraAimState,
     player::{AttackState, ClientPlayer},
 };
 
@@ -44,6 +47,7 @@ impl Plugin for UiPlugin {
                     update_items_ui.run_if(any_with_component::<ClientPlayer>),
                     update_attack_timer_ui.run_if(any_with_component::<ClientPlayer>),
                     update_weapon_guard_ui,
+                    update_camera_ui,
                     #[cfg(feature = "debug")]
                     update_terrain_ik_debug_ui,
                     #[cfg(feature = "debug")]
@@ -105,6 +109,16 @@ struct CombatStateSpan;
 #[derive(Component)]
 struct WeaponGuardSpan;
 
+#[derive(Component)]
+struct RaisedReticle;
+
+#[derive(Component)]
+struct AimBlockedSpan;
+
+#[cfg(feature = "debug")]
+#[derive(Component)]
+struct CameraDebugSpan;
+
 #[cfg(feature = "debug")]
 #[derive(Component)]
 struct TerrainIkDebugSpan;
@@ -150,7 +164,18 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 ClassList::new("primary"),
                 Text::default(),
             ),
-            (Name::new("crosshair"), Node::default()),
+            (
+                Name::new("crosshair"),
+                RaisedReticle,
+                Visibility::Hidden,
+                Node::default(),
+                children![(
+                    Name::new("aim-blocked"),
+                    AimBlockedSpan,
+                    Visibility::Hidden,
+                    Text::new("MUZZLE BLOCKED"),
+                )],
+            ),
             (
                 Name::new("attack-info"),
                 Node::default(),
@@ -181,7 +206,8 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                         "DEBUG: F2 to toggle body | F3 to toggle hitbox | F4 to toggle hitscan"
                     ),
                     (GameSpeedDebugSpan, TextSpan::new(" | F7 game speed: 1x")),
-                    (TerrainIkDebugSpan, TextSpan::new(" | F8 terrain IK: OFF"))
+                    (TerrainIkDebugSpan, TextSpan::new(" | F8 terrain IK: OFF")),
+                    (CameraDebugSpan, TextSpan::new(" | F6 camera rig: OFF"))
                 ],
             ),
             (
@@ -378,6 +404,47 @@ fn update_weapon_guard_ui(
         **span = match guard.desired {
             WeaponGuardState::Lowered => "Lowered".to_owned(),
             WeaponGuardState::Raised => "Raised".to_owned(),
+        };
+    }
+}
+
+fn update_camera_ui(
+    aim: Res<CameraAimState>,
+    mut reticle: Single<&mut Visibility, (With<RaisedReticle>, Without<AimBlockedSpan>)>,
+    mut blocked: Single<&mut Visibility, (With<AimBlockedSpan>, Without<RaisedReticle>)>,
+    #[cfg(feature = "debug")] enabled: Res<CameraDebugEnabled>,
+    #[cfg(feature = "debug")] debug: Res<CameraRigDebugState>,
+    #[cfg(feature = "debug")] mut debug_span: Single<&mut TextSpan, With<CameraDebugSpan>>,
+) {
+    **reticle = if aim.active {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+    **blocked = if aim.active && aim.blocked {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+    #[cfg(feature = "debug")]
+    {
+        debug_span.0 = if enabled.0 && debug.active {
+            format!(
+                " | F6 camera: {:.0}% | boom {:.2}/{:.2}m v{:.2} | focus v{:.2} | screen ({:.2},{:.2})/({:.2},{:.2}) | hard:{} soft:{}",
+                debug.raised_blend * 100.0,
+                debug.limited_distance,
+                debug.desired_distance,
+                debug.boom_velocity,
+                debug.focus_velocity.length(),
+                debug.screen_error.x,
+                debug.screen_error.y,
+                debug.sweet_spot.x,
+                debug.sweet_spot.y,
+                debug.collision_entity.is_some(),
+                debug.soft_occluder.is_some(),
+            )
+        } else {
+            " | F6 camera rig: OFF".to_owned()
         };
     }
 }
