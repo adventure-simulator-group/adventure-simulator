@@ -587,7 +587,7 @@ pub(crate) fn update_skeleton_locomotion(
 ) {
     for (controller, velocity, mut skeleton, mut transform, combat_state) in &mut players {
         if combat_state.is_incapacitated() {
-            let lowered = authoritative_weapon_guard(skeleton.weapon_guard, true);
+            let lowered = authoritative_weapon_guard(skeleton.weapon_guard(), true);
             set_weapon_guard(&mut skeleton, lowered);
         }
         let tick = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
@@ -595,8 +595,8 @@ pub(crate) fn update_skeleton_locomotion(
             transform.rotation,
             controller.orientation,
             velocity.0,
-            skeleton.action,
-            skeleton.weapon_guard,
+            skeleton.action_kind(),
+            skeleton.weapon_guard(),
             time.delta_secs(),
         );
         project_skeleton_locomotion(

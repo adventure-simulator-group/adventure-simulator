@@ -286,7 +286,6 @@ fn on_attack_fired_hook(
         return;
     };
     if attacking {
-        // already in attack
         return;
     }
     let Ok((reach, ranged, melee)) = viewer.get(event.context).map(|character| {
@@ -306,8 +305,8 @@ fn on_attack_fired_hook(
     }
     cmd.entity(event.context)
         .insert(AttackState::new(PRE_HIT_DELAY, reach, ranged));
-    let start = (time.elapsed_secs_f64() * 64.0).round() as u64;
-    skeleton.begin_action(SkeletonAction::Attack, start, start + 19);
+    let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
+    skeleton.begin_attack(AttackSpec::default(), start, start + 19);
     if ranged {
         cmd.client_trigger(RangedActionRequest::Start);
     } else {
@@ -322,8 +321,8 @@ fn on_dodge_fired(
     mut skeletons: Query<&mut SkeletonState>,
 ) {
     if let Ok(mut skeleton) = skeletons.get_mut(event.context) {
-        let start = (time.elapsed_secs_f64() * 64.0).round() as u64;
-        skeleton.begin_action(SkeletonAction::Dodge, start, start + 8);
+        let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
+        skeleton.begin_dodge(DodgeSpec::default(), start, start + 8);
     }
     cmd.client_trigger(DefendRequest::Dodge);
 }
@@ -335,8 +334,8 @@ fn on_parry_fired(
     mut skeletons: Query<&mut SkeletonState>,
 ) {
     if let Ok(mut skeleton) = skeletons.get_mut(event.context) {
-        let start = (time.elapsed_secs_f64() * 64.0).round() as u64;
-        skeleton.begin_action(SkeletonAction::Block, start, start + 8);
+        let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
+        skeleton.begin_block(BlockSpec::default(), start, start + 8);
     }
     cmd.client_trigger(DefendRequest::Parry);
 }
