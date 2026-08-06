@@ -292,7 +292,7 @@ fn quest_location_center(
             @if let Some(surrender) = hostile_surrender.filter(|_| !resolved) {
                 section class="settlement-chat-area hostile-surrender-dock"
                     aria-label="Hostile surrender" {
-                    h3 { "Surrender with " (&surrender.spokesman.name) }
+                    h3 { "Hostile surrender terms from " (&surrender.spokesman.name) }
                     @if let Some(response) = surrender.latest_response.as_deref() {
                         p class="chat-message" { (response) }
                     }
@@ -790,6 +790,13 @@ mod tests {
             expected_revision: 4,
             latest_response: Some("The spokesman refuses for now.".into()),
         };
+        let surrender = HostileSurrenderPresentation {
+            spokesman: negotiation.spokesman.clone(),
+            context_ref: "exact_case_context".into(),
+            expected_revision: 4,
+            mode: crate::spacetimedb::HostileSurrenderMode::Demand,
+            latest_response: None,
+        };
         let markup = quest_location_center(
             &presentation,
             &site,
@@ -800,7 +807,7 @@ mod tests {
             false,
             None,
             Some(&negotiation),
-            None,
+            Some(&surrender),
             None,
             true,
             None,
@@ -819,6 +826,9 @@ mod tests {
         assert!(markup.contains("name=\"expected_revision\" value=\"4\""));
         assert!(markup.contains("name=\"action_id\" value=\"hostile-parley-"));
         assert!(markup.contains("The spokesman refuses for now."));
+        assert!(markup.contains("Hostile surrender terms from Bandit spokesman"));
+        assert!(markup.contains("Demand surrender"));
+        assert!(!markup.contains("Surrender with"));
         assert!(!markup.contains("/missions/enter"));
     }
 

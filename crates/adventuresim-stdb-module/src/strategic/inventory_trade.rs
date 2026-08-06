@@ -975,6 +975,13 @@ pub(crate) fn commit_hostile_resolution_authority(
     if group.disposition != HostileGroupDisposition::Active {
         return Err("Hostile group is already resolved".into());
     }
+    if resolution == HostileResolutionKind::Surrendered {
+        if !adventuresim_core::strategic_action::hostile_surrender_is_authored(parse_threat(
+            &group.enemy_type,
+        )?) {
+            return Err("Hostile group has no authored surrender policy".into());
+        }
+    }
     let site = ctx
         .db
         .case_site_authority()
@@ -1062,7 +1069,7 @@ pub(crate) fn commit_hostile_resolution_authority(
                 resolution,
             );
         if !exact_approach {
-            return Err("Hostile group has no exact current drive-off approach".into());
+            return Err("Hostile group has no exact current contextual resolution approach".into());
         }
     }
     group.disposition = match resolution {

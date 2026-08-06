@@ -39,7 +39,9 @@ nearby distance of about 1 km so unrelated random road encounters do not
 dominate this focused demo; ordinary generated quests and travel risk are
 unchanged. At the hostile site it demonstrates combat, negotiated withdrawal,
 and a surrender demand or NPC surrender offer. Reset the isolated profile to
-restore the unresolved branch after any outcome.
+restore the unresolved branch after any outcome. The fixture seeds the
+public-awareness threshold used by the authored NPC offer policy, so the offer
+mode is directly demonstrable rather than merely theoretical.
 
 Scenario adoption is available only to the registered strategic gateway in a
 module compiled with the development capability. Each opaque browser owner

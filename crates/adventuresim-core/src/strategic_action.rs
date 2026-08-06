@@ -87,6 +87,11 @@ pub struct HostileSurrenderAssessment {
     pub demand_score: f32,
 }
 
+pub fn hostile_surrender_is_authored(threat: crate::bestiary::ThreatId) -> bool {
+    let policy = threat.profile().negotiation;
+    policy.sapient && policy.negotiable
+}
+
 /// Narrow authored policy for whole-group pre-combat surrender. Awareness and
 /// low morale make capitulation more likely; language-scaled social ability and
 /// spokesman affinity govern whether a player demand is accepted.
@@ -1119,6 +1124,12 @@ mod tests {
 
     #[test]
     fn surrender_policy_is_bounded_authored_and_language_gated() {
+        assert!(hostile_surrender_is_authored(
+            crate::bestiary::ThreatId::Bandit
+        ));
+        assert!(!hostile_surrender_is_authored(
+            crate::bestiary::ThreatId::Wolf
+        ));
         let reliable_demo = assess_hostile_surrender(5.0, 1.0, 0.0, 50, 6_000);
         assert!(reliable_demo.accepts_demand);
         assert!(reliable_demo.offers_surrender);

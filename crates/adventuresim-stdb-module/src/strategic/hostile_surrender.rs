@@ -7,6 +7,7 @@ pub enum HostileSurrenderMode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
 pub enum HostileSurrenderOutcome {
     Refused,
+    Declined,
     Accepted,
 }
 
@@ -77,6 +78,14 @@ fn surrender_offer_elected(
     .offers_surrender
 }
 
+fn elected_surrender_mode(offers_surrender: bool) -> HostileSurrenderMode {
+    if offers_surrender {
+        HostileSurrenderMode::Offer
+    } else {
+        HostileSurrenderMode::Demand
+    }
+}
+
 #[view(accessor = backend_hostile_surrenders, public)]
 pub fn backend_hostile_surrenders(ctx: &ViewContext) -> Vec<BackendHostileSurrender> {
     if !strategic_view_is_gateway(ctx) {
@@ -129,15 +138,11 @@ pub fn backend_hostile_surrenders(ctx: &ViewContext) -> Vec<BackendHostileSurren
         if language <= 0.0 {
             continue;
         }
-        let mode = if surrender_offer_elected(
+        let mode = elected_surrender_mode(surrender_offer_elected(
             language,
             profile.combat.morale,
             surrender_awareness_for_group_view(ctx, &group),
-        ) {
-            HostileSurrenderMode::Offer
-        } else {
-            HostileSurrenderMode::Demand
-        };
+        ));
         let latest_response = ctx
             .db
             .hostile_surrender_receipt()
@@ -229,6 +234,10 @@ fn resolve_hostile_surrender(ctx: &ReducerContext, request: SurrenderRequest) ->
         profile.combat.morale,
         surrender_awareness_for_case(ctx, &case),
     );
+    let elected_mode = elected_surrender_mode(assessment.offers_surrender);
+    if request.mode != elected_mode {
+        return Err("Hostile surrender mode is stale or forged".into());
+    }
     let accepted = match request.mode {
         HostileSurrenderMode::Demand => {
             if request.player_accepted_offer.is_some() {
@@ -273,6 +282,12 @@ fn resolve_hostile_surrender(ctx: &ReducerContext, request: SurrenderRequest) ->
             HostileSurrenderOutcome::Accepted,
             "The hostile group yields as a whole and submits without battle.".into(),
         )
+    } else if request.mode == HostileSurrenderMode::Offer {
+        (
+            HostileSurrenderOutcome::Declined,
+            "You decline the hostile group's offer. The group and every available approach remain unchanged."
+                .into(),
+        )
     } else {
         crate::social::put_affinity(
             ctx,
@@ -282,7 +297,7 @@ fn resolve_hostile_surrender(ctx: &ReducerContext, request: SurrenderRequest) ->
         );
         (
             HostileSurrenderOutcome::Refused,
-            "Surrender is refused. The hostile group remains active and other approaches remain available."
+            "The hostile spokesman refuses your surrender demand. The group remains active and every approach remains available."
                 .into(),
         )
     };
@@ -364,6 +379,16 @@ pub fn answer_hostile_surrender_offer(
 
 #[cfg(test)]
 mod hostile_surrender_source_tests {
+    use super::{HostileSurrenderMode, elected_surrender_mode, surrender_offer_elected};
+
+    #[test]
+    fn one_live_mode_is_elected_from_authored_offer_policy() {
+        assert_eq!(elected_surrender_mode(false), HostileSurrenderMode::Demand);
+        assert_eq!(elected_surrender_mode(true), HostileSurrenderMode::Offer);
+        assert!(surrender_offer_elected(1.0, 50, 6_000));
+        assert!(!surrender_offer_elected(1.0, 70, 6_000));
+    }
+
     #[test]
     fn surrender_is_exact_precombat_and_battle_independent() {
         let source = include_str!("hostile_surrender.rs");
@@ -371,6 +396,14 @@ mod hostile_surrender_source_tests {
         assert!(source.contains("exact_hostile_negotiation_authority"));
         assert!(source.contains("expected_revision"));
         assert!(source.contains("assessment.offers_surrender"));
+        assert!(source.contains("request.mode != elected_mode"));
+        assert!(source.contains("HostileSurrenderOutcome::Declined"));
+        let declined = source
+            .split("HostileSurrenderOutcome::Declined")
+            .next()
+            .expect("player-declined offer branch");
+        assert!(!declined.rsplit("} else if").next().unwrap().contains("put_affinity"));
+        assert!(source.contains("every available approach remain unchanged"));
         assert!(source.contains("put_affinity"));
         assert!(!source.contains("BattleResult"));
         assert!(!source.contains("battle_loot_item"));

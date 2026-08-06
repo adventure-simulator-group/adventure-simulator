@@ -311,6 +311,21 @@ fn ensure_recurring_threat_provisions(
     Ok(())
 }
 
+fn ensure_recurring_threat_offer_awareness(
+    ctx: &ReducerContext,
+    problem_id: &str,
+) -> Result<(), String> {
+    let mut problem = ctx
+        .db
+        .local_problem_authority()
+        .id()
+        .find(&problem_id.to_string())
+        .ok_or("Recurring-threat scenario problem is missing")?;
+    problem.public_awareness_bps = problem.public_awareness_bps.max(6_000);
+    ctx.db.local_problem_authority().id().update(problem);
+    Ok(())
+}
+
 /// Register every fixture from the one strategic bootstrap and materialize
 /// feature states against distinct primary characters.
 pub(crate) fn materialize_development_scenario_gallery(
@@ -389,6 +404,7 @@ pub(crate) fn materialize_development_scenario_gallery(
         adventuresim_core::quest_generation::TemplateFamily::RecurringDepredation,
         0x5448_5245_4154_0001,
     )?;
+    ensure_recurring_threat_offer_awareness(ctx, &threat_problem_id)?;
     crate::local_problem::discover_development_problem(
         ctx,
         THREAT_ID,
@@ -692,6 +708,7 @@ mod development_scenario_source_tests {
         assert!(source.contains("\"Discovered outbreak\""));
         assert!(source.contains("\"Combat, withdrawal, or surrender\""));
         assert!(source.contains("ensure_recurring_threat_provisions(ctx, THREAT_ID)"));
+        assert!(source.contains("ensure_recurring_threat_offer_awareness"));
         assert!(source.contains("STANDARD_TRAVEL_RATION_ID"));
         assert!(source.contains("STANDARD_WATERSKIN_ID"));
         assert!(source.contains("FIELD_TENT_ID"));

@@ -1563,6 +1563,18 @@ pub(crate) fn ensure_bound_mission_authority(
                         _ => continue,
                     }
                 };
+            if resolution == HostileResolutionKind::Surrendered {
+                let authored = ctx
+                    .db
+                    .hostile_group_authority()
+                    .id()
+                    .find(&hostile_group_id)
+                    .and_then(|group| parse_threat(&group.enemy_type).ok())
+                    .is_some_and(adventuresim_core::strategic_action::hostile_surrender_is_authored);
+                if !authored {
+                    continue;
+                }
+            }
             let path_index =
                 u16::try_from(path_index).map_err(|_| "Case has too many objective paths")?;
             let id = mission_approach_capability_id(

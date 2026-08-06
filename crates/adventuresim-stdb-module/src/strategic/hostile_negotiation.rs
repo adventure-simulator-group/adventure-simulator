@@ -548,7 +548,7 @@ fn exact_hostile_negotiation_authority(
         );
     eligible
         .then_some((party, group, site))
-        .ok_or_else(|| "Hostile group has no current negotiated drive-off approach".into())
+        .ok_or_else(|| "Hostile group has no current contextual resolution approach".into())
 }
 
 #[reducer]

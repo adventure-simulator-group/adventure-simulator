@@ -503,8 +503,8 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         .resident_character_id
         .clone();
     let (objectives, finales, custody, dialogue_producers) = match family {
-        TemplateFamily::RecurringDepredation => (
-            ObjectiveExpression::new(vec![
+        TemplateFamily::RecurringDepredation => {
+            let mut paths = vec![
                 ObjectivePath {
                     objectives: vec![Objective {
                         id: ObjectiveId::new(scoped_id(&prefix, "objective", "defeat")).unwrap(),
@@ -522,16 +522,19 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                         },
                     }],
                 },
-                ObjectivePath {
+            ];
+            if matches!(cause, CanonicalCause::Hostile(threat) if crate::strategic_action::hostile_surrender_is_authored(threat)) {
+                paths.push(ObjectivePath {
                     objectives: vec![Objective {
                         id: ObjectiveId::new(scoped_id(&prefix, "objective", "surrender")).unwrap(),
                         requirement: ObjectiveRequirement::Surrender {
                             hostile_group_id: hostile_id.clone(),
                         },
                     }],
-                },
-            ])
-            .expect("generated objective"),
+                });
+            }
+            (
+            ObjectiveExpression::new(paths).expect("generated objective"),
             vec![
                 GeneratedFinale {
                     id: FinaleId::new(scoped_id(&prefix, "finale", "defeat")),
@@ -554,7 +557,8 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             ],
             vec![],
             vec![],
-        ),
+        )
+        },
         TemplateFamily::DisappearanceOrLoss => match cause {
             CanonicalCause::Hostile(_) | CanonicalCause::ConcealmentByWitness => {
                 let objective_id =
