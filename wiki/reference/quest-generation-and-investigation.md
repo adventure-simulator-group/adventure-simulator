@@ -548,9 +548,21 @@ The response combines the actor's best live Charm/Command check on the normal
 morale. Refusal changes no case or group authority. Acceptance uses the
 existing `DriveOff` / `HostilesDrivenOff` path, revokes sibling approaches, and
 creates no battle, morale-victory, corpse, or loot rows.
-This first slice does not model surrender, tactical mid-battle negotiation,
-random-encounter negotiation, captivity, recruitment, theft, parole, ransom,
-or a general-purpose dialogue framework.
+Generated recurring-hostile cases also support a narrow whole-group surrender
+alternative at the exact case site. Before combat, an eligible player may
+demand surrender; when the authored awareness/morale policy elects it, the
+hostile spokesman instead offers surrender and the player may accept or refuse.
+Acceptance revalidates the exact party, case, site, group, living spokesman,
+membership revision, pending objective, and absence of a bound mission before
+marking the group surrendered and recording `HostilesSurrendered`. It creates no
+battle, morale-victory, corpse, loot, custody, confiscation, or inventory rows.
+Refusal leaves combat and negotiated withdrawal available and records only the
+action receipt plus a small relationship consequence.
+
+This initial surrender slice does not model tactical or mid-battle surrender,
+random encounters, individuals, captivity, disarmament, parole, ransom,
+release, escape, defection, recruitment, theft, or law enforcement. It is not a
+general-purpose dialogue framework.
 
 An observer can open a generated case site without a contract only after the
 observer-owned exact pin and authoritative party occupancy agree on that site.

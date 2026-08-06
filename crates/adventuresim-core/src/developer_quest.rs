@@ -842,7 +842,8 @@ fn validate_references(
                 ObjectiveRequirement::Defeat {
                     hostile_group_id, ..
                 }
-                | ObjectiveRequirement::DriveOff { hostile_group_id } => missing_reference(
+                | ObjectiveRequirement::DriveOff { hostile_group_id }
+                | ObjectiveRequirement::Surrender { hostile_group_id } => missing_reference(
                     diagnostics,
                     format!("{base}.hostile_group_id"),
                     hostile_group_id,
@@ -1329,7 +1330,8 @@ fn namespace_definition(
                 ObjectiveRequirement::Defeat {
                     hostile_group_id, ..
                 }
-                | ObjectiveRequirement::DriveOff { hostile_group_id } => {
+                | ObjectiveRequirement::DriveOff { hostile_group_id }
+                | ObjectiveRequirement::Surrender { hostile_group_id } => {
                     remap(hostile_group_id, &replacements);
                 }
                 ObjectiveRequirement::Capture { subject_id }

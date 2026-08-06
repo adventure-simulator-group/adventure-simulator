@@ -482,6 +482,9 @@ fn generated_hostile_materialization_preserves_manifest_identity_across_links() 
                     }
                     | ObjectiveRequirement::DriveOff {
                         hostile_group_id: linked,
+                    }
+                    | ObjectiveRequirement::Surrender {
+                        hostile_group_id: linked,
                     } => assert_eq!(linked, hostile_group_id),
                     _ => {}
                 }
@@ -517,12 +520,16 @@ fn generated_hostile_materialization_preserves_manifest_identity_across_links() 
                 .all(|candidate| candidate.hostile_group_id == *hostile_group_id)
         );
         if generated.family == TemplateFamily::RecurringDepredation {
-            assert_eq!(candidates.len(), 2);
+            assert_eq!(candidates.len(), 3);
             assert!(candidates.iter().any(|candidate| {
                 candidate.resolution == HostileResolutionKind::Defeated && candidate.weight == 50
             }));
             assert!(candidates.iter().any(|candidate| {
                 candidate.resolution == HostileResolutionKind::DrivenOff && candidate.weight == 30
+            }));
+            assert!(candidates.iter().any(|candidate| {
+                candidate.resolution == HostileResolutionKind::Surrendered
+                    && candidate.weight == 20
             }));
         }
     }
@@ -633,6 +640,21 @@ fn generated_combat_eligibility_fails_closed_across_site_group_and_finale_author
         .map(|eligible| eligible.id.as_str()),
         Some(hostile_group_id.as_str()),
         "generated pre-combat resolution must not depend on a bound mission capability",
+    );
+    assert_eq!(
+        generated_case_site_hostile_resolution_eligible(
+            &generated,
+            &case,
+            &site,
+            std::slice::from_ref(&group),
+            &finales,
+            &facts,
+            "party",
+            Some(HostileResolutionKind::Surrendered),
+        )
+        .map(|eligible| eligible.id.as_str()),
+        Some(hostile_group_id.as_str()),
+        "generated surrender must not depend on a bound mission capability",
     );
     assert!(
         generated_case_site_combat_eligible(

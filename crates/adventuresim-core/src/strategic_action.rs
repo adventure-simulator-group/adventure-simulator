@@ -80,6 +80,43 @@ pub struct NegotiatedWithdrawalAssessment {
     pub score: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HostileSurrenderAssessment {
+    pub accepts_demand: bool,
+    pub offers_surrender: bool,
+    pub demand_score: f32,
+}
+
+pub fn hostile_surrender_is_authored(threat: crate::bestiary::ThreatId) -> bool {
+    let policy = threat.profile().negotiation;
+    policy.sapient && policy.negotiable
+}
+
+/// Narrow authored policy for whole-group pre-combat surrender. Awareness and
+/// low morale make capitulation more likely; language-scaled social ability and
+/// spokesman affinity govern whether a player demand is accepted.
+pub fn assess_hostile_surrender(
+    social_ability: f32,
+    shared_language_coefficient: f32,
+    spokesman_affinity: f32,
+    hostile_morale_percent: u8,
+    public_awareness_bps: u16,
+) -> HostileSurrenderAssessment {
+    let language = shared_language_coefficient.clamp(0.0, 1.0);
+    let social = social_ability.clamp(0.0, 5.0) * language;
+    let relationship = spokesman_affinity.clamp(-100.0, 100.0) / 25.0;
+    let morale_pressure = 100_u8.saturating_sub(hostile_morale_percent.min(100)) as f32 / 20.0;
+    let awareness = f32::from(public_awareness_bps.min(10_000)) / 2_000.0;
+    let demand_score = social + relationship + morale_pressure + awareness;
+    HostileSurrenderAssessment {
+        accepts_demand: language > 0.0 && demand_score >= 7.5,
+        offers_surrender: language > 0.0
+            && hostile_morale_percent <= 50
+            && public_awareness_bps >= 5_000,
+        demand_score,
+    }
+}
+
 /// Deterministic pre-combat response. Social ability is language-scaled;
 /// existing affinity and pressure from low morale affect the same
 /// bounded score. A refusal changes no authority, so changed state can be
@@ -1083,6 +1120,21 @@ mod tests {
             social_acceptance.score
         );
         assert!(!assess_negotiated_withdrawal(10.0, 0.0, 100.0, 0).accepted);
+    }
+
+    #[test]
+    fn surrender_policy_is_bounded_authored_and_language_gated() {
+        assert!(hostile_surrender_is_authored(
+            crate::bestiary::ThreatId::Bandit
+        ));
+        assert!(!hostile_surrender_is_authored(
+            crate::bestiary::ThreatId::Wolf
+        ));
+        let reliable_demo = assess_hostile_surrender(5.0, 1.0, 0.0, 50, 6_000);
+        assert!(reliable_demo.accepts_demand);
+        assert!(reliable_demo.offers_surrender);
+        assert!(!assess_hostile_surrender(5.0, 0.0, 100.0, 0, 10_000).accepts_demand);
+        assert!(!assess_hostile_surrender(5.0, 1.0, 0.0, 70, 10_000).offers_surrender);
     }
 
     #[test]

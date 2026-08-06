@@ -1233,6 +1233,9 @@ fn hostile_resolution_for_objective(
         R::DriveOff {
             hostile_group_id: id,
         } if id == hostile_group_id => Some((HostileResolutionKind::DrivenOff, 30)),
+        R::Surrender {
+            hostile_group_id: id,
+        } if id == hostile_group_id => Some((HostileResolutionKind::Surrendered, 20)),
         _ => None,
     }
 }
@@ -1560,6 +1563,18 @@ pub(crate) fn ensure_bound_mission_authority(
                         _ => continue,
                     }
                 };
+            if resolution == HostileResolutionKind::Surrendered {
+                let authored = ctx
+                    .db
+                    .hostile_group_authority()
+                    .id()
+                    .find(&hostile_group_id)
+                    .and_then(|group| parse_threat(&group.enemy_type).ok())
+                    .is_some_and(adventuresim_core::strategic_action::hostile_surrender_is_authored);
+                if !authored {
+                    continue;
+                }
+            }
             let path_index =
                 u16::try_from(path_index).map_err(|_| "Case has too many objective paths")?;
             let id = mission_approach_capability_id(
@@ -1616,7 +1631,11 @@ pub(crate) fn ensure_bound_mission_authority(
         }
     }
     capabilities.sort_by(|left, right| left.id.cmp(&right.id));
-    if capabilities.is_empty() {
+    let tactical_capabilities = capabilities
+        .into_iter()
+        .filter(|capability| capability.resolution != HostileResolutionKind::Surrendered)
+        .collect::<Vec<_>>();
+    if tactical_capabilities.is_empty() {
         return Err("Case site has no unresolved observer-authorized combat approach".into());
     }
     let hostile_group = ctx
@@ -1659,7 +1678,7 @@ pub(crate) fn ensure_bound_mission_authority(
         drop_quantity: hostile_group.drop_quantity,
     };
     ctx.db.mission_authority().insert(authority.clone());
-    for (index, capability) in capabilities.into_iter().enumerate() {
+    for (index, capability) in tactical_capabilities.into_iter().enumerate() {
         ctx.db
             .mission_outcome_candidate()
             .insert(mission_candidate_from_capability(

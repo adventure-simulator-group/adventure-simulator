@@ -1022,7 +1022,8 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
             ObjectiveRequirement::Defeat {
                 hostile_group_id, ..
             }
-            | ObjectiveRequirement::DriveOff { hostile_group_id } => case
+            | ObjectiveRequirement::DriveOff { hostile_group_id }
+            | ObjectiveRequirement::Surrender { hostile_group_id } => case
                 .hostile_groups
                 .iter()
                 .any(|(id, _, _, _)| id == hostile_group_id),

@@ -157,6 +157,7 @@ fn current_drive_off_capability_for_view(
     observer_character_id: u64,
     party_id: &str,
     group: &HostileGroupAuthority,
+    resolution: HostileResolutionKind,
 ) -> bool {
     let Some(site) = ctx
         .db
@@ -176,7 +177,7 @@ fn current_drive_off_capability_for_view(
                 && capability.hostile_group_id == group.id
                 && capability.case_id == site.case_id
                 && capability.case_site_id == group.case_site_id
-                && capability.resolution == HostileResolutionKind::DrivenOff
+                && capability.resolution == resolution
                 && ctx
                     .db
                     .case_authority()
@@ -200,7 +201,7 @@ fn current_drive_off_capability_for_view(
             party_id,
             &site,
             group,
-            HostileResolutionKind::DrivenOff,
+            resolution,
         )
 }
 
@@ -385,7 +386,13 @@ pub fn backend_hostile_negotiations(ctx: &ViewContext) -> Vec<BackendHostileNego
         if !profile.negotiation.sapient
             || !profile.negotiation.negotiable
             || bound_mission_for_view(ctx, &party.id, &group.id)
-            || !current_drive_off_capability_for_view(ctx, party.leader_id, &party.id, &group)
+            || !current_drive_off_capability_for_view(
+                ctx,
+                party.leader_id,
+                &party.id,
+                &group,
+                HostileResolutionKind::DrivenOff,
+            )
         {
             continue;
         }
@@ -432,6 +439,7 @@ fn exact_hostile_negotiation_authority(
     spokesman_id: u64,
     context_ref: &str,
     expected_revision: u32,
+    resolution: HostileResolutionKind,
 ) -> Result<(Party, HostileGroupAuthority, CaseSiteAuthority), String> {
     if context_ref != HOSTILE_NEGOTIATION_CONTEXT_REF {
         return Err("Hostile negotiation context is unavailable".into());
@@ -521,7 +529,7 @@ fn exact_hostile_negotiation_authority(
                 && capability.case_id == site.case_id
                 && capability.hostile_group_id == group.id
                 && capability.case_site_id == group.case_site_id
-                && capability.resolution == HostileResolutionKind::DrivenOff
+                && capability.resolution == resolution
                 && mission_approach_capability_is_pending(
                     ctx,
                     &capability,
@@ -536,11 +544,11 @@ fn exact_hostile_negotiation_authority(
             &party.id,
             &site,
             &group,
-            HostileResolutionKind::DrivenOff,
+            resolution,
         );
     eligible
         .then_some((party, group, site))
-        .ok_or_else(|| "Hostile group has no current negotiated drive-off approach".into())
+        .ok_or_else(|| "Hostile group has no current contextual resolution approach".into())
 }
 
 #[reducer]
@@ -582,6 +590,7 @@ pub fn negotiate_hostile_withdrawal(
         spokesman_id,
         &context_ref,
         expected_revision,
+        HostileResolutionKind::DrivenOff,
     )?;
     let social_ability = crate::condition::mental_check(
         ctx,
@@ -612,6 +621,7 @@ pub fn negotiate_hostile_withdrawal(
             spokesman_id,
             &context_ref,
             expected_revision,
+            HostileResolutionKind::DrivenOff,
         )?;
         commit_hostile_resolution_authority(
             ctx,

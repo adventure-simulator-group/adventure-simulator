@@ -7,18 +7,12 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 #[derive(Copy, Eq, Hash)]
-pub enum HostileGroupDisposition {
-    Active,
+pub enum HostileSurrenderMode {
+    Demand,
 
-    Defeated,
-
-    DrivenOff,
-
-    Surrendered,
-
-    Captured,
+    Offer,
 }
 
-impl __sdk::InModule for HostileGroupDisposition {
+impl __sdk::InModule for HostileSurrenderMode {
     type Module = super::RemoteModule;
 }
