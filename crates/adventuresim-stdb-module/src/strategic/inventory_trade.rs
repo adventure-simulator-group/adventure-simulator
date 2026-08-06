@@ -1046,7 +1046,16 @@ pub(crate) fn commit_hostile_resolution_authority(
                     && mission_approach_capability_is_pending(ctx, &capability, party_id)
                         .unwrap_or(false)
             });
-        if !exact_capability {
+        let exact_approach = exact_capability
+            || generated_hostile_resolution_available(
+                ctx,
+                observer_character_id,
+                party_id,
+                &site,
+                &group,
+                resolution,
+            );
+        if !exact_approach {
             return Err("Hostile group has no exact current drive-off approach".into());
         }
     }

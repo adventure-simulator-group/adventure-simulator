@@ -339,6 +339,7 @@ fn case_contract_and_tactical_authority_are_separated() {
     assert!(resolution.contains("existing.case_site_id == *case_site_id"));
     assert!(resolution.contains("existing.capture_subject_id.as_deref() == capture_subject_id"));
     assert!(resolution.contains("mission_approach_capability_is_pending"));
+    assert!(resolution.contains("generated_hostile_resolution_available"));
     assert!(!resolution.contains("BattleResult"));
     assert!(!resolution.contains("battle_loot_item"));
     assert!(!resolution.contains("record_morale_event"));
