@@ -72,6 +72,16 @@ text,span {
   z-index: -100;
 }
 
+#terminal-outcome {
+  position: absolute;
+  top: 28%;
+  width: 100%;
+  font-size: 64px;
+  font-weight: 800;
+  text-align: center;
+  text-shadow: #000 3px 3px;
+}
+
 #stats {
   flex-direction: column;
   position: absolute;

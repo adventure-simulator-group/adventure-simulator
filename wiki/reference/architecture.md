@@ -309,8 +309,12 @@ ten-second reconnection grace before `Failed`, including when every client
 disconnects before the seal. A timeout-disabled development server where nobody
 ever joins remains available. Terminal submission retries a frozen result after
 synchronous errors no more than once per second, before reevaluating combat
-predicates, and exits only after successful submission. A configured timeout
-remains a bounded `Failed` fallback.
+predicates. Queueing is not commitment: only an `end_tactical_server_then`
+callback confirming reducer acceptance latches the result and broadcasts the authoritative
+Victory/Defeat presentation event, keeps the transport alive for a bounded
+three-second display window, and then exits. The delay is strictly post-commit:
+it cannot defer strategic authority or create a second outcome. A configured
+timeout remains a bounded `Failed` fallback.
 
 The terminal call carries a bounded authenticated consequence receipt frozen
 with the resolution. It contains only Party character IDs, applied (clamped)

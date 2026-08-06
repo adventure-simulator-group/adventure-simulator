@@ -7,7 +7,7 @@ use adventuresim_tactical_netcode::{
     aeronet::io::connection::{LocalAddr, PeerAddr},
     bevy_replicon::prelude::{ClientState, ClientStats},
     client::normalize_server_url,
-    message::SuccessfulAttackResponse,
+    message::{SuccessfulAttackResponse, TacticalOutcome, TacticalOutcomeResponse},
     prelude::*,
 };
 use bevy::{
@@ -35,12 +35,14 @@ impl Plugin for UiPlugin {
                     update_connection_ui,
                     update_skills_ui.run_if(any_with_component::<ClientPlayer>),
                     update_limbs_ui.run_if(any_with_component::<ClientPlayer>),
+                    update_combat_state_ui.run_if(any_with_component::<ClientPlayer>),
                     update_items_ui.run_if(any_with_component::<ClientPlayer>),
                     update_attack_timer_ui.run_if(any_with_component::<ClientPlayer>),
                 ),
             )
             .add_observer(on_new_player_added_hook)
             .add_observer(on_successful_attack_display)
+            .add_observer(on_tactical_outcome_display)
             .add_systems(Update, update_attack_result_ui);
     }
 }
@@ -88,6 +90,12 @@ struct HeadSpan;
 struct AttackTimerSpan;
 
 #[derive(Component)]
+struct CombatStateSpan;
+
+#[derive(Component)]
+struct TacticalOutcomeBanner;
+
+#[derive(Component)]
 struct AttackResultText {
     timer: Timer,
 }
@@ -114,6 +122,13 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         Node::default(),
         NodeStyleSheet::new(asset_server.load("ui.css")),
         children![
+            (
+                Name::new("terminal-outcome"),
+                TacticalOutcomeBanner,
+                Visibility::Hidden,
+                ClassList::new("primary"),
+                Text::default(),
+            ),
             (Name::new("crosshair"), Node::default()),
             (
                 Name::new("attack-info"),
@@ -153,6 +168,11 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                         Name::new("fps"),
                         Text::new("FPS: "),
                         children![(FpsSpan, TextSpan::default())]
+                    ),
+                    (
+                        Name::new("combat-state"),
+                        Text::new("Combat: "),
+                        children![(CombatStateSpan, TextSpan::default())]
                     ),
                 ]
             ),
@@ -318,6 +338,46 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     ));
 }
 
+fn combat_state_label(state: &TacticalCombatState) -> String {
+    if state.incapacitated {
+        format!(
+            "INCAPACITATED | Blood loss {:.0}% | Imbalance {:.0}%",
+            state.blood_loss_fraction * 100.0,
+            state.imbalance * 100.0
+        )
+    } else {
+        format!(
+            "Active | Blood loss {:.0}% | Imbalance {:.0}%",
+            state.blood_loss_fraction * 100.0,
+            state.imbalance * 100.0
+        )
+    }
+}
+
+fn update_combat_state_ui(
+    player: Single<&TacticalCombatState, With<ClientPlayer>>,
+    mut span: Single<&mut TextSpan, With<CombatStateSpan>>,
+) {
+    span.0 = combat_state_label(&player);
+}
+
+fn tactical_outcome_label(outcome: TacticalOutcome) -> (&'static str, &'static str) {
+    match outcome {
+        TacticalOutcome::Victory => ("VICTORY", "success"),
+        TacticalOutcome::Defeat => ("DEFEAT", "error"),
+    }
+}
+
+fn on_tactical_outcome_display(
+    event: On<TacticalOutcomeResponse>,
+    mut banner: Single<(&mut Text, &mut Visibility, &mut ClassList), With<TacticalOutcomeBanner>>,
+) {
+    let (label, class) = tactical_outcome_label(event.outcome);
+    banner.0.0 = label.to_owned();
+    *banner.1 = Visibility::Visible;
+    *banner.2 = ClassList::new(class);
+}
+
 fn update_stats_ui(
     diagnostics: Res<DiagnosticsStore>,
     player: Single<(Ref<Transform>, &PlayerId), With<ClientPlayer>>,
@@ -335,7 +395,6 @@ fn update_stats_ui(
             translation.x, translation.y, translation.z
         );
     }
-
     if let Some(fps) = diagnostics
         .get(&FrameTimeDiagnosticsPlugin::FPS)
         .and_then(|fps| fps.smoothed())
@@ -635,4 +694,39 @@ fn on_new_player_added_hook(
     ));
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn combat_label_surfaces_live_and_incapacitated_state() {
+        let active = TacticalCombatState {
+            blood_loss_fraction: 0.25,
+            imbalance: 0.5,
+            ..default()
+        };
+        assert_eq!(
+            combat_state_label(&active),
+            "Active | Blood loss 25% | Imbalance 50%"
+        );
+        let incapacitated = TacticalCombatState {
+            incapacitated: true,
+            ..active
+        };
+        assert!(combat_state_label(&incapacitated).starts_with("INCAPACITATED"));
+    }
+
+    #[test]
+    fn terminal_outcome_labels_are_unambiguous() {
+        assert_eq!(
+            tactical_outcome_label(TacticalOutcome::Victory),
+            ("VICTORY", "success")
+        );
+        assert_eq!(
+            tactical_outcome_label(TacticalOutcome::Defeat),
+            ("DEFEAT", "error")
+        );
+    }
 }

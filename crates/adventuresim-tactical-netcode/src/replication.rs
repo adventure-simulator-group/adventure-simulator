@@ -6,7 +6,7 @@ use bevy_replicon::prelude::*;
 use crate::FIXED_TIMESTEP_HZ;
 use crate::message::{
     DefendRequest, JoinRequest, MeleeActionRequest, PlayerInputRequest, RangedActionRequest,
-    SuccessfulAttackResponse,
+    SuccessfulAttackResponse, TacticalOutcomeResponse,
 };
 
 #[derive(Default)]
@@ -43,7 +43,8 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .add_client_event::<DefendRequest>(Channel::Unreliable)
             .add_mapped_client_event::<MeleeActionRequest>(Channel::Ordered)
             .add_mapped_client_event::<RangedActionRequest>(Channel::Ordered)
-            .add_mapped_server_event::<SuccessfulAttackResponse>(Channel::Ordered);
+            .add_mapped_server_event::<SuccessfulAttackResponse>(Channel::Ordered)
+            .add_server_event::<TacticalOutcomeResponse>(Channel::Ordered);
 
         // Replicating physics components since those don't change and
         // it's useful for debugging. Can be gated behind a feature flag, but

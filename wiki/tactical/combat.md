@@ -71,14 +71,16 @@ at one-second intervals before reevaluating combat, commits only after successfu
 submission, and does not depend on the optional mission timeout; a configured
 timeout is only a bounded failure fallback.
 
-This is still an iteration harness rather than complete enemy decision-making.
-It does not pathfind around terrain or other combatants, handle ranged weapons,
-or populate ranged ammunition/projectile consequences. Accepted melee attacks
-accumulate only clamped Party injury and blood consequences plus available
-weapon contact provenance in server memory. The frozen terminal receipt is
-strictly bounded and validated by strategic authority before injuries, blood,
-capability, filth, ammunition, equipment wear, and defeat morale commit
-transactionally; invalid receipts remain retryable.
+This remains an iteration harness without terrain/obstacle pathfinding, but
+offensive AI can pursue and attack with melee or ranged equipment. Accepted
+attacks accumulate clamped Party injury, blood, and ammunition consequences.
+The tactical consequence receipt introduced in stacked branch 4 also supplies
+durable equipment-wear provenance: presentation never infers contact from
+animations. Instead, the server records bounded contact stress against the
+actual attacker weapon, parry shield, or contacted armor inventory item. The
+frozen receipt is strictly bounded and validated by strategic authority before
+injuries, blood, capability, filth, ammunition, equipment wear, and defeat
+morale commit transactionally; invalid receipts remain retryable.
 
 ### Skill check algorithm
 Broadly speaking, the flow goes like this:
