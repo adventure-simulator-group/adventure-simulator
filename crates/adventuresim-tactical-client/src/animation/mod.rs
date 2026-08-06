@@ -38,6 +38,7 @@ use diagnostics::log_animation_diagnostics;
 pub(crate) use diagnostics::{
     AnimationDiagnosticLog, DiagnosticInputStatus, RenderScheduleTelemetry,
 };
+pub(crate) mod semantic_graph;
 
 fn animation_asset_path(path: &str) -> String {
     #[cfg(not(target_family = "wasm"))]
@@ -194,10 +195,21 @@ fn evaluate_skeletons(
     runtime: Res<AnimationRuntime>,
     time: Res<Time>,
     procedural_clock: Res<ProceduralAnimationClock>,
-    players: Query<(Entity, &PresentedSkeleton, Option<&mut AnimationPlayback>), With<Player>>,
+    players: Query<
+        (
+            Entity,
+            &PresentedSkeleton,
+            &semantic_graph::SemanticGraphTrace,
+            Option<&mut AnimationPlayback>,
+        ),
+        With<Player>,
+    >,
 ) {
-    for (entity, skeleton, playback) in players {
-        let evaluation = AnimationEvaluation::from_skeleton(skeleton);
+    for (entity, skeleton, graph_trace, playback) in players {
+        // This evaluation contains weights/progress decoded from the dependency
+        // graph's returned Pose. The preceding chained system always inserts a
+        // trace, including an explicit legacy fallback trace on graph errors.
+        let evaluation = graph_trace.evaluation.clone();
         let samples = if evaluation.action.is_empty() {
             &evaluation.base
         } else {

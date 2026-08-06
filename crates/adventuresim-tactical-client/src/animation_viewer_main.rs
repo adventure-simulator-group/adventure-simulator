@@ -1,6 +1,7 @@
 //! Deterministic native animation capture utility.
 
 mod animation;
+mod animation_graph_nodes;
 mod animation_viewer;
 mod camera;
 mod player;

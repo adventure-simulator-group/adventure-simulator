@@ -52,6 +52,21 @@ Those runs must use a trusted internal branch/check or report the private-fetch
 check as unavailable; do not weaken the exact pin or make the dependency public
 to bypass credential provisioning.
 
+The semantic bridge queries dependency-owned ordinary-locomotion and
+raised-guard/attack graphs with sparse semantic anchors. A dependency pose-blend
+chain composes locomotion weights and each action span's start/end contribution;
+the graph-returned values reconstruct the exact `PoseSample` weights and span
+progress consumed by the effective-pack resolver and FK player. A missing or
+invalid graph output atomically selects the untouched legacy evaluation.
+Persistent per-player graph contexts seek to authoritative gait/action phase.
+Diagnostic JSONL records requested and selected routes, read-only inputs,
+runtime success, and output equivalence. Every captured frame records that same
+evidence, and the viewer manifest fails if any frame expected to use a migrated
+route falls back. Existing bind restore,
+mirroring, body response, terrain IK/attack footwork, and weapon constraints
+still run after FK; graph root motion, events, inertialization, and IK remain
+unused.
+
 ## Animation export contract
 
 The humanoid base rig is independent from authored motions:
