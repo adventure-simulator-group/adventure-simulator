@@ -288,7 +288,7 @@ tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") sc
 # Run a native tactical client (for testing `just tactical`). Defaults come
 # from `.env.tactical` when present, same as `tactical` above.
 client id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_default("TACTICAL_PORT", tactical_port) features="":
-    @cargo run --package adventuresim-tactical-client --features "debug,{{ features }}" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}"
+    @cargo run --package adventuresim-tactical-client --bin adventuresim-tactical-client --features "debug,{{ features }}" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}"
 
 # Start an isolated SpacetimeDB seeded with a standalone tactical mission.
 # No strategic layer, no WASM build - just the DB plus a mission. Writes

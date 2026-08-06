@@ -6,20 +6,27 @@ const THIRD_PERSON_HEIGHT: f32 = 0.25;
 
 pub struct TacticalCameraPlugin;
 
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum TacticalCameraSet {
+    Offset,
+}
+
 impl Plugin for TacticalCameraPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CameraMode>()
             .add_systems(Update, toggle_camera_mode)
             .add_systems(
                 PostUpdate,
-                apply_third_person_offset.before(TransformSystems::Propagate),
+                apply_third_person_offset
+                    .in_set(TacticalCameraSet::Offset)
+                    .before(TransformSystems::Propagate),
             );
     }
 }
 
 #[derive(Resource, Default)]
-struct CameraMode {
-    third_person: bool,
+pub(crate) struct CameraMode {
+    pub(crate) third_person: bool,
 }
 
 fn toggle_camera_mode(keyboard: Res<ButtonInput<KeyCode>>, mut mode: ResMut<CameraMode>) {
@@ -46,7 +53,7 @@ fn apply_third_person_offset(
     }
 }
 
-fn third_person_offset(rotation: Quat) -> Vec3 {
+pub(crate) fn third_person_offset(rotation: Quat) -> Vec3 {
     let back = rotation * Vec3::Z;
     let horizontal_back = Vec3::new(back.x, 0.0, back.z)
         .try_normalize()

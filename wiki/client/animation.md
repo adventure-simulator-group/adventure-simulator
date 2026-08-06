@@ -456,6 +456,20 @@ between normal and quarter-speed game time. Both client presentation and the
 authoritative server clock change together, so movement, physics, combat, and
 animation remain synchronized during slow-motion inspection.
 
+The native `animation-viewer` is a deterministic gameplay-presentation fixture
+for regression and visual review. It uses the gameplay player-spawn observer, character mesh,
+camera, terrain presentation, authored animation evaluator, and procedural
+passes rather than maintaining parallel fixture implementations. Locomotion is
+projected and integrated continuously at the authoritative 64Hz fixed tick over
+seeded uneven terrain. For each logical tick the replay freezes simulation and
+captures one raw gameplay-camera image plus side and front diagnostic images of
+that exact pose. Its manifest records final world-space bones, support weights,
+continuity, planted-foot drift, and terrain-relative foot clearance; those
+signals locate suspect frames but do not replace review of the rendered mesh.
+The fixture supplies deterministic controller observations at the shared
+server projection boundary and follows rendered terrain height; it does not
+exercise physics contacts, replication, interpolation, or recorded live input.
+
 During ordinary travel the body turns toward its velocity, so forward walk and
 run also serve diagonal and lateral travel. During combat, the torso remains
 oriented toward the opponent and a procedural stance-step planner provides

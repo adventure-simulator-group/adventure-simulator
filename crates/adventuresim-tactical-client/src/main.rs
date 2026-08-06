@@ -10,17 +10,12 @@
 use adventuresim_tactical_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::*;
-use bevy::camera::Exposure;
-use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::input_focus::InputDispatchPlugin;
-use bevy::light::AtmosphereEnvironmentMapLight;
-use bevy::light::light_consts::lux;
-use bevy::pbr::{Atmosphere, ScatteringMedium, ScreenSpaceAmbientOcclusion};
-use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::window::PresentMode;
 use bevy::{
+    asset::io::AssetSourceBuilder,
     ecs::schedule::common_conditions::any_with_component,
     input::common_conditions::input_just_pressed,
     window::{CursorGrabMode, CursorOptions},
@@ -36,6 +31,7 @@ mod camera;
 #[cfg(feature = "debug")]
 mod debug;
 mod player;
+mod presentation;
 mod ui;
 
 #[derive(Parser, Debug, Resource)]
@@ -68,19 +64,30 @@ pub fn wasm_run(args: Vec<String>) {
 
 fn run(args: Args) {
     let mut app = App::new();
-    app.add_plugins((
-        DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Adventure Simulator - Tactical".into(),
-                canvas: Some("#game-canvas".into()),
-                fit_canvas_to_parent: true,
-                prevent_default_event_handling: true,
-                present_mode: PresentMode::AutoVsync,
-                decorations: false,
-                ..default()
-            }),
+    #[cfg(not(target_family = "wasm"))]
+    app.register_asset_source(
+        "workspace",
+        AssetSourceBuilder::platform_default(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../assets")
+                .to_string_lossy(),
+            None,
+        ),
+    );
+    let default_plugins = DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "Adventure Simulator - Tactical".into(),
+            canvas: Some("#game-canvas".into()),
+            fit_canvas_to_parent: true,
+            prevent_default_event_handling: true,
+            present_mode: PresentMode::AutoVsync,
+            decorations: false,
             ..default()
         }),
+        ..default()
+    });
+    app.add_plugins((
+        default_plugins,
         FrameTimeDiagnosticsPlugin::default(),
         EnhancedInputPlugin,
         InputDispatchPlugin,
@@ -99,9 +106,10 @@ fn run(args: Args) {
         player::PlayerPlugin,
         animation::TacticalAnimationPlugin,
         camera::TacticalCameraPlugin,
+        presentation::TacticalPresentationPlugin,
     ))
     .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.15)))
-    .add_systems(Startup, (setup_scene, setup_client))
+    .add_systems(Startup, setup_client)
     .add_systems(
         Update,
         (
@@ -114,7 +122,7 @@ fn run(args: Args) {
             ),
         ),
     )
-    .add_observer(on_game_scene_added_hook)
+    .insert_resource(player::LocalCharacterId(args.id))
     .insert_resource(args);
 
     #[cfg(feature = "debug")]
@@ -129,70 +137,6 @@ fn setup_client(mut commands: Commands, args: Res<Args>) {
         server_url: args.server_addr.clone(),
         ..default()
     });
-}
-
-fn setup_scene(mut commands: Commands, mut scattering_mediums: ResMut<Assets<ScatteringMedium>>) {
-    // Spawn a directional light
-    commands.spawn((
-        Transform::from_xyz(200.0, 1000.0, 100.0).looking_at(Vec3::ZERO, Vec3::Y),
-        DirectionalLight {
-            shadows_enabled: true,
-            illuminance: lux::DIRECT_SUNLIGHT,
-            ..default()
-        },
-    ));
-
-    // Camera
-    commands.spawn((
-        Camera3d::default(),
-        Projection::Perspective(PerspectiveProjection {
-            fov: 80.0_f32.to_radians(),
-            ..default()
-        }),
-        Atmosphere::earthlike(scattering_mediums.add(ScatteringMedium::default())),
-        AtmosphereEnvironmentMapLight::default(),
-        Exposure::SUNLIGHT,
-        Tonemapping::AcesFitted,
-        Bloom::NATURAL,
-        Msaa::Off,
-        ScreenSpaceAmbientOcclusion::default(),
-    ));
-}
-
-fn on_game_scene_added_hook(
-    event: On<Add, SceneId>,
-    mut commands: Commands,
-    query: Query<(&SceneId, &SceneTerrain)>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) -> Result {
-    let (id, terrain) = query.get(event.entity)?;
-    info!(
-        entity = ?event.entity,
-        "Spawning a scene {id:?}"
-    );
-
-    let floor_color = match id.0.as_str() {
-        "hills" => Color::srgb_u8(96, 108, 56),
-        "desert" => Color::srgb_u8(221, 161, 94),
-        id => {
-            warn!("Unknown scene: {id}");
-            Color::BLACK
-        }
-    };
-
-    // Terrain mesh
-    commands.spawn((
-        Mesh3d(meshes.add(terrain.mesh())),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: floor_color,
-            perceptual_roughness: 0.8,
-            metallic: 0.0,
-            ..default()
-        })),
-    ));
-
-    Ok(())
 }
 
 fn capture_cursor(

@@ -507,35 +507,18 @@ pub(crate) fn update_skeleton_locomotion(
     >,
 ) {
     for (controller, velocity, mut skeleton) in &mut players {
-        let local_velocity = controller.orientation.inverse() * velocity.0;
-        skeleton.local_velocity = local_velocity;
-        skeleton.grounded = controller.grounded.is_some();
-        skeleton.posture = if skeleton.grounded {
-            if controller.crouching {
-                Posture::Crouched
-            } else {
-                Posture::Upright
-            }
-        } else {
-            Posture::Airborne
-        };
-
-        let ground_speed = local_velocity.xz().length();
-        if skeleton.grounded && ground_speed > 0.05 {
-            // One normalized cycle covers an average left/right stride. The
-            // evaluator shares this phase across walk, run, and crouch-walk.
-            let stride_length = (0.9 + ground_speed * 0.16).clamp(0.9, 1.8);
-            skeleton.gait_phase = (skeleton.gait_phase
-                + ground_speed * time.delta_secs() / stride_length)
-                .rem_euclid(1.0);
-            skeleton.lead_foot = if skeleton.gait_phase < 0.5 {
-                LeadFoot::Left
-            } else {
-                LeadFoot::Right
-            };
-        }
         let tick = (time.elapsed_secs_f64() * 64.0).round() as u64;
-        skeleton.advance_action(tick);
+        project_skeleton_locomotion(
+            &mut skeleton,
+            SkeletonLocomotionInput {
+                orientation: controller.orientation,
+                linear_velocity: velocity.0,
+                grounded: controller.grounded.is_some(),
+                crouching: controller.crouching,
+                delta_seconds: time.delta_secs(),
+                tick,
+            },
+        );
     }
 }
 

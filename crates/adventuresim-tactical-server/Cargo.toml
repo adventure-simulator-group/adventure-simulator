@@ -12,7 +12,6 @@ default = []
 debug = ["bevy/debug"]
 
 [dependencies]
-noiz.workspace = true
 rand.workspace = true
 
 # Bevy + shared Aeronet/Replicon netcode
