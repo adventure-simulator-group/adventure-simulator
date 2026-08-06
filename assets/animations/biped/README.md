@@ -7,7 +7,9 @@ biped/
     idle_relaxed.glb
     walk.glb
     run.glb
-    attack_thrust_lead_left_stay.glb
+    guard_lead_left.glb
+    attack_thrust_lead_left_contact.glb
+    duck_lead_left_left.glb
     ...
 ```
 
@@ -30,5 +32,7 @@ validating the one-animation, duration, and canonical target-path contracts it
 copies source bytes exactly, and `--check` verifies the committed result.
 
 Missing motion files are expected while art is in progress. They participate
-in pack and similar-pose fallback independently and ultimately leave the
+in fallback independently. For guard, attack, and guard-relative duck pairs,
+an exact side wins; otherwise an available same-pack opposite side is mirrored
+before the parent pack is consulted. The remaining similar-pose chain ultimately leaves the
 authored base rig in its T-pose rather than crashing or hiding the actor.
