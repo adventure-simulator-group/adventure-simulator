@@ -264,6 +264,48 @@ fn ensure_scenario_character_at(
     )
 }
 
+const RECURRING_THREAT_RATIONS: u32 = 10;
+const RECURRING_THREAT_WATERSKINS: u32 = 4;
+
+fn ensure_recurring_threat_provisions(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<(), String> {
+    let party_id = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .and_then(|character| character.party_id)
+        .ok_or("Recurring-threat scenario character has no party")?;
+    for (item_id, target_quantity) in [
+        (
+            adventuresim_core::provisioning::STANDARD_TRAVEL_RATION_ID,
+            RECURRING_THREAT_RATIONS,
+        ),
+        (
+            adventuresim_core::provisioning::STANDARD_WATERSKIN_ID,
+            RECURRING_THREAT_WATERSKINS,
+        ),
+    ] {
+        let current_quantity = ctx
+            .db
+            .party_inventory_item()
+            .party_id()
+            .filter(&party_id)
+            .filter(|row| row.item_id == item_id)
+            .map(|row| row.quantity)
+            .sum::<u32>();
+        add_to_party_inventory_checked(
+            ctx,
+            &party_id,
+            item_id,
+            target_quantity.saturating_sub(current_quantity),
+        )?;
+    }
+    Ok(())
+}
+
 /// Register every fixture from the one strategic bootstrap and materialize
 /// feature states against distinct primary characters.
 pub(crate) fn materialize_development_scenario_gallery(
@@ -325,6 +367,7 @@ pub(crate) fn materialize_development_scenario_gallery(
         skills.oral_languages.dwarfish = 10_000.0;
         ctx.db.character_skills().character_id().update(skills);
     }
+    ensure_recurring_threat_provisions(ctx, THREAT_ID)?;
     debug_assert!(
         adventuresim_core::strategic_action::assess_negotiated_withdrawal(
             5.0, 1.0, 0.0, 50,
@@ -639,6 +682,10 @@ mod development_scenario_source_tests {
         assert!(source.contains("&threat_problem_id,\n        \"quest-recurring-threat\""));
         assert!(source.contains("\"Discovered outbreak\""));
         assert!(source.contains("\"Combat or negotiated withdrawal\""));
+        assert!(source.contains("ensure_recurring_threat_provisions(ctx, THREAT_ID)"));
+        assert!(source.contains("STANDARD_TRAVEL_RATION_ID"));
+        assert!(source.contains("STANDARD_WATERSKIN_ID"));
+        assert!(source.contains("add_to_party_inventory_checked"));
         assert!(source.contains("let occurrence_id = materialize_development_road_encounter"));
         assert!(!source.contains(".find(|problem| problem.recurring_hostile"));
     }
