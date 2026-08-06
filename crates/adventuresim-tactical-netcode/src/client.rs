@@ -56,7 +56,7 @@ fn on_client_added(
 
 fn announce_join(mut commands: Commands, client: Single<&AdventureSimulatorClient>) {
     commands.client_trigger(JoinRequest {
-        player_id: client.player_id,
+        character_id: CharacterId(client.player_id),
     });
 }
 
