@@ -3,7 +3,7 @@ use std::{num::NonZeroU8, time::Duration};
 use adventuresim_stdb_client::TacticalMissionResolution;
 use adventuresim_tactical_core::prelude::{CharacterId, Player, TacticalCombatState};
 use adventuresim_tactical_netcode::{
-    bevy_replicon::prelude::{SendMode, ServerTriggerExt, ToClients},
+    bevy_replicon::prelude::{SendTargets, ServerTriggerExt, ToClients},
     message::TacticalOutcomeResponse,
 };
 use bevy::prelude::*;
@@ -77,7 +77,7 @@ pub(crate) fn process_terminal_submission_results(
             TERMINAL_PRESENTATION_DELAY,
         ) {
             cmd.server_trigger(ToClients {
-                mode: SendMode::CLIENTS_ONLY,
+                targets: SendTargets::All,
                 message: TacticalOutcomeResponse { outcome },
             });
             info!(

@@ -16,6 +16,13 @@ camera target and the subsequent muzzle path separately. Debug builds use
 `F6` to show rig, collision, smoothing, occlusion classification, and aim-ray
 telemetry.
 
+The tactical workspace targets Bevy 0.19, Avian 0.7, Ahoy 0.2, Replicon
+0.41, Aeronet 0.21, Enhanced Input 0.26, and Flair 0.8. The engine upgrade does
+not move animation or movement authority: `SkeletonState` and controller state
+remain server-owned, while authored pose evaluation, lighting, and the Bevy
+world-asset scene attachment are client presentation. Native and Wasm builds
+share those semantics through their existing explicit feature sets.
+
 ## Animation export contract
 
 The humanoid base rig is independent from authored motions:

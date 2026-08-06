@@ -174,7 +174,7 @@ pub(super) fn resolve_ranged_attack(
         attacker_weapon_contact: false,
     });
     cmd.server_trigger(ToClients {
-        mode: SendMode::CLIENTS_ONLY,
+        targets: SendTargets::All,
         message: SuccessfulAttackResponse {
             attacker: shot.attacker(),
             hit: vec![target],

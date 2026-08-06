@@ -90,7 +90,7 @@ struct AnimationRuntime {
     requested_base: Option<Handle<Gltf>>,
     base_processed: bool,
     base_failed: bool,
-    base_scene: Option<Handle<Scene>>,
+    base_scene: Option<Handle<WorldAsset>>,
     requested_motions: BTreeMap<(String, String), Handle<Gltf>>,
     processed_motions: BTreeSet<(String, String)>,
     unavailable_motions: BTreeSet<(String, String)>,

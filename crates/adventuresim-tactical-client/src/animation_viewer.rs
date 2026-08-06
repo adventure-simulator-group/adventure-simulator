@@ -12,7 +12,6 @@ use adventuresim_tactical_netcode::client::WeaponGuardInputState;
 use bevy::{
     app::AppExit,
     asset::io::AssetSourceBuilder,
-    input_focus::InputDispatchPlugin,
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     window::PresentMode,
@@ -190,7 +189,6 @@ pub(crate) fn run(
                     enable_simulation: false,
                 }),
             EnhancedInputPlugin,
-            InputDispatchPlugin,
         ))
         .add_plugins((
             PlayerPlugin,

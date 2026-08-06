@@ -6,6 +6,6 @@ repository = "https://github.com/adventure-simulator-group/adventure-simulator"
 license = "GPL-3.0"
 
 [dependencies]
-bevy = "0.18.0"
+bevy = "0.19.0"
 
 [workspace]

@@ -401,6 +401,11 @@ just load-world         # Recreate the canonical local database and load it
 just load-world http://127.0.0.1:24610 adventuresim-dev-example # Recreate and load an isolated profile database
 ```
 
+The tactical crates currently target the Bevy 0.19 ecosystem. Keep both the
+native and explicit Wasm feature builds in the verification set when updating
+Bevy, Avian, Ahoy, Replicon, Aeronet, Enhanced Input, or Flair; a successful
+native build does not prove the browser dependency boundary.
+
 `just test` runs the strategic browser tests and the native Rust test suites,
 excluding `adventuresim-stdb-module`. It also runs `spacetime build` to validate
 that module against the SpacetimeDB host ABI. Native linking cannot provide that

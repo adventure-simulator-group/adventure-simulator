@@ -8,8 +8,10 @@ use adventuresim_tactical_core::prelude::*;
 use bevy::{
     camera::Exposure,
     core_pipeline::tonemapping::Tonemapping,
-    light::{AtmosphereEnvironmentMapLight, light_consts::lux},
-    pbr::{Atmosphere, ScatteringMedium, ScreenSpaceAmbientOcclusion},
+    light::{
+        Atmosphere, AtmosphereEnvironmentMapLight, atmosphere::ScatteringMedium, light_consts::lux,
+    },
+    pbr::{AtmosphereSettings, ScreenSpaceAmbientOcclusion},
     post_process::bloom::Bloom,
     prelude::*,
 };
@@ -71,11 +73,17 @@ fn setup_tactical_presentation(
         Name::new("Tactical sunlight"),
         Transform::from_xyz(200.0, 1000.0, 100.0).looking_at(Vec3::ZERO, Vec3::Y),
         DirectionalLight {
-            shadows_enabled: settings.shadows_enabled,
+            shadow_maps_enabled: settings.shadows_enabled,
             illuminance: lux::DIRECT_SUNLIGHT,
             ..default()
         },
     ));
+
+    if settings.atmosphere_enabled {
+        commands.spawn(Atmosphere::earth(
+            scattering_mediums.add(ScatteringMedium::default()),
+        ));
+    }
 
     let mut camera = commands.spawn((
         Name::new("Tactical gameplay camera"),
@@ -90,9 +98,7 @@ fn setup_tactical_presentation(
         Msaa::Off,
     ));
     if settings.atmosphere_enabled {
-        camera.insert(Atmosphere::earthlike(
-            scattering_mediums.add(ScatteringMedium::default()),
-        ));
+        camera.insert(AtmosphereSettings::default());
         if settings.environment_light_enabled {
             camera.insert(AtmosphereEnvironmentMapLight {
                 size: UVec2::splat(settings.environment_map_size),

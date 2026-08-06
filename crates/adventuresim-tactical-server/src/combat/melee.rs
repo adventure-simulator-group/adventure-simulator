@@ -177,7 +177,7 @@ pub(super) fn resolve_melee_attack(
     }
 
     cmd.server_trigger(ToClients {
-        mode: SendMode::CLIENTS_ONLY,
+        targets: SendTargets::All,
         message: SuccessfulAttackResponse {
             attacker: attack.attacker(),
             hit: vec![attack.target()],

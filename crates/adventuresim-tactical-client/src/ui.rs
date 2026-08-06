@@ -155,7 +155,7 @@ struct PlayerSpan(Vec<Entity>);
 fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
         Node::default(),
-        NodeStyleSheet::new(asset_server.load("ui.css")),
+        Styled::new(asset_server.load("ui.css")),
         children![
             (
                 Name::new("terminal-outcome"),

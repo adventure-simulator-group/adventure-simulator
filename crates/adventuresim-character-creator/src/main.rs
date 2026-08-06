@@ -31,7 +31,7 @@ struct Animations {
 
 #[derive(Resource)]
 struct SceneHandleResource {
-    scene: Handle<Scene>,
+    scene: Handle<WorldAsset>,
 }
 
 fn setup(
@@ -75,7 +75,7 @@ fn setup(
     commands.spawn((
         Transform::from_rotation(Quat::from_euler(EulerRot::ZYX, 0.0, 1.0, -PI / 4.)),
         DirectionalLight {
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         CascadeShadowConfigBuilder {
@@ -88,7 +88,7 @@ fn setup(
 
     // Fox
     let scene_handle = asset_server.load(GltfAssetLabel::Scene(0).from_asset(MODEL_PATH));
-    commands.spawn(SceneRoot(scene_handle.clone()));
+    commands.spawn(WorldAssetRoot(scene_handle.clone()));
     commands.insert_resource(SceneHandleResource {
         scene: scene_handle,
     });
@@ -273,7 +273,7 @@ fn debug_gltf_events(mut events: MessageReader<AssetEvent<Gltf>>) {
     }
 }
 
-fn debug_scene_events(mut events: MessageReader<AssetEvent<Scene>>) {
+fn debug_scene_events(mut events: MessageReader<AssetEvent<WorldAsset>>) {
     for event in events.read() {
         info!("Scene asset event: {:?}", event);
     }
