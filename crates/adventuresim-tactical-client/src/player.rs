@@ -6,6 +6,7 @@ use adventuresim_tactical_netcode::{
 use bevy::prelude::*;
 
 use crate::Args;
+use crate::animation::spawn_fallback_t_pose;
 
 const BODY_PART_HITBOXES: &[(BodyPart, Vec3, Vec3)] = &[
     (
@@ -114,7 +115,8 @@ fn on_new_player_added_hook(
     let (Player { name }, id) = query.get(event.entity)?;
     info!(entity = ?event.entity, id = id.0, "Added new player {name}");
 
-    if args.id == id.0 {
+    let is_client_player = args.id == id.0;
+    if is_client_player {
         info!(
             entity = ?event.entity,
             "New player is assigned to this client. Assuming control...",
@@ -164,49 +166,18 @@ fn on_new_player_added_hook(
         commands
             .entity(camera.into_inner())
             .insert(CharacterControllerCameraOf::new(event.entity));
-    } else {
-        commands.entity(event.entity).with_children(|parent| {
-            for &(body_part, offset, half_extents) in BODY_PART_HITBOXES {
-                let color = match body_part {
-                    BodyPart::Head => id.color().lighter(0.2).rotate_hue(30.0),
-                    BodyPart::LeftArm | BodyPart::RightArm => {
-                        id.color().lighter(0.1).rotate_hue(-20.0)
-                    }
-                    BodyPart::LeftLeg | BodyPart::RightLeg => {
-                        id.color().darker(0.1).rotate_hue(-20.0)
-                    }
-                    _ => id.color(),
-                };
-                parent.spawn((
-                    Mesh3d(meshes.add(Capsule3d::new(
-                        half_extents.x,
-                        (half_extents.y - half_extents.x).max(0.0) * 2.0,
-                    ))),
-                    MeshMaterial3d(materials.add(StandardMaterial {
-                        base_color: color,
-                        metallic: 0.0,
-                        perceptual_roughness: 1.0,
-                        ..default()
-                    })),
-                    Transform::from_translation(offset),
-                ));
+    }
 
-                if body_part == BodyPart::Head {
-                    parent.spawn((
-                        Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(0.3, 0.10, 0.1)))),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: color,
-                            metallic: 0.5,
-                            perceptual_roughness: 0.5,
-                            ..default()
-                        })),
-                        Transform::from_translation(
-                            offset + Vec3::new(0.0, 0.05, half_extents.x * 0.9),
-                        ),
-                    ));
-                }
-            }
+    commands.entity(event.entity).with_children(|parent| {
+        spawn_fallback_t_pose(
+            parent,
+            event.entity,
+            id.color(),
+            &mut meshes,
+            &mut materials,
+        );
 
+        if !is_client_player {
             for &(body_part, offset, half_extents) in BODY_PART_HITBOXES {
                 parent.spawn((
                     LimbHitbox(body_part),
@@ -219,8 +190,8 @@ fn on_new_player_added_hook(
                     Transform::from_translation(offset),
                 ));
             }
-        });
-    }
+        }
+    });
 
     Ok(())
 }

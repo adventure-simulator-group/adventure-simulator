@@ -204,10 +204,10 @@ glTF export. Files are grouped first by skeleton family. The initial humanoid
 family uses `biped/`:
 
 ```text
-biped/idle_relaxed.casc
-biped/idle_relaxed.glb
-biped/walk.casc
-biped/walk.glb
+biped/unarmed/idle_relaxed.casc
+biped/unarmed/idle_relaxed.glb
+biped/unarmed/walk.casc
+biped/unarmed/walk.glb
 ```
 
 The `.casc` and `.glb` files always share a basename. `.casc` is the editable
@@ -216,10 +216,44 @@ unrelated motions at undocumented ranges of one long timeline, and do not use
 Cascadeur Animation Tracks as animation names: tracks organize parts of a rig,
 not runtime clips.
 
+Editable unarmed motion sources live under `assets_src/biped/unarmed/`; runtime
+exports live under `assets/animations/biped/unarmed/`. The semantic pack ID is
+still `humanoid_unarmed`; `unarmed` is its ergonomic on-disk directory. The
+existing `assets_src/base.*` files remain the special-case rig source until the
+new `assets_src/biped/unarmed/base.casc` has a matching GLB. Prepare its
+runtime-only scene deterministically with:
+
+```powershell
+python scripts/prepare_rig_base.py assets_src/base.glb assets/animations/biped/unarmed/base.glb
+```
+
+`base.glb` supplies only the spawnable skinned scene and may contain zero
+animations. Every other `.glb` is a non-spawnable motion source and must contain
+exactly one animation, named or unnamed. The 30fps catalog, not the animation's
+glTF name, assigns semantic anchors to file/frame pairs. A missing, malformed,
+or short motion invalidates only that motion so pack and similar-pose fallback
+can continue.
+
+Prepare each motion by validating and copying its source export exactly:
+
+```powershell
+python scripts/prepare_animation_motion.py assets_src/biped/unarmed/walk.glb assets/animations/biped/unarmed/base.glb assets/animations/biped/unarmed/walk.glb --last-frame 32
+```
+
+The same command with `--check` verifies committed output. Motion scenes and
+meshes need not be stripped because only the animation asset is loaded; keeping
+the raw bytes makes source-to-runtime generation deterministic and auditable.
+
+At runtime, the zero-animation base is given one canonical animation player on
+its `Skeleton` scene root. Target IDs are rebuilt from the full stable bone-name
+paths, matching Bevy's glTF loader convention. Each independently loaded motion
+must animate a non-empty subset of those exact targets; a motion containing a
+foreign target is rejected without invalidating the base or any other motion.
+
 A file may contain more than one required semantic pose when those poses are
-phases of the same coherent motion. For example, `biped/walk.casc` contains a
+phases of the same coherent motion. For example, `biped/unarmed/walk.casc` contains a
 complete walk cycle, with particular keyframes designated as `walk_contact`
-and `walk_passing`. The corresponding `biped/walk.glb` preserves the full
+and `walk_passing`. The corresponding `biped/unarmed/walk.glb` preserves the full
 motion. The animation catalog maps each semantic pose to a file and frame; the
 semantic poses are not separate glTF clips. Frames not named by the catalog are
 ordinary in-betweens or endpoint references.
@@ -240,7 +274,7 @@ specialized overrides may contain only the compatible skeleton and animation.
 
 Single-pose files place their named semantic pose at frame 0:
 
-| File basename under `biped/` | Semantic pose at frame 0 |
+| File basename under `biped/unarmed/` | Semantic pose at frame 0 |
 |---|---|
 | `idle_relaxed` | `idle_relaxed` |
 | `crouch_idle` | `crouch_idle` |

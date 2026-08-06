@@ -335,7 +335,8 @@ impl FromStr for SemanticPose {
     }
 }
 
-/// One authored pack. `clips` contains the semantic names present in its GLB.
+/// One authored pack. `clips` contains semantics whose catalog motions are
+/// currently available to the runtime.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnimationPack {
     pub id: String,
