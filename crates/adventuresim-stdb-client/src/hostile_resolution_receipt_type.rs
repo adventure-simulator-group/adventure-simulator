@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::case_site_id_type::CaseSiteId;
 use super::hostile_resolution_kind_type::HostileResolutionKind;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -13,7 +14,11 @@ pub struct HostileResolutionReceipt {
     pub party_id: String,
     pub mission_id: Option<String>,
     pub hostile_group_id: String,
+    pub observer_character_id: u64,
+    pub case_id: String,
+    pub case_site_id: CaseSiteId,
     pub resolution: HostileResolutionKind,
+    pub capture_subject_id: Option<String>,
 }
 
 impl __sdk::InModule for HostileResolutionReceipt {
@@ -28,7 +33,11 @@ pub struct HostileResolutionReceiptCols {
     pub party_id: __sdk::__query_builder::Col<HostileResolutionReceipt, String>,
     pub mission_id: __sdk::__query_builder::Col<HostileResolutionReceipt, Option<String>>,
     pub hostile_group_id: __sdk::__query_builder::Col<HostileResolutionReceipt, String>,
+    pub observer_character_id: __sdk::__query_builder::Col<HostileResolutionReceipt, u64>,
+    pub case_id: __sdk::__query_builder::Col<HostileResolutionReceipt, String>,
+    pub case_site_id: __sdk::__query_builder::Col<HostileResolutionReceipt, CaseSiteId>,
     pub resolution: __sdk::__query_builder::Col<HostileResolutionReceipt, HostileResolutionKind>,
+    pub capture_subject_id: __sdk::__query_builder::Col<HostileResolutionReceipt, Option<String>>,
 }
 
 impl __sdk::__query_builder::HasCols for HostileResolutionReceipt {
@@ -39,7 +48,14 @@ impl __sdk::__query_builder::HasCols for HostileResolutionReceipt {
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             mission_id: __sdk::__query_builder::Col::new(table_name, "mission_id"),
             hostile_group_id: __sdk::__query_builder::Col::new(table_name, "hostile_group_id"),
+            observer_character_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "observer_character_id",
+            ),
+            case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
+            case_site_id: __sdk::__query_builder::Col::new(table_name, "case_site_id"),
             resolution: __sdk::__query_builder::Col::new(table_name, "resolution"),
+            capture_subject_id: __sdk::__query_builder::Col::new(table_name, "capture_subject_id"),
         }
     }
 }
