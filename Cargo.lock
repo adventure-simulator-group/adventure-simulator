@@ -189,6 +189,7 @@ dependencies = [
  "bevy_enhanced_input",
  "noiz",
  "serde",
+ "serde_json",
  "strum 0.28.0",
 ]
 

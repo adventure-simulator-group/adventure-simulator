@@ -121,7 +121,7 @@ fn apply_analogue_movement_speed(
         controller.speed = skeleton.map_or_else(
             || tactical_movement_speed(input.last_movement),
             |skeleton| {
-                tactical_movement_speed_for_guard(input.last_movement, skeleton.weapon_guard)
+                tactical_movement_speed_for_guard(input.last_movement, skeleton.weapon_guard())
             },
         );
     }
@@ -169,10 +169,7 @@ mod tests {
                     ..default()
                 },
                 CharacterController::default(),
-                SkeletonState {
-                    weapon_guard: WeaponGuardState::Raised,
-                    ..default()
-                },
+                SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised),
             ))
             .id();
         let generic = world

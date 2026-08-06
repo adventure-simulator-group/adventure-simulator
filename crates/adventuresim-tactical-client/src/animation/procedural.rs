@@ -3,159 +3,10 @@ use std::collections::BTreeMap;
 use adventuresim_tactical_core::prelude::*;
 use bevy::{math::Affine3A, prelude::*};
 
-use super::{
-    AnimationPlayback, AnimationRigScene, AuthoredBindTransform, ImpactReaction, PresentedSkeleton,
-};
+use super::{AnimationPlayback, AuthoredBindTransform, ImpactReaction, PresentedSkeleton};
 
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct HumanoidBone {
-    pub(crate) owner: Entity,
-    pub(crate) role: BoneRole,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum BoneRole {
-    Root,
-    Pelvis,
-    StomachOne,
-    StomachTwo,
-    Chest,
-    NeckOne,
-    NeckTwo,
-    Head,
-    ClavicleLeft,
-    ClavicleRight,
-    ThighLeft,
-    ThighTwistLeft,
-    ShinLeft,
-    ShinTwistLeft,
-    FootLeft,
-    ToeLeft,
-    ThighRight,
-    ThighTwistRight,
-    ShinRight,
-    ShinTwistRight,
-    FootRight,
-    ToeRight,
-    UpperArmLeft,
-    UpperArmTwistLeft,
-    ForearmLeft,
-    ForearmTwistLeft,
-    HandLeft,
-    WeaponLeft,
-    UpperArmRight,
-    UpperArmTwistRight,
-    ForearmRight,
-    ForearmTwistRight,
-    HandRight,
-    WeaponRight,
-}
-
-impl BoneRole {
-    fn from_name(name: &str) -> Option<Self> {
-        Some(match name {
-            "root" => Self::Root,
-            "pelvis" => Self::Pelvis,
-            "stomach_01" => Self::StomachOne,
-            "stomach_02" => Self::StomachTwo,
-            "chest" => Self::Chest,
-            "neck_01" => Self::NeckOne,
-            "neck_02" => Self::NeckTwo,
-            "head" => Self::Head,
-            "clavicle.L" => Self::ClavicleLeft,
-            "clavicle.R" => Self::ClavicleRight,
-            "thigh.L" => Self::ThighLeft,
-            "thigh_twist.L" => Self::ThighTwistLeft,
-            "shin.L" => Self::ShinLeft,
-            "shin_twist.L" => Self::ShinTwistLeft,
-            "foot.L" => Self::FootLeft,
-            "toe.L" => Self::ToeLeft,
-            "thigh.R" => Self::ThighRight,
-            "thigh_twist.R" => Self::ThighTwistRight,
-            "shin.R" => Self::ShinRight,
-            "shin_twist.R" => Self::ShinTwistRight,
-            "foot.R" => Self::FootRight,
-            "toe.R" => Self::ToeRight,
-            "upper_arm.L" => Self::UpperArmLeft,
-            "upper_arm_twist.L" => Self::UpperArmTwistLeft,
-            "forearm.L" => Self::ForearmLeft,
-            "forearm_twist.L" => Self::ForearmTwistLeft,
-            "hand.L" => Self::HandLeft,
-            "weapon.L" => Self::WeaponLeft,
-            "upper_arm.R" => Self::UpperArmRight,
-            "upper_arm_twist.R" => Self::UpperArmTwistRight,
-            "forearm.R" => Self::ForearmRight,
-            "forearm_twist.R" => Self::ForearmTwistRight,
-            "hand.R" => Self::HandRight,
-            "weapon.R" => Self::WeaponRight,
-            _ => return None,
-        })
-    }
-}
-
-pub(super) fn bind_humanoid_bones(
-    mut commands: Commands,
-    bones: Query<(Entity, &Name), (Added<Name>, Without<HumanoidBone>)>,
-    parents: Query<&ChildOf>,
-    roots: Query<&AnimationRigScene>,
-) {
-    for (entity, name) in &bones {
-        let Some(role) = BoneRole::from_name(name.as_str()) else {
-            continue;
-        };
-        let mut current = entity;
-        for _ in 0..64 {
-            if let Ok(root) = roots.get(current) {
-                commands.entity(entity).insert(HumanoidBone {
-                    owner: root.0,
-                    role,
-                });
-                break;
-            }
-            let Ok(parent) = parents.get(current) else {
-                break;
-            };
-            current = parent.parent();
-        }
-    }
-}
-
-#[derive(Component, Debug, Clone, Copy)]
-pub(super) struct SoleUpAxis(Vec3);
-
-/// Captures the foot's bind-space sole normal from the authored global bind
-/// transform. The Cascadeur rig's local +Y points ankle-to-toe, so assuming a
-/// cardinal local up axis would pitch the feet even on flat terrain.
-pub(super) fn capture_humanoid_rig_axes(
-    mut commands: Commands,
-    feet: Query<(Entity, &HumanoidBone), (Added<HumanoidBone>, Without<SoleUpAxis>)>,
-    helper: TransformHelper,
-) {
-    for (entity, bone) in &feet {
-        if !matches!(bone.role, BoneRole::FootLeft | BoneRole::FootRight) {
-            continue;
-        }
-        let Ok(global) = helper.compute_global_transform(entity) else {
-            continue;
-        };
-        let axis = sole_up_axis_from_bind(global.rotation());
-        if let Some(axis) = axis.try_normalize() {
-            commands.entity(entity).insert(SoleUpAxis(axis));
-        }
-    }
-}
-
-fn sole_up_axis_from_bind(bind_world_rotation: Quat) -> Vec3 {
-    bind_world_rotation.inverse() * Vec3::Y
-}
-
-fn pole_to_world(owner_rotation: Quat, owner_local_pole: Vec3) -> Vec3 {
-    owner_rotation * owner_local_pole
-}
-
-fn pole_to_owner(owner_rotation: Quat, world_pole: Vec3) -> Vec3 {
-    owner_rotation.inverse() * world_pole
-}
+mod rig;
+pub(crate) use rig::*;
 
 /// Procedural facing is an additive post-FK layer. Animation evaluation writes
 /// these local transforms again on the next frame, so the offsets do not drift.
@@ -168,7 +19,7 @@ pub(super) fn apply_head_and_torso_look(
             continue;
         };
         let pitch = look.pitch.clamp(-0.65, 0.65);
-        let directional_yaw = skeleton.action_direction.x.clamp(-1.0, 1.0) * 0.35;
+        let directional_yaw = skeleton.action_direction().x.clamp(-1.0, 1.0) * 0.35;
         let weight = match bone.role {
             BoneRole::StomachOne => 0.08,
             BoneRole::StomachTwo => 0.12,
@@ -190,51 +41,11 @@ pub(super) fn apply_head_and_torso_look(
 /// FK blending and must never pass through this post-blend operation.
 pub(super) fn apply_pose_mirroring(
     playbacks: Query<&AnimationPlayback>,
-    rig_scenes: Query<(Entity, &AnimationRigScene)>,
+    rigs: Query<(Entity, &HumanoidRig)>,
     parents: Query<&ChildOf>,
-    mut transforms: ParamSet<(
-        Query<(Entity, &HumanoidBone, &Transform)>,
-        TransformHelper,
-        Query<&mut Transform>,
-    )>,
+    mut transforms: ParamSet<(Query<&Transform>, TransformHelper, Query<&mut Transform>)>,
 ) {
-    let locals = {
-        let bones = transforms.p0();
-        bones
-            .iter()
-            .map(|(entity, bone, transform)| (entity, *bone, *transform))
-            .collect::<Vec<_>>()
-    };
-    let mut rigs = BTreeMap::<Entity, BTreeMap<BoneRole, MirrorBone>>::new();
-    let mut rig_globals = BTreeMap::<Entity, GlobalTransform>::new();
-    {
-        let helper = transforms.p1();
-        for (entity, scene) in &rig_scenes {
-            if let Ok(global) = helper.compute_global_transform(entity) {
-                rig_globals.insert(scene.0, global);
-            }
-        }
-        for (entity, bone, local) in locals {
-            let Ok(global) = helper.compute_global_transform(entity) else {
-                continue;
-            };
-            let parent = parents.get(entity).ok().map(ChildOf::parent);
-            let parent_global = parent
-                .and_then(|parent| helper.compute_global_transform(parent).ok())
-                .unwrap_or(GlobalTransform::IDENTITY);
-            rigs.entry(bone.owner).or_default().insert(
-                bone.role,
-                MirrorBone {
-                    entity,
-                    local,
-                    global,
-                    parent,
-                    parent_global,
-                },
-            );
-        }
-    }
-    for (owner, rig) in rigs {
+    for (owner, topology) in &rigs {
         let Ok(playback) = playbacks.get(owner) else {
             continue;
         };
@@ -242,8 +53,42 @@ pub(super) fn apply_pose_mirroring(
         if whole_body_weight <= f32::EPSILON {
             continue;
         }
-        let Some(rig_global) = rig_globals.get(&owner) else {
+        let Some(rig_scene) = topology.rig_scene() else {
             continue;
+        };
+        let local_snapshots = {
+            let locals = transforms.p0();
+            BoneRole::ALL
+                .into_iter()
+                .filter_map(|role| {
+                    let entity = *topology.get(&role)?;
+                    Some((role, entity, *locals.get(entity).ok()?))
+                })
+                .collect::<Vec<_>>()
+        };
+        let (rig, rig_global) = {
+            let helper = transforms.p1();
+            let Ok(rig_global) = helper.compute_global_transform(rig_scene) else {
+                continue;
+            };
+            let mut rig = [None; BoneRole::COUNT];
+            for (role, entity, local) in local_snapshots {
+                let Ok(global) = helper.compute_global_transform(entity) else {
+                    continue;
+                };
+                let parent = parents.get(entity).ok().map(ChildOf::parent);
+                let parent_global = parent
+                    .and_then(|parent| helper.compute_global_transform(parent).ok())
+                    .unwrap_or(GlobalTransform::IDENTITY);
+                rig[role.index()] = Some(MirrorBone {
+                    entity,
+                    local,
+                    global,
+                    parent,
+                    parent_global,
+                });
+            }
+            (rig, rig_global)
         };
         let mut desired_globals = BTreeMap::<Entity, Affine3A>::new();
         let mut mirror_weights = BTreeMap::<Entity, f32>::new();
@@ -258,13 +103,11 @@ pub(super) fn apply_pose_mirroring(
                 BoneRole::NeckTwo,
                 BoneRole::Head,
             ] {
-                let Some(bone) = rig.get(&role) else {
+                let Some(bone) = rig[role.index()].as_ref() else {
                     continue;
                 };
-                desired_globals.insert(
-                    bone.entity,
-                    mirrored_global_affine(bone.global, *rig_global),
-                );
+                desired_globals
+                    .insert(bone.entity, mirrored_global_affine(bone.global, rig_global));
                 mirror_weights.insert(bone.entity, whole_body_weight);
             }
         }
@@ -283,22 +126,25 @@ pub(super) fn apply_pose_mirroring(
             (BoneRole::FootLeft, BoneRole::FootRight),
             (BoneRole::ToeLeft, BoneRole::ToeRight),
         ] {
-            let (Some(left), Some(right)) = (rig.get(&left_role), rig.get(&right_role)) else {
+            let (Some(left), Some(right)) = (
+                rig[left_role.index()].as_ref(),
+                rig[right_role.index()].as_ref(),
+            ) else {
                 continue;
             };
             desired_globals.insert(
                 left.entity,
-                mirrored_global_affine(right.global, *rig_global),
+                mirrored_global_affine(right.global, rig_global),
             );
             desired_globals.insert(
                 right.entity,
-                mirrored_global_affine(left.global, *rig_global),
+                mirrored_global_affine(left.global, rig_global),
             );
             mirror_weights.insert(left.entity, whole_body_weight);
             mirror_weights.insert(right.entity, whole_body_weight);
         }
         let mut bones = transforms.p2();
-        for bone in rig.values() {
+        for bone in rig.iter().flatten() {
             let Some(&desired_global) = desired_globals.get(&bone.entity) else {
                 continue;
             };
@@ -391,7 +237,7 @@ pub(crate) struct LocomotionBodyResponseState {
 }
 
 pub(crate) fn locomotion_height_wave(skeleton: &SkeletonState) -> f32 {
-    if !skeleton.grounded || skeleton.action != SkeletonAction::None {
+    if !skeleton.is_grounded() || skeleton.action_kind() != SkeletonAction::None {
         return 0.0;
     }
     let speed = skeleton.animation_speed();
@@ -410,11 +256,11 @@ pub(crate) fn locomotion_height_wave(skeleton: &SkeletonState) -> f32 {
 }
 
 fn authored_height_compensation(skeleton: &SkeletonState) -> f32 {
-    if !skeleton.grounded
-        || skeleton.action != SkeletonAction::None
+    if !skeleton.is_grounded()
+        || skeleton.action_kind() != SkeletonAction::None
         || skeleton.animation_pack != "humanoid_unarmed"
-        || skeleton.posture != Posture::Upright
-        || skeleton.weapon_guard != WeaponGuardState::Lowered
+        || skeleton.posture() != Posture::Upright
+        || skeleton.weapon_guard() != WeaponGuardState::Lowered
     {
         return 0.0;
     }
@@ -422,9 +268,9 @@ fn authored_height_compensation(skeleton: &SkeletonState) -> f32 {
 }
 
 fn locomotion_normalization_target(skeleton: &SkeletonState) -> f32 {
-    (skeleton.grounded
-        && skeleton.action == SkeletonAction::None
-        && matches!(skeleton.posture, Posture::Upright | Posture::Crouched)
+    (skeleton.is_grounded()
+        && skeleton.action_kind() == SkeletonAction::None
+        && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
         && skeleton.animation_speed() > 0.05) as u8 as f32
 }
 
@@ -466,10 +312,10 @@ pub(super) fn stabilize_locomotion_torso(
             next.amplitude = target_wave;
             next.authored_rise_compensation = target_authored_compensation;
             next.normalization_weight = target_normalization;
-            next.last_guard = Some(skeleton.weapon_guard);
-            next.last_posture = Some(skeleton.posture);
-            next.last_action = Some(skeleton.action);
-            next.last_grounded = Some(skeleton.grounded);
+            next.last_guard = Some(skeleton.weapon_guard());
+            next.last_posture = Some(skeleton.posture());
+            next.last_action = Some(skeleton.action_kind());
+            next.last_grounded = Some(skeleton.is_grounded());
             next.last_landing_sequence = skeleton.landing_sequence;
         }
         let tick_delta =
@@ -477,9 +323,9 @@ pub(super) fn stabilize_locomotion_torso(
                 .unwrap_or_default();
         next.evaluation_tick = Some(skeleton.locomotion_sample_tick);
         let delta_seconds = tick_delta as f32 / LOCOMOTION_SAMPLE_HZ;
-        let ordinary_stop = skeleton.grounded
-            && skeleton.action == SkeletonAction::None
-            && matches!(skeleton.posture, Posture::Upright | Posture::Crouched)
+        let ordinary_stop = skeleton.is_grounded()
+            && skeleton.action_kind() == SkeletonAction::None
+            && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
             && skeleton.animation_speed() <= 0.05;
         next.amplitude = if ordinary_stop {
             advance_towards(
@@ -530,8 +376,8 @@ pub(super) fn stabilize_locomotion_torso(
                 next.landing_recovery_metres_per_second * delta_seconds,
             );
         }
-        if !skeleton.grounded
-            || skeleton.action != SkeletonAction::None
+        if !skeleton.is_grounded()
+            || skeleton.action_kind() != SkeletonAction::None
             || next.landing_compression <= 0.001
         {
             clear_landing_foot_plants(&mut next);
@@ -539,10 +385,10 @@ pub(super) fn stabilize_locomotion_torso(
         let compensation =
             grounded_height_wave(skeleton.gait_phase, next.authored_rise_compensation);
         let raw_wave = next.amplitude - compensation;
-        let state_changed = next.last_guard != Some(skeleton.weapon_guard)
-            || next.last_posture != Some(skeleton.posture)
-            || next.last_action != Some(skeleton.action)
-            || next.last_grounded != Some(skeleton.grounded);
+        let state_changed = next.last_guard != Some(skeleton.weapon_guard())
+            || next.last_posture != Some(skeleton.posture())
+            || next.last_action != Some(skeleton.action_kind())
+            || next.last_grounded != Some(skeleton.is_grounded());
         if state_changed {
             next.wave_transition_offset = next.displayed_wave - raw_wave;
         } else {
@@ -553,10 +399,10 @@ pub(super) fn stabilize_locomotion_torso(
             );
         }
         next.displayed_wave = raw_wave + next.wave_transition_offset;
-        next.last_guard = Some(skeleton.weapon_guard);
-        next.last_posture = Some(skeleton.posture);
-        next.last_action = Some(skeleton.action);
-        next.last_grounded = Some(skeleton.grounded);
+        next.last_guard = Some(skeleton.weapon_guard());
+        next.last_posture = Some(skeleton.posture());
+        next.last_action = Some(skeleton.action_kind());
+        next.last_grounded = Some(skeleton.is_grounded());
         heights.insert(owner, next);
         if let Some(mut state) = state {
             *state = next;
@@ -603,10 +449,10 @@ pub(super) fn stabilize_locomotion_torso(
 }
 
 fn ordinary_support_grounding_is_active(skeleton: &SkeletonState) -> bool {
-    skeleton.grounded
-        && skeleton.action == SkeletonAction::None
-        && skeleton.weapon_guard == WeaponGuardState::Lowered
-        && matches!(skeleton.posture, Posture::Upright | Posture::Crouched)
+    skeleton.is_grounded()
+        && skeleton.action_kind() == SkeletonAction::None
+        && skeleton.weapon_guard() == WeaponGuardState::Lowered
+        && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
         && skeleton.animation_speed() > 0.05
 }
 
@@ -624,23 +470,11 @@ fn support_grounding_target(foot_height: f32, floor_height: f32, sole_offset: f3
 pub(super) fn apply_support_foot_grounding(
     mut commands: Commands,
     mut owners: Query<(&PresentedSkeleton, Option<&mut SupportFootGroundingState>)>,
-    rig_scenes: Query<(Entity, &AnimationRigScene)>,
-    bones: Query<(Entity, &HumanoidBone)>,
+    rigs: Query<(Entity, &HumanoidRig)>,
     parents: Query<&ChildOf>,
     mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
 ) {
-    let mut rigs = BTreeMap::<Entity, BTreeMap<BoneRole, Entity>>::new();
-    for (entity, bone) in &bones {
-        rigs.entry(bone.owner)
-            .or_default()
-            .insert(bone.role, entity);
-    }
-    let scene_roots = rig_scenes
-        .iter()
-        .map(|(entity, rig)| (rig.0, entity))
-        .collect::<BTreeMap<_, _>>();
-
-    for (owner, rig) in rigs {
+    for (owner, rig) in &rigs {
         let Ok((skeleton, state)) = owners.get_mut(owner) else {
             continue;
         };
@@ -658,15 +492,14 @@ pub(super) fn apply_support_foot_grounding(
                 LeadFoot::Left => BoneRole::FootLeft,
                 LeadFoot::Right => BoneRole::FootRight,
             };
-            if let (Some(&foot), Some(&scene_root)) = (rig.get(&foot_role), scene_roots.get(&owner))
-            {
+            if let (Some(&foot), Some(scene_root)) = (rig.get(&foot_role), rig.rig_scene()) {
                 let foot_global = transforms.p0().compute_global_transform(foot).ok();
                 let scene_global = transforms.p0().compute_global_transform(scene_root).ok();
                 if let (Some(foot_global), Some(scene_global)) = (foot_global, scene_global) {
                     next.target_offset_metres = support_grounding_target(
                         foot_global.translation().y,
                         scene_global.translation().y,
-                        ankle_sole_offset(foot_global.rotation()),
+                        MEASURED_ANKLE_SOLE_OFFSET_METRES,
                     );
                     next.contact_sequence = skeleton.contact_sequence;
                     if !next.initialized {
@@ -731,24 +564,21 @@ pub(super) fn apply_landing_leg_compression(
         ),
         Without<HumanoidBone>,
     >,
-    bones: Query<(Entity, &HumanoidBone, &GlobalTransform)>,
+    rigs: Query<(Entity, &HumanoidRig)>,
+    bones: Query<(Entity, &GlobalTransform), With<HumanoidBone>>,
     parents: Query<&ChildOf>,
     mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
 ) {
-    let mut rigs = BTreeMap::<Entity, BTreeMap<BoneRole, Entity>>::new();
     let mut previous_world_positions = BTreeMap::<Entity, Vec3>::new();
-    for (entity, bone, global) in &bones {
-        rigs.entry(bone.owner)
-            .or_default()
-            .insert(bone.role, entity);
+    for (entity, global) in &bones {
         previous_world_positions.insert(entity, global.translation());
     }
-    for (owner, rig) in rigs {
+    for (owner, rig) in &rigs {
         let Ok((skeleton, mut height, owner_transform)) = owners.get_mut(owner) else {
             continue;
         };
-        if !skeleton.grounded
-            || skeleton.action != SkeletonAction::None
+        if !skeleton.is_grounded()
+            || skeleton.action_kind() != SkeletonAction::None
             || height.landing_compression <= 0.001
         {
             clear_landing_foot_plants(&mut height);
@@ -945,1747 +775,54 @@ struct BoneSnapshot {
     parent_rotation: Quat,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-struct PoleMemory {
-    left_leg: Option<Vec3>,
-    right_leg: Option<Vec3>,
-    left_foot_plant: Option<Vec3>,
-    right_foot_plant: Option<Vec3>,
-    left_foot_target: Option<Vec3>,
-    right_foot_target: Option<Vec3>,
-    left_foot_world_target: Option<Vec3>,
-    right_foot_world_target: Option<Vec3>,
-    left_support_weight: Option<f32>,
-    right_support_weight: Option<f32>,
-    left_release_active: bool,
-    right_release_active: bool,
-    left_arm: Option<Vec3>,
-    right_arm: Option<Vec3>,
-    pelvis_shift: f32,
-    raised_pelvis_shift: f32,
-    evaluation_tick: Option<u64>,
-}
+mod ik;
+pub(crate) use ik::{
+    ArmIkState, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidIkTargets, LegIkState,
+    ProceduralAnimationClock, RaisedFootworkState, locomotion_support_weights,
+};
+#[cfg(test)]
+use ik::{
+    FOOT_TRACK_INNER, FOOT_TRACK_OUTER, GUARD_TARGET_INTER_FOOT_SEPARATION, MAX_FOOT_TARGET_STEP,
+    MAX_PELVIS_CORRECTION_STEP, MIN_INTER_FOOT_SEPARATION, TwoBoneSolution, advance_foot_target,
+    advance_pelvis_shift, body_response_target, constrain_foot_to_track,
+    constrain_guard_swing_to_live_corridor, constrain_target_to_reach, guard_step_sequence_delta,
+    landing_maximum_reach, maximum_reach, plan_guard_step_endpoint, plant_is_continuous,
+    raised_footwork_posture_is_valid, secondary_grip_world, solve_two_bone,
+    terrain_conformed_guard_target, terrain_leg_has_support,
+};
+use ik::{
+    MEASURED_ANKLE_SOLE_OFFSET_METRES, apply_two_bone_solution, canonical_knee_pole,
+    presentation_tick_delta, smoothstep, snapshot_chain, solve_landing_two_bone,
+};
+pub(super) use ik::{
+    apply_arm_and_weapon_constraints, apply_locomotion_body_response, apply_terrain_leg_ik,
+};
 
-/// Optional deterministic clock for tools that render the same simulation
-/// tick more than once. Gameplay leaves the override unset and advances from
-/// Bevy's render delta.
-#[derive(Resource, Debug, Clone, Copy, Default)]
-pub(crate) struct ProceduralAnimationClock {
-    fixed_tick: Option<(u64, f32)>,
-}
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
 
-impl ProceduralAnimationClock {
-    pub(crate) fn set_fixed_tick(&mut self, tick: u64, delta_seconds: f32) {
-        self.fixed_tick = Some((tick, delta_seconds.max(0.0)));
-    }
+    #[test]
+    fn measured_sole_offset_is_shared_by_grounding_and_ik() {
+        const GROUNDING_TOLERANCE_METRES: f32 = 0.000_001;
 
-    pub(crate) fn fixed_step(&self) -> Option<(u64, f32)> {
-        self.fixed_tick
-    }
-}
-
-const MIN_INTER_FOOT_SEPARATION: f32 = 0.16;
-// Cascadeur's final ankle bones sit about 15 mm inside analytic targets after
-// the complete hierarchy solve. Keep a measured planning allowance so the
-// rendered bones, not merely abstract targets, retain the 0.16 m contract.
-const GUARD_TARGET_INTER_FOOT_SEPARATION: f32 = MIN_INTER_FOOT_SEPARATION + 0.04;
-const FOOT_TRACK_INNER: f32 = MIN_INTER_FOOT_SEPARATION * 0.5;
-const FOOT_TRACK_OUTER: f32 = 0.55;
-const MAX_PLANT_DISCONTINUITY: f32 = 2.0;
-const MAX_FOOT_TARGET_SPEED: f32 = 12.0;
-const MAX_FOOT_TARGET_STEP: f32 = 0.2;
-const PELVIS_CORRECTION_SPEED: f32 = 1.6;
-const MAX_PELVIS_CORRECTION_STEP: f32 = 0.05;
-const MIN_KNEE_FLEXION: f32 = 20.0_f32.to_radians();
-// Keep the normal knee reserve while a landing visibly carries weight, then
-// release it before the pelvis reaches the authored height. The released
-// reach remains capped at the authored leg extension, preventing a final
-// recovery-frame foot lift or snap without introducing a straight-leg target.
-const LANDING_KNEE_RESERVE_RELEASE_COMPRESSION: f32 = 0.012;
-const LANDING_KNEE_RESERVE_FULL_COMPRESSION: f32 = 0.04;
-const RAISED_GUARD_PELVIS_DROP: f32 = 0.14;
-
-#[derive(Component, Debug, Clone, Copy, Default)]
-pub(crate) struct ProceduralIkState(PoleMemory);
-
-/// Client-only world-space plants for combat-stance locomotion. The replicated
-/// skeleton chooses cadence and direction; exact feet remain presentation
-/// state so they never become tactical authority.
-#[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct RaisedFootworkState {
-    initialized: bool,
-    half_step: u8,
-    lead: LeadFoot,
-    swing_left: bool,
-    step_origin: Vec3,
-    step_rotation: Quat,
-    swing_stance_local: Vec3,
-    swing_start: Vec3,
-    swing_end: Vec3,
-    left_plant: Vec3,
-    right_plant: Vec3,
-    evaluation_tick: Option<u64>,
-    step_sequence: u32,
-    pub(crate) left_solve_target: Option<Vec3>,
-    pub(crate) right_solve_target: Option<Vec3>,
-}
-
-impl Default for RaisedFootworkState {
-    fn default() -> Self {
-        Self {
-            initialized: false,
-            half_step: 0,
-            lead: LeadFoot::Left,
-            swing_left: false,
-            step_origin: Vec3::ZERO,
-            step_rotation: Quat::IDENTITY,
-            swing_stance_local: Vec3::ZERO,
-            swing_start: Vec3::ZERO,
-            swing_end: Vec3::ZERO,
-            left_plant: Vec3::ZERO,
-            right_plant: Vec3::ZERO,
-            evaluation_tick: None,
-            step_sequence: 0,
-            left_solve_target: None,
-            right_solve_target: None,
-        }
-    }
-}
-
-/// Client-only world-space target for a hand. It is presentation data and is
-/// deliberately absent from replicated `SkeletonState`.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct HandIkTarget {
-    pub translation: Vec3,
-    pub rotation: Option<Quat>,
-    pub weight: f32,
-}
-
-/// Optional client-only direct hand targets.
-#[derive(Component, Debug, Clone, Copy, Default)]
-pub(crate) struct HumanoidIkTargets {
-    pub left: Option<HandIkTarget>,
-    pub right: Option<HandIkTarget>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HandSide {
-    Left,
-    Right,
-}
-
-/// Constrains a client-side held item to an authored weapon socket. The
-/// optional point is in weapon-local space and becomes an off-hand IK target.
-#[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct HeldWeaponConstraint {
-    pub owner: Entity,
-    pub primary_hand: HandSide,
-    pub secondary_grip_local: Option<Vec3>,
-}
-
-/// Places the planted foot on the terrain with an analytic two-bone solve,
-/// then lowers the hips by the bounded residual. Weapon/hand constraints use
-/// the same final-pose seam when authored held-item rigs arrive.
-pub(super) fn apply_terrain_leg_ik(
-    enabled: Res<super::TerrainIkEnabled>,
-    time: Res<Time>,
-    clock: Res<ProceduralAnimationClock>,
-    terrain: Query<&SceneTerrain>,
-    owners: Query<&PresentedSkeleton>,
-    rig_scenes: Query<(Entity, &AnimationRigScene)>,
-    bones: Query<(Entity, &HumanoidBone, Option<&SoleUpAxis>)>,
-    parents: Query<&ChildOf>,
-    mut ik_states: Query<&mut ProceduralIkState>,
-    mut raised_states: Query<&mut RaisedFootworkState>,
-    mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
-    mut commands: Commands,
-) {
-    let terrain = terrain.iter().next();
-    let mut rigs = BTreeMap::<Entity, BTreeMap<BoneRole, Entity>>::new();
-    let mut sole_axes = BTreeMap::<Entity, Vec3>::new();
-    {
-        for (entity, bone, sole_axis) in &bones {
-            rigs.entry(bone.owner)
-                .or_default()
-                .insert(bone.role, entity);
-            if let Some(axis) = sole_axis {
-                sole_axes.insert(entity, axis.0);
-            }
-        }
-    }
-
-    for (owner, rig) in rigs {
-        let Ok(skeleton) = owners.get(owner) else {
-            continue;
-        };
-        if !raised_footwork_posture_is_valid(skeleton) {
-            if let Ok(mut state) = ik_states.get_mut(owner) {
-                state.0 = PoleMemory::default();
-            }
-            if let Ok(mut state) = raised_states.get_mut(owner) {
-                *state = RaisedFootworkState::default();
-            }
-            continue;
-        }
-        let raised_guard_follower = skeleton.weapon_guard == WeaponGuardState::Raised
-            && skeleton.action == SkeletonAction::None
-            && skeleton.raised_locomotion.active;
-        if !raised_guard_follower && let Ok(mut raised) = raised_states.get_mut(owner) {
-            *raised = RaisedFootworkState::default();
-        }
-        let (left_weight, right_weight) = locomotion_support_weights(skeleton);
-        let legs = [
-            (
-                BoneRole::ThighLeft,
-                BoneRole::ShinLeft,
-                BoneRole::FootLeft,
-                left_weight,
-                true,
-            ),
-            (
-                BoneRole::ThighRight,
-                BoneRole::ShinRight,
-                BoneRole::FootRight,
-                right_weight,
-                false,
-            ),
-        ];
-        let mut memory = ik_states
-            .get_mut(owner)
-            .map(|state| state.0)
-            .unwrap_or_default();
-        let state_delta_seconds = match clock.fixed_tick {
-            Some((tick, _)) if memory.evaluation_tick == Some(tick) => 0.0,
-            Some((tick, delta_seconds)) => {
-                memory.evaluation_tick = Some(tick);
-                delta_seconds
-            }
-            None => time.delta_secs(),
-        };
-        let desired_raised_pelvis_shift = if raised_guard_follower {
-            -RAISED_GUARD_PELVIS_DROP
-        } else {
-            0.0
-        };
-        if state_delta_seconds > 0.0 {
-            memory.raised_pelvis_shift = advance_pelvis_shift(
-                memory.raised_pelvis_shift,
-                desired_raised_pelvis_shift,
-                state_delta_seconds,
-            );
-        }
-        let raised_pelvis_shift = memory.raised_pelvis_shift;
-        if raised_pelvis_shift < -0.001
-            && let Some(&pelvis) = rig.get(&BoneRole::Pelvis)
-        {
-            let local_delta = parents
-                .get(pelvis)
-                .ok()
-                .and_then(|parent| {
-                    transforms
-                        .p0()
-                        .compute_global_transform(parent.parent())
-                        .ok()
-                })
-                .map(|parent| {
-                    parent
-                        .affine()
-                        .inverse()
-                        .transform_vector3(Vec3::Y * raised_pelvis_shift)
-                })
-                .unwrap_or(Vec3::Y * raised_pelvis_shift);
-            if let Ok(mut transform) = transforms.p1().get_mut(pelvis) {
-                transform.translation += local_delta;
-            }
-        }
-        // Pole, plant, and pelvis reach all belong to the server-owned
-        // authored-body frame. The child rig carries no locomotion yaw.
-        let (rig_origin, rig_rotation) = rig_scenes
-            .iter()
-            .find(|(_, scene)| scene.0 == owner)
-            .and_then(|(entity, _)| transforms.p0().compute_global_transform(entity).ok())
-            .map(|global| (global.translation(), global.rotation()))
-            .unwrap_or((Vec3::ZERO, Quat::IDENTITY));
-
-        if raised_guard_follower {
-            // The authored guard is nearly straight-legged. Smoothly lower its
-            // pelvis so a world-planted support foot remains within physical
-            // reach without a one-frame stance-height snap at starts or stops.
-            let left = (
-                rig.get(&BoneRole::ThighLeft),
-                rig.get(&BoneRole::ShinLeft),
-                rig.get(&BoneRole::FootLeft),
-            );
-            let right = (
-                rig.get(&BoneRole::ThighRight),
-                rig.get(&BoneRole::ShinRight),
-                rig.get(&BoneRole::FootRight),
-            );
-            let (Some(&left_upper), Some(&left_lower), Some(&left_foot)) = left else {
-                continue;
-            };
-            let (Some(&right_upper), Some(&right_lower), Some(&right_foot)) = right else {
-                continue;
-            };
-            let Some((_, _, left_foot_snapshot)) = snapshot_chain(
-                left_upper,
-                left_lower,
-                left_foot,
-                &parents,
-                &transforms.p0(),
-            ) else {
-                continue;
-            };
-            let Some((_, _, right_foot_snapshot)) = snapshot_chain(
-                right_upper,
-                right_lower,
-                right_foot,
-                &parents,
-                &transforms.p0(),
-            ) else {
-                continue;
-            };
-            let mut footwork = raised_states
-                .get_mut(owner)
-                .map(|state| *state)
-                .unwrap_or_default();
-            let tick = clock.fixed_tick.map(|(tick, _)| tick);
-            let advances = match tick {
-                Some(tick) => footwork.evaluation_tick != Some(tick),
-                None => state_delta_seconds > 0.0,
-            };
-            if let Some(tick) = tick {
-                footwork.evaluation_tick = Some(tick);
-            }
-            let phase = skeleton.gait_phase.rem_euclid(1.0);
-            let half_step = (phase >= 0.5) as u8;
-            let swing_left = skeleton.raised_locomotion.swing_foot == LeadFoot::Left;
-            // Pelvis lowering must not lower the semantic movement plane.
-            // Recover the pre-drop authored ankle positions for persistent
-            // flat plants; the analytic solve bends the lowered legs to them.
-            let left_authored =
-                left_foot_snapshot.global.translation() + Vec3::Y * -raised_pelvis_shift;
-            let right_authored =
-                right_foot_snapshot.global.translation() + Vec3::Y * -raised_pelvis_shift;
-            let visible_left = memory.left_foot_world_target.unwrap_or(left_authored);
-            let visible_right = memory.right_foot_world_target.unwrap_or(right_authored);
-            let discontinuous =
-                footwork.initialized && rig_origin.distance_squared(footwork.step_origin) > 4.0;
-            let sequence_delta = guard_step_sequence_delta(
-                footwork.step_sequence,
-                skeleton.raised_locomotion.step_sequence,
-            );
-            let skipped_handoff = footwork.initialized && sequence_delta > 1;
-            if !footwork.initialized
-                || footwork.lead != skeleton.lead_foot
-                || discontinuous
-                || skipped_handoff
-            {
-                footwork = RaisedFootworkState {
-                    initialized: true,
-                    half_step,
-                    lead: skeleton.lead_foot,
-                    swing_left,
-                    step_origin: rig_origin,
-                    step_rotation: rig_rotation,
-                    swing_stance_local: rig_rotation.inverse()
-                        * ((if swing_left {
-                            left_authored
-                        } else {
-                            right_authored
-                        }) - rig_origin),
-                    swing_start: if swing_left {
-                        visible_left
-                    } else {
-                        visible_right
-                    },
-                    swing_end: if swing_left {
-                        left_authored
-                    } else {
-                        right_authored
-                    },
-                    left_plant: visible_left,
-                    right_plant: visible_right,
-                    evaluation_tick: tick,
-                    step_sequence: skeleton.raised_locomotion.step_sequence,
-                    left_solve_target: None,
-                    right_solve_target: None,
-                };
-            } else if advances && sequence_delta == 1 {
-                if footwork.swing_left {
-                    footwork.left_plant = footwork.left_solve_target.unwrap_or(footwork.swing_end);
-                } else {
-                    footwork.right_plant =
-                        footwork.right_solve_target.unwrap_or(footwork.swing_end);
-                }
-                footwork.half_step = half_step;
-                footwork.step_sequence = skeleton.raised_locomotion.step_sequence;
-                footwork.swing_left = swing_left;
-                footwork.step_origin = rig_origin;
-                footwork.step_rotation = rig_rotation;
-                footwork.swing_stance_local = rig_rotation.inverse()
-                    * ((if swing_left {
-                        left_authored
-                    } else {
-                        right_authored
-                    }) - rig_origin);
-                footwork.swing_start = if swing_left {
-                    footwork.left_plant
-                } else {
-                    footwork.right_plant
-                };
-            }
-            let local_direction = skeleton
-                .raised_locomotion
-                .local_direction
-                .normalize_or_zero();
-            // Semantic controller axes are opposite the authored rig's X/Z
-            // axes. The owner carries the single 180-degree body conversion.
-            let rig_local_direction = -local_direction;
-            let step_length = guard_step_length(skeleton.raised_locomotion.speed);
-            let opposite_plant = if footwork.swing_left {
-                footwork.right_plant
-            } else {
-                footwork.left_plant
-            };
-            footwork.swing_end = plan_guard_step_endpoint(
-                footwork.step_origin,
-                footwork.step_rotation,
-                footwork.swing_stance_local,
-                rig_local_direction,
-                step_length,
-                footwork.swing_left,
-                opposite_plant,
-            );
-            let step_progress = (phase * 2.0).fract();
-            let horizontal_progress = smoothstep(0.0, 1.0, step_progress);
-            let mut swing_target = footwork
-                .swing_start
-                .lerp(footwork.swing_end, horizontal_progress);
-            let mut left_target = footwork.left_plant;
-            let mut right_target = footwork.right_plant;
-            let support_target = if footwork.swing_left {
-                right_target
-            } else {
-                left_target
-            };
-            swing_target = constrain_guard_swing_to_live_corridor(
-                swing_target,
-                support_target,
-                rig_origin,
-                rig_rotation,
-                footwork.swing_stance_local.x.signum(),
-            );
-            let mut terrain_swing_end = footwork.swing_end;
-            if enabled.0
-                && let Some(terrain) = terrain
-            {
-                left_target = terrain_conformed_guard_target(
-                    left_target,
-                    terrain.height_at(left_target.xz()),
-                );
-                right_target = terrain_conformed_guard_target(
-                    right_target,
-                    terrain.height_at(right_target.xz()),
-                );
-                terrain_swing_end = terrain_conformed_guard_target(
-                    terrain_swing_end,
-                    terrain.height_at(terrain_swing_end.xz()),
-                );
-                swing_target.y = footwork
-                    .swing_start
-                    .y
-                    .lerp(terrain_swing_end.y, horizontal_progress);
-            }
-            swing_target.y += (std::f32::consts::PI * step_progress).sin() * 0.10;
-            if footwork.swing_left {
-                left_target = swing_target;
-            } else {
-                right_target = swing_target;
-            }
-
-            for (upper, lower, foot, target, left, support) in [
-                (
-                    left_upper,
-                    left_lower,
-                    left_foot,
-                    left_target,
-                    true,
-                    !footwork.swing_left,
-                ),
-                (
-                    right_upper,
-                    right_lower,
-                    right_foot,
-                    right_target,
-                    false,
-                    footwork.swing_left,
-                ),
-            ] {
-                let Some((upper_snapshot, lower_snapshot, foot_snapshot)) =
-                    snapshot_chain(upper, lower, foot, &parents, &transforms.p0())
-                else {
-                    continue;
-                };
-                let upper_length = upper_snapshot
-                    .global
-                    .translation()
-                    .distance(lower_snapshot.global.translation());
-                let lower_length = lower_snapshot
-                    .global
-                    .translation()
-                    .distance(foot_snapshot.global.translation());
-                let side = anatomical_side(
-                    rig_rotation,
-                    rig_origin,
-                    upper_snapshot.global.translation(),
-                    left,
-                );
-                let remembered = if left {
-                    memory.left_leg
-                } else {
-                    memory.right_leg
-                };
-                let canonical_pole = canonical_knee_pole(side);
-                let remembered = remembered.filter(|pole| pole.dot(canonical_pole) > 0.2);
-                let pole = pole_to_world(rig_rotation, remembered.unwrap_or(canonical_pole));
-                if let Some(solution) = solve_two_bone_with_reach(
-                    upper_snapshot.global.translation(),
-                    lower_snapshot.global.translation(),
-                    foot_snapshot.global.translation(),
-                    target,
-                    upper_length,
-                    lower_length,
-                    pole,
-                    (upper_length + lower_length) * 0.999,
-                ) {
-                    apply_two_bone_solution(
-                        upper,
-                        lower,
-                        foot,
-                        solution,
-                        &parents,
-                        &mut transforms,
-                    );
-                    let bend = (solution.knee - upper_snapshot.global.translation())
-                        .reject_from_normalized(solution.end_direction);
-                    if let Some(valid) = bend.try_normalize() {
-                        if left {
-                            memory.left_leg = Some(pole_to_owner(rig_rotation, valid));
-                        } else {
-                            memory.right_leg = Some(pole_to_owner(rig_rotation, valid));
-                        }
-                    }
-                }
-                if enabled.0
-                    && support
-                    && let Some(terrain) = terrain
-                    && let Some(normal) = terrain.normal_at(target.xz())
-                    && let Some(&sole_axis) = sole_axes.get(&foot)
-                {
-                    align_foot_to_slope(foot, sole_axis, normal, 1.0, &parents, &mut transforms);
-                }
-                if left {
-                    footwork.left_solve_target = Some(target);
-                    memory.left_foot_world_target = Some(target);
-                    memory.left_support_weight = Some(support as u8 as f32);
-                } else {
-                    footwork.right_solve_target = Some(target);
-                    memory.right_foot_world_target = Some(target);
-                    memory.right_support_weight = Some(support as u8 as f32);
-                }
-            }
-            if let Ok(mut state) = raised_states.get_mut(owner) {
-                *state = footwork;
-            } else {
-                commands.entity(owner).insert(footwork);
-            }
-            if let Ok(mut state) = ik_states.get_mut(owner) {
-                state.0 = memory;
-            } else {
-                commands.entity(owner).insert(ProceduralIkState(memory));
-            }
-            continue;
-        }
-
-        if !enabled.0 {
-            // Terrain IK is opt-in. Clear only leg targets so enabling it later
-            // cannot resurrect stale plants; arm pole continuity is unrelated.
-            memory.left_foot_plant = None;
-            memory.right_foot_plant = None;
-            memory.left_foot_target = None;
-            memory.right_foot_target = None;
-            memory.left_foot_world_target = None;
-            memory.right_foot_world_target = None;
-            memory.left_support_weight = None;
-            memory.right_support_weight = None;
-            memory.left_release_active = false;
-            memory.right_release_active = false;
-            memory.pelvis_shift = 0.0;
-            if let Ok(mut state) = ik_states.get_mut(owner) {
-                state.0 = memory;
-            } else {
-                commands.entity(owner).insert(ProceduralIkState(memory));
-            }
-            continue;
-        }
-        let Some(terrain) = terrain else {
-            continue;
-        };
-        let mut desired_hip_shift = 0.0_f32;
-        for (upper_role, lower_role, foot_role, weight, left) in legs {
-            let (Some(&upper), Some(&lower), Some(&foot)) = (
-                rig.get(&upper_role),
-                rig.get(&lower_role),
-                rig.get(&foot_role),
-            ) else {
-                continue;
-            };
-            let Some((upper_snapshot, lower_snapshot, foot_snapshot)) =
-                snapshot_chain(upper, lower, foot, &parents, &transforms.p0())
-            else {
-                continue;
-            };
-            let position = foot_snapshot.global.translation();
-            if let Some(height) = terrain.height_at(position.xz()) {
-                let desired_ankle = height + ankle_sole_offset(foot_snapshot.global.rotation());
-                desired_hip_shift = desired_hip_shift
-                    .min(((desired_ankle - position.y) * weight).clamp(-0.18, 0.0));
-            }
-            let plant = if left {
-                memory.left_foot_plant
-            } else {
-                memory.right_foot_plant
-            };
-            let Some(plant) = plant else { continue };
-            let side = anatomical_side(
-                rig_rotation,
-                rig_origin,
-                upper_snapshot.global.translation(),
-                left,
-            );
-            let horizontal_target = constrain_foot_to_track(plant, rig_origin, rig_rotation, side);
-            let Some(height) = terrain.height_at(horizontal_target.xz()) else {
-                continue;
-            };
-            let target_y = height + ankle_sole_offset(foot_snapshot.global.rotation());
-            let upper_length = upper_snapshot
-                .global
-                .translation()
-                .distance(lower_snapshot.global.translation());
-            let lower_length = lower_snapshot
-                .global
-                .translation()
-                .distance(foot_snapshot.global.translation());
-            let reach = maximum_reach(upper_length, lower_length);
-            let horizontal_distance = (horizontal_target - upper_snapshot.global.translation())
-                .xz()
-                .length();
-            let maximum_vertical = (reach * reach - horizontal_distance * horizontal_distance)
-                .max(0.0)
-                .sqrt();
-            let reach_shift = target_y + maximum_vertical - upper_snapshot.global.translation().y;
-            desired_hip_shift = desired_hip_shift.min((reach_shift * weight).clamp(-0.25, 0.0));
-        }
-        // Couple both legs through one bounded, continuous pelvis correction.
-        // The authored pose is restored each frame, so this retained scalar is
-        // the only temporal state and cannot accumulate transform drift.
-        if state_delta_seconds > 0.0 {
-            memory.pelvis_shift =
-                advance_pelvis_shift(memory.pelvis_shift, desired_hip_shift, state_delta_seconds);
-        }
-        let hip_shift = memory.pelvis_shift;
-        if hip_shift < -0.001
-            && let Some(&pelvis) = rig.get(&BoneRole::Pelvis)
-        {
-            let local_delta = parents
-                .get(pelvis)
-                .ok()
-                .and_then(|parent| {
-                    transforms
-                        .p0()
-                        .compute_global_transform(parent.parent())
-                        .ok()
-                })
-                .map(|parent| {
-                    parent
-                        .affine()
-                        .inverse()
-                        .transform_vector3(Vec3::Y * hip_shift)
-                })
-                .unwrap_or(Vec3::Y * hip_shift);
-            if local_delta.is_finite()
-                && let Ok(mut transform) = transforms.p1().get_mut(pelvis)
-            {
-                transform.translation += local_delta;
-            }
-        }
-        for (upper_role, lower_role, foot_role, weight, left) in legs {
-            let (Some(&upper), Some(&lower), Some(&foot)) = (
-                rig.get(&upper_role),
-                rig.get(&lower_role),
-                rig.get(&foot_role),
-            ) else {
-                continue;
-            };
-            let Some((upper_snapshot, lower_snapshot, foot_snapshot)) =
-                snapshot_chain(upper, lower, foot, &parents, &transforms.p0())
-            else {
-                continue;
-            };
-            let foot_position = foot_snapshot.global.translation();
-            let mut plant = if left {
-                memory.left_foot_plant
-            } else {
-                memory.right_foot_plant
-            };
-            let side = anatomical_side(
-                rig_rotation,
-                rig_origin,
-                upper_snapshot.global.translation(),
-                left,
-            );
-            let upper_length = upper_snapshot
-                .global
-                .translation()
-                .distance(lower_snapshot.global.translation());
-            let lower_length = lower_snapshot.global.translation().distance(foot_position);
-            if weight <= 0.05
-                || plant.is_some_and(|position| !plant_is_continuous(position, foot_position))
-            {
-                plant = None;
-            }
-            if !terrain_leg_has_support(weight) {
-                if left {
-                    memory.left_foot_plant = None;
-                    memory.left_foot_target = None;
-                    memory.left_foot_world_target = None;
-                    memory.left_support_weight = Some(0.0);
-                    memory.left_release_active = false;
-                } else {
-                    memory.right_foot_plant = None;
-                    memory.right_foot_target = None;
-                    memory.right_foot_world_target = None;
-                    memory.right_support_weight = Some(0.0);
-                    memory.right_release_active = false;
-                }
-                // A zero-support swing leg is already in its authored FK pose.
-                // Solving it back to the same ankle target can still replace
-                // the authored knee bend with the analytic pole solution.
-                continue;
-            }
-            // Do not memorize a footprint while the swing foot is merely
-            // approaching the ground. Capturing that stale position early
-            // makes the pelvis outrun it, forcing the reach limiter to drag a
-            // fully weighted foot and drive the knee toward extension.
-            if weight >= 0.95 && plant.is_none() && !raised_guard_follower {
-                let visible_contact = if left {
-                    memory.left_foot_world_target
-                } else {
-                    memory.right_foot_world_target
-                }
-                .unwrap_or(foot_position);
-                plant = Some(constrain_foot_to_track(
-                    visible_contact,
-                    rig_origin,
-                    rig_rotation,
-                    side,
-                ));
-            }
-            let mut horizontal_target = constrain_foot_to_track(
-                plant.unwrap_or(foot_position),
-                rig_origin,
-                rig_rotation,
-                side,
-            );
-            let Some(height) = terrain.height_at(horizontal_target.xz()) else {
-                continue;
-            };
-            let sole_offset = ankle_sole_offset(foot_snapshot.global.rotation());
-            let mut planted_target = Vec3::new(
-                horizontal_target.x,
-                height + sole_offset,
-                horizontal_target.z,
-            );
-            // A turning or advancing pelvis can make an otherwise valid plant
-            // unreachable before its support weight releases. Slide that
-            // target only as far as anatomical reach requires instead of
-            // dropping and reacquiring it in one frame. Re-store the adjusted
-            // target so successive turns follow the side corridor continuously.
-            planted_target = constrain_target_to_reach(
-                planted_target,
-                upper_snapshot.global.translation(),
-                maximum_reach(upper_length, lower_length),
-            );
-            horizontal_target.x = planted_target.x;
-            horizontal_target.z = planted_target.z;
-            plant = plant.map(|_| horizontal_target);
-            if left {
-                memory.left_foot_plant = plant;
-            } else {
-                memory.right_foot_plant = plant;
-            }
-            // Sparse authored locomotion poses can move the swing foot much
-            // farther than one rendered frame should permit when support is
-            // released. Follow that desired pose at a bounded velocity so the
-            // final IK target cannot teleport, while still converging all the
-            // way back to the unconstrained authored swing during flight.
-            let mut desired_target = foot_position.lerp(planted_target, weight);
-            // An unloaded sparse swing pose can dip below uneven terrain,
-            // especially when the forward gait is reused in reverse. Preserve
-            // exact stance contact while giving the free foot a small
-            // support-weighted clearance floor.
-            desired_target.y = desired_target
-                .y
-                .max(planted_target.y + 0.05 * (1.0 - weight));
-            let desired_owner_target = rig_rotation.inverse() * (desired_target - rig_origin);
-            let (previous_owner_target, previous_support, mut release_active) = if left {
-                (
-                    memory.left_foot_target,
-                    memory.left_support_weight,
-                    memory.left_release_active,
-                )
-            } else {
-                (
-                    memory.right_foot_target,
-                    memory.right_support_weight,
-                    memory.right_release_active,
-                )
-            };
-            if let Some(previous_support) = previous_support {
-                if weight + 0.001 < previous_support {
-                    release_active = true;
-                } else if weight > previous_support + 0.001 {
-                    // Contact acquisition should lock immediately. The long
-                    // swing interval has already brought the authored foot
-                    // close to its next plant, and filtering acquisition is
-                    // perceived as skating under load.
-                    release_active = false;
-                }
-            }
-            let owner_target = if release_active {
-                advance_foot_target(
-                    previous_owner_target,
-                    desired_owner_target,
-                    state_delta_seconds,
-                )
-            } else {
-                desired_owner_target
-            };
-            if owner_target.distance_squared(desired_owner_target) <= 0.000001 {
-                release_active = false;
-            }
-            if left {
-                memory.left_foot_target = Some(owner_target);
-                if state_delta_seconds > 0.0 || memory.left_support_weight.is_none() {
-                    memory.left_support_weight = Some(weight);
-                }
-                memory.left_release_active = release_active;
-            } else {
-                memory.right_foot_target = Some(owner_target);
-                if state_delta_seconds > 0.0 || memory.right_support_weight.is_none() {
-                    memory.right_support_weight = Some(weight);
-                }
-                memory.right_release_active = release_active;
-            }
-            let target = rig_origin + rig_rotation * owner_target;
-            if left {
-                memory.left_foot_world_target = Some(target);
-            } else {
-                memory.right_foot_world_target = Some(target);
-            }
-            let remembered = if left {
-                memory.left_leg
-            } else {
-                memory.right_leg
-            };
-            let canonical_pole = canonical_knee_pole(side);
-            let remembered = remembered.filter(|pole| pole.dot(canonical_pole) > 0.2);
-            let pole = pole_to_world(rig_rotation, remembered.unwrap_or(canonical_pole));
-            if let Some(solution) = solve_two_bone(
-                upper_snapshot.global.translation(),
-                lower_snapshot.global.translation(),
-                foot_position,
-                target,
-                upper_length,
-                lower_length,
-                pole,
-            ) {
-                apply_two_bone_solution(upper, lower, foot, solution, &parents, &mut transforms);
-                let bend = (solution.knee - upper_snapshot.global.translation())
-                    .reject_from_normalized(solution.end_direction);
-                if let Some(valid) = bend.try_normalize() {
-                    if left {
-                        memory.left_leg = Some(pole_to_owner(rig_rotation, valid));
-                    } else {
-                        memory.right_leg = Some(pole_to_owner(rig_rotation, valid));
-                    }
-                }
-            }
-            if weight > 0.001
-                && let Some(normal) = terrain.normal_at(horizontal_target.xz())
-                && let Some(&sole_axis) = sole_axes.get(&foot)
-            {
-                align_foot_to_slope(foot, sole_axis, normal, weight, &parents, &mut transforms);
-            }
-        }
-        if let Ok(mut state) = ik_states.get_mut(owner) {
-            state.0 = memory;
-        } else {
-            commands.entity(owner).insert(ProceduralIkState(memory));
-        }
-    }
-}
-
-fn raised_footwork_posture_is_valid(skeleton: &SkeletonState) -> bool {
-    skeleton.grounded && skeleton.posture == Posture::Upright
-}
-
-fn terrain_leg_has_support(weight: f32) -> bool {
-    weight > 0.05
-}
-
-/// World-space plant confidence used by diagnostics. Procedural guard movement
-/// has exactly one support foot while the other follows its clearance arc.
-pub(crate) fn locomotion_support_weights(skeleton: &SkeletonState) -> (f32, f32) {
-    let speed = skeleton.animation_speed();
-    if !skeleton.grounded || skeleton.action != SkeletonAction::None {
-        return (0.0, 0.0);
-    }
-    if speed <= 0.05 {
-        return (1.0, 1.0);
-    }
-    if skeleton.weapon_guard == WeaponGuardState::Raised
-        && skeleton.action == SkeletonAction::None
-        && skeleton.raised_locomotion.active
-    {
-        let swing_left = skeleton.raised_locomotion.swing_foot == LeadFoot::Left;
-        ((!swing_left) as u8 as f32, swing_left as u8 as f32)
-    } else {
-        let (left, right) = gait_support_weights(locomotion_profile(skeleton), skeleton.gait_phase);
-        let moving = smoothstep(0.05, 0.75, speed);
-        (1.0 - (1.0 - left) * moving, 1.0 - (1.0 - right) * moving)
-    }
-}
-
-const MAX_PRESENTATION_SAMPLE_GAP: u64 = 32;
-
-fn presentation_tick_delta(previous: Option<u64>, current: u64) -> Option<u64> {
-    match previous {
-        None => Some(0),
-        Some(previous) if current >= previous => {
-            let delta = current - previous;
-            (delta <= MAX_PRESENTATION_SAMPLE_GAP).then_some(delta)
-        }
-        Some(_) => None,
-    }
-}
-
-/// Adds bounded inertial body response from server-observed world
-/// acceleration transformed through the current presentation body frame.
-/// Retained angles are client presentation only.
-pub(super) fn apply_locomotion_body_response(
-    mut commands: Commands,
-    mut owners: Query<
-        (
-            Entity,
-            &PresentedSkeleton,
-            &Transform,
-            Option<&mut LocomotionBodyResponseState>,
-        ),
-        Without<HumanoidBone>,
-    >,
-    mut bones: Query<(&HumanoidBone, &mut Transform), Without<PresentedSkeleton>>,
-) {
-    let mut responses = BTreeMap::new();
-    for (owner, skeleton, owner_transform, state) in &mut owners {
-        let mut next = state.as_deref().copied().unwrap_or_default();
-        let tick = skeleton.locomotion_sample_tick;
-        let tick_delta = presentation_tick_delta(next.last_tick, tick);
-        let discontinuous = tick_delta.is_none()
-            || next
-                .last_posture
-                .is_some_and(|value| value != skeleton.posture)
-            || next
-                .last_action
-                .is_some_and(|value| value != skeleton.action)
-            || next
-                .last_grounded
-                .is_some_and(|value| value != skeleton.grounded);
-        if discontinuous || !skeleton.grounded || skeleton.action != SkeletonAction::None {
-            next.pitch_radians = 0.0;
-            next.roll_radians = 0.0;
-            next.target_pitch_radians = 0.0;
-            next.target_roll_radians = 0.0;
-        } else if let Some(tick_delta @ 1..) = tick_delta {
-            let delta_seconds = tick_delta as f32 / LOCOMOTION_SAMPLE_HZ;
-            let body_acceleration =
-                owner_transform.rotation.inverse() * skeleton.world_acceleration;
-            if body_acceleration.xz().length() > 0.5 {
-                let combined = body_response_target(body_acceleration);
-                next.target_pitch_radians = combined.x;
-                next.target_roll_radians = combined.y;
-            } else {
-                let target_decay = 10.0_f32.to_radians() / 0.4 * delta_seconds;
-                next.target_pitch_radians =
-                    advance_towards(next.target_pitch_radians, 0.0, target_decay);
-                next.target_roll_radians =
-                    advance_towards(next.target_roll_radians, 0.0, target_decay);
-            }
-            let maximum_step = 2.0_f32.to_radians() * tick_delta as f32;
-            let current = Vec2::new(next.pitch_radians, next.roll_radians);
-            let target = Vec2::new(next.target_pitch_radians, next.target_roll_radians);
-            let advanced = current + (target - current).clamp_length_max(maximum_step);
-            next.pitch_radians = advanced.x;
-            next.roll_radians = advanced.y;
-        }
-        next.last_tick = Some(tick);
-        next.last_posture = Some(skeleton.posture);
-        next.last_action = Some(skeleton.action);
-        next.last_grounded = Some(skeleton.grounded);
-        responses.insert(owner, next);
-        if let Some(mut state) = state {
-            *state = next;
-        } else {
-            commands.entity(owner).insert(next);
-        }
-    }
-    for (bone, mut transform) in &mut bones {
-        let Some(response) = responses.get(&bone.owner) else {
-            continue;
-        };
-        let weight = match bone.role {
-            BoneRole::Pelvis => 0.20,
-            BoneRole::StomachOne => 0.25,
-            BoneRole::StomachTwo => 0.25,
-            BoneRole::Chest => 0.30,
-            _ => continue,
-        };
-        transform.rotation *= Quat::from_euler(
-            EulerRot::XYZ,
-            response.pitch_radians * weight,
-            0.0,
-            response.roll_radians * weight,
+        assert!((MEASURED_ANKLE_SOLE_OFFSET_METRES - 0.085).abs() < f32::EPSILON);
+        let target = support_grounding_target(1.135, 1.0, MEASURED_ANKLE_SOLE_OFFSET_METRES);
+        assert!(
+            (target - -0.05).abs() <= GROUNDING_TOLERANCE_METRES,
+            "grounding target {target} differed from the expected offset"
         );
     }
-}
 
-fn body_response_target(acceleration: Vec3) -> Vec2 {
-    // Tactical body forward is local +Z (the authored rig carries its own
-    // facing correction), so positive Z acceleration pitches into travel.
-    let pitch = if acceleration.z > 0.0 {
-        (-acceleration.z / 12.0 * 10.0_f32.to_radians()).clamp(-12.0_f32.to_radians(), 0.0)
-    } else {
-        (-acceleration.z / 12.0 * 8.0_f32.to_radians()).clamp(0.0, 10.0_f32.to_radians())
-    };
-    let roll = (-acceleration.x / 10.0 * 8.0_f32.to_radians())
-        .clamp(-10.0_f32.to_radians(), 10.0_f32.to_radians());
-    let response = Vec2::new(pitch, roll);
-    // Leave a sub-milliradian numerical margin so degree conversion cannot
-    // report a value microscopically above the documented 15-degree cap.
-    let maximum_response = 15.0_f32.to_radians() - 0.000001;
-    if response.length_squared() > maximum_response * maximum_response {
-        response.normalize_or_zero() * maximum_response
-    } else {
-        response
-    }
-}
-
-fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
-    let t = ((value - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
-
-fn ankle_sole_offset(_rotation: Quat) -> f32 {
-    0.085
-}
-
-fn anatomical_side(rig_rotation: Quat, rig_origin: Vec3, hip: Vec3, left: bool) -> f32 {
-    let hip_x = (rig_rotation.inverse() * (hip - rig_origin)).x;
-    if hip_x.abs() > 0.001 {
-        hip_x.signum()
-    } else if left {
-        -1.0
-    } else {
-        1.0
-    }
-}
-
-fn constrain_foot_to_track(world: Vec3, rig_origin: Vec3, rig_rotation: Quat, side: f32) -> Vec3 {
-    let mut local = rig_rotation.inverse() * (world - rig_origin);
-    let signed_x = (local.x * side).clamp(FOOT_TRACK_INNER, FOOT_TRACK_OUTER);
-    local.x = signed_x * side;
-    rig_origin + rig_rotation * local
-}
-
-fn plan_guard_step_endpoint(
-    step_origin: Vec3,
-    step_rotation: Quat,
-    mut stance_local: Vec3,
-    local_direction: Vec2,
-    step_length: f32,
-    left: bool,
-    opposite_plant: Vec3,
-) -> Vec3 {
-    // Cascadeur's authored lateral axis is opposite the conventional Bevy
-    // anatomical assumption. Derive the corridor from the actual pose rather
-    // than assigning a sign from the semantic bone name.
-    let side = if stance_local.x.abs() > 0.001 {
-        stance_local.x.signum()
-    } else if left {
-        -1.0
-    } else {
-        1.0
-    };
-    let lateral_travel = local_direction.x * step_length;
-    let authored_track = (stance_local.x * side)
-        .abs()
-        .clamp(FOOT_TRACK_INNER, FOOT_TRACK_OUTER);
-    let moving_toward_side = lateral_travel * side > 0.001;
-    let mut track = if lateral_travel.abs() <= 0.001 {
-        authored_track
-    } else if moving_toward_side {
-        (lateral_travel.abs() + FOOT_TRACK_INNER).min(FOOT_TRACK_OUTER)
-    } else {
-        FOOT_TRACK_INNER
-    };
-    let future_origin = step_origin
-        + step_rotation * Vec3::new(local_direction.x, 0.0, local_direction.y) * step_length;
-    let opposite_local = step_rotation.inverse() * (opposite_plant - future_origin);
-    // Separation is an anatomical lateral-track contract. Fore/aft spacing
-    // must not be credited toward it or feet can converge onto one tightrope.
-    let separation_track = opposite_local.x * side + GUARD_TARGET_INTER_FOOT_SEPARATION;
-    track = track
-        .max(separation_track)
-        .clamp(FOOT_TRACK_INNER, FOOT_TRACK_OUTER);
-    stance_local.x = track * side;
-    future_origin + step_rotation * stance_local
-}
-
-fn guard_step_sequence_delta(previous: u32, current: u32) -> u32 {
-    current.wrapping_sub(previous)
-}
-
-fn constrain_guard_swing_to_live_corridor(
-    target: Vec3,
-    support: Vec3,
-    rig_origin: Vec3,
-    rig_rotation: Quat,
-    side: f32,
-) -> Vec3 {
-    let mut local = rig_rotation.inverse() * (target - rig_origin);
-    let support_local = rig_rotation.inverse() * (support - rig_origin);
-    let required_track = support_local.x * side + GUARD_TARGET_INTER_FOOT_SEPARATION;
-    let signed_track = (local.x * side)
-        .max(FOOT_TRACK_INNER)
-        .max(required_track)
-        .min(FOOT_TRACK_OUTER);
-    local.x = signed_track * side;
-    rig_origin + rig_rotation * local
-}
-
-fn terrain_conformed_guard_target(mut flat_target: Vec3, terrain_height: Option<f32>) -> Vec3 {
-    if let Some(height) = terrain_height {
-        flat_target.y = height + 0.085;
-    }
-    flat_target
-}
-
-fn maximum_reach(upper_length: f32, lower_length: f32) -> f32 {
-    (upper_length * upper_length
-        + lower_length * lower_length
-        + 2.0 * upper_length * lower_length * MIN_KNEE_FLEXION.cos())
-    .sqrt()
-}
-
-fn landing_maximum_reach(
-    upper_length: f32,
-    lower_length: f32,
-    authored_reach: f32,
-    compression: f32,
-) -> f32 {
-    let reserved_reach = maximum_reach(upper_length, lower_length);
-    let full_reach = upper_length + lower_length - 0.0001;
-    let released_reach = authored_reach.clamp(reserved_reach, full_reach);
-    let reserve_weight = smoothstep(
-        LANDING_KNEE_RESERVE_RELEASE_COMPRESSION,
-        LANDING_KNEE_RESERVE_FULL_COMPRESSION,
-        compression,
-    );
-    released_reach.lerp(reserved_reach, reserve_weight)
-}
-
-fn constrain_target_to_reach(target: Vec3, root: Vec3, maximum_reach: f32) -> Vec3 {
-    let vertical = target.y - root.y;
-    let maximum_horizontal = (maximum_reach * maximum_reach - vertical * vertical)
-        .max(0.0)
-        .sqrt();
-    let horizontal = (target - root).xz().clamp_length_max(maximum_horizontal);
-    Vec3::new(root.x + horizontal.x, target.y, root.z + horizontal.y)
-}
-
-fn plant_is_continuous(plant: Vec3, current_foot: Vec3) -> bool {
-    plant.is_finite()
-        && current_foot.is_finite()
-        && plant.distance(current_foot) <= MAX_PLANT_DISCONTINUITY
-}
-
-fn advance_foot_target(previous: Option<Vec3>, desired: Vec3, delta_seconds: f32) -> Vec3 {
-    let Some(previous) = previous.filter(|position| position.is_finite()) else {
-        return desired;
-    };
-    if !desired.is_finite() {
-        return previous;
-    }
-    if previous.distance(desired) > MAX_PLANT_DISCONTINUITY {
-        return desired;
-    }
-    let maximum_step = (MAX_FOOT_TARGET_SPEED * delta_seconds.max(0.0)).min(MAX_FOOT_TARGET_STEP);
-    previous + (desired - previous).clamp_length_max(maximum_step)
-}
-
-fn advance_pelvis_shift(current: f32, desired: f32, delta_seconds: f32) -> f32 {
-    let maximum_step =
-        (PELVIS_CORRECTION_SPEED * delta_seconds.max(0.0)).min(MAX_PELVIS_CORRECTION_STEP);
-    current + (desired - current).clamp(-maximum_step, maximum_step)
-}
-
-fn canonical_knee_pole(side: f32) -> Vec3 {
-    (Vec3::Z + Vec3::X * side * 0.18).normalize()
-}
-
-#[derive(Debug, Clone, Copy)]
-struct TwoBoneSolution {
-    knee: Vec3,
-    end: Vec3,
-    end_direction: Vec3,
-}
-
-fn solve_two_bone(
-    root: Vec3,
-    current_knee: Vec3,
-    current_end: Vec3,
-    target: Vec3,
-    upper_length: f32,
-    lower_length: f32,
-    pole_direction: Vec3,
-) -> Option<TwoBoneSolution> {
-    solve_two_bone_internal(
-        root,
-        current_knee,
-        current_end,
-        target,
-        upper_length,
-        lower_length,
-        pole_direction,
-        maximum_reach(upper_length, lower_length),
-        true,
-    )
-}
-
-fn solve_landing_two_bone(
-    root: Vec3,
-    current_knee: Vec3,
-    current_end: Vec3,
-    target: Vec3,
-    upper_length: f32,
-    lower_length: f32,
-    pole_direction: Vec3,
-    compression: f32,
-) -> Option<TwoBoneSolution> {
-    solve_two_bone_internal(
-        root,
-        current_knee,
-        current_end,
-        target,
-        upper_length,
-        lower_length,
-        pole_direction,
-        landing_maximum_reach(
-            upper_length,
-            lower_length,
-            root.distance(current_end),
-            compression,
-        ),
-        true,
-    )
-}
-
-fn solve_two_bone_with_reach(
-    root: Vec3,
-    current_knee: Vec3,
-    current_end: Vec3,
-    target: Vec3,
-    upper_length: f32,
-    lower_length: f32,
-    pole_direction: Vec3,
-    maximum_target_reach: f32,
-) -> Option<TwoBoneSolution> {
-    solve_two_bone_internal(
-        root,
-        current_knee,
-        current_end,
-        target,
-        upper_length,
-        lower_length,
-        pole_direction,
-        maximum_target_reach,
-        false,
-    )
-}
-
-fn solve_two_bone_internal(
-    root: Vec3,
-    current_knee: Vec3,
-    current_end: Vec3,
-    target: Vec3,
-    upper_length: f32,
-    lower_length: f32,
-    pole_direction: Vec3,
-    maximum_target_reach: f32,
-    preserve_authored_bend: bool,
-) -> Option<TwoBoneSolution> {
-    if !root.is_finite() || !target.is_finite() || upper_length <= 0.0001 || lower_length <= 0.0001
-    {
-        return None;
-    }
-    let target_offset = target - root;
-    let target_direction = target_offset
-        .try_normalize()
-        .or_else(|| (current_end - root).try_normalize())
-        .unwrap_or(Vec3::NEG_Y);
-    let distance = target_offset.length().clamp(
-        (upper_length - lower_length).abs() + 0.0001,
-        maximum_target_reach.min(upper_length + lower_length - 0.0001),
-    );
-    let end = root + target_direction * distance;
-    let along = (upper_length * upper_length - lower_length * lower_length + distance * distance)
-        / (2.0 * distance);
-    let height = (upper_length * upper_length - along * along)
-        .max(0.0)
-        .sqrt();
-    let pole_bend = pole_direction
-        .reject_from_normalized(target_direction)
-        .try_normalize();
-    let authored_bend = (current_knee - root)
-        .reject_from_normalized(target_direction)
-        .try_normalize();
-    // Preserve authored continuity only while it remains in the anatomical
-    // hemisphere. Never flip a valid authored bend through a straight-leg
-    // singularity merely to satisfy a pole chosen on the opposite side.
-    let stabilized_authored_bend = preserve_authored_bend
-        .then_some(authored_bend)
-        .flatten()
-        .zip(pole_bend)
-        .and_then(|(authored, pole)| {
-            let alignment = authored.dot(pole);
-            (alignment > 0.05)
-                .then(|| {
-                    pole.lerp(authored, smoothstep(0.05, 0.5, alignment))
-                        .try_normalize()
-                })
-                .flatten()
-        });
-    let bend = stabilized_authored_bend
-        .or(pole_bend)
-        .or(preserve_authored_bend.then_some(authored_bend).flatten())
-        .or_else(|| target_direction.any_orthonormal_vector().try_normalize())?;
-    let knee = root + target_direction * along + bend * height;
-    (knee.is_finite() && end.is_finite()).then_some(TwoBoneSolution {
-        knee,
-        end,
-        end_direction: target_direction,
-    })
-}
-
-fn snapshot(
-    entity: Entity,
-    parents: &Query<&ChildOf>,
-    helper: &TransformHelper,
-) -> Option<BoneSnapshot> {
-    let global = helper.compute_global_transform(entity).ok()?;
-    let parent_rotation = parents
-        .get(entity)
-        .ok()
-        .and_then(|parent| helper.compute_global_transform(parent.parent()).ok())
-        .map(|global| global.rotation())
-        .unwrap_or(Quat::IDENTITY);
-    Some(BoneSnapshot {
-        entity,
-        global,
-        parent_rotation,
-    })
-}
-
-fn snapshot_chain(
-    upper: Entity,
-    lower: Entity,
-    end: Entity,
-    parents: &Query<&ChildOf>,
-    helper: &TransformHelper,
-) -> Option<(BoneSnapshot, BoneSnapshot, BoneSnapshot)> {
-    Some((
-        snapshot(upper, parents, helper)?,
-        snapshot(lower, parents, helper)?,
-        snapshot(end, parents, helper)?,
-    ))
-}
-
-fn aim_world_rotation(current: BoneSnapshot, from: Vec3, to: Vec3) -> Option<Quat> {
-    let from = from.try_normalize()?;
-    let to = to.try_normalize()?;
-    let world = Quat::from_rotation_arc(from, to) * current.global.rotation();
-    let local = current.parent_rotation.inverse() * world;
-    local.is_finite().then_some(local.normalize())
-}
-
-fn apply_two_bone_solution(
-    upper: Entity,
-    lower: Entity,
-    end: Entity,
-    solution: TwoBoneSolution,
-    parents: &Query<&ChildOf>,
-    transforms: &mut ParamSet<(TransformHelper, Query<&mut Transform>)>,
-) {
-    let Some((upper_before, lower_before, _)) =
-        snapshot_chain(upper, lower, end, parents, &transforms.p0())
-    else {
-        return;
-    };
-    let Some(rotation) = aim_world_rotation(
-        upper_before,
-        lower_before.global.translation() - upper_before.global.translation(),
-        solution.knee - upper_before.global.translation(),
-    ) else {
-        return;
-    };
-    if let Ok(mut transform) = transforms.p1().get_mut(upper_before.entity) {
-        transform.rotation = rotation;
-    }
-
-    // Recompute through the actual twist hierarchy after rotating the major
-    // upper bone. The twist local transforms remain untouched.
-    let Some((_, lower_after, end_after)) =
-        snapshot_chain(upper, lower, end, parents, &transforms.p0())
-    else {
-        return;
-    };
-    let Some(rotation) = aim_world_rotation(
-        lower_after,
-        end_after.global.translation() - lower_after.global.translation(),
-        solution.end - solution.knee,
-    ) else {
-        return;
-    };
-    if let Ok(mut transform) = transforms.p1().get_mut(lower_after.entity) {
-        transform.rotation = rotation;
-    }
-}
-
-fn align_foot_to_slope(
-    foot: Entity,
-    sole_up_local: Vec3,
-    normal: Vec3,
-    weight: f32,
-    parents: &Query<&ChildOf>,
-    transforms: &mut ParamSet<(TransformHelper, Query<&mut Transform>)>,
-) {
-    let Some(snapshot) = snapshot(foot, parents, &transforms.p0()) else {
-        return;
-    };
-    let Some(normal) = normal.try_normalize() else {
-        return;
-    };
-    let current_up = snapshot.global.rotation() * sole_up_local;
-    let angle = current_up.angle_between(normal).min(28.0_f32.to_radians()) * weight;
-    let axis = current_up.cross(normal).try_normalize();
-    let Some(axis) = axis else { return };
-    let world = Quat::from_axis_angle(axis, angle) * snapshot.global.rotation();
-    let local = snapshot.parent_rotation.inverse() * world;
-    if local.is_finite()
-        && let Ok(mut transform) = transforms.p1().get_mut(foot)
-    {
-        transform.rotation = local.normalize();
-    }
-}
-
-/// Applies optional client-only hand targets and held-item constraints. Missing
-/// targets, sockets, or arm bones are intentionally inert.
-pub(super) fn apply_arm_and_weapon_constraints(
-    bones: Query<(Entity, &HumanoidBone)>,
-    parents: Query<&ChildOf>,
-    targets: Query<&HumanoidIkTargets>,
-    mut ik_states: Query<&mut ProceduralIkState>,
-    weapon_constraints: Query<(Entity, &HeldWeaponConstraint)>,
-    mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
-    mut commands: Commands,
-) {
-    let mut rigs = BTreeMap::<Entity, BTreeMap<BoneRole, Entity>>::new();
-    for (entity, bone) in &bones {
-        rigs.entry(bone.owner)
-            .or_default()
-            .insert(bone.role, entity);
-    }
-
-    // Move an explicitly targeted primary hand first. The socket is a child of
-    // that hand, so the weapon placement below observes the same-frame result.
-    for (_, constraint) in &weapon_constraints {
-        let Some(rig) = rigs.get(&constraint.owner) else {
-            continue;
-        };
-        let explicit = targets.get(constraint.owner).copied().unwrap_or_default();
-        let (target, roles, left) = match constraint.primary_hand {
-            HandSide::Left => (
-                explicit.left,
-                (
-                    BoneRole::UpperArmLeft,
-                    BoneRole::ForearmLeft,
-                    BoneRole::HandLeft,
-                ),
-                true,
-            ),
-            HandSide::Right => (
-                explicit.right,
-                (
-                    BoneRole::UpperArmRight,
-                    BoneRole::ForearmRight,
-                    BoneRole::HandRight,
-                ),
-                false,
-            ),
-        };
-        let Some(target) = target else { continue };
-        let mut memory = ik_states
-            .get_mut(constraint.owner)
-            .map(|state| state.0)
-            .unwrap_or_default();
-        apply_hand_target(
-            constraint.owner,
-            rig,
-            roles,
-            target,
-            left,
-            &mut memory,
-            &parents,
-            &mut transforms,
-        );
-        if let Ok(mut state) = ik_states.get_mut(constraint.owner) {
-            state.0 = memory;
-        }
-    }
-
-    let mut derived_targets = BTreeMap::<Entity, HumanoidIkTargets>::new();
-    for (weapon, constraint) in &weapon_constraints {
-        let Some(rig) = rigs.get(&constraint.owner) else {
-            continue;
-        };
-        let socket_role = match constraint.primary_hand {
-            HandSide::Left => BoneRole::WeaponLeft,
-            HandSide::Right => BoneRole::WeaponRight,
-        };
-        let Some(&socket) = rig.get(&socket_role) else {
-            continue;
-        };
-        let Ok(socket_global) = transforms.p0().compute_global_transform(socket) else {
-            continue;
-        };
-        set_world_transform(
-            weapon,
-            socket_global.compute_transform(),
-            &parents,
-            &mut transforms,
-        );
-        if let Some(grip) = constraint.secondary_grip_local {
-            let Ok(weapon_global) = transforms.p0().compute_global_transform(weapon) else {
-                continue;
-            };
-            let target = HandIkTarget {
-                translation: secondary_grip_world(weapon_global, grip),
-                rotation: None,
-                weight: 1.0,
-            };
-            let entry = derived_targets.entry(constraint.owner).or_default();
-            match constraint.primary_hand {
-                HandSide::Left => entry.right = Some(target),
-                HandSide::Right => entry.left = Some(target),
-            }
-        }
-    }
-
-    for (owner, rig) in rigs {
-        let explicit = targets.get(owner).copied().unwrap_or_default();
-        let derived = derived_targets.get(&owner).copied().unwrap_or_default();
-        let combined = HumanoidIkTargets {
-            left: derived.left.or(explicit.left),
-            right: derived.right.or(explicit.right),
-        };
-        let mut memory = ik_states
-            .get_mut(owner)
-            .map(|state| state.0)
-            .unwrap_or_default();
-        for (upper_role, lower_role, hand_role, target, left) in [
-            (
-                BoneRole::UpperArmLeft,
-                BoneRole::ForearmLeft,
-                BoneRole::HandLeft,
-                combined.left,
-                true,
-            ),
-            (
-                BoneRole::UpperArmRight,
-                BoneRole::ForearmRight,
-                BoneRole::HandRight,
-                combined.right,
-                false,
-            ),
-        ] {
-            let Some(target) = target else { continue };
-            apply_hand_target(
-                owner,
-                &rig,
-                (upper_role, lower_role, hand_role),
-                target,
-                left,
-                &mut memory,
-                &parents,
-                &mut transforms,
-            );
-        }
-        if let Ok(mut state) = ik_states.get_mut(owner) {
-            state.0 = memory;
-        } else {
-            commands.entity(owner).insert(ProceduralIkState(memory));
-        }
-    }
-}
-
-fn apply_hand_target(
-    owner: Entity,
-    rig: &BTreeMap<BoneRole, Entity>,
-    (upper_role, lower_role, hand_role): (BoneRole, BoneRole, BoneRole),
-    target: HandIkTarget,
-    left: bool,
-    memory: &mut PoleMemory,
-    parents: &Query<&ChildOf>,
-    transforms: &mut ParamSet<(TransformHelper, Query<&mut Transform>)>,
-) {
-    let weight = target.weight.clamp(0.0, 1.0);
-    if weight <= f32::EPSILON {
-        return;
-    }
-    let (Some(&upper), Some(&lower), Some(&hand)) = (
-        rig.get(&upper_role),
-        rig.get(&lower_role),
-        rig.get(&hand_role),
-    ) else {
-        return;
-    };
-    let Some((upper_snapshot, lower_snapshot, hand_snapshot)) =
-        snapshot_chain(upper, lower, hand, parents, &transforms.p0())
-    else {
-        return;
-    };
-    let blended_target = hand_snapshot
-        .global
-        .translation()
-        .lerp(target.translation, weight);
-    let remembered = if left {
-        memory.left_arm
-    } else {
-        memory.right_arm
-    };
-    let owner_rotation = transforms
-        .p0()
-        .compute_global_transform(owner)
-        .map(|global| global.rotation())
-        .unwrap_or(Quat::IDENTITY);
-    if let Some(solution) = solve_two_bone(
-        upper_snapshot.global.translation(),
-        lower_snapshot.global.translation(),
-        hand_snapshot.global.translation(),
-        blended_target,
-        upper_snapshot
-            .global
-            .translation()
-            .distance(lower_snapshot.global.translation()),
-        lower_snapshot
-            .global
-            .translation()
-            .distance(hand_snapshot.global.translation()),
-        pole_to_world(owner_rotation, remembered.unwrap_or(Vec3::NEG_Y)),
-    ) {
-        apply_two_bone_solution(upper, lower, hand, solution, parents, transforms);
-        let bend = (solution.knee - upper_snapshot.global.translation())
-            .reject_from_normalized(solution.end_direction);
-        if let Some(valid) = bend.try_normalize() {
-            if left {
-                memory.left_arm = Some(pole_to_owner(owner_rotation, valid));
-            } else {
-                memory.right_arm = Some(pole_to_owner(owner_rotation, valid));
-            }
-        }
-        if let Some(rotation) = target.rotation {
-            set_bone_world_rotation(hand, rotation, parents, transforms);
-        }
-    }
-}
-
-fn secondary_grip_world(weapon: GlobalTransform, local_grip: Vec3) -> Vec3 {
-    weapon.transform_point(local_grip)
-}
-
-fn set_bone_world_rotation(
-    entity: Entity,
-    world_rotation: Quat,
-    parents: &Query<&ChildOf>,
-    transforms: &mut ParamSet<(TransformHelper, Query<&mut Transform>)>,
-) {
-    let parent_rotation = parents
-        .get(entity)
-        .ok()
-        .and_then(|parent| {
-            transforms
-                .p0()
-                .compute_global_transform(parent.parent())
-                .ok()
-        })
-        .map(|global| global.rotation())
-        .unwrap_or(Quat::IDENTITY);
-    let local = parent_rotation.inverse() * world_rotation;
-    if local.is_finite()
-        && let Ok(mut transform) = transforms.p1().get_mut(entity)
-    {
-        transform.rotation = local.normalize();
-    }
-}
-
-fn set_world_transform(
-    entity: Entity,
-    world: Transform,
-    parents: &Query<&ChildOf>,
-    transforms: &mut ParamSet<(TransformHelper, Query<&mut Transform>)>,
-) {
-    let local = parents
-        .get(entity)
-        .ok()
-        .and_then(|parent| {
-            transforms
-                .p0()
-                .compute_global_transform(parent.parent())
-                .ok()
-        })
-        .map(|parent| GlobalTransform::from(world).reparented_to(&parent))
-        .unwrap_or(world);
-    if local.translation.is_finite()
-        && local.rotation.is_finite()
-        && let Ok(mut transform) = transforms.p1().get_mut(entity)
-    {
-        *transform = local;
+    #[test]
+    fn presentation_tick_delta_handles_wrap_and_rejects_large_gaps() {
+        assert_eq!(presentation_tick_delta(Some(u64::MAX), 0), Some(1));
+        assert_eq!(presentation_tick_delta(Some(1), 100), None);
     }
 }
 
 #[cfg(test)]
-mod tests {
+mod legacy_tests {
     use super::*;
 
     fn apply_test_two_bone(
@@ -2831,19 +968,15 @@ mod tests {
     #[test]
     fn phase_owned_height_has_two_contact_minima_and_two_equal_peaks() {
         for phase in [0.0, 0.5] {
-            let state = SkeletonState {
-                local_velocity: Vec3::NEG_Z * 5.5,
-                gait_phase: phase,
-                ..default()
-            };
+            let state = SkeletonState::default()
+                .with_local_velocity(Vec3::NEG_Z * 5.5)
+                .with_gait_phase(phase);
             assert!(locomotion_height_wave(&state).abs() < 0.0001);
         }
         for phase in [0.25, 0.75] {
-            let state = SkeletonState {
-                local_velocity: Vec3::NEG_Z * 5.5,
-                gait_phase: phase,
-                ..default()
-            };
+            let state = SkeletonState::default()
+                .with_local_velocity(Vec3::NEG_Z * 5.5)
+                .with_gait_phase(phase);
             assert!(
                 (locomotion_height_wave(&state) - RUN_LOCOMOTION_PROFILE.flight_apex_metres).abs()
                     < 0.0001
@@ -2853,47 +986,46 @@ mod tests {
 
     #[test]
     fn locomotion_height_amplitude_covers_walk_run_guard_and_crouch() {
-        let moving = |speed, posture, guard| SkeletonState {
-            local_velocity: Vec3::NEG_Z * speed,
-            posture,
-            weapon_guard: guard,
-            raised_locomotion: RaisedLocomotionIntent {
-                active: guard == WeaponGuardState::Raised,
-                local_direction: Vec2::NEG_Y,
-                speed,
-                ..default()
-            },
-            ..default()
+        let moving = |speed, posture, guard| {
+            SkeletonState::default()
+                .with_local_velocity(Vec3::NEG_Z * speed)
+                .with_body_state(match posture {
+                    Posture::Crouched => BodyState::Grounded(GroundedPosture::Crouched),
+                    Posture::Airborne => BodyState::Airborne,
+                    _ => BodyState::Grounded(GroundedPosture::Upright),
+                })
+                .with_weapon_guard(guard)
+                .with_raised_locomotion(if guard == WeaponGuardState::Raised {
+                    RaisedLocomotionIntent::moving(Vec2::NEG_Y, speed, LeadFoot::Left, 0)
+                } else {
+                    RaisedLocomotionIntent::default()
+                })
         };
         assert!(
-            (locomotion_height_wave(&SkeletonState {
-                gait_phase: 0.25,
-                ..moving(2.0, Posture::Upright, WeaponGuardState::Lowered,)
-            }) - WALK_LOCOMOTION_PROFILE.bounce_metres)
+            (locomotion_height_wave(
+                &moving(2.0, Posture::Upright, WeaponGuardState::Lowered,).with_gait_phase(0.25)
+            ) - WALK_LOCOMOTION_PROFILE.bounce_metres)
                 .abs()
                 < 0.0001
         );
         assert!(
-            (locomotion_height_wave(&SkeletonState {
-                gait_phase: 0.25,
-                ..moving(5.5, Posture::Upright, WeaponGuardState::Lowered,)
-            }) - RUN_LOCOMOTION_PROFILE.flight_apex_metres)
+            (locomotion_height_wave(
+                &moving(5.5, Posture::Upright, WeaponGuardState::Lowered,).with_gait_phase(0.25)
+            ) - RUN_LOCOMOTION_PROFILE.flight_apex_metres)
                 .abs()
                 < 0.0001
         );
         assert!(
-            (locomotion_height_wave(&SkeletonState {
-                gait_phase: 0.25,
-                ..moving(2.0, Posture::Upright, WeaponGuardState::Raised)
-            }) - RAISED_GUARD_LOCOMOTION_PROFILE.bounce_metres)
+            (locomotion_height_wave(
+                &moving(2.0, Posture::Upright, WeaponGuardState::Raised,).with_gait_phase(0.25)
+            ) - RAISED_GUARD_LOCOMOTION_PROFILE.bounce_metres)
                 .abs()
                 < 0.0001
         );
         assert!(
-            (locomotion_height_wave(&SkeletonState {
-                gait_phase: 0.25,
-                ..moving(1.5, Posture::Crouched, WeaponGuardState::Lowered,)
-            }) - CROUCH_LOCOMOTION_PROFILE.bounce_metres)
+            (locomotion_height_wave(
+                &moving(1.5, Posture::Crouched, WeaponGuardState::Lowered,).with_gait_phase(0.25)
+            ) - CROUCH_LOCOMOTION_PROFILE.bounce_metres)
                 .abs()
                 < 0.0001
         );
@@ -2938,41 +1070,41 @@ mod tests {
 
     #[test]
     fn support_grounding_is_limited_to_ordinary_grounded_locomotion() {
-        let moving = SkeletonState {
-            local_velocity: Vec3::NEG_Z * 2.0,
-            ..default()
-        };
+        let moving = SkeletonState::default().with_local_velocity(Vec3::NEG_Z * 2.0);
         assert!(ordinary_support_grounding_is_active(&moving));
-        assert!(!ordinary_support_grounding_is_active(&SkeletonState {
-            weapon_guard: WeaponGuardState::Raised,
-            ..moving.clone()
-        }));
-        assert!(!ordinary_support_grounding_is_active(&SkeletonState {
-            grounded: false,
-            ..moving.clone()
-        }));
-        assert!(!ordinary_support_grounding_is_active(&SkeletonState {
-            action: SkeletonAction::Attack,
-            ..moving
-        }));
+        assert!(!ordinary_support_grounding_is_active(
+            &moving.clone().with_weapon_guard(WeaponGuardState::Raised)
+        ));
+        let mut airborne = moving.clone();
+        project_skeleton_locomotion(
+            &mut airborne,
+            SkeletonLocomotionInput {
+                orientation: Quat::IDENTITY,
+                linear_velocity: Vec3::NEG_Z * 2.0,
+                grounded: false,
+                crouching: false,
+                delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                tick: 1,
+            },
+        );
+        assert!(!ordinary_support_grounding_is_active(&airborne));
+        let mut action = moving;
+        action.begin_attack(AttackSpec::default(), 0, 1);
+        assert!(!ordinary_support_grounding_is_active(&action));
     }
 
     #[test]
     fn central_height_normalization_applies_only_during_active_locomotion() {
-        let moving = SkeletonState {
-            local_velocity: Vec3::NEG_Z * 2.0,
-            ..default()
-        };
+        let moving = SkeletonState::default().with_local_velocity(Vec3::NEG_Z * 2.0);
         assert_eq!(locomotion_normalization_target(&moving), 1.0);
         assert_eq!(
             locomotion_normalization_target(&SkeletonState::default()),
             0.0
         );
         assert_eq!(
-            locomotion_normalization_target(&SkeletonState {
-                weapon_guard: WeaponGuardState::Raised,
-                ..default()
-            }),
+            locomotion_normalization_target(
+                &SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised)
+            ),
             0.0
         );
     }
@@ -3116,47 +1248,32 @@ mod tests {
             (LeadFoot::Right, 0.25),
             (LeadFoot::Right, 0.75),
         ] {
-            let skeleton = SkeletonState {
-                weapon_guard: WeaponGuardState::Raised,
-                lead_foot: lead,
-                gait_phase: phase,
-                local_velocity: Vec3::NEG_Z * 2.0,
-                raised_locomotion: RaisedLocomotionIntent {
-                    active: true,
-                    local_direction: Vec2::NEG_Y,
-                    speed: 2.0,
-                    swing_foot: lead,
-                    step_sequence: 0,
-                },
-                ..default()
-            };
+            let skeleton = SkeletonState::default()
+                .with_lead_foot(lead)
+                .with_gait_phase(phase)
+                .with_local_velocity(Vec3::NEG_Z * 2.0)
+                .with_weapon_guard(WeaponGuardState::Raised)
+                .with_raised_locomotion(RaisedLocomotionIntent::moving(Vec2::NEG_Y, 2.0, lead, 0));
             let (left, right) = locomotion_support_weights(&skeleton);
             assert_eq!(left + right, 1.0);
             let expected_swing_left = lead == LeadFoot::Left;
             assert_eq!(left, (!expected_swing_left) as u8 as f32);
             assert_eq!(right, expected_swing_left as u8 as f32);
         }
-        let idle = SkeletonState {
-            weapon_guard: WeaponGuardState::Raised,
-            local_velocity: Vec3::ZERO,
-            ..default()
-        };
+        let idle = SkeletonState::default()
+            .with_local_velocity(Vec3::ZERO)
+            .with_weapon_guard(WeaponGuardState::Raised);
         assert_eq!(locomotion_support_weights(&idle), (1.0, 1.0));
     }
 
     #[test]
     fn ordinary_idle_and_stopping_restore_symmetric_terrain_support() {
-        let idle = SkeletonState {
-            gait_phase: 0.25,
-            ..default()
-        };
+        let idle = SkeletonState::default().with_gait_phase(0.25);
         assert_eq!(locomotion_support_weights(&idle), (1.0, 1.0));
 
-        let stopping = SkeletonState {
-            gait_phase: 0.25,
-            local_velocity: Vec3::NEG_Z * 0.2,
-            ..default()
-        };
+        let stopping = SkeletonState::default()
+            .with_gait_phase(0.25)
+            .with_local_velocity(Vec3::NEG_Z * 0.2);
         let (left, right) = locomotion_support_weights(&stopping);
         let (raw_left, raw_right) =
             gait_support_weights(locomotion_profile(&stopping), stopping.gait_phase);
@@ -3166,12 +1283,10 @@ mod tests {
 
     #[test]
     fn actions_and_zero_weight_swing_legs_preserve_authored_fk() {
-        let action = SkeletonState {
-            action: SkeletonAction::Attack,
-            local_velocity: Vec3::NEG_Z * 5.5,
-            gait_phase: 0.0,
-            ..default()
-        };
+        let mut action = SkeletonState::default()
+            .with_local_velocity(Vec3::NEG_Z * 5.5)
+            .with_gait_phase(0.0);
+        action.begin_attack(AttackSpec::default(), 0, 1);
         assert_eq!(locomotion_support_weights(&action), (0.0, 0.0));
         assert!(!terrain_leg_has_support(0.0));
         assert!(!terrain_leg_has_support(0.01));
@@ -3255,17 +1370,14 @@ mod tests {
 
     #[test]
     fn inactive_postures_require_raised_footwork_reset() {
-        for (grounded, posture) in [
-            (false, Posture::Airborne),
-            (true, Posture::Crouched),
-            (true, Posture::Prone),
+        for body in [
+            BodyState::Airborne,
+            BodyState::Grounded(GroundedPosture::Crouched),
+            BodyState::Prone,
         ] {
-            let skeleton = SkeletonState {
-                grounded,
-                posture,
-                weapon_guard: WeaponGuardState::Raised,
-                ..default()
-            };
+            let skeleton = SkeletonState::default()
+                .with_body_state(body)
+                .with_weapon_guard(WeaponGuardState::Raised);
             assert!(!raised_footwork_posture_is_valid(&skeleton));
         }
     }

@@ -44,17 +44,22 @@ Skeleton state contains the minimum authoritative information needed to
 reproduce what a character is doing. It is not a single mutually exclusive
 enum, because a character may be moving, crouching, looking at an opponent,
 and starting an attack at the same time. It is instead composed from several
-cooperating dimensions:
+cooperating, typed dimensions. The body mode owns ground contact, and each
+active action owns its own timeline and parameters. State-changing methods
+preserve these invariants rather than exposing a public property bag:
 
-- **Posture:** upright, crouched, airborne, prone, supine, or ragdolled.
-- **Locomotion:** local velocity, speed, grounded state, gait phase, and the
+- **Body:** grounded upright/crouched, airborne, prone, supine, or ragdolled;
+  this tagged value owns the ground-contact/posture relationship.
+- **Locomotion:** local/world velocity, acceleration, gait phase, and the
   currently leading or planted foot.
-- **Stance:** facing, handedness, selected animation pack, aim state, and which
-  foot is forward.
-- **Action:** none, jump charge, jump, dodge, attack, block, hit reaction,
-  prone transition, or get-up.
-- **Action parameters:** direction, attack line, stay/switch footwork, phase,
-  target height, and authoritative start/contact times where applicable.
+- **Stance:** lowered, or raised with validated planted/moving footwork intent.
+- **Selection and facing:** body-facing rotation remains on the character root;
+  lead foot and animation-pack selection are independent skeleton fields.
+- **Action:** opaque idle, dodge, attack, or block state constructed through
+  typed transitions. Additional actions require an authoritative producer.
+- **Action payload:** dodge direction, block line, or attack family,
+  stay/switch footwork, target height, and a saturating authoritative timeline,
+  carried only by the corresponding action variant.
 
 This state is synchronized over the network. A client does not need to know
 whether another character is an NPC or player; it needs only the replicated
@@ -84,6 +89,14 @@ already-reversed gameplay root. Releasing movement completes only the active
 half-step. Lowering, incapacitation, crouching, or leaving the ground clears the
 intent.
 
+The replicated stance is a tagged `lowered` or `raised` value; only the raised
+variant can contain locomotion intent. Raised intent is itself tagged as
+`planted` or `moving`. Both retain the wrapping step sequence needed to detect
+coalesced handoffs, while only `moving` can contain normalized finite direction,
+positive speed, and a swing foot. Construction and deserialization validate
+those payloads, and lowering discards the intent entirely. Repeated writes of
+the already-current guard state preserve live footwork and gait phase.
+
 A discrete raised/lowered change is presentation-crossfaded from the currently
 displayed effective pose over 0.18 seconds. This includes resolved fallback
 clips and their whole-body mirror contribution, so an incomplete
@@ -93,8 +106,11 @@ tools (and by render delta in gameplay); changing direction or gait phase does
 not restart it. Reversing guard during the blend starts from the pose already
 on screen rather than either original endpoint.
 
-The server owns movement, posture and action acceptance, gameplay position,
-attack timing, hits, damage, and other outcomes. A client may begin an
+The server owns movement, body mode, authoritative action timing, gameplay
+position, attack timing, hits, damage, and other outcomes. Typed action starts
+currently preserve the established last-writer-wins replacement behavior;
+there is no invented action-vs-action rejection table. Entering a downed body
+mode atomically lowers guard and cancels the presentation action. A client may begin an
 animation immediately in response to local input, then reconcile it with the
 server's accepted skeleton state. Bone transforms, terrain-adjusted foot
 positions, and secondary motion are presentation and are not authoritative.
@@ -723,10 +739,12 @@ returns to the same parity after a skipped full cycle. World-space targets
 remain client-only.
 
 Procedural guard plants and targets stay entirely client-side. Replicated
-`SkeletonState` carries only semantic direction, speed, phase, swing side, and
-step identity; it never
+`SkeletonState` carries a tagged planted/moving intent whose moving payload has
+semantic direction, speed, swing side, and step identity; it never
 carries bones or world foot positions. Flat-ground placement works with
-terrain IK disabled. When terrain conformity is explicitly enabled, the same
+terrain IK disabled. Raised planning and terrain conformity intentionally
+share one ordered solver pass so pole, plant, and pelvis memory are sampled
+once per frame. When terrain conformity is explicitly enabled, the same
 targets additionally follow height and slope without replacing their planted
 XZ positions. Raised grounded idle uses the static guard. Raised crouched and airborne
 characters retain the existing crouch and airborne posture rules; specialized
@@ -937,7 +955,9 @@ an automatic get-up or ragdoll transition rather than a player-controlled roll.
 
 The humanoid unarmed root must satisfy every required semantic pose because it
 has no parent pack. Exact files and the presence-based mirrored counterparts
-both satisfy that requirement. Its tentative authored size is:
+both satisfy that requirement. The contract contains 34 resolvable semantics;
+six mirrored pairs allow the root to satisfy it with 28 authored files. Its
+tentative authored size is:
 
 | Family | Authored poses |
 |---|---:|

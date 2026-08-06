@@ -20,9 +20,9 @@ use bevy::{
 use serde::Serialize;
 
 use crate::animation::{
-    AnimationPlayback, BoneRole, HumanoidBone, LocomotionBodyResponseState, LocomotionHeightState,
-    LocomotionPresentationEvent, LocomotionPresentationEventKind, PresentedSkeleton,
-    ProceduralAnimationClock, ProceduralIkState, RaisedFootworkState, TacticalAnimationPlugin,
+    AnimationPlayback, ArmIkState, BoneRole, HumanoidBone, LegIkState, LocomotionBodyResponseState,
+    LocomotionHeightState, LocomotionPresentationEvent, LocomotionPresentationEventKind,
+    PresentedSkeleton, ProceduralAnimationClock, RaisedFootworkState, TacticalAnimationPlugin,
     TerrainIkEnabled, locomotion_support_weights,
 };
 use crate::{
@@ -949,7 +949,8 @@ fn drive_sequence(
             &mut Transform,
             &mut CharacterLook,
             Option<&AnimationPlayback>,
-            Option<&mut ProceduralIkState>,
+            Option<&mut LegIkState>,
+            Option<&mut ArmIkState>,
             Option<&mut RaisedFootworkState>,
             Option<&mut LocomotionHeightState>,
             Option<&mut LocomotionBodyResponseState>,
@@ -970,6 +971,7 @@ fn drive_sequence(
         mut look,
         playback,
         ik_state,
+        arm_ik_state,
         raised_footwork,
         height_state,
         body_response,
@@ -989,7 +991,10 @@ fn drive_sequence(
             *skeleton = SkeletonState::default();
             *guard_input = WeaponGuardInputState::default();
             if let Some(mut ik_state) = ik_state {
-                *ik_state = ProceduralIkState::default();
+                *ik_state = LegIkState::default();
+            }
+            if let Some(mut arm_ik_state) = arm_ik_state {
+                *arm_ik_state = ArmIkState::default();
             }
             if let Some(mut raised_footwork) = raised_footwork {
                 *raised_footwork = RaisedFootworkState::default();
@@ -1044,18 +1049,23 @@ fn drive_sequence(
         };
         transform.translation = Vec3::new(horizontal.x, vertical, horizontal.y);
         if frame.action != SkeletonAction::None {
-            skeleton.begin_action(
-                frame.action,
-                sequence.simulation_tick,
-                sequence.simulation_tick + 64,
-            );
+            let start = sequence.simulation_tick;
+            let contact = start + 64;
+            match frame.action {
+                SkeletonAction::Attack => {
+                    skeleton.begin_attack(AttackSpec::default(), start, contact)
+                }
+                SkeletonAction::Dodge => skeleton.begin_dodge(DodgeSpec::default(), start, contact),
+                SkeletonAction::Block => skeleton.begin_block(BlockSpec::default(), start, contact),
+                SkeletonAction::None => {}
+            }
         }
         transform.rotation = advance_body_facing(
             transform.rotation,
             orientation,
             world_velocity,
             frame.action,
-            skeleton.weapon_guard,
+            skeleton.weapon_guard(),
             delta_seconds,
         );
         sequence.scenario_distance += frame.speed * delta_seconds;
@@ -3008,7 +3018,7 @@ mod tests {
                 samples.push((
                     frame.scenario_frame,
                     skeleton.gait_phase,
-                    skeleton.raised_locomotion,
+                    skeleton.raised_locomotion(),
                 ));
             }
             samples
@@ -3018,15 +3028,15 @@ mod tests {
         assert!(
             release
                 .iter()
-                .any(|(frame, phase, intent)| *frame > 20 && *phase > 0.5 && intent.active)
+                .any(|(frame, phase, intent)| *frame > 20 && *phase > 0.5 && intent.is_moving())
         );
-        assert!(!release.last().unwrap().2.active);
+        assert!(!release.last().unwrap().2.is_moving());
         assert_eq!(release.last().unwrap().1, 0.0);
 
         let reversal = replay("raised-guard-left-right-reversal");
         let changed = reversal
             .iter()
-            .find(|(_, _, intent)| intent.local_direction == Vec2::X)
+            .find(|(_, _, intent)| intent.local_direction() == Vec2::X)
             .expect("reversal is accepted at a foot handoff");
         assert!(changed.0 >= 16);
         assert!(changed.1 < 0.08 || (0.5..0.58).contains(&changed.1));
