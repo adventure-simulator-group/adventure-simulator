@@ -1102,8 +1102,17 @@ pub struct StrategicEncounter {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CharacterContextKind {
     HostileGroup,
+    CaseSite,
     StrategicEncounter,
     RoadEncounter,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum BackendContextualDecision {
+    Request,
+    Refused,
+    Unavailable,
+    EmergencyTreatment,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -1124,7 +1133,10 @@ pub struct BackendContextCharacter {
     pub ordinal: u16,
     pub alive: bool,
     pub revision: u32,
-    pub treatment_consent: bool,
+    pub membership_revision: u32,
+    pub contact_decision: BackendContextualDecision,
+    pub treatment_decision: BackendContextualDecision,
+    pub treatment_limb_slug: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

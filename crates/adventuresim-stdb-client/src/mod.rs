@@ -76,6 +76,7 @@ pub mod backend_characters_table;
 pub mod backend_committed_cuts_table;
 pub mod backend_context_character_type;
 pub mod backend_context_characters_table;
+pub mod backend_contextual_decision_type;
 pub mod backend_contract_type;
 pub mod backend_contracts_table;
 pub mod backend_corpse_type;
@@ -260,6 +261,7 @@ pub mod contact_context_character_reducer;
 pub mod container_liquid_table;
 pub mod container_liquid_type;
 pub mod contextual_contact_receipt_type;
+pub mod contextual_decision_state_type;
 pub mod continue_camp_travel_reducer;
 pub mod contract_interaction_stage_type;
 pub mod contract_issuer_interaction_receipt_type;
@@ -893,6 +895,7 @@ pub mod travel_to_case_site_reducer;
 pub mod travel_to_settlement_planned_reducer;
 pub mod travel_to_settlement_reducer;
 pub mod treat_limb_reducer;
+pub mod treatment_action_receipt_type;
 pub mod tree_species_id_type;
 pub mod tree_species_profile_type;
 pub mod trigger_development_scenario_incident_reducer;
@@ -994,6 +997,7 @@ pub use backend_characters_table::*;
 pub use backend_committed_cuts_table::*;
 pub use backend_context_character_type::BackendContextCharacter;
 pub use backend_context_characters_table::*;
+pub use backend_contextual_decision_type::BackendContextualDecision;
 pub use backend_contract_type::BackendContract;
 pub use backend_contracts_table::*;
 pub use backend_corpse_type::BackendCorpse;
@@ -1178,6 +1182,7 @@ pub use contact_context_character_reducer::contact_context_character;
 pub use container_liquid_table::*;
 pub use container_liquid_type::ContainerLiquid;
 pub use contextual_contact_receipt_type::ContextualContactReceipt;
+pub use contextual_decision_state_type::ContextualDecisionState;
 pub use continue_camp_travel_reducer::continue_camp_travel;
 pub use contract_interaction_stage_type::ContractInteractionStage;
 pub use contract_issuer_interaction_receipt_type::ContractIssuerInteractionReceipt;
@@ -1811,6 +1816,7 @@ pub use travel_to_case_site_reducer::travel_to_case_site;
 pub use travel_to_settlement_planned_reducer::travel_to_settlement_planned;
 pub use travel_to_settlement_reducer::travel_to_settlement;
 pub use treat_limb_reducer::treat_limb;
+pub use treatment_action_receipt_type::TreatmentActionReceipt;
 pub use tree_species_id_type::TreeSpeciesId;
 pub use tree_species_profile_type::TreeSpeciesProfile;
 pub use trigger_development_scenario_incident_reducer::trigger_development_scenario_incident;
@@ -2728,6 +2734,9 @@ pub enum Reducer {
         procedure: String,
         projectile_id: Option<u64>,
         use_soap: bool,
+        action_id: String,
+        context_ref: Option<String>,
+        expected_membership_revision: Option<u32>,
     },
     TriggerDevelopmentScenarioIncident {
         scenario_slug: String,
@@ -4564,6 +4573,9 @@ Reducer::BeginFormalCourtship{
                 procedure,
                 projectile_id,
                 use_soap,
+                action_id,
+                context_ref,
+                expected_membership_revision,
 }             => __sats::bsatn::to_vec(&treat_limb_reducer::TreatLimbArgs {
                 actor_id: actor_id.clone(),
                 patient_id: patient_id.clone(),
@@ -4571,6 +4583,9 @@ Reducer::BeginFormalCourtship{
                 procedure: procedure.clone(),
                 projectile_id: projectile_id.clone(),
                 use_soap: use_soap.clone(),
+                action_id: action_id.clone(),
+                context_ref: context_ref.clone(),
+                expected_membership_revision: expected_membership_revision.clone(),
 }),
             Reducer::TriggerDevelopmentScenarioIncident{
                 scenario_slug,

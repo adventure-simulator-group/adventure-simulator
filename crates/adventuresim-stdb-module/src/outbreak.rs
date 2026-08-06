@@ -1395,7 +1395,8 @@ pub(crate) fn materialize_generated_outbreak(
                     .min(course_end),
             ),
             revision: 1,
-            treatment_consent: true,
+            contact_decision: crate::world_actor::ContextualDecisionState::Allowed,
+            treatment_decision: crate::world_actor::ContextualDecisionState::Allowed,
         };
         if ctx
             .db
@@ -1425,7 +1426,8 @@ pub(crate) fn materialize_generated_outbreak(
                 || existing.role != membership.role
                 || existing.ordinal != membership.ordinal
                 || existing.entered_at != membership.entered_at
-                || existing.treatment_consent != membership.treatment_consent
+                || existing.contact_decision != membership.contact_decision
+                || existing.treatment_decision != membership.treatment_decision
             {
                 return Err("Outbreak Patient context provenance collision".into());
             }

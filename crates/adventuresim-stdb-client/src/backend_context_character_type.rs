@@ -4,6 +4,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::backend_contextual_decision_type::BackendContextualDecision;
 use super::character_context_kind_type::CharacterContextKind;
 use super::character_context_role_type::CharacterContextRole;
 
@@ -19,7 +20,10 @@ pub struct BackendContextCharacter {
     pub ordinal: u16,
     pub alive: bool,
     pub revision: u32,
-    pub treatment_consent: bool,
+    pub membership_revision: u32,
+    pub contact_decision: BackendContextualDecision,
+    pub treatment_decision: BackendContextualDecision,
+    pub treatment_limb_slug: Option<String>,
 }
 
 impl __sdk::InModule for BackendContextCharacter {
@@ -39,7 +43,12 @@ pub struct BackendContextCharacterCols {
     pub ordinal: __sdk::__query_builder::Col<BackendContextCharacter, u16>,
     pub alive: __sdk::__query_builder::Col<BackendContextCharacter, bool>,
     pub revision: __sdk::__query_builder::Col<BackendContextCharacter, u32>,
-    pub treatment_consent: __sdk::__query_builder::Col<BackendContextCharacter, bool>,
+    pub membership_revision: __sdk::__query_builder::Col<BackendContextCharacter, u32>,
+    pub contact_decision:
+        __sdk::__query_builder::Col<BackendContextCharacter, BackendContextualDecision>,
+    pub treatment_decision:
+        __sdk::__query_builder::Col<BackendContextCharacter, BackendContextualDecision>,
+    pub treatment_limb_slug: __sdk::__query_builder::Col<BackendContextCharacter, Option<String>>,
 }
 
 impl __sdk::__query_builder::HasCols for BackendContextCharacter {
@@ -55,7 +64,16 @@ impl __sdk::__query_builder::HasCols for BackendContextCharacter {
             ordinal: __sdk::__query_builder::Col::new(table_name, "ordinal"),
             alive: __sdk::__query_builder::Col::new(table_name, "alive"),
             revision: __sdk::__query_builder::Col::new(table_name, "revision"),
-            treatment_consent: __sdk::__query_builder::Col::new(table_name, "treatment_consent"),
+            membership_revision: __sdk::__query_builder::Col::new(
+                table_name,
+                "membership_revision",
+            ),
+            contact_decision: __sdk::__query_builder::Col::new(table_name, "contact_decision"),
+            treatment_decision: __sdk::__query_builder::Col::new(table_name, "treatment_decision"),
+            treatment_limb_slug: __sdk::__query_builder::Col::new(
+                table_name,
+                "treatment_limb_slug",
+            ),
         }
     }
 }

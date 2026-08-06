@@ -67,6 +67,9 @@ pub struct Character {
     /// future death system, but parties already use this to govern succession.
     #[default(true)]
     pub alive: bool,
+    /// Explicit ordinary care preference for another member of this
+    /// Character's current party. Context-specific refusals take precedence.
+    pub party_treatment_decision: crate::world_actor::ContextualDecisionState,
 }
 
 /// Full Character rows are private because a globally exclusive NPC may have
@@ -2190,6 +2193,7 @@ pub(crate) fn insert_character_with_origin(
             |spec| spec.age_years,
         ),
         alive: true,
+        party_treatment_decision: crate::world_actor::ContextualDecisionState::Allowed,
     });
     let initial_minute = options.initial_time_minute.unwrap_or(0);
     let birth_minute =

@@ -79,6 +79,12 @@ current party, character, location, time, custody, and source identity before
 changing state. Shared-core functions perform deterministic calculations, but
 do not grant authority by themselves.
 
+Contextual Character interactions share only a pure typed decision—allowed
+with a narrow reason, refused, or unavailable. Domain reducers still own exact
+presence, privacy, procedure, retry, and commit validation. This is not a
+universal permission table: medical emergency doctrine remains in Surgery and
+contact consequences remain in social/context authority.
+
 Strategic systems share a closed, versioned vocabulary for place and fixture
 identity. A coarse settlement identity is not an exact venue, and constructing
 an inn, chapter, residence, case-site, camp, source, or fireplace identity does

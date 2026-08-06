@@ -13,6 +13,9 @@ pub(super) struct TreatLimbArgs {
     pub procedure: String,
     pub projectile_id: Option<u64>,
     pub use_soap: bool,
+    pub action_id: String,
+    pub context_ref: Option<String>,
+    pub expected_membership_revision: Option<u32>,
 }
 
 impl From<TreatLimbArgs> for super::Reducer {
@@ -24,6 +27,9 @@ impl From<TreatLimbArgs> for super::Reducer {
             procedure: args.procedure,
             projectile_id: args.projectile_id,
             use_soap: args.use_soap,
+            action_id: args.action_id,
+            context_ref: args.context_ref,
+            expected_membership_revision: args.expected_membership_revision,
         }
     }
 }
@@ -51,6 +57,9 @@ pub trait treat_limb {
         procedure: String,
         projectile_id: Option<u64>,
         use_soap: bool,
+        action_id: String,
+        context_ref: Option<String>,
+        expected_membership_revision: Option<u32>,
     ) -> __sdk::Result<()> {
         self.treat_limb_then(
             actor_id,
@@ -59,6 +68,9 @@ pub trait treat_limb {
             procedure,
             projectile_id,
             use_soap,
+            action_id,
+            context_ref,
+            expected_membership_revision,
             |_, _| {},
         )
     }
@@ -77,6 +89,9 @@ pub trait treat_limb {
         procedure: String,
         projectile_id: Option<u64>,
         use_soap: bool,
+        action_id: String,
+        context_ref: Option<String>,
+        expected_membership_revision: Option<u32>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -95,6 +110,9 @@ impl treat_limb for super::RemoteReducers {
         procedure: String,
         projectile_id: Option<u64>,
         use_soap: bool,
+        action_id: String,
+        context_ref: Option<String>,
+        expected_membership_revision: Option<u32>,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -110,6 +128,9 @@ impl treat_limb for super::RemoteReducers {
                 procedure,
                 projectile_id,
                 use_soap,
+                action_id,
+                context_ref,
+                expected_membership_revision,
             },
             callback,
         )

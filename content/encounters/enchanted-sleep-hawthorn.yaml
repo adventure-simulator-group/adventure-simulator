@@ -11,7 +11,7 @@
         "adaptation_note": "A direct adaptation of Malory's Volume I, Book VI, Chapter III, where Morgan le Fay enchants the sleeping Launcelot for six hours and has him borne away. This version relocates enchanted sleep to a reusable roadside company rescue and omits Morgan's abduction and coercive demand."
       },
       "cast": [
-        { "id": "veteran_caravan_mistress", "name": "Veteran caravan mistress", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } },
+        { "id": "veteran_caravan_mistress", "name": "Veteran caravan mistress", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } },
         { "id": "lady_of_hawthorn", "name": "Lady of the Hawthorn", "nature": "supernatural", "backing": { "kind": "blocked", "issue": "#375", "reason": "Supernatural personhood and physiology are not yet modeled." } }
       ],
       "opening": [

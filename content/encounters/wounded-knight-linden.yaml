@@ -11,7 +11,7 @@
         "adaptation_note": "An original encounter assembled cautiously from wounded-knight and roadside-aid commonplaces shared by medieval romance; it does not reproduce a particular episode."
       },
       "cast": [
-        { "id": "wounded_knight", "name": "Wounded knight", "nature": "mortal", "backing": { "kind": "character", "role": "patient", "treatment_consent": true } }
+        { "id": "wounded_knight", "name": "Wounded knight", "nature": "mortal", "backing": { "kind": "character", "role": "patient", "contact_decision": "allowed", "treatment_decision": "allowed" } }
       ],
       "opening": [
         {

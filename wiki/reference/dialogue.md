@@ -66,9 +66,12 @@ private morale, directional affinity, and familiarity, so time spent getting
 to know someone can affect a later confrontation without revealing whether
 they have quest information.
 
-Contextual contact applies to every living, co-present Character role,
-including road-encounter counterparties and consenting Patients. Road content
-does not own a parallel dialogue or affinity table: **Talk** uses the shared
+Contextual contact applies to every living, co-present Character role whose
+authored context permits the request, including road-encounter counterparties
+and Patients. The shared decision is deliberately small: a request is allowed,
+refused, or unavailable. Refused and unavailable contact changes no awareness,
+affinity, familiarity, time, or receipt state. Road content does not own a
+parallel dialogue or affinity table: **Request** uses the shared
 social mutation and durable relationship edge. At a combat choice point,
 contact establishes mutual awareness and removes the opening stealth choice.
 For a non-combat road conversation it still records contact revision and

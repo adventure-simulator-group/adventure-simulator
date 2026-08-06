@@ -988,19 +988,41 @@ fn generic_road_encounter(challenge: &BackendRoadChallenge) -> Markup {
                   div class="npc-portrait counterparty-portrait" data-character-id=(character.character_id) {
                     span class="npc-portrait-image" aria-hidden="true" { "?" }
                     span class="npc-portrait-name" { (&character.name) }
-                    @if character.can_talk {
+                    @if character.contact_decision == adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Request {
                       form action="/camp/counterparty/contact" method="post" {
                         input type="hidden" name="target_id" value=(character.character_id);
                         input type="hidden" name="contact_ref" value=(&challenge.id);
                         input type="hidden" name="expected_revision" value=(character.contact_revision);
                         input type="hidden" name="action_id" value=(format!("road-contact:{}:{}:{}", challenge.id, character.contact_revision, character.character_id));
-                        button type="submit" class="btn btn-secondary btn-small" { "Talk" }
+                        button type="submit" class="btn btn-secondary btn-small" { "Request" }
+                      }
+                    } @else {
+                      button type="button" class="btn btn-secondary btn-small" disabled {
+                        (match character.contact_decision {
+                            adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Refused => "Refused",
+                            _ => "Unavailable",
+                        })
                       }
                     }
-                    @if character.can_bandage {
+                    @if character.treatment_limb_slug.is_some() && matches!(character.treatment_decision,
+                        adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Request
+                        | adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::EmergencyTreatment) {
                       form action="/camp/counterparty/bandage" method="post" {
                         input type="hidden" name="patient_id" value=(character.character_id);
-                        button type="submit" class="btn btn-secondary btn-small" { "Bandage" }
+                        input type="hidden" name="limb_slug" value=(character.treatment_limb_slug.as_deref().unwrap_or_default());
+                        input type="hidden" name="action_id" value=(crate::templates::fresh_request_token("treatment"));
+                        input type="hidden" name="context_ref" value=(&challenge.id);
+                        input type="hidden" name="expected_membership_revision" value=(character.membership_revision);
+                        button type="submit" class="btn btn-secondary btn-small" {
+                          (if character.treatment_decision == adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::EmergencyTreatment { "Emergency treatment" } else { "Request treatment" })
+                        }
+                      }
+                    } @else {
+                      button type="button" class="btn btn-secondary btn-small" disabled {
+                        (match character.treatment_decision {
+                            adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Refused => "Refused",
+                            _ => "Unavailable",
+                        })
                       }
                     }
                   }
@@ -1080,7 +1102,7 @@ fn strategic_encounter_panel(
                                 input type="hidden" name="contact_ref" value=(&encounter.encounter_id);
                                 input type="hidden" name="expected_revision" value=(encounter.revision);
                                 input type="hidden" name="action_id" value=(format!("contact:{}:{}:{}", encounter.encounter_id, encounter.revision, character.id));
-                                button type="submit" class="btn btn-secondary btn-small" { "Talk" }
+                                button type="submit" class="btn btn-secondary btn-small" { "Request" }
                             }
                         }
                     }

@@ -15,6 +15,65 @@ use crate::{
     strategic_place::{StrategicFixtureId, StrategicPlaceId},
 };
 
+/// The small, public answer to a contextual Character interaction request.
+///
+/// Domains remain responsible for proving presence, privacy, and their own
+/// emergency doctrine. This type deliberately does not grow into a universal
+/// permission or policy engine.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ContextualActionDecision {
+    Allowed(ContextualActionReason),
+    Refused,
+    Unavailable,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ContextualActionReason {
+    SelfAction,
+    TargetPermission,
+    EmergencyMedicalNecessity,
+}
+
+impl ContextualActionDecision {
+    pub const fn is_allowed(self) -> bool {
+        matches!(self, Self::Allowed(_))
+    }
+}
+
+/// Resolve an already-authoritatively gathered contextual answer. A target's
+/// explicit refusal always wins; emergency authority can only fill an absent
+/// (`Unavailable`) permission.
+pub const fn decide_contextual_action(
+    self_action: bool,
+    target_answer: ContextualActionDecision,
+    emergency_medical_necessity: bool,
+) -> ContextualActionDecision {
+    if self_action {
+        ContextualActionDecision::Allowed(ContextualActionReason::SelfAction)
+    } else {
+        match target_answer {
+            ContextualActionDecision::Refused => ContextualActionDecision::Refused,
+            ContextualActionDecision::Allowed(reason) => ContextualActionDecision::Allowed(reason),
+            ContextualActionDecision::Unavailable if emergency_medical_necessity => {
+                ContextualActionDecision::Allowed(ContextualActionReason::EmergencyMedicalNecessity)
+            }
+            ContextualActionDecision::Unavailable => ContextualActionDecision::Unavailable,
+        }
+    }
+}
+
+pub fn emergency_bandage_is_necessary(
+    incapacitated: bool,
+    procedure: &str,
+    selected_limb_cut_damage: f32,
+    selected_limb_bandaged: bool,
+) -> bool {
+    incapacitated
+        && procedure == "bandage"
+        && selected_limb_cut_damage > 0.0
+        && !selected_limb_bandaged
+}
+
 pub trait DomainTarget: Clone + fmt::Debug + Eq {}
 pub trait DomainRequirement: Clone + fmt::Debug + Eq {}
 pub trait DomainCapability: Clone + fmt::Debug + Eq {}
@@ -730,6 +789,13 @@ mod tests {
             interrupted_whole.end_minute,
             interrupted_partition.end_minute
         );
+        assert!(!emergency_bandage_is_necessary(
+            false, "bandage", 0.4, false
+        ));
+        assert!(emergency_bandage_is_necessary(true, "bandage", 0.4, false));
+        assert!(!emergency_bandage_is_necessary(true, "stitch", 0.4, false));
+        assert!(!emergency_bandage_is_necessary(true, "bandage", 0.0, false));
+        assert!(!emergency_bandage_is_necessary(true, "bandage", 0.4, true));
         assert_eq!(
             interrupted_partition.outcome,
             TimeOutcome::Interrupted(Interrupt::Encounter)
@@ -944,6 +1010,37 @@ mod tests {
             &[ActionEffect::Domain(Effect::InspectEvidence(9))]
         );
         assert_eq!(std::mem::size_of::<Effect>(), std::mem::size_of::<u64>());
+    }
+
+    #[test]
+    fn contextual_decisions_keep_refusal_distinct_from_unavailability() {
+        assert!(ContextualActionDecision::Allowed(ContextualActionReason::SelfAction).is_allowed());
+        assert!(
+            ContextualActionDecision::Allowed(ContextualActionReason::TargetPermission)
+                .is_allowed()
+        );
+        assert!(
+            ContextualActionDecision::Allowed(ContextualActionReason::EmergencyMedicalNecessity)
+                .is_allowed()
+        );
+        assert!(!ContextualActionDecision::Refused.is_allowed());
+        assert!(!ContextualActionDecision::Unavailable.is_allowed());
+        assert_ne!(
+            ContextualActionDecision::Refused,
+            ContextualActionDecision::Unavailable
+        );
+        assert_eq!(
+            decide_contextual_action(true, ContextualActionDecision::Refused, false),
+            ContextualActionDecision::Allowed(ContextualActionReason::SelfAction)
+        );
+        assert_eq!(
+            decide_contextual_action(false, ContextualActionDecision::Refused, true),
+            ContextualActionDecision::Refused
+        );
+        assert_eq!(
+            decide_contextual_action(false, ContextualActionDecision::Unavailable, true),
+            ContextualActionDecision::Allowed(ContextualActionReason::EmergencyMedicalNecessity)
+        );
     }
 
     #[test]

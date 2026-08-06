@@ -1,3 +1,5 @@
+use crate::condition::character_strategic_condition__view as _;
+
 pub const ERRANTRY_ISSUER_ORGANIZATION_ID: &str = "order_saint_george";
 pub const ERRANTRY_FINALE_THREAT_ID: &str = "armed_retainer";
 pub const COURIER_REST_DELAY_MINUTES: u64 = 60;
@@ -615,23 +617,49 @@ pub fn backend_road_challenges(ctx: &ViewContext) -> Vec<BackendRoadChallenge> {
                         .filter(&challenge.id)
                         .find(|row| row.active && usize::from(row.ordinal) == ordinal)?;
                     let character = ctx.db.character().id().find(membership.character_id)?;
-                    let has_unbandaged_cut = ctx
-                        .db
-                        .limb_injury()
-                        .character_id()
-                        .filter(character.id)
-                        .any(|injury| injury.cut_damage > 0.0 && !injury.bandaged);
+                    let treatment_limb = crate::surgery::LimbRegion::ALL.into_iter().find(|limb| {
+                        ctx.db
+                            .limb_injury()
+                            .character_id()
+                            .filter(character.id)
+                            .find(|injury| injury.limb == *limb)
+                            .is_some_and(|injury| injury.cut_damage > 0.0 && !injury.bandaged)
+                    });
+                    let presentation_decision = |decision| match decision {
+                        crate::world_actor::ContextualDecisionState::Allowed => adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Request,
+                        crate::world_actor::ContextualDecisionState::Refused => adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Refused,
+                        crate::world_actor::ContextualDecisionState::Unavailable => adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Unavailable,
+                    };
+                    let available = active && challenge.open && character.alive;
                     Some(adventuresim_core::road_encounter_catalog::PresentationCastMember {
                         character_id: character.id,
                         name: character.name,
                         role: *role,
-                        can_talk: active && challenge.open && character.alive,
-                        can_bandage: active
-                            && challenge.open
-                            && character.alive
-                            && membership.treatment_consent
-                            && has_unbandaged_cut,
+                        contact_decision: if available {
+                            presentation_decision(membership.contact_decision)
+                        } else {
+                            adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Unavailable
+                        },
+                        treatment_decision: if available && treatment_limb.is_some() {
+                            let incapacitated = ctx.db.character_strategic_condition()
+                                .character_id().find(character.id)
+                                .is_some_and(|condition| condition.incapacitation >= 1.0 || condition.status == "incapacitated");
+                            let emergency = treatment_limb.is_some_and(|limb| ctx.db.limb_injury()
+                                .character_id().filter(character.id)
+                                .find(|injury| injury.limb == limb)
+                                .is_some_and(|injury| adventuresim_core::strategic_action::emergency_bandage_is_necessary(
+                                    incapacitated, "bandage", injury.cut_damage, injury.bandaged)));
+                            if membership.treatment_decision == crate::world_actor::ContextualDecisionState::Unavailable && emergency {
+                                adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::EmergencyTreatment
+                            } else {
+                                presentation_decision(membership.treatment_decision)
+                            }
+                        } else {
+                            adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Unavailable
+                        },
                         contact_revision,
+                        membership_revision: membership.revision,
+                        treatment_limb_slug: treatment_limb.map(|limb| limb.slug().to_owned()),
                     })
                 })
                 .collect();

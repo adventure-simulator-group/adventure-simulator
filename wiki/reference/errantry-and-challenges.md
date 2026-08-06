@@ -236,10 +236,15 @@ use **Continue travel** to bypass either preliminary challenge and reach the
 bound finale.
 
 Wounded couriers and knights are durable Characters with an actual untreated
-limb wound and treatment consent. Their authored outcome observes an ordinary
+limb wound and explicit contextual contact and treatment decisions. Their authored outcome observes an ordinary
 successful bandage rather than consuming a bandage through a bespoke effect.
 The camp projects every active Character-backed cast member in authored order.
-Each can be contacted through the ordinary contextual social reducer, and a
-consenting wounded Patient exposes the ordinary bandage action. Resolving or
+Allowed contact is requested through the ordinary contextual social reducer;
+refused and unavailable decisions are rendered without attempting mutation.
+An available wounded Patient exposes the ordinary bandage request. Resolving or
 ignoring the occurrence deactivates only context membership; it never deletes
 the Characters or their relationship history.
+The wounded-courier fixture explicitly refuses conversation and is
+incapacitated with unavailable ordinary treatment, so its canonically selected
+open-cut limb exercises the narrow **Emergency treatment** presentation and
+authority path.
