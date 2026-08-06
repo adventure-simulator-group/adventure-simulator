@@ -34,8 +34,11 @@ at the finale, the enemy page exposes both the existing combat controls and the
 hostile conversation dock. The scenario character has enough social training
 to exercise acceptance reliably and carries ordinary party rations, filled
 waterskins, and a field tent with enough surplus and shelter for the normal
-outbound and return journeys. Reset the isolated profile to restore the
-unresolved branch after either outcome.
+outbound and return journeys. Its generated finale site uses a fixture-only
+nearby distance of about 1 km so unrelated random road encounters do not
+dominate this focused demo; ordinary generated quests and travel risk are
+unchanged. Reset the isolated profile to restore the unresolved branch after
+either outcome.
 
 Scenario adoption is available only to the registered strategic gateway in a
 module compiled with the development capability. Each opaque browser owner
