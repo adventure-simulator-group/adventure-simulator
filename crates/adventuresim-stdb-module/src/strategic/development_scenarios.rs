@@ -305,11 +305,32 @@ pub(crate) fn materialize_development_scenario_gallery(
     const THREAT_SETTLEMENT: &str = "dev-scenario-recurring-threat";
     ensure_scenario_settlement(ctx, THREAT_SETTLEMENT, "Threat Scenario Hamlet")?;
     ensure_scenario_character_at(ctx, THREAT_ID, "Threat Investigator", THREAT_SETTLEMENT)?;
+    if let Some(mut attributes) = ctx.db.character_attributes().character_id().find(THREAT_ID) {
+        attributes.instinct = 5.0;
+        ctx.db
+            .character_attributes()
+            .character_id()
+            .update(attributes);
+    }
     if let Some(mut skills) = ctx.db.character_skills().character_id().find(THREAT_ID) {
         skills.charm_hours = skills.charm_hours.max(10_000.0);
         skills.command_hours = skills.command_hours.max(10_000.0);
+        skills.oral_languages.east_central = 10_000.0;
+        skills.oral_languages.west_central = 10_000.0;
+        skills.oral_languages.low = 10_000.0;
+        skills.oral_languages.yiddish = 10_000.0;
+        skills.oral_languages.latin = 10_000.0;
+        skills.oral_languages.romani = 10_000.0;
+        skills.oral_languages.elven = 10_000.0;
+        skills.oral_languages.dwarfish = 10_000.0;
         ctx.db.character_skills().character_id().update(skills);
     }
+    debug_assert!(
+        adventuresim_core::strategic_action::assess_negotiated_withdrawal(
+            5.0, 1.0, 0.0, 50,
+        )
+        .accepted
+    );
     let threat_problem_id = materialize_preferred_generated_fixture(
         ctx,
         THREAT_ID,

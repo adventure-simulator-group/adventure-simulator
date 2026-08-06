@@ -1522,6 +1522,21 @@ mod tests {
     }
 
     #[test]
+    fn initial_negotiation_slice_is_authored_only_for_bandits_and_smugglers() {
+        let negotiable = ALL_THREATS
+            .iter()
+            .copied()
+            .filter(|threat| profile(*threat).negotiation.negotiable)
+            .collect::<Vec<_>>();
+        assert!(negotiable == vec![ThreatId::Bandit, ThreatId::Smuggler]);
+        assert!(
+            negotiable
+                .iter()
+                .all(|threat| profile(*threat).negotiation.sapient)
+        );
+    }
+
+    #[test]
     fn representative_profiles_expose_multiple_supported_preparation_choices() {
         let skeleton = profile(ThreatId::Skeleton).combat;
         assert!(skeleton.innate_protection.resistance_joules > 0.0);

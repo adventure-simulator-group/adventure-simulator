@@ -1452,7 +1452,11 @@ pub struct HostileResolutionReceipt {
     pub party_id: String,
     pub mission_id: Option<String>,
     pub hostile_group_id: String,
+    pub observer_character_id: u64,
+    pub case_id: String,
+    pub case_site_id: CaseSiteId,
     pub resolution: HostileResolutionKind,
+    pub capture_subject_id: Option<String>,
 }
 
 #[derive(SpacetimeType, serde::Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]

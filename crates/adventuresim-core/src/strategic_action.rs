@@ -81,7 +81,7 @@ pub struct NegotiatedWithdrawalAssessment {
 }
 
 /// Deterministic pre-combat response. Social ability is language-scaled;
-/// existing affinity and pressure from casualties/low morale affect the same
+/// existing affinity and pressure from low morale affect the same
 /// bounded score. A refusal changes no authority, so changed state can be
 /// assessed again without a special cooldown or permanent refusal flag.
 pub fn assess_negotiated_withdrawal(
@@ -89,22 +89,11 @@ pub fn assess_negotiated_withdrawal(
     shared_language_coefficient: f32,
     spokesman_affinity: f32,
     hostile_morale_percent: u8,
-    original_enemy_count: u32,
-    current_enemy_count: u32,
 ) -> NegotiatedWithdrawalAssessment {
     let language = shared_language_coefficient.clamp(0.0, 1.0);
-    let social = social_ability.max(0.0).min(10.0) * language;
+    let social = social_ability.clamp(0.0, 5.0) * language;
     let relationship = spokesman_affinity.clamp(-100.0, 100.0) / 20.0;
-    let casualty_fraction = if original_enemy_count == 0 {
-        0.0
-    } else {
-        original_enemy_count
-            .saturating_sub(current_enemy_count)
-            .min(original_enemy_count) as f32
-            / original_enemy_count as f32
-    };
-    let pressure = casualty_fraction * 5.0
-        + (100_u8.saturating_sub(hostile_morale_percent.min(100)) as f32 / 20.0);
+    let pressure = 100_u8.saturating_sub(hostile_morale_percent.min(100)) as f32 / 20.0;
     let score = social + relationship + pressure;
     NegotiatedWithdrawalAssessment {
         accepted: language > 0.0 && score >= 7.5,
@@ -1082,14 +1071,18 @@ mod tests {
     }
 
     #[test]
-    fn negotiated_withdrawal_uses_language_relationship_morale_and_casualties() {
-        let refusal = assess_negotiated_withdrawal(5.0, 1.0, 0.0, 80, 4, 4);
+    fn negotiated_withdrawal_uses_live_social_scale_language_relationship_and_morale() {
+        let refusal = assess_negotiated_withdrawal(5.0, 1.0, 0.0, 80);
         assert!(!refusal.accepted);
-        let social_acceptance = assess_negotiated_withdrawal(8.0, 1.0, 0.0, 80, 4, 4);
+        let social_acceptance = assess_negotiated_withdrawal(5.0, 1.0, 0.0, 50);
         assert!(social_acceptance.accepted);
-        let pressure_acceptance = assess_negotiated_withdrawal(5.0, 1.0, 20.0, 30, 4, 2);
+        let pressure_acceptance = assess_negotiated_withdrawal(5.0, 1.0, 20.0, 70);
         assert!(pressure_acceptance.accepted);
-        assert!(!assess_negotiated_withdrawal(10.0, 0.0, 100.0, 0, 4, 1).accepted);
+        assert_eq!(
+            assess_negotiated_withdrawal(10.0, 1.0, 0.0, 50).score,
+            social_acceptance.score
+        );
+        assert!(!assess_negotiated_withdrawal(10.0, 0.0, 100.0, 0).accepted);
     }
 
     #[test]

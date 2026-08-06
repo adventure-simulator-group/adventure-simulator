@@ -832,6 +832,50 @@ pub(crate) fn complete_bound_mission_success(
     Ok(committed)
 }
 
+pub(crate) fn mission_approach_capability_is_pending(
+    ctx: &ReducerContext,
+    capability: &MissionApproachCapability,
+    party_id: &str,
+) -> Result<bool, String> {
+    let Some(case) = ctx.db.case_authority().id().find(&capability.case_id) else {
+        return Ok(false);
+    };
+    if case.generated_case_id.is_empty() || case.resolution_status != CaseResolutionStatus::Open {
+        return Ok(false);
+    }
+    let expression: adventuresim_core::case::ObjectiveExpression =
+        serde_json::from_str(&case.objective_expression_json)
+            .map_err(|_| "Case objective authority is invalid")?;
+    let facts = ctx
+        .db
+        .case_outcome_fact()
+        .case_id()
+        .filter(&case.id)
+        .map(|row| {
+            serde_json::from_str::<adventuresim_core::case::OutcomeFact>(&row.fact_json)
+                .map_err(|_| "Stored outcome fact is invalid".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let core_case_id =
+        adventuresim_core::case::CaseId::new(case.id.clone()).map_err(|_| "Case ID is invalid")?;
+    let evaluation = expression.evaluate(&core_case_id, party_id, &facts);
+    let Some(path) = expression.alternatives.get(usize::from(capability.path_index)) else {
+        return Ok(false);
+    };
+    let Some(objective_index) = path
+        .objectives
+        .iter()
+        .position(|objective| objective.id.as_str() == capability.objective_id)
+    else {
+        return Ok(false);
+    };
+    Ok(evaluation
+        .alternatives
+        .get(usize::from(capability.path_index))
+        .and_then(|path| path.get(objective_index))
+        .is_some_and(|progress| progress.state == adventuresim_core::case::EvaluationState::Pending))
+}
+
 pub(crate) fn fail_bound_mission_attempt(
     ctx: &ReducerContext,
     mission_id: &str,
@@ -876,6 +920,9 @@ pub(crate) struct HostileResolutionCommit<'a> {
     pub party_id: &'a str,
     pub mission_id: Option<&'a str>,
     pub hostile_group_id: &'a str,
+    pub observer_character_id: u64,
+    pub case_id: &'a str,
+    pub case_site_id: &'a CaseSiteId,
     pub resolution: HostileResolutionKind,
     pub capture_subject_id: Option<&'a str>,
 }
@@ -891,6 +938,9 @@ pub(crate) fn commit_hostile_resolution_authority(
         party_id,
         mission_id,
         hostile_group_id,
+        observer_character_id,
+        case_id,
+        case_site_id,
         resolution,
         capture_subject_id,
     } = commit;
@@ -905,7 +955,11 @@ pub(crate) fn commit_hostile_resolution_authority(
         return if existing.party_id == party_id
             && existing.mission_id.as_deref() == mission_id
             && existing.hostile_group_id == hostile_group_id
+            && existing.observer_character_id == observer_character_id
+            && existing.case_id == case_id
+            && existing.case_site_id == *case_site_id
             && existing.resolution == resolution
+            && existing.capture_subject_id.as_deref() == capture_subject_id
         {
             Ok(false)
         } else {
@@ -921,6 +975,16 @@ pub(crate) fn commit_hostile_resolution_authority(
     if group.disposition != HostileGroupDisposition::Active {
         return Err("Hostile group is already resolved".into());
     }
+    let site = ctx
+        .db
+        .case_site_authority()
+        .id_key()
+        .find(&case_site_id.value)
+        .filter(|site| site.id == *case_site_id && site.case_id == case_id)
+        .ok_or("Hostile resolution case-site authority is stale")?;
+    if group.case_site_id != *case_site_id {
+        return Err("Hostile resolution does not match the hostile-group site".into());
+    }
     if let Some(mission_id) = mission_id {
         let mission = ctx
             .db
@@ -930,6 +994,9 @@ pub(crate) fn commit_hostile_resolution_authority(
             .ok_or("Mission authority not found")?;
         if mission.party_id != party_id
             || mission.hostile_group_id.as_deref() != Some(hostile_group_id)
+            || mission.observer_character_id != observer_character_id
+            || mission.case_id != case_id
+            || mission.case_site_id.as_ref() != Some(case_site_id)
             || mission.status != MissionAttemptStatus::Bound
         {
             return Err("Hostile resolution does not match bound mission authority".into());
@@ -954,19 +1021,34 @@ pub(crate) fn commit_hostile_resolution_authority(
             return Err("Hostile resolution is not an exact current mission candidate".into());
         }
     }
-    if mission_id.is_none()
-        && !ctx
+    if mission_id.is_none() {
+        let party = ctx
+            .db
+            .party_authority()
+            .id()
+            .find(&party_id.to_string())
+            .filter(|party| party.leader_id == observer_character_id)
+            .ok_or("Hostile resolution observer is not the party leader")?;
+        if party.current_case_site_id.as_ref() != Some(case_site_id) {
+            return Err("Party is no longer present at the hostile-group site".into());
+        }
+        let exact_capability = ctx
             .db
             .mission_approach_capability()
-            .hostile_group_id()
-            .filter(&hostile_group_id.to_string())
+            .observer_character_id()
+            .filter(observer_character_id)
             .any(|capability| {
                 capability.active
+                    && capability.case_id == case_id
                     && capability.resolution == HostileResolutionKind::DrivenOff
-                    && capability.case_site_id == group.case_site_id
-            })
-    {
-        return Err("Hostile group has no current drive-off approach".into());
+                    && capability.case_site_id == *case_site_id
+                    && capability.hostile_group_id == hostile_group_id
+                    && mission_approach_capability_is_pending(ctx, &capability, party_id)
+                        .unwrap_or(false)
+            });
+        if !exact_capability {
+            return Err("Hostile group has no exact current drive-off approach".into());
+        }
     }
     group.disposition = match resolution {
         HostileResolutionKind::Defeated => HostileGroupDisposition::Defeated,
@@ -981,12 +1063,6 @@ pub(crate) fn commit_hostile_resolution_authority(
             ingest_hostile_group_defeat_fact(ctx, receipt_id, party_id, &group, group.enemy_count)?
         }
         HostileResolutionKind::DrivenOff => {
-            let site = ctx
-                .db
-                .case_site_authority()
-                .id_key()
-                .find(&group.case_site_id.value)
-                .ok_or("Hostile group case site not found")?;
             ingest_case_outcome_fact(
                 ctx,
                 &format!("{receipt_id}:drive-off"),
@@ -1055,7 +1131,11 @@ pub(crate) fn commit_hostile_resolution_authority(
             party_id: party_id.to_string(),
             mission_id: mission_id.map(str::to_string),
             hostile_group_id: hostile_group_id.to_string(),
+            observer_character_id,
+            case_id: case_id.to_string(),
+            case_site_id: case_site_id.clone(),
             resolution,
+            capture_subject_id: capture_subject_id.map(str::to_string),
         });
     Ok(true)
 }
@@ -1261,6 +1341,27 @@ fn commit_hostile_battle_resolution(
         });
     }
     if let Some(group) = group {
+        let site = ctx
+            .db
+            .case_site_authority()
+            .id_key()
+            .find(&group.case_site_id.value)
+            .ok_or("Hostile group case site not found")?;
+        let observer_character_id = if let Some(mission_id) = mission_id {
+            ctx.db
+                .mission_authority()
+                .id()
+                .find(&mission_id.to_string())
+                .ok_or("Mission authority not found")?
+                .observer_character_id
+        } else {
+            ctx.db
+                .party_authority()
+                .id()
+                .find(&party_id.to_string())
+                .ok_or("Party authority not found")?
+                .leader_id
+        };
         commit_hostile_resolution_authority(
             ctx,
             HostileResolutionCommit {
@@ -1268,6 +1369,9 @@ fn commit_hostile_battle_resolution(
                 party_id,
                 mission_id,
                 hostile_group_id: &group.id,
+                observer_character_id,
+                case_id: &site.case_id,
+                case_site_id: &site.id,
                 resolution,
                 capture_subject_id,
             },

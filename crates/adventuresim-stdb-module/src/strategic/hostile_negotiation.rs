@@ -1,4 +1,5 @@
 use crate::character::character_attributes__view as _;
+use crate::character::character__view as _;
 use crate::time::character_time__view as _;
 use crate::world_actor::character_context_membership as _;
 
@@ -76,25 +77,96 @@ fn exact_spokesman_for_view(
     group: &HostileGroupAuthority,
     minute: u64,
 ) -> Option<crate::world_actor::CharacterContextMembership> {
-    let mut rows = ctx
+    let rows = ctx
         .db
         .character_context_membership()
         .context_id()
         .filter(&group.id)
         .filter(|row| {
             row.context_kind == crate::world_actor::CharacterContextKind::HostileGroup
-                && row.ordinal == 0
+                && row.role == crate::world_actor::CharacterContextRole::Counterparty
+                && row.location_id == group.case_site_id.value
                 && crate::world_actor::context_membership_valid_at(row, minute)
-        });
-    let row = rows.next()?;
-    rows.next().is_none().then_some(row)
+                && ctx
+                    .db
+                    .character()
+                    .id()
+                    .find(row.character_id)
+                    .is_some_and(|character| character.alive)
+                && crate::world_actor::character_alive_at_for_view(ctx, row.character_id, minute)
+        })
+        .collect();
+    unique_lowest_ordinal_spokesman(rows)
+}
+
+fn unique_lowest_ordinal_spokesman(
+    rows: Vec<crate::world_actor::CharacterContextMembership>,
+) -> Option<crate::world_actor::CharacterContextMembership> {
+    unique_lowest_ordinal_value(rows.into_iter().map(|row| (row.ordinal, row)))
+}
+
+fn unique_lowest_ordinal_value<T>(rows: impl IntoIterator<Item = (u16, T)>) -> Option<T> {
+    let mut selected: Option<(u16, T)> = None;
+    let mut ambiguous = false;
+    for (ordinal, value) in rows {
+        match selected.as_ref().map(|(selected_ordinal, _)| *selected_ordinal) {
+            None => selected = Some((ordinal, value)),
+            Some(selected_ordinal) if ordinal < selected_ordinal => {
+                selected = Some((ordinal, value));
+                ambiguous = false;
+            }
+            Some(selected_ordinal) if ordinal == selected_ordinal => ambiguous = true,
+            Some(_) => {}
+        }
+    }
+    (!ambiguous).then(|| selected.map(|(_, value)| value)).flatten()
+}
+
+fn bound_mission_for_view(
+    ctx: &ViewContext,
+    party_id: &str,
+    hostile_group_id: &str,
+) -> bool {
+    ctx.db
+        .mission_authority()
+        .party_id()
+        .filter(&party_id.to_string())
+        .any(|mission| {
+            mission.status == MissionAttemptStatus::Bound
+                && mission.hostile_group_id.as_deref() == Some(hostile_group_id)
+        })
+}
+
+fn bound_mission(
+    ctx: &ReducerContext,
+    party_id: &str,
+    hostile_group_id: &str,
+) -> bool {
+    ctx.db
+        .mission_authority()
+        .party_id()
+        .filter(&party_id.to_string())
+        .any(|mission| {
+            mission.status == MissionAttemptStatus::Bound
+                && mission.hostile_group_id.as_deref() == Some(hostile_group_id)
+        })
 }
 
 fn current_drive_off_capability_for_view(
     ctx: &ViewContext,
     observer_character_id: u64,
+    party_id: &str,
     group: &HostileGroupAuthority,
 ) -> bool {
+    let Some(site) = ctx
+        .db
+        .case_site_authority()
+        .id_key()
+        .find(&group.case_site_id.value)
+        .filter(|site| site.id == group.case_site_id)
+    else {
+        return false;
+    };
     ctx.db
         .mission_approach_capability()
         .observer_character_id()
@@ -102,6 +174,7 @@ fn current_drive_off_capability_for_view(
         .any(|capability| {
             capability.active
                 && capability.hostile_group_id == group.id
+                && capability.case_id == site.case_id
                 && capability.case_site_id == group.case_site_id
                 && capability.resolution == HostileResolutionKind::DrivenOff
                 && ctx
@@ -112,8 +185,56 @@ fn current_drive_off_capability_for_view(
                     .is_some_and(|case| {
                         !case.generated_case_id.is_empty()
                             && case.resolution_status == CaseResolutionStatus::Open
+                            && view_capability_objective_is_pending(
+                                ctx,
+                                &case,
+                                &capability,
+                                party_id,
+                            )
                     })
         })
+}
+
+fn view_capability_objective_is_pending(
+    ctx: &ViewContext,
+    case: &CaseAuthority,
+    capability: &MissionApproachCapability,
+    party_id: &str,
+) -> bool {
+    let Ok(expression) = serde_json::from_str::<adventuresim_core::case::ObjectiveExpression>(
+        &case.objective_expression_json,
+    ) else {
+        return false;
+    };
+    let Ok(core_case_id) = adventuresim_core::case::CaseId::new(case.id.clone()) else {
+        return false;
+    };
+    let Some(facts) = ctx
+        .db
+        .case_outcome_fact()
+        .case_id()
+        .filter(&case.id)
+        .map(|row| serde_json::from_str(&row.fact_json).ok())
+        .collect::<Option<Vec<adventuresim_core::case::OutcomeFact>>>()
+    else {
+        return false;
+    };
+    let Some(path) = expression.alternatives.get(usize::from(capability.path_index)) else {
+        return false;
+    };
+    let Some(objective_index) = path
+        .objectives
+        .iter()
+        .position(|objective| objective.id.as_str() == capability.objective_id)
+    else {
+        return false;
+    };
+    expression
+        .evaluate(&core_case_id, party_id, &facts)
+        .alternatives
+        .get(usize::from(capability.path_index))
+        .and_then(|path| path.get(objective_index))
+        .is_some_and(|progress| progress.state == adventuresim_core::case::EvaluationState::Pending)
 }
 
 /// Gateway-only, party-scoped availability. Private group and case IDs never
@@ -144,16 +265,20 @@ pub fn backend_hostile_negotiations(ctx: &ViewContext) -> Vec<BackendHostileNego
         };
         if !profile.negotiation.sapient
             || !profile.negotiation.negotiable
-            || !current_drive_off_capability_for_view(ctx, party.leader_id, &group)
+            || bound_mission_for_view(ctx, &party.id, &group.id)
+            || !current_drive_off_capability_for_view(ctx, party.leader_id, &party.id, &group)
         {
             continue;
         }
-        let minute = ctx
+        let Some(minute) = ctx
             .db
             .character_time()
             .character_id()
             .find(party.leader_id)
-            .map_or(0, |time| time.minutes);
+            .map(|time| time.minutes)
+        else {
+            continue;
+        };
         let Some(spokesman) = exact_spokesman_for_view(ctx, &group, minute) else {
             continue;
         };
@@ -188,7 +313,7 @@ fn exact_hostile_negotiation_authority(
     spokesman_id: u64,
     context_ref: &str,
     expected_revision: u32,
-) -> Result<(Party, HostileGroupAuthority), String> {
+) -> Result<(Party, HostileGroupAuthority, CaseSiteAuthority), String> {
     if context_ref != HOSTILE_NEGOTIATION_CONTEXT_REF {
         return Err("Hostile negotiation context is unavailable".into());
     }
@@ -218,6 +343,16 @@ fn exact_hostile_negotiation_authority(
         .find(&case_site_id.to_string())
         .filter(|group| group.disposition == HostileGroupDisposition::Active)
         .ok_or("Active hostile group is unavailable")?;
+    if bound_mission(ctx, &party.id, &group.id) {
+        return Err("Combat is already in flight for this hostile group".into());
+    }
+    let site = ctx
+        .db
+        .case_site_authority()
+        .id_key()
+        .find(&case_site_id.to_string())
+        .filter(|site| site.id == group.case_site_id)
+        .ok_or("Hostile case-site authority is unavailable")?;
     let minute = ctx
         .db
         .character_time()
@@ -225,22 +360,30 @@ fn exact_hostile_negotiation_authority(
         .find(actor_id)
         .ok_or("Negotiation actor has no personal time")?
         .minutes;
-    let mut spokesmen = ctx
+    let spokesman = unique_lowest_ordinal_spokesman(
+        ctx
         .db
         .character_context_membership()
-        .character_id()
-        .filter(spokesman_id)
+        .context_id()
+        .filter(&group.id)
         .filter(|membership| {
-            membership.context_id == group.id
-                && membership.location_id == case_site_id
+            membership.location_id == case_site_id
                 && membership.context_kind == crate::world_actor::CharacterContextKind::HostileGroup
-                && membership.ordinal == 0
-                && membership.revision == expected_revision
+                && membership.role == crate::world_actor::CharacterContextRole::Counterparty
                 && crate::world_actor::context_membership_valid_at(membership, minute)
-        });
-    let spokesman = spokesmen
-        .next()
-        .filter(|_| spokesmen.next().is_none())
+                && ctx
+                    .db
+                    .character()
+                    .id()
+                    .find(membership.character_id)
+                    .is_some_and(|character| character.alive)
+                && crate::relationship::character_alive_at(ctx, membership.character_id, minute)
+        })
+        .collect(),
+    )
+        .filter(|membership| {
+            membership.character_id == spokesman_id && membership.revision == expected_revision
+        })
         .ok_or("Hostile spokesman claim is stale or ambiguous")?;
     let profile = parse_threat(&group.enemy_type)?.profile();
     if !profile.negotiation.sapient || !profile.negotiation.negotiable {
@@ -255,22 +398,20 @@ fn exact_hostile_negotiation_authority(
         .observer_character_id()
         .filter(actor_id)
         .any(|capability| {
-            capability.active
+                capability.active
+                && capability.case_id == site.case_id
                 && capability.hostile_group_id == group.id
                 && capability.case_site_id == group.case_site_id
                 && capability.resolution == HostileResolutionKind::DrivenOff
-                && ctx
-                    .db
-                    .case_authority()
-                    .id()
-                    .find(&capability.case_id)
-                    .is_some_and(|case| {
-                        !case.generated_case_id.is_empty()
-                            && case.resolution_status == CaseResolutionStatus::Open
-                    })
+                && crate::strategic::inventory_trade::mission_approach_capability_is_pending(
+                    ctx,
+                    &capability,
+                    &party.id,
+                )
+                .unwrap_or(false)
         });
     eligible
-        .then_some((party, group))
+        .then_some((party, group, site))
         .ok_or_else(|| "Hostile group has no current negotiated drive-off approach".into())
 }
 
@@ -306,7 +447,7 @@ pub fn negotiate_hostile_withdrawal(
             Err("Conflicting hostile negotiation retry".into())
         };
     }
-    let (party, group) = exact_hostile_negotiation_authority(
+    let (party, group, _site) = exact_hostile_negotiation_authority(
         ctx,
         actor_id,
         &case_site_id,
@@ -332,17 +473,28 @@ pub fn negotiate_hostile_withdrawal(
         language,
         affinity,
         profile.combat.morale,
-        group.base_enemy_count,
-        group.enemy_count,
     );
     let (outcome, response) = if assessment.accepted {
+        // Re-resolve all mutable pre-combat authority immediately before the
+        // shared transition. This closes the projection/assessment race.
+        let (_, current_group, current_site) = exact_hostile_negotiation_authority(
+            ctx,
+            actor_id,
+            &case_site_id,
+            spokesman_id,
+            &context_ref,
+            expected_revision,
+        )?;
         commit_hostile_resolution_authority(
             ctx,
             HostileResolutionCommit {
                 receipt_id: &format!("{receipt_id}:resolution"),
                 party_id: &party.id,
                 mission_id: None,
-                hostile_group_id: &group.id,
+                hostile_group_id: &current_group.id,
+                observer_character_id: actor_id,
+                case_id: &current_site.case_id,
+                case_site_id: &current_site.id,
                 resolution: HostileResolutionKind::DrivenOff,
                 capture_subject_id: None,
             },
@@ -363,7 +515,8 @@ pub fn negotiate_hostile_withdrawal(
         .character_time()
         .character_id()
         .find(actor_id)
-        .map_or(0, |time| time.minutes);
+        .ok_or("Negotiation actor has no personal time")?
+        .minutes;
     ctx.db
         .hostile_negotiation_receipt()
         .insert(HostileNegotiationReceipt {
@@ -384,6 +537,19 @@ pub fn negotiate_hostile_withdrawal(
 
 #[cfg(test)]
 mod hostile_negotiation_source_tests {
+    use super::unique_lowest_ordinal_value;
+
+    #[test]
+    fn spokesman_selection_skips_ineligible_rows_before_choosing_and_rejects_ties() {
+        // Living/role/context filtering happens before this shared pure selector.
+        assert_eq!(
+            unique_lowest_ordinal_value([(4, "living-four"), (7, "living-seven")]),
+            Some("living-four")
+        );
+        assert_eq!(unique_lowest_ordinal_value([(4, "a"), (4, "b")]), None);
+        assert_eq!(unique_lowest_ordinal_value::<&str>([]), None);
+    }
+
     #[test]
     fn refusal_is_non_terminal_and_acceptance_uses_battle_independent_drive_off() {
         let source = include_str!("hostile_negotiation.rs");
@@ -404,11 +570,16 @@ mod hostile_negotiation_source_tests {
         let source = include_str!("hostile_negotiation.rs");
         assert!(source.contains("strategic_view_is_gateway(ctx)"));
         assert!(source.contains("HOSTILE_NEGOTIATION_CONTEXT_REF"));
-        assert!(source.contains("membership.ordinal == 0"));
+        assert!(source.contains("CharacterContextRole::Counterparty"));
+        assert!(source.contains("unique_lowest_ordinal_spokesman"));
+        assert!(source.contains("character_alive_at"));
         assert!(source.contains("membership.revision == expected_revision"));
         assert!(source.contains("profile.negotiation.sapient"));
         assert!(source.contains("profile.negotiation.negotiable"));
         assert!(source.contains("shared_language_coefficient"));
         assert!(source.contains("CaseResolutionStatus::Open"));
+        assert!(source.contains("MissionAttemptStatus::Bound"));
+        assert!(source.contains("mission_approach_capability_is_pending"));
+        assert!(source.contains("case_id == site.case_id"));
     }
 }

@@ -10,14 +10,12 @@
     {
       "id": "deserter", "name": "Deserter", "singular": "deserter", "plural": "deserters", "aliases": ["runaway soldier"],
       "base_weight": 30, "curation_weight": 35, "northern_germany_prior": 130, "primary_category":"human","secondary_categories":[],
-      "negotiation": {"sapient":true,"negotiable":true},
       "combat": {"rig":"humanoid","speed_m_per_minute":82,"weight_kg":72.0,"attack":"spear","ranged":false,"precision_bonus_milli":0,"training_multiplier_milli":1100,"perception":55,"stealth":45,"morale":60,"protection":"armored","resistance_joules":0,"padding_joules":0,"disease_risk":0,"fear":0,"temperament":"disciplined","encounter_scale_basis_points":10000,"loot_item_id":"spear","escalation_mode":"mob","escalation_growth_rate_bps":2000,"baseline_combat_power":12000},
       "investigation": {"habitats":["road","camp","ruin"],"activity":"any","victim_tags":["travelers"],"tracks":["boot_prints"],"wounds":["weapon_cuts"],"disturbances":["camp_debris"],"sounds":["marching"],"silhouettes":["armed_people"],"odors":[],"mistaken_for":["bandit","town_watch"],"distinguishing_clues":["military_kit"],"preparation_advice":"Expect military weapons, formation discipline, and armor.","investigability":65,"identification_challenge":false,"location_challenge":false,"countermeasure_hypotheses":[]}
     },
     {
       "id": "poacher", "name": "Poacher", "singular": "poacher", "plural": "poachers", "aliases": ["illegal hunter"],
       "base_weight": 35, "curation_weight": 40, "northern_germany_prior": 130, "primary_category":"human","secondary_categories":[],
-      "negotiation": {"sapient":true,"negotiable":true},
       "combat": {"rig":"humanoid","speed_m_per_minute":84,"weight_kg":68.0,"attack":"bow","ranged":true,"precision_bonus_milli":500,"training_multiplier_milli":1000,"perception":65,"stealth":65,"morale":40,"protection":"hide","resistance_joules":0,"padding_joules":0,"disease_risk":0,"fear":0,"temperament":"elusive","encounter_scale_basis_points":10000,"loot_item_id":"self_bow","escalation_mode":"mob","escalation_growth_rate_bps":2000,"baseline_combat_power":10000},
       "investigation": {"habitats":["sparse_woods","deep_woods","camp"],"activity":"any","victim_tags":["gamekeepers","livestock"],"tracks":["boot_prints"],"wounds":["arrow_shafts"],"disturbances":["snares"],"sounds":["bowstring"],"silhouettes":["armed_people"],"odors":["woodsmoke"],"mistaken_for":["bandit"],"distinguishing_clues":["arrow_shafts"],"preparation_advice":"Use cover and close quickly against skilled bow fire.","investigability":55,"identification_challenge":false,"location_challenge":true,"countermeasure_hypotheses":[]}
     },
@@ -31,35 +29,30 @@
     {
       "id": "cultist", "name": "Cultist", "singular": "cultist", "plural": "cultists", "aliases": ["secret worshipper"],
       "base_weight": 16, "curation_weight": 30, "northern_germany_prior": 70, "primary_category":"human","secondary_categories":[],
-      "negotiation": {"sapient":true,"negotiable":true},
       "combat": {"rig":"humanoid","speed_m_per_minute":78,"weight_kg":67.0,"attack":"knife","ranged":false,"precision_bonus_milli":0,"training_multiplier_milli":1000,"perception":50,"stealth":50,"morale":70,"protection":"unarmored","resistance_joules":0,"padding_joules":0,"disease_risk":0,"fear":15,"temperament":"aggressive","encounter_scale_basis_points":10000,"loot_item_id":"knife","escalation_mode":"mob","escalation_growth_rate_bps":2000,"baseline_combat_power":8000},
       "investigation": {"habitats":["ruin","cave","occupied_house"],"activity":"night","victim_tags":["isolated_people"],"tracks":["boot_prints"],"wounds":["knife_wounds"],"disturbances":["ritual_marks"],"sounds":["chanting"],"silhouettes":["armed_people"],"odors":["sulfur_odor"],"mistaken_for":["bandit"],"distinguishing_clues":["ritual_marks"],"preparation_advice":"Resolve and religious knowledge help against frightening rites.","investigability":50,"identification_challenge":true,"location_challenge":true,"countermeasure_hypotheses":["courage"]}
     },
     {
       "id": "grave_robber", "name": "Grave robber", "singular": "grave robber", "plural": "grave robbers", "aliases": ["resurrectionist"],
       "base_weight": 18, "curation_weight": 30, "northern_germany_prior": 130, "primary_category":"human","secondary_categories":[],
-      "negotiation": {"sapient":true,"negotiable":true},
       "combat": {"rig":"humanoid","speed_m_per_minute":78,"weight_kg":68.0,"attack":"blunt","ranged":false,"precision_bonus_milli":0,"training_multiplier_milli":900,"perception":45,"stealth":55,"morale":35,"protection":"unarmored","resistance_joules":0,"padding_joules":0,"disease_risk":10,"fear":0,"temperament":"cowardly","encounter_scale_basis_points":10000,"loot_item_id":"club","escalation_mode":"mob","escalation_growth_rate_bps":2000,"baseline_combat_power":7000},
       "investigation": {"habitats":["crypt","graveyard","occupied_house"],"activity":"night","victim_tags":["burials"],"tracks":["boot_prints"],"wounds":["blunt_damage"],"disturbances":["grave_soil"],"sounds":["digging"],"silhouettes":["armed_people"],"odors":["corpse_odor"],"mistaken_for":["ghoul"],"distinguishing_clues":["tool_marks"],"preparation_advice":"They are ordinary people but may carry digging tools as weapons.","investigability":70,"identification_challenge":true,"location_challenge":false,"countermeasure_hypotheses":[]}
     },
     {
       "id": "town_watch", "name": "Town watch", "singular": "Town watch", "plural": "Town watch", "aliases": ["guard"],
       "base_weight": 1, "curation_weight": 1, "northern_germany_prior": 130, "primary_category":"human","secondary_categories":[],
-      "negotiation": {"sapient":true,"negotiable":true},
       "combat": {"rig":"humanoid","speed_m_per_minute":80,"weight_kg":72.0,"attack":"spear","ranged":false,"precision_bonus_milli":0,"training_multiplier_milli":1100,"perception":60,"stealth":35,"morale":65,"protection":"shielded","resistance_joules":0,"padding_joules":0,"disease_risk":0,"fear":0,"temperament":"disciplined","encounter_scale_basis_points":10000,"loot_item_id":"spear","escalation_mode":"mob","escalation_growth_rate_bps":2000,"baseline_combat_power":12000},
       "investigation": {"habitats":["road","open","occupied_house"],"activity":"any","victim_tags":["criminals"],"tracks":["boot_prints"],"wounds":["weapon_cuts"],"disturbances":["official_seals"],"sounds":["orders"],"silhouettes":["armed_people"],"odors":[],"mistaken_for":["deserter"],"distinguishing_clues":["official_seals"],"preparation_advice":"Avoid fighting lawful authorities.","investigability":90,"identification_challenge":false,"location_challenge":false,"countermeasure_hypotheses":[]}
     },
     {
       "id": "armed_retainer", "name": "Armed retainer", "singular": "armed retainer", "plural": "armed retainers", "aliases": ["man-at-arms"],
       "base_weight": 5, "curation_weight": 10, "northern_germany_prior": 130, "primary_category":"human","secondary_categories":[],
-      "negotiation": {"sapient":true,"negotiable":true},
       "combat": {"rig":"humanoid","speed_m_per_minute":82,"weight_kg":75.0,"attack":"blade","ranged":false,"precision_bonus_milli":0,"training_multiplier_milli":1200,"perception":55,"stealth":40,"morale":70,"protection":"armored","resistance_joules":0,"padding_joules":0,"disease_risk":0,"fear":0,"temperament":"disciplined","encounter_scale_basis_points":8500,"loot_item_id":"arming_sword","escalation_mode":"mob","escalation_growth_rate_bps":2000,"baseline_combat_power":15000},
       "investigation": {"habitats":["road","open","occupied_house"],"activity":"day","victim_tags":["rivals"],"tracks":["boot_prints"],"wounds":["weapon_cuts"],"disturbances":["heraldry"],"sounds":["orders"],"silhouettes":["armed_people"],"odors":[],"mistaken_for":["town_watch"],"distinguishing_clues":["heraldry"],"preparation_advice":"Expect trained, armored professionals.","investigability":85,"identification_challenge":false,"location_challenge":false,"countermeasure_hypotheses":[]}
     },
     {
       "id": "angry_mob", "name": "Angry mob", "singular": "Angry townsman", "plural": "Angry townsfolk", "aliases": ["mob"],
       "base_weight": 8, "curation_weight": 12, "northern_germany_prior": 130, "primary_category":"human","secondary_categories":[],
-      "negotiation": {"sapient":true,"negotiable":true},
       "combat": {"rig":"humanoid","speed_m_per_minute":75,"weight_kg":68.0,"attack":"blunt","ranged":false,"precision_bonus_milli":0,"training_multiplier_milli":700,"perception":45,"stealth":20,"morale":45,"protection":"unarmored","resistance_joules":0,"padding_joules":0,"disease_risk":0,"fear":0,"temperament":"aggressive","encounter_scale_basis_points":14000,"loot_item_id":"club","escalation_mode":"mob","escalation_growth_rate_bps":2000,"baseline_combat_power":5000},
       "investigation": {"habitats":["road","open","occupied_house"],"activity":"any","victim_tags":["outsiders"],"tracks":["boot_prints"],"wounds":["blunt_damage"],"disturbances":["broken_goods"],"sounds":["shouting"],"silhouettes":["armed_people"],"odors":["smoke"],"mistaken_for":["bandit"],"distinguishing_clues":["local_slogans"],"preparation_advice":"Avoid being surrounded by a large but poorly equipped crowd.","investigability":95,"identification_challenge":false,"location_challenge":false,"countermeasure_hypotheses":[]}
     },

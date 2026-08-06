@@ -335,6 +335,10 @@ fn case_contract_and_tactical_authority_are_separated() {
         .expect("shared hostile resolution commit");
     assert!(resolution.contains("ingest_hostile_group_defeat_fact"));
     assert!(resolution.contains("HostilesDrivenOff"));
+    assert!(resolution.contains("existing.case_id == case_id"));
+    assert!(resolution.contains("existing.case_site_id == *case_site_id"));
+    assert!(resolution.contains("existing.capture_subject_id.as_deref() == capture_subject_id"));
+    assert!(resolution.contains("mission_approach_capability_is_pending"));
     assert!(!resolution.contains("BattleResult"));
     assert!(!resolution.contains("battle_loot_item"));
     assert!(!resolution.contains("record_morale_event"));

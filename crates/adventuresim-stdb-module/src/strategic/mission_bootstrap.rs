@@ -1426,8 +1426,8 @@ fn materialize_preferred_generated_fixture(
             let generated = qg::generate(&candidate).ok()?;
             let suitable = family != qg::TemplateFamily::RecurringDepredation
                 || generated.hostile_groups.iter().any(|(_, _, threat, _)| {
-                    let negotiation = threat.profile().negotiation;
-                    negotiation.sapient && negotiation.negotiable
+                    *threat == adventuresim_core::bestiary::ThreatId::Bandit
+                        || *threat == adventuresim_core::bestiary::ThreatId::Smuggler
                 });
             suitable.then_some((candidate, generated))
         })
