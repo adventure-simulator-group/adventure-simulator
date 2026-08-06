@@ -328,14 +328,27 @@ fn case_contract_and_tactical_authority_are_separated() {
     assert!(!accept.contains("case_authority().delete"));
     assert!(!accept.contains("gold_reward.max"));
 
+    let resolution = source
+        .split("pub(crate) fn commit_hostile_resolution_authority")
+        .nth(1)
+        .and_then(|tail| tail.split("fn commit_hostile_battle_resolution").next())
+        .expect("shared hostile resolution commit");
+    assert!(resolution.contains("ingest_hostile_group_defeat_fact"));
+    assert!(resolution.contains("HostilesDrivenOff"));
+    assert!(!resolution.contains("BattleResult"));
+    assert!(!resolution.contains("battle_loot_item"));
+    assert!(!resolution.contains("record_morale_event"));
+
     let battle = source
-        .split("pub(crate) fn commit_hostile_battle_resolution")
+        .split("fn commit_hostile_battle_resolution")
         .nth(1)
         .and_then(|tail| tail.split("#[reducer]").next())
         .expect("battle commit");
-    assert!(battle.contains("ingest_hostile_group_defeat_fact"));
+    assert!(battle.contains("commit_hostile_resolution_authority"));
+    assert!(battle.contains("BattleResult"));
+    assert!(battle.contains("battle_loot_item"));
+    assert!(battle.contains("record_morale_event"));
     assert!(!battle.contains("report_contract("));
-    assert!(!battle.contains("credit_party_currency("));
 }
 
 #[test]

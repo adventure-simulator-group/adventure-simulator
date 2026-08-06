@@ -1441,6 +1441,20 @@ pub struct OutcomeSourceAuthority {
     pub party_id: String,
 }
 
+/// Battle-independent exact receipt for the authoritative hostile-group
+/// transition. Tactical victory and pre-combat withdrawal both call the same
+/// seam; only the tactical caller creates battle, morale, corpse, or loot rows.
+#[derive(Clone, Debug)]
+#[table(accessor = hostile_resolution_receipt)]
+pub struct HostileResolutionReceipt {
+    #[primary_key]
+    pub id: String,
+    pub party_id: String,
+    pub mission_id: Option<String>,
+    pub hostile_group_id: String,
+    pub resolution: HostileResolutionKind,
+}
+
 #[derive(SpacetimeType, serde::Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RecruitmentRequirements {
     pub melee: bool,

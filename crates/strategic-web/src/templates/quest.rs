@@ -32,6 +32,14 @@ pub struct CaseSiteRecoveryNotice {
     pub withdrawal_href: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct HostileNegotiationPresentation {
+    pub spokesman: Character,
+    pub context_ref: String,
+    pub expected_revision: u32,
+    pub latest_response: Option<String>,
+}
+
 pub fn quest_location_map_page(
     presentation: &CaseSitePagePresentation,
     site: &BackendCaseSitePin,
@@ -85,6 +93,7 @@ pub fn quest_location_map_page(
             resolved,
             autoresolve_report,
             None,
+            None,
             false,
             recovery_notice,
             true,
@@ -123,6 +132,7 @@ fn quest_location_center(
     can_fight: bool,
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
+    hostile_negotiation: Option<&HostileNegotiationPresentation>,
     travel_planner: Option<Markup>,
     show_combat_actions: bool,
     recovery_notice: Option<&CaseSiteRecoveryNotice>,
@@ -247,6 +257,27 @@ fn quest_location_center(
                     }
                 }
             }
+            @if let Some(negotiation) = hostile_negotiation.filter(|_| !resolved) {
+                section class="settlement-chat-area hostile-conversation-dock"
+                    aria-label="Hostile pre-combat conversation" {
+                    h3 { "Parley with " (&negotiation.spokesman.name) }
+                    @if let Some(response) = negotiation.latest_response.as_deref() {
+                        p class="chat-message" { (response) }
+                    } @else {
+                        p class="text-muted" {
+                            "Ask the hostile spokesman to withdraw before battle. A refusal leaves every combat approach available."
+                        }
+                    }
+                    form method="post"
+                        action=(format!("/locations/case-site/{}/hostile/withdrawal", site.case_site_id)) {
+                        input type="hidden" name="spokesman_id" value=(negotiation.spokesman.id);
+                        input type="hidden" name="context_ref" value=(&negotiation.context_ref);
+                        input type="hidden" name="expected_revision" value=(negotiation.expected_revision);
+                        input type="hidden" name="action_id" value=(crate::templates::fresh_request_token("hostile-parley"));
+                        button type="submit" class="btn btn-secondary" { "Ask them to withdraw" }
+                    }
+                }
+            }
             @if let Some(travel_planner) = travel_planner { (travel_planner) }
             (settlement_chat_area_with_info(&presentation.title, active_character, &autoresolve_messages))
         }
@@ -336,6 +367,7 @@ pub fn quest_location_enemy_page(
     active_character: Option<&Character>,
     party_members: &[Character],
     counterparties: &[QuestCounterparty],
+    hostile_negotiation: Option<&HostileNegotiationPresentation>,
     can_fight: bool,
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
@@ -417,6 +449,7 @@ pub fn quest_location_enemy_page(
             can_fight,
             resolved,
             autoresolve_report,
+            hostile_negotiation,
             None,
             true,
             recovery_notice,
@@ -693,6 +726,26 @@ mod tests {
             can_travel_to_required_site: false,
             unavailable_reason: String::new(),
         };
+        let negotiation = HostileNegotiationPresentation {
+            spokesman: Character {
+                id: 81,
+                name: "Bandit spokesman".into(),
+                xp: 0,
+                level: 1,
+                gold: 0,
+                current_settlement_id: None,
+                current_case_site_id: Some(site.case_site_id.clone()),
+                party_id: None,
+                age_years: 30,
+                alive: true,
+                temporary: true,
+                social_notification_count: 0,
+                automatic_social_chat_enabled: false,
+            },
+            context_ref: "exact_case_context".into(),
+            expected_revision: 4,
+            latest_response: Some("The spokesman refuses for now.".into()),
+        };
         let markup = quest_location_center(
             &presentation,
             &site,
@@ -702,7 +755,7 @@ mod tests {
             true,
             false,
             None,
-            None,
+            Some(&negotiation),
             true,
             None,
             false,
@@ -713,6 +766,13 @@ mod tests {
         assert!(markup.contains("action=\"/quests/actions\""));
         assert!(markup.contains("Inspect the camp"));
         assert!(markup.contains("/quests/site:known/autoresolve"));
+        assert!(markup.contains("Hostile pre-combat conversation"));
+        assert!(markup.contains("/locations/case-site/site:known/hostile/withdrawal"));
+        assert!(markup.contains("name=\"spokesman_id\" value=\"81\""));
+        assert!(markup.contains("name=\"context_ref\" value=\"exact_case_context\""));
+        assert!(markup.contains("name=\"expected_revision\" value=\"4\""));
+        assert!(markup.contains("name=\"action_id\" value=\"hostile-parley-"));
+        assert!(markup.contains("The spokesman refuses for now."));
         assert!(!markup.contains("/missions/enter"));
     }
 

@@ -536,6 +536,21 @@ weighted `MissionOutcomeCandidate` rows after exact observer-authorized site
 entry. Investigation never fabricates a battle result and no tactical tick
 state is persisted.
 
+Sapient, authored-negotiable hostile groups may also expose a private
+pre-combat conversation at that exact site. Availability requires the current
+observer-scoped `DriveOff` approach, an active group and open generated case,
+the ordinal-zero hostile spokesman, and a shared spoken language. The form
+binds the public site, fixed hostile-context discriminator, spokesman, and
+membership revision; it never exposes the private group or canonical case ID.
+The response combines the actor's best Charm/Command check with language,
+the spokesman's current affinity, authored hostile morale, and current
+casualties. Refusal changes no case or group authority. Acceptance uses the
+existing `DriveOff` / `HostilesDrivenOff` path, revokes sibling approaches, and
+creates no battle, morale-victory, corpse, or loot rows.
+This first slice does not model surrender, tactical mid-battle negotiation,
+random-encounter negotiation, captivity, recruitment, theft, parole, ransom,
+or a general-purpose dialogue framework.
+
 An observer can open a generated case site without a contract only after the
 observer-owned exact pin and authoritative party occupancy agree on that site.
 The location page uses the validated public problem summary and site label; it

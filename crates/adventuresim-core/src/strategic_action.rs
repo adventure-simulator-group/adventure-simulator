@@ -74,6 +74,44 @@ pub fn emergency_bandage_is_necessary(
         && !selected_limb_bandaged
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NegotiatedWithdrawalAssessment {
+    pub accepted: bool,
+    pub score: f32,
+}
+
+/// Deterministic pre-combat response. Social ability is language-scaled;
+/// existing affinity and pressure from casualties/low morale affect the same
+/// bounded score. A refusal changes no authority, so changed state can be
+/// assessed again without a special cooldown or permanent refusal flag.
+pub fn assess_negotiated_withdrawal(
+    social_ability: f32,
+    shared_language_coefficient: f32,
+    spokesman_affinity: f32,
+    hostile_morale_percent: u8,
+    original_enemy_count: u32,
+    current_enemy_count: u32,
+) -> NegotiatedWithdrawalAssessment {
+    let language = shared_language_coefficient.clamp(0.0, 1.0);
+    let social = social_ability.max(0.0).min(10.0) * language;
+    let relationship = spokesman_affinity.clamp(-100.0, 100.0) / 20.0;
+    let casualty_fraction = if original_enemy_count == 0 {
+        0.0
+    } else {
+        original_enemy_count
+            .saturating_sub(current_enemy_count)
+            .min(original_enemy_count) as f32
+            / original_enemy_count as f32
+    };
+    let pressure = casualty_fraction * 5.0
+        + (100_u8.saturating_sub(hostile_morale_percent.min(100)) as f32 / 20.0);
+    let score = social + relationship + pressure;
+    NegotiatedWithdrawalAssessment {
+        accepted: language > 0.0 && score >= 7.5,
+        score,
+    }
+}
+
 pub trait DomainTarget: Clone + fmt::Debug + Eq {}
 pub trait DomainRequirement: Clone + fmt::Debug + Eq {}
 pub trait DomainCapability: Clone + fmt::Debug + Eq {}
@@ -1041,6 +1079,17 @@ mod tests {
             decide_contextual_action(false, ContextualActionDecision::Unavailable, true),
             ContextualActionDecision::Allowed(ContextualActionReason::EmergencyMedicalNecessity)
         );
+    }
+
+    #[test]
+    fn negotiated_withdrawal_uses_language_relationship_morale_and_casualties() {
+        let refusal = assess_negotiated_withdrawal(5.0, 1.0, 0.0, 80, 4, 4);
+        assert!(!refusal.accepted);
+        let social_acceptance = assess_negotiated_withdrawal(8.0, 1.0, 0.0, 80, 4, 4);
+        assert!(social_acceptance.accepted);
+        let pressure_acceptance = assess_negotiated_withdrawal(5.0, 1.0, 20.0, 30, 4, 2);
+        assert!(pressure_acceptance.accepted);
+        assert!(!assess_negotiated_withdrawal(10.0, 0.0, 100.0, 0, 4, 1).accepted);
     }
 
     #[test]

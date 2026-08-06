@@ -1200,6 +1200,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-stdb-module/src/strategic/dialogue_sessions.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/strategic/encounters.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/strategic/governance.rs` — Rust source module.
+- `crates/adventuresim-stdb-module/src/strategic/hostile_negotiation.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/strategic/incidents.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/strategic/inventory_trade.rs` — Rust source module.
 - `crates/adventuresim-stdb-module/src/strategic/journey_camp.rs` — Rust source module.

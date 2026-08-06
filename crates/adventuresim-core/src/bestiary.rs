@@ -441,6 +441,7 @@ pub struct ThreatProfile {
     pub primary_category: BestiaryCategory,
     pub secondary_categories: &'static [BestiaryCategory],
     pub combat: CombatProfile,
+    pub negotiation: crate::quest_catalog::MonsterNegotiation,
     pub investigation: InvestigationProfile,
 }
 
@@ -600,6 +601,7 @@ fn compile_profile(
                 baseline_enemy_power: crate::threat_escalation::BASELINE_ORC_POWER,
             },
         },
+        negotiation: authored.negotiation,
         investigation: InvestigationProfile {
             habitats: &[],
             activity: ActivityTime::Any,

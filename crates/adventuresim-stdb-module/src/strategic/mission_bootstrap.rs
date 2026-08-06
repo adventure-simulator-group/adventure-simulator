@@ -1355,7 +1355,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         0,
     )
     .precipitation;
-    let context = qg::GenerationContext {
+    let initial_context = qg::GenerationContext {
         seed,
         observer_entropy_hi,
         observer_entropy_lo,
@@ -1419,8 +1419,19 @@ fn materialize_preferred_generated_fixture(
         requested_family: Some(family),
         witness_candidates: generated_witness_candidates(ctx, &settlement_id),
     };
-    let generated = qg::generate(&context)
-        .map_err(|error| format!("Development quest fixture generation failed: {error:?}"))?;
+    let (context, generated) = (0..64_u64)
+        .find_map(|offset| {
+            let mut candidate = initial_context.clone();
+            candidate.seed = candidate.seed.wrapping_add(offset);
+            let generated = qg::generate(&candidate).ok()?;
+            let suitable = family != qg::TemplateFamily::RecurringDepredation
+                || generated.hostile_groups.iter().any(|(_, _, threat, _)| {
+                    let negotiation = threat.profile().negotiation;
+                    negotiation.sapient && negotiation.negotiable
+                });
+            suitable.then_some((candidate, generated))
+        })
+        .ok_or("Development quest fixture exhausted negotiable generated threats")?;
     let witness = generated
         .witnesses
         .first()

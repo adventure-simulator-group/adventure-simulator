@@ -2220,6 +2220,56 @@ impl LiveRunner {
             });
             if let Some(pin) = pin {
                 if pin.combat_available {
+                    if let Some(negotiation) = self
+                        .connection
+                        .db
+                        .backend_hostile_negotiations()
+                        .iter()
+                        .find(|row| {
+                            row.owner_character_id == character_id
+                                && row.case_site_id == pin.case_site_id
+                        })
+                        .cloned()
+                    {
+                        let action_id = format!(
+                            "sim-hostile-parley-{}-{}",
+                            self.sequence.saturating_add(1),
+                            negotiation.expected_revision
+                        );
+                        let result = reducer_call!(self, "negotiate_hostile_withdrawal", |cb| self
+                            .connection
+                            .reducers
+                            .negotiate_hostile_withdrawal_then(
+                                character_id,
+                                pin.case_site_id.clone(),
+                                negotiation.spokesman_id,
+                                negotiation.context_ref.clone(),
+                                negotiation.expected_revision,
+                                action_id.clone(),
+                                cb,
+                            ));
+                        self.call(result)?;
+                        if self.generated_case_status(character_id, case_id).as_deref()
+                            != Some("open")
+                        {
+                            self.event(
+                                agent,
+                                CoreLoopEventKind::QuestDecision,
+                                format!(
+                                    "generated_case={};action=negotiated_hostile_withdrawal",
+                                    bounded_event_field(case_id)
+                                ),
+                            );
+                            self.observe_generated_case_transition(
+                                agent,
+                                character_id,
+                                case_id,
+                                subject,
+                                true,
+                            );
+                            continue;
+                        }
+                    }
                     let first_assessment =
                         self.public_generated_case_site_assessment(party_id, &pin);
                     if !first_assessment.eligible {

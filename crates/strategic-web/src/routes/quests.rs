@@ -26,15 +26,15 @@ use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
     AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BackendContextCharacter,
-    BackendCorpse, BackendInvestigationAction, BattleLootItem, BattleResult, Character,
-    CharacterAttributes, CharacterLimbs, CharacterStats, CharacterStrategicCondition,
-    CharacterTime, CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
-    FoodLot, InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyStake,
-    Settlement,
+    BackendCorpse, BackendHostileNegotiation, BackendInvestigationAction, BattleLootItem,
+    BattleResult, Character, CharacterAttributes, CharacterLimbs, CharacterStats,
+    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, ContractPresentation,
+    ContractPresentationStatus, FoodLot, InventoryQuantityTarget, ItemDefinition, Party,
+    PartyInventoryItem, PartyStake, Settlement,
 };
 use crate::templates::quest::{
-    CaseSitePagePresentation, CaseSiteRecoveryNotice, QuestCounterparty, quest_location_enemy_page,
-    quest_location_map_page,
+    CaseSitePagePresentation, CaseSiteRecoveryNotice, HostileNegotiationPresentation,
+    QuestCounterparty, quest_location_enemy_page, quest_location_map_page,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -55,6 +55,10 @@ pub fn routes() -> Router<AppState> {
             "/locations/case-site/{id}/counterparty/bandage",
             post(bandage_quest_counterparty),
         )
+        .route(
+            "/locations/case-site/{id}/hostile/withdrawal",
+            post(negotiate_hostile_withdrawal),
+        )
         .route("/corpses/{corpse_id}/action", post(perform_corpse_action))
         .route(
             "/locations/case-site/{id}/loot",
@@ -70,6 +74,46 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/quests/{id}/autoresolve", post(autoresolve_quest))
         .route("/quests/{id}/loot/store", post(store_battle_loot))
+}
+
+#[derive(Deserialize)]
+struct HostileNegotiationForm {
+    spokesman_id: u64,
+    context_ref: String,
+    expected_revision: u32,
+    action_id: String,
+}
+
+async fn negotiate_hostile_withdrawal(
+    State(state): State<AppState>,
+    Path(case_site_id): Path<String>,
+    session: Session,
+    Form(form): Form<HostileNegotiationForm>,
+) -> Response {
+    let Some(actor_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call(
+            "negotiate_hostile_withdrawal",
+            &[
+                json!(actor_id),
+                json!(&case_site_id),
+                json!(form.spokesman_id),
+                json!(&form.context_ref),
+                json!(form.expected_revision),
+                json!(&form.action_id),
+            ],
+        )
+        .await
+    {
+        Ok(()) => {
+            Redirect::to(&format!("/locations/case-site/{case_site_id}/enemy")).into_response()
+        }
+        Err(error) if error.to_string().contains("stale") => StatusCode::CONFLICT.into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
 }
 
 #[derive(Serialize)]
@@ -1140,6 +1184,26 @@ async fn render_quest_location(
             });
         }
     }
+    let hostile_negotiation = state
+        .db
+        .query::<BackendHostileNegotiation>(&format!(
+            "SELECT * FROM backend_hostile_negotiations WHERE owner_character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .find(|row| row.case_site_id == site.case_site_id)
+        .and_then(|row| {
+            counterparties
+                .iter()
+                .find(|counterparty| counterparty.character.id == row.spokesman_id)
+                .map(|counterparty| HostileNegotiationPresentation {
+                    spokesman: counterparty.character.clone(),
+                    context_ref: row.context_ref,
+                    expected_revision: row.expected_revision,
+                    latest_response: row.latest_response,
+                })
+        });
     let onsite_actions = onsite_investigation_actions(
         state
             .db
@@ -1216,6 +1280,7 @@ async fn render_quest_location(
             character.as_ref(),
             &party_members,
             &counterparties,
+            hostile_negotiation.as_ref(),
             can_fight,
             resolved,
             autoresolve_report.as_ref(),

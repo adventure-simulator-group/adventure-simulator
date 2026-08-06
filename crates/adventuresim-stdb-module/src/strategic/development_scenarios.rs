@@ -305,6 +305,11 @@ pub(crate) fn materialize_development_scenario_gallery(
     const THREAT_SETTLEMENT: &str = "dev-scenario-recurring-threat";
     ensure_scenario_settlement(ctx, THREAT_SETTLEMENT, "Threat Scenario Hamlet")?;
     ensure_scenario_character_at(ctx, THREAT_ID, "Threat Investigator", THREAT_SETTLEMENT)?;
+    if let Some(mut skills) = ctx.db.character_skills().character_id().find(THREAT_ID) {
+        skills.charm_hours = skills.charm_hours.max(10_000.0);
+        skills.command_hours = skills.command_hours.max(10_000.0);
+        ctx.db.character_skills().character_id().update(skills);
+    }
     let threat_problem_id = materialize_preferred_generated_fixture(
         ctx,
         THREAT_ID,
@@ -317,7 +322,7 @@ pub(crate) fn materialize_development_scenario_gallery(
         &threat_problem_id,
         "quest-recurring-threat",
     )?;
-    register_development_scenario(ctx, "quest-recurring-threat", "Quests", "Discovered recurring hostile threat", "Continue a deterministic local threat from its ordinary rumor-derived journal entry, or trigger an isolated follow-up attack in the scenario inspector.", THREAT_ID, "/quests")?;
+    register_development_scenario(ctx, "quest-recurring-threat", "Quests", "Combat or negotiated withdrawal", "Follow a deterministic sapient hostile threat to its case site, then resolve it through ordinary combat or a pre-combat demand to withdraw.", THREAT_ID, "/quests")?;
     register_development_subject(ctx, "quest-recurring-threat", "generated_problem", &threat_problem_id)?;
 
     for (offset, kind) in [
@@ -612,7 +617,7 @@ mod development_scenario_source_tests {
         assert!(source.contains("&outbreak_problem_id,\n        \"quest-outbreak\""));
         assert!(source.contains("&threat_problem_id,\n        \"quest-recurring-threat\""));
         assert!(source.contains("\"Discovered outbreak\""));
-        assert!(source.contains("\"Discovered recurring hostile threat\""));
+        assert!(source.contains("\"Combat or negotiated withdrawal\""));
         assert!(source.contains("let occurrence_id = materialize_development_road_encounter"));
         assert!(!source.contains(".find(|problem| problem.recurring_hostile"));
     }
