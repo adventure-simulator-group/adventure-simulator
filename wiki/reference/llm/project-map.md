@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1882)
+## Files (1885)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -1292,6 +1292,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/animation/procedural/ik/mod.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/procedural/ik/solver.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/procedural/rig.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/animation/ragdoll.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/semantic_graph.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/tests.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation_graph_editor_main.rs` — Rust source module for this component.
@@ -1304,6 +1305,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/player.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/presentation.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-client/src/ragdoll_viewer.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-client/src/ragdoll_viewer_main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/ui.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-core/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-tactical-core/src/animation/evaluation.rs` — Rust source module.

@@ -27,7 +27,7 @@ impl Default for HumanoidRig {
 }
 
 impl HumanoidRig {
-    pub(super) fn get(&self, role: &BoneRole) -> Option<&Entity> {
+    pub(crate) fn get(&self, role: &BoneRole) -> Option<&Entity> {
         self.bones[role.index()].as_ref()
     }
 
@@ -118,7 +118,7 @@ impl BoneRole {
         Self::WeaponRight,
     ];
 
-    pub(super) fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         self as usize
     }
 

@@ -312,6 +312,11 @@ animation-graph-editor asset_source="assets":
 animation-graph-preview scenario="steady-walk-2.0" output="target/animation-captures/graph-preview":
     @cargo run -p adventuresim-tactical-client --bin animation-viewer -- --scenario {{ quote(scenario) }} --output {{ quote(output) }}
 
+# Launch the focused native Cascadeur-humanoid ragdoll fixture with a complete
+# Avian solver. This does not change the live client's query-only physics path.
+ragdoll-viewer asset_source="assets":
+    @cargo run -p adventuresim-tactical-client --features animation-graph-physics --bin ragdoll-viewer -- --asset-root {{ quote(asset_source) }}
+
 # Report whether the supervised tactical database, claim, authority, listener,
 # and recorded child identities are healthy.
 tactical-status:

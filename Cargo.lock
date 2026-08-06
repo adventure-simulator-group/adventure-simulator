@@ -176,6 +176,7 @@ version = "0.1.0"
 dependencies = [
  "adventuresim-tactical-core",
  "adventuresim-tactical-netcode",
+ "avian3d",
  "bevy",
  "bevy_animation_graph",
  "bevy_animation_graph_editor",
