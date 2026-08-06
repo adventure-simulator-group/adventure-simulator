@@ -46,6 +46,11 @@ pub struct AdventureSimulatorPhysicsPlugin {
     pub enable_simulation: bool,
 }
 
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AdventureSimulatorPhysicsSet {
+    ApplyMovementSpeed,
+}
+
 impl Default for AdventureSimulatorPhysicsPlugin {
     fn default() -> Self {
         Self {
@@ -63,7 +68,9 @@ impl Plugin for AdventureSimulatorPhysicsPlugin {
             ))
             .add_systems(
                 FixedPostUpdate,
-                apply_analogue_movement_speed.before(AhoySystems::MoveCharacters),
+                apply_analogue_movement_speed
+                    .in_set(AdventureSimulatorPhysicsSet::ApplyMovementSpeed)
+                    .before(AhoySystems::MoveCharacters),
             );
         } else {
             app.add_plugins((

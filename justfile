@@ -298,10 +298,11 @@ tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:t
     @{{ python_bin }} scripts/dev_stack.py run-profile --mode tactical {{ quote(profile) }} {{ quote(base_port) }} --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }}
 
 # Build and supervise a complete disposable native tactical test session.
-# animation disables combat, combat uses normal enemies, and networking omits
-# the client while retaining the validated database/server fixture.
-tactical-play mode="animation" base_port="24920": preflight verify-db-client
-    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }}
+# animation disables combat, diagnostic runs scripted real-client input and
+# records every animation frame, combat uses normal enemies, and networking
+# omits the client while retaining the validated database/server fixture.
+tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto": preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }}
 
 # Report whether the supervised tactical database, claim, authority, listener,
 # and recorded child identities are healthy.

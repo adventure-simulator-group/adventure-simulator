@@ -49,19 +49,29 @@ Use these conventions:
   semantic anchors;
 - locomotion uses only its contact and passing/flight anchor frames. The
   runtime constructs contact -> passing -> mirrored contact -> mirrored
-  passing -> contact with smooth quarter-cycle interpolation; later exporter
-  keys cannot become accidental runtime gait poses; and
+  passing -> contact by sampling the two exact catalog frames on distinct Bevy
+  graph nodes, selecting pre-mirrored endpoint clips, and blending complete
+  poses with linear quarter-cycle weights;
+  every exported in-between key and every later exporter key is ignored; and
 - packs in one fallback chain use identical bone names and hierarchy.
 
 Lower-body reflection is evaluated in character space so anatomical left and
 right retain their lateral spacing while exchanging gait roles. Authored
 upper-body carriage remains intact; explicit hand targets and weapon
 constraints apply only when gameplay supplies them. Root, pelvis, spine, neck,
-and head motion is clamped around the authored bind pose before look and final
-IK. During active locomotion, authored root/pelvis Y is normalized, then the
+and head translations are clamped around the authored bind pose before look
+and final IK, while authored joint rotations remain intact. During active
+locomotion, sparse anchor blending advances linearly with phase so the pose
+cannot ease to a hold and then accelerate between anchors. Gait parity is
+binary per endpoint and is applied before blending; the runtime never
+fractionally reflects an already blended skeleton, which would collapse the
+forward/back separation of bilateral limbs.
+Authored root/pelvis Y is normalized, then the
 shared gait profile supplies grounded bounce or a gravity-shaped run flight
 arc with two phase-aligned peaks per cycle without moving the gameplay
-controller. Idle poses blend back
+controller. A contact-edge calibration translates the complete visual rig so
+the supported sole meets the rig floor, then retains that baseline through the
+stride without reconstructing either leg. Idle poses blend back
 to their authored central-bone transforms. The 33mm hierarchy compensation is
 measured for upright, lowered-guard `humanoid_unarmed` locomotion only;
 crouching, guard movement, and specialized packs receive no inferred
@@ -69,9 +79,14 @@ compensation.
 
 ## Deterministic animation capture
 
+Regenerate the mirrored endpoint clips after changing `walk.glb` or `run.glb`
+with `python scripts/mirror_gait_assets.py`; CI-style verification uses the
+same command with `--check`. The generator requires Python 3 and NumPy.
+
 The native `animation-viewer` binary is a deterministic gameplay-presentation
 fixture rather than a separate pose renderer. It installs the gameplay player,
-camera, scene presentation, authored FK, procedural mirroring, look, and
+camera, scene presentation, authored FK, pre-mirrored gait endpoints,
+whole-body fallback mirroring, look, and
 terrain-IK plugins,
 then advances the shared authoritative locomotion projector at its real 64Hz
 fixed tick. Default-off scenarios retain authored ordinary leg motion with a
@@ -100,7 +115,8 @@ Use `--asset-root` when invoking it outside the repository root,
 at normal speed before using slow motion. The manifest tracks pelvis, chest,
 head, shoulders, elbows, hands, hips, knees, and feet; finite transforms; loop
 seams; per-frame displacement and rotation spikes; knee direction;
-terrain-relative foot clearance/support/slip; controller-height stability;
+terrain-relative foot clearance/support/slip; contact-sole grounding;
+controller-height stability;
 phase-indexed contact/pass height; visual peak count; run flight duration and
 sole clearance; and pelvis/head stability. These
 values are regression signals and do not establish biomechanical correctness
@@ -111,15 +127,102 @@ supported-foot per-frame slip and planted-interval drift, and records the
 responsible frames.
 
 The fixture synthesizes deterministic controller observations at the shared
-server projection boundary; it does not replay network packets or run the
-physics character controller. Only the cross-slope probe follows rendered
+server projection boundary; it does not run the transport or physics character
+controller. Only the cross-slope probe follows rendered
 terrain height; flat scenarios verify that animation never changes controller Y.
+
+## Real-client animation diagnostics
+
+Use the supervised diagnostic profile when a problem appears in gameplay but
+not in `animation-viewer`:
+
+```powershell
+just tactical-play diagnostic
+```
+
+This launches the ordinary native client, server, transport, replicated
+physics controller, and rendering stack. Once the controlled character is
+available, the client turns 90 degrees right, holds forward at 0.5 analogue
+input for two seconds, holds forward at full input for two seconds, stops for
+half a second, and exits. The supervisor then stops its isolated server and
+database and returns successfully. The profile run directory contains the generated
+`animation-input-script.json`, the per-render-frame `animation-state.jsonl`,
+and the ordinary client/server logs. `just tactical-status` prints that run
+directory.
+
+The JSONL record includes the requested command and input, controller
+transform, replicated authoritative `SkeletonState`, client-predicted
+presentation shadow, semantic `AnimationEvaluation`, resolved clip weights
+and sample times, endpoint parity, whole-body mirror coordinates,
+phase prediction/correction deltas,
+authoritative phase measurements, pending drift correction, any presentation
+crossfade, wall-clock time, and the latest render-schedule completion counter.
+PresentMon remains the independent authority for actual swapchain presentation. This is
+the diagnostic boundary immediately after pose evaluation; it does not replace
+the real network or animation path.
+
+Only the bounded `diagnostic` profile enables the per-frame JSONL log by
+default. Interactive `animation` and `combat` sessions avoid an unbounded log;
+launch the native client with an explicit `--animation-log PATH` when a manual
+session needs one.
+
+On Windows the bounded diagnostic launcher also starts PresentMon when it is
+available and writes `presentmon-<session>.csv` beside the JSONL log. This
+records ETW display/presentation timing independently of Bevy's update loop.
+Pass `presentation_trace=off` to disable it or
+`presentation_trace=required` to fail startup when PresentMon cannot run (or
+to force it for an interactive profile). `PRESENTMON_PATH` overrides PATH and
+standard-location discovery.
+
+For presentation A/B tests, pass `present_mode=auto-vsync`,
+`auto-no-vsync`, `fifo`, `fifo-relaxed`, `mailbox`, or `immediate` to
+`just tactical-play`. The default remains `auto-vsync`; unsupported explicit
+modes are reported by the graphics backend rather than silently selected by
+the launcher.
+
+The native client also accepts custom files through `--input-script PATH` and
+`--animation-log PATH`. A script has this shape:
+
+```json
+{
+  "commands": [
+    { "type": "rotate", "degrees_right": 90.0 },
+    { "type": "move", "direction": "forward", "input_speed": 0.5, "duration_seconds": 2.0 },
+    { "type": "wait_for_signal", "path": "C:/capture/ready.json" },
+    { "type": "wait", "duration_seconds": 0.5 }
+  ]
+}
+```
+
+Movement directions are `forward`, `backward`, `left`, and `right`.
+`wait_for_signal` holds neutral input until its file exists, which lets a
+capture supervisor release movement only after recording is ready. Add
+`--exit-after-script` for bounded unattended captures.
+
+The gameplay camera already runs with MSAA disabled. For matched performance
+diagnostics, pass `graphics_preset=no-shadows`, `no-ssao`, `no-bloom`, or
+`no-atmosphere` to disable one cost independently. `minimal` omits all four:
+
+```powershell
+just tactical-play diagnostic 24920 no-shadows
+just tactical-play diagnostic 24920 minimal
+```
+
+The normal client uses a 64×64 generated atmosphere environment map.
+`no-environment-light` keeps the rendered atmosphere but omits that lighting.
+
+The same presets are available on the native client through
+`--graphics-preset`.
 
 Walk support telemetry remains continuous through its cycle. As locomotion
 blends toward run, support narrows around each foot contact. At 5.5m/s the
 quarter-cycle run flight unloads both legs for roughly 90-110ms and presents
-at least 0.10m of sole clearance. When terrain IK is explicitly enabled, high
-support retains the foot's world-space horizontal plant until release.
+0.10-0.30m of sole clearance. Contact-phase sole clearance must remain between
+-0.02m and 0.04m. When terrain IK is explicitly enabled, high
+support retains the foot's world-space horizontal plant until release. Only a
+meaningfully supported leg enters the analytic terrain solve; the swing leg
+keeps its authored FK and action poses opt out until they expose explicit foot
+contact semantics. Idle continues to support both feet.
 
 The replicated skeleton also carries the shared 64 Hz locomotion sample tick,
 observed world velocity/acceleration, alternating contact sequence, and landing
@@ -133,6 +236,15 @@ landing, retains both pre-compression world foot plants through recovery, and
 solves the actual hip/knee chains back to them; it never translates or stretches thigh roots. Stationary and
 stopping ordinary locomotion blends both feet back to full support.
 
+Rendering uses a client-only shadow of `SkeletonState`. Between authoritative
+samples it advances gait phase from the most recently measured physical speed
+and smooths the displayed local/world velocity. Minor authoritative phase
+differences are treated as packet-timing jitter. Larger persistent drift is
+low-pass filtered before a slow bounded circular correction is applied, while
+posture, actions, contacts, landings, and large discontinuities snap to
+authority. This removes packet-cadence pose holds and packet-by-packet speed
+modulation without predicting gameplay events or changing the replicated component.
+
 Contact and landing messages are deduplicated presentation hooks for future
 audio/VFX. Plausible contact gaps reconstruct at most eight ordered alternating
 contacts; resets, backward sequences, and larger gaps resynchronize silently.
@@ -142,9 +254,17 @@ not an invented historical contact timestamp.
 
 Terrain conformity starts off. In debug builds, press `F8` to opt into its
 height, slope, and pelvis corrections. The HUD reports whether it is on or off;
-authored FK, gait mirroring, torso stabilization, and procedural guard stepping
+authored FK, gait endpoint blending, torso stabilization, and procedural guard stepping
 remain active. Ordinary flat-ground locomotion does not run the terrain leg
 solver while the toggle is off.
+
+In debug builds, `F7` switches both peers between normal and quarter-speed game
+time. The server retains the latest validated analogue movement request across
+missing unreliable input packets and restores Ahoy's fixed-loop input from it
+before each movement step. That intent drives the controller only. Current
+post-physics planar speed selects the idle/walk/run blend and determines stride
+cadence, while acceleration is reserved for procedural body response. The
+clock toggle therefore cannot directly change walk/run selection.
 
 The procedural humanoid pass recognizes these case-sensitive bone names:
 

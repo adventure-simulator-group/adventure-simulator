@@ -24,9 +24,15 @@ impl Plugin for TacticalCameraPlugin {
     }
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub(crate) struct CameraMode {
     pub(crate) third_person: bool,
+}
+
+impl Default for CameraMode {
+    fn default() -> Self {
+        Self { third_person: true }
+    }
 }
 
 fn toggle_camera_mode(keyboard: Res<ButtonInput<KeyCode>>, mut mode: ResMut<CameraMode>) {
@@ -75,7 +81,12 @@ mod tests {
 
         world.run_system_cached(toggle_camera_mode).unwrap();
 
-        assert!(world.resource::<CameraMode>().third_person);
+        assert!(!world.resource::<CameraMode>().third_person);
+    }
+
+    #[test]
+    fn camera_defaults_to_third_person() {
+        assert!(CameraMode::default().third_person);
     }
 
     #[test]

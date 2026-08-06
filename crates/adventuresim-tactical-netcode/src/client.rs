@@ -12,6 +12,7 @@ pub struct AdventureSimulatorClientPlugin;
 impl Plugin for AdventureSimulatorClientPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<WeaponGuardInputState>()
+            .init_resource::<PlayerInputOverride>()
             .add_plugins((WebSocketClientPlugin, AeronetRepliconClientPlugin))
             .add_observer(on_client_added)
             .add_systems(OnEnter(ClientState::Connected), announce_join)
@@ -30,6 +31,12 @@ impl Plugin for AdventureSimulatorClientPlugin {
 pub struct WeaponGuardInputState {
     pub desired: WeaponGuardState,
 }
+
+/// Optional input supplied by native diagnostic tooling. The request still
+/// crosses the ordinary client/server transport and authoritative controller;
+/// only the physical keyboard/gamepad sampling is replaced.
+#[derive(Resource, Debug, Clone, Copy, Default)]
+pub struct PlayerInputOverride(pub Option<PlayerInputRequest>);
 
 impl WeaponGuardInputState {
     pub fn apply_controls(&mut self, wheel_y: f32, right_thumb_pressed: bool) {
@@ -105,8 +112,13 @@ fn send_player_input(
     movements: Query<&Action<input::Movement>>,
     jumps: Query<&Action<input::Jump>>,
     guard: Res<WeaponGuardInputState>,
+    scripted: Res<PlayerInputOverride>,
 ) {
     for (actions, look) in &players {
+        if let Some(request) = scripted.0 {
+            commands.client_trigger(request);
+            continue;
+        }
         let movement = movements
             .iter_many(actions)
             .next()

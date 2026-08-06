@@ -1,9 +1,21 @@
+#[cfg(not(target_family = "wasm"))]
+use std::io::{BufWriter, Write};
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
     str::FromStr,
 };
+#[cfg(not(target_family = "wasm"))]
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Instant,
+};
 
 use adventuresim_tactical_core::prelude::*;
+#[cfg(not(target_family = "wasm"))]
+use adventuresim_tactical_netcode::message::PlayerInputRequest;
 use adventuresim_tactical_netcode::message::SuccessfulAttackResponse;
 use bevy::{
     animation::{AnimatedBy, AnimationTargetId},
@@ -31,6 +43,78 @@ const PRESENTATION_CROSSFADE_SECONDS: f32 = 0.18;
 // lower face so the first-person camera lands at the authored head.
 const PLAYER_VISUAL_Y_OFFSET: f32 = -0.95;
 
+#[cfg(not(target_family = "wasm"))]
+#[derive(Resource, Debug, Clone, Default, serde::Serialize)]
+pub(crate) struct DiagnosticInputStatus {
+    pub command_index: usize,
+    pub command_kind: String,
+    pub command_elapsed_seconds: f32,
+    pub request: PlayerInputRequest,
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[derive(Resource)]
+pub(crate) struct AnimationDiagnosticLog {
+    pub(crate) writer: BufWriter<std::fs::File>,
+    pub(crate) frame: u64,
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[derive(Resource, Clone, Debug)]
+pub(crate) struct RenderScheduleTelemetry(Arc<RenderScheduleShared>);
+
+#[cfg(not(target_family = "wasm"))]
+#[derive(Debug)]
+struct RenderScheduleShared {
+    started: Instant,
+    count: AtomicU64,
+    elapsed_micros: AtomicU64,
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl RenderScheduleTelemetry {
+    pub(crate) fn new() -> Self {
+        Self(Arc::new(RenderScheduleShared {
+            started: Instant::now(),
+            count: AtomicU64::new(0),
+            elapsed_micros: AtomicU64::new(0),
+        }))
+    }
+
+    pub(crate) fn record_completion(&self) {
+        let elapsed = self.0.started.elapsed().as_micros();
+        self.0
+            .elapsed_micros
+            .store(elapsed.min(u64::MAX as u128) as u64, Ordering::Release);
+        self.0.count.fetch_add(1, Ordering::Release);
+    }
+
+    pub(crate) fn snapshot(&self) -> (u64, u64) {
+        (
+            self.0.count.load(Ordering::Acquire),
+            self.0.elapsed_micros.load(Ordering::Acquire),
+        )
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl AnimationDiagnosticLog {
+    pub(crate) fn write(&mut self, mut value: serde_json::Value) {
+        value["frame"] = self.frame.into();
+        serde_json::to_writer(&mut self.writer, &value)
+            .expect("animation diagnostic log should remain writable");
+        self.writer
+            .write_all(b"\n")
+            .expect("animation diagnostic log should remain writable");
+        if self.frame % 60 == 59 {
+            self.writer
+                .flush()
+                .expect("animation diagnostic log should remain writable");
+        }
+        self.frame += 1;
+    }
+}
+
 fn animation_asset_path(path: &str) -> String {
     #[cfg(not(target_family = "wasm"))]
     {
@@ -43,6 +127,155 @@ fn animation_asset_path(path: &str) -> String {
 }
 
 pub struct TacticalAnimationPlugin;
+
+const PRESENTATION_VELOCITY_RESPONSE_PER_SECOND: f32 = 18.0;
+// Replicated phase samples naturally arrive a few render frames behind the
+// presentation clock. Treat that delivery-time offset as jitter unless it
+// persists beyond a meaningful fraction of a quarter-cycle.
+const PRESENTATION_PHASE_CORRECTION_RATE_PER_SECOND: f32 = 0.05;
+const PRESENTATION_PHASE_DRIFT_DEADBAND: f32 = 0.04;
+const PRESENTATION_PHASE_DRIFT_MEASUREMENT_BLEND: f32 = 0.15;
+const PRESENTATION_PHASE_SNAP_ERROR: f32 = 0.20;
+const MAX_PRESENTATION_SOURCE_GAP_TICKS: u64 = 32;
+
+/// Client-only locomotion state used for rendering between replicated server
+/// samples. Gameplay semantics and presentation events continue to read the
+/// authoritative `SkeletonState` directly.
+#[derive(Component, Debug, Clone)]
+pub(crate) struct PresentedSkeleton {
+    state: SkeletonState,
+    source_tick: u64,
+    presentation_tick: Option<u64>,
+    phase_error_remaining: f32,
+    last_phase_prediction_delta: f32,
+    last_phase_correction_delta: f32,
+    last_phase_measurement_error: Option<f32>,
+    last_phase_source_changed: bool,
+}
+
+impl std::ops::Deref for PresentedSkeleton {
+    type Target = SkeletonState;
+
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
+}
+
+fn circular_phase_delta(from: f32, to: f32) -> f32 {
+    (to - from + 0.5).rem_euclid(1.0) - 0.5
+}
+
+fn can_predict_locomotion(previous: &SkeletonState, authoritative: &SkeletonState) -> bool {
+    authoritative.grounded
+        && authoritative.action == SkeletonAction::None
+        && authoritative.animation_speed() > 0.05
+        && previous.posture == authoritative.posture
+        && previous.weapon_guard == authoritative.weapon_guard
+        && previous.action == authoritative.action
+        && previous.grounded == authoritative.grounded
+        && previous.animation_pack == authoritative.animation_pack
+}
+
+fn advance_presented_skeleton(
+    presented: &mut PresentedSkeleton,
+    authoritative: &SkeletonState,
+    delta_seconds: f32,
+) {
+    let delta_seconds = delta_seconds.clamp(0.0, 0.1);
+    let source_changed = presented.source_tick != authoritative.locomotion_sample_tick;
+    presented.last_phase_prediction_delta = 0.0;
+    presented.last_phase_correction_delta = 0.0;
+    presented.last_phase_measurement_error = None;
+    presented.last_phase_source_changed = source_changed;
+    let source_gap = authoritative
+        .locomotion_sample_tick
+        .checked_sub(presented.source_tick);
+    let previous = presented.state.clone();
+    let mut next = authoritative.clone();
+
+    let source_is_contiguous =
+        source_gap.is_some_and(|gap| gap <= MAX_PRESENTATION_SOURCE_GAP_TICKS);
+    if source_is_contiguous && can_predict_locomotion(&previous, authoritative) {
+        let response = 1.0 - (-PRESENTATION_VELOCITY_RESPONSE_PER_SECOND * delta_seconds).exp();
+        next.local_velocity = previous
+            .local_velocity
+            .lerp(authoritative.local_velocity, response);
+        next.world_velocity = previous
+            .world_velocity
+            .lerp(authoritative.world_velocity, response);
+
+        let speed = next.animation_speed();
+        let prediction_delta =
+            gait_cycle_phase_delta(locomotion_profile(&next), speed, delta_seconds);
+        let predicted = (previous.gait_phase + prediction_delta).rem_euclid(1.0);
+        presented.last_phase_prediction_delta = prediction_delta;
+        let error = circular_phase_delta(predicted, authoritative.gait_phase);
+        let discontinuous = error.abs() > PRESENTATION_PHASE_SNAP_ERROR;
+        if source_changed && discontinuous {
+            next.gait_phase = authoritative.gait_phase;
+            presented.phase_error_remaining = 0.0;
+            presented.last_phase_measurement_error = Some(error);
+        } else {
+            if source_changed {
+                presented.last_phase_measurement_error = Some(error);
+                let measured_drift = if error.abs() <= PRESENTATION_PHASE_DRIFT_DEADBAND {
+                    0.0
+                } else {
+                    error - error.signum() * PRESENTATION_PHASE_DRIFT_DEADBAND
+                };
+                // Keep one continuous correction accumulator. Replacing it
+                // with every packet's error makes packet timing modulate the
+                // displayed gait speed even when physical speed is constant.
+                presented.phase_error_remaining += (measured_drift
+                    - presented.phase_error_remaining)
+                    * PRESENTATION_PHASE_DRIFT_MEASUREMENT_BLEND;
+            }
+            let maximum_correction = PRESENTATION_PHASE_CORRECTION_RATE_PER_SECOND * delta_seconds;
+            let correction = presented
+                .phase_error_remaining
+                .clamp(-maximum_correction, maximum_correction);
+            next.gait_phase = (predicted + correction).rem_euclid(1.0);
+            presented.phase_error_remaining -= correction;
+            presented.last_phase_correction_delta = correction;
+        }
+    } else {
+        presented.phase_error_remaining = 0.0;
+    }
+
+    presented.state = next;
+    presented.source_tick = authoritative.locomotion_sample_tick;
+}
+
+fn update_presented_skeletons(
+    mut commands: Commands,
+    time: Res<Time>,
+    procedural_clock: Res<ProceduralAnimationClock>,
+    mut players: Query<(Entity, &SkeletonState, Option<&mut PresentedSkeleton>), With<Player>>,
+) {
+    for (entity, authoritative, presented) in &mut players {
+        let Some(mut presented) = presented else {
+            commands.entity(entity).insert(PresentedSkeleton {
+                state: authoritative.clone(),
+                source_tick: authoritative.locomotion_sample_tick,
+                presentation_tick: procedural_clock.fixed_step().map(|(tick, _)| tick),
+                phase_error_remaining: 0.0,
+                last_phase_prediction_delta: 0.0,
+                last_phase_correction_delta: 0.0,
+                last_phase_measurement_error: None,
+                last_phase_source_changed: false,
+            });
+            continue;
+        };
+        let delta_seconds = if let Some((tick, fixed_delta)) = procedural_clock.fixed_step() {
+            let advances = presented.presentation_tick != Some(tick);
+            presented.presentation_tick = Some(tick);
+            if advances { fixed_delta } else { 0.0 }
+        } else {
+            time.delta_secs()
+        };
+        advance_presented_skeleton(&mut presented, authoritative, delta_seconds);
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LocomotionPresentationEventKind {
@@ -119,12 +352,14 @@ impl Plugin for TacticalAnimationPlugin {
                 (
                     collect_loaded_packs,
                     attach_loaded_rig_scenes,
+                    update_presented_skeletons,
                     establish_animation_targets,
                     identify_animation_players,
                     procedural::bind_humanoid_bones,
                     procedural::capture_humanoid_rig_axes,
                     capture_authored_bind_transforms,
                     evaluate_skeletons,
+                    log_animation_diagnostics,
                     tick_impact_reactions,
                     sync_animation_graphs,
                     drive_fk_players,
@@ -142,12 +377,13 @@ impl Plugin for TacticalAnimationPlugin {
                 PostUpdate,
                 (
                     restore_authored_bind_pose,
-                    procedural::apply_gait_mirroring,
+                    procedural::apply_pose_mirroring,
                     procedural::stabilize_locomotion_torso,
                     procedural::apply_landing_leg_compression,
                     procedural::apply_locomotion_body_response,
                     procedural::apply_head_and_torso_look,
                     procedural::apply_impact_reaction,
+                    procedural::apply_support_foot_grounding,
                     procedural::apply_terrain_leg_ik,
                     procedural::apply_arm_and_weapon_constraints,
                 )
@@ -408,6 +644,12 @@ impl AnimationPackCatalog {
                 builder.pose(motion, frame, pose)?;
             }
         }
+        // These clips contain character-space reflected copies of the sparse
+        // gait anchors. They deliberately have no independent semantics: the
+        // evaluator selects them only as the mirrored endpoint of a gait
+        // blend, before Bevy combines transforms.
+        builder.motion("walk_mirrored", 32);
+        builder.motion("run_mirrored", 20);
         for (motion, pose) in [
             ("duck_lead_left_backward", "duck_lead_left_backward"),
             ("duck_lead_left_left", "duck_lead_left_left"),
@@ -511,11 +753,23 @@ impl AnimationPackCatalog {
 
 #[derive(Debug, Clone)]
 struct LoadedClip {
+    /// Dedicated graph node for continuous timeline playback. A Bevy graph
+    /// node has one seek position, so sparse pose anchors use separate nodes
+    /// below when two frames from the same source clip must be blended.
     node: AnimationNodeIndex,
+    anchor_nodes: BTreeMap<u16, AnimationNodeIndex>,
     /// The code-owned catalog range is authoritative. Exporters may retain
     /// extra timeline keys, but locomotion must never sample beyond the
     /// documented closure frame.
     cycle_duration_seconds: f32,
+}
+
+impl LoadedClip {
+    fn at_anchor(&self, frame: u16) -> Self {
+        let mut clip = self.clone();
+        clip.node = self.anchor_nodes.get(&frame).copied().unwrap_or(self.node);
+        clip
+    }
 }
 
 #[derive(Resource, Default)]
@@ -539,7 +793,6 @@ struct AnimationRuntime {
 pub(super) struct AnimationPlayback {
     clips: Vec<WeightedClip>,
     use_authored_bind_pose: bool,
-    pub(super) lower_body_mirror: f32,
     pub(super) whole_body_mirror: f32,
     weapon_guard: WeaponGuardState,
     ordinary_locomotion_active: bool,
@@ -559,7 +812,6 @@ impl Default for AnimationPlayback {
         Self {
             clips: Vec::new(),
             use_authored_bind_pose: true,
-            lower_body_mirror: 0.0,
             whole_body_mirror: 0.0,
             weapon_guard: WeaponGuardState::Lowered,
             ordinary_locomotion_active: false,
@@ -581,7 +833,6 @@ struct WeightedClip {
 struct PlaybackPose {
     clips: Vec<WeightedClip>,
     use_authored_bind_pose: bool,
-    lower_body_mirror: f32,
     whole_body_mirror: f32,
 }
 
@@ -769,12 +1020,10 @@ fn collect_loaded_packs(
         .iter()
         .map(|(key, handle)| (key.clone(), handle.clone()))
         .collect::<Vec<_>>();
-    let (graph, nodes) =
-        AnimationGraph::from_clips(ordered.iter().map(|(_, handle)| handle.clone()));
+    let mut graph = AnimationGraph::new();
     runtime.clips = ordered
         .into_iter()
-        .zip(nodes)
-        .map(|((key, handle), node)| {
+        .map(|(key, handle)| {
             let source = &catalog.packs[&key.0].motions[&key.1];
             let exported_duration = clips
                 .get(&handle)
@@ -783,10 +1032,31 @@ fn collect_loaded_packs(
             let cycle_duration_seconds =
                 authoritative_cycle_duration(source.last_frame, exported_duration)
                     .expect("processed motion already passed catalog-range validation");
+            let node = graph.add_clip(handle.clone(), 1.0, graph.root);
+            let pack = &catalog.packs[&key.0];
+            let anchor_motion = key.1.strip_suffix("_mirrored").unwrap_or(&key.1);
+            let anchor_frames = pack
+                .poses
+                .values()
+                .filter(|anchor| anchor.motion == anchor_motion)
+                .map(|anchor| anchor.frame)
+                .chain(
+                    pack.references
+                        .get(&key.1)
+                        .into_iter()
+                        .flatten()
+                        .map(|reference| reference.frame),
+                )
+                .collect::<BTreeSet<_>>();
+            let anchor_nodes = anchor_frames
+                .into_iter()
+                .map(|frame| (frame, graph.add_clip(handle.clone(), 1.0, graph.root)))
+                .collect();
             (
                 key,
                 LoadedClip {
                     node,
+                    anchor_nodes,
                     cycle_duration_seconds,
                 },
             )
@@ -978,7 +1248,7 @@ fn evaluate_skeletons(
     runtime: Res<AnimationRuntime>,
     time: Res<Time>,
     procedural_clock: Res<ProceduralAnimationClock>,
-    players: Query<(Entity, &SkeletonState, Option<&mut AnimationPlayback>), With<Player>>,
+    players: Query<(Entity, &PresentedSkeleton, Option<&mut AnimationPlayback>), With<Player>>,
 ) {
     for (entity, skeleton, playback) in players {
         let evaluation = AnimationEvaluation::from_skeleton(skeleton);
@@ -1015,10 +1285,7 @@ fn evaluate_skeletons(
                 mirrored > exact
             });
         let mut weighted = Vec::<WeightedClip>::new();
-        let mut mirror_weight = 0.0;
-        let mut resolved_weight = 0.0;
         for sample in samples {
-            let before = weighted.iter().map(|clip| clip.weight).sum::<f32>();
             append_resolved_sample(
                 &mut weighted,
                 &runtime,
@@ -1027,9 +1294,6 @@ fn evaluate_skeletons(
                 *sample,
                 coherent_guard_parity,
             );
-            let added = (weighted.iter().map(|clip| clip.weight).sum::<f32>() - before).max(0.0);
-            resolved_weight += added;
-            mirror_weight += added * sample.mirror_lower_body.clamp(0.0, 1.0);
         }
         let target = PlaybackPose {
             use_authored_bind_pose: weighted.is_empty(),
@@ -1047,11 +1311,6 @@ fn evaluate_skeletons(
                 }
             },
             clips: weighted,
-            lower_body_mirror: if resolved_weight > f32::EPSILON {
-                (mirror_weight / resolved_weight).clamp(0.0, 1.0)
-            } else {
-                0.0
-            },
         };
         let ordinary_locomotion_active = skeleton.grounded
             && skeleton.action == SkeletonAction::None
@@ -1070,7 +1329,6 @@ fn evaluate_skeletons(
             commands.entity(entity).insert(AnimationPlayback {
                 clips: target.clips,
                 use_authored_bind_pose: target.use_authored_bind_pose,
-                lower_body_mirror: target.lower_body_mirror,
                 whole_body_mirror: target.whole_body_mirror,
                 weapon_guard: skeleton.weapon_guard,
                 ordinary_locomotion_active,
@@ -1080,6 +1338,88 @@ fn evaluate_skeletons(
         }
     }
 }
+
+#[cfg(not(target_family = "wasm"))]
+fn log_animation_diagnostics(
+    time: Res<Time>,
+    mut log: Option<ResMut<AnimationDiagnosticLog>>,
+    input: Option<Res<DiagnosticInputStatus>>,
+    render_schedule: Option<Res<RenderScheduleTelemetry>>,
+    players: Query<
+        (
+            &Transform,
+            &SkeletonState,
+            &PresentedSkeleton,
+            &AnimationPlayback,
+        ),
+        (With<Player>, With<crate::player::ClientPlayer>),
+    >,
+) {
+    let Some(log) = log.as_mut() else {
+        return;
+    };
+    let render_schedule_completion = render_schedule.as_deref().map(|telemetry| {
+        let (count, elapsed_micros) = telemetry.snapshot();
+        serde_json::json!({
+            "count": count,
+            "elapsed_micros": elapsed_micros,
+        })
+    });
+    let wall_clock_unix_micros = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_micros().min(u64::MAX as u128) as u64)
+        .unwrap_or_default();
+    for (transform, authoritative, presented, playback) in &players {
+        let evaluation = AnimationEvaluation::from_skeleton(presented);
+        let transition = playback.presentation_transition.as_ref().map(|transition| {
+            serde_json::json!({
+                "elapsed_seconds": transition.elapsed_seconds,
+                "progress": (transition.elapsed_seconds / PRESENTATION_CROSSFADE_SECONDS)
+                    .clamp(0.0, 1.0),
+            })
+        });
+        let clips = playback
+            .clips
+            .iter()
+            .map(|clip| {
+                serde_json::json!({
+                    "weight": clip.weight,
+                    "time_seconds": clip.time_seconds,
+                    "mirrored_weight": clip.mirrored_weight,
+                })
+            })
+            .collect::<Vec<_>>();
+        log.write(serde_json::json!({
+            "elapsed_seconds": time.elapsed_secs_f64(),
+            "wall_clock_unix_micros": wall_clock_unix_micros,
+            "render_delta_seconds": time.delta_secs(),
+            "render_schedule_completion": render_schedule_completion,
+            "input": input.as_deref(),
+            "controller_transform": {
+                "translation": transform.translation.to_array(),
+                "rotation_xyzw": transform.rotation.to_array(),
+            },
+            "authoritative": authoritative,
+            "presented": &presented.state,
+            "presentation_phase_error_remaining": presented.phase_error_remaining,
+            "presentation_phase_prediction_delta": presented.last_phase_prediction_delta,
+            "presentation_phase_correction_delta": presented.last_phase_correction_delta,
+            "presentation_phase_measurement_error": presented.last_phase_measurement_error,
+            "presentation_phase_source_changed": presented.last_phase_source_changed,
+            "evaluation": evaluation,
+            "playback": {
+                "use_authored_bind_pose": playback.use_authored_bind_pose,
+                "whole_body_mirror": playback.whole_body_mirror,
+                "ordinary_locomotion_active": playback.ordinary_locomotion_active,
+                "transition": transition,
+                "clips": clips,
+            },
+        }));
+    }
+}
+
+#[cfg(target_family = "wasm")]
+fn log_animation_diagnostics() {}
 
 fn update_presentation_crossfade(
     playback: &mut AnimationPlayback,
@@ -1137,7 +1477,6 @@ fn playback_pose(playback: &AnimationPlayback) -> PlaybackPose {
     PlaybackPose {
         clips: playback.clips.clone(),
         use_authored_bind_pose: playback.use_authored_bind_pose,
-        lower_body_mirror: playback.lower_body_mirror,
         whole_body_mirror: playback.whole_body_mirror,
     }
 }
@@ -1145,7 +1484,6 @@ fn playback_pose(playback: &AnimationPlayback) -> PlaybackPose {
 fn apply_playback_pose(playback: &mut AnimationPlayback, pose: PlaybackPose) {
     playback.clips = pose.clips;
     playback.use_authored_bind_pose = pose.use_authored_bind_pose;
-    playback.lower_body_mirror = pose.lower_body_mirror;
     playback.whole_body_mirror = pose.whole_body_mirror;
 }
 
@@ -1157,7 +1495,6 @@ fn blend_playback_poses(from: &PlaybackPose, to: &PlaybackPose, progress: f32) -
     PlaybackPose {
         use_authored_bind_pose: clips.is_empty(),
         clips,
-        lower_body_mirror: from.lower_body_mirror.lerp(to.lower_body_mirror, progress),
         whole_body_mirror: from.whole_body_mirror.lerp(to.whole_body_mirror, progress),
     }
 }
@@ -1304,6 +1641,19 @@ fn resolve_anchor<'a>(
     })
 }
 
+fn select_gait_endpoint_parity<'a>(
+    runtime: &'a AnimationRuntime,
+    resolved: ResolvedAnchor<'a>,
+    mirrored: bool,
+) -> Option<ResolvedAnchor<'a>> {
+    if !mirrored {
+        return Some(resolved);
+    }
+    let motion = format!("{}_mirrored", resolved.anchor.motion);
+    let clip = runtime.clips.get(&(resolved.pack_id.to_owned(), motion))?;
+    Some(ResolvedAnchor { clip, ..resolved })
+}
+
 fn is_guard_locomotion_pose(pose: SemanticPose) -> bool {
     matches!(
         pose,
@@ -1441,23 +1791,54 @@ fn append_weighted(
     time_seconds: f32,
     weight: f32,
 ) {
+    append_weighted_clip(
+        weighted,
+        resolved.clip,
+        resolved.mirrored,
+        time_seconds,
+        weight,
+    );
+}
+
+fn append_weighted_anchor(
+    weighted: &mut Vec<WeightedClip>,
+    resolved: &ResolvedAnchor,
+    frame: u16,
+    weight: f32,
+) {
+    let clip = resolved.clip.at_anchor(frame);
+    append_weighted_clip(
+        weighted,
+        &clip,
+        resolved.mirrored,
+        frame_seconds(frame),
+        weight,
+    );
+}
+
+fn append_weighted_clip(
+    weighted: &mut Vec<WeightedClip>,
+    clip: &LoadedClip,
+    mirrored: bool,
+    time_seconds: f32,
+    weight: f32,
+) {
     if weight <= f32::EPSILON {
         return;
     }
     if let Some(existing) = weighted.iter_mut().find(|existing| {
-        existing.clip.node == resolved.clip.node
-            && (existing.time_seconds - time_seconds).abs() < 0.0001
+        existing.clip.node == clip.node && (existing.time_seconds - time_seconds).abs() < 0.0001
     }) {
         existing.weight += weight;
-        if resolved.mirrored {
+        if mirrored {
             existing.mirrored_weight += weight;
         }
     } else {
         weighted.push(WeightedClip {
-            clip: resolved.clip.clone(),
+            clip: clip.clone(),
             weight,
             time_seconds,
-            mirrored_weight: if resolved.mirrored { weight } else { 0.0 },
+            mirrored_weight: if mirrored { weight } else { 0.0 },
         });
     }
 }
@@ -1474,16 +1855,15 @@ fn append_resolved_sample(
         Some(mirrored) => resolve_anchor_with_parity(runtime, catalog, pack, sample.pose, mirrored),
         None => resolve_anchor(runtime, catalog, pack, sample.pose),
     };
-    let Some(start) = start else {
+    let Some(start) = start.and_then(|resolved| {
+        select_gait_endpoint_parity(runtime, resolved, sample.mirror_lower_body)
+    }) else {
         return;
     };
     match sample.sampling {
-        PoseSampling::Anchor => append_weighted(
-            weighted,
-            &start,
-            frame_seconds(start.anchor.frame),
-            sample.weight,
-        ),
+        PoseSampling::Anchor => {
+            append_weighted_anchor(weighted, &start, start.anchor.frame, sample.weight)
+        }
         PoseSampling::Cycle { progress } => append_weighted(
             weighted,
             &start,
@@ -1500,17 +1880,17 @@ fn append_resolved_sample(
                 None => resolve_anchor(runtime, catalog, pack, end_pose),
             };
             let Some(end) = end else {
-                append_weighted(
-                    weighted,
-                    &start,
-                    frame_seconds(start.anchor.frame),
-                    sample.weight,
-                );
+                append_weighted_anchor(weighted, &start, start.anchor.frame, sample.weight);
                 return;
             };
             if start.pack_id == end.pack_id && start.anchor.motion == end.anchor.motion {
-                let frame = (start.anchor.frame as f32).lerp(end.anchor.frame as f32, progress);
-                append_weighted(weighted, &start, frame / ANIMATION_FPS, sample.weight);
+                append_weighted_anchor(
+                    weighted,
+                    &start,
+                    start.anchor.frame,
+                    sample.weight * (1.0 - progress),
+                );
+                append_weighted_anchor(weighted, &end, end.anchor.frame, sample.weight * progress);
             } else if let Some(reference) = catalog.packs[end.pack_id]
                 .references
                 .get(&end.anchor.motion)
@@ -1521,8 +1901,13 @@ fn append_resolved_sample(
                         .min_by_key(|reference| reference.frame.abs_diff(end.anchor.frame))
                 })
             {
-                let frame = (reference.frame as f32).lerp(end.anchor.frame as f32, progress);
-                append_weighted(weighted, &end, frame / ANIMATION_FPS, sample.weight);
+                append_weighted_anchor(
+                    weighted,
+                    &end,
+                    reference.frame,
+                    sample.weight * (1.0 - progress),
+                );
+                append_weighted_anchor(weighted, &end, end.anchor.frame, sample.weight * progress);
             } else if let Some(reference) = catalog.packs[start.pack_id]
                 .references
                 .get(&start.anchor.motion)
@@ -1533,21 +1918,21 @@ fn append_resolved_sample(
                         .min_by_key(|reference| reference.frame.abs_diff(start.anchor.frame))
                 })
             {
-                let frame = (start.anchor.frame as f32).lerp(reference.frame as f32, progress);
-                append_weighted(weighted, &start, frame / ANIMATION_FPS, sample.weight);
-            } else {
-                append_weighted(
+                append_weighted_anchor(
                     weighted,
                     &start,
-                    frame_seconds(start.anchor.frame),
+                    start.anchor.frame,
                     sample.weight * (1.0 - progress),
                 );
-                append_weighted(
+                append_weighted_anchor(weighted, &start, reference.frame, sample.weight * progress);
+            } else {
+                append_weighted_anchor(
                     weighted,
-                    &end,
-                    frame_seconds(end.anchor.frame),
-                    sample.weight * progress,
+                    &start,
+                    start.anchor.frame,
+                    sample.weight * (1.0 - progress),
                 );
+                append_weighted_anchor(weighted, &end, end.anchor.frame, sample.weight * progress);
             }
         }
     }
@@ -1700,6 +2085,219 @@ mod tests {
         assert!(!TerrainIkEnabled::default().0);
     }
 
+    #[test]
+    fn presentation_phase_advances_between_sparse_authoritative_samples() {
+        let mut authoritative = SkeletonState {
+            local_velocity: Vec3::NEG_Z * 5.5,
+            world_velocity: Vec3::NEG_Z * 5.5,
+            ..default()
+        };
+        let mut presented = PresentedSkeleton {
+            state: authoritative.clone(),
+            source_tick: 0,
+            presentation_tick: None,
+            phase_error_remaining: 0.0,
+            last_phase_prediction_delta: 0.0,
+            last_phase_correction_delta: 0.0,
+            last_phase_measurement_error: None,
+            last_phase_source_changed: false,
+        };
+        let mut replicated = authoritative.clone();
+        let mut previous_phase = presented.gait_phase;
+        let mut largest_step = 0.0_f32;
+        let mut advanced_without_sample = false;
+
+        for tick in 1..=64 {
+            project_skeleton_locomotion(
+                &mut authoritative,
+                SkeletonLocomotionInput {
+                    orientation: Quat::IDENTITY,
+                    linear_velocity: Vec3::NEG_Z * 5.5,
+                    grounded: true,
+                    crouching: false,
+                    delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                    tick,
+                },
+            );
+            if tick % 4 == 0 {
+                replicated = authoritative.clone();
+            }
+            advance_presented_skeleton(&mut presented, &replicated, 1.0 / LOCOMOTION_SAMPLE_HZ);
+            let step = circular_phase_delta(previous_phase, presented.gait_phase).abs();
+            largest_step = largest_step.max(step);
+            if tick % 4 != 0 && step > 0.001 {
+                advanced_without_sample = true;
+            }
+            previous_phase = presented.gait_phase;
+        }
+
+        assert!(advanced_without_sample);
+        assert!(largest_step < 0.06, "largest phase step was {largest_step}");
+        assert!(circular_phase_delta(presented.gait_phase, authoritative.gait_phase).abs() < 0.08);
+    }
+
+    #[test]
+    fn presentation_phase_correction_is_rate_limited_across_packet_jitter() {
+        let velocity = Vec3::NEG_Z * 5.5;
+        let authoritative = SkeletonState {
+            local_velocity: velocity,
+            world_velocity: velocity,
+            gait_phase: 0.12,
+            locomotion_sample_tick: 1,
+            ..default()
+        };
+        let mut presented = PresentedSkeleton {
+            state: SkeletonState {
+                local_velocity: velocity,
+                world_velocity: velocity,
+                ..default()
+            },
+            source_tick: 0,
+            presentation_tick: None,
+            phase_error_remaining: 0.0,
+            last_phase_prediction_delta: 0.0,
+            last_phase_correction_delta: 0.0,
+            last_phase_measurement_error: None,
+            last_phase_source_changed: false,
+        };
+        let render_deltas = [1.0 / 60.0, 1.0 / 90.0, 1.0 / 45.0, 1.0 / 72.0];
+        let mut previous_phase = presented.gait_phase;
+
+        for delta_seconds in render_deltas.into_iter().cycle().take(16) {
+            advance_presented_skeleton(&mut presented, &authoritative, delta_seconds);
+            let actual = circular_phase_delta(previous_phase, presented.gait_phase);
+            let predicted = gait_cycle_phase_delta(
+                locomotion_profile(&presented.state),
+                presented.animation_speed(),
+                delta_seconds,
+            );
+            let maximum = predicted
+                + PRESENTATION_PHASE_CORRECTION_RATE_PER_SECOND * delta_seconds
+                + 0.000_01;
+            assert!(actual >= 0.0, "phase moved backwards by {actual}");
+            assert!(actual <= maximum, "phase step {actual} exceeded {maximum}");
+            previous_phase = presented.gait_phase;
+        }
+    }
+
+    #[test]
+    fn presentation_phase_ignores_minor_authoritative_packet_jitter() {
+        let velocity = Vec3::NEG_Z * 5.5;
+        let mut authoritative = SkeletonState {
+            local_velocity: velocity,
+            world_velocity: velocity,
+            ..default()
+        };
+        let mut presented = PresentedSkeleton {
+            state: authoritative.clone(),
+            source_tick: 0,
+            presentation_tick: None,
+            phase_error_remaining: 0.0,
+            last_phase_prediction_delta: 0.0,
+            last_phase_correction_delta: 0.0,
+            last_phase_measurement_error: None,
+            last_phase_source_changed: false,
+        };
+        let delta_seconds = 1.0 / 60.0;
+
+        for tick in 1..=32 {
+            let previous_phase = presented.gait_phase;
+            let predicted_delta = gait_cycle_phase_delta(
+                locomotion_profile(&presented.state),
+                presented.animation_speed(),
+                delta_seconds,
+            );
+            let jitter = if tick % 2 == 0 { 0.03 } else { -0.03 };
+            authoritative.gait_phase = (previous_phase + predicted_delta + jitter).rem_euclid(1.0);
+            authoritative.locomotion_sample_tick = tick;
+
+            advance_presented_skeleton(&mut presented, &authoritative, delta_seconds);
+
+            let actual_delta = circular_phase_delta(previous_phase, presented.gait_phase);
+            assert!((actual_delta - predicted_delta).abs() < 0.000_01);
+            assert_eq!(presented.last_phase_correction_delta, 0.0);
+            assert_eq!(presented.phase_error_remaining, 0.0);
+            assert!(presented.last_phase_source_changed);
+            assert!(presented.last_phase_measurement_error.is_some());
+        }
+    }
+
+    #[test]
+    fn presentation_phase_filters_persistent_drift_before_bounded_correction() {
+        let velocity = Vec3::NEG_Z * 5.5;
+        let mut authoritative = SkeletonState {
+            local_velocity: velocity,
+            world_velocity: velocity,
+            ..default()
+        };
+        let mut presented = PresentedSkeleton {
+            state: authoritative.clone(),
+            source_tick: 0,
+            presentation_tick: None,
+            phase_error_remaining: 0.0,
+            last_phase_prediction_delta: 0.0,
+            last_phase_correction_delta: 0.0,
+            last_phase_measurement_error: None,
+            last_phase_source_changed: false,
+        };
+        let delta_seconds = 1.0 / 60.0;
+        let maximum_correction = PRESENTATION_PHASE_CORRECTION_RATE_PER_SECOND * delta_seconds;
+
+        for tick in 1..=8 {
+            let predicted_delta = gait_cycle_phase_delta(
+                locomotion_profile(&presented.state),
+                presented.animation_speed(),
+                delta_seconds,
+            );
+            authoritative.gait_phase =
+                (presented.gait_phase + predicted_delta + 0.10).rem_euclid(1.0);
+            authoritative.locomotion_sample_tick = tick;
+
+            advance_presented_skeleton(&mut presented, &authoritative, delta_seconds);
+
+            assert!(presented.last_phase_correction_delta > 0.0);
+            assert!(presented.last_phase_correction_delta <= maximum_correction + 0.000_01);
+            let measured = presented
+                .last_phase_measurement_error
+                .expect("new authoritative sample should be measured");
+            assert!((measured - 0.10).abs() < 0.000_01);
+            assert!(presented.phase_error_remaining < 0.10 - PRESENTATION_PHASE_DRIFT_DEADBAND);
+        }
+    }
+
+    #[test]
+    fn presentation_velocity_smooths_a_sparse_turn_without_changing_authority() {
+        let authoritative = SkeletonState {
+            local_velocity: Vec3::NEG_Z * 5.5,
+            world_velocity: Vec3::NEG_Z * 5.5,
+            ..default()
+        };
+        let mut presented = PresentedSkeleton {
+            state: authoritative.clone(),
+            source_tick: 0,
+            presentation_tick: None,
+            phase_error_remaining: 0.0,
+            last_phase_prediction_delta: 0.0,
+            last_phase_correction_delta: 0.0,
+            last_phase_measurement_error: None,
+            last_phase_source_changed: false,
+        };
+        let turned = SkeletonState {
+            local_velocity: Vec3::X * 5.5,
+            world_velocity: Vec3::X * 5.5,
+            locomotion_sample_tick: 4,
+            gait_phase: 0.1,
+            ..authoritative.clone()
+        };
+
+        advance_presented_skeleton(&mut presented, &turned, 1.0 / LOCOMOTION_SAMPLE_HZ);
+
+        assert_eq!(turned.local_velocity, Vec3::X * 5.5);
+        assert!(presented.local_velocity.x > 0.0);
+        assert!(presented.local_velocity.x < 5.5);
+        assert!(presented.local_velocity.z < 0.0);
+    }
+
     fn spawn_test_t_pose(
         In(owner): In<Entity>,
         mut commands: Commands,
@@ -1823,20 +2421,43 @@ mod tests {
             let cycle_duration_seconds =
                 catalog.packs[HUMANOID_UNARMED_PACK].motions[&anchor.motion].last_frame as f32
                     / ANIMATION_FPS;
-            let next_node = AnimationNodeIndex::new(runtime.clips.len());
-            runtime
-                .clips
-                .entry((HUMANOID_UNARMED_PACK.to_owned(), anchor.motion.clone()))
-                .or_insert(LoadedClip {
-                    node: next_node,
+            let key = (HUMANOID_UNARMED_PACK.to_owned(), anchor.motion.clone());
+            if runtime.clips.contains_key(&key) {
+                continue;
+            }
+            let node_base = runtime.clips.len() * 256;
+            let pack = &catalog.packs[HUMANOID_UNARMED_PACK];
+            let anchor_nodes = pack
+                .poses
+                .values()
+                .filter(|candidate| candidate.motion == anchor.motion)
+                .map(|candidate| candidate.frame)
+                .chain(
+                    pack.references
+                        .get(&anchor.motion)
+                        .into_iter()
+                        .flatten()
+                        .map(|reference| reference.frame),
+                )
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .enumerate()
+                .map(|(index, frame)| (frame, AnimationNodeIndex::new(node_base + index + 1)))
+                .collect();
+            runtime.clips.insert(
+                key,
+                LoadedClip {
+                    node: AnimationNodeIndex::new(node_base),
+                    anchor_nodes,
                     cycle_duration_seconds,
-                });
+                },
+            );
         }
         runtime
     }
 
     #[test]
-    fn same_motion_span_uses_one_exact_time_sample() {
+    fn same_motion_span_blends_only_the_two_exact_anchor_frames() {
         let catalog = AnimationPackCatalog::default();
         let runtime =
             runtime_with_available([SemanticPose::WalkContact, SemanticPose::WalkPassing]);
@@ -1853,12 +2474,54 @@ mod tests {
                     progress: 0.5,
                 },
                 weight: 1.0,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
             None,
         );
+        assert_eq!(weighted.len(), 2);
+        assert!(
+            weighted.iter().any(|sample| {
+                sample.time_seconds == 0.0 && (sample.weight - 0.5).abs() < 0.0001
+            })
+        );
+        assert!(weighted.iter().any(|sample| {
+            (sample.time_seconds - 8.0 / ANIMATION_FPS).abs() < 0.0001
+                && (sample.weight - 0.5).abs() < 0.0001
+        }));
+    }
+
+    #[test]
+    fn mirrored_gait_endpoint_uses_a_distinct_pre_fk_clip_node() {
+        let catalog = AnimationPackCatalog::default();
+        let mut runtime =
+            runtime_with_available([SemanticPose::RunContact, SemanticPose::RunFlight]);
+        let mirrored_node = AnimationNodeIndex::new(9_001);
+        runtime.clips.insert(
+            (HUMANOID_UNARMED_PACK.to_owned(), "run_mirrored".to_owned()),
+            LoadedClip {
+                node: AnimationNodeIndex::new(9_000),
+                anchor_nodes: BTreeMap::from([(0, mirrored_node)]),
+                cycle_duration_seconds: 20.0 / ANIMATION_FPS,
+            },
+        );
+        let mut weighted = Vec::new();
+        append_resolved_sample(
+            &mut weighted,
+            &runtime,
+            &catalog,
+            HUMANOID_UNARMED_PACK,
+            PoseSample {
+                pose: SemanticPose::RunContact,
+                sampling: PoseSampling::Anchor,
+                weight: 0.5,
+                mirror_lower_body: true,
+            },
+            None,
+        );
+
         assert_eq!(weighted.len(), 1);
-        assert!((weighted[0].time_seconds - 4.0 / 30.0).abs() < 0.0001);
+        assert_eq!(weighted[0].clip.node, mirrored_node);
+        assert!((weighted[0].weight - 0.5).abs() < 0.0001);
     }
 
     #[test]
@@ -1875,7 +2538,7 @@ mod tests {
                 pose: SemanticPose::WalkContact,
                 sampling: PoseSampling::Cycle { progress: 0.5 },
                 weight: 1.0,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
             None,
         );
@@ -1904,7 +2567,7 @@ mod tests {
                 pose: SemanticPose::RunContact,
                 sampling: PoseSampling::Cycle { progress: 0.999 },
                 weight: 1.0,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
             None,
         );
@@ -1940,12 +2603,30 @@ mod tests {
                     progress: 0.5,
                 },
                 weight: 1.0,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
             None,
         );
-        assert_eq!(weighted.len(), 1);
-        assert!((weighted[0].time_seconds - 2.0 / ANIMATION_FPS).abs() < 0.0001);
+        assert_eq!(weighted.len(), 2);
+        assert!(
+            weighted.iter().any(|sample| {
+                sample.time_seconds == 0.0 && (sample.weight - 0.5).abs() < 0.0001
+            })
+        );
+        assert!(weighted.iter().any(|sample| {
+            (sample.time_seconds - 4.0 / ANIMATION_FPS).abs() < 0.0001
+                && (sample.weight - 0.5).abs() < 0.0001
+        }));
+        let attack = &runtime.clips[&(
+            HUMANOID_UNARMED_PACK.to_owned(),
+            "attack_thrust_lead_left_stay".to_owned(),
+        )];
+        assert!(weighted.iter().all(|sample| {
+            attack
+                .anchor_nodes
+                .values()
+                .any(|node| *node == sample.clip.node)
+        }));
     }
 
     #[test]
@@ -2049,7 +2730,7 @@ mod tests {
                 pose: SemanticPose::RunContact,
                 sampling: PoseSampling::Anchor,
                 weight: 1.0,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
             None,
         );
@@ -2085,7 +2766,7 @@ mod tests {
                 pose: SemanticPose::GuardLeadRight,
                 sampling: PoseSampling::Anchor,
                 weight: 0.75,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
             None,
         );
@@ -2112,7 +2793,7 @@ mod tests {
                 progress: 0.5,
             },
             weight,
-            mirror_lower_body: 0.0,
+            mirror_lower_body: false,
         });
         let movement = requested.map(|item| item.0);
         let exact = guard_parity_score(
@@ -2153,12 +2834,12 @@ mod tests {
                 HUMANOID_UNARMED_PACK.to_owned(),
                 "guard_lead_left".to_owned(),
             )]
-                .node,
+                .anchor_nodes[&0],
             runtime.clips[&(
                 HUMANOID_UNARMED_PACK.to_owned(),
                 "guard_walk_lead_left".to_owned(),
             )]
-                .node,
+                .anchor_nodes[&0],
         ];
         assert!(
             weighted
@@ -2185,7 +2866,7 @@ mod tests {
                     progress: 0.5,
                 },
                 weight: 0.5,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
             PoseSample {
                 pose: SemanticPose::GuardLeadLeft,
@@ -2194,7 +2875,7 @@ mod tests {
                     progress: 0.5,
                 },
                 weight: 0.5,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
         ];
         let movement = [
@@ -2235,17 +2916,17 @@ mod tests {
                 HUMANOID_UNARMED_PACK.to_owned(),
                 "guard_lead_right".to_owned(),
             )]
-                .node,
+                .anchor_nodes[&0],
             runtime.clips[&(
                 HUMANOID_UNARMED_PACK.to_owned(),
                 "guard_walk_lead_right".to_owned(),
             )]
-                .node,
+                .anchor_nodes[&0],
             runtime.clips[&(
                 HUMANOID_UNARMED_PACK.to_owned(),
                 "guard_strafe_lead_right_right".to_owned(),
             )]
-                .node,
+                .anchor_nodes[&0],
         ];
         assert!(
             weighted
@@ -2275,7 +2956,7 @@ mod tests {
                 progress: 0.5,
             },
             weight: 1.0,
-            mirror_lower_body: 0.0,
+            mirror_lower_body: false,
         }];
         let movement = [SemanticPose::GuardWalkLeadLeft];
         let exact = guard_parity_score(
@@ -2315,7 +2996,7 @@ mod tests {
                     progress: 0.5,
                 },
                 weight: 1.0,
-                mirror_lower_body: 0.0,
+                mirror_lower_body: false,
             },
             Some(false),
         );
@@ -2413,7 +3094,6 @@ mod tests {
         PlaybackPose {
             clips: Vec::new(),
             use_authored_bind_pose: true,
-            lower_body_mirror: mirror,
             whole_body_mirror: mirror,
         }
     }
@@ -2421,7 +3101,6 @@ mod tests {
     #[test]
     fn guard_crossfade_activates_at_the_current_effective_pose() {
         let mut playback = AnimationPlayback {
-            lower_body_mirror: 0.8,
             whole_body_mirror: 0.8,
             ..default()
         };
@@ -2438,14 +3117,12 @@ mod tests {
         );
 
         assert!(playback.presentation_transition.is_some());
-        assert!((playback.lower_body_mirror - 0.8).abs() < 0.0001);
         assert!((playback.whole_body_mirror - 0.8).abs() < 0.0001);
     }
 
     #[test]
     fn guard_crossfade_completes_at_the_latest_target_pose() {
         let mut playback = AnimationPlayback {
-            lower_body_mirror: 0.8,
             whole_body_mirror: 0.8,
             ..default()
         };
@@ -2470,14 +3147,12 @@ mod tests {
         );
 
         assert!(playback.presentation_transition.is_none());
-        assert!((playback.lower_body_mirror - 0.2).abs() < 0.0001);
         assert!((playback.whole_body_mirror - 0.2).abs() < 0.0001);
     }
 
     #[test]
     fn hard_stop_retains_then_releases_the_effective_locomotion_pose() {
         let mut playback = AnimationPlayback {
-            lower_body_mirror: 0.8,
             whole_body_mirror: 0.8,
             ordinary_locomotion_active: true,
             ..default()
@@ -2493,7 +3168,7 @@ mod tests {
             0.0,
         );
         assert!(playback.presentation_transition.is_some());
-        assert!((playback.lower_body_mirror - 0.8).abs() < 0.0001);
+        assert!((playback.whole_body_mirror - 0.8).abs() < 0.0001);
 
         update_presentation_crossfade(
             &mut playback,
@@ -2503,7 +3178,7 @@ mod tests {
             &clock,
             1.0,
         );
-        assert!((playback.lower_body_mirror - 0.8).abs() < 0.0001);
+        assert!((playback.whole_body_mirror - 0.8).abs() < 0.0001);
 
         clock.set_fixed_tick(11, PRESENTATION_CROSSFADE_SECONDS);
         update_presentation_crossfade(
@@ -2515,14 +3190,12 @@ mod tests {
             0.0,
         );
         assert!(playback.presentation_transition.is_none());
-        assert!(playback.lower_body_mirror.abs() < 0.0001);
         assert!(playback.whole_body_mirror.abs() < 0.0001);
     }
 
     #[test]
     fn reversing_guard_mid_crossfade_has_no_presentation_jump() {
         let mut playback = AnimationPlayback {
-            lower_body_mirror: 0.8,
             whole_body_mirror: 0.8,
             ..default()
         };
@@ -2545,7 +3218,7 @@ mod tests {
             &clock,
             0.0,
         );
-        let before_reversal = playback.lower_body_mirror;
+        let before_reversal = playback.whole_body_mirror;
 
         clock.set_fixed_tick(12, 0.09);
         update_presentation_crossfade(
@@ -2558,8 +3231,8 @@ mod tests {
         );
 
         let transition = playback.presentation_transition.as_ref().unwrap();
-        assert!((playback.lower_body_mirror - before_reversal).abs() < 0.0001);
-        assert!((transition.from.lower_body_mirror - before_reversal).abs() < 0.0001);
+        assert!((playback.whole_body_mirror - before_reversal).abs() < 0.0001);
+        assert!((transition.from.whole_body_mirror - before_reversal).abs() < 0.0001);
     }
 
     #[test]

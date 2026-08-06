@@ -21,9 +21,9 @@ use serde::Serialize;
 
 use crate::animation::{
     AnimationPlayback, BoneRole, HumanoidBone, LocomotionBodyResponseState, LocomotionHeightState,
-    LocomotionPresentationEvent, LocomotionPresentationEventKind, ProceduralAnimationClock,
-    ProceduralIkState, RaisedFootworkState, TacticalAnimationPlugin, TerrainIkEnabled,
-    locomotion_support_weights,
+    LocomotionPresentationEvent, LocomotionPresentationEventKind, PresentedSkeleton,
+    ProceduralAnimationClock, ProceduralIkState, RaisedFootworkState, TacticalAnimationPlugin,
+    TerrainIkEnabled, locomotion_support_weights,
 };
 use crate::{
     camera::{CameraMode, TacticalCameraPlugin, TacticalCameraSet, third_person_offset},
@@ -171,7 +171,7 @@ pub(crate) fn run(
             PlayerPlugin,
             TacticalAnimationPlugin,
             TacticalCameraPlugin,
-            TacticalPresentationPlugin,
+            TacticalPresentationPlugin::default(),
         ))
         .insert_resource(LocalCharacterId(0))
         .insert_resource(CameraMode { third_person: true })
@@ -394,6 +394,8 @@ struct ScenarioMetrics {
     visual_height_peaks_in_passing_windows: bool,
     maximum_no_support_seconds: f32,
     minimum_flight_sole_clearance_metres: f32,
+    minimum_contact_sole_clearance_metres: f32,
+    maximum_contact_sole_clearance_metres: f32,
     head_vertical_range_metres: f32,
     foot_terrain_relief_metres: f32,
     minimum_knee_forward_bend_metres: f32,
@@ -538,7 +540,7 @@ fn crouch_steady_scenario() -> Vec<PlannedFrame> {
 }
 
 fn crouch_transition_scenario() -> Vec<PlannedFrame> {
-    (0..=96)
+    (0_usize..=96)
         .map(|scenario_frame| PlannedFrame {
             scenario: "crouch-enter-exit",
             scenario_frame,
@@ -1086,7 +1088,7 @@ fn drive_sequence(
 
 fn position_capture_camera(
     sequence: Res<CaptureSequence>,
-    subjects: Query<(&Transform, &SkeletonState), With<CaptureSubject>>,
+    subjects: Query<(&Transform, &PresentedSkeleton), With<CaptureSubject>>,
     mut cameras: Query<&mut Transform, (With<Camera3d>, Without<CaptureSubject>)>,
     mut labels: Query<(&mut Text, &mut Visibility), With<CaptureLabel>>,
 ) {
@@ -1139,7 +1141,7 @@ fn position_capture_camera(
 fn draw_skeleton_overlay(
     sequence: Res<CaptureSequence>,
     mut gizmos: Gizmos,
-    subjects: Query<(Entity, &SkeletonState), With<CaptureSubject>>,
+    subjects: Query<(Entity, &PresentedSkeleton), With<CaptureSubject>>,
     bones: Query<(&HumanoidBone, &GlobalTransform)>,
 ) {
     if matches!(
@@ -1233,7 +1235,7 @@ fn capture_frame(
     subjects: Query<
         (
             Entity,
-            &SkeletonState,
+            &PresentedSkeleton,
             &GlobalTransform,
             Option<&AnimationPlayback>,
             Option<&RaisedFootworkState>,
@@ -1554,7 +1556,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     });
     let no_ground_penetration = scenarios
         .iter()
-        .all(|metrics| metrics.minimum_foot_clearance_metres >= -0.08);
+        .all(|metrics| metrics.minimum_contact_sole_clearance_metres >= -0.02);
     let raised_guard_fixed_lead = frames.windows(2).all(|pair| {
         pair[0].scenario != pair[1].scenario
             || pair[0].weapon_guard != WeaponGuardState::Raised
@@ -1586,7 +1588,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     let run_flight_valid = scenarios.iter().all(|metrics| {
         if metrics.scenario == "steady-run-5.5" {
             (0.085..=0.12).contains(&metrics.maximum_no_support_seconds)
-                && metrics.minimum_flight_sole_clearance_metres >= 0.10
+                && (0.10..=0.30).contains(&metrics.minimum_flight_sole_clearance_metres)
         } else if metrics.scenario == "steady-walk-2.0"
             || metrics.scenario.starts_with("raised-guard")
         {
@@ -1817,6 +1819,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
                     && metrics.minimum_knee_hemisphere_dot >= 0.0))
             && metrics.maximum_facing_tracking_excess_degrees <= 0.2
             && metrics.final_facing_motion_error_degrees <= 3.0
+            && metrics.maximum_contact_sole_clearance_metres <= 0.04
             && metrics.pelvis_vertical_range_metres <= vertical_range_limit
             && metrics.head_vertical_range_metres <= vertical_range_limit
             && if !expects_loop_seam(&metrics.scenario) {
@@ -2065,6 +2068,10 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
                 visual_height_peaks_in_passing_windows,
                 maximum_no_support_seconds: maximum_no_support_seconds(&metric_frames),
                 minimum_flight_sole_clearance_metres: minimum_flight_sole_clearance(&metric_frames),
+                minimum_contact_sole_clearance_metres: contact_sole_clearance_range(&metric_frames)
+                    .0,
+                maximum_contact_sole_clearance_metres: contact_sole_clearance_range(&metric_frames)
+                    .1,
                 head_vertical_range_metres: root_relative_vertical_range(&metric_frames, "head"),
                 foot_terrain_relief_metres: foot_terrain_relief(&metric_frames),
                 minimum_knee_forward_bend_metres: minimum_knee_bend(&metric_frames),
@@ -2107,7 +2114,7 @@ fn vertical_range_limit(scenario: &str, foot_terrain_relief_metres: f32) -> f32 
 fn expected_visual_height(scenario: &str) -> Option<(f32, f32, usize)> {
     Some(match scenario {
         "steady-walk-2.0" => (0.025, 0.06, 2),
-        "steady-run-5.5" => (0.15, 0.20, 2),
+        "steady-run-5.5" => (0.03, 0.12, 2),
         "steady-crouch-1.5" => (0.035, 0.065, 2),
         "raised-guard-forward" | "raised-guard-half-speed" => (0.018, 0.05, 2),
         _ => return None,
@@ -2513,6 +2520,38 @@ fn minimum_flight_sole_clearance(frames: &[&FrameSample]) -> f32 {
         })
         .fold(f32::INFINITY, f32::min);
     if minimum.is_finite() { minimum } else { 0.0 }
+}
+
+fn contact_sole_clearance_range(frames: &[&FrameSample]) -> (f32, f32) {
+    let (minimum, maximum) = frames
+        .iter()
+        .filter_map(|frame| {
+            let phase = frame.gait_phase.rem_euclid(1.0);
+            let left_distance = phase.min(1.0 - phase);
+            let right_distance = (phase - 0.5).abs();
+            let (distance, foot) = if left_distance <= right_distance {
+                (left_distance, "left_foot")
+            } else {
+                (right_distance, "right_foot")
+            };
+            if distance > 0.035 {
+                return None;
+            }
+            frame
+                .bones
+                .get(foot)?
+                .terrain_clearance_metres
+                .map(|ankle| ankle - 0.085)
+        })
+        .fold(
+            (f32::INFINITY, f32::NEG_INFINITY),
+            |(minimum, maximum), clearance| (minimum.min(clearance), maximum.max(clearance)),
+        );
+    if minimum.is_finite() && maximum.is_finite() {
+        (minimum, maximum)
+    } else {
+        (0.0, 0.0)
+    }
 }
 
 /// Terrain height variation under the two sampled feet relative to the

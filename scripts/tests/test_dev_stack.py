@@ -365,13 +365,347 @@ class WorkflowTests(unittest.TestCase):
     def test_tactical_play_parser_profiles(self):
         parser = dev_stack.create_parser()
         animation = parser.parse_args(["tactical-play", "animation"])
+        diagnostic = parser.parse_args(["tactical-play", "diagnostic"])
+        no_shadows = parser.parse_args([
+            "tactical-play", "diagnostic", "25020", "--graphics-preset", "no-shadows"
+        ])
+        traced = parser.parse_args([
+            "tactical-play", "animation", "--presentation-trace", "required"
+        ])
+        no_vsync = parser.parse_args([
+            "tactical-play", "animation", "--present-mode", "auto-no-vsync"
+        ])
+        captured = parser.parse_args([
+            "tactical-play", "diagnostic", "--window-capture", "required"
+        ])
+        display_dx12 = parser.parse_args([
+            "tactical-play", "diagnostic", "--capture-source", "display",
+            "--render-backend", "dx12",
+        ])
         networking = parser.parse_args(["tactical-play", "networking", "25000"])
         self.assertEqual(animation.base_port, 24920)
+        self.assertEqual(animation.presentation_trace, "auto")
+        self.assertEqual(diagnostic.mode, "diagnostic")
+        self.assertEqual(no_shadows.graphics_preset, "no-shadows")
+        self.assertEqual(traced.presentation_trace, "required")
+        self.assertEqual(no_vsync.present_mode, "auto-no-vsync")
+        self.assertEqual(diagnostic.window_capture, "auto")
+        self.assertEqual(diagnostic.capture_source, "window")
+        self.assertEqual(diagnostic.render_backend, "auto")
+        self.assertEqual(captured.window_capture, "required")
+        self.assertEqual(display_dx12.capture_source, "display")
+        self.assertEqual(display_dx12.render_backend, "dx12")
         self.assertEqual(networking.base_port, 25000)
+
+    def test_removed_high_environment_light_preset_is_rejected(self):
+        parser = dev_stack.create_parser()
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            parser.parse_args([
+                "tactical-play",
+                "diagnostic",
+                "25020",
+                "--graphics-preset",
+                "high-environment-light",
+            ])
+
+    def test_animation_profile_does_not_enable_unbounded_frame_logging(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "adventuresim-tactical-client.exe"
+            executable.touch()
+            process = mock.Mock(pid=1234)
+            process.poll.return_value = None
+            config = {
+                "worktree_fingerprint": "abc",
+                "session_id": "session-123456789",
+                "character_id": 0,
+                "tactical_port": 24922,
+                "play_mode": "animation",
+                "window_capture": "off",
+            }
+            with mock.patch.object(
+                dev_stack, "tactical_executable", return_value=executable
+            ), mock.patch.object(
+                dev_stack, "spawn_recorded", return_value=process
+            ) as spawn, mock.patch.object(dev_stack.time, "sleep"):
+                dev_stack.launch_recorded_tactical_client(root, config)
+            command = spawn.call_args.args[0]
+            self.assertNotIn("--animation-log", command)
+            self.assertNotIn("--input-script", command)
+            self.assertNotIn("animation_log", config)
+
+    def test_diagnostic_profile_waits_for_capture_before_scripted_motion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "adventuresim-tactical-client.exe"
+            executable.touch()
+            process = mock.Mock(pid=1234)
+            process.poll.return_value = None
+            config = {
+                "worktree_fingerprint": "abc",
+                "session_id": "session-123456789",
+                "character_id": 0,
+                "tactical_port": 24922,
+                "play_mode": "diagnostic",
+                "window_capture": "required",
+            }
+            with mock.patch.object(
+                dev_stack, "tactical_executable", return_value=executable
+            ), mock.patch.object(
+                dev_stack, "spawn_recorded", return_value=process
+            ), mock.patch.object(dev_stack.time, "sleep"):
+                dev_stack.launch_recorded_tactical_client(root, config)
+            script = json.loads(Path(config["input_script"]).read_text())
+            self.assertEqual(script["commands"][0]["type"], "wait_for_signal")
+            self.assertEqual(
+                script["commands"][0]["path"], config["capture_ready_signal"]
+            )
+            self.assertEqual(script["commands"][1]["type"], "rotate")
+            self.assertIn("animation_log", config)
+
+    def test_presentmon_path_can_be_configured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "PresentMon.exe"
+            executable.touch()
+            with mock.patch.dict(os.environ, {"PRESENTMON_PATH": str(executable)}):
+                self.assertEqual(dev_stack.find_presentmon(), executable)
+
+    def test_obs_path_can_be_configured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "obs64.exe"
+            executable.touch()
+            with mock.patch.dict(os.environ, {"OBS_PATH": str(executable)}):
+                self.assertEqual(dev_stack.find_obs(), executable)
+
+    def test_obs_monitor_selection_matches_active_display(self):
+        items = [
+            {"itemName": "Display 1: Integrated Display (1920x1080)", "itemValue": "display-1"},
+            {"itemName": "Display 2: Home Monitor (2560x1440)", "itemValue": "display-2"},
+        ]
+        geometry = {
+            "monitor_name": "Home Monitor",
+            "monitor_width": 2560,
+            "monitor_height": 1440,
+            "monitor_left": 1920,
+            "monitor_top": 0,
+        }
+        self.assertEqual(dev_stack.select_obs_monitor_id(items, geometry), "display-2")
+        self.assertEqual(
+            dev_stack.select_obs_monitor_id(items, geometry, "display-1"),
+            "display-1",
+        )
+        with self.assertRaisesRegex(RuntimeError, "OBS_MONITOR_ID"):
+            dev_stack.select_obs_monitor_id(items, geometry, "missing")
+
+    def test_obs_monitor_selection_rejects_ambiguous_display(self):
+        items = [
+            {"itemName": "Display: Same Monitor", "itemValue": "one"},
+            {"itemName": "Display: Same Monitor", "itemValue": "two"},
+        ]
+        geometry = {
+            "monitor_name": "Same Monitor",
+            "monitor_width": 1920,
+            "monitor_height": 1080,
+            "monitor_left": 0,
+            "monitor_top": 0,
+        }
+        with self.assertRaisesRegex(RuntimeError, "uniquely match"):
+            dev_stack.select_obs_monitor_id(items, geometry)
+
+    def test_obs_screenshot_readiness_requires_nonblack_pixels(self):
+        def png_data_url(rgb):
+            def chunk(kind, data):
+                return (
+                    dev_stack.struct.pack(">I", len(data))
+                    + kind
+                    + data
+                    + b"\0\0\0\0"
+                )
+
+            header = dev_stack.struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+            payload = (
+                b"\x89PNG\r\n\x1a\n"
+                + chunk(b"IHDR", header)
+                + chunk(b"IDAT", dev_stack.zlib.compress(b"\0" + bytes(rgb)))
+                + chunk(b"IEND", b"")
+            )
+            return "data:image/png;base64," + dev_stack.base64.b64encode(payload).decode()
+
+        black = png_data_url((0, 0, 0))
+        visible = png_data_url((12, 24, 36))
+        self.assertFalse(dev_stack.obs_screenshot_has_visible_pixels(black))
+        self.assertTrue(dev_stack.obs_screenshot_has_visible_pixels(visible))
+        self.assertFalse(dev_stack.obs_screenshot_has_visible_pixels("not an image"))
+
+        class FakeWebSocket:
+            def __init__(self):
+                self.calls = 0
+
+            def request(self, request_type, data=None):
+                self.calls += 1
+                self.assert_request = (request_type, data)
+                return {"imageData": visible if self.calls >= 3 else black}
+
+        websocket = FakeWebSocket()
+        with mock.patch.object(dev_stack.time, "sleep"):
+            dev_stack.wait_for_obs_source_ready(websocket, "Tactical client", 1.0)
+        self.assertEqual(websocket.calls, 3)
+        self.assertEqual(websocket.assert_request[0], "GetSourceScreenshot")
+
+    def test_obs_workspace_uses_portable_named_profile_and_collection(self):
+        class FakeWebSocket:
+            def __init__(self):
+                self.calls = []
+
+            def request(self, request_type, data=None):
+                self.calls.append((request_type, data))
+                if request_type == "GetProfileList":
+                    return {
+                        "currentProfileName": "Developer Profile",
+                        "profiles": ["Developer Profile", "Portable Diagnostics"],
+                    }
+                if request_type == "GetSceneCollectionList":
+                    return {
+                        "currentSceneCollectionName": "Developer Scenes",
+                        "sceneCollections": ["Developer Scenes", "Portable Scenes"],
+                    }
+                return {}
+
+        websocket = FakeWebSocket()
+        config = {}
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {"OBS_PROFILE": "Portable Diagnostics", "OBS_COLLECTION": "Portable Scenes"},
+            clear=True,
+        ), mock.patch.object(dev_stack.time, "sleep"):
+            dev_stack.configure_obs_workspace(websocket, Path(directory), config)
+
+        self.assertIn(
+            ("SetCurrentProfile", {"profileName": "Portable Diagnostics"}),
+            websocket.calls,
+        )
+        self.assertIn(
+            (
+                "SetCurrentSceneCollection",
+                {"sceneCollectionName": "Portable Scenes"},
+            ),
+            websocket.calls,
+        )
+        self.assertFalse(any(call[0] == "CreateProfile" for call in websocket.calls))
+        self.assertFalse(
+            any(call[0] == "CreateSceneCollection" for call in websocket.calls)
+        )
+        self.assertEqual(config["obs_original_profile"], "Developer Profile")
+        self.assertEqual(config["obs_original_collection"], "Developer Scenes")
+
+    def test_restore_obs_workspace_removes_capture_and_restores_user_state(self):
+        class FakeWebSocket:
+            def __init__(self):
+                self.calls = []
+
+            def request(self, request_type, data=None):
+                self.calls.append((request_type, data))
+                return {}
+
+        websocket = FakeWebSocket()
+        config = {
+            "obs_original_scene": "Gameplay",
+            "obs_capture_scene": "Adventure Simulator diagnostic abc",
+            "obs_original_collection": "Developer Scenes",
+            "obs_capture_collection": "Portable Scenes",
+            "obs_original_profile": "Developer Profile",
+            "obs_capture_profile": "Portable Diagnostics",
+        }
+        with mock.patch.object(dev_stack.time, "sleep"):
+            dev_stack.restore_obs_workspace(websocket, config, remove_capture_scene=True)
+        self.assertEqual(
+            websocket.calls,
+            [
+                ("SetCurrentProgramScene", {"sceneName": "Gameplay"}),
+                (
+                    "RemoveScene",
+                    {"sceneName": "Adventure Simulator diagnostic abc"},
+                ),
+                (
+                    "SetCurrentSceneCollection",
+                    {"sceneCollectionName": "Developer Scenes"},
+                ),
+                ("SetCurrentProfile", {"profileName": "Developer Profile"}),
+            ],
+        )
+
+    def test_obs_stop_restores_workspace_even_when_record_stop_fails(self):
+        class FakeWebSocket:
+            def __init__(self):
+                self.calls = []
+                self.closed = False
+
+            def request(self, request_type, data=None):
+                self.calls.append((request_type, data))
+                if request_type == "StopRecord":
+                    raise RuntimeError("recording failed")
+                return {}
+
+            def close(self):
+                self.closed = True
+
+        websocket = FakeWebSocket()
+        capture = dev_stack.ObsCapture(mock.Mock(), websocket, Path("obs.identity.json"))
+        config = {
+            "obs_original_scene": "Idle",
+            "obs_capture_scene": "Adventure Simulator diagnostic abc",
+            "obs_original_collection": "Developer Scenes",
+            "obs_capture_collection": "Portable Scenes",
+            "obs_original_profile": "Developer Profile",
+            "obs_capture_profile": "Portable Diagnostics",
+        }
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            dev_stack, "stop_recorded"
+        ), mock.patch.object(dev_stack.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "recording failed"):
+                dev_stack.stop_obs_capture(capture, Path(directory), config)
+        self.assertIn(
+            ("SetCurrentSceneCollection", {"sceneCollectionName": "Developer Scenes"}),
+            websocket.calls,
+        )
+        self.assertIn(
+            ("SetCurrentProfile", {"profileName": "Developer Profile"}),
+            websocket.calls,
+        )
+        self.assertTrue(websocket.closed)
+
+    def test_capture_gate_is_written_atomically(self):
+        with tempfile.TemporaryDirectory() as directory:
+            signal = Path(directory) / "ready.json"
+            dev_stack.release_capture_gate({"capture_ready_signal": str(signal)})
+            self.assertEqual(json.loads(signal.read_text()), {"ready": True})
+
+    def test_presentation_trace_auto_is_bounded_to_diagnostic_mode(self):
+        self.assertEqual(
+            dev_stack.effective_presentation_trace(
+                dev_stack.TacticalPlayMode.DIAGNOSTIC, "auto"
+            ),
+            "auto",
+        )
+        self.assertEqual(
+            dev_stack.effective_presentation_trace(
+                dev_stack.TacticalPlayMode.ANIMATION, "auto"
+            ),
+            "off",
+        )
+        self.assertEqual(
+            dev_stack.effective_presentation_trace(
+                dev_stack.TacticalPlayMode.COMBAT, "required"
+            ),
+            "required",
+        )
 
     def test_visual_and_networking_profiles_disable_combat(self):
         self.assertEqual(
             dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.ANIMATION), 0
+        )
+        self.assertEqual(
+            dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.DIAGNOSTIC), 0
         )
         self.assertEqual(
             dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.NETWORKING), 0

@@ -32,6 +32,12 @@ pub(crate) struct LoadingPlayer {
     pub(crate) requested_character: CharacterId,
 }
 
+/// Latest complete movement request accepted from a player. Unlike Ahoy's
+/// per-fixed-loop accumulator, this survives missing unreliable input packets
+/// until an explicit request replaces it.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq)]
+pub(crate) struct AuthoritativeMovementIntent(Option<Vec2>);
+
 /// Durable inventory provenance retained only on the authoritative server.
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct TacticalInventoryItemId(pub u64);
@@ -312,6 +318,7 @@ fn spawn_connected_player(
             CollisionMargin(0.01),
             tactical_character_controller(),
             CharacterLook::default(),
+            AuthoritativeMovementIntent::default(),
         ),
     ));
 
@@ -472,6 +479,7 @@ pub(crate) fn on_player_input(
             &mut CharacterLook,
             &TacticalCombatState,
             &mut SkeletonState,
+            &mut AuthoritativeMovementIntent,
         ),
         With<Player>,
     >,
@@ -484,12 +492,14 @@ pub(crate) fn on_player_input(
     let Some(entity) = input.client_id.entity() else {
         return;
     };
-    let Ok((mut accumulated_input, mut look, combat_state, mut skeleton)) = players.get_mut(entity)
+    let Ok((mut accumulated_input, mut look, combat_state, mut skeleton, mut movement_intent)) =
+        players.get_mut(entity)
     else {
         return;
     };
     if combat_state.is_incapacitated() {
         accumulated_input.last_movement = None;
+        movement_intent.0 = None;
         accumulated_input.jumped = None;
         set_weapon_guard(
             &mut skeleton,
@@ -500,6 +510,7 @@ pub(crate) fn on_player_input(
     look.yaw = validated.yaw;
     look.pitch = validated.pitch;
     accumulated_input.last_movement = validated.movement;
+    movement_intent.0 = validated.movement;
     set_weapon_guard(
         &mut skeleton,
         authoritative_weapon_guard(validated.weapon_guard, false),
@@ -545,6 +556,17 @@ fn authoritative_weapon_guard(
         WeaponGuardState::Lowered
     } else {
         requested
+    }
+}
+
+/// Rehydrates Ahoy's disposable fixed-loop input from the latest accepted
+/// complete request before movement runs. Ahoy may clear its accumulator after
+/// every fixed loop without turning a missing network packet into a stop.
+pub(crate) fn restore_authoritative_movement_intent(
+    mut players: Query<(&AuthoritativeMovementIntent, &mut AccumulatedInput), With<Player>>,
+) {
+    for (movement_intent, mut accumulated_input) in &mut players {
+        accumulated_input.last_movement = movement_intent.0;
     }
 }
 
@@ -632,8 +654,9 @@ fn player_spawn_offset(collider: &Collider) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        WeaponGuardState, authoritative_weapon_guard, mission_enemy_health_scale,
-        mission_enemy_scale, validate_player_input,
+        AuthoritativeMovementIntent, Player, WeaponGuardState, authoritative_weapon_guard, input,
+        mission_enemy_health_scale, mission_enemy_scale, restore_authoritative_movement_intent,
+        tactical_movement_speed_for_guard, validate_player_input,
     };
     use bevy::prelude::*;
 
@@ -714,6 +737,54 @@ mod tests {
         assert_eq!(
             authoritative_weapon_guard(WeaponGuardState::Raised, true),
             WeaponGuardState::Lowered
+        );
+    }
+
+    #[test]
+    fn movement_intent_survives_missing_unreliable_packets_until_explicit_stop() {
+        let mut world = World::new();
+        let player = world
+            .spawn((
+                Player::default(),
+                AuthoritativeMovementIntent(Some(Vec2::X)),
+                input::AccumulatedInput::default(),
+            ))
+            .id();
+        let mut schedule = Schedule::default();
+        schedule.add_systems(restore_authoritative_movement_intent);
+
+        for _missing_packet_tick in 0..4 {
+            schedule.run(&mut world);
+            let accumulated = world.get::<input::AccumulatedInput>(player).unwrap();
+            assert_eq!(accumulated.last_movement, Some(Vec2::X));
+            assert_eq!(
+                tactical_movement_speed_for_guard(
+                    accumulated.last_movement,
+                    WeaponGuardState::Lowered
+                ),
+                5.5
+            );
+            world
+                .get_mut::<input::AccumulatedInput>(player)
+                .unwrap()
+                .last_movement = None;
+        }
+
+        world
+            .get_mut::<AuthoritativeMovementIntent>(player)
+            .unwrap()
+            .0 = None;
+        schedule.run(&mut world);
+        assert_eq!(
+            world
+                .get::<input::AccumulatedInput>(player)
+                .unwrap()
+                .last_movement,
+            None
+        );
+        assert_eq!(
+            tactical_movement_speed_for_guard(None, WeaponGuardState::Lowered),
+            0.0
         );
     }
 }
