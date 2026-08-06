@@ -47,10 +47,31 @@ Use these conventions:
 - the armature bind pose is a T-pose, which is the final runtime fallback;
 - each motion GLB contains exactly one animation and preserves all authored
   in-betweens between its documented frame anchors;
-- locomotion exports provide the canonical contact and passing/flight poses;
-  the runtime interpolates them, mirrors only the lower body for the
-  opposite-foot half, and closes the normalized gait cycle; and
+- cyclic locomotion exports include their complete opposite-foot half and loop
+  closure; runtime gait phase traverses the loaded clip's actual duration while
+  catalog frame numbers continue to identify semantic anchors; and
 - packs in one fallback chain use identical bone names and hierarchy.
+
+## Deterministic animation capture
+
+The native `animation-viewer` binary exercises the same authored FK,
+procedural mirroring, and terrain IK plugin as the tactical client without a
+server or player input. It holds eight evenly spaced walk phases under a fixed
+camera, writes one PNG per phase plus `manifest.json`, validates that foot lead
+changes twice across the captured cycle, and exits. A missing rig, unresolved
+walk clip, or unbound foot times out with `failure.txt` rather than hanging.
+
+Run it from the repository root:
+
+```powershell
+cargo run -p adventuresim-tactical-client --bin animation-viewer -- --output target/animation-captures/walk
+```
+
+Use `--asset-root` when invoking it outside the repository root and
+`--frames-per-sample` to change the regular interval after the initial render
+warmup. The manifest records gait phase, lower-body mirror weight, and both
+knee/foot world positions so procedural regressions can be diagnosed without
+visual guesswork.
 
 The procedural humanoid pass recognizes these case-sensitive bone names:
 
