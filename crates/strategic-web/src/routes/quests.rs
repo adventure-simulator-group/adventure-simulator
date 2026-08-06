@@ -368,6 +368,10 @@ struct QuestEnemyQuery {
 #[derive(Debug, Deserialize)]
 struct QuestCounterpartyBandageForm {
     patient_id: u64,
+    limb_slug: String,
+    action_id: String,
+    context_ref: String,
+    expected_membership_revision: u32,
 }
 
 async fn bandage_quest_counterparty(
@@ -386,10 +390,13 @@ async fn bandage_quest_counterparty(
             &[
                 json!(actor_id),
                 json!(form.patient_id),
-                json!("left-arm"),
+                json!(form.limb_slug),
                 json!("bandage"),
                 crate::spacetimedb::sats_option(None::<u64>),
                 json!(false),
+                json!(form.action_id),
+                crate::spacetimedb::sats_option(Some(form.context_ref)),
+                crate::spacetimedb::sats_option(Some(form.expected_membership_revision)),
             ],
         )
         .await
@@ -1126,6 +1133,10 @@ async fn render_quest_location(
                 character: counterparty,
                 contact_ref: membership.contact_ref,
                 revision: membership.revision,
+                membership_revision: membership.membership_revision,
+                contact_decision: membership.contact_decision,
+                treatment_decision: membership.treatment_decision,
+                treatment_limb_slug: membership.treatment_limb_slug,
             });
         }
     }

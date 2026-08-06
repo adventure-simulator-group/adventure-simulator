@@ -280,6 +280,7 @@ pub(super) struct SurgeryProcedureForm {
     projectile_id: Option<u64>,
     #[serde(default)]
     use_soap: bool,
+    action_id: String,
 }
 
 pub(super) fn schedule_allocation_reducer_arg(schedule: &ScheduleAllocation) -> serde_json::Value {
@@ -337,6 +338,9 @@ pub(super) async fn perform_surgery(
                 json!(form.procedure),
                 crate::spacetimedb::sats_option(form.projectile_id),
                 json!(form.use_soap),
+                json!(form.action_id),
+                crate::spacetimedb::sats_option(None::<String>),
+                crate::spacetimedb::sats_option(None::<u32>),
             ],
         )
         .await

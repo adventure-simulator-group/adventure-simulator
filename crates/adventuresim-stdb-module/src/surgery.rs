@@ -37,6 +37,63 @@ pub enum LimbRegion {
     Head,
 }
 
+#[derive(Clone, Debug)]
+#[table(accessor = treatment_action_receipt)]
+pub struct TreatmentActionReceipt {
+    #[primary_key]
+    pub id: String,
+    pub action_id: String,
+    pub actor_id: u64,
+    pub patient_id: u64,
+    pub limb: LimbRegion,
+    pub procedure: String,
+    pub projectile_id: Option<u64>,
+    pub use_soap: bool,
+    pub context_ref: Option<String>,
+    pub expected_membership_revision: Option<u32>,
+    pub completed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TreatmentReceiptDisposition {
+    New,
+    ExactReplay,
+    Collision,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn treatment_receipt_disposition(
+    existing: Option<&TreatmentActionReceipt>,
+    action_id: &str,
+    actor_id: u64,
+    patient_id: u64,
+    limb: LimbRegion,
+    procedure: &str,
+    projectile_id: Option<u64>,
+    use_soap: bool,
+    context_ref: Option<&str>,
+    expected_membership_revision: Option<u32>,
+) -> TreatmentReceiptDisposition {
+    let Some(existing) = existing else {
+        return TreatmentReceiptDisposition::New;
+    };
+    if existing.action_id == action_id
+        && existing.actor_id == actor_id
+        && existing.patient_id == patient_id
+        && existing.limb == limb
+        && existing.procedure == procedure
+        && existing.projectile_id == projectile_id
+        && existing.use_soap == use_soap
+        && existing.context_ref.as_deref() == context_ref
+        && existing.expected_membership_revision == expected_membership_revision
+        && existing.completed
+    {
+        TreatmentReceiptDisposition::ExactReplay
+    } else {
+        TreatmentReceiptDisposition::Collision
+    }
+}
+
 impl LimbRegion {
     pub const ALL: [Self; 7] = [
         Self::LeftArm,
@@ -877,12 +934,6 @@ fn require_together(ctx: &ReducerContext, actor_id: u64, patient_id: u64) -> Res
     if !same_place {
         return Err("Surgeon and patient must be together".into());
     }
-    if actor_id != patient_id
-        && (actor.party_id.is_none() || actor.party_id != patient.party_id)
-        && !crate::world_actor::treatment_is_authorized(ctx, actor_id, patient_id)
-    {
-        return Err("Treatment requires the co-present patient's consent or incapacitation".into());
-    }
     Ok(())
 }
 
@@ -963,11 +1014,69 @@ pub fn treat_limb(
     procedure: String,
     projectile_id: Option<u64>,
     use_soap: bool,
+    action_id: String,
+    context_ref: Option<String>,
+    expected_membership_revision: Option<u32>,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, actor_id)?;
-    crate::item::upsert_surgery_items(ctx);
-    require_together(ctx, actor_id, patient_id)?;
+    if action_id.is_empty() || action_id.len() > 160 {
+        return Err("Treatment action ID is invalid".into());
+    }
     let limb = LimbRegion::parse(&limb_slug).ok_or("Unknown limb")?;
+    let contextual_claim = match (&context_ref, expected_membership_revision) {
+        (None, None) => None,
+        (Some(contact_ref), Some(expected_membership_revision))
+            if !contact_ref.is_empty() && contact_ref.len() <= 256 =>
+        {
+            Some(crate::world_actor::ContextualTreatmentClaim {
+                contact_ref: contact_ref.clone(),
+                expected_membership_revision,
+            })
+        }
+        _ => return Err("Treatment context claim is malformed".into()),
+    };
+    let receipt_id = format!("treatment:{actor_id}:{action_id}");
+    match treatment_receipt_disposition(
+        ctx.db
+            .treatment_action_receipt()
+            .id()
+            .find(&receipt_id)
+            .as_ref(),
+        &action_id,
+        actor_id,
+        patient_id,
+        limb,
+        &procedure,
+        projectile_id,
+        use_soap,
+        context_ref.as_deref(),
+        expected_membership_revision,
+    ) {
+        TreatmentReceiptDisposition::New => {}
+        TreatmentReceiptDisposition::ExactReplay => return Ok(()),
+        TreatmentReceiptDisposition::Collision => {
+            return Err("Conflicting treatment retry".into());
+        }
+    }
+    require_together(ctx, actor_id, patient_id)?;
+    let initial_decision = crate::world_actor::contextual_treatment_decision(
+        ctx,
+        actor_id,
+        patient_id,
+        limb,
+        &procedure,
+        contextual_claim.as_ref(),
+    );
+    match initial_decision {
+        adventuresim_core::strategic_action::ContextualActionDecision::Allowed(_) => {}
+        adventuresim_core::strategic_action::ContextualActionDecision::Refused => {
+            return Err("Treatment was refused".into());
+        }
+        adventuresim_core::strategic_action::ContextualActionDecision::Unavailable => {
+            return Err("Treatment is unavailable".into());
+        }
+    }
+    crate::item::upsert_surgery_items(ctx);
     let skill = procedure_check(ctx, actor_id, patient_id, &procedure)?;
     let mut injury = injury_for(ctx, patient_id, limb);
     let projectile = projectile_id.and_then(|id| ctx.db.retained_projectile().id().find(id));
@@ -1030,6 +1139,22 @@ pub fn treat_limb(
         return Ok(());
     }
     require_together(ctx, actor_id, patient_id)?;
+    match crate::world_actor::contextual_treatment_decision(
+        ctx,
+        actor_id,
+        patient_id,
+        limb,
+        &procedure,
+        contextual_claim.as_ref(),
+    ) {
+        adventuresim_core::strategic_action::ContextualActionDecision::Allowed(_) => {}
+        adventuresim_core::strategic_action::ContextualActionDecision::Refused => {
+            return Err("Treatment was refused before it could be committed".into());
+        }
+        adventuresim_core::strategic_action::ContextualActionDecision::Unavailable => {
+            return Err("Treatment became unavailable before it could be committed".into());
+        }
+    }
     injury = injury_for(ctx, patient_id, limb);
     let selected_alcohol = soap_applicable
         .then(|| crate::alcohol::best_disinfectant(ctx, actor_id))
@@ -1120,22 +1245,129 @@ pub fn treat_limb(
     }
     store_injury(ctx, injury);
     refresh_limb_projection(ctx, patient_id, limb);
-    if !ctx
+    let patient_survived = ctx
         .db
         .character()
         .id()
         .find(patient_id)
-        .is_some_and(|character| character.alive)
-    {
-        return Ok(());
+        .is_some_and(|character| character.alive);
+    if patient_survived {
+        crate::capability::refresh_character_capability(ctx, patient_id)?;
     }
-    crate::capability::refresh_character_capability(ctx, patient_id)?;
+    ctx.db
+        .treatment_action_receipt()
+        .insert(TreatmentActionReceipt {
+            id: receipt_id,
+            action_id,
+            actor_id,
+            patient_id,
+            limb,
+            procedure,
+            projectile_id,
+            use_soap,
+            context_ref,
+            expected_membership_revision,
+            completed: true,
+        });
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn treatment_authorization_precedes_mutation_and_is_revalidated() {
+        let source = include_str!("surgery.rs");
+        let reducer = source
+            .split("pub fn treat_limb")
+            .nth(1)
+            .expect("treatment reducer");
+        let first_decision = reducer
+            .find("contextual_treatment_decision")
+            .expect("initial treatment decision");
+        assert!(first_decision < reducer.find("upsert_surgery_items").expect("item upsert"));
+        assert!(reducer[first_decision + 1..].contains("contextual_treatment_decision"));
+        assert!(reducer.contains("Treatment was refused"));
+        assert!(reducer.contains("Treatment is unavailable"));
+    }
+
+    #[test]
+    fn treatment_receipts_bind_exact_requests_and_retries() {
+        let source = include_str!("surgery.rs");
+        let reducer = source
+            .split("pub fn treat_limb")
+            .nth(1)
+            .expect("treatment reducer");
+        for coordinate in [
+            "existing.actor_id == actor_id",
+            "existing.patient_id == patient_id",
+            "existing.limb == limb",
+            "existing.procedure == procedure",
+            "existing.projectile_id == projectile_id",
+            "existing.use_soap == use_soap",
+        ] {
+            assert!(reducer.contains(coordinate), "missing {coordinate}");
+        }
+        assert!(reducer.contains("Conflicting treatment retry"));
+        assert!(reducer.contains("treatment_action_receipt().insert"));
+        let interrupted = reducer
+            .split("if !align_and_advance")
+            .nth(1)
+            .and_then(|tail| tail.split("require_together").next())
+            .expect("interrupted treatment branch");
+        assert!(!interrupted.contains("treatment_action_receipt"));
+    }
+
+    #[test]
+    fn receipt_state_machine_distinguishes_replay_collision_and_new_attempt() {
+        let receipt = TreatmentActionReceipt {
+            id: "treatment:7:token-a".into(),
+            action_id: "token-a".into(),
+            actor_id: 7,
+            patient_id: 8,
+            limb: LimbRegion::RightLeg,
+            procedure: "bandage".into(),
+            projectile_id: None,
+            use_soap: true,
+            context_ref: Some("road:1".into()),
+            expected_membership_revision: Some(4),
+            completed: true,
+        };
+        let disposition = |existing, token: &str, soap| {
+            treatment_receipt_disposition(
+                existing,
+                token,
+                7,
+                8,
+                LimbRegion::RightLeg,
+                "bandage",
+                None,
+                soap,
+                Some("road:1"),
+                Some(4),
+            )
+        };
+        assert_eq!(
+            disposition(Some(&receipt), "token-a", true),
+            TreatmentReceiptDisposition::ExactReplay
+        );
+        assert_eq!(
+            disposition(Some(&receipt), "token-a", false),
+            TreatmentReceiptDisposition::Collision
+        );
+        assert_eq!(
+            disposition(None, "token-b", true),
+            TreatmentReceiptDisposition::New
+        );
+
+        let mut incomplete = receipt;
+        incomplete.completed = false;
+        assert_eq!(
+            disposition(Some(&incomplete), "token-a", true),
+            TreatmentReceiptDisposition::Collision
+        );
+    }
 
     #[test]
     fn fracture_uses_single_hit_threshold() {

@@ -570,8 +570,10 @@ mod road_challenge_route_tests {
         assert!(template.contains("presentation.opening"));
         assert!(template.contains("presentation.cast"));
         assert!(template.contains("Roadside characters"));
-        assert!(template.contains(">Talk<") || template.contains("{ \"Talk\" }"));
-        assert!(template.contains(">Bandage<") || template.contains("{ \"Bandage\" }"));
+        assert!(template.contains("Request"));
+        assert!(template.contains("Refused"));
+        assert!(template.contains("Unavailable"));
+        assert!(template.contains("Emergency treatment"));
         assert!(!template.contains("challenge.actor_character_id"));
         assert!(!template.contains("EncounterDefinition"));
         assert!(!template.contains("WoundedOrderCourierV1"));
@@ -652,6 +654,10 @@ pub(super) async fn contact_camp_counterparty(
 #[derive(Debug, Deserialize)]
 pub(super) struct CounterpartyBandageForm {
     patient_id: u64,
+    limb_slug: String,
+    action_id: String,
+    context_ref: String,
+    expected_membership_revision: u32,
 }
 
 pub(super) async fn bandage_camp_counterparty(
@@ -669,10 +675,13 @@ pub(super) async fn bandage_camp_counterparty(
             &[
                 json!(actor_id),
                 json!(form.patient_id),
-                json!("left-arm"),
+                json!(form.limb_slug),
                 json!("bandage"),
                 crate::spacetimedb::sats_option(None::<u64>),
                 json!(false),
+                json!(form.action_id),
+                crate::spacetimedb::sats_option(Some(form.context_ref)),
+                crate::spacetimedb::sats_option(Some(form.expected_membership_revision)),
             ],
         )
         .await

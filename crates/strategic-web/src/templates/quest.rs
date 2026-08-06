@@ -278,6 +278,10 @@ pub struct QuestCounterparty {
     pub character: Character,
     pub contact_ref: String,
     pub revision: u32,
+    pub membership_revision: u32,
+    pub contact_decision: crate::spacetimedb::BackendContextualDecision,
+    pub treatment_decision: crate::spacetimedb::BackendContextualDecision,
+    pub treatment_limb_slug: Option<String>,
 }
 
 fn quest_counterparty_strip(case_site_id: &str, counterparties: &[QuestCounterparty]) -> Markup {
@@ -287,18 +291,36 @@ fn quest_counterparty_strip(case_site_id: &str, counterparties: &[QuestCounterpa
                 div class="npc-portrait counterparty-portrait" {
                     span class="npc-portrait-image" aria-hidden="true" { "?" }
                     span class="npc-portrait-name" { (&counterparty.character.name) }
-                    form method="post" action=(format!("/locations/case-site/{case_site_id}/counterparty/contact")) {
+                    @if counterparty.contact_decision == crate::spacetimedb::BackendContextualDecision::Request {
+                      form method="post" action=(format!("/locations/case-site/{case_site_id}/counterparty/contact")) {
                         input type="hidden" name="target_id" value=(counterparty.character.id);
                         input type="hidden" name="contact_ref" value=(&counterparty.contact_ref);
                         input type="hidden" name="expected_revision" value=(counterparty.revision);
                         input type="hidden" name="action_id" value=(format!("quest-contact:{case_site_id}:{}:{}", counterparty.revision, counterparty.character.id));
-                        button type="submit" class="btn btn-secondary btn-small" { "Talk" }
+                        button type="submit" class="btn btn-secondary btn-small" { "Request" }
+                      }
+                    } @else {
+                      button type="button" class="btn btn-secondary btn-small" disabled {
+                        (if counterparty.contact_decision == crate::spacetimedb::BackendContextualDecision::Refused { "Refused" } else { "Unavailable" })
+                      }
                     }
-                    @if counterparty.character.alive {
+                    @if counterparty.character.alive && counterparty.treatment_limb_slug.is_some() && matches!(counterparty.treatment_decision,
+                        crate::spacetimedb::BackendContextualDecision::Request
+                        | crate::spacetimedb::BackendContextualDecision::EmergencyTreatment) {
                         form method="post" action=(format!("/locations/case-site/{case_site_id}/counterparty/bandage")) {
                             input type="hidden" name="patient_id" value=(counterparty.character.id);
-                            button type="submit" class="btn btn-secondary btn-small" { "Bandage" }
+                            input type="hidden" name="limb_slug" value=(counterparty.treatment_limb_slug.as_deref().unwrap_or_default());
+                            input type="hidden" name="action_id" value=(crate::templates::fresh_request_token("treatment"));
+                            input type="hidden" name="context_ref" value=(&counterparty.contact_ref);
+                            input type="hidden" name="expected_membership_revision" value=(counterparty.membership_revision);
+                            button type="submit" class="btn btn-secondary btn-small" {
+                              (if counterparty.treatment_decision == crate::spacetimedb::BackendContextualDecision::EmergencyTreatment { "Emergency treatment" } else { "Request treatment" })
+                            }
                         }
+                    } @else {
+                      button type="button" class="btn btn-secondary btn-small" disabled {
+                        (if counterparty.treatment_decision == crate::spacetimedb::BackendContextualDecision::Refused { "Refused" } else { "Unavailable" })
+                      }
                     }
                 }
             }
@@ -500,7 +522,7 @@ mod tests {
     }
 
     #[test]
-    fn each_counterparty_renders_its_own_contact_claim() {
+    fn each_counterparty_renders_only_its_own_contextual_claims() {
         let character = |id, name: &str| Character {
             id,
             name: name.into(),
@@ -521,27 +543,69 @@ mod tests {
                 character: character(41, "Alice"),
                 contact_ref: "claim-a".into(),
                 revision: 3,
+                membership_revision: 2,
+                contact_decision: crate::spacetimedb::BackendContextualDecision::Request,
+                treatment_decision: crate::spacetimedb::BackendContextualDecision::Unavailable,
+                treatment_limb_slug: None,
             },
             QuestCounterparty {
                 character: character(42, "Bert"),
                 contact_ref: "claim-b".into(),
                 revision: 7,
+                membership_revision: 4,
+                contact_decision: crate::spacetimedb::BackendContextualDecision::Refused,
+                treatment_decision: crate::spacetimedb::BackendContextualDecision::Request,
+                treatment_limb_slug: Some("right-leg".into()),
+            },
+            QuestCounterparty {
+                character: character(43, "Charlie"),
+                contact_ref: "claim-c".into(),
+                revision: 9,
+                membership_revision: 6,
+                contact_decision: crate::spacetimedb::BackendContextualDecision::Unavailable,
+                treatment_decision:
+                    crate::spacetimedb::BackendContextualDecision::EmergencyTreatment,
+                treatment_limb_slug: Some("chest".into()),
             },
         ];
         let markup = quest_counterparty_strip("case-site:known", &rows).into_string();
         let cards = markup
-            .split("counterparty-portrait")
+            .split("<div class=\"npc-portrait counterparty-portrait\">")
             .skip(1)
+            .map(|card| {
+                card.split_once("</div>")
+                    .expect("complete counterparty card")
+                    .0
+            })
             .collect::<Vec<_>>();
-        assert_eq!(cards.len(), 2);
+        assert_eq!(cards.len(), 3);
         assert!(cards[0].contains("Alice"));
         assert!(cards[0].contains("value=\"41\""));
         assert!(cards[0].contains("value=\"claim-a\""));
+        assert!(!cards[0].contains("value=\"claim-b\""));
+        assert!(!cards[0].contains("value=\"claim-c\""));
         assert!(cards[0].contains("value=\"3\""));
+        assert!(cards[0].contains("Request"));
+        assert!(cards[0].contains("Unavailable"));
         assert!(cards[1].contains("Bert"));
         assert!(cards[1].contains("value=\"42\""));
         assert!(cards[1].contains("value=\"claim-b\""));
-        assert!(cards[1].contains("value=\"7\""));
+        assert!(!cards[1].contains("value=\"claim-a\""));
+        assert!(!cards[1].contains("value=\"claim-c\""));
+        assert!(!cards[1].contains("/counterparty/contact"));
+        assert!(cards[1].contains("/counterparty/bandage"));
+        assert!(cards[1].contains("Refused"));
+        assert!(cards[1].contains("Request treatment"));
+        assert!(cards[1].contains("value=\"right-leg\""));
+        assert!(cards[1].contains("value=\"4\""));
+        assert!(cards[1].contains("name=\"action_id\" value=\"treatment-"));
+        assert!(cards[2].contains("Charlie"));
+        assert!(cards[2].contains("value=\"claim-c\""));
+        assert!(!cards[2].contains("value=\"claim-a\""));
+        assert!(!cards[2].contains("value=\"claim-b\""));
+        assert!(cards[2].contains("Unavailable"));
+        assert!(cards[2].contains("Emergency treatment"));
+        assert!(cards[2].contains("value=\"chest\""));
     }
 
     #[test]

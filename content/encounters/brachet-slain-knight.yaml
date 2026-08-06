@@ -11,7 +11,7 @@
         "adaptation_note": "A direct adaptation of Malory's image in Volume I, Book VI, Chapter XIV: Launcelot follows a black brachet along a blood trail and finds a dead knight. This version relocates that image to a goal-neutral roadside recovery, adds the slain lord's veteran kennel master, and replaces Malory's subsequent supernatural adventure with grounded body care, armor observation, and the possibility of material desecration."
       },
       "cast": [
-        { "id": "kennel_master", "name": "Veteran kennel master", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } }
+        { "id": "kennel_master", "name": "Veteran kennel master", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } }
       ],
       "opening": [
         {

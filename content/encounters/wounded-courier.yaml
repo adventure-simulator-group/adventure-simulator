@@ -11,7 +11,7 @@
         "adaptation_note": "Infrastructure fixture combining common romance motifs; not a direct adaptation of a named episode."
       },
       "cast": [
-        { "id": "courier", "name": "Wounded courier", "nature": "mortal", "backing": { "kind": "character", "role": "patient", "treatment_consent": true } }
+        { "id": "courier", "name": "Wounded courier", "nature": "mortal", "backing": { "kind": "character", "role": "patient", "contact_decision": "refused", "treatment_decision": "unavailable" } }
       ],
       "opening": [
         {

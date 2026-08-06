@@ -11,8 +11,8 @@
         "adaptation_note": "An original synthesis of sharp-tongued companions, prudent household officers, contested passages, vows, and tests of courage common in chivalric romance; it does not reproduce a particular episode or direct abuse toward bodily identity."
       },
       "cast": [
-        { "id": "sharp_tongued_damsel", "name": "Sharp-tongued damsel", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } },
-        { "id": "dwarf_steward", "name": "Dwarf steward", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } }
+        { "id": "sharp_tongued_damsel", "name": "Sharp-tongued damsel", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } },
+        { "id": "dwarf_steward", "name": "Dwarf steward", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } }
       ],
       "opening": [
         {

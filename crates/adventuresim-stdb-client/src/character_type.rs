@@ -4,6 +4,8 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::contextual_decision_state_type::ContextualDecisionState;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Character {
@@ -20,6 +22,7 @@ pub struct Character {
     pub temporary: bool,
     pub age_years: u16,
     pub alive: bool,
+    pub party_treatment_decision: ContextualDecisionState,
 }
 
 impl __sdk::InModule for Character {
@@ -43,6 +46,7 @@ pub struct CharacterCols {
     pub temporary: __sdk::__query_builder::Col<Character, bool>,
     pub age_years: __sdk::__query_builder::Col<Character, u16>,
     pub alive: __sdk::__query_builder::Col<Character, bool>,
+    pub party_treatment_decision: __sdk::__query_builder::Col<Character, ContextualDecisionState>,
 }
 
 impl __sdk::__query_builder::HasCols for Character {
@@ -65,6 +69,10 @@ impl __sdk::__query_builder::HasCols for Character {
             temporary: __sdk::__query_builder::Col::new(table_name, "temporary"),
             age_years: __sdk::__query_builder::Col::new(table_name, "age_years"),
             alive: __sdk::__query_builder::Col::new(table_name, "alive"),
+            party_treatment_decision: __sdk::__query_builder::Col::new(
+                table_name,
+                "party_treatment_decision",
+            ),
         }
     }
 }

@@ -169,6 +169,13 @@ impl LiveRunner {
                     procedure.to_owned(),
                     None,
                     false,
+                    format!(
+                        "sim-first-aid-{actor_id}-{patient_id}-{}-{}",
+                        self.sequence.saturating_add(1),
+                        injury.cut_damage.to_bits(),
+                    ),
+                    None,
+                    None,
                     cb,
                 ));
             self.call(result)?;

@@ -12,7 +12,7 @@
       },
       "cast": [
         { "id": "white_mere_lady", "name": "Lady of the White Mere", "nature": "supernatural", "backing": { "kind": "blocked", "issue": "#375", "reason": "Supernatural personhood and physiology are not yet modeled." } },
-        { "id": "forest_reeve", "name": "Forest reeve", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } },
+        { "id": "forest_reeve", "name": "Forest reeve", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } },
         { "id": "forest_charges", "name": "Foresters in the reeve's charge", "nature": "mortal", "backing": { "kind": "narrative_only", "reason": "An anonymous collective with no individually addressed speaker." } }
       ],
       "opening": [

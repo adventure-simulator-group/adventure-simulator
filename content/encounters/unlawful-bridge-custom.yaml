@@ -11,7 +11,7 @@
         "adaptation_note": "An original synthesis of unlawful bridge and ford customs common in chivalric romance; it does not reproduce a particular episode."
       },
       "cast": [
-        { "id": "bridge_keeper", "name": "Bridge keeper", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } }
+        { "id": "bridge_keeper", "name": "Bridge keeper", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } }
       ],
       "opening": [
         {

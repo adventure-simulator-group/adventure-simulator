@@ -15,7 +15,6 @@ use crate::social::{
     PhysiologyPresenceSpan, physiology_presence_span, physiology_presence_span__view,
 };
 use crate::time::character_time__view;
-use crate::world_actor::character_context_membership;
 use crate::{
     character_attributes, character_skills, character_time,
     item::{inventory_item, item},
@@ -2165,34 +2164,21 @@ pub(crate) fn require_intervention_relationship(
     patient_id: u64,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, actor_id)?;
-    let actor = crate::require_living_character(ctx, actor_id)?;
-    let patient = crate::require_living_character(ctx, patient_id)?;
+    crate::require_living_character(ctx, actor_id)?;
+    crate::require_living_character(ctx, patient_id)?;
     if actor_id == patient_id {
         return Ok(());
     }
-    let ordinary_relationship = actor.party_id.is_some()
-        && actor.party_id == patient.party_id
-        && actor.current_settlement_id.is_some()
-        && actor.current_settlement_id == patient.current_settlement_id;
-    let contextual_relationship =
-        crate::world_actor::contextual_interaction_is_authorized(ctx, actor_id, patient_id, true);
-    let has_active_patient_context = ctx
-        .db
-        .character_context_membership()
-        .character_id()
-        .filter(patient_id)
-        .any(|membership| {
-            membership.active
-                && membership.role == crate::world_actor::CharacterContextRole::Patient
-        });
-    if (has_active_patient_context && !contextual_relationship)
-        || (!has_active_patient_context && !ordinary_relationship && !contextual_relationship)
+    match crate::world_actor::contextual_nonemergency_treatment_decision(ctx, actor_id, patient_id)
     {
-        return Err(
-            "An intervention actor and patient must share an authorized treatment context".into(),
-        );
+        adventuresim_core::strategic_action::ContextualActionDecision::Allowed(_) => Ok(()),
+        adventuresim_core::strategic_action::ContextualActionDecision::Refused => {
+            Err("The patient refused this intervention".into())
+        }
+        adventuresim_core::strategic_action::ContextualActionDecision::Unavailable => Err(
+            "An intervention actor and patient must share an available treatment context".into(),
+        ),
     }
-    Ok(())
 }
 
 fn commit_terminal_at_boundary(
@@ -3051,5 +3037,20 @@ mod fantastic_differential_tests {
         ] {
             assert!(!preview.contains(forbidden), "preview contains {forbidden}");
         }
+    }
+
+    #[test]
+    fn medicinal_interventions_use_nonemergency_treatment_decisions() {
+        let source = include_str!("disease.rs");
+        let relationship = source
+            .split("pub(crate) fn require_intervention_relationship")
+            .nth(1)
+            .and_then(|tail| tail.split("fn commit_terminal_at_boundary").next())
+            .expect("intervention relationship");
+        assert!(relationship.contains("contextual_nonemergency_treatment_decision"));
+        assert!(relationship.contains("ContextualActionDecision::Refused"));
+        assert!(relationship.contains("ContextualActionDecision::Unavailable"));
+        assert!(!relationship.contains("incapacitat"));
+        assert!(!relationship.contains("party_id =="));
     }
 }

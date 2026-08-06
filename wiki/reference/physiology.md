@@ -8,6 +8,21 @@ the source, or completes the quest; those conclusions require the investigation
 evidence graph and exact remediation. See
 [Outbreak investigations](outbreaks.md).
 
+Strategic treatment uses the same allowed/refused/unavailable contextual
+decision as contact. A Character explicitly permits ordinary care from current
+party members by default, but an authored contextual refusal wins. Refusal or
+unavailability consumes no time, bandage, soap, alcohol, or tool use. The only
+incapacity exception is emergency **Bandage** for the exact selected limb when
+it has a live open, unbandaged cut; incapacity never authorizes stitching,
+splinting, extraction, or another procedure. Exact request receipts make an
+identical completed retry idempotent and reject reuse for different treatment
+inputs. Each rendered attempt receives a fresh opaque request token; an
+interrupted attempt writes no completed receipt, so a new render may try again.
+Contextual treatment binds the sanitized context reference and exact membership
+revision at request and commit, while ordinary self/party care explicitly
+carries no contextual claim. Presentation selects the first open cut in
+canonical limb order and posts that exact limb, including for emergency care.
+
 Dead subjects remain available to the medical interface. External and internal
 post-mortem interpretation, its separation from Surgery and Bestiary, and
 observer-safe corpse findings are documented in [Autopsies](autopsies.md).

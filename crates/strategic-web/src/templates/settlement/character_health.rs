@@ -153,6 +153,7 @@ fn surgery_procedure_row(
             data-strategic-tooltip=[unavailable] aria-label=[unavailable_label.as_deref()]
             tabindex=[unavailable.map(|_| "0")] {
             input type="hidden" name="procedure" value=(procedure);
+            input type="hidden" name="action_id" value=(crate::templates::fresh_request_token("treatment"));
             @if let Some(projectile_id) = projectile_id {
                 input type="hidden" name="projectile_id" value=(projectile_id);
             }
