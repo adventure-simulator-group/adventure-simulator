@@ -19,13 +19,13 @@ mod procedural;
 #[allow(unused_imports)]
 pub(crate) use procedural::{
     BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidBone, HumanoidIkTargets,
-    LocomotionHeightState, ProceduralAnimationClock, ProceduralIkState, RaisedFootworkState,
-    locomotion_support_weights,
+    LocomotionBodyResponseState, LocomotionHeightState, ProceduralAnimationClock,
+    ProceduralIkState, RaisedFootworkState, locomotion_support_weights,
 };
 const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
 const ANIMATION_FPS: f32 = 30.0;
-const GUARD_PRESENTATION_CROSSFADE_SECONDS: f32 = 0.18;
+const PRESENTATION_CROSSFADE_SECONDS: f32 = 0.18;
 // Player transforms sit at the center of the 1.9 m server collider, while
 // authored rigs use a floor-level origin. Keep visual feet on the collider's
 // lower face so the first-person camera lands at the authored head.
@@ -44,12 +44,74 @@ fn animation_asset_path(path: &str) -> String {
 
 pub struct TacticalAnimationPlugin;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LocomotionPresentationEventKind {
+    Contact(LeadFoot),
+    Landing,
+}
+
+#[derive(Message, Debug, Clone, Copy)]
+pub(crate) struct LocomotionPresentationEvent {
+    pub owner: Entity,
+    pub sequence: u64,
+    /// Authoritative sample tick when this sequence state was observed. For a
+    /// coalesced gap this is not a reconstructed historical contact time.
+    pub sample_tick: u64,
+    pub kind: LocomotionPresentationEventKind,
+}
+
+const MAX_COALESCED_PRESENTATION_EVENTS: u64 = 8;
+
+fn bounded_forward_sequence_delta(previous: u64, current: u64) -> Option<u64> {
+    current
+        .checked_sub(previous)
+        .filter(|delta| *delta <= MAX_COALESCED_PRESENTATION_EVENTS)
+}
+
+fn latest_coalesced_landing(previous: u64, current: u64) -> Option<u64> {
+    bounded_forward_sequence_delta(previous, current)
+        .filter(|delta| *delta > 0)
+        .map(|_| current)
+}
+
+fn coalesced_contacts(
+    previous: u64,
+    current: u64,
+    latest_foot: LeadFoot,
+) -> Option<Vec<(u64, LeadFoot)>> {
+    let delta = bounded_forward_sequence_delta(previous, current)?;
+    Some(
+        (0..delta)
+            .rev()
+            .map(|offset| {
+                let foot = if offset % 2 == 0 {
+                    latest_foot
+                } else {
+                    match latest_foot {
+                        LeadFoot::Left => LeadFoot::Right,
+                        LeadFoot::Right => LeadFoot::Left,
+                    }
+                };
+                (current - offset, foot)
+            })
+            .collect(),
+    )
+}
+
+#[derive(Component, Debug, Clone, Copy, Default)]
+struct LocomotionEventCursor {
+    initialized: bool,
+    contact_sequence: u64,
+    landing_sequence: u64,
+}
+
 impl Plugin for TacticalAnimationPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<AnimationPackCatalog>()
             .init_resource::<AnimationRuntime>()
             .init_resource::<TerrainIkEnabled>()
             .init_resource::<ProceduralAnimationClock>()
+            .add_message::<LocomotionPresentationEvent>()
             .add_systems(Startup, request_animation_packs)
             .add_observer(on_successful_attack)
             .add_systems(
@@ -67,6 +129,8 @@ impl Plugin for TacticalAnimationPlugin {
                     sync_animation_graphs,
                     drive_fk_players,
                     update_rig_visibility,
+                    emit_locomotion_presentation_events,
+                    trace_locomotion_presentation_events,
                 )
                     .chain(),
             )
@@ -80,6 +144,8 @@ impl Plugin for TacticalAnimationPlugin {
                     restore_authored_bind_pose,
                     procedural::apply_gait_mirroring,
                     procedural::stabilize_locomotion_torso,
+                    procedural::apply_landing_leg_compression,
+                    procedural::apply_locomotion_body_response,
                     procedural::apply_head_and_torso_look,
                     procedural::apply_impact_reaction,
                     procedural::apply_terrain_leg_ik,
@@ -89,6 +155,65 @@ impl Plugin for TacticalAnimationPlugin {
                     .after(AnimationSystems)
                     .before(TransformSystems::Propagate),
             );
+    }
+}
+
+fn trace_locomotion_presentation_events(mut messages: MessageReader<LocomotionPresentationEvent>) {
+    for message in messages.read() {
+        trace!(
+            owner = ?message.owner,
+            sequence = message.sequence,
+            sample_tick = message.sample_tick,
+            kind = ?message.kind,
+            "locomotion presentation event"
+        );
+    }
+}
+
+fn emit_locomotion_presentation_events(
+    mut commands: Commands,
+    mut messages: MessageWriter<LocomotionPresentationEvent>,
+    mut skeletons: Query<(Entity, &SkeletonState, Option<&mut LocomotionEventCursor>)>,
+) {
+    for (owner, skeleton, cursor) in &mut skeletons {
+        let mut next = cursor.as_deref().copied().unwrap_or_default();
+        if !next.initialized {
+            next.initialized = true;
+            next.contact_sequence = skeleton.contact_sequence;
+            next.landing_sequence = skeleton.landing_sequence;
+        } else {
+            if let Some(contacts) = coalesced_contacts(
+                next.contact_sequence,
+                skeleton.contact_sequence,
+                skeleton.contact_foot,
+            ) {
+                for (sequence, foot) in contacts {
+                    messages.write(LocomotionPresentationEvent {
+                        owner,
+                        sequence,
+                        sample_tick: skeleton.locomotion_sample_tick,
+                        kind: LocomotionPresentationEventKind::Contact(foot),
+                    });
+                }
+            }
+            if let Some(sequence) =
+                latest_coalesced_landing(next.landing_sequence, skeleton.landing_sequence)
+            {
+                messages.write(LocomotionPresentationEvent {
+                    owner,
+                    sequence,
+                    sample_tick: skeleton.locomotion_sample_tick,
+                    kind: LocomotionPresentationEventKind::Landing,
+                });
+            }
+            next.contact_sequence = skeleton.contact_sequence;
+            next.landing_sequence = skeleton.landing_sequence;
+        }
+        if let Some(mut cursor) = cursor {
+            *cursor = next;
+        } else {
+            commands.entity(owner).insert(next);
+        }
     }
 }
 
@@ -417,7 +542,8 @@ pub(super) struct AnimationPlayback {
     pub(super) lower_body_mirror: f32,
     pub(super) whole_body_mirror: f32,
     weapon_guard: WeaponGuardState,
-    guard_transition: Option<GuardPlaybackTransition>,
+    ordinary_locomotion_active: bool,
+    presentation_transition: Option<PlaybackTransition>,
     evaluation_tick: Option<u64>,
 }
 
@@ -436,7 +562,8 @@ impl Default for AnimationPlayback {
             lower_body_mirror: 0.0,
             whole_body_mirror: 0.0,
             weapon_guard: WeaponGuardState::Lowered,
-            guard_transition: None,
+            ordinary_locomotion_active: false,
+            presentation_transition: None,
             evaluation_tick: None,
         }
     }
@@ -459,7 +586,7 @@ struct PlaybackPose {
 }
 
 #[derive(Debug, Clone)]
-struct GuardPlaybackTransition {
+struct PlaybackTransition {
     from: PlaybackPose,
     elapsed_seconds: f32,
 }
@@ -926,11 +1053,16 @@ fn evaluate_skeletons(
                 0.0
             },
         };
+        let ordinary_locomotion_active = skeleton.grounded
+            && skeleton.action == SkeletonAction::None
+            && skeleton.weapon_guard == WeaponGuardState::Lowered
+            && skeleton.animation_speed() > 0.05;
         if let Some(mut playback) = playback {
-            update_guard_crossfade(
+            update_presentation_crossfade(
                 &mut playback,
                 target,
                 skeleton.weapon_guard,
+                ordinary_locomotion_active,
                 &procedural_clock,
                 time.delta_secs(),
             );
@@ -941,17 +1073,19 @@ fn evaluate_skeletons(
                 lower_body_mirror: target.lower_body_mirror,
                 whole_body_mirror: target.whole_body_mirror,
                 weapon_guard: skeleton.weapon_guard,
-                guard_transition: None,
+                ordinary_locomotion_active,
+                presentation_transition: None,
                 evaluation_tick: procedural_clock.fixed_step().map(|(tick, _)| tick),
             });
         }
     }
 }
 
-fn update_guard_crossfade(
+fn update_presentation_crossfade(
     playback: &mut AnimationPlayback,
     target: PlaybackPose,
     weapon_guard: WeaponGuardState,
+    ordinary_locomotion_active: bool,
     procedural_clock: &ProceduralAnimationClock,
     render_delta_seconds: f32,
 ) {
@@ -964,24 +1098,29 @@ fn update_guard_crossfade(
         None => render_delta_seconds.max(0.0),
     };
     let guard_changed = playback.weapon_guard != weapon_guard;
-    if guard_changed {
-        playback.guard_transition = Some(GuardPlaybackTransition {
+    let locomotion_released =
+        playback.ordinary_locomotion_active && !ordinary_locomotion_active && !guard_changed;
+    let transition_started = guard_changed || locomotion_released;
+    if transition_started {
+        playback.presentation_transition = Some(PlaybackTransition {
             from: playback_pose(playback),
             elapsed_seconds: 0.0,
         });
         playback.weapon_guard = weapon_guard;
     }
+    playback.ordinary_locomotion_active = ordinary_locomotion_active;
 
     let mut transition_complete = false;
-    let resolved = if let Some(transition) = playback.guard_transition.as_mut() {
+    let resolved = if let Some(transition) = playback.presentation_transition.as_mut() {
         // The state change is first presented at the exact old pose. Time
         // begins accumulating on the next simulation/render observation, so
-        // a replicated guard edge cannot consume the preceding frame's dt.
-        if !guard_changed {
+        // a replicated guard or locomotion edge cannot consume the preceding
+        // frame's dt.
+        if !transition_started {
             transition.elapsed_seconds += delta_seconds;
         }
         let progress =
-            (transition.elapsed_seconds / GUARD_PRESENTATION_CROSSFADE_SECONDS).clamp(0.0, 1.0);
+            (transition.elapsed_seconds / PRESENTATION_CROSSFADE_SECONDS).clamp(0.0, 1.0);
         let pose = blend_playback_poses(&transition.from, &target, progress);
         transition_complete = progress >= 1.0;
         pose
@@ -989,7 +1128,7 @@ fn update_guard_crossfade(
         target
     };
     if transition_complete {
-        playback.guard_transition = None;
+        playback.presentation_transition = None;
     }
     apply_playback_pose(playback, resolved);
 }
@@ -2289,15 +2428,16 @@ mod tests {
         let mut clock = ProceduralAnimationClock::default();
         clock.set_fixed_tick(10, 0.1);
 
-        update_guard_crossfade(
+        update_presentation_crossfade(
             &mut playback,
             mirror_test_pose(0.2),
             WeaponGuardState::Raised,
+            false,
             &clock,
             0.0,
         );
 
-        assert!(playback.guard_transition.is_some());
+        assert!(playback.presentation_transition.is_some());
         assert!((playback.lower_body_mirror - 0.8).abs() < 0.0001);
         assert!((playback.whole_body_mirror - 0.8).abs() < 0.0001);
     }
@@ -2311,25 +2451,72 @@ mod tests {
         };
         let mut clock = ProceduralAnimationClock::default();
         clock.set_fixed_tick(10, 0.1);
-        update_guard_crossfade(
+        update_presentation_crossfade(
             &mut playback,
             mirror_test_pose(0.2),
             WeaponGuardState::Raised,
+            false,
             &clock,
             0.0,
         );
-        clock.set_fixed_tick(11, GUARD_PRESENTATION_CROSSFADE_SECONDS);
-        update_guard_crossfade(
+        clock.set_fixed_tick(11, PRESENTATION_CROSSFADE_SECONDS);
+        update_presentation_crossfade(
             &mut playback,
             mirror_test_pose(0.2),
             WeaponGuardState::Raised,
+            false,
             &clock,
             0.0,
         );
 
-        assert!(playback.guard_transition.is_none());
+        assert!(playback.presentation_transition.is_none());
         assert!((playback.lower_body_mirror - 0.2).abs() < 0.0001);
         assert!((playback.whole_body_mirror - 0.2).abs() < 0.0001);
+    }
+
+    #[test]
+    fn hard_stop_retains_then_releases_the_effective_locomotion_pose() {
+        let mut playback = AnimationPlayback {
+            lower_body_mirror: 0.8,
+            whole_body_mirror: 0.8,
+            ordinary_locomotion_active: true,
+            ..default()
+        };
+        let mut clock = ProceduralAnimationClock::default();
+        clock.set_fixed_tick(10, 1.0 / LOCOMOTION_SAMPLE_HZ);
+        update_presentation_crossfade(
+            &mut playback,
+            mirror_test_pose(0.0),
+            WeaponGuardState::Lowered,
+            false,
+            &clock,
+            0.0,
+        );
+        assert!(playback.presentation_transition.is_some());
+        assert!((playback.lower_body_mirror - 0.8).abs() < 0.0001);
+
+        update_presentation_crossfade(
+            &mut playback,
+            mirror_test_pose(0.0),
+            WeaponGuardState::Lowered,
+            false,
+            &clock,
+            1.0,
+        );
+        assert!((playback.lower_body_mirror - 0.8).abs() < 0.0001);
+
+        clock.set_fixed_tick(11, PRESENTATION_CROSSFADE_SECONDS);
+        update_presentation_crossfade(
+            &mut playback,
+            mirror_test_pose(0.0),
+            WeaponGuardState::Lowered,
+            false,
+            &clock,
+            0.0,
+        );
+        assert!(playback.presentation_transition.is_none());
+        assert!(playback.lower_body_mirror.abs() < 0.0001);
+        assert!(playback.whole_body_mirror.abs() < 0.0001);
     }
 
     #[test]
@@ -2341,33 +2528,36 @@ mod tests {
         };
         let mut clock = ProceduralAnimationClock::default();
         clock.set_fixed_tick(10, 0.09);
-        update_guard_crossfade(
+        update_presentation_crossfade(
             &mut playback,
             mirror_test_pose(0.2),
             WeaponGuardState::Raised,
+            false,
             &clock,
             0.0,
         );
         clock.set_fixed_tick(11, 0.09);
-        update_guard_crossfade(
+        update_presentation_crossfade(
             &mut playback,
             mirror_test_pose(0.2),
             WeaponGuardState::Raised,
+            false,
             &clock,
             0.0,
         );
         let before_reversal = playback.lower_body_mirror;
 
         clock.set_fixed_tick(12, 0.09);
-        update_guard_crossfade(
+        update_presentation_crossfade(
             &mut playback,
             mirror_test_pose(0.8),
             WeaponGuardState::Lowered,
+            false,
             &clock,
             0.0,
         );
 
-        let transition = playback.guard_transition.as_ref().unwrap();
+        let transition = playback.presentation_transition.as_ref().unwrap();
         assert!((playback.lower_body_mirror - before_reversal).abs() < 0.0001);
         assert!((transition.from.lower_body_mirror - before_reversal).abs() < 0.0001);
     }
@@ -2383,5 +2573,25 @@ mod tests {
             secondary_grip_local: None,
         };
         assert_eq!(constraint.primary_hand, HandSide::Right);
+    }
+
+    #[test]
+    fn presentation_sequence_gaps_are_bounded_ordered_and_reset_safe() {
+        assert_eq!(
+            coalesced_contacts(10, 13, LeadFoot::Right),
+            Some(vec![
+                (11, LeadFoot::Right),
+                (12, LeadFoot::Left),
+                (13, LeadFoot::Right),
+            ])
+        );
+        assert_eq!(coalesced_contacts(13, 13, LeadFoot::Right), Some(vec![]));
+        assert_eq!(coalesced_contacts(13, 2, LeadFoot::Left), None);
+        assert_eq!(coalesced_contacts(2, 20, LeadFoot::Left), None);
+        assert_eq!(bounded_forward_sequence_delta(7, 9), Some(2));
+        assert_eq!(bounded_forward_sequence_delta(9, 7), None);
+        assert_eq!(latest_coalesced_landing(7, 9), Some(9));
+        assert_eq!(latest_coalesced_landing(9, 7), None);
+        assert_eq!(latest_coalesced_landing(2, 20), None);
     }
 }

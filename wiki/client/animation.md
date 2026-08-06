@@ -504,9 +504,11 @@ input preserves its radial magnitude, so half stick deflection requests 2.75
 m/s lowered or 1.0 m/s raised. Radial clamping prevents diagonal overspeed,
 generic controllers without skeleton state use the lowered cap, and Ahoy still
 applies its existing crouch multiplier and acceleration/deceleration. Gait phase 0 through 1 is
-one complete left-right cycle rather than one step; phase frequency therefore
-uses twice the estimated single-step stride length. This keeps the authored
-walk/run cadence tied to ground distance without double-speed footfalls.
+one complete left-right cycle rather than one step. Shared typed walk, run,
+crouch, and raised-guard profiles own reference speed, step distance, support,
+flight, bounce, and compression metadata used by both authoritative projection
+and client presentation. This keeps cadence tied to actual post-physics ground
+distance without duplicated timing formulas or double-speed footfalls.
 
 Contact and passing/flight anchors are authoritative sparse gait inputs. The
 evaluator constructs four smooth quarters: contact to passing, passing to the
@@ -532,16 +534,45 @@ stopping blends central bones back to the authored idle. XZ, rotations, and
 authored limb silhouettes remain intact. The measured 0.033 m hierarchy-rise
 compensation applies only to upright, lowered-guard `humanoid_unarmed`
 locomotion; crouching, guard movement, and specialized packs receive zero
-compensation until measured independently. One visual-only
-`sin²(TAU * phase)` curve owns height: contacts at phase 0 and 0.5 are minima,
-and passing/flight at 0.25 and 0.75 are maxima. Starting amplitudes are 0.04 m
-walk, 0.18 m run, 0.03 m raised guard, and 0.025 m crouch, continuously blended
+compensation until measured independently. One visual-only profile evaluation
+owns height: contacts at phase 0 and 0.5 are minima, grounded gaits use smooth
+compression/recovery curves, and running uses a gravity-shaped parabolic arc
+across each full contact-to-contact half-step so the sole is already elevated
+when shared support releases. Its 0.16 m run apex and 0.04 m walk,
+0.03 m raised-guard, and 0.025 m crouch bounce are continuously blended
 across speed and state changes. The curve never changes authoritative owner Y,
 grounded state, or posture. Guard's separate reach correction remains an
 additive baseline concern rather than a gait wave.
 When guard, crouch, grounded, or action state changes, a decaying visual offset
 preserves the previously displayed height across the edge; the new phase curve
 then resumes without resetting or delaying authoritative gait phase.
+
+The authoritative projector derives world velocity/acceleration, alternating
+contact identity, landing identity/impact, and the shared 64 Hz sample tick from
+consecutive post-physics observations. The client transforms acceleration into
+the current body frame and advances retained response only once per logical
+sample: acceleration leans forward, braking leans back, lateral acceleration
+rolls inward, and steady motion decays to neutral. Bounded skipped-tick gaps use
+their authoritative tick duration; repeated renders of one tick do not advance.
+A hard stop retains the effective authored locomotion pose, then releases it to
+exact idle through the same deterministic 0.18-second presentation crossfade
+used for guard edges instead of switching sparse clips in one frame.
+A real airborne-to-grounded sequence triggers one 0.04-0.08 m, roughly 0.16
+second landing compression. A landing-only analytic solve flexes the actual
+hips/knees back to retained pre-compression world foot plants throughout recovery.
+Its knee-flexion reserve eases toward the authored leg extension during the final
+12 mm of compression release so the feet do not lift or snap on the last frame,
+without translating thigh roots or enabling general terrain IK. The plants
+resynchronize after tick/teleport discontinuities and clear on air, action, or
+completion. At rest and while stopping, ordinary
+support blends symmetrically back to full support on both feet.
+
+Monotonic contact and landing sequences drive deduplicated client presentation
+messages for future audio/VFX only. Up to eight plausible missed contacts are
+reconstructed in alternating order. A backward/reset or larger delta silently
+resynchronizes instead of producing a phantom burst; missed landing changes
+collapse to one latest observation. `sample_tick` is the observation tick of
+the replicated sequence state, not a reconstructed historical event time.
 
 Terrain conformity defaults off while its uneven-ground behavior is being
 refined. Debug clients expose `F8` as an explicit runtime opt-in. Disabling it
@@ -568,13 +599,25 @@ diagnostic images of that exact pose. Its manifest records final world-space bon
 continuity, planted-foot drift under a stable body, signed foot tracks and separation, knee flexion
 and bend hemisphere, desired body-forward alignment, bounded per-tick turning
 residual (including look-facing guards), terrain-relative foot clearance,
-phase-indexed height extrema and peak count, controller vertical range, and run
-flight duration/sole clearance; those
+phase-indexed height extrema and peak count, controller vertical range, run
+flight duration/sole clearance, authoritative acceleration, retained lean,
+landing compression, contact identity, landing identity, and fixed tick; those
 signals locate suspect frames but do not replace review of the rendered mesh.
 For steady height scenarios, every complete cycle after warmup must contain
 exactly two prominent peaks in the phase 0.25 and 0.75 passing windows. A
 0.003 m prominence threshold filters sampling jitter while still rejecting an
 extra visible beat.
+Typed scenario metadata distinguishes ordinary, transition, terrain,
+raised-guard, and landing gates. The suite includes a speed ramp, an
+apex-adjacent hard stop, real forward-input camera/controller turns through 90
+and 180 degrees, airborne landing, and a two-cycle cadence/contact fixture.
+Every logical sample is evaluated repeatedly across the three review views;
+the gate compares bones within 0.5 mm/0.1 degrees and requires unchanged
+contact/landing sequences and event counts. Success also gates lean and phase
+continuity, hard-stop pelvis continuity from the moving-to-zero edge through
+settling, two ordered contacts per cycle and
+shared step distance, event order/count/deduplication, landing knee flex, foot
+preservation within 1 cm, and landing penetration no lower than -1 cm.
 The fixture supplies deterministic controller observations at the shared
 server projection boundary and follows rendered terrain height only in the
 cross-slope probe; it does not
