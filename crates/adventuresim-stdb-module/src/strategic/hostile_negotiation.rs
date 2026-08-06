@@ -201,7 +201,7 @@ fn current_drive_off_capability_for_view(
             party_id,
             &site,
             group,
-            HostileResolutionKind::DrivenOff,
+            resolution,
         )
 }
 
@@ -544,7 +544,7 @@ fn exact_hostile_negotiation_authority(
             &party.id,
             &site,
             &group,
-            HostileResolutionKind::DrivenOff,
+            resolution,
         );
     eligible
         .then_some((party, group, site))
