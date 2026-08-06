@@ -619,6 +619,21 @@ fn generated_combat_eligibility_fails_closed_across_site_group_and_finale_author
         .map(|eligible| eligible.id.as_str()),
         Some(hostile_group_id.as_str()),
     );
+    assert_eq!(
+        generated_case_site_hostile_resolution_eligible(
+            &generated,
+            &case,
+            &site,
+            std::slice::from_ref(&group),
+            &finales,
+            &facts,
+            "party",
+            Some(HostileResolutionKind::DrivenOff),
+        )
+        .map(|eligible| eligible.id.as_str()),
+        Some(hostile_group_id.as_str()),
+        "generated pre-combat resolution must not depend on a bound mission capability",
+    );
     assert!(
         generated_case_site_combat_eligible(
             &generated,

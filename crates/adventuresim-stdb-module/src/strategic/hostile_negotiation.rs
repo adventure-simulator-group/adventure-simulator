@@ -167,7 +167,7 @@ fn current_drive_off_capability_for_view(
     else {
         return false;
     };
-    ctx.db
+    let capability_available = ctx.db
         .mission_approach_capability()
         .observer_character_id()
         .filter(observer_character_id)
@@ -192,7 +192,126 @@ fn current_drive_off_capability_for_view(
                                 party_id,
                             )
                     })
-        })
+        });
+    capability_available
+        || generated_hostile_resolution_available_for_view(
+            ctx,
+            observer_character_id,
+            party_id,
+            &site,
+            group,
+            HostileResolutionKind::DrivenOff,
+        )
+}
+
+fn generated_hostile_resolution_available_for_view(
+    ctx: &ViewContext,
+    observer_character_id: u64,
+    party_id: &str,
+    site: &CaseSiteAuthority,
+    group: &HostileGroupAuthority,
+    resolution: HostileResolutionKind,
+) -> bool {
+    let Some(case) = ctx.db.case_authority().id().find(&site.case_id) else {
+        return false;
+    };
+    let Some(validated) = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&case.id)
+        .and_then(|authority| validate_quest_generation_authority(&authority).ok())
+    else {
+        return false;
+    };
+    let hostile_groups = vec![group.clone()];
+    let finales: Vec<_> = ctx
+        .db
+        .case_finale_authority()
+        .case_id()
+        .filter(&case.id)
+        .collect();
+    let Some(facts) = ctx
+        .db
+        .case_outcome_fact()
+        .case_id()
+        .filter(&case.id)
+        .map(|row| serde_json::from_str(&row.fact_json).ok())
+        .collect::<Option<Vec<adventuresim_core::case::OutcomeFact>>>()
+    else {
+        return false;
+    };
+    ctx.db
+        .character()
+        .id()
+        .find(observer_character_id)
+        .is_some_and(|character| character.party_id.as_deref() == Some(party_id))
+        && generated_case_site_hostile_resolution_eligible(
+            &validated.manifest,
+            &case,
+            site,
+            &hostile_groups,
+            &finales,
+            &facts,
+            party_id,
+            Some(resolution),
+        )
+        .is_some()
+}
+
+fn generated_hostile_resolution_available(
+    ctx: &ReducerContext,
+    observer_character_id: u64,
+    party_id: &str,
+    site: &CaseSiteAuthority,
+    group: &HostileGroupAuthority,
+    resolution: HostileResolutionKind,
+) -> bool {
+    let Some(case) = ctx.db.case_authority().id().find(&site.case_id) else {
+        return false;
+    };
+    let Some(validated) = ctx
+        .db
+        .quest_generation_authority()
+        .case_id()
+        .find(&case.id)
+        .and_then(|authority| validate_quest_generation_authority(&authority).ok())
+    else {
+        return false;
+    };
+    let hostile_groups = vec![group.clone()];
+    let finales: Vec<_> = ctx
+        .db
+        .case_finale_authority()
+        .case_id()
+        .filter(&case.id)
+        .collect();
+    let Some(facts) = ctx
+        .db
+        .case_outcome_fact()
+        .case_id()
+        .filter(&case.id)
+        .map(|row| serde_json::from_str(&row.fact_json).ok())
+        .collect::<Option<Vec<adventuresim_core::case::OutcomeFact>>>()
+    else {
+        return false;
+    };
+    ctx.db
+        .character()
+        .id()
+        .find(observer_character_id)
+        .is_some_and(|character| character.party_id.as_deref() == Some(party_id))
+        && generated_case_site_hostile_resolution_eligible(
+            &validated.manifest,
+            &case,
+            site,
+            &hostile_groups,
+            &finales,
+            &facts,
+            party_id,
+            Some(resolution),
+        )
+        .is_some()
 }
 
 fn view_capability_objective_is_pending(
@@ -392,7 +511,7 @@ fn exact_hostile_negotiation_authority(
     if crate::character::shared_language_coefficient(ctx, actor_id, spokesman.character_id) <= 0.0 {
         return Err("No shared spoken language is available".into());
     }
-    let eligible = ctx
+    let capability_available = ctx
         .db
         .mission_approach_capability()
         .observer_character_id()
@@ -410,6 +529,15 @@ fn exact_hostile_negotiation_authority(
                 )
                 .unwrap_or(false)
         });
+    let eligible = capability_available
+        || generated_hostile_resolution_available(
+            ctx,
+            actor_id,
+            &party.id,
+            &site,
+            &group,
+            HostileResolutionKind::DrivenOff,
+        );
     eligible
         .then_some((party, group, site))
         .ok_or_else(|| "Hostile group has no current negotiated drive-off approach".into())
@@ -578,6 +706,7 @@ mod hostile_negotiation_source_tests {
         assert!(source.contains("profile.negotiation.negotiable"));
         assert!(source.contains("shared_language_coefficient"));
         assert!(source.contains("CaseResolutionStatus::Open"));
+        assert!(source.contains("generated_case_site_hostile_resolution_eligible"));
         assert!(source.contains("MissionAttemptStatus::Bound"));
         assert!(source.contains("mission_approach_capability_is_pending"));
         assert!(source.contains("case_id == site.case_id"));
