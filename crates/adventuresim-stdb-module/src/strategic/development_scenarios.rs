@@ -266,6 +266,7 @@ fn ensure_scenario_character_at(
 
 const RECURRING_THREAT_RATIONS: u32 = 10;
 const RECURRING_THREAT_WATERSKINS: u32 = 4;
+const RECURRING_THREAT_FIELD_TENTS: u32 = 1;
 
 fn ensure_recurring_threat_provisions(
     ctx: &ReducerContext,
@@ -286,6 +287,10 @@ fn ensure_recurring_threat_provisions(
         (
             adventuresim_core::provisioning::STANDARD_WATERSKIN_ID,
             RECURRING_THREAT_WATERSKINS,
+        ),
+        (
+            adventuresim_core::item_references::FIELD_TENT_ID,
+            RECURRING_THREAT_FIELD_TENTS,
         ),
     ] {
         let current_quantity = ctx
@@ -685,6 +690,7 @@ mod development_scenario_source_tests {
         assert!(source.contains("ensure_recurring_threat_provisions(ctx, THREAT_ID)"));
         assert!(source.contains("STANDARD_TRAVEL_RATION_ID"));
         assert!(source.contains("STANDARD_WATERSKIN_ID"));
+        assert!(source.contains("FIELD_TENT_ID"));
         assert!(source.contains("add_to_party_inventory_checked"));
         assert!(source.contains("let occurrence_id = materialize_development_road_encounter"));
         assert!(!source.contains(".find(|problem| problem.recurring_hostile"));
