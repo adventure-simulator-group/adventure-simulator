@@ -38,6 +38,7 @@ impl Plugin for TacticalAnimationPlugin {
                     establish_animation_targets,
                     identify_animation_players,
                     procedural::bind_humanoid_bones,
+                    capture_authored_bind_transforms,
                     evaluate_skeletons,
                     tick_impact_reactions,
                     sync_animation_graphs,
@@ -48,7 +49,12 @@ impl Plugin for TacticalAnimationPlugin {
             )
             .add_systems(
                 PostUpdate,
+                reset_authored_bind_before_fk.before(AnimationSystems),
+            )
+            .add_systems(
+                PostUpdate,
                 (
+                    restore_authored_bind_pose,
                     procedural::apply_head_and_torso_look,
                     procedural::apply_lower_body_mirroring,
                     procedural::apply_impact_reaction,
@@ -355,14 +361,14 @@ struct AnimationRuntime {
 #[derive(Component, Debug)]
 pub(super) struct AnimationPlayback {
     clips: Vec<WeightedClip>,
-    use_bind_pose_t: bool,
+    use_authored_bind_pose: bool,
     pub(super) lower_body_mirror: f32,
 }
 
 impl AnimationPlayback {
     #[allow(dead_code)] // Used by the standalone animation-viewer binary.
     pub(super) fn authored_pose_is_ready(&self) -> bool {
-        !self.use_bind_pose_t && !self.clips.is_empty()
+        !self.use_authored_bind_pose && !self.clips.is_empty()
     }
 }
 
@@ -370,7 +376,7 @@ impl Default for AnimationPlayback {
     fn default() -> Self {
         Self {
             clips: Vec::new(),
-            use_bind_pose_t: true,
+            use_authored_bind_pose: true,
             lower_body_mirror: 0.0,
         }
     }
@@ -400,6 +406,12 @@ struct AnimationPlayerOwner(pub Entity);
 
 #[derive(Component, Default)]
 struct AnimationGraphRevision(u64);
+
+#[derive(Component, Debug, Clone, Copy)]
+struct AuthoredBindTransform {
+    owner: Entity,
+    local: Transform,
+}
 
 #[derive(Component, Debug, Clone, Copy)]
 pub(super) struct ImpactReaction {
@@ -779,7 +791,7 @@ fn evaluate_skeletons(
             mirror_weight += added * sample.mirror_lower_body.clamp(0.0, 1.0);
         }
         let next = AnimationPlayback {
-            use_bind_pose_t: weighted.is_empty(),
+            use_authored_bind_pose: weighted.is_empty(),
             clips: weighted,
             lower_body_mirror: if resolved_weight > f32::EPSILON {
                 (mirror_weight / resolved_weight).clamp(0.0, 1.0)
@@ -791,6 +803,55 @@ fn evaluate_skeletons(
             *playback = next;
         } else {
             commands.entity(entity).insert(next);
+        }
+    }
+}
+
+fn capture_authored_bind_transforms(
+    mut commands: Commands,
+    nodes: Query<(Entity, &Transform), (Added<Transform>, Without<AuthoredBindTransform>)>,
+    parents: Query<&ChildOf>,
+    roots: Query<&AnimationRigScene>,
+) {
+    for (entity, transform) in &nodes {
+        let mut current = entity;
+        for _ in 0..64 {
+            if let Ok(root) = roots.get(current) {
+                commands.entity(entity).insert(AuthoredBindTransform {
+                    owner: root.0,
+                    local: *transform,
+                });
+                break;
+            }
+            let Ok(parent) = parents.get(current) else {
+                break;
+            };
+            current = parent.parent();
+        }
+    }
+}
+
+fn reset_authored_bind_before_fk(
+    playbacks: Query<&AnimationPlayback>,
+    mut nodes: Query<(&AuthoredBindTransform, &mut Transform)>,
+) {
+    for (bind, mut transform) in &mut nodes {
+        if playbacks.get(bind.owner).is_ok() {
+            *transform = bind.local;
+        }
+    }
+}
+
+fn restore_authored_bind_pose(
+    playbacks: Query<&AnimationPlayback>,
+    mut nodes: Query<(&AuthoredBindTransform, &mut Transform)>,
+) {
+    for (bind, mut transform) in &mut nodes {
+        if playbacks
+            .get(bind.owner)
+            .is_ok_and(|playback| playback.use_authored_bind_pose)
+        {
+            *transform = bind.local;
         }
     }
 }
@@ -986,7 +1047,7 @@ fn drive_fk_players(
         let Ok(playback) = owners.get(owner.0) else {
             continue;
         };
-        if playback.use_bind_pose_t {
+        if playback.use_authored_bind_pose {
             player.stop_all();
             continue;
         }
@@ -1008,21 +1069,19 @@ fn update_rig_visibility(
     mut fallbacks: Query<(&FallbackAnimationRig, &mut Visibility)>,
     mut authored: Query<(&AnimationRigScene, &mut Visibility), Without<FallbackAnimationRig>>,
 ) {
+    let authored_owners = authored
+        .iter_mut()
+        .map(|(rig, _)| rig.0)
+        .collect::<BTreeSet<_>>();
     for (owner, mut visibility) in &mut fallbacks {
-        let t_pose = playbacks
-            .get(owner.0)
-            .map_or(true, |state| state.use_bind_pose_t);
-        *visibility = if t_pose {
-            Visibility::Inherited
-        } else {
+        *visibility = if authored_owners.contains(&owner.0) {
             Visibility::Hidden
+        } else {
+            Visibility::Inherited
         };
     }
     for (owner, mut visibility) in &mut authored {
-        let animated = playbacks
-            .get(owner.0)
-            .is_ok_and(|state| !state.use_bind_pose_t);
-        *visibility = if animated {
+        *visibility = if playbacks.get(owner.0).is_ok() {
             Visibility::Inherited
         } else {
             Visibility::Hidden
@@ -1099,6 +1158,17 @@ pub fn spawn_fallback_t_pose(
 mod tests {
     use super::*;
     use crate::player::ClientPlayer;
+
+    fn spawn_test_t_pose(
+        In(owner): In<Entity>,
+        mut commands: Commands,
+        mut meshes: ResMut<Assets<Mesh>>,
+        mut materials: ResMut<Assets<StandardMaterial>>,
+    ) {
+        commands.entity(owner).with_children(|parent| {
+            spawn_fallback_t_pose(parent, owner, Color::WHITE, &mut meshes, &mut materials);
+        });
+    }
 
     #[test]
     fn default_catalog_owns_all_required_poses_once() {
@@ -1392,5 +1462,86 @@ mod tests {
     fn out_of_range_catalog_frame_is_unavailable() {
         assert!(frame_fits_clip(8, 8.0 / 30.0));
         assert!(!frame_fits_clip(20, 0.1));
+    }
+
+    #[test]
+    fn missing_base_keeps_generated_mannequin_visible() {
+        let mut world = World::new();
+        world.init_resource::<Assets<Mesh>>();
+        world.init_resource::<Assets<StandardMaterial>>();
+        let owner = world.spawn_empty().id();
+        world
+            .run_system_cached_with(spawn_test_t_pose, owner)
+            .unwrap();
+        world.flush();
+        world.run_system_cached(update_rig_visibility).unwrap();
+        let (_, visibility) = world
+            .query::<(&FallbackAnimationRig, &Visibility)>()
+            .single(&world)
+            .unwrap();
+        assert_eq!(*visibility, Visibility::Inherited);
+    }
+
+    #[test]
+    fn authored_zero_motion_rig_hides_mannequin_and_shows_bind_pose() {
+        let mut world = World::new();
+        let owner = world.spawn(AnimationPlayback::default()).id();
+        let fallback = world
+            .spawn((FallbackAnimationRig(owner), Visibility::Inherited))
+            .id();
+        let authored = world
+            .spawn((AnimationRigScene(owner), Visibility::Hidden))
+            .id();
+        world.run_system_cached(update_rig_visibility).unwrap();
+        assert_eq!(
+            *world.get::<Visibility>(fallback).unwrap(),
+            Visibility::Hidden
+        );
+        assert_eq!(
+            *world.get::<Visibility>(authored).unwrap(),
+            Visibility::Inherited
+        );
+    }
+
+    #[test]
+    fn unresolved_motion_restores_authored_bind_transform() {
+        let mut world = World::new();
+        let owner = world.spawn(AnimationPlayback::default()).id();
+        let bind = Transform::from_rotation(Quat::from_rotation_x(0.4));
+        let node = world
+            .spawn((
+                AuthoredBindTransform { owner, local: bind },
+                Transform::from_rotation(Quat::from_rotation_y(1.2)),
+            ))
+            .id();
+        world.run_system_cached(restore_authored_bind_pose).unwrap();
+        assert_eq!(*world.get::<Transform>(node).unwrap(), bind);
+    }
+
+    #[test]
+    fn partial_motion_begins_from_bind_every_frame() {
+        let mut world = World::new();
+        let owner = world
+            .spawn(AnimationPlayback {
+                use_authored_bind_pose: false,
+                ..default()
+            })
+            .id();
+        let bind = Transform::from_xyz(0.0, 0.25, 0.0);
+        let node = world
+            .spawn((
+                AuthoredBindTransform { owner, local: bind },
+                Transform::from_xyz(3.0, 4.0, 5.0),
+            ))
+            .id();
+        world
+            .run_system_cached(reset_authored_bind_before_fk)
+            .unwrap();
+        assert_eq!(*world.get::<Transform>(node).unwrap(), bind);
+        world.get_mut::<Transform>(node).unwrap().translation = Vec3::splat(9.0);
+        world
+            .run_system_cached(reset_authored_bind_before_fk)
+            .unwrap();
+        assert_eq!(*world.get::<Transform>(node).unwrap(), bind);
     }
 }
