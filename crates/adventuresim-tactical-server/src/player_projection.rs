@@ -563,10 +563,31 @@ fn authoritative_weapon_guard(
 /// complete request before movement runs. Ahoy may clear its accumulator after
 /// every fixed loop without turning a missing network packet into a stop.
 pub(crate) fn restore_authoritative_movement_intent(
-    mut players: Query<(&AuthoritativeMovementIntent, &mut AccumulatedInput), With<Player>>,
+    mut players: Query<
+        (
+            &AuthoritativeMovementIntent,
+            &SkeletonState,
+            &mut AccumulatedInput,
+        ),
+        With<Player>,
+    >,
 ) {
-    for (movement_intent, mut accumulated_input) in &mut players {
-        accumulated_input.last_movement = movement_intent.0;
+    for (movement_intent, skeleton, mut accumulated_input) in &mut players {
+        accumulated_input.last_movement =
+            if let Some((direction, speed)) = skeleton.attack_movement() {
+                if skeleton.action_phase() >= 0.5 {
+                    None
+                } else {
+                    let cap = match skeleton.weapon_guard() {
+                        WeaponGuardState::Lowered => TACTICAL_RUN_SPEED_METRES_PER_SECOND,
+                        WeaponGuardState::Raised => TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
+                    };
+                    (speed > 0.01 && direction != Vec2::ZERO)
+                        .then_some(direction * (speed / cap).clamp(0.0, 1.0))
+                }
+            } else {
+                movement_intent.0
+            };
     }
 }
 
@@ -658,6 +679,7 @@ mod tests {
         mission_enemy_health_scale, mission_enemy_scale, restore_authoritative_movement_intent,
         tactical_movement_speed_for_guard, validate_player_input,
     };
+    use adventuresim_tactical_core::prelude::{AttackSpec, SkeletonState};
     use bevy::prelude::*;
 
     #[test]
@@ -747,6 +769,7 @@ mod tests {
             .spawn((
                 Player::default(),
                 AuthoritativeMovementIntent(Some(Vec2::X)),
+                SkeletonState::default(),
                 input::AccumulatedInput::default(),
             ))
             .id();
@@ -785,6 +808,62 @@ mod tests {
         assert_eq!(
             tactical_movement_speed_for_guard(None, WeaponGuardState::Lowered),
             0.0
+        );
+    }
+
+    #[test]
+    fn attack_holds_captured_velocity_until_contact_then_settles_before_resuming_input() {
+        let mut skeleton = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        skeleton.begin_attack(
+            AttackSpec::melee_from_local_velocity(Vec3::new(0.0, 0.0, -2.0)),
+            0,
+            10,
+        );
+        let mut world = World::new();
+        let player = world
+            .spawn((
+                Player::default(),
+                AuthoritativeMovementIntent(Some(Vec2::Y)),
+                skeleton,
+                input::AccumulatedInput::default(),
+            ))
+            .id();
+        let mut schedule = Schedule::default();
+        schedule.add_systems(restore_authoritative_movement_intent);
+
+        schedule.run(&mut world);
+        assert_eq!(
+            world
+                .get::<input::AccumulatedInput>(player)
+                .unwrap()
+                .last_movement,
+            Some(Vec2::NEG_Y)
+        );
+
+        world
+            .get_mut::<SkeletonState>(player)
+            .unwrap()
+            .advance_action(10);
+        schedule.run(&mut world);
+        assert_eq!(
+            world
+                .get::<input::AccumulatedInput>(player)
+                .unwrap()
+                .last_movement,
+            None
+        );
+
+        world
+            .get_mut::<SkeletonState>(player)
+            .unwrap()
+            .advance_action(21);
+        schedule.run(&mut world);
+        assert_eq!(
+            world
+                .get::<input::AccumulatedInput>(player)
+                .unwrap()
+                .last_movement,
+            Some(Vec2::Y)
         );
     }
 }

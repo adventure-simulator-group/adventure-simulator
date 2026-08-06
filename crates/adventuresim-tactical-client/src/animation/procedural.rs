@@ -777,9 +777,9 @@ struct BoneSnapshot {
 
 mod ik;
 pub(crate) use ik::{
-    ArmIkState, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidIkTargets, LegIkState,
-    MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock, RaisedFootworkState,
-    SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
+    ArmIkState, AttackFootworkState, HandIkTarget, HandSide, HeldWeaponConstraint,
+    HumanoidIkTargets, LegIkState, MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock,
+    RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
 };
 #[cfg(test)]
 use ik::{
@@ -1392,12 +1392,16 @@ mod legacy_tests {
     }
 
     #[test]
-    fn actions_and_zero_weight_swing_legs_preserve_authored_fk() {
-        let mut action = SkeletonState::default()
+    fn stay_attacks_plant_both_feet_while_unsupported_actions_preserve_authored_fk() {
+        let mut attack = SkeletonState::default()
             .with_local_velocity(Vec3::NEG_Z * 5.5)
             .with_gait_phase(0.0);
-        action.begin_attack(AttackSpec::default(), 0, 1);
-        assert_eq!(locomotion_support_weights(&action), (0.0, 0.0));
+        attack.begin_attack(AttackSpec::default(), 0, 1);
+        assert_eq!(locomotion_support_weights(&attack), (1.0, 1.0));
+
+        let mut dodge = SkeletonState::default();
+        dodge.begin_dodge(DodgeSpec::default(), 0, 1);
+        assert_eq!(locomotion_support_weights(&dodge), (0.0, 0.0));
         assert!(!terrain_leg_has_support(0.0));
         assert!(!terrain_leg_has_support(0.01));
         assert!(terrain_leg_has_support(0.1));

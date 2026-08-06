@@ -910,7 +910,7 @@ mod legacy_tests {
         let mut state = SkeletonState::default().with_lead_foot(LeadFoot::Left);
         state.begin_attack(
             AttackSpec {
-                footwork: Footwork::Switch,
+                step: AttackStep::Forward,
                 ..default()
             },
             0,
@@ -944,6 +944,129 @@ mod legacy_tests {
         };
         assert_eq!(end, SemanticPose::GuardLeadRight);
         assert!((progress - 0.99).abs() < 0.0001);
+    }
+
+    #[test]
+    fn melee_attack_snapshots_longitudinal_velocity_semantically() {
+        assert_eq!(
+            AttackSpec::melee_from_local_velocity(Vec3::NEG_Z * 2.0).step,
+            AttackStep::Forward
+        );
+        assert_eq!(
+            AttackSpec::melee_from_local_velocity(Vec3::Z * 5.5).step,
+            AttackStep::Backward
+        );
+        assert_eq!(
+            AttackSpec::melee_from_local_velocity(Vec3::X * 5.5).step,
+            AttackStep::Stay
+        );
+        let dominant_lateral = AttackSpec::melee_from_local_velocity(Vec3::new(5.5, 0.0, -0.14));
+        assert_eq!(dominant_lateral.step, AttackStep::Stay);
+        assert!((dominant_lateral.step_speed - 0.14).abs() < 0.0001);
+        assert_eq!(
+            AttackSpec::melee_from_local_velocity(Vec3::splat(f32::NAN)).step,
+            AttackStep::Stay
+        );
+    }
+
+    #[test]
+    fn attack_step_ignores_later_velocity_and_commits_lead_once() {
+        let mut state = SkeletonState::default()
+            .with_lead_foot(LeadFoot::Right)
+            .with_local_velocity(Vec3::NEG_Z * 5.5);
+        let spec = AttackSpec::melee_from_local_velocity(state.local_velocity);
+        state.begin_attack(spec, 100, 110);
+        state.local_velocity = Vec3::Z * 5.5;
+        state.advance_action(110);
+        assert_eq!(state.attack_step(), AttackStep::Forward);
+        assert_eq!(state.lead_foot, LeadFoot::Right);
+
+        state.advance_action(120);
+        assert_eq!(state.action_kind(), SkeletonAction::Attack);
+        assert_eq!(state.action_phase(), 1.0);
+        assert_eq!(state.lead_foot, LeadFoot::Left);
+        state.advance_action(121);
+        assert_eq!(state.action_kind(), SkeletonAction::None);
+        assert_eq!(state.lead_foot, LeadFoot::Left);
+    }
+
+    #[test]
+    fn replacing_attack_preserves_lead_until_replacement_finishes() {
+        let mut state = SkeletonState::default().with_lead_foot(LeadFoot::Left);
+        state.begin_attack(
+            AttackSpec::melee_from_local_velocity(Vec3::NEG_Z),
+            10,
+            20,
+        );
+        state.advance_action(15);
+        state.begin_attack(
+            AttackSpec::melee_from_local_velocity(Vec3::Z),
+            16,
+            26,
+        );
+        state.advance_action(20);
+        assert_eq!(state.lead_foot, LeadFoot::Left);
+        assert_eq!(state.attack_step(), AttackStep::Backward);
+        state.advance_action(36);
+        assert_eq!(state.lead_foot, LeadFoot::Right);
+    }
+
+    #[test]
+    fn locomotion_projection_cannot_repick_attack_start_lead() {
+        let mut state = SkeletonState::default()
+            .with_weapon_guard(WeaponGuardState::Raised)
+            .with_lead_foot(LeadFoot::Right);
+        state.begin_attack(
+            AttackSpec::melee_from_local_velocity(Vec3::NEG_Z * 2.0),
+            10,
+            20,
+        );
+        for tick in 11..20 {
+            project_skeleton_locomotion(
+                &mut state,
+                SkeletonLocomotionInput {
+                    orientation: Quat::IDENTITY,
+                    linear_velocity: if tick % 2 == 0 {
+                        Vec3::NEG_Z * 5.5
+                    } else {
+                        Vec3::Z * 5.5
+                    },
+                    grounded: true,
+                    crouching: false,
+                    delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                    tick,
+                },
+            );
+            assert_eq!(state.lead_foot, LeadFoot::Right);
+            assert_eq!(state.attack_start_lead(), LeadFoot::Right);
+            assert_eq!(state.attack_step(), AttackStep::Forward);
+        }
+        project_skeleton_locomotion(
+            &mut state,
+            SkeletonLocomotionInput {
+                orientation: Quat::IDENTITY,
+                linear_velocity: Vec3::Z * 5.5,
+                grounded: true,
+                crouching: false,
+                delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                tick: 30,
+            },
+        );
+        assert_eq!(state.action_kind(), SkeletonAction::Attack);
+        assert_eq!(state.action_phase(), 1.0);
+        project_skeleton_locomotion(
+            &mut state,
+            SkeletonLocomotionInput {
+                orientation: Quat::IDENTITY,
+                linear_velocity: Vec3::Z * 5.5,
+                grounded: true,
+                crouching: false,
+                delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                tick: 31,
+            },
+        );
+        assert_eq!(state.action_kind(), SkeletonAction::None);
+        assert_eq!(state.lead_foot, LeadFoot::Left);
     }
 
     #[test]
@@ -1026,6 +1149,8 @@ mod legacy_tests {
         state.advance_action(25);
         assert_eq!(state.action_phase(), 0.75);
         state.advance_action(30);
+        assert_eq!(state.action_phase(), 1.0);
+        state.advance_action(31);
         assert_eq!(state.action(), ActionState::default());
     }
 }

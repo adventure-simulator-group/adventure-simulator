@@ -278,10 +278,11 @@ fn duck_side_pose(lead: LeadFoot, duck_left: bool) -> SemanticPose {
 
 fn attack_samples(state: &SkeletonState) -> Vec<PoseSample> {
     let phase = state.action_phase().clamp(0.0, 1.0);
-    let start_guard = guard_pose(state.lead_foot);
+    let start_lead = state.attack_start_lead();
+    let start_guard = guard_pose(start_lead);
     let end_guard = guard_pose(match state.footwork() {
-        Footwork::Stay => state.lead_foot,
-        Footwork::Switch => opposite_foot(state.lead_foot),
+        Footwork::Stay => start_lead,
+        Footwork::Switch => opposite_foot(start_lead),
     });
     let contact = attack_pose(state);
     let (pose, end, blend) = if phase < 0.5 {
@@ -321,7 +322,7 @@ fn block_pose(line: AttackLine, lead: LeadFoot) -> SemanticPose {
 
 fn attack_pose(state: &SkeletonState) -> SemanticPose {
     use {LeadFoot::*, SemanticPose::*, StrikeFamily::*};
-    match (state.strike_family(), state.lead_foot) {
+    match (state.strike_family(), state.attack_start_lead()) {
         (Thrust, Left) => AttackThrustLeadLeftContact,
         (Thrust, Right) => AttackThrustLeadRightContact,
         (Slash, Left) => AttackSlashLeadLeftContact,

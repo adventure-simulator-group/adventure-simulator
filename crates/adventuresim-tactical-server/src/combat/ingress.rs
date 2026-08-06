@@ -53,11 +53,8 @@ pub(super) fn on_melee_attack_started(
     );
     if let Ok(mut skeleton) = skeletons.get_mut(event.attacker) {
         let start = animation_tick(&time);
-        skeleton.begin_attack(
-            AttackSpec::default(),
-            start,
-            start + duration_ticks(event.windup),
-        );
+        let attack = AttackSpec::melee_from_local_velocity(skeleton.local_velocity);
+        skeleton.begin_attack(attack, start, start + duration_ticks(event.windup));
     }
 }
 
@@ -117,11 +114,8 @@ pub(super) fn on_melee_action_request(
             );
             if let Ok(mut skeleton) = skeletons.get_mut(attacker) {
                 let start = animation_tick(&time);
-                skeleton.begin_attack(
-                    AttackSpec::default(),
-                    start,
-                    start + duration_ticks(CLIENT_MELEE_WINDUP),
-                );
+                let attack = AttackSpec::melee_from_local_velocity(skeleton.local_velocity);
+                skeleton.begin_attack(attack, start, start + duration_ticks(CLIENT_MELEE_WINDUP));
             }
         }
         MeleeActionRequest::Complete {

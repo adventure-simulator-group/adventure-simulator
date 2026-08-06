@@ -20,11 +20,11 @@ use bevy::{
 use serde::Serialize;
 
 use crate::animation::{
-    AnimationPlayback, ArmIkState, BoneRole, HumanoidBone, LegIkState, LocomotionBodyResponseState,
-    LocomotionHeightState, LocomotionPresentationEvent, LocomotionPresentationEventKind,
-    MEASURED_ANKLE_SOLE_OFFSET_METRES, PresentedSkeleton, ProceduralAnimationClock,
-    RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, TacticalAnimationPlugin, TerrainIkEnabled,
-    locomotion_support_weights,
+    AnimationPlayback, ArmIkState, AttackFootworkState, BoneRole, HumanoidBone, LegIkState,
+    LocomotionBodyResponseState, LocomotionHeightState, LocomotionPresentationEvent,
+    LocomotionPresentationEventKind, MEASURED_ANKLE_SOLE_OFFSET_METRES, PresentedSkeleton,
+    ProceduralAnimationClock, RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES,
+    TacticalAnimationPlugin, TerrainIkEnabled, locomotion_support_weights,
 };
 use crate::{
     camera::{CameraMode, TacticalCameraPlugin, TacticalCameraSet, third_person_offset},
@@ -37,6 +37,7 @@ const CAPTURE_ROOT_GROUND_OFFSET_METRES: f32 = 0.95;
 const FULL_PLANT_SUPPORT_WEIGHT: f32 = 0.99;
 const RAISED_MINIMUM_INTER_FOOT_SEPARATION_METRES: f32 = 0.16;
 const RAISED_MAXIMUM_PELVIS_VERTICAL_STEP_METRES: f32 = 0.05;
+const ATTACK_MAXIMUM_CONSTRAINED_TARGET_STEP_METRES: f32 = 0.201;
 // The parent guard-entry fixture already moves 33.13 mm in one sampled frame.
 // Allow less than 4 mm of additional height-system overhead without weakening
 // the broader raised-guard continuity bound.
@@ -73,6 +74,7 @@ enum ScenarioKind {
     Terrain,
     Transition,
     Landing,
+    Attack,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -100,6 +102,12 @@ fn scenario_metadata(name: &str) -> ScenarioMetadata {
                 && !name.contains("restart")
                 && !name.contains("chatter")
                 && !name.starts_with("terrain-steady-run"),
+            procedural_solver: true,
+        }
+    } else if name.starts_with("attack-step-") {
+        ScenarioMetadata {
+            kind: ScenarioKind::Attack,
+            repeatable: false,
             procedural_solver: true,
         }
     } else if name.starts_with("raised-guard") {
@@ -147,8 +155,9 @@ pub(crate) fn run(
         panic!("failed to create animation capture directory {output:?}: {error}")
     });
     invalidate_previous_report(&output);
-    let initial_terrain_ik =
-        scenario.is_some_and(|name| scenario_metadata(name).kind == ScenarioKind::Terrain);
+    let initial_terrain_ik = scenario.is_some_and(|name| {
+        scenario_metadata(name).kind == ScenarioKind::Terrain || name.contains("terrain")
+    });
 
     let workspace_asset_source =
         AssetSourceBuilder::platform_default(&asset_root.to_string_lossy(), None);
@@ -367,6 +376,7 @@ struct CaptureValidation {
     hard_stop_maximum_pelvis_step_metres: Option<f32>,
     hard_stop_height_continuity_valid: bool,
     repeated_evaluation_valid: bool,
+    attack_footwork_valid: bool,
     views_are_distinct: bool,
     duplicate_view_frames: Vec<String>,
     note: &'static str,
@@ -468,6 +478,9 @@ struct FrameSample {
     body_rotation_xyzw: [f32; 4],
     weapon_guard: WeaponGuardState,
     lead_foot: LeadFoot,
+    action: SkeletonAction,
+    action_phase: f32,
+    attack_step: AttackStep,
     guard_action: bool,
     left_support_weight: f32,
     right_support_weight: f32,
@@ -487,6 +500,12 @@ struct FrameSample {
     ik_left_release_target: Option<[f32; 3]>,
     ik_right_release_target: Option<[f32; 3]>,
     ik_settle_progress: Option<f32>,
+    attack_requested_left_foot_target: Option<[f32; 3]>,
+    attack_requested_right_foot_target: Option<[f32; 3]>,
+    attack_constrained_left_foot_target: Option<[f32; 3]>,
+    attack_constrained_right_foot_target: Option<[f32; 3]>,
+    attack_support_handoffs: u8,
+    attack_maximum_reach_yield_metres: f32,
     screenshots: BTreeMap<String, String>,
     bones: BTreeMap<String, BoneSample>,
 }
@@ -630,7 +649,7 @@ fn scenario_uses_terrain_ik(scenario: &str) -> bool {
 }
 
 fn terrain_ik_enabled_for_frame(frame: &PlannedFrame) -> bool {
-    scenario_uses_terrain_ik(frame.scenario)
+    (scenario_uses_terrain_ik(frame.scenario) || frame.scenario.contains("terrain"))
         && (frame.scenario != "terrain-toggle-mid-stride"
             || (16..80).contains(&frame.scenario_frame))
 }
@@ -828,6 +847,48 @@ fn smoothstep01(value: f32) -> f32 {
     value * value * (3.0 - 2.0 * value)
 }
 
+fn attack_step_scenario(
+    name: &'static str,
+    speed: f32,
+    initial_direction: Vec2,
+    lead_foot: LeadFoot,
+    reverse_velocity: bool,
+) -> Vec<PlannedFrame> {
+    const START: usize = 8;
+    (0..=47)
+        .map(|scenario_frame| PlannedFrame {
+            scenario: name,
+            scenario_frame,
+            speed,
+            time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+            // Deliberately reverse velocity and yaw after attack start in the
+            // stress fixture. The replicated AttackStep must remain the one
+            // selected on frame zero.
+            local_direction: if (reverse_velocity || name.contains("high-speed"))
+                && scenario_frame >= START + 1
+            {
+                -initial_direction
+            } else {
+                initial_direction
+            },
+            camera_yaw: if name.contains("yaw-only") && scenario_frame >= START + 1 {
+                std::f32::consts::FRAC_PI_2
+            } else {
+                0.0
+            },
+            camera_pitch: 0.0,
+            crouching: false,
+            action: if scenario_frame < START {
+                SkeletonAction::None
+            } else {
+                SkeletonAction::Attack
+            },
+            weapon_guard: WeaponGuardState::Raised,
+            lead_foot,
+        })
+        .collect()
+}
+
 fn capture_plan() -> Vec<PlannedFrame> {
     [
         steady_scenario("steady-walk-2.0", 2.0, 2.0),
@@ -884,6 +945,69 @@ fn capture_plan() -> Vec<PlannedFrame> {
             LeadFoot::Right,
         ),
         raised_guard_transition_scenario(),
+        attack_step_scenario(
+            "attack-step-forward-left-lead",
+            2.0,
+            Vec2::NEG_Y,
+            LeadFoot::Left,
+            false,
+        ),
+        attack_step_scenario(
+            "attack-step-forward-right-lead",
+            2.0,
+            Vec2::NEG_Y,
+            LeadFoot::Right,
+            false,
+        ),
+        attack_step_scenario(
+            "attack-step-backward-left-lead",
+            2.0,
+            Vec2::Y,
+            LeadFoot::Left,
+            false,
+        ),
+        attack_step_scenario(
+            "attack-step-backward-right-lead",
+            2.0,
+            Vec2::Y,
+            LeadFoot::Right,
+            false,
+        ),
+        attack_step_scenario(
+            "attack-step-stationary",
+            0.0,
+            Vec2::ZERO,
+            LeadFoot::Left,
+            false,
+        ),
+        attack_step_scenario(
+            "attack-step-high-speed-reversal",
+            5.5,
+            Vec2::NEG_Y,
+            LeadFoot::Left,
+            false,
+        ),
+        attack_step_scenario(
+            "attack-step-reversal",
+            2.0,
+            Vec2::NEG_Y,
+            LeadFoot::Left,
+            true,
+        ),
+        attack_step_scenario(
+            "attack-step-yaw-only",
+            2.0,
+            Vec2::NEG_Y,
+            LeadFoot::Left,
+            false,
+        ),
+        attack_step_scenario(
+            "attack-step-terrain-cross-slope",
+            2.0,
+            Vec2::new(0.5, -1.0).normalize(),
+            LeadFoot::Left,
+            false,
+        ),
         crouch_transition_scenario(),
         dynamics_speed_scenario("speed-ramp-up-down", false),
         dynamics_speed_scenario("hard-stop", true),
@@ -1193,6 +1317,7 @@ fn drive_sequence(
             Option<&mut LegIkState>,
             Option<&mut ArmIkState>,
             Option<&mut RaisedFootworkState>,
+            Option<&mut AttackFootworkState>,
             Option<&mut LocomotionHeightState>,
             Option<&mut LocomotionBodyResponseState>,
         ),
@@ -1214,6 +1339,7 @@ fn drive_sequence(
         ik_state,
         arm_ik_state,
         raised_footwork,
+        attack_footwork,
         height_state,
         body_response,
     ) in &mut subjects
@@ -1240,6 +1366,9 @@ fn drive_sequence(
             if let Some(mut raised_footwork) = raised_footwork {
                 *raised_footwork = RaisedFootworkState::default();
             }
+            if let Some(mut attack_footwork) = attack_footwork {
+                *attack_footwork = AttackFootworkState::default();
+            }
             if let Some(mut height_state) = height_state {
                 *height_state = LocomotionHeightState::default();
             }
@@ -1259,7 +1388,12 @@ fn drive_sequence(
             WeaponGuardState::Raised => 1.0,
             WeaponGuardState::Lowered => -1.0,
         };
-        skeleton.lead_foot = frame.lead_foot;
+        let attack_start_frame = frame.scenario.starts_with("attack-step-").then_some(8);
+        if frame.action != SkeletonAction::Attack
+            || attack_start_frame == Some(frame.scenario_frame)
+        {
+            skeleton.lead_foot = frame.lead_foot;
+        }
         terrain_ik.0 = terrain_ik_enabled_for_frame(&frame);
         guard_input.apply_controls(wheel, false);
         set_weapon_guard(&mut skeleton, guard_input.desired);
@@ -1269,11 +1403,21 @@ fn drive_sequence(
         } else {
             0.0
         };
-        let local_velocity = Vec3::new(
+        let requested_local_velocity = Vec3::new(
             frame.local_direction.x * frame.speed,
             vertical_velocity,
             frame.local_direction.y * frame.speed,
         );
+        let local_velocity = skeleton
+            .attack_movement()
+            .map(|(direction, speed)| {
+                if skeleton.action_phase() < 0.5 {
+                    Vec3::new(direction.x * speed, vertical_velocity, direction.y * speed)
+                } else {
+                    Vec3::new(0.0, vertical_velocity, 0.0)
+                }
+            })
+            .unwrap_or(requested_local_velocity);
         let world_velocity = controller_yaw(orientation) * local_velocity;
         let delta_seconds = if frame.scenario_frame == 0 {
             0.0
@@ -1289,13 +1433,23 @@ fn drive_sequence(
             transform.translation.y
         };
         transform.translation = Vec3::new(horizontal.x, vertical, horizontal.y);
-        if frame.action != SkeletonAction::None {
+        if frame.action != SkeletonAction::None
+            && (frame.action != SkeletonAction::Attack
+                || attack_start_frame == Some(frame.scenario_frame))
+        {
             let start = sequence.simulation_tick;
-            let contact = start + 64;
+            let contact = start
+                + if frame.action == SkeletonAction::Attack {
+                    19
+                } else {
+                    64
+                };
             match frame.action {
-                SkeletonAction::Attack => {
-                    skeleton.begin_attack(AttackSpec::default(), start, contact)
-                }
+                SkeletonAction::Attack => skeleton.begin_attack(
+                    AttackSpec::melee_from_local_velocity(local_velocity),
+                    start,
+                    contact,
+                ),
                 SkeletonAction::Dodge => skeleton.begin_dodge(DodgeSpec::default(), start, contact),
                 SkeletonAction::Block => skeleton.begin_block(BlockSpec::default(), start, contact),
                 SkeletonAction::None => {}
@@ -1490,6 +1644,7 @@ fn capture_frame(
             &GlobalTransform,
             Option<&AnimationPlayback>,
             Option<&RaisedFootworkState>,
+            Option<&AttackFootworkState>,
             Option<&LocomotionBodyResponseState>,
             Option<&LocomotionHeightState>,
             Option<&LegIkState>,
@@ -1509,6 +1664,7 @@ fn capture_frame(
         subject_global,
         playback,
         raised_footwork,
+        attack_footwork,
         body_response,
         height_state,
         leg_ik,
@@ -1626,16 +1782,44 @@ fn capture_frame(
     if sequence.view_index == 0 {
         let cadence_support = locomotion_support_weights(skeleton);
         let root_distance_metres = sequence.scenario_distance;
-        let (desired_left_foot_target, desired_right_foot_target) = raised_footwork
+        let (desired_left_foot_target, desired_right_foot_target) = attack_footwork
+            .filter(|state| state.initialized)
             .map(|state| (state.left_solve_target, state.right_solve_target))
+            .or_else(|| {
+                raised_footwork.map(|state| (state.left_solve_target, state.right_solve_target))
+            })
             .unwrap_or_default();
         let leg_ik = leg_ik.map(LegIkState::diagnostics).unwrap_or_default();
-        let (left_support_weight, right_support_weight) =
+        let ik_support =
             if leg_ik.left_solve_target.is_some() || leg_ik.right_solve_target.is_some() {
                 (leg_ik.left_support_weight, leg_ik.right_support_weight)
             } else {
                 cadence_support
             };
+        let (left_support_weight, right_support_weight) = attack_footwork
+            .filter(|state| state.initialized)
+            .map(|state| (state.left_support_weight, state.right_support_weight))
+            .unwrap_or(ik_support);
+        let (
+            attack_requested_left,
+            attack_requested_right,
+            attack_constrained_left,
+            attack_constrained_right,
+            attack_support_handoffs,
+            attack_maximum_reach_yield,
+        ) = attack_footwork.filter(|state| state.initialized).map_or(
+            (None, None, None, None, 0, 0.0),
+            |state| {
+                (
+                    state.left_requested_target,
+                    state.right_requested_target,
+                    state.left_solve_target,
+                    state.right_solve_target,
+                    state.support_handoffs,
+                    state.maximum_reach_yield,
+                )
+            },
+        );
         sequence.samples.push(FrameSample {
             scenario: frame.scenario.to_owned(),
             scenario_frame: frame.scenario_frame,
@@ -1675,6 +1859,9 @@ fn capture_frame(
             body_rotation_xyzw: subject_global.rotation().to_array(),
             weapon_guard: frame.weapon_guard,
             lead_foot: skeleton.lead_foot,
+            action: skeleton.action_kind(),
+            action_phase: skeleton.action_phase(),
+            attack_step: skeleton.attack_step(),
             guard_action: frame.weapon_guard == WeaponGuardState::Raised
                 || matches!(frame.action, SkeletonAction::Attack | SkeletonAction::Block),
             left_support_weight,
@@ -1695,6 +1882,15 @@ fn capture_frame(
             ik_left_release_target: leg_ik.left_release_target.map(|value| value.to_array()),
             ik_right_release_target: leg_ik.right_release_target.map(|value| value.to_array()),
             ik_settle_progress: leg_ik.settle_progress,
+            attack_requested_left_foot_target: attack_requested_left.map(|value| value.to_array()),
+            attack_requested_right_foot_target: attack_requested_right
+                .map(|value| value.to_array()),
+            attack_constrained_left_foot_target: attack_constrained_left
+                .map(|value| value.to_array()),
+            attack_constrained_right_foot_target: attack_constrained_right
+                .map(|value| value.to_array()),
+            attack_support_handoffs,
+            attack_maximum_reach_yield_metres: attack_maximum_reach_yield,
             screenshots: VIEWS
                 .into_iter()
                 .map(|view| {
@@ -1854,16 +2050,36 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         });
     let all_artifacts_written = capture_artifacts_written(&sequence.output, &frames);
     let continuity_within_review_bounds = scenarios.iter().all(|metrics| {
-        metrics.maximum_root_relative_step_metres <= 0.20
-            && metrics.maximum_foot_root_relative_step_metres <= 0.055
-            && metrics.maximum_knee_root_relative_step_metres <= 0.10
+        metrics.maximum_root_relative_step_metres
+            <= if metrics.scenario.starts_with("attack-step-") {
+                0.30
+            } else {
+                0.20
+            }
+            && metrics.maximum_foot_root_relative_step_metres
+                <= if metrics.scenario.starts_with("attack-step-") {
+                    0.21
+                } else {
+                    0.055
+                }
+            && metrics.maximum_knee_root_relative_step_metres
+                <= if metrics.scenario.starts_with("attack-step-") {
+                    0.15
+                } else {
+                    0.10
+                }
             && metrics.maximum_bone_rotation_step_degrees <= 60.0
             && (!metrics.scenario.starts_with("raised-guard")
                 || metrics.maximum_pelvis_vertical_step_metres
                     <= RAISED_MAXIMUM_PELVIS_VERTICAL_STEP_METRES)
     });
     let no_ground_penetration = scenarios.iter().all(|metrics| {
-        if scenario_metadata(&metrics.scenario).kind == ScenarioKind::Terrain
+        if scenario_metadata(&metrics.scenario).kind == ScenarioKind::Attack {
+            // Gait-phase contact selection does not describe a one-shot attack
+            // handoff. Its dedicated validator checks the actual requested
+            // plant; retain only the raw ankle penetration guard here.
+            metrics.minimum_foot_clearance_metres >= -0.04
+        } else if scenario_metadata(&metrics.scenario).kind == ScenarioKind::Terrain
             && metrics.scenario != "terrain-toggle-mid-stride"
         {
             // Only a contact foot is ground-constrained. Gate those contacts;
@@ -1880,10 +2096,13 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         pair[0].scenario != pair[1].scenario
             || pair[0].weapon_guard != WeaponGuardState::Raised
             || pair[1].weapon_guard != WeaponGuardState::Raised
+            || pair[0].action == SkeletonAction::Attack
+            || pair[1].action == SkeletonAction::Attack
             || pair[0].lead_foot == pair[1].lead_foot
     });
     let flat_controller_height_stable = scenarios.iter().all(|metrics| {
         scenario_uses_terrain_ik(&metrics.scenario)
+            || metrics.scenario.contains("terrain")
             || metrics.controller_vertical_range_metres <= 0.0001
     });
     let phase_owned_height_valid = scenarios.iter().all(|metrics| {
@@ -2303,7 +2522,9 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
                 && metrics.pelvis_vertical_range_metres <= vertical_range_limit
                 && metrics.head_vertical_range_metres <= vertical_range_limit;
         }
+        let attack = scenario_metadata(&metrics.scenario).kind == ScenarioKind::Attack;
         (!procedural_solver_gates_apply
+            || attack
             || (metrics.maximum_supported_foot_slip_metres_per_frame
                 <= supported_foot_slip_limit(&metrics.scenario)
                 && metrics.maximum_planted_foot_drift_metres
@@ -2312,11 +2533,12 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             && metrics.minimum_inter_foot_separation_metres
                 >= inter_foot_separation_limit(&metrics.scenario)
             && (!procedural_solver_gates_apply
+                || metrics.scenario == "attack-step-stationary"
                 || (metrics.minimum_knee_flexion_degrees >= 3.9
                     && metrics.minimum_knee_hemisphere_dot >= 0.0))
             && metrics.maximum_facing_tracking_excess_degrees <= 0.2
             && metrics.final_facing_motion_error_degrees <= 3.0
-            && metrics.maximum_contact_sole_clearance_metres <= 0.04
+            && (attack || metrics.maximum_contact_sole_clearance_metres <= 0.04)
             && metrics.pelvis_vertical_range_metres <= vertical_range_limit
             && metrics.head_vertical_range_metres <= vertical_range_limit
             && if !expects_loop_seam(&metrics.scenario) {
@@ -2333,6 +2555,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     });
     let views_are_distinct = sequence.duplicate_view_frames.is_empty();
     let repeated_evaluation_valid = sequence.repeated_evaluation_valid;
+    let attack_footwork_valid = validate_attack_footwork(&frames);
     let manifest = CaptureManifest {
         sample_hz: SAMPLE_HZ,
         pipeline: "shared tactical player, scene, camera, authoritative locomotion projection, authored FK, and final procedural passes",
@@ -2362,6 +2585,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             hard_stop_maximum_pelvis_step_metres,
             hard_stop_height_continuity_valid,
             repeated_evaluation_valid,
+            attack_footwork_valid,
             views_are_distinct,
             duplicate_view_frames: sequence.duplicate_view_frames.clone(),
             note: "Continuity metrics are regression signals, not biomechanical proof; review index.html at normal and slow speed.",
@@ -2403,6 +2627,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         && final_support_balance_valid
         && hard_stop_height_continuity_valid
         && repeated_evaluation_valid
+        && attack_footwork_valid
         && views_are_distinct
     {
         exit.write(AppExit::Success);
@@ -2415,6 +2640,284 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         .unwrap_or_else(|error| panic!("failed to write {failure_path:?}: {error}"));
         exit.write(AppExit::Error(1.try_into().expect("one is non-zero")));
     }
+}
+
+fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
+    let mut grouped = BTreeMap::<&str, Vec<&FrameSample>>::new();
+    for frame in frames
+        .iter()
+        .filter(|frame| frame.scenario.starts_with("attack-step-"))
+    {
+        grouped.entry(&frame.scenario).or_default().push(frame);
+    }
+    if grouped.is_empty() {
+        return true;
+    }
+    let expected = [
+        "attack-step-forward-left-lead",
+        "attack-step-forward-right-lead",
+        "attack-step-backward-left-lead",
+        "attack-step-backward-right-lead",
+        "attack-step-stationary",
+        "attack-step-high-speed-reversal",
+        "attack-step-reversal",
+        "attack-step-yaw-only",
+        "attack-step-terrain-cross-slope",
+    ];
+    let selected = if grouped.len() == 1 {
+        grouped.keys().copied().collect::<Vec<_>>()
+    } else {
+        expected.to_vec()
+    };
+    selected.into_iter().all(|name| {
+        let Some(samples) = grouped.get(name) else {
+            return false;
+        };
+        let start_lead = if name.contains("right-lead") {
+            LeadFoot::Right
+        } else {
+            LeadFoot::Left
+        };
+        let expected_step = if name == "attack-step-stationary" {
+            AttackStep::Stay
+        } else if name.contains("backward") {
+            AttackStep::Backward
+        } else {
+            AttackStep::Forward
+        };
+        let active = samples
+            .iter()
+            .copied()
+            .filter(|frame| frame.action == SkeletonAction::Attack)
+            .collect::<Vec<_>>();
+        if active.is_empty()
+            || active.iter().any(|frame| {
+                frame.attack_step != expected_step
+                    || (frame.action_phase < 0.999 && frame.lead_foot != start_lead)
+            })
+            || active
+                .windows(2)
+                .any(|pair| pair[1].action_phase + 0.0001 < pair[0].action_phase)
+        {
+            return false;
+        }
+        let contact = active.iter().min_by(|left, right| {
+            (left.action_phase - 0.5)
+                .abs()
+                .total_cmp(&(right.action_phase - 0.5).abs())
+        });
+        if contact.is_none_or(|frame| {
+            (frame.action_phase - 0.5).abs() > 0.001 || frame.scenario_frame != 27
+        }) {
+            return false;
+        }
+        let final_lead = samples.last().map(|frame| frame.lead_foot);
+        if expected_step == AttackStep::Stay {
+            let stable = [true, false].into_iter().all(|left| {
+                let positions = active
+                    .iter()
+                    .filter_map(|frame| {
+                        if left {
+                            frame.attack_requested_left_foot_target
+                        } else {
+                            frame.attack_requested_right_foot_target
+                        }
+                    })
+                    .map(Vec3::from_array)
+                    .collect::<Vec<_>>();
+                positions.first().is_some_and(|first| {
+                    positions
+                        .iter()
+                        .all(|position| position.distance(*first) <= 0.03)
+                })
+            });
+            return final_lead == Some(start_lead)
+                && stable
+                && active.iter().all(|frame| {
+                    frame.left_support_weight >= 0.99
+                        && frame.right_support_weight >= 0.99
+                        && frame.attack_support_handoffs == 0
+                });
+        }
+        let opposite = match start_lead {
+            LeadFoot::Left => LeadFoot::Right,
+            LeadFoot::Right => LeadFoot::Left,
+        };
+        if final_lead != Some(opposite) {
+            return false;
+        }
+        // The initially planted foot must remain fixed through contact. At
+        // high speed the analytic reach limiter may compress the visible
+        // lunge, so judge the requested world target and separately retain the
+        // global continuity/reach gates for rendered bones.
+        let planted_left = match expected_step {
+            AttackStep::Forward => start_lead == LeadFoot::Left,
+            AttackStep::Backward => start_lead == LeadFoot::Right,
+            AttackStep::Stay => true,
+        };
+        let requested = active
+            .iter()
+            .take_while(|frame| frame.action_phase <= 0.5 + 0.001)
+            .filter_map(|frame| {
+                if planted_left {
+                    frame.attack_requested_left_foot_target
+                } else {
+                    frame.attack_requested_right_foot_target
+                }
+            })
+            .map(Vec3::from_array)
+            .collect::<Vec<_>>();
+        let requested_plant_stable = requested.first().is_some_and(|first| {
+            requested
+                .iter()
+                .all(|target| target.is_finite() && target.distance(*first) <= 0.01)
+        });
+        let planted_foot = if planted_left {
+            "left_foot"
+        } else {
+            "right_foot"
+        };
+        let maximum_slip = active
+            .windows(2)
+            .filter(|pair| pair[1].action_phase <= 0.5 + 0.001)
+            .filter_map(|pair| {
+                Some(
+                    (Vec3::from_array(pair[1].bones.get(planted_foot)?.position)
+                        - Vec3::from_array(pair[0].bones.get(planted_foot)?.position))
+                    .xz()
+                    .length(),
+                )
+            })
+            .fold(0.0, f32::max);
+        let slip_limit = if name.contains("high-speed") {
+            0.11
+        } else if name.contains("terrain") {
+            // The analytic cross-slope solve contributes a small horizontal
+            // component while conforming the ankle to the surface normal.
+            0.05
+        } else {
+            0.04
+        };
+        let moving_foot = if planted_left {
+            "right_foot"
+        } else {
+            "left_foot"
+        };
+        // Measure the step in the facing frame captured when the attack
+        // began. A player may continue turning during the action; judging
+        // each frame in its new body frame would turn a valid lunge into a
+        // sideways or backwards step in telemetry.
+        let attack_forward = active
+            .first()
+            .map(|frame| Vec3::from_array(frame.body_forward_direction).normalize_or_zero())
+            .unwrap_or(Vec3::NEG_Z);
+        let moving_start = active.first().and_then(|frame| {
+            frame
+                .bones
+                .get(moving_foot)
+                .map(|bone| Vec3::from_array(bone.position))
+        });
+        let signed_extensions = active
+            .iter()
+            .filter_map(|frame| {
+                let moving = Vec3::from_array(frame.bones.get(moving_foot)?.position);
+                let signed = (moving - moving_start?).dot(attack_forward);
+                Some((frame.scenario_frame, signed))
+            })
+            .collect::<Vec<_>>();
+        let direction_valid = contact.is_some_and(|frame| {
+            let moving = frame
+                .bones
+                .get(moving_foot)
+                .map(|bone| Vec3::from_array(bone.position));
+            moving.zip(moving_start).is_some_and(|(moving, start)| {
+                let margin = (moving - start).dot(attack_forward);
+                if expected_step == AttackStep::Forward {
+                    margin >= 0.05
+                } else {
+                    margin <= -0.05
+                }
+            })
+        });
+        // Recovery may include an in-place guard pivot after a large facing
+        // change. Judge strike extent only over the lunge half; recovery is
+        // separately bounded by continuity and the one-handoff invariant.
+        let maximum_extension = signed_extensions
+            .iter()
+            .filter(|(frame, _)| *frame <= 27)
+            .map(|(_, extension)| extension.abs())
+            .fold(0.0, f32::max);
+        let maximum_at_contact = signed_extensions
+            .iter()
+            .find(|(frame, _)| *frame == 27)
+            // Two centimetres covers the two fixed samples around exact
+            // authored contact while still rejecting a visibly early step.
+            .is_some_and(|(_, extension)| extension.abs() + 0.02 >= maximum_extension);
+        let constrained_continuous = [true, false].into_iter().all(|left| {
+            active
+                .windows(2)
+                .filter_map(|pair| {
+                    let target = |frame: &FrameSample| {
+                        if left {
+                            frame.attack_constrained_left_foot_target
+                        } else {
+                            frame.attack_constrained_right_foot_target
+                        }
+                        .map(Vec3::from_array)
+                    };
+                    Some(target(pair[0])?.distance(target(pair[1])?))
+                })
+                .all(|step| step <= ATTACK_MAXIMUM_CONSTRAINED_TARGET_STEP_METRES)
+        });
+        let final_attack = active.last().copied();
+        let airborne_lunge = name.contains("high-speed");
+        let yield_valid = if airborne_lunge {
+            final_attack.is_some_and(|frame| frame.attack_maximum_reach_yield_metres <= 0.15)
+        } else {
+            active
+                .iter()
+                .all(|frame| frame.attack_maximum_reach_yield_metres <= 4.0)
+        };
+        let support_valid = if airborne_lunge {
+            contact.is_some_and(|frame| {
+                frame.left_support_weight.max(frame.right_support_weight) >= 0.9
+                    && frame.left_support_weight.min(frame.right_support_weight) <= 0.1
+            }) && active.first().is_some_and(|frame| {
+                frame.left_support_weight.max(frame.right_support_weight) >= 0.9
+            })
+        } else {
+            active
+                .iter()
+                .all(|frame| frame.left_support_weight.max(frame.right_support_weight) >= 0.5)
+        };
+        let valid = (requested_plant_stable || airborne_lunge)
+            && maximum_slip <= slip_limit
+            && direction_valid
+            && maximum_at_contact
+            && constrained_continuous
+            && yield_valid
+            && final_attack.is_some_and(|frame| frame.attack_support_handoffs == 1)
+            && support_valid
+            && active
+                .iter()
+                .all(|frame| frame.attack_maximum_reach_yield_metres.is_finite());
+        if !valid {
+            warn!(
+                scenario = name,
+                requested_plant_stable,
+                maximum_slip,
+                slip_limit,
+                direction_valid,
+                maximum_at_contact,
+                constrained_continuous,
+                yield_valid,
+                support_valid,
+                handoffs = final_attack.map_or(0, |frame| frame.attack_support_handoffs),
+                "attack footwork validation failed"
+            );
+        }
+        valid
+    })
 }
 
 fn planted_drift_limit(scenario: &str) -> f32 {
@@ -2680,7 +3183,9 @@ fn expects_loop_seam(scenario: &str) -> bool {
 }
 
 fn vertical_range_limit(scenario: &str, foot_terrain_relief_metres: f32) -> f32 {
-    if scenario.starts_with("raised-guard-") {
+    if scenario.starts_with("attack-step-") {
+        0.35
+    } else if scenario.starts_with("raised-guard-") {
         RAISED_GUARD_VERTICAL_RANGE_LIMIT_METRES
     } else if scenario == "hard-stop" {
         // The scenario intentionally spans the run apex and exact final idle.
@@ -3421,6 +3926,9 @@ mod tests {
             body_rotation_xyzw: Quat::IDENTITY.to_array(),
             weapon_guard: WeaponGuardState::Lowered,
             lead_foot: LeadFoot::Left,
+            action: SkeletonAction::None,
+            action_phase: 0.0,
+            attack_step: AttackStep::Stay,
             guard_action: false,
             left_support_weight: 1.0,
             right_support_weight: 1.0,
@@ -3440,6 +3948,12 @@ mod tests {
             ik_left_release_target: None,
             ik_right_release_target: None,
             ik_settle_progress: None,
+            attack_requested_left_foot_target: None,
+            attack_requested_right_foot_target: None,
+            attack_constrained_left_foot_target: None,
+            attack_constrained_right_foot_target: None,
+            attack_support_handoffs: 0,
+            attack_maximum_reach_yield_metres: 0.0,
             screenshots,
             bones: BTreeMap::new(),
         };
@@ -3769,6 +4283,9 @@ mod tests {
             body_rotation_xyzw: Quat::IDENTITY.to_array(),
             weapon_guard: WeaponGuardState::Lowered,
             lead_foot: LeadFoot::Left,
+            action: SkeletonAction::None,
+            action_phase: 0.0,
+            attack_step: AttackStep::Stay,
             guard_action: false,
             left_support_weight: 1.0,
             right_support_weight: 1.0,
@@ -3788,6 +4305,12 @@ mod tests {
             ik_left_release_target: None,
             ik_right_release_target: None,
             ik_settle_progress: None,
+            attack_requested_left_foot_target: None,
+            attack_requested_right_foot_target: None,
+            attack_constrained_left_foot_target: None,
+            attack_constrained_right_foot_target: None,
+            attack_support_handoffs: 0,
+            attack_maximum_reach_yield_metres: 0.0,
             screenshots: BTreeMap::new(),
             bones,
         };
@@ -3873,6 +4396,9 @@ mod tests {
             body_rotation_xyzw: Quat::IDENTITY.to_array(),
             weapon_guard: WeaponGuardState::Lowered,
             lead_foot: LeadFoot::Left,
+            action: SkeletonAction::None,
+            action_phase: 0.0,
+            attack_step: AttackStep::Stay,
             guard_action: false,
             left_support_weight,
             right_support_weight: 0.0,
@@ -3892,6 +4418,12 @@ mod tests {
             ik_left_release_target: None,
             ik_right_release_target: None,
             ik_settle_progress: None,
+            attack_requested_left_foot_target: None,
+            attack_requested_right_foot_target: None,
+            attack_constrained_left_foot_target: None,
+            attack_constrained_right_foot_target: None,
+            attack_support_handoffs: 0,
+            attack_maximum_reach_yield_metres: 0.0,
             screenshots: BTreeMap::new(),
             bones: BTreeMap::from([
                 ("left_foot".into(), foot(left_x, left_terrain_height)),
