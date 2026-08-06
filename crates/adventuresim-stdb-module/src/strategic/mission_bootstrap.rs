@@ -1355,7 +1355,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         0,
     )
     .precipitation;
-    let initial_context = qg::GenerationContext {
+    let context = qg::GenerationContext {
         seed,
         observer_entropy_hi,
         observer_entropy_lo,
@@ -1404,7 +1404,7 @@ fn materialize_preferred_generated_fixture(
 
     let now_minute = crate::time::refresh_clock(ctx)?.max(4_000);
     let entropy = character_id ^ seed_salt;
-    let context = qg::GenerationContext {
+    let initial_context = qg::GenerationContext {
         seed: preferred_fixture_seed(entropy, family),
         observer_entropy_hi: entropy.rotate_left(23),
         observer_entropy_lo: entropy.rotate_right(17),

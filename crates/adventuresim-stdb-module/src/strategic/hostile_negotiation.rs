@@ -1,3 +1,9 @@
+use crate::character::character_attributes__view as _;
+use crate::time::character_time__view as _;
+use crate::world_actor::{
+    character_context_membership as _, character_context_membership__view as _,
+};
+
 const HOSTILE_NEGOTIATION_CONTEXT_REF: &str = "exact_case_context";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
