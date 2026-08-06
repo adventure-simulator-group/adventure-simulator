@@ -1361,7 +1361,7 @@ mod tests {
             TreatmentReceiptDisposition::New
         );
 
-        let mut incomplete = receipt;
+        let mut incomplete = receipt.clone();
         incomplete.completed = false;
         assert_eq!(
             disposition(Some(&incomplete), "token-a", true),
