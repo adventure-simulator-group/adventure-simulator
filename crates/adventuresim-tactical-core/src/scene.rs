@@ -134,8 +134,12 @@ impl SceneTerrain {
 
         let mut positions = Vec::with_capacity(self.heightmap.len());
         let mut uvs = Vec::with_capacity(self.heightmap.len());
-        for x in 0..self.grid_width() {
-            for z in 0..self.grid_depth() {
+        // Keep vertices in the same row-major (z * width + x) order used by
+        // height sampling and the triangle indices below. Iterating x first
+        // transposed the storage without transposing the indices, which made
+        // otherwise smooth terrain render as long shredded triangles.
+        for z in 0..self.grid_depth() {
+            for x in 0..self.grid_width() {
                 let i = z * self.grid_width() + x;
                 let y = self.heightmap[i];
 
@@ -157,11 +161,11 @@ impl SceneTerrain {
 
                 indices.extend_from_slice(&[
                     i,
+                    i + self.grid_width() as u32 + 1,
                     i + 1,
-                    i + self.grid_width() as u32 + 1,
                     i,
-                    i + self.grid_width() as u32 + 1,
                     i + self.grid_width() as u32,
+                    i + self.grid_width() as u32 + 1,
                 ]);
             }
         }
@@ -179,6 +183,22 @@ mod tests {
         let terrain = SceneTerrain::new(2, 2, 2.0, |point| point.x + point.y * 2.0);
         assert!((terrain.height_at(Vec2::new(-1.0, -1.0)).unwrap() - 1.5).abs() < 0.0001);
         assert_eq!(terrain.height_at(Vec2::new(-3.0, 0.0)), None);
+    }
+
+    #[test]
+    fn mesh_vertices_follow_heightmap_row_major_order() {
+        let terrain = SceneTerrain::new(2, 2, 1.0, |point| point.x + point.y * 10.0);
+        let (positions, indices, _) = terrain.mesh_components();
+
+        assert_eq!(positions[0][1], 0.0);
+        assert_eq!(positions[1][1], 1.0);
+        assert_eq!(positions[2][1], 2.0);
+        assert_eq!(positions[3][1], 10.0);
+
+        let a = Vec3::from_array(positions[indices[0] as usize]);
+        let b = Vec3::from_array(positions[indices[1] as usize]);
+        let c = Vec3::from_array(positions[indices[2] as usize]);
+        assert!((b - a).cross(c - a).y > 0.0);
     }
 
     #[test]

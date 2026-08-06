@@ -1,18 +1,30 @@
 use adventuresim_tactical_core::prelude::*;
+use adventuresim_tactical_netcode::{
+    bevy_replicon::prelude::ClientTriggerExt, prelude::DebugGameTimeScaleRequest,
+};
 use bevy::{color::palettes::tailwind, prelude::*};
 
-use crate::player::{ClientPlayer, HitPerformed, LimbHitbox};
+use crate::{
+    animation::TerrainIkEnabled,
+    player::{ClientPlayer, HitPerformed, LimbHitbox},
+};
 
 pub struct DebugPlugin;
 
 impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DebugVisualsConfig>()
+            .init_resource::<DebugGameSpeed>()
             .register_required_components_with::<Collider, _>(|| DebugRender::none())
             .add_systems(Update, toggle_debug_visuals)
             .add_systems(Update, draw_debug_rays)
             .add_observer(on_hit_performed);
     }
+}
+
+#[derive(Resource, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct DebugGameSpeed {
+    pub(crate) quarter_speed: bool,
 }
 
 #[derive(Resource)]
@@ -41,9 +53,23 @@ struct DebugRay {
 fn toggle_debug_visuals(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut config: ResMut<DebugVisualsConfig>,
+    mut terrain_ik: ResMut<TerrainIkEnabled>,
+    mut game_speed: ResMut<DebugGameSpeed>,
+    mut virtual_time: ResMut<Time<Virtual>>,
     q_colliders: Query<(Entity, Option<&LimbHitbox>), (With<Collider>, Without<ClientPlayer>)>,
     mut cmd: Commands,
 ) {
+    if keyboard.just_pressed(KeyCode::F7) {
+        game_speed.quarter_speed = !game_speed.quarter_speed;
+        let request = DebugGameTimeScaleRequest {
+            quarter_speed: game_speed.quarter_speed,
+        };
+        let relative_speed = request.relative_speed();
+        virtual_time.set_relative_speed(relative_speed);
+        cmd.client_trigger(request);
+        info!(relative_speed, "Debug game speed toggled");
+    }
+
     if keyboard.just_pressed(KeyCode::F2) {
         config.physics_colliders = !config.physics_colliders;
         for (entity, hitbox) in &q_colliders {
@@ -73,6 +99,11 @@ fn toggle_debug_visuals(
 
     if keyboard.just_pressed(KeyCode::F4) {
         config.raycast = !config.raycast;
+    }
+
+    if keyboard.just_pressed(KeyCode::F8) {
+        terrain_ik.0 = !terrain_ik.0;
+        info!(enabled = terrain_ik.0, "Terrain leg IK toggled");
     }
 }
 
@@ -140,5 +171,37 @@ fn draw_debug_rays(
                 color.set_alpha(alpha);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn f8_toggles_terrain_ik() {
+        let mut app = App::new();
+        app.init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<DebugVisualsConfig>()
+            .init_resource::<DebugGameSpeed>()
+            .init_resource::<TerrainIkEnabled>()
+            .init_resource::<Time<Virtual>>()
+            .add_systems(Update, toggle_debug_visuals);
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::F8);
+        app.update();
+        assert!(!app.world().resource::<TerrainIkEnabled>().0);
+
+        {
+            let mut keyboard = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keyboard.release(KeyCode::F8);
+            keyboard.clear_just_pressed(KeyCode::F8);
+            keyboard.clear_just_released(KeyCode::F8);
+            keyboard.press(KeyCode::F8);
+        }
+        app.update();
+        assert!(app.world().resource::<TerrainIkEnabled>().0);
     }
 }

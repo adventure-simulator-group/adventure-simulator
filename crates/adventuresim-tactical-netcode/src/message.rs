@@ -26,6 +26,42 @@ pub struct PlayerInputRequest {
     pub jump: bool,
 }
 
+/// Debug-build request to run the tactical simulation at normal or quarter
+/// speed. Production servers intentionally do not install a handler for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Event, Serialize, Deserialize)]
+pub struct DebugGameTimeScaleRequest {
+    pub quarter_speed: bool,
+}
+
+impl DebugGameTimeScaleRequest {
+    pub const fn relative_speed(self) -> f32 {
+        if self.quarter_speed { 0.25 } else { 1.0 }
+    }
+}
+
+#[cfg(test)]
+mod debug_game_time_scale_tests {
+    use super::DebugGameTimeScaleRequest;
+
+    #[test]
+    fn request_maps_to_normal_or_quarter_speed() {
+        assert_eq!(
+            DebugGameTimeScaleRequest {
+                quarter_speed: false
+            }
+            .relative_speed(),
+            1.0
+        );
+        assert_eq!(
+            DebugGameTimeScaleRequest {
+                quarter_speed: true
+            }
+            .relative_speed(),
+            0.25
+        );
+    }
+}
+
 /// Both melee phases share one mapped ordered stream, so a completion cannot
 /// overtake its server-observed start.
 #[derive(Debug, Clone, Copy, Event, Serialize, Deserialize, MapEntities)]

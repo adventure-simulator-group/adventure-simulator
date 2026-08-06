@@ -45,33 +45,65 @@ Use these conventions:
 - glTF coordinates and meters: +Y up, -Z forward, +X anatomical left;
 - the scene root stays at the origin and gameplay movement is not baked into it;
 - the armature bind pose is a T-pose, which is the final runtime fallback;
-- each motion GLB contains exactly one animation and preserves all authored
-  in-betweens between its documented frame anchors;
-- cyclic locomotion exports include their complete opposite-foot half and loop
-  closure; runtime gait phase traverses the loaded clip's actual duration while
-  catalog frame numbers continue to identify semantic anchors; and
+- each motion GLB contains exactly one animation and preserves its documented
+  semantic anchors;
+- locomotion uses only its contact and passing/flight anchor frames. The
+  runtime constructs contact -> passing -> mirrored contact -> mirrored
+  passing -> contact with smooth quarter-cycle interpolation; later exporter
+  keys cannot become accidental runtime gait poses; and
 - packs in one fallback chain use identical bone names and hierarchy.
+
+Lower-body reflection is evaluated in character space so anatomical left and
+right retain their lateral spacing while exchanging gait roles. Authored
+upper-body carriage remains intact; explicit hand targets and weapon
+constraints apply only when gameplay supplies them. Root, pelvis, spine, neck,
+and head motion is clamped around the authored bind pose before look and final
+IK, with a bounded procedural lift preserving the run's airborne beats.
 
 ## Deterministic animation capture
 
 The native `animation-viewer` binary exercises the same authored FK,
-procedural mirroring, and terrain IK plugin as the tactical client without a
-server or player input. It holds eight evenly spaced walk phases under a fixed
-camera, writes one PNG per phase plus `manifest.json`, validates that foot lead
-changes twice across the captured cycle, and exits. A missing rig, unresolved
-walk clip, or unbound foot times out with `failure.txt` rather than hanging.
+procedural mirroring, look pass, and terrain IK plugin as the tactical client
+without a server or player input. It advances the same server stride formula
+at a deterministic 60Hz through two-cycle 2.0m/s walk, 3.75m/s blend, and
+5.5m/s run scenarios plus a four-second start/run/stop transition. Every frame
+is captured from live-like third-person, side, and front views over a fixed
+one-metre world grid, with a skeleton overlay and yellow supported-foot / pink
+swing-foot markers. The output includes per-view PNG sequences, `manifest.json` bone and
+support telemetry, and an `index.html` normal/half/quarter-speed reviewer with
+representative contact sheets. A missing rig or unresolved locomotion clip
+times out with `failure.txt` rather than hanging.
 
 Run it from the repository root:
 
 ```powershell
-cargo run -p adventuresim-tactical-client --bin animation-viewer -- --output target/animation-captures/walk
+cargo run -p adventuresim-tactical-client --bin animation-viewer -- --output target/animation-captures/locomotion-review
 ```
 
 Use `--asset-root` when invoking it outside the repository root and
-`--frames-per-sample` to change the regular interval after the initial render
-warmup. The manifest records gait phase, lower-body mirror weight, and both
-knee/foot world positions so procedural regressions can be diagnosed without
-visual guesswork.
+`--frames-per-sample` to change the render settle interval (not the simulated
+60Hz sample interval). Open `index.html` after capture and review each scenario
+at normal speed before using slow motion. The manifest tracks pelvis, chest,
+head, shoulders, elbows, hands, hips, knees, and feet; finite transforms; loop
+seams; per-frame displacement and rotation spikes; knee direction; foot
+height/support/slip; and pelvis/head stability. These values are regression
+signals and do not establish biomechanical correctness without visual review.
+Capture fails for teleport-scale continuity, ground penetration, duplicate
+front/side/third-person image output, missing artifacts, or excessive
+supported-foot per-frame slip and planted-interval drift, and records the
+responsible frames.
+
+Walk keeps at least partial terrain support throughout its cycle. As locomotion
+blends toward run, support narrows around each foot contact until the authored
+run's quarter-cycle flight phases have zero leg-IK weight. This prevents terrain
+IK from converting a deliberately airborne swing into a kick or pop.
+When support is high, terrain IK retains the foot's world-space horizontal
+plant until support releases; this prevents the character-following camera
+from concealing conveyor-belt foot skating.
+
+In debug builds, press `F8` to toggle only the final terrain leg-IK pass. The
+HUD reports whether it is on or off; authored FK, gait mirroring, and torso
+stabilization remain active for a useful before/after comparison.
 
 The procedural humanoid pass recognizes these case-sensitive bone names:
 

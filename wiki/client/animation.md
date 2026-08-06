@@ -397,9 +397,9 @@ opponent-side contact plane. The engine remains responsible for authoritative
 collision and damage.
 
 Locomotion semantic anchors use the **left** side as their canonical first
-half-cycle, while each authored gait file supplies its complete second half and
-closure. Lower-body mirroring is retained only as an explicit fallback for a
-resolved sample whose source lacks authored opposite-foot frames.
+half-cycle. When a sparse gait source contains only that half, the runtime
+reflects the complete bilateral limb motion—including clavicles, arms, hands,
+legs, feet, and twist bones—to construct the opposite half and closure.
 Attack and guard poses are not assumed to be whole-body mirrorable because a
 weapon may remain in the same hand.
 
@@ -411,8 +411,9 @@ fallback chain.
 
 ### Standing and locomotion
 
-The opposite half of each gait cycle can be produced by mirroring lower-body
-motion while preserving handed upper-body carriage.
+The opposite half of each sparse unarmed gait cycle is produced by mirroring
+both the arm swing and leg motion. Packs with handed upper-body carriage use an
+explicit weapon or hand constraint after gait reconstruction.
 
 | Pose | Animator brief |
 |---|---|
@@ -429,6 +430,31 @@ phase, while walking retains ground contact. Crouched locomotion applies
 procedural pelvis lowering, additional hip and knee flexion, shortened stride,
 and foot IK to the ordinary gait instead of requiring a separate crouch-walk
 cycle.
+
+Contact and passing/flight anchors are authoritative sparse gait inputs. The
+evaluator constructs four smooth quarters: contact to passing, passing to the
+character-space mirrored contact, mirrored contact to mirrored passing, and
+mirrored passing back to contact. It does not traverse later exported gait
+timeline data. Character-space reflection retains anatomical lateral spacing
+rather than swapping bones discretely. Terrain leg IK preserves continuous
+support for walking, narrows support through the walk/run blend, and releases
+both feet during the authored run flight phase. During high support it also
+locks the stance foot horizontally in world space until release, preventing
+visible skating as the gameplay root advances. Arm and leg swing share the
+same phase reconstruction before terrain IK; only the legs receive the final
+terrain solve. An explicit hand or weapon constraint can then override the
+reconstructed arm carriage.
+Locomotion also bounds root, pelvis, torso, neck, and head excursions around
+bind before look and final IK, then restores a bounded vertical lift at each
+run flight beat.
+
+Debug clients expose `F8` as a runtime terrain leg-IK toggle. Disabling it
+leaves authored FK, gait mirroring, and torso stabilization intact and clears
+stored foot plants so re-enabling IK cannot snap to an obsolete target.
+Debug clients also expose `F7` to toggle the connected local tactical mission
+between normal and quarter-speed game time. Both client presentation and the
+authoritative server clock change together, so movement, physics, combat, and
+animation remain synchronized during slow-motion inspection.
 
 During ordinary travel the body turns toward its velocity, so forward walk and
 run also serve diagonal and lateral travel. During combat, the torso remains

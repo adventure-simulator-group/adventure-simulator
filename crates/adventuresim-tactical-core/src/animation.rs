@@ -685,23 +685,30 @@ fn gait_or_idle(
 }
 
 fn locomotion_samples(speed: f32, phase: f32, crouch: f32) -> Vec<PoseSample> {
-    if speed < 0.05 {
-        return weighted_pair(SemanticPose::IdleRelaxed, SemanticPose::CrouchIdle, crouch);
-    }
     const WALK_REFERENCE_SPEED: f32 = 2.0;
     const RUN_REFERENCE_SPEED: f32 = 5.5;
+    const LOCOMOTION_BLEND_SPEED: f32 = 0.75;
+    let locomotion = smoothstep01(speed / LOCOMOTION_BLEND_SPEED);
     let run = ((speed - WALK_REFERENCE_SPEED) / (RUN_REFERENCE_SPEED - WALK_REFERENCE_SPEED))
         .clamp(0.0, 1.0);
-    let mut samples = Vec::with_capacity(6);
+    let mut samples = Vec::with_capacity(8);
+    let mut idle = weighted_pair(SemanticPose::IdleRelaxed, SemanticPose::CrouchIdle, crouch);
+    // The idle lower body is authored symmetrically. Give every contribution
+    // the same reflection coordinate before Bevy blends it, so the client
+    // never has to average incompatible mirrored and unmirrored semantics.
+    for sample in &mut idle {
+        sample.mirror_lower_body = gait_mirror(phase);
+    }
+    append_scaled(&mut samples, idle, 1.0 - locomotion);
     append_scaled(
         &mut samples,
         gait_pair(phase, SemanticPose::WalkContact, SemanticPose::WalkPassing),
-        (1.0 - run) * (1.0 - crouch),
+        locomotion * (1.0 - run) * (1.0 - crouch),
     );
     append_scaled(
         &mut samples,
         gait_pair(phase, SemanticPose::RunContact, SemanticPose::RunFlight),
-        run * (1.0 - crouch),
+        locomotion * run * (1.0 - crouch),
     );
     append_scaled(
         &mut samples,
@@ -710,7 +717,7 @@ fn locomotion_samples(speed: f32, phase: f32, crouch: f32) -> Vec<PoseSample> {
             SemanticPose::CrouchWalkContact,
             SemanticPose::CrouchWalkPassing,
         ),
-        crouch,
+        locomotion * crouch,
     );
     samples.retain(|sample| sample.weight > f32::EPSILON);
     samples
@@ -745,15 +752,53 @@ fn weighted_pair(a: SemanticPose, b: SemanticPose, b_weight: f32) -> Vec<PoseSam
     samples
 }
 
-fn gait_pair(phase: f32, contact: SemanticPose, _passing: SemanticPose) -> Vec<PoseSample> {
+fn gait_mirror(phase: f32) -> f32 {
+    let phase = phase.rem_euclid(1.0);
+    if phase < 0.15 {
+        0.0
+    } else if phase < 0.35 {
+        smoothstep01((phase - 0.15) / 0.20)
+    } else if phase < 0.65 {
+        1.0
+    } else if phase < 0.85 {
+        1.0 - smoothstep01((phase - 0.65) / 0.20)
+    } else {
+        0.0
+    }
+}
+
+fn gait_pair(phase: f32, contact: SemanticPose, passing: SemanticPose) -> Vec<PoseSample> {
+    let phase = phase.rem_euclid(1.0);
+    let quarter = phase * 4.0;
+    let index = quarter.floor() as u8;
+    let progress = smoothstep01(quarter.fract());
+    let (start, end) = match index {
+        0 => (contact, passing),
+        1 => (passing, contact),
+        2 => (contact, passing),
+        _ => (passing, contact),
+    };
+    // Swap anatomical sides only near each passing pose. A hard swap pops,
+    // while blending throughout contact folds the planted stride through
+    // itself. The 20%-cycle windows keep interpolation around the pose where
+    // the legs are closest and preserve the authored contact silhouettes.
+    let mirror = gait_mirror(phase);
+    // Contact and passing are authoritative timestamps in the same sparse
+    // motion file. Sample the interval directly instead of asking Bevy to
+    // blend two times on one animation-graph node: a node has only one seek
+    // position, so the latter sample would overwrite the former and create a
+    // hard quarter-cycle pose swap.
     vec![PoseSample {
-        pose: contact,
-        sampling: PoseSampling::Cycle {
-            progress: phase.rem_euclid(1.0),
-        },
+        pose: start,
+        sampling: PoseSampling::Span { end, progress },
         weight: 1.0,
-        mirror_lower_body: 0.0,
+        mirror_lower_body: mirror,
     }]
+}
+
+fn smoothstep01(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    value * value * (3.0 - 2.0 * value)
 }
 
 fn directional_jump_poses(direction: Vec2) -> [SemanticPose; 3] {
@@ -1051,36 +1096,94 @@ mod tests {
         let evaluation = AnimationEvaluation::from_skeleton(&state);
         assert_eq!(evaluation.base.len(), 2);
         assert!(evaluation.base.iter().any(|sample| {
-            sample.pose == SemanticPose::WalkContact
-                && sample.sampling == (PoseSampling::Cycle { progress: 0.25 })
+            sample.pose == SemanticPose::WalkPassing
+                && sample.sampling
+                    == PoseSampling::Span {
+                        end: SemanticPose::WalkContact,
+                        progress: 0.0,
+                    }
                 && sample.weight == 0.5
         }));
         assert!(evaluation.base.iter().any(|sample| {
-            sample.pose == SemanticPose::RunContact
-                && sample.sampling == (PoseSampling::Cycle { progress: 0.25 })
+            sample.pose == SemanticPose::RunFlight
+                && sample.sampling
+                    == PoseSampling::Span {
+                        end: SemanticPose::RunContact,
+                        progress: 0.0,
+                    }
                 && sample.weight == 0.5
         }));
     }
 
     #[test]
-    fn gait_samples_the_complete_authored_cycle() {
+    fn low_speed_idle_and_gait_contributions_share_mirror_semantics() {
+        let evaluation = AnimationEvaluation::from_skeleton(&SkeletonState {
+            local_velocity: Vec3::new(0.25, 0.0, 0.0),
+            gait_phase: 0.25,
+            ..default()
+        });
+        assert!(evaluation.base.len() >= 2);
+        let mirror = evaluation.base[0].mirror_lower_body;
+        assert!(
+            evaluation
+                .base
+                .iter()
+                .all(|sample| (sample.mirror_lower_body - mirror).abs() < 0.0001)
+        );
+    }
+
+    #[test]
+    fn gait_constructs_four_quarters_from_sparse_authoritative_anchors() {
         let samples = [0.0, 0.25, 0.5, 0.75]
             .map(|phase| gait_pair(phase, SemanticPose::WalkContact, SemanticPose::WalkPassing)[0]);
-        assert!(
-            samples
-                .iter()
-                .all(|sample| sample.pose == SemanticPose::WalkContact)
+        assert_eq!(
+            samples.map(|sample| sample.pose),
+            [
+                SemanticPose::WalkContact,
+                SemanticPose::WalkPassing,
+                SemanticPose::WalkContact,
+                SemanticPose::WalkPassing,
+            ]
         );
         assert_eq!(
             samples.map(|sample| sample.sampling),
             [
-                PoseSampling::Cycle { progress: 0.0 },
-                PoseSampling::Cycle { progress: 0.25 },
-                PoseSampling::Cycle { progress: 0.5 },
-                PoseSampling::Cycle { progress: 0.75 },
+                PoseSampling::Span {
+                    end: SemanticPose::WalkPassing,
+                    progress: 0.0,
+                },
+                PoseSampling::Span {
+                    end: SemanticPose::WalkContact,
+                    progress: 0.0,
+                },
+                PoseSampling::Span {
+                    end: SemanticPose::WalkPassing,
+                    progress: 0.0,
+                },
+                PoseSampling::Span {
+                    end: SemanticPose::WalkContact,
+                    progress: 0.0,
+                },
             ]
         );
-        assert!(samples.iter().all(|sample| sample.mirror_lower_body == 0.0));
+        for (actual, expected) in samples
+            .map(|sample| sample.mirror_lower_body)
+            .into_iter()
+            .zip([0.0, 0.5, 1.0, 0.5])
+        {
+            assert!((actual - expected).abs() < 0.0001);
+        }
+        let between = gait_pair(0.375, SemanticPose::WalkContact, SemanticPose::WalkPassing);
+        assert_eq!(between.len(), 1);
+        assert_eq!(
+            between[0].sampling,
+            PoseSampling::Span {
+                end: SemanticPose::WalkContact,
+                progress: 0.5,
+            }
+        );
+        assert_eq!(between[0].weight, 1.0);
+        assert_eq!(between[0].mirror_lower_body, 1.0);
     }
 
     #[test]

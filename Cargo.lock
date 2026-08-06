@@ -169,6 +169,8 @@ dependencies = [
  "bevy_flair",
  "clap",
  "console_error_panic_hook",
+ "serde",
+ "serde_json",
  "tracing",
  "tracing-subscriber",
  "tracing-tracy",
