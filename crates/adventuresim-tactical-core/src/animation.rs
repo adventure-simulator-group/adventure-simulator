@@ -751,7 +751,7 @@ pub struct SkeletonLocomotionInput {
 }
 
 /// Maximum server-authoritative body turn speed during ordinary locomotion.
-pub const BODY_TURN_SPEED_RADIANS: f32 = 10.0;
+pub const BODY_TURN_SPEED_RADIANS: f32 = std::f32::consts::PI / 0.25;
 
 /// Returns the controller's yaw without allowing camera pitch or roll to tilt
 /// planar locomotion into or out of the ground plane.
@@ -829,8 +829,7 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     } else {
         skeleton.raised_locomotion = RaisedLocomotionIntent::default();
         if input.grounded && ground_speed > 0.05 {
-            let stride_length = (0.9 + ground_speed * 0.16).clamp(0.9, 1.8);
-            let phase_delta = ground_speed * input.delta_seconds / stride_length;
+            let phase_delta = gait_cycle_phase_delta(ground_speed, input.delta_seconds);
             skeleton.gait_phase = (skeleton.gait_phase + phase_delta).rem_euclid(1.0);
             if skeleton.weapon_guard == WeaponGuardState::Lowered {
                 skeleton.lead_foot = if skeleton.gait_phase < 0.5 {
@@ -866,8 +865,7 @@ fn advance_raised_locomotion_intent(
     }
 
     let speed = skeleton.raised_locomotion.speed;
-    let stride_length = (0.9 + speed * 0.16).clamp(0.9, 1.8);
-    let next_phase = skeleton.gait_phase + speed * delta_seconds.max(0.0) / stride_length;
+    let next_phase = skeleton.gait_phase + gait_cycle_phase_delta(speed, delta_seconds.max(0.0));
     if next_phase < 1.0 {
         skeleton.gait_phase = next_phase;
         return;
@@ -880,6 +878,13 @@ fn advance_raised_locomotion_intent(
         skeleton.raised_locomotion = RaisedLocomotionIntent::default();
         skeleton.gait_phase = 0.0;
     }
+}
+
+/// Advances a complete left-right gait cycle. `stride_length` describes one
+/// step, while phase 0..1 contains both the left and right step.
+fn gait_cycle_phase_delta(speed: f32, delta_seconds: f32) -> f32 {
+    let stride_length = (0.9 + speed * 0.16).clamp(0.9, 1.8);
+    speed * delta_seconds.max(0.0) / (stride_length * 2.0)
 }
 
 /// One weighted authored pose contributing to the FK result.
@@ -1632,7 +1637,7 @@ mod tests {
         assert!(state.grounded);
         assert_eq!(state.posture, Posture::Upright);
         assert!((state.local_velocity - local_velocity).length() < 0.0001);
-        assert!((state.gait_phase - 2.0 / (0.9 + 2.0 * 0.16) / 64.0).abs() < 0.0001);
+        assert!((state.gait_phase - 2.0 / (0.9 + 2.0 * 0.16) / 2.0 / 64.0).abs() < 0.0001);
         assert_eq!(state.lead_foot, LeadFoot::Left);
     }
 
@@ -1706,6 +1711,16 @@ mod tests {
             (first * Vec3::Z).x > 0.0,
             "exact reversal chooses positive yaw"
         );
+
+        let completed = advance_body_facing(
+            Quat::IDENTITY,
+            Quat::IDENTITY,
+            Vec3::NEG_Z,
+            SkeletonAction::None,
+            WeaponGuardState::Lowered,
+            0.25,
+        );
+        assert!((Quat::IDENTITY.angle_between(completed) - std::f32::consts::PI).abs() < 0.0001);
     }
 
     #[test]
@@ -1767,6 +1782,14 @@ mod tests {
                     }
                 && sample.weight == 0.5
         }));
+    }
+
+    #[test]
+    fn gait_phase_spans_two_steps_at_run_speed() {
+        let speed = 5.5;
+        let stride_length = 0.9 + speed * 0.16;
+        let cycle_seconds = stride_length * 2.0 / speed;
+        assert!((gait_cycle_phase_delta(speed, cycle_seconds) - 1.0).abs() < 0.0001);
     }
 
     #[test]
@@ -1910,14 +1933,14 @@ mod tests {
             delta_seconds,
             tick: 1,
         };
-        project_skeleton_locomotion(&mut state, input(Vec3::NEG_Z * 2.0, 0.305));
+        project_skeleton_locomotion(&mut state, input(Vec3::NEG_Z * 2.0, 0.61));
         assert!(state.raised_locomotion.active);
         assert!((state.gait_phase - 0.5).abs() < 0.001);
 
-        project_skeleton_locomotion(&mut state, input(Vec3::ZERO, 0.2));
+        project_skeleton_locomotion(&mut state, input(Vec3::ZERO, 0.3));
         assert!(state.raised_locomotion.active);
         assert_eq!(state.raised_locomotion.local_direction, Vec2::NEG_Y);
-        project_skeleton_locomotion(&mut state, input(Vec3::ZERO, 0.2));
+        project_skeleton_locomotion(&mut state, input(Vec3::ZERO, 0.31));
         assert!(!state.raised_locomotion.active);
         assert_eq!(state.gait_phase, 0.0);
     }
@@ -1938,7 +1961,7 @@ mod tests {
         project_skeleton_locomotion(&mut state, input(Vec3::X * 2.0, 0.2));
         assert_eq!(state.raised_locomotion.local_direction, Vec2::NEG_X);
 
-        project_skeleton_locomotion(&mut state, input(Vec3::X * 2.0, 0.25));
+        project_skeleton_locomotion(&mut state, input(Vec3::X * 2.0, 0.85));
         assert_eq!(state.raised_locomotion.local_direction, Vec2::X);
         assert!(state.gait_phase < 0.15);
         assert_eq!(state.lead_foot, LeadFoot::Left);

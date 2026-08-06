@@ -47,6 +47,7 @@ const BODY_PART_HITBOXES: &[(BodyPart, Vec3, Vec3)] = &[
 const HITBOX_LAYER: LayerMask = LayerMask(1 << 1);
 const PRE_HIT_DELAY: f32 = 0.3;
 const HIT_PRECISION: f32 = 1.0;
+const GAMEPAD_LOOK_SCALE: Vec3 = Vec3::new(4.0, -4.0, 4.0);
 
 pub struct PlayerPlugin;
 
@@ -129,7 +130,7 @@ fn on_new_player_added_hook(
         );
 
         commands.entity(event.entity).insert((
-            CharacterController::default(),
+            tactical_character_controller(),
             ClientPlayer,
             actions!(Player[
                 (
@@ -148,7 +149,10 @@ fn on_new_player_added_hook(
                     Action::<input::RotateCamera>::new(),
                     Bindings::spawn((
                         Spawn((Binding::mouse_motion(), Scale::splat(0.15))),
-                        Axial::right_stick().with((Scale::splat(4.0), DeadZone::default())),
+                        Axial::right_stick().with((
+                            Scale::new(GAMEPAD_LOOK_SCALE),
+                            DeadZone::default(),
+                        )),
                     ))
                 ),
                 (
@@ -335,4 +339,15 @@ fn on_parry_fired(
         skeleton.begin_action(SkeletonAction::Block, start, start + 8);
     }
     cmd.client_trigger(DefendRequest::Parry);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gamepad_look_keeps_horizontal_and_reverses_vertical_input() {
+        assert!(GAMEPAD_LOOK_SCALE.x.is_sign_positive());
+        assert!(GAMEPAD_LOOK_SCALE.y.is_sign_negative());
+    }
 }

@@ -310,7 +310,7 @@ fn spawn_connected_player(
         (
             player_collider.clone(),
             CollisionMargin(0.01),
-            CharacterController::default(),
+            tactical_character_controller(),
             CharacterLook::default(),
         ),
     ));
