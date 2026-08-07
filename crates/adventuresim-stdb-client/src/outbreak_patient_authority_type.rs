@@ -8,21 +8,11 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct OutbreakPatientAuthority {
     pub id: String,
-    pub gateway_bucket: u8,
     pub case_id: String,
-    pub presentation_npc_id: String,
-    pub family_npc_id: Option<String>,
-    pub patient_key: u64,
+    pub patient_character_id: u64,
     pub episode_id: u64,
-    pub disease_id: String,
-    pub immunity_milli: u16,
-    pub ruleset_version: u16,
-    pub phenotype_key_version: u16,
-    pub exposed_at: u64,
-    pub became_symptomatic_at: u64,
-    pub died_at: Option<u64>,
-    pub death_kind: Option<String>,
-    pub terminal_failure: Option<String>,
+    pub context_active: bool,
+    pub health_active: bool,
     pub corpse_id: Option<String>,
     pub autopsy_evidence_id: Option<String>,
 }
@@ -36,21 +26,11 @@ impl __sdk::InModule for OutbreakPatientAuthority {
 /// Provides typed access to columns for query building.
 pub struct OutbreakPatientAuthorityCols {
     pub id: __sdk::__query_builder::Col<OutbreakPatientAuthority, String>,
-    pub gateway_bucket: __sdk::__query_builder::Col<OutbreakPatientAuthority, u8>,
     pub case_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, String>,
-    pub presentation_npc_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, String>,
-    pub family_npc_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, Option<String>>,
-    pub patient_key: __sdk::__query_builder::Col<OutbreakPatientAuthority, u64>,
+    pub patient_character_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, u64>,
     pub episode_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, u64>,
-    pub disease_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, String>,
-    pub immunity_milli: __sdk::__query_builder::Col<OutbreakPatientAuthority, u16>,
-    pub ruleset_version: __sdk::__query_builder::Col<OutbreakPatientAuthority, u16>,
-    pub phenotype_key_version: __sdk::__query_builder::Col<OutbreakPatientAuthority, u16>,
-    pub exposed_at: __sdk::__query_builder::Col<OutbreakPatientAuthority, u64>,
-    pub became_symptomatic_at: __sdk::__query_builder::Col<OutbreakPatientAuthority, u64>,
-    pub died_at: __sdk::__query_builder::Col<OutbreakPatientAuthority, Option<u64>>,
-    pub death_kind: __sdk::__query_builder::Col<OutbreakPatientAuthority, Option<String>>,
-    pub terminal_failure: __sdk::__query_builder::Col<OutbreakPatientAuthority, Option<String>>,
+    pub context_active: __sdk::__query_builder::Col<OutbreakPatientAuthority, bool>,
+    pub health_active: __sdk::__query_builder::Col<OutbreakPatientAuthority, bool>,
     pub corpse_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, Option<String>>,
     pub autopsy_evidence_id: __sdk::__query_builder::Col<OutbreakPatientAuthority, Option<String>>,
 }
@@ -60,30 +40,14 @@ impl __sdk::__query_builder::HasCols for OutbreakPatientAuthority {
     fn cols(table_name: &'static str) -> Self::Cols {
         OutbreakPatientAuthorityCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
-            gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
             case_id: __sdk::__query_builder::Col::new(table_name, "case_id"),
-            presentation_npc_id: __sdk::__query_builder::Col::new(
+            patient_character_id: __sdk::__query_builder::Col::new(
                 table_name,
-                "presentation_npc_id",
+                "patient_character_id",
             ),
-            family_npc_id: __sdk::__query_builder::Col::new(table_name, "family_npc_id"),
-            patient_key: __sdk::__query_builder::Col::new(table_name, "patient_key"),
             episode_id: __sdk::__query_builder::Col::new(table_name, "episode_id"),
-            disease_id: __sdk::__query_builder::Col::new(table_name, "disease_id"),
-            immunity_milli: __sdk::__query_builder::Col::new(table_name, "immunity_milli"),
-            ruleset_version: __sdk::__query_builder::Col::new(table_name, "ruleset_version"),
-            phenotype_key_version: __sdk::__query_builder::Col::new(
-                table_name,
-                "phenotype_key_version",
-            ),
-            exposed_at: __sdk::__query_builder::Col::new(table_name, "exposed_at"),
-            became_symptomatic_at: __sdk::__query_builder::Col::new(
-                table_name,
-                "became_symptomatic_at",
-            ),
-            died_at: __sdk::__query_builder::Col::new(table_name, "died_at"),
-            death_kind: __sdk::__query_builder::Col::new(table_name, "death_kind"),
-            terminal_failure: __sdk::__query_builder::Col::new(table_name, "terminal_failure"),
+            context_active: __sdk::__query_builder::Col::new(table_name, "context_active"),
+            health_active: __sdk::__query_builder::Col::new(table_name, "health_active"),
             corpse_id: __sdk::__query_builder::Col::new(table_name, "corpse_id"),
             autopsy_evidence_id: __sdk::__query_builder::Col::new(
                 table_name,
@@ -99,9 +63,8 @@ impl __sdk::__query_builder::HasCols for OutbreakPatientAuthority {
 pub struct OutbreakPatientAuthorityIxCols {
     pub case_id: __sdk::__query_builder::IxCol<OutbreakPatientAuthority, String>,
     pub episode_id: __sdk::__query_builder::IxCol<OutbreakPatientAuthority, u64>,
-    pub gateway_bucket: __sdk::__query_builder::IxCol<OutbreakPatientAuthority, u8>,
     pub id: __sdk::__query_builder::IxCol<OutbreakPatientAuthority, String>,
-    pub presentation_npc_id: __sdk::__query_builder::IxCol<OutbreakPatientAuthority, String>,
+    pub patient_character_id: __sdk::__query_builder::IxCol<OutbreakPatientAuthority, u64>,
 }
 
 impl __sdk::__query_builder::HasIxCols for OutbreakPatientAuthority {
@@ -110,11 +73,10 @@ impl __sdk::__query_builder::HasIxCols for OutbreakPatientAuthority {
         OutbreakPatientAuthorityIxCols {
             case_id: __sdk::__query_builder::IxCol::new(table_name, "case_id"),
             episode_id: __sdk::__query_builder::IxCol::new(table_name, "episode_id"),
-            gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
-            presentation_npc_id: __sdk::__query_builder::IxCol::new(
+            patient_character_id: __sdk::__query_builder::IxCol::new(
                 table_name,
-                "presentation_npc_id",
+                "patient_character_id",
             ),
         }
     }

@@ -1,5 +1,5 @@
 use adventuresim_core::{
-    organization::{OrganizationDefinition, OrganizationRank, organization},
+    organization::{OrganizationDefinition, OrganizationRoleDefinition, organization},
     strategic_schedule::CombatTrainingProfile,
 };
 use adventuresim_world_schema::OfficialReligion;
@@ -15,8 +15,8 @@ use super::{
     },
     chrome::{party_portrait_overlay, visual_stage},
     context::LocationView,
-    social::{player_chat_area, settlement_chat_area},
-    trade::{cooking_activity_dialog, religious_demand_rail},
+    social::player_chat_area,
+    trade::religious_demand_rail,
 };
 use crate::medical::MedicalPresentation;
 use crate::spacetimedb::{
@@ -25,7 +25,9 @@ use crate::spacetimedb::{
     InventoryItemAmount, ItemDefinition, LimbInjury, OrganizationMembership,
     OrganizationPresentation, Party, RetainedProjectile,
 };
-use crate::templates::{decorative_game_icon, religion_icon, sidebar_section};
+use crate::templates::{
+    decorative_game_icon, organization_charge, organization_colors, religion_icon, sidebar_section,
+};
 
 fn character_summary_rail(
     capability: Option<&CharacterCapability>,
@@ -249,29 +251,19 @@ pub fn party_personal_page(
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     filth: &[crate::spacetimedb::CharacterFilth],
-    cooking: bool,
-    herbalism: bool,
-    inventory: &[InventoryItem],
-    inventory_amounts: &[InventoryItemAmount],
-    food_lots: &[FoodLot],
-    item_definitions: &[ItemDefinition],
+    _inventory: &[InventoryItem],
+    _inventory_amounts: &[InventoryItemAmount],
+    _food_lots: &[FoodLot],
+    _item_definitions: &[ItemDefinition],
     character_action_dialog: Option<Markup>,
     surgery_open: Option<&str>,
     social_open: bool,
     foraging_dialog: Option<Markup>,
 ) -> Markup {
-    let cooking_href = location.preserve_building(format!(
-        "{}/party/{}?cook=true",
-        location.base_path(),
-        active_character.id
-    ));
-    let cooking_open = cooking;
-    let herbalism_href = location.preserve_building(format!(
-        "{}/party/{}?herbalism=true",
-        location.base_path(),
-        active_character.id
-    ));
-    let herbalism_open = herbalism;
+    // Cooking is informational on the skill sheet. The environmental
+    // fireplace portrait is the sole entry point to cooking.
+    let cooking_href: Option<String> = None;
+    let cooking_open = false;
     let surgery_path_template = location.preserve_building(format!(
         "{}/party/{}/surgery/__limb__",
         location.base_path(),
@@ -304,32 +296,13 @@ pub fn party_personal_page(
         Some(active_character.id),
         false,
     );
-    let center_after = settlement_chat_area(&active_character.name, Some(active_character));
+    let center_after = character_action_dialog
+        .unwrap_or_else(|| player_chat_area(location, active_character, active_character));
     let foraging_open = foraging_dialog.is_some();
     let after = html! {
         (physiology_dialog(medical, "physiology-chart-dialog", &active_character.name))
-        @if cooking_open {
-            (cooking_activity_dialog(
-                location,
-                active_character,
-                inventory,
-                inventory_amounts,
-                food_lots,
-                item_definitions,
-            ))
-        } @else if herbalism_open {
-            (super::trade::herbalism_activity_dialog(
-                location,
-                active_character,
-                skills,
-                attributes,
-                inventory,
-                item_definitions,
-            ))
-        } @else if let Some(dialog) = foraging_dialog {
+        @if let Some(dialog) = foraging_dialog {
             (dialog)
-        } @else {
-            @if let Some(dialog) = character_action_dialog { (dialog) }
         }
     };
     let content = character_sheet_markup(CharacterSheetView {
@@ -363,10 +336,8 @@ pub fn party_personal_page(
         professes_religion: religion_id.is_some(),
         prayer_religion_check,
         skill_actions: CharacterSheetActions {
-            cooking_href: Some(&cooking_href),
+            cooking_href: cooking_href.as_deref(),
             cooking_open,
-            herbalism_href: Some(&herbalism_href),
-            herbalism_open,
             foraging_href: Some(&foraging_href),
             foraging_open,
         },
@@ -427,7 +398,8 @@ pub fn party_stats_page(
         Some(selected.id),
         false,
     );
-    let center_after = player_chat_area(selected, active_character);
+    let center_after = character_action_dialog
+        .unwrap_or_else(|| player_chat_area(location, selected, active_character));
     let right_after = html! {
         @if selected.id != active_character.id {
                 @if active_character.party_id == selected.party_id {
@@ -457,10 +429,7 @@ pub fn party_stats_page(
                 }
             }
     };
-    let after = html! {
-        @if let Some(dialog) = character_action_dialog { (dialog) }
-        (physiology_dialog(medical, "physiology-chart-dialog", &selected.name))
-    };
+    let after = html! { (physiology_dialog(medical, "physiology-chart-dialog", &selected.name)) };
     let content = character_sheet_markup(CharacterSheetView {
         character: selected,
         capability,
@@ -600,8 +569,8 @@ fn organization_identity_display(
                 && membership.organization_id == presentation.organization_id
         })?;
         let definition = organization(&membership.organization_id)?;
-        let rank = definition.rank(&membership.rank_id)?;
-        Some((definition, rank))
+        let role = definition.role(&membership.role_id)?;
+        Some((definition, role))
     });
     let class = if selected.is_some() {
         "identity-control organization-identity-control is-readonly"
@@ -610,11 +579,11 @@ fn organization_identity_display(
     };
     html! {
         div class=(class) {
-            @if let Some((definition, rank)) = selected {
+            @if let Some((definition, role)) = selected {
                 (organization_crest(definition))
                 (organization_identity_copy(
                     definition.name.as_str(),
-                    &profession_name(definition, rank),
+                    &profession_name(definition, role),
                 ))
             } @else {
                 (empty_organization_crest())
@@ -666,11 +635,11 @@ fn organization_identity_picker(
         .iter()
         .filter_map(|membership| {
             let definition = organization(&membership.organization_id)?;
-            let rank = definition.rank(&membership.rank_id)?;
+            let role = definition.role(&membership.role_id)?;
             (membership.status == "active"
                 && minute <= membership.dues_paid_through_minute
                 && definition.recognition.includes(settlement_id))
-            .then_some((membership, definition, rank))
+            .then_some((membership, definition, role))
         })
         .collect::<Vec<_>>();
     let selected = presentation.and_then(|presentation| {
@@ -692,9 +661,9 @@ fn organization_identity_picker(
     html! {
         details class="organization-identity-picker" {
             summary class=(summary_class) {
-                @if let Some((_, definition, rank)) = selected {
+                @if let Some((_, definition, role)) = selected {
                     (organization_crest(definition))
-                    (organization_identity_copy(definition.name.as_str(), &profession_name(definition, rank)))
+                    (organization_identity_copy(definition.name.as_str(), &profession_name(definition, role)))
                 } @else {
                     (empty_organization_crest())
                     (organization_identity_copy("No organization", "No Profession"))
@@ -709,13 +678,13 @@ fn organization_identity_picker(
                         (organization_identity_copy("No organization", "No Profession"))
                     }
                 }
-                @for (_, definition, rank) in choices {
+                @for (_, definition, role) in choices {
                     @let is_selected = selected.is_some_and(|(_, selected_definition, _)| selected_definition.id == definition.id);
                     form method="post" action=(format!("{base}/organization-presentation/{}", definition.id)) {
                         button type="submit" class=(if is_selected { "organization-picker-option is-selected" } else { "organization-picker-option" })
                             role="menuitem" {
                             (organization_crest(definition))
-                            (organization_identity_copy(definition.name.as_str(), &profession_name(definition, rank)))
+                            (organization_identity_copy(definition.name.as_str(), &profession_name(definition, role)))
                         }
                     }
                 }
@@ -733,7 +702,10 @@ fn organization_identity_copy(organization_name: &str, profession: &str) -> Mark
     }
 }
 
-fn profession_name(definition: &OrganizationDefinition, rank: &OrganizationRank) -> String {
+fn profession_name(
+    definition: &OrganizationDefinition,
+    role: &OrganizationRoleDefinition,
+) -> String {
     let profession = match definition.service_id.as_deref() {
         Some("merchants") => Some("Merchant"),
         Some("weapons") => Some("Weaponsmith"),
@@ -746,9 +718,9 @@ fn profession_name(definition: &OrganizationDefinition, rank: &OrganizationRank)
         _ => None,
     };
     profession.map_or_else(
-        || rank.name.clone(),
-        |profession| match rank.id.as_str() {
-            "apprentice" | "journeyman" | "master" => format!("{} {profession}", rank.name),
+        || role.name.clone(),
+        |profession| match role.id.as_str() {
+            "apprentice" | "journeyman" | "master" => format!("{} {profession}", role.name),
             _ => profession.to_string(),
         },
     )
@@ -776,55 +748,6 @@ fn empty_organization_crest() -> Markup {
     }
 }
 
-fn organization_colors(id: &str) -> (&'static str, &'static str) {
-    const PALETTES: &[(&str, &str)] = &[
-        ("#7f1d1d", "#f5d77b"),
-        ("#173f5f", "#d9edf7"),
-        ("#285943", "#f0cf65"),
-        ("#4c2a63", "#e6c9ff"),
-        ("#7a4b12", "#f6e7c1"),
-        ("#1e4d4f", "#f1b24a"),
-        ("#5a2333", "#f3d9a5"),
-        ("#243b67", "#d8c89b"),
-    ];
-    let hash = id.bytes().fold(0usize, |hash, byte| {
-        hash.wrapping_mul(31).wrapping_add(usize::from(byte))
-    });
-    PALETTES[hash % PALETTES.len()]
-}
-
-fn organization_charge(definition: &OrganizationDefinition) -> &'static str {
-    match definition.id.as_str() {
-        "order_saint_george" => return "mounted-knight",
-        "lodge_hart_king" => return "wood-axe",
-        "hunt_pale_lantern" => return "eye-target",
-        _ => {}
-    }
-    match definition.service_id.as_deref() {
-        Some("merchants") => "coins",
-        Some("weapons") => "anvil",
-        Some("armor") => "breastplate",
-        Some("clothing") => "clothes",
-        Some("herbalist") => "medical-pack",
-        Some("physician") => "caduceus",
-        Some("surgeon") => "scalpel",
-        Some("inn") => "meal",
-        _ if definition.id.contains("forester") => "wood-axe",
-        _ if definition.id.contains("saint_george")
-            || definition.id.contains("royal")
-            || definition.id.contains("knight") =>
-        {
-            "mounted-knight"
-        }
-        _ if definition.id.contains("witch") || definition.id.contains("watchful") => "eye-target",
-        _ if definition.id.contains("religion") || definition.id.contains("theolog") => {
-            "gothic-cross"
-        }
-        _ if definition.id.contains("scholar") || definition.id.contains("college") => "open-book",
-        _ => "shield",
-    }
-}
-
 fn personality_tags(
     personality: &crate::spacetimedb::CharacterPersonality,
 ) -> Vec<(&'static str, &'static str)> {
@@ -835,29 +758,29 @@ fn personality_tags(
     };
     let mut tags = Vec::new();
     match personality.nerve {
-        Brave => tags.push(("Brave", "Morale loss from being outmatched ×0.5.")),
-        Fearful => tags.push(("Fearful", "Morale loss from being outmatched ×2.")),
+        Brave => tags.push(("Brave", "Softens morale loss against a stronger threat; potency follows the hidden disposition.")),
+        Fearful => tags.push(("Fearful", "Deepens morale loss against a stronger threat; potency follows the hidden disposition.")),
         _ => {}
     }
     match personality.drive {
-        Ambitious => tags.push(("Ambitious", "Morale from victories and defeats ×1.5.")),
-        Content => tags.push(("Content", "Morale from victories and defeats ×0.5.")),
+        Ambitious => tags.push(("Ambitious", "Feels victories and defeats more keenly.")),
+        Content => tags.push(("Content", "Takes victories and defeats more evenly.")),
         _ => {}
     }
     match personality.outlook {
         Sanguine => tags.push((
             "Sanguine",
-            "Positive morale ×1.25; negative morale ×0.75; negative-event duration ×0.5.",
+            "Dwells more on encouragement and recovers sooner from discouragement.",
         )),
         Brooding => tags.push((
             "Brooding",
-            "Positive morale ×0.75; negative morale ×1.25; negative-event duration ×2.",
+            "Dwells more on discouragement and carries it longer.",
         )),
         _ => {}
     }
     match personality.sociability {
-        Gregarious => tags.push(("Gregarious", "Morale restored by allies ×1.5.")),
-        Solitary => tags.push(("Solitary", "Morale restored by allies ×0.5.")),
+        Gregarious => tags.push(("Gregarious", "Draws greater comfort from allies.")),
+        Solitary => tags.push(("Solitary", "Draws less comfort from allies.")),
         _ => {}
     }
     match personality.conscience {
@@ -876,34 +799,37 @@ fn personality_tags(
         _ => {}
     }
     match personality.self_regard {
-        Proud => tags.push(("Proud", "Morale from victory ×1.5; morale from defeat ×3.")),
-        Humble => tags.push(("Humble", "Morale from victories and defeats ×0.75.")),
-        _ => {}
-    }
-    match personality.conviction {
-        Zealous => tags.push(("Zealous", "Morale from religious sources and events ×1.5.")),
-        Irreverent => tags.push((
-            "Irreverent",
-            "Morale from religious sources and events ×0.5.",
+        Proud => tags.push(("Proud", "Takes victory deeply and defeat harder still.")),
+        Humble => tags.push((
+            "Humble",
+            "Takes victories and defeats with greater equanimity.",
         )),
         _ => {}
     }
+    match personality.conviction {
+        Zealous => tags.push(("Zealous", "Responds more strongly to religious events.")),
+        Irreverent => tags.push(("Irreverent", "Responds less strongly to religious events.")),
+        _ => {}
+    }
     match personality.hygiene {
-        Slovenly => tags.push(("Slovenly", "Filth morale penalty ×0.")),
+        Slovenly => tags.push((
+            "Slovenly",
+            "Is increasingly untroubled by filth as this hidden disposition deepens.",
+        )),
         Cleanly => tags.push((
             "Cleanly",
-            "Filth morale penalty ×2.5; +2 morale while completely clean.",
+            "Cares increasingly about cleanliness as this hidden disposition deepens.",
         )),
         _ => {}
     }
     match personality.temperance {
         Temperate => tags.push((
             "Temperate",
-            "Automatic alcohol morale bonus +0; missed-drink morale penalty -0.",
+            "Does not seek a nightly drink; lesser hidden movement toward temperance can already soften alcohol reactions.",
         )),
         Drunkard => tags.push((
             "Drunkard",
-            "Wants a heavy drink every evening: +5 morale when satisfied, -5 when missed.",
+            "Seeks a heavy nightly drink; the strength of the morale reaction follows the hidden disposition.",
         )),
         _ => {}
     }
@@ -1155,8 +1081,8 @@ mod tests {
     #[test]
     fn service_memberships_name_the_profession() {
         let definition = organization("weaponsmith_guild").expect("weapons guild");
-        let rank = definition.ranks.first().expect("weapons guild rank");
-        assert_eq!(profession_name(definition, rank), "Apprentice Weaponsmith");
+        let role = definition.roles.first().expect("weapons guild role");
+        assert_eq!(profession_name(definition, role), "Apprentice Weaponsmith");
     }
 
     #[test]
@@ -1167,8 +1093,8 @@ mod tests {
             ("surgeons_guild", "Apprentice Surgeon", "scalpel"),
         ] {
             let definition = organization(id).unwrap();
-            let rank = definition.ranks.first().unwrap();
-            assert_eq!(profession_name(definition, rank), profession);
+            let role = definition.roles.first().unwrap();
+            assert_eq!(profession_name(definition, role), profession);
             assert_eq!(organization_charge(definition), charge);
         }
     }

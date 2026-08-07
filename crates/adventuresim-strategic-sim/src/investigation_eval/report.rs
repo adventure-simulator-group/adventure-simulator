@@ -462,7 +462,13 @@ pub fn replay_case(recorded: &ReplayCase) -> Result<PublicQuestTrace, String> {
         || environment.developer_analysis().generator_manifest_digest
             != recorded.generator_manifest_digest
     {
-        return Err("replay fixture generator revision or manifest mismatch".into());
+        return Err(format!(
+            "replay fixture generator revision or manifest mismatch: recorded catalog={}, current catalog={}, recorded manifest={}, current manifest={}",
+            recorded.catalog_revision,
+            environment.developer_analysis().catalog_revision,
+            recorded.generator_manifest_digest,
+            environment.developer_analysis().generator_manifest_digest,
+        ));
     }
     for decision in recorded.decisions.iter().take(MAX_REPLAY_DECISIONS) {
         environment.apply(decision)?;
@@ -1070,7 +1076,7 @@ mod tests {
             Box::new(MockLlmPolicy) as Box<dyn QuestPolicy>,
         ] {
             let bundle = evaluate_cases(
-                &[EvalCaseConfig::fixture(97, TemplateFamily::Outbreak)],
+                &[EvalCaseConfig::fixture(0, TemplateFamily::Outbreak)],
                 policy.as_mut(),
                 &limits,
             )
@@ -1078,6 +1084,54 @@ mod tests {
             assert_eq!(bundle.public.metrics.cases, 1);
             assert_eq!(bundle.public.metrics.solved, 1);
         }
+
+        use adventuresim_core::water_source::{OutbreakWaterFlow, OutbreakWaterFlowError};
+        let mut source = OutbreakWaterFlow::new(500_000);
+        let receipt = source.draw("draw-1", 1_000, 12_000_000).unwrap();
+        assert_eq!(source.draw("draw-1", 1_000, 12_000_000), Ok(receipt));
+        assert_eq!(
+            source.draw("draw-1", 999, 12_000_000),
+            Err(OutbreakWaterFlowError::ReplayCollision)
+        );
+        let mut pot = OutbreakWaterFlow::new(0);
+        source.transfer_all(&mut pot);
+        assert_eq!(
+            (pot.holding_ml, pot.holding_load_microunits),
+            (1_000, 12_000_000)
+        );
+        pot.cook_all(1, 10_000);
+        let load_before_split = pot.food_load_microunits;
+        let mut serving = pot.split_food(1, 2).unwrap();
+        assert_eq!(
+            pot.food_load_microunits + serving.food_load_microunits,
+            load_before_split
+        );
+        let event = serving.consume_all().expect("typed food-water event");
+        event.validate().unwrap();
+        let digest = serving.contribution_digest.clone().unwrap();
+        assert!(matches!(
+            event.payload,
+            adventuresim_core::world_event::WorldEventPayloadRef::FoodWaterInfection {
+                contribution_digest,
+                consumed_fraction_bps: 10_000,
+                ..
+            } if contribution_digest == digest
+        ));
+        source.close_source();
+        assert_eq!(
+            source.draw("draw-after-close", 1, 0),
+            Err(OutbreakWaterFlowError::Closed)
+        );
+        assert_eq!(
+            pot.food_ml, 500,
+            "food held before closure remains available"
+        );
+
+        let mut clean = OutbreakWaterFlow::new(500_000);
+        clean.draw("clean", 1_000, 0).unwrap();
+        let mut tainted = OutbreakWaterFlow::new(500_000);
+        tainted.draw("tainted", 1_000, 12_000_000).unwrap();
+        assert_eq!(clean.public_projection(), tainted.public_projection());
     }
 
     #[test]

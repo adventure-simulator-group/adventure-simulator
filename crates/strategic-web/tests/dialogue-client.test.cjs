@@ -5,11 +5,62 @@ const test = require("node:test");
 const source = fs.readFileSync(path.join(__dirname, "..", "static", "dialogue-client.js"), "utf8");
 const dialogueCss = fs.readFileSync(path.join(__dirname, "..", "static", "css", "strategic.css"), "utf8");
 const {
+  createRetriableAction,
   dialogueCompletion,
   dialogueResponseIsCurrent,
   dialogueSubmission,
   dialogueTopicPayload,
+  relationshipLabel,
+  relationshipLevel,
+  romanticResponse,
+  socialDurationChoices,
+  contextualMutationIsCurrent,
+  courtshipPresentation,
+  affinityPresentation,
+  moraleTopicPresentation,
 } = require("../static/dialogue-client.js");
+
+test("errantry acceptance reuses its action ID after a lost response", async () => {
+  const generated = ["acceptance-1", "acceptance-2"];
+  const acceptance = createRetriableAction(() => generated.shift());
+  const sent = [];
+  await assert.rejects(
+    acceptance.run(async (actionId) => {
+      sent.push(actionId);
+      throw new TypeError("fetch failed after commit");
+    }),
+  );
+  const result = await acceptance.run(async (actionId) => {
+    sent.push(actionId);
+    return { redirect: "/quests" };
+  });
+  assert.deepEqual(sent, ["acceptance-1", "acceptance-1"]);
+  assert.equal(result.redirect, "/quests");
+  await acceptance.run(async (actionId) => {
+    sent.push(actionId);
+    return { redirect: "/quests" };
+  });
+  assert.deepEqual(sent, ["acceptance-1", "acceptance-1", "acceptance-2"]);
+});
+
+test("errantry acceptance replaces its action ID after a definitive conflict", async () => {
+  const generated = ["conflict-1", "conflict-2"];
+  const acceptance = createRetriableAction(() => generated.shift());
+  const sent = [];
+  await assert.rejects(
+    acceptance.run(async (actionId) => {
+      sent.push(actionId);
+      const error = new Error("conflict");
+      error.status = 422;
+      throw error;
+    }),
+  );
+  await acceptance.run(async (actionId) => {
+    sent.push(actionId);
+    return { redirect: "/quests" };
+  });
+  assert.deepEqual(sent, ["conflict-1", "conflict-2"]);
+});
 
 test("dialogue client is schema-driven with stable authoritative actions", () => {
   assert.match(source, /api\/dialogue\/start/);
@@ -22,10 +73,13 @@ test("dialogue client is schema-driven with stable authoritative actions", () =>
   assert.doesNotMatch(source, /professionDetails|openQuestOffer|beginHerbalistConversation|dialogueActions/);
 });
 
-test("topics are exposed only through inline dialogue text", () => {
-  assert.doesNotMatch(source, /data-dialogue-topic-pane/);
-  assert.doesNotMatch(source, /topicList\.replaceChildren/);
+test("discovered authored topics use typed category tabs while contextual actions stay inline", () => {
+  assert.match(source, /topic\.category \|\| "lore"/);
+  assert.match(source, /data-dialogue-category-panel/);
   assert.match(source, /row\.append\(topicAnchor/);
+  assert.match(source, /dialogue-context-topics/);
+  assert.match(source, /contextTopicButton\("social", "conversation"/);
+  assert.match(source, /contextTopicButton\("romance", "rose"/);
   assert.match(source, /document\.createDocumentFragment\(\)/);
   assert.match(source, /fragment\.append\(anchor, edit\)/);
   assert.doesNotMatch(source, /anchor\.append\(edit\)/);
@@ -92,9 +146,78 @@ test("settlement NPCs reuse the circular party portrait structure", () => {
   assert.match(source, /party-portrait-face/);
   assert.match(source, /party-portrait-name settlement-npc-name/);
   assert.match(source, /portrait\.append\(face, name\)/);
-  assert.match(source, /data\.openNpcSocial|dataset\.openNpcSocial/);
-  assert.match(source, /settlement-npc-social-button/);
-  assert.match(source, /npc-social-summary/);
+  assert.doesNotMatch(source, /data\.openNpcSocial|dataset\.openNpcSocial/);
+  assert.doesNotMatch(source, /settlement-npc-social-button/);
+  assert.doesNotMatch(source, /npc-social-summary/);
+});
+
+test("socializing and romance are dialogue responses with a qualitative regard face", () => {
+  assert.equal(relationshipLabel("well_known"), "well known");
+  assert.equal(relationshipLevel("affinity", "trusted"), 1);
+  assert.equal(relationshipLevel("morale", "guarded"), 2 / 3);
+  assert.deepEqual(socialDurationChoices.map((choice) => choice.minutes), [15, 60, 240]);
+  assert.equal(romanticResponse("formal_courtship").icon, "rose");
+  assert.equal(romanticResponse("schedule_wedding").icon, "calendar");
+  assert.deepEqual(courtshipPresentation("formal", false), { icon: "rose", label: "formal courtship; formal and public" });
+  assert.deepEqual(courtshipPresentation("informal", false), { icon: "lockpicks", label: "informal courtship; private" });
+  assert.deepEqual(courtshipPresentation("informal", true), { icon: "eye-target", label: "informal courtship; known to family" });
+  assert.match(source, /dataset\.dialogueContextPrompt/);
+  assert.match(source, /appendContextExchange/);
+  assert.match(source, /face\.dataset\.npcAffinityFace/);
+  assert.match(source, /requested_minutes: choice\.minutes/);
+  assert.match(source, /ask under Of Thee for more/);
+  assert.match(source, /currentView\.open_prompt \|\| contextualMutation/);
+  assert.match(source, /const render = \(view\) => \{[\s\S]*?removeContextPrompt\(\);/);
+  const socialMutation = source.slice(source.indexOf("const chooseSocialResponse"), source.indexOf("const chooseRomanticResponse"));
+  const romanceMutation = source.slice(source.indexOf("const chooseRomanticResponse"), source.indexOf("const renderContextPrompt"));
+  assert.match(socialMutation, /renderCategoryTopics\(currentView/);
+  assert.match(romanceMutation, /renderCategoryTopics\(currentView/);
+  assert.doesNotMatch(source, /success_chance|personality_fit|morale_delta/);
+});
+
+test("morale topics and affinity faces combine color with accessible qualitative wording", () => {
+  assert.deepEqual(affinityPresentation(0), { band: "neutral", label: "Neutral regard", face: "😐" });
+  assert.equal(affinityPresentation(70).band, "very-warm");
+  assert.equal(affinityPresentation(-70).band, "hostile");
+  assert.equal(moraleTopicPresentation(0).label, "Neutral morale, +0.0");
+  assert.equal(moraleTopicPresentation(4).direction, "positive");
+  assert.equal(moraleTopicPresentation(-4).direction, "negative");
+  assert.notEqual(moraleTopicPresentation(1).color, moraleTopicPresentation(5).color);
+  assert.match(dialogueCss, /affinity-popover\.is-pinned/);
+  assert.match(source, /event\.key !== "Escape"/);
+  assert.match(source, /is-closing/);
+  assert.match(dialogueCss, /is-closing \.affinity-details/);
+});
+
+test("NPC switches clear subject-bound social state before asynchronous refresh", () => {
+  const selectNpc = source.slice(source.indexOf("const selectNpc"), source.indexOf("const loadPeople"));
+  assert.match(selectNpc, /currentSocial = null/);
+  assert.match(selectNpc, /data-npc-affinity-popover/);
+  assert.match(selectNpc, /data-dialogue-category-panel/);
+  assert.match(selectNpc, /Loading this person's conversation/);
+  assert.match(source, /button\.dataset\.socialRevision !== currentSocial\?\.social_revision/);
+  assert.match(source, /button\.dataset\.socialSubject !== chat\.dataset\.localChatSubject/);
+});
+
+test("party portrait chat deep-loads the authorized social dock into the functional stream", () => {
+  assert.match(source, /dockChat\.dataset\.partySocialHref/);
+  assert.match(source, /const activateRequested = async \(tab, focus = false\)/);
+  assert.match(source, /void activateRequested\(tabs\[next\], true\)/);
+  assert.match(source, /querySelector\("\[data-social-conversation\]"\)/);
+  assert.match(source, /dockChat\.replaceWith\(replacement\)/);
+});
+
+test("contextual mutations are bound to the active NPC, path, session, revision, and operation", () => {
+  const binding = { token: "op-1", selectionGeneration: 3, npcId: "npc:anna", path: "/anna/social", sessionId: "dialogue:anna", revision: 4 };
+  const view = { session_id: "dialogue:anna", revision: 4 };
+  assert.equal(contextualMutationIsCurrent(binding, "op-1", 3, "npc:anna", "/anna/social", view), true);
+  assert.equal(contextualMutationIsCurrent(binding, "op-2", 3, "npc:anna", "/anna/social", view), false);
+  assert.equal(contextualMutationIsCurrent(binding, "op-1", 4, "npc:anna", "/anna/social", view), false);
+  assert.equal(contextualMutationIsCurrent(binding, "op-1", 3, "npc:elsa", "/elsa/social", view), false);
+  assert.equal(contextualMutationIsCurrent(binding, "op-1", 3, "npc:anna", "/anna/social", { ...view, revision: 5 }), false);
+  assert.match(source, /if \(!contextMutationCurrent\(binding\)\) return/);
+  assert.match(source, /contextualMutation = null/);
+  assert.match(source, /setContextControlsDisabled\(true\)/);
 });
 
 test("NPCs without initials use the neutral person silhouette without losing their accessible name", () => {

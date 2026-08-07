@@ -71,13 +71,13 @@ web-isolated profile="renderer-demo" base_port="23100": preflight verify-db-clie
 web-isolated-strategic profile="renderer-demo" base_port="23100": preflight verify-db-client
     @{{ python_bin }} scripts/dev_stack.py run-profile --mode bare-strategic {{ quote(profile) }} {{ quote(base_port) }}
 
-# Start a disposable strategic stack for the one-click in-world autopsy demo.
-autopsy-demo base_port="23100": preflight verify-db-client
-    @{{ python_bin }} scripts/dev_stack.py run-profile --mode bare-strategic autopsy-demo {{ quote(base_port) }}
+# Run the dependency-light puzzle laboratory without building the game stack.
+puzzle-lab args="--help":
+    @cargo run -q -p adventuresim-puzzles --bin puzzle-lab -- {{ args }}
 
-# Start a disposable strategic stack for the one-click generated outbreak demo.
-outbreak-demo base_port="23100": preflight verify-db-client
-    @{{ python_bin }} scripts/dev_stack.py run-profile --mode bare-strategic outbreak-demo {{ quote(base_port) }}
+# Exercise deterministic generation, replay, and solver invariants quickly.
+puzzle-check:
+    @cargo test -p adventuresim-puzzles
 
 # Canonical database deletion is deliberately unavailable. Use web-isolated.
 web-reset:
@@ -289,13 +289,13 @@ _spawner-stop:
 # Run a single tactical server (for testing). Defaults come from `.env.tactical`
 # (written by `tactical-isolated`) when present, otherwise from the canonical
 # stack - so a bare `just tactical` targets whichever is currently running.
-tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") scene_key=env_var_or_default("TACTICAL_SCENE_KEY", "hills") bots=env_var_or_default("TACTICAL_BOTS", "3") port=env_var_or_default("TACTICAL_PORT", tactical_port) url=env_var_or_default("TACTICAL_SPACETIMEDB_URL", spacetime_url) module=env_var_or_default("TACTICAL_SPACETIMEDB_MODULE", spacetime_module):
-    @cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --required-enemy-kills {{ bots }} --enemy-combat-scale-bps 10000 --no-timeout
+tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") scene_key=env_var_or_default("TACTICAL_SCENE_KEY", "hills") bots=env_var_or_default("TACTICAL_BOTS", "3") port=env_var_or_default("TACTICAL_PORT", tactical_port) url=env_var_or_default("TACTICAL_SPACETIMEDB_URL", spacetime_url) module=env_var_or_default("TACTICAL_SPACETIMEDB_MODULE", spacetime_module) enemy_combat_scale_bps=env_var_or_default("TACTICAL_ENEMY_COMBAT_SCALE_BPS", "10000"):
+    @cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --expected-party-members 1 --required-enemy-kills {{ bots }} --enemy-combat-scale-bps {{ enemy_combat_scale_bps }} --no-timeout
 
 # Run a native tactical client (for testing `just tactical`). Defaults come
 # from `.env.tactical` when present, same as `tactical` above.
 client id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_default("TACTICAL_PORT", tactical_port) features="":
-    @cargo run --package adventuresim-tactical-client --features "debug,{{ features }}" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}"
+    @cargo run --package adventuresim-tactical-client --bin adventuresim-tactical-client --features "debug,{{ features }}" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}"
 
 # Start an isolated SpacetimeDB seeded with a standalone tactical mission.
 # No strategic layer, no WASM build - just the DB plus a mission. Writes
@@ -303,6 +303,22 @@ client id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_defau
 # other terminals targets it automatically.
 tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="hills" character_id="0" bots="3": preflight _build-tactical-unverified
     @{{ python_bin }} scripts/dev_stack.py run-profile --mode tactical {{ quote(profile) }} {{ quote(base_port) }} --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }}
+
+# Build and supervise a complete disposable native tactical test session.
+# animation disables combat, diagnostic runs scripted real-client input and
+# records every animation frame, combat uses normal enemies, and networking
+# omits the client while retaining the validated database/server fixture.
+tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto": preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }}
+
+# Report whether the supervised tactical database, claim, authority, listener,
+# and recorded child identities are healthy.
+tactical-status:
+    @{{ python_bin }} scripts/dev_stack.py tactical-status
+
+# Relaunch only the native client after validating the supervised server.
+tactical-client:
+    @{{ python_bin }} scripts/dev_stack.py tactical-client
 
 # Generate self-signed WebTransport certificates
 certs sans="127.0.0.1,localhost":
@@ -362,6 +378,11 @@ quest-analyze-replay-fixture:
 test-strategic-sim:
     @cargo test -p adventuresim-strategic-sim
 
+# Offline lifecycle acceptance tier over the same deterministic pure rules used
+# by reducers. The output directory must not already exist.
+strategic-sim-lifecycle output_dir seed="42":
+    @cargo run -p adventuresim-strategic-sim -- lifecycle --output-dir {{ quote(output_dir) }} --seed {{ seed }}
+
 # LLM-only, end-to-end browser evaluator. output_dir must be new because the
 # screenshot record never overwrites an earlier run.
 quest-web-eval output_dir base_url="http://127.0.0.1:24301" start_path="/characters" api_key_env="OPENAI_API_KEY" model="gpt-4.1-mini":
@@ -370,7 +391,7 @@ quest-web-eval output_dir base_url="http://127.0.0.1:24301" start_path="/charact
 # Own one nonce-named local database for the duration of the command. There is
 # intentionally no database or server override.
 strategic-sim-core-loop output_dir seed="42" population="4" cycles="100" duration_days="365" party_size="2": spacetime-version-check spacetime-start
-    @{{ python_bin }} scripts/just_tasks.py strategic-sim-core-loop {{ seed }} {{ population }} {{ cycles }} {{ duration_days }} {{ party_size }} {{ quote(output_dir) }} --spacetime-url {{ spacetime_url }} --module-dir {{ quote(strategic_dir) }}
+    @{{ python_bin }} scripts/just_tasks.py strategic-sim-core-loop {{ seed }} {{ population }} {{ cycles }} {{ duration_days }} {{ party_size }} {{ quote(output_dir) }} --spacetime-url {{ spacetime_url }} --module-dir {{ quote(strategic_dir) }} --require-quest-coverage
 
 # Run the authoritative core loop against the pinned compiled 1544 world.
 # output_dir must not exist; the launcher always deletes its nonce database.

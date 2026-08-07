@@ -3,6 +3,7 @@
     {
       "id": "bandit", "name": "Bandit", "singular": "Bandit", "plural": "Bandits", "aliases": ["brigand"],
       "base_weight": 80, "curation_weight": 70, "northern_germany_prior": 130, "primary_category":"human","secondary_categories":[],
+      "negotiation": {"sapient":true,"negotiable":true},
       "combat": {"rig":"humanoid","speed_m_per_minute":80,"weight_kg":70.0,"attack":"blade","ranged":false,"precision_bonus_milli":0,"training_multiplier_milli":1000,"perception":50,"stealth":50,"morale":50,"protection":"armored","resistance_joules":0,"padding_joules":0,"disease_risk":0,"fear":0,"temperament":"cautious","encounter_scale_basis_points":10000,"loot_item_id":"katzbalger","escalation_mode":"mob","escalation_growth_rate_bps":2000,"baseline_combat_power":10000},
       "investigation": {"habitats":["road","open","sparse_woods","camp","ruin"],"activity":"any","victim_tags":["travelers","merchants"],"tracks":["boot_prints"],"wounds":["weapon_cuts"],"disturbances":["disturbed_goods"],"sounds":["voices"],"silhouettes":["armed_people"],"odors":[],"mistaken_for":["deserter","poacher","smuggler"],"distinguishing_clues":["weapon_cuts"],"preparation_advice":"Bring armor and an anti-armor weapon; expect an organized group.","investigability":60,"identification_challenge":false,"location_challenge":false,"countermeasure_hypotheses":[]}
     },
@@ -21,6 +22,7 @@
     {
       "id": "smuggler", "name": "Smuggler", "singular": "smuggler", "plural": "smugglers", "aliases": ["contraband runner"],
       "base_weight": 25, "curation_weight": 35, "northern_germany_prior": 130, "primary_category":"human","secondary_categories":[],
+      "negotiation": {"sapient":true,"negotiable":true},
       "combat": {"rig":"humanoid","speed_m_per_minute":83,"weight_kg":70.0,"attack":"blade","ranged":false,"precision_bonus_milli":0,"training_multiplier_milli":1000,"perception":55,"stealth":60,"morale":45,"protection":"hide","resistance_joules":0,"padding_joules":0,"disease_risk":0,"fear":0,"temperament":"cautious","encounter_scale_basis_points":10000,"loot_item_id":"knife","escalation_mode":"mob","escalation_growth_rate_bps":2000,"baseline_combat_power":9000},
       "investigation": {"habitats":["road","cave","occupied_house"],"activity":"night","victim_tags":["merchants"],"tracks":["boot_prints"],"wounds":["weapon_cuts"],"disturbances":["disturbed_goods"],"sounds":["whispers"],"silhouettes":["armed_people"],"odors":[],"mistaken_for":["bandit"],"distinguishing_clues":["contraband"],"preparation_advice":"Watch exits and bring enough people to prevent escape.","investigability":45,"identification_challenge":true,"location_challenge":true,"countermeasure_hypotheses":[]}
     },

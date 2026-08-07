@@ -705,7 +705,9 @@ impl InvestigationEnvironment {
                 self.generated
                     .witnesses
                     .get(*visible)
-                    .is_some_and(|witness| witness.npc_id == action.target_id)
+                    .is_some_and(|witness| {
+                        witness.resident_character_id.to_string() == action.target_id
+                    })
             })
         {
             return false;
@@ -930,7 +932,9 @@ fn generation_context(seed: u64, family: TemplateFamily) -> qg::GenerationContex
     ]);
     let witness = |id: &str, display_name: &str, demographic, description: &str, location: &str| {
         WitnessCandidate {
-            npc_id: format!("npc:{id}"),
+            resident_character_id: adventuresim_core::settlement_population::stable_hash(&format!(
+                "investigation-eval-witness:{id}"
+            )) | (1u64 << 63),
             display_name: display_name.into(),
             demographic,
             age_band: "adult".into(),
@@ -1104,7 +1108,7 @@ mod tests {
             .iter_mut()
             .find(|action| action.target_kind == "contact")
             .unwrap()
-            .target_id = generated.witnesses[1].npc_id.clone();
+            .target_id = generated.witnesses[1].resident_character_id.to_string();
         let mut env = InvestigationEnvironment::from_generated(
             generated,
             EvalCaseConfig::fixture(19, TemplateFamily::RecurringDepredation).party,

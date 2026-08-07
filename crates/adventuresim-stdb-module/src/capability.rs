@@ -5,16 +5,17 @@ use spacetimedb::{ReducerContext, Table, reducer, table};
 use crate::character::{character_equipped_item as _, equipment_occupancy as _};
 use crate::condition::{character_condition as _, character_needs as _};
 use crate::food::food_lot as _;
+use crate::inventory_container::{container_liquid as _, inventory_object as _};
 use crate::item::item as _;
 use crate::repair::item_condition as _;
 use crate::{
     CharacterAttributes, CharacterLimbs, CharacterSkills, CharacterStats, InventoryItem, Item,
     ItemKind, character_attributes, character_limbs, character_skills, character_stats,
-    inventory_item,
+    character_strategic_condition, inventory_item,
 };
 
 #[derive(Clone, Debug, PartialEq)]
-#[table(accessor = character_capability, public)]
+#[table(accessor = character_capability)]
 pub struct CharacterCapability {
     #[primary_key]
     pub character_id: u64,
@@ -39,6 +40,8 @@ pub struct CharacterCapability {
     pub religion: f32,
     #[default(0.0)]
     pub weapon_precision: f32,
+    #[default(0u64)]
+    pub autoresolve_combat_power: u64,
 }
 
 impl From<(u64, CharacterCapabilities)> for CharacterCapability {
@@ -66,6 +69,7 @@ impl From<(u64, CharacterCapabilities)> for CharacterCapability {
             command: value.command,
             religion: value.religion,
             weapon_precision: value.weapon_precision,
+            autoresolve_combat_power: 0,
         }
     }
 }
@@ -114,7 +118,21 @@ pub fn refresh_character_capability(
     character_id: u64,
 ) -> Result<CharacterCapabilities, String> {
     let capabilities = evaluate_character(ctx, character_id)?;
-    let row = CharacterCapability::from((character_id, capabilities));
+    let mut row = CharacterCapability::from((character_id, capabilities));
+    let condition = ctx
+        .db
+        .character_strategic_condition()
+        .character_id()
+        .find(character_id);
+    let combatant = load_combatant(
+        ctx,
+        character_id,
+        condition.as_ref().map_or(0.0, |row| row.incapacitation),
+        condition.as_ref().map_or(0.0, |row| row.pain),
+        condition.as_ref().map_or(0.0, |row| row.blood_loss),
+    )?;
+    row.autoresolve_combat_power =
+        adventuresim_core::autoresolve::autoresolve_combat_power(&combatant);
     if let Some(existing) = ctx
         .db
         .character_capability()
@@ -375,6 +393,9 @@ impl StrategicEquipment {
             .character_id()
             .filter(character_id)
             .filter(|inventory| inventory.item_id == "arrow")
+            .filter(|inventory| {
+                !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", inventory.id)
+            })
             .map(|inventory| inventory.quantity)
             .sum();
         let mut armor = [adventuresim_core::equipment::LayeredArmor::default(); 7];
@@ -456,6 +477,13 @@ impl StrategicEquipment {
             .character_id()
             .filter(character_id)
             .filter_map(|inventory: InventoryItem| {
+                if crate::inventory_container::row_is_fireplace_rooted(
+                    ctx,
+                    "personal",
+                    inventory.id,
+                ) {
+                    return None;
+                }
                 if let Some(lot) = ctx
                     .db
                     .food_lot()
@@ -482,6 +510,23 @@ impl StrategicEquipment {
             .character_id()
             .find(character_id)
             .map_or(0.0, |needs| carried_water_weight_kg(needs.carried_water_ml));
+        let contained_water_weight: f32 = ctx
+            .db
+            .inventory_object()
+            .iter()
+            .filter(|object| {
+                object.location_kind == "personal"
+                    && object.location_owner == character_id.to_string()
+                    && !crate::inventory_container::ancestry_reaches_fireplace(ctx, object.id)
+            })
+            .filter_map(|object| {
+                ctx.db
+                    .container_liquid()
+                    .container_object_id()
+                    .find(object.id)
+            })
+            .map(|liquid| liquid.water_ml as f32 / 1_000.0)
+            .sum();
         Self {
             hands,
             weapon,
@@ -505,7 +550,7 @@ impl StrategicEquipment {
                 weatherproofing_bps: (weatherproofing_total / 7).min(10_000) as u16,
                 peripheral_protection_bps,
             },
-            inventory_weight: dry_inventory_weight + carried_water_weight,
+            inventory_weight: dry_inventory_weight + carried_water_weight + contained_water_weight,
         }
     }
 
@@ -747,6 +792,14 @@ pub(crate) fn load_combatant(
     let combat_equipment = equipment.combat_equipment();
     let initial_ammunition = combat_equipment.ammunition;
 
+    let (starting_incapacitation, starting_blood_fraction) = derive_combat_starting_condition(
+        strategic_incapacitation,
+        strategic_pain,
+        strategic_blood_loss,
+        condition.current_blood_ml,
+        condition.maximum_blood_ml,
+    );
+
     Ok(Combatant {
         id: character_id,
         attributes: CombatAttributes {
@@ -810,13 +863,8 @@ pub(crate) fn load_combatant(
             tailoring_hours: skills.tailoring_hours,
             smithing_hours: skills.smithing_hours,
         },
-        starting_incapacitation: (strategic_incapacitation - strategic_pain - strategic_blood_loss)
-            .max(0.0),
-        starting_blood_fraction: if condition.maximum_blood_ml > 0.0 {
-            (condition.current_blood_ml / condition.maximum_blood_ml).clamp(0.0, 1.0)
-        } else {
-            1.0
-        },
+        starting_incapacitation,
+        starting_blood_fraction,
         initial_ammunition,
         ..Combatant::new(character_id)
     })

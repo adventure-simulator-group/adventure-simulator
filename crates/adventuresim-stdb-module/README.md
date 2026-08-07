@@ -17,6 +17,10 @@ the headless tactical server.
 See the repository [architecture reference](../../wiki/reference/architecture.md)
 for the complete boundary.
 
+The current factoring, domain-typing, invalid-state, macro, and testing audit is
+recorded in the
+[strategic server code-quality review](../../wiki/reference/strategic-server-code-quality.md).
+
 ## Content and authority
 
 Generated cases retain private catalog revision, deterministic context,
@@ -33,10 +37,13 @@ player-identity-to-character ownership model.
 
 ## Tactical completion
 
-Mission requests bind a party, scene, one-use tactical-server claim, and private
-strategic mission authority. The registered tactical child keeps live
+Mission requests bind a party, its expected living member count, a scene, a
+one-use tactical-server claim, and private strategic mission authority. The
+registered tactical child keeps live
 simulation state in memory and calls `end_tactical_server` with its terminal
-resolution.
+resolution and a bounded Party-only consequence receipt. The reducer validates
+membership, enrollment, inventory custody, uniqueness, numeric ranges, and
+record caps before applying any durable consequences transactionally.
 
 The module then validates that server and mission, selects only a compatible
 private strategic outcome, and commits durable consequences idempotently.

@@ -20,8 +20,12 @@ inn is the discovery funnel; a settlement without an available inn uses overview
 
 ## People and locations
 
-Every seeded or imported settlement has persistent local NPC identities in addition to
-its service providers. The overview/public area and service locations contain multiple
+Every seeded or imported settlement has persistent local people in addition to
+its service providers. Each is a full `Character` identified by the same
+authoritative `u64` character ID used by parties, relationships, morale, estate,
+and personal time. `SettlementResidentProfile` adds only local appearance,
+vocation, service, and dialogue metadata under that ID; it is not a second NPC
+identity. The overview/public area and service locations contain multiple
 people; towns and larger settlements also populate a keep. A horizontal, keyboard-
 navigable circular portrait strip selects whom the active character addresses. It is
 attached just above the resizable chat panel, opposite the party portrait strip, and
@@ -45,12 +49,14 @@ with the selected quest's dry log; toggling it again or pressing Escape restores
 location rails.
 
 Public squares, residential areas, and, for towns and larger settlements, the keep appear
-as selectable building tabs alongside services in the settlement header. Until bespoke
-building art is available, non-service tabs reuse neutral building art and house/castle
-icons. These places use the same authoritative portrait, description, and chat surface;
+as selectable building tabs alongside services in the settlement header. Standalone
+organization chapters choose an existing facade by authored building kind and use their
+stable heraldic charge, while public places retain their house/castle vocabulary. These
+places use the same authoritative portrait, description, and chat surface;
 villages and hamlets cannot enter a keep that their population does not have.
 
-NPC presences and daily time windows are strategic database state, not tactical
+Resident presences and daily time windows are keyed by that character ID and
+are strategic database state, not tactical
 positions or tick state. The player view exposes physical presentation, occupation,
 household, observable presentation, and public local role, but never private
 sex, personality, motives, beliefs, quest truth,
@@ -180,20 +186,22 @@ the full skill rail separately shows injury-adjusted current performance.
 Recruitment recommendation matching continues to use the existing capability
 projection; the icon summary is presentation only.
 
-Portrait social affordances open the normal social popup for party members and
-present settlement NPCs. The selected person's morale/relationship area opens
-the same popup. Its ordinary **Chat** activity has a 30-minute default and a
-15-minute duration slider up to eight hours. Quest-specific confrontation
-approaches are not duplicated there: they appear only while the corresponding
-quest dialogue is active. The fallible Insight impression happens passively
-when the witness's quest testimony is heard.
+Party portraits retain their normal social surface. Selecting a present
+settlement NPC instead opens that person's dialogue; icon topics in the
+transcript reveal spoken responses for ordinary conversation and, when legal,
+courtship or wedding proposals. Qualitative morale, affinity, and familiarity
+appear as icon meters beside the selected person. Quest-specific confrontation
+approaches appear only while the corresponding quest dialogue is active. The
+fallible Insight impression happens passively when the witness's quest
+testimony is heard.
 
 A living active character with Physiology 2 or better sees the selected
 character's Physiology surface as a passive, durable notebook derived from
 actual shared-presence spans. It shows quantized Humour readings, recognizable
 symptoms, known interventions, localization appropriate to historical skill,
-and explicit gaps, but never diagnoses or recommends. The active character's
-Cooking skill icon continues to open cooking.
+and explicit gaps, but never diagnoses or recommends. Cooking remains an
+informational skill row; actual cooking begins from the Fireplace counterparty
+shown at settlement buildings and journey camps.
 
 Herbalists sell concrete prepared interventions into personal inventory.
 The active character self-administers a preparation from personal inventory by
@@ -254,3 +262,8 @@ default operator and visitor, and do not add another Place Facade. If the
 mapped service is unavailable the chapter safely retains its standalone
 building. Physician and surgeon chapters, and organizations without a service,
 remain standalone. Organization-aware dialogue stays with the representative.
+Every rendered Place Facade exposes its exact building identity. Character and
+party inspection links preserve that identity only while it belongs to the
+current settlement's rendered set, including authored standalone organization
+chapters; unavailable services, non-standalone chapters, foreign chapter IDs,
+and unknown identities are discarded by both page state and redirects.

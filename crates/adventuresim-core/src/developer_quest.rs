@@ -573,9 +573,9 @@ fn validate_references(
     ids: &DeclaredIdSets,
     diagnostics: &mut Vec<DeveloperQuestDiagnostic>,
 ) {
-    let npc_ids = witness_candidates
+    let resident_character_ids = witness_candidates
         .iter()
-        .map(|candidate| candidate.npc_id.clone())
+        .map(|candidate| candidate.resident_character_id.to_string())
         .collect::<BTreeSet<_>>();
     for (index, area) in definition.areas.iter().enumerate() {
         for (site_index, site_id) in area.contains_site_ids.iter().enumerate() {
@@ -732,7 +732,7 @@ fn validate_references(
                 diagnostics,
                 format!("{base}.target_id"),
                 &action.target_id,
-                &npc_ids,
+                &resident_character_ids,
                 "NPC",
             ),
             "cohort" => missing_reference(
@@ -842,7 +842,8 @@ fn validate_references(
                 ObjectiveRequirement::Defeat {
                     hostile_group_id, ..
                 }
-                | ObjectiveRequirement::DriveOff { hostile_group_id } => missing_reference(
+                | ObjectiveRequirement::DriveOff { hostile_group_id }
+                | ObjectiveRequirement::Surrender { hostile_group_id } => missing_reference(
                     diagnostics,
                     format!("{base}.hostile_group_id"),
                     hostile_group_id,
@@ -961,11 +962,12 @@ fn validate_references(
             &ids.objectives,
             "objective",
         );
+        let recipient_character_id = producer.recipient_resident_character_id.to_string();
         missing_reference(
             diagnostics,
-            format!("dialogue_producers.{index}.recipient_npc_id"),
-            &producer.recipient_npc_id,
-            &npc_ids,
+            format!("dialogue_producers.{index}.recipient_resident_character_id"),
+            &recipient_character_id,
+            &resident_character_ids,
             "NPC",
         );
         if let Some(subject_ref) = &producer.subject_ref {
@@ -1124,6 +1126,29 @@ fn validate_custody(
                 format!("Objective custody object {object_id} has no authored starting site"),
                 DiagnosticTier::Structural,
             ));
+        }
+    }
+}
+
+fn reject_unsupported_challenge_objectives(
+    definition: &DeveloperQuestDefinition,
+    diagnostics: &mut Vec<DeveloperQuestDiagnostic>,
+) {
+    for (path_index, path) in definition.objectives.alternatives.iter().enumerate() {
+        for (objective_index, objective) in path.objectives.iter().enumerate() {
+            if matches!(
+                &objective.requirement,
+                ObjectiveRequirement::SolveChallenge { .. }
+            ) {
+                diagnostics.push(diagnostic(
+                    format!(
+                        "objectives.alternatives.{path_index}.objectives.{objective_index}.requirement"
+                    ),
+                    "unsupported_challenge_objective",
+                    "Investigation developer quests cannot author challenge objectives until challenge declarations and materialization are supported",
+                    DiagnosticTier::Structural,
+                ));
+            }
         }
     }
 }
@@ -1305,7 +1330,8 @@ fn namespace_definition(
                 ObjectiveRequirement::Defeat {
                     hostile_group_id, ..
                 }
-                | ObjectiveRequirement::DriveOff { hostile_group_id } => {
+                | ObjectiveRequirement::DriveOff { hostile_group_id }
+                | ObjectiveRequirement::Surrender { hostile_group_id } => {
                     remap(hostile_group_id, &replacements);
                 }
                 ObjectiveRequirement::Capture { subject_id }
@@ -1362,6 +1388,9 @@ fn namespace_definition(
                 ObjectiveRequirement::RemediateSource { remediation_id } => {
                     remap(remediation_id, &replacements);
                 }
+                // Rejected structurally before materialization: developer
+                // investigation definitions cannot declare challenge authority.
+                ObjectiveRequirement::SolveChallenge { .. } => {}
                 ObjectiveRequirement::PresentProof { evidence_id, .. } => {
                     remap(evidence_id, &replacements);
                 }
@@ -1437,6 +1466,7 @@ pub fn compile(
     );
     validate_recursive_bounds(definition, &mut diagnostics);
     validate_custody(definition, &mut diagnostics);
+    reject_unsupported_challenge_objectives(definition, &mut diagnostics);
     let supplied_bridges: BTreeSet<_> = definition
         .bridges
         .iter()
@@ -1558,7 +1588,7 @@ pub fn compile(
         .base
         .witness_candidates
         .iter()
-        .map(|candidate| (candidate.npc_id.as_str(), candidate))
+        .map(|candidate| (candidate.resident_character_id, candidate))
         .collect();
     for (index, witness) in definition.witnesses.iter().enumerate() {
         check_relation(
@@ -1585,9 +1615,9 @@ pub fn compile(
                 },
             );
         }
-        let Some(candidate) = candidates.get(witness.npc_id.as_str()) else {
+        let Some(candidate) = candidates.get(&witness.resident_character_id) else {
             diagnostics.push(diagnostic(
-                format!("witnesses.{index}.npc_id"),
+                format!("witnesses.{index}.resident_character_id"),
                 "missing_navigable_witness",
                 "Witness is not a current, persistent, navigable NPC in this settlement",
                 DiagnosticTier::Structural,
@@ -1620,11 +1650,12 @@ pub fn compile(
         }
     }
     for (index, target) in definition.pattern_targets.iter().enumerate() {
-        let matches_current = candidates
-            .get(target.npc_id.as_str())
-            .is_some_and(|candidate| {
-                qg::pattern_target_matches(target, candidate, &context.base.settlement_id)
-            });
+        let matches_current =
+            candidates
+                .get(&target.resident_character_id)
+                .is_some_and(|candidate| {
+                    qg::pattern_target_matches(target, candidate, &context.base.settlement_id)
+                });
         if !matches_current {
             diagnostics.push(diagnostic(
                 format!("pattern_targets.{index}"),
@@ -1804,10 +1835,10 @@ pub fn schema_json(witness_candidates: &[qg::WitnessCandidate]) -> Value {
             "sites": options(catalog.sites().map(|x| (x.id.clone(), x.label.clone())).collect()),
             "evidence": options(catalog.evidence_definitions().map(|x| (x.id.clone(), x.portrait_label.clone())).collect()),
             "witnesses": witness_candidates.iter().map(|candidate| json!({
-                "value": candidate.npc_id,
+                "value": candidate.resident_character_id,
                 "label": format!("{} — {}", candidate.display_name, candidate.expected_location_label),
                 "binding": {
-                    "npc_id": candidate.npc_id,
+                    "resident_character_id": candidate.resident_character_id,
                     "display_name": candidate.display_name,
                     "demographic": candidate.demographic,
                     "age_band": candidate.age_band,
@@ -2097,16 +2128,36 @@ mod tests {
     }
 
     #[test]
+    fn challenge_objectives_are_rejected_until_the_editor_can_materialize_them() {
+        let mut definition = generated_definition();
+        definition.objectives.alternatives[0].objectives[0].requirement =
+            ObjectiveRequirement::SolveChallenge {
+                challenge_id: "challenge:not-declared".into(),
+            };
+        let diagnostics = compile(&DeveloperGenerationContext {
+            base: context(),
+            definition,
+            allow_implausible: true,
+        })
+        .unwrap_err();
+        assert!(diagnostics.iter().any(|item| {
+            item.code == "unsupported_challenge_objective"
+                && item.path == "objectives.alternatives.0.objectives.0.requirement"
+                && item.tier == DiagnosticTier::Structural
+        }));
+    }
+
+    #[test]
     fn switching_to_another_schema_candidate_compiles_with_atomic_binding() {
         let mut definition = generated_definition();
-        let current_npc = definition.witnesses[0].npc_id.clone();
+        let current_npc = definition.witnesses[0].resident_character_id.clone();
         let replacement = context()
             .witness_candidates
             .into_iter()
-            .find(|candidate| candidate.npc_id != current_npc)
+            .find(|candidate| candidate.resident_character_id != current_npc)
             .unwrap();
         let witness = &mut definition.witnesses[0];
-        witness.npc_id = replacement.npc_id.clone();
+        witness.resident_character_id = replacement.resident_character_id.clone();
         witness.display_name = replacement.display_name.clone();
         witness.demographic = replacement.demographic;
         witness.expected_location = replacement.expected_location.clone();
@@ -2114,13 +2165,14 @@ mod tests {
         witness.visible_description = replacement.visible_description.clone();
         witness.circumstance = *replacement.allowed_circumstances.iter().next().unwrap();
         for action in &mut definition.actions {
-            if action.target_kind == "contact" && action.target_id == current_npc {
-                action.target_id = replacement.npc_id.clone();
+            if action.target_kind == "contact" && action.target_id == current_npc.to_string() {
+                action.target_id = replacement.resident_character_id.to_string();
             }
         }
         for producer in &mut definition.dialogue_producers {
-            if producer.recipient_npc_id == current_npc {
-                producer.recipient_npc_id = replacement.npc_id.clone();
+            if producer.recipient_resident_character_id == current_npc {
+                producer.recipient_resident_character_id =
+                    replacement.resident_character_id.clone();
             }
         }
         let generated = compile(&DeveloperGenerationContext {
@@ -2129,7 +2181,10 @@ mod tests {
             allow_implausible: true,
         })
         .unwrap();
-        assert_eq!(generated.witnesses[0].npc_id, replacement.npc_id);
+        assert_eq!(
+            generated.witnesses[0].resident_character_id,
+            replacement.resident_character_id
+        );
         assert_eq!(
             generated.witnesses[0].expected_location,
             replacement.expected_location

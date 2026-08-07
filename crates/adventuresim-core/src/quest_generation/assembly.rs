@@ -82,7 +82,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             context.seed.rotate_left(41),
             &format!(
                 "victim-target:{}",
-                context.witness_candidates[*index].npc_id
+                context.witness_candidates[*index].resident_character_id
             ),
         )
     });
@@ -99,7 +99,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             .expect("victim pattern hard-zeroed without a target")];
         GeneratedPatternTarget {
             cohort_id: scoped_id(&prefix, "cohort", "victim-profile"),
-            npc_id: candidate.npc_id.clone(),
+            resident_character_id: candidate.resident_character_id.clone(),
             demographic: candidate.demographic,
             age_band: candidate.age_band.clone(),
             sex: candidate.sex.clone(),
@@ -124,8 +124,8 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let decoy_site = SiteId::new(scoped_id(&prefix, "site", "decoy"));
     let witness1 = WitnessId::new(scoped_id(&prefix, "witness", "primary"));
     let witness2 = WitnessId::new(scoped_id(&prefix, "witness", "corroborating"));
-    let npc1 = primary.npc_id.clone();
-    let npc2 = secondary.npc_id.clone();
+    let npc1 = primary.resident_character_id.clone();
+    let npc2 = secondary.resident_character_id.clone();
     let presented_site_kind = if reliability == Reliability::Truthful {
         site
     } else {
@@ -140,12 +140,12 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     label(presented_site_kind)
                 );
                 (
-                    format!("It looked like {claim}."),
+                    format!("Methought it looked like {claim}."),
                     claim,
                     TestimonyChallengeResponses {
-                        charm: Some("Your eye was keen. What made the shape seem so?".into()),
-                        command: Some("Name what you truly saw, without embellishment.".into()),
-                        bluff: Some("That shape was seen elsewhere; amend your account.".into()),
+                        charm: Some("A keen eye marked it. What made the shape seem so?".into()),
+                        command: Some("Name what was truly seen, without embellishment.".into()),
+                        bluff: Some("That shape was seen elsewhere; amend the account.".into()),
                     },
                 )
             }
@@ -155,9 +155,9 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     format!("I only heard {claim}; I never saw it clearly."),
                     claim,
                     TestimonyChallengeResponses {
-                        charm: Some("Describe the sound as carefully as you can.".into()),
+                        charm: Some("Describe the sound with all possible care.".into()),
                         command: Some(
-                            "Tell me exactly what you heard and from which direction.".into(),
+                            "Tell me exactly what was heard, and from what quarter.".into(),
                         ),
                         bluff: Some(
                             "Others heard a different sound there; account for that.".into(),
@@ -174,19 +174,19 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     format!("{claim}."),
                     claim,
                     TestimonyChallengeResponses {
-                        charm: Some("Help me follow how those signs led you that way.".into()),
+                        charm: Some("Help me follow how those signs led thither.".into()),
                         command: Some(
-                            "Separate the tracks you saw from the course you inferred.".into(),
+                            "Part the tracks observed from the course inferred.".into(),
                         ),
                         bluff: Some(
-                            "That trail turns elsewhere on my map; explain your route.".into(),
+                            "That trail turneth elsewhere upon my map; explain the route.".into(),
                         ),
                     },
                 )
             }
         };
     let true_statement = format!(
-        "I saw signs pointing toward {}, but I could not identify the culprit.",
+        "I saw signs pointing toward {}, yet could not name the culprit.",
         label(site)
     );
     let description_prop = scoped_id(&prefix, "proposition", "description");
@@ -195,28 +195,28 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let private_pattern_prop = scoped_id(&prefix, "proposition", "private-pattern-detail");
     let pattern_evidence_id = EvidenceId::new(scoped_id(&prefix, "evidence", "attack-pattern"));
     let pattern_truth = match attack_pattern {
-        AttackPattern::Nightly => "The incidents cluster after nightfall.".to_owned(),
+        AttackPattern::Nightly => "The incidents gather after nightfall.".to_owned(),
         AttackPattern::Roadside => {
-            "The incidents cluster along the road used by passing traffic.".to_owned()
+            "The incidents gather along the road used by passing traffic.".to_owned()
         }
         AttackPattern::VictimSpecific => {
             let target = pattern_target
                 .as_ref()
                 .expect("victim-specific pattern has a bound cohort");
             format!(
-                "The incidents disproportionately affect people connected with the {} trade near {}.",
+                "The incidents fall chiefly upon folk of the {} trade near {}.",
                 target.profession, target.expected_location_label
             )
         }
         AttackPattern::Irregular => {
-            "The incidents have no reliable time, place, or victim schedule.".to_owned()
+            "The incidents keep no certain time, place, nor order of victims.".to_owned()
         }
     };
     // Every primary witness volunteers this reliability-neutral account. The
     // optional exact detail is a separate private concern, so its existence
     // cannot change any part of the initial dialogue projection.
     let uncorroborated_pattern_claim =
-        "There may be a pattern, but I cannot tell which details matter.".to_owned();
+        "There may be a pattern, yet I cannot tell which details matter.".to_owned();
     let has_private_pattern_detail = hash(
         context.observer_entropy_hi ^ context.observer_entropy_lo.rotate_left(17),
         "testimony-concern:private-pattern-detail",
@@ -295,9 +295,9 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             spoken_text: uncorroborated_pattern_claim,
             challenge_text: "I cannot tell which details matter".into(),
             challenge_responses: TestimonyChallengeResponses {
-                charm: Some("Take your time—which detail first suggested a pattern?".into()),
-                command: Some("Separate what you observed from what you merely suppose.".into()),
-                bluff: Some("I know which detail matters; tell me what you withheld.".into()),
+                charm: Some("Take time—which detail first bespoke a pattern?".into()),
+                command: Some("Part what was observed from what was merely supposed.".into()),
+                bluff: Some("I know which detail mattereth; name what was withheld.".into()),
             },
             destination_stage: "textual".into(),
             site_id: None,
@@ -312,14 +312,14 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                 "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}."
             ),
             spoken_text: format!(
-                "I noticed {primary_evidence_reference} worth inspecting at {evidence_site_label}. You may examine it yourself."
+                "I marked {primary_evidence_reference} worth inspecting at {evidence_site_label}. It may be examined firsthand."
             ),
             challenge_text: format!(
                 "{primary_evidence_reference} worth inspecting at {evidence_site_label}"
             ),
             challenge_responses: TestimonyChallengeResponses {
-                charm: Some("Show me how you came upon that clue.".into()),
-                command: Some("State exactly where and when you found it.".into()),
+                charm: Some("Show me how that clue came to light.".into()),
+                command: Some("State exactly where and when it was found.".into()),
                 bluff: Some("The site was searched already; tell me what I will find.".into()),
             },
             destination_stage: "exact_believed".into(),
@@ -337,7 +337,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             spoken_text: format!("What I held back is this: {pattern_truth}"),
             challenge_text: pattern_truth.trim_end_matches('.').into(),
             challenge_responses: TestimonyChallengeResponses {
-                charm: Some("Thank you for saying it. What else attends that detail?".into()),
+                charm: Some("My thanks for saying it. What else attendeth that detail?".into()),
                 command: Some("Give the whole account now.".into()),
                 bluff: Some("That confirms what I heard elsewhere; continue.".into()),
             },
@@ -378,7 +378,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let witnesses = vec![
         WitnessBinding {
             id: witness1.clone(),
-            npc_id: npc1,
+            resident_character_id: npc1,
             display_name: primary.display_name.clone(),
             demographic,
             circumstance,
@@ -390,7 +390,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         },
         WitnessBinding {
             id: witness2.clone(),
-            npc_id: npc2,
+            resident_character_id: npc2,
             display_name: secondary.display_name.clone(),
             demographic: secondary.demographic,
             circumstance: secondary_circumstance,
@@ -489,7 +489,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         family,
         &finale_site,
         &area_id,
-        &primary.npc_id,
+        primary.resident_character_id,
         route_variant,
         attack_pattern,
         pattern_target.as_ref(),
@@ -500,11 +500,11 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         .witness_candidates
         .get(2)
         .unwrap_or(secondary)
-        .npc_id
+        .resident_character_id
         .clone();
     let (objectives, finales, custody, dialogue_producers) = match family {
-        TemplateFamily::RecurringDepredation => (
-            ObjectiveExpression::new(vec![
+        TemplateFamily::RecurringDepredation => {
+            let mut paths = vec![
                 ObjectivePath {
                     objectives: vec![Objective {
                         id: ObjectiveId::new(scoped_id(&prefix, "objective", "defeat")).unwrap(),
@@ -522,8 +522,19 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                         },
                     }],
                 },
-            ])
-            .expect("generated objective"),
+            ];
+            if matches!(cause, CanonicalCause::Hostile(threat) if crate::strategic_action::hostile_surrender_is_authored(threat)) {
+                paths.push(ObjectivePath {
+                    objectives: vec![Objective {
+                        id: ObjectiveId::new(scoped_id(&prefix, "objective", "surrender")).unwrap(),
+                        requirement: ObjectiveRequirement::Surrender {
+                            hostile_group_id: hostile_id.clone(),
+                        },
+                    }],
+                });
+            }
+            (
+            ObjectiveExpression::new(paths).expect("generated objective"),
             vec![
                 GeneratedFinale {
                     id: FinaleId::new(scoped_id(&prefix, "finale", "defeat")),
@@ -546,7 +557,8 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             ],
             vec![],
             vec![],
-        ),
+        )
+        },
         TemplateFamily::DisappearanceOrLoss => match cause {
             CanonicalCause::Hostile(_) | CanonicalCause::ConcealmentByWitness => {
                 let objective_id =
@@ -621,7 +633,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                                 id: return_id.clone(),
                                 requirement: ObjectiveRequirement::Return {
                                     asset_id: asset.clone(),
-                                    custodian_id: issuer.clone(),
+                                    custodian_id: issuer.to_string(),
                                 },
                             },
                         ],
@@ -640,7 +652,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     vec![GeneratedDialogueProducer {
                         action: GeneratedDialogueAction::ReturnAsset,
                         objective_id: return_id,
-                        recipient_npc_id: issuer.clone(),
+                        recipient_resident_character_id: issuer.clone(),
                         subject_ref: None,
                         asset_id: Some(asset.as_str().into()),
                     }],
@@ -672,7 +684,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     vec![GeneratedDialogueProducer {
                         action: GeneratedDialogueAction::Expose,
                         objective_id,
-                        recipient_npc_id: issuer.clone(),
+                        recipient_resident_character_id: issuer.clone(),
                         subject_ref: Some(description_prop.clone()),
                         asset_id: None,
                     }],
@@ -864,15 +876,30 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
     }
     let prefix = observer_scope(context);
     let disease = [
+        DiseaseId::Dysentery,
         DiseaseId::Influenza,
         DiseaseId::Mahrdruck,
         DiseaseId::ShroudFever,
         DiseaseId::Bilwisschuss,
         DiseaseId::Kobeldunst,
-    ][context.seed as usize % 5];
+    ][context.seed as usize % 6];
     let transmission_route = crate::disease::definition(disease).primary_community_vector;
     let carrier = ThreatId::Alp;
     let (site_kind, source, remediation, responsible_npc, carrier_threat) = match disease {
+        DiseaseId::Dysentery => (
+            SiteKind::Well,
+            OutbreakSource::Sanitation {
+                practice: OutbreakSanitationPractice::ContaminatedWell,
+            },
+            OutbreakRemediation::Sanitation {
+                action: OutbreakSanitationAction::CloseWell,
+            },
+            Some(ResponsibleOutbreakNpc {
+                resident_character_id: context.witness_candidates[1].resident_character_id.clone(),
+                culpability: OutbreakCulpability::Negligent,
+            }),
+            None,
+        ),
         DiseaseId::Influenza if (context.seed / 5) % 2 == 0 => (
             SiteKind::OccupiedHouse,
             OutbreakSource::Sanitation {
@@ -882,7 +909,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                 action: OutbreakSanitationAction::LaunderBedding,
             },
             Some(ResponsibleOutbreakNpc {
-                npc_id: context.witness_candidates[1].npc_id.clone(),
+                resident_character_id: context.witness_candidates[1].resident_character_id.clone(),
                 culpability: OutbreakCulpability::Negligent,
             }),
             None,
@@ -896,7 +923,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                 action: OutbreakBehaviorAction::SeparateSleepers,
             },
             Some(ResponsibleOutbreakNpc {
-                npc_id: context.witness_candidates[1].npc_id.clone(),
+                resident_character_id: context.witness_candidates[1].resident_character_id.clone(),
                 culpability: OutbreakCulpability::Innocent,
             }),
             None,
@@ -949,6 +976,13 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
         ),
         _ => unreachable!("bounded outbreak disease catalog"),
     };
+    let has_collectible_water_source = disease == DiseaseId::Dysentery
+        && matches!(
+            source,
+            OutbreakSource::Sanitation {
+                practice: OutbreakSanitationPractice::ContaminatedWell
+            }
+        );
     debug_assert!(crate::disease::definition(disease).supports(transmission_route));
 
     let canonical_case_id = format!(
@@ -976,39 +1010,39 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                      corroborating: bool|
      -> TestimonyDraft {
         TestimonyDraft {
-        proposition_id: proposition_id.into(),
-        reliability: Reliability::Truthful,
-        delivery: TestimonyDelivery::Volunteered,
-        truthful_text: format!("{common_claim}."),
-        spoken_text: format!("{common_claim}."),
-        challenge_text: common_claim.into(),
-        challenge_responses: TestimonyChallengeResponses {
-            charm: Some(if corroborating {
-                "Tell me which visit you remember most clearly.".into()
-            } else {
-                "Help me set the order of those illnesses carefully.".into()
-            }),
-            command: Some(if corroborating {
-                "Give the visits in order, omitting no household.".into()
-            } else {
-                "Name each household and the day its sickness began.".into()
-            }),
-            bluff: Some(if corroborating {
-                "The household marks disagree with your order; account for it.".into()
-            } else {
-                "Another account puts the first fever elsewhere; explain that.".into()
-            }),
-        },
-        destination_stage: "textual".into(),
-        site_id: None,
-        corrects_proposition_id: None,
-        referred_witness_ids,
+            proposition_id: proposition_id.into(),
+            reliability: Reliability::Truthful,
+            delivery: TestimonyDelivery::Volunteered,
+            truthful_text: format!("{common_claim}."),
+            spoken_text: format!("{common_claim}."),
+            challenge_text: common_claim.into(),
+            challenge_responses: TestimonyChallengeResponses {
+                charm: Some(if corroborating {
+                    "Tell me which visit is remembered most clearly.".into()
+                } else {
+                    "Help me set the order of those illnesses carefully.".into()
+                }),
+                command: Some(if corroborating {
+                    "Give the visits in order, omitting no household.".into()
+                } else {
+                    "Name each household and the day its sickness began.".into()
+                }),
+                bluff: Some(if corroborating {
+                    "The household marks gainsay that order; account for it.".into()
+                } else {
+                    "Another account puts the first fever elsewhere; explain that.".into()
+                }),
+            },
+            destination_stage: "textual".into(),
+            site_id: None,
+            corrects_proposition_id: None,
+            referred_witness_ids,
         }
     };
     let witnesses = vec![
         WitnessBinding {
             id: witness1.clone(),
-            npc_id: primary.npc_id.clone(),
+            resident_character_id: primary.resident_character_id.clone(),
             display_name: primary.display_name.clone(),
             demographic: primary.demographic,
             circumstance: primary
@@ -1029,7 +1063,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
         },
         WitnessBinding {
             id: witness2,
-            npc_id: secondary.npc_id.clone(),
+            resident_character_id: secondary.resident_character_id.clone(),
             display_name: secondary.display_name.clone(),
             demographic: secondary.demographic,
             circumstance: secondary
@@ -1065,7 +1099,8 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
             is_true_location: false,
         },
     ];
-    let evidence = vec![
+    let source_evidence_id = EvidenceId::new(scoped_id(&prefix, "evidence", "source-material"));
+    let mut evidence = vec![
         GeneratedEvidence {
             id: evidence_id.clone(),
             kind: EvidenceKind::LedgerEntry,
@@ -1096,6 +1131,21 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
             corrects_proposition_id: None,
         },
     ];
+    if has_collectible_water_source {
+        evidence.push(GeneratedEvidence {
+            id: source_evidence_id.clone(),
+            kind: EvidenceKind::LedgerEntry,
+            proposition_id: "outbreak:source-material".into(),
+            site_id: source_site.clone(),
+            portrait_label: "material traces at the suspected source".into(),
+            portrait_icon: "water-drop".into(),
+            base_description: "Direct inspection records a bounded sample provenance.".into(),
+            inspection_topics: Vec::new(),
+            safe_description: "The inspected material can be compared with testimony and symptoms."
+                .into(),
+            corrects_proposition_id: None,
+        });
+    }
     let exact = GeneratedActionOutput::Destination {
         stage: GeneratedDestinationStage::Exact,
         site_id: Some(source_site.clone()),
@@ -1124,7 +1174,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
             kind: InvestigationActionKind::LocateContact,
             route: RouteClass::SocialInquiry,
             target_kind: "contact".into(),
-            target_id: primary.npc_id.clone(),
+            target_id: secondary.resident_character_id.to_string(),
             prerequisite: None,
             alternate: physical_action,
             active_initially: true,
@@ -1146,44 +1196,53 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
         }
         .to_ascii_lowercase()
     );
-    let physical_remediation =
-        ActionId::new(scoped_id(&prefix, "action", "remediate-physical"));
+    let physical_remediation = ActionId::new(scoped_id(&prefix, "action", "remediate-physical"));
     let social_remediation = ActionId::new(scoped_id(&prefix, "action", "remediate-social"));
     if !matches!(
         &remediation,
         OutbreakRemediation::ResolveCarrierThreat { .. }
     ) {
         actions.extend([
-        GeneratedAction {
-            id: physical_remediation.clone(),
-            kind: InvestigationActionKind::InspectSite,
-            route: RouteClass::PhysicalTrail,
-            target_kind: "site".into(),
-            target_id: source_site.0.clone(),
-            prerequisite: Some(actions[0].id.clone()),
-            alternate: social_remediation.clone(),
-            active_initially: false,
-            safe_summary: "Apply the supported physical source intervention.".into(),
-            track_segment_id: None,
-            outputs: vec![GeneratedActionOutput::Remediation {
-                remediation_id: remediation_ref.clone(),
-            }],
-        },
-        GeneratedAction {
-            id: social_remediation,
-            kind: InvestigationActionKind::InspectSite,
-            route: RouteClass::SocialInquiry,
-            target_kind: "site".into(),
-            target_id: source_site.0.clone(),
-            prerequisite: Some(actions[1].id.clone()),
-            alternate: physical_remediation,
-            active_initially: false,
-            safe_summary: "Apply the supported physical source intervention.".into(),
-            track_segment_id: None,
-            outputs: vec![GeneratedActionOutput::Remediation {
-                remediation_id: remediation_ref.clone(),
-            }],
-        },
+            GeneratedAction {
+                id: physical_remediation.clone(),
+                kind: InvestigationActionKind::InspectSite,
+                route: RouteClass::PhysicalTrail,
+                target_kind: "site".into(),
+                target_id: source_site.0.clone(),
+                prerequisite: Some(actions[0].id.clone()),
+                alternate: social_remediation.clone(),
+                active_initially: false,
+                safe_summary: "Apply the supported physical source intervention.".into(),
+                track_segment_id: None,
+                outputs: if has_collectible_water_source {
+                    vec![
+                        GeneratedActionOutput::Evidence { evidence_id: source_evidence_id.clone() },
+                        GeneratedActionOutput::Remediation { remediation_id: remediation_ref.clone() },
+                    ]
+                } else {
+                    vec![GeneratedActionOutput::Remediation { remediation_id: remediation_ref.clone() }]
+                },
+            },
+            GeneratedAction {
+                id: social_remediation,
+                kind: InvestigationActionKind::InspectSite,
+                route: RouteClass::SocialInquiry,
+                target_kind: "site".into(),
+                target_id: source_site.0.clone(),
+                prerequisite: Some(actions[1].id.clone()),
+                alternate: physical_remediation,
+                active_initially: false,
+                safe_summary: "Apply the supported physical source intervention.".into(),
+                track_segment_id: None,
+                outputs: if has_collectible_water_source {
+                    vec![
+                        GeneratedActionOutput::Evidence { evidence_id: source_evidence_id },
+                        GeneratedActionOutput::Remediation { remediation_id: remediation_ref.clone() },
+                    ]
+                } else {
+                    vec![GeneratedActionOutput::Remediation { remediation_id: remediation_ref.clone() }]
+                },
+            },
         ]);
     }
     let objective = Objective {
@@ -1194,81 +1253,68 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
         },
     };
     let patient_ref = |name: &str| scoped_id(&prefix, "patient", name);
-    let patient_course = |name: &str, npc_id: &str, immunity_milli: u16, carrier_death: bool| {
-        let patient_ref = patient_ref(name);
-        let patient_key = hash(context.seed, &patient_ref);
-        let definition = crate::disease::definition(disease);
-        let course_duration = definition
-            .incubation_minutes
-            .saturating_add(definition.rise_minutes)
-            .saturating_add(definition.peak_minutes)
-            .saturating_add(definition.recovery_minutes);
-        let exposed_at = context.now_minute.saturating_sub(course_duration);
-        let episode_id = crate::disease::outbreak_exposure_seed(
-            patient_key,
-            &format!("{}:{patient_ref}", problem_id),
-        );
-        let episode = crate::disease::InfectionEpisode {
-            id: episode_id,
-            character_id: patient_key,
-            disease_id: disease,
-            contracted_at: exposed_at,
-            ruleset_version: crate::physiology::PHYSIOLOGY_RULESET_VERSION,
-            phenotype_key_version: crate::physiology::PHENOTYPE_KEY_VERSION,
-        };
-        let became_symptomatic_at = exposed_at.saturating_add(definition.incubation_minutes);
-        let immunity = f32::from(immunity_milli) / 1_000.0;
-        let terminal = crate::disease::first_combined_terminal(
-            &[episode],
-            exposed_at,
-            exposed_at
-                .saturating_add(definition.incubation_minutes)
+    let patient_course =
+        |name: &str, resident_character_id: u64, immunity_milli: u16, carrier_death: bool| {
+            let patient_ref = patient_ref(name);
+            let definition = crate::disease::definition(disease);
+            let course_duration = definition
+                .incubation_minutes
                 .saturating_add(definition.rise_minutes)
                 .saturating_add(definition.peak_minutes)
-                .saturating_add(definition.recovery_minutes),
-            immunity,
-        );
-        let (died_at, death_kind, terminal_failure) = if carrier_death {
-            let attack_at = context
-                .now_minute
-                .saturating_sub(1_440)
-                .max(became_symptomatic_at);
-            let attack_precedes_terminal =
-                terminal.is_none_or(|(terminal_at, _)| attack_at < terminal_at);
-            if attack_at <= context.now_minute && attack_precedes_terminal {
-                (
-                    Some(attack_at),
-                    Some(OutbreakPatientDeathKind::CarrierAttack),
-                    None,
-                )
+                .saturating_add(definition.recovery_minutes);
+            let exposed_at = context.now_minute.saturating_sub(course_duration);
+            let episode_id = crate::disease::outbreak_exposure_seed(
+                resident_character_id,
+                &format!("{}:{patient_ref}", problem_id),
+            );
+            let episode = crate::disease::InfectionEpisode {
+                id: episode_id,
+                character_id: resident_character_id,
+                disease_id: disease,
+                contracted_at: exposed_at,
+                ruleset_version: crate::physiology::PHYSIOLOGY_RULESET_VERSION,
+                phenotype_key_version: crate::physiology::PHENOTYPE_KEY_VERSION,
+            };
+            let became_symptomatic_at = exposed_at.saturating_add(definition.incubation_minutes);
+            let immunity = f32::from(immunity_milli) / 1_000.0;
+            let terminal = crate::disease::first_combined_terminal(
+                &[episode],
+                exposed_at,
+                exposed_at
+                    .saturating_add(definition.incubation_minutes)
+                    .saturating_add(definition.rise_minutes)
+                    .saturating_add(definition.peak_minutes)
+                    .saturating_add(definition.recovery_minutes),
+                immunity,
+            );
+            let (died_at, death_kind) = if carrier_death {
+                let attack_at = context
+                    .now_minute
+                    .saturating_sub(1_440)
+                    .max(became_symptomatic_at);
+                let attack_precedes_terminal =
+                    terminal.is_none_or(|(terminal_at, _)| attack_at < terminal_at);
+                if attack_at <= context.now_minute && attack_precedes_terminal {
+                    (Some(attack_at), Some(OutbreakPatientDeathKind::CarrierAttack))
+                } else {
+                    (None, None)
+                }
             } else {
-                (None, None, None)
+                let past_terminal =
+                    terminal.filter(|(terminal_at, _)| *terminal_at <= context.now_minute);
+                (past_terminal.map(|value| value.0), past_terminal.map(|_| OutbreakPatientDeathKind::Disease))
+            };
+            OutbreakExposure {
+                patient_ref,
+                patient_character_id: resident_character_id,
+                episode_id,
+                exposed_at,
+                became_symptomatic_at,
+                died_at,
+                death_kind,
             }
-        } else {
-            let past_terminal = terminal.filter(|(terminal_at, _)| *terminal_at <= context.now_minute);
-            (
-                past_terminal.map(|value| value.0),
-                past_terminal.map(|_| OutbreakPatientDeathKind::Disease),
-                past_terminal.map(|value| value.1),
-            )
         };
-        OutbreakExposure {
-            patient_ref,
-            presentation_npc_id: npc_id.into(),
-            family_npc_id: (name == "first").then(|| secondary.npc_id.clone()),
-            patient_key,
-            episode_id,
-            immunity_milli,
-            phenotype_key_version: crate::physiology::PHENOTYPE_KEY_VERSION,
-            exposed_at,
-            became_symptomatic_at,
-            died_at,
-            death_kind,
-            terminal_failure,
-        }
-    };
-    let first_patient_killed_by_carrier =
-        matches!(&source, OutbreakSource::ThreatVector { .. });
+    let first_patient_killed_by_carrier = matches!(&source, OutbreakSource::ThreatVector { .. });
     let outbreak = GeneratedOutbreak {
         disease,
         transmission_route,
@@ -1280,11 +1326,11 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
         exposure_chronology: vec![
             patient_course(
                 "first",
-                &primary.npc_id,
+                primary.resident_character_id,
                 0,
                 first_patient_killed_by_carrier,
             ),
-            patient_course("living", &secondary.npc_id, 5_000, false),
+            patient_course("living", secondary.resident_character_id, 5_000, false),
         ],
         remediation,
     };

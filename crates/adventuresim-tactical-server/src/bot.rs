@@ -1,43 +1,39 @@
+mod defense;
+mod offense;
+
+use adventuresim_core::item_references::ARROW_ID;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::FromClient,
-    message::{AttackStartedRequest, DefendRequest},
+    message::{DefendRequest, MeleeActionRequest},
 };
 use bevy::prelude::*;
+use std::cmp::Ordering;
 
-use crate::{MissionState, combat::PendingDefenderResponse};
-
-/// Chance that a bot notices an incoming attack in time to parry it.
-const PARRY_CHANCE: f64 = 0.4;
-/// Chance that a bot notices an incoming attack in time to dodge it.
-const DODGE_CHANCE: f64 = 0.4;
-/// Flanking values at or below this are considered "facing each other" (see
-/// [`flanking_from_dir`]), which is the only case a bot can react at all.
-const FRONTAL_FLANKING_MAX: f32 = 0.01;
-/// Range (in seconds) a bot's reaction to a noticed attack is delayed by,
-/// simulating varying skill/reflexes between bots. A bot that rolls a long
-/// delay may end up committing its reaction only after the attack has
-/// already been resolved, i.e. reacting too late to matter.
-const REACTION_DELAY_SECS: std::ops::Range<f32> = 0.05..0.6;
-/// Real-time grace period between a bot dying and its ECS despawn. See
-/// [`PendingRemoval`] for why this exists; it has nothing to do with the
-/// client's (much longer, purely cosmetic) fade-out duration.
-const DESPAWN_REPLICATION_GRACE_SECONDS: f32 = 0.3;
+use crate::{
+    combat::{
+        CombatDuration, CombatInstant, CombatSet, MeleeAttackIntent, MeleeAttackStartedIntent,
+        PendingDefenderResponse, RangedAttackIntent, RangedAttackStartedIntent, ReportedPrecision,
+        TacticalCombatSide, TacticalCombatantDefeated,
+    },
+    mission::MissionState,
+};
+use defense::{
+    CountedEnemyDefeat, on_attack_started, on_tactical_combatant_defeated,
+    on_targeted_attack_started, on_targeted_ranged_attack_started, tick_bot_reactions,
+};
+pub use offense::OffensiveCombatAi;
+use offense::{compare_target, drive_offensive_combat_ai, ranged_weapon_needs_ammo_lookup};
 
 /// Marks a server-controlled bot filling in for a temporary (non-connected)
 /// mission character.
 #[derive(Component)]
 pub struct MissionEnemy;
 
-#[derive(Component)]
-pub struct CountedEnemyDeath;
-
-/// Emitted by the tactical server's combat resolution when a combatant's
-/// `CombatState` crosses into `IncapacitationStatus::Incapacitated`. Only
-/// `MissionEnemy` entities are actually removed by its handler; incomplete
-/// missions still fail closed at timeout if nothing dies.
-#[derive(Event)]
-pub struct AuthoritativeEnemyDeath(pub Entity);
+/// Real-time grace period between a bot dying and its ECS despawn. See
+/// [`PendingRemoval`] for why this exists; it has nothing to do with the
+/// client's (much longer, purely cosmetic) fade-out duration.
+const DESPAWN_REPLICATION_GRACE_SECONDS: f32 = 0.3;
 
 /// Marks a dead bot for removal after [`DESPAWN_REPLICATION_GRACE_SECONDS`]
 /// of real time, rather than despawning it the instant it dies.
@@ -58,46 +54,24 @@ struct PendingRemoval {
     timer: Timer,
 }
 
-/// A bot's yet-to-commit reaction to a noticed attack. Ticks down for
-/// [`REACTION_DELAY_SECS`] before becoming a [`PendingDefenderResponse`],
-/// simulating the bot's reflexes.
-#[derive(Component)]
-struct PendingBotReaction {
-    timer: Timer,
-    choice: DefendRequest,
-}
-
 pub struct BotPlugin;
 
 impl Plugin for BotPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(on_authoritative_enemy_death)
+        app.add_observer(on_tactical_combatant_defeated)
             .add_observer(on_attack_started)
-            .add_systems(Update, (tick_bot_reactions, despawn_pending_removals));
+            .add_observer(on_targeted_attack_started)
+            .add_observer(on_targeted_ranged_attack_started)
+            .add_systems(
+                Update,
+                (
+                    drive_offensive_combat_ai,
+                    tick_bot_reactions,
+                    despawn_pending_removals,
+                )
+                    .after(CombatSet::Condition),
+            );
     }
-}
-
-/// Marks a dead bot [`PendingRemoval`] rather than despawning it inline (see
-/// that type's docs for why). This is still "the server deletes it" from a
-/// gameplay standpoint — no health/incapacitation state lingers, just a brief
-/// technical grace period before the ECS despawn.
-fn on_authoritative_enemy_death(
-    death: On<AuthoritativeEnemyDeath>,
-    enemies: Query<(), (With<MissionEnemy>, Without<CountedEnemyDeath>)>,
-    mut commands: Commands,
-    mut state: ResMut<MissionState>,
-) {
-    let entity = death.0;
-    if enemies.get(entity).is_err() {
-        return;
-    }
-    commands.entity(entity).insert((
-        CountedEnemyDeath,
-        PendingRemoval {
-            timer: Timer::from_seconds(DESPAWN_REPLICATION_GRACE_SECONDS, TimerMode::Once),
-        },
-    ));
-    state.enemies_killed = state.enemies_killed.saturating_add(1);
 }
 
 /// Despawns bots marked [`PendingRemoval`] once their grace timer elapses.
@@ -114,89 +88,472 @@ fn despawn_pending_removals(
     }
 }
 
-pub fn mission_objective_satisfied(required: u32, killed: u32) -> bool {
-    killed >= required
-}
-
-/// Predicts, for every bot facing the attacker head-on, whether it notices
-/// this attack starting and, primitively, decides to dodge or parry it.
-///
-/// A bot has no real reflexes: it only ever gets a chance to react when it is
-/// facing its attacker (`flanking <= FRONTAL_FLANKING_MAX`), and even then it
-/// correctly reads the attack only some of the time. A decision to react is
-/// committed only after a random delay (see [`REACTION_DELAY_SECS`]).
-fn on_attack_started(
-    event: On<FromClient<AttackStartedRequest>>,
-    mut cmd: Commands,
-    q_character: Query<&CharacterLook>,
-    q_bots: Query<(Entity, &CharacterLook), With<MissionEnemy>>,
-) {
-    let Some(attacker) = event.client_id.entity() else {
-        return;
-    };
-    let Ok(attacker_look) = q_character.get(attacker) else {
-        return;
-    };
-    let (a2, a1) = attacker_look.yaw.sin_cos();
-
-    for (bot, bot_look) in &q_bots {
-        let (d2, d1) = bot_look.yaw.sin_cos();
-        if flanking_from_dir((a1, a2), (d1, d2)) > FRONTAL_FLANKING_MAX {
-            continue;
-        }
-
-        let Some(choice) = roll_defend_choice() else {
-            continue;
-        };
-
-        cmd.entity(bot).insert(PendingBotReaction {
-            timer: Timer::from_seconds(rand::random_range(REACTION_DELAY_SECS), TimerMode::Once),
-            choice,
-        });
-    }
-}
-
-fn roll_defend_choice() -> Option<DefendRequest> {
-    let roll: f64 = rand::random();
-    if roll < PARRY_CHANCE {
-        Some(DefendRequest::Parry)
-    } else if roll < PARRY_CHANCE + DODGE_CHANCE {
-        Some(DefendRequest::Dodge)
-    } else {
-        None
-    }
-}
-
-fn tick_bot_reactions(
-    mut cmd: Commands,
-    time: Res<Time<()>>,
-    mut q_reacting: Query<(Entity, &mut PendingBotReaction)>,
-) {
-    for (bot, mut reaction) in &mut q_reacting {
-        reaction.timer.tick(time.delta());
-        if !reaction.timer.is_finished() {
-            continue;
-        }
-
-        cmd.entity(bot)
-            .remove::<PendingBotReaction>()
-            .insert(PendingDefenderResponse {
-                choice: reaction.choice,
-                set_at: time.elapsed_secs(),
-            });
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::mission_objective_satisfied;
+    use std::{num::NonZeroU32, time::Duration};
+
+    use super::*;
+
+    #[derive(Resource, Default)]
+    struct RecordedAttacks(Vec<(Entity, Entity)>);
+
+    #[derive(Resource, Default)]
+    struct RecordedRangedAttacks(Vec<(Entity, Entity)>);
+
+    fn record_attack(event: On<MeleeAttackIntent>, mut attacks: ResMut<RecordedAttacks>) {
+        attacks.0.push((event.attacker, event.target));
+    }
+
+    fn record_ranged_attack(
+        event: On<RangedAttackIntent>,
+        mut attacks: ResMut<RecordedRangedAttacks>,
+    ) {
+        if let Some(target) = event.target {
+            attacks.0.push((event.attacker, target));
+        }
+    }
+
+    fn apply_deterministic_test_hit(
+        event: On<MeleeAttackIntent>,
+        mut combatants: Query<(&mut Limbs, &mut TacticalCombatState)>,
+    ) {
+        let Ok([attacker, defender]) = combatants.get_many_mut([event.attacker, event.target])
+        else {
+            return;
+        };
+        let (_, mut attacker_state) = attacker;
+        let (mut defender_limbs, mut defender_state) = defender;
+        crate::combat::apply_transient_attack_result(
+            &mut attacker_state,
+            &mut defender_limbs,
+            &mut defender_state,
+            AttackResult::ToDefender {
+                cut_damage: 160.0,
+                blunt_damage: 0.0,
+                balance_damage: 0.0,
+                contact_force: 160.0,
+                armor_contact: false,
+            },
+            BodyPart::Chest,
+        );
+    }
+
+    fn spawn_test_ai(world: &mut World, side: TacticalCombatSide, position: Vec3) -> Entity {
+        // Temporary characters receive this production loadout from
+        // `insert_new_character` when no authored starting package is given.
+        const KATZBALGER_REACH: f32 = 0.8;
+        let actor = world
+            .spawn((
+                Player::default(),
+                Transform::from_translation(position)
+                    .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
+                side,
+                CharacterLook::default(),
+                input::AccumulatedInput::default(),
+                OffensiveCombatAi::default(),
+                TacticalCombatState::default(),
+            ))
+            .id();
+        let weapon = world.spawn(ItemOf(actor)).id();
+        // Match production's insertion order: the equip hook must see both
+        // the owning inventory relationship and the weapon classification.
+        world.entity_mut(weapon).insert(WeaponItem {
+            skill_weights: [0.0; 9],
+            accuracy: 1.0,
+            penetration: 1.0,
+            reach: KATZBALGER_REACH,
+            balance: 0.0,
+            precise: false,
+            melee: true,
+            ranged: false,
+            blunt: false,
+            slash: true,
+            pierce: false,
+        });
+        world.entity_mut(weapon).insert(EquipSlot::HoldingRight);
+        actor
+    }
+
+    fn spawn_test_ranged_ai(
+        world: &mut World,
+        side: TacticalCombatSide,
+        position: Vec3,
+    ) -> (Entity, Entity) {
+        const TEST_WEAPON_REACH: f32 = 8.0;
+        let actor = world
+            .spawn((
+                Player::default(),
+                Transform::from_translation(position)
+                    .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
+                side,
+                CharacterLook::default(),
+                input::AccumulatedInput::default(),
+                OffensiveCombatAi::default(),
+                TacticalCombatState::default(),
+            ))
+            .id();
+        let weapon = world.spawn(ItemOf(actor)).id();
+        world.entity_mut(weapon).insert(WeaponItem {
+            skill_weights: [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+            accuracy: 1.0,
+            penetration: 1.0,
+            reach: TEST_WEAPON_REACH,
+            balance: 0.0,
+            precise: false,
+            melee: true,
+            ranged: true,
+            blunt: false,
+            slash: false,
+            pierce: true,
+        });
+        world.entity_mut(weapon).insert(EquipSlot::HoldingRight);
+        let ammo = world
+            .spawn((
+                ItemOf(actor),
+                ItemProperties {
+                    id: ARROW_ID.to_owned(),
+                    weight: 0.05,
+                },
+                ItemQuantity(NonZeroU32::new(1).unwrap()),
+            ))
+            .id();
+        (actor, ammo)
+    }
+
+    fn spawn_test_target(world: &mut World, side: TacticalCombatSide, position: Vec3) -> Entity {
+        world
+            .spawn((
+                Player::default(),
+                Transform::from_translation(position)
+                    .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
+                side,
+                CharacterLook::default(),
+                TacticalCombatState::default(),
+            ))
+            .id()
+    }
+
+    fn test_app() -> App {
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .init_resource::<RecordedAttacks>()
+            .init_resource::<RecordedRangedAttacks>()
+            .add_observer(record_attack)
+            .add_observer(record_ranged_attack)
+            .add_systems(Update, drive_offensive_combat_ai);
+        app
+    }
 
     #[test]
-    fn mission_success_requires_the_full_authoritative_objective() {
-        assert!(mission_objective_satisfied(0, 0));
-        assert!(!mission_objective_satisfied(3, 0));
-        assert!(!mission_objective_satisfied(3, 2));
-        assert!(mission_objective_satisfied(3, 3));
-        assert!(mission_objective_satisfied(3, 4));
+    fn ranged_ai_fires_then_falls_back_to_melee_when_ammo_is_exhausted() {
+        assert!(!ranged_weapon_needs_ammo_lookup(false, 1.0));
+        assert!(!ranged_weapon_needs_ammo_lookup(true, 0.0));
+        assert!(ranged_weapon_needs_ammo_lookup(true, 8.0));
+        let mut app = test_app();
+        let (actor, ammo) = spawn_test_ranged_ai(
+            app.world_mut(),
+            TacticalCombatSide::Enemy,
+            Vec3::new(0.0, 0.0, 2.0),
+        );
+        let target = spawn_test_target(
+            app.world_mut(),
+            TacticalCombatSide::Party,
+            Vec3::new(0.0, 0.0, -2.0),
+        );
+
+        for _ in 0..7 {
+            app.world_mut()
+                .resource_mut::<Time<()>>()
+                .advance_by(Duration::from_millis(100));
+            app.update();
+        }
+        assert_eq!(
+            app.world().resource::<RecordedRangedAttacks>().0,
+            vec![(actor, target)]
+        );
+        assert!(app.world().resource::<RecordedAttacks>().0.is_empty());
+
+        // Production consumes this through `resolve_ranged_attack`; removing
+        // it here isolates deterministic controller selection from physics.
+        app.world_mut().despawn(ammo);
+        for _ in 0..20 {
+            app.world_mut()
+                .resource_mut::<Time<()>>()
+                .advance_by(Duration::from_millis(100));
+            app.update();
+        }
+
+        assert!(
+            app.world()
+                .resource::<RecordedAttacks>()
+                .0
+                .contains(&(actor, target)),
+            "ammo exhaustion should return a melee-capable weapon to melee cadence"
+        );
+        assert_eq!(app.world().resource::<RecordedRangedAttacks>().0.len(), 1);
+    }
+
+    #[test]
+    fn enemy_defeat_is_counted_only_once() {
+        let mut app = App::new();
+        app.insert_resource(MissionState::new(None, 1, NonZeroU32::new(1).unwrap()))
+            .add_observer(on_tactical_combatant_defeated);
+        let enemy = app.world_mut().spawn(MissionEnemy).id();
+
+        app.world_mut().trigger(TacticalCombatantDefeated(enemy));
+        app.update();
+        app.world_mut().trigger(TacticalCombatantDefeated(enemy));
+        app.update();
+
+        assert_eq!(app.world().resource::<MissionState>().enemies_defeated(), 1);
+        assert!(app.world().entity(enemy).contains::<CountedEnemyDefeat>());
+    }
+
+    #[test]
+    fn opposing_ai_approach_face_stop_and_both_attack() {
+        let mut app = test_app();
+        let party = spawn_test_ai(
+            app.world_mut(),
+            TacticalCombatSide::Party,
+            Vec3::new(0.0, 0.0, -3.0),
+        );
+        let enemy = spawn_test_ai(
+            app.world_mut(),
+            TacticalCombatSide::Enemy,
+            Vec3::new(0.0, 0.0, 3.0),
+        );
+
+        // Simulate only the small, deterministic movement seam driven by the
+        // existing controller input. No physics, wall clock, spawn randomness,
+        // or global RNG is involved in this headless behavior test.
+        for _ in 0..20 {
+            app.world_mut()
+                .resource_mut::<Time<()>>()
+                .advance_by(Duration::from_millis(100));
+            app.update();
+
+            let snapshots: Vec<_> = [party, enemy]
+                .into_iter()
+                .map(|actor| {
+                    let entity = app.world().entity(actor);
+                    (
+                        actor,
+                        entity
+                            .get::<input::AccumulatedInput>()
+                            .unwrap()
+                            .last_movement,
+                        entity.get::<CharacterLook>().unwrap().yaw,
+                    )
+                })
+                .collect();
+            for (actor, movement, yaw) in snapshots {
+                if movement.is_some() {
+                    let forward = Vec3::new(-yaw.sin(), 0.0, -yaw.cos());
+                    app.world_mut()
+                        .entity_mut(actor)
+                        .get_mut::<Transform>()
+                        .unwrap()
+                        .translation += forward * 0.5;
+                }
+            }
+        }
+
+        let party_transform = app.world().entity(party).get::<Transform>().unwrap();
+        let enemy_transform = app.world().entity(enemy).get::<Transform>().unwrap();
+        let separation = party_transform
+            .translation
+            .xz()
+            .distance(enemy_transform.translation.xz());
+        const KATZBALGER_REACH: f32 = 0.8;
+        const TWO_CHARACTER_COLLIDER_RADII: f32 = 0.8;
+        assert!(
+            separation <= melee_interaction_range(KATZBALGER_REACH),
+            "AI stopped outside melee interaction range: {separation}"
+        );
+        assert!(
+            separation >= TWO_CHARACTER_COLLIDER_RADII,
+            "AI test movement collapsed production-sized character colliders: {separation}"
+        );
+        for (actor, target) in [(party, enemy), (enemy, party)] {
+            let entity = app.world().entity(actor);
+            let target_entity = app.world().entity(target);
+            let yaw = entity.get::<CharacterLook>().unwrap().yaw;
+            let forward = Vec2::new(-yaw.sin(), -yaw.cos());
+            let toward_target = (target_entity.get::<Transform>().unwrap().translation.xz()
+                - entity.get::<Transform>().unwrap().translation.xz())
+            .normalize();
+            let facing = forward.dot(toward_target);
+            assert!(
+                facing > 0.999,
+                "AI {actor:?} yaw {yaw} faces {forward:?}, target direction {toward_target:?}, dot {facing}, separation {separation}"
+            );
+        }
+        assert_eq!(
+            app.world()
+                .entity(party)
+                .get::<input::AccumulatedInput>()
+                .unwrap()
+                .last_movement,
+            None
+        );
+        assert_eq!(
+            app.world()
+                .entity(enemy)
+                .get::<input::AccumulatedInput>()
+                .unwrap()
+                .last_movement,
+            None
+        );
+
+        let attacks = &app.world().resource::<RecordedAttacks>().0;
+        assert!(attacks.contains(&(party, enemy)));
+        assert!(attacks.contains(&(enemy, party)));
+    }
+
+    #[test]
+    fn nearest_target_ties_use_entity_identity() {
+        let mut app = test_app();
+        let actor = spawn_test_ai(app.world_mut(), TacticalCombatSide::Party, Vec3::ZERO);
+        let first = spawn_test_ai(
+            app.world_mut(),
+            TacticalCombatSide::Enemy,
+            Vec3::new(-2.0, 0.0, 0.0),
+        );
+        let second = spawn_test_ai(
+            app.world_mut(),
+            TacticalCombatSide::Enemy,
+            Vec3::new(2.0, 0.0, 0.0),
+        );
+        app.update();
+
+        let selected = app
+            .world()
+            .entity(actor)
+            .get::<OffensiveCombatAi>()
+            .unwrap()
+            .target();
+        let expected = if first.to_bits() < second.to_bits() {
+            first
+        } else {
+            second
+        };
+        assert_eq!(selected, Some(expected));
+    }
+
+    #[test]
+    fn ai_duel_stops_incapacitated_combatants() {
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .init_resource::<RecordedAttacks>()
+            .add_observer(record_attack)
+            .add_observer(apply_deterministic_test_hit)
+            .add_systems(
+                Update,
+                (
+                    crate::combat::update_tactical_combat_state,
+                    drive_offensive_combat_ai,
+                )
+                    .chain(),
+            );
+        let party = spawn_test_ai(
+            app.world_mut(),
+            TacticalCombatSide::Party,
+            Vec3::new(0.0, 0.0, -3.0),
+        );
+        let enemy = spawn_test_ai(
+            app.world_mut(),
+            TacticalCombatSide::Enemy,
+            Vec3::new(0.0, 0.0, 3.0),
+        );
+
+        for _ in 0..30 {
+            app.world_mut()
+                .resource_mut::<Time<()>>()
+                .advance_by(Duration::from_millis(100));
+            app.update();
+            let snapshots: Vec<_> = [party, enemy]
+                .into_iter()
+                .map(|actor| {
+                    let entity = app.world().entity(actor);
+                    (
+                        actor,
+                        entity
+                            .get::<input::AccumulatedInput>()
+                            .unwrap()
+                            .last_movement,
+                        entity.get::<CharacterLook>().unwrap().yaw,
+                    )
+                })
+                .collect();
+            for (actor, movement, yaw) in snapshots {
+                if movement.is_some() {
+                    let forward = Vec3::new(-yaw.sin(), 0.0, -yaw.cos());
+                    app.world_mut()
+                        .entity_mut(actor)
+                        .get_mut::<Transform>()
+                        .unwrap()
+                        .translation += forward * 0.5;
+                }
+            }
+            if [party, enemy].into_iter().any(|actor| {
+                app.world()
+                    .entity(actor)
+                    .get::<TacticalCombatState>()
+                    .is_some_and(TacticalCombatState::is_incapacitated)
+            }) {
+                break;
+            }
+        }
+
+        let incapacitated: Vec<_> = [party, enemy]
+            .into_iter()
+            .filter(|actor| {
+                app.world()
+                    .entity(*actor)
+                    .get::<TacticalCombatState>()
+                    .unwrap()
+                    .is_incapacitated()
+            })
+            .collect();
+        assert!(!incapacitated.is_empty());
+        for actor in incapacitated {
+            assert_eq!(
+                app.world()
+                    .entity(actor)
+                    .get::<input::AccumulatedInput>()
+                    .unwrap()
+                    .last_movement,
+                None
+            );
+        }
+        assert!(!app.world().resource::<RecordedAttacks>().0.is_empty());
+
+        let party_defeated = app
+            .world()
+            .entity(party)
+            .get::<TacticalCombatState>()
+            .unwrap()
+            .is_incapacitated();
+        let enemy_defeated = app
+            .world()
+            .entity(enemy)
+            .get::<TacticalCombatState>()
+            .unwrap()
+            .is_incapacitated();
+        let resolution =
+            crate::mission::terminal_resolution(crate::mission::TerminalCombatSnapshot {
+                required_enemies: 1,
+                loaded_enemies: 1,
+                defeated_enemies: u32::from(enemy_defeated),
+                loaded_party: 1,
+                incapacitated_party: u32::from(party_defeated),
+                enrollment_sealed: true,
+            });
+        let expected = if party_defeated {
+            Some(adventuresim_stdb_client::TacticalMissionResolution::Failed)
+        } else {
+            Some(adventuresim_stdb_client::TacticalMissionResolution::Defeated)
+        };
+        assert_eq!(resolution, expected);
     }
 }

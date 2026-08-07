@@ -1,3 +1,75 @@
+fn resolved_prompt_choices(
+    ctx: &ReducerContext,
+    session: &DialogueSession,
+    character_id: u64,
+    prompt: &adventuresim_dialogue::Prompt,
+) -> Result<(String, Vec<adventuresim_dialogue::Choice>, u32, u32), String> {
+    if prompt.id != "request-organization-promotion" {
+        return Ok((
+            format!("{:?}", prompt.mode),
+            prompt.choices.clone(),
+            prompt.min_choices as u32,
+            prompt.max_choices as u32,
+        ));
+    }
+    let npc_id = ctx
+        .db
+        .dialogue_participant()
+        .session_id()
+        .filter(&session.id)
+        .find(|participant| participant.role != prompt.respondent)
+        .and_then(|participant| dialogue_actor_id(&participant))
+        .ok_or("Dialogue promotion has no organization representative")?;
+    let npc = crate::settlement_population::resolve_settlement_resident(ctx, npc_id)
+        .ok_or("Dialogue organization representative is unavailable")?;
+    let organization_id = dialogue_organization_id(ctx, session, &npc)?;
+    let definition = adventuresim_core::organization::organization(&organization_id)
+        .ok_or("Unknown organization")?;
+    let current = crate::social_roles::assigned_organization_role(
+        ctx,
+        character_id,
+        &organization_id,
+    )?;
+    let request_template = prompt
+        .choices
+        .iter()
+        .find(|choice| {
+            choice.effects.iter().any(|effect| {
+                matches!(
+                    effect,
+                    adventuresim_dialogue::Effect::RequestOrganizationPromotion { .. }
+                )
+            })
+        })
+        .ok_or("Promotion prompt has no request template")?;
+    let mut choices = definition
+        .promotion_targets(&current.role_id)
+        .map(|target| {
+            let mut choice = request_template.clone();
+            choice.id = format!("request:{}", target.id);
+            choice.label = format!("Request the role of {}.", target.name);
+            choice.effects = vec![adventuresim_dialogue::Effect::RequestOrganizationPromotion {
+                to_role_id: Some(target.id.clone()),
+            }];
+            choice
+        })
+        .collect::<Vec<_>>();
+    if let Some(wait) = prompt.choices.iter().find(|choice| {
+        !choice.effects.iter().any(|effect| {
+            matches!(
+                effect,
+                adventuresim_dialogue::Effect::RequestOrganizationPromotion { .. }
+            )
+        })
+    }) {
+        choices.push(wait.clone());
+    }
+    if choices.len() < 2 {
+        return Err("Promotion prompt has no selectable authored transition".into());
+    }
+    Ok(("Single".into(), choices, 1, 1))
+}
+
 #[reducer]
 pub fn choose_dialogue_topic(
     ctx: &ReducerContext,
@@ -51,11 +123,15 @@ pub fn choose_dialogue_topic(
             .filter(&session_id)
             .find(|participant| participant.character_id.is_none())
             .ok_or("Dialogue has no NPC participant")?;
+        let npc_id = npc_participant
+            .actor_id
+            .parse::<u64>()
+            .map_err(|_| "Dialogue NPC identity is invalid")?;
         let granted = crate::corpse::grant_permission_from_dialogue(
             ctx,
             character_id,
             corpse_id,
-            &npc_participant.actor_id,
+            npc_id,
             scope,
             approach,
         )?;
@@ -64,10 +140,15 @@ pub fn choose_dialogue_topic(
         } else {
             "examine the body"
         };
-        let outcome = if granted {
-            format!("You have my permission to {scope_label}.")
+        let familiar = dialogue_pair_uses_familiar(ctx, npc_id, character_id);
+        let outcome = if granted && familiar {
+            format!("Thou hast my leave to {scope_label}.")
+        } else if granted {
+            format!("You have my leave to {scope_label}.")
+        } else if familiar {
+            format!("Nay. I shall not permit thee to {scope_label}.")
         } else {
-            format!("No. I will not permit you to {scope_label}.")
+            format!("Nay. I shall not permit you to {scope_label}.")
         };
         let sequence = ctx
             .db
@@ -81,7 +162,10 @@ pub fn choose_dialogue_topic(
             gateway_bucket: 0,
             session_id: session_id.clone(),
             sequence,
-            response_id: format!("corpse-permission-{}", if granted { "granted" } else { "refused" }),
+            response_id: format!(
+                "corpse-permission-{}",
+                if granted { "granted" } else { "refused" }
+            ),
             speaker_role: npc_participant.role,
             fragments_json: serde_json::to_string(&fragments)
                 .map_err(|_| "Could not encode corpse permission response")?,
@@ -202,6 +286,8 @@ pub fn choose_dialogue_topic(
         )?;
     }
     if let Some(prompt) = &response.prompt {
+        let (mode, choices, min_choices, max_choices) =
+            resolved_prompt_choices(ctx, &session, character_id, prompt)?;
         let id = format!("{session_id}:prompt:{}:{action_id}", prompt.id);
         if ctx.db.dialogue_prompt().id().find(&id).is_none() {
             ctx.db.dialogue_prompt().insert(DialoguePrompt {
@@ -209,18 +295,17 @@ pub fn choose_dialogue_topic(
                 gateway_bucket: 0,
                 session_id: session_id.clone(),
                 prompt_id: prompt.id.clone(),
-                mode: format!("{:?}", prompt.mode),
+                mode,
                 respondent_role: prompt.respondent.clone(),
                 resolution_policy: format!("{:?}", prompt.resolution),
-                choices_json: serde_json::to_string(&prompt.choices)
+                choices_json: serde_json::to_string(&choices)
                     .map_err(|_| "Could not encode dialogue choices")?,
-                min_choices: prompt.min_choices as u32,
-                max_choices: prompt.max_choices as u32,
+                min_choices,
+                max_choices,
                 state: "open".into(),
                 resolved_choice_ids_json: "[]".into(),
                 source_refs_json: serde_json::to_string(
-                    &prompt
-                        .choices
+                    &choices
                         .iter()
                         .map(|choice| {
                             adventuresim_dialogue::source_for_choice(
@@ -331,7 +416,8 @@ pub fn answer_dialogue_prompt(
         id,
         prompt_row_id: prompt_row_id.clone(),
         character_id,
-        choice_ids_json: serde_json::to_string(&chosen).unwrap(),
+        choice_ids_json: serde_json::to_string(&chosen)
+            .map_err(|_| "Could not encode dialogue answer")?,
         created_micros: ctx.timestamp.to_micros_since_unix_epoch(),
     });
     let answer_count = ctx
@@ -468,6 +554,7 @@ pub fn answer_dialogue_prompt(
                         &session,
                         character_id,
                         &turn.speaker,
+                        Some(&turn.addressee),
                         &turn.fragments,
                     )?)
                     .map_err(|_| "Could not encode dialogue result")?,
@@ -480,7 +567,8 @@ pub fn answer_dialogue_prompt(
         }
         let mut prompt = prompt;
         prompt.state = "resolved".into();
-        prompt.resolved_choice_ids_json = serde_json::to_string(&winning).unwrap();
+        prompt.resolved_choice_ids_json = serde_json::to_string(&winning)
+            .map_err(|_| "Could not encode resolved dialogue answer")?;
         ctx.db.dialogue_prompt().id().update(prompt);
     }
     session.revision += 1;

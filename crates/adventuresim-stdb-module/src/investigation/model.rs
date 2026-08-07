@@ -5,17 +5,14 @@ use crate::{
     },
     condition::character_strategic_condition__view,
     local_problem::local_problem_receipt,
-    settlement_population::{
-        settlement_npc, settlement_npc__view, settlement_npc_presence,
-        settlement_npc_presence__view,
-    },
+    settlement_population::{settlement_resident_presence, settlement_resident_presence__view},
     strategic::{
         CustodyHolderKind, CustodyObjectKind, case_authority, case_authority__view, case_custody,
         case_finale_authority__view, case_outcome__view, case_outcome_fact__view,
         generated_case_site_combat_eligible, generated_case_site_combat_group_id,
-        hostile_group_authority__view,
-        living_party_member_ids, party_authority, party_authority__view, party_journey_authority,
-        party_member__view, quest_generation_authority, quest_generation_authority__view,
+        hostile_group_authority__view, living_party_member_ids, party_authority,
+        party_authority__view, party_journey_authority, party_member__view,
+        quest_generation_authority, quest_generation_authority__view,
         require_no_unresolved_encounter, require_party_ready,
         require_strategic_character_authority, require_strategic_gateway, settlement,
         strategic_gateway_authority__view, validate_quest_generation_authority,
@@ -24,6 +21,7 @@ use crate::{
         advance_investigation_time, character_time, character_time__view,
         synchronize_party_activity_time, world_clock, world_clock__view,
     },
+    world_actor::character_context_membership,
 };
 use adventuresim_core::investigation as inv;
 use adventuresim_core::investigation_action as action;
@@ -34,21 +32,43 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 const MAX_TEXT: usize = 512;
 
+/// SpacetimeDB transport for the opaque component of a canonical
+/// `StrategicPlaceId::CaseSite`. It has no independent identity semantics;
+/// consumers must cross the centralized conversion boundary below.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, SpacetimeType)]
 pub struct CaseSiteId {
     pub value: String,
 }
 
 impl CaseSiteId {
+    pub fn try_new(value: impl Into<String>) -> Result<Self, String> {
+        let value = value.into();
+        adventuresim_core::strategic_place::StrategicPlaceId::case_site(value.clone())
+            .map_err(|_| "Case-site identity is malformed")?;
+        Ok(Self { value })
+    }
+
     pub fn as_str(&self) -> &str {
         &self.value
+    }
+
+    pub(crate) fn to_place(
+        &self,
+    ) -> Option<adventuresim_core::strategic_place::StrategicPlaceId> {
+        adventuresim_core::strategic_place::StrategicPlaceId::case_site(self.value.clone()).ok()
     }
 }
 
 impl From<String> for CaseSiteId {
     fn from(value: String) -> Self {
-        Self { value }
+        Self::try_new(value).expect("server-authored case-site component must be canonical")
     }
+}
+
+pub(crate) fn canonical_case_site_place(
+    value: &str,
+) -> Option<adventuresim_core::strategic_place::StrategicPlaceId> {
+    CaseSiteId::try_new(value.to_owned()).ok()?.to_place()
 }
 
 impl std::ops::Deref for CaseSiteId {
@@ -984,7 +1004,7 @@ pub struct InvestigationPatternTargetAuthority {
     pub cohort_id: String,
     #[index(btree)]
     pub case_id: String,
-    pub npc_id: String,
+    pub resident_character_id: u64,
     pub demographic: String,
     pub age_band: String,
     pub sex: String,
@@ -1049,51 +1069,129 @@ pub struct PartyCaseSiteTracking {
 #[table(accessor = character_case_site_occupancy)]
 pub struct CharacterCaseSiteOccupancy {
     #[primary_key]
+    pub id: String,
+    #[index(btree)]
     pub character_id: u64,
     #[index(btree)]
     pub gateway_bucket: u8,
     pub case_site_id: CaseSiteId,
+    pub entered_at: u64,
+    pub left_at: Option<u64>,
+}
+
+pub(crate) fn current_character_case_site_occupancy(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Option<CharacterCaseSiteOccupancy> {
+    let mut rows = ctx
+        .db
+        .character_case_site_occupancy()
+        .character_id()
+        .filter(character_id)
+        .filter(|row| row.left_at.is_none());
+    let row = rows.next()?;
+    rows.next().is_none().then_some(row)
+}
+
+pub(crate) fn character_case_site_occupancy_at(
+    ctx: &ReducerContext,
+    character_id: u64,
+    minute: u64,
+) -> Option<CharacterCaseSiteOccupancy> {
+    let mut rows = ctx
+        .db
+        .character_case_site_occupancy()
+        .character_id()
+        .filter(character_id)
+        .filter(|row| {
+            row.entered_at <= minute && row.left_at.is_none_or(|left_at| left_at > minute)
+        });
+    let row = rows.next()?;
+    rows.next().is_none().then_some(row)
 }
 
 pub(crate) fn character_case_site_id(ctx: &ReducerContext, character_id: u64) -> Option<String> {
-    ctx.db
-        .character_case_site_occupancy()
-        .character_id()
-        .find(character_id)
-        .map(|row| row.case_site_id.value)
+    current_character_case_site_occupancy(ctx, character_id).map(|row| row.case_site_id.value)
 }
 
 pub(crate) fn set_character_case_site(
     ctx: &ReducerContext,
     character_id: u64,
     case_site_id: Option<String>,
-) {
-    crate::outbreak::record_case_site_presence_transition(
-        ctx,
-        character_id,
-        case_site_id.as_deref(),
-    );
-    if ctx
+) -> Result<(), String> {
+    let case_site_id = match case_site_id {
+        Some(value) => match CaseSiteId::try_new(value) {
+            Ok(value) => Some(value),
+            Err(error) => return Err(error),
+        },
+        None => None,
+    };
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map(|row| row.minutes)
+        .ok_or("Case-site transition requires CharacterTime authority")?;
+    let mut current_rows = ctx
         .db
         .character_case_site_occupancy()
         .character_id()
-        .find(character_id)
-        .is_some()
-    {
-        ctx.db
-            .character_case_site_occupancy()
-            .character_id()
-            .delete(character_id);
+        .filter(character_id)
+        .filter(|row| row.left_at.is_none())
+        .collect::<Vec<_>>();
+    if current_rows.len() > 1 {
+        return Err("Character has conflicting active case-site occupancy".into());
     }
-    if let Some(value) = case_site_id {
+    let current = current_rows.pop();
+    let previous_site = current
+        .as_ref()
+        .map(|row| row.case_site_id.value.clone());
+    if previous_site.as_deref() == case_site_id.as_ref().map(CaseSiteId::as_str) {
+        return Ok(());
+    }
+    if previous_site.as_deref() != case_site_id.as_ref().map(CaseSiteId::as_str)
+        && let Some(previous_site) = previous_site.as_deref()
+    {
+        for membership in ctx
+            .db
+            .character_context_membership()
+            .location_id()
+            .filter(&previous_site.to_owned())
+            .filter(|membership| membership.active)
+        {
+            crate::social::close_physiology_presence_between(
+                ctx,
+                character_id,
+                membership.character_id,
+            );
+        }
+    }
+    crate::outbreak::record_case_site_presence_transition(
+        ctx,
+        character_id,
+        case_site_id.as_ref().map(CaseSiteId::as_str),
+    );
+    if let Some(mut current) = current {
+        current.left_at = Some(minute);
+        ctx.db.character_case_site_occupancy().id().update(current);
+    }
+    if let Some(case_site_id) = case_site_id {
         ctx.db
             .character_case_site_occupancy()
             .insert(CharacterCaseSiteOccupancy {
+                id: format!(
+                    "case-occupancy:{character_id}:{minute}:{}",
+                    case_site_id.as_str()
+                ),
                 character_id,
                 gateway_bucket: 0,
-                case_site_id: CaseSiteId { value },
+                case_site_id,
+                entered_at: minute,
+                left_at: None,
             });
     }
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -1164,13 +1262,13 @@ pub struct InvestigationWitnessReferral {
     #[index(btree)]
     pub canonical_case_id: String,
     pub public_case_id: String,
-    pub witness_npc_id: String,
+    pub witness_resident_character_id: u64,
     pub expected_settlement_id: String,
     pub expected_location_id: String,
     pub grant_kind: String,
     pub source_receipt_id: String,
     pub source_witness_id: String,
-    pub source_witness_npc_id: String,
+    pub source_witness_resident_character_id: u64,
     pub source_testimony_index: u32,
     pub source_proposition_id: String,
     pub catalog_revision: String,

@@ -10,16 +10,28 @@ use super::character_skills_type::CharacterSkills;
 use super::character_stats_type::CharacterStats;
 use super::character_type::Character;
 use super::connected_player_item_type::ConnectedPlayerItem;
+use super::tactical_mission_side_type::TacticalMissionSide;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ConnectedPlayer {
     pub character: Character,
+    pub mission_side: TacticalMissionSide,
     pub items: Vec<ConnectedPlayerItem>,
     pub skills: CharacterSkills,
     pub stats: CharacterStats,
     pub attrs: CharacterAttributes,
     pub limbs: CharacterLimbs,
+    pub enemy_difficulty: i32,
+    pub enemy_combat_scale_bps: u32,
+    pub countermeasure_multiplier_bps: u32,
+    pub party_has_surprise: bool,
+    pub body_weight_kg: f32,
+    pub current_blood_ml: f32,
+    pub maximum_blood_ml: f32,
+    pub strategic_incapacitation: f32,
+    pub strategic_pain: f32,
+    pub strategic_blood_loss: f32,
 }
 
 impl __sdk::InModule for ConnectedPlayer {
@@ -31,11 +43,22 @@ impl __sdk::InModule for ConnectedPlayer {
 /// Provides typed access to columns for query building.
 pub struct ConnectedPlayerCols {
     pub character: __sdk::__query_builder::Col<ConnectedPlayer, Character>,
+    pub mission_side: __sdk::__query_builder::Col<ConnectedPlayer, TacticalMissionSide>,
     pub items: __sdk::__query_builder::Col<ConnectedPlayer, Vec<ConnectedPlayerItem>>,
     pub skills: __sdk::__query_builder::Col<ConnectedPlayer, CharacterSkills>,
     pub stats: __sdk::__query_builder::Col<ConnectedPlayer, CharacterStats>,
     pub attrs: __sdk::__query_builder::Col<ConnectedPlayer, CharacterAttributes>,
     pub limbs: __sdk::__query_builder::Col<ConnectedPlayer, CharacterLimbs>,
+    pub enemy_difficulty: __sdk::__query_builder::Col<ConnectedPlayer, i32>,
+    pub enemy_combat_scale_bps: __sdk::__query_builder::Col<ConnectedPlayer, u32>,
+    pub countermeasure_multiplier_bps: __sdk::__query_builder::Col<ConnectedPlayer, u32>,
+    pub party_has_surprise: __sdk::__query_builder::Col<ConnectedPlayer, bool>,
+    pub body_weight_kg: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub current_blood_ml: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub maximum_blood_ml: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_incapacitation: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_pain: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_blood_loss: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
 }
 
 impl __sdk::__query_builder::HasCols for ConnectedPlayer {
@@ -43,11 +66,34 @@ impl __sdk::__query_builder::HasCols for ConnectedPlayer {
     fn cols(table_name: &'static str) -> Self::Cols {
         ConnectedPlayerCols {
             character: __sdk::__query_builder::Col::new(table_name, "character"),
+            mission_side: __sdk::__query_builder::Col::new(table_name, "mission_side"),
             items: __sdk::__query_builder::Col::new(table_name, "items"),
             skills: __sdk::__query_builder::Col::new(table_name, "skills"),
             stats: __sdk::__query_builder::Col::new(table_name, "stats"),
             attrs: __sdk::__query_builder::Col::new(table_name, "attrs"),
             limbs: __sdk::__query_builder::Col::new(table_name, "limbs"),
+            enemy_difficulty: __sdk::__query_builder::Col::new(table_name, "enemy_difficulty"),
+            enemy_combat_scale_bps: __sdk::__query_builder::Col::new(
+                table_name,
+                "enemy_combat_scale_bps",
+            ),
+            countermeasure_multiplier_bps: __sdk::__query_builder::Col::new(
+                table_name,
+                "countermeasure_multiplier_bps",
+            ),
+            party_has_surprise: __sdk::__query_builder::Col::new(table_name, "party_has_surprise"),
+            body_weight_kg: __sdk::__query_builder::Col::new(table_name, "body_weight_kg"),
+            current_blood_ml: __sdk::__query_builder::Col::new(table_name, "current_blood_ml"),
+            maximum_blood_ml: __sdk::__query_builder::Col::new(table_name, "maximum_blood_ml"),
+            strategic_incapacitation: __sdk::__query_builder::Col::new(
+                table_name,
+                "strategic_incapacitation",
+            ),
+            strategic_pain: __sdk::__query_builder::Col::new(table_name, "strategic_pain"),
+            strategic_blood_loss: __sdk::__query_builder::Col::new(
+                table_name,
+                "strategic_blood_loss",
+            ),
         }
     }
 }

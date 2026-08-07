@@ -1,4 +1,189 @@
 impl LiveRunner {
+    fn contribute_party_journey_currency(
+        &mut self,
+        party_id: &str,
+        settlement_id: &str,
+        needed: u64,
+    ) -> Result<(u64, usize), String> {
+        let mut contributors = self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .filter(|member| member.party_id == party_id)
+            .filter_map(|member| {
+                let character = self.connection.db.backend_characters().iter().find(|row| {
+                    row.id == member.character_id
+                        && row.alive
+                        && row.current_settlement_id.as_deref() == Some(settlement_id)
+                })?;
+                let ready = self
+                    .connection
+                    .db
+                    .backend_character_strategic_conditions()
+                    .iter()
+                    .find(|row| row.character_id == character.id)
+                    .is_some_and(|row| row.status == "ready");
+                let illness_safe = self
+                    .connection
+                    .db
+                    .character_illness_status()
+                    .iter()
+                    .find(|row| row.character_id == character.id)
+                    .is_none_or(|row| !row.symptomatic && !row.critical);
+                (ready && illness_safe).then_some(character.id)
+            })
+            .collect::<Vec<_>>();
+        contributors.sort_unstable();
+        let mut remaining = needed;
+        let mut contributed = 0_u64;
+        let mut contributor_count = 0_usize;
+        for character_id in contributors {
+            if remaining == 0 {
+                break;
+            }
+            let reserve = self
+                .observable_medical_reserve(character_id, settlement_id)
+                .unwrap_or(0);
+            let available = self.personal_gold(character_id).saturating_sub(reserve);
+            let mut contribution = remaining.min(available);
+            if contribution == 0 {
+                continue;
+            }
+            let mut stacks = self
+                .connection
+                .db
+                .inventory_item()
+                .iter()
+                .filter(|row| row.character_id == character_id && is_currency_id(&row.item_id))
+                .collect::<Vec<_>>();
+            stacks.sort_by_key(|row| (row.item_id.clone(), row.id));
+            let planned = contribution;
+            for stack in stacks {
+                if contribution == 0 {
+                    break;
+                }
+                let quantity = contribution.min(u64::from(stack.quantity)) as u32;
+                let result = reducer_call!(self, "contribute_journey_currency", |cb| self
+                    .connection
+                    .reducers
+                    .deposit_party_inventory_item_then(character_id, stack.id, quantity, cb));
+                self.call(result)?;
+                contribution -= u64::from(quantity);
+            }
+            let deposited = planned.saturating_sub(contribution);
+            if deposited > 0 {
+                contributed = contributed.saturating_add(deposited);
+                remaining = remaining.saturating_sub(deposited);
+                contributor_count += 1;
+            }
+        }
+        Ok((contributed, contributor_count))
+    }
+
+    pub(super) fn public_party_matchup_assessment(
+        &self,
+        party_id: &str,
+        difficulty: i32,
+        opposition_count_wording: &str,
+        opposition_combat_power: u64,
+    ) -> PublicContractAssessment {
+        let living_ids = self
+            .connection
+            .db
+            .backend_characters()
+            .iter()
+            .filter(|character| character.alive)
+            .map(|character| character.id)
+            .collect::<HashSet<_>>();
+        let member_ids = self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .filter(|member| member.party_id == party_id)
+            .map(|member| member.character_id)
+            .filter(|character_id| living_ids.contains(character_id))
+            .collect::<HashSet<_>>();
+        let members = self
+            .connection
+            .db
+            .backend_character_capabilities()
+            .iter()
+            .filter(|row| member_ids.contains(&row.character_id))
+            .map(|capability| {
+                let condition_ready = self
+                    .connection
+                    .db
+                    .backend_character_strategic_conditions()
+                    .iter()
+                    .find(|row| row.character_id == capability.character_id)
+                    .is_some_and(|row| row.status == "ready");
+                let illness_safe = self
+                    .connection
+                    .db
+                    .character_illness_status()
+                    .iter()
+                    .find(|row| row.character_id == capability.character_id)
+                    .map_or(true, |row| !row.symptomatic && !row.critical);
+                PublicPartyCombatant {
+                    capability,
+                    ready: condition_ready && illness_safe,
+                }
+            })
+            .collect::<Vec<_>>();
+        public_contract_assessment(
+            difficulty,
+            opposition_count_wording,
+            opposition_combat_power,
+            &members,
+        )
+    }
+
+    pub(super) fn public_party_contract_assessment(
+        &self,
+        party_id: &str,
+        contract: &BackendContract,
+    ) -> PublicContractAssessment {
+        self.public_party_matchup_assessment(
+            party_id,
+            contract.difficulty,
+            &contract.opposition_count_wording,
+            contract.opposition_combat_power,
+        )
+    }
+
+    pub(super) fn public_party_combat_fingerprint(
+        &self,
+        party_id: &str,
+    ) -> PublicCombatFingerprint {
+        let living_ids = self
+            .connection
+            .db
+            .backend_characters()
+            .iter()
+            .filter(|character| character.alive)
+            .map(|character| character.id)
+            .collect::<HashSet<_>>();
+        let member_ids = self
+            .connection
+            .db
+            .party_member()
+            .iter()
+            .filter(|member| member.party_id == party_id)
+            .map(|member| member.character_id)
+            .filter(|character_id| living_ids.contains(character_id))
+            .collect::<HashSet<_>>();
+        public_combat_fingerprint(
+            self.connection
+                .db
+                .backend_character_capabilities()
+                .iter()
+                .filter(|row| member_ids.contains(&row.character_id))
+                .collect(),
+        )
+    }
+
     pub(super) fn provision_case_site_journey(
         &mut self,
         party_id: &str,
@@ -6,6 +191,7 @@ impl LiveRunner {
         agent: u32,
         finance_key: &str,
         distance_m: u64,
+        additional_plan_minutes: u64,
     ) -> Result<TravelProvisionDecision, String> {
         let party = self.party_by_id(party_id)?;
         let Some(settlement_id) = party.current_settlement_id.clone() else {
@@ -15,6 +201,7 @@ impl LiveRunner {
         };
         let planning_minutes =
             projected_case_site_journey_minutes(distance_m, party.walking_minutes_per_day)
+                .and_then(|minutes| minutes.checked_add(additional_plan_minutes))
                 .ok_or("journey provisioning projection is incoherent")?;
         let settlement = self
             .connection
@@ -52,7 +239,7 @@ impl LiveRunner {
             .filter_map(|membership| {
                 self.connection
                     .db
-                    .character()
+                    .backend_characters()
                     .iter()
                     .find(|row| row.id == membership.character_id && row.alive)
             })
@@ -88,7 +275,7 @@ impl LiveRunner {
             .filter_map(|member| {
                 self.connection
                     .db
-                    .character_needs()
+                    .backend_character_needs()
                     .iter()
                     .find(|row| row.character_id == member.id)
             })
@@ -99,7 +286,7 @@ impl LiveRunner {
             .filter_map(|member| {
                 self.connection
                     .db
-                    .character_needs()
+                    .backend_character_needs()
                     .iter()
                     .find(|row| row.character_id == member.id)
             })
@@ -194,6 +381,32 @@ impl LiveRunner {
             .filter(|row| is_currency_id(&row.item_id))
             .map(|row| u64::from(row.quantity))
             .sum::<u64>();
+        let party_personal_funds = members
+            .iter()
+            .filter(|member| member.current_settlement_id.as_deref() == Some(&settlement_id))
+            .filter(|member| {
+                self.connection
+                    .db
+                    .backend_character_strategic_conditions()
+                    .iter()
+                    .find(|row| row.character_id == member.id)
+                    .is_some_and(|row| row.status == "ready")
+                    && self
+                        .connection
+                        .db
+                        .character_illness_status()
+                        .iter()
+                        .find(|row| row.character_id == member.id)
+                        .is_none_or(|row| !row.symptomatic && !row.critical)
+            })
+            .map(|member| {
+                let reserve = self
+                    .observable_medical_reserve(member.id, &settlement_id)
+                    .unwrap_or(0);
+                self.personal_gold(member.id).saturating_sub(reserve)
+            })
+            .sum::<u64>();
+        let party_spendable = party_coin.saturating_add(party_personal_funds);
         let upper_bound_cost_for = |buy_bps: i32| -> Option<u64> {
             let unit_price = |item: &Item| {
                 let base = adventuresim_core::strategic_economy::merchant_buy_price(
@@ -216,14 +429,14 @@ impl LiveRunner {
                 let payer_minute = self
                     .connection
                     .db
-                    .character_time()
+                    .backend_character_times()
                     .iter()
                     .find(|row| row.character_id == member.id)?
                     .minutes;
                 let merchant_count = self
                     .connection
                     .db
-                    .backend_settlement_npcs()
+                    .backend_settlement_residents()
                     .iter()
                     .filter(|npc| {
                         npc.home_settlement_id == settlement_id && npc.service_id == "merchants"
@@ -231,16 +444,18 @@ impl LiveRunner {
                     .filter(|npc| {
                         self.connection
                             .db
-                            .settlement_npc_presence()
+                            .settlement_resident_presence()
                             .iter()
                             .any(|presence| {
-                                presence.npc_id == npc.id
+                                presence.character_id == npc.character_id
                                     && presence.settlement_id == settlement_id
                                     && presence.location_id == "market"
                                     && presence.is_default
                                     && npc_is_publicly_present(
                                         presence.start_minute,
                                         presence.end_minute,
+                                        presence.context_suppressed,
+                                        presence.health_suppressed,
                                         payer_minute,
                                     )
                             })
@@ -263,9 +478,7 @@ impl LiveRunner {
                 let committed_reserve = self
                     .observable_medical_reserve(member.id, &settlement_id)
                     .unwrap_or(0);
-                let spendable = party_coin
-                    .saturating_add(personal)
-                    .saturating_sub(committed_reserve);
+                let spendable = party_spendable;
                 Some((
                     spendable >= upper_bound_cost,
                     spendable,
@@ -302,7 +515,7 @@ impl LiveRunner {
                     .generated_finance_blocked_cycles
                     .saturating_add(1);
             }
-            let public_funds = party_coin.saturating_add(personal);
+            let public_funds = party_spendable;
             let signature = (upper_bound_cost, public_funds);
             if self.generated_finance_blocks.get(&finance_cache_key) == Some(&signature) {
                 return Ok(TravelProvisionDecision::Deferred("journey_finance_backoff"));
@@ -322,6 +535,26 @@ impl LiveRunner {
             ));
         }
         self.generated_finance_blocks.remove(&finance_cache_key);
+        let total_personal_before = members
+            .iter()
+            .map(|member| self.personal_gold(member.id))
+            .sum::<u64>();
+        let contribution_needed = upper_bound_cost.saturating_sub(party_coin);
+        let (contributed, contributor_count) =
+            self.contribute_party_journey_currency(party_id, &settlement_id, contribution_needed)?;
+        let funded_party_coin = self
+            .connection
+            .db
+            .party_inventory_item()
+            .iter()
+            .filter(|row| row.party_id == party_id && is_currency_id(&row.item_id))
+            .map(|row| u64::from(row.quantity))
+            .sum::<u64>();
+        if funded_party_coin < upper_bound_cost {
+            return Ok(TravelProvisionDecision::Deferred(
+                "journey_contribution_revalidation_failed",
+            ));
+        }
         let mut item_ids = Vec::new();
         let mut quantities = Vec::new();
         if rations_to_buy > 0 {
@@ -345,7 +578,16 @@ impl LiveRunner {
                 true,
                 cb,
             ));
-        self.call(result)?;
+        if let Err(error) = result {
+            if merchant_provider_unavailable_failure(&error) {
+                return Ok(TravelProvisionDecision::Deferred(
+                    "journey_payer_provider_projection_unavailable",
+                ));
+            }
+            return self
+                .call(Err(error))
+                .map(|_| TravelProvisionDecision::Ready);
+        }
         let after_party_coin = self
             .connection
             .db
@@ -354,9 +596,13 @@ impl LiveRunner {
             .filter(|row| row.party_id == party_id && is_currency_id(&row.item_id))
             .map(|row| u64::from(row.quantity))
             .sum::<u64>();
+        let total_personal_after = members
+            .iter()
+            .map(|member| self.personal_gold(member.id))
+            .sum::<u64>();
         let actual_spent = party_coin
-            .saturating_add(personal)
-            .saturating_sub(after_party_coin.saturating_add(self.personal_gold(payer)));
+            .saturating_add(total_personal_before)
+            .saturating_sub(after_party_coin.saturating_add(total_personal_after));
         self.metrics.journey_provision_purchases += 1;
         self.metrics.journey_provision_party_gold_spent = self
             .metrics
@@ -366,7 +612,7 @@ impl LiveRunner {
             agent,
             CoreLoopEventKind::Purchase,
             format!(
-                "journey_provisions=purchased;planning_minutes={planning_minutes};reserve_days={TRAVEL_PROVISION_RESERVE_DAYS:.1};payer={payer};treasury_before={party_coin};payer_purse_before={personal};claimable_stake={stake};upper_bound_cost={upper_bound_cost};actual_spent={actual_spent};rations={rations_to_buy};waterskins={waterskins_to_buy}"
+                "journey_provisions=purchased;planning_minutes={planning_minutes};reserve_days={TRAVEL_PROVISION_RESERVE_DAYS:.1};payer={payer};treasury_before={party_coin};payer_purse_before={personal};claimable_stake={stake};party_personal_spendable={party_personal_funds};contributed={contributed};contributors={contributor_count};upper_bound_cost={upper_bound_cost};actual_spent={actual_spent};rations={rations_to_buy};waterskins={waterskins_to_buy}"
             ),
         );
         Ok(TravelProvisionDecision::Ready)
@@ -422,6 +668,78 @@ impl LiveRunner {
             active_interval_start,
             active_interval_minutes,
         })
+    }
+
+    pub(super) fn public_generated_case_site_assessment(
+        &self,
+        party_id: &str,
+        pin: &BackendCaseSitePin,
+    ) -> PublicContractAssessment {
+        match (pin.opposition_count, pin.opposition_combat_power) {
+            (Some(count), Some(power)) if pin.combat_available && count > 0 && power > 0 => {
+                self.public_party_matchup_assessment(party_id, 1, &count.to_string(), power)
+            }
+            _ => PublicContractAssessment {
+                eligible: false,
+                reason: "missing_generated_opposition_assessment",
+                enemy_count: pin.opposition_count,
+                ready_combatants: 0,
+                party_power_milli: 0,
+                enemy_power_milli: pin.opposition_combat_power.unwrap_or(0),
+            },
+        }
+    }
+
+    pub(super) fn public_journey_camp_state(
+        &self,
+        party_id: &str,
+    ) -> Result<PublicJourneyCampState, String> {
+        let party = self.party_by_id(party_id)?;
+        let destination = party
+            .camp_destination
+            .as_ref()
+            .ok_or_else(|| self.public_camp_coherence_error(party_id, "no_active_destination"))?;
+        if party.current_settlement_id.is_some() || party.camp_remaining_minutes == 0 {
+            return Err(self.public_camp_coherence_error(
+                party_id,
+                "active_destination_has_no_remaining_movement",
+            ));
+        }
+        let journeys = self
+            .connection
+            .db
+            .party_journey()
+            .iter()
+            .filter(|journey| journey.party_id == party_id)
+            .collect::<Vec<_>>();
+        let itineraries = self
+            .connection
+            .db
+            .party_journey_itinerary()
+            .iter()
+            .filter(|itinerary| itinerary.party_id == party_id)
+            .collect::<Vec<_>>();
+        let [journey] = journeys.as_slice() else {
+            return Err(self.public_camp_coherence_error(party_id, "no_unique_public_journey"));
+        };
+        let [itinerary] = itineraries.as_slice() else {
+            return Err(self.public_camp_coherence_error(party_id, "no_unique_public_itinerary"));
+        };
+        if &journey.destination != destination || itinerary.party_id != party_id {
+            return Err(
+                self.public_camp_coherence_error(party_id, "public_journey_destination_mismatch")
+            );
+        }
+        if journey.completed_elapsed_minutes >= journey.total_elapsed_minutes {
+            return Err(self
+                .public_camp_coherence_error(party_id, "active_destination_journey_is_complete"));
+        }
+        classify_public_journey_camp_state(projected_active_camp_interval_count(
+            journey.completed_elapsed_minutes,
+            journey.total_elapsed_minutes,
+            &itinerary.forecast_camp_intervals,
+        ))
+        .map_err(|reason| self.public_camp_coherence_error(party_id, reason))
     }
 
     pub(super) fn public_camp_coherence_error(&self, party_id: &str, reason: &str) -> String {
@@ -538,6 +856,34 @@ impl LiveRunner {
             .any(|row| row.party_id == party_id && row.status == "awaiting_choice")
     }
 
+    pub(super) fn active_public_narrative_challenge(
+        &self,
+        leader_id: u64,
+    ) -> Option<BackendRoadChallenge> {
+        let mut challenges = self
+            .connection
+            .db
+            .backend_road_challenges()
+            .iter()
+            .filter(|row| row.owner_character_id == leader_id && row.open && row.active)
+            .collect::<Vec<_>>();
+        challenges.sort_by(|left, right| {
+            left.absolute_minute
+                .cmp(&right.absolute_minute)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        challenges.into_iter().next()
+    }
+
+    pub(super) fn party_has_public_travel_interruption(
+        &self,
+        party_id: &str,
+        leader_id: u64,
+    ) -> bool {
+        self.party_has_unresolved_public_encounter(party_id)
+            || self.active_public_narrative_challenge(leader_id).is_some()
+    }
+
     pub(super) fn travel_camps(&mut self, party_id: &str) -> Result<JourneyTravelOutcome, String> {
         for _ in 0..MAX_CAMPS_PER_LEG {
             let party = self.party_by_id(party_id)?;
@@ -545,8 +891,97 @@ impl LiveRunner {
                 self.metrics.travel_legs += 1;
                 return Ok(JourneyTravelOutcome::Completed);
             }
+            if let Some(challenge) = self.active_public_narrative_challenge(party.leader_id) {
+                let Some((leader_id, leader_agent)) = self.current_leader(party_id) else {
+                    return self.record_journey_hold(
+                        party_id,
+                        "journey_narrative_encounter",
+                        "narrative_encounter_has_no_actionable_leader",
+                    );
+                };
+                let profile = self
+                    .profiles
+                    .get(leader_agent as usize)
+                    .ok_or("narrative encounter leader profile is unavailable")?;
+                let policy_choice = match select_public_narrative_encounter_choice(
+                    &challenge.presentation_json,
+                    profile,
+                ) {
+                    Ok(Some(choice)) => choice,
+                    Ok(None) => {
+                        self.event(
+                            leader_agent,
+                            CoreLoopEventKind::Encounter,
+                            format!(
+                                "kind=narrative;id={};revision={};status=held_no_available_choice",
+                                bounded_event_field(&challenge.id),
+                                challenge.revision,
+                            ),
+                        );
+                        return self.record_journey_hold(
+                            party_id,
+                            "journey_narrative_encounter",
+                            "narrative_encounter_has_no_available_public_choice",
+                        );
+                    }
+                    Err(_) => {
+                        self.event(
+                            leader_agent,
+                            CoreLoopEventKind::Encounter,
+                            format!(
+                                "kind=narrative;id={};revision={};status=held_invalid_public_presentation",
+                                bounded_event_field(&challenge.id),
+                                challenge.revision,
+                            ),
+                        );
+                        return self.record_journey_hold(
+                            party_id,
+                            "journey_narrative_encounter",
+                            "narrative_encounter_public_presentation_invalid",
+                        );
+                    }
+                };
+                let choice = policy_choice.choice.clone();
+                let action_id = format!(
+                    "sim-road-{}-r{}",
+                    blake3::hash(challenge.id.as_bytes()).to_hex(),
+                    challenge.revision,
+                );
+                let challenge_id = challenge.id.clone();
+                let revision = challenge.revision;
+                let result = reducer_call!(self, "resolve_errantry_road_challenge", |cb| self
+                    .connection
+                    .reducers
+                    .resolve_errantry_road_challenge_then(
+                        leader_id,
+                        challenge_id.clone(),
+                        revision,
+                        choice.clone(),
+                        action_id.clone(),
+                        cb,
+                    ));
+                self.call(result)?;
+                self.observe_deaths();
+                self.metrics.encounters = self.metrics.encounters.saturating_add(1);
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::Encounter,
+                    format!(
+                        "kind=narrative;id={};revision={revision};choice={};status=resolved;reason={};visible_alternatives={};eligible_meaningful_alternatives={}",
+                        bounded_event_field(&challenge_id),
+                        bounded_event_field(&choice),
+                        policy_choice.reason,
+                        bounded_event_field(&policy_choice.visible_alternatives.join(",")),
+                        bounded_event_field(
+                            &policy_choice.eligible_meaningful_alternatives.join(",")
+                        ),
+                    ),
+                );
+                continue;
+            }
             let remaining_before = party.camp_remaining_minutes;
-            let Some((travel_actor, _, _)) = self.expedition_recovery_actor(party_id) else {
+            let Some((travel_actor, travel_agent, _)) = self.expedition_recovery_actor(party_id)
+            else {
                 self.observe_deaths();
                 return self.record_journey_hold(
                     party_id,
@@ -568,12 +1003,10 @@ impl LiveRunner {
                     self.metrics.encounter_escape_ineligible += 1;
                 }
                 let evacuation = self.public_journey_is_evacuation(party_id);
-                let choice = select_expedition_encounter_choice(
-                    &encounter.available_choices,
-                    encounter.roll_index,
-                    evacuation,
-                )
-                .ok_or("encounter offers no protective evacuation choice")?;
+                let policy_choice =
+                    select_expedition_encounter_choice(&encounter.available_choices, evacuation)
+                        .ok_or("encounter offers no protective evacuation choice")?;
+                let choice = policy_choice.choice;
                 match choice.as_str() {
                     "sneak" => self.metrics.encounter_sneaks += 1,
                     "detour" => self.metrics.encounter_detours += 1,
@@ -603,10 +1036,20 @@ impl LiveRunner {
                     _ => return Err("encounter exposed an unknown choice".into()),
                 }
                 let encounter_id = encounter.encounter_id.clone();
+                let encounter_revision = encounter.revision;
+                let action_id =
+                    format!("strategic-sim:{encounter_id}:{encounter_revision}:{choice}");
                 let result = reducer_call!(self, "resolve_strategic_encounter", |cb| self
                     .connection
                     .reducers
-                    .resolve_strategic_encounter_then(travel_actor, choice.clone(), cb));
+                    .resolve_strategic_encounter_then(
+                        travel_actor,
+                        encounter_id.clone(),
+                        choice.clone(),
+                        encounter_revision,
+                        action_id,
+                        cb,
+                    ));
                 self.call(result)?;
                 self.observe_deaths();
                 let resolved_outcome = {
@@ -626,7 +1069,12 @@ impl LiveRunner {
                 self.event(
                     self.current_leader(party_id).map_or(0, |(_, agent)| agent),
                     CoreLoopEventKind::Encounter,
-                    format!("id={encounter_id};choice={choice};outcome={resolved_outcome:?}"),
+                    format!(
+                        "id={encounter_id};choice={choice};reason={};evacuation={evacuation};run_eligible={};available_choices={};outcome={resolved_outcome:?}",
+                        policy_choice.reason,
+                        encounter.run_ineligibility.is_none(),
+                        encounter.available_choices.join(","),
+                    ),
                 );
                 if self.current_leader(party_id).is_none() {
                     return self.record_journey_hold(
@@ -719,6 +1167,38 @@ impl LiveRunner {
                 }
                 continue;
             }
+            if self.public_journey_camp_state(party_id)? == PublicJourneyCampState::BetweenCamps {
+                let leg_members_before = self.expedition_member_observations(party_id)?;
+                let leg_supplies_before = self.expedition_supplies(party_id);
+                let result = reducer_call!(self, "continue_camp_travel", |cb| self
+                    .connection
+                    .reducers
+                    .continue_camp_travel_then(travel_actor, cb));
+                self.call(result)?;
+                self.observe_deaths();
+                let leg_members_after = self.expedition_member_observations(party_id)?;
+                let leg_supplies_after = self.expedition_supplies(party_id);
+                self.emit_expedition_diagnostics(
+                    party_id,
+                    "journey_leg",
+                    "continue_camp_travel",
+                    "continue_between_forecast_camps",
+                    &leg_members_before,
+                    &leg_members_after,
+                    leg_supplies_before,
+                    leg_supplies_after,
+                );
+                self.event(
+                    travel_agent,
+                    CoreLoopEventKind::Travel,
+                    format!(
+                        "phase=between_camps_continue;party={};remaining_movement={}",
+                        bounded_event_field(party_id),
+                        self.party_by_id(party_id)?.camp_remaining_minutes,
+                    ),
+                );
+                continue;
+            }
             let camp = self
                 .public_active_camp_observation(party_id)
                 .ok_or_else(|| {
@@ -738,30 +1218,48 @@ impl LiveRunner {
             );
             let camp_members_before = self.expedition_member_observations(party_id)?;
             let camp_supplies_before = self.expedition_supplies(party_id);
-            let expected_completed_elapsed = camp_start.saturating_add(rest_minutes);
-            let result = reducer_call!(self, "rest_at_camp", |cb| self
-                .connection
-                .reducers
-                .rest_at_camp_then(travel_actor, rest_minutes, FieldShelter::Bivouac, cb));
-            self.call(result)?;
+            let before_completed_elapsed = camp.completed_elapsed_minutes;
+            let leader_before_rest = party.leader_id;
+            let shelter =
+                self.rest_at_camp_with_party_shelter(travel_actor, rest_minutes, "rest_at_camp")?;
             self.observe_deaths();
-            let Some((continue_actor, agent, continue_actor_role)) =
-                self.expedition_recovery_actor(party_id)
-            else {
-                return self.record_journey_hold(
-                    party_id,
-                    "journey_stalled_after_rest",
-                    "journey_held_no_actionable_actor",
-                );
-            };
-            let unsafe_after_rest = self.unsafe_party_agents(&self.party_agents(continue_actor)?);
             let camp_members_after = self.expedition_member_observations(party_id)?;
+            let before_liveness = camp_members_before
+                .iter()
+                .map(|member| (member.character_id, member.alive))
+                .collect::<Vec<_>>();
+            let after_liveness = camp_members_after
+                .iter()
+                .map(|member| (member.character_id, member.alive))
+                .collect::<Vec<_>>();
+            let terminal_ids = public_alive_to_dead_ids(&before_liveness, &after_liveness);
+            let terminal_state_change = !terminal_ids.is_empty();
+            let before_member_elapsed = camp_members_before
+                .iter()
+                .map(|member| (member.character_id, member.elapsed_minutes))
+                .collect::<Vec<_>>();
+            let after_member_elapsed = camp_members_after
+                .iter()
+                .map(|member| (member.character_id, member.elapsed_minutes))
+                .collect::<Vec<_>>();
+            let terminal_rest_elapsed = public_terminal_rest_elapsed(
+                &terminal_ids,
+                &before_member_elapsed,
+                &after_member_elapsed,
+            );
+            let unsafe_after_rest = camp_members_after
+                .iter()
+                .filter(|member| expedition_member_needs_recovery(member))
+                .map(|member| member.agent_id)
+                .collect::<Vec<_>>();
             let camp_supplies_after = self.expedition_supplies(party_id);
             self.emit_expedition_diagnostics(
                 party_id,
                 "journey_camp",
                 "rest_at_camp",
-                if unsafe_after_rest.is_empty() {
+                if terminal_state_change {
+                    "journey_terminal_state_reclassified"
+                } else if unsafe_after_rest.is_empty() {
                     "quest_leg_rest_complete"
                 } else {
                     "quest_suppressed_member_not_ready_after_camp"
@@ -772,42 +1270,105 @@ impl LiveRunner {
                 camp_supplies_after,
             );
             let after_rest_party = self.party_by_id(party_id)?;
-            let after_rest_journey = self
+            let after_rest_journeys = self
                 .connection
                 .db
                 .party_journey()
                 .iter()
-                .find(|row| row.party_id == party_id)
-                .ok_or("journey camp projection is incoherent: journey disappeared after rest")?;
-            let after_rest_itinerary = self
+                .filter(|row| row.party_id == party_id)
+                .collect::<Vec<_>>();
+            let after_rest_itineraries = self
                 .connection
                 .db
                 .party_journey_itinerary()
                 .iter()
-                .find(|row| row.party_id == party_id)
-                .ok_or("journey camp projection is incoherent: itinerary disappeared after rest")?;
-            if after_rest_party.camp_destination.is_none()
-                || after_rest_journey.completed_elapsed_minutes != expected_completed_elapsed
-                || after_rest_journey.completed_elapsed_minutes
-                    > after_rest_journey.total_elapsed_minutes
-                || after_rest_itinerary.party_id != party_id
-            {
-                return Err(
-                    "journey camp projection is incoherent: rest did not produce a safe forecast boundary"
-                        .into(),
-                );
-            }
+                .filter(|row| row.party_id == party_id)
+                .collect::<Vec<_>>();
+            let (after_completed_elapsed, after_total_elapsed) = match (
+                after_rest_party.camp_destination.as_ref(),
+                after_rest_journeys.as_slice(),
+                after_rest_itineraries.as_slice(),
+            ) {
+                (Some(after_rest_destination), [after_rest_journey], [after_rest_itinerary])
+                    if &after_rest_journey.destination == after_rest_destination
+                        && after_rest_itinerary.party_id == party_id =>
+                {
+                    (
+                        after_rest_journey.completed_elapsed_minutes,
+                        after_rest_journey.total_elapsed_minutes,
+                    )
+                }
+                (None, [], []) if terminal_state_change => {
+                    let terminal_rest_elapsed = terminal_rest_elapsed.ok_or(
+                        "journey camp projection is incoherent: terminal rest elapsed is unavailable",
+                    )?;
+                    let after_completed_elapsed = before_completed_elapsed
+                        .checked_add(terminal_rest_elapsed)
+                        .ok_or("journey camp projection is incoherent: terminal rest elapsed overflowed")?;
+                    (after_completed_elapsed, camp.total_elapsed_minutes)
+                }
+                _ => {
+                    return Err(
+                        "journey camp projection is incoherent: rest changed the active journey identity"
+                            .into(),
+                    );
+                }
+            };
+            let interrupted =
+                self.party_has_public_travel_interruption(party_id, after_rest_party.leader_id);
+            let post_rest_progress = classify_post_rest_progress(
+                before_completed_elapsed,
+                rest_minutes,
+                after_completed_elapsed,
+                after_total_elapsed,
+                interrupted,
+                terminal_state_change,
+            )
+            .map_err(|reason| {
+                format!(
+                    "journey camp projection is incoherent: rest did not produce a safe forecast boundary: reason={reason}"
+                )
+            })?;
+            let actual_rest_minutes = post_rest_progress.actual_rest_minutes();
+            let post_rest_agent = self
+                .current_leader(party_id)
+                .map_or(travel_agent, |(_, agent)| agent);
             self.event(
-                agent,
+                post_rest_agent,
                 CoreLoopEventKind::Camp,
                 format!(
-                    "phase=post_rest;party={};completed_elapsed={};total_elapsed={};rest_minutes={rest_minutes};remaining_movement={}",
+                    "phase=post_rest;party={};completed_elapsed={after_completed_elapsed};total_elapsed={after_total_elapsed};requested_rest_minutes={rest_minutes};actual_rest_minutes={actual_rest_minutes};terminal_state_change={terminal_state_change};terminal_deaths={};leader_before={leader_before_rest};leader_after={};shelter={shelter:?};remaining_movement={}",
                     bounded_event_field(party_id),
-                    after_rest_journey.completed_elapsed_minutes,
-                    after_rest_journey.total_elapsed_minutes,
+                    terminal_ids.len(),
+                    after_rest_party.leader_id,
                     after_rest_party.camp_remaining_minutes,
                 ),
             );
+            if actual_rest_minutes > 0 {
+                self.metrics.camp_stops = self.metrics.camp_stops.saturating_add(1);
+            }
+            if terminal_state_change {
+                if self.expedition_recovery_actor(party_id).is_none() {
+                    return self.record_journey_hold(
+                        party_id,
+                        "journey_stalled_after_terminal_rest",
+                        "journey_held_no_actionable_actor",
+                    );
+                }
+                continue;
+            }
+            if interrupted {
+                continue;
+            }
+            let Some((continue_actor, agent, continue_actor_role)) =
+                self.expedition_recovery_actor(party_id)
+            else {
+                return self.record_journey_hold(
+                    party_id,
+                    "journey_stalled_after_rest",
+                    "journey_held_no_actionable_actor",
+                );
+            };
             let evacuation_leg = matches!(
                 after_rest_party.camp_destination,
                 Some(JourneyEndpoint::Settlement(_))
@@ -833,7 +1394,6 @@ impl LiveRunner {
                 .continue_camp_travel_then(continue_actor, cb));
             self.call(result)?;
             self.observe_deaths();
-            self.metrics.camp_stops += 1;
             self.event(
                 agent,
                 CoreLoopEventKind::Camp,
@@ -941,7 +1501,11 @@ impl LiveRunner {
         Ok(Some(JourneyTravelOutcome::Completed))
     }
 
-    pub(super) fn choose_quest(&self, party: &Party, profile: &AgentProfile) -> Option<BackendContract> {
+    pub(super) fn choose_quest(
+        &self,
+        party: &Party,
+        profile: &AgentProfile,
+    ) -> Option<BackendContract> {
         let settlement = party.current_settlement_id.as_ref()?;
         let mut quests: Vec<_> = self
             .connection
@@ -950,6 +1514,10 @@ impl LiveRunner {
             .iter()
             .filter(|q| q.settlement_id == *settlement && q.status == ContractStatus::Offered)
             .collect();
+        quests.retain(|quest| {
+            self.public_party_contract_assessment(&party.id, quest)
+                .eligible
+        });
         quests.sort_by_key(|q| {
             let risk_target = (profile.risk_tolerance * 10.0).round() as i32;
             ((q.difficulty - risk_target).abs(), q.id.clone())
@@ -972,5 +1540,4 @@ impl LiveRunner {
                     )
             })
     }
-
 }

@@ -26,7 +26,7 @@ pub fn audit(seeds: u64) -> BTreeMap<TemplateFamily, u64> {
 pub fn test_witnesses() -> Vec<WitnessCandidate> {
     vec![
         WitnessCandidate {
-            npc_id: "npc:a".into(),
+            resident_character_id: 1,
             display_name: "Anna Weber".into(),
             demographic: WitnessDemographic::Child,
             age_band: "child".into(),
@@ -42,7 +42,7 @@ pub fn test_witnesses() -> Vec<WitnessCandidate> {
             ]),
         },
         WitnessCandidate {
-            npc_id: "npc:b".into(),
+            resident_character_id: 2,
             display_name: "Berthold Fischer".into(),
             demographic: WitnessDemographic::Guard,
             age_band: "adult".into(),
@@ -58,7 +58,7 @@ pub fn test_witnesses() -> Vec<WitnessCandidate> {
             ]),
         },
         WitnessCandidate {
-            npc_id: "npc:c".into(),
+            resident_character_id: 3,
             display_name: "Clara Hoffmann".into(),
             demographic: WitnessDemographic::Merchant,
             age_band: "elder".into(),

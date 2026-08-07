@@ -5,8 +5,8 @@ use bevy_replicon::prelude::*;
 
 use crate::FIXED_TIMESTEP_HZ;
 use crate::message::{
-    AttackRequest, AttackStartedRequest, DefendRequest, JoinRequest, PlayerInputRequest,
-    SuccessfulAttackResponse,
+    DebugGameTimeScaleRequest, DefendRequest, JoinRequest, MeleeActionRequest, PlayerInputRequest,
+    RangedActionRequest, SuccessfulAttackResponse, TacticalOutcomeResponse,
 };
 
 #[derive(Default)]
@@ -21,11 +21,13 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
         app.insert_resource(Time::<Fixed>::from_hz(FIXED_TIMESTEP_HZ as f64))
             .add_plugins(RepliconPlugins)
             .replicate::<Player>()
-            .replicate::<PlayerId>()
+            .replicate::<CharacterId>()
             .replicate::<Limbs>()
             .replicate::<CombatState>()
             .replicate::<Skills>()
             .replicate::<Stats>()
+            .replicate::<TacticalCombatState>()
+            .replicate::<SkeletonState>()
             .replicate::<Attributes>()
             .replicate::<Transform>()
             .replicate::<CharacterLook>()
@@ -40,10 +42,12 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .replicate::<SceneTerrain>()
             .add_client_event::<JoinRequest>(Channel::Ordered)
             .add_client_event::<PlayerInputRequest>(Channel::Unreliable)
+            .add_client_event::<DebugGameTimeScaleRequest>(Channel::Ordered)
             .add_client_event::<DefendRequest>(Channel::Unreliable)
-            .add_client_event::<AttackStartedRequest>(Channel::Unreliable)
-            .add_mapped_client_event::<AttackRequest>(Channel::Ordered)
-            .add_mapped_server_event::<SuccessfulAttackResponse>(Channel::Ordered);
+            .add_mapped_client_event::<MeleeActionRequest>(Channel::Ordered)
+            .add_mapped_client_event::<RangedActionRequest>(Channel::Ordered)
+            .add_mapped_server_event::<SuccessfulAttackResponse>(Channel::Ordered)
+            .add_server_event::<TacticalOutcomeResponse>(Channel::Ordered);
 
         // Replicating physics components since those don't change and
         // it's useful for debugging. Can be gated behind a feature flag, but

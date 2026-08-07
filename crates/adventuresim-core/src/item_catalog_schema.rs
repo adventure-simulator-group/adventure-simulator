@@ -14,6 +14,8 @@ pub struct ItemDefinition {
     pub id: String,
     pub display_name: String,
     pub weight_kg: f32,
+    /// Exterior displacement used when this object is placed in a container.
+    pub exterior_volume_ml: u32,
     pub base_value: u32,
     #[serde(default)]
     pub tags: Vec<String>,

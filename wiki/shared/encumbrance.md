@@ -22,10 +22,10 @@ weight from `character_condition`; invalid or missing legacy values use the
 70 kg schema default rather than silently treating every member as the same
 weight.
 
-Inventory rails split the summary into equal-width halves. The left half shows
-the exact burden and capacity to one decimal place with the exact penalty to
-one decimal percent directly below it. The right half is a stable-width
-green-to-yellow-to-red meter whose marker follows the same linear penalty.
+Inventory rails show a full-width green-to-yellow-to-red meter whose marker
+follows the linear penalty. Keyboard focus or pointer hover opens the shared
+tooltip with exact burden, capacity, and penalty values; the same detail is
+available through the meter's accessible value without persistent numeric copy.
 Merchant Player tabs use the personal summary; merchant
 Party tabs use the living-party aggregate. The party chest also shows this
 aggregate: all living party members' burdens and capacities are summed, with

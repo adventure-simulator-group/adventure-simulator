@@ -21,9 +21,12 @@ pub struct MissionAuthority {
     pub status: MissionAttemptStatus,
     pub committed_resolution: Option<HostileResolutionKind>,
     pub committed_capture_subject_id: Option<String>,
+    pub committed_capture_custody_version: Option<u32>,
     pub scene_key: String,
     pub hostile_version: u16,
     pub enemy_count: u32,
+    pub enemy_character_ids: Vec<u64>,
+    pub contacted_before_combat: bool,
     pub enemy_difficulty: i32,
     pub enemy_combat_scale_bps: u32,
     pub normalized_combat_power: u32,
@@ -50,9 +53,13 @@ pub struct MissionAuthorityCols {
     pub committed_resolution:
         __sdk::__query_builder::Col<MissionAuthority, Option<HostileResolutionKind>>,
     pub committed_capture_subject_id: __sdk::__query_builder::Col<MissionAuthority, Option<String>>,
+    pub committed_capture_custody_version:
+        __sdk::__query_builder::Col<MissionAuthority, Option<u32>>,
     pub scene_key: __sdk::__query_builder::Col<MissionAuthority, String>,
     pub hostile_version: __sdk::__query_builder::Col<MissionAuthority, u16>,
     pub enemy_count: __sdk::__query_builder::Col<MissionAuthority, u32>,
+    pub enemy_character_ids: __sdk::__query_builder::Col<MissionAuthority, Vec<u64>>,
+    pub contacted_before_combat: __sdk::__query_builder::Col<MissionAuthority, bool>,
     pub enemy_difficulty: __sdk::__query_builder::Col<MissionAuthority, i32>,
     pub enemy_combat_scale_bps: __sdk::__query_builder::Col<MissionAuthority, u32>,
     pub normalized_combat_power: __sdk::__query_builder::Col<MissionAuthority, u32>,
@@ -83,9 +90,21 @@ impl __sdk::__query_builder::HasCols for MissionAuthority {
                 table_name,
                 "committed_capture_subject_id",
             ),
+            committed_capture_custody_version: __sdk::__query_builder::Col::new(
+                table_name,
+                "committed_capture_custody_version",
+            ),
             scene_key: __sdk::__query_builder::Col::new(table_name, "scene_key"),
             hostile_version: __sdk::__query_builder::Col::new(table_name, "hostile_version"),
             enemy_count: __sdk::__query_builder::Col::new(table_name, "enemy_count"),
+            enemy_character_ids: __sdk::__query_builder::Col::new(
+                table_name,
+                "enemy_character_ids",
+            ),
+            contacted_before_combat: __sdk::__query_builder::Col::new(
+                table_name,
+                "contacted_before_combat",
+            ),
             enemy_difficulty: __sdk::__query_builder::Col::new(table_name, "enemy_difficulty"),
             enemy_combat_scale_bps: __sdk::__query_builder::Col::new(
                 table_name,

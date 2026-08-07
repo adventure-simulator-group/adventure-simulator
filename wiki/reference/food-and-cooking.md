@@ -1,5 +1,20 @@
 # Food and cooking
 
+## Container cooking lanes
+
+Loose selected food remains the single spit-roast lane. A pan, pot, or portable
+oven is instead placed as an exact stable object at one exact fireplace and
+disappears from carried inventory until retrieved there. Multiple vessels can
+cook simultaneously beside the loose roast.
+
+Starting a vessel consumes every directly contained uncooked food lot in full;
+non-food solids remain untouched. Pan, pot, and oven select pan-fry, stew, and
+bake. Stew requires water physically inside the pot, and all contained water
+joins the meal. Contents are locked while cooking. Retrieval applies the same
+early/exact/late quality, nutrition, contamination, value, and provenance rules
+and creates one measured cooked-meal lot inside the original vessel before its
+subtree returns to the recorded personal or party inventory.
+
 This page describes current production behavior. Food rows now use the initial
 integer quantity-plus-measured-state rollout in
 [`measured-inventory.md`](measured-inventory.md), while conserved food-lot
@@ -7,7 +22,8 @@ mass, nutrition, and value remain floating fields pending the stable
 measured-object schema.
 
 Food is authoritative strategic inventory. `ItemKind::Food` identifies ordinary
-foods, while edible herbalist ingredients may retain `Ingredient`. Every
+foods, while edible or medicinal ingredients may retain `Ingredient`. Both use
+the same measured lot model and may carry zero nutrition or flavor. Every
 acquisition creates one independent quantity-one `food_lot` per purchased or
 found unit; food lots never merge merely because item IDs match. The inventory
 row identifies the batch, while mass, calories, value, quality, five flavor
@@ -36,8 +52,8 @@ separate private row anchors microbial concentration and exponential growth.
 Growth is evaluated lazily from strategic time and bounded; there is no spoilage
 tick. Initial loads are deterministic server-random log-scale samples. Raw meat
 grows fastest, cooked meat is heat-reduced and slower, and intact produce and
-nuts are lower-risk. Temperature, storage, preservation, undercooking, and
-burning are deferred.
+nuts are lower-risk. Temperature, storage, and preservation remain deferred;
+undercooking and method-aware late cooking are modeled at fireplace retrieval.
 
 Ingestion uses current concentration times consumed mass as a direct dose for
 existing Dysentery (`Bloody flux`), whose vector is already food/water. The
@@ -52,37 +68,80 @@ private, field, and camp rest provide no food or drinking water.
 
 ## Cooking
 
-The active character's Cooking skill icon is a raised menu button; flat skill
-icons remain informational. Activating Cooking opens a wide, responsive modal
-dialog over the unchanged character sheet. It uses the same two-sided inventory
-browser as trading and
-looting: the cooking pot is on the left, the character's full inventory is on
-the right, and transfer arrows stage bounded amounts of food between them. The
-amount controls use integer milliunits internally and quarter-unit steps in the
-current interface, including a final smaller remainder when necessary. The
-center shows a placeholder cooking scene, Cook and Cancel, and a horizontal
-icon row for pan-fry, stew, roast/skewer, and bake. Roast is always available.
-Pan-fry requires a pan, stew a pot plus water, and bake a portable oven. Stew
-draws pooled party water before carried water. Tools are retained. Inns sell
-the food ingredients and reusable implements needed by this interface. The
-preview reports estimated duration and flavor score and calls out roast calorie
-loss, a fatless pan, and stew disposal; the reducer remains authoritative.
+Cooking is entered through an environmental Fireplace portrait alongside the
+people at a journey camp or an actual settlement building. Public Square, maps,
+roads, and case sites have no fireplace. The Cooking skill row is informational.
+The fireplace opens a trade-style station: personal inventory is the default,
+and party inventory is an explicit alternate source and retrieval destination.
+Transfer arrows stage bounded measured portions in quarter-unit steps. `Add
+Ingredients` warns that committing is irreversible because the ingredients are
+immediately consolidated into one generic meal escrow. Cutting and grinding
+are ingredient-row Edge Actions; they preserve nutrition and flavor while
+reducing authored safety time to 75% and 50% respectively.
+
+Each character has private station contents at each exact fireplace even though
+everyone sees the shared environmental portrait. Station custody persists a
+canonical fireplace fixture ID rather than a route-shaped context key.
+Settlement authority separately proves the fixture's exact current venue and
+that building's availability; camp authority separately proves the fixture's
+party, journey departure minute, and reached movement minute, preventing a
+station from leaking between camps or journeys. Non-canonical fixture strings,
+tactical actors, and stale or remote places are rejected. A station holds at
+most one dish and one installed
+instrument. Trading a pan, pot, or portable oven into an idle station selects
+pan-fry, stew, or bake; no instrument selects roast. A dish captures its exact
+operational character or party return custody before ingredients are consumed,
+using the shared physical-object custody vocabulary. Retrieval returns the
+cooked meal only to that immutable custody, even if the
+character later changes parties; a caller-selected destination cannot redirect
+it, and a missing original party fails closed. Replacing or removing a tool
+returns it to its recorded character or exact party custody. If that custody is no longer
+available, the tool stays installed rather than being lost. Party-sourced tools
+remember the exact originating party rather than following the character into a
+new party. Equipped tools are ineligible, and instruments cannot change while a
+dish occupies the fireplace. A party cannot break its current camp while any
+member still has a dish or instrument in that exact camp context; the camp must
+be cleared first. A member likewise cannot leave or be removed, and a camped
+party cannot disband, while affected private custody remains. Death is the one
+deterministic exception: the dead owner's unfinished dish is abandoned, an
+installed tool returns to its exact personal or recorded party source when
+possible, and an unavailable party return falls back to the dead character's
+personal estate inventory. If no character record remains, the tool is
+abandoned with the station. Only that owner's private rows are cleaned.
 
 Duration is method setup plus the slowest ingredient's safety/doneness time plus
-square-root batch scaling. The reducer preflights actor, state, selections,
-tools, water, and arithmetic before mutation. It advances neutral strategic
-time, and consumes inputs. Pan-fry, roast, and bake create a carried derived
-food lot; cooking no longer also eats those meals. Stew is the sole exception:
-soup is immediately eaten up to the one-day fullness cap because it cannot be
-carried, and any remainder is discarded. Consumed stew water contributes its
-milliliters divided by 1,000 to finished mass before flavor scoring and
-contamination dilution. Only the registered strategic gateway may
-invoke eating or cooking, and tactical actors are rejected. Cooking advances its
-safe time prefix before consuming supplies: a terminal interruption commits the
-elapsed time and terminal event, leaves ingredients and water untouched, and
-creates no meal. Remainders stay as independent lots, and their current lot mass
-and value drive encumbrance and merchant quotes. Completing a meal trains the
-mental, trained Cooking skill for the elapsed cooking time. A character can
+square-root batch scaling. The reducer atomically preflights actor, exact
+location, empty station, unique selection, ownership, measured amounts, tools,
+water, and arithmetic before mutation. Commit consumes ingredients immediately
+without advancing time and stores one aggregate escrow containing conserved
+mass, calories, value, flavors, provenance, and private contamination inputs.
+Stew draws pooled party water before carried water and includes that water in
+finished mass. Clean cooking water adds no pathogen dose and dilutes the
+ingredients' microbial load across that final water-inclusive mass. The dish is
+retrievable like every other dish and is never auto-eaten or discarded.
+`cooked_meal` cannot be submitted as an ingredient.
+
+Progress is evaluated lazily from the owner's `CharacterTime`, so resting,
+travelling, or spending time elsewhere cooks the dish. The fireplace page shows
+the contributor, start-relative status, target, and remaining minutes, but never
+hidden microbial load. Its convenience rest control uses minutes and defaults
+to the remaining target time; once ready it stays visible with method-specific
+late status. Retrieval may put the meal in personal or current
+party inventory, frees the dish, and leaves the tool installed. Early retrieval
+reduces quality and interpolates calories from the raw total toward the normal
+ready retention. It geometrically interpolates microbial kill from raw load to
+the method's complete kill and linearly interpolates microbial growth from the
+raw ingredient rate to the cooked rate. This preserves meaningful Dysentery
+risk. Exact-target retrieval gives the ordinary cooking result. Late pan-frying
+and baking reduce calories linearly to zero and lower quality to tier 1 by one
+additional target duration. Wet pot cooking reaches readiness and safely
+plateaus: it never burns or dries and preserves ready nutrition, quality, and
+microbial kill. Roasting never burns. Late roast time progressively changes the
+durable state to dried/smoked and approaches one additional fixed 15% nutrition
+loss without reapplying ordinary ready roast retention. Extreme elapsed values
+are bounded. Fireplace waiting and retrieval award no passive
+Cooking experience, mastery, or morale. Remainders stay as independent lots,
+and their current lot mass and value drive encumbrance and merchant quotes. A character can
 also apprentice as a cook through the inn's ordinary profession dialogue;
 apprenticeship and later independent practice follow the same progression and
 payment rules as the other non-religious settlement professions.
@@ -124,6 +183,9 @@ nutrition multiplier.
 
 Raw wild foods gathered through current-vicinity foraging enter personal
 inventory through the same validated non-fungible food-lot path as other food.
+Every harvested unit receives a stable physical-object identity and a private
+request/place provenance receipt, so later preparation can bind the exact
+material revision rather than a fungible catalog quantity.
 Watercress and seaweed extend Plants for wet-ground and coast foraging.
 Venison is High Game, fowl is Low Game, fish requires wet ground or coast, and
 minimal beast meat keeps Harmful Beasts functional. All use authoritative

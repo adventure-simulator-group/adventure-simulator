@@ -11,6 +11,7 @@ use super::starting_age_tier_coordinate_type::StartingAgeTierCoordinate;
 pub struct StartingCharacterClaim {
     pub request_key: String,
     pub character_id: u64,
+    pub owner_key: String,
     pub generator_version: u16,
     pub seed: String,
     pub age_tier: StartingAgeTierCoordinate,
@@ -27,6 +28,7 @@ impl __sdk::InModule for StartingCharacterClaim {
 pub struct StartingCharacterClaimCols {
     pub request_key: __sdk::__query_builder::Col<StartingCharacterClaim, String>,
     pub character_id: __sdk::__query_builder::Col<StartingCharacterClaim, u64>,
+    pub owner_key: __sdk::__query_builder::Col<StartingCharacterClaim, String>,
     pub generator_version: __sdk::__query_builder::Col<StartingCharacterClaim, u16>,
     pub seed: __sdk::__query_builder::Col<StartingCharacterClaim, String>,
     pub age_tier: __sdk::__query_builder::Col<StartingCharacterClaim, StartingAgeTierCoordinate>,
@@ -39,6 +41,7 @@ impl __sdk::__query_builder::HasCols for StartingCharacterClaim {
         StartingCharacterClaimCols {
             request_key: __sdk::__query_builder::Col::new(table_name, "request_key"),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
+            owner_key: __sdk::__query_builder::Col::new(table_name, "owner_key"),
             generator_version: __sdk::__query_builder::Col::new(table_name, "generator_version"),
             seed: __sdk::__query_builder::Col::new(table_name, "seed"),
             age_tier: __sdk::__query_builder::Col::new(table_name, "age_tier"),
@@ -52,6 +55,7 @@ impl __sdk::__query_builder::HasCols for StartingCharacterClaim {
 /// Provides typed access to indexed columns for query building.
 pub struct StartingCharacterClaimIxCols {
     pub character_id: __sdk::__query_builder::IxCol<StartingCharacterClaim, u64>,
+    pub owner_key: __sdk::__query_builder::IxCol<StartingCharacterClaim, String>,
     pub request_key: __sdk::__query_builder::IxCol<StartingCharacterClaim, String>,
 }
 
@@ -60,6 +64,7 @@ impl __sdk::__query_builder::HasIxCols for StartingCharacterClaim {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         StartingCharacterClaimIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
+            owner_key: __sdk::__query_builder::IxCol::new(table_name, "owner_key"),
             request_key: __sdk::__query_builder::IxCol::new(table_name, "request_key"),
         }
     }

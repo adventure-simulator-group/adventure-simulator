@@ -33,6 +33,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use config::Config;
 use live::LiveState;
 use routes::{AppState, build_router};
+use session::SessionCodec;
 use spacetimedb::{SpacetimeClient, sats_option};
 
 #[tokio::main]
@@ -48,6 +49,10 @@ async fn main() -> anyhow::Result<()> {
 
     // Parse config
     let config = Config::parse();
+    let session_codec = std::sync::Arc::new(SessionCodec::from_base64url(
+        &config.strategic_session_secret,
+        config.strategic_session_cookie_secure,
+    )?);
 
     tracing::info!("Starting strategic-web server on {}", config.bind_address);
     tracing::info!(
@@ -126,6 +131,7 @@ async fn main() -> anyhow::Result<()> {
         live,
         strategic_map,
         terrain,
+        session_codec,
     };
 
     // Keep a middleware-free clone for rendering authoritative POST

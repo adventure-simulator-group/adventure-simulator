@@ -28,6 +28,7 @@ pub struct CharacterCapability {
     pub command: f32,
     pub religion: f32,
     pub weapon_precision: f32,
+    pub autoresolve_combat_power: u64,
 }
 
 impl __sdk::InModule for CharacterCapability {
@@ -59,6 +60,7 @@ pub struct CharacterCapabilityCols {
     pub command: __sdk::__query_builder::Col<CharacterCapability, f32>,
     pub religion: __sdk::__query_builder::Col<CharacterCapability, f32>,
     pub weapon_precision: __sdk::__query_builder::Col<CharacterCapability, f32>,
+    pub autoresolve_combat_power: __sdk::__query_builder::Col<CharacterCapability, u64>,
 }
 
 impl __sdk::__query_builder::HasCols for CharacterCapability {
@@ -89,6 +91,10 @@ impl __sdk::__query_builder::HasCols for CharacterCapability {
             command: __sdk::__query_builder::Col::new(table_name, "command"),
             religion: __sdk::__query_builder::Col::new(table_name, "religion"),
             weapon_precision: __sdk::__query_builder::Col::new(table_name, "weapon_precision"),
+            autoresolve_combat_power: __sdk::__query_builder::Col::new(
+                table_name,
+                "autoresolve_combat_power",
+            ),
         }
     }
 }

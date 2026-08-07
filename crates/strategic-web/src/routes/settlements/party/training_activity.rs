@@ -4,6 +4,7 @@ pub(super) struct TrainingScheduleForm {
     reading_minutes: u16,
     combat_training_minutes: u16,
     carousing_minutes: u16,
+    socializing_minutes: u16,
     apprenticeship_minutes: u16,
     apprenticeship_organization_id: Option<String>,
     profession_practice_minutes: u16,
@@ -35,7 +36,7 @@ mod training_schedule_form_tests {
     fn immediate_route_checks_resolved_location_before_calling_reducer() {
         let source = include_str!("training_activity.rs");
         let handler = source
-            .split_once("pub(super) async fn perform_immediate_activity(\n")
+            .rsplit_once("pub(super) async fn perform_immediate_activity(")
             .map(|(_, tail)| tail)
             .and_then(|tail| tail.split("pub(super) async fn party_member").next())
             .expect("immediate activity handler");
@@ -64,6 +65,7 @@ pub(super) async fn update_training_schedule(
         reading_minutes: form.reading_minutes,
         combat_training_minutes: form.combat_training_minutes,
         carousing_minutes: form.carousing_minutes,
+        socializing_minutes: form.socializing_minutes,
         apprenticeship_minutes: form.apprenticeship_minutes,
         apprenticeship_organization_id: form.apprenticeship_organization_id,
         profession_practice_minutes: form.profession_practice_minutes,
@@ -80,13 +82,12 @@ pub(super) async fn update_training_schedule(
             &[
                 json!(character_id),
                 schedule_allocation_reducer_arg(&downtime),
-                schedule_allocation_reducer_arg(&ScheduleAllocation::default()),
             ],
         )
         .await
     {
         Ok(()) => Redirect::to(
-            &building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")),
+            &building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party/{character_id}")).await,
         )
         .into_response(),
         Err(error) => {
@@ -188,7 +189,7 @@ pub(super) async fn perform_immediate_activity(
                     .into_response();
             }
             Redirect::to(
-                &building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")),
+                &building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party/{character_id}")).await,
             )
             .into_response()
         }
@@ -209,7 +210,7 @@ pub(super) async fn party_member(
             return Html("<h1>Strategic data is unavailable</h1>".to_string());
         }
     };
-    location.active_building = building.valid().map(str::to_owned);
+    location.active_building = building.valid_for(&location).map(str::to_owned);
 
     let Some((active_character, active_inventory)) =
         get_active_character(&state, session.character_id_u64()).await
@@ -224,14 +225,15 @@ pub(super) async fn party_member(
     let selected = if character_id == active_character.id {
         active_character.clone()
     } else {
-        let characters: Vec<Character> = state
-            .db
-            .query(&format!(
-                "SELECT * FROM character WHERE id = {character_id}"
-            ))
+        let character = crate::routes::data::character_as_observed(
+            &state,
+            character_id,
+            active_character.id,
+        )
             .await
-            .unwrap_or_default();
-        match characters.into_iter().next() {
+            .ok()
+            .flatten();
+        match character {
             Some(character) => character,
             None => return Html("<h1>Party member not found</h1>".to_string()),
         }
@@ -274,6 +276,14 @@ pub(super) async fn party_member(
         .query("SELECT * FROM food_lot")
         .await
         .unwrap_or_default();
+    let preparation_plans: Vec<BackendIngredientPreparationPlan> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM backend_ingredient_preparation_plans WHERE actor_character_id = {}",
+            active_character.id
+        ))
+        .await
+        .unwrap_or_default();
     let selected_targets = personal_inventory_targets(&state, selected.id).await;
     let active_targets = personal_inventory_targets(&state, active_character.id).await;
     let encumbrance_rows =
@@ -301,6 +311,7 @@ pub(super) async fn party_member(
                 &active_inventory,
                 &items,
                 &food_lots,
+                &preparation_plans,
                 &party_members,
                 active_equip.first(),
                 active_encumbrance,
@@ -343,7 +354,7 @@ pub(super) async fn party_pool_inventory(
             return Html("<h1>Strategic data is unavailable</h1>".into());
         }
     };
-    location.active_building = building.valid().map(str::to_owned);
+    location.active_building = building.valid_for(&location).map(str::to_owned);
     let Some((character, inventory)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
@@ -376,6 +387,14 @@ pub(super) async fn party_pool_inventory(
         .query("SELECT * FROM food_lot")
         .await
         .unwrap_or_default();
+    let preparation_plans: Vec<BackendIngredientPreparationPlan> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM backend_ingredient_preparation_plans WHERE actor_character_id = {}",
+            character.id
+        ))
+        .await
+        .unwrap_or_default();
     let items: Vec<ItemDefinition> = state
         .db
         .query("SELECT * FROM item")
@@ -401,6 +420,7 @@ pub(super) async fn party_pool_inventory(
             stake,
             &items,
             &food_lots,
+            &preparation_plans,
             &members,
             equip.first(),
             &personal_targets,

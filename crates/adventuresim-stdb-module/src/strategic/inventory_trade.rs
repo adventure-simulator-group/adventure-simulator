@@ -1,3 +1,5 @@
+use crate::inventory_container::inventory_object as _;
+
 /// Transfer a stack of items between two members of the same party.
 #[reducer]
 pub fn transfer_party_item(
@@ -30,6 +32,21 @@ pub fn transfer_party_item(
     }
     if crate::character::inventory_item_is_equipped(ctx, from_character_id, inventory_item_id) {
         return Err("Unequip an item before transferring it".into());
+    }
+
+    let container_object =
+        crate::inventory_container::object_for_row(ctx, "personal", source_item.id)?;
+    if let Some(object) = container_object {
+        if !physical_object_row_is_atomic(true, quantity, source_item.quantity) {
+            return Err("A physical object must move as one exact inventory row".into());
+        }
+        crate::inventory_container::detach_if_nested(ctx, object.id)?;
+        crate::inventory_container::rehome_subtree(
+            ctx, object.id, "personal", &to_character_id.to_string(),
+        )?;
+        crate::capability::refresh_character_capability(ctx, from_character_id)?;
+        crate::capability::refresh_character_capability(ctx, to_character_id)?;
+        return Ok(());
     }
 
     let measured = crate::inventory_amount::personal_amount(ctx, source_item.id).is_some();
@@ -203,6 +220,22 @@ fn party_inventory_value(
     }
 }
 
+fn personal_subtree_value(ctx: &ReducerContext, root_object_id: u64) -> Result<u64, String> {
+    crate::inventory_container::subtree_object_ids(ctx, root_object_id)?.into_iter().try_fold(0u64, |total, id| {
+        let object = ctx.db.inventory_object().id().find(id).ok_or("Inventory subtree object is missing")?;
+        let row = ctx.db.inventory_item().id().find(object.inventory_row_id).ok_or("Inventory subtree row is missing")?;
+        total.checked_add(personal_inventory_value(ctx, &row, row.quantity)?).ok_or("Inventory subtree value overflow".into())
+    })
+}
+
+fn party_subtree_value(ctx: &ReducerContext, root_object_id: u64) -> Result<u64, String> {
+    crate::inventory_container::subtree_object_ids(ctx, root_object_id)?.into_iter().try_fold(0u64, |total, id| {
+        let object = ctx.db.inventory_object().id().find(id).ok_or("Inventory subtree object is missing")?;
+        let row = ctx.db.party_inventory_item().id().find(object.inventory_row_id).ok_or("Party inventory subtree row is missing")?;
+        total.checked_add(party_inventory_value(ctx, &row, row.quantity)?).ok_or("Inventory subtree value overflow".into())
+    })
+}
+
 fn item_is_durable(ctx: &ReducerContext, item_id: &str) -> bool {
     ctx.db
         .item()
@@ -231,7 +264,7 @@ mod durable_custody_tests {
         };
         assert!(clothing.repairable);
 
-        let source = STRATEGIC_SOURCE;
+        let source = crate::strategic::STRATEGIC_SOURCE;
         let durable_policy = source
             .split("fn item_is_durable")
             .nth(1)
@@ -267,11 +300,85 @@ mod durable_custody_tests {
     }
 }
 
+fn physical_object_row_is_atomic(has_object: bool, quantity: u32, row_quantity: u32) -> bool {
+    !has_object || (quantity == 1 && row_quantity == 1)
+}
+
+#[cfg(test)]
+mod physical_object_custody_tests {
+    use super::physical_object_row_is_atomic;
+
+    fn section<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+        source
+            .split(start)
+            .nth(1)
+            .unwrap()
+            .split(end)
+            .next()
+            .unwrap()
+    }
+
+    #[test]
+    fn empty_root_objects_keep_identity_across_every_trade_path() {
+        assert!(physical_object_row_is_atomic(false, 1, 20));
+        assert!(physical_object_row_is_atomic(true, 1, 1));
+        assert!(!physical_object_row_is_atomic(true, 1, 2));
+        assert!(!physical_object_row_is_atomic(true, 2, 2));
+
+        let source = crate::strategic::STRATEGIC_SOURCE;
+        for (start, end) in [
+            (
+                "#[reducer]\npub fn transfer_party_item",
+                "fn objective_item_value",
+            ),
+            (
+                "#[reducer]\npub fn deposit_party_inventory_item",
+                "pub(crate) fn consume_personal_gold",
+            ),
+            (
+                "#[reducer]\npub fn withdraw_party_inventory_item",
+                "#[reducer]\npub fn liquidate_party_inventory",
+            ),
+        ] {
+            let transfer = section(source, start, end);
+            assert!(transfer.contains("if let Some(object)"));
+            assert!(transfer.contains("rehome_subtree"));
+            assert!(!transfer.contains("object.filter(|_| container_subtree)"));
+        }
+
+        for (start, end) in [
+            (
+                "#[reducer]\npub fn liquidate_party_inventory",
+                "#[reducer]\npub fn discard_inventory_items",
+            ),
+            (
+                "#[reducer]\npub fn discard_inventory_items",
+                "#[reducer]\npub fn finalize_party_offer",
+            ),
+        ] {
+            let destruction = section(source, start, end);
+            assert!(destruction.contains("if let Some(object) = object"));
+            assert!(destruction.contains("delete_subtree"));
+            assert!(!destruction.contains("object.filter(|_| subtree)"));
+            assert!(!destruction.contains("object.filter(|object|"));
+        }
+
+        let storefront = section(
+            source,
+            "fn finalize_storefront_trade_impl(ctx: &ReducerContext",
+            "#[reducer]",
+        );
+        assert!(storefront.contains("physical_object_row_is_atomic(container_object.is_some()"));
+        assert!(storefront.contains("if let Some(object) = object"));
+        assert!(storefront.contains("delete_subtree"));
+    }
+}
+
 #[cfg(test)]
 mod medication_custody_tests {
     #[test]
     fn medication_stays_in_quantity_one_rows_across_custody_paths() {
-        let source = STRATEGIC_SOURCE;
+        let source = crate::strategic::STRATEGIC_SOURCE;
         let direct_transfer = source
             .split("pub fn transfer_party_item")
             .nth(1)
@@ -327,7 +434,7 @@ pub(crate) fn add_to_party_inventory(
     let _ = add_to_party_inventory_checked(ctx, party_id, item_id, quantity);
 }
 
-fn add_to_party_inventory_checked(
+pub(crate) fn add_to_party_inventory_checked(
     ctx: &ReducerContext,
     party_id: &str,
     item_id: &str,
@@ -658,6 +765,7 @@ pub(crate) fn complete_bound_mission_success(
         .id()
         .find(&mission_id.to_string())
         .ok_or("Mission authority not found")?;
+    mission.parsed_state()?;
     if mission.status == MissionAttemptStatus::Committed {
         return Ok(false);
     }
@@ -677,6 +785,7 @@ pub(crate) fn complete_bound_mission_success(
     }
     let Some(selected) = sample_mission_candidate(&mission, candidates) else {
         mission.status = MissionAttemptStatus::Failed;
+        mission.parsed_state()?;
         ctx.db.mission_authority().id().update(mission);
         return Ok(false);
     };
@@ -702,35 +811,69 @@ pub(crate) fn complete_bound_mission_success(
     let outcome_source_id = format!("outcome:{mission_id}");
     let committed = commit_hostile_battle_resolution(
         ctx,
-        &outcome_source_id,
-        &battle_id,
-        &mission.party_id,
-        Some(mission_id),
-        Some(&selected.hostile_group_id),
-        selected.resolution,
-        selected.capture_subject_id.as_deref(),
-        dropped_items,
-        selected.resolution == HostileResolutionKind::Defeated,
+        HostileBattleCommit {
+            outcome_source_id: &outcome_source_id,
+            battle_id: &battle_id,
+            party_id: &mission.party_id,
+            mission_id: Some(mission_id),
+            hostile_group_id: Some(&selected.hostile_group_id),
+            resolution: selected.resolution,
+            capture_subject_id: selected.capture_subject_id.as_deref(),
+            dropped_items,
+            include_random_gold: selected.resolution == HostileResolutionKind::Defeated,
+        },
     )?;
     mission.status = MissionAttemptStatus::Committed;
     mission.committed_resolution = Some(selected.resolution);
     mission.committed_capture_subject_id = selected.capture_subject_id;
+    mission.committed_capture_custody_version = selected.capture_custody_version;
+    mission.parsed_state()?;
     ctx.db.mission_authority().id().update(mission);
-    for mut capability in ctx
-        .db
-        .mission_approach_capability()
-        .hostile_group_id()
-        .filter(&selected.hostile_group_id)
-        .filter(|capability| capability.case_site_id == selected.case_site_id)
-        .collect::<Vec<_>>()
-    {
-        capability.active = false;
-        ctx.db.mission_approach_capability().id().update(capability);
-    }
-    if committed {
-        finish_incident_for_hostile_group(ctx, &selected.hostile_group_id)?;
-    }
     Ok(committed)
+}
+
+pub(crate) fn mission_approach_capability_is_pending(
+    ctx: &ReducerContext,
+    capability: &MissionApproachCapability,
+    party_id: &str,
+) -> Result<bool, String> {
+    let Some(case) = ctx.db.case_authority().id().find(&capability.case_id) else {
+        return Ok(false);
+    };
+    if case.generated_case_id.is_empty() || case.resolution_status != CaseResolutionStatus::Open {
+        return Ok(false);
+    }
+    let expression: adventuresim_core::case::ObjectiveExpression =
+        serde_json::from_str(&case.objective_expression_json)
+            .map_err(|_| "Case objective authority is invalid")?;
+    let facts = ctx
+        .db
+        .case_outcome_fact()
+        .case_id()
+        .filter(&case.id)
+        .map(|row| {
+            serde_json::from_str::<adventuresim_core::case::OutcomeFact>(&row.fact_json)
+                .map_err(|_| "Stored outcome fact is invalid".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let core_case_id =
+        adventuresim_core::case::CaseId::new(case.id.clone()).map_err(|_| "Case ID is invalid")?;
+    let evaluation = expression.evaluate(&core_case_id, party_id, &facts);
+    let Some(path) = expression.alternatives.get(usize::from(capability.path_index)) else {
+        return Ok(false);
+    };
+    let Some(objective_index) = path
+        .objectives
+        .iter()
+        .position(|objective| objective.id.as_str() == capability.objective_id)
+    else {
+        return Ok(false);
+    };
+    Ok(evaluation
+        .alternatives
+        .get(usize::from(capability.path_index))
+        .and_then(|path| path.get(objective_index))
+        .is_some_and(|progress| progress.state == adventuresim_core::case::EvaluationState::Pending))
 }
 
 pub(crate) fn fail_bound_mission_attempt(
@@ -745,9 +888,11 @@ pub(crate) fn fail_bound_mission_attempt(
     else {
         return Ok(());
     };
+    mission.parsed_state()?;
     match mission.status {
         MissionAttemptStatus::Bound => {
             mission.status = MissionAttemptStatus::Failed;
+            mission.parsed_state()?;
             ctx.db.mission_authority().id().update(mission);
             Ok(())
         }
@@ -758,19 +903,292 @@ pub(crate) fn fail_bound_mission_attempt(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn commit_hostile_battle_resolution(
-    ctx: &ReducerContext,
-    outcome_source_id: &str,
-    battle_id: &str,
-    party_id: &str,
-    mission_id: Option<&str>,
-    hostile_group_id: Option<&str>,
+struct HostileBattleCommit<'a> {
+    outcome_source_id: &'a str,
+    battle_id: &'a str,
+    party_id: &'a str,
+    mission_id: Option<&'a str>,
+    hostile_group_id: Option<&'a str>,
     resolution: HostileResolutionKind,
-    capture_subject_id: Option<&str>,
+    capture_subject_id: Option<&'a str>,
     dropped_items: Vec<(String, u32)>,
     include_random_gold: bool,
+}
+
+pub(crate) struct HostileResolutionCommit<'a> {
+    pub receipt_id: &'a str,
+    pub party_id: &'a str,
+    pub mission_id: Option<&'a str>,
+    pub hostile_group_id: &'a str,
+    pub observer_character_id: u64,
+    pub case_id: &'a str,
+    pub case_site_id: &'a CaseSiteId,
+    pub resolution: HostileResolutionKind,
+    pub capture_subject_id: Option<&'a str>,
+}
+
+/// Commit the exact persistent hostile outcome without assuming a battle.
+/// Callers remain responsible for any tactical-only artifacts.
+pub(crate) fn commit_hostile_resolution_authority(
+    ctx: &ReducerContext,
+    commit: HostileResolutionCommit<'_>,
 ) -> Result<bool, String> {
+    let HostileResolutionCommit {
+        receipt_id,
+        party_id,
+        mission_id,
+        hostile_group_id,
+        observer_character_id,
+        case_id,
+        case_site_id,
+        resolution,
+        capture_subject_id,
+    } = commit;
+    validate_hostile_resolution_contract(None, None, resolution, capture_subject_id, false)
+        .map_err(str::to_string)?;
+    if let Some(existing) = ctx
+        .db
+        .hostile_resolution_receipt()
+        .id()
+        .find(&receipt_id.to_string())
+    {
+        return if existing.party_id == party_id
+            && existing.mission_id.as_deref() == mission_id
+            && existing.hostile_group_id == hostile_group_id
+            && existing.observer_character_id == observer_character_id
+            && existing.case_id == case_id
+            && existing.case_site_id == *case_site_id
+            && existing.resolution == resolution
+            && existing.capture_subject_id.as_deref() == capture_subject_id
+        {
+            Ok(false)
+        } else {
+            Err("Conflicting hostile resolution retry".into())
+        };
+    }
+    let mut group = ctx
+        .db
+        .hostile_group_authority()
+        .id()
+        .find(&hostile_group_id.to_string())
+        .ok_or("Hostile group not found")?;
+    if group.disposition != HostileGroupDisposition::Active {
+        return Err("Hostile group is already resolved".into());
+    }
+    if resolution == HostileResolutionKind::Surrendered {
+        if !adventuresim_core::strategic_action::hostile_surrender_is_authored(parse_threat(
+            &group.enemy_type,
+        )?) {
+            return Err("Hostile group has no authored surrender policy".into());
+        }
+    }
+    let site = ctx
+        .db
+        .case_site_authority()
+        .id_key()
+        .find(&case_site_id.value)
+        .filter(|site| site.id == *case_site_id && site.case_id == case_id)
+        .ok_or("Hostile resolution case-site authority is stale")?;
+    if group.case_site_id != *case_site_id {
+        return Err("Hostile resolution does not match the hostile-group site".into());
+    }
+    if let Some(mission_id) = mission_id {
+        let mission = ctx
+            .db
+            .mission_authority()
+            .id()
+            .find(&mission_id.to_string())
+            .ok_or("Mission authority not found")?;
+        if mission.party_id != party_id
+            || mission.hostile_group_id.as_deref() != Some(hostile_group_id)
+            || mission.observer_character_id != observer_character_id
+            || mission.case_id != case_id
+            || mission.case_site_id.as_ref() != Some(case_site_id)
+            || mission.status != MissionAttemptStatus::Bound
+        {
+            return Err("Hostile resolution does not match bound mission authority".into());
+        }
+        let exact_candidate = ctx
+            .db
+            .mission_outcome_candidate()
+            .mission_id()
+            .filter(&mission.id)
+            .filter_map(|candidate| {
+                mission_candidate_is_current(ctx, &mission, &candidate)
+                    .ok()
+                    .filter(|current| *current)
+                    .map(|_| candidate)
+            })
+            .any(|candidate| {
+                candidate.hostile_group_id == hostile_group_id
+                    && candidate.resolution == resolution
+                    && candidate.capture_subject_id.as_deref() == capture_subject_id
+            });
+        if !exact_candidate {
+            return Err("Hostile resolution is not an exact current mission candidate".into());
+        }
+    }
+    if mission_id.is_none() {
+        if !matches!(
+            resolution,
+            HostileResolutionKind::DrivenOff | HostileResolutionKind::Surrendered
+        ) {
+            return Err("Pre-combat hostile resolution is unavailable for this outcome".into());
+        }
+        let party = ctx
+            .db
+            .party_authority()
+            .id()
+            .find(&party_id.to_string())
+            .filter(|party| party.leader_id == observer_character_id)
+            .ok_or("Hostile resolution observer is not the party leader")?;
+        if party.current_case_site_id.as_ref() != Some(case_site_id) {
+            return Err("Party is no longer present at the hostile-group site".into());
+        }
+        let exact_capability = ctx
+            .db
+            .mission_approach_capability()
+            .observer_character_id()
+            .filter(observer_character_id)
+            .any(|capability| {
+                capability.active
+                    && capability.case_id == case_id
+                    && capability.resolution == resolution
+                    && capability.case_site_id == *case_site_id
+                    && capability.hostile_group_id == hostile_group_id
+                    && mission_approach_capability_is_pending(ctx, &capability, party_id)
+                        .unwrap_or(false)
+            });
+        let exact_approach = exact_capability
+            || generated_hostile_resolution_available(
+                ctx,
+                observer_character_id,
+                party_id,
+                &site,
+                &group,
+                resolution,
+            );
+        if !exact_approach {
+            return Err("Hostile group has no exact current contextual resolution approach".into());
+        }
+    }
+    group.disposition = match resolution {
+        HostileResolutionKind::Defeated => HostileGroupDisposition::Defeated,
+        HostileResolutionKind::DrivenOff => HostileGroupDisposition::DrivenOff,
+        HostileResolutionKind::Surrendered => HostileGroupDisposition::Surrendered,
+        HostileResolutionKind::Captured => HostileGroupDisposition::Captured,
+        HostileResolutionKind::CaptureTargetKilled => unreachable!(),
+    };
+    ctx.db.hostile_group_authority().id().update(group.clone());
+    crate::world_actor::deactivate_context_roster(ctx, &group.id);
+    match resolution {
+        HostileResolutionKind::Defeated => {
+            ingest_hostile_group_defeat_fact(ctx, receipt_id, party_id, &group, group.enemy_count)?
+        }
+        HostileResolutionKind::DrivenOff => {
+            ingest_case_outcome_fact(
+                ctx,
+                &format!("{receipt_id}:drive-off"),
+                &site.case_id,
+                party_id,
+                adventuresim_core::case::OutcomeFactKind::HostilesDrivenOff {
+                    hostile_group_id: group.id.clone(),
+                },
+            )?;
+        }
+        HostileResolutionKind::Surrendered => {
+            ingest_case_outcome_fact(
+                ctx,
+                &format!("{receipt_id}:surrender"),
+                &site.case_id,
+                party_id,
+                adventuresim_core::case::OutcomeFactKind::HostilesSurrendered {
+                    hostile_group_id: group.id.clone(),
+                },
+            )?;
+        }
+        HostileResolutionKind::Captured => {
+            let subject_id =
+                capture_subject_id.ok_or("Capture result has no mission-bound subject")?;
+            let current = ctx
+                .db
+                .case_custody()
+                .object_id()
+                .find(&subject_id.to_string())
+                .ok_or("Captured subject has no custody authority")?;
+            let site = ctx
+                .db
+                .case_site_authority()
+                .id_key()
+                .find(&group.case_site_id.value)
+                .ok_or("Hostile group case site not found")?;
+            if current.case_id != site.case_id
+                || current.holder_kind != CustodyHolderKind::Site
+                || current.holder_id != group.case_site_id.value
+            {
+                return Err("Capture subject is not bound to this mission site and case".into());
+            }
+            transition_case_custody(
+                ctx,
+                &format!("{receipt_id}:capture"),
+                &current.case_id,
+                party_id,
+                CustodyObjectKind::Subject,
+                subject_id,
+                CustodyHolderKind::Party,
+                party_id,
+                current.version.saturating_add(1),
+                Some(adventuresim_core::case::OutcomeFactKind::SubjectCaptured {
+                    subject_id: adventuresim_core::case::SubjectId::new(subject_id)
+                        .map_err(|_| "Capture subject ID is invalid")?,
+                }),
+            )?;
+        }
+        HostileResolutionKind::CaptureTargetKilled => unreachable!(),
+    }
+    for mut capability in ctx
+        .db
+        .mission_approach_capability()
+        .hostile_group_id()
+        .filter(&hostile_group_id.to_string())
+        .filter(|capability| capability.case_site_id == group.case_site_id)
+        .collect::<Vec<_>>()
+    {
+        capability.active = false;
+        ctx.db.mission_approach_capability().id().update(capability);
+    }
+    finish_incident_for_hostile_group(ctx, hostile_group_id)?;
+    ctx.db
+        .hostile_resolution_receipt()
+        .insert(HostileResolutionReceipt {
+            id: receipt_id.to_string(),
+            party_id: party_id.to_string(),
+            mission_id: mission_id.map(str::to_string),
+            hostile_group_id: hostile_group_id.to_string(),
+            observer_character_id,
+            case_id: case_id.to_string(),
+            case_site_id: case_site_id.clone(),
+            resolution,
+            capture_subject_id: capture_subject_id.map(str::to_string),
+        });
+    Ok(true)
+}
+
+fn commit_hostile_battle_resolution(
+    ctx: &ReducerContext,
+    commit: HostileBattleCommit<'_>,
+) -> Result<bool, String> {
+    let HostileBattleCommit {
+        outcome_source_id,
+        battle_id,
+        party_id,
+        mission_id,
+        hostile_group_id,
+        resolution,
+        capture_subject_id,
+        dropped_items,
+        include_random_gold,
+    } = commit;
     validate_hostile_resolution_contract(
         None,
         None,
@@ -956,79 +1374,42 @@ pub(crate) fn commit_hostile_battle_resolution(
             quantity,
         });
     }
-    if let Some(mut group) = group {
-        group.disposition = match resolution {
-            HostileResolutionKind::Defeated => HostileGroupDisposition::Defeated,
-            HostileResolutionKind::DrivenOff => HostileGroupDisposition::DrivenOff,
-            HostileResolutionKind::Captured => HostileGroupDisposition::Captured,
-            HostileResolutionKind::CaptureTargetKilled => unreachable!(),
+    if let Some(group) = group {
+        let site = ctx
+            .db
+            .case_site_authority()
+            .id_key()
+            .find(&group.case_site_id.value)
+            .ok_or("Hostile group case site not found")?;
+        let observer_character_id = if let Some(mission_id) = mission_id {
+            ctx.db
+                .mission_authority()
+                .id()
+                .find(&mission_id.to_string())
+                .ok_or("Mission authority not found")?
+                .observer_character_id
+        } else {
+            ctx.db
+                .party_authority()
+                .id()
+                .find(&party_id.to_string())
+                .ok_or("Party authority not found")?
+                .leader_id
         };
-        ctx.db.hostile_group_authority().id().update(group.clone());
-        match resolution {
-            HostileResolutionKind::Defeated => ingest_hostile_group_defeat_fact(
-                ctx,
-                outcome_source_id,
+        commit_hostile_resolution_authority(
+            ctx,
+            HostileResolutionCommit {
+                receipt_id: outcome_source_id,
                 party_id,
-                &group,
-                group.enemy_count,
-            )?,
-            HostileResolutionKind::DrivenOff => {
-                let site = ctx
-                    .db
-                    .case_site_authority()
-                    .id_key()
-                    .find(&group.case_site_id.value)
-                    .ok_or("Hostile group case site not found")?;
-                ingest_case_outcome_fact(
-                    ctx,
-                    &format!("{outcome_source_id}:drive-off"),
-                    &site.case_id,
-                    party_id,
-                    adventuresim_core::case::OutcomeFactKind::HostilesDrivenOff {
-                        hostile_group_id: group.id.clone(),
-                    },
-                )?;
-            }
-            HostileResolutionKind::Captured => {
-                let subject_id =
-                    capture_subject_id.ok_or("Capture result has no mission-bound subject")?;
-                let current = ctx
-                    .db
-                    .case_custody()
-                    .object_id()
-                    .find(&subject_id.to_string())
-                    .ok_or("Captured subject has no custody authority")?;
-                if current.case_id
-                    != ctx
-                        .db
-                        .case_site_authority()
-                        .id_key()
-                        .find(&group.case_site_id.value)
-                        .ok_or("Hostile group case site not found")?
-                        .case_id
-                    || current.holder_kind != CustodyHolderKind::Site
-                    || current.holder_id != group.case_site_id.value
-                {
-                    return Err("Capture subject is not bound to this mission site and case".into());
-                }
-                transition_case_custody(
-                    ctx,
-                    &format!("{outcome_source_id}:capture"),
-                    &current.case_id,
-                    party_id,
-                    CustodyObjectKind::Subject,
-                    subject_id,
-                    CustodyHolderKind::Party,
-                    party_id,
-                    current.version.saturating_add(1),
-                    Some(adventuresim_core::case::OutcomeFactKind::SubjectCaptured {
-                        subject_id: adventuresim_core::case::SubjectId::new(subject_id)
-                            .map_err(|_| "Capture subject ID is invalid")?,
-                    }),
-                )?;
-            }
-            HostileResolutionKind::CaptureTargetKilled => unreachable!(),
-        }
+                mission_id,
+                hostile_group_id: &group.id,
+                observer_character_id,
+                case_id: &site.case_id,
+                case_site_id: &site.id,
+                resolution,
+                capture_subject_id,
+            },
+        )?;
     }
     Ok(true)
 }
@@ -1182,6 +1563,25 @@ pub fn deposit_party_inventory_item(
     if crate::character::inventory_item_is_equipped(ctx, character_id, inventory_item_id) {
         return Err("Unequip an item before depositing it".into());
     }
+    if let Some(object) =
+        crate::inventory_container::object_for_row(ctx, "personal", inventory.id)?
+    {
+        if !physical_object_row_is_atomic(true, quantity, inventory.quantity) {
+            return Err("A physical object must be deposited as one exact inventory row".into());
+        }
+        let has_subtree = crate::inventory_container::object_is_nonempty(ctx, object.id)
+            || crate::inventory_container::object_is_nested(ctx, object.id);
+        let value = if has_subtree {
+            personal_subtree_value(ctx, object.id)?
+        } else {
+            personal_inventory_value(ctx, &inventory, quantity)?
+        };
+        crate::inventory_container::detach_if_nested(ctx, object.id)?;
+        crate::inventory_container::rehome_subtree(ctx, object.id, "party", &party_id)?;
+        credit_party_stake(ctx, &party_id, character_id, value)?;
+        crate::capability::refresh_character_capability(ctx, character_id)?;
+        return Ok(());
+    }
     let medication = item_is_medication(ctx, &inventory.item_id);
     if medication && (quantity != 1 || inventory.quantity != 1) {
         return Err("Medication must be deposited as an individual course".into());
@@ -1236,7 +1636,12 @@ pub fn deposit_party_inventory_item(
                     .filter(|row| row.item_id == inventory.item_id)
                     .max_by_key(|row| row.id)
             })
-            .expect("durable party row was just inserted");
+            .ok_or_else(|| {
+                format!(
+                    "Durable party inventory row was not found after depositing item {} into party {}",
+                    inventory.item_id, party_id
+                )
+            })?;
         ctx.db
             .party_item_condition()
             .party_inventory_item_id()
@@ -1426,7 +1831,21 @@ pub fn withdraw_party_inventory_item(
     if quantity == 0 || inventory.party_id != party_id || inventory.quantity < quantity {
         return Err("Invalid party inventory withdrawal".into());
     }
-    let cost = party_inventory_value(ctx, &inventory, quantity)?;
+    let container_object =
+        crate::inventory_container::object_for_row(ctx, "party", inventory.id)?;
+    let container_subtree = container_object.as_ref().is_some_and(|object|
+        crate::inventory_container::object_is_nonempty(ctx, object.id)
+            || crate::inventory_container::object_is_nested(ctx, object.id));
+    if !physical_object_row_is_atomic(
+        container_object.is_some(),
+        quantity,
+        inventory.quantity,
+    ) {
+        return Err("A physical object must be withdrawn as one exact inventory row".into());
+    }
+    let cost = if let Some(object) = container_object.as_ref().filter(|_| container_subtree) {
+        party_subtree_value(ctx, object.id)?
+    } else { party_inventory_value(ctx, &inventory, quantity)? };
     let mut stake = ctx
         .db
         .party_stake()
@@ -1441,6 +1860,12 @@ pub fn withdraw_party_inventory_item(
     if let Some(ref mut stake) = stake {
         stake.value = stake.value.saturating_sub(cost);
         ctx.db.party_stake().id().update(stake.clone());
+    }
+    if let Some(object) = container_object {
+        crate::inventory_container::detach_if_nested(ctx, object.id)?;
+        crate::inventory_container::rehome_subtree(ctx, object.id, "personal", &character_id.to_string())?;
+        crate::capability::refresh_character_capability(ctx, character_id)?;
+        return Ok(());
     }
     let durable = item_is_durable(ctx, &inventory.item_id);
     let medication = item_is_medication(ctx, &inventory.item_id);
@@ -1563,15 +1988,29 @@ pub fn liquidate_party_inventory(
         {
             return Err("Invalid party asset liquidation".into());
         }
-        let line_value = party_inventory_value(ctx, &entry, quantity)?;
+        let object = crate::inventory_container::object_for_row(ctx, "party", entry.id)?;
+        let subtree = object.as_ref().is_some_and(|object|
+            crate::inventory_container::object_is_nonempty(ctx, object.id)
+                || crate::inventory_container::object_is_nested(ctx, object.id));
+        if !physical_object_row_is_atomic(object.is_some(), quantity, entry.quantity) {
+            return Err("A physical object must be liquidated as one exact inventory row".into());
+        }
+        let line_value = if let Some(object) = object.as_ref().filter(|_| subtree) {
+            party_subtree_value(ctx, object.id)?
+        } else { party_inventory_value(ctx, &entry, quantity)? };
         proceeds = proceeds
             .checked_add(line_value)
             .ok_or("Party asset liquidation total overflow")?;
-        staged.push((entry, quantity));
+        staged.push((entry, quantity, object));
     }
     let proceeds =
         u32::try_from(proceeds).map_err(|_| "Party asset liquidation exceeds currency limits")?;
-    for (mut entry, quantity) in staged {
+    for (mut entry, quantity, object) in staged {
+        if let Some(object) = object {
+            crate::inventory_container::detach_if_nested(ctx, object.id)?;
+            crate::inventory_container::delete_subtree(ctx, object.id)?;
+            continue;
+        }
         let is_food = crate::food::party_lot(ctx, entry.id).is_some();
         if is_food {
             crate::food::remove_party_lot_quantity(ctx, entry.id, quantity, entry.quantity)?;
@@ -1628,10 +2067,19 @@ pub fn discard_inventory_items(
         if crate::character::inventory_item_is_equipped(ctx, character_id, inventory_item_id) {
             return Err("Unequip an item before discarding it".into());
         }
-        staged.push((item, quantity));
+        let object = crate::inventory_container::object_for_row(ctx, "personal", item.id)?;
+        if !physical_object_row_is_atomic(object.is_some(), quantity, item.quantity) {
+            return Err("A physical object must be discarded as one exact inventory row".into());
+        }
+        staged.push((item, quantity, object));
     }
 
-    for (mut item, quantity) in staged {
+    for (mut item, quantity, object) in staged {
+        if let Some(object) = object {
+            crate::inventory_container::detach_if_nested(ctx, object.id)?;
+            crate::inventory_container::delete_subtree(ctx, object.id)?;
+            continue;
+        }
         if item.quantity == quantity {
             ctx.db
                 .inventory_item_amount()
@@ -1658,28 +2106,31 @@ pub fn finalize_party_offer(
     inventory_item_ids: Vec<u64>,
     quantities: Vec<u32>,
 ) -> Result<(), String> {
-    for character_id in from_character_ids.iter().chain(&to_character_ids) {
-        require_character_no_unresolved_encounter(ctx, *character_id)?;
-        crate::character::require_living_character(ctx, *character_id)?;
-    }
-    if from_character_ids.len() != to_character_ids.len()
-        || from_character_ids.len() != inventory_item_ids.len()
-        || from_character_ids.len() != quantities.len()
-        || from_character_ids.is_empty()
+    let offer = adventuresim_core::strategic_inventory::parse_party_offer(
+        from_character_ids,
+        to_character_ids,
+        inventory_item_ids,
+        quantities,
+    )
+    .map_err(|error| error.to_string())?;
+    for character_id in offer
+        .iter()
+        .flat_map(|line| [line.from_character_id, line.to_character_id])
     {
-        return Err("Offer entries must be non-empty and aligned".into());
+        require_character_no_unresolved_encounter(ctx, character_id)?;
+        crate::character::require_living_character(ctx, character_id)?;
     }
-    for index in 0..from_character_ids.len() {
-        let from_id = from_character_ids[index];
-        let to_id = to_character_ids[index];
-        let quantity = quantities[index];
+    for line in &offer {
+        let from_id = line.from_character_id;
+        let to_id = line.to_character_id;
+        let quantity = line.quantity.get();
         let Some(from) = ctx.db.character().id().find(from_id) else {
             return Err("Source character not found".into());
         };
         let Some(to) = ctx.db.character().id().find(to_id) else {
             return Err("Recipient character not found".into());
         };
-        let Some(item) = ctx.db.inventory_item().id().find(inventory_item_ids[index]) else {
+        let Some(item) = ctx.db.inventory_item().id().find(line.inventory_item_id) else {
             return Err("Inventory item not found".into());
         };
         if quantity == 0
@@ -1695,13 +2146,13 @@ pub fn finalize_party_offer(
             return Err("Unequip an item before offering it".into());
         }
     }
-    for index in 0..from_character_ids.len() {
+    for line in offer {
         transfer_party_item(
             ctx,
-            from_character_ids[index],
-            to_character_ids[index],
-            inventory_item_ids[index],
-            quantities[index],
+            line.from_character_id,
+            line.to_character_id,
+            line.inventory_item_id,
+            line.quantity.get(),
         )?;
     }
     Ok(())
@@ -1718,19 +2169,16 @@ pub fn finalize_merchant_trade(
     sell_quantities: Vec<u32>,
     party_scope: bool,
 ) -> Result<(), String> {
-    let provider_npc_id = default_merchant_provider(ctx, &settlement_id, "merchants", "market")?;
-    finalize_storefront_trade_impl(
-        ctx,
+    let provider_resident_character_id =
+        default_merchant_provider(ctx, &settlement_id, "merchants", "market")
+            .map_err(|error| error.to_string())?;
+    finalize_storefront_trade_impl(ctx, StorefrontTradeExecution {
         character_id,
         settlement_id,
-        "merchants".into(),
-        provider_npc_id,
-        buy_item_ids,
-        buy_quantities,
-        sell_inventory_ids,
-        sell_quantities,
-        party_scope,
-    )
+        service_id: "merchants".into(),
+        provider_resident_character_id,
+        request: adventuresim_core::strategic_inventory::StorefrontTradeRequest::parse(buy_item_ids, buy_quantities, sell_inventory_ids, sell_quantities, party_scope).map_err(|error| error.to_string())?,
+    })
 }
 
 #[reducer]
@@ -1739,46 +2187,206 @@ pub fn finalize_storefront_trade(
     character_id: u64,
     settlement_id: String,
     service_id: String,
-    provider_npc_id: String,
+    provider_resident_character_id: u64,
     buy_item_ids: Vec<String>,
     buy_quantities: Vec<u32>,
     sell_inventory_ids: Vec<u64>,
     sell_quantities: Vec<u32>,
     party_scope: bool,
 ) -> Result<(), String> {
-    finalize_storefront_trade_impl(
-        ctx,
+    let provider_resident_character_id =
+        adventuresim_core::strategic_inventory::MerchantProviderId::try_from(
+            provider_resident_character_id,
+        )
+        .map_err(|error| error.to_string())?;
+    finalize_storefront_trade_impl(ctx, StorefrontTradeExecution {
         character_id,
         settlement_id,
         service_id,
-        provider_npc_id,
-        buy_item_ids,
-        buy_quantities,
-        sell_inventory_ids,
-        sell_quantities,
-        party_scope,
-    )
+        provider_resident_character_id,
+        request: adventuresim_core::strategic_inventory::StorefrontTradeRequest::parse(buy_item_ids, buy_quantities, sell_inventory_ids, sell_quantities, party_scope).map_err(|error| error.to_string())?,
+    })
 }
 
-fn merchant_storefront(
-    service_id: &str,
-) -> Result<
-    (
-        adventuresim_core::settlement_economy::Storefront,
-        &'static str,
-    ),
-    String,
-> {
-    use adventuresim_core::settlement_economy::Storefront;
-    match service_id {
-        "merchants" => Ok((Storefront::General, "market")),
-        "weapons" => Ok((Storefront::Weapons, "forge")),
-        "armor" => Ok((Storefront::Armor, "armoury")),
-        "clothing" => Ok((Storefront::Clothing, "tailor")),
-        "inn" => Ok((Storefront::Inn, "inn")),
-        "books" => Ok((Storefront::Books, "bookstore")),
-        _ => Err("Unknown merchant storefront".into()),
+/// Buy one personal storefront line while atomically funding the declared
+/// share from the caller's earned party stake. Any later validation failure
+/// rolls back the stake, party currency, personal currency, and inventory.
+#[reducer]
+pub fn purchase_personal_storefront_with_party_stake(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: String,
+    service_id: String,
+    provider_resident_character_id: u64,
+    item_id: String,
+    quantity: u32,
+    maximum_unit_price: u64,
+    maximum_personal_payment: u64,
+    maximum_stake_payment: u64,
+) -> Result<(), String> {
+    require_strategic_character_authority(ctx, character_id)?;
+    let provider_resident_character_id =
+        adventuresim_core::strategic_inventory::MerchantProviderId::try_from(
+            provider_resident_character_id,
+        )
+        .map_err(|error| error.to_string())?;
+    let (party_id, current_unit_price) = validate_personal_storefront_purchase(
+        ctx,
+        character_id,
+        &settlement_id,
+        &service_id,
+        provider_resident_character_id,
+        &item_id,
+        quantity,
+    )?;
+    if current_unit_price > maximum_unit_price {
+        return Err("Storefront quote exceeds the authorized maximum".into());
     }
+    let total = current_unit_price
+        .checked_mul(u64::from(quantity))
+        .ok_or("Merchant purchase total overflow")?;
+    let payment = adventuresim_core::strategic_inventory::StorefrontPaymentAuthorization::new(
+        maximum_personal_payment,
+        maximum_stake_payment,
+    )
+    .plan(total)
+    .map_err(|error| error.to_string())?;
+    let personal_payment = payment.personal_amount();
+    let stake_payment = payment.stake_amount();
+    if crate::item::personal_currency_total(ctx, character_id) < personal_payment {
+        return Err("Not enough personal coin".into());
+    }
+    if stake_payment > 0 {
+        let mut stake = ctx
+            .db
+            .party_stake()
+            .party_id()
+            .filter(&party_id)
+            .find(|stake| stake.character_id == character_id)
+            .ok_or("Character has no earned party stake")?;
+        if stake.value < stake_payment || party_currency_total(ctx, &party_id) < stake_payment {
+            return Err("Earned party stake cannot fund this purchase".into());
+        }
+        transfer_party_currency_to_personal(ctx, &party_id, character_id, stake_payment)?;
+        stake.value -= stake_payment;
+        ctx.db.party_stake().id().update(stake);
+    }
+    finalize_storefront_trade_impl(ctx, StorefrontTradeExecution {
+        character_id,
+        settlement_id,
+        service_id,
+        provider_resident_character_id,
+        request: adventuresim_core::strategic_inventory::StorefrontTradeRequest::parse(vec![item_id], vec![quantity], Vec::new(), Vec::new(), false).map_err(|error| error.to_string())?,
+    })
+}
+
+fn validate_personal_storefront_purchase(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: &str,
+    service_id: &str,
+    provider_resident_character_id: adventuresim_core::strategic_inventory::MerchantProviderId,
+    item_id: &str,
+    quantity: u32,
+) -> Result<(String, u64), String> {
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    if quantity == 0 || character.current_settlement_id.as_deref() != Some(settlement_id) {
+        return Err("Character must be at this settlement to purchase".into());
+    }
+    let party_id = character.party_id.ok_or("Character has no party")?;
+    let route = adventuresim_core::strategic_inventory::MerchantStorefrontRoute::try_from(
+        service_id,
+    )
+    .map_err(|error| error.to_string())?;
+    let storefront = route.storefront();
+    let location_id = route.location_id();
+    let settlement = ctx
+        .db
+        .settlement()
+        .id()
+        .find(&settlement_id.to_string())
+        .ok_or("Settlement not found")?;
+    let item = ctx
+        .db
+        .item()
+        .id()
+        .find(&item_id.to_string())
+        .ok_or("Merchant item not found")?;
+    if matches!(
+        item.kind,
+        crate::ItemKind::Currency | crate::ItemKind::Medication
+    ) || !adventuresim_core::settlement_economy::storefront_stocks(
+        &settlement.economy,
+        storefront,
+        item_id,
+        crate::item::economy_catalog_kind(item.kind),
+    ) || (storefront == adventuresim_core::settlement_economy::Storefront::Books
+        && adventuresim_core::item_catalog::definition(item_id)
+            .and_then(|definition| definition.capabilities.book.as_ref())
+            .is_none_or(|book| {
+                !book.settlement_allowlist.is_empty()
+                    && !book
+                        .settlement_allowlist
+                        .contains(&settlement_id.to_string())
+            }))
+    {
+        return Err("This settlement does not stock that merchant item".into());
+    }
+    if default_merchant_provider(ctx, settlement_id, service_id, location_id)
+        .map_err(|error| error.to_string())?
+        != provider_resident_character_id
+    {
+        return Err("Merchant service provider does not match this storefront".into());
+    }
+    let presence = ctx
+        .db
+        .settlement_resident_presence()
+        .character_id()
+        .find(provider_resident_character_id.get())
+        .ok_or("Merchant service provider has no presence")?;
+    let minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |time| time.minutes);
+    if !crate::settlement_population::npc_is_present(ctx, &presence, minute) {
+        return Err("Merchant service provider is not available".into());
+    }
+    let speaker = ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character skills not found")?
+        .oral_languages;
+    let mut merchant = adventuresim_world_schema::OralLanguageHours::default();
+    *merchant.direct_mut(settlement.languages.dominant_german()) =
+        adventuresim_world_schema::ORAL_FLUENCY_HOURS;
+    let speaker_cap = ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .map_or(0.0, |attributes| attributes.instinct * 1_000.0);
+    let (_, shared_language) = adventuresim_world_schema::best_common_oral_language_capped(
+        speaker,
+        speaker_cap,
+        merchant,
+        adventuresim_world_schema::ORAL_FLUENCY_HOURS,
+    );
+    let effects = crate::local_problem::settlement_effects(ctx, settlement_id, minute);
+    let quote = adventuresim_core::strategic_economy::language_adjusted_buy_price(
+        adventuresim_core::strategic_economy::merchant_buy_price(item.base_value.unwrap_or(1)),
+        shared_language,
+    );
+    Ok((
+        party_id,
+        u64::from(adventuresim_core::local_problem::adjust_price(
+            quote,
+            effects.buy_bps,
+        )),
+    ))
 }
 
 fn default_merchant_provider(
@@ -1786,58 +2394,59 @@ fn default_merchant_provider(
     settlement_id: &str,
     service_id: &str,
     location_id: &str,
-) -> Result<String, String> {
-    unique_default_merchant_provider(
+) -> Result<
+    adventuresim_core::strategic_inventory::MerchantProviderId,
+    adventuresim_core::strategic_inventory::MerchantProviderError,
+> {
+    adventuresim_core::strategic_inventory::unique_merchant_provider(
         ctx.db
-            .settlement_npc()
-            .iter()
-            .filter(|npc| npc.home_settlement_id == settlement_id && npc.service_id == service_id)
+            .settlement_resident_profile()
+            .home_settlement_id()
+            .filter(&settlement_id.to_string())
+            .filter(|npc| npc.service_id == service_id)
             .filter_map(|npc| {
                 ctx.db
-                    .settlement_npc_presence()
-                    .npc_id()
-                    .find(&npc.id)
+                    .settlement_resident_presence()
+                    .character_id()
+                    .find(npc.character_id)
                     .filter(|presence| {
                         presence.settlement_id == settlement_id
                             && presence.location_id == location_id
                             && presence.is_default
                     })
-                    .map(|_| npc.id)
+                    .map(|_| npc.character_id)
             }),
     )
 }
 
-fn unique_default_merchant_provider(
-    providers: impl IntoIterator<Item = String>,
-) -> Result<String, String> {
-    let providers = providers.into_iter().collect::<Vec<_>>();
-    match providers.as_slice() {
-        [provider] => Ok(provider.clone()),
-        [] => Err("Merchant service provider not found".into()),
-        _ => Err("Merchant service provider is ambiguous".into()),
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn finalize_storefront_trade_impl(
-    ctx: &ReducerContext,
+struct StorefrontTradeExecution {
     character_id: u64,
     settlement_id: String,
     service_id: String,
-    provider_npc_id: String,
-    buy_item_ids: Vec<String>,
-    buy_quantities: Vec<u32>,
-    sell_inventory_ids: Vec<u64>,
-    sell_quantities: Vec<u32>,
-    party_scope: bool,
-) -> Result<(), String> {
+    provider_resident_character_id: adventuresim_core::strategic_inventory::MerchantProviderId,
+    request: adventuresim_core::strategic_inventory::StorefrontTradeRequest,
+}
+
+fn finalize_storefront_trade_impl(ctx: &ReducerContext, execution: StorefrontTradeExecution) -> Result<(), String> {
+    let StorefrontTradeExecution { character_id, settlement_id, service_id, provider_resident_character_id, request } = execution;
+    let party_scope = matches!(request.scope, adventuresim_core::strategic_inventory::TradeScope::Party);
+    let buy_item_ids = request.buys.iter().map(|line| line.item_id.clone()).collect::<Vec<_>>();
+    let buy_quantities = request.buys.iter().map(|line| line.quantity.get()).collect::<Vec<_>>();
+    let sell_inventory_ids = request.sells.iter().map(|line| line.inventory_item_id).collect::<Vec<_>>();
+    let sell_quantities = request.sells.iter().map(|line| line.quantity.get()).collect::<Vec<_>>();
     crate::character::require_living_character(ctx, character_id)?;
-    let (storefront, location_id) = merchant_storefront(&service_id)?;
-    if buy_item_ids.len() != buy_quantities.len()
-        || sell_inventory_ids.len() != sell_quantities.len()
-    {
-        return Err("Trade entries must be aligned".into());
-    }
+    crate::relationship::enforce_temporal_scope(
+        ctx,
+        character_id,
+        Some(provider_resident_character_id.get()),
+        crate::relationship::TemporalScope::PairwiseSoft,
+    )?;
+    let route = adventuresim_core::strategic_inventory::MerchantStorefrontRoute::try_from(
+        service_id.as_str(),
+    )
+    .map_err(|error| error.to_string())?;
+    let storefront = route.storefront();
+    let location_id = route.location_id();
     let Some(character) = ctx.db.character().id().find(character_id) else {
         return Err("Character not found".into());
     };
@@ -1857,15 +2466,15 @@ fn finalize_storefront_trade_impl(
     }
     let provider = ctx
         .db
-        .settlement_npc()
-        .id()
-        .find(&provider_npc_id)
+        .settlement_resident_profile()
+        .character_id()
+        .find(provider_resident_character_id.get())
         .ok_or("Merchant service provider not found")?;
     let provider_presence = ctx
         .db
-        .settlement_npc_presence()
-        .npc_id()
-        .find(&provider_npc_id)
+        .settlement_resident_presence()
+        .character_id()
+        .find(provider_resident_character_id.get())
         .ok_or("Merchant service provider has no presence")?;
     let problem_minute = ctx
         .db
@@ -1878,11 +2487,13 @@ fn finalize_storefront_trade_impl(
         || provider_presence.settlement_id != settlement_id
         || provider_presence.location_id != location_id
         || !provider_presence.is_default
-        || !crate::settlement_population::npc_is_present(&provider_presence, problem_minute)
+        || !crate::settlement_population::npc_is_present(ctx, &provider_presence, problem_minute)
     {
         return Err("Merchant service provider is not available".into());
     }
-    if default_merchant_provider(ctx, &settlement_id, &service_id, location_id)? != provider_npc_id
+    if default_merchant_provider(ctx, &settlement_id, &service_id, location_id)
+        .map_err(|error| error.to_string())?
+        != provider_resident_character_id
     {
         return Err("Merchant service provider does not match this storefront".into());
     }
@@ -1964,6 +2575,12 @@ fn finalize_storefront_trade_impl(
     }
     let mut proceeds = 0_u64;
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
+        let container_object = crate::inventory_container::object_for_row(
+            ctx, if party_scope { "party" } else { "personal" }, *inventory_id,
+        )?;
+        let container_subtree = container_object.as_ref().is_some_and(|object|
+            crate::inventory_container::object_is_nonempty(ctx, object.id)
+                || crate::inventory_container::object_is_nested(ctx, object.id));
         let (item_id, available, food_value) = if party_scope {
             let inventory = ctx
                 .db
@@ -2002,12 +2619,22 @@ fn finalize_storefront_trade_impl(
         {
             return Err("Invalid merchant sale".into());
         }
+        if !physical_object_row_is_atomic(container_object.is_some(), *quantity, available) {
+            return Err("A physical object must be sold as one exact inventory row".into());
+        }
         if !party_scope
             && crate::character::inventory_item_is_equipped(ctx, character_id, *inventory_id)
         {
             return Err("Unequip an item before selling it".into());
         }
-        let line = if let Some(value) = food_value {
+        let line = if let Some(object) = container_object.as_ref().filter(|_| container_subtree) {
+            let intrinsic = if party_scope { party_subtree_value(ctx, object.id)? } else { personal_subtree_value(ctx, object.id)? };
+            let quoted = adventuresim_core::strategic_economy::language_adjusted_sell_price(
+                adventuresim_core::strategic_economy::merchant_sell_price(u32::try_from(intrinsic).map_err(|_| "Container subtree quote overflow")?),
+                shared_language,
+            );
+            u64::from(adventuresim_core::local_problem::adjust_price(quoted, -problem_effects.sell_penalty_bps))
+        } else if let Some(value) = food_value {
             if *quantity != available || !value.is_finite() || value < 0.0 {
                 return Err("Food batches must be sold as complete valid lots".into());
             }
@@ -2071,13 +2698,21 @@ fn finalize_storefront_trade_impl(
         return Err("Not enough coin".into());
     }
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
+        let object = crate::inventory_container::object_for_row(
+            ctx, if party_scope { "party" } else { "personal" }, *inventory_id,
+        )?;
+        if let Some(object) = object {
+            crate::inventory_container::detach_if_nested(ctx, object.id)?;
+            crate::inventory_container::delete_subtree(ctx, object.id)?;
+            continue;
+        }
         if party_scope {
             let mut inventory = ctx
                 .db
                 .party_inventory_item()
                 .id()
                 .find(*inventory_id)
-                .unwrap();
+                .ok_or("Party inventory item disappeared before trade application")?;
             if inventory.quantity == *quantity {
                 crate::food::delete_party_food_lot(ctx, *inventory_id);
                 ctx.db
@@ -2102,7 +2737,12 @@ fn finalize_storefront_trade_impl(
                 ctx.db.party_inventory_item().id().update(inventory);
             }
         } else {
-            let mut inventory = ctx.db.inventory_item().id().find(*inventory_id).unwrap();
+            let mut inventory = ctx
+                .db
+                .inventory_item()
+                .id()
+                .find(*inventory_id)
+                .ok_or("Inventory item disappeared before trade application")?;
             if inventory.quantity == *quantity {
                 crate::food::delete_personal_food_lot(ctx, *inventory_id);
                 ctx.db
@@ -2130,7 +2770,12 @@ fn finalize_storefront_trade_impl(
     }
     for (item_id, quantity) in buy_item_ids.iter().zip(&buy_quantities) {
         if party_scope {
-            add_to_party_inventory_checked(ctx, party_id.as_ref().unwrap(), item_id, *quantity)?;
+            add_to_party_inventory_checked(
+                ctx,
+                party_id.as_ref().ok_or("Character has no party")?,
+                item_id,
+                *quantity,
+            )?;
             continue;
         }
         // Never add purchases to an equipped stack. An equipped item must stay
@@ -2180,7 +2825,7 @@ fn finalize_storefront_trade_impl(
         (0, proceeds - cost)
     };
     if party_scope && receives > 0 {
-        let party_id = party_id.as_ref().unwrap();
+        let party_id = party_id.as_ref().ok_or("Character has no party")?;
         credit_party_currency(
             ctx,
             party_id,
@@ -2188,7 +2833,7 @@ fn finalize_storefront_trade_impl(
             u32::try_from(receives).map_err(|_| "Merchant proceeds exceed inventory capacity")?,
         )?;
     } else if party_scope && owes > 0 {
-        let party_id = party_id.as_ref().unwrap();
+        let party_id = party_id.as_ref().ok_or("Character has no party")?;
         let party_coins = party_currency_total(ctx, party_id);
         let personal_coins = crate::item::personal_currency_total(ctx, character_id);
         let (pooled, personal) =
@@ -2258,6 +2903,11 @@ pub fn remove_party_member(
     if actor_character_id != member_character_id && party.leader_id != actor_character_id {
         return Err("Only the party leader may remove another member".into());
     }
+    crate::food::require_members_clear_current_camp_fireplace(
+        ctx,
+        &party_id,
+        &[member_character_id],
+    )?;
     if actor_character_id == party.leader_id && character.temporary {
         settle_temporary_member_stake(ctx, &party_id, member_character_id)?;
     }
@@ -2333,6 +2983,18 @@ pub fn disband_party(ctx: &ReducerContext, leader_id: u64, party_id: String) -> 
     if party.leader_id != leader_id {
         return Err("Only the party leader can disband the party".into());
     }
+    let fireplace_member_ids = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(&party_id)
+        .map(|member| member.character_id)
+        .collect::<Vec<_>>();
+    crate::food::require_members_clear_current_camp_fireplace(
+        ctx,
+        &party_id,
+        &fireplace_member_ids,
+    )?;
     if party
         .active_contract_id
         .as_ref()

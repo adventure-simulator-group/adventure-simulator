@@ -157,7 +157,7 @@ pub(super) async fn settlement_map(
     let living_party_members = living_party_members(&party_members);
     let stats: Vec<CharacterStats> = state
         .db
-        .query("SELECT * FROM character_stats")
+        .query("SELECT * FROM backend_character_stats")
         .await
         .unwrap_or_default();
     let default_rest_minutes = living_party_members
@@ -173,22 +173,22 @@ pub(super) async fn settlement_map(
         if let Some(party) = active_party.as_ref() {
             let attributes: Vec<CharacterAttributes> = state
                 .db
-                .query("SELECT * FROM character_attributes")
+                .query("SELECT * FROM backend_character_attributes")
                 .await
                 .unwrap_or_default();
             let limbs: Vec<CharacterLimbs> = state
                 .db
-                .query("SELECT * FROM character_limbs")
+                .query("SELECT * FROM backend_character_limbs")
                 .await
                 .unwrap_or_default();
             let times: Vec<CharacterTime> = state
                 .db
-                .query("SELECT * FROM character_time")
+                .query("SELECT * FROM backend_character_times")
                 .await
                 .unwrap_or_default();
             let schedules: Vec<CharacterTrainingSchedule> = state
                 .db
-                .query("SELECT * FROM character_training_schedule")
+                .query("SELECT * FROM backend_character_training_schedules")
                 .await
                 .unwrap_or_default();
             let member_ids: Vec<_> = living_party_members
@@ -270,7 +270,10 @@ pub(super) async fn settlement_map(
     )
 }
 
-pub(super) fn settlement_html_travel_available(is_current_settlement: bool, has_party: bool) -> bool {
+pub(super) fn settlement_html_travel_available(
+    is_current_settlement: bool,
+    has_party: bool,
+) -> bool {
     is_current_settlement && has_party
 }
 
@@ -324,7 +327,7 @@ mod map_quest_tests {
             xp_reward: 1,
             settlement_id: "issuer".into(),
             service_id: "inn".into(),
-            issuer_npc_id: String::new(),
+            issuer_resident_character_id: String::new(),
             status,
             accepted_by: Some("party".into()),
             opposition_wording: "unknown opposition".into(),

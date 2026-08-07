@@ -10,9 +10,9 @@ const MAX_CHECK: f32 = 5.0;
 
 /// Player skills.
 ///
-/// Skills are trained abilities. Each has a governing aptitude which controls
-/// learning speed and the highest currently effective rank, but never adds to
-/// the final check value.
+/// Skills are trained abilities. Each has weighted governing aptitudes which
+/// control learning speed and the highest currently effective rank, but never
+/// add to the final check value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, enum_assoc::Assoc)]
 #[func(pub const fn max_hours(&self) -> f32)]
 #[func(pub const fn kind(&self) -> SkillKind)]
@@ -191,18 +191,44 @@ mod tests {
     fn skill_and_aptitude_labels_are_canonical() {
         assert_eq!(Skill::Charm.label(), "Charm");
         assert_eq!(
-            Skill::Surgery.governing_aptitude_kind().label(),
+            Skill::Surgery.governing_aptitudes().description(),
+            "50% arm Agility, 30% Intelligence, 20% Instinct"
+        );
+        assert_eq!(
+            Skill::Physiology.governing_aptitudes().description(),
             "Intelligence"
         );
         assert_eq!(
-            Skill::Physiology.governing_aptitude_kind().label(),
-            "Intelligence"
-        );
-        assert_eq!(
-            Skill::TerrainForest.governing_aptitude_kind().label(),
+            Skill::TerrainForest.governing_aptitudes().description(),
             "Instinct"
         );
-        assert_eq!(Skill::Knife.governing_aptitude_kind().label(), "Agility");
+        assert_eq!(Skill::Knife.governing_aptitudes().description(), "Agility");
+    }
+
+    #[test]
+    fn every_skill_governing_aptitude_definition_is_valid() {
+        for skill in Skill::ALL {
+            let governing = skill.governing_aptitudes();
+            assert_eq!(governing.total_percent(), 100, "{skill:?}");
+            if let Some(limbs) = governing.agility_limbs() {
+                let weights = [
+                    limbs.left_arm,
+                    limbs.right_arm,
+                    limbs.left_leg,
+                    limbs.right_leg,
+                ];
+                assert!(
+                    weights
+                        .iter()
+                        .all(|weight| weight.is_finite() && *weight >= 0.0),
+                    "{skill:?} has an invalid Agility limb weight"
+                );
+                assert!(
+                    (weights.into_iter().sum::<f32>() - 1.0).abs() < 0.000_01,
+                    "{skill:?} Agility limb weights must total 1"
+                );
+            }
+        }
     }
 
     #[test]
@@ -278,6 +304,31 @@ mod tests {
         assert_eq!(Skill::Deception.governing_aptitude(&attributes), 4.0);
         assert_eq!(Skill::Charm.governing_aptitude(&attributes), 4.0);
         assert_eq!(Skill::Physiology.governing_aptitude(&attributes), 2.0);
+        // Both-arm Agility is 2.0, so Surgery is 50% * 2 + 30% * 2 + 20% * 4.
+        assert!((Skill::Surgery.governing_aptitude(&attributes) - 2.4).abs() < 0.001);
+    }
+
+    #[test]
+    fn surgery_blend_controls_training_speed_and_rank_cap() {
+        let attributes = Aptitudes {
+            intelligence: 4.0,
+            instinct: 1.0,
+            limbs: [2.0, 5.0, 0.5, 4.5],
+        };
+        // 50% * mean(2, 5) + 30% * 4 + 20% * 1 = 3.15.
+        let aptitude = Skill::Surgery.governing_aptitude(&attributes);
+        assert!((aptitude - 3.15).abs() < 0.001);
+        assert!((aptitude_training_multiplier(aptitude) - 1.325).abs() < 0.001);
+
+        let uncapped_hours = Skill::Surgery.hours_for_rank(4.0);
+        assert!(
+            (Skill::Surgery.capped_training_rank(uncapped_hours, &attributes) - 3.15).abs() < 0.001
+        );
+
+        let mut stored = 0.0;
+        let gain = apply_direct_training(Skill::Surgery, &mut stored, 10.0, &attributes);
+        assert!((gain.accepted_effective_hours - 13.25).abs() < 0.001);
+        assert_eq!(gain.excess_effective_hours, 0.0);
     }
 
     #[test]
@@ -312,6 +363,35 @@ mod tests {
         };
         assert!((check(&low) - 2.0).abs() < 0.001);
         assert_eq!(check(&low), check(&high));
+    }
+
+    #[test]
+    fn surgery_remains_mental_and_arm_injury_does_not_become_a_performance_penalty() {
+        struct SurgerySkills(f32);
+        impl PlayerSkills for SurgerySkills {
+            fn skill_hours_trained(&self, skill: Skill) -> f32 {
+                (skill == Skill::Surgery).then_some(self.0).unwrap_or(0.0)
+            }
+        }
+        let attributes = Aptitudes {
+            intelligence: 4.0,
+            instinct: 3.0,
+            limbs: [5.0, 4.0, 1.0, 2.0],
+        };
+        let skills = SurgerySkills(Skill::Surgery.hours_for_rank(2.0));
+        let check = |arm_health| {
+            skills.skill_check_by_parts(
+                Skill::Surgery,
+                &attributes,
+                &ArmHealthBody(arm_health),
+                &StubEssentials,
+                &StubEquipment,
+                LimbWeights::both_arms(),
+            )
+        };
+        assert!(Skill::Surgery.is_mental());
+        assert!((check(1.0) - 2.0).abs() < 0.001);
+        assert_eq!(check(0.0), check(1.0));
     }
 
     #[test]
@@ -507,6 +587,41 @@ mod tests {
 }
 
 impl Skill {
+    pub const ALL: [Self; 32] = [
+        Self::Will,
+        Self::Insight,
+        Self::Charm,
+        Self::Command,
+        Self::Deception,
+        Self::Physiology,
+        Self::Cooking,
+        Self::Herbalism,
+        Self::Religion,
+        Self::Bestiary,
+        Self::Polearm,
+        Self::Axe,
+        Self::Bludgeon,
+        Self::Sword,
+        Self::Knife,
+        Self::Bow,
+        Self::Crossbow,
+        Self::Firearm,
+        Self::Throw,
+        Self::Block,
+        Self::Dodge,
+        Self::Stealth,
+        Self::Balance,
+        Self::TerrainPlains,
+        Self::TerrainForest,
+        Self::TerrainHills,
+        Self::TerrainWetlands,
+        Self::TerrainUrban,
+        Self::TerrainSnow,
+        Self::Surgery,
+        Self::Tailoring,
+        Self::Smithing,
+    ];
+
     /// Canonical stable identifier used by authored curricula and requirements.
     pub fn from_training_id(id: &str) -> Option<Self> {
         Some(match id {
@@ -616,25 +731,14 @@ impl Skill {
     /// Governing healthy conditioned aptitude. This intentionally reads raw
     /// attributes so injury changes performance, not learning speed or mastery.
     pub fn governing_aptitude(self, attr: &impl PlayerAttributes) -> f32 {
-        let value = match self.governing_aptitude_kind() {
-            GoverningAptitude::Intelligence => {
-                attr.raw_single_body_part_attr(SimpleAttribute::Intelligence)
-            }
-            GoverningAptitude::Instinct => {
-                attr.raw_single_body_part_attr(SimpleAttribute::Instinct)
-            }
-            GoverningAptitude::Agility(weights) => BodyPart::LIMBS.iter().fold(0.0, |sum, part| {
-                sum + attr.raw_limb_attr(LimbAttribute::Agility, part) * weights.by_part(part)
-            }),
-        };
-        if value.is_finite() {
-            value.clamp(0.0, MAX_CHECK)
-        } else {
-            0.0
-        }
+        self.governing_aptitudes().resolve(
+            attr.raw_single_body_part_attr(SimpleAttribute::Intelligence),
+            attr.raw_single_body_part_attr(SimpleAttribute::Instinct),
+            |part| attr.raw_limb_attr(LimbAttribute::Agility, part),
+        )
     }
 
-    pub const fn governing_aptitude_kind(self) -> GoverningAptitude {
+    pub const fn governing_aptitudes(self) -> GoverningAptitudes {
         match self {
             Self::Will
             | Self::Insight
@@ -646,15 +750,15 @@ impl Skill {
             | Self::TerrainHills
             | Self::TerrainWetlands
             | Self::TerrainUrban
-            | Self::TerrainSnow => GoverningAptitude::Instinct,
+            | Self::TerrainSnow => GoverningAptitudes::instinct(),
             Self::Physiology
-            | Self::Surgery
             | Self::Cooking
             | Self::Herbalism
             | Self::Religion
-            | Self::Bestiary => GoverningAptitude::Intelligence,
-            Self::Dodge | Self::Balance => GoverningAptitude::Agility(LimbWeights::both_legs()),
-            Self::Stealth => GoverningAptitude::Agility(LimbWeights::all_equal()),
+            | Self::Bestiary => GoverningAptitudes::intelligence(),
+            Self::Surgery => GoverningAptitudes::weighted(30, 20, 50, LimbWeights::both_arms()),
+            Self::Dodge | Self::Balance => GoverningAptitudes::agility(LimbWeights::both_legs()),
+            Self::Stealth => GoverningAptitudes::agility(LimbWeights::all_equal()),
             Self::Polearm
             | Self::Axe
             | Self::Bludgeon
@@ -666,7 +770,7 @@ impl Skill {
             | Self::Throw
             | Self::Block
             | Self::Tailoring
-            | Self::Smithing => GoverningAptitude::Agility(LimbWeights::both_arms()),
+            | Self::Smithing => GoverningAptitudes::agility(LimbWeights::both_arms()),
         }
     }
 
@@ -784,19 +888,125 @@ impl Skill {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum GoverningAptitude {
-    Intelligence,
-    Instinct,
-    Agility(LimbWeights),
+pub struct GoverningAptitudes {
+    intelligence_percent: u8,
+    instinct_percent: u8,
+    agility_percent: u8,
+    agility_limbs: LimbWeights,
 }
 
-impl GoverningAptitude {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Intelligence => "Intelligence",
-            Self::Instinct => "Instinct",
-            Self::Agility(_) => "Agility",
+impl GoverningAptitudes {
+    const fn intelligence() -> Self {
+        Self::weighted(100, 0, 0, LimbWeights::both_arms())
+    }
+
+    const fn instinct() -> Self {
+        Self::weighted(0, 100, 0, LimbWeights::both_arms())
+    }
+
+    const fn agility(limbs: LimbWeights) -> Self {
+        Self::weighted(0, 0, 100, limbs)
+    }
+
+    const fn weighted(
+        intelligence_percent: u8,
+        instinct_percent: u8,
+        agility_percent: u8,
+        agility_limbs: LimbWeights,
+    ) -> Self {
+        assert!(
+            intelligence_percent as u16 + instinct_percent as u16 + agility_percent as u16 == 100
+        );
+        Self {
+            intelligence_percent,
+            instinct_percent,
+            agility_percent,
+            agility_limbs,
         }
+    }
+
+    pub const fn intelligence_percent(self) -> u8 {
+        self.intelligence_percent
+    }
+
+    pub const fn instinct_percent(self) -> u8 {
+        self.instinct_percent
+    }
+
+    pub const fn agility_percent(self) -> u8 {
+        self.agility_percent
+    }
+
+    pub const fn agility_limbs(self) -> Option<LimbWeights> {
+        if self.agility_percent > 0 {
+            Some(self.agility_limbs)
+        } else {
+            None
+        }
+    }
+
+    pub const fn total_percent(self) -> u16 {
+        self.intelligence_percent as u16
+            + self.instinct_percent as u16
+            + self.agility_percent as u16
+    }
+
+    pub fn resolve(
+        self,
+        intelligence: f32,
+        instinct: f32,
+        agility: impl Fn(BodyPart) -> f32,
+    ) -> f32 {
+        let mut value = 0.0;
+        if self.intelligence_percent > 0 {
+            value += intelligence * f32::from(self.intelligence_percent);
+        }
+        if self.instinct_percent > 0 {
+            value += instinct * f32::from(self.instinct_percent);
+        }
+        if self.agility_percent > 0 {
+            let agility = BodyPart::LIMBS.iter().fold(0.0, |sum, part| {
+                sum + agility(part) * self.agility_limbs.by_part(part)
+            });
+            value += agility * f32::from(self.agility_percent);
+        }
+        let value = value / 100.0;
+        if value.is_finite() {
+            value.clamp(0.0, MAX_CHECK)
+        } else {
+            0.0
+        }
+    }
+
+    pub fn description(self) -> String {
+        if self == Self::intelligence() {
+            return "Intelligence".into();
+        }
+        if self == Self::instinct() {
+            return "Instinct".into();
+        }
+        if self.intelligence_percent == 0 && self.instinct_percent == 0 {
+            return "Agility".into();
+        }
+
+        let mut components = Vec::with_capacity(3);
+        if self.agility_percent > 0 {
+            let scope = if self.agility_limbs == LimbWeights::both_arms() {
+                "arm Agility"
+            } else if self.agility_limbs == LimbWeights::both_legs() {
+                "leg Agility"
+            } else {
+                "Agility"
+            };
+            components.push(format!("{}% {scope}", self.agility_percent));
+        }
+        if self.intelligence_percent > 0 {
+            components.push(format!("{}% Intelligence", self.intelligence_percent));
+        }
+        if self.instinct_percent > 0 {
+            components.push(format!("{}% Instinct", self.instinct_percent));
+        }
+        components.join(", ")
     }
 }
 
@@ -877,9 +1087,9 @@ pub fn apply_direct_training(
 /// Skill category.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SkillKind {
-    /// Physical: governed by a fixed healthy-limb Agility weighting.
+    /// Physical performance receives the shared physical penalties.
     Physical,
-    /// Mental: governed by either Instinct or Intelligence.
+    /// Mental performance receives the shared mental penalties.
     Mental,
 }
 

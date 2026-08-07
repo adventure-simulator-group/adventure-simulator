@@ -573,6 +573,9 @@ pub trait PlayerEquipment {
         40.0 * self.weapon_weight().max(0.5)
     }
     fn shield_block_bonus(&self) -> f32;
+    fn shield_holding_side(&self) -> Option<BodySide> {
+        None
+    }
 
     fn armor_resistance(&self, part: BodyPart) -> f32;
     fn armor_padding(&self, part: BodyPart) -> f32;

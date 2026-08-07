@@ -5,8 +5,9 @@
 // imports the handlers and projections consumed outside this domain.
 
 include!("location_personal.rs");
+include!("containers.rs");
 include!("cooking.rs");
-include!("herbalism.rs");
+include!("ingredient_preparation.rs");
 include!("training_activity.rs");
 include!("inventory_medical.rs");
 include!("social.rs");

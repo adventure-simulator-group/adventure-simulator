@@ -107,6 +107,9 @@ fn available_item_amount(
                     .party_id()
                     .filter(&party_id)
                     .filter(|row| row.item_id == item_id)
+                    .filter(|row| {
+                        !crate::inventory_container::row_is_fireplace_rooted(ctx, "party", row.id)
+                    })
                     .map(|row| {
                         u64::from(crate::inventory_amount::party_amount(ctx, row.id).unwrap_or(0))
                     })
@@ -118,6 +121,9 @@ fn available_item_amount(
             .character_id()
             .filter(owner)
             .filter(|row| row.item_id == item_id)
+            .filter(|row| {
+                !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", row.id)
+            })
             .map(|row| {
                 u64::from(crate::inventory_amount::personal_amount(ctx, row.id).unwrap_or(0))
             })
@@ -148,6 +154,9 @@ fn available_stacks(
         && let Some(party) = ctx.db.party_authority().id().find(party_id)
     {
         for stack in ctx.db.party_inventory_item().party_id().filter(party_id) {
+            if crate::inventory_container::row_is_fireplace_rooted(ctx, "party", stack.id) {
+                continue;
+            }
             if let Some(def) = ctx.db.item().id().find(&stack.item_id) {
                 let p = properties(&def);
                 if p.potable
@@ -173,6 +182,9 @@ fn available_stacks(
         }
     }
     for stack in ctx.db.inventory_item().character_id().filter(character_id) {
+        if crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", stack.id) {
+            continue;
+        }
         if let Some(def) = ctx.db.item().id().find(&stack.item_id) {
             let p = properties(&def);
             if p.potable
@@ -222,12 +234,31 @@ fn consume_stack(
     stack: Stack,
     amount_milliunits: u32,
 ) -> Result<u32, String> {
-    match stack {
-        Stack::Party(row) => crate::inventory_amount::consume_party(ctx, row.id, amount_milliunits),
-        Stack::Personal(row) => {
-            crate::inventory_amount::consume_personal(ctx, row.id, amount_milliunits)
+    let (kind, row_id, available) = match &stack {
+        Stack::Party(row) => (
+            "party",
+            row.id,
+            crate::inventory_amount::party_amount(ctx, row.id),
+        ),
+        Stack::Personal(row) => (
+            "personal",
+            row.id,
+            crate::inventory_amount::personal_amount(ctx, row.id),
+        ),
+    };
+    crate::inventory_container::reconcile_consumed_row(ctx, kind, row_id, false)?;
+    let consumed = match stack {
+        Stack::Party(row) => {
+            crate::inventory_amount::consume_party(ctx, row.id, amount_milliunits)?
         }
+        Stack::Personal(row) => {
+            crate::inventory_amount::consume_personal(ctx, row.id, amount_milliunits)?
+        }
+    };
+    if available.is_some_and(|amount| consumed >= amount) {
+        crate::inventory_container::reconcile_consumed_row(ctx, kind, row_id, true)?;
     }
+    Ok(consumed)
 }
 
 fn consume_for_ethanol(
@@ -280,7 +311,8 @@ fn ordinary_potable_exists(ctx: &ReducerContext, character_id: u64) -> bool {
         .character_id()
         .filter(character_id)
         .any(|row| {
-            row.quantity > 0
+            !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", row.id)
+                && row.quantity > 0
                 && ctx.db.item().id().find(&row.item_id).is_some_and(|def| {
                     def.alcohol_potable
                         && def.alcohol_abv_basis_points > 0
@@ -300,7 +332,8 @@ fn ordinary_potable_exists(ctx: &ReducerContext, character_id: u64) -> bool {
                     .party_id()
                     .filter(&party_id)
                     .any(|row| {
-                        row.quantity > 0
+                        !crate::inventory_container::row_is_fireplace_rooted(ctx, "party", row.id)
+                            && row.quantity > 0
                             && ctx.db.item().id().find(&row.item_id).is_some_and(|def| {
                                 def.alcohol_potable
                                     && def.alcohol_abv_basis_points > 0
@@ -355,6 +388,8 @@ pub fn process_rest_evenings(
 ) -> Result<(), String> {
     use crate::personality::Temperance;
     let temperament = crate::personality::personality_or_neutral(ctx, character_id).temperance;
+    let temperance_score =
+        crate::personality::personality_scores_or_neutral(ctx, character_id).temperance;
     if temperament == Temperance::Temperate {
         return Ok(());
     }
@@ -434,11 +469,23 @@ pub fn process_rest_evenings(
         let effect =
             nightly_morale_effect(evening, preference, had_recent_heavy, consumed >= target)
                 .ok_or("Alcohol morale effect unexpectedly absent")?;
+        let neutral_effect = nightly_morale_effect(
+            evening,
+            TemperancePreference::Neutral,
+            had_recent_heavy,
+            consumed >= target,
+        )
+        .ok_or("Neutral alcohol morale effect unexpectedly absent")?;
+        let magnitude = crate::personality::temperance_morale_magnitude(
+            temperance_score,
+            f32::from(neutral_effect.magnitude),
+            consumed >= target,
+        );
         crate::condition::upsert_refreshable_morale_event_at_without_refresh(
             ctx,
             character_id,
             effect.kind,
-            f32::from(effect.magnitude),
+            magnitude,
             effect.occurred_at_minute,
             NIGHTLY_MORALE_SOURCE_ID,
         )?;
@@ -500,6 +547,7 @@ pub fn best_disinfectant(ctx: &ReducerContext, character_id: u64) -> Option<(u64
         .inventory_item()
         .character_id()
         .filter(character_id)
+        .filter(|row| !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", row.id))
         .filter_map(|row| ctx.db.item().id().find(&row.item_id).map(|def| (row, def)))
         .filter(|(row, def)| {
             let required = adventuresim_core::inventory_measurement::amount_for_fraction(
@@ -530,6 +578,7 @@ pub fn disinfectant_count(ctx: &ReducerContext, character_id: u64) -> u32 {
         .inventory_item()
         .character_id()
         .filter(character_id)
+        .filter(|row| !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", row.id))
         .filter_map(|row| {
             let definition = ctx.db.item().id().find(&row.item_id)?;
             if definition.alcohol_disinfectant_effectiveness == 0 {
@@ -568,4 +617,22 @@ pub fn consume_inventory_row(ctx: &ReducerContext, id: u64) -> Result<(), String
     .map_err(|_| "Selected alcohol has an invalid serving size")?;
     consume_stack(ctx, Stack::Personal(row), requested)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn alcohol_candidates_and_consumption_observe_effective_container_custody() {
+        let source = include_str!("alcohol.rs");
+        assert!(source.matches("row_is_fireplace_rooted").count() >= 6);
+        let consume = source
+            .split("fn consume_stack")
+            .nth(1)
+            .unwrap()
+            .split("fn consume_for_ethanol")
+            .next()
+            .unwrap();
+        assert!(consume.contains("reconcile_consumed_row(ctx, kind, row_id, false)"));
+        assert!(consume.contains("reconcile_consumed_row(ctx, kind, row_id, true)"));
+    }
 }

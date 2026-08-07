@@ -1,33 +1,101 @@
 # Development Workflow
 
+For fast puzzle generation, interactive play, structural difficulty sweeps,
+and deterministic regression replay without starting SpacetimeDB or the web
+stack, use the dependency-light [`puzzle-lab`](puzzle-lab.md) CLI.
+
+## Strategic scenario gallery
+
+Start every in-game strategic fixture with one isolated command:
+
+```powershell
+just web-isolated-strategic scenario-gallery 23100
+```
+
+The guarded bootstrap always creates the complete gallery; there is no visual
+demo flag and no feature-specific profile. Open **Character select**, search
+the distinct **Test scenarios** roster, and choose **Select and open**. Each
+entry owns a deterministic character and durable state, including disease,
+wounds, knowledge, social interactions, autopsy, outbreak, all puzzle kinds,
+and every compiled road encounter. Reset the disposable isolated profile to
+restore irreversible scenarios.
+
+The **Scenario inspector** lists a bounded union of generated local problems,
+open contracts and Order errantries, and registered road encounters. Player-safe
+summaries are visually separated from private subject and canonical case IDs.
+For a registered recurring-threat scenario, **Trigger next incident / attack**
+appends exactly one incident at the official current minute through the same
+materializer as scheduled progression; it does not advance the world clock or
+run settlement-wide activity.
+
+The **Combat, withdrawal, or surrender** scenario chooses a deterministic
+authored-negotiable hostile threat. Follow its ordinary journal and site flow;
+at the finale, the enemy page exposes both the existing combat controls and the
+hostile conversation dock. The scenario character has enough social training
+to exercise acceptance reliably and carries ordinary party rations, filled
+waterskins, and a field tent with enough surplus and shelter for the normal
+outbound and return journeys. Its generated finale site uses a fixture-only
+nearby distance of about 1 km so unrelated random road encounters do not
+dominate this focused demo; ordinary generated quests and travel risk are
+unchanged. At the hostile site it demonstrates combat, negotiated withdrawal,
+and a surrender demand or NPC surrender offer. Reset the isolated profile to
+restore the unresolved branch after any outcome. The fixture seeds the
+public-awareness threshold used by the authored NPC offer policy, so the offer
+mode is directly demonstrable rather than merely theoretical.
+
+Scenario adoption is available only to the registered strategic gateway in a
+module compiled with the development capability. Each opaque browser owner
+receives owner-scoped access to the shared registered primaries; scenario
+characters are not captured by the first browser. Ordinary character grants
+remain exclusive. Ordinary builds project no scenario catalog and cannot adopt
+or update it.
+
+## Puzzle demo (scenario character)
+
+Use the single scenario-gallery command above, then select **Sigil puzzle**,
+**Witness puzzle**, **Rune puzzle**, **Logic-grid puzzle**, or
+**Provision puzzle**. Each already owns a deterministic Order-sourced quest,
+active journey, persisted road camp, finale hostile, and selected puzzle trial,
+then opens
+the playable chat challenge. This skips
+ordinary dialogue acceptance and travel setup. The no-JavaScript form uses
+POST/redirect/GET and preserves safe wrong/correct feedback. Background world
+updates do not replace the challenge page, and the solved transcript remains
+until **Return to camp** is selected. Solving reveals a combat-model-derived
+weakness and preparation recommendation without changing enemy statistics;
+the optional trial never
+blocks **Continue travel**. Rest for at least one hour at that bound camp to
+exercise the optional wounded-courier road trial. Aiding him adds his captured
+dispatch to party inventory; leaving him or continuing the journey remains
+valid.
+
+Bootstrap reuses the durable puzzle state when invoked repeatedly. The redirect
+is read from the safe challenge projection rather than reconstructed by the HTTP adapter. See
+[Errantry and modular challenges](errantry-and-challenges.md).
+
 ## Outbreak demo
 
-Start a disposable strategic-only stack with `just outbreak-demo`. Create or
-select an adventurer, enable browser-local developer mode, and choose
-**Outbreak demo** in the settlement top bar. The loader creates a deterministic
+Use the single scenario-gallery command and select **Discovered outbreak**.
+Its character owns a deterministic
 generated outbreak with private progressing patients, an optional exact-course
 disease victim or carrier-autoresolve victim, and an ordinary remediation path.
 It prepares the selected character
 with Physiology, Surgery, Bestiary, social and urban-investigation skills plus a
 surgery kit.
 
-The loader intentionally does not reveal the case or write a journal entry.
-Ask local NPCs for rumors, then investigate through the normal quest,
-physiology, surgery, bestiary, and dialogue surfaces. Repeated loading is
-idempotent for the same character and settlement. The reducer is available only
-in a development-bootstrap module.
+Bootstrap completes the same observer-safe discovery transition as accepting a
+local NPC rumor: the selected character starts with the exact problem's receipt,
+witness referral, and journal-visible lead/action graph. It also records the dry
+notice that makes the case immediately available in the journal index; identical
+notice and lead presentation rows are collapsed. Continue through the normal quest,
+physiology, surgery, bestiary, and dialogue surfaces. Repeated loading is idempotent
+for the scenario character and its dedicated settlement. The gallery is available
+only in a development-bootstrap module.
 
 ## Autopsy demo
 
-Start a disposable strategic-only stack:
-
-```powershell
-just autopsy-demo
-```
-
-Create or select an adventurer, enable browser-local developer mode, return to
-their settlement overview, and choose **Autopsy demo** in the top bar. The
-one-shot loader raises that character's Surgery, Physiology, and Bestiary
+Use the single scenario-gallery command and select **Autopsy**. Its character's
+Surgery, Physiology, and Bestiary
 skills, supplies a surgery kit, and stages three bodies in the current
 settlement: a recent victim, an unidentified interred victim, and an enemy
 killed by the party. All physical injuries come from ordinary strategic
@@ -47,12 +115,11 @@ deploy a development-bootstrap module to an untrusted environment.
 
 ## Herbalism demo
 
-Bootstrap the isolated profile with visual demos, select **Herbalism Demo**,
-and open the raised **Herbalism** skill action. Willow demonstrates public
-grade and potency, comfrey demonstrates dry/grind and excessive-heat waste,
-and poppy tincture demonstrates a strong benefit with a physiological hazard.
-The demo also carries tincture spirit so the bounded solvent requirement is
-visible in the preview and success path.
+Bootstrap the isolated scenario gallery, select **Herbalism Demo**,
+and use Cut/Grind Edge Actions on its concrete ingredient rows. The character
+carries a knife and mortar and pestle so both timing lanes can be compared.
+Willow and comfrey demonstrate heated transformations; poppy, tincture spirit,
+glass bottles, and a jar demonstrate the six-week passive tincture path.
 The result uses the normal inventory transfer, merchant exchange, and medical
 administration paths.
 
@@ -62,6 +129,10 @@ Item YAML uses the production build validator. Run `just content-check` for all
 compiled core catalogs plus dialogue, or `just content-check items` while iterating on
 `content/items/*.yaml`; see
 [Item definition authoring](item-authoring.md).
+
+Road/rest encounter YAML is also compiled and validated at build time. Run
+`cargo run -p adventuresim-core --bin content-check -- encounters` for its
+focused provenance, digest, and semantic checks.
 
 ## Organization content
 
@@ -82,10 +153,9 @@ pages it reveals a top-right quest-authoring button; it never appears at camp
 or case sites. The resulting quest remains undiscovered until ordinary
 tavern/NPC rumor delivery.
 
-This is not an authorization boundary. The HTTP endpoint and
-`spawn_developer_quest` reducer intentionally have no developer credential yet,
-so they must not be exposed as an administrative tool on an untrusted
-deployment.
+Browser-local mode remains presentation only. The reducer requires the
+registered strategic gateway and the compiled development capability, so a
+normal module build cannot author arbitrary quests.
 
 The editor, authorization limitation, generated authority, and discovery model
 are documented in
@@ -107,9 +177,16 @@ The complete authoring and validation contract is documented in
 
 For deterministic multi-year NPC balance experiments and replay commands, see
 [`strategic-simulation.md`](strategic-simulation.md), `just strategic-sim`, and
-`just test-strategic-sim`. The isolated `just strategic-sim-core-loop <new-output-dir>` command
-also evaluates the authoritative strategic incident, escalation, recruitment,
-and quest systems. See
+`just test-strategic-sim`. The isolated
+`just strategic-sim-core-loop <new-output-dir>` command installs deterministic
+direct-contract and generated-local-problem fixtures for two ordinary parties,
+then fails unless both public quest paths and the final survival/return gates
+complete for the exact seeded IDs and designated leaders. Aggregate activity or
+a safe abandonment cannot substitute for direct accept/travel/encounter/report
+and generated discovery/intake/completion evidence. It writes `report.json`
+first and an actionable `failure.json` when a
+coverage metric is unmet. It also evaluates the authoritative strategic
+incident, escalation, recruitment, and quest systems. See
 [`strategic-simulation.md`](strategic-simulation.md#quest-evaluators).
 The separate end-to-end web evaluator is LLM-only and drives the same visible
 controls as a player. With a local strategic server running, invoke
@@ -120,9 +197,17 @@ model credential from `OPENAI_API_KEY` by default.
 The opt-in authoritative integration driver is
 `just strategic-sim-core-loop-world <new-output-dir>` loads the pinned
 `target/world-1544.json` rather than sample/renderer data and is preferred for
-gameplay evaluation. Both recipes create, claim, and delete their own
+exploratory imported-world gameplay evaluation; it deliberately does not force
+the deterministic quest fixture. Both recipes create, claim, and delete their own
   nonce-named loopback database, compile a one-run bootstrap capability in
   memory, and accepts no host, database, or capability override.
+
+For a fast, credential-free lifecycle rule-composition check, run
+`just strategic-sim-lifecycle <new-output-dir> <seed>`. It refuses an existing
+directory and writes immutable whole-cadence, daily-cadence, and comparison
+reports. This is an offline pure-rule tier; see
+[`strategic-simulation.md`](strategic-simulation.md#lifecycle-acceptance-tier)
+for its exact coverage and limits.
 
 The current strategic/tactical boundaries and tactical lifecycle are documented
 in [Architecture](architecture.md). This page is the canonical home for local
@@ -442,11 +527,14 @@ receive live state through the web server rather than connecting directly to
 SpacetimeDB. Current rendering and transport boundaries are documented in
 [Architecture](architecture.md).
 
-The local strategic UI is anonymous and single-user. Its cookie selects the
-active character; it does not establish a user identity. The default
-`127.0.0.1:8080` bind is therefore intentional. A non-loopback development bind
-must set `ALLOW_INSECURE_NON_LOOPBACK_BIND=true` and must remain on an isolated,
-trusted network.
+The strategic UI uses a pseudonymous browser owner, not an account. Set
+`STRATEGIC_SESSION_SECRET` to exactly 32 cryptographically random bytes encoded
+as unpadded base64url before startup; a missing or malformed secret fails
+closed. The signed opaque cookie contains no character IDs. Set
+`STRATEGIC_SESSION_COOKIE_SECURE=true` whenever the browser reaches the gateway
+over HTTPS. The default `127.0.0.1:8080` bind remains intentional; a
+non-loopback development bind must set
+`ALLOW_INSECURE_NON_LOOPBACK_BIND=true` and remain on an isolated network.
 
 Test the server-rendered strategic browser through `https://localhost:8443`
 using `just web-secure`. Caddy terminates TLS and negotiates HTTP/2 or HTTP/3
@@ -481,7 +569,114 @@ Each tactical server:
 4. Calls `end_tactical_server` with its terminal resolution
 5. Exits after strategic authority validates and commits the durable outcome
 
+Party enrollment and terminal submission are explicit lifecycle enums. The
+frozen resolution and bounded receipt stay together through bounded retry,
+acknowledgement, presentation, and shutdown; an ambiguous acknowledgement
+timeout fails closed without presenting an uncommitted result.
+
 ## Testing a Single Server
+
+After changing the canonical unarmed `walk.glb` or `run.glb`, regenerate the
+complete mirrored gait endpoint clips with:
+
+```powershell
+python scripts/mirror_gait_assets.py
+python scripts/mirror_gait_assets.py --check
+```
+
+The generator requires Python 3 and NumPy. Runtime locomotion blends these
+binary-parity endpoint clips; it does not fractionally mirror an FK result.
+
+For normal native tactical development, use the supervised launcher:
+
+```bash
+just tactical-play animation
+```
+
+Use `just tactical-play diagnostic` to run the same native gameplay client
+with a bounded analogue-input script and a per-render-frame animation-state
+JSONL log. The generated script, `animation-state-<session>.jsonl`, and process
+logs are written to the supervised run directory reported by `just tactical-status`.
+This is the preferred reproducer when deterministic `animation-viewer`
+captures disagree with visible networked gameplay.
+Scripted diagnostic mode forces the default third-person camera and suppresses
+live keyboard and mouse buttons, motion, and scrolling so activity in another
+application cannot alter the capture. Third person is also the normal tactical
+client's default; F9 still toggles camera mode outside scripted diagnostics.
+Only `diagnostic` enables the per-frame JSONL log by default, supplies scripted
+input, and exits automatically. Interactive `animation` and `combat` profiles
+avoid unbounded diagnostic files; use the native client's explicit
+`--animation-log PATH` option when an interactive recording needs correlation.
+On Windows, `presentation_trace=auto` records a
+`presentmon-<session>.csv` ETW trace for the bounded diagnostic profile when
+PresentMon is installed. Use `presentation_trace=required` for a capture that
+must include independent display timing (including an interactive profile), or
+`off` to disable it. The JSONL includes wall-clock time, the render thread's
+latest render-schedule completion counter, each frame's predicted gait-phase
+travel and bounded drift correction, and new authoritative phase measurements.
+Only PresentMon confirms that a frame reached the Windows presentation path.
+On Windows, the diagnostic profile also uses OBS Studio capture when it is
+installed. The supervisor uses a dedicated OBS profile and scene collection,
+creates the required capture source, and releases the scripted movement only
+after a low-resolution OBS source screenshot contains nonblack pixels and
+recording has started. It stops when the input script exits and moves the finalized
+video to `<capture-source>-capture-<session>.<extension>` in the same run directory.
+This does not control or stop an OBS process that was already
+running, and it restores the previously selected profile, scene collection,
+scene, and exact WebSocket configuration bytes after capture. Set the sixth
+`just tactical-play` argument to `off` to disable capture or `required` to fail
+when OBS is unavailable. OBS 28 or newer must have been started once so its
+built-in WebSocket configuration exists. The launcher searches PATH and the
+standard Windows install location; `OBS_PATH` and `OBS_WEBSOCKET_CONFIG`
+override those paths. `OBS_PROFILE` and `OBS_COLLECTION` rename the dedicated
+workspace (both default to `Adventure Simulator Diagnostics`). The
+seventh argument selects `window` (the default Windows Graphics Capture path)
+or `display`. Display capture creates a monitor source, automatically matches
+the monitor containing the tactical window, and crops it to the client area's
+live Win32 coordinates, allowing the final DWM
+desktop composition to be compared with the application's WGC surface. The
+client is temporarily topmost without being focused during display capture so
+activity in another application cannot occlude the measured pixels. The
+temporary window source forces Windows Graphics Capture because OBS's
+automatic BitBlt choice can return stale frames for Bevy's Vulkan window.
+Set `OBS_MONITOR_ID` to an OBS `monitor_id` value when identical monitor names
+make automatic selection ambiguous. OBS capture requires no external ffmpeg;
+the lifecycle script uses Python's standard library, with `PYTHON_BIN` available
+when Python is installed outside PATH.
+The fifth `just tactical-play` argument selects `auto-vsync`,
+`auto-no-vsync`, `fifo`, `fifo-relaxed`, `mailbox`, or `immediate` for
+swapchain frame-pacing comparisons; normal launches default to `auto-vsync`.
+The eighth argument selects `auto`, `vulkan`, or `dx12` as wgpu's render
+backend. For example, `just tactical-play diagnostic 25020 default off
+auto-vsync required display dx12` records a deterministic DX12 Display Capture
+without requiring PresentMon.
+Pass a fourth argument of `no-shadows`, `no-ssao`, `no-bloom`,
+`no-atmosphere`, or `minimal` to compare GPU-oriented rendering presets; MSAA
+is already disabled in every tactical preset.
+The normal client uses a 64×64 generated atmosphere environment map. Use
+`no-environment-light` to omit it while retaining the visible sky.
+
+This builds the native tactical server and client before creating a mission,
+starts a worktree-isolated SpacetimeDB instance, publishes and seeds it, starts
+the server, verifies that its one-use claim was consumed and its listener is
+owned by the recorded process, and only then launches the native client. The
+`animation` fixture disables enemy combat and mission timeout so rendering,
+camera, and animation work can remain open indefinitely. `combat` enables
+normal enemy behavior. `networking` creates the validated database and server
+without launching a client. Tactical-only profiles do not build or serve a
+browser/WASM client.
+
+The supervisor prints the database, mission, tactical address, combat mode,
+and log directory. Press Ctrl+C in its terminal to stop only children whose
+recorded executable and process-start identities still match. Run
+`just tactical-status` from another terminal to inspect database,
+claim/authority, listener, and client state. After closing only the native
+client, run `just tactical-client` to validate the live server and relaunch it.
+If the server has died after consuming its claim, relaunch fails with a
+recovery command instead of opening a client that remains on `Connecting...`.
+
+The three-terminal workflow below remains available for advanced/manual
+debugging. It exposes more lifecycle details and therefore more footguns.
 
 For testing without the spawner:
 
@@ -492,6 +687,43 @@ just tactical mission_id="test-123" scene_key="hills"
 For a self-contained tactical database and request, prefer
 `just tactical-isolated`; it writes `.env.tactical` so a subsequent bare
 `just tactical` and `just client` target the same isolated instance.
+
+To demonstrate tactical combat presentation without touching the canonical
+development database, use three terminals from the repository root. First,
+create and seed the disposable mission profile (leave it running):
+
+```bash
+just tactical-isolated presentation-demo 23200 mission:presentation-demo hills 0 1
+```
+
+Then start the seeded mission server using the generated `.env.tactical`:
+
+```bash
+just tactical
+```
+
+Finally connect the seeded Party character:
+
+```bash
+just client
+```
+
+The generated tactical server claim is single-use. Native client restarts are
+safe while that server remains alive, but restarting the server requires a
+fresh isolated mission and claim. Keep the `tactical-isolated` owner terminal
+running: it owns the database and removes `.env.tactical` during orderly
+shutdown. After a reboot or forced termination, do not trust a surviving
+`.env.tactical`; `just tactical-status` detects stale supervised state, and
+the recovery is `just tactical-play animation`. Launch through repository
+recipes so the worktree, working directory, binary, and asset roots agree.
+
+Fight the single enemy or allow the Party character to become incapacitated.
+The client shows live blood-loss/imbalance/incapacitation status, then an
+authoritative `VICTORY` or `DEFEAT` banner after the reducer callback confirms
+strategic acceptance.
+The server remains connected for the bounded three-second presentation window
+and exits automatically. Stop the isolated profile with Ctrl+C in its first
+terminal when finished.
 
 ## Troubleshooting
 
@@ -537,13 +769,14 @@ Start the isolated strategic stack with the guarded visual fixtures:
 just web-isolated-strategic social-demo 23100
 ```
 
-Select **Social Demo**, open **Greta the Guard**, and press the raised Social
-icon beside the Morale meter.
+Select **Social Demo**, open **Greta the Guard**, and open their conversation
+from the portrait action. Use **Recent Tidings** for morale concerns and
+**Of Thee** for observer-safe questions about Greta.
 The fixture includes defeat and injury penalties, established Familiarity,
 positive Affinity, exact multi-valued observer beliefs, presentation, and one
 deliberately incorrect perceived sensitivity. Greta professes Lutheranism, and
 Social Demo has direct Lutheran study plus correlated Catholic knowledge, so
-the themed Prayer response is immediately usable. The Social rail shows
+the themed Prayer response is immediately usable. The conversation dock offers
 Insight, Charm, Command, Deception, and target-specific Religion; Lighten Mood
 and Flirt are distinct Charm
 approaches, and repeated supported observations demonstrate the
@@ -553,3 +786,7 @@ reducer. Schema changes are destructive in this pre-launch workflow, so rerun
 the isolated profile to recreate its database. Select **Zealous Prayer Demo**
 and open **Margareta the Pilgrim** to inspect the same Lutheran action kept
 visible, greyed out, and annotated with its unavailable reason.
+
+Encounter development should query `backend_context_characters` by exact
+`context_id` or `location_id`. After contextual schema changes, run
+`just generate-db-client` before building the web or tactical server.

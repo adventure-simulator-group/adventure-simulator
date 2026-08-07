@@ -14,7 +14,7 @@ pub struct NpcAdventuringPartyAuthority {
     #[index(btree)]
     pub settlement_id: String,
     pub name: String,
-    pub member_npc_ids_json: String,
+    pub member_resident_character_ids_json: String,
     pub capability: u16,
     pub available_at: u64,
 }

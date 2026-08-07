@@ -430,7 +430,7 @@ async fn recruitment_panel_fragment(
         if let Some(capability) = state
             .db
             .query::<CharacterCapability>(&format!(
-                "SELECT * FROM character_capability WHERE character_id = {}",
+                "SELECT * FROM backend_character_capabilities WHERE character_id = {}",
                 membership.character_id
             ))
             .await
@@ -504,7 +504,7 @@ async fn recruitment_panel_fragment(
                 let capability = state
                     .db
                     .query::<CharacterCapability>(&format!(
-                        "SELECT * FROM character_capability WHERE character_id = {}",
+                        "SELECT * FROM backend_character_capabilities WHERE character_id = {}",
                         request.character_id
                     ))
                     .await
@@ -514,7 +514,7 @@ async fn recruitment_panel_fragment(
                 let attributes = state
                     .db
                     .query::<CharacterAttributes>(&format!(
-                        "SELECT * FROM character_attributes WHERE character_id = {}",
+                        "SELECT * FROM backend_character_attributes WHERE character_id = {}",
                         request.character_id
                     ))
                     .await
@@ -524,7 +524,7 @@ async fn recruitment_panel_fragment(
                 let skills = state
                     .db
                     .query::<CharacterSkills>(&format!(
-                        "SELECT * FROM character_skills WHERE character_id = {}",
+                        "SELECT * FROM backend_character_skills WHERE character_id = {}",
                         request.character_id
                     ))
                     .await
@@ -534,7 +534,7 @@ async fn recruitment_panel_fragment(
                 let limbs = state
                     .db
                     .query::<CharacterLimbs>(&format!(
-                        "SELECT * FROM character_limbs WHERE character_id = {}",
+                        "SELECT * FROM backend_character_limbs WHERE character_id = {}",
                         request.character_id
                     ))
                     .await
@@ -735,9 +735,11 @@ async fn party_notifications(
         Vec::new()
     };
     let actual_leader_alive = match parties.first() {
-        Some(party) => get_character(&state, party.leader_id)
+        Some(party) => super::data::character_as_observed(&state, party.leader_id, character_id)
             .await
-            .is_some_and(|leader| leader.alive),
+            .ok()
+            .flatten()
+            .is_none_or(|leader| leader.alive),
         None => true,
     };
     let leader_votes = state

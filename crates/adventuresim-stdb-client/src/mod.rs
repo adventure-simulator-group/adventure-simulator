@@ -8,16 +8,24 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 pub mod abandon_contract_reducer;
 pub mod accept_contract_reducer;
+pub mod accept_order_errantry_reducer;
 pub mod accept_party_join_request_reducer;
+pub mod active_pregnancy_type;
 pub mod activity_incident_entropy_type;
+pub mod add_fireplace_ingredients_reducer;
 pub mod administer_preparation_reducer;
+pub mod administer_tincture_from_container_reducer;
+pub mod admit_household_occupant_reducer;
+pub mod adopt_development_scenarios_reducer;
 pub mod advance_simulation_world_time_reducer;
+pub mod affinity_band_type;
 pub mod agricultural_commodity_type;
 pub mod agricultural_limitation_type;
 pub mod agriculture_industry_type;
 pub mod alcohol_consumption_table;
 pub mod alcohol_consumption_type;
 pub mod answer_dialogue_prompt_reducer;
+pub mod answer_hostile_surrender_offer_reducer;
 pub mod approach_dialogue_witness_reducer;
 pub mod approve_party_action_request_planned_reducer;
 pub mod approve_party_action_request_reducer;
@@ -30,23 +38,56 @@ pub mod autoresolve_mission_reducer;
 pub mod autoresolve_report_table;
 pub mod autoresolve_report_type;
 pub mod available_water_capacity_type;
+pub mod backend_authority_arrest_action_type;
+pub mod backend_authority_arrest_actions_table;
 pub mod backend_automatic_social_chats_table;
 pub mod backend_bestiary_deduction_type;
 pub mod backend_bestiary_deductions_table;
+pub mod backend_browser_character_access_table;
+pub mod backend_browser_character_access_type;
 pub mod backend_case_battle_type;
 pub mod backend_case_battles_table;
 pub mod backend_case_site_pin_type;
 pub mod backend_case_site_pins_table;
+pub mod backend_challenge_type;
+pub mod backend_challenges_table;
 pub mod backend_character_affinities_table;
+pub mod backend_character_attributes_table;
+pub mod backend_character_capabilities_table;
 pub mod backend_character_case_site_location_type;
 pub mod backend_character_case_site_locations_table;
+pub mod backend_character_conditions_table;
+pub mod backend_character_deaths_table;
+pub mod backend_character_exposures_table;
 pub mod backend_character_familiarities_table;
+pub mod backend_character_limbs_table;
+pub mod backend_character_morale_sources_table;
+pub mod backend_character_needs_table;
 pub mod backend_character_personalities_table;
+pub mod backend_character_relationship_status_type;
+pub mod backend_character_relationship_statuses_table;
+pub mod backend_character_residence_status_type;
+pub mod backend_character_residence_statuses_table;
+pub mod backend_character_skills_table;
+pub mod backend_character_stats_table;
+pub mod backend_character_strategic_conditions_table;
+pub mod backend_character_times_table;
+pub mod backend_character_training_schedules_table;
+pub mod backend_characters_table;
 pub mod backend_committed_cuts_table;
+pub mod backend_context_character_type;
+pub mod backend_context_characters_table;
+pub mod backend_contextual_decision_type;
 pub mod backend_contract_type;
 pub mod backend_contracts_table;
 pub mod backend_corpse_type;
 pub mod backend_corpses_table;
+pub mod backend_courtship_discoveries_table;
+pub mod backend_courtship_discovery_status_type;
+pub mod backend_development_quest_type;
+pub mod backend_development_quests_table;
+pub mod backend_development_scenario_type;
+pub mod backend_development_scenarios_table;
 pub mod backend_dialogue_event_type;
 pub mod backend_dialogue_events_table;
 pub mod backend_dialogue_participant_type;
@@ -59,8 +100,24 @@ pub mod backend_dialogue_topic_option_type;
 pub mod backend_dialogue_topic_options_table;
 pub mod backend_dialogue_witness_claim_type;
 pub mod backend_dialogue_witness_claims_table;
+pub mod backend_estate_disposition_type;
+pub mod backend_estate_dispositions_table;
+pub mod backend_family_child_type;
+pub mod backend_family_children_table;
+pub mod backend_fireplace_dish_type;
+pub mod backend_fireplace_dishes_table;
+pub mod backend_fireplace_station_type;
+pub mod backend_fireplace_stations_table;
+pub mod backend_forage_attempt_state_type;
+pub mod backend_forage_attempt_states_table;
 pub mod backend_forage_receipt_type;
 pub mod backend_forage_receipts_table;
+pub mod backend_hostile_negotiation_type;
+pub mod backend_hostile_negotiations_table;
+pub mod backend_hostile_surrender_type;
+pub mod backend_hostile_surrenders_table;
+pub mod backend_ingredient_preparation_plan_type;
+pub mod backend_ingredient_preparation_plans_table;
 pub mod backend_investigation_action_outcome_type;
 pub mod backend_investigation_action_outcomes_table;
 pub mod backend_investigation_action_type;
@@ -77,8 +134,8 @@ pub mod backend_local_problem_rumor_type;
 pub mod backend_local_problem_rumors_table;
 pub mod backend_local_problem_trade_effect_type;
 pub mod backend_local_problem_trade_effects_table;
-pub mod backend_outbreak_patient_type;
-pub mod backend_outbreak_patients_table;
+pub mod backend_organization_membership_type;
+pub mod backend_organization_memberships_table;
 pub mod backend_physical_evidence_inspection_type;
 pub mod backend_physical_evidence_inspections_table;
 pub mod backend_physical_evidence_table;
@@ -88,14 +145,18 @@ pub mod backend_physiology_administrations_table;
 pub mod backend_physiology_chart_type;
 pub mod backend_physiology_charts_table;
 pub mod backend_physiology_differential_type;
-pub mod backend_settlement_npc_relationship_type;
-pub mod backend_settlement_npc_relationships_table;
-pub mod backend_settlement_npc_type;
-pub mod backend_settlement_npcs_table;
+pub mod backend_road_challenge_type;
+pub mod backend_road_challenges_table;
+pub mod backend_settlement_resident_relationship_type;
+pub mod backend_settlement_resident_relationships_table;
+pub mod backend_settlement_resident_type;
+pub mod backend_settlement_residents_table;
 pub mod backend_social_addresses_table;
 pub mod backend_social_beliefs_table;
 pub mod backend_social_chat_receipt_type;
 pub mod backend_social_chat_receipts_table;
+pub mod backend_tincture_status_type;
+pub mod backend_tincture_statuses_table;
 pub mod backfill_character_deaths_and_leadership_reducer;
 pub mod backfill_equipment_condition_and_smiths_reducer;
 pub mod backfill_solo_parties_reducer;
@@ -105,17 +166,24 @@ pub mod battle_participant_table;
 pub mod battle_participant_type;
 pub mod battle_result_table;
 pub mod battle_result_type;
+pub mod begin_formal_courtship_reducer;
+pub mod begin_informal_courtship_reducer;
 pub mod begin_world_data_import_reducer;
 pub mod belief_axis_type;
 pub mod bestiary_hours_type;
 pub mod blood_exposure_checkpoint_type;
 pub mod bootstrap_development_world_reducer;
+pub mod browser_character_grant_origin_type;
+pub mod browser_character_grant_type;
+pub mod browser_character_selection_type;
 pub mod built_settlement_cover_type;
 pub mod burn_corpse_reducer;
 pub mod bury_corpse_reducer;
+pub mod buy_residence_reducer;
 pub mod camp_duration_mode_type;
 pub mod canal_watercourse_type;
 pub mod cancel_mission_request_reducer;
+pub mod cancel_wedding_reducer;
 pub mod canopy_density_type;
 pub mod case_authority_type;
 pub mod case_custody_type;
@@ -130,56 +198,62 @@ pub mod case_site_id_type;
 pub mod catholic_lutheran_church_type;
 pub mod catholic_reformed_church_type;
 pub mod cation_exchange_capacity_type;
+pub mod challenge_attempt_receipt_type;
+pub mod challenge_authority_type;
+pub mod challenge_presenter_catalog_id_type;
 pub mod change_inventory_item_reducer;
 pub mod character_affinity_type;
-pub mod character_attributes_table;
 pub mod character_attributes_type;
-pub mod character_capability_table;
+pub mod character_birth_type;
 pub mod character_capability_type;
 pub mod character_case_site_occupancy_type;
-pub mod character_condition_table;
 pub mod character_condition_type;
-pub mod character_death_table;
+pub mod character_context_kind_type;
+pub mod character_context_membership_type;
+pub mod character_context_role_type;
 pub mod character_death_type;
 pub mod character_equipped_item_table;
 pub mod character_equipped_item_type;
-pub mod character_estate_basis_type;
-pub mod character_exposure_table;
 pub mod character_exposure_type;
 pub mod character_familiarity_type;
 pub mod character_filth_table;
 pub mod character_filth_type;
 pub mod character_illness_status_table;
 pub mod character_illness_status_type;
-pub mod character_limbs_table;
+pub mod character_kinship_type;
 pub mod character_limbs_type;
-pub mod character_morale_source_table;
 pub mod character_morale_source_type;
-pub mod character_needs_table;
 pub mod character_needs_type;
 pub mod character_organization_role_type;
+pub mod character_personality_scores_type;
 pub mod character_personality_type;
 pub mod character_settlement_reputation_table;
 pub mod character_settlement_reputation_type;
-pub mod character_skills_table;
 pub mod character_skills_type;
-pub mod character_stats_table;
 pub mod character_stats_type;
-pub mod character_strategic_condition_table;
 pub mod character_strategic_condition_type;
-pub mod character_table;
-pub mod character_time_table;
 pub mod character_time_type;
 pub mod character_topic_knowledge_type;
-pub mod character_training_schedule_table;
 pub mod character_training_schedule_type;
 pub mod character_type;
 pub mod charcoal_burning_industry_type;
 pub mod chat_with_party_member_reducer;
+pub mod child_activity_focus_type;
+pub mod child_development_type;
+pub mod child_identity_reservation_type;
+pub mod child_stage_type;
+pub mod chivalric_virtue_type;
 pub mod choose_dialogue_topic_reducer;
 pub mod claim_simulation_run_reducer;
+pub mod clear_browser_character_selection_reducer;
 pub mod clear_organization_presentation_reducer;
+pub mod collect_fixture_water_into_container_reducer;
+pub mod commitment_event_type;
+pub mod commitment_kind_type;
+pub mod commitment_status_type;
+pub mod commitment_terminal_reason_type;
 pub mod committed_cut_type;
+pub mod conception_trial_receipt_type;
 pub mod configure_simulation_character_reducer;
 pub mod connected_equipment_occupancy_type;
 pub mod connected_player_item_type;
@@ -188,13 +262,17 @@ pub mod connected_players_table;
 pub mod conscience_type;
 pub mod construction_commodity_type;
 pub mod construction_industry_type;
+pub mod contact_context_character_reducer;
+pub mod container_liquid_table;
+pub mod container_liquid_type;
+pub mod contextual_contact_receipt_type;
+pub mod contextual_decision_state_type;
 pub mod continue_camp_travel_reducer;
 pub mod contract_interaction_stage_type;
 pub mod contract_issuer_interaction_receipt_type;
 pub mod contract_status_type;
 pub mod contract_type;
 pub mod conviction_type;
-pub mod cook_food_reducer;
 pub mod cooking_method_type;
 pub mod corpse_body_state_type;
 pub mod corpse_family_binding_type;
@@ -204,6 +282,13 @@ pub mod corpse_permission_attempt_type;
 pub mod corpse_permission_kind_type;
 pub mod corpse_permission_scope_type;
 pub mod corpse_permission_type;
+pub mod courtship_discovery_type;
+pub mod courtship_kind_type;
+pub mod courtship_observer_baseline_type;
+pub mod courtship_record_type;
+pub mod courtship_secrecy_reason_type;
+pub mod courtship_status_type;
+pub mod courtship_terminal_reason_type;
 pub mod courtship_type;
 pub mod create_character_reducer;
 pub mod create_named_character_reducer;
@@ -221,11 +306,17 @@ pub mod death_cause_type;
 pub mod death_source_type;
 pub mod delete_recruitment_role_reducer;
 pub mod delete_saved_recruitment_role_reducer;
+pub mod demand_hostile_surrender_reducer;
 pub mod deposit_party_inventory_item_reducer;
 pub mod derived_historical_vegetation_cover_type;
 pub mod derived_historical_vegetation_method_type;
 pub mod derived_historical_vegetation_type;
 pub mod derived_industry_type;
+pub mod designate_residence_reducer;
+pub mod development_scenario_browser_access_type;
+pub mod development_scenario_subject_type;
+pub mod development_scenario_type;
+pub mod development_scenario_update_receipt_type;
 pub mod dialogue_action_type;
 pub mod dialogue_answer_type;
 pub mod dialogue_event_type;
@@ -247,6 +338,9 @@ pub mod disease_notice_type;
 pub mod dismiss_party_action_request_reducer;
 pub mod dominant_aspect_type;
 pub mod dominant_leaf_type_type;
+pub mod dowry_escrow_type;
+pub mod dowry_outcome_kind_type;
+pub mod dowry_outcome_type;
 pub mod drive_type;
 pub mod drought_history_type;
 pub mod drought_profile_type;
@@ -254,6 +348,7 @@ pub mod eat_food_reducer;
 pub mod edge_endpoint_type;
 pub mod edge_progress_permille_type;
 pub mod elevation_meters_type;
+pub mod end_marriage_reducer;
 pub mod end_tactical_server_reducer;
 pub mod ensure_settlement_activity_reducer;
 pub mod enter_mission_reducer;
@@ -270,14 +365,20 @@ pub mod equipment_occupancy_table;
 pub mod equipment_occupancy_type;
 pub mod equipment_parent_requirement_type;
 pub mod equipment_placement_type;
+pub mod errantry_authority_type;
+pub mod estate_disposition_status_type;
+pub mod estate_disposition_type;
+pub mod estate_heir_kind_type;
 pub mod evidence_presentation_kind_type;
 pub mod examine_corpse_reducer;
-pub mod examine_outbreak_patient_reducer;
+pub mod exclusive_commitment_participant_type;
+pub mod exclusive_commitment_type;
 pub mod exhume_corpse_reducer;
 pub mod fallback_historical_vegetation_cover_type;
 pub mod fallback_historical_vegetation_method_type;
 pub mod fallback_historical_vegetation_type;
 pub mod fallback_industry_type;
+pub mod familiarity_band_type;
 pub mod ferry_route_type;
 pub mod ferry_waterway_type;
 pub mod field_shelter_type;
@@ -291,17 +392,22 @@ pub mod finalize_merchant_trade_reducer;
 pub mod finalize_party_offer_reducer;
 pub mod finalize_storefront_trade_reducer;
 pub mod finish_world_data_import_reducer;
+pub mod fireplace_dish_type;
+pub mod fireplace_station_type;
 pub mod fish_commodity_type;
 pub mod fishing_industry_type;
 pub mod flow_persistence_type;
 pub mod flowing_water_access_type;
+pub mod food_contamination_provenance_type;
 pub mod food_contamination_type;
 pub mod food_lot_table;
 pub mod food_lot_type;
 pub mod food_preparation_type;
 pub mod forage_attempt_authority_type;
+pub mod forage_attempt_state_type;
 pub mod forage_current_vicinity_reducer;
 pub mod forage_environment_attestation_type;
+pub mod forage_harvest_material_type;
 pub mod forest_commodity_type;
 pub mod forest_cover_type;
 pub mod forestry_industry_type;
@@ -311,14 +417,23 @@ pub mod geologic_era_type;
 pub mod geologic_lithology_evidence_type;
 pub mod geologic_setting_type;
 pub mod geologic_unit_id_type;
+pub mod grant_browser_character_reducer;
 pub mod habitat_suitability_type;
-pub mod herbal_preparation_method_type;
 pub mod historical_vegetation_type;
 pub mod historical_wetland_type;
 pub mod historical_woodland_type;
 pub mod hostile_group_authority_type;
 pub mod hostile_group_disposition_type;
+pub mod hostile_negotiation_outcome_type;
+pub mod hostile_negotiation_receipt_type;
 pub mod hostile_resolution_kind_type;
+pub mod hostile_resolution_receipt_type;
+pub mod hostile_surrender_mode_type;
+pub mod hostile_surrender_outcome_type;
+pub mod hostile_surrender_receipt_type;
+pub mod household_member_type;
+pub mod household_role_type;
+pub mod household_type;
 pub mod hygiene_type;
 pub mod igneous_rock_type;
 pub mod immediate_activity_type;
@@ -337,13 +452,20 @@ pub mod infection_episode_row_type;
 pub mod inferred_geologic_setting_type;
 pub mod inferred_industry_profile_type;
 pub mod inferred_tree_species_profile_type;
+pub mod ingredient_preparation_action_type;
+pub mod ingredient_preparation_attempt_state_type;
+pub mod ingredient_preparation_receipt_type;
 pub mod inland_water_access_type;
 pub mod inland_water_size_type;
 pub mod inspect_physical_evidence_reducer;
+pub mod inventory_containment_table;
+pub mod inventory_containment_type;
 pub mod inventory_item_amount_table;
 pub mod inventory_item_amount_type;
 pub mod inventory_item_table;
 pub mod inventory_item_type;
+pub mod inventory_object_table;
+pub mod inventory_object_type;
 pub mod inventory_quantity_target_table;
 pub mod inventory_quantity_target_type;
 pub mod investigation_action_attempt_type;
@@ -393,18 +515,20 @@ pub mod journey_terrain_kind_type;
 pub mod journey_terrain_span_type;
 pub mod journey_terrain_weights_type;
 pub mod kill_simulation_character_reducer;
+pub mod kinship_kind_type;
 pub mod land_route_type;
 pub mod land_use_fraction_type;
 pub mod land_use_profile_type;
 pub mod land_water_crossing_type;
 pub mod leave_mission_reducer;
 pub mod leave_party_reducer;
+pub mod lifecycle_event_failure_type;
+pub mod lifecycle_event_kind_type;
 pub mod limb_injury_table;
 pub mod limb_injury_type;
 pub mod limb_region_type;
+pub mod lineage_control_claim_type;
 pub mod liquidate_party_inventory_reducer;
-pub mod load_autopsy_demo_reducer;
-pub mod load_outbreak_demo_reducer;
 pub mod local_chat_message_type;
 pub mod local_problem_authority_type;
 pub mod local_problem_generation_explanation_type;
@@ -419,6 +543,10 @@ pub mod located_route_landform_type;
 pub mod lutheran_reformed_church_type;
 pub mod mapped_surface_geology_type;
 pub mod marine_water_access_type;
+pub mod marriage_participant_type;
+pub mod marriage_status_type;
+pub mod marriage_type;
+pub mod medicinal_component_type;
 pub mod metamorphic_rock_type;
 pub mod mined_commodity_type;
 pub mod mineral_soil_texture_type;
@@ -432,35 +560,48 @@ pub mod mission_outcome_candidate_type;
 pub mod mixed_lithology_type;
 pub mod modeled_tree_species_profile_type;
 pub mod modeled_tree_species_type;
+pub mod morale_band_type;
 pub mod morale_event_table;
 pub mod morale_event_type;
+pub mod narrative_combat_followup_authority_type;
+pub mod narrative_combat_followup_receipt_type;
+pub mod narrative_encounter_information_type;
+pub mod narrative_encounter_origin_type;
+pub mod narrative_encounter_private_authority_type;
+pub mod narrative_encounter_trigger_type;
 pub mod native_range_evidence_type;
+pub mod negotiate_hostile_withdrawal_reducer;
 pub mod nerve_type;
 pub mod npc_adventuring_party_authority_type;
 pub mod npc_age_band_type;
+pub mod npc_causal_schedule_type;
+pub mod npc_policy_decision_outcome_type;
+pub mod npc_policy_decision_phase_type;
+pub mod npc_policy_decision_receipt_type;
+pub mod npc_policy_type;
 pub mod npc_presentation_type;
-pub mod npc_sex_type;
 pub mod objective_continuity_guard_type;
 pub mod objective_continuity_kind_type;
 pub mod official_religion_type;
 pub mod open_corpse_reducer;
 pub mod oral_language_hours_type;
+pub mod order_errantry_acceptance_receipt_type;
 pub mod organic_soil_type;
-pub mod organization_membership_table;
 pub mod organization_membership_type;
 pub mod organization_presentation_table;
 pub mod organization_presentation_type;
 pub mod other_non_textured_soil_type;
 pub mod outbreak_authority_type;
 pub mod outbreak_patient_authority_type;
-pub mod outbreak_patient_examination_type;
 pub mod outbreak_source_presence_span_type;
+pub mod outbreak_water_source_type;
 pub mod outcome_source_authority_type;
 pub mod outlook_type;
 pub mod palmer_drought_severity_index_type;
 pub mod party_action_request_table;
 pub mod party_action_request_type;
 pub mod party_case_site_tracking_type;
+pub mod party_context_contact_authority_type;
 pub mod party_inventory_item_table;
 pub mod party_inventory_item_type;
 pub mod party_inventory_state_table;
@@ -494,19 +635,42 @@ pub mod peat_cutting_industry_type;
 pub mod perform_immediate_activity_reducer;
 pub mod perform_investigation_action_reducer;
 pub mod perform_social_action_reducer;
+pub mod persisted_case_resolution_payload_ref_type;
+pub mod persisted_food_water_event_source_type;
+pub mod persisted_food_water_payload_ref_type;
+pub mod persisted_foraging_event_source_type;
+pub mod persisted_foraging_payload_ref_type;
+pub mod persisted_generated_finale_event_source_type;
+pub mod persisted_operational_custody_type;
+pub mod persisted_world_event_actor_type;
+pub mod persisted_world_event_envelope_type;
+pub mod persisted_world_event_payload_ref_type;
+pub mod persisted_world_event_place_type;
+pub mod persisted_world_event_source_type;
+pub mod persisted_world_event_subject_type;
+pub mod personality_axis_type;
+pub mod personality_development_event_type;
 pub mod physical_evidence_inspection_action_receipt_type;
 pub mod physical_evidence_inspection_attempt_type;
 pub mod physiology_administration_type;
 pub mod physiology_key_material_type;
 pub mod physiology_presence_span_type;
+pub mod place_fireplace_container_reducer;
 pub mod potential_vegetation_class_type;
 pub mod potential_vegetation_posterior_type;
 pub mod potential_vegetation_type;
 pub mod pottery_commodity_type;
 pub mod pottery_industry_type;
-pub mod prepare_herbal_remedy_reducer;
+pub mod pour_tincture_spirit_into_container_reducer;
+pub mod pour_water_into_container_reducer;
+pub mod pour_water_out_of_container_reducer;
+pub mod pregnancy_status_type;
+pub mod pregnancy_type;
+pub mod prepare_development_courtship_reducer;
+pub mod prepare_ingredient_lot_reducer;
 pub mod present_organization_reducer;
 pub mod presentation_type;
+pub mod primary_residence_type;
 pub mod production_scale_type;
 pub mod profile_fact_provenance_type;
 pub mod projectile_kind_type;
@@ -514,11 +678,14 @@ pub mod promote_organization_membership_reducer;
 pub mod prosperity_tier_type;
 pub mod public_threat_disclosure_type;
 pub mod purchase_from_herbalist_reducer;
+pub mod purchase_personal_storefront_with_party_stake_reducer;
+pub mod put_inventory_item_in_container_reducer;
 pub mod quarry_commodity_type;
 pub mod quarrying_industry_type;
 pub mod quest_generation_authority_type;
 pub mod receive_investigation_claim_reducer;
 pub mod receive_local_problem_rumor_reducer;
+pub mod recover_owned_residence_reducer;
 pub mod recruitment_offer_id_type;
 pub mod recruitment_offer_status_type;
 pub mod recruitment_offer_table;
@@ -527,13 +694,18 @@ pub mod recruitment_requirements_type;
 pub mod recruitment_source_id_type;
 pub mod refresh_capabilities_reducer;
 pub mod refresh_strategic_condition_reducer;
+pub mod refresh_tincture_reducer;
 pub mod register_strategic_gateway_reducer;
 pub mod reject_party_join_request_reducer;
 pub mod religion_hours_type;
 pub mod religious_demand_table;
 pub mod religious_demand_type;
+pub mod relinquish_residence_reducer;
+pub mod remove_household_occupant_reducer;
+pub mod remove_inventory_item_from_container_reducer;
 pub mod remove_party_member_reducer;
 pub mod rename_saved_recruitment_role_reducer;
+pub mod rent_residence_reducer;
 pub mod repair_order_table;
 pub mod repair_order_type;
 pub mod replace_item_at_placement_reducer;
@@ -544,20 +716,35 @@ pub mod request_party_action_reducer;
 pub mod request_tactical_server_for_scene_reducer;
 pub mod request_tactical_server_reducer;
 pub mod request_to_join_party_reducer;
+pub mod residence_charge_outcome_type;
+pub mod residence_charge_type;
+pub mod residence_holding_status_type;
+pub mod residence_holding_type;
+pub mod residence_occupant_type;
+pub mod residence_tenure_type;
+pub mod residence_tier_type;
+pub mod residence_transition_kind_type;
+pub mod residence_transition_type;
+pub mod resolve_errantry_road_challenge_reducer;
 pub mod resolve_religious_demand_reducer;
 pub mod resolve_strategic_encounter_reducer;
 pub mod resolved_party_action_type;
 pub mod rest_at_camp_reducer;
+pub mod rest_at_residence_hours_reducer;
 pub mod rest_at_settlement_hours_reducer;
 pub mod rest_at_settlement_reducer;
 pub mod retained_projectile_table;
 pub mod retained_projectile_type;
+pub mod retrieve_fireplace_container_reducer;
+pub mod retrieve_fireplace_dish_reducer;
 pub mod retrieve_repaired_item_reducer;
 pub mod retrieve_repaired_items_reducer;
 pub mod revoke_tactical_server_claim_reducer;
 pub mod river_access_type;
 pub mod river_and_canal_access_type;
 pub mod river_watercourse_type;
+pub mod road_challenge_authority_type;
+pub mod road_challenge_resolution_receipt_type;
 pub mod rock_outcrop_soil_type;
 pub mod route_elevation_profile_type;
 pub mod route_elevation_sample_type;
@@ -581,16 +768,21 @@ pub mod save_recruitment_role_reducer;
 pub mod saved_recruitment_role_table;
 pub mod saved_recruitment_role_type;
 pub mod schedule_allocation_type;
+pub mod schedule_wedding_reducer;
 pub mod sedimentary_rock_type;
+pub mod seed_npc_policy_for_development_reducer;
 pub mod seed_simulation_disease_reducer;
 pub mod seed_simulation_equipment_damage_reducer;
+pub mod seed_simulation_quest_fixture_reducer;
 pub mod seed_simulation_world_reducer;
 pub mod seed_standalone_tactical_mission_reducer;
+pub mod select_browser_character_reducer;
 pub mod self_knowledge_type;
 pub mod self_regard_type;
 pub mod send_local_chat_message_reducer;
 pub mod set_automatic_social_chat_reducer;
 pub mod set_character_religion_reducer;
+pub mod set_fireplace_instrument_reducer;
 pub mod set_inventory_quantity_target_reducer;
 pub mod set_party_camp_fatigue_percent_reducer;
 pub mod set_party_travel_itinerary_reducer;
@@ -606,18 +798,15 @@ pub mod settlement_economy_profile_type;
 pub mod settlement_hydrology_type;
 pub mod settlement_import_type;
 pub mod settlement_language_profile_type;
-pub mod settlement_npc_estate_basis_type;
-pub mod settlement_npc_morale_event_type;
-pub mod settlement_npc_organization_role_type;
-pub mod settlement_npc_presence_table;
-pub mod settlement_npc_presence_type;
-pub mod settlement_npc_relationship_type;
-pub mod settlement_npc_seed_explanation_type;
-pub mod settlement_npc_social_state_type;
-pub mod settlement_npc_type;
 pub mod settlement_outbreak_table;
 pub mod settlement_outbreak_type;
 pub mod settlement_religious_status_type;
+pub mod settlement_residence_offer_table;
+pub mod settlement_residence_offer_type;
+pub mod settlement_resident_presence_table;
+pub mod settlement_resident_presence_type;
+pub mod settlement_resident_profile_type;
+pub mod settlement_resident_seed_explanation_type;
 pub mod settlement_service_type;
 pub mod settlement_smith_table;
 pub mod settlement_smith_type;
@@ -630,15 +819,21 @@ pub mod share_investigation_lead_reducer;
 pub mod simulate_contract_issuer_interaction_reducer;
 pub mod simulation_character_table;
 pub mod simulation_character_type;
+pub mod simulation_quest_fixture_authority_type;
+pub mod simulation_quest_fixture_table;
+pub mod simulation_quest_fixture_type;
 pub mod simulation_run_table;
 pub mod simulation_run_type;
 pub mod sociability_type;
 pub mod social_action_cooldown_type;
 pub mod social_address_type;
 pub mod social_belief_type;
+pub mod social_chat_outcome_type;
 pub mod social_chat_receipt_type;
+pub mod social_chat_target_kind_type;
 pub mod social_interaction_type;
 pub mod social_organization_instance_type;
+pub mod socializing_receipt_type;
 pub mod soil_acidity_type;
 pub mod soil_basis_points_type;
 pub mod soil_depth_type;
@@ -649,12 +844,16 @@ pub mod soil_properties_type;
 pub mod soil_substrate_type;
 pub mod soil_water_regime_type;
 pub mod spawn_developer_quest_reducer;
-pub mod spend_time_with_settlement_npc_reducer;
+pub mod spend_time_with_settlement_resident_reducer;
 pub mod sponsor_party_member_inn_rest_reducer;
+pub mod spouse_leisure_accrual_type;
+pub mod spouse_leisure_overlap_type;
+pub mod spouse_leisure_slice_type;
 pub mod stage_investigation_lead_reducer;
 pub mod start_dialogue_reducer;
+pub mod start_fireplace_container_cooking_reducer;
+pub mod start_poppy_tincture_reducer;
 pub mod starting_age_tier_coordinate_type;
-pub mod starting_character_claim_table;
 pub mod starting_character_claim_type;
 pub mod stock_category_type;
 pub mod stone_content_percent_type;
@@ -663,6 +862,7 @@ pub mod store_battle_loot_reducer;
 pub mod strahler_order_type;
 pub mod strategic_corpse_type;
 pub mod strategic_encounter_loss_type;
+pub mod strategic_encounter_resolution_receipt_type;
 pub mod strategic_encounter_table;
 pub mod strategic_encounter_type;
 pub mod strategic_gateway_authority_table;
@@ -670,18 +870,29 @@ pub mod strategic_gateway_authority_type;
 pub mod strategic_incident_type;
 pub mod submit_all_repairable_items_reducer;
 pub mod submit_item_for_repair_reducer;
+pub mod submit_puzzle_challenge_reducer;
 pub mod suitability_basis_points_type;
 pub mod surface_geology_type;
 pub mod surface_lithology_type;
 pub mod surrender_to_authority_reducer;
+pub mod sync_development_clock_to_character_reducer;
 pub mod synchronize_character_time_reducer;
+pub mod synchronize_party_for_activity_reducer;
+pub mod tactical_character_consequence_type;
+pub mod tactical_consequence_receipt_type;
+pub mod tactical_equipment_contact_role_type;
+pub mod tactical_equipment_contact_type;
+pub mod tactical_hit_injury_type;
 pub mod tactical_mission_resolution_type;
+pub mod tactical_mission_side_type;
+pub mod tactical_receipt_body_part_type;
 pub mod tactical_server_claim_type;
 pub mod tactical_server_request_table;
 pub mod tactical_server_request_type;
 pub mod tactical_server_table;
 pub mod tactical_server_type;
 pub mod temperance_type;
+pub mod tincture_process_type;
 pub mod topsoil_organic_carbon_type;
 pub mod track_case_site_reducer;
 pub mod transfer_party_item_reducer;
@@ -697,8 +908,10 @@ pub mod travel_to_case_site_reducer;
 pub mod travel_to_settlement_planned_reducer;
 pub mod travel_to_settlement_reducer;
 pub mod treat_limb_reducer;
+pub mod treatment_action_receipt_type;
 pub mod tree_species_id_type;
 pub mod tree_species_profile_type;
+pub mod trigger_development_scenario_incident_reducer;
 pub mod unconsolidated_deposit_type;
 pub mod update_character_reducer;
 pub mod update_party_check_targets_reducer;
@@ -706,17 +919,21 @@ pub mod update_recruitment_role_reducer;
 pub mod update_training_schedule_reducer;
 pub mod upgrade_manual_surgery_reducer;
 pub mod vote_for_party_leader_reducer;
+pub mod water_collection_receipt_type;
 pub mod water_distance_meters_type;
+pub mod water_holding_contribution_type;
+pub mod water_material_lot_type;
+pub mod water_output_lot_type;
 pub mod weapon_skill_distribution_type;
 pub mod western_christian_arrangement_type;
 pub mod withdraw_party_inventory_item_reducer;
 pub mod witness_social_action_receipt_type;
 pub mod woodland_type;
-pub mod world_clock_schedule_type;
 pub mod world_clock_table;
 pub mod world_clock_type;
 pub mod world_data_import_table;
 pub mod world_data_import_type;
+pub mod world_event_receipt_type;
 pub mod world_node_import_type;
 pub mod world_node_table;
 pub mod world_node_type;
@@ -725,16 +942,24 @@ pub mod written_language_hours_type;
 
 pub use abandon_contract_reducer::abandon_contract;
 pub use accept_contract_reducer::accept_contract;
+pub use accept_order_errantry_reducer::accept_order_errantry;
 pub use accept_party_join_request_reducer::accept_party_join_request;
+pub use active_pregnancy_type::ActivePregnancy;
 pub use activity_incident_entropy_type::ActivityIncidentEntropy;
+pub use add_fireplace_ingredients_reducer::add_fireplace_ingredients;
 pub use administer_preparation_reducer::administer_preparation;
+pub use administer_tincture_from_container_reducer::administer_tincture_from_container;
+pub use admit_household_occupant_reducer::admit_household_occupant;
+pub use adopt_development_scenarios_reducer::adopt_development_scenarios;
 pub use advance_simulation_world_time_reducer::advance_simulation_world_time;
+pub use affinity_band_type::AffinityBand;
 pub use agricultural_commodity_type::AgriculturalCommodity;
 pub use agricultural_limitation_type::AgriculturalLimitation;
 pub use agriculture_industry_type::AgricultureIndustry;
 pub use alcohol_consumption_table::*;
 pub use alcohol_consumption_type::AlcoholConsumption;
 pub use answer_dialogue_prompt_reducer::answer_dialogue_prompt;
+pub use answer_hostile_surrender_offer_reducer::answer_hostile_surrender_offer;
 pub use approach_dialogue_witness_reducer::approach_dialogue_witness;
 pub use approve_party_action_request_planned_reducer::approve_party_action_request_planned;
 pub use approve_party_action_request_reducer::approve_party_action_request;
@@ -747,23 +972,56 @@ pub use autoresolve_mission_reducer::autoresolve_mission;
 pub use autoresolve_report_table::*;
 pub use autoresolve_report_type::AutoresolveReport;
 pub use available_water_capacity_type::AvailableWaterCapacity;
+pub use backend_authority_arrest_action_type::BackendAuthorityArrestAction;
+pub use backend_authority_arrest_actions_table::*;
 pub use backend_automatic_social_chats_table::*;
 pub use backend_bestiary_deduction_type::BackendBestiaryDeduction;
 pub use backend_bestiary_deductions_table::*;
+pub use backend_browser_character_access_table::*;
+pub use backend_browser_character_access_type::BackendBrowserCharacterAccess;
 pub use backend_case_battle_type::BackendCaseBattle;
 pub use backend_case_battles_table::*;
 pub use backend_case_site_pin_type::BackendCaseSitePin;
 pub use backend_case_site_pins_table::*;
+pub use backend_challenge_type::BackendChallenge;
+pub use backend_challenges_table::*;
 pub use backend_character_affinities_table::*;
+pub use backend_character_attributes_table::*;
+pub use backend_character_capabilities_table::*;
 pub use backend_character_case_site_location_type::BackendCharacterCaseSiteLocation;
 pub use backend_character_case_site_locations_table::*;
+pub use backend_character_conditions_table::*;
+pub use backend_character_deaths_table::*;
+pub use backend_character_exposures_table::*;
 pub use backend_character_familiarities_table::*;
+pub use backend_character_limbs_table::*;
+pub use backend_character_morale_sources_table::*;
+pub use backend_character_needs_table::*;
 pub use backend_character_personalities_table::*;
+pub use backend_character_relationship_status_type::BackendCharacterRelationshipStatus;
+pub use backend_character_relationship_statuses_table::*;
+pub use backend_character_residence_status_type::BackendCharacterResidenceStatus;
+pub use backend_character_residence_statuses_table::*;
+pub use backend_character_skills_table::*;
+pub use backend_character_stats_table::*;
+pub use backend_character_strategic_conditions_table::*;
+pub use backend_character_times_table::*;
+pub use backend_character_training_schedules_table::*;
+pub use backend_characters_table::*;
 pub use backend_committed_cuts_table::*;
+pub use backend_context_character_type::BackendContextCharacter;
+pub use backend_context_characters_table::*;
+pub use backend_contextual_decision_type::BackendContextualDecision;
 pub use backend_contract_type::BackendContract;
 pub use backend_contracts_table::*;
 pub use backend_corpse_type::BackendCorpse;
 pub use backend_corpses_table::*;
+pub use backend_courtship_discoveries_table::*;
+pub use backend_courtship_discovery_status_type::BackendCourtshipDiscoveryStatus;
+pub use backend_development_quest_type::BackendDevelopmentQuest;
+pub use backend_development_quests_table::*;
+pub use backend_development_scenario_type::BackendDevelopmentScenario;
+pub use backend_development_scenarios_table::*;
 pub use backend_dialogue_event_type::BackendDialogueEvent;
 pub use backend_dialogue_events_table::*;
 pub use backend_dialogue_participant_type::BackendDialogueParticipant;
@@ -776,8 +1034,24 @@ pub use backend_dialogue_topic_option_type::BackendDialogueTopicOption;
 pub use backend_dialogue_topic_options_table::*;
 pub use backend_dialogue_witness_claim_type::BackendDialogueWitnessClaim;
 pub use backend_dialogue_witness_claims_table::*;
+pub use backend_estate_disposition_type::BackendEstateDisposition;
+pub use backend_estate_dispositions_table::*;
+pub use backend_family_child_type::BackendFamilyChild;
+pub use backend_family_children_table::*;
+pub use backend_fireplace_dish_type::BackendFireplaceDish;
+pub use backend_fireplace_dishes_table::*;
+pub use backend_fireplace_station_type::BackendFireplaceStation;
+pub use backend_fireplace_stations_table::*;
+pub use backend_forage_attempt_state_type::BackendForageAttemptState;
+pub use backend_forage_attempt_states_table::*;
 pub use backend_forage_receipt_type::BackendForageReceipt;
 pub use backend_forage_receipts_table::*;
+pub use backend_hostile_negotiation_type::BackendHostileNegotiation;
+pub use backend_hostile_negotiations_table::*;
+pub use backend_hostile_surrender_type::BackendHostileSurrender;
+pub use backend_hostile_surrenders_table::*;
+pub use backend_ingredient_preparation_plan_type::BackendIngredientPreparationPlan;
+pub use backend_ingredient_preparation_plans_table::*;
 pub use backend_investigation_action_outcome_type::BackendInvestigationActionOutcome;
 pub use backend_investigation_action_outcomes_table::*;
 pub use backend_investigation_action_type::BackendInvestigationAction;
@@ -794,8 +1068,8 @@ pub use backend_local_problem_rumor_type::BackendLocalProblemRumor;
 pub use backend_local_problem_rumors_table::*;
 pub use backend_local_problem_trade_effect_type::BackendLocalProblemTradeEffect;
 pub use backend_local_problem_trade_effects_table::*;
-pub use backend_outbreak_patient_type::BackendOutbreakPatient;
-pub use backend_outbreak_patients_table::*;
+pub use backend_organization_membership_type::BackendOrganizationMembership;
+pub use backend_organization_memberships_table::*;
 pub use backend_physical_evidence_inspection_type::BackendPhysicalEvidenceInspection;
 pub use backend_physical_evidence_inspections_table::*;
 pub use backend_physical_evidence_table::*;
@@ -805,14 +1079,18 @@ pub use backend_physiology_administrations_table::*;
 pub use backend_physiology_chart_type::BackendPhysiologyChart;
 pub use backend_physiology_charts_table::*;
 pub use backend_physiology_differential_type::BackendPhysiologyDifferential;
-pub use backend_settlement_npc_relationship_type::BackendSettlementNpcRelationship;
-pub use backend_settlement_npc_relationships_table::*;
-pub use backend_settlement_npc_type::BackendSettlementNpc;
-pub use backend_settlement_npcs_table::*;
+pub use backend_road_challenge_type::BackendRoadChallenge;
+pub use backend_road_challenges_table::*;
+pub use backend_settlement_resident_relationship_type::BackendSettlementResidentRelationship;
+pub use backend_settlement_resident_relationships_table::*;
+pub use backend_settlement_resident_type::BackendSettlementResident;
+pub use backend_settlement_residents_table::*;
 pub use backend_social_addresses_table::*;
 pub use backend_social_beliefs_table::*;
 pub use backend_social_chat_receipt_type::BackendSocialChatReceipt;
 pub use backend_social_chat_receipts_table::*;
+pub use backend_tincture_status_type::BackendTinctureStatus;
+pub use backend_tincture_statuses_table::*;
 pub use backfill_character_deaths_and_leadership_reducer::backfill_character_deaths_and_leadership;
 pub use backfill_equipment_condition_and_smiths_reducer::backfill_equipment_condition_and_smiths;
 pub use backfill_solo_parties_reducer::backfill_solo_parties;
@@ -822,17 +1100,24 @@ pub use battle_participant_table::*;
 pub use battle_participant_type::BattleParticipant;
 pub use battle_result_table::*;
 pub use battle_result_type::BattleResult;
+pub use begin_formal_courtship_reducer::begin_formal_courtship;
+pub use begin_informal_courtship_reducer::begin_informal_courtship;
 pub use begin_world_data_import_reducer::begin_world_data_import;
 pub use belief_axis_type::BeliefAxis;
 pub use bestiary_hours_type::BestiaryHours;
 pub use blood_exposure_checkpoint_type::BloodExposureCheckpoint;
 pub use bootstrap_development_world_reducer::bootstrap_development_world;
+pub use browser_character_grant_origin_type::BrowserCharacterGrantOrigin;
+pub use browser_character_grant_type::BrowserCharacterGrant;
+pub use browser_character_selection_type::BrowserCharacterSelection;
 pub use built_settlement_cover_type::BuiltSettlementCover;
 pub use burn_corpse_reducer::burn_corpse;
 pub use bury_corpse_reducer::bury_corpse;
+pub use buy_residence_reducer::buy_residence;
 pub use camp_duration_mode_type::CampDurationMode;
 pub use canal_watercourse_type::CanalWatercourse;
 pub use cancel_mission_request_reducer::cancel_mission_request;
+pub use cancel_wedding_reducer::cancel_wedding;
 pub use canopy_density_type::CanopyDensity;
 pub use case_authority_type::CaseAuthority;
 pub use case_custody_type::CaseCustody;
@@ -847,56 +1132,62 @@ pub use case_site_id_type::CaseSiteId;
 pub use catholic_lutheran_church_type::CatholicLutheranChurch;
 pub use catholic_reformed_church_type::CatholicReformedChurch;
 pub use cation_exchange_capacity_type::CationExchangeCapacity;
+pub use challenge_attempt_receipt_type::ChallengeAttemptReceipt;
+pub use challenge_authority_type::ChallengeAuthority;
+pub use challenge_presenter_catalog_id_type::ChallengePresenterCatalogId;
 pub use change_inventory_item_reducer::change_inventory_item;
 pub use character_affinity_type::CharacterAffinity;
-pub use character_attributes_table::*;
 pub use character_attributes_type::CharacterAttributes;
-pub use character_capability_table::*;
+pub use character_birth_type::CharacterBirth;
 pub use character_capability_type::CharacterCapability;
 pub use character_case_site_occupancy_type::CharacterCaseSiteOccupancy;
-pub use character_condition_table::*;
 pub use character_condition_type::CharacterCondition;
-pub use character_death_table::*;
+pub use character_context_kind_type::CharacterContextKind;
+pub use character_context_membership_type::CharacterContextMembership;
+pub use character_context_role_type::CharacterContextRole;
 pub use character_death_type::CharacterDeath;
 pub use character_equipped_item_table::*;
 pub use character_equipped_item_type::CharacterEquippedItem;
-pub use character_estate_basis_type::CharacterEstateBasis;
-pub use character_exposure_table::*;
 pub use character_exposure_type::CharacterExposure;
 pub use character_familiarity_type::CharacterFamiliarity;
 pub use character_filth_table::*;
 pub use character_filth_type::CharacterFilth;
 pub use character_illness_status_table::*;
 pub use character_illness_status_type::CharacterIllnessStatus;
-pub use character_limbs_table::*;
+pub use character_kinship_type::CharacterKinship;
 pub use character_limbs_type::CharacterLimbs;
-pub use character_morale_source_table::*;
 pub use character_morale_source_type::CharacterMoraleSource;
-pub use character_needs_table::*;
 pub use character_needs_type::CharacterNeeds;
 pub use character_organization_role_type::CharacterOrganizationRole;
+pub use character_personality_scores_type::CharacterPersonalityScores;
 pub use character_personality_type::CharacterPersonality;
 pub use character_settlement_reputation_table::*;
 pub use character_settlement_reputation_type::CharacterSettlementReputation;
-pub use character_skills_table::*;
 pub use character_skills_type::CharacterSkills;
-pub use character_stats_table::*;
 pub use character_stats_type::CharacterStats;
-pub use character_strategic_condition_table::*;
 pub use character_strategic_condition_type::CharacterStrategicCondition;
-pub use character_table::*;
-pub use character_time_table::*;
 pub use character_time_type::CharacterTime;
 pub use character_topic_knowledge_type::CharacterTopicKnowledge;
-pub use character_training_schedule_table::*;
 pub use character_training_schedule_type::CharacterTrainingSchedule;
 pub use character_type::Character;
 pub use charcoal_burning_industry_type::CharcoalBurningIndustry;
 pub use chat_with_party_member_reducer::chat_with_party_member;
+pub use child_activity_focus_type::ChildActivityFocus;
+pub use child_development_type::ChildDevelopment;
+pub use child_identity_reservation_type::ChildIdentityReservation;
+pub use child_stage_type::ChildStage;
+pub use chivalric_virtue_type::ChivalricVirtue;
 pub use choose_dialogue_topic_reducer::choose_dialogue_topic;
 pub use claim_simulation_run_reducer::claim_simulation_run;
+pub use clear_browser_character_selection_reducer::clear_browser_character_selection;
 pub use clear_organization_presentation_reducer::clear_organization_presentation;
+pub use collect_fixture_water_into_container_reducer::collect_fixture_water_into_container;
+pub use commitment_event_type::CommitmentEvent;
+pub use commitment_kind_type::CommitmentKind;
+pub use commitment_status_type::CommitmentStatus;
+pub use commitment_terminal_reason_type::CommitmentTerminalReason;
 pub use committed_cut_type::CommittedCut;
+pub use conception_trial_receipt_type::ConceptionTrialReceipt;
 pub use configure_simulation_character_reducer::configure_simulation_character;
 pub use connected_equipment_occupancy_type::ConnectedEquipmentOccupancy;
 pub use connected_player_item_type::ConnectedPlayerItem;
@@ -905,13 +1196,17 @@ pub use connected_players_table::*;
 pub use conscience_type::Conscience;
 pub use construction_commodity_type::ConstructionCommodity;
 pub use construction_industry_type::ConstructionIndustry;
+pub use contact_context_character_reducer::contact_context_character;
+pub use container_liquid_table::*;
+pub use container_liquid_type::ContainerLiquid;
+pub use contextual_contact_receipt_type::ContextualContactReceipt;
+pub use contextual_decision_state_type::ContextualDecisionState;
 pub use continue_camp_travel_reducer::continue_camp_travel;
 pub use contract_interaction_stage_type::ContractInteractionStage;
 pub use contract_issuer_interaction_receipt_type::ContractIssuerInteractionReceipt;
 pub use contract_status_type::ContractStatus;
 pub use contract_type::Contract;
 pub use conviction_type::Conviction;
-pub use cook_food_reducer::cook_food;
 pub use cooking_method_type::CookingMethod;
 pub use corpse_body_state_type::CorpseBodyState;
 pub use corpse_family_binding_type::CorpseFamilyBinding;
@@ -921,6 +1216,13 @@ pub use corpse_permission_attempt_type::CorpsePermissionAttempt;
 pub use corpse_permission_kind_type::CorpsePermissionKind;
 pub use corpse_permission_scope_type::CorpsePermissionScope;
 pub use corpse_permission_type::CorpsePermission;
+pub use courtship_discovery_type::CourtshipDiscovery;
+pub use courtship_kind_type::CourtshipKind;
+pub use courtship_observer_baseline_type::CourtshipObserverBaseline;
+pub use courtship_record_type::CourtshipRecord;
+pub use courtship_secrecy_reason_type::CourtshipSecrecyReason;
+pub use courtship_status_type::CourtshipStatus;
+pub use courtship_terminal_reason_type::CourtshipTerminalReason;
 pub use courtship_type::Courtship;
 pub use create_character_reducer::create_character;
 pub use create_named_character_reducer::create_named_character;
@@ -938,11 +1240,17 @@ pub use death_cause_type::DeathCause;
 pub use death_source_type::DeathSource;
 pub use delete_recruitment_role_reducer::delete_recruitment_role;
 pub use delete_saved_recruitment_role_reducer::delete_saved_recruitment_role;
+pub use demand_hostile_surrender_reducer::demand_hostile_surrender;
 pub use deposit_party_inventory_item_reducer::deposit_party_inventory_item;
 pub use derived_historical_vegetation_cover_type::DerivedHistoricalVegetationCover;
 pub use derived_historical_vegetation_method_type::DerivedHistoricalVegetationMethod;
 pub use derived_historical_vegetation_type::DerivedHistoricalVegetation;
 pub use derived_industry_type::DerivedIndustry;
+pub use designate_residence_reducer::designate_residence;
+pub use development_scenario_browser_access_type::DevelopmentScenarioBrowserAccess;
+pub use development_scenario_subject_type::DevelopmentScenarioSubject;
+pub use development_scenario_type::DevelopmentScenario;
+pub use development_scenario_update_receipt_type::DevelopmentScenarioUpdateReceipt;
 pub use dialogue_action_type::DialogueAction;
 pub use dialogue_answer_type::DialogueAnswer;
 pub use dialogue_event_type::DialogueEvent;
@@ -964,6 +1272,9 @@ pub use disease_notice_type::DiseaseNotice;
 pub use dismiss_party_action_request_reducer::dismiss_party_action_request;
 pub use dominant_aspect_type::DominantAspect;
 pub use dominant_leaf_type_type::DominantLeafType;
+pub use dowry_escrow_type::DowryEscrow;
+pub use dowry_outcome_kind_type::DowryOutcomeKind;
+pub use dowry_outcome_type::DowryOutcome;
 pub use drive_type::Drive;
 pub use drought_history_type::DroughtHistory;
 pub use drought_profile_type::DroughtProfile;
@@ -971,6 +1282,7 @@ pub use eat_food_reducer::eat_food;
 pub use edge_endpoint_type::EdgeEndpoint;
 pub use edge_progress_permille_type::EdgeProgressPermille;
 pub use elevation_meters_type::ElevationMeters;
+pub use end_marriage_reducer::end_marriage;
 pub use end_tactical_server_reducer::end_tactical_server;
 pub use ensure_settlement_activity_reducer::ensure_settlement_activity;
 pub use enter_mission_reducer::enter_mission;
@@ -987,14 +1299,20 @@ pub use equipment_occupancy_table::*;
 pub use equipment_occupancy_type::EquipmentOccupancy;
 pub use equipment_parent_requirement_type::EquipmentParentRequirement;
 pub use equipment_placement_type::EquipmentPlacement;
+pub use errantry_authority_type::ErrantryAuthority;
+pub use estate_disposition_status_type::EstateDispositionStatus;
+pub use estate_disposition_type::EstateDisposition;
+pub use estate_heir_kind_type::EstateHeirKind;
 pub use evidence_presentation_kind_type::EvidencePresentationKind;
 pub use examine_corpse_reducer::examine_corpse;
-pub use examine_outbreak_patient_reducer::examine_outbreak_patient;
+pub use exclusive_commitment_participant_type::ExclusiveCommitmentParticipant;
+pub use exclusive_commitment_type::ExclusiveCommitment;
 pub use exhume_corpse_reducer::exhume_corpse;
 pub use fallback_historical_vegetation_cover_type::FallbackHistoricalVegetationCover;
 pub use fallback_historical_vegetation_method_type::FallbackHistoricalVegetationMethod;
 pub use fallback_historical_vegetation_type::FallbackHistoricalVegetation;
 pub use fallback_industry_type::FallbackIndustry;
+pub use familiarity_band_type::FamiliarityBand;
 pub use ferry_route_type::FerryRoute;
 pub use ferry_waterway_type::FerryWaterway;
 pub use field_shelter_type::FieldShelter;
@@ -1008,17 +1326,22 @@ pub use finalize_merchant_trade_reducer::finalize_merchant_trade;
 pub use finalize_party_offer_reducer::finalize_party_offer;
 pub use finalize_storefront_trade_reducer::finalize_storefront_trade;
 pub use finish_world_data_import_reducer::finish_world_data_import;
+pub use fireplace_dish_type::FireplaceDish;
+pub use fireplace_station_type::FireplaceStation;
 pub use fish_commodity_type::FishCommodity;
 pub use fishing_industry_type::FishingIndustry;
 pub use flow_persistence_type::FlowPersistence;
 pub use flowing_water_access_type::FlowingWaterAccess;
+pub use food_contamination_provenance_type::FoodContaminationProvenance;
 pub use food_contamination_type::FoodContamination;
 pub use food_lot_table::*;
 pub use food_lot_type::FoodLot;
 pub use food_preparation_type::FoodPreparation;
 pub use forage_attempt_authority_type::ForageAttemptAuthority;
+pub use forage_attempt_state_type::ForageAttemptState;
 pub use forage_current_vicinity_reducer::forage_current_vicinity;
 pub use forage_environment_attestation_type::ForageEnvironmentAttestation;
+pub use forage_harvest_material_type::ForageHarvestMaterial;
 pub use forest_commodity_type::ForestCommodity;
 pub use forest_cover_type::ForestCover;
 pub use forestry_industry_type::ForestryIndustry;
@@ -1028,14 +1351,23 @@ pub use geologic_era_type::GeologicEra;
 pub use geologic_lithology_evidence_type::GeologicLithologyEvidence;
 pub use geologic_setting_type::GeologicSetting;
 pub use geologic_unit_id_type::GeologicUnitId;
+pub use grant_browser_character_reducer::grant_browser_character;
 pub use habitat_suitability_type::HabitatSuitability;
-pub use herbal_preparation_method_type::HerbalPreparationMethod;
 pub use historical_vegetation_type::HistoricalVegetation;
 pub use historical_wetland_type::HistoricalWetland;
 pub use historical_woodland_type::HistoricalWoodland;
 pub use hostile_group_authority_type::HostileGroupAuthority;
 pub use hostile_group_disposition_type::HostileGroupDisposition;
+pub use hostile_negotiation_outcome_type::HostileNegotiationOutcome;
+pub use hostile_negotiation_receipt_type::HostileNegotiationReceipt;
 pub use hostile_resolution_kind_type::HostileResolutionKind;
+pub use hostile_resolution_receipt_type::HostileResolutionReceipt;
+pub use hostile_surrender_mode_type::HostileSurrenderMode;
+pub use hostile_surrender_outcome_type::HostileSurrenderOutcome;
+pub use hostile_surrender_receipt_type::HostileSurrenderReceipt;
+pub use household_member_type::HouseholdMember;
+pub use household_role_type::HouseholdRole;
+pub use household_type::Household;
 pub use hygiene_type::Hygiene;
 pub use igneous_rock_type::IgneousRock;
 pub use immediate_activity_type::ImmediateActivity;
@@ -1054,13 +1386,20 @@ pub use infection_episode_row_type::InfectionEpisodeRow;
 pub use inferred_geologic_setting_type::InferredGeologicSetting;
 pub use inferred_industry_profile_type::InferredIndustryProfile;
 pub use inferred_tree_species_profile_type::InferredTreeSpeciesProfile;
+pub use ingredient_preparation_action_type::IngredientPreparationAction;
+pub use ingredient_preparation_attempt_state_type::IngredientPreparationAttemptState;
+pub use ingredient_preparation_receipt_type::IngredientPreparationReceipt;
 pub use inland_water_access_type::InlandWaterAccess;
 pub use inland_water_size_type::InlandWaterSize;
 pub use inspect_physical_evidence_reducer::inspect_physical_evidence;
+pub use inventory_containment_table::*;
+pub use inventory_containment_type::InventoryContainment;
 pub use inventory_item_amount_table::*;
 pub use inventory_item_amount_type::InventoryItemAmount;
 pub use inventory_item_table::*;
 pub use inventory_item_type::InventoryItem;
+pub use inventory_object_table::*;
+pub use inventory_object_type::InventoryObject;
 pub use inventory_quantity_target_table::*;
 pub use inventory_quantity_target_type::InventoryQuantityTarget;
 pub use investigation_action_attempt_type::InvestigationActionAttempt;
@@ -1110,18 +1449,20 @@ pub use journey_terrain_kind_type::JourneyTerrainKind;
 pub use journey_terrain_span_type::JourneyTerrainSpan;
 pub use journey_terrain_weights_type::JourneyTerrainWeights;
 pub use kill_simulation_character_reducer::kill_simulation_character;
+pub use kinship_kind_type::KinshipKind;
 pub use land_route_type::LandRoute;
 pub use land_use_fraction_type::LandUseFraction;
 pub use land_use_profile_type::LandUseProfile;
 pub use land_water_crossing_type::LandWaterCrossing;
 pub use leave_mission_reducer::leave_mission;
 pub use leave_party_reducer::leave_party;
+pub use lifecycle_event_failure_type::LifecycleEventFailure;
+pub use lifecycle_event_kind_type::LifecycleEventKind;
 pub use limb_injury_table::*;
 pub use limb_injury_type::LimbInjury;
 pub use limb_region_type::LimbRegion;
+pub use lineage_control_claim_type::LineageControlClaim;
 pub use liquidate_party_inventory_reducer::liquidate_party_inventory;
-pub use load_autopsy_demo_reducer::load_autopsy_demo;
-pub use load_outbreak_demo_reducer::load_outbreak_demo;
 pub use local_chat_message_type::LocalChatMessage;
 pub use local_problem_authority_type::LocalProblemAuthority;
 pub use local_problem_generation_explanation_type::LocalProblemGenerationExplanation;
@@ -1136,6 +1477,10 @@ pub use located_route_landform_type::LocatedRouteLandform;
 pub use lutheran_reformed_church_type::LutheranReformedChurch;
 pub use mapped_surface_geology_type::MappedSurfaceGeology;
 pub use marine_water_access_type::MarineWaterAccess;
+pub use marriage_participant_type::MarriageParticipant;
+pub use marriage_status_type::MarriageStatus;
+pub use marriage_type::Marriage;
+pub use medicinal_component_type::MedicinalComponent;
 pub use metamorphic_rock_type::MetamorphicRock;
 pub use mined_commodity_type::MinedCommodity;
 pub use mineral_soil_texture_type::MineralSoilTexture;
@@ -1149,35 +1494,48 @@ pub use mission_outcome_candidate_type::MissionOutcomeCandidate;
 pub use mixed_lithology_type::MixedLithology;
 pub use modeled_tree_species_profile_type::ModeledTreeSpeciesProfile;
 pub use modeled_tree_species_type::ModeledTreeSpecies;
+pub use morale_band_type::MoraleBand;
 pub use morale_event_table::*;
 pub use morale_event_type::MoraleEvent;
+pub use narrative_combat_followup_authority_type::NarrativeCombatFollowupAuthority;
+pub use narrative_combat_followup_receipt_type::NarrativeCombatFollowupReceipt;
+pub use narrative_encounter_information_type::NarrativeEncounterInformation;
+pub use narrative_encounter_origin_type::NarrativeEncounterOrigin;
+pub use narrative_encounter_private_authority_type::NarrativeEncounterPrivateAuthority;
+pub use narrative_encounter_trigger_type::NarrativeEncounterTrigger;
 pub use native_range_evidence_type::NativeRangeEvidence;
+pub use negotiate_hostile_withdrawal_reducer::negotiate_hostile_withdrawal;
 pub use nerve_type::Nerve;
 pub use npc_adventuring_party_authority_type::NpcAdventuringPartyAuthority;
 pub use npc_age_band_type::NpcAgeBand;
+pub use npc_causal_schedule_type::NpcCausalSchedule;
+pub use npc_policy_decision_outcome_type::NpcPolicyDecisionOutcome;
+pub use npc_policy_decision_phase_type::NpcPolicyDecisionPhase;
+pub use npc_policy_decision_receipt_type::NpcPolicyDecisionReceipt;
+pub use npc_policy_type::NpcPolicy;
 pub use npc_presentation_type::NpcPresentation;
-pub use npc_sex_type::NpcSex;
 pub use objective_continuity_guard_type::ObjectiveContinuityGuard;
 pub use objective_continuity_kind_type::ObjectiveContinuityKind;
 pub use official_religion_type::OfficialReligion;
 pub use open_corpse_reducer::open_corpse;
 pub use oral_language_hours_type::OralLanguageHours;
+pub use order_errantry_acceptance_receipt_type::OrderErrantryAcceptanceReceipt;
 pub use organic_soil_type::OrganicSoil;
-pub use organization_membership_table::*;
 pub use organization_membership_type::OrganizationMembership;
 pub use organization_presentation_table::*;
 pub use organization_presentation_type::OrganizationPresentation;
 pub use other_non_textured_soil_type::OtherNonTexturedSoil;
 pub use outbreak_authority_type::OutbreakAuthority;
 pub use outbreak_patient_authority_type::OutbreakPatientAuthority;
-pub use outbreak_patient_examination_type::OutbreakPatientExamination;
 pub use outbreak_source_presence_span_type::OutbreakSourcePresenceSpan;
+pub use outbreak_water_source_type::OutbreakWaterSource;
 pub use outcome_source_authority_type::OutcomeSourceAuthority;
 pub use outlook_type::Outlook;
 pub use palmer_drought_severity_index_type::PalmerDroughtSeverityIndex;
 pub use party_action_request_table::*;
 pub use party_action_request_type::PartyActionRequest;
 pub use party_case_site_tracking_type::PartyCaseSiteTracking;
+pub use party_context_contact_authority_type::PartyContextContactAuthority;
 pub use party_inventory_item_table::*;
 pub use party_inventory_item_type::PartyInventoryItem;
 pub use party_inventory_state_table::*;
@@ -1211,19 +1569,42 @@ pub use peat_cutting_industry_type::PeatCuttingIndustry;
 pub use perform_immediate_activity_reducer::perform_immediate_activity;
 pub use perform_investigation_action_reducer::perform_investigation_action;
 pub use perform_social_action_reducer::perform_social_action;
+pub use persisted_case_resolution_payload_ref_type::PersistedCaseResolutionPayloadRef;
+pub use persisted_food_water_event_source_type::PersistedFoodWaterEventSource;
+pub use persisted_food_water_payload_ref_type::PersistedFoodWaterPayloadRef;
+pub use persisted_foraging_event_source_type::PersistedForagingEventSource;
+pub use persisted_foraging_payload_ref_type::PersistedForagingPayloadRef;
+pub use persisted_generated_finale_event_source_type::PersistedGeneratedFinaleEventSource;
+pub use persisted_operational_custody_type::PersistedOperationalCustody;
+pub use persisted_world_event_actor_type::PersistedWorldEventActor;
+pub use persisted_world_event_envelope_type::PersistedWorldEventEnvelope;
+pub use persisted_world_event_payload_ref_type::PersistedWorldEventPayloadRef;
+pub use persisted_world_event_place_type::PersistedWorldEventPlace;
+pub use persisted_world_event_source_type::PersistedWorldEventSource;
+pub use persisted_world_event_subject_type::PersistedWorldEventSubject;
+pub use personality_axis_type::PersonalityAxis;
+pub use personality_development_event_type::PersonalityDevelopmentEvent;
 pub use physical_evidence_inspection_action_receipt_type::PhysicalEvidenceInspectionActionReceipt;
 pub use physical_evidence_inspection_attempt_type::PhysicalEvidenceInspectionAttempt;
 pub use physiology_administration_type::PhysiologyAdministration;
 pub use physiology_key_material_type::PhysiologyKeyMaterial;
 pub use physiology_presence_span_type::PhysiologyPresenceSpan;
+pub use place_fireplace_container_reducer::place_fireplace_container;
 pub use potential_vegetation_class_type::PotentialVegetationClass;
 pub use potential_vegetation_posterior_type::PotentialVegetationPosterior;
 pub use potential_vegetation_type::PotentialVegetation;
 pub use pottery_commodity_type::PotteryCommodity;
 pub use pottery_industry_type::PotteryIndustry;
-pub use prepare_herbal_remedy_reducer::prepare_herbal_remedy;
+pub use pour_tincture_spirit_into_container_reducer::pour_tincture_spirit_into_container;
+pub use pour_water_into_container_reducer::pour_water_into_container;
+pub use pour_water_out_of_container_reducer::pour_water_out_of_container;
+pub use pregnancy_status_type::PregnancyStatus;
+pub use pregnancy_type::Pregnancy;
+pub use prepare_development_courtship_reducer::prepare_development_courtship;
+pub use prepare_ingredient_lot_reducer::prepare_ingredient_lot;
 pub use present_organization_reducer::present_organization;
 pub use presentation_type::Presentation;
+pub use primary_residence_type::PrimaryResidence;
 pub use production_scale_type::ProductionScale;
 pub use profile_fact_provenance_type::ProfileFactProvenance;
 pub use projectile_kind_type::ProjectileKind;
@@ -1231,11 +1612,14 @@ pub use promote_organization_membership_reducer::promote_organization_membership
 pub use prosperity_tier_type::ProsperityTier;
 pub use public_threat_disclosure_type::PublicThreatDisclosure;
 pub use purchase_from_herbalist_reducer::purchase_from_herbalist;
+pub use purchase_personal_storefront_with_party_stake_reducer::purchase_personal_storefront_with_party_stake;
+pub use put_inventory_item_in_container_reducer::put_inventory_item_in_container;
 pub use quarry_commodity_type::QuarryCommodity;
 pub use quarrying_industry_type::QuarryingIndustry;
 pub use quest_generation_authority_type::QuestGenerationAuthority;
 pub use receive_investigation_claim_reducer::receive_investigation_claim;
 pub use receive_local_problem_rumor_reducer::receive_local_problem_rumor;
+pub use recover_owned_residence_reducer::recover_owned_residence;
 pub use recruitment_offer_id_type::RecruitmentOfferId;
 pub use recruitment_offer_status_type::RecruitmentOfferStatus;
 pub use recruitment_offer_table::*;
@@ -1244,13 +1628,18 @@ pub use recruitment_requirements_type::RecruitmentRequirements;
 pub use recruitment_source_id_type::RecruitmentSourceId;
 pub use refresh_capabilities_reducer::refresh_capabilities;
 pub use refresh_strategic_condition_reducer::refresh_strategic_condition;
+pub use refresh_tincture_reducer::refresh_tincture;
 pub use register_strategic_gateway_reducer::register_strategic_gateway;
 pub use reject_party_join_request_reducer::reject_party_join_request;
 pub use religion_hours_type::ReligionHours;
 pub use religious_demand_table::*;
 pub use religious_demand_type::ReligiousDemand;
+pub use relinquish_residence_reducer::relinquish_residence;
+pub use remove_household_occupant_reducer::remove_household_occupant;
+pub use remove_inventory_item_from_container_reducer::remove_inventory_item_from_container;
 pub use remove_party_member_reducer::remove_party_member;
 pub use rename_saved_recruitment_role_reducer::rename_saved_recruitment_role;
+pub use rent_residence_reducer::rent_residence;
 pub use repair_order_table::*;
 pub use repair_order_type::RepairOrder;
 pub use replace_item_at_placement_reducer::replace_item_at_placement;
@@ -1261,20 +1650,35 @@ pub use request_party_action_reducer::request_party_action;
 pub use request_tactical_server_for_scene_reducer::request_tactical_server_for_scene;
 pub use request_tactical_server_reducer::request_tactical_server;
 pub use request_to_join_party_reducer::request_to_join_party;
+pub use residence_charge_outcome_type::ResidenceChargeOutcome;
+pub use residence_charge_type::ResidenceCharge;
+pub use residence_holding_status_type::ResidenceHoldingStatus;
+pub use residence_holding_type::ResidenceHolding;
+pub use residence_occupant_type::ResidenceOccupant;
+pub use residence_tenure_type::ResidenceTenure;
+pub use residence_tier_type::ResidenceTier;
+pub use residence_transition_kind_type::ResidenceTransitionKind;
+pub use residence_transition_type::ResidenceTransition;
+pub use resolve_errantry_road_challenge_reducer::resolve_errantry_road_challenge;
 pub use resolve_religious_demand_reducer::resolve_religious_demand;
 pub use resolve_strategic_encounter_reducer::resolve_strategic_encounter;
 pub use resolved_party_action_type::ResolvedPartyAction;
 pub use rest_at_camp_reducer::rest_at_camp;
+pub use rest_at_residence_hours_reducer::rest_at_residence_hours;
 pub use rest_at_settlement_hours_reducer::rest_at_settlement_hours;
 pub use rest_at_settlement_reducer::rest_at_settlement;
 pub use retained_projectile_table::*;
 pub use retained_projectile_type::RetainedProjectile;
+pub use retrieve_fireplace_container_reducer::retrieve_fireplace_container;
+pub use retrieve_fireplace_dish_reducer::retrieve_fireplace_dish;
 pub use retrieve_repaired_item_reducer::retrieve_repaired_item;
 pub use retrieve_repaired_items_reducer::retrieve_repaired_items;
 pub use revoke_tactical_server_claim_reducer::revoke_tactical_server_claim;
 pub use river_access_type::RiverAccess;
 pub use river_and_canal_access_type::RiverAndCanalAccess;
 pub use river_watercourse_type::RiverWatercourse;
+pub use road_challenge_authority_type::RoadChallengeAuthority;
+pub use road_challenge_resolution_receipt_type::RoadChallengeResolutionReceipt;
 pub use rock_outcrop_soil_type::RockOutcropSoil;
 pub use route_elevation_profile_type::RouteElevationProfile;
 pub use route_elevation_sample_type::RouteElevationSample;
@@ -1298,16 +1702,21 @@ pub use save_recruitment_role_reducer::save_recruitment_role;
 pub use saved_recruitment_role_table::*;
 pub use saved_recruitment_role_type::SavedRecruitmentRole;
 pub use schedule_allocation_type::ScheduleAllocation;
+pub use schedule_wedding_reducer::schedule_wedding;
 pub use sedimentary_rock_type::SedimentaryRock;
+pub use seed_npc_policy_for_development_reducer::seed_npc_policy_for_development;
 pub use seed_simulation_disease_reducer::seed_simulation_disease;
 pub use seed_simulation_equipment_damage_reducer::seed_simulation_equipment_damage;
+pub use seed_simulation_quest_fixture_reducer::seed_simulation_quest_fixture;
 pub use seed_simulation_world_reducer::seed_simulation_world;
 pub use seed_standalone_tactical_mission_reducer::seed_standalone_tactical_mission;
+pub use select_browser_character_reducer::select_browser_character;
 pub use self_knowledge_type::SelfKnowledge;
 pub use self_regard_type::SelfRegard;
 pub use send_local_chat_message_reducer::send_local_chat_message;
 pub use set_automatic_social_chat_reducer::set_automatic_social_chat;
 pub use set_character_religion_reducer::set_character_religion;
+pub use set_fireplace_instrument_reducer::set_fireplace_instrument;
 pub use set_inventory_quantity_target_reducer::set_inventory_quantity_target;
 pub use set_party_camp_fatigue_percent_reducer::set_party_camp_fatigue_percent;
 pub use set_party_travel_itinerary_reducer::set_party_travel_itinerary;
@@ -1323,18 +1732,15 @@ pub use settlement_economy_profile_type::SettlementEconomyProfile;
 pub use settlement_hydrology_type::SettlementHydrology;
 pub use settlement_import_type::SettlementImport;
 pub use settlement_language_profile_type::SettlementLanguageProfile;
-pub use settlement_npc_estate_basis_type::SettlementNpcEstateBasis;
-pub use settlement_npc_morale_event_type::SettlementNpcMoraleEvent;
-pub use settlement_npc_organization_role_type::SettlementNpcOrganizationRole;
-pub use settlement_npc_presence_table::*;
-pub use settlement_npc_presence_type::SettlementNpcPresence;
-pub use settlement_npc_relationship_type::SettlementNpcRelationship;
-pub use settlement_npc_seed_explanation_type::SettlementNpcSeedExplanation;
-pub use settlement_npc_social_state_type::SettlementNpcSocialState;
-pub use settlement_npc_type::SettlementNpc;
 pub use settlement_outbreak_table::*;
 pub use settlement_outbreak_type::SettlementOutbreak;
 pub use settlement_religious_status_type::SettlementReligiousStatus;
+pub use settlement_residence_offer_table::*;
+pub use settlement_residence_offer_type::SettlementResidenceOffer;
+pub use settlement_resident_presence_table::*;
+pub use settlement_resident_presence_type::SettlementResidentPresence;
+pub use settlement_resident_profile_type::SettlementResidentProfile;
+pub use settlement_resident_seed_explanation_type::SettlementResidentSeedExplanation;
 pub use settlement_service_type::SettlementService;
 pub use settlement_smith_table::*;
 pub use settlement_smith_type::SettlementSmith;
@@ -1347,15 +1753,21 @@ pub use share_investigation_lead_reducer::share_investigation_lead;
 pub use simulate_contract_issuer_interaction_reducer::simulate_contract_issuer_interaction;
 pub use simulation_character_table::*;
 pub use simulation_character_type::SimulationCharacter;
+pub use simulation_quest_fixture_authority_type::SimulationQuestFixtureAuthority;
+pub use simulation_quest_fixture_table::*;
+pub use simulation_quest_fixture_type::SimulationQuestFixture;
 pub use simulation_run_table::*;
 pub use simulation_run_type::SimulationRun;
 pub use sociability_type::Sociability;
 pub use social_action_cooldown_type::SocialActionCooldown;
 pub use social_address_type::SocialAddress;
 pub use social_belief_type::SocialBelief;
+pub use social_chat_outcome_type::SocialChatOutcome;
 pub use social_chat_receipt_type::SocialChatReceipt;
+pub use social_chat_target_kind_type::SocialChatTargetKind;
 pub use social_interaction_type::SocialInteraction;
 pub use social_organization_instance_type::SocialOrganizationInstance;
+pub use socializing_receipt_type::SocializingReceipt;
 pub use soil_acidity_type::SoilAcidity;
 pub use soil_basis_points_type::SoilBasisPoints;
 pub use soil_depth_type::SoilDepth;
@@ -1366,12 +1778,16 @@ pub use soil_properties_type::SoilProperties;
 pub use soil_substrate_type::SoilSubstrate;
 pub use soil_water_regime_type::SoilWaterRegime;
 pub use spawn_developer_quest_reducer::spawn_developer_quest;
-pub use spend_time_with_settlement_npc_reducer::spend_time_with_settlement_npc;
+pub use spend_time_with_settlement_resident_reducer::spend_time_with_settlement_resident;
 pub use sponsor_party_member_inn_rest_reducer::sponsor_party_member_inn_rest;
+pub use spouse_leisure_accrual_type::SpouseLeisureAccrual;
+pub use spouse_leisure_overlap_type::SpouseLeisureOverlap;
+pub use spouse_leisure_slice_type::SpouseLeisureSlice;
 pub use stage_investigation_lead_reducer::stage_investigation_lead;
 pub use start_dialogue_reducer::start_dialogue;
+pub use start_fireplace_container_cooking_reducer::start_fireplace_container_cooking;
+pub use start_poppy_tincture_reducer::start_poppy_tincture;
 pub use starting_age_tier_coordinate_type::StartingAgeTierCoordinate;
-pub use starting_character_claim_table::*;
 pub use starting_character_claim_type::StartingCharacterClaim;
 pub use stock_category_type::StockCategory;
 pub use stone_content_percent_type::StoneContentPercent;
@@ -1380,6 +1796,7 @@ pub use store_battle_loot_reducer::store_battle_loot;
 pub use strahler_order_type::StrahlerOrder;
 pub use strategic_corpse_type::StrategicCorpse;
 pub use strategic_encounter_loss_type::StrategicEncounterLoss;
+pub use strategic_encounter_resolution_receipt_type::StrategicEncounterResolutionReceipt;
 pub use strategic_encounter_table::*;
 pub use strategic_encounter_type::StrategicEncounter;
 pub use strategic_gateway_authority_table::*;
@@ -1387,18 +1804,29 @@ pub use strategic_gateway_authority_type::StrategicGatewayAuthority;
 pub use strategic_incident_type::StrategicIncident;
 pub use submit_all_repairable_items_reducer::submit_all_repairable_items;
 pub use submit_item_for_repair_reducer::submit_item_for_repair;
+pub use submit_puzzle_challenge_reducer::submit_puzzle_challenge;
 pub use suitability_basis_points_type::SuitabilityBasisPoints;
 pub use surface_geology_type::SurfaceGeology;
 pub use surface_lithology_type::SurfaceLithology;
 pub use surrender_to_authority_reducer::surrender_to_authority;
+pub use sync_development_clock_to_character_reducer::sync_development_clock_to_character;
 pub use synchronize_character_time_reducer::synchronize_character_time;
+pub use synchronize_party_for_activity_reducer::synchronize_party_for_activity;
+pub use tactical_character_consequence_type::TacticalCharacterConsequence;
+pub use tactical_consequence_receipt_type::TacticalConsequenceReceipt;
+pub use tactical_equipment_contact_role_type::TacticalEquipmentContactRole;
+pub use tactical_equipment_contact_type::TacticalEquipmentContact;
+pub use tactical_hit_injury_type::TacticalHitInjury;
 pub use tactical_mission_resolution_type::TacticalMissionResolution;
+pub use tactical_mission_side_type::TacticalMissionSide;
+pub use tactical_receipt_body_part_type::TacticalReceiptBodyPart;
 pub use tactical_server_claim_type::TacticalServerClaim;
 pub use tactical_server_request_table::*;
 pub use tactical_server_request_type::TacticalServerRequest;
 pub use tactical_server_table::*;
 pub use tactical_server_type::TacticalServer;
 pub use temperance_type::Temperance;
+pub use tincture_process_type::TinctureProcess;
 pub use topsoil_organic_carbon_type::TopsoilOrganicCarbon;
 pub use track_case_site_reducer::track_case_site;
 pub use transfer_party_item_reducer::transfer_party_item;
@@ -1414,8 +1842,10 @@ pub use travel_to_case_site_reducer::travel_to_case_site;
 pub use travel_to_settlement_planned_reducer::travel_to_settlement_planned;
 pub use travel_to_settlement_reducer::travel_to_settlement;
 pub use treat_limb_reducer::treat_limb;
+pub use treatment_action_receipt_type::TreatmentActionReceipt;
 pub use tree_species_id_type::TreeSpeciesId;
 pub use tree_species_profile_type::TreeSpeciesProfile;
+pub use trigger_development_scenario_incident_reducer::trigger_development_scenario_incident;
 pub use unconsolidated_deposit_type::UnconsolidatedDeposit;
 pub use update_character_reducer::update_character;
 pub use update_party_check_targets_reducer::update_party_check_targets;
@@ -1423,17 +1853,21 @@ pub use update_recruitment_role_reducer::update_recruitment_role;
 pub use update_training_schedule_reducer::update_training_schedule;
 pub use upgrade_manual_surgery_reducer::upgrade_manual_surgery;
 pub use vote_for_party_leader_reducer::vote_for_party_leader;
+pub use water_collection_receipt_type::WaterCollectionReceipt;
 pub use water_distance_meters_type::WaterDistanceMeters;
+pub use water_holding_contribution_type::WaterHoldingContribution;
+pub use water_material_lot_type::WaterMaterialLot;
+pub use water_output_lot_type::WaterOutputLot;
 pub use weapon_skill_distribution_type::WeaponSkillDistribution;
 pub use western_christian_arrangement_type::WesternChristianArrangement;
 pub use withdraw_party_inventory_item_reducer::withdraw_party_inventory_item;
 pub use witness_social_action_receipt_type::WitnessSocialActionReceipt;
 pub use woodland_type::Woodland;
-pub use world_clock_schedule_type::WorldClockSchedule;
 pub use world_clock_table::*;
 pub use world_clock_type::WorldClock;
 pub use world_data_import_table::*;
 pub use world_data_import_type::WorldDataImport;
+pub use world_event_receipt_type::WorldEventReceipt;
 pub use world_node_import_type::WorldNodeImport;
 pub use world_node_table::*;
 pub use world_node_type::WorldNode;
@@ -1456,9 +1890,21 @@ pub enum Reducer {
         character_id: u64,
         contract_id: String,
     },
+    AcceptOrderErrantry {
+        character_id: u64,
+        dialogue_session_id: String,
+        action_id: String,
+    },
     AcceptPartyJoinRequest {
         leader_id: u64,
         request_id: u64,
+    },
+    AddFireplaceIngredients {
+        character_id: u64,
+        fireplace_fixture_id: String,
+        inventory_scope: String,
+        inventory_item_ids: Vec<u64>,
+        amounts_milliunits: Vec<u32>,
     },
     AdministerPreparation {
         actor_id: u64,
@@ -1468,6 +1914,20 @@ pub enum Reducer {
         route: String,
         amount_milliunits: u32,
         region: Option<String>,
+    },
+    AdministerTinctureFromContainer {
+        actor_id: u64,
+        patient_id: u64,
+        object_id: u64,
+        amount_milliunits: u32,
+    },
+    AdmitHouseholdOccupant {
+        owner_character_id: u64,
+        holding_id: String,
+        occupant_id: u64,
+    },
+    AdoptDevelopmentScenarios {
+        owner_key: String,
     },
     AdvanceSimulationWorldTime {
         nonce: String,
@@ -1480,6 +1940,15 @@ pub enum Reducer {
         action_id: String,
         expected_revision: u64,
         catalog_revision: String,
+    },
+    AnswerHostileSurrenderOffer {
+        actor_id: u64,
+        case_site_id: String,
+        spokesman_id: u64,
+        context_ref: String,
+        expected_revision: u32,
+        accept: bool,
+        action_id: String,
     },
     ApproachDialogueWitness {
         observer_character_id: u64,
@@ -1515,6 +1984,14 @@ pub enum Reducer {
     BackfillCharacterDeathsAndLeadership,
     BackfillEquipmentConditionAndSmiths,
     BackfillSoloParties,
+    BeginFormalCourtship {
+        suitor_id: u64,
+        partner_id: u64,
+    },
+    BeginInformalCourtship {
+        suitor_id: u64,
+        partner_id: u64,
+    },
     BeginWorldDataImport {
         schema_version: u32,
         artifact_id: String,
@@ -1523,7 +2000,6 @@ pub enum Reducer {
     },
     BootstrapDevelopmentWorld {
         bootstrap_token: String,
-        include_visual_demos: bool,
     },
     BurnCorpse {
         actor_id: u64,
@@ -1538,9 +2014,18 @@ pub enum Reducer {
         action_id: String,
         expected_revision: u32,
     },
+    BuyResidence {
+        character_id: u64,
+        settlement_id: String,
+        tier: ResidenceTier,
+    },
     CancelMissionRequest {
         character_id: u64,
         mission_id: String,
+    },
+    CancelWedding {
+        actor_id: u64,
+        commitment_id: String,
     },
     ChangeInventoryItem {
         character_id: u64,
@@ -1566,8 +2051,19 @@ pub enum Reducer {
         nonce: String,
         policy_seed: u64,
     },
+    ClearBrowserCharacterSelection {
+        owner_key: String,
+    },
     ClearOrganizationPresentation {
         character_id: u64,
+    },
+    CollectFixtureWaterIntoContainer {
+        request_id: String,
+        character_id: u64,
+        capability_id: String,
+        expected_capability_version: u32,
+        container_object_id: u64,
+        requested_ml: u64,
     },
     ConfigureSimulationCharacter {
         nonce: String,
@@ -1579,14 +2075,15 @@ pub enum Reducer {
         downtime: ScheduleAllocation,
         personality: CharacterPersonality,
     },
+    ContactContextCharacter {
+        actor_id: u64,
+        target_id: u64,
+        contact_ref: String,
+        expected_revision: u32,
+        action_id: String,
+    },
     ContinueCampTravel {
         character_id: u64,
-    },
-    CookFood {
-        character_id: u64,
-        method: CookingMethod,
-        inventory_item_ids: Vec<u64>,
-        amounts_milliunits: Vec<u32>,
     },
     CreateCharacter {
         id: u64,
@@ -1607,6 +2104,7 @@ pub enum Reducer {
         save_role: bool,
     },
     CreateStartingCharacter {
+        owner_key: String,
         generator_version: u16,
         seed: String,
         age_tier: StartingAgeTierCoordinate,
@@ -1629,10 +2127,22 @@ pub enum Reducer {
         owner_id: u64,
         role_id: u64,
     },
+    DemandHostileSurrender {
+        actor_id: u64,
+        case_site_id: String,
+        spokesman_id: u64,
+        context_ref: String,
+        expected_revision: u32,
+        action_id: String,
+    },
     DepositPartyInventoryItem {
         character_id: u64,
         inventory_item_id: u64,
         quantity: u32,
+    },
+    DesignateResidence {
+        character_id: u64,
+        holding_id: String,
     },
     DisbandParty {
         leader_id: u64,
@@ -1656,9 +2166,13 @@ pub enum Reducer {
         character_id: u64,
         inventory_item_id: u64,
     },
+    EndMarriage {
+        actor_id: u64,
+        marriage_id: String,
+    },
     EndTacticalServer {
         resolution: TacticalMissionResolution,
-        reported_xp_gained: i32,
+        receipt: TacticalConsequenceReceipt,
     },
     EnsureSettlementActivity {
         settlement_id: String,
@@ -1686,10 +2200,6 @@ pub enum Reducer {
         expected_revision: u32,
         confirm_unauthorized: bool,
     },
-    ExamineOutbreakPatient {
-        actor_id: u64,
-        patient_ref: String,
-    },
     ExhumeCorpse {
         actor_id: u64,
         corpse_id: String,
@@ -1716,7 +2226,7 @@ pub enum Reducer {
         character_id: u64,
         settlement_id: String,
         service_id: String,
-        provider_npc_id: String,
+        provider_resident_character_id: u64,
         buy_item_ids: Vec<String>,
         buy_quantities: Vec<u32>,
         sell_inventory_ids: Vec<u64>,
@@ -1731,7 +2241,13 @@ pub enum Reducer {
         request_id: String,
         source_ids: Vec<String>,
         requested_minutes: u64,
+        attempt_generation: u64,
         attestation: ForageEnvironmentAttestation,
+    },
+    GrantBrowserCharacter {
+        owner_key: String,
+        character_id: u64,
+        starting_request_key: String,
     },
     ImportSettlementAliases {
         aliases: Vec<SettlementAliasBatchRow>,
@@ -1765,6 +2281,7 @@ pub enum Reducer {
     JoinOrganization {
         character_id: u64,
         organization_id: String,
+        entry_role_id: String,
     },
     KillSimulationCharacter {
         nonce: String,
@@ -1782,11 +2299,13 @@ pub enum Reducer {
         party_inventory_item_ids: Vec<u64>,
         quantities: Vec<u32>,
     },
-    LoadAutopsyDemo {
-        character_id: u64,
-    },
-    LoadOutbreakDemo {
-        character_id: u64,
+    NegotiateHostileWithdrawal {
+        actor_id: u64,
+        case_site_id: String,
+        spokesman_id: u64,
+        context_ref: String,
+        expected_revision: u32,
+        action_id: String,
     },
     OpenCorpse {
         actor_id: u64,
@@ -1817,10 +2336,42 @@ pub enum Reducer {
         source_id: String,
         action_kind: String,
     },
-    PrepareHerbalRemedy {
+    PlaceFireplaceContainer {
         character_id: u64,
+        fireplace_fixture_id: String,
+        inventory_scope: String,
         inventory_item_id: u64,
-        method: HerbalPreparationMethod,
+    },
+    PourTinctureSpiritIntoContainer {
+        character_id: u64,
+        spirit_id: u64,
+        object_id: u64,
+    },
+    PourWaterIntoContainer {
+        character_id: u64,
+        parent_scope: String,
+        parent_row_id: u64,
+        requested_ml: u64,
+    },
+    PourWaterOutOfContainer {
+        character_id: u64,
+        container_object_id: u64,
+        requested_ml: u64,
+    },
+    PrepareDevelopmentCourtship {
+        suitor_id: u64,
+        partner_id: u64,
+    },
+    PrepareIngredientLot {
+        character_id: u64,
+        inventory_scope: String,
+        inventory_item_id: u64,
+        food_lot_id: u64,
+        material_object_id: u64,
+        request_id: String,
+        expected_revision: u64,
+        attempt_generation: u64,
+        action: IngredientPreparationAction,
     },
     PresentOrganization {
         character_id: u64,
@@ -1829,12 +2380,31 @@ pub enum Reducer {
     PromoteOrganizationMembership {
         character_id: u64,
         organization_id: String,
+        to_role_id: String,
     },
     PurchaseFromHerbalist {
         patient_id: u64,
         settlement_id: String,
         item_ids: Vec<String>,
         quantities: Vec<u32>,
+    },
+    PurchasePersonalStorefrontWithPartyStake {
+        character_id: u64,
+        settlement_id: String,
+        service_id: String,
+        provider_resident_character_id: u64,
+        item_id: String,
+        quantity: u32,
+        maximum_unit_price: u64,
+        maximum_personal_payment: u64,
+        maximum_stake_payment: u64,
+    },
+    PutInventoryItemInContainer {
+        character_id: u64,
+        child_scope: String,
+        child_row_id: u64,
+        parent_scope: String,
+        parent_row_id: u64,
     },
     ReceiveInvestigationClaim {
         character_id: u64,
@@ -1846,11 +2416,19 @@ pub enum Reducer {
         receipt_id: String,
         action_id: String,
     },
+    RecoverOwnedResidence {
+        character_id: u64,
+        holding_id: String,
+    },
     RefreshCapabilities {
         character_id: u64,
     },
     RefreshStrategicCondition {
         character_id: u64,
+    },
+    RefreshTincture {
+        character_id: u64,
+        object_id: u64,
     },
     RegisterStrategicGateway {
         terrain_package_digest: Option<String>,
@@ -1860,6 +2438,19 @@ pub enum Reducer {
         leader_id: u64,
         request_id: u64,
     },
+    RelinquishResidence {
+        character_id: u64,
+        holding_id: String,
+    },
+    RemoveHouseholdOccupant {
+        owner_character_id: u64,
+        holding_id: String,
+        occupant_id: u64,
+    },
+    RemoveInventoryItemFromContainer {
+        character_id: u64,
+        child_object_id: u64,
+    },
     RemovePartyMember {
         actor_character_id: u64,
         member_character_id: u64,
@@ -1868,6 +2459,11 @@ pub enum Reducer {
         owner_id: u64,
         role_id: u64,
         name: String,
+    },
+    RentResidence {
+        character_id: u64,
+        settlement_id: String,
+        tier: ResidenceTier,
     },
     ReplaceItemAtPlacement {
         character_id: u64,
@@ -1902,18 +2498,32 @@ pub enum Reducer {
         character_id: u64,
         recruitment_role_id: u64,
     },
+    ResolveErrantryRoadChallenge {
+        character_id: u64,
+        challenge_id: String,
+        expected_revision: u32,
+        choice: String,
+        action_id: String,
+    },
     ResolveReligiousDemand {
         demand_id: u64,
         choice: String,
     },
     ResolveStrategicEncounter {
         character_id: u64,
+        encounter_id: String,
         choice: String,
+        expected_revision: u32,
+        action_id: String,
     },
     RestAtCamp {
         character_id: u64,
         requested_minutes: u64,
         shelter: FieldShelter,
+    },
+    RestAtResidenceHours {
+        character_id: u64,
+        requested_minutes: u64,
     },
     RestAtSettlement {
         character_id: u64,
@@ -1924,6 +2534,16 @@ pub enum Reducer {
         character_id: u64,
         requested_minutes: u64,
         at_inn: bool,
+    },
+    RetrieveFireplaceContainer {
+        character_id: u64,
+        fireplace_fixture_id: String,
+        container_object_id: u64,
+    },
+    RetrieveFireplaceDish {
+        character_id: u64,
+        fireplace_fixture_id: String,
+        inventory_scope: String,
     },
     RetrieveRepairedItem {
         character_id: u64,
@@ -1945,14 +2565,29 @@ pub enum Reducer {
         requirements: RecruitmentRequirements,
         weapon_precision: f32,
     },
+    ScheduleWedding {
+        first_character_id: u64,
+        second_character_id: u64,
+    },
+    SeedNpcPolicyForDevelopment {
+        character_id: u64,
+        home_settlement_id: String,
+        policy_seed: u64,
+    },
     SeedSimulationDisease {
         nonce: String,
         character_id: u64,
+        disease_id: String,
     },
     SeedSimulationEquipmentDamage {
         nonce: String,
         character_id: u64,
         inventory_item_id: u64,
+    },
+    SeedSimulationQuestFixture {
+        nonce: String,
+        direct_leader_id: u64,
+        generated_leader_id: u64,
     },
     SeedSimulationWorld {
         nonce: String,
@@ -1964,6 +2599,10 @@ pub enum Reducer {
         scene_key: String,
         required_enemy_kills: u32,
         tactical_claim: String,
+    },
+    SelectBrowserCharacter {
+        owner_key: String,
+        character_id: u64,
     },
     SendLocalChatMessage {
         sender_id: u64,
@@ -1980,6 +2619,12 @@ pub enum Reducer {
     SetCharacterReligion {
         character_id: u64,
         religion_id: String,
+    },
+    SetFireplaceInstrument {
+        character_id: u64,
+        fireplace_fixture_id: String,
+        inventory_scope: String,
+        inventory_item_id: Option<u64>,
     },
     SetInventoryQuantityTarget {
         character_id: u64,
@@ -2020,9 +2665,9 @@ pub enum Reducer {
         definition_json: String,
         allow_implausible: bool,
     },
-    SpendTimeWithSettlementNpc {
+    SpendTimeWithSettlementResident {
         actor_id: u64,
-        npc_id: String,
+        resident_character_id: u64,
         requested_minutes: u64,
         action_id: String,
     },
@@ -2055,6 +2700,15 @@ pub enum Reducer {
         location_id: String,
         catalog_revision: String,
     },
+    StartFireplaceContainerCooking {
+        character_id: u64,
+        fireplace_fixture_id: String,
+        container_object_id: u64,
+    },
+    StartPoppyTincture {
+        character_id: u64,
+        object_id: u64,
+    },
     StopPreparation {
         actor_id: u64,
         administration_id: u64,
@@ -2076,12 +2730,25 @@ pub enum Reducer {
         service: String,
         inventory_item_id: u64,
     },
+    SubmitPuzzleChallenge {
+        character_id: u64,
+        case_id: String,
+        challenge_id: String,
+        expected_revision: u32,
+        submission_json: String,
+    },
     SurrenderToAuthority {
         character_id: u64,
-        incident_id: String,
+        action_token: String,
+    },
+    SyncDevelopmentClockToCharacter {
+        character_id: u64,
     },
     SynchronizeCharacterTime {
         character_id: u64,
+    },
+    SynchronizePartyForActivity {
+        leader_id: u64,
     },
     TrackCaseSite {
         character_id: u64,
@@ -2118,6 +2785,14 @@ pub enum Reducer {
         procedure: String,
         projectile_id: Option<u64>,
         use_soap: bool,
+        action_id: String,
+        context_ref: Option<String>,
+        expected_membership_revision: Option<u32>,
+    },
+    TriggerDevelopmentScenarioIncident {
+        scenario_slug: String,
+        problem_id: String,
+        request_id: String,
     },
     UpdateCharacter {
         id: u64,
@@ -2140,7 +2815,6 @@ pub enum Reducer {
     UpdateTrainingSchedule {
         character_id: u64,
         downtime: ScheduleAllocation,
-        travel: ScheduleAllocation,
     },
     UpgradeManualSurgery,
     VoteForPartyLeader {
@@ -2163,10 +2837,16 @@ impl __sdk::Reducer for Reducer {
         match self {
             Reducer::AbandonContract { .. } => "abandon_contract",
             Reducer::AcceptContract { .. } => "accept_contract",
+            Reducer::AcceptOrderErrantry { .. } => "accept_order_errantry",
             Reducer::AcceptPartyJoinRequest { .. } => "accept_party_join_request",
+            Reducer::AddFireplaceIngredients { .. } => "add_fireplace_ingredients",
             Reducer::AdministerPreparation { .. } => "administer_preparation",
+            Reducer::AdministerTinctureFromContainer { .. } => "administer_tincture_from_container",
+            Reducer::AdmitHouseholdOccupant { .. } => "admit_household_occupant",
+            Reducer::AdoptDevelopmentScenarios { .. } => "adopt_development_scenarios",
             Reducer::AdvanceSimulationWorldTime { .. } => "advance_simulation_world_time",
             Reducer::AnswerDialoguePrompt { .. } => "answer_dialogue_prompt",
+            Reducer::AnswerHostileSurrenderOffer { .. } => "answer_hostile_surrender_offer",
             Reducer::ApproachDialogueWitness { .. } => "approach_dialogue_witness",
             Reducer::ApprovePartyActionRequest { .. } => "approve_party_action_request",
             Reducer::ApprovePartyActionRequestPlanned { .. } => {
@@ -2182,19 +2862,27 @@ impl __sdk::Reducer for Reducer {
                 "backfill_equipment_condition_and_smiths"
             }
             Reducer::BackfillSoloParties => "backfill_solo_parties",
+            Reducer::BeginFormalCourtship { .. } => "begin_formal_courtship",
+            Reducer::BeginInformalCourtship { .. } => "begin_informal_courtship",
             Reducer::BeginWorldDataImport { .. } => "begin_world_data_import",
             Reducer::BootstrapDevelopmentWorld { .. } => "bootstrap_development_world",
             Reducer::BurnCorpse { .. } => "burn_corpse",
             Reducer::BuryCorpse { .. } => "bury_corpse",
+            Reducer::BuyResidence { .. } => "buy_residence",
             Reducer::CancelMissionRequest { .. } => "cancel_mission_request",
+            Reducer::CancelWedding { .. } => "cancel_wedding",
             Reducer::ChangeInventoryItem { .. } => "change_inventory_item",
             Reducer::ChatWithPartyMember { .. } => "chat_with_party_member",
             Reducer::ChooseDialogueTopic { .. } => "choose_dialogue_topic",
             Reducer::ClaimSimulationRun { .. } => "claim_simulation_run",
+            Reducer::ClearBrowserCharacterSelection { .. } => "clear_browser_character_selection",
             Reducer::ClearOrganizationPresentation { .. } => "clear_organization_presentation",
+            Reducer::CollectFixtureWaterIntoContainer { .. } => {
+                "collect_fixture_water_into_container"
+            }
             Reducer::ConfigureSimulationCharacter { .. } => "configure_simulation_character",
+            Reducer::ContactContextCharacter { .. } => "contact_context_character",
             Reducer::ContinueCampTravel { .. } => "continue_camp_travel",
-            Reducer::CookFood { .. } => "cook_food",
             Reducer::CreateCharacter { .. } => "create_character",
             Reducer::CreateNamedCharacter { .. } => "create_named_character",
             Reducer::CreateNamedCharacterWithId { .. } => "create_named_character_with_id",
@@ -2204,25 +2892,28 @@ impl __sdk::Reducer for Reducer {
             Reducer::CreateTemporaryCharacter { .. } => "create_temporary_character",
             Reducer::DeleteRecruitmentRole { .. } => "delete_recruitment_role",
             Reducer::DeleteSavedRecruitmentRole { .. } => "delete_saved_recruitment_role",
+            Reducer::DemandHostileSurrender { .. } => "demand_hostile_surrender",
             Reducer::DepositPartyInventoryItem { .. } => "deposit_party_inventory_item",
+            Reducer::DesignateResidence { .. } => "designate_residence",
             Reducer::DisbandParty { .. } => "disband_party",
             Reducer::DiscardInventoryItems { .. } => "discard_inventory_items",
             Reducer::DiscoverInvestigationLead { .. } => "discover_investigation_lead",
             Reducer::DismissPartyActionRequest { .. } => "dismiss_party_action_request",
             Reducer::EatFood { .. } => "eat_food",
+            Reducer::EndMarriage { .. } => "end_marriage",
             Reducer::EndTacticalServer { .. } => "end_tactical_server",
             Reducer::EnsureSettlementActivity { .. } => "ensure_settlement_activity",
             Reducer::EnterMission { .. } => "enter_mission",
             Reducer::EquipItem { .. } => "equip_item",
             Reducer::EquipItemAtPlacement { .. } => "equip_item_at_placement",
             Reducer::ExamineCorpse { .. } => "examine_corpse",
-            Reducer::ExamineOutbreakPatient { .. } => "examine_outbreak_patient",
             Reducer::ExhumeCorpse { .. } => "exhume_corpse",
             Reducer::FinalizeMerchantTrade { .. } => "finalize_merchant_trade",
             Reducer::FinalizePartyOffer { .. } => "finalize_party_offer",
             Reducer::FinalizeStorefrontTrade { .. } => "finalize_storefront_trade",
             Reducer::FinishWorldDataImport { .. } => "finish_world_data_import",
             Reducer::ForageCurrentVicinity { .. } => "forage_current_vicinity",
+            Reducer::GrantBrowserCharacter { .. } => "grant_browser_character",
             Reducer::ImportSettlementAliases { .. } => "import_settlement_aliases",
             Reducer::ImportSettlementDescriptions { .. } => "import_settlement_descriptions",
             Reducer::ImportSettlements { .. } => "import_settlements",
@@ -2235,25 +2926,43 @@ impl __sdk::Reducer for Reducer {
             Reducer::LeaveMission { .. } => "leave_mission",
             Reducer::LeaveParty { .. } => "leave_party",
             Reducer::LiquidatePartyInventory { .. } => "liquidate_party_inventory",
-            Reducer::LoadAutopsyDemo { .. } => "load_autopsy_demo",
-            Reducer::LoadOutbreakDemo { .. } => "load_outbreak_demo",
+            Reducer::NegotiateHostileWithdrawal { .. } => "negotiate_hostile_withdrawal",
             Reducer::OpenCorpse { .. } => "open_corpse",
             Reducer::PayOrganizationDues { .. } => "pay_organization_dues",
             Reducer::PerformImmediateActivity { .. } => "perform_immediate_activity",
             Reducer::PerformInvestigationAction { .. } => "perform_investigation_action",
             Reducer::PerformSocialAction { .. } => "perform_social_action",
-            Reducer::PrepareHerbalRemedy { .. } => "prepare_herbal_remedy",
+            Reducer::PlaceFireplaceContainer { .. } => "place_fireplace_container",
+            Reducer::PourTinctureSpiritIntoContainer { .. } => {
+                "pour_tincture_spirit_into_container"
+            }
+            Reducer::PourWaterIntoContainer { .. } => "pour_water_into_container",
+            Reducer::PourWaterOutOfContainer { .. } => "pour_water_out_of_container",
+            Reducer::PrepareDevelopmentCourtship { .. } => "prepare_development_courtship",
+            Reducer::PrepareIngredientLot { .. } => "prepare_ingredient_lot",
             Reducer::PresentOrganization { .. } => "present_organization",
             Reducer::PromoteOrganizationMembership { .. } => "promote_organization_membership",
             Reducer::PurchaseFromHerbalist { .. } => "purchase_from_herbalist",
+            Reducer::PurchasePersonalStorefrontWithPartyStake { .. } => {
+                "purchase_personal_storefront_with_party_stake"
+            }
+            Reducer::PutInventoryItemInContainer { .. } => "put_inventory_item_in_container",
             Reducer::ReceiveInvestigationClaim { .. } => "receive_investigation_claim",
             Reducer::ReceiveLocalProblemRumor { .. } => "receive_local_problem_rumor",
+            Reducer::RecoverOwnedResidence { .. } => "recover_owned_residence",
             Reducer::RefreshCapabilities { .. } => "refresh_capabilities",
             Reducer::RefreshStrategicCondition { .. } => "refresh_strategic_condition",
+            Reducer::RefreshTincture { .. } => "refresh_tincture",
             Reducer::RegisterStrategicGateway { .. } => "register_strategic_gateway",
             Reducer::RejectPartyJoinRequest { .. } => "reject_party_join_request",
+            Reducer::RelinquishResidence { .. } => "relinquish_residence",
+            Reducer::RemoveHouseholdOccupant { .. } => "remove_household_occupant",
+            Reducer::RemoveInventoryItemFromContainer { .. } => {
+                "remove_inventory_item_from_container"
+            }
             Reducer::RemovePartyMember { .. } => "remove_party_member",
             Reducer::RenameSavedRecruitmentRole { .. } => "rename_saved_recruitment_role",
+            Reducer::RentResidence { .. } => "rent_residence",
             Reducer::ReplaceItemAtPlacement { .. } => "replace_item_at_placement",
             Reducer::ReportContract { .. } => "report_contract",
             Reducer::RequestGeneralPartyJoin { .. } => "request_general_party_join",
@@ -2261,22 +2970,31 @@ impl __sdk::Reducer for Reducer {
             Reducer::RequestTacticalServer { .. } => "request_tactical_server",
             Reducer::RequestTacticalServerForScene { .. } => "request_tactical_server_for_scene",
             Reducer::RequestToJoinParty { .. } => "request_to_join_party",
+            Reducer::ResolveErrantryRoadChallenge { .. } => "resolve_errantry_road_challenge",
             Reducer::ResolveReligiousDemand { .. } => "resolve_religious_demand",
             Reducer::ResolveStrategicEncounter { .. } => "resolve_strategic_encounter",
             Reducer::RestAtCamp { .. } => "rest_at_camp",
+            Reducer::RestAtResidenceHours { .. } => "rest_at_residence_hours",
             Reducer::RestAtSettlement { .. } => "rest_at_settlement",
             Reducer::RestAtSettlementHours { .. } => "rest_at_settlement_hours",
+            Reducer::RetrieveFireplaceContainer { .. } => "retrieve_fireplace_container",
+            Reducer::RetrieveFireplaceDish { .. } => "retrieve_fireplace_dish",
             Reducer::RetrieveRepairedItem { .. } => "retrieve_repaired_item",
             Reducer::RetrieveRepairedItems { .. } => "retrieve_repaired_items",
             Reducer::RevokeTacticalServerClaim { .. } => "revoke_tactical_server_claim",
             Reducer::SaveRecruitmentRole { .. } => "save_recruitment_role",
+            Reducer::ScheduleWedding { .. } => "schedule_wedding",
+            Reducer::SeedNpcPolicyForDevelopment { .. } => "seed_npc_policy_for_development",
             Reducer::SeedSimulationDisease { .. } => "seed_simulation_disease",
             Reducer::SeedSimulationEquipmentDamage { .. } => "seed_simulation_equipment_damage",
+            Reducer::SeedSimulationQuestFixture { .. } => "seed_simulation_quest_fixture",
             Reducer::SeedSimulationWorld { .. } => "seed_simulation_world",
             Reducer::SeedStandaloneTacticalMission { .. } => "seed_standalone_tactical_mission",
+            Reducer::SelectBrowserCharacter { .. } => "select_browser_character",
             Reducer::SendLocalChatMessage { .. } => "send_local_chat_message",
             Reducer::SetAutomaticSocialChat { .. } => "set_automatic_social_chat",
             Reducer::SetCharacterReligion { .. } => "set_character_religion",
+            Reducer::SetFireplaceInstrument { .. } => "set_fireplace_instrument",
             Reducer::SetInventoryQuantityTarget { .. } => "set_inventory_quantity_target",
             Reducer::SetPartyCampFatiguePercent { .. } => "set_party_camp_fatigue_percent",
             Reducer::SetPartyTravelItinerary { .. } => "set_party_travel_itinerary",
@@ -2286,16 +3004,25 @@ impl __sdk::Reducer for Reducer {
                 "simulate_contract_issuer_interaction"
             }
             Reducer::SpawnDeveloperQuest { .. } => "spawn_developer_quest",
-            Reducer::SpendTimeWithSettlementNpc { .. } => "spend_time_with_settlement_npc",
+            Reducer::SpendTimeWithSettlementResident { .. } => {
+                "spend_time_with_settlement_resident"
+            }
             Reducer::SponsorPartyMemberInnRest { .. } => "sponsor_party_member_inn_rest",
             Reducer::StageInvestigationLead { .. } => "stage_investigation_lead",
             Reducer::StartDialogue { .. } => "start_dialogue",
+            Reducer::StartFireplaceContainerCooking { .. } => "start_fireplace_container_cooking",
+            Reducer::StartPoppyTincture { .. } => "start_poppy_tincture",
             Reducer::StopPreparation { .. } => "stop_preparation",
             Reducer::StoreBattleLoot { .. } => "store_battle_loot",
             Reducer::SubmitAllRepairableItems { .. } => "submit_all_repairable_items",
             Reducer::SubmitItemForRepair { .. } => "submit_item_for_repair",
+            Reducer::SubmitPuzzleChallenge { .. } => "submit_puzzle_challenge",
             Reducer::SurrenderToAuthority { .. } => "surrender_to_authority",
+            Reducer::SyncDevelopmentClockToCharacter { .. } => {
+                "sync_development_clock_to_character"
+            }
             Reducer::SynchronizeCharacterTime { .. } => "synchronize_character_time",
+            Reducer::SynchronizePartyForActivity { .. } => "synchronize_party_for_activity",
             Reducer::TrackCaseSite { .. } => "track_case_site",
             Reducer::TransferPartyItem { .. } => "transfer_party_item",
             Reducer::TravelToCaseSite { .. } => "travel_to_case_site",
@@ -2303,6 +3030,9 @@ impl __sdk::Reducer for Reducer {
             Reducer::TravelToSettlement { .. } => "travel_to_settlement",
             Reducer::TravelToSettlementPlanned { .. } => "travel_to_settlement_planned",
             Reducer::TreatLimb { .. } => "treat_limb",
+            Reducer::TriggerDevelopmentScenarioIncident { .. } => {
+                "trigger_development_scenario_incident"
+            }
             Reducer::UpdateCharacter { .. } => "update_character",
             Reducer::UpdatePartyCheckTargets { .. } => "update_party_check_targets",
             Reducer::UpdateRecruitmentRole { .. } => "update_recruitment_role",
@@ -2330,12 +3060,34 @@ impl __sdk::Reducer for Reducer {
                 character_id: character_id.clone(),
                 contract_id: contract_id.clone(),
 }),
+            Reducer::AcceptOrderErrantry{
+                character_id,
+                dialogue_session_id,
+                action_id,
+}             => __sats::bsatn::to_vec(&accept_order_errantry_reducer::AcceptOrderErrantryArgs {
+                character_id: character_id.clone(),
+                dialogue_session_id: dialogue_session_id.clone(),
+                action_id: action_id.clone(),
+}),
             Reducer::AcceptPartyJoinRequest{
                 leader_id,
                 request_id,
 }             => __sats::bsatn::to_vec(&accept_party_join_request_reducer::AcceptPartyJoinRequestArgs {
                 leader_id: leader_id.clone(),
                 request_id: request_id.clone(),
+}),
+            Reducer::AddFireplaceIngredients{
+                character_id,
+                fireplace_fixture_id,
+                inventory_scope,
+                inventory_item_ids,
+                amounts_milliunits,
+}             => __sats::bsatn::to_vec(&add_fireplace_ingredients_reducer::AddFireplaceIngredientsArgs {
+                character_id: character_id.clone(),
+                fireplace_fixture_id: fireplace_fixture_id.clone(),
+                inventory_scope: inventory_scope.clone(),
+                inventory_item_ids: inventory_item_ids.clone(),
+                amounts_milliunits: amounts_milliunits.clone(),
 }),
             Reducer::AdministerPreparation{
                 actor_id,
@@ -2353,6 +3105,31 @@ impl __sdk::Reducer for Reducer {
                 route: route.clone(),
                 amount_milliunits: amount_milliunits.clone(),
                 region: region.clone(),
+}),
+            Reducer::AdministerTinctureFromContainer{
+                actor_id,
+                patient_id,
+                object_id,
+                amount_milliunits,
+}             => __sats::bsatn::to_vec(&administer_tincture_from_container_reducer::AdministerTinctureFromContainerArgs {
+                actor_id: actor_id.clone(),
+                patient_id: patient_id.clone(),
+                object_id: object_id.clone(),
+                amount_milliunits: amount_milliunits.clone(),
+}),
+            Reducer::AdmitHouseholdOccupant{
+                owner_character_id,
+                holding_id,
+                occupant_id,
+}             => __sats::bsatn::to_vec(&admit_household_occupant_reducer::AdmitHouseholdOccupantArgs {
+                owner_character_id: owner_character_id.clone(),
+                holding_id: holding_id.clone(),
+                occupant_id: occupant_id.clone(),
+}),
+            Reducer::AdoptDevelopmentScenarios{
+                owner_key,
+}             => __sats::bsatn::to_vec(&adopt_development_scenarios_reducer::AdoptDevelopmentScenariosArgs {
+                owner_key: owner_key.clone(),
 }),
             Reducer::AdvanceSimulationWorldTime{
                 nonce,
@@ -2375,6 +3152,23 @@ impl __sdk::Reducer for Reducer {
                 action_id: action_id.clone(),
                 expected_revision: expected_revision.clone(),
                 catalog_revision: catalog_revision.clone(),
+}),
+            Reducer::AnswerHostileSurrenderOffer{
+                actor_id,
+                case_site_id,
+                spokesman_id,
+                context_ref,
+                expected_revision,
+                accept,
+                action_id,
+}             => __sats::bsatn::to_vec(&answer_hostile_surrender_offer_reducer::AnswerHostileSurrenderOfferArgs {
+                actor_id: actor_id.clone(),
+                case_site_id: case_site_id.clone(),
+                spokesman_id: spokesman_id.clone(),
+                context_ref: context_ref.clone(),
+                expected_revision: expected_revision.clone(),
+                accept: accept.clone(),
+                action_id: action_id.clone(),
 }),
             Reducer::ApproachDialogueWitness{
                 observer_character_id,
@@ -2438,7 +3232,21 @@ Reducer::BackfillEquipmentConditionAndSmiths => __sats::bsatn::to_vec(&backfill_
                 }),
 Reducer::BackfillSoloParties => __sats::bsatn::to_vec(&backfill_solo_parties_reducer::BackfillSoloPartiesArgs {
                 }),
-Reducer::BeginWorldDataImport{
+Reducer::BeginFormalCourtship{
+                suitor_id,
+                partner_id,
+}             => __sats::bsatn::to_vec(&begin_formal_courtship_reducer::BeginFormalCourtshipArgs {
+                suitor_id: suitor_id.clone(),
+                partner_id: partner_id.clone(),
+}),
+            Reducer::BeginInformalCourtship{
+                suitor_id,
+                partner_id,
+}             => __sats::bsatn::to_vec(&begin_informal_courtship_reducer::BeginInformalCourtshipArgs {
+                suitor_id: suitor_id.clone(),
+                partner_id: partner_id.clone(),
+}),
+            Reducer::BeginWorldDataImport{
                 schema_version,
                 artifact_id,
                 manifest_digest,
@@ -2451,10 +3259,8 @@ Reducer::BeginWorldDataImport{
 }),
             Reducer::BootstrapDevelopmentWorld{
                 bootstrap_token,
-                include_visual_demos,
 }             => __sats::bsatn::to_vec(&bootstrap_development_world_reducer::BootstrapDevelopmentWorldArgs {
                 bootstrap_token: bootstrap_token.clone(),
-                include_visual_demos: include_visual_demos.clone(),
 }),
             Reducer::BurnCorpse{
                 actor_id,
@@ -2480,12 +3286,28 @@ Reducer::BeginWorldDataImport{
                 action_id: action_id.clone(),
                 expected_revision: expected_revision.clone(),
 }),
+            Reducer::BuyResidence{
+                character_id,
+                settlement_id,
+                tier,
+}             => __sats::bsatn::to_vec(&buy_residence_reducer::BuyResidenceArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                tier: tier.clone(),
+}),
             Reducer::CancelMissionRequest{
                 character_id,
                 mission_id,
 }             => __sats::bsatn::to_vec(&cancel_mission_request_reducer::CancelMissionRequestArgs {
                 character_id: character_id.clone(),
                 mission_id: mission_id.clone(),
+}),
+            Reducer::CancelWedding{
+                actor_id,
+                commitment_id,
+}             => __sats::bsatn::to_vec(&cancel_wedding_reducer::CancelWeddingArgs {
+                actor_id: actor_id.clone(),
+                commitment_id: commitment_id.clone(),
 }),
             Reducer::ChangeInventoryItem{
                 character_id,
@@ -2531,10 +3353,30 @@ Reducer::BeginWorldDataImport{
                 nonce: nonce.clone(),
                 policy_seed: policy_seed.clone(),
 }),
+            Reducer::ClearBrowserCharacterSelection{
+                owner_key,
+}             => __sats::bsatn::to_vec(&clear_browser_character_selection_reducer::ClearBrowserCharacterSelectionArgs {
+                owner_key: owner_key.clone(),
+}),
             Reducer::ClearOrganizationPresentation{
                 character_id,
 }             => __sats::bsatn::to_vec(&clear_organization_presentation_reducer::ClearOrganizationPresentationArgs {
                 character_id: character_id.clone(),
+}),
+            Reducer::CollectFixtureWaterIntoContainer{
+                request_id,
+                character_id,
+                capability_id,
+                expected_capability_version,
+                container_object_id,
+                requested_ml,
+}             => __sats::bsatn::to_vec(&collect_fixture_water_into_container_reducer::CollectFixtureWaterIntoContainerArgs {
+                request_id: request_id.clone(),
+                character_id: character_id.clone(),
+                capability_id: capability_id.clone(),
+                expected_capability_version: expected_capability_version.clone(),
+                container_object_id: container_object_id.clone(),
+                requested_ml: requested_ml.clone(),
 }),
             Reducer::ConfigureSimulationCharacter{
                 nonce,
@@ -2555,21 +3397,23 @@ Reducer::BeginWorldDataImport{
                 downtime: downtime.clone(),
                 personality: personality.clone(),
 }),
+            Reducer::ContactContextCharacter{
+                actor_id,
+                target_id,
+                contact_ref,
+                expected_revision,
+                action_id,
+}             => __sats::bsatn::to_vec(&contact_context_character_reducer::ContactContextCharacterArgs {
+                actor_id: actor_id.clone(),
+                target_id: target_id.clone(),
+                contact_ref: contact_ref.clone(),
+                expected_revision: expected_revision.clone(),
+                action_id: action_id.clone(),
+}),
             Reducer::ContinueCampTravel{
                 character_id,
 }             => __sats::bsatn::to_vec(&continue_camp_travel_reducer::ContinueCampTravelArgs {
                 character_id: character_id.clone(),
-}),
-            Reducer::CookFood{
-                character_id,
-                method,
-                inventory_item_ids,
-                amounts_milliunits,
-}             => __sats::bsatn::to_vec(&cook_food_reducer::CookFoodArgs {
-                character_id: character_id.clone(),
-                method: method.clone(),
-                inventory_item_ids: inventory_item_ids.clone(),
-                amounts_milliunits: amounts_milliunits.clone(),
 }),
             Reducer::CreateCharacter{
                 id,
@@ -2604,11 +3448,13 @@ Reducer::BeginWorldDataImport{
                 save_role: save_role.clone(),
 }),
             Reducer::CreateStartingCharacter{
+                owner_key,
                 generator_version,
                 seed,
                 age_tier,
                 slot,
 }             => __sats::bsatn::to_vec(&create_starting_character_reducer::CreateStartingCharacterArgs {
+                owner_key: owner_key.clone(),
                 generator_version: generator_version.clone(),
                 seed: seed.clone(),
                 age_tier: age_tier.clone(),
@@ -2644,6 +3490,21 @@ Reducer::BeginWorldDataImport{
                 owner_id: owner_id.clone(),
                 role_id: role_id.clone(),
 }),
+            Reducer::DemandHostileSurrender{
+                actor_id,
+                case_site_id,
+                spokesman_id,
+                context_ref,
+                expected_revision,
+                action_id,
+}             => __sats::bsatn::to_vec(&demand_hostile_surrender_reducer::DemandHostileSurrenderArgs {
+                actor_id: actor_id.clone(),
+                case_site_id: case_site_id.clone(),
+                spokesman_id: spokesman_id.clone(),
+                context_ref: context_ref.clone(),
+                expected_revision: expected_revision.clone(),
+                action_id: action_id.clone(),
+}),
             Reducer::DepositPartyInventoryItem{
                 character_id,
                 inventory_item_id,
@@ -2652,6 +3513,13 @@ Reducer::BeginWorldDataImport{
                 character_id: character_id.clone(),
                 inventory_item_id: inventory_item_id.clone(),
                 quantity: quantity.clone(),
+}),
+            Reducer::DesignateResidence{
+                character_id,
+                holding_id,
+}             => __sats::bsatn::to_vec(&designate_residence_reducer::DesignateResidenceArgs {
+                character_id: character_id.clone(),
+                holding_id: holding_id.clone(),
 }),
             Reducer::DisbandParty{
                 leader_id,
@@ -2692,12 +3560,19 @@ Reducer::BeginWorldDataImport{
                 character_id: character_id.clone(),
                 inventory_item_id: inventory_item_id.clone(),
 }),
+            Reducer::EndMarriage{
+                actor_id,
+                marriage_id,
+}             => __sats::bsatn::to_vec(&end_marriage_reducer::EndMarriageArgs {
+                actor_id: actor_id.clone(),
+                marriage_id: marriage_id.clone(),
+}),
             Reducer::EndTacticalServer{
                 resolution,
-                reported_xp_gained,
+                receipt,
 }             => __sats::bsatn::to_vec(&end_tactical_server_reducer::EndTacticalServerArgs {
                 resolution: resolution.clone(),
-                reported_xp_gained: reported_xp_gained.clone(),
+                receipt: receipt.clone(),
 }),
             Reducer::EnsureSettlementActivity{
                 settlement_id,
@@ -2746,13 +3621,6 @@ Reducer::BeginWorldDataImport{
                 expected_revision: expected_revision.clone(),
                 confirm_unauthorized: confirm_unauthorized.clone(),
 }),
-            Reducer::ExamineOutbreakPatient{
-                actor_id,
-                patient_ref,
-}             => __sats::bsatn::to_vec(&examine_outbreak_patient_reducer::ExamineOutbreakPatientArgs {
-                actor_id: actor_id.clone(),
-                patient_ref: patient_ref.clone(),
-}),
             Reducer::ExhumeCorpse{
                 actor_id,
                 corpse_id,
@@ -2798,7 +3666,7 @@ Reducer::BeginWorldDataImport{
                 character_id,
                 settlement_id,
                 service_id,
-                provider_npc_id,
+                provider_resident_character_id,
                 buy_item_ids,
                 buy_quantities,
                 sell_inventory_ids,
@@ -2808,7 +3676,7 @@ Reducer::BeginWorldDataImport{
                 character_id: character_id.clone(),
                 settlement_id: settlement_id.clone(),
                 service_id: service_id.clone(),
-                provider_npc_id: provider_npc_id.clone(),
+                provider_resident_character_id: provider_resident_character_id.clone(),
                 buy_item_ids: buy_item_ids.clone(),
                 buy_quantities: buy_quantities.clone(),
                 sell_inventory_ids: sell_inventory_ids.clone(),
@@ -2825,13 +3693,24 @@ Reducer::BeginWorldDataImport{
                 request_id,
                 source_ids,
                 requested_minutes,
+                attempt_generation,
                 attestation,
 }             => __sats::bsatn::to_vec(&forage_current_vicinity_reducer::ForageCurrentVicinityArgs {
                 character_id: character_id.clone(),
                 request_id: request_id.clone(),
                 source_ids: source_ids.clone(),
                 requested_minutes: requested_minutes.clone(),
+                attempt_generation: attempt_generation.clone(),
                 attestation: attestation.clone(),
+}),
+            Reducer::GrantBrowserCharacter{
+                owner_key,
+                character_id,
+                starting_request_key,
+}             => __sats::bsatn::to_vec(&grant_browser_character_reducer::GrantBrowserCharacterArgs {
+                owner_key: owner_key.clone(),
+                character_id: character_id.clone(),
+                starting_request_key: starting_request_key.clone(),
 }),
             Reducer::ImportSettlementAliases{
                 aliases,
@@ -2887,9 +3766,11 @@ Reducer::BeginWorldDataImport{
             Reducer::JoinOrganization{
                 character_id,
                 organization_id,
+                entry_role_id,
 }             => __sats::bsatn::to_vec(&join_organization_reducer::JoinOrganizationArgs {
                 character_id: character_id.clone(),
                 organization_id: organization_id.clone(),
+                entry_role_id: entry_role_id.clone(),
 }),
             Reducer::KillSimulationCharacter{
                 nonce,
@@ -2919,15 +3800,20 @@ Reducer::BeginWorldDataImport{
                 party_inventory_item_ids: party_inventory_item_ids.clone(),
                 quantities: quantities.clone(),
 }),
-            Reducer::LoadAutopsyDemo{
-                character_id,
-}             => __sats::bsatn::to_vec(&load_autopsy_demo_reducer::LoadAutopsyDemoArgs {
-                character_id: character_id.clone(),
-}),
-            Reducer::LoadOutbreakDemo{
-                character_id,
-}             => __sats::bsatn::to_vec(&load_outbreak_demo_reducer::LoadOutbreakDemoArgs {
-                character_id: character_id.clone(),
+            Reducer::NegotiateHostileWithdrawal{
+                actor_id,
+                case_site_id,
+                spokesman_id,
+                context_ref,
+                expected_revision,
+                action_id,
+}             => __sats::bsatn::to_vec(&negotiate_hostile_withdrawal_reducer::NegotiateHostileWithdrawalArgs {
+                actor_id: actor_id.clone(),
+                case_site_id: case_site_id.clone(),
+                spokesman_id: spokesman_id.clone(),
+                context_ref: context_ref.clone(),
+                expected_revision: expected_revision.clone(),
+                action_id: action_id.clone(),
 }),
             Reducer::OpenCorpse{
                 actor_id,
@@ -2982,14 +3868,73 @@ Reducer::BeginWorldDataImport{
                 source_id: source_id.clone(),
                 action_kind: action_kind.clone(),
 }),
-            Reducer::PrepareHerbalRemedy{
+            Reducer::PlaceFireplaceContainer{
                 character_id,
+                fireplace_fixture_id,
+                inventory_scope,
                 inventory_item_id,
-                method,
-}             => __sats::bsatn::to_vec(&prepare_herbal_remedy_reducer::PrepareHerbalRemedyArgs {
+}             => __sats::bsatn::to_vec(&place_fireplace_container_reducer::PlaceFireplaceContainerArgs {
                 character_id: character_id.clone(),
+                fireplace_fixture_id: fireplace_fixture_id.clone(),
+                inventory_scope: inventory_scope.clone(),
                 inventory_item_id: inventory_item_id.clone(),
-                method: method.clone(),
+}),
+            Reducer::PourTinctureSpiritIntoContainer{
+                character_id,
+                spirit_id,
+                object_id,
+}             => __sats::bsatn::to_vec(&pour_tincture_spirit_into_container_reducer::PourTinctureSpiritIntoContainerArgs {
+                character_id: character_id.clone(),
+                spirit_id: spirit_id.clone(),
+                object_id: object_id.clone(),
+}),
+            Reducer::PourWaterIntoContainer{
+                character_id,
+                parent_scope,
+                parent_row_id,
+                requested_ml,
+}             => __sats::bsatn::to_vec(&pour_water_into_container_reducer::PourWaterIntoContainerArgs {
+                character_id: character_id.clone(),
+                parent_scope: parent_scope.clone(),
+                parent_row_id: parent_row_id.clone(),
+                requested_ml: requested_ml.clone(),
+}),
+            Reducer::PourWaterOutOfContainer{
+                character_id,
+                container_object_id,
+                requested_ml,
+}             => __sats::bsatn::to_vec(&pour_water_out_of_container_reducer::PourWaterOutOfContainerArgs {
+                character_id: character_id.clone(),
+                container_object_id: container_object_id.clone(),
+                requested_ml: requested_ml.clone(),
+}),
+            Reducer::PrepareDevelopmentCourtship{
+                suitor_id,
+                partner_id,
+}             => __sats::bsatn::to_vec(&prepare_development_courtship_reducer::PrepareDevelopmentCourtshipArgs {
+                suitor_id: suitor_id.clone(),
+                partner_id: partner_id.clone(),
+}),
+            Reducer::PrepareIngredientLot{
+                character_id,
+                inventory_scope,
+                inventory_item_id,
+                food_lot_id,
+                material_object_id,
+                request_id,
+                expected_revision,
+                attempt_generation,
+                action,
+}             => __sats::bsatn::to_vec(&prepare_ingredient_lot_reducer::PrepareIngredientLotArgs {
+                character_id: character_id.clone(),
+                inventory_scope: inventory_scope.clone(),
+                inventory_item_id: inventory_item_id.clone(),
+                food_lot_id: food_lot_id.clone(),
+                material_object_id: material_object_id.clone(),
+                request_id: request_id.clone(),
+                expected_revision: expected_revision.clone(),
+                attempt_generation: attempt_generation.clone(),
+                action: action.clone(),
 }),
             Reducer::PresentOrganization{
                 character_id,
@@ -3001,9 +3946,11 @@ Reducer::BeginWorldDataImport{
             Reducer::PromoteOrganizationMembership{
                 character_id,
                 organization_id,
+                to_role_id,
 }             => __sats::bsatn::to_vec(&promote_organization_membership_reducer::PromoteOrganizationMembershipArgs {
                 character_id: character_id.clone(),
                 organization_id: organization_id.clone(),
+                to_role_id: to_role_id.clone(),
 }),
             Reducer::PurchaseFromHerbalist{
                 patient_id,
@@ -3015,6 +3962,40 @@ Reducer::BeginWorldDataImport{
                 settlement_id: settlement_id.clone(),
                 item_ids: item_ids.clone(),
                 quantities: quantities.clone(),
+}),
+            Reducer::PurchasePersonalStorefrontWithPartyStake{
+                character_id,
+                settlement_id,
+                service_id,
+                provider_resident_character_id,
+                item_id,
+                quantity,
+                maximum_unit_price,
+                maximum_personal_payment,
+                maximum_stake_payment,
+}             => __sats::bsatn::to_vec(&purchase_personal_storefront_with_party_stake_reducer::PurchasePersonalStorefrontWithPartyStakeArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                service_id: service_id.clone(),
+                provider_resident_character_id: provider_resident_character_id.clone(),
+                item_id: item_id.clone(),
+                quantity: quantity.clone(),
+                maximum_unit_price: maximum_unit_price.clone(),
+                maximum_personal_payment: maximum_personal_payment.clone(),
+                maximum_stake_payment: maximum_stake_payment.clone(),
+}),
+            Reducer::PutInventoryItemInContainer{
+                character_id,
+                child_scope,
+                child_row_id,
+                parent_scope,
+                parent_row_id,
+}             => __sats::bsatn::to_vec(&put_inventory_item_in_container_reducer::PutInventoryItemInContainerArgs {
+                character_id: character_id.clone(),
+                child_scope: child_scope.clone(),
+                child_row_id: child_row_id.clone(),
+                parent_scope: parent_scope.clone(),
+                parent_row_id: parent_row_id.clone(),
 }),
             Reducer::ReceiveInvestigationClaim{
                 character_id,
@@ -3034,6 +4015,13 @@ Reducer::BeginWorldDataImport{
                 receipt_id: receipt_id.clone(),
                 action_id: action_id.clone(),
 }),
+            Reducer::RecoverOwnedResidence{
+                character_id,
+                holding_id,
+}             => __sats::bsatn::to_vec(&recover_owned_residence_reducer::RecoverOwnedResidenceArgs {
+                character_id: character_id.clone(),
+                holding_id: holding_id.clone(),
+}),
             Reducer::RefreshCapabilities{
                 character_id,
 }             => __sats::bsatn::to_vec(&refresh_capabilities_reducer::RefreshCapabilitiesArgs {
@@ -3043,6 +4031,13 @@ Reducer::BeginWorldDataImport{
                 character_id,
 }             => __sats::bsatn::to_vec(&refresh_strategic_condition_reducer::RefreshStrategicConditionArgs {
                 character_id: character_id.clone(),
+}),
+            Reducer::RefreshTincture{
+                character_id,
+                object_id,
+}             => __sats::bsatn::to_vec(&refresh_tincture_reducer::RefreshTinctureArgs {
+                character_id: character_id.clone(),
+                object_id: object_id.clone(),
 }),
             Reducer::RegisterStrategicGateway{
                 terrain_package_digest,
@@ -3057,6 +4052,29 @@ Reducer::BeginWorldDataImport{
 }             => __sats::bsatn::to_vec(&reject_party_join_request_reducer::RejectPartyJoinRequestArgs {
                 leader_id: leader_id.clone(),
                 request_id: request_id.clone(),
+}),
+            Reducer::RelinquishResidence{
+                character_id,
+                holding_id,
+}             => __sats::bsatn::to_vec(&relinquish_residence_reducer::RelinquishResidenceArgs {
+                character_id: character_id.clone(),
+                holding_id: holding_id.clone(),
+}),
+            Reducer::RemoveHouseholdOccupant{
+                owner_character_id,
+                holding_id,
+                occupant_id,
+}             => __sats::bsatn::to_vec(&remove_household_occupant_reducer::RemoveHouseholdOccupantArgs {
+                owner_character_id: owner_character_id.clone(),
+                holding_id: holding_id.clone(),
+                occupant_id: occupant_id.clone(),
+}),
+            Reducer::RemoveInventoryItemFromContainer{
+                character_id,
+                child_object_id,
+}             => __sats::bsatn::to_vec(&remove_inventory_item_from_container_reducer::RemoveInventoryItemFromContainerArgs {
+                character_id: character_id.clone(),
+                child_object_id: child_object_id.clone(),
 }),
             Reducer::RemovePartyMember{
                 actor_character_id,
@@ -3073,6 +4091,15 @@ Reducer::BeginWorldDataImport{
                 owner_id: owner_id.clone(),
                 role_id: role_id.clone(),
                 name: name.clone(),
+}),
+            Reducer::RentResidence{
+                character_id,
+                settlement_id,
+                tier,
+}             => __sats::bsatn::to_vec(&rent_residence_reducer::RentResidenceArgs {
+                character_id: character_id.clone(),
+                settlement_id: settlement_id.clone(),
+                tier: tier.clone(),
 }),
             Reducer::ReplaceItemAtPlacement{
                 character_id,
@@ -3133,6 +4160,19 @@ Reducer::BeginWorldDataImport{
                 character_id: character_id.clone(),
                 recruitment_role_id: recruitment_role_id.clone(),
 }),
+            Reducer::ResolveErrantryRoadChallenge{
+                character_id,
+                challenge_id,
+                expected_revision,
+                choice,
+                action_id,
+}             => __sats::bsatn::to_vec(&resolve_errantry_road_challenge_reducer::ResolveErrantryRoadChallengeArgs {
+                character_id: character_id.clone(),
+                challenge_id: challenge_id.clone(),
+                expected_revision: expected_revision.clone(),
+                choice: choice.clone(),
+                action_id: action_id.clone(),
+}),
             Reducer::ResolveReligiousDemand{
                 demand_id,
                 choice,
@@ -3142,10 +4182,16 @@ Reducer::BeginWorldDataImport{
 }),
             Reducer::ResolveStrategicEncounter{
                 character_id,
+                encounter_id,
                 choice,
+                expected_revision,
+                action_id,
 }             => __sats::bsatn::to_vec(&resolve_strategic_encounter_reducer::ResolveStrategicEncounterArgs {
                 character_id: character_id.clone(),
+                encounter_id: encounter_id.clone(),
                 choice: choice.clone(),
+                expected_revision: expected_revision.clone(),
+                action_id: action_id.clone(),
 }),
             Reducer::RestAtCamp{
                 character_id,
@@ -3155,6 +4201,13 @@ Reducer::BeginWorldDataImport{
                 character_id: character_id.clone(),
                 requested_minutes: requested_minutes.clone(),
                 shelter: shelter.clone(),
+}),
+            Reducer::RestAtResidenceHours{
+                character_id,
+                requested_minutes,
+}             => __sats::bsatn::to_vec(&rest_at_residence_hours_reducer::RestAtResidenceHoursArgs {
+                character_id: character_id.clone(),
+                requested_minutes: requested_minutes.clone(),
 }),
             Reducer::RestAtSettlement{
                 character_id,
@@ -3173,6 +4226,24 @@ Reducer::BeginWorldDataImport{
                 character_id: character_id.clone(),
                 requested_minutes: requested_minutes.clone(),
                 at_inn: at_inn.clone(),
+}),
+            Reducer::RetrieveFireplaceContainer{
+                character_id,
+                fireplace_fixture_id,
+                container_object_id,
+}             => __sats::bsatn::to_vec(&retrieve_fireplace_container_reducer::RetrieveFireplaceContainerArgs {
+                character_id: character_id.clone(),
+                fireplace_fixture_id: fireplace_fixture_id.clone(),
+                container_object_id: container_object_id.clone(),
+}),
+            Reducer::RetrieveFireplaceDish{
+                character_id,
+                fireplace_fixture_id,
+                inventory_scope,
+}             => __sats::bsatn::to_vec(&retrieve_fireplace_dish_reducer::RetrieveFireplaceDishArgs {
+                character_id: character_id.clone(),
+                fireplace_fixture_id: fireplace_fixture_id.clone(),
+                inventory_scope: inventory_scope.clone(),
 }),
             Reducer::RetrieveRepairedItem{
                 character_id,
@@ -3210,12 +4281,30 @@ Reducer::BeginWorldDataImport{
                 requirements: requirements.clone(),
                 weapon_precision: weapon_precision.clone(),
 }),
+            Reducer::ScheduleWedding{
+                first_character_id,
+                second_character_id,
+}             => __sats::bsatn::to_vec(&schedule_wedding_reducer::ScheduleWeddingArgs {
+                first_character_id: first_character_id.clone(),
+                second_character_id: second_character_id.clone(),
+}),
+            Reducer::SeedNpcPolicyForDevelopment{
+                character_id,
+                home_settlement_id,
+                policy_seed,
+}             => __sats::bsatn::to_vec(&seed_npc_policy_for_development_reducer::SeedNpcPolicyForDevelopmentArgs {
+                character_id: character_id.clone(),
+                home_settlement_id: home_settlement_id.clone(),
+                policy_seed: policy_seed.clone(),
+}),
             Reducer::SeedSimulationDisease{
                 nonce,
                 character_id,
+                disease_id,
 }             => __sats::bsatn::to_vec(&seed_simulation_disease_reducer::SeedSimulationDiseaseArgs {
                 nonce: nonce.clone(),
                 character_id: character_id.clone(),
+                disease_id: disease_id.clone(),
 }),
             Reducer::SeedSimulationEquipmentDamage{
                 nonce,
@@ -3225,6 +4314,15 @@ Reducer::BeginWorldDataImport{
                 nonce: nonce.clone(),
                 character_id: character_id.clone(),
                 inventory_item_id: inventory_item_id.clone(),
+}),
+            Reducer::SeedSimulationQuestFixture{
+                nonce,
+                direct_leader_id,
+                generated_leader_id,
+}             => __sats::bsatn::to_vec(&seed_simulation_quest_fixture_reducer::SeedSimulationQuestFixtureArgs {
+                nonce: nonce.clone(),
+                direct_leader_id: direct_leader_id.clone(),
+                generated_leader_id: generated_leader_id.clone(),
 }),
             Reducer::SeedSimulationWorld{
                 nonce,
@@ -3245,6 +4343,13 @@ Reducer::BeginWorldDataImport{
                 scene_key: scene_key.clone(),
                 required_enemy_kills: required_enemy_kills.clone(),
                 tactical_claim: tactical_claim.clone(),
+}),
+            Reducer::SelectBrowserCharacter{
+                owner_key,
+                character_id,
+}             => __sats::bsatn::to_vec(&select_browser_character_reducer::SelectBrowserCharacterArgs {
+                owner_key: owner_key.clone(),
+                character_id: character_id.clone(),
 }),
             Reducer::SendLocalChatMessage{
                 sender_id,
@@ -3274,6 +4379,17 @@ Reducer::BeginWorldDataImport{
 }             => __sats::bsatn::to_vec(&set_character_religion_reducer::SetCharacterReligionArgs {
                 character_id: character_id.clone(),
                 religion_id: religion_id.clone(),
+}),
+            Reducer::SetFireplaceInstrument{
+                character_id,
+                fireplace_fixture_id,
+                inventory_scope,
+                inventory_item_id,
+}             => __sats::bsatn::to_vec(&set_fireplace_instrument_reducer::SetFireplaceInstrumentArgs {
+                character_id: character_id.clone(),
+                fireplace_fixture_id: fireplace_fixture_id.clone(),
+                inventory_scope: inventory_scope.clone(),
+                inventory_item_id: inventory_item_id.clone(),
 }),
             Reducer::SetInventoryQuantityTarget{
                 character_id,
@@ -3346,14 +4462,14 @@ Reducer::BeginWorldDataImport{
                 definition_json: definition_json.clone(),
                 allow_implausible: allow_implausible.clone(),
 }),
-            Reducer::SpendTimeWithSettlementNpc{
+            Reducer::SpendTimeWithSettlementResident{
                 actor_id,
-                npc_id,
+                resident_character_id,
                 requested_minutes,
                 action_id,
-}             => __sats::bsatn::to_vec(&spend_time_with_settlement_npc_reducer::SpendTimeWithSettlementNpcArgs {
+}             => __sats::bsatn::to_vec(&spend_time_with_settlement_resident_reducer::SpendTimeWithSettlementResidentArgs {
                 actor_id: actor_id.clone(),
-                npc_id: npc_id.clone(),
+                resident_character_id: resident_character_id.clone(),
                 requested_minutes: requested_minutes.clone(),
                 action_id: action_id.clone(),
 }),
@@ -3412,6 +4528,22 @@ Reducer::BeginWorldDataImport{
                 location_id: location_id.clone(),
                 catalog_revision: catalog_revision.clone(),
 }),
+            Reducer::StartFireplaceContainerCooking{
+                character_id,
+                fireplace_fixture_id,
+                container_object_id,
+}             => __sats::bsatn::to_vec(&start_fireplace_container_cooking_reducer::StartFireplaceContainerCookingArgs {
+                character_id: character_id.clone(),
+                fireplace_fixture_id: fireplace_fixture_id.clone(),
+                container_object_id: container_object_id.clone(),
+}),
+            Reducer::StartPoppyTincture{
+                character_id,
+                object_id,
+}             => __sats::bsatn::to_vec(&start_poppy_tincture_reducer::StartPoppyTinctureArgs {
+                character_id: character_id.clone(),
+                object_id: object_id.clone(),
+}),
             Reducer::StopPreparation{
                 actor_id,
                 administration_id,
@@ -3450,17 +4582,40 @@ Reducer::BeginWorldDataImport{
                 service: service.clone(),
                 inventory_item_id: inventory_item_id.clone(),
 }),
+            Reducer::SubmitPuzzleChallenge{
+                character_id,
+                case_id,
+                challenge_id,
+                expected_revision,
+                submission_json,
+}             => __sats::bsatn::to_vec(&submit_puzzle_challenge_reducer::SubmitPuzzleChallengeArgs {
+                character_id: character_id.clone(),
+                case_id: case_id.clone(),
+                challenge_id: challenge_id.clone(),
+                expected_revision: expected_revision.clone(),
+                submission_json: submission_json.clone(),
+}),
             Reducer::SurrenderToAuthority{
                 character_id,
-                incident_id,
+                action_token,
 }             => __sats::bsatn::to_vec(&surrender_to_authority_reducer::SurrenderToAuthorityArgs {
                 character_id: character_id.clone(),
-                incident_id: incident_id.clone(),
+                action_token: action_token.clone(),
+}),
+            Reducer::SyncDevelopmentClockToCharacter{
+                character_id,
+}             => __sats::bsatn::to_vec(&sync_development_clock_to_character_reducer::SyncDevelopmentClockToCharacterArgs {
+                character_id: character_id.clone(),
 }),
             Reducer::SynchronizeCharacterTime{
                 character_id,
 }             => __sats::bsatn::to_vec(&synchronize_character_time_reducer::SynchronizeCharacterTimeArgs {
                 character_id: character_id.clone(),
+}),
+            Reducer::SynchronizePartyForActivity{
+                leader_id,
+}             => __sats::bsatn::to_vec(&synchronize_party_for_activity_reducer::SynchronizePartyForActivityArgs {
+                leader_id: leader_id.clone(),
 }),
             Reducer::TrackCaseSite{
                 character_id,
@@ -3519,6 +4674,9 @@ Reducer::BeginWorldDataImport{
                 procedure,
                 projectile_id,
                 use_soap,
+                action_id,
+                context_ref,
+                expected_membership_revision,
 }             => __sats::bsatn::to_vec(&treat_limb_reducer::TreatLimbArgs {
                 actor_id: actor_id.clone(),
                 patient_id: patient_id.clone(),
@@ -3526,6 +4684,18 @@ Reducer::BeginWorldDataImport{
                 procedure: procedure.clone(),
                 projectile_id: projectile_id.clone(),
                 use_soap: use_soap.clone(),
+                action_id: action_id.clone(),
+                context_ref: context_ref.clone(),
+                expected_membership_revision: expected_membership_revision.clone(),
+}),
+            Reducer::TriggerDevelopmentScenarioIncident{
+                scenario_slug,
+                problem_id,
+                request_id,
+}             => __sats::bsatn::to_vec(&trigger_development_scenario_incident_reducer::TriggerDevelopmentScenarioIncidentArgs {
+                scenario_slug: scenario_slug.clone(),
+                problem_id: problem_id.clone(),
+                request_id: request_id.clone(),
 }),
             Reducer::UpdateCharacter{
                 id,
@@ -3563,11 +4733,9 @@ Reducer::BeginWorldDataImport{
             Reducer::UpdateTrainingSchedule{
                 character_id,
                 downtime,
-                travel,
 }             => __sats::bsatn::to_vec(&update_training_schedule_reducer::UpdateTrainingScheduleArgs {
                 character_id: character_id.clone(),
                 downtime: downtime.clone(),
-                travel: travel.clone(),
 }),
             Reducer::UpgradeManualSurgery => __sats::bsatn::to_vec(&upgrade_manual_surgery_reducer::UpgradeManualSurgeryArgs {
                 }),
@@ -3598,24 +4766,55 @@ Reducer::VoteForPartyLeader{
 pub struct DbUpdate {
     alcohol_consumption: __sdk::TableUpdate<AlcoholConsumption>,
     autoresolve_report: __sdk::TableUpdate<AutoresolveReport>,
+    backend_authority_arrest_actions: __sdk::TableUpdate<BackendAuthorityArrestAction>,
     backend_automatic_social_chats: __sdk::TableUpdate<AutomaticSocialChat>,
     backend_bestiary_deductions: __sdk::TableUpdate<BackendBestiaryDeduction>,
+    backend_browser_character_access: __sdk::TableUpdate<BackendBrowserCharacterAccess>,
     backend_case_battles: __sdk::TableUpdate<BackendCaseBattle>,
     backend_case_site_pins: __sdk::TableUpdate<BackendCaseSitePin>,
+    backend_challenges: __sdk::TableUpdate<BackendChallenge>,
     backend_character_affinities: __sdk::TableUpdate<CharacterAffinity>,
+    backend_character_attributes: __sdk::TableUpdate<CharacterAttributes>,
+    backend_character_capabilities: __sdk::TableUpdate<CharacterCapability>,
     backend_character_case_site_locations: __sdk::TableUpdate<BackendCharacterCaseSiteLocation>,
+    backend_character_conditions: __sdk::TableUpdate<CharacterCondition>,
+    backend_character_deaths: __sdk::TableUpdate<CharacterDeath>,
+    backend_character_exposures: __sdk::TableUpdate<CharacterExposure>,
     backend_character_familiarities: __sdk::TableUpdate<CharacterFamiliarity>,
+    backend_character_limbs: __sdk::TableUpdate<CharacterLimbs>,
+    backend_character_morale_sources: __sdk::TableUpdate<CharacterMoraleSource>,
+    backend_character_needs: __sdk::TableUpdate<CharacterNeeds>,
     backend_character_personalities: __sdk::TableUpdate<CharacterPersonality>,
+    backend_character_relationship_statuses: __sdk::TableUpdate<BackendCharacterRelationshipStatus>,
+    backend_character_residence_statuses: __sdk::TableUpdate<BackendCharacterResidenceStatus>,
+    backend_character_skills: __sdk::TableUpdate<CharacterSkills>,
+    backend_character_stats: __sdk::TableUpdate<CharacterStats>,
+    backend_character_strategic_conditions: __sdk::TableUpdate<CharacterStrategicCondition>,
+    backend_character_times: __sdk::TableUpdate<CharacterTime>,
+    backend_character_training_schedules: __sdk::TableUpdate<CharacterTrainingSchedule>,
+    backend_characters: __sdk::TableUpdate<Character>,
     backend_committed_cuts: __sdk::TableUpdate<CommittedCut>,
+    backend_context_characters: __sdk::TableUpdate<BackendContextCharacter>,
     backend_contracts: __sdk::TableUpdate<BackendContract>,
     backend_corpses: __sdk::TableUpdate<BackendCorpse>,
+    backend_courtship_discoveries: __sdk::TableUpdate<BackendCourtshipDiscoveryStatus>,
+    backend_development_quests: __sdk::TableUpdate<BackendDevelopmentQuest>,
+    backend_development_scenarios: __sdk::TableUpdate<BackendDevelopmentScenario>,
     backend_dialogue_events: __sdk::TableUpdate<BackendDialogueEvent>,
     backend_dialogue_participants: __sdk::TableUpdate<BackendDialogueParticipant>,
     backend_dialogue_prompts: __sdk::TableUpdate<BackendDialoguePrompt>,
     backend_dialogue_sessions: __sdk::TableUpdate<BackendDialogueSession>,
     backend_dialogue_topic_options: __sdk::TableUpdate<BackendDialogueTopicOption>,
     backend_dialogue_witness_claims: __sdk::TableUpdate<BackendDialogueWitnessClaim>,
+    backend_estate_dispositions: __sdk::TableUpdate<BackendEstateDisposition>,
+    backend_family_children: __sdk::TableUpdate<BackendFamilyChild>,
+    backend_fireplace_dishes: __sdk::TableUpdate<BackendFireplaceDish>,
+    backend_fireplace_stations: __sdk::TableUpdate<BackendFireplaceStation>,
+    backend_forage_attempt_states: __sdk::TableUpdate<BackendForageAttemptState>,
     backend_forage_receipts: __sdk::TableUpdate<BackendForageReceipt>,
+    backend_hostile_negotiations: __sdk::TableUpdate<BackendHostileNegotiation>,
+    backend_hostile_surrenders: __sdk::TableUpdate<BackendHostileSurrender>,
+    backend_ingredient_preparation_plans: __sdk::TableUpdate<BackendIngredientPreparationPlan>,
     backend_investigation_action_outcomes: __sdk::TableUpdate<BackendInvestigationActionOutcome>,
     backend_investigation_actions: __sdk::TableUpdate<BackendInvestigationAction>,
     backend_investigation_cases: __sdk::TableUpdate<BackendInvestigationCaseSummary>,
@@ -3624,49 +4823,40 @@ pub struct DbUpdate {
     backend_local_chat_messages: __sdk::TableUpdate<BackendLocalChatMessage>,
     backend_local_problem_rumors: __sdk::TableUpdate<BackendLocalProblemRumor>,
     backend_local_problem_trade_effects: __sdk::TableUpdate<BackendLocalProblemTradeEffect>,
-    backend_outbreak_patients: __sdk::TableUpdate<BackendOutbreakPatient>,
+    backend_organization_memberships: __sdk::TableUpdate<BackendOrganizationMembership>,
     backend_physical_evidence: __sdk::TableUpdate<BackendPhysicalEvidence>,
     backend_physical_evidence_inspections: __sdk::TableUpdate<BackendPhysicalEvidenceInspection>,
     backend_physiology_administrations: __sdk::TableUpdate<BackendPhysiologyAdministration>,
     backend_physiology_charts: __sdk::TableUpdate<BackendPhysiologyChart>,
-    backend_settlement_npc_relationships: __sdk::TableUpdate<BackendSettlementNpcRelationship>,
-    backend_settlement_npcs: __sdk::TableUpdate<BackendSettlementNpc>,
+    backend_road_challenges: __sdk::TableUpdate<BackendRoadChallenge>,
+    backend_settlement_resident_relationships:
+        __sdk::TableUpdate<BackendSettlementResidentRelationship>,
+    backend_settlement_residents: __sdk::TableUpdate<BackendSettlementResident>,
     backend_social_addresses: __sdk::TableUpdate<SocialAddress>,
     backend_social_beliefs: __sdk::TableUpdate<SocialBelief>,
     backend_social_chat_receipts: __sdk::TableUpdate<BackendSocialChatReceipt>,
+    backend_tincture_statuses: __sdk::TableUpdate<BackendTinctureStatus>,
     battle_loot_item: __sdk::TableUpdate<BattleLootItem>,
     battle_participant: __sdk::TableUpdate<BattleParticipant>,
     battle_result: __sdk::TableUpdate<BattleResult>,
-    character: __sdk::TableUpdate<Character>,
-    character_attributes: __sdk::TableUpdate<CharacterAttributes>,
-    character_capability: __sdk::TableUpdate<CharacterCapability>,
-    character_condition: __sdk::TableUpdate<CharacterCondition>,
-    character_death: __sdk::TableUpdate<CharacterDeath>,
     character_equipped_item: __sdk::TableUpdate<CharacterEquippedItem>,
-    character_exposure: __sdk::TableUpdate<CharacterExposure>,
     character_filth: __sdk::TableUpdate<CharacterFilth>,
     character_illness_status: __sdk::TableUpdate<CharacterIllnessStatus>,
-    character_limbs: __sdk::TableUpdate<CharacterLimbs>,
-    character_morale_source: __sdk::TableUpdate<CharacterMoraleSource>,
-    character_needs: __sdk::TableUpdate<CharacterNeeds>,
     character_settlement_reputation: __sdk::TableUpdate<CharacterSettlementReputation>,
-    character_skills: __sdk::TableUpdate<CharacterSkills>,
-    character_stats: __sdk::TableUpdate<CharacterStats>,
-    character_strategic_condition: __sdk::TableUpdate<CharacterStrategicCondition>,
-    character_time: __sdk::TableUpdate<CharacterTime>,
-    character_training_schedule: __sdk::TableUpdate<CharacterTrainingSchedule>,
     connected_players: __sdk::TableUpdate<ConnectedPlayer>,
+    container_liquid: __sdk::TableUpdate<ContainerLiquid>,
     equipment_occupancy: __sdk::TableUpdate<EquipmentOccupancy>,
     food_lot: __sdk::TableUpdate<FoodLot>,
+    inventory_containment: __sdk::TableUpdate<InventoryContainment>,
     inventory_item: __sdk::TableUpdate<InventoryItem>,
     inventory_item_amount: __sdk::TableUpdate<InventoryItemAmount>,
+    inventory_object: __sdk::TableUpdate<InventoryObject>,
     inventory_quantity_target: __sdk::TableUpdate<InventoryQuantityTarget>,
     item: __sdk::TableUpdate<Item>,
     item_condition: __sdk::TableUpdate<ItemCondition>,
     limb_injury: __sdk::TableUpdate<LimbInjury>,
     local_problem_symptom: __sdk::TableUpdate<LocalProblemSymptom>,
     morale_event: __sdk::TableUpdate<MoraleEvent>,
-    organization_membership: __sdk::TableUpdate<OrganizationMembership>,
     organization_presentation: __sdk::TableUpdate<OrganizationPresentation>,
     party: __sdk::TableUpdate<Party>,
     party_action_request: __sdk::TableUpdate<PartyActionRequest>,
@@ -3690,12 +4880,13 @@ pub struct DbUpdate {
     settlement: __sdk::TableUpdate<Settlement>,
     settlement_alias: __sdk::TableUpdate<SettlementAlias>,
     settlement_description: __sdk::TableUpdate<SettlementDescription>,
-    settlement_npc_presence: __sdk::TableUpdate<SettlementNpcPresence>,
     settlement_outbreak: __sdk::TableUpdate<SettlementOutbreak>,
+    settlement_residence_offer: __sdk::TableUpdate<SettlementResidenceOffer>,
+    settlement_resident_presence: __sdk::TableUpdate<SettlementResidentPresence>,
     settlement_smith: __sdk::TableUpdate<SettlementSmith>,
     simulation_character: __sdk::TableUpdate<SimulationCharacter>,
+    simulation_quest_fixture: __sdk::TableUpdate<SimulationQuestFixture>,
     simulation_run: __sdk::TableUpdate<SimulationRun>,
-    starting_character_claim: __sdk::TableUpdate<StartingCharacterClaim>,
     strategic_encounter: __sdk::TableUpdate<StrategicEncounter>,
     strategic_gateway_authority: __sdk::TableUpdate<StrategicGatewayAuthority>,
     tactical_server: __sdk::TableUpdate<TacticalServer>,
@@ -3718,6 +4909,11 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(autoresolve_report_table::parse_table_update(table_update)?),
+                "backend_authority_arrest_actions" => {
+                    db_update.backend_authority_arrest_actions.append(
+                        backend_authority_arrest_actions_table::parse_table_update(table_update)?,
+                    )
+                }
                 "backend_automatic_social_chats" => {
                     db_update.backend_automatic_social_chats.append(
                         backend_automatic_social_chats_table::parse_table_update(table_update)?,
@@ -3726,15 +4922,31 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_bestiary_deductions" => db_update.backend_bestiary_deductions.append(
                     backend_bestiary_deductions_table::parse_table_update(table_update)?,
                 ),
+                "backend_browser_character_access" => {
+                    db_update.backend_browser_character_access.append(
+                        backend_browser_character_access_table::parse_table_update(table_update)?,
+                    )
+                }
                 "backend_case_battles" => db_update.backend_case_battles.append(
                     backend_case_battles_table::parse_table_update(table_update)?,
                 ),
                 "backend_case_site_pins" => db_update.backend_case_site_pins.append(
                     backend_case_site_pins_table::parse_table_update(table_update)?,
                 ),
+                "backend_challenges" => db_update
+                    .backend_challenges
+                    .append(backend_challenges_table::parse_table_update(table_update)?),
                 "backend_character_affinities" => db_update.backend_character_affinities.append(
                     backend_character_affinities_table::parse_table_update(table_update)?,
                 ),
+                "backend_character_attributes" => db_update.backend_character_attributes.append(
+                    backend_character_attributes_table::parse_table_update(table_update)?,
+                ),
+                "backend_character_capabilities" => {
+                    db_update.backend_character_capabilities.append(
+                        backend_character_capabilities_table::parse_table_update(table_update)?,
+                    )
+                }
                 "backend_character_case_site_locations" => {
                     db_update.backend_character_case_site_locations.append(
                         backend_character_case_site_locations_table::parse_table_update(
@@ -3742,18 +4954,81 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                         )?,
                     )
                 }
+                "backend_character_conditions" => db_update.backend_character_conditions.append(
+                    backend_character_conditions_table::parse_table_update(table_update)?,
+                ),
+                "backend_character_deaths" => db_update.backend_character_deaths.append(
+                    backend_character_deaths_table::parse_table_update(table_update)?,
+                ),
+                "backend_character_exposures" => db_update.backend_character_exposures.append(
+                    backend_character_exposures_table::parse_table_update(table_update)?,
+                ),
                 "backend_character_familiarities" => {
                     db_update.backend_character_familiarities.append(
                         backend_character_familiarities_table::parse_table_update(table_update)?,
                     )
                 }
+                "backend_character_limbs" => db_update.backend_character_limbs.append(
+                    backend_character_limbs_table::parse_table_update(table_update)?,
+                ),
+                "backend_character_morale_sources" => {
+                    db_update.backend_character_morale_sources.append(
+                        backend_character_morale_sources_table::parse_table_update(table_update)?,
+                    )
+                }
+                "backend_character_needs" => db_update.backend_character_needs.append(
+                    backend_character_needs_table::parse_table_update(table_update)?,
+                ),
                 "backend_character_personalities" => {
                     db_update.backend_character_personalities.append(
                         backend_character_personalities_table::parse_table_update(table_update)?,
                     )
                 }
+                "backend_character_relationship_statuses" => {
+                    db_update.backend_character_relationship_statuses.append(
+                        backend_character_relationship_statuses_table::parse_table_update(
+                            table_update,
+                        )?,
+                    )
+                }
+                "backend_character_residence_statuses" => {
+                    db_update.backend_character_residence_statuses.append(
+                        backend_character_residence_statuses_table::parse_table_update(
+                            table_update,
+                        )?,
+                    )
+                }
+                "backend_character_skills" => db_update.backend_character_skills.append(
+                    backend_character_skills_table::parse_table_update(table_update)?,
+                ),
+                "backend_character_stats" => db_update.backend_character_stats.append(
+                    backend_character_stats_table::parse_table_update(table_update)?,
+                ),
+                "backend_character_strategic_conditions" => {
+                    db_update.backend_character_strategic_conditions.append(
+                        backend_character_strategic_conditions_table::parse_table_update(
+                            table_update,
+                        )?,
+                    )
+                }
+                "backend_character_times" => db_update.backend_character_times.append(
+                    backend_character_times_table::parse_table_update(table_update)?,
+                ),
+                "backend_character_training_schedules" => {
+                    db_update.backend_character_training_schedules.append(
+                        backend_character_training_schedules_table::parse_table_update(
+                            table_update,
+                        )?,
+                    )
+                }
+                "backend_characters" => db_update
+                    .backend_characters
+                    .append(backend_characters_table::parse_table_update(table_update)?),
                 "backend_committed_cuts" => db_update.backend_committed_cuts.append(
                     backend_committed_cuts_table::parse_table_update(table_update)?,
+                ),
+                "backend_context_characters" => db_update.backend_context_characters.append(
+                    backend_context_characters_table::parse_table_update(table_update)?,
                 ),
                 "backend_contracts" => db_update
                     .backend_contracts
@@ -3761,6 +5036,15 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_corpses" => db_update
                     .backend_corpses
                     .append(backend_corpses_table::parse_table_update(table_update)?),
+                "backend_courtship_discoveries" => db_update.backend_courtship_discoveries.append(
+                    backend_courtship_discoveries_table::parse_table_update(table_update)?,
+                ),
+                "backend_development_quests" => db_update.backend_development_quests.append(
+                    backend_development_quests_table::parse_table_update(table_update)?,
+                ),
+                "backend_development_scenarios" => db_update.backend_development_scenarios.append(
+                    backend_development_scenarios_table::parse_table_update(table_update)?,
+                ),
                 "backend_dialogue_events" => db_update.backend_dialogue_events.append(
                     backend_dialogue_events_table::parse_table_update(table_update)?,
                 ),
@@ -3783,9 +5067,37 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                         backend_dialogue_witness_claims_table::parse_table_update(table_update)?,
                     )
                 }
+                "backend_estate_dispositions" => db_update.backend_estate_dispositions.append(
+                    backend_estate_dispositions_table::parse_table_update(table_update)?,
+                ),
+                "backend_family_children" => db_update.backend_family_children.append(
+                    backend_family_children_table::parse_table_update(table_update)?,
+                ),
+                "backend_fireplace_dishes" => db_update.backend_fireplace_dishes.append(
+                    backend_fireplace_dishes_table::parse_table_update(table_update)?,
+                ),
+                "backend_fireplace_stations" => db_update.backend_fireplace_stations.append(
+                    backend_fireplace_stations_table::parse_table_update(table_update)?,
+                ),
+                "backend_forage_attempt_states" => db_update.backend_forage_attempt_states.append(
+                    backend_forage_attempt_states_table::parse_table_update(table_update)?,
+                ),
                 "backend_forage_receipts" => db_update.backend_forage_receipts.append(
                     backend_forage_receipts_table::parse_table_update(table_update)?,
                 ),
+                "backend_hostile_negotiations" => db_update.backend_hostile_negotiations.append(
+                    backend_hostile_negotiations_table::parse_table_update(table_update)?,
+                ),
+                "backend_hostile_surrenders" => db_update.backend_hostile_surrenders.append(
+                    backend_hostile_surrenders_table::parse_table_update(table_update)?,
+                ),
+                "backend_ingredient_preparation_plans" => {
+                    db_update.backend_ingredient_preparation_plans.append(
+                        backend_ingredient_preparation_plans_table::parse_table_update(
+                            table_update,
+                        )?,
+                    )
+                }
                 "backend_investigation_action_outcomes" => {
                     db_update.backend_investigation_action_outcomes.append(
                         backend_investigation_action_outcomes_table::parse_table_update(
@@ -3818,9 +5130,11 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                         )?,
                     )
                 }
-                "backend_outbreak_patients" => db_update.backend_outbreak_patients.append(
-                    backend_outbreak_patients_table::parse_table_update(table_update)?,
-                ),
+                "backend_organization_memberships" => {
+                    db_update.backend_organization_memberships.append(
+                        backend_organization_memberships_table::parse_table_update(table_update)?,
+                    )
+                }
                 "backend_physical_evidence" => db_update.backend_physical_evidence.append(
                     backend_physical_evidence_table::parse_table_update(table_update)?,
                 ),
@@ -3839,15 +5153,18 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_physiology_charts" => db_update.backend_physiology_charts.append(
                     backend_physiology_charts_table::parse_table_update(table_update)?,
                 ),
-                "backend_settlement_npc_relationships" => {
-                    db_update.backend_settlement_npc_relationships.append(
-                        backend_settlement_npc_relationships_table::parse_table_update(
+                "backend_road_challenges" => db_update.backend_road_challenges.append(
+                    backend_road_challenges_table::parse_table_update(table_update)?,
+                ),
+                "backend_settlement_resident_relationships" => {
+                    db_update.backend_settlement_resident_relationships.append(
+                        backend_settlement_resident_relationships_table::parse_table_update(
                             table_update,
                         )?,
                     )
                 }
-                "backend_settlement_npcs" => db_update.backend_settlement_npcs.append(
-                    backend_settlement_npcs_table::parse_table_update(table_update)?,
+                "backend_settlement_residents" => db_update.backend_settlement_residents.append(
+                    backend_settlement_residents_table::parse_table_update(table_update)?,
                 ),
                 "backend_social_addresses" => db_update.backend_social_addresses.append(
                     backend_social_addresses_table::parse_table_update(table_update)?,
@@ -3858,6 +5175,9 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "backend_social_chat_receipts" => db_update.backend_social_chat_receipts.append(
                     backend_social_chat_receipts_table::parse_table_update(table_update)?,
                 ),
+                "backend_tincture_statuses" => db_update.backend_tincture_statuses.append(
+                    backend_tincture_statuses_table::parse_table_update(table_update)?,
+                ),
                 "battle_loot_item" => db_update
                     .battle_loot_item
                     .append(battle_loot_item_table::parse_table_update(table_update)?),
@@ -3867,77 +5187,44 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "battle_result" => db_update
                     .battle_result
                     .append(battle_result_table::parse_table_update(table_update)?),
-                "character" => db_update
-                    .character
-                    .append(character_table::parse_table_update(table_update)?),
-                "character_attributes" => db_update.character_attributes.append(
-                    character_attributes_table::parse_table_update(table_update)?,
-                ),
-                "character_capability" => db_update.character_capability.append(
-                    character_capability_table::parse_table_update(table_update)?,
-                ),
-                "character_condition" => db_update
-                    .character_condition
-                    .append(character_condition_table::parse_table_update(table_update)?),
-                "character_death" => db_update
-                    .character_death
-                    .append(character_death_table::parse_table_update(table_update)?),
                 "character_equipped_item" => db_update.character_equipped_item.append(
                     character_equipped_item_table::parse_table_update(table_update)?,
                 ),
-                "character_exposure" => db_update
-                    .character_exposure
-                    .append(character_exposure_table::parse_table_update(table_update)?),
                 "character_filth" => db_update
                     .character_filth
                     .append(character_filth_table::parse_table_update(table_update)?),
                 "character_illness_status" => db_update.character_illness_status.append(
                     character_illness_status_table::parse_table_update(table_update)?,
                 ),
-                "character_limbs" => db_update
-                    .character_limbs
-                    .append(character_limbs_table::parse_table_update(table_update)?),
-                "character_morale_source" => db_update.character_morale_source.append(
-                    character_morale_source_table::parse_table_update(table_update)?,
-                ),
-                "character_needs" => db_update
-                    .character_needs
-                    .append(character_needs_table::parse_table_update(table_update)?),
                 "character_settlement_reputation" => {
                     db_update.character_settlement_reputation.append(
                         character_settlement_reputation_table::parse_table_update(table_update)?,
                     )
                 }
-                "character_skills" => db_update
-                    .character_skills
-                    .append(character_skills_table::parse_table_update(table_update)?),
-                "character_stats" => db_update
-                    .character_stats
-                    .append(character_stats_table::parse_table_update(table_update)?),
-                "character_strategic_condition" => db_update.character_strategic_condition.append(
-                    character_strategic_condition_table::parse_table_update(table_update)?,
-                ),
-                "character_time" => db_update
-                    .character_time
-                    .append(character_time_table::parse_table_update(table_update)?),
-                "character_training_schedule" => db_update.character_training_schedule.append(
-                    character_training_schedule_table::parse_table_update(table_update)?,
-                ),
                 "connected_players" => db_update
                     .connected_players
                     .append(connected_players_table::parse_table_update(table_update)?),
+                "container_liquid" => db_update
+                    .container_liquid
+                    .append(container_liquid_table::parse_table_update(table_update)?),
                 "equipment_occupancy" => db_update
                     .equipment_occupancy
                     .append(equipment_occupancy_table::parse_table_update(table_update)?),
                 "food_lot" => db_update
                     .food_lot
                     .append(food_lot_table::parse_table_update(table_update)?),
+                "inventory_containment" => db_update.inventory_containment.append(
+                    inventory_containment_table::parse_table_update(table_update)?,
+                ),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(inventory_item_table::parse_table_update(table_update)?),
                 "inventory_item_amount" => db_update.inventory_item_amount.append(
                     inventory_item_amount_table::parse_table_update(table_update)?,
                 ),
+                "inventory_object" => db_update
+                    .inventory_object
+                    .append(inventory_object_table::parse_table_update(table_update)?),
                 "inventory_quantity_target" => db_update.inventory_quantity_target.append(
                     inventory_quantity_target_table::parse_table_update(table_update)?,
                 ),
@@ -3956,9 +5243,6 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "morale_event" => db_update
                     .morale_event
                     .append(morale_event_table::parse_table_update(table_update)?),
-                "organization_membership" => db_update.organization_membership.append(
-                    organization_membership_table::parse_table_update(table_update)?,
-                ),
                 "organization_presentation" => db_update.organization_presentation.append(
                     organization_presentation_table::parse_table_update(table_update)?,
                 ),
@@ -4028,24 +5312,27 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
                 "settlement_description" => db_update.settlement_description.append(
                     settlement_description_table::parse_table_update(table_update)?,
                 ),
-                "settlement_npc_presence" => db_update.settlement_npc_presence.append(
-                    settlement_npc_presence_table::parse_table_update(table_update)?,
-                ),
                 "settlement_outbreak" => db_update
                     .settlement_outbreak
                     .append(settlement_outbreak_table::parse_table_update(table_update)?),
+                "settlement_residence_offer" => db_update.settlement_residence_offer.append(
+                    settlement_residence_offer_table::parse_table_update(table_update)?,
+                ),
+                "settlement_resident_presence" => db_update.settlement_resident_presence.append(
+                    settlement_resident_presence_table::parse_table_update(table_update)?,
+                ),
                 "settlement_smith" => db_update
                     .settlement_smith
                     .append(settlement_smith_table::parse_table_update(table_update)?),
                 "simulation_character" => db_update.simulation_character.append(
                     simulation_character_table::parse_table_update(table_update)?,
                 ),
+                "simulation_quest_fixture" => db_update.simulation_quest_fixture.append(
+                    simulation_quest_fixture_table::parse_table_update(table_update)?,
+                ),
                 "simulation_run" => db_update
                     .simulation_run
                     .append(simulation_run_table::parse_table_update(table_update)?),
-                "starting_character_claim" => db_update.starting_character_claim.append(
-                    starting_character_claim_table::parse_table_update(table_update)?,
-                ),
                 "strategic_encounter" => db_update
                     .strategic_encounter
                     .append(strategic_encounter_table::parse_table_update(table_update)?),
@@ -4120,42 +5407,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.battle_result = cache
             .apply_diff_to_table::<BattleResult>("battle_result", &self.battle_result)
             .with_updates_by_pk(|row| &row.battle_id);
-        diff.character = cache
-            .apply_diff_to_table::<Character>("character", &self.character)
-            .with_updates_by_pk(|row| &row.id);
-        diff.character_attributes = cache
-            .apply_diff_to_table::<CharacterAttributes>(
-                "character_attributes",
-                &self.character_attributes,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_capability = cache
-            .apply_diff_to_table::<CharacterCapability>(
-                "character_capability",
-                &self.character_capability,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_condition = cache
-            .apply_diff_to_table::<CharacterCondition>(
-                "character_condition",
-                &self.character_condition,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_death = cache
-            .apply_diff_to_table::<CharacterDeath>("character_death", &self.character_death)
-            .with_updates_by_pk(|row| &row.character_id);
         diff.character_equipped_item = cache
             .apply_diff_to_table::<CharacterEquippedItem>(
                 "character_equipped_item",
                 &self.character_equipped_item,
             )
             .with_updates_by_pk(|row| &row.inventory_item_id);
-        diff.character_exposure = cache
-            .apply_diff_to_table::<CharacterExposure>(
-                "character_exposure",
-                &self.character_exposure,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
         diff.character_filth = cache
             .apply_diff_to_table::<CharacterFilth>("character_filth", &self.character_filth)
             .with_updates_by_pk(|row| &row.id);
@@ -4165,45 +5422,15 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.character_illness_status,
             )
             .with_updates_by_pk(|row| &row.character_id);
-        diff.character_limbs = cache
-            .apply_diff_to_table::<CharacterLimbs>("character_limbs", &self.character_limbs)
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_morale_source = cache
-            .apply_diff_to_table::<CharacterMoraleSource>(
-                "character_morale_source",
-                &self.character_morale_source,
-            )
-            .with_updates_by_pk(|row| &row.id);
-        diff.character_needs = cache
-            .apply_diff_to_table::<CharacterNeeds>("character_needs", &self.character_needs)
-            .with_updates_by_pk(|row| &row.character_id);
         diff.character_settlement_reputation = cache
             .apply_diff_to_table::<CharacterSettlementReputation>(
                 "character_settlement_reputation",
                 &self.character_settlement_reputation,
             )
             .with_updates_by_pk(|row| &row.id);
-        diff.character_skills = cache
-            .apply_diff_to_table::<CharacterSkills>("character_skills", &self.character_skills)
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_stats = cache
-            .apply_diff_to_table::<CharacterStats>("character_stats", &self.character_stats)
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_strategic_condition = cache
-            .apply_diff_to_table::<CharacterStrategicCondition>(
-                "character_strategic_condition",
-                &self.character_strategic_condition,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_time = cache
-            .apply_diff_to_table::<CharacterTime>("character_time", &self.character_time)
-            .with_updates_by_pk(|row| &row.character_id);
-        diff.character_training_schedule = cache
-            .apply_diff_to_table::<CharacterTrainingSchedule>(
-                "character_training_schedule",
-                &self.character_training_schedule,
-            )
-            .with_updates_by_pk(|row| &row.character_id);
+        diff.container_liquid = cache
+            .apply_diff_to_table::<ContainerLiquid>("container_liquid", &self.container_liquid)
+            .with_updates_by_pk(|row| &row.container_object_id);
         diff.equipment_occupancy = cache
             .apply_diff_to_table::<EquipmentOccupancy>(
                 "equipment_occupancy",
@@ -4213,6 +5440,12 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.food_lot = cache
             .apply_diff_to_table::<FoodLot>("food_lot", &self.food_lot)
             .with_updates_by_pk(|row| &row.id);
+        diff.inventory_containment = cache
+            .apply_diff_to_table::<InventoryContainment>(
+                "inventory_containment",
+                &self.inventory_containment,
+            )
+            .with_updates_by_pk(|row| &row.child_object_id);
         diff.inventory_item = cache
             .apply_diff_to_table::<InventoryItem>("inventory_item", &self.inventory_item)
             .with_updates_by_pk(|row| &row.id);
@@ -4222,6 +5455,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.inventory_item_amount,
             )
             .with_updates_by_pk(|row| &row.inventory_item_id);
+        diff.inventory_object = cache
+            .apply_diff_to_table::<InventoryObject>("inventory_object", &self.inventory_object)
+            .with_updates_by_pk(|row| &row.id);
         diff.inventory_quantity_target = cache
             .apply_diff_to_table::<InventoryQuantityTarget>(
                 "inventory_quantity_target",
@@ -4245,12 +5481,6 @@ impl __sdk::DbUpdate for DbUpdate {
             .with_updates_by_pk(|row| &row.problem_id);
         diff.morale_event = cache
             .apply_diff_to_table::<MoraleEvent>("morale_event", &self.morale_event)
-            .with_updates_by_pk(|row| &row.id);
-        diff.organization_membership = cache
-            .apply_diff_to_table::<OrganizationMembership>(
-                "organization_membership",
-                &self.organization_membership,
-            )
             .with_updates_by_pk(|row| &row.id);
         diff.organization_presentation = cache
             .apply_diff_to_table::<OrganizationPresentation>(
@@ -4336,18 +5566,24 @@ impl __sdk::DbUpdate for DbUpdate {
                 &self.settlement_description,
             )
             .with_updates_by_pk(|row| &row.id);
-        diff.settlement_npc_presence = cache
-            .apply_diff_to_table::<SettlementNpcPresence>(
-                "settlement_npc_presence",
-                &self.settlement_npc_presence,
-            )
-            .with_updates_by_pk(|row| &row.npc_id);
         diff.settlement_outbreak = cache
             .apply_diff_to_table::<SettlementOutbreak>(
                 "settlement_outbreak",
                 &self.settlement_outbreak,
             )
             .with_updates_by_pk(|row| &row.id);
+        diff.settlement_residence_offer = cache
+            .apply_diff_to_table::<SettlementResidenceOffer>(
+                "settlement_residence_offer",
+                &self.settlement_residence_offer,
+            )
+            .with_updates_by_pk(|row| &row.id);
+        diff.settlement_resident_presence = cache
+            .apply_diff_to_table::<SettlementResidentPresence>(
+                "settlement_resident_presence",
+                &self.settlement_resident_presence,
+            )
+            .with_updates_by_pk(|row| &row.character_id);
         diff.settlement_smith = cache
             .apply_diff_to_table::<SettlementSmith>("settlement_smith", &self.settlement_smith)
             .with_updates_by_pk(|row| &row.settlement_id);
@@ -4360,12 +5596,6 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.simulation_run = cache
             .apply_diff_to_table::<SimulationRun>("simulation_run", &self.simulation_run)
             .with_updates_by_pk(|row| &row.id);
-        diff.starting_character_claim = cache
-            .apply_diff_to_table::<StartingCharacterClaim>(
-                "starting_character_claim",
-                &self.starting_character_claim,
-            )
-            .with_updates_by_pk(|row| &row.request_key);
         diff.strategic_encounter = cache
             .apply_diff_to_table::<StrategicEncounter>(
                 "strategic_encounter",
@@ -4390,6 +5620,11 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.world_node = cache
             .apply_diff_to_table::<WorldNode>("world_node", &self.world_node)
             .with_updates_by_pk(|row| &row.id);
+        diff.backend_authority_arrest_actions = cache
+            .apply_diff_to_table::<BackendAuthorityArrestAction>(
+                "backend_authority_arrest_actions",
+                &self.backend_authority_arrest_actions,
+            );
         diff.backend_automatic_social_chats = cache.apply_diff_to_table::<AutomaticSocialChat>(
             "backend_automatic_social_chats",
             &self.backend_automatic_social_chats,
@@ -4398,6 +5633,11 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_bestiary_deductions",
             &self.backend_bestiary_deductions,
         );
+        diff.backend_browser_character_access = cache
+            .apply_diff_to_table::<BackendBrowserCharacterAccess>(
+                "backend_browser_character_access",
+                &self.backend_browser_character_access,
+            );
         diff.backend_case_battles = cache.apply_diff_to_table::<BackendCaseBattle>(
             "backend_case_battles",
             &self.backend_case_battles,
@@ -4406,31 +5646,119 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_case_site_pins",
             &self.backend_case_site_pins,
         );
+        diff.backend_challenges = cache.apply_diff_to_table::<BackendChallenge>(
+            "backend_challenges",
+            &self.backend_challenges,
+        );
         diff.backend_character_affinities = cache.apply_diff_to_table::<CharacterAffinity>(
             "backend_character_affinities",
             &self.backend_character_affinities,
+        );
+        diff.backend_character_attributes = cache.apply_diff_to_table::<CharacterAttributes>(
+            "backend_character_attributes",
+            &self.backend_character_attributes,
+        );
+        diff.backend_character_capabilities = cache.apply_diff_to_table::<CharacterCapability>(
+            "backend_character_capabilities",
+            &self.backend_character_capabilities,
         );
         diff.backend_character_case_site_locations = cache
             .apply_diff_to_table::<BackendCharacterCaseSiteLocation>(
                 "backend_character_case_site_locations",
                 &self.backend_character_case_site_locations,
             );
+        diff.backend_character_conditions = cache.apply_diff_to_table::<CharacterCondition>(
+            "backend_character_conditions",
+            &self.backend_character_conditions,
+        );
+        diff.backend_character_deaths = cache.apply_diff_to_table::<CharacterDeath>(
+            "backend_character_deaths",
+            &self.backend_character_deaths,
+        );
+        diff.backend_character_exposures = cache.apply_diff_to_table::<CharacterExposure>(
+            "backend_character_exposures",
+            &self.backend_character_exposures,
+        );
         diff.backend_character_familiarities = cache.apply_diff_to_table::<CharacterFamiliarity>(
             "backend_character_familiarities",
             &self.backend_character_familiarities,
+        );
+        diff.backend_character_limbs = cache.apply_diff_to_table::<CharacterLimbs>(
+            "backend_character_limbs",
+            &self.backend_character_limbs,
+        );
+        diff.backend_character_morale_sources = cache.apply_diff_to_table::<CharacterMoraleSource>(
+            "backend_character_morale_sources",
+            &self.backend_character_morale_sources,
+        );
+        diff.backend_character_needs = cache.apply_diff_to_table::<CharacterNeeds>(
+            "backend_character_needs",
+            &self.backend_character_needs,
         );
         diff.backend_character_personalities = cache.apply_diff_to_table::<CharacterPersonality>(
             "backend_character_personalities",
             &self.backend_character_personalities,
         );
+        diff.backend_character_relationship_statuses = cache
+            .apply_diff_to_table::<BackendCharacterRelationshipStatus>(
+                "backend_character_relationship_statuses",
+                &self.backend_character_relationship_statuses,
+            );
+        diff.backend_character_residence_statuses = cache
+            .apply_diff_to_table::<BackendCharacterResidenceStatus>(
+                "backend_character_residence_statuses",
+                &self.backend_character_residence_statuses,
+            );
+        diff.backend_character_skills = cache.apply_diff_to_table::<CharacterSkills>(
+            "backend_character_skills",
+            &self.backend_character_skills,
+        );
+        diff.backend_character_stats = cache.apply_diff_to_table::<CharacterStats>(
+            "backend_character_stats",
+            &self.backend_character_stats,
+        );
+        diff.backend_character_strategic_conditions = cache
+            .apply_diff_to_table::<CharacterStrategicCondition>(
+                "backend_character_strategic_conditions",
+                &self.backend_character_strategic_conditions,
+            );
+        diff.backend_character_times = cache.apply_diff_to_table::<CharacterTime>(
+            "backend_character_times",
+            &self.backend_character_times,
+        );
+        diff.backend_character_training_schedules = cache
+            .apply_diff_to_table::<CharacterTrainingSchedule>(
+                "backend_character_training_schedules",
+                &self.backend_character_training_schedules,
+            );
+        diff.backend_characters =
+            cache.apply_diff_to_table::<Character>("backend_characters", &self.backend_characters);
         diff.backend_committed_cuts = cache.apply_diff_to_table::<CommittedCut>(
             "backend_committed_cuts",
             &self.backend_committed_cuts,
+        );
+        diff.backend_context_characters = cache.apply_diff_to_table::<BackendContextCharacter>(
+            "backend_context_characters",
+            &self.backend_context_characters,
         );
         diff.backend_contracts = cache
             .apply_diff_to_table::<BackendContract>("backend_contracts", &self.backend_contracts);
         diff.backend_corpses =
             cache.apply_diff_to_table::<BackendCorpse>("backend_corpses", &self.backend_corpses);
+        diff.backend_courtship_discoveries = cache
+            .apply_diff_to_table::<BackendCourtshipDiscoveryStatus>(
+                "backend_courtship_discoveries",
+                &self.backend_courtship_discoveries,
+            );
+        diff.backend_development_quests = cache.apply_diff_to_table::<BackendDevelopmentQuest>(
+            "backend_development_quests",
+            &self.backend_development_quests,
+        );
+        diff.backend_development_scenarios = cache
+            .apply_diff_to_table::<BackendDevelopmentScenario>(
+                "backend_development_scenarios",
+                &self.backend_development_scenarios,
+            );
         diff.backend_dialogue_events = cache.apply_diff_to_table::<BackendDialogueEvent>(
             "backend_dialogue_events",
             &self.backend_dialogue_events,
@@ -4458,10 +5786,44 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_dialogue_witness_claims",
                 &self.backend_dialogue_witness_claims,
             );
+        diff.backend_estate_dispositions = cache.apply_diff_to_table::<BackendEstateDisposition>(
+            "backend_estate_dispositions",
+            &self.backend_estate_dispositions,
+        );
+        diff.backend_family_children = cache.apply_diff_to_table::<BackendFamilyChild>(
+            "backend_family_children",
+            &self.backend_family_children,
+        );
+        diff.backend_fireplace_dishes = cache.apply_diff_to_table::<BackendFireplaceDish>(
+            "backend_fireplace_dishes",
+            &self.backend_fireplace_dishes,
+        );
+        diff.backend_fireplace_stations = cache.apply_diff_to_table::<BackendFireplaceStation>(
+            "backend_fireplace_stations",
+            &self.backend_fireplace_stations,
+        );
+        diff.backend_forage_attempt_states = cache
+            .apply_diff_to_table::<BackendForageAttemptState>(
+                "backend_forage_attempt_states",
+                &self.backend_forage_attempt_states,
+            );
         diff.backend_forage_receipts = cache.apply_diff_to_table::<BackendForageReceipt>(
             "backend_forage_receipts",
             &self.backend_forage_receipts,
         );
+        diff.backend_hostile_negotiations = cache.apply_diff_to_table::<BackendHostileNegotiation>(
+            "backend_hostile_negotiations",
+            &self.backend_hostile_negotiations,
+        );
+        diff.backend_hostile_surrenders = cache.apply_diff_to_table::<BackendHostileSurrender>(
+            "backend_hostile_surrenders",
+            &self.backend_hostile_surrenders,
+        );
+        diff.backend_ingredient_preparation_plans = cache
+            .apply_diff_to_table::<BackendIngredientPreparationPlan>(
+                "backend_ingredient_preparation_plans",
+                &self.backend_ingredient_preparation_plans,
+            );
         diff.backend_investigation_action_outcomes = cache
             .apply_diff_to_table::<BackendInvestigationActionOutcome>(
                 "backend_investigation_action_outcomes",
@@ -4499,10 +5861,11 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_local_problem_trade_effects",
                 &self.backend_local_problem_trade_effects,
             );
-        diff.backend_outbreak_patients = cache.apply_diff_to_table::<BackendOutbreakPatient>(
-            "backend_outbreak_patients",
-            &self.backend_outbreak_patients,
-        );
+        diff.backend_organization_memberships = cache
+            .apply_diff_to_table::<BackendOrganizationMembership>(
+                "backend_organization_memberships",
+                &self.backend_organization_memberships,
+            );
         diff.backend_physical_evidence = cache.apply_diff_to_table::<BackendPhysicalEvidence>(
             "backend_physical_evidence",
             &self.backend_physical_evidence,
@@ -4521,14 +5884,18 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_physiology_charts",
             &self.backend_physiology_charts,
         );
-        diff.backend_settlement_npc_relationships = cache
-            .apply_diff_to_table::<BackendSettlementNpcRelationship>(
-                "backend_settlement_npc_relationships",
-                &self.backend_settlement_npc_relationships,
+        diff.backend_road_challenges = cache.apply_diff_to_table::<BackendRoadChallenge>(
+            "backend_road_challenges",
+            &self.backend_road_challenges,
+        );
+        diff.backend_settlement_resident_relationships = cache
+            .apply_diff_to_table::<BackendSettlementResidentRelationship>(
+                "backend_settlement_resident_relationships",
+                &self.backend_settlement_resident_relationships,
             );
-        diff.backend_settlement_npcs = cache.apply_diff_to_table::<BackendSettlementNpc>(
-            "backend_settlement_npcs",
-            &self.backend_settlement_npcs,
+        diff.backend_settlement_residents = cache.apply_diff_to_table::<BackendSettlementResident>(
+            "backend_settlement_residents",
+            &self.backend_settlement_residents,
         );
         diff.backend_social_addresses = cache.apply_diff_to_table::<SocialAddress>(
             "backend_social_addresses",
@@ -4542,6 +5909,10 @@ impl __sdk::DbUpdate for DbUpdate {
             "backend_social_chat_receipts",
             &self.backend_social_chat_receipts,
         );
+        diff.backend_tincture_statuses = cache.apply_diff_to_table::<BackendTinctureStatus>(
+            "backend_tincture_statuses",
+            &self.backend_tincture_statuses,
+        );
         diff.connected_players = cache
             .apply_diff_to_table::<ConnectedPlayer>("connected_players", &self.connected_players);
         diff.party = cache.apply_diff_to_table::<Party>("party", &self.party);
@@ -4554,6 +5925,10 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.party_journey_route = cache.apply_diff_to_table::<PartyJourneyRoute>(
             "party_journey_route",
             &self.party_journey_route,
+        );
+        diff.simulation_quest_fixture = cache.apply_diff_to_table::<SimulationQuestFixture>(
+            "simulation_quest_fixture",
+            &self.simulation_quest_fixture,
         );
         diff.tactical_server =
             cache.apply_diff_to_table::<TacticalServer>("tactical_server", &self.tactical_server);
@@ -4574,11 +5949,17 @@ impl __sdk::DbUpdate for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_authority_arrest_actions" => db_update
+                    .backend_authority_arrest_actions
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_automatic_social_chats" => db_update
                     .backend_automatic_social_chats
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_bestiary_deductions" => db_update
                     .backend_bestiary_deductions
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_browser_character_access" => db_update
+                    .backend_browser_character_access
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_case_battles" => db_update
                     .backend_case_battles
@@ -4586,26 +5967,89 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_case_site_pins" => db_update
                     .backend_case_site_pins
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_challenges" => db_update
+                    .backend_challenges
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_character_affinities" => db_update
                     .backend_character_affinities
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_attributes" => db_update
+                    .backend_character_attributes
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_capabilities" => db_update
+                    .backend_character_capabilities
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_character_case_site_locations" => db_update
                     .backend_character_case_site_locations
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_conditions" => db_update
+                    .backend_character_conditions
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_deaths" => db_update
+                    .backend_character_deaths
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_exposures" => db_update
+                    .backend_character_exposures
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_character_familiarities" => db_update
                     .backend_character_familiarities
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_limbs" => db_update
+                    .backend_character_limbs
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_morale_sources" => db_update
+                    .backend_character_morale_sources
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_needs" => db_update
+                    .backend_character_needs
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_character_personalities" => db_update
                     .backend_character_personalities
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_relationship_statuses" => db_update
+                    .backend_character_relationship_statuses
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_residence_statuses" => db_update
+                    .backend_character_residence_statuses
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_skills" => db_update
+                    .backend_character_skills
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_stats" => db_update
+                    .backend_character_stats
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_strategic_conditions" => db_update
+                    .backend_character_strategic_conditions
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_times" => db_update
+                    .backend_character_times
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_character_training_schedules" => db_update
+                    .backend_character_training_schedules
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_characters" => db_update
+                    .backend_characters
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_committed_cuts" => db_update
                     .backend_committed_cuts
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_context_characters" => db_update
+                    .backend_context_characters
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_contracts" => db_update
                     .backend_contracts
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_corpses" => db_update
                     .backend_corpses
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_courtship_discoveries" => db_update
+                    .backend_courtship_discoveries
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_development_quests" => db_update
+                    .backend_development_quests
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_development_scenarios" => db_update
+                    .backend_development_scenarios
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_dialogue_events" => db_update
                     .backend_dialogue_events
@@ -4625,8 +6069,32 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_dialogue_witness_claims" => db_update
                     .backend_dialogue_witness_claims
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_estate_dispositions" => db_update
+                    .backend_estate_dispositions
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_family_children" => db_update
+                    .backend_family_children
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_fireplace_dishes" => db_update
+                    .backend_fireplace_dishes
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_fireplace_stations" => db_update
+                    .backend_fireplace_stations
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_forage_attempt_states" => db_update
+                    .backend_forage_attempt_states
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_hostile_negotiations" => db_update
+                    .backend_hostile_negotiations
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_hostile_surrenders" => db_update
+                    .backend_hostile_surrenders
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_ingredient_preparation_plans" => db_update
+                    .backend_ingredient_preparation_plans
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_investigation_action_outcomes" => db_update
                     .backend_investigation_action_outcomes
@@ -4652,8 +6120,8 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_local_problem_trade_effects" => db_update
                     .backend_local_problem_trade_effects
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_outbreak_patients" => db_update
-                    .backend_outbreak_patients
+                "backend_organization_memberships" => db_update
+                    .backend_organization_memberships
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_physical_evidence" => db_update
                     .backend_physical_evidence
@@ -4667,11 +6135,14 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_physiology_charts" => db_update
                     .backend_physiology_charts
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_settlement_npc_relationships" => db_update
-                    .backend_settlement_npc_relationships
+                "backend_road_challenges" => db_update
+                    .backend_road_challenges
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "backend_settlement_npcs" => db_update
-                    .backend_settlement_npcs
+                "backend_settlement_resident_relationships" => db_update
+                    .backend_settlement_resident_relationships
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_settlement_residents" => db_update
+                    .backend_settlement_residents
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "backend_social_addresses" => db_update
                     .backend_social_addresses
@@ -4682,6 +6153,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_social_chat_receipts" => db_update
                     .backend_social_chat_receipts
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "backend_tincture_statuses" => db_update
+                    .backend_tincture_statuses
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
@@ -4691,26 +6165,8 @@ impl __sdk::DbUpdate for DbUpdate {
                 "battle_result" => db_update
                     .battle_result
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character" => db_update
-                    .character
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_attributes" => db_update
-                    .character_attributes
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_capability" => db_update
-                    .character_capability
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_condition" => db_update
-                    .character_condition
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_death" => db_update
-                    .character_death
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_equipped_item" => db_update
                     .character_equipped_item
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_exposure" => db_update
-                    .character_exposure
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_filth" => db_update
                     .character_filth
@@ -4718,35 +6174,14 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_illness_status" => db_update
                     .character_illness_status
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_limbs" => db_update
-                    .character_limbs
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_morale_source" => db_update
-                    .character_morale_source
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_needs" => db_update
-                    .character_needs
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "character_settlement_reputation" => db_update
                     .character_settlement_reputation
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_skills" => db_update
-                    .character_skills
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_stats" => db_update
-                    .character_stats
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_strategic_condition" => db_update
-                    .character_strategic_condition
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_time" => db_update
-                    .character_time
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "character_training_schedule" => db_update
-                    .character_training_schedule
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "connected_players" => db_update
                     .connected_players
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "container_liquid" => db_update
+                    .container_liquid
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "equipment_occupancy" => db_update
                     .equipment_occupancy
@@ -4754,11 +6189,17 @@ impl __sdk::DbUpdate for DbUpdate {
                 "food_lot" => db_update
                     .food_lot
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "inventory_containment" => db_update
+                    .inventory_containment
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "inventory_item_amount" => db_update
                     .inventory_item_amount
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "inventory_object" => db_update
+                    .inventory_object
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "inventory_quantity_target" => db_update
                     .inventory_quantity_target
@@ -4777,9 +6218,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "morale_event" => db_update
                     .morale_event
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "organization_membership" => db_update
-                    .organization_membership
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "organization_presentation" => db_update
                     .organization_presentation
@@ -4850,11 +6288,14 @@ impl __sdk::DbUpdate for DbUpdate {
                 "settlement_description" => db_update
                     .settlement_description
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "settlement_npc_presence" => db_update
-                    .settlement_npc_presence
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "settlement_outbreak" => db_update
                     .settlement_outbreak
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "settlement_residence_offer" => db_update
+                    .settlement_residence_offer
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "settlement_resident_presence" => db_update
+                    .settlement_resident_presence
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "settlement_smith" => db_update
                     .settlement_smith
@@ -4862,11 +6303,11 @@ impl __sdk::DbUpdate for DbUpdate {
                 "simulation_character" => db_update
                     .simulation_character
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
+                "simulation_quest_fixture" => db_update
+                    .simulation_quest_fixture
+                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "simulation_run" => db_update
                     .simulation_run
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "starting_character_claim" => db_update
-                    .starting_character_claim
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 "strategic_encounter" => db_update
                     .strategic_encounter
@@ -4911,11 +6352,17 @@ impl __sdk::DbUpdate for DbUpdate {
                 "autoresolve_report" => db_update
                     .autoresolve_report
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_authority_arrest_actions" => db_update
+                    .backend_authority_arrest_actions
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_automatic_social_chats" => db_update
                     .backend_automatic_social_chats
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_bestiary_deductions" => db_update
                     .backend_bestiary_deductions
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_browser_character_access" => db_update
+                    .backend_browser_character_access
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_case_battles" => db_update
                     .backend_case_battles
@@ -4923,26 +6370,89 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_case_site_pins" => db_update
                     .backend_case_site_pins
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_challenges" => db_update
+                    .backend_challenges
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_character_affinities" => db_update
                     .backend_character_affinities
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_attributes" => db_update
+                    .backend_character_attributes
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_capabilities" => db_update
+                    .backend_character_capabilities
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_character_case_site_locations" => db_update
                     .backend_character_case_site_locations
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_conditions" => db_update
+                    .backend_character_conditions
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_deaths" => db_update
+                    .backend_character_deaths
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_exposures" => db_update
+                    .backend_character_exposures
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_character_familiarities" => db_update
                     .backend_character_familiarities
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_limbs" => db_update
+                    .backend_character_limbs
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_morale_sources" => db_update
+                    .backend_character_morale_sources
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_needs" => db_update
+                    .backend_character_needs
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_character_personalities" => db_update
                     .backend_character_personalities
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_relationship_statuses" => db_update
+                    .backend_character_relationship_statuses
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_residence_statuses" => db_update
+                    .backend_character_residence_statuses
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_skills" => db_update
+                    .backend_character_skills
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_stats" => db_update
+                    .backend_character_stats
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_strategic_conditions" => db_update
+                    .backend_character_strategic_conditions
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_times" => db_update
+                    .backend_character_times
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_character_training_schedules" => db_update
+                    .backend_character_training_schedules
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_characters" => db_update
+                    .backend_characters
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_committed_cuts" => db_update
                     .backend_committed_cuts
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_context_characters" => db_update
+                    .backend_context_characters
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_contracts" => db_update
                     .backend_contracts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_corpses" => db_update
                     .backend_corpses
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_courtship_discoveries" => db_update
+                    .backend_courtship_discoveries
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_development_quests" => db_update
+                    .backend_development_quests
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_development_scenarios" => db_update
+                    .backend_development_scenarios
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_dialogue_events" => db_update
                     .backend_dialogue_events
@@ -4962,8 +6472,32 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_dialogue_witness_claims" => db_update
                     .backend_dialogue_witness_claims
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_estate_dispositions" => db_update
+                    .backend_estate_dispositions
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_family_children" => db_update
+                    .backend_family_children
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_fireplace_dishes" => db_update
+                    .backend_fireplace_dishes
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_fireplace_stations" => db_update
+                    .backend_fireplace_stations
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_forage_attempt_states" => db_update
+                    .backend_forage_attempt_states
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_forage_receipts" => db_update
                     .backend_forage_receipts
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_hostile_negotiations" => db_update
+                    .backend_hostile_negotiations
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_hostile_surrenders" => db_update
+                    .backend_hostile_surrenders
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_ingredient_preparation_plans" => db_update
+                    .backend_ingredient_preparation_plans
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_investigation_action_outcomes" => db_update
                     .backend_investigation_action_outcomes
@@ -4989,8 +6523,8 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_local_problem_trade_effects" => db_update
                     .backend_local_problem_trade_effects
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_outbreak_patients" => db_update
-                    .backend_outbreak_patients
+                "backend_organization_memberships" => db_update
+                    .backend_organization_memberships
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_physical_evidence" => db_update
                     .backend_physical_evidence
@@ -5004,11 +6538,14 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_physiology_charts" => db_update
                     .backend_physiology_charts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_settlement_npc_relationships" => db_update
-                    .backend_settlement_npc_relationships
+                "backend_road_challenges" => db_update
+                    .backend_road_challenges
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "backend_settlement_npcs" => db_update
-                    .backend_settlement_npcs
+                "backend_settlement_resident_relationships" => db_update
+                    .backend_settlement_resident_relationships
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_settlement_residents" => db_update
+                    .backend_settlement_residents
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "backend_social_addresses" => db_update
                     .backend_social_addresses
@@ -5019,6 +6556,9 @@ impl __sdk::DbUpdate for DbUpdate {
                 "backend_social_chat_receipts" => db_update
                     .backend_social_chat_receipts
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "backend_tincture_statuses" => db_update
+                    .backend_tincture_statuses
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "battle_loot_item" => db_update
                     .battle_loot_item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
@@ -5028,26 +6568,8 @@ impl __sdk::DbUpdate for DbUpdate {
                 "battle_result" => db_update
                     .battle_result
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character" => db_update
-                    .character
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_attributes" => db_update
-                    .character_attributes
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_capability" => db_update
-                    .character_capability
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_condition" => db_update
-                    .character_condition
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_death" => db_update
-                    .character_death
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_equipped_item" => db_update
                     .character_equipped_item
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_exposure" => db_update
-                    .character_exposure
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_filth" => db_update
                     .character_filth
@@ -5055,35 +6577,14 @@ impl __sdk::DbUpdate for DbUpdate {
                 "character_illness_status" => db_update
                     .character_illness_status
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_limbs" => db_update
-                    .character_limbs
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_morale_source" => db_update
-                    .character_morale_source
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_needs" => db_update
-                    .character_needs
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "character_settlement_reputation" => db_update
                     .character_settlement_reputation
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_skills" => db_update
-                    .character_skills
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_stats" => db_update
-                    .character_stats
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_strategic_condition" => db_update
-                    .character_strategic_condition
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_time" => db_update
-                    .character_time
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "character_training_schedule" => db_update
-                    .character_training_schedule
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "connected_players" => db_update
                     .connected_players
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "container_liquid" => db_update
+                    .container_liquid
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "equipment_occupancy" => db_update
                     .equipment_occupancy
@@ -5091,11 +6592,17 @@ impl __sdk::DbUpdate for DbUpdate {
                 "food_lot" => db_update
                     .food_lot
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "inventory_containment" => db_update
+                    .inventory_containment
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "inventory_item" => db_update
                     .inventory_item
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "inventory_item_amount" => db_update
                     .inventory_item_amount
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "inventory_object" => db_update
+                    .inventory_object
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "inventory_quantity_target" => db_update
                     .inventory_quantity_target
@@ -5114,9 +6621,6 @@ impl __sdk::DbUpdate for DbUpdate {
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "morale_event" => db_update
                     .morale_event
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "organization_membership" => db_update
-                    .organization_membership
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "organization_presentation" => db_update
                     .organization_presentation
@@ -5187,11 +6691,14 @@ impl __sdk::DbUpdate for DbUpdate {
                 "settlement_description" => db_update
                     .settlement_description
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "settlement_npc_presence" => db_update
-                    .settlement_npc_presence
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "settlement_outbreak" => db_update
                     .settlement_outbreak
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "settlement_residence_offer" => db_update
+                    .settlement_residence_offer
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "settlement_resident_presence" => db_update
+                    .settlement_resident_presence
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "settlement_smith" => db_update
                     .settlement_smith
@@ -5199,11 +6706,11 @@ impl __sdk::DbUpdate for DbUpdate {
                 "simulation_character" => db_update
                     .simulation_character
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
+                "simulation_quest_fixture" => db_update
+                    .simulation_quest_fixture
+                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "simulation_run" => db_update
                     .simulation_run
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "starting_character_claim" => db_update
-                    .starting_character_claim
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 "strategic_encounter" => db_update
                     .strategic_encounter
@@ -5246,25 +6753,60 @@ impl __sdk::DbUpdate for DbUpdate {
 pub struct AppliedDiff<'r> {
     alcohol_consumption: __sdk::TableAppliedDiff<'r, AlcoholConsumption>,
     autoresolve_report: __sdk::TableAppliedDiff<'r, AutoresolveReport>,
+    backend_authority_arrest_actions: __sdk::TableAppliedDiff<'r, BackendAuthorityArrestAction>,
     backend_automatic_social_chats: __sdk::TableAppliedDiff<'r, AutomaticSocialChat>,
     backend_bestiary_deductions: __sdk::TableAppliedDiff<'r, BackendBestiaryDeduction>,
+    backend_browser_character_access: __sdk::TableAppliedDiff<'r, BackendBrowserCharacterAccess>,
     backend_case_battles: __sdk::TableAppliedDiff<'r, BackendCaseBattle>,
     backend_case_site_pins: __sdk::TableAppliedDiff<'r, BackendCaseSitePin>,
+    backend_challenges: __sdk::TableAppliedDiff<'r, BackendChallenge>,
     backend_character_affinities: __sdk::TableAppliedDiff<'r, CharacterAffinity>,
+    backend_character_attributes: __sdk::TableAppliedDiff<'r, CharacterAttributes>,
+    backend_character_capabilities: __sdk::TableAppliedDiff<'r, CharacterCapability>,
     backend_character_case_site_locations:
         __sdk::TableAppliedDiff<'r, BackendCharacterCaseSiteLocation>,
+    backend_character_conditions: __sdk::TableAppliedDiff<'r, CharacterCondition>,
+    backend_character_deaths: __sdk::TableAppliedDiff<'r, CharacterDeath>,
+    backend_character_exposures: __sdk::TableAppliedDiff<'r, CharacterExposure>,
     backend_character_familiarities: __sdk::TableAppliedDiff<'r, CharacterFamiliarity>,
+    backend_character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
+    backend_character_morale_sources: __sdk::TableAppliedDiff<'r, CharacterMoraleSource>,
+    backend_character_needs: __sdk::TableAppliedDiff<'r, CharacterNeeds>,
     backend_character_personalities: __sdk::TableAppliedDiff<'r, CharacterPersonality>,
+    backend_character_relationship_statuses:
+        __sdk::TableAppliedDiff<'r, BackendCharacterRelationshipStatus>,
+    backend_character_residence_statuses:
+        __sdk::TableAppliedDiff<'r, BackendCharacterResidenceStatus>,
+    backend_character_skills: __sdk::TableAppliedDiff<'r, CharacterSkills>,
+    backend_character_stats: __sdk::TableAppliedDiff<'r, CharacterStats>,
+    backend_character_strategic_conditions:
+        __sdk::TableAppliedDiff<'r, CharacterStrategicCondition>,
+    backend_character_times: __sdk::TableAppliedDiff<'r, CharacterTime>,
+    backend_character_training_schedules: __sdk::TableAppliedDiff<'r, CharacterTrainingSchedule>,
+    backend_characters: __sdk::TableAppliedDiff<'r, Character>,
     backend_committed_cuts: __sdk::TableAppliedDiff<'r, CommittedCut>,
+    backend_context_characters: __sdk::TableAppliedDiff<'r, BackendContextCharacter>,
     backend_contracts: __sdk::TableAppliedDiff<'r, BackendContract>,
     backend_corpses: __sdk::TableAppliedDiff<'r, BackendCorpse>,
+    backend_courtship_discoveries: __sdk::TableAppliedDiff<'r, BackendCourtshipDiscoveryStatus>,
+    backend_development_quests: __sdk::TableAppliedDiff<'r, BackendDevelopmentQuest>,
+    backend_development_scenarios: __sdk::TableAppliedDiff<'r, BackendDevelopmentScenario>,
     backend_dialogue_events: __sdk::TableAppliedDiff<'r, BackendDialogueEvent>,
     backend_dialogue_participants: __sdk::TableAppliedDiff<'r, BackendDialogueParticipant>,
     backend_dialogue_prompts: __sdk::TableAppliedDiff<'r, BackendDialoguePrompt>,
     backend_dialogue_sessions: __sdk::TableAppliedDiff<'r, BackendDialogueSession>,
     backend_dialogue_topic_options: __sdk::TableAppliedDiff<'r, BackendDialogueTopicOption>,
     backend_dialogue_witness_claims: __sdk::TableAppliedDiff<'r, BackendDialogueWitnessClaim>,
+    backend_estate_dispositions: __sdk::TableAppliedDiff<'r, BackendEstateDisposition>,
+    backend_family_children: __sdk::TableAppliedDiff<'r, BackendFamilyChild>,
+    backend_fireplace_dishes: __sdk::TableAppliedDiff<'r, BackendFireplaceDish>,
+    backend_fireplace_stations: __sdk::TableAppliedDiff<'r, BackendFireplaceStation>,
+    backend_forage_attempt_states: __sdk::TableAppliedDiff<'r, BackendForageAttemptState>,
     backend_forage_receipts: __sdk::TableAppliedDiff<'r, BackendForageReceipt>,
+    backend_hostile_negotiations: __sdk::TableAppliedDiff<'r, BackendHostileNegotiation>,
+    backend_hostile_surrenders: __sdk::TableAppliedDiff<'r, BackendHostileSurrender>,
+    backend_ingredient_preparation_plans:
+        __sdk::TableAppliedDiff<'r, BackendIngredientPreparationPlan>,
     backend_investigation_action_outcomes:
         __sdk::TableAppliedDiff<'r, BackendInvestigationActionOutcome>,
     backend_investigation_actions: __sdk::TableAppliedDiff<'r, BackendInvestigationAction>,
@@ -5275,52 +6817,42 @@ pub struct AppliedDiff<'r> {
     backend_local_problem_rumors: __sdk::TableAppliedDiff<'r, BackendLocalProblemRumor>,
     backend_local_problem_trade_effects:
         __sdk::TableAppliedDiff<'r, BackendLocalProblemTradeEffect>,
-    backend_outbreak_patients: __sdk::TableAppliedDiff<'r, BackendOutbreakPatient>,
+    backend_organization_memberships: __sdk::TableAppliedDiff<'r, BackendOrganizationMembership>,
     backend_physical_evidence: __sdk::TableAppliedDiff<'r, BackendPhysicalEvidence>,
     backend_physical_evidence_inspections:
         __sdk::TableAppliedDiff<'r, BackendPhysicalEvidenceInspection>,
     backend_physiology_administrations:
         __sdk::TableAppliedDiff<'r, BackendPhysiologyAdministration>,
     backend_physiology_charts: __sdk::TableAppliedDiff<'r, BackendPhysiologyChart>,
-    backend_settlement_npc_relationships:
-        __sdk::TableAppliedDiff<'r, BackendSettlementNpcRelationship>,
-    backend_settlement_npcs: __sdk::TableAppliedDiff<'r, BackendSettlementNpc>,
+    backend_road_challenges: __sdk::TableAppliedDiff<'r, BackendRoadChallenge>,
+    backend_settlement_resident_relationships:
+        __sdk::TableAppliedDiff<'r, BackendSettlementResidentRelationship>,
+    backend_settlement_residents: __sdk::TableAppliedDiff<'r, BackendSettlementResident>,
     backend_social_addresses: __sdk::TableAppliedDiff<'r, SocialAddress>,
     backend_social_beliefs: __sdk::TableAppliedDiff<'r, SocialBelief>,
     backend_social_chat_receipts: __sdk::TableAppliedDiff<'r, BackendSocialChatReceipt>,
+    backend_tincture_statuses: __sdk::TableAppliedDiff<'r, BackendTinctureStatus>,
     battle_loot_item: __sdk::TableAppliedDiff<'r, BattleLootItem>,
     battle_participant: __sdk::TableAppliedDiff<'r, BattleParticipant>,
     battle_result: __sdk::TableAppliedDiff<'r, BattleResult>,
-    character: __sdk::TableAppliedDiff<'r, Character>,
-    character_attributes: __sdk::TableAppliedDiff<'r, CharacterAttributes>,
-    character_capability: __sdk::TableAppliedDiff<'r, CharacterCapability>,
-    character_condition: __sdk::TableAppliedDiff<'r, CharacterCondition>,
-    character_death: __sdk::TableAppliedDiff<'r, CharacterDeath>,
     character_equipped_item: __sdk::TableAppliedDiff<'r, CharacterEquippedItem>,
-    character_exposure: __sdk::TableAppliedDiff<'r, CharacterExposure>,
     character_filth: __sdk::TableAppliedDiff<'r, CharacterFilth>,
     character_illness_status: __sdk::TableAppliedDiff<'r, CharacterIllnessStatus>,
-    character_limbs: __sdk::TableAppliedDiff<'r, CharacterLimbs>,
-    character_morale_source: __sdk::TableAppliedDiff<'r, CharacterMoraleSource>,
-    character_needs: __sdk::TableAppliedDiff<'r, CharacterNeeds>,
     character_settlement_reputation: __sdk::TableAppliedDiff<'r, CharacterSettlementReputation>,
-    character_skills: __sdk::TableAppliedDiff<'r, CharacterSkills>,
-    character_stats: __sdk::TableAppliedDiff<'r, CharacterStats>,
-    character_strategic_condition: __sdk::TableAppliedDiff<'r, CharacterStrategicCondition>,
-    character_time: __sdk::TableAppliedDiff<'r, CharacterTime>,
-    character_training_schedule: __sdk::TableAppliedDiff<'r, CharacterTrainingSchedule>,
     connected_players: __sdk::TableAppliedDiff<'r, ConnectedPlayer>,
+    container_liquid: __sdk::TableAppliedDiff<'r, ContainerLiquid>,
     equipment_occupancy: __sdk::TableAppliedDiff<'r, EquipmentOccupancy>,
     food_lot: __sdk::TableAppliedDiff<'r, FoodLot>,
+    inventory_containment: __sdk::TableAppliedDiff<'r, InventoryContainment>,
     inventory_item: __sdk::TableAppliedDiff<'r, InventoryItem>,
     inventory_item_amount: __sdk::TableAppliedDiff<'r, InventoryItemAmount>,
+    inventory_object: __sdk::TableAppliedDiff<'r, InventoryObject>,
     inventory_quantity_target: __sdk::TableAppliedDiff<'r, InventoryQuantityTarget>,
     item: __sdk::TableAppliedDiff<'r, Item>,
     item_condition: __sdk::TableAppliedDiff<'r, ItemCondition>,
     limb_injury: __sdk::TableAppliedDiff<'r, LimbInjury>,
     local_problem_symptom: __sdk::TableAppliedDiff<'r, LocalProblemSymptom>,
     morale_event: __sdk::TableAppliedDiff<'r, MoraleEvent>,
-    organization_membership: __sdk::TableAppliedDiff<'r, OrganizationMembership>,
     organization_presentation: __sdk::TableAppliedDiff<'r, OrganizationPresentation>,
     party: __sdk::TableAppliedDiff<'r, Party>,
     party_action_request: __sdk::TableAppliedDiff<'r, PartyActionRequest>,
@@ -5344,12 +6876,13 @@ pub struct AppliedDiff<'r> {
     settlement: __sdk::TableAppliedDiff<'r, Settlement>,
     settlement_alias: __sdk::TableAppliedDiff<'r, SettlementAlias>,
     settlement_description: __sdk::TableAppliedDiff<'r, SettlementDescription>,
-    settlement_npc_presence: __sdk::TableAppliedDiff<'r, SettlementNpcPresence>,
     settlement_outbreak: __sdk::TableAppliedDiff<'r, SettlementOutbreak>,
+    settlement_residence_offer: __sdk::TableAppliedDiff<'r, SettlementResidenceOffer>,
+    settlement_resident_presence: __sdk::TableAppliedDiff<'r, SettlementResidentPresence>,
     settlement_smith: __sdk::TableAppliedDiff<'r, SettlementSmith>,
     simulation_character: __sdk::TableAppliedDiff<'r, SimulationCharacter>,
+    simulation_quest_fixture: __sdk::TableAppliedDiff<'r, SimulationQuestFixture>,
     simulation_run: __sdk::TableAppliedDiff<'r, SimulationRun>,
-    starting_character_claim: __sdk::TableAppliedDiff<'r, StartingCharacterClaim>,
     strategic_encounter: __sdk::TableAppliedDiff<'r, StrategicEncounter>,
     strategic_gateway_authority: __sdk::TableAppliedDiff<'r, StrategicGatewayAuthority>,
     tactical_server: __sdk::TableAppliedDiff<'r, TacticalServer>,
@@ -5381,6 +6914,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.autoresolve_report,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<BackendAuthorityArrestAction>(
+            "backend_authority_arrest_actions",
+            &self.backend_authority_arrest_actions,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<AutomaticSocialChat>(
             "backend_automatic_social_chats",
             &self.backend_automatic_social_chats,
@@ -5389,6 +6927,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendBestiaryDeduction>(
             "backend_bestiary_deductions",
             &self.backend_bestiary_deductions,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendBrowserCharacterAccess>(
+            "backend_browser_character_access",
+            &self.backend_browser_character_access,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendCaseBattle>(
@@ -5401,9 +6944,24 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.backend_case_site_pins,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<BackendChallenge>(
+            "backend_challenges",
+            &self.backend_challenges,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<CharacterAffinity>(
             "backend_character_affinities",
             &self.backend_character_affinities,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterAttributes>(
+            "backend_character_attributes",
+            &self.backend_character_attributes,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterCapability>(
+            "backend_character_capabilities",
+            &self.backend_character_capabilities,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendCharacterCaseSiteLocation>(
@@ -5411,9 +6969,39 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.backend_character_case_site_locations,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<CharacterCondition>(
+            "backend_character_conditions",
+            &self.backend_character_conditions,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterDeath>(
+            "backend_character_deaths",
+            &self.backend_character_deaths,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterExposure>(
+            "backend_character_exposures",
+            &self.backend_character_exposures,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<CharacterFamiliarity>(
             "backend_character_familiarities",
             &self.backend_character_familiarities,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterLimbs>(
+            "backend_character_limbs",
+            &self.backend_character_limbs,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterMoraleSource>(
+            "backend_character_morale_sources",
+            &self.backend_character_morale_sources,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterNeeds>(
+            "backend_character_needs",
+            &self.backend_character_needs,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterPersonality>(
@@ -5421,9 +7009,54 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.backend_character_personalities,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<BackendCharacterRelationshipStatus>(
+            "backend_character_relationship_statuses",
+            &self.backend_character_relationship_statuses,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendCharacterResidenceStatus>(
+            "backend_character_residence_statuses",
+            &self.backend_character_residence_statuses,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterSkills>(
+            "backend_character_skills",
+            &self.backend_character_skills,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterStats>(
+            "backend_character_stats",
+            &self.backend_character_stats,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterStrategicCondition>(
+            "backend_character_strategic_conditions",
+            &self.backend_character_strategic_conditions,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterTime>(
+            "backend_character_times",
+            &self.backend_character_times,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<CharacterTrainingSchedule>(
+            "backend_character_training_schedules",
+            &self.backend_character_training_schedules,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<Character>(
+            "backend_characters",
+            &self.backend_characters,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<CommittedCut>(
             "backend_committed_cuts",
             &self.backend_committed_cuts,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendContextCharacter>(
+            "backend_context_characters",
+            &self.backend_context_characters,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendContract>(
@@ -5434,6 +7067,21 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<BackendCorpse>(
             "backend_corpses",
             &self.backend_corpses,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendCourtshipDiscoveryStatus>(
+            "backend_courtship_discoveries",
+            &self.backend_courtship_discoveries,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendDevelopmentQuest>(
+            "backend_development_quests",
+            &self.backend_development_quests,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendDevelopmentScenario>(
+            "backend_development_scenarios",
+            &self.backend_development_scenarios,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendDialogueEvent>(
@@ -5466,9 +7114,49 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.backend_dialogue_witness_claims,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<BackendEstateDisposition>(
+            "backend_estate_dispositions",
+            &self.backend_estate_dispositions,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendFamilyChild>(
+            "backend_family_children",
+            &self.backend_family_children,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendFireplaceDish>(
+            "backend_fireplace_dishes",
+            &self.backend_fireplace_dishes,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendFireplaceStation>(
+            "backend_fireplace_stations",
+            &self.backend_fireplace_stations,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendForageAttemptState>(
+            "backend_forage_attempt_states",
+            &self.backend_forage_attempt_states,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<BackendForageReceipt>(
             "backend_forage_receipts",
             &self.backend_forage_receipts,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendHostileNegotiation>(
+            "backend_hostile_negotiations",
+            &self.backend_hostile_negotiations,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendHostileSurrender>(
+            "backend_hostile_surrenders",
+            &self.backend_hostile_surrenders,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendIngredientPreparationPlan>(
+            "backend_ingredient_preparation_plans",
+            &self.backend_ingredient_preparation_plans,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendInvestigationActionOutcome>(
@@ -5511,9 +7199,9 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.backend_local_problem_trade_effects,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<BackendOutbreakPatient>(
-            "backend_outbreak_patients",
-            &self.backend_outbreak_patients,
+        callbacks.invoke_table_row_callbacks::<BackendOrganizationMembership>(
+            "backend_organization_memberships",
+            &self.backend_organization_memberships,
             event,
         );
         callbacks.invoke_table_row_callbacks::<BackendPhysicalEvidence>(
@@ -5536,14 +7224,19 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.backend_physiology_charts,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<BackendSettlementNpcRelationship>(
-            "backend_settlement_npc_relationships",
-            &self.backend_settlement_npc_relationships,
+        callbacks.invoke_table_row_callbacks::<BackendRoadChallenge>(
+            "backend_road_challenges",
+            &self.backend_road_challenges,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<BackendSettlementNpc>(
-            "backend_settlement_npcs",
-            &self.backend_settlement_npcs,
+        callbacks.invoke_table_row_callbacks::<BackendSettlementResidentRelationship>(
+            "backend_settlement_resident_relationships",
+            &self.backend_settlement_resident_relationships,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<BackendSettlementResident>(
+            "backend_settlement_residents",
+            &self.backend_settlement_residents,
             event,
         );
         callbacks.invoke_table_row_callbacks::<SocialAddress>(
@@ -5561,6 +7254,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.backend_social_chat_receipts,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<BackendTinctureStatus>(
+            "backend_tincture_statuses",
+            &self.backend_tincture_statuses,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<BattleLootItem>(
             "battle_loot_item",
             &self.battle_loot_item,
@@ -5576,35 +7274,9 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.battle_result,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<Character>("character", &self.character, event);
-        callbacks.invoke_table_row_callbacks::<CharacterAttributes>(
-            "character_attributes",
-            &self.character_attributes,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterCapability>(
-            "character_capability",
-            &self.character_capability,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterCondition>(
-            "character_condition",
-            &self.character_condition,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterDeath>(
-            "character_death",
-            &self.character_death,
-            event,
-        );
         callbacks.invoke_table_row_callbacks::<CharacterEquippedItem>(
             "character_equipped_item",
             &self.character_equipped_item,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterExposure>(
-            "character_exposure",
-            &self.character_exposure,
             event,
         );
         callbacks.invoke_table_row_callbacks::<CharacterFilth>(
@@ -5617,54 +7289,19 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.character_illness_status,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<CharacterLimbs>(
-            "character_limbs",
-            &self.character_limbs,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterMoraleSource>(
-            "character_morale_source",
-            &self.character_morale_source,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterNeeds>(
-            "character_needs",
-            &self.character_needs,
-            event,
-        );
         callbacks.invoke_table_row_callbacks::<CharacterSettlementReputation>(
             "character_settlement_reputation",
             &self.character_settlement_reputation,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<CharacterSkills>(
-            "character_skills",
-            &self.character_skills,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterStats>(
-            "character_stats",
-            &self.character_stats,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterStrategicCondition>(
-            "character_strategic_condition",
-            &self.character_strategic_condition,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterTime>(
-            "character_time",
-            &self.character_time,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<CharacterTrainingSchedule>(
-            "character_training_schedule",
-            &self.character_training_schedule,
-            event,
-        );
         callbacks.invoke_table_row_callbacks::<ConnectedPlayer>(
             "connected_players",
             &self.connected_players,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<ContainerLiquid>(
+            "container_liquid",
+            &self.container_liquid,
             event,
         );
         callbacks.invoke_table_row_callbacks::<EquipmentOccupancy>(
@@ -5673,6 +7310,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             event,
         );
         callbacks.invoke_table_row_callbacks::<FoodLot>("food_lot", &self.food_lot, event);
+        callbacks.invoke_table_row_callbacks::<InventoryContainment>(
+            "inventory_containment",
+            &self.inventory_containment,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<InventoryItem>(
             "inventory_item",
             &self.inventory_item,
@@ -5681,6 +7323,11 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<InventoryItemAmount>(
             "inventory_item_amount",
             &self.inventory_item_amount,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<InventoryObject>(
+            "inventory_object",
+            &self.inventory_object,
             event,
         );
         callbacks.invoke_table_row_callbacks::<InventoryQuantityTarget>(
@@ -5703,11 +7350,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<MoraleEvent>(
             "morale_event",
             &self.morale_event,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<OrganizationMembership>(
-            "organization_membership",
-            &self.organization_membership,
             event,
         );
         callbacks.invoke_table_row_callbacks::<OrganizationPresentation>(
@@ -5813,14 +7455,19 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.settlement_description,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<SettlementNpcPresence>(
-            "settlement_npc_presence",
-            &self.settlement_npc_presence,
-            event,
-        );
         callbacks.invoke_table_row_callbacks::<SettlementOutbreak>(
             "settlement_outbreak",
             &self.settlement_outbreak,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<SettlementResidenceOffer>(
+            "settlement_residence_offer",
+            &self.settlement_residence_offer,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<SettlementResidentPresence>(
+            "settlement_resident_presence",
+            &self.settlement_resident_presence,
             event,
         );
         callbacks.invoke_table_row_callbacks::<SettlementSmith>(
@@ -5833,14 +7480,14 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
             &self.simulation_character,
             event,
         );
+        callbacks.invoke_table_row_callbacks::<SimulationQuestFixture>(
+            "simulation_quest_fixture",
+            &self.simulation_quest_fixture,
+            event,
+        );
         callbacks.invoke_table_row_callbacks::<SimulationRun>(
             "simulation_run",
             &self.simulation_run,
-            event,
-        );
-        callbacks.invoke_table_row_callbacks::<StartingCharacterClaim>(
-            "starting_character_claim",
-            &self.starting_character_claim,
             event,
         );
         callbacks.invoke_table_row_callbacks::<StrategicEncounter>(
@@ -6533,24 +8180,55 @@ impl __sdk::SpacetimeModule for RemoteModule {
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         alcohol_consumption_table::register_table(client_cache);
         autoresolve_report_table::register_table(client_cache);
+        backend_authority_arrest_actions_table::register_table(client_cache);
         backend_automatic_social_chats_table::register_table(client_cache);
         backend_bestiary_deductions_table::register_table(client_cache);
+        backend_browser_character_access_table::register_table(client_cache);
         backend_case_battles_table::register_table(client_cache);
         backend_case_site_pins_table::register_table(client_cache);
+        backend_challenges_table::register_table(client_cache);
         backend_character_affinities_table::register_table(client_cache);
+        backend_character_attributes_table::register_table(client_cache);
+        backend_character_capabilities_table::register_table(client_cache);
         backend_character_case_site_locations_table::register_table(client_cache);
+        backend_character_conditions_table::register_table(client_cache);
+        backend_character_deaths_table::register_table(client_cache);
+        backend_character_exposures_table::register_table(client_cache);
         backend_character_familiarities_table::register_table(client_cache);
+        backend_character_limbs_table::register_table(client_cache);
+        backend_character_morale_sources_table::register_table(client_cache);
+        backend_character_needs_table::register_table(client_cache);
         backend_character_personalities_table::register_table(client_cache);
+        backend_character_relationship_statuses_table::register_table(client_cache);
+        backend_character_residence_statuses_table::register_table(client_cache);
+        backend_character_skills_table::register_table(client_cache);
+        backend_character_stats_table::register_table(client_cache);
+        backend_character_strategic_conditions_table::register_table(client_cache);
+        backend_character_times_table::register_table(client_cache);
+        backend_character_training_schedules_table::register_table(client_cache);
+        backend_characters_table::register_table(client_cache);
         backend_committed_cuts_table::register_table(client_cache);
+        backend_context_characters_table::register_table(client_cache);
         backend_contracts_table::register_table(client_cache);
         backend_corpses_table::register_table(client_cache);
+        backend_courtship_discoveries_table::register_table(client_cache);
+        backend_development_quests_table::register_table(client_cache);
+        backend_development_scenarios_table::register_table(client_cache);
         backend_dialogue_events_table::register_table(client_cache);
         backend_dialogue_participants_table::register_table(client_cache);
         backend_dialogue_prompts_table::register_table(client_cache);
         backend_dialogue_sessions_table::register_table(client_cache);
         backend_dialogue_topic_options_table::register_table(client_cache);
         backend_dialogue_witness_claims_table::register_table(client_cache);
+        backend_estate_dispositions_table::register_table(client_cache);
+        backend_family_children_table::register_table(client_cache);
+        backend_fireplace_dishes_table::register_table(client_cache);
+        backend_fireplace_stations_table::register_table(client_cache);
+        backend_forage_attempt_states_table::register_table(client_cache);
         backend_forage_receipts_table::register_table(client_cache);
+        backend_hostile_negotiations_table::register_table(client_cache);
+        backend_hostile_surrenders_table::register_table(client_cache);
+        backend_ingredient_preparation_plans_table::register_table(client_cache);
         backend_investigation_action_outcomes_table::register_table(client_cache);
         backend_investigation_actions_table::register_table(client_cache);
         backend_investigation_cases_table::register_table(client_cache);
@@ -6559,49 +8237,39 @@ impl __sdk::SpacetimeModule for RemoteModule {
         backend_local_chat_messages_table::register_table(client_cache);
         backend_local_problem_rumors_table::register_table(client_cache);
         backend_local_problem_trade_effects_table::register_table(client_cache);
-        backend_outbreak_patients_table::register_table(client_cache);
+        backend_organization_memberships_table::register_table(client_cache);
         backend_physical_evidence_table::register_table(client_cache);
         backend_physical_evidence_inspections_table::register_table(client_cache);
         backend_physiology_administrations_table::register_table(client_cache);
         backend_physiology_charts_table::register_table(client_cache);
-        backend_settlement_npc_relationships_table::register_table(client_cache);
-        backend_settlement_npcs_table::register_table(client_cache);
+        backend_road_challenges_table::register_table(client_cache);
+        backend_settlement_resident_relationships_table::register_table(client_cache);
+        backend_settlement_residents_table::register_table(client_cache);
         backend_social_addresses_table::register_table(client_cache);
         backend_social_beliefs_table::register_table(client_cache);
         backend_social_chat_receipts_table::register_table(client_cache);
+        backend_tincture_statuses_table::register_table(client_cache);
         battle_loot_item_table::register_table(client_cache);
         battle_participant_table::register_table(client_cache);
         battle_result_table::register_table(client_cache);
-        character_table::register_table(client_cache);
-        character_attributes_table::register_table(client_cache);
-        character_capability_table::register_table(client_cache);
-        character_condition_table::register_table(client_cache);
-        character_death_table::register_table(client_cache);
         character_equipped_item_table::register_table(client_cache);
-        character_exposure_table::register_table(client_cache);
         character_filth_table::register_table(client_cache);
         character_illness_status_table::register_table(client_cache);
-        character_limbs_table::register_table(client_cache);
-        character_morale_source_table::register_table(client_cache);
-        character_needs_table::register_table(client_cache);
         character_settlement_reputation_table::register_table(client_cache);
-        character_skills_table::register_table(client_cache);
-        character_stats_table::register_table(client_cache);
-        character_strategic_condition_table::register_table(client_cache);
-        character_time_table::register_table(client_cache);
-        character_training_schedule_table::register_table(client_cache);
         connected_players_table::register_table(client_cache);
+        container_liquid_table::register_table(client_cache);
         equipment_occupancy_table::register_table(client_cache);
         food_lot_table::register_table(client_cache);
+        inventory_containment_table::register_table(client_cache);
         inventory_item_table::register_table(client_cache);
         inventory_item_amount_table::register_table(client_cache);
+        inventory_object_table::register_table(client_cache);
         inventory_quantity_target_table::register_table(client_cache);
         item_table::register_table(client_cache);
         item_condition_table::register_table(client_cache);
         limb_injury_table::register_table(client_cache);
         local_problem_symptom_table::register_table(client_cache);
         morale_event_table::register_table(client_cache);
-        organization_membership_table::register_table(client_cache);
         organization_presentation_table::register_table(client_cache);
         party_table::register_table(client_cache);
         party_action_request_table::register_table(client_cache);
@@ -6625,12 +8293,13 @@ impl __sdk::SpacetimeModule for RemoteModule {
         settlement_table::register_table(client_cache);
         settlement_alias_table::register_table(client_cache);
         settlement_description_table::register_table(client_cache);
-        settlement_npc_presence_table::register_table(client_cache);
         settlement_outbreak_table::register_table(client_cache);
+        settlement_residence_offer_table::register_table(client_cache);
+        settlement_resident_presence_table::register_table(client_cache);
         settlement_smith_table::register_table(client_cache);
         simulation_character_table::register_table(client_cache);
+        simulation_quest_fixture_table::register_table(client_cache);
         simulation_run_table::register_table(client_cache);
-        starting_character_claim_table::register_table(client_cache);
         strategic_encounter_table::register_table(client_cache);
         strategic_gateway_authority_table::register_table(client_cache);
         tactical_server_table::register_table(client_cache);
@@ -6643,24 +8312,55 @@ impl __sdk::SpacetimeModule for RemoteModule {
     const ALL_TABLE_NAMES: &'static [&'static str] = &[
         "alcohol_consumption",
         "autoresolve_report",
+        "backend_authority_arrest_actions",
         "backend_automatic_social_chats",
         "backend_bestiary_deductions",
+        "backend_browser_character_access",
         "backend_case_battles",
         "backend_case_site_pins",
+        "backend_challenges",
         "backend_character_affinities",
+        "backend_character_attributes",
+        "backend_character_capabilities",
         "backend_character_case_site_locations",
+        "backend_character_conditions",
+        "backend_character_deaths",
+        "backend_character_exposures",
         "backend_character_familiarities",
+        "backend_character_limbs",
+        "backend_character_morale_sources",
+        "backend_character_needs",
         "backend_character_personalities",
+        "backend_character_relationship_statuses",
+        "backend_character_residence_statuses",
+        "backend_character_skills",
+        "backend_character_stats",
+        "backend_character_strategic_conditions",
+        "backend_character_times",
+        "backend_character_training_schedules",
+        "backend_characters",
         "backend_committed_cuts",
+        "backend_context_characters",
         "backend_contracts",
         "backend_corpses",
+        "backend_courtship_discoveries",
+        "backend_development_quests",
+        "backend_development_scenarios",
         "backend_dialogue_events",
         "backend_dialogue_participants",
         "backend_dialogue_prompts",
         "backend_dialogue_sessions",
         "backend_dialogue_topic_options",
         "backend_dialogue_witness_claims",
+        "backend_estate_dispositions",
+        "backend_family_children",
+        "backend_fireplace_dishes",
+        "backend_fireplace_stations",
+        "backend_forage_attempt_states",
         "backend_forage_receipts",
+        "backend_hostile_negotiations",
+        "backend_hostile_surrenders",
+        "backend_ingredient_preparation_plans",
         "backend_investigation_action_outcomes",
         "backend_investigation_actions",
         "backend_investigation_cases",
@@ -6669,49 +8369,39 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "backend_local_chat_messages",
         "backend_local_problem_rumors",
         "backend_local_problem_trade_effects",
-        "backend_outbreak_patients",
+        "backend_organization_memberships",
         "backend_physical_evidence",
         "backend_physical_evidence_inspections",
         "backend_physiology_administrations",
         "backend_physiology_charts",
-        "backend_settlement_npc_relationships",
-        "backend_settlement_npcs",
+        "backend_road_challenges",
+        "backend_settlement_resident_relationships",
+        "backend_settlement_residents",
         "backend_social_addresses",
         "backend_social_beliefs",
         "backend_social_chat_receipts",
+        "backend_tincture_statuses",
         "battle_loot_item",
         "battle_participant",
         "battle_result",
-        "character",
-        "character_attributes",
-        "character_capability",
-        "character_condition",
-        "character_death",
         "character_equipped_item",
-        "character_exposure",
         "character_filth",
         "character_illness_status",
-        "character_limbs",
-        "character_morale_source",
-        "character_needs",
         "character_settlement_reputation",
-        "character_skills",
-        "character_stats",
-        "character_strategic_condition",
-        "character_time",
-        "character_training_schedule",
         "connected_players",
+        "container_liquid",
         "equipment_occupancy",
         "food_lot",
+        "inventory_containment",
         "inventory_item",
         "inventory_item_amount",
+        "inventory_object",
         "inventory_quantity_target",
         "item",
         "item_condition",
         "limb_injury",
         "local_problem_symptom",
         "morale_event",
-        "organization_membership",
         "organization_presentation",
         "party",
         "party_action_request",
@@ -6735,12 +8425,13 @@ impl __sdk::SpacetimeModule for RemoteModule {
         "settlement",
         "settlement_alias",
         "settlement_description",
-        "settlement_npc_presence",
         "settlement_outbreak",
+        "settlement_residence_offer",
+        "settlement_resident_presence",
         "settlement_smith",
         "simulation_character",
+        "simulation_quest_fixture",
         "simulation_run",
-        "starting_character_claim",
         "strategic_encounter",
         "strategic_gateway_authority",
         "tactical_server",

@@ -25,24 +25,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 
-const BUILDINGS: &[&str] = &[
-    "public-square",
-    "residences",
-    "keep",
-    "map",
-    "merchants",
-    "weapons",
-    "armor",
-    "clothing",
-    "inn",
-    "religion",
-];
-
 #[derive(Clone, Debug, Default, Deserialize)]
 struct BuildingQuery {
     building: Option<String>,
-    cook: Option<bool>,
-    herbalism: Option<bool>,
     corpse: Option<String>,
     medical: Option<String>,
     forage: Option<bool>,
@@ -51,33 +36,15 @@ struct BuildingQuery {
     social_feedback: Option<String>,
 }
 
-#[derive(Deserialize)]
-struct MerchantProviderRow {
-    id: String,
-    home_settlement_id: String,
-    service_id: String,
-}
-
-#[derive(Deserialize)]
-struct MerchantProviderPresenceRow {
-    npc_id: String,
-    settlement_id: String,
-    location_id: String,
-    is_default: bool,
-}
-
 impl BuildingQuery {
-    fn herbalism(&self) -> bool {
-        self.herbalism.unwrap_or(false)
-    }
-    fn valid(&self) -> Option<&str> {
+    fn valid_for<'a>(&'a self, location: &LocationView) -> Option<&'a str> {
         self.building
             .as_deref()
-            .filter(|value| BUILDINGS.contains(value))
+            .and_then(|building| location.valid_building(building))
     }
 
-    fn append_to(&self, path: String) -> String {
-        self.valid().map_or_else(
+    fn append_to_location(&self, location: &LocationView, path: String) -> String {
+        self.valid_for(location).map_or_else(
             || path.clone(),
             |building| {
                 format!(
@@ -88,9 +55,19 @@ impl BuildingQuery {
         )
     }
 
-    fn cooking(&self) -> bool {
-        self.cook == Some(true)
+    async fn append_to(
+        &self,
+        state: &AppState,
+        kind: &str,
+        id: &str,
+        path: String,
+    ) -> String {
+        match resolve_location(state, kind, id).await {
+            LocationLookup::Found(location) => self.append_to_location(&location, path),
+            LocationLookup::NotFound | LocationLookup::Unavailable => path,
+        }
     }
+
 }
 
 #[cfg(test)]
@@ -99,34 +76,79 @@ mod building_query_tests {
 
     #[test]
     fn building_query_is_closed_and_preserved_on_redirects() {
+        let economy = adventuresim_world_schema::SettlementEconomyProfile::stage_placeholder();
+        let (_organization, chapter) = adventuresim_core::organization::catalog()
+            .organizations
+            .iter()
+            .find_map(|organization| {
+                organization.chapters.iter().find(|chapter| {
+                    adventuresim_core::organization::chapter_has_standalone_building(
+                        organization,
+                        chapter,
+                        &economy,
+                    )
+                }).map(|chapter| (organization, chapter))
+            })
+            .expect("standalone catalog chapter");
+        let location = crate::templates::settlement::LocationView {
+            kind: crate::templates::settlement::LocationKind::Settlement,
+            id: chapter.settlement_id.clone(),
+            name: "Place".into(),
+            religion_id: None,
+            category: Some(crate::spacetimedb::SettlementCategory::Village),
+            economy: Some(economy),
+            active_building: None,
+        };
         let valid = BuildingQuery {
             building: Some("inn".into()),
             ..Default::default()
         };
-        assert_eq!(valid.valid(), Some("inn"));
+        assert_eq!(valid.valid_for(&location), Some("inn"));
+        let unavailable = BuildingQuery { building: Some("books".into()), ..Default::default() };
+        assert_eq!(unavailable.valid_for(&location), None);
+        let organization_query = BuildingQuery {
+            building: Some(chapter.location_id.clone()),
+            ..Default::default()
+        };
+        assert_eq!(organization_query.valid_for(&location), Some(chapter.location_id.as_str()));
+        if let Some(foreign) = adventuresim_core::organization::catalog()
+            .organizations
+            .iter()
+            .flat_map(|organization| &organization.chapters)
+            .find(|foreign| {
+                foreign.settlement_id != location.id
+                    && adventuresim_core::organization::organization_chapter_at(
+                        &location.id,
+                        &foreign.location_id,
+                    )
+                    .is_none()
+            })
+        {
+            let foreign_query = BuildingQuery {
+                building: Some(foreign.location_id.clone()),
+                ..Default::default()
+            };
+            assert_eq!(foreign_query.valid_for(&location), None);
+        }
         assert_eq!(
-            valid.append_to("/locations/settlement/x/party/1".into()),
+            valid.append_to_location(&location, "/locations/settlement/x/party/1".into()),
             "/locations/settlement/x/party/1?building=inn"
-        );
-        assert_eq!(
-            valid.append_to("/locations/settlement/x/party/1?cook=true".into()),
-            "/locations/settlement/x/party/1?cook=true&building=inn"
         );
         let non_service = BuildingQuery {
             building: Some("public-square".into()),
             ..Default::default()
         };
         assert_eq!(
-            non_service.append_to("/locations/settlement/x/party/1".into()),
+            non_service.append_to_location(&location, "/locations/settlement/x/party/1".into()),
             "/locations/settlement/x/party/1?building=public-square"
         );
         let invalid = BuildingQuery {
             building: Some("../religion".into()),
             ..Default::default()
         };
-        assert_eq!(invalid.valid(), None);
+        assert_eq!(invalid.valid_for(&location), None);
         assert_eq!(
-            invalid.append_to("/locations/settlement/x/party/1".into()),
+            invalid.append_to_location(&location, "/locations/settlement/x/party/1".into()),
             "/locations/settlement/x/party/1"
         );
     }
@@ -164,9 +186,30 @@ mod building_query_tests {
             .expect("service quest offers route");
         assert!(!offers.contains("ensure_settlement_activity"));
     }
+
+    #[test]
+    fn fireplace_pages_use_gateway_views_and_authoritative_locality_inputs() {
+        let source = SETTLEMENTS_SOURCE;
+        assert!(source.contains("SELECT * FROM backend_fireplace_stations"));
+        assert!(source.contains("SELECT * FROM backend_fireplace_dishes"));
+        let private_station = ["SELECT * FROM fireplace_", "station WHERE"].concat();
+        let private_dish = ["SELECT * FROM fireplace_", "dish WHERE"].concat();
+        assert!(!source.contains(&private_station));
+        assert!(!source.contains(&private_dish));
+        assert!(source.contains(
+            "party.camp_destination.as_ref() == Some(&journey.destination)"
+        ));
+        assert!(source.contains("matches!(journey.plan_version, 1 | 2)"));
+        assert!(source.contains("journey.completed_minutes < journey.total_minutes"));
+        assert!(source.contains("camp_stop_minutes"));
+        assert!(source.contains("service_npc_location_available"));
+        assert!(source.contains("chapter_has_standalone_building"));
+        assert!(source.contains("StrategicFixtureId::fireplace"));
+        assert!(source.contains("StrategicPlaceId::journey_camp"));
+        assert!(!source.contains("format!(\"camp|"));
+    }
 }
 
-use super::{AppState, PartyAction, PartyActionOutcome, execute_or_request_party_action};
 use super::inventory_forms::{
     DiscardInventoryForm, MerchantOfferForm, PartyOfferForm, PartyPoolTransferForm,
 };
@@ -175,32 +218,42 @@ use super::travel::{
     CaseSiteKnowledgePresentation, TravelDestination, TravelForm, TravelProvisionForecast,
     active_contract_tooltip, connected_destinations, populate_itinerary_forecasts,
 };
+use super::{
+    AppState, PartyAction, PartyActionOutcome, SocialActionId, SocialDuration,
+    execute_or_request_party_action,
+};
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendCorpse,
-    BackendLocalProblemTradeEffect,
-    BackendPhysiologyAdministration, BackendPhysiologyChart, Character, CharacterAffinity,
-    CharacterAttributes, CharacterCapability, CharacterCondition, CharacterEquipmentGraph,
-    CharacterEquippedItem, CharacterFamiliarity, CharacterFilth, CharacterLimbs,
-    CharacterMoraleSource, CharacterNeeds, CharacterPersonality, CharacterSettlementReputation,
-    CharacterSkills, CharacterStats, CharacterStrategicCondition, CharacterTime,
-    CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
-    EquipmentAnchorKind, EquipmentAttachmentTarget, EquipmentOccupancy, FoodLot, InventoryItem,
+    AlcoholConsumption, AutomaticSocialChat, BackendCaseSitePin, BackendChallenge,
+    BackendIngredientPreparationPlan,
+    BackendCharacterRelationshipStatus, BackendCharacterResidenceStatus, BackendCorpse,
+    BackendFamilyChild,
+    BackendLocalProblemTradeEffect, BackendPhysiologyAdministration, BackendPhysiologyChart,
+    BackendRoadChallenge, BackendContextCharacter, Character, CharacterAffinity, CharacterAttributes, CharacterCapability,
+    CharacterCondition, CharacterEquipmentGraph, CharacterEquippedItem, CharacterFamiliarity,
+    CharacterFilth, CharacterLimbs, CharacterMoraleSource, CharacterNeeds, CharacterPersonality,
+    CharacterSettlementReputation, CharacterSkills, CharacterStats, CharacterStrategicCondition,
+    CharacterTime, CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
+    BackendFireplaceDish, BackendFireplaceStation, EquipmentAnchorKind,
+    EquipmentAttachmentTarget, EquipmentOccupancy, FoodLot, InventoryItem,
     InventoryItemAmount, InventoryQuantityTarget, ItemCondition, ItemDefinition, ItemKind,
-    ItemSlot, LimbInjury, LimbRegion, Party, PartyInventoryItem, PartyJourney,
+    ItemSlot, LimbInjury, LimbRegion, Party, PartyInventoryItem, PartyItemAmount, PartyJourney,
     PartyJourneyItinerary, PartyJourneyRoute, PartyMember, PartyRecruitmentRole, PartyStake,
     RecruitmentOffer, RecruitmentOfferStatus, RecruitmentRequirements, ReligiousDemand,
-    RepairOrder, RetainedProjectile, ScheduleAllocation, Settlement, SettlementAlias,
-    SettlementDescription, SettlementSmith, SocialAddress, SocialBelief, StrategicEncounter,
-    TravelEdge,
+    RepairOrder, ResidenceTier, RetainedProjectile, ScheduleAllocation, Settlement,
+    SettlementAlias, SettlementDescription, SettlementResidenceOffer, SettlementSmith,
+    SocialAddress, SocialBelief, SocialChatOutcome, StrategicEncounter, TravelEdge,
+    BackendTinctureStatus, ContainerLiquid, InventoryContainment, InventoryObject,
 };
 use crate::templates::settlement::{
-    ActivityPreviewRates, CampTravelDestination, LocationKind, LocationView, MerchantShop,
-    RestSummary, SoapRestPreview, SocialPresentation, camp_page, live_merchant_shop_page,
-    merchants_page, party_discard_page, party_inventory_page, party_personal_page, party_pool_page,
-    party_social_dialog, party_stats_page, religion_page, rest_default_minutes, rest_result_page,
-    settlement_map_page, settlement_npc_location_page, settlement_overview_page, surgery_dialog,
+    ActivityPreviewRates, CampTravelDestination, ChildPresentation, LocationKind, LocationView,
+    MerchantShop, RelationshipPresentation, RestSummary, SoapRestPreview, SocialPresentation,
+    WeddingPresentation, camp_page, live_merchant_shop_page, merchants_page, party_discard_page,
+    party_inventory_page, party_personal_page, party_pool_page, party_social_dialog,
+    party_stats_page, religion_page, rest_default_minutes, rest_result_page, settlement_map_page,
+    settlement_overview_page, settlement_residence_page, settlement_resident_location_page,
+    surgery_dialog,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -208,9 +261,20 @@ pub fn routes() -> Router<AppState> {
         .route("/settlements/{id}", get(show_settlement))
         .route(
             "/settlements/{id}/places/{place}",
-            get(settlement_npc_place),
+            get(settlement_resident_place),
+        )
+        .route(
+            "/settlements/{id}/residences/{action}/{tier}",
+            post(change_residence),
         )
         .route("/locations/settlement/{id}", get(show_settlement_location))
+        .route("/locations/settlement/{id}/fireplace", get(settlement_fireplace))
+        .route("/locations/settlement/{id}/fireplace/ingredients", post(settlement_fireplace_ingredients))
+        .route("/locations/settlement/{id}/fireplace/instrument", post(settlement_fireplace_instrument))
+        .route("/locations/settlement/{id}/fireplace/retrieve", post(settlement_fireplace_retrieve))
+        .route("/locations/settlement/{id}/fireplace/container/place", post(settlement_fireplace_container_place))
+        .route("/locations/settlement/{id}/fireplace/container/start", post(settlement_fireplace_container_start))
+        .route("/locations/settlement/{id}/fireplace/container/remove", post(settlement_fireplace_container_remove))
         .route("/locations/settlement/{id}/map", get(settlement_map))
         .route("/locations/settlement/{id}/alchemy", get(alchemy))
         .route(
@@ -226,13 +290,36 @@ pub fn routes() -> Router<AppState> {
             post(update_travel_configuration),
         )
         .route("/camp", get(camp))
+        .route("/camp/fireplace", get(camp_fireplace_page))
+        .route("/camp/fireplace/ingredients", post(camp_fireplace_ingredients))
+        .route("/camp/fireplace/instrument", post(camp_fireplace_instrument))
+        .route("/camp/fireplace/retrieve", post(camp_fireplace_retrieve))
+        .route("/camp/fireplace/container/place", post(camp_fireplace_container_place))
+        .route("/camp/fireplace/container/start", post(camp_fireplace_container_start))
+        .route("/camp/fireplace/container/remove", post(camp_fireplace_container_remove))
+        .route("/api/inventory/containers", get(inventory_containers))
+        .route("/api/inventory/containers/move", post(move_inventory_container_item))
+        .route("/api/inventory/containers/remove", post(remove_inventory_container_item))
+        .route("/api/inventory/containers/pour", post(pour_inventory_container_water))
+        .route("/api/inventory/containers/drain", post(drain_inventory_container_water))
+        .route("/api/inventory/containers/tincture-spirit", post(pour_inventory_container_tincture_spirit))
+        .route("/api/inventory/containers/tincture-start", post(start_inventory_container_tincture))
+        .route("/api/inventory/containers/tincture-refresh", post(refresh_inventory_container_tincture))
+        .route("/api/inventory/containers/tincture-dose", post(dose_inventory_container_tincture))
+        .route("/api/inventory/prepare", post(prepare_ingredient_lot))
         .route("/camp/rest", post(rest_at_camp))
+        .route(
+            "/camp/errantry-road-challenge",
+            post(resolve_errantry_road_challenge),
+        )
         .route(
             "/camp/travel-configuration",
             post(update_camp_travel_configuration),
         )
         .route("/camp/continue", post(continue_camp_travel))
         .route("/camp/encounter", post(resolve_camp_encounter))
+        .route("/camp/counterparty/contact", post(contact_camp_counterparty))
+        .route("/camp/counterparty/bandage", post(bandage_camp_counterparty))
         .route("/camp/destination/{id}", post(change_camp_destination))
         .route(
             "/api/settlements/{id}/service-quests",
@@ -257,10 +344,6 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/settlement/{id}/party/{character_id}/organization-presentation-none",
             post(clear_presented_organization),
-        )
-        .route(
-            "/locations/{kind}/{id}/party/{character_id}/cook",
-            post(cook_food),
         )
         .route(
             "/locations/{kind}/{id}/party/{character_id}/physiology/{administration_id}/stop",
@@ -339,10 +422,6 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/locations/{kind}/{id}/party/{character_id}/activity",
             post(perform_immediate_activity),
-        )
-        .route(
-            "/locations/{kind}/{id}/party/{character_id}/herbalism",
-            post(prepare_herbal_remedy),
         )
         .route(
             "/locations/{kind}/{id}/party/{character_id}/religion/renounce",

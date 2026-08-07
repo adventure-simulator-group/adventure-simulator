@@ -10,7 +10,7 @@ pub struct NpcAdventuringPartyAuthority {
     pub id: String,
     pub settlement_id: String,
     pub name: String,
-    pub member_npc_ids_json: String,
+    pub member_resident_character_ids_json: String,
     pub capability: u16,
     pub available_at: u64,
 }
@@ -26,7 +26,8 @@ pub struct NpcAdventuringPartyAuthorityCols {
     pub id: __sdk::__query_builder::Col<NpcAdventuringPartyAuthority, String>,
     pub settlement_id: __sdk::__query_builder::Col<NpcAdventuringPartyAuthority, String>,
     pub name: __sdk::__query_builder::Col<NpcAdventuringPartyAuthority, String>,
-    pub member_npc_ids_json: __sdk::__query_builder::Col<NpcAdventuringPartyAuthority, String>,
+    pub member_resident_character_ids_json:
+        __sdk::__query_builder::Col<NpcAdventuringPartyAuthority, String>,
     pub capability: __sdk::__query_builder::Col<NpcAdventuringPartyAuthority, u16>,
     pub available_at: __sdk::__query_builder::Col<NpcAdventuringPartyAuthority, u64>,
 }
@@ -38,9 +39,9 @@ impl __sdk::__query_builder::HasCols for NpcAdventuringPartyAuthority {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
             name: __sdk::__query_builder::Col::new(table_name, "name"),
-            member_npc_ids_json: __sdk::__query_builder::Col::new(
+            member_resident_character_ids_json: __sdk::__query_builder::Col::new(
                 table_name,
-                "member_npc_ids_json",
+                "member_resident_character_ids_json",
             ),
             capability: __sdk::__query_builder::Col::new(table_name, "capability"),
             available_at: __sdk::__query_builder::Col::new(table_name, "available_at"),

@@ -6,6 +6,7 @@
 //! It defines how the tactical world works in minimal environemnt,
 //! which can be extended by networking and visuals in other crates.
 
+pub mod animation;
 pub mod combat;
 pub mod inventory;
 pub mod physics;
@@ -16,20 +17,37 @@ pub use avian3d;
 
 pub mod prelude {
     pub use crate::AdventureSimulatorCorePlugins;
-    pub use crate::combat::{Attack, Dodge, Parry};
+    pub use crate::animation::{
+        ActionState, AnimationEvaluation, AnimationPack, AnimationPackLibrary, AttackLine,
+        AttackSpec, BODY_TURN_SPEED_RADIANS, BlockSpec, BodyState, CROUCH_LOCOMOTION_PROFILE,
+        DodgeSpec, Footwork, GroundedPosture, HUMANOID_LANDING_PROFILE, LOCOMOTION_SAMPLE_HZ,
+        LandingProfile, LeadFoot, LocomotionGait, LocomotionProfile, PackValidationError,
+        PoseSample, PoseSampling, Posture, RAISED_GUARD_LOCOMOTION_PROFILE, RUN_LOCOMOTION_PROFILE,
+        RaisedLocomotionIntent, ResolvedPose, SemanticPose, SkeletonAction,
+        SkeletonLocomotionInput, SkeletonState, StanceState, StrikeFamily, WALK_LOCOMOTION_PROFILE,
+        WeaponGuardState, advance_body_facing, controller_yaw, gait_cycle_phase_delta,
+        gait_support_weights, guard_step_length, locomotion_profile, ordinary_step_distance,
+        project_skeleton_locomotion, set_weapon_guard,
+    };
+    pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
     pub use crate::inventory::{
         ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentTopology, EquipmentTopologyOccupancy,
         InventoryItems, ItemOf, ItemProperties, ItemQuantity, ShieldItem, WeaponItem,
     };
-    pub use crate::player::{
-        Attributes, BestiaryCategories, CombatState, ControlledPlayer, Limbs, Player, PlayerId,
-        Skills, Stats, TacticalPlayerView, TacticalPlayerViewer,
+    pub use crate::physics::{
+        AdventureSimulatorPhysicsSet, TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
+        TACTICAL_RUN_SPEED_METRES_PER_SECOND, tactical_character_controller,
+        tactical_movement_speed, tactical_movement_speed_for_guard,
     };
-    pub use crate::scene::{SceneId, SceneTerrain};
+    pub use crate::player::{
+        Attributes, BestiaryCategories, CharacterId, CombatState, ControlledPlayer, Limbs, Player,
+        Skills, Stats, TacticalCombatState, TacticalPlayerView, TacticalPlayerViewer,
+    };
+    pub use crate::scene::{SceneId, SceneTerrain, TerrainGenerator};
     pub use adventuresim_core::prelude::*;
     pub use avian3d::prelude::*;
     pub use bevy_ahoy::{
-        CharacterController, CharacterControllerState, CharacterLook,
+        AhoySystems, CharacterController, CharacterControllerState, CharacterLook,
         camera::{CharacterControllerCamera, CharacterControllerCameraOf},
         input,
     };

@@ -28,7 +28,7 @@ pub(crate) fn require_party_ready(ctx: &ReducerContext, party_id: &str) -> Resul
     crate::condition::require_characters_ready(ctx, &character_ids)
 }
 
-fn character_is_publicly_ready_party_member(
+pub(crate) fn character_is_publicly_ready_party_member(
     ctx: &ReducerContext,
     party: &Party,
     character_id: u64,
@@ -56,6 +56,38 @@ fn character_is_publicly_ready_party_member(
             .character_id()
             .find(character_id)
             .is_some_and(|illness| illness.symptomatic || illness.critical)
+}
+
+/// Exact server-side counterpart of the simulator's public readiness filter.
+/// The result remains an aggregate; it never exposes an individual member's
+/// condition or capability outside ordinary authorized projections.
+pub(crate) fn publicly_ready_party_combat_power(
+    ctx: &ReducerContext,
+    party: &Party,
+) -> Result<(u32, u64), String> {
+    ctx.db
+        .party_member()
+        .party_id()
+        .filter(&party.id)
+        .filter(|member| character_is_publicly_ready_party_member(ctx, party, member.character_id))
+        .try_fold((0u32, 0u64), |(count, total), member| {
+            let capability = ctx
+                .db
+                .character_capability()
+                .character_id()
+                .find(member.character_id)
+                .ok_or("Ready party member has no combat assessment")?;
+            if !(capability.melee || capability.ranged) {
+                return Ok((count, total));
+            }
+            let count = count
+                .checked_add(1)
+                .ok_or("Ready party combatant count overflow")?;
+            let total = total
+                .checked_add(capability.autoresolve_combat_power)
+                .ok_or("Ready party combat assessment overflow")?;
+            Ok((count, total))
+        })
 }
 
 fn party_leader_is_publicly_ready(ctx: &ReducerContext, party: &Party) -> bool {

@@ -1,9 +1,13 @@
 use std::{fmt, str::FromStr};
 
+use adventuresim_world_schema::SettlementEconomyProfile;
 use maud::Markup;
 
 use crate::spacetimedb::SettlementCategory;
-use crate::templates::{quest_location_layout_with_session, settlement_layout_with_session};
+use crate::templates::{
+    quest_location_layout_with_session, settlement_building_available,
+    settlement_layout_with_session,
+};
 
 #[derive(Clone, Debug)]
 pub struct LocationView {
@@ -12,6 +16,7 @@ pub struct LocationView {
     pub name: String,
     pub religion_id: Option<String>,
     pub category: Option<SettlementCategory>,
+    pub economy: Option<SettlementEconomyProfile>,
     pub active_building: Option<String>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,6 +52,18 @@ impl FromStr for LocationKind {
 }
 
 impl LocationView {
+    pub fn valid_building<'a>(&self, building: &'a str) -> Option<&'a str> {
+        (self.kind == LocationKind::Settlement
+            && settlement_building_available(
+                &self.id,
+                self.category
+                    .as_ref()
+                    .unwrap_or(&SettlementCategory::Unknown),
+                self.economy.as_ref(),
+                building,
+            ))
+        .then_some(building)
+    }
     pub fn base_path(&self) -> String {
         format!("/locations/{}/{}", self.kind, self.id)
     }
@@ -78,7 +95,7 @@ impl LocationView {
                     .unwrap_or(&SettlementCategory::Unknown),
                 self.active_building.as_deref().unwrap_or(""),
                 self.religion_id.as_deref(),
-                None,
+                self.economy.as_ref(),
                 content,
                 logged_in_as,
             )
@@ -104,5 +121,23 @@ mod tests {
         assert_eq!("case-site".parse(), Ok(LocationKind::CaseSite));
         assert!("quest".parse::<LocationKind>().is_err());
         assert!("merchant".parse::<LocationKind>().is_err());
+    }
+
+    #[test]
+    fn settlement_location_layout_respects_its_economy_services() {
+        let location = LocationView {
+            kind: LocationKind::Settlement,
+            id: "small-place".into(),
+            name: "Small Place".into(),
+            religion_id: None,
+            category: Some(SettlementCategory::Village),
+            economy: Some(SettlementEconomyProfile::stage_placeholder()),
+            active_building: Some("inn".into()),
+        };
+        let markup = location
+            .render_layout("Party", maud::html! {}, None)
+            .into_string();
+        assert!(markup.contains("data-building-id=\"inn\""));
+        assert!(!markup.contains("data-building-id=\"merchants\""));
     }
 }

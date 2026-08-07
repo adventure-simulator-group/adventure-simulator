@@ -22,6 +22,7 @@ pub(super) async fn resolve_location(state: &AppState, kind: &str, id: &str) -> 
                         settlement.name,
                         Some(settlement.category),
                         Some(settlement.religion_id),
+                        Some(settlement.economy),
                     )
                 })
             }),
@@ -32,9 +33,9 @@ pub(super) async fn resolve_location(state: &AppState, kind: &str, id: &str) -> 
                 sql_string_literal(id)
             ))
             .await
-            .map(|row| row.map(|site| (site.display_title, None, None))),
+            .map(|row| row.map(|site| (site.display_title, None, None, None))),
     };
-    let (name, category, religion_id) = match location {
+    let (name, category, religion_id, economy) = match location {
         Ok(Some(location)) => location,
         Ok(None) => return LocationLookup::NotFound,
         Err(error) => {
@@ -48,6 +49,7 @@ pub(super) async fn resolve_location(state: &AppState, kind: &str, id: &str) -> 
         name,
         religion_id,
         category,
+        economy,
         active_building: None,
     })
 }
@@ -102,7 +104,7 @@ pub(super) async fn render_party_personal(
             return Html("<h1>Strategic data is unavailable</h1>".to_string());
         }
     };
-    location.active_building = building.valid().map(str::to_owned);
+    location.active_building = building.valid_for(&location).map(str::to_owned);
     let Some((active_character, active_inventory)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
@@ -118,35 +120,35 @@ pub(super) async fn render_party_personal(
     let attributes: Vec<CharacterAttributes> = state
         .db
         .query(&format!(
-            "SELECT * FROM character_attributes WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_attributes WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
     let skills: Vec<CharacterSkills> = state
         .db
         .query(&format!(
-            "SELECT * FROM character_skills WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_skills WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
     let limbs: Vec<CharacterLimbs> = state
         .db
         .query(&format!(
-            "SELECT * FROM character_limbs WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_limbs WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
     let schedule: Vec<CharacterTrainingSchedule> = state
         .db
         .query(&format!(
-            "SELECT * FROM character_training_schedule WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_training_schedules WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
     let apprenticeships: Vec<crate::spacetimedb::OrganizationMembership> = state
         .db
         .query(&format!(
-            "SELECT * FROM organization_membership WHERE character_id = {character_id}"
+            "SELECT * FROM backend_organization_memberships WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
@@ -158,13 +160,13 @@ pub(super) async fn render_party_personal(
         .await
         .ok()
         .flatten();
-    let character_minute = query_single::<CharacterTime>(&state, "character_time", character_id)
+    let character_minute = query_single::<CharacterTime>(&state, "backend_character_times", character_id)
         .await
         .map_or(0, |time| time.minutes);
     let capability = get_character_capability(&state, character_id).await;
     let combat_profile = get_combat_training_profile(&state, character_id).await;
     let can_examine = false;
-    let stats = query_single::<CharacterStats>(&state, "character_stats", character_id).await;
+    let stats = query_single::<CharacterStats>(&state, "backend_character_stats", character_id).await;
     let case_site = if location.kind == LocationKind::CaseSite {
         state
             .db
@@ -242,7 +244,7 @@ pub(super) async fn render_party_personal(
     };
     let condition = get_strategic_condition(&state, character_id).await;
     let morale_sources = get_morale_sources(&state, character_id).await;
-    let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
+    let religion = query_single::<CharacterCondition>(&state, "backend_character_conditions", character_id)
         .await
         .and_then(|condition| condition.religion_id);
     let prayer_religion_check = match religion.as_deref() {
@@ -354,8 +356,6 @@ pub(super) async fn render_party_personal(
             &injuries,
             &projectiles,
             &filth,
-            building.cooking(),
-            building.herbalism(),
             &active_inventory,
             &inventory_amounts,
             &food_lots,

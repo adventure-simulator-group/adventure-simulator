@@ -49,6 +49,175 @@ stable_id!(BeliefId);
 stable_id!(LeadId);
 stable_id!(RevisionId);
 stable_id!(SharingReceiptId);
+stable_id!(EvidenceKnowledgeSourceId);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EvidenceKnowledgeSubject {
+    Evidence(EvidenceId),
+}
+impl crate::knowledge::DomainKnowledgeSubject for EvidenceKnowledgeSubject {}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EvidenceKnowledgeProposition {
+    pub case_id: CaseId,
+    pub evidence_id: EvidenceId,
+}
+impl crate::knowledge::DomainProposition for EvidenceKnowledgeProposition {}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EvidenceKnowledgeSource {
+    InvestigationAction(EvidenceKnowledgeSourceId),
+}
+impl crate::knowledge::DomainKnowledgeSource for EvidenceKnowledgeSource {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EvidenceKnowledgeVisibility {}
+impl crate::knowledge::DomainVisibilityRule for EvidenceKnowledgeVisibility {}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EvidenceKnownBelief {
+    pub evidence_id: EvidenceId,
+}
+impl crate::knowledge::DomainBelief for EvidenceKnownBelief {}
+
+pub type EvidenceKnowledgeRecord = crate::knowledge::ObserverKnowledgeRecord<
+    EvidenceKnowledgeSubject,
+    EvidenceKnowledgeProposition,
+    EvidenceKnowledgeSource,
+    EvidenceKnowledgeVisibility,
+    EvidenceKnownBelief,
+>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AdaptedEvidenceKnowledge {
+    persisted_id: String,
+    record: EvidenceKnowledgeRecord,
+}
+
+impl AdaptedEvidenceKnowledge {
+    pub fn persisted_id(&self) -> &str {
+        &self.persisted_id
+    }
+
+    pub const fn record(&self) -> &EvidenceKnowledgeRecord {
+        &self.record
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EvidenceKnowledgeAdapterError {
+    InvalidObserver,
+    InvalidDomainIdentity(ValidationError),
+    InvalidKnowledge(crate::knowledge::KnowledgeError),
+}
+
+/// Adapts one existing evidence-custody row to the observer-private knowledge
+/// contract without changing its persisted identity or chronology.
+///
+/// The numeric record id is a deterministic adapter key, not a replacement DB
+/// primary key. A persistence adapter must reject a collision between distinct
+/// string ids before storing or joining by this key.
+pub fn adapt_evidence_knowledge(
+    persisted_id: &str,
+    owner_character_id: u64,
+    case_id: &str,
+    evidence_id: &str,
+    source_id: &str,
+    learned_at: u64,
+    observer_personal_minute: u64,
+) -> Result<AdaptedEvidenceKnowledge, EvidenceKnowledgeAdapterError> {
+    use crate::knowledge::{
+        KnowledgeConfidence, KnowledgeEnvelope, KnowledgeLineage, KnowledgeRecordId,
+        KnowledgeRevision, KnowledgeSource, KnowledgeSubject, KnowledgeVisibility,
+        ObserverKnowledgeRecord,
+    };
+    use sha2::Digest as _;
+
+    let observer = crate::physical_object::CustodyCharacterId::try_new(owner_character_id)
+        .map_err(|_| EvidenceKnowledgeAdapterError::InvalidObserver)?;
+    let case_id =
+        CaseId::new(case_id).map_err(EvidenceKnowledgeAdapterError::InvalidDomainIdentity)?;
+    let evidence_id = EvidenceId::new(evidence_id)
+        .map_err(EvidenceKnowledgeAdapterError::InvalidDomainIdentity)?;
+    let source_id = EvidenceKnowledgeSourceId::new(source_id)
+        .map_err(EvidenceKnowledgeAdapterError::InvalidDomainIdentity)?;
+    let digest = sha2::Sha256::digest(persisted_id.as_bytes());
+    let mut numeric = u64::from_le_bytes(digest[..8].try_into().expect("SHA-256 prefix"));
+    if numeric == 0 {
+        numeric = 1;
+    }
+    let envelope = KnowledgeEnvelope::try_new(
+        KnowledgeRecordId::try_new(numeric)
+            .map_err(EvidenceKnowledgeAdapterError::InvalidKnowledge)?,
+        observer,
+        KnowledgeSubject::Domain(EvidenceKnowledgeSubject::Evidence(evidence_id.clone())),
+        EvidenceKnowledgeProposition {
+            case_id,
+            evidence_id: evidence_id.clone(),
+        },
+        KnowledgeSource::Domain(EvidenceKnowledgeSource::InvestigationAction(source_id)),
+        learned_at,
+        learned_at,
+        observer_personal_minute,
+        KnowledgeConfidence::try_new(10_000)
+            .map_err(EvidenceKnowledgeAdapterError::InvalidKnowledge)?,
+        KnowledgeVisibility::ObserverPrivate,
+        KnowledgeLineage::try_new(
+            KnowledgeRevision::try_new(1)
+                .map_err(EvidenceKnowledgeAdapterError::InvalidKnowledge)?,
+            None,
+        )
+        .map_err(EvidenceKnowledgeAdapterError::InvalidKnowledge)?,
+    )
+    .map_err(EvidenceKnowledgeAdapterError::InvalidKnowledge)?;
+    Ok(AdaptedEvidenceKnowledge {
+        persisted_id: persisted_id.to_owned(),
+        record: ObserverKnowledgeRecord::new(envelope, EvidenceKnownBelief { evidence_id }),
+    })
+}
+
+#[cfg(test)]
+mod evidence_knowledge_adapter_tests {
+    use super::*;
+    use crate::knowledge::{KnowledgeError, KnowledgeVisibility};
+
+    #[test]
+    fn evidence_adapter_is_observer_private_and_respects_personal_time() {
+        let record = adapt_evidence_knowledge(
+            "evidence-knowledge:7:case:mill:evidence:print",
+            7,
+            "case:mill",
+            "evidence:print",
+            "attempt:inspect:1",
+            120,
+            120,
+        )
+        .unwrap();
+        assert_eq!(
+            record.persisted_id(),
+            "evidence-knowledge:7:case:mill:evidence:print"
+        );
+        assert_eq!(record.record().envelope().observer().get(), 7);
+        assert!(matches!(
+            record.record().envelope().visibility(),
+            KnowledgeVisibility::ObserverPrivate
+        ));
+        assert_eq!(
+            adapt_evidence_knowledge(
+                "evidence-knowledge:7:case:mill:evidence:print",
+                7,
+                "case:mill",
+                "evidence:print",
+                "attempt:inspect:1",
+                120,
+                119,
+            ),
+            Err(EvidenceKnowledgeAdapterError::InvalidKnowledge(
+                KnowledgeError::BeyondObserverTime
+            ))
+        );
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BasisPoints(u16);

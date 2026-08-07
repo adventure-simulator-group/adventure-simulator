@@ -888,6 +888,8 @@ mod tests {
             generated_case: false,
             case_resolved: false,
             combat_available: false,
+            opposition_count: None,
+            opposition_combat_power: None,
         }
     }
 

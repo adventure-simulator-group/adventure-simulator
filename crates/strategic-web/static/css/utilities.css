@@ -74,6 +74,11 @@
 .left-sidebar .inventory-actions-cell > .inventory-row-actions { left:100%; padding-left:var(--inventory-action-bridge); }
 .right-sidebar .inventory-actions-cell > .inventory-row-actions { right:100%; padding-right:var(--inventory-action-bridge); }
 .inventory-row-actions.smith-player-actions { grid-template-columns:repeat(2,1.35rem); width:calc(2.85rem + var(--inventory-action-bridge)); }
+.inventory-row-actions.inventory-container-move-actions { grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:1.35rem; width:max-content; }
+.inventory-container-move-actions > select,
+.inventory-container-move-actions > [data-container-move-into] { width:1.35rem; min-width:1.35rem; height:1.35rem; min-height:1.35rem; padding:0; overflow:hidden; }
+.inventory-container-move-actions > [data-container-move-into] { font-size:0; }
+.inventory-container-move-actions > [data-container-move-into]::before { content:"↳"; font-size:.9rem; }
 .trade-inventory-row:not(:last-child) .inventory-row-actions { bottom:-1px; }
 .trade-inventory-row:last-child .inventory-row-actions { border-bottom:0; }
 .smith-player-actions .row-repair-form { position:static; order:0; width:1.35rem; height:1.35rem; opacity:1; transform:none; }
@@ -118,6 +123,18 @@
   .inventory-row-actions.smith-player-actions {
     grid-template-columns: repeat(2, 2.75rem);
     width: calc(5.5rem + var(--inventory-action-bridge));
+  }
+  .inventory-row-actions.inventory-container-move-actions {
+    grid-template-columns: none;
+    grid-auto-columns: 2.75rem;
+    width: max-content;
+  }
+  .inventory-container-move-actions > select,
+  .inventory-container-move-actions > [data-container-move-into] {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    height: 2.75rem;
+    min-height: 2.75rem;
   }
   .inventory-row-actions .trade-transfer,
   .smith-player-actions .row-repair-form,

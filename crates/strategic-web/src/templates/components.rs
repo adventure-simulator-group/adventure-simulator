@@ -1,8 +1,58 @@
 //! Reusable Maud components
 
+use adventuresim_core::organization::OrganizationDefinition;
 use maud::{Markup, html};
 
 const GAME_ICON_ROOT: &str = "/static/icons/game";
+
+pub(crate) fn organization_colors(id: &str) -> (&'static str, &'static str) {
+    const PALETTES: &[(&str, &str)] = &[
+        ("#7f1d1d", "#f5d77b"),
+        ("#173f5f", "#d9edf7"),
+        ("#285943", "#f0cf65"),
+        ("#4c2a63", "#e6c9ff"),
+        ("#7a4b12", "#f6e7c1"),
+        ("#1e4d4f", "#f1b24a"),
+        ("#5a2333", "#f3d9a5"),
+        ("#243b67", "#d8c89b"),
+    ];
+    let hash = id.bytes().fold(0usize, |hash, byte| {
+        hash.wrapping_mul(31).wrapping_add(usize::from(byte))
+    });
+    PALETTES[hash % PALETTES.len()]
+}
+
+pub(crate) fn organization_charge(definition: &OrganizationDefinition) -> &'static str {
+    match definition.id.as_str() {
+        "order_saint_george" => return "mounted-knight",
+        "lodge_hart_king" => return "wood-axe",
+        "hunt_pale_lantern" => return "eye-target",
+        _ => {}
+    }
+    match definition.service_id.as_deref() {
+        Some("merchants") => "coins",
+        Some("weapons") => "anvil",
+        Some("armor") => "breastplate",
+        Some("clothing") => "clothes",
+        Some("herbalist") => "medical-pack",
+        Some("physician") => "caduceus",
+        Some("surgeon") => "scalpel",
+        Some("inn") => "meal",
+        _ if definition.id.contains("forester") => "wood-axe",
+        _ if definition.id.contains("saint_george")
+            || definition.id.contains("royal")
+            || definition.id.contains("knight") =>
+        {
+            "mounted-knight"
+        }
+        _ if definition.id.contains("witch") || definition.id.contains("watchful") => "eye-target",
+        _ if definition.id.contains("religion") || definition.id.contains("theolog") => {
+            "gothic-cross"
+        }
+        _ if definition.id.contains("scholar") || definition.id.contains("college") => "open-book",
+        _ => "shield",
+    }
+}
 
 /// A locally-vendored, theme-recolourable Game Icons mask.
 pub fn game_icon(label: &str, icon: &str) -> Markup {

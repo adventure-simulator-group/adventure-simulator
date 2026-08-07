@@ -20,7 +20,10 @@ use adventuresim_core::social::{
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 use crate::character::{character, character__view, character_limbs, character_stats};
+use crate::condition::character_strategic_condition__view;
 use crate::condition::{character_condition, character_morale_source__view, morale_event};
+use crate::relationship::{KinshipKind, active_courtship_between_view, character_kinship__view};
+use crate::settlement_population::settlement_resident_profile__view;
 use crate::strategic::{
     dialogue_event__view, dialogue_session__view, strategic_gateway_authority__view,
 };
@@ -28,7 +31,7 @@ use crate::time::character_time__view;
 use crate::{
     character_attributes, character_capability, character_morale_source, character_personality,
     character_skills, character_strategic_condition, character_time, dialogue_event,
-    dialogue_session, settlement_npc, settlement_npc_presence,
+    dialogue_session, settlement_resident_presence, settlement_resident_profile,
 };
 
 pub const MAX_AUTOMATIC_SOCIAL_ATTEMPTS_PER_DOWNTIME: usize = 3;
@@ -124,52 +127,46 @@ pub struct CharacterFamiliarity {
     pub joint_minute_anchor: u64,
 }
 
-/// Private social identity for a persistent settlement NPC. Settlement NPCs do
-/// not become Characters and therefore cannot accidentally enter party,
-/// equipment, physiology, or tactical systems.
-#[derive(Clone, Debug)]
-#[table(accessor = settlement_npc_social_state)]
-pub struct SettlementNpcSocialState {
-    #[primary_key]
-    pub npc_id: String,
-    pub transparency: crate::personality::Transparency,
-    pub mirth: crate::personality::Mirth,
-    pub morale_anchor: f32,
-    pub morale_anchor_minute: u64,
-    pub private_entropy: u64,
-}
-
-/// Durable named causes for settlement-NPC morale. The aggregate state is a
-/// cache; these rows preserve why it changed without making NPCs Characters.
-#[derive(Clone, Debug)]
-#[table(accessor = settlement_npc_morale_event)]
-pub struct SettlementNpcMoraleEvent {
-    #[primary_key]
-    pub id: String,
-    #[index(btree)]
-    pub npc_id: String,
-    pub source_kind: String,
-    pub magnitude: f32,
-    pub occurred_at: u64,
-}
-
-#[derive(Clone, Debug)]
-#[table(accessor = settlement_npc_relationship)]
-pub struct SettlementNpcRelationship {
-    #[primary_key]
-    pub id: String,
-    #[index(btree)]
-    pub observer_character_id: u64,
-    #[index(btree)]
-    pub npc_id: String,
-    pub affinity_anchor: f32,
-    pub affinity_anchor_minute: u64,
-    pub shared_minutes: u64,
-}
-
 /// Idempotent, qualitative result of a deliberately selected ordinary chat.
 /// Exact checks, personality fit, rolls, morale, and affinity deltas remain
 /// private and are never stored in the gateway-facing receipt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum SocialChatTargetKind {
+    SettlementResident,
+    PartyMember,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum SocialChatOutcome {
+    Positive,
+    Mixed,
+    Negative,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum AffinityBand {
+    Hostile,
+    Reserved,
+    Warm,
+    Trusted,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum FamiliarityBand {
+    New,
+    Known,
+    Familiar,
+    WellKnown,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
+pub enum MoraleBand {
+    Uncertain,
+    Distressed,
+    Guarded,
+    Settled,
+}
+
 #[derive(Clone, Debug)]
 #[table(accessor = social_chat_receipt)]
 pub struct SocialChatReceipt {
@@ -178,10 +175,10 @@ pub struct SocialChatReceipt {
     #[index(btree)]
     pub actor_id: u64,
     pub action_id: String,
-    pub target_kind: String,
+    pub target_kind: SocialChatTargetKind,
     pub target_id: String,
     pub requested_minutes: u64,
-    pub outcome: String,
+    pub outcome: SocialChatOutcome,
     pub occurred_at_minute: u64,
 }
 
@@ -189,10 +186,10 @@ pub struct SocialChatReceipt {
 pub struct BackendSocialChatReceipt {
     pub id: String,
     pub actor_id: u64,
-    pub target_kind: String,
+    pub target_kind: SocialChatTargetKind,
     pub target_id: String,
     pub requested_minutes: u64,
-    pub outcome: String,
+    pub outcome: SocialChatOutcome,
     pub occurred_at_minute: u64,
 }
 
@@ -218,12 +215,15 @@ pub fn backend_social_chat_receipts(ctx: &ViewContext) -> Vec<BackendSocialChatR
 }
 
 #[derive(Clone, Debug, SpacetimeType)]
-pub struct BackendSettlementNpcRelationship {
+pub struct BackendSettlementResidentRelationship {
     pub observer_character_id: u64,
-    pub npc_id: String,
-    pub affinity_band: String,
-    pub familiarity_band: String,
-    pub morale_band: String,
+    pub resident_character_id: u64,
+    pub affinity_band: AffinityBand,
+    pub familiarity_band: FamiliarityBand,
+    pub morale_band: MoraleBand,
+    /// Whether this resident uses singular familiar address for the observer,
+    /// because the pair is intimate or the resident socially outranks them.
+    pub uses_familiar_address: bool,
 }
 
 /// Private authority for social actions scoped to one live dialogue encounter.
@@ -237,7 +237,7 @@ pub struct DialogueWitnessCapability {
     pub session_id: String,
     #[index(btree)]
     pub observer_character_id: u64,
-    pub npc_id: String,
+    pub resident_character_id: u64,
     pub has_bound_concern: bool,
     pub bound_released: bool,
 }
@@ -252,7 +252,7 @@ pub struct DialogueWitnessClaim {
     pub session_id: String,
     #[index(btree)]
     pub observer_character_id: u64,
-    pub npc_id: String,
+    pub resident_character_id: u64,
     pub event_sequence: u32,
     pub claim_order: u32,
     pub proposition_id: String,
@@ -288,7 +288,7 @@ pub struct WitnessSocialActionReceipt {
 pub struct BackendDialogueWitnessClaim {
     pub observer_character_id: u64,
     pub session_id: String,
-    pub npc_id: String,
+    pub resident_character_id: u64,
     pub event_sequence: u32,
     pub claim_order: u32,
     pub challenge_token: String,
@@ -303,78 +303,111 @@ pub struct BackendDialogueWitnessClaim {
     pub affinity_delta: f32,
 }
 
-fn relationship_band(value: f32) -> String {
+fn relationship_band(value: f32) -> AffinityBand {
     if value <= -25.0 {
-        "hostile"
+        AffinityBand::Hostile
     } else if value < 15.0 {
-        "reserved"
+        AffinityBand::Reserved
     } else if value < 50.0 {
-        "warm"
+        AffinityBand::Warm
     } else {
-        "trusted"
+        AffinityBand::Trusted
     }
-    .into()
 }
 
-fn familiarity_band(minutes: u64) -> String {
+fn familiarity_band(minutes: u64) -> FamiliarityBand {
     if minutes < 60 {
-        "new"
+        FamiliarityBand::New
     } else if minutes < 8 * 60 {
-        "known"
+        FamiliarityBand::Known
     } else if minutes < 40 * 60 {
-        "familiar"
+        FamiliarityBand::Familiar
     } else {
-        "well_known"
+        FamiliarityBand::WellKnown
     }
-    .into()
 }
 
-fn morale_band(value: f32) -> String {
+fn morale_band(value: f32) -> MoraleBand {
     if value <= -20.0 {
-        "distressed"
+        MoraleBand::Distressed
     } else if value < 10.0 {
-        "guarded"
+        MoraleBand::Guarded
     } else {
-        "settled"
+        MoraleBand::Settled
     }
-    .into()
 }
 
-#[view(accessor = backend_settlement_npc_relationships, public)]
-pub fn backend_settlement_npc_relationships(
+#[view(accessor = backend_settlement_resident_relationships, public)]
+pub fn backend_settlement_resident_relationships(
     ctx: &ViewContext,
-) -> Vec<BackendSettlementNpcRelationship> {
+) -> Vec<BackendSettlementResidentRelationship> {
     if !is_strategic_gateway(ctx) {
         return Vec::new();
     }
     ctx.db
-        .settlement_npc_relationship()
-        .observer_character_id()
+        .character_affinity()
+        .subject_id()
         .filter(0u64..)
-        .filter_map(|relationship| {
-            let state = ctx
+        .filter_map(|affinity| {
+            let profile = ctx
                 .db
-                .settlement_npc_social_state()
-                .npc_id()
-                .find(&relationship.npc_id)?;
+                .settlement_resident_profile()
+                .character_id()
+                .find(affinity.subject_id)?;
             let now = ctx
                 .db
                 .character_time()
                 .character_id()
-                .find(relationship.observer_character_id)
-                .map_or(state.morale_anchor_minute, |time| time.minutes);
-            Some(BackendSettlementNpcRelationship {
-                observer_character_id: relationship.observer_character_id,
-                npc_id: relationship.npc_id,
+                .find(affinity.subject_id)
+                .map_or(affinity.anchor_minute, |time| time.minutes);
+            let shared_minutes = canonical_pair(affinity.subject_id, affinity.actor_id)
+                .and_then(|(low, high)| {
+                    ctx.db
+                        .character_familiarity()
+                        .id()
+                        .find(&pair_id(low, high))
+                })
+                .map_or(0, |row| row.shared_minutes);
+            let morale = ctx
+                .db
+                .character_strategic_condition()
+                .character_id()
+                .find(profile.character_id)
+                .map_or(0.0, |row| row.morale + row.morale_bonus);
+            let immediate_kin = ctx
+                .db
+                .character_kinship()
+                .subject_id()
+                .filter(affinity.subject_id)
+                .any(|edge| {
+                    edge.related_id == affinity.actor_id
+                        && matches!(
+                            edge.kind,
+                            KinshipKind::Parent
+                                | KinshipKind::Child
+                                | KinshipKind::Sibling
+                                | KinshipKind::Spouse
+                        )
+                });
+            let active_courtship =
+                active_courtship_between_view(ctx, affinity.subject_id, affinity.actor_id);
+            let resident_precedence =
+                crate::social_roles::character_social_precedence_view(ctx, affinity.subject_id);
+            let observer_precedence =
+                crate::social_roles::character_social_precedence_view(ctx, affinity.actor_id);
+            Some(BackendSettlementResidentRelationship {
+                observer_character_id: affinity.actor_id,
+                resident_character_id: affinity.subject_id,
                 affinity_band: relationship_band(settle_affinity(
-                    relationship.affinity_anchor,
-                    now.saturating_sub(relationship.affinity_anchor_minute),
+                    affinity.anchor,
+                    now.saturating_sub(affinity.anchor_minute),
                 )),
-                familiarity_band: familiarity_band(relationship.shared_minutes),
-                morale_band: morale_band(settle_affinity(
-                    state.morale_anchor,
-                    now.saturating_sub(state.morale_anchor_minute),
-                )),
+                familiarity_band: familiarity_band(shared_minutes),
+                morale_band: morale_band(morale),
+                uses_familiar_address: immediate_kin
+                    || active_courtship
+                    || shared_minutes >= 40 * 60
+                    || resident_precedence > observer_precedence,
             })
         })
         .collect()
@@ -432,7 +465,7 @@ pub fn backend_dialogue_witness_claims(ctx: &ViewContext) -> Vec<BackendDialogue
             Some(BackendDialogueWitnessClaim {
                 observer_character_id: claim.observer_character_id,
                 session_id: claim.session_id,
-                npc_id: claim.npc_id,
+                resident_character_id: claim.resident_character_id,
                 event_sequence: claim.event_sequence,
                 claim_order: claim.claim_order,
                 challenge_token: claim.challenge_token,
@@ -450,140 +483,30 @@ pub fn backend_dialogue_witness_claims(ctx: &ViewContext) -> Vec<BackendDialogue
         .collect()
 }
 
-pub(crate) fn ensure_settlement_npc_social_state(
-    ctx: &ReducerContext,
-    npc_id: &str,
-    now: u64,
-) -> SettlementNpcSocialState {
-    if let Some(state) = ctx
-        .db
-        .settlement_npc_social_state()
-        .npc_id()
-        .find(&npc_id.to_owned())
-    {
-        return state;
-    }
-    let seed = ctx.random::<u64>();
-    let private_draw = |domain: &str| {
-        adventuresim_core::settlement_population::stable_hash(&format!("{seed}:{domain}"))
-    };
-    let state = SettlementNpcSocialState {
-        npc_id: npc_id.into(),
-        transparency: match private_draw("transparency") % 3 {
-            0 => crate::personality::Transparency::Open,
-            1 => crate::personality::Transparency::Neutral,
-            _ => crate::personality::Transparency::Guarded,
-        },
-        mirth: match private_draw("mirth") % 3 {
-            0 => crate::personality::Mirth::Merry,
-            1 => crate::personality::Mirth::Neutral,
-            _ => crate::personality::Mirth::Grave,
-        },
-        morale_anchor: (private_draw("morale") % 21) as f32 - 10.0,
-        morale_anchor_minute: now,
-        private_entropy: seed,
-    };
-    ctx.db.settlement_npc_social_state().insert(state.clone());
-    ctx.db
-        .settlement_npc_morale_event()
-        .insert(SettlementNpcMoraleEvent {
-            id: format!("npc-morale-initial:{npc_id}"),
-            npc_id: npc_id.into(),
-            source_kind: "initial_temperament".into(),
-            magnitude: state.morale_anchor,
-            occurred_at: now,
-        });
-    state
-}
-
-fn record_settlement_npc_morale_event(
-    ctx: &ReducerContext,
-    id: String,
-    npc_id: &str,
-    source_kind: &str,
-    magnitude: f32,
-    occurred_at: u64,
-) -> Result<(), String> {
-    if let Some(existing) = ctx.db.settlement_npc_morale_event().id().find(&id) {
-        return if existing.npc_id == npc_id
-            && existing.source_kind == source_kind
-            && existing.magnitude == magnitude
-            && existing.occurred_at == occurred_at
-        {
-            Ok(())
-        } else {
-            Err("Settlement NPC morale event conflicts with its existing authority".into())
-        };
-    }
-    ctx.db
-        .settlement_npc_morale_event()
-        .insert(SettlementNpcMoraleEvent {
-            id,
-            npc_id: npc_id.into(),
-            source_kind: source_kind.into(),
-            magnitude,
-            occurred_at,
-        });
-    Ok(())
-}
-
 /// Retry-safe social consequence shared by corpse permission and unauthorized
 /// autopsy actions. The caller supplies a globally stable event ID.
 pub(crate) fn apply_corpse_family_offense(
     ctx: &ReducerContext,
     observer_character_id: u64,
-    npc_id: &str,
+    resident_character_id: u64,
     event_id: &str,
     morale_delta: f32,
     affinity_delta: f32,
 ) -> Result<(), String> {
-    let now = ctx
-        .db
-        .character_time()
-        .character_id()
-        .find(observer_character_id)
-        .map_or(0, |row| row.minutes);
-    let morale_id = format!("corpse-family:{event_id}");
-    if ctx
-        .db
-        .settlement_npc_morale_event()
-        .id()
-        .find(&morale_id)
-        .is_some()
-    {
-        return Ok(());
-    }
-    let mut relationship = ctx
-        .db
-        .settlement_npc_relationship()
-        .id()
-        .find(&format!("{observer_character_id}:{npc_id}"))
-        .unwrap_or(SettlementNpcRelationship {
-            id: format!("{observer_character_id}:{npc_id}"),
-            observer_character_id,
-            npc_id: npc_id.into(),
-            affinity_anchor: 0.0,
-            affinity_anchor_minute: now,
-            shared_minutes: 0,
-        });
-    relationship.affinity_anchor =
-        (relationship.affinity_anchor + affinity_delta).clamp(AFFINITY_MIN, AFFINITY_MAX);
-    relationship.affinity_anchor_minute = now;
-    if ctx
-        .db
-        .settlement_npc_relationship()
-        .id()
-        .find(&relationship.id)
-        .is_some()
-    {
-        ctx.db
-            .settlement_npc_relationship()
-            .id()
-            .update(relationship);
-    } else {
-        ctx.db.settlement_npc_relationship().insert(relationship);
-    }
-    record_settlement_npc_morale_event(ctx, morale_id, npc_id, "corpse_handling", morale_delta, now)
+    let current = current_affinity(ctx, resident_character_id, observer_character_id);
+    put_affinity(
+        ctx,
+        resident_character_id,
+        observer_character_id,
+        current + affinity_delta,
+    );
+    crate::condition::record_morale_event(
+        ctx,
+        resident_character_id,
+        "corpse_handling",
+        morale_delta,
+        Some(format!("corpse-family:{event_id}")),
+    )
 }
 
 const MIN_CASUAL_CHAT_MINUTES: u64 = 15;
@@ -616,7 +539,7 @@ fn chat_replayed(
     ctx: &ReducerContext,
     actor_id: u64,
     action_id: &str,
-    target_kind: &str,
+    target_kind: SocialChatTargetKind,
     target_id: &str,
     requested_minutes: u64,
 ) -> Result<bool, String> {
@@ -663,19 +586,6 @@ fn character_chat_disposition(
     }
 }
 
-fn settlement_npc_chat_disposition(state: &SettlementNpcSocialState) -> CasualChatDisposition {
-    CasualChatDisposition {
-        mirth: core_mirth(state.mirth),
-        transparency: match state.transparency {
-            crate::personality::Transparency::Neutral => CoreTransparency::Neutral,
-            crate::personality::Transparency::Open => CoreTransparency::Open,
-            crate::personality::Transparency::Guarded => CoreTransparency::Guarded,
-        },
-        sociability: 0,
-        outlook: 0,
-    }
-}
-
 fn resolve_casual_chat_segments(
     ctx: &ReducerContext,
     requested_minutes: u64,
@@ -685,7 +595,7 @@ fn resolve_casual_chat_segments(
     familiarity_hours: f32,
     actor: CasualChatDisposition,
     target: CasualChatDisposition,
-) -> (f32, f32, String) {
+) -> (f32, f32, SocialChatOutcome) {
     let mut morale_delta = 0.0;
     let mut affinity_delta = 0.0;
     let mut positive_segments = 0u64;
@@ -706,30 +616,30 @@ fn resolve_casual_chat_segments(
         affinity = (affinity + outcome.affinity_delta).clamp(AFFINITY_MIN, AFFINITY_MAX);
     }
     let outcome = if positive_segments * 3 >= segments * 2 {
-        "positive"
+        SocialChatOutcome::Positive
     } else if positive_segments * 3 <= segments {
-        "negative"
+        SocialChatOutcome::Negative
     } else {
-        "mixed"
+        SocialChatOutcome::Mixed
     };
-    (morale_delta, affinity_delta, outcome.into())
+    (morale_delta, affinity_delta, outcome)
 }
 
 fn insert_chat_receipt(
     ctx: &ReducerContext,
     actor_id: u64,
     action_id: String,
-    target_kind: &str,
+    target_kind: SocialChatTargetKind,
     target_id: String,
     requested_minutes: u64,
-    outcome: String,
+    outcome: SocialChatOutcome,
     occurred_at_minute: u64,
 ) {
     ctx.db.social_chat_receipt().insert(SocialChatReceipt {
         id: chat_receipt_id(actor_id, &action_id),
         actor_id,
         action_id,
-        target_kind: target_kind.into(),
+        target_kind,
         target_id,
         requested_minutes,
         outcome,
@@ -741,22 +651,26 @@ fn insert_chat_receipt(
 /// Familiarity always records the shared time, while skill and mutual
 /// personality can move morale and affinity in either direction.
 #[reducer]
-pub fn spend_time_with_settlement_npc(
+pub fn spend_time_with_settlement_resident(
     ctx: &ReducerContext,
     actor_id: u64,
-    npc_id: String,
+    resident_character_id: u64,
     requested_minutes: u64,
     action_id: String,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_gateway(ctx)?;
     crate::strategic::require_strategic_character_authority(ctx, actor_id)?;
     validate_casual_chat_request(requested_minutes, &action_id)?;
+    if actor_id == resident_character_id {
+        return Err("Choose another resident to chat with".into());
+    }
+    let target_key = resident_character_id.to_string();
     if chat_replayed(
         ctx,
         actor_id,
         &action_id,
-        "settlement_npc",
-        &npc_id,
+        SocialChatTargetKind::SettlementResident,
+        &target_key,
         requested_minutes,
     )? {
         return Ok(());
@@ -767,14 +681,25 @@ pub fn spend_time_with_settlement_npc(
         .id()
         .find(actor_id)
         .ok_or("Actor not found")?;
-    let npc = ctx
+    let target = ctx
         .db
-        .settlement_npc()
+        .character()
         .id()
-        .find(&npc_id)
-        .ok_or("Settlement NPC not found")?;
-    if actor.current_settlement_id.as_deref() != Some(npc.home_settlement_id.as_str()) {
-        return Err("Actor and settlement NPC are not co-located".into());
+        .find(resident_character_id)
+        .ok_or("Resident not found")?;
+    let profile = ctx
+        .db
+        .settlement_resident_profile()
+        .character_id()
+        .find(resident_character_id)
+        .ok_or("Character is not a settlement resident")?;
+    if !actor.alive || !target.alive {
+        return Err("Socializing requires living characters".into());
+    }
+    if actor.current_settlement_id.as_deref() != Some(profile.home_settlement_id.as_str())
+        || target.current_settlement_id.as_deref() != Some(profile.home_settlement_id.as_str())
+    {
+        return Err("Actor and resident are not co-located".into());
     }
     let now = ctx
         .db
@@ -782,59 +707,51 @@ pub fn spend_time_with_settlement_npc(
         .character_id()
         .find(actor_id)
         .map_or(0, |time| time.minutes);
+    if !crate::relationship::character_alive_at(ctx, resident_character_id, now) {
+        return Err("Resident is not available at the actor's personal date".into());
+    }
     let remaining_presence = ctx
         .db
-        .settlement_npc_presence()
-        .npc_id()
-        .find(&npc_id)
+        .settlement_resident_presence()
+        .character_id()
+        .find(resident_character_id)
         .and_then(|presence| {
-            crate::settlement_population::npc_presence_remaining_minutes(&presence, now)
+            crate::settlement_population::npc_presence_remaining_minutes_at(ctx, &presence, now)
         });
-    if remaining_presence.is_none() {
-        return Err("Settlement NPC is not presently available".into());
+    if remaining_presence.is_none_or(|remaining| requested_minutes > remaining) {
+        return Err("The conversation would continue beyond the resident's availability".into());
     }
-    if now.checked_add(requested_minutes).is_none()
-        || remaining_presence.is_none_or(|remaining| requested_minutes > remaining)
-    {
-        return Err("The conversation would continue beyond the NPC's availability".into());
-    }
-    let actor_personality = crate::personality::personality_or_neutral(ctx, actor_id);
-    let actor_disposition = character_chat_disposition(&actor_personality);
-    let mut state = ensure_settlement_npc_social_state(ctx, &npc_id, now);
-    let target_disposition = settlement_npc_chat_disposition(&state);
-    let id = format!("{actor_id}:{npc_id}");
-    let mut relationship = ctx
-        .db
-        .settlement_npc_relationship()
-        .id()
-        .find(&id)
-        .unwrap_or(SettlementNpcRelationship {
-            id: id.clone(),
-            observer_character_id: actor_id,
-            npc_id: npc_id.clone(),
-            affinity_anchor: 0.0,
-            affinity_anchor_minute: now,
-            shared_minutes: 0,
-        });
-    let current = settle_affinity(
-        relationship.affinity_anchor,
-        now.saturating_sub(relationship.affinity_anchor_minute),
+    let actor_disposition =
+        character_chat_disposition(&crate::personality::personality_or_neutral(ctx, actor_id));
+    let target_disposition = character_chat_disposition(
+        &crate::personality::personality_or_neutral(ctx, resident_character_id),
     );
-    let charm_check = crate::condition::mental_check(ctx, actor_id, Skill::Charm)?;
-    let insight_check = crate::condition::mental_check(ctx, actor_id, Skill::Insight)?;
-    let (fame, infamy) =
-        crate::reputation::local_reputation(ctx, actor_id, &npc.home_settlement_id);
-    let familiarity_bps =
-        ((relationship.shared_minutes.saturating_mul(10_000) / (100 * 60)).min(10_000)) as u16;
-    let reputation_modifier =
-        adventuresim_core::reputation::npc_reaction_modifier(fame, infamy, familiarity_bps);
+    let affinity = current_affinity(ctx, resident_character_id, actor_id);
+    let familiarity = canonical_pair(actor_id, resident_character_id)
+        .and_then(|(low, high)| {
+            ctx.db
+                .character_familiarity()
+                .id()
+                .find(&pair_id(low, high))
+        })
+        .map_or(0.0, |row| row.shared_minutes as f32 / 60.0);
+    let language =
+        crate::character::shared_language_coefficient(ctx, actor_id, resident_character_id);
+    let charm_check = adventuresim_world_schema::language_scaled_effect(
+        crate::condition::mental_check(ctx, actor_id, Skill::Charm)?,
+        language,
+    );
+    let insight_check = adventuresim_world_schema::language_scaled_effect(
+        crate::condition::mental_check(ctx, actor_id, Skill::Insight)?,
+        language,
+    );
     let (morale_delta, affinity_delta, outcome) = resolve_casual_chat_segments(
         ctx,
         requested_minutes,
         charm_check,
         insight_check,
-        (current + f32::from(reputation_modifier)).clamp(AFFINITY_MIN, AFFINITY_MAX),
-        relationship.shared_minutes as f32 / 60.0,
+        affinity,
+        familiarity,
         actor_disposition,
         target_disposition,
     );
@@ -847,46 +764,28 @@ pub fn spend_time_with_settlement_npc(
         .character_id()
         .find(actor_id)
         .map_or(now.saturating_add(requested_minutes), |time| time.minutes);
-    let settled_morale = settle_affinity(
-        state.morale_anchor,
-        after.saturating_sub(state.morale_anchor_minute),
-    );
-    state.morale_anchor = (settled_morale + morale_delta).clamp(AFFINITY_MIN, AFFINITY_MAX);
-    state.morale_anchor_minute = after;
-    ctx.db.settlement_npc_social_state().npc_id().update(state);
-    record_settlement_npc_morale_event(
+    crate::condition::record_morale_event(
         ctx,
-        format!("npc-morale-chat:{actor_id}:{npc_id}:{action_id}"),
-        &npc_id,
-        "conversation",
+        resident_character_id,
+        "social_interaction",
         morale_delta,
-        after,
+        Some(format!(
+            "resident-chat:{actor_id}:{resident_character_id}:{action_id}"
+        )),
     )?;
-    relationship.affinity_anchor = (current + affinity_delta).clamp(AFFINITY_MIN, AFFINITY_MAX);
-    relationship.affinity_anchor_minute = after;
-    relationship.shared_minutes = relationship
-        .shared_minutes
-        .saturating_add(requested_minutes);
-    if ctx
-        .db
-        .settlement_npc_relationship()
-        .id()
-        .find(&id)
-        .is_some()
-    {
-        ctx.db
-            .settlement_npc_relationship()
-            .id()
-            .update(relationship);
-    } else {
-        ctx.db.settlement_npc_relationship().insert(relationship);
-    }
+    put_affinity(
+        ctx,
+        resident_character_id,
+        actor_id,
+        affinity + affinity_delta,
+    );
+    apply_async_socializing(ctx, actor_id, resident_character_id, requested_minutes)?;
     insert_chat_receipt(
         ctx,
         actor_id,
         action_id,
-        "settlement_npc",
-        npc_id,
+        SocialChatTargetKind::SettlementResident,
+        target_key,
         requested_minutes,
         outcome,
         after,
@@ -894,8 +793,7 @@ pub fn spend_time_with_settlement_npc(
     Ok(())
 }
 
-/// Spend deliberate personal time talking to a living, co-located party
-/// member. Both clocks advance through ordinary stationary time, so the same
+/// Spend deliberate personal time talking to a living, co-located party/// member. Both clocks advance through ordinary stationary time, so the same
 /// canonical familiarity accounting used elsewhere remains authoritative.
 #[reducer]
 pub fn chat_with_party_member(
@@ -916,7 +814,7 @@ pub fn chat_with_party_member(
         ctx,
         actor_id,
         &action_id,
-        "party_member",
+        SocialChatTargetKind::PartyMember,
         &target_key,
         requested_minutes,
     )? {
@@ -999,7 +897,7 @@ pub fn chat_with_party_member(
         ctx,
         actor_id,
         action_id,
-        "party_member",
+        SocialChatTargetKind::PartyMember,
         target_key,
         requested_minutes,
         outcome,
@@ -1012,7 +910,7 @@ pub(crate) fn ensure_dialogue_witness_capability(
     ctx: &ReducerContext,
     session: &crate::strategic::DialogueSession,
     observer_character_id: u64,
-    npc_id: &str,
+    resident_character_id: u64,
 ) -> Result<(), String> {
     let id = format!("{}:{observer_character_id}", session.id);
     if ctx
@@ -1024,8 +922,12 @@ pub(crate) fn ensure_dialogue_witness_capability(
     {
         return Ok(());
     }
-    let referred =
-        crate::strategic::dialogue_referred_witness(ctx, observer_character_id, session, npc_id)?;
+    let referred = crate::strategic::dialogue_referred_witness(
+        ctx,
+        observer_character_id,
+        session,
+        resident_character_id,
+    )?;
     let has_bound_concern = referred.as_ref().is_some_and(|(_, witness)| {
         witness.testimony.iter().any(|draft| {
             draft.delivery == adventuresim_core::quest_generation::TestimonyDelivery::Withheld
@@ -1037,7 +939,7 @@ pub(crate) fn ensure_dialogue_witness_capability(
             id,
             session_id: session.id.clone(),
             observer_character_id,
-            npc_id: npc_id.into(),
+            resident_character_id,
             has_bound_concern,
             bound_released: false,
         });
@@ -1056,7 +958,7 @@ fn persist_claim_assessments(
     ctx: &ReducerContext,
     observer_character_id: u64,
     session_id: &str,
-    npc_id: &str,
+    resident_character_id: u64,
     event_sequence: u32,
     claims: Vec<crate::strategic::ReferredTestimonyClaim>,
 ) -> Result<(), String> {
@@ -1087,7 +989,7 @@ fn persist_claim_assessments(
                 challenge_token,
                 session_id: session_id.into(),
                 observer_character_id,
-                npc_id: npc_id.into(),
+                resident_character_id,
                 event_sequence,
                 claim_order: claim_order as u32,
                 proposition_id: claim.proposition_id,
@@ -1124,7 +1026,7 @@ pub(crate) fn passively_assess_dialogue_witness(
         ctx,
         observer_character_id,
         &session,
-        &capability.npc_id,
+        capability.resident_character_id,
         false,
         event_sequence,
     )?;
@@ -1132,7 +1034,7 @@ pub(crate) fn passively_assess_dialogue_witness(
         ctx,
         observer_character_id,
         session_id,
-        &capability.npc_id,
+        capability.resident_character_id,
         event_sequence,
         claims,
     )
@@ -1142,14 +1044,14 @@ fn passively_assess_released_testimony(
     ctx: &ReducerContext,
     observer_character_id: u64,
     session: &crate::strategic::DialogueSession,
-    npc_id: &str,
+    resident_character_id: u64,
     event_sequence: u32,
 ) -> Result<(), String> {
     let claims = crate::strategic::referred_testimony_claims(
         ctx,
         observer_character_id,
         session,
-        npc_id,
+        resident_character_id,
         true,
         event_sequence,
     )?;
@@ -1157,7 +1059,7 @@ fn passively_assess_released_testimony(
         ctx,
         observer_character_id,
         &session.id,
-        npc_id,
+        resident_character_id,
         event_sequence,
         claims,
     )
@@ -1241,7 +1143,7 @@ fn require_witness_social_action(
         .ok_or("Witness claim challenge is unavailable")?;
     if claim.session_id != session_id
         || claim.observer_character_id != observer_character_id
-        || claim.npc_id != capability.npc_id
+        || claim.resident_character_id != capability.resident_character_id
         || claim.resolved
         || !ctx
             .db
@@ -1295,68 +1197,32 @@ fn finish_witness_social_action(
 fn apply_witness_relationship_outcome(
     ctx: &ReducerContext,
     observer_character_id: u64,
-    npc_id: &str,
-    now: u64,
+    resident_character_id: u64,
+    _now: u64,
     elapsed: u64,
     morale_delta: f32,
     affinity_delta: f32,
     morale_source_id: &str,
     morale_source_kind: &str,
 ) -> Result<f32, String> {
-    let mut state = ensure_settlement_npc_social_state(ctx, npc_id, now);
-    let settled_morale = settle_affinity(
-        state.morale_anchor,
-        now.saturating_sub(state.morale_anchor_minute),
-    );
-    state.morale_anchor = (settled_morale + morale_delta).clamp(-100.0, 100.0);
-    state.morale_anchor_minute = now;
-    ctx.db.settlement_npc_social_state().npc_id().update(state);
     if morale_delta != 0.0 {
-        record_settlement_npc_morale_event(
+        crate::condition::record_morale_event(
             ctx,
-            morale_source_id.into(),
-            npc_id,
+            resident_character_id,
             morale_source_kind,
             morale_delta,
-            now,
+            Some(morale_source_id.into()),
         )?;
     }
-    let id = format!("{observer_character_id}:{npc_id}");
-    let mut relationship = ctx
-        .db
-        .settlement_npc_relationship()
-        .id()
-        .find(&id)
-        .unwrap_or(SettlementNpcRelationship {
-            id: id.clone(),
-            observer_character_id,
-            npc_id: npc_id.into(),
-            affinity_anchor: 0.0,
-            affinity_anchor_minute: now,
-            shared_minutes: 0,
-        });
-    let current = settle_affinity(
-        relationship.affinity_anchor,
-        now.saturating_sub(relationship.affinity_anchor_minute),
-    );
+    let current = current_affinity(ctx, resident_character_id, observer_character_id);
     let realized_delta = realized_affinity_delta(current, affinity_delta);
-    relationship.affinity_anchor = (current + realized_delta).clamp(AFFINITY_MIN, AFFINITY_MAX);
-    relationship.affinity_anchor_minute = now;
-    relationship.shared_minutes = relationship.shared_minutes.saturating_add(elapsed);
-    if ctx
-        .db
-        .settlement_npc_relationship()
-        .id()
-        .find(&id)
-        .is_some()
-    {
-        ctx.db
-            .settlement_npc_relationship()
-            .id()
-            .update(relationship);
-    } else {
-        ctx.db.settlement_npc_relationship().insert(relationship);
-    }
+    put_affinity(
+        ctx,
+        resident_character_id,
+        observer_character_id,
+        current + realized_delta,
+    );
+    apply_async_socializing(ctx, observer_character_id, resident_character_id, elapsed)?;
     Ok(realized_delta)
 }
 
@@ -1392,19 +1258,7 @@ pub fn approach_dialogue_witness(
         &approach_kind,
         &challenge_token,
     )?;
-    let state = ensure_settlement_npc_social_state(ctx, &capability.npc_id, now);
-    let relationship_id = format!("{observer_character_id}:{}", capability.npc_id);
-    let relationship = ctx
-        .db
-        .settlement_npc_relationship()
-        .id()
-        .find(&relationship_id);
-    let affinity = relationship.as_ref().map_or(0.0, |relationship| {
-        settle_affinity(
-            relationship.affinity_anchor,
-            now.saturating_sub(relationship.affinity_anchor_minute),
-        )
-    });
+    let affinity = current_affinity(ctx, capability.resident_character_id, observer_character_id);
     let skill_check = crate::condition::mental_check(
         ctx,
         observer_character_id,
@@ -1412,33 +1266,42 @@ pub fn approach_dialogue_witness(
     )?;
     let npc = ctx
         .db
-        .settlement_npc()
-        .id()
-        .find(&capability.npc_id)
+        .settlement_resident_profile()
+        .character_id()
+        .find(capability.resident_character_id)
         .ok_or("Witness NPC not found")?;
-    let familiarity_minutes = relationship
-        .as_ref()
-        .map_or(0, |value| value.shared_minutes);
+    let familiarity_minutes =
+        canonical_pair(observer_character_id, capability.resident_character_id)
+            .and_then(|(low, high)| {
+                ctx.db
+                    .character_familiarity()
+                    .id()
+                    .find(&pair_id(low, high))
+            })
+            .map_or(0, |value| value.shared_minutes);
     let familiarity_bps =
         ((familiarity_minutes.saturating_mul(10_000) / (100 * 60)).min(10_000)) as u16;
     let (fame, infamy) =
         crate::reputation::local_reputation(ctx, observer_character_id, &npc.home_settlement_id);
     let reputation_modifier =
         adventuresim_core::reputation::npc_reaction_modifier(fame, infamy, familiarity_bps);
+    let target_personality =
+        crate::personality::personality_or_neutral(ctx, capability.resident_character_id);
+    let current_morale = ctx
+        .db
+        .character_strategic_condition()
+        .character_id()
+        .find(capability.resident_character_id)
+        .map_or(0.0, |condition| condition.morale + condition.morale_bonus);
     let outcome = resolve_claim_challenge(ClaimChallengeInput {
         approach,
         claim_is_factually_accurate: claim.claim_is_factually_accurate,
         skill_check,
         affinity: (affinity + f32::from(reputation_modifier)).clamp(AFFINITY_MIN, AFFINITY_MAX),
-        familiarity_hours: relationship.as_ref().map_or(0.0, |relationship| {
-            relationship.shared_minutes as f32 / 60.0
-        }),
-        current_morale: settle_affinity(
-            state.morale_anchor,
-            now.saturating_sub(state.morale_anchor_minute),
-        ),
-        target_transparency: core_transparency(state.transparency),
-        target_mirth: core_mirth(state.mirth),
+        familiarity_hours: familiarity_minutes as f32 / 60.0,
+        current_morale,
+        target_transparency: core_transparency(target_personality.transparency),
+        target_mirth: core_mirth(target_personality.mirth),
         roll: (ctx.random::<u64>() as f64 / u64::MAX as f64) as f32,
     });
     if !crate::time::advance_investigation_time(
@@ -1452,7 +1315,7 @@ pub fn approach_dialogue_witness(
     let affinity_delta = apply_witness_relationship_outcome(
         ctx,
         observer_character_id,
-        &capability.npc_id,
+        capability.resident_character_id,
         after,
         SOCIAL_RESPONSE_MINUTES,
         outcome.morale_delta,
@@ -1478,7 +1341,7 @@ pub fn approach_dialogue_witness(
             ctx,
             observer_character_id,
             &session,
-            &capability.npc_id,
+            capability.resident_character_id,
             &action_id,
         )?;
         capability.bound_released = true;
@@ -1486,7 +1349,7 @@ pub fn approach_dialogue_witness(
             ctx,
             observer_character_id,
             &session,
-            &capability.npc_id,
+            capability.resident_character_id,
             released_event_sequence,
         )?;
     }
@@ -1809,25 +1672,109 @@ pub fn current_affinity(ctx: &ReducerContext, subject_id: u64, actor_id: u64) ->
         })
 }
 
-fn put_affinity(ctx: &ReducerContext, subject_id: u64, actor_id: u64, value: f32) {
+pub(crate) fn put_affinity(ctx: &ReducerContext, subject_id: u64, actor_id: u64, value: f32) {
+    let anchor_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(subject_id)
+        .map_or(0, |v| v.minutes);
+    put_affinity_at(ctx, subject_id, actor_id, value, anchor_minute);
+}
+
+pub(crate) fn put_affinity_at(
+    ctx: &ReducerContext,
+    subject_id: u64,
+    actor_id: u64,
+    value: f32,
+    anchor_minute: u64,
+) {
     let id = affinity_id(subject_id, actor_id);
     let row = CharacterAffinity {
         id: id.clone(),
         subject_id,
         actor_id,
         anchor: value.clamp(AFFINITY_MIN, AFFINITY_MAX),
-        anchor_minute: ctx
-            .db
-            .character_time()
-            .character_id()
-            .find(subject_id)
-            .map_or(0, |v| v.minutes),
+        anchor_minute,
     };
     if ctx.db.character_affinity().id().find(&id).is_some() {
         ctx.db.character_affinity().id().update(row);
     } else {
         ctx.db.character_affinity().insert(row);
     }
+}
+
+/// Record an asynchronous, pairwise-soft social interval.  It intentionally
+/// does not consult either participant's canonical NPC frontier, consume an
+/// NPC schedule, or create an exclusive claim.  The receipt belongs to the
+/// caller in `relationship`; this helper only mutates the independent social
+/// edge once the caller has established idempotency.
+pub fn apply_async_socializing(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    target_id: u64,
+    minutes: u64,
+) -> Result<(), String> {
+    apply_async_socializing_with_familiarity(ctx, actor_id, target_id, minutes, true)
+}
+
+/// Party familiarity is owned by the shared-clock settlement path. Scheduled
+/// Socializing with a party member still grants directed affinity, while this
+/// entry point avoids counting the same colocated minutes a second time.
+pub fn apply_async_socializing_without_familiarity(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    target_id: u64,
+    minutes: u64,
+) -> Result<(), String> {
+    apply_async_socializing_with_familiarity(ctx, actor_id, target_id, minutes, false)
+}
+
+fn apply_async_socializing_with_familiarity(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    target_id: u64,
+    minutes: u64,
+    record_familiarity: bool,
+) -> Result<(), String> {
+    if actor_id == target_id || minutes == 0 {
+        return Ok(());
+    }
+    if ctx.db.character().id().find(actor_id).is_none()
+        || ctx.db.character().id().find(target_id).is_none()
+    {
+        return Err("Socializing requires full Characters".into());
+    }
+    let current = current_affinity(ctx, target_id, actor_id);
+    // A small diminishing directed gain: socializing says the target gets to
+    // know the actor better, but does not assert romantic availability.
+    let requested = (minutes as f32 / 60.0) * 0.4;
+    put_affinity(
+        ctx,
+        target_id,
+        actor_id,
+        current + realized_affinity_delta(current, requested),
+    );
+    if !record_familiarity {
+        return Ok(());
+    }
+    let Some((low_id, high_id)) = canonical_pair(actor_id, target_id) else {
+        return Ok(());
+    };
+    let id = pair_id(low_id, high_id);
+    if let Some(mut familiarity) = ctx.db.character_familiarity().id().find(&id) {
+        familiarity.shared_minutes = familiarity.shared_minutes.saturating_add(minutes);
+        ctx.db.character_familiarity().id().update(familiarity);
+    } else {
+        ctx.db.character_familiarity().insert(CharacterFamiliarity {
+            id,
+            low_id,
+            high_id,
+            shared_minutes: minutes,
+            joint_minute_anchor: 0,
+        });
+    }
+    Ok(())
 }
 
 /// Settle canonical familiarity whenever either member's personal strategic
@@ -2051,6 +1998,83 @@ pub fn close_physiology_presence(ctx: &ReducerContext, character_id: u64) {
                 .min(clock(span.high_id))
                 .max(span.started_at),
         );
+        ctx.db.physiology_presence_span().id().update(span);
+    }
+}
+
+/// Begin observation only when two contextual Characters actually make
+/// contact. Earlier co-location is never backfilled into the chart.
+pub(crate) fn begin_physiology_presence_on_contact(
+    ctx: &ReducerContext,
+    observer_id: u64,
+    patient_id: u64,
+) {
+    let Some((low_id, high_id)) = canonical_pair(observer_id, patient_id) else {
+        return;
+    };
+    if ctx
+        .db
+        .physiology_presence_span()
+        .presence_low_id()
+        .filter(low_id)
+        .any(|span| span.high_id == high_id && span.ended_at.is_none())
+    {
+        return;
+    }
+    let clock = |id| {
+        ctx.db
+            .character_time()
+            .character_id()
+            .find(id)
+            .map_or(0, |time| time.minutes)
+    };
+    let band = |id| {
+        ctx.db
+            .character_capability()
+            .character_id()
+            .find(id)
+            .map_or(0, |capability| {
+                capability.physiology.round().clamp(0.0, 5.0) as u8
+            })
+    };
+    ctx.db
+        .physiology_presence_span()
+        .insert(PhysiologyPresenceSpan {
+            id: 0,
+            low_id,
+            high_id,
+            started_at: clock(low_id).min(clock(high_id)),
+            ended_at: None,
+            low_observer_band: band(low_id),
+            high_observer_band: band(high_id),
+        });
+}
+
+pub(crate) fn close_physiology_presence_between(ctx: &ReducerContext, left_id: u64, right_id: u64) {
+    let Some((low_id, high_id)) = canonical_pair(left_id, right_id) else {
+        return;
+    };
+    let low_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(low_id)
+        .map_or(0, |time| time.minutes);
+    let high_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(high_id)
+        .map_or(0, |time| time.minutes);
+    for mut span in ctx
+        .db
+        .physiology_presence_span()
+        .presence_low_id()
+        .filter(low_id)
+        .filter(|span| span.high_id == high_id && span.ended_at.is_none())
+        .collect::<Vec<_>>()
+    {
+        span.ended_at = Some(low_minute.min(high_minute).max(span.started_at));
         ctx.db.physiology_presence_span().id().update(span);
     }
 }
@@ -2717,9 +2741,9 @@ fn validate_social_pair(
         return Err("Social actions require the same party".into());
     }
     if !is_self
-        && (actor.current_settlement_id != target.current_settlement_id
-            || crate::investigation::character_case_site_id(ctx, actor.id)
-                != crate::investigation::character_case_site_id(ctx, target.id))
+        && !(actor.current_settlement_id.is_some()
+            && actor.current_settlement_id == target.current_settlement_id
+            || crate::world_actor::characters_are_contextually_present(ctx, actor.id, target.id))
     {
         return Err("Characters must be co-located".into());
     }
@@ -3299,11 +3323,13 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
     viewer_personality.sex = crate::personality::Sex::Male;
     viewer_personality.presentation = crate::personality::Presentation::Man;
     viewer_personality.inclination = crate::personality::Inclination::Women;
-    viewer_personality.conviction = crate::personality::Conviction::Neutral;
-    ctx.db
-        .character_personality()
-        .character_id()
-        .update(viewer_personality);
+    crate::personality::update_personality_demographics(
+        ctx,
+        VIEWER,
+        viewer_personality.sex,
+        viewer_personality.presentation,
+        viewer_personality.inclination,
+    )?;
     let mut personality = crate::personality::CharacterPersonality::neutral(TARGET);
     personality.drive = crate::personality::Drive::Ambitious;
     personality.self_regard = crate::personality::SelfRegard::Proud;
@@ -3313,10 +3339,7 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
     personality.sex = crate::personality::Sex::Female;
     personality.presentation = crate::personality::Presentation::Woman;
     personality.inclination = crate::personality::Inclination::Men;
-    ctx.db
-        .character_personality()
-        .character_id()
-        .update(personality);
+    crate::personality::reset_personality_from_visible(ctx, personality);
     crate::condition::initialize_character_condition(ctx, TARGET)?;
     if let Some(mut condition) = ctx.db.character_condition().character_id().find(TARGET) {
         condition.religion_id = Some("lutheran".into());
@@ -3332,12 +3355,12 @@ pub(crate) fn seed_social_demo(ctx: &ReducerContext) -> Result<(), String> {
         skills.religion_hours.roman_catholic = 600.0;
         ctx.db.character_skills().character_id().update(skills);
     }
-    let mut zealous_personality = crate::personality::personality_or_neutral(ctx, ZEALOUS_VIEWER);
-    zealous_personality.conviction = crate::personality::Conviction::Zealous;
-    ctx.db
-        .character_personality()
-        .character_id()
-        .update(zealous_personality);
+    crate::personality::set_personality_axis_score(
+        ctx,
+        ZEALOUS_VIEWER,
+        crate::personality::PersonalityAxis::Conviction,
+        crate::personality::PERSONALITY_SCORE_LIMIT,
+    )?;
     crate::condition::initialize_character_condition(ctx, ZEALOUS_TARGET)?;
     if let Some(mut condition) = ctx
         .db
@@ -3706,6 +3729,20 @@ mod contract_tests {
     }
 
     #[test]
+    fn settlement_chat_rejects_a_target_not_born_at_the_actor_frontier() {
+        let source = include_str!("social.rs");
+        let chat = source
+            .split("pub fn spend_time_with_settlement_resident")
+            .nth(1)
+            .unwrap()
+            .split("/// Spend deliberate personal time")
+            .next()
+            .unwrap();
+        assert!(chat.contains("character_alive_at(ctx, resident_character_id, now)"));
+        assert!(chat.contains("not available at the actor's personal date"));
+    }
+
+    #[test]
     fn disabled_automatic_preferences_are_not_retained_in_the_projection() {
         let source = include_str!("social.rs");
         let setter = source
@@ -3858,51 +3895,56 @@ mod contract_tests {
     }
 
     #[test]
-    fn witness_hidden_state_uses_persisted_private_entropy_and_named_morale_events() {
-        let source = include_str!("social.rs");
-        let initializer = source
-            .split("pub(crate) fn ensure_settlement_npc_social_state")
-            .nth(1)
-            .and_then(|tail| tail.split("pub fn spend_time_with_settlement_npc").next())
-            .expect("settlement NPC social initializer");
-        assert!(initializer.contains("ctx.random::<u64>()"));
-        assert!(initializer.contains("private_entropy"));
-        assert!(!initializer.contains("stable_hash(npc_id"));
-        assert!(source.contains("SettlementNpcMoraleEvent"));
-        assert!(source.contains("record_settlement_npc_morale_event"));
-        let projection = source
-            .split("pub struct BackendSettlementNpcRelationship")
-            .nth(1)
-            .and_then(|tail| tail.split("pub struct DialogueWitnessCapability").next())
-            .expect("settlement NPC relationship projection");
-        assert!(!projection.contains("private_entropy"));
-        assert!(!projection.contains("morale_anchor"));
-    }
-
-    #[test]
     fn casual_npc_chat_is_replay_first_and_fits_the_presence_window() {
         let source = include_str!("social.rs");
         let reducer = source
-            .split("pub fn spend_time_with_settlement_npc")
+            .split("pub fn spend_time_with_settlement_resident")
             .nth(1)
             .and_then(|tail| tail.split("pub fn chat_with_party_member").next())
             .expect("settlement NPC chat reducer");
-        assert!(reducer.find("chat_replayed(") < reducer.find("settlement_npc_presence()"));
+        assert!(reducer.find("chat_replayed(") < reducer.find("settlement_resident_presence()"));
         assert!(reducer.contains("npc_presence_remaining_minutes"));
-        assert!(reducer.contains("now.checked_add(requested_minutes)"));
+        assert!(reducer.contains("settlement_resident_profile"));
         assert!(reducer.contains("requested_minutes > remaining"));
+        assert!(reducer.contains("SocialChatTargetKind::SettlementResident"));
+        assert!(!reducer.contains("\"settlement_resident_profile\","));
     }
 
     #[test]
-    fn settlement_npc_affinity_projection_uses_observer_elapsed_time() {
+    fn qualitative_social_projections_use_closed_bands() {
+        assert_eq!(relationship_band(-30.0), AffinityBand::Hostile);
+        assert_eq!(relationship_band(50.0), AffinityBand::Trusted);
+        assert_eq!(familiarity_band(60), FamiliarityBand::Known);
+        assert_eq!(morale_band(-20.0), MoraleBand::Distressed);
+        let source = include_str!("social.rs");
+        let receipt = source
+            .split("pub struct SocialChatReceipt")
+            .nth(1)
+            .and_then(|tail| tail.split("pub struct BackendSocialChatReceipt").next())
+            .expect("typed social chat receipt");
+        assert!(receipt.contains("SocialChatTargetKind"));
+        assert!(receipt.contains("SocialChatOutcome"));
+        assert!(!receipt.contains("target_kind: String"));
+        assert!(!receipt.contains("outcome: String"));
+    }
+
+    #[test]
+    fn settlement_resident_affinity_projection_uses_observer_elapsed_time() {
         let source = include_str!("social.rs");
         let projection = source
-            .split("pub fn backend_settlement_npc_relationships")
+            .split("pub fn backend_settlement_resident_relationships")
             .nth(1)
             .and_then(|tail| tail.split("fn witness_social_action_replayed").next())
             .expect("settlement NPC relationship projection");
-        assert!(projection.contains("now.saturating_sub(relationship.affinity_anchor_minute)"));
-        assert!(!projection.contains("settle_affinity(relationship.affinity_anchor, 0)"));
+        assert!(projection.contains("now.saturating_sub(affinity.anchor_minute)"));
+        assert!(projection.contains("KinshipKind::Parent"));
+        assert!(projection.contains("KinshipKind::Child"));
+        assert!(projection.contains("KinshipKind::Sibling"));
+        assert!(projection.contains("KinshipKind::Spouse"));
+        assert!(projection.contains("active_courtship_between_view"));
+        assert!(projection.contains("shared_minutes >= 40 * 60"));
+        assert!(projection.contains("resident_precedence > observer_precedence"));
+        assert!(!projection.contains("settlement_resident_relationship"));
     }
 
     #[test]
@@ -3927,10 +3969,7 @@ mod contract_tests {
         let projection = source
             .split("pub fn backend_dialogue_witness_claims")
             .nth(1)
-            .and_then(|tail| {
-                tail.split("pub(crate) fn ensure_settlement_npc_social_state")
-                    .next()
-            })
+            .and_then(|tail| tail.split("fn witness_social_action_replayed").next())
             .expect("witness projection");
         assert!(projection.contains("event.sequence == claim.event_sequence"));
 

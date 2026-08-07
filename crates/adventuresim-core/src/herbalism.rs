@@ -1,264 +1,324 @@
-//! Small, authored herbalism rules.
-//!
-//! Herbalism deliberately models public ingredient grades and named
-//! preparations, not hidden chemistry, lots, arbitrary mixtures, or disease
-//! cures.  The result is pure and deterministic so the browser can preview
-//! exactly the same decision that the authoritative reducer commits.
+//! Shared physical-preparation and tincture timing constants.
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum IngredientGrade {
-    Poor,
-    Ordinary,
-    Fine,
+pub const BASE_CUT_MINUTES: u32 = 10;
+pub const BASE_GRIND_MINUTES: u32 = 20;
+pub const CHECK_TIME_REDUCTION_PER_RANK: f32 = 0.06;
+pub const GRINDING_TOOL_TIME_FACTOR: f32 = 0.50;
+pub const POPPY_TINCTURE_MATURATION_MINUTES: u64 = 60_480;
+pub const POPPY_TINCTURE_HERB_GRAMS: u32 = 50;
+pub const POPPY_TINCTURE_SPIRIT_ML: u32 = 150;
+
+use crate::{
+    material::{
+        DomainConservationPolicy, DomainContaminant, DomainMaterialComponent,
+        DomainMaterialProcess, DomainMaterialReceipt, DomainPreparation,
+        PublicMaterialPresentation,
+    },
+    physical_object::CustodyCharacterId,
+    rights::{
+        DecisionProvenance, DomainJurisdiction, DomainRightsOperation, DomainRightsResource,
+        DomainRightsSubject, PrivateRightsDecision, RightsDecisionKind, RightsJurisdiction,
+        RightsOperation, RightsQuestion, RightsResource, RightsRevision, RightsSubject,
+    },
+    strategic_action::{
+        ActionCoordinates, ActionEffect, ActionRequirement, AuthoritativeSnapshot,
+        CalculatedAction, DomainCapability, DomainEffect, DomainInterruption, DomainRequirement,
+        DomainTarget, PlanInput, PlanProvenance, PlanningOutcome, PublicPreview, PublicRejection,
+        RequestedDuration, RequirementCheck, TimeBoundaries, build_plan,
+    },
+    strategic_place::StrategicPlaceId,
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreparationAction {
+    Cut,
+    Grind,
 }
 
-impl IngredientGrade {
-    pub const fn rank(self) -> u8 {
-        match self {
-            Self::Poor => 0,
-            Self::Ordinary => 1,
-            Self::Fine => 2,
-        }
-    }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IngredientMaterialPreparation {}
+impl DomainPreparation for IngredientMaterialPreparation {}
 
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Poor => "Poor",
-            Self::Ordinary => "Ordinary",
-            Self::Fine => "Fine",
-        }
-    }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IngredientMaterialProcess {}
+impl DomainMaterialProcess for IngredientMaterialProcess {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MedicinalMaterialComponent {
+    pub intervention_profile_id: String,
+    pub profile_version: u16,
 }
+impl DomainMaterialComponent for MedicinalMaterialComponent {}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PreparationMethod {
-    DryGrind,
-    InfuseDecoct,
-    Tincture,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IngredientContaminant {
+    Microbial,
 }
+impl DomainContaminant for IngredientContaminant {}
 
-impl PreparationMethod {
-    pub const ALL: [Self; 3] = [Self::DryGrind, Self::InfuseDecoct, Self::Tincture];
-
-    pub const fn slug(self) -> &'static str {
-        match self {
-            Self::DryGrind => "dry_grind",
-            Self::InfuseDecoct => "infuse_decoct",
-            Self::Tincture => "tincture",
-        }
-    }
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::DryGrind => "Dry and grind",
-            Self::InfuseDecoct => "Infuse or decoct",
-            Self::Tincture => "Tincture",
-        }
-    }
-
-    pub const fn description(self) -> &'static str {
-        match self {
-            Self::DryGrind => "Air-dry the herb, then grind it for a topical preparation.",
-            Self::InfuseDecoct => {
-                "Use an authored gentle infusion or stronger heated decoction, as the herb requires."
-            }
-            Self::Tincture => {
-                "Steep the herb in one unit of tincture spirit to extract a concentrated remedy."
-            }
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CraftOutcome {
-    Medication(&'static str),
-    DegradedWaste(&'static str),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RequiredConsumable {
-    pub item_id: &'static str,
-    pub units: u32,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RiskAwareness {
-    Coarse,
-    Intermediate,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreparationConservationPolicy {
     Exact,
 }
+impl DomainConservationPolicy for PreparationConservationPolicy {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PreparationMaterialReceipt {
+    pub action: PreparationAction,
+}
+impl DomainMaterialReceipt for PreparationMaterialReceipt {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PreparationMaterialPresentation {
+    pub action: PreparationAction,
+    pub expected_revision: u64,
+}
+impl PublicMaterialPresentation for PreparationMaterialPresentation {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreparationPlanTarget {
+    IngredientLot,
+}
+impl DomainTarget for PreparationPlanTarget {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreparationPlanRequirement {
+    StableObjectCustody,
+    LotRevisionCurrent,
+    PreparationTransition,
+    RequiredTool,
+    RightsAllowed,
+}
+impl DomainRequirement for PreparationPlanRequirement {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreparationPlanCapability {
+    GoverningSkill,
+}
+impl DomainCapability for PreparationPlanCapability {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreparationPlanInterruption {
+    CharacterBoundary,
+}
+impl DomainInterruption for PreparationPlanInterruption {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PreparationPlanEffect {
+    AttemptWait {
+        actor: CustodyCharacterId,
+        requested_minutes: u64,
+    },
+    CommitPreparation {
+        action: PreparationAction,
+        expected_revision: u64,
+        next_display_name: String,
+    },
+}
+impl DomainEffect for PreparationPlanEffect {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreparationPublicPreview {
+    pub action: PreparationAction,
+    pub expected_revision: u64,
+    pub duration_minutes: u32,
+}
+impl PublicPreview for PreparationPublicPreview {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreparationRightsSubject {}
+impl DomainRightsSubject for PreparationRightsSubject {}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreparationRightsResource {}
+impl DomainRightsResource for PreparationRightsResource {}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreparationRightsOperation {}
+impl DomainRightsOperation for PreparationRightsOperation {}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreparationRightsJurisdiction {}
+impl DomainJurisdiction for PreparationRightsJurisdiction {}
+
+pub type PreparationRightsQuestion = RightsQuestion<
+    PreparationRightsSubject,
+    PreparationRightsResource,
+    PreparationRightsOperation,
+    PreparationRightsJurisdiction,
+>;
+
+pub fn preparation_rights_question(
+    actor: CustodyCharacterId,
+    object_id: crate::physical_object::PhysicalObjectId,
+    place: StrategicPlaceId,
+) -> Result<PreparationRightsQuestion, crate::rights::RightsQuestionError> {
+    RightsQuestion::try_new(
+        RightsSubject::Character(actor),
+        RightsResource::Object(object_id),
+        RightsOperation::Alter,
+        RightsJurisdiction::Place(place),
+    )
+}
+
+pub fn decide_preparation_rights(
+    question: &PreparationRightsQuestion,
+    custody_matches: bool,
+    revision: u64,
+) -> PrivateRightsDecision<()> {
+    use sha2::Digest as _;
+    let mut hash = sha2::Sha256::new();
+    hash.update(b"ingredient-preparation-rights-v1");
+    if let RightsSubject::Character(actor) = question.subject() {
+        hash.update(actor.get().to_le_bytes());
+    }
+    if let RightsResource::Object(object) = question.resource() {
+        hash.update(object.get().to_le_bytes());
+    }
+    match question.jurisdiction() {
+        RightsJurisdiction::Global => hash.update(b"global"),
+        RightsJurisdiction::Place(place) => hash.update(place.to_string().as_bytes()),
+        RightsJurisdiction::Domain(_) => hash.update(b"domain"),
+    }
+    let provenance = DecisionProvenance {
+        evidence_revision: RightsRevision(revision),
+        question_digest: hash.finalize().into(),
+    };
+    if custody_matches {
+        PrivateRightsDecision::allowed(Vec::new(), None, provenance)
+    } else {
+        PrivateRightsDecision::denied(Vec::new(), provenance)
+    }
+}
+
+pub struct PreparationPlanAuthority {
+    pub coordinates: ActionCoordinates<PreparationPlanTarget>,
+    pub provenance: PlanProvenance,
+    pub snapshot: AuthoritativeSnapshot,
+    pub current_minute: u64,
+    pub duration: RequestedDuration,
+    /// Exact terminal boundary hydrated by the authoritative persistence
+    /// adapter. A boundary inside the requested interval makes the plan
+    /// wait-only; completion effects must never be invented by the reducer.
+    pub terminal_minute: Option<u64>,
+    pub rights: PrivateRightsDecision<()>,
+    pub custody_matches: bool,
+    pub revision_current: bool,
+    pub transition_allowed: bool,
+    pub required_tool_available: bool,
+    pub action: PreparationAction,
+    pub expected_revision: u64,
+    pub next_display_name: String,
+}
+
+pub type PreparationPlanningOutcome = PlanningOutcome<
+    PreparationPlanTarget,
+    PreparationPlanRequirement,
+    PreparationPlanCapability,
+    PreparationPlanInterruption,
+    PreparationPlanEffect,
+    PreparationPublicPreview,
+>;
+
+pub fn build_preparation_plan(authority: PreparationPlanAuthority) -> PreparationPlanningOutcome {
+    let requirements = [
+        (
+            PreparationPlanRequirement::StableObjectCustody,
+            authority.custody_matches,
+        ),
+        (
+            PreparationPlanRequirement::LotRevisionCurrent,
+            authority.revision_current,
+        ),
+        (
+            PreparationPlanRequirement::PreparationTransition,
+            authority.transition_allowed,
+        ),
+        (
+            PreparationPlanRequirement::RequiredTool,
+            authority.required_tool_available,
+        ),
+        (
+            PreparationPlanRequirement::RightsAllowed,
+            authority.rights.kind() == RightsDecisionKind::Allowed,
+        ),
+    ]
+    .into_iter()
+    .map(|(requirement, satisfied)| RequirementCheck {
+        requirement: ActionRequirement::Domain(requirement),
+        satisfied,
+    })
+    .collect();
+    let actor = authority.coordinates.actor();
+    let action = authority.action;
+    let revision = authority.expected_revision;
+    let duration = authority.duration.minutes();
+    let next_display_name = authority.next_display_name;
+    build_plan(
+        PlanInput {
+            coordinates: authority.coordinates,
+            provenance: authority.provenance,
+            snapshot: authority.snapshot,
+            current_minute: authority.current_minute,
+            duration: authority.duration,
+            boundaries: TimeBoundaries {
+                terminal_minute: authority.terminal_minute,
+                interruption: None,
+            },
+            requirements,
+            sanitized_rejection: PublicRejection::Unavailable,
+        },
+        move |_, time| {
+            let mut effects = vec![ActionEffect::Domain(PreparationPlanEffect::AttemptWait {
+                actor,
+                requested_minutes: duration,
+            })];
+            if time.permits_completion_effects() {
+                effects.push(ActionEffect::Domain(
+                    PreparationPlanEffect::CommitPreparation {
+                        action,
+                        expected_revision: revision,
+                        next_display_name,
+                    },
+                ));
+            }
+            CalculatedAction {
+                effects,
+                public_preview: PreparationPublicPreview {
+                    action,
+                    expected_revision: revision,
+                    duration_minutes: duration.min(u64::from(u32::MAX)) as u32,
+                },
+            }
+        },
+    )
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct CraftPreview {
-    pub base_ingredient_id: &'static str,
-    pub grade: IngredientGrade,
-    pub method: PreparationMethod,
-    pub input_units: u32,
-    pub required_consumable: Option<RequiredConsumable>,
-    pub duration_minutes: u32,
-    pub potency_tier: u8,
-    pub outcome: CraftOutcome,
-    pub expected_effect: &'static str,
-    pub risk: &'static str,
-    pub risk_awareness: RiskAwareness,
+pub enum PhysicalPreparation {
+    Cut,
+    Ground,
 }
 
-fn risk_projection(base: &str, skill: f32) -> (&'static str, RiskAwareness) {
-    let awareness = if skill < 1.5 {
-        RiskAwareness::Coarse
-    } else if skill < 3.5 {
-        RiskAwareness::Intermediate
-    } else {
-        RiskAwareness::Exact
+pub fn physical_preparation_minutes(
+    preparation: PhysicalPreparation,
+    governing_check: f32,
+    has_grinding_tool: bool,
+) -> u32 {
+    let base = match preparation {
+        PhysicalPreparation::Cut => BASE_CUT_MINUTES,
+        PhysicalPreparation::Ground => BASE_GRIND_MINUTES,
     };
-    let risk = match (base, awareness) {
-        ("willow_bark", RiskAwareness::Coarse) => {
-            "Safety warning: may dangerously affect bleeding; exact severity is unclear"
-        }
-        ("willow_bark", RiskAwareness::Intermediate) => {
-            "Safety warning: may meaningfully impair coagulation"
-        }
-        ("willow_bark", RiskAwareness::Exact) => {
-            "Safety warning: coagulation hazard rises from +0.02 to +0.07 by potency"
-        }
-        ("comfrey", RiskAwareness::Coarse) => {
-            "Safety warning: do not swallow; exact topical safety is unclear"
-        }
-        ("comfrey", RiskAwareness::Intermediate | RiskAwareness::Exact) => {
-            "Safety warning: topical use only"
-        }
-        ("poppy", RiskAwareness::Coarse) => {
-            "Safety warning: dangerous breathing and kidney effects; exact severity is unclear"
-        }
-        ("poppy", RiskAwareness::Intermediate) => {
-            "Safety warning: meaningful oxygenation and renal-clearance hazard"
-        }
-        ("poppy", RiskAwareness::Exact) => {
-            "Safety warning: oxygenation +0.04–0.16 and renal clearance +0.03–0.11 by potency"
-        }
-        ("sage", RiskAwareness::Coarse) => {
-            "Safety warning: may worsen fluid balance; exact severity is unclear"
-        }
-        ("sage", RiskAwareness::Intermediate) => "Safety warning: may increase dehydration",
-        ("sage", RiskAwareness::Exact) => {
-            "Safety warning: hydration hazard rises from +0.02 to +0.06 by potency"
-        }
-        _ => "Safety warning: preparation risk is uncertain",
-    };
-    (risk, awareness)
-}
-
-pub const SUPPORTED_BASE_INGREDIENTS: [&str; 4] = ["willow_bark", "comfrey", "poppy", "sage"];
-
-/// Decode a bounded catalogue identity into its medicinal base and public
-/// grade. Ordinary ingredients retain their established IDs.
-pub fn normalize_ingredient(id: &str) -> Option<(&'static str, IngredientGrade)> {
-    for base in SUPPORTED_BASE_INGREDIENTS {
-        if id == base {
-            return Some((base, IngredientGrade::Ordinary));
-        }
-        if id.strip_suffix("_poor") == Some(base) {
-            return Some((base, IngredientGrade::Poor));
-        }
-        if id.strip_suffix("_fine") == Some(base) {
-            return Some((base, IngredientGrade::Fine));
-        }
-    }
-    None
-}
-
-fn tier(grade: IngredientGrade, capability: f32) -> u8 {
-    let skill = if capability.is_finite() {
-        capability.clamp(0.0, 5.0)
+    let check = if governing_check.is_finite() {
+        governing_check.clamp(0.0, 5.0)
     } else {
         0.0
     };
-    // Grade supplies the first two steps; practiced hands can raise it by one.
-    (1 + grade.rank() + u8::from(skill >= 2.5)).min(3)
-}
-
-fn medication(prefix: &str, tier: u8) -> &'static str {
-    match (prefix, tier) {
-        ("willow", 1) => "weak_willow_decoction",
-        ("willow", 2) => "cooling_willow_draught",
-        ("willow", 3) => "strong_willow_decoction",
-        ("comfrey", 1) => "weak_comfrey_poultice",
-        ("comfrey", 2) => "comfrey_poultice",
-        ("comfrey", 3) => "fine_comfrey_poultice",
-        ("poppy", 1) => "weak_poppy_tincture",
-        ("poppy", 2) => "poppy_tincture",
-        ("poppy", 3) => "strong_poppy_tincture",
-        ("sage", 1) => "weak_sage_infusion",
-        ("sage", 2) => "sage_infusion",
-        ("sage", 3) => "fine_sage_infusion",
-        _ => unreachable!("authored herbal preparation"),
-    }
-}
-
-/// Preview an authored one-ingredient preparation.
-pub fn preview(
-    ingredient_id: &str,
-    method: PreparationMethod,
-    capability: f32,
-) -> Option<CraftPreview> {
-    let (base, grade) = normalize_ingredient(ingredient_id)?;
-    let potency_tier = tier(grade, capability);
-    let skill = if capability.is_finite() {
-        capability.clamp(0.0, 5.0)
+    let tool = if preparation == PhysicalPreparation::Ground && has_grinding_tool {
+        GRINDING_TOOL_TIME_FACTOR
     } else {
-        0.0
+        1.0
     };
-    let input_units = 1;
-    let base_minutes = match method {
-        PreparationMethod::DryGrind => 120,
-        PreparationMethod::InfuseDecoct => 180,
-        PreparationMethod::Tincture => 360,
-    };
-    let duration_minutes = ((base_minutes as f32) * (1.25 - skill * 0.05)).round() as u32;
-    let (risk, risk_awareness) = risk_projection(base, skill);
-    let required_consumable =
-        (method == PreparationMethod::Tincture).then_some(RequiredConsumable {
-            item_id: "tincture_spirit",
-            units: 1,
-        });
-    let (outcome, expected_effect) = match (base, method) {
-        ("willow_bark", PreparationMethod::InfuseDecoct) => (
-            CraftOutcome::Medication(medication("willow", potency_tier)),
-            "Reduces temperature and inflammation",
-        ),
-        ("comfrey", PreparationMethod::DryGrind) => (
-            CraftOutcome::Medication(medication("comfrey", potency_tier)),
-            "Supports tissue integrity and reduces inflammation",
-        ),
-        ("poppy", PreparationMethod::Tincture) => (
-            CraftOutcome::Medication(medication("poppy", potency_tier)),
-            "Strongly relieves pain and stress",
-        ),
-        ("sage", PreparationMethod::InfuseDecoct) => (
-            CraftOutcome::Medication(medication("sage", potency_tier)),
-            "Mildly reduces inflammation and stress",
-        ),
-        // Comfrey's useful constituents are authored as heat-sensitive. This
-        // is a deliberate, visible degradation outcome rather than a roll.
-        ("comfrey", PreparationMethod::InfuseDecoct) => (
-            CraftOutcome::DegradedWaste("spent_herb_waste"),
-            "No medicinal effect; excessive heat destroys the useful preparation",
-        ),
-        _ => return None,
-    };
-    Some(CraftPreview {
-        base_ingredient_id: base,
-        grade,
-        method,
-        input_units,
-        required_consumable,
-        duration_minutes,
-        potency_tier,
-        outcome,
-        expected_effect,
-        risk,
-        risk_awareness,
-    })
+    ((base as f32) * (1.0 - CHECK_TIME_REDUCTION_PER_RANK * check) * tool)
+        .ceil()
+        .max(1.0) as u32
 }
 
 #[cfg(test)]
@@ -266,124 +326,82 @@ mod tests {
     use super::*;
 
     #[test]
-    fn full_public_grade_method_matrix_is_deterministic() {
-        for base in SUPPORTED_BASE_INGREDIENTS {
-            for id in [format!("{base}_poor"), base.into(), format!("{base}_fine")] {
-                assert!(normalize_ingredient(&id).is_some());
-                for method in PreparationMethod::ALL {
-                    assert_eq!(preview(&id, method, 2.0), preview(&id, method, 2.0));
-                }
-            }
-        }
-        assert!(normalize_ingredient("mystery_lot").is_none());
-        assert!(normalize_ingredient("tincture_spirit").is_none());
-        assert!(preview("sage", PreparationMethod::DryGrind, 5.0).is_none());
-    }
-
-    #[test]
-    fn every_bounded_identity_is_authored_in_the_item_catalogue() {
-        for base in SUPPORTED_BASE_INGREDIENTS {
-            for id in [format!("{base}_poor"), base.into(), format!("{base}_fine")] {
-                assert!(crate::item_catalog::definition(&id).is_some(), "{id}");
-            }
-        }
-        for base in SUPPORTED_BASE_INGREDIENTS {
-            for method in PreparationMethod::ALL {
-                if let Some(preview) = preview(base, method, 2.0) {
-                    let output = match preview.outcome {
-                        CraftOutcome::Medication(id) | CraftOutcome::DegradedWaste(id) => id,
-                    };
-                    assert!(
-                        crate::item_catalog::definition(output).is_some(),
-                        "{output}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn grade_and_skill_improve_tier_while_skill_reduces_time() {
-        let poor = preview("willow_bark_poor", PreparationMethod::InfuseDecoct, 0.0).unwrap();
-        let ordinary = preview("willow_bark", PreparationMethod::InfuseDecoct, 1.0).unwrap();
-        let fine = preview("willow_bark_fine", PreparationMethod::InfuseDecoct, 3.0).unwrap();
-        assert!(poor.potency_tier < ordinary.potency_tier);
-        assert!(ordinary.potency_tier < fine.potency_tier);
-        assert!(poor.duration_minutes > fine.duration_minutes);
-        assert_eq!(poor.input_units, 1);
-        assert_eq!(fine.input_units, 1);
-    }
-
-    #[test]
-    fn heat_degradation_and_toxic_tincture_are_explicit() {
-        let degraded = preview("comfrey", PreparationMethod::InfuseDecoct, 3.0).unwrap();
+    fn grinding_tool_halves_time_and_skill_uses_canonical_check() {
         assert_eq!(
-            degraded.outcome,
-            CraftOutcome::DegradedWaste("spent_herb_waste")
-        );
-        assert!(degraded.expected_effect.contains("excessive heat"));
-        let poppy = preview("poppy_fine", PreparationMethod::Tincture, 5.0).unwrap();
-        assert!(poppy.risk.contains("oxygenation"));
-        assert_eq!(
-            poppy.required_consumable,
-            Some(RequiredConsumable {
-                item_id: "tincture_spirit",
-                units: 1
-            })
-        );
-        assert_eq!(poppy.potency_tier, 3);
-        let weak = crate::physiology::current_intervention_profile("weak_poppy_tincture").unwrap();
-        let strong =
-            crate::physiology::current_intervention_profile("strong_poppy_tincture").unwrap();
-        assert!(
-            strong
-                .adverse_delta_per_unit
-                .get(crate::physiology::Meter::Oxygenation)
-                > weak
-                    .adverse_delta_per_unit
-                    .get(crate::physiology::Meter::Oxygenation)
-        );
-        assert!(strong.route == crate::physiology::InterventionRoute::Oral);
-    }
-
-    #[test]
-    fn risk_awareness_improves_but_never_removes_the_warning() {
-        let novice = preview("poppy", PreparationMethod::Tincture, 0.0).unwrap();
-        let intermediate = preview("poppy", PreparationMethod::Tincture, 2.0).unwrap();
-        let master = preview("poppy", PreparationMethod::Tincture, 5.0).unwrap();
-        assert_eq!(novice.risk_awareness, RiskAwareness::Coarse);
-        assert_eq!(intermediate.risk_awareness, RiskAwareness::Intermediate);
-        assert_eq!(master.risk_awareness, RiskAwareness::Exact);
-        assert_ne!(novice.risk, master.risk);
-        for risk in [novice.risk, intermediate.risk, master.risk] {
-            assert!(risk.starts_with("Safety warning:"));
-        }
-    }
-
-    #[test]
-    fn only_tincture_requires_the_bounded_alcoholic_consumable() {
-        assert!(
-            preview("comfrey", PreparationMethod::DryGrind, 2.0)
-                .unwrap()
-                .required_consumable
-                .is_none()
-        );
-        assert!(
-            preview("willow_bark", PreparationMethod::InfuseDecoct, 2.0)
-                .unwrap()
-                .required_consumable
-                .is_none()
+            physical_preparation_minutes(PhysicalPreparation::Ground, 0.0, false),
+            20
         );
         assert_eq!(
-            preview("poppy", PreparationMethod::Tincture, 2.0)
-                .unwrap()
-                .required_consumable
-                .unwrap()
-                .item_id,
-            "tincture_spirit"
+            physical_preparation_minutes(PhysicalPreparation::Ground, 0.0, true),
+            10
         );
-        for method in PreparationMethod::ALL {
-            assert!(!method.description().is_empty());
-        }
+        assert!(
+            physical_preparation_minutes(PhysicalPreparation::Cut, 5.0, false) < BASE_CUT_MINUTES
+        );
+    }
+
+    #[test]
+    fn terminal_preparation_plan_is_wait_only() {
+        use crate::{
+            physical_object::{CustodyCharacterId, PhysicalObjectId},
+            strategic_action::{
+                ActionCoordinates, ActionDefinitionId, ActionRequestId, ActionTarget,
+                AuthoritativeSnapshot, AuthorityBinding, PlanProvenance, PlanningOutcome,
+                RequestedDuration, SnapshotDigest, SnapshotRevision,
+            },
+            strategic_place::StrategicPlaceId,
+        };
+
+        let actor = CustodyCharacterId::try_new(1).unwrap();
+        let object = PhysicalObjectId::try_new(2).unwrap();
+        let place = StrategicPlaceId::settlement("ironforge").unwrap();
+        let coordinates = ActionCoordinates::try_new(
+            actor,
+            ActionTarget::Object(object),
+            place.clone(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        let question = preparation_rights_question(actor, object, place).unwrap();
+        let digest = [3; 32];
+        let PlanningOutcome::Ready(plan) = build_preparation_plan(PreparationPlanAuthority {
+            coordinates,
+            provenance: PlanProvenance {
+                request_id: ActionRequestId::try_new("terminal-preparation").unwrap(),
+                action_id: ActionDefinitionId::try_new("ingredient-preparation:cut").unwrap(),
+                input_digest: SnapshotDigest(digest),
+                authority_binding: AuthorityBinding(digest),
+            },
+            snapshot: AuthoritativeSnapshot {
+                revision: SnapshotRevision(1),
+                digest: SnapshotDigest(digest),
+            },
+            current_minute: 100,
+            duration: RequestedDuration::try_new(10).unwrap(),
+            terminal_minute: Some(105),
+            rights: decide_preparation_rights(&question, true, 1),
+            custody_matches: true,
+            revision_current: true,
+            transition_allowed: true,
+            required_tool_available: true,
+            action: PreparationAction::Cut,
+            expected_revision: 1,
+            next_display_name: "Cut willow bark".into(),
+        }) else {
+            panic!("terminal preparation should remain a valid wait-only plan");
+        };
+        assert!(plan.effects().iter().any(|effect| matches!(
+            effect,
+            crate::strategic_action::ActionEffect::Domain(
+                PreparationPlanEffect::AttemptWait { .. }
+            )
+        )));
+        assert!(!plan.effects().iter().any(|effect| matches!(
+            effect,
+            crate::strategic_action::ActionEffect::Domain(
+                PreparationPlanEffect::CommitPreparation { .. }
+            )
+        )));
     }
 }

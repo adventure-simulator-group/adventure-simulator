@@ -51,13 +51,10 @@
   };
   if (typeof document === "undefined") return;
 
-  const mounted = new WeakSet();
   const dirty = new WeakSet();
   const states = new WeakMap();
 
   const mount = (control) => {
-    if (mounted.has(control)) return;
-    mounted.add(control);
     const form = control.closest("form");
     const duration = control.querySelector("[data-rest-duration-input]");
     const exact = control.querySelector("[data-rest-exact-minutes]");
@@ -66,6 +63,22 @@
     const panel = control.querySelector("[data-wake-time-panel]");
     const submit = form.querySelector("[data-rest-submit]");
     const radios = [...control.querySelectorAll("input[type=radio][name=unit]")];
+    const buttons = [...control.querySelectorAll("[data-rest-step]")];
+    const signature = [
+      duration, exact, slider, output, panel, submit, ...radios, ...buttons,
+      control.dataset.restMinimumMinutes ?? "",
+      control.dataset.restDefaultMinutes ?? "",
+      control.dataset.restScheduledWakeMinute ?? "",
+    ];
+    const previous = states.get(control);
+    if (previous?.signature.length === signature.length
+      && previous.signature.every((value, index) => value === signature[index])) return;
+    previous?.listeners.abort();
+    dirty.delete(control);
+    const listeners = new AbortController();
+    const listen = (target, type, listener) => target.addEventListener(type, listener, {
+      signal: listeners.signal,
+    });
     const minimumMinutes = Math.max(1, Math.round(Number(control.dataset.restMinimumMinutes) || DAY_MINUTES));
     const defaultMinutes = Math.max(0, Math.round(Number(control.dataset.restDefaultMinutes) || 0));
     const scheduledWakeMinute = control.dataset.restScheduledWakeMinute === undefined
@@ -123,7 +136,7 @@
     setTarget(scheduledWakeMinute ?? (characterMinutes !== null && defaultMinutes > 0
       ? targetForDuration(characterMinutes, defaultMinutes)
       : 480));
-    slider.addEventListener("input", () => {
+    listen(slider, "input", () => {
       dirty.add(control);
       const clock = formatClock(slider.value);
       output.value = clock;
@@ -131,8 +144,8 @@
       slider.setAttribute("aria-valuetext", clock);
       if (characterMinutes !== null) setHoursMinutes(minutesUntilWakeWithMinimum(characterMinutes, slider.value, minimumMinutes));
     });
-    slider.addEventListener("pointerdown", () => { slider.step = "60"; });
-    slider.addEventListener("keydown", (event) => {
+    listen(slider, "pointerdown", () => { slider.step = "60"; });
+    listen(slider, "keydown", (event) => {
       const direction = ["ArrowRight", "ArrowUp"].includes(event.key) ? 1
         : ["ArrowLeft", "ArrowDown"].includes(event.key) ? -1 : 0;
       if (!direction) return;
@@ -145,7 +158,7 @@
       slider.value = Math.min(1_380, Math.max(0, next));
       slider.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    duration.addEventListener("input", () => {
+    listen(duration, "input", () => {
       dirty.add(control);
       if (selectedUnit() === "days") {
         const value = Number(duration.value);
@@ -165,7 +178,7 @@
       submit.disabled = false;
       setTarget(targetForDuration(characterMinutes, durationMinutes));
     });
-    duration.addEventListener("change", () => {
+    listen(duration, "change", () => {
       if (selectedUnit() === "hours") {
         const durationMinutes = parseDuration(duration.value);
         duration.value = formatDuration(durationMinutes === null ? minimumMinutes : Math.max(minimumMinutes, durationMinutes));
@@ -173,11 +186,11 @@
       if (selectedUnit() === "days" && Number(duration.value) < 1) duration.value = "1";
       duration.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    radios.forEach((radio) => radio.addEventListener("change", () => {
+    radios.forEach((radio) => listen(radio, "change", () => {
       dirty.add(control);
       applyUnit();
     }));
-    control.querySelectorAll("[data-rest-step]").forEach((button) => button.addEventListener("click", () => {
+    buttons.forEach((button) => listen(button, "click", () => {
       dirty.add(control);
       if (selectedUnit() === "hours") {
         const current = parseDuration(duration.value) ?? minimumMinutes;
@@ -189,6 +202,8 @@
       duration.dispatchEvent(new Event("change", { bubbles: true }));
     }));
     states.set(control, {
+      signature,
+      listeners,
       syncTime(minutes) {
         characterMinutes = Number(minutes);
         if (selectedUnit() === "hours") {
@@ -214,6 +229,14 @@
   };
 
   const mountAll = (root = document) => root.querySelectorAll?.("[data-wake-time]").forEach(mount);
+  const mountAdded = (root) => {
+    if (root.matches?.("[data-wake-time]")) mount(root);
+    const owner = root.closest?.("[data-wake-time]");
+    if (owner) mount(owner);
+    const form = root.matches?.("form") ? root : root.closest?.("form");
+    if (form) mountAll(form);
+    mountAll(root);
+  };
   const isDirty = (root = document) => [...root.querySelectorAll?.("[data-wake-time]") || []]
     .some((control) => dirty.has(control));
   const syncTime = (root, minutes) => {
@@ -249,6 +272,21 @@
   window.strategicRestDuration = { isDirty, mountAll };
   mountAll();
   mountRestSummary();
+  if (typeof MutationObserver !== "undefined") {
+    new MutationObserver((records) => records.forEach((record) => {
+      if (record.type === "attributes") mountAdded(record.target);
+      else record.addedNodes.forEach(mountAdded);
+    })).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: [
+        "data-rest-minimum-minutes",
+        "data-rest-default-minutes",
+        "data-rest-scheduled-wake-minute",
+      ],
+      childList: true,
+      subtree: true,
+    });
+  }
   document.addEventListener("strategic-page-mounted", () => {
     mountAll();
     mountRestSummary();

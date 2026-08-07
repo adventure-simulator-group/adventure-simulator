@@ -16,6 +16,10 @@
   };
 
   const locationMatches = ({ kind, id }) => {
+    // Modal strategic workflows such as a puzzle conversation remain valid
+    // while the character's authoritative location is still the road camp.
+    // The player leaves them through their explicit navigation action.
+    if (document.querySelector("[data-live-navigation-static]")) return true;
     // Character selection is an intentional escape from the current location.
     if (location.pathname.startsWith("/characters")) return true;
     if (kind === "camp") return location.pathname === "/camp";

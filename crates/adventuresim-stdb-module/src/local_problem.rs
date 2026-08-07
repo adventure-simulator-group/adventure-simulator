@@ -6,7 +6,7 @@ use crate::{
         InvestigationLead, case_site_authority, investigation_event_authority,
         investigation_evidence_authority, investigation_lead,
     },
-    settlement_population::{settlement_npc, settlement_npc_presence},
+    settlement_population::{settlement_resident_presence, settlement_resident_profile},
     strategic::{
         ValidatedQuestGenerationAuthority, hostile_group_authority, quest_generation_authority,
         settlement, strategic_gateway_authority__view, travel_edge,
@@ -26,6 +26,8 @@ use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet};
 pub struct LocalProblemAuthority {
     #[primary_key]
     pub id: String,
+    #[index(btree)]
+    pub gateway_bucket: u8,
     #[index(btree)]
     pub scope_key: String,
     pub scope_json: String,
@@ -67,8 +69,8 @@ pub struct GeneratedProblemIncident {
     pub occurred_at: u64,
     pub event_id: String,
     pub proposition_id: String,
-    pub witness_npc_id: String,
-    pub victim_npc_id: String,
+    pub witness_resident_character_id: u64,
+    pub victim_resident_character_id: u64,
     pub circumstance: String,
     pub site_id: String,
     pub evidence_id: String,
@@ -119,9 +121,9 @@ pub struct LocalProblemReceipt {
     pub settlement_id: String,
     pub problem_id: String,
     pub opaque_case_ref: String,
-    pub source_npc_id: String,
+    pub source_resident_character_id: u64,
     pub discovery_session_id: String,
-    pub contact_npc_id: String,
+    pub contact_resident_character_id: u64,
     pub expected_location_id: String,
     pub safe_summary: String,
     /// Observer chronology used by owner-facing journal projections.
@@ -187,7 +189,7 @@ pub struct PublicThreatDisclosure {
     pub exact_site_id: String,
     pub approximate_count: String,
     pub source_kind: String,
-    pub source_npc_id: String,
+    pub source_resident_character_id: u64,
     pub learned_at: u64,
 }
 
@@ -344,7 +346,7 @@ pub fn backend_local_problem_rumors(ctx: &ViewContext) -> Vec<BackendLocalProble
         .collect()
 }
 
-fn official_minute(ctx: &ReducerContext) -> u64 {
+pub(crate) fn official_minute(ctx: &ReducerContext) -> u64 {
     ctx.db
         .world_clock()
         .id()
@@ -414,6 +416,7 @@ pub(crate) fn materialize_generated_problem(
         .local_problem_authority()
         .insert(LocalProblemAuthority {
             id: case.problem_id.clone(),
+            gateway_bucket: 0,
             scope_key,
             scope_json: serde_json::to_string(&scope)
                 .map_err(|_| "Could not encode generated problem scope")?,
@@ -494,6 +497,52 @@ pub(crate) fn ensure_generated_incidents(
     settlement_id: &str,
     minute: u64,
 ) -> Result<(), String> {
+    ensure_generated_incidents_inner(ctx, settlement_id, minute, None, None)
+}
+
+pub(crate) fn trigger_next_generated_incident(
+    ctx: &ReducerContext,
+    problem_id: &str,
+    occurred_at: u64,
+) -> Result<u16, String> {
+    let problem = ctx
+        .db
+        .local_problem_authority()
+        .id()
+        .find(problem_id.to_owned())
+        .ok_or("Generated problem not found")?;
+    if problem.resolved_at.is_some() {
+        return Err("Resolved generated problems cannot receive another incident".into());
+    }
+    let scope: lp::Scope = serde_json::from_str(&problem.scope_json)
+        .map_err(|_| "Generated problem scope authority is invalid")?;
+    let lp::Scope::Settlement { settlement_id } = scope else {
+        return Err("Only settlement generated problems support manual incidents".into());
+    };
+    let validated = validated_problem_generation(ctx, &problem, &settlement_id)
+        .ok_or("Generated problem has no valid private generation authority")?;
+    if !problem.recurring_hostile && problem.incident_count >= validated.manifest.maximum_incidents
+    {
+        return Err("Generated problem has reached its incident maximum".into());
+    }
+    let next = problem.incident_count.saturating_add(1);
+    ensure_generated_incidents_inner(
+        ctx,
+        &settlement_id,
+        occurred_at,
+        Some(problem_id),
+        Some(occurred_at),
+    )?;
+    Ok(next)
+}
+
+fn ensure_generated_incidents_inner(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    minute: u64,
+    target_problem_id: Option<&str>,
+    forced_occurred_at: Option<u64>,
+) -> Result<(), String> {
     let scope = format!("settlement:{settlement_id}");
     let problems: Vec<_> = ctx
         .db
@@ -501,6 +550,7 @@ pub(crate) fn ensure_generated_incidents(
         .scope_key()
         .filter(&scope)
         .filter(|problem| is_active(problem, minute))
+        .filter(|problem| target_problem_id.is_none_or(|id| problem.id == id))
         .collect();
     for mut problem in problems {
         let Some(validated) = validated_problem_generation(ctx, &problem, settlement_id) else {
@@ -511,12 +561,19 @@ pub(crate) fn ensure_generated_incidents(
         } else {
             validated.manifest.maximum_incidents
         };
-        let total_due = lp::due_incident_count_configured(
-            problem.starts_at,
-            minute,
-            validated.manifest.incident_interval_minutes,
-            configured_maximum,
-        );
+        let total_due = if target_problem_id.is_some() {
+            problem
+                .incident_count
+                .saturating_add(1)
+                .min(configured_maximum)
+        } else {
+            lp::due_incident_count_configured(
+                problem.starts_at,
+                minute,
+                validated.manifest.incident_interval_minutes,
+                configured_maximum,
+            )
+        };
         // Bound one transaction's catch-up work. Repeated settlement refreshes
         // deterministically continue from the persisted ordinal.
         let due = total_due.min(problem.incident_count.saturating_add(16));
@@ -559,10 +616,12 @@ pub(crate) fn ensure_generated_incidents(
             let event_id = format!("{id}:event");
             let proposition_id = format!("{id}:proposition");
             let evidence_id = format!("{id}:evidence");
-            let occurred_at = problem.starts_at.saturating_add(
-                u64::from(ordinal.saturating_sub(1))
-                    .saturating_mul(validated.manifest.incident_interval_minutes),
-            );
+            let occurred_at = forced_occurred_at.unwrap_or_else(|| {
+                problem.starts_at.saturating_add(
+                    u64::from(ordinal.saturating_sub(1))
+                        .saturating_mul(validated.manifest.incident_interval_minutes),
+                )
+            });
             let public_summary = follow_up_summary(&problem.symptom).to_owned();
             let witness_account = format!(
                 "{} reported seeing signs near {} while {}.",
@@ -578,8 +637,8 @@ pub(crate) fn ensure_generated_incidents(
                 occurred_at,
                 event_id: event_id.clone(),
                 proposition_id: proposition_id.clone(),
-                witness_npc_id: witness.npc_id.clone(),
-                victim_npc_id: victim.npc_id.clone(),
+                witness_resident_character_id: witness.resident_character_id.clone(),
+                victim_resident_character_id: victim.resident_character_id.clone(),
                 circumstance: format!("{circumstance:?}").to_ascii_lowercase(),
                 site_id: site.id.0.clone(),
                 evidence_id: evidence_id.clone(),
@@ -603,7 +662,7 @@ pub(crate) fn ensure_generated_incidents(
                     case_id: incident.case_id.clone(),
                     canonical_propositions_json: serde_json::to_string(&[serde_json::json!({
                         "id": proposition_id,
-                        "subject": victim.npc_id,
+                        "subject": victim.resident_character_id,
                         "predicate": "was affected by a further incident near",
                         "object": site.id.0,
                     })])
@@ -644,12 +703,13 @@ pub(crate) fn ensure_generated_incidents(
             if problem.public_since_minute.is_none()
                 && adventuresim_core::threat_escalation::is_public(problem.public_awareness_bps)
             {
-                problem.public_since_minute =
+                problem.public_since_minute = forced_occurred_at.or_else(|| {
                     adventuresim_core::threat_escalation::scheduled_public_since_minute(
                         problem.starts_at,
                         validated.manifest.incident_interval_minutes,
                         profile.investigation.investigability,
-                    );
+                    )
+                });
                 if problem.public_since_minute.is_none() {
                     return Err("Public awareness crossed without a crossing ordinal".into());
                 }
@@ -727,6 +787,7 @@ pub fn ensure_settlement_problems(ctx: &ReducerContext, settlement_id: &str) -> 
         .local_problem_authority()
         .insert(LocalProblemAuthority {
             id: problem.id.0.clone(),
+            gateway_bucket: 0,
             scope_key: key,
             scope_json: serde_json::to_string(&scope)
                 .map_err(|_| "Could not encode problem scope")?,
@@ -800,6 +861,7 @@ pub fn ensure_route_problem(
         .local_problem_authority()
         .insert(LocalProblemAuthority {
             id: problem.id.0.clone(),
+            gateway_bucket: 0,
             scope_key: key,
             scope_json: serde_json::to_string(&scope)
                 .map_err(|_| "Could not encode route scope")?,
@@ -1039,7 +1101,7 @@ fn referral_location_label(
         .witnesses
         .iter()
         .find(|witness| {
-            witness.npc_id == receipt.contact_npc_id
+            witness.resident_character_id == receipt.contact_resident_character_id
                 && witness.expected_location == receipt.expected_location_id
         })
         .map(adventuresim_core::quest_generation::referral_display_location)
@@ -1154,7 +1216,7 @@ fn bounded_hearing_graph(ctx: &ReducerContext, listener_node: u64) -> BoundedHea
 fn source_may_disclose_public_threat(
     ctx: &ReducerContext,
     character_id: u64,
-    source_npc: &crate::settlement_population::SettlementNpc,
+    source_npc: &crate::settlement_population::SettlementResidentProfile,
     listener_settlement_id: &str,
     location_id: &str,
     minute: u64,
@@ -1204,7 +1266,7 @@ fn surface_public_threat(
     ctx: &ReducerContext,
     character_id: u64,
     session_id: &str,
-    source_npc: &crate::settlement_population::SettlementNpc,
+    source_npc: &crate::settlement_population::SettlementResidentProfile,
     listener_settlement_id: &str,
     location_id: &str,
     observer_minute: u64,
@@ -1339,7 +1401,7 @@ fn surface_public_threat(
         exact_site_id: site.id.0.clone(),
         approximate_count: count_band.into(),
         source_kind: source_kind.into(),
-        source_npc_id: source_npc.id.clone(),
+        source_resident_character_id: source_npc.character_id.clone(),
         learned_at: observer_minute,
     };
     if ctx
@@ -1425,8 +1487,8 @@ fn surface_new_problem(
     problem: &LocalProblemAuthority,
     character_id: u64,
     session_id: &str,
-    source_npc_id: &str,
-    source_npc: Option<&crate::settlement_population::SettlementNpc>,
+    source_resident_character_id: u64,
+    source_npc: Option<&crate::settlement_population::ResolvedSettlementResident>,
     settlement_id: &str,
     observer_minute: u64,
     official_world_minute: u64,
@@ -1446,21 +1508,35 @@ fn surface_new_problem(
     let Some(witness) = validated.manifest.witnesses.first() else {
         return Ok(false);
     };
-    let Some(contact) = ctx.db.settlement_npc().id().find(&witness.npc_id) else {
+    let Some(contact) = crate::settlement_population::resolve_settlement_resident(
+        ctx,
+        witness.resident_character_id,
+    ) else {
         return Ok(false);
     };
-    let Some(presence) = ctx
-        .db
-        .settlement_npc_presence()
-        .npc_id()
-        .find(&witness.npc_id)
-        .filter(|presence| {
-            presence.settlement_id == settlement_id
-                && presence.location_id == witness.expected_location
-        })
-    else {
+    let Some(settlement) = ctx.db.settlement().id().find(settlement_id.to_owned()) else {
         return Ok(false);
     };
+    let has_keep = matches!(
+        settlement.category,
+        crate::strategic::SettlementCategory::Town
+            | crate::strategic::SettlementCategory::City
+            | crate::strategic::SettlementCategory::Capital
+    );
+    let expected_location_is_navigable =
+        adventuresim_core::settlement_economy::npc_location_is_navigable(
+            &settlement.economy,
+            has_keep,
+            settlement_id,
+            &witness.expected_location,
+        );
+    if !rumor_contact_is_valid(
+        &contact.home_settlement_id,
+        settlement_id,
+        expected_location_is_navigable,
+    ) {
+        return Ok(false);
+    }
     let Some(symptom) = ctx
         .db
         .local_problem_symptom()
@@ -1473,10 +1549,15 @@ fn surface_new_problem(
     if location_label.is_empty() {
         return Ok(false);
     }
+    let source_identity = source_npc.map(|npc| npc.character_id.to_string());
+    let source = source_npc
+        .zip(source_identity.as_deref())
+        .map(|(npc, id)| (id, npc.name.as_str()));
+    let contact_identity = contact.character_id.to_string();
     let presentation = lp::referral_presentation(
         &symptom.public_summary,
-        source_npc.map(|npc| (npc.id.as_str(), npc.name.as_str())),
-        &contact.id,
+        source,
+        &contact_identity,
         &contact.name,
         &contact.profession,
         &contact.height,
@@ -1491,10 +1572,10 @@ fn surface_new_problem(
         settlement_id: settlement_id.into(),
         problem_id: problem.id.clone(),
         opaque_case_ref: problem.opaque_case_ref.clone(),
-        source_npc_id: source_npc_id.into(),
+        source_resident_character_id,
         discovery_session_id: session_id.into(),
-        contact_npc_id: contact.id,
-        expected_location_id: presence.location_id,
+        contact_resident_character_id: contact.character_id,
+        expected_location_id: witness.expected_location.clone(),
         safe_summary: symptom.public_summary,
         learned_at: observer_minute,
         official_learned_at: official_world_minute,
@@ -1512,6 +1593,99 @@ fn surface_new_problem(
     Ok(true)
 }
 
+fn rumor_contact_is_valid(
+    contact_home_settlement_id: &str,
+    problem_settlement_id: &str,
+    expected_location_is_navigable: bool,
+) -> bool {
+    contact_home_settlement_id == problem_settlement_id && expected_location_is_navigable
+}
+
+/// Development-gallery seam that establishes the same receipt, referral, and
+/// journal-visible action graph as a completed local rumor interaction, plus
+/// the dry journal notice required to index the case immediately. It accepts
+/// only one exact already-materialized problem in the selected character's
+/// current settlement.
+pub(crate) fn discover_development_problem(
+    ctx: &ReducerContext,
+    character_id: u64,
+    problem_id: &str,
+    scenario_slug: &str,
+) -> Result<(), String> {
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    let settlement_id = character
+        .current_settlement_id
+        .ok_or("Development quest discovery requires a settlement")?;
+    let problem = ctx
+        .db
+        .local_problem_authority()
+        .id()
+        .find(&problem_id.to_owned())
+        .ok_or("Development quest problem is missing")?;
+    if problem.scope_key != format!("settlement:{settlement_id}") {
+        return Err("Development quest problem is outside its scenario settlement".into());
+    }
+    let validated = validated_problem_generation(ctx, &problem, &settlement_id)
+        .ok_or("Development quest problem has invalid generation authority")?;
+    let witness = validated
+        .manifest
+        .witnesses
+        .first()
+        .ok_or("Development quest problem has no rumor witness")?;
+    let source = crate::settlement_population::resolve_settlement_resident(
+        ctx,
+        witness.resident_character_id,
+    )
+    .ok_or("Development quest rumor witness is missing")?;
+    let observer_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or("Development quest character time is missing")?
+        .minutes;
+    let official_world_minute = official_minute(ctx);
+    let session_id = format!("development-scenario:{scenario_slug}:rumor");
+    surface_new_problem(
+        ctx,
+        &problem,
+        character_id,
+        &session_id,
+        source.character_id,
+        Some(&source),
+        &settlement_id,
+        observer_minute,
+        official_world_minute,
+    )?;
+    let receipt_id = format!("{character_id}:{}", problem.id);
+    crate::investigation::receive_local_problem_rumor_for_development_bootstrap(
+        ctx,
+        character_id,
+        receipt_id.clone(),
+        format!("development-scenario:{scenario_slug}:receive-rumor"),
+    )?;
+    let receipt = ctx
+        .db
+        .local_problem_receipt()
+        .id()
+        .find(&receipt_id)
+        .ok_or("Development quest rumor receipt is missing")?;
+    crate::investigation::record_journal_notice(
+        ctx,
+        character_id,
+        &validated.manifest.public_case_id,
+        &format!("development-scenario:{scenario_slug}:discovered-rumor"),
+        &receipt.safe_summary,
+        "local rumor",
+        receipt.learned_at,
+    )?;
+    ctx.db
+        .local_problem_rumor_preference()
+        .character_id()
+        .delete(character_id);
+    Ok(())
+}
+
 /// Surface at most one active problem. A private one-shot preference may order
 /// an explicit development demo first, but disclosure still occurs through
 /// ordinary eligible rumor dialogue and creates the normal observer receipt.
@@ -1519,7 +1693,7 @@ pub fn surface_problem(
     ctx: &ReducerContext,
     character_id: u64,
     session_id: &str,
-    source_npc_id: &str,
+    source_resident_character_id: u64,
     location_id: &str,
 ) -> Result<(), String> {
     let character = ctx
@@ -1531,12 +1705,11 @@ pub fn surface_problem(
     let settlement_id = character
         .current_settlement_id
         .ok_or("Problem discovery requires a settlement")?;
-    let source_npc = ctx
-        .db
-        .settlement_npc()
-        .id()
-        .find(&source_npc_id.to_owned())
-        .filter(|npc| npc.home_settlement_id == settlement_id);
+    let source_npc = crate::settlement_population::resolve_settlement_resident(
+        ctx,
+        source_resident_character_id,
+    )
+    .filter(|npc| npc.home_settlement_id == settlement_id);
     // Problem authority is anchored to the official world clock. A character's
     // elapsed clock is an observer timeline and may be ahead of or behind it
     // after travel, treatment, or bulk settlement activity.
@@ -1570,19 +1743,23 @@ pub fn surface_problem(
     let inn_available = inn_service
         && ctx
             .db
-            .settlement_npc_presence()
+            .settlement_resident_presence()
             .settlement_id()
             .filter(&settlement_id)
             .any(|presence| {
-                let npc = ctx.db.settlement_npc().id().find(&presence.npc_id);
+                let npc = ctx
+                    .db
+                    .settlement_resident_profile()
+                    .character_id()
+                    .find(presence.character_id);
                 dialogue_capable_inn_contact(
                     &presence.settlement_id,
                     &settlement_id,
                     &presence.location_id,
-                    crate::settlement_population::npc_is_present(&presence, observer_minute),
+                    crate::settlement_population::npc_is_present(ctx, &presence, observer_minute),
                     npc.as_ref().is_some_and(|npc| {
                         npc.home_settlement_id == settlement_id
-                            && crate::settlement_population::npc_is_dialogue_capable(npc)
+                            && crate::settlement_population::resident_is_dialogue_capable(npc)
                     }),
                 )
             });
@@ -1621,7 +1798,7 @@ pub fn surface_problem(
                 problem,
                 character_id,
                 session_id,
-                source_npc_id,
+                source_resident_character_id,
                 source_npc.as_ref(),
                 &settlement_id,
                 observer_minute,
@@ -1735,7 +1912,10 @@ pub fn surface_problem(
                 });
             return Ok(());
         }
-        let Some(contact) = ctx.db.settlement_npc().id().find(&receipt.contact_npc_id) else {
+        let Some(contact) = crate::settlement_population::resolve_settlement_resident(
+            ctx,
+            receipt.contact_resident_character_id,
+        ) else {
             continue;
         };
         let Some(location_label) = referral_location_label(ctx, problem, &receipt) else {
@@ -1743,9 +1923,9 @@ pub fn surface_problem(
         };
         let present = ctx
             .db
-            .settlement_npc_presence()
-            .npc_id()
-            .find(&receipt.contact_npc_id)
+            .settlement_resident_presence()
+            .character_id()
+            .find(receipt.contact_resident_character_id)
             .is_some_and(|presence| {
                 presence.settlement_id == settlement_id
                     && presence.location_id == receipt.expected_location_id
@@ -1753,6 +1933,12 @@ pub fn surface_problem(
         if !present {
             continue;
         }
+        let source_identity = source_npc.as_ref().map(|npc| npc.character_id.to_string());
+        let source = source_npc
+            .as_ref()
+            .zip(source_identity.as_deref())
+            .map(|(npc, id)| (id, npc.name.as_str()));
+        let contact_identity = contact.character_id.to_string();
         ctx.db
             .local_problem_rumor_delivery()
             .insert(LocalProblemRumorDelivery {
@@ -1763,10 +1949,8 @@ pub fn surface_problem(
                 receipt_id: receipt.id,
                 fragments_json: referral_fragments_json(lp::referral_presentation(
                     &receipt.safe_summary,
-                    source_npc
-                        .as_ref()
-                        .map(|npc| (npc.id.as_str(), npc.name.as_str())),
-                    &contact.id,
+                    source,
+                    &contact_identity,
                     &contact.name,
                     &contact.profession,
                     &contact.height,
@@ -1786,7 +1970,7 @@ pub fn surface_problem(
             &problem,
             character_id,
             session_id,
-            source_npc_id,
+            source_resident_character_id,
             source_npc.as_ref(),
             &settlement_id,
             observer_minute,
@@ -1832,7 +2016,7 @@ mod tests {
     use crate::local_problem::{
         BoundedHearingGraph, MAX_HEARING_DISTANCE_M, MAX_HEARING_GRAPH_EDGES,
         MAX_HEARING_GRAPH_NODES, dialogue_capable_inn_contact, public_threat_in_hearing_range,
-        referral_fragments_json, stable_eligible_candidates,
+        referral_fragments_json, rumor_contact_is_valid, stable_eligible_candidates,
     };
     use adventuresim_core::threat_escalation::{
         MAX_PUBLIC_THREAT_CANDIDATES, bounded_public_threat_candidates as bounded_public_candidates,
@@ -2056,6 +2240,13 @@ mod tests {
     }
 
     #[test]
+    fn initial_rumor_uses_persistent_local_identity_and_authored_navigable_location() {
+        assert!(rumor_contact_is_valid("ironforge", "ironforge", true));
+        assert!(!rumor_contact_is_valid("lubeck", "ironforge", true));
+        assert!(!rumor_contact_is_valid("ironforge", "ironforge", false));
+    }
+
+    #[test]
     fn discovery_uses_world_time_for_problem_windows_and_observer_time_for_records() {
         let source = include_str!("local_problem.rs");
         let surface = source
@@ -2067,7 +2258,7 @@ mod tests {
         assert!(surface.contains("let observer_minute = ctx"));
         assert!(surface.contains("is_active(problem, official_world_minute)"));
         assert!(!surface.contains("is_active(problem, observer_minute)"));
-        assert!(surface.contains("npc_is_present(&presence, observer_minute)"));
+        assert!(surface.contains("npc_is_present(ctx, &presence, observer_minute)"));
         assert!(surface.contains("learned_at: observer_minute"));
         assert!(surface.contains("official_learned_at: official_world_minute"));
         assert!(surface.contains("recorded_at: observer_minute"));
@@ -2109,6 +2300,37 @@ mod tests {
             demo.find("materialize_generated_quest(").unwrap()
                 < demo.rfind("prefer_next_rumor(").unwrap()
         );
+    }
+
+    #[test]
+    fn development_discovery_uses_bootstrap_safe_rumor_transition() {
+        let source = include_str!("local_problem.rs");
+        let discovery = source
+            .split("pub(crate) fn discover_development_problem")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn surface_problem").next())
+            .expect("development problem discovery implementation");
+        assert!(discovery.contains("receive_local_problem_rumor_for_development_bootstrap"));
+        assert!(!discovery.contains("crate::investigation::receive_local_problem_rumor("));
+        assert!(discovery.contains("record_journal_notice"));
+
+        let investigation = crate::investigation::INVESTIGATION_SOURCE;
+        let external = investigation
+            .split("pub fn receive_local_problem_rumor(")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub(crate) fn receive_local_problem_rumor_for_development_bootstrap")
+                    .next()
+            })
+            .expect("external rumor reducer");
+        assert!(external.contains("require_actor(ctx, character_id)?"));
+        let bootstrap = investigation
+            .split("pub(crate) fn receive_local_problem_rumor_for_development_bootstrap")
+            .nth(1)
+            .and_then(|tail| tail.split("fn receive_local_problem_rumor_impl").next())
+            .expect("bootstrap rumor transition");
+        assert!(bootstrap.contains("development_capability_enabled()"));
+        assert!(!bootstrap.contains("require_strategic_gateway"));
     }
 
     #[test]
@@ -2164,7 +2386,7 @@ mod tests {
         for binding in [
             "problem.opaque_case_ref != receipt.opaque_case_ref",
             "problem.id != receipt.problem_id",
-            "witness.npc_id == receipt.contact_npc_id",
+            "witness.resident_character_id == receipt.contact_resident_character_id",
             "witness.expected_location == receipt.expected_location_id",
         ] {
             assert!(referral.contains(binding), "{binding}");
@@ -2177,7 +2399,10 @@ mod tests {
         ] {
             assert!(authority.contains(binding), "{binding}");
         }
-        assert!(surface.contains("presence.location_id == witness.expected_location"));
+        assert!(surface.contains("contact.home_settlement_id"));
+        assert!(surface.contains("npc_location_is_navigable"));
+        assert!(surface.contains("expected_location_id: witness.expected_location.clone()"));
+        assert!(!new_problem.contains("settlement_resident_presence()"));
         assert!(surface.contains("stable_eligible_candidates"));
         let selector = source
             .split("fn stable_eligible_candidates")
@@ -2285,9 +2510,13 @@ mod tests {
         let local = include_str!("local_problem.rs");
         let surface = local.split("pub fn surface_problem").nth(1).unwrap();
         assert!(surface.contains("validated.manifest.witnesses.first()"));
-        assert!(surface.contains("settlement_npc().id().find(&witness.npc_id)"));
-        assert!(surface.contains("presence.location_id == witness.expected_location"));
-        assert!(surface.contains("contact_npc_id: contact.id"));
+        assert!(surface.contains(
+            "settlement_resident_profile().character_id().find(witness.resident_character_id)"
+        ));
+        assert!(surface.contains("contact.home_settlement_id"));
+        assert!(surface.contains("npc_location_is_navigable"));
+        assert!(surface.contains("expected_location_id: witness.expected_location.clone()"));
+        assert!(surface.contains("contact_resident_character_id: contact.character_id"));
         assert!(surface.contains("discovery_session_id: session_id.into()"));
 
         let strategic = crate::strategic::STRATEGIC_SOURCE;
@@ -2304,7 +2533,7 @@ mod tests {
             .unwrap();
         assert!(receive.contains("referred_generated_witness"));
         assert!(receive.contains("&receipt.opaque_case_ref"));
-        assert!(receive.contains("&live_npc.id"));
+        assert!(receive.contains("&live_npc.character_id"));
         assert!(receive.contains("&session.settlement_id"));
         assert!(receive.contains("&session.location_id"));
         assert!(!receive.contains("manifest.witnesses"));

@@ -21,9 +21,10 @@ fn validate_track_trails(case: &GeneratedCase, errors: &mut Vec<String>) {
                 action.kind,
                 InvestigationActionKind::FollowTracks | InvestigationActionKind::ReacquireTracks
             )
-            || action.outputs.iter().any(|output| {
-                matches!(output, GeneratedActionOutput::TrackFinding { .. })
-            })
+            || action
+                .outputs
+                .iter()
+                .any(|output| matches!(output, GeneratedActionOutput::TrackFinding { .. }))
     });
     if uses_tracking && case.track_trails.is_empty() {
         errors.push("generated case requires an immutable physical trail".into());
@@ -228,7 +229,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     && case
                         .witnesses
                         .iter()
-                        .any(|witness| witness.npc_id == entry.target_id)
+                        .any(|witness| witness.resident_character_id.to_string() == entry.target_id)
                     && successors.len() == 2
                     && successors.iter().all(|action| !action.active_initially)
                     && successors.iter().any(|action| {
@@ -252,10 +253,9 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                         action.kind == InvestigationActionKind::Watch
                             && action.route == RouteClass::PatternSurveillance
                             && action.target_kind == "contact"
-                            && case
-                                .witnesses
-                                .iter()
-                                .any(|witness| witness.npc_id == action.target_id)
+                            && case.witnesses.iter().any(|witness| {
+                                witness.resident_character_id.to_string() == action.target_id
+                            })
                             && action.alternate
                                 == successors
                                     .iter()
@@ -289,10 +289,9 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     && action.route == RouteClass::SocialInquiry
                     && action.target_kind == "contact"
                     && action.prerequisite.is_none()
-                    && case
-                        .witnesses
-                        .iter()
-                        .any(|witness| witness.npc_id == action.target_id)
+                    && case.witnesses.iter().any(|witness| {
+                        witness.resident_character_id.to_string() == action.target_id
+                    })
             });
             if initial_actions.len() != 2
                 || physical.is_none()
@@ -311,11 +310,11 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 action.route == RouteClass::PhysicalTrail
                     && action.kind == InvestigationActionKind::InspectSite
             });
-            let social = initial_actions.iter().any(|action| {
+            let social = initial_actions.iter().find(|action| {
                 action.route == RouteClass::SocialInquiry
                     && action.kind == InvestigationActionKind::LocateContact
             });
-            if initial_actions.len() < 2 || physical.is_none() || !social {
+            if initial_actions.len() < 2 || physical.is_none() || social.is_none() {
                 errors.push(
                     "outbreak cases require independent physical and non-corpse social routes"
                         .into(),
@@ -325,9 +324,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 errors.push("outbreak family lacks private typed outbreak truth".into());
                 return Err(errors);
             };
-            if !crate::disease::definition(outbreak.disease)
-                .supports(outbreak.transmission_route)
-            {
+            if !crate::disease::definition(outbreak.disease).supports(outbreak.transmission_route) {
                 errors.push("outbreak disease does not support its transmission route".into());
             }
             if !case
@@ -338,8 +335,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 errors.push("outbreak physical source site is not materialized".into());
             }
             if !case.sites.iter().any(|site| {
-                site.id == outbreak.patient_presentation_site
-                    && site.exact_location_initially_known
+                site.id == outbreak.patient_presentation_site && site.exact_location_initially_known
             }) {
                 errors.push("outbreak patient presentation site is not initially reachable".into());
             }
@@ -351,19 +347,23 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     GeneratedActionOutput::Evidence { evidence_id } => Some(evidence_id),
                     _ => None,
                 });
-                let source_lead = inspection.outputs.iter().any(|output| matches!(
-                    output,
-                    GeneratedActionOutput::Destination {
-                        stage: GeneratedDestinationStage::Exact,
-                        site_id: Some(site_id),
-                    } if site_id == &outbreak.physical_source_site
-                ));
-                reachable_root && source_lead && observed.is_some_and(|evidence_id| {
-                    case.evidence.iter().any(|evidence| {
-                        &evidence.id == evidence_id
-                            && evidence.site_id.0 == inspection.target_id
+                let source_lead = inspection.outputs.iter().any(|output| {
+                    matches!(
+                        output,
+                        GeneratedActionOutput::Destination {
+                            stage: GeneratedDestinationStage::Exact,
+                            site_id: Some(site_id),
+                        } if site_id == &outbreak.physical_source_site
+                    )
+                });
+                reachable_root
+                    && source_lead
+                    && observed.is_some_and(|evidence_id| {
+                        case.evidence.iter().any(|evidence| {
+                            &evidence.id == evidence_id
+                                && evidence.site_id.0 == inspection.target_id
+                        })
                     })
-                })
             });
             if !physical_path_is_complete {
                 errors.push(
@@ -381,11 +381,11 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 || outbreak.exposure_chronology.iter().any(|exposure| {
                     let episode = crate::disease::InfectionEpisode {
                         id: exposure.episode_id,
-                        character_id: exposure.patient_key,
+                        character_id: exposure.patient_character_id,
                         disease_id: outbreak.disease,
                         contracted_at: exposure.exposed_at,
                         ruleset_version: crate::physiology::PHYSIOLOGY_RULESET_VERSION,
-                        phenotype_key_version: exposure.phenotype_key_version,
+                        phenotype_key_version: crate::physiology::PHENOTYPE_KEY_VERSION,
                     };
                     let definition = crate::disease::definition(outbreak.disease);
                     let course_end = exposure
@@ -398,43 +398,32 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                         &[episode],
                         exposure.exposed_at,
                         course_end,
-                        f32::from(exposure.immunity_milli) / 1_000.0,
+                        0.0,
                     );
                     let death_is_coherent = match exposure.death_kind {
                         Some(OutbreakPatientDeathKind::Disease) => {
-                            terminal == exposure.died_at.zip(exposure.terminal_failure)
+                            terminal.map(|value| value.0) == exposure.died_at
                         }
                         Some(OutbreakPatientDeathKind::CarrierAttack) => {
                             matches!(&outbreak.source, OutbreakSource::ThreatVector { .. })
                                 && exposure.died_at.is_some_and(|died_at| {
                                     terminal.is_none_or(|(terminal_at, _)| died_at < terminal_at)
                                 })
-                                && exposure.terminal_failure.is_none()
                         }
-                        None => exposure.died_at.is_none()
-                            && exposure.terminal_failure.is_none(),
+                        None => exposure.died_at.is_none(),
                     };
                     exposure.patient_ref.is_empty()
-                        || exposure.presentation_npc_id.is_empty()
-                        || !case
-                            .witnesses
-                            .iter()
-                            .any(|witness| witness.npc_id == exposure.presentation_npc_id)
-                        || exposure.family_npc_id.as_deref()
-                            == Some(exposure.presentation_npc_id.as_str())
-                        || exposure.family_npc_id.as_ref().is_some_and(|family_npc_id| {
-                            !case
-                                .witnesses
-                                .iter()
-                                .any(|witness| &witness.npc_id == family_npc_id)
+                        || exposure.patient_character_id == 0
+                        || !case.witnesses.iter().any(|witness| {
+                            witness.resident_character_id
+                                == exposure.patient_character_id
                         })
                         || exposure.became_symptomatic_at
                             != exposure
                                 .exposed_at
                                 .saturating_add(definition.incubation_minutes)
                         || !death_is_coherent
-                        ||
-                    exposure.exposed_at > exposure.became_symptomatic_at
+                        || exposure.exposed_at > exposure.became_symptomatic_at
                         || exposure
                             .died_at
                             .is_some_and(|died| died < exposure.became_symptomatic_at)
@@ -445,6 +434,15 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     .any(|pair| pair[0].exposed_at > pair[1].exposed_at)
             {
                 errors.push("outbreak exposure chronology is incoherent".into());
+            }
+            let fatal_patients = outbreak
+                .exposure_chronology
+                .iter()
+                .filter(|exposure| exposure.died_at.is_some())
+                .map(|exposure| exposure.patient_character_id.to_string())
+                .collect::<BTreeSet<_>>();
+            if social.is_some_and(|action| fatal_patients.contains(&action.target_id)) {
+                errors.push("outbreak social route must target a surviving witness".into());
             }
             let source_is_compatible = match (&outbreak.source, outbreak.transmission_route) {
                 (
@@ -502,6 +500,14 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     },
                 ) => true,
                 (
+                    OutbreakSource::Sanitation {
+                        practice: OutbreakSanitationPractice::ContaminatedWell,
+                    },
+                    OutbreakRemediation::Sanitation {
+                        action: OutbreakSanitationAction::CloseWell,
+                    },
+                ) => true,
+                (
                     OutbreakSource::Environmental { reservoir: left },
                     OutbreakRemediation::RemoveEnvironmentalSource { reservoir: right },
                 ) if left == right => true,
@@ -527,9 +533,10 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 errors.push("outbreak remediation does not match its exact source".into());
             }
             let direct_remediations = case.actions.iter().filter(|action| {
-                action.outputs.iter().any(|output| {
-                    matches!(output, GeneratedActionOutput::Remediation { .. })
-                })
+                action
+                    .outputs
+                    .iter()
+                    .any(|output| matches!(output, GeneratedActionOutput::Remediation { .. }))
             });
             if matches!(
                 &outbreak.remediation,
@@ -542,13 +549,18 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     );
                 }
             } else if !case.actions.iter().any(|action| {
-                action.outputs.iter().any(|output| {
-                    matches!(output, GeneratedActionOutput::Remediation { .. })
-                })
+                action
+                    .outputs
+                    .iter()
+                    .any(|output| matches!(output, GeneratedActionOutput::Remediation { .. }))
             }) {
                 errors.push("non-carrier outbreak has no direct source intervention".into());
             }
-            if case.actions.iter().any(|action| action.target_kind == "corpse") {
+            if case
+                .actions
+                .iter()
+                .any(|action| action.target_kind == "corpse")
+            {
                 errors.push("outbreak graph has no complete non-corpse route".into());
             }
         }
@@ -631,7 +643,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
             "contact" => case
                 .witnesses
                 .iter()
-                .any(|witness| witness.npc_id == action.target_id),
+                .any(|witness| witness.resident_character_id.to_string() == action.target_id),
             "cohort" => case
                 .pattern_targets
                 .iter()
@@ -721,7 +733,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
     let mut referral_edges = BTreeMap::<WitnessId, BTreeSet<WitnessId>>::new();
     let mut authored_challenge_responses = BTreeSet::<String>::new();
     for (source_index, witness) in case.witnesses.iter().enumerate() {
-        if witness.npc_id.is_empty()
+        if witness.resident_character_id == 0
             || witness.expected_location.is_empty()
             || witness.expected_location_label.is_empty()
             || witness.visible_description.is_empty()
@@ -849,7 +861,8 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 .iter()
                 .any(|draft| draft.corrects_proposition_id.is_some())
                 || case.actions.iter().any(|action| {
-                    action.target_kind == "contact" && action.target_id == witness.npc_id
+                    action.target_kind == "contact"
+                        && action.target_id == witness.resident_character_id.to_string()
                 });
             if route_required && !reachable.contains(&witness.id) {
                 errors.push(format!(
@@ -995,7 +1008,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 producer.objective_id.as_str()
             ));
         }
-        if producer.recipient_npc_id.is_empty() {
+        if producer.recipient_resident_character_id == 0 {
             errors.push("dialogue producer has no recipient".into());
         }
     }
@@ -1009,7 +1022,8 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
             ObjectiveRequirement::Defeat {
                 hostile_group_id, ..
             }
-            | ObjectiveRequirement::DriveOff { hostile_group_id } => case
+            | ObjectiveRequirement::DriveOff { hostile_group_id }
+            | ObjectiveRequirement::Surrender { hostile_group_id } => case
                 .hostile_groups
                 .iter()
                 .any(|(id, _, _, _)| id == hostile_group_id),
@@ -1036,7 +1050,7 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 producer.objective_id == objective.id
                     && producer.action == GeneratedDialogueAction::ReturnAsset
                     && producer.asset_id.as_deref() == Some(asset_id.as_str())
-                    && producer.recipient_npc_id == *custodian_id
+                    && producer.recipient_resident_character_id.to_string() == *custodian_id
             }),
             ObjectiveRequirement::Expose { subject_ref } => {
                 case.dialogue_producers.iter().any(|producer| {

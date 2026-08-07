@@ -1,6 +1,6 @@
 //! Build-time compiled organization content shared by strategic authority and UI.
 //!
-//! Stable strings cross persistence boundaries. Ranks, requirements, training,
+//! Stable strings cross persistence boundaries. Roles, requirements, training,
 //! recognition, and privileges are content rather than institution-shaped enums.
 
 use std::sync::OnceLock;
@@ -13,7 +13,69 @@ include!(concat!(env!("OUT_DIR"), "/organization_catalog.rs"));
 #[serde(deny_unknown_fields)]
 pub struct OrganizationCatalog {
     pub organizations: Vec<OrganizationDefinition>,
+    pub promotion_transitions: Vec<OrganizationPromotionTransition>,
     pub settlement_policies: Vec<SettlementPolicy>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationPromotionTransition {
+    pub organization_id: String,
+    pub from_role_id: String,
+    pub to_role_id: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SecondPersonRegister {
+    pub subject: &'static str,
+    pub object: &'static str,
+    pub possessive: &'static str,
+    pub possessive_pronoun: &'static str,
+    pub reflexive: &'static str,
+    pub be: &'static str,
+    pub have: &'static str,
+    pub do_word: &'static str,
+    pub will: &'static str,
+    pub may: &'static str,
+    pub should: &'static str,
+}
+
+/// Early Modern singular familiar address is downward or intimate. Plural
+/// address is always `you`, regardless of either participant's social roles.
+pub const fn second_person_register(
+    singular: bool,
+    speaker_outranks_addressee: bool,
+    intimate: bool,
+) -> SecondPersonRegister {
+    if singular && (speaker_outranks_addressee || intimate) {
+        SecondPersonRegister {
+            subject: "thou",
+            object: "thee",
+            possessive: "thy",
+            possessive_pronoun: "thine",
+            reflexive: "thyself",
+            be: "art",
+            have: "hast",
+            do_word: "dost",
+            will: "wilt",
+            may: "mayst",
+            should: "shouldst",
+        }
+    } else {
+        SecondPersonRegister {
+            subject: "you",
+            object: "you",
+            possessive: "your",
+            possessive_pronoun: "yours",
+            reflexive: "yourself",
+            be: "are",
+            have: "have",
+            do_word: "do",
+            will: "will",
+            may: "may",
+            should: "should",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -28,14 +90,21 @@ pub struct OrganizationDefinition {
     #[serde(default)]
     pub service_id: Option<String>,
     /// Authored authority to refer dues-current members to publicly notorious
-    /// hostile cases. Never inferred from names, ranks, or skills.
+    /// hostile cases. Never inferred from names, roles, or skills.
     pub public_threat_referrals: bool,
+    /// Authored authority to issue romantic errantry. This capability is
+    /// intentionally narrower than public threat referral.
+    #[serde(default)]
+    pub errantry_issuance: bool,
     #[serde(default)]
     pub starting_role: Option<OrganizationStartingRole>,
-    /// Additive social and professional roles. These do not replace ranks,
-    /// dues, training, presentation, or any current membership behavior.
-    #[serde(default)]
+    /// The sole profession-bearing membership tiers for this organization.
+    /// A character has exactly one of these roles in each organization instance.
     pub roles: Vec<OrganizationRoleDefinition>,
+    /// Roles available through ordinary admission. Internal assignment may
+    /// select other disconnected roles explicitly (family, civic status, &c.).
+    #[serde(default)]
+    pub entry_role_ids: Vec<String>,
     #[serde(default)]
     pub chapters: Vec<OrganizationChapter>,
     pub recognition: Recognition,
@@ -43,7 +112,6 @@ pub struct OrganizationDefinition {
     pub admission: Admission,
     #[serde(default)]
     pub dues: Option<Dues>,
-    pub ranks: Vec<OrganizationRank>,
     pub activity: OrganizationActivity,
     #[serde(default)]
     pub privileges: Vec<Privilege>,
@@ -57,47 +125,47 @@ pub enum OrganizationKind {
     NobleHouse,
     Lordship,
     CivicCommunity,
+    Family,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct OrganizationRoleDefinition {
     pub id: String,
     pub name: String,
-    #[serde(flatten)]
-    pub purpose: OrganizationRolePurpose,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "purpose", rename_all = "snake_case")]
-pub enum OrganizationRolePurpose {
-    Estate { estate: Estate },
-    Profession { profession: String },
-    Office,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Estate {
-    Serf,
-    Freeman,
-    Burgher,
-    Noble,
-}
-
-impl Estate {
-    pub const fn id(self) -> &'static str {
-        match self {
-            Self::Serf => "serf",
-            Self::Freeman => "freeman",
-            Self::Burgher => "burgher",
-            Self::Noble => "noble",
-        }
-    }
+    /// The social or occupational identity supplied by this role. Unlike the
+    /// former social scalar, this is meaningful only with its organization
+    /// instance (a citizen of Lubeck, a noble of a particular house, &c.).
+    pub profession: String,
+    /// Higher values win when dialogue chooses a public form of address.
+    #[serde(default)]
+    pub address_priority: i16,
+    /// Independent ordering used only to decide whether a speaker addresses a
+    /// social inferior with singular familiar pronouns.
+    #[serde(default)]
+    pub social_precedence: i16,
+    /// Spoken title, without a personal name (for example "Father" or
+    /// "my lord"). An empty title leaves the actor's ordinary profession.
+    #[serde(default)]
+    pub address_title: String,
+    /// Private or concealed roles never become dialogue identity merely
+    /// because authoritative persistence knows of them.
+    #[serde(default)]
+    pub publicly_recognizable: bool,
+    /// An authored upbringing or institutional entitlement. This replaces the
+    /// old hard-coded assumption that every noble is literate.
+    #[serde(default)]
+    pub creation_literacy: Option<adventuresim_world_schema::WrittenLanguage>,
+    pub description: String,
+    #[serde(default)]
+    pub requirements: Vec<Requirement>,
+    pub practice_allowed: bool,
+    pub practice_reward_interval_minutes: u32,
+    #[serde(default)]
+    pub privileges: Vec<Privilege>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InitialSocialRole {
-    pub estate: Estate,
     pub definition_id: &'static str,
     pub role_id: &'static str,
     pub settlement_scoped: bool,
@@ -113,36 +181,31 @@ pub fn initial_social_role(
     urban: bool,
 ) -> InitialSocialRole {
     let draw = crate::settlement_population::stable_hash(&format!(
-        "social-estate:v2:{}:{settlement_id}:{actor_domain_key}",
+        "social-role:v3:{}:{settlement_id}:{actor_domain_key}",
         settlement_id.len()
     )) % 4;
     match draw {
         0 => InitialSocialRole {
-            estate: Estate::Serf,
             definition_id: "local_lordship",
             role_id: "serf",
             settlement_scoped: true,
         },
         1 => InitialSocialRole {
-            estate: Estate::Freeman,
             definition_id: "settlement_civic_community",
             role_id: "free_resident",
             settlement_scoped: true,
         },
         2 if urban => InitialSocialRole {
-            estate: Estate::Burgher,
             definition_id: "settlement_civic_community",
             role_id: "citizen",
             settlement_scoped: true,
         },
         2 => InitialSocialRole {
-            estate: Estate::Freeman,
             definition_id: "settlement_civic_community",
             role_id: "free_resident",
             settlement_scoped: true,
         },
         _ => InitialSocialRole {
-            estate: Estate::Noble,
             definition_id: "local_noble_house",
             role_id: "house_member",
             settlement_scoped: true,
@@ -180,8 +243,8 @@ pub enum ChapterBuildingKind {
 #[serde(deny_unknown_fields)]
 pub struct OrganizationStartingRole {
     pub profession: StartingProfession,
-    pub adult_rank_id: String,
-    pub old_rank_id: String,
+    pub adult_role_id: String,
+    pub old_role_id: String,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -264,20 +327,6 @@ pub struct Admission {
 pub struct Dues {
     pub amount: u32,
     pub interval_days: u32,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct OrganizationRank {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    #[serde(default)]
-    pub requirements: Vec<Requirement>,
-    pub practice_allowed: bool,
-    pub practice_reward_interval_minutes: u32,
-    #[serde(default)]
-    pub privileges: Vec<Privilege>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -394,28 +443,36 @@ impl OrganizationDefinition {
         self.privileges.contains(&privilege)
     }
 
-    /// Organization privileges are inherited by every rank; rank privileges
+    /// Organization privileges are inherited by every role; role privileges
     /// are additive.
-    pub fn has_privilege_at_rank(&self, rank_id: &str, privilege: Privilege) -> bool {
+    pub fn has_privilege_at_role(&self, role_id: &str, privilege: Privilege) -> bool {
         self.has_privilege(privilege)
             || self
-                .rank(rank_id)
-                .is_some_and(|rank| rank.privileges.contains(&privilege))
-    }
-
-    pub fn rank(&self, rank_id: &str) -> Option<&OrganizationRank> {
-        self.ranks.iter().find(|rank| rank.id == rank_id)
+                .role(role_id)
+                .is_some_and(|role| role.privileges.contains(&privilege))
     }
 
     pub fn role(&self, role_id: &str) -> Option<&OrganizationRoleDefinition> {
         self.roles.iter().find(|role| role.id == role_id)
     }
 
-    pub fn next_rank(&self, rank_id: &str) -> Option<&OrganizationRank> {
-        self.ranks
+    pub fn promotion_targets(
+        &self,
+        role_id: &str,
+    ) -> impl Iterator<Item = &OrganizationRoleDefinition> {
+        catalog()
+            .promotion_transitions
             .iter()
-            .position(|rank| rank.id == rank_id)
-            .and_then(|index| self.ranks.get(index + 1))
+            .filter(move |edge| edge.organization_id == self.id && edge.from_role_id == role_id)
+            .filter_map(|edge| self.role(&edge.to_role_id))
+    }
+
+    pub fn can_transition(&self, from_role_id: &str, to_role_id: &str) -> bool {
+        catalog().promotion_transitions.iter().any(|edge| {
+            edge.organization_id == self.id
+                && edge.from_role_id == from_role_id
+                && edge.to_role_id == to_role_id
+        })
     }
 }
 
@@ -515,20 +572,22 @@ pub fn chapter_has_standalone_building(
 
 /// Stable representative identity is deliberately independent of provider
 /// ordinals and physical venue so co-location cannot collide with service NPCs.
-pub fn organization_representative_id(settlement_id: &str, organization_id: &str) -> String {
-    format!("npc:organization-representative:{settlement_id}:{organization_id}")
+pub fn organization_representative_id(settlement_id: &str, organization_id: &str) -> u64 {
+    crate::settlement_population::stable_hash(&format!(
+        "resident:organization-representative:{settlement_id}:{organization_id}"
+    )) | (1u64 << 63)
 }
 
 pub fn exact_representative_fields_match(
-    npc_id: &str,
-    expected_id: &str,
+    resident_character_id: u64,
+    expected_id: u64,
     home_settlement_id: &str,
     settlement_id: &str,
     organization_id: &str,
     expected_organization_id: &str,
     conversation_id: &str,
 ) -> bool {
-    npc_id == expected_id
+    resident_character_id == expected_id
         && home_settlement_id == settlement_id
         && organization_id == expected_organization_id
         && conversation_id == "organization-representative"
@@ -546,28 +605,67 @@ mod tests {
     use super::*;
 
     #[test]
-    fn arbitrary_rank_names_and_mixed_requirements_round_trip() {
+    fn second_person_register_is_asymmetric_and_plural_safe() {
+        let downward = second_person_register(true, true, false);
+        assert_eq!(
+            (
+                downward.subject,
+                downward.object,
+                downward.be,
+                downward.have
+            ),
+            ("thou", "thee", "art", "hast")
+        );
+        assert_eq!((downward.may, downward.should), ("mayst", "shouldst"));
+        let upward = second_person_register(true, false, false);
+        assert_eq!(
+            (upward.subject, upward.object, upward.be, upward.have),
+            ("you", "you", "are", "have")
+        );
+        let intimate = second_person_register(true, false, true);
+        assert_eq!(intimate.reflexive, "thyself");
+        let plural = second_person_register(false, true, true);
+        assert_eq!(
+            (plural.subject, plural.possessive, plural.will),
+            ("you", "your", "will")
+        );
+        assert_eq!((plural.may, plural.should), ("may", "should"));
+    }
+
+    #[test]
+    fn explicit_transitions_allow_disconnected_and_branching_roles() {
+        let family = organization("common_family").unwrap();
+        assert!(family.promotion_targets("family_member").next().is_none());
+        let cooks = organization("test_catholic_polearm_cooks").unwrap();
+        assert_eq!(cooks.promotion_targets("spoon_bearer").count(), 2);
+        assert!(cooks.can_transition("spoon_bearer", "keeper_of_the_long_spoon"));
+        assert!(cooks.can_transition("spoon_bearer", "keeper_of_the_silver_spoon"));
+        assert!(!cooks.can_transition("keeper_of_the_long_spoon", "spoon_bearer"));
+    }
+
+    #[test]
+    fn arbitrary_role_names_and_mixed_requirements_round_trip() {
         let definition = organization("test_catholic_polearm_cooks").unwrap();
-        let rank = definition.rank("keeper_of_the_long_spoon").unwrap();
-        assert_eq!(rank.name, "Keeper of the Long Spoon");
+        let role = definition.role("keeper_of_the_long_spoon").unwrap();
+        assert_eq!(role.name, "Keeper of the Long Spoon");
         assert!(matches!(
-            &rank.requirements[0],
+            &role.requirements[0],
             Requirement::SkillRating { skill, minimum, .. }
                 if skill == "cooking" && *minimum == 4.0
         ));
         assert!(matches!(
-            &rank.requirements[1],
+            &role.requirements[1],
             Requirement::SkillRating { skill, minimum, .. }
                 if skill == "polearm" && *minimum == 4.0
         ));
     }
 
     #[test]
-    fn one_rank_organization_can_practice_from_yaml() {
+    fn one_role_organization_can_practice_from_yaml() {
         let definition = organization("lutheran_learned_visitation").unwrap();
-        let rank = definition.rank("hearer").unwrap();
-        assert!(rank.practice_allowed);
-        assert_eq!(rank.practice_reward_interval_minutes, 480);
+        let role = definition.role("hearer").unwrap();
+        assert!(role.practice_allowed);
+        assert_eq!(role.practice_reward_interval_minutes, 480);
     }
 
     #[test]
@@ -580,15 +678,15 @@ mod tests {
         assert_eq!(physicians.service_id.as_deref(), Some("physician"));
         assert_eq!(surgeons.service_id.as_deref(), Some("surgeon"));
         let herbalist_start = herbalists.starting_role.as_ref().unwrap();
-        assert_eq!(herbalist_start.adult_rank_id, "herbalist");
-        assert_eq!(herbalist_start.old_rank_id, "elder_herbalist");
+        assert_eq!(herbalist_start.adult_role_id, "herbalist");
+        assert_eq!(herbalist_start.old_role_id, "elder_herbalist");
         assert_eq!(herbalists.name, "Fellowship of Herbalists");
         assert_eq!(herbalists.admission.joining_fee, 0);
         assert_eq!(
             herbalists
-                .ranks
+                .roles
                 .iter()
-                .map(|rank| rank.id.as_str())
+                .map(|role| role.id.as_str())
                 .collect::<Vec<_>>(),
             ["learner", "herbalist", "elder_herbalist"]
         );
@@ -615,13 +713,13 @@ mod tests {
             vec![("physiology".into(), 1.0)]
         );
         assert_eq!(fixed_curriculum(surgeons), vec![("surgery".into(), 1.0)]);
-        for (definition, rank_id, expected_skill) in [
+        for (definition, role_id, expected_skill) in [
             (physicians, "physician", "physiology"),
             (physicians, "master_physician", "physiology"),
             (surgeons, "surgeon", "surgery"),
             (surgeons, "master_surgeon", "surgery"),
         ] {
-            let requirements = &definition.rank(rank_id).unwrap().requirements;
+            let requirements = &definition.role(role_id).unwrap().requirements;
             assert_eq!(requirements.len(), 1);
             assert!(matches!(
                 &requirements[0],
@@ -648,12 +746,12 @@ mod tests {
     #[test]
     fn ranger_common_licenses_are_inherited_and_high_game_is_master_only() {
         let definition = organization("lodge_hart_king").unwrap();
-        let first = &definition.ranks[0];
-        assert!(definition.has_privilege_at_rank(&first.id, Privilege::ForageLowGame));
-        assert!(definition.has_privilege_at_rank(&first.id, Privilege::ForageFish));
-        assert!(definition.has_privilege_at_rank(&first.id, Privilege::ForagePlants));
-        assert!(!definition.has_privilege_at_rank(&first.id, Privilege::ForageHighGame));
-        assert!(definition.has_privilege_at_rank("master", Privilege::ForageHighGame));
+        let first = &definition.roles[0];
+        assert!(definition.has_privilege_at_role(&first.id, Privilege::ForageLowGame));
+        assert!(definition.has_privilege_at_role(&first.id, Privilege::ForageFish));
+        assert!(definition.has_privilege_at_role(&first.id, Privilege::ForagePlants));
+        assert!(!definition.has_privilege_at_role(&first.id, Privilege::ForageHighGame));
+        assert!(definition.has_privilege_at_role("master", Privilege::ForageHighGame));
     }
 
     #[test]
@@ -696,8 +794,8 @@ mod tests {
             assert!(definition.admission.requirements.iter().all(|requirement| {
                 !matches!(requirement, Requirement::ProfessedReligion { .. })
             }));
-            assert!(definition.ranks.iter().all(|rank| {
-                rank.requirements.iter().all(|requirement| {
+            assert!(definition.roles.iter().all(|role| {
+                role.requirements.iter().all(|requirement| {
                     !matches!(requirement, Requirement::ProfessedReligion { .. })
                 })
             }));
@@ -738,33 +836,22 @@ mod tests {
     }
 
     #[test]
-    fn estate_roles_are_intrinsic_and_professions_are_orthogonal() {
+    fn role_identity_and_hierarchy_are_authored_on_real_roles() {
         let prince = organization("house_habsburg")
             .unwrap()
             .role("prince")
             .unwrap();
-        assert_eq!(
-            prince.purpose,
-            OrganizationRolePurpose::Estate {
-                estate: Estate::Noble
-            }
-        );
+        assert_eq!(prince.profession, "prince");
+        assert!(prince.social_precedence > 300);
         let priest = organization("lutheran_learned_visitation")
             .unwrap()
-            .role("learned_religious_practitioner")
+            .roles
+            .iter()
+            .find(|role| role.profession == "learned_religious_practitioner")
             .unwrap();
-        assert_eq!(
-            priest.purpose,
-            OrganizationRolePurpose::Profession {
-                profession: "learned_religious_practitioner".into()
-            }
-        );
-        // The two independent assignments form a noble priest without a
-        // writable estate scalar that could contradict the prince role.
-        assert_ne!(
-            std::mem::discriminant(&prince.purpose),
-            std::mem::discriminant(&priest.purpose)
-        );
+        assert_eq!(priest.profession, "learned_religious_practitioner");
+        assert!(priest.address_priority > prince.address_priority);
+        assert!(priest.social_precedence > prince.social_precedence);
     }
 
     #[test]
@@ -778,87 +865,99 @@ mod tests {
             "islamic_learned_fellowship",
             "jewish_learned_fellowship",
         ] {
-            assert_eq!(
-                organization(id)
-                    .unwrap()
-                    .role("learned_religious_practitioner")
-                    .unwrap()
-                    .purpose,
-                OrganizationRolePurpose::Profession {
-                    profession: "learned_religious_practitioner".into()
-                },
+            let definition = organization(id).unwrap();
+            assert!(
+                definition
+                    .roles
+                    .iter()
+                    .any(|role| role.profession == "learned_religious_practitioner"),
                 "{id}"
             );
         }
-        let noble_id = (0..10_000)
-            .find(|id| {
-                initial_social_role(&format!("character:{id}"), "settlement-a", true).estate
-                    == Estate::Noble
-            })
-            .unwrap();
-        assert_eq!(
-            initial_social_role(&format!("character:{noble_id}"), "settlement-a", true).estate,
-            Estate::Noble
-        );
         assert!(
             organization("reformed_learned_chapter")
                 .unwrap()
-                .role("learned_religious_practitioner")
-                .is_some()
+                .roles
+                .iter()
+                .any(|role| role.profession == "learned_religious_practitioner")
         );
     }
 
     #[test]
-    fn civic_template_has_explicit_freeman_and_burgher_roles() {
+    fn civic_noble_and_serf_positions_are_organization_professions() {
         let civic = organization("settlement_civic_community").unwrap();
-        for (role_id, estate) in [
-            ("free_resident", Estate::Freeman),
-            ("citizen", Estate::Burgher),
-        ] {
-            assert_eq!(
-                civic.role(role_id).unwrap().purpose,
-                OrganizationRolePurpose::Estate { estate }
-            );
+        for (role_id, profession) in [("free_resident", "free_resident"), ("citizen", "citizen")] {
+            assert_eq!(civic.role(role_id).unwrap().profession, profession);
         }
         assert_eq!(
             organization("local_noble_house")
                 .unwrap()
                 .role("house_member")
                 .unwrap()
-                .purpose,
-            OrganizationRolePurpose::Estate {
-                estate: Estate::Noble
-            }
+                .profession,
+            "noble"
         );
+        assert_eq!(
+            organization("local_noble_house")
+                .unwrap()
+                .role("house_member")
+                .unwrap()
+                .creation_literacy,
+            Some(adventuresim_world_schema::WrittenLanguage::German)
+        );
+        assert_eq!(civic.role("citizen").unwrap().creation_literacy, None);
         assert_eq!(
             organization("local_lordship")
                 .unwrap()
                 .role("serf")
                 .unwrap()
-                .purpose,
-            OrganizationRolePurpose::Estate {
-                estate: Estate::Serf
-            }
+                .profession,
+            "serf"
         );
     }
 
     #[test]
-    fn deterministic_social_assignment_covers_all_estates_without_implicit_freemen() {
+    fn address_priority_makes_clergy_overwrite_noble_and_noble_overwrite_citizen() {
+        let citizen = organization("settlement_civic_community")
+            .unwrap()
+            .role("citizen")
+            .unwrap();
+        let noble = organization("local_noble_house")
+            .unwrap()
+            .role("house_member")
+            .unwrap();
+        let clergy = organization("roman_catholic_learned_chapter")
+            .unwrap()
+            .roles
+            .iter()
+            .find(|role| role.profession == "learned_religious_practitioner")
+            .unwrap();
+        assert!(clergy.address_priority > noble.address_priority);
+        assert!(noble.address_priority > citizen.address_priority);
+        assert!(clergy.social_precedence > noble.social_precedence);
+        assert!(noble.social_precedence > citizen.social_precedence);
+        assert_eq!(clergy.profession, "learned_religious_practitioner");
+        assert_eq!(noble.profession, "noble");
+        assert_eq!(citizen.profession, "citizen");
+    }
+
+    #[test]
+    fn deterministic_social_assignment_covers_authored_organization_roles() {
         let mut found = std::collections::BTreeMap::new();
         for id in 0..10_000 {
             let role = initial_social_role(&format!("character:{id}"), "settlement-a", true);
-            found.entry(role.estate.id()).or_insert((id, role));
+            found.entry(role.role_id).or_insert((id, role));
             if found.len() == 4 {
                 break;
             }
         }
         assert_eq!(
             found.keys().copied().collect::<Vec<_>>(),
-            ["burgher", "freeman", "noble", "serf"]
+            ["citizen", "free_resident", "house_member", "serf"]
         );
-        assert_eq!(found["noble"].1.definition_id, "local_noble_house");
+        assert_eq!(found["house_member"].1.definition_id, "local_noble_house");
         assert_eq!(found["serf"].1.definition_id, "local_lordship");
-        assert!(found["noble"].1.settlement_scoped);
+        assert!(found["house_member"].1.settlement_scoped);
         assert!(found["serf"].1.settlement_scoped);
         for (id, expected) in found.values() {
             assert_eq!(
@@ -867,37 +966,32 @@ mod tests {
             );
             assert_ne!(
                 crate::settlement_population::stable_hash(&format!(
-                    "social-estate:v2:12:settlement-a:character:{id}"
+                    "social-role:v3:12:settlement-a:character:{id}"
                 )),
                 crate::settlement_population::stable_hash(&format!(
-                    "social-estate:v2:12:settlement-a:settlement-npc:{id}"
+                    "social-role:v3:12:settlement-a:settlement-npc:{id}"
                 ))
             );
         }
         let urban_burgher = (0..10_000)
             .find(|id| {
-                initial_social_role(&format!("character:{id}"), "settlement-a", true).estate
-                    == Estate::Burgher
+                initial_social_role(&format!("character:{id}"), "settlement-a", true).role_id
+                    == "citizen"
             })
             .unwrap();
         let rural =
             initial_social_role(&format!("character:{urban_burgher}"), "settlement-a", false);
-        assert_eq!(rural.estate, Estate::Freeman);
         assert_eq!(rural.role_id, "free_resident");
         assert_ne!(
-            crate::settlement_population::stable_hash(
-                "social-estate:v2:12:settlement-a:character:7"
-            ),
-            crate::settlement_population::stable_hash(
-                "social-estate:v2:12:settlement-b:character:7"
-            )
+            crate::settlement_population::stable_hash("social-role:v3:12:settlement-a:character:7"),
+            crate::settlement_population::stable_hash("social-role:v3:12:settlement-b:character:7")
         );
     }
 
     #[test]
-    fn social_persistence_hooks_cover_both_durable_actor_types() {
+    fn social_persistence_hooks_cover_residents_as_full_characters() {
         let social =
-            include_str!("../../adventuresim-stdb-module/src/social_estate.rs").replace('\r', "");
+            include_str!("../../adventuresim-stdb-module/src/social_roles.rs").replace('\r', "");
         let character =
             include_str!("../../adventuresim-stdb-module/src/character.rs").replace('\r', "");
         let population =
@@ -909,29 +1003,31 @@ mod tests {
         let world_import =
             include_str!("../../adventuresim-stdb-module/src/strategic/world_import.rs")
                 .replace('\r', "");
-        assert!(social.contains("#[table(accessor = character_estate_basis)]"));
-        assert!(social.contains("#[primary_key]\n    pub character_id: u64"));
-        assert!(social.contains("#[table(accessor = settlement_npc_estate_basis)]"));
-        assert!(social.contains("#[primary_key]\n    pub npc_id: String"));
+        assert!(!social.contains("character_estate_basis"));
+        assert!(social.contains("format!(\"character:{character_id}:{instance_id}\")"));
+        assert!(social.contains("already has a different role in this organization instance"));
+        assert!(social.contains("row.organization_instance_id == instance_id"));
+        assert!(!social.contains("resident_character_id"));
         assert!(!social.contains("ctx.random"));
-        assert!(social.contains("Estate roles require the exclusive estate-assignment path"));
-        assert!(social.contains("already has an estate-bearing role"));
         assert!(social.contains("\"lutheran\" => \"lutheran_learned_visitation\""));
         assert!(social.contains("\"reformed\" => \"reformed_learned_chapter\""));
         assert!(character.contains("ensure_character_social_roles("));
         assert!(character.contains("ensure_character_professional_role("));
         assert!(character.contains("delete_character_social_roles(ctx, character.id)"));
-        assert!(population.contains("ensure_settlement_npc_social_roles("));
+        assert!(population.contains("pub struct SettlementResidentProfile"));
+        assert!(population.contains("ensure_character_social_roles("));
         assert!(population.contains("ensure_settlement_social_organizations(ctx, settlement_id)"));
-        assert!(world_import.contains("delete_settlement_npc_social_roles(ctx, &npc.id)"));
+        assert!(world_import.contains("delete_character_for_world_import(ctx, character)"));
         assert!(world_import.contains("delete_unreferenced_settlement_social_organizations("));
         let mission =
             include_str!("../../adventuresim-stdb-module/src/strategic/mission_bootstrap.rs")
                 .replace('\r', "");
-        assert!(mission.contains("copy_settlement_npc_social_roles_to_character("));
-        assert!(dialogue.matches("FactKey::ParticipantEstate").count() >= 2);
-        assert!(dialogue.contains("character_estate(ctx, id)?"));
-        assert!(dialogue.contains("settlement_npc_estate(ctx, &npc.id)?"));
+        assert!(!mission.contains("copy_settlement_resident_social_roles_to_character("));
+        assert!(mission.contains("let leader_id = npc.character_id"));
+        assert!(mission.contains("settlement_resident_id: npc.character_id"));
+        assert!(dialogue.matches("FactKey::ParticipantRole").count() >= 2);
+        assert!(dialogue.contains("character_roles(ctx, id)?"));
+        assert!(dialogue.contains("character_roles(ctx, npc.character_id)?"));
     }
 
     #[test]
@@ -968,10 +1064,22 @@ mod tests {
     }
 
     #[test]
+    fn only_the_order_of_saint_george_can_issue_errantry() {
+        for organization in &catalog().organizations {
+            assert_eq!(
+                organization.errantry_issuance,
+                organization.id == "order_saint_george",
+                "{}",
+                organization.id
+            );
+        }
+    }
+
+    #[test]
     fn exact_representative_requires_identity_home_and_conversation() {
         let valid = (
-            "npc:goslar:ranger-lodge:0",
-            "npc:goslar:ranger-lodge:0",
+            9_007_199_254_740_993,
+            9_007_199_254_740_993,
             "goslar",
             "goslar",
             "ranger_lodge",
@@ -982,7 +1090,7 @@ mod tests {
             valid.0, valid.1, valid.2, valid.3, valid.4, valid.5, valid.6
         ));
         assert!(!exact_representative_fields_match(
-            "npc:goslar:ranger-lodge:1",
+            9_007_199_254_740_994,
             valid.1,
             valid.2,
             valid.3,
@@ -1079,6 +1187,7 @@ mod tests {
             merchant,
             organization_representative_id("viabundus-0", "weaponsmith_guild")
         );
-        assert!(!merchant.ends_with(":0"));
+        assert_ne!(merchant, 0);
+        assert!(merchant >= 1u64 << 63);
     }
 }

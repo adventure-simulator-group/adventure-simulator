@@ -46,17 +46,21 @@ pub enum FieldShelter {
     #[default]
     Bivouac,
     Tent,
+    /// A settlement building whose interior protects occupants from ambient
+    /// thermal loading as well as precipitation and wind.
+    Indoor,
 }
 
 impl FieldShelter {
     pub const fn blocks_rain(self) -> bool {
-        matches!(self, Self::Tent)
+        matches!(self, Self::Tent | Self::Indoor)
     }
 
     pub const fn wind_multiplier_bps(self) -> u16 {
         match self {
             Self::Bivouac => 10_000,
             Self::Tent => 2_500,
+            Self::Indoor => 0,
         }
     }
 }
@@ -168,6 +172,13 @@ fn next_thermal_strain(
     clothing: ClothingExposure,
     shelter: FieldShelter,
 ) -> i32 {
+    // Settlement downtime happens inside a building rather than in a tent
+    // pitched outdoors. Ignore the exterior temperature while indoors and
+    // let any existing strain recover at the same bounded neutral rate used
+    // for comfortable weather.
+    if shelter == FieldShelter::Indoor {
+        return strain - strain.signum();
+    }
     const COMFORT_DECI_C: i32 = 180;
     let wind =
         i32::from(weather.wind_speed_bps) * i32::from(shelter.wind_multiplier_bps()) / 10_000;
@@ -306,6 +317,35 @@ mod tests {
             .thermal_strain,
             0
         );
+    }
+
+    #[test]
+    fn indoor_rest_does_not_create_extreme_thermal_exposure() {
+        for weather in [weather(-800, 10_000, true), weather(500, 0, false)] {
+            let outcome = advance_exposure(
+                SurvivalState::default(),
+                [weather; 1_440],
+                ClothingExposure::default(),
+                FieldShelter::Indoor,
+            );
+            assert_eq!(outcome.state.thermal_strain, 0);
+            assert_eq!(thermal_incapacitation(outcome.state.thermal_strain), 0.0);
+            assert!(outcome.frostbite_event_offsets.is_empty());
+        }
+
+        let recovering = advance_exposure(
+            SurvivalState {
+                wetness_bps: MAX_WETNESS_BPS,
+                thermal_strain: COLD_STAGGER_STRAIN,
+                frostbite_progress_minutes: 10,
+            },
+            [weather(-800, 10_000, true); 60],
+            ClothingExposure::default(),
+            FieldShelter::Indoor,
+        );
+        assert!(recovering.state.wetness_bps < MAX_WETNESS_BPS);
+        assert!(recovering.state.thermal_strain > COLD_STAGGER_STRAIN);
+        assert_eq!(recovering.state.frostbite_progress_minutes, 0);
     }
 
     #[test]

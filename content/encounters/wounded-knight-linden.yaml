@@ -1,0 +1,99 @@
+{
+  "encounters": [
+    {
+      "id": "wounded_knight_linden_v1",
+      "version": 2,
+      "weight": 85,
+      "triggers": { "travel": true, "rest": true },
+      "provenance": {
+        "works": ["Parzival", "Le Morte d'Arthur"],
+        "motifs": ["wounded_knight_beneath_tree", "recreant_squires", "roadside_mercy", "helpless_noble"],
+        "adaptation_note": "An original encounter assembled cautiously from wounded-knight and roadside-aid commonplaces shared by medieval romance; it does not reproduce a particular episode."
+      },
+      "cast": [
+        { "id": "wounded_knight", "name": "Wounded knight", "nature": "mortal", "backing": { "kind": "character", "role": "patient", "contact_decision": "allowed", "treatment_decision": "allowed" } }
+      ],
+      "opening": [
+        {
+          "speaker": "wounded_knight",
+          "text": "Good travelers, draw near. Beneath this linden have recreant squires and woodland robbers left me bleeding. My destrier and sumpter stand tethered yonder, and my frightened sumpter-boy dareth not ride home alone.",
+          "reviewed_shakespearean": true
+        }
+      ],
+      "choices": [
+        {
+          "id": "treat",
+          "interaction": { "kind": "shared_systems", "character_actions": ["treatment", "investigation_information", "item_inventory_transfer", "relationship_personality"] },
+          "label": "Spend a bandage and dress the knight's wound",
+          "response": [{ "speaker": "wounded_knight", "text": "Thy hands have stayed the blood. Mark this: they hid within the thorn brake and rushed me only when I drew near. Take these few groschen with my thanks.", "reviewed_shakespearean": true }],
+          "result": "Thou spendest a clean bandage, dressest the wound, learnest the assailants' close-ambush method, and acceptest a modest purse in thanks.",
+          "deed": "treat_wounded_knight_beneath_linden",
+          "outcome_tags": ["mercy", "field_treatment"],
+          "requirements": [{ "kind": "item", "item_id": "bandage", "minimum_quantity": 1 }],
+          "checks": [{ "kind": "skill", "skill": "physiology", "difficulty_milli": 1000 }],
+          "effects": [
+            { "kind": "consume_item", "item_id": "bandage", "quantity": 1 },
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 8 },
+            { "kind": "information", "information_id": "linden_assailants_close_ambush_method" }
+          ],
+          "personality": [{ "axis": "conscience", "delta": 100, "virtue": "mercy" }],
+          "quest_reward_tags": ["assailants_favor_close_ambush"]
+        },
+        {
+          "id": "track",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
+          "label": "Read the robbers' trail before it groweth cold",
+          "response": [{ "speaker": "wounded_knight", "text": "Thou hast read their flight aright. That torn dispatch fell from their leader; its marks shall tell thee which hidden ways they favor.", "reviewed_shakespearean": true }],
+          "result": "Thou followest the fresh spoor far enough to recover a dropped dispatch, then returnest before the wounded knight is forsaken.",
+          "deed": "track_linden_assailants_and_recover_dispatch",
+          "outcome_tags": ["prudence", "tracking", "information_gained"],
+          "checks": [{ "kind": "skill", "skill": "terrain_forest", "difficulty_milli": 1100 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "captured_black_knight_dispatch", "quantity": 1 },
+            { "kind": "information", "information_id": "linden_robbers_close_ambush_route" }
+          ],
+          "personality": [{ "axis": "drive", "delta": 90, "virtue": "prudence" }],
+          "quest_reward_tags": ["enemy_ambush_route_warning"]
+        },
+        {
+          "id": "organize_aid",
+          "interaction": { "kind": "shared_systems", "character_actions": ["item_inventory_transfer", "relationship_personality"] },
+          "label": "Set his sumpter-boy to ride for household aid",
+          "response": [{ "speaker": "wounded_knight", "text": "Thy word hath put good order in our fear. Take this household silver, for my folk shall come armed and bear me hence.", "reviewed_shakespearean": true }],
+          "result": "Thou orderest the frightened servant onto the fresh sumpter and arrangest a guarded return; the knight payeth thee from his travel purse.",
+          "deed": "organize_household_aid_for_wounded_knight",
+          "outcome_tags": ["loyalty", "command", "escort_arranged"],
+          "requirements": [{ "kind": "skill", "skill": "command", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "command", "difficulty_milli": 1000 }],
+          "effects": [{ "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 16 }],
+          "personality": [{ "axis": "conscience", "delta": 80, "virtue": "loyalty" }]
+        },
+        {
+          "id": "plunder",
+          "interaction": { "kind": "blocked", "issue": "#377", "reason": "Plundering a wounded Character needs shared ownership authority." },
+          "label": "Take ransom, sword, and shield from the helpless knight",
+          "response": [{ "speaker": "wounded_knight", "text": "Take purse and harness, false knight, yet know thy profit proclaimeth what honor thou hast sold.", "reviewed_shakespearean": true }],
+          "result": "Thou exactest ransom from the helpless man and takest the arming sword and heater shield from his tethered horse.",
+          "deed": "plunder_helpless_knight_and_his_horse",
+          "outcome_tags": ["cruelty", "robbery", "ransom"],
+          "effects": [
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 48 },
+            { "kind": "grant_item", "item_id": "arming_sword", "quantity": 1 },
+            { "kind": "grant_item", "item_id": "heater_shield", "quantity": 1 }
+          ],
+          "personality": [{ "axis": "conscience", "delta": -180, "virtue": "mercy" }]
+        },
+        {
+          "id": "ignore",
+          "interaction": { "kind": "shared_systems", "character_actions": ["ignore_travel"] },
+          "label": "Leave him beneath the linden",
+          "response": [],
+          "result": "Thou leavest the wounded knight and his tethered horses beneath the linden.",
+          "deed": "ignore_wounded_knight_beneath_linden",
+          "outcome_tags": []
+        }
+      ],
+      "quest_reward_eligibility": ["physical_tactical_information"]
+    }
+  ]
+}

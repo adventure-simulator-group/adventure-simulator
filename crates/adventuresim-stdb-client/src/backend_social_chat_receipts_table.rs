@@ -3,6 +3,8 @@
 
 #![allow(unused, clippy::all)]
 use super::backend_social_chat_receipt_type::BackendSocialChatReceipt;
+use super::social_chat_outcome_type::SocialChatOutcome;
+use super::social_chat_target_kind_type::SocialChatTargetKind;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `backend_social_chat_receipts`.

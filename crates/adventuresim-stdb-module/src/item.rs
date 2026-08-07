@@ -244,6 +244,8 @@ pub struct Item {
     #[primary_key]
     pub id: String,
     pub weight: f32,
+    /// Exterior displacement for generic inventory containment.
+    pub exterior_volume_ml: u32,
     pub slot: ItemSlot,
     pub kind: ItemKind,
     pub equipment_placements: Vec<EquipmentPlacement>,
@@ -273,6 +275,9 @@ pub struct Item {
     pub nutrition_kcal: f32,
     /// Water capacity contributed while this item is in personal inventory.
     pub water_capacity_ml: u32,
+    /// Generic interior inventory capacity. This remains independent of
+    /// equipment attachment points and their slot counts.
+    pub container_capacity_ml: u32,
     /// Potable liquid in one discrete serving.
     pub alcohol_serving_ml: u32,
     /// Alcohol by volume in basis points (500 = 5%).
@@ -305,6 +310,7 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
     let mut item = Item {
         id: definition.id.clone(),
         weight: definition.weight_kg,
+        exterior_volume_ml: definition.exterior_volume_ml,
         base_value: Some(definition.base_value),
         ..Item::default()
     };
@@ -504,7 +510,12 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
         item.quality = book.quality;
     }
     if let Some(container) = definition.capabilities.container {
-        item.water_capacity_ml = container.capacity_ml;
+        item.water_capacity_ml = if definition.id == "waterskin" {
+            container.capacity_ml
+        } else {
+            0
+        };
+        item.container_capacity_ml = container.capacity_ml;
     }
     if let Some(alcohol) = definition.capabilities.alcohol {
         item.alcohol_serving_ml = alcohol.serving_ml;
@@ -530,6 +541,7 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
 #[reducer(init)]
 fn init_items(ctx: &ReducerContext) -> Result<(), String> {
     crate::time::initialize_time(ctx);
+    crate::npc_causal::initialize_npc_causal_schedule(ctx);
     crate::disease::initialize_physiology_key(ctx);
     log::info!(
         "Populating items from catalog revision {}",
@@ -619,6 +631,25 @@ pub(crate) fn add_inventory_item_checked(
         let _ = crate::capability::refresh_character_capability(ctx, character_id);
     }
     Ok(first)
+}
+
+/// Foraging receipts bind every concrete harvested unit to an object and
+/// material lot. Preserve the shared grant helper's stacking semantics for
+/// every other caller while intentionally issuing one validated unit here.
+pub(crate) fn add_foraged_inventory_item_checked_rows(
+    ctx: &ReducerContext,
+    character_id: u64,
+    item_id: &str,
+    quantity: u32,
+) -> Result<Vec<u64>, String> {
+    let mut rows = Vec::with_capacity(quantity as usize);
+    for _ in 0..quantity {
+        rows.push(
+            add_inventory_item_checked(ctx, character_id, item_id, 1)?
+                .ok_or("Foraged inventory insertion returned no row")?,
+        );
+    }
+    Ok(rows)
 }
 
 pub fn add_inventory_item(
@@ -737,6 +768,18 @@ pub fn credit_personal_currency(
         add_inventory_item(ctx, character_id, &currency_id, amount);
     }
     Ok(())
+}
+
+pub fn validate_personal_currency_credit(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    amount: u32,
+) -> Result<(), String> {
+    if amount == 0 {
+        Ok(())
+    } else {
+        currency_id_for_settlement(ctx, settlement_id).map(|_| ())
+    }
 }
 
 fn merged_currency_quantity(existing: u32, credit: u32) -> Option<u32> {
@@ -948,6 +991,18 @@ mod tests {
                 .kind,
             adventuresim_core::item_catalog::ItemKind::Ingredient
         );
+    }
+
+    #[test]
+    fn foraging_specific_insertion_issues_each_harvested_unit_separately() {
+        let source = include_str!("item.rs");
+        let helper = source
+            .split("pub(crate) fn add_foraged_inventory_item_checked_rows")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn add_inventory_item").next())
+            .expect("foraging-specific insertion helper");
+        assert!(helper.contains("for _ in 0..quantity"));
+        assert!(helper.contains("add_inventory_item_checked(ctx, character_id, item_id, 1)"));
     }
 
     #[test]

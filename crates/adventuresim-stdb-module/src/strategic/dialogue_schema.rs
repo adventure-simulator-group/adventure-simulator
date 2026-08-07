@@ -9,7 +9,7 @@ pub struct LocalChatMessage {
     #[index(btree)]
     pub audience_party_id: String,
     pub other_party_id: String,
-    pub npc_id: String,
+    pub resident_character_id: Option<u64>,
     pub sender_id: u64,
     pub sender_name: String,
     pub body: String,
@@ -22,7 +22,7 @@ pub struct BackendLocalChatMessage {
     pub owner_character_id: u64,
     pub conversation_kind: String,
     pub subject_party_id: String,
-    pub subject_npc_id: String,
+    pub subject_resident_character_id: String,
     pub sender_id: u64,
     pub sender_name: String,
     pub body: String,
@@ -44,20 +44,21 @@ fn project_local_chat_message(
     other_viewers: &[u64],
 ) -> Vec<BackendLocalChatMessage> {
     let mut projections = Vec::new();
-    let mut push = |owner_character_id, conversation_kind, subject_party_id, subject_npc_id| {
-        projections.push(BackendLocalChatMessage {
-            id: row.id,
-            owner_character_id,
-            conversation_kind,
-            subject_party_id,
-            subject_npc_id,
-            sender_id: row.sender_id,
-            sender_name: row.sender_name.clone(),
-            body: row.body.clone(),
-            created_micros: row.created_micros,
-        });
-    };
-    if row.npc_id.is_empty() {
+    let mut push =
+        |owner_character_id, conversation_kind, subject_party_id, subject_resident_character_id| {
+            projections.push(BackendLocalChatMessage {
+                id: row.id,
+                owner_character_id,
+                conversation_kind,
+                subject_party_id,
+                subject_resident_character_id,
+                sender_id: row.sender_id,
+                sender_name: row.sender_name.clone(),
+                body: row.body.clone(),
+                created_micros: row.created_micros,
+            });
+        };
+    if row.resident_character_id.is_none() {
         for &owner_character_id in audience_viewers {
             push(
                 owner_character_id,
@@ -82,7 +83,7 @@ fn project_local_chat_message(
                 owner_character_id,
                 "npc".into(),
                 String::new(),
-                row.npc_id.clone(),
+                row.resident_character_id.map_or_else(String::new, |id| id.to_string()),
             );
         }
     }
@@ -100,7 +101,7 @@ pub fn backend_local_chat_messages(ctx: &ViewContext) -> Vec<BackendLocalChatMes
         .filter(0u8)
         .flat_map(|row| {
             let audience_viewers = local_chat_party_viewer_ids(ctx, &row.audience_party_id);
-            let other_viewers = if row.npc_id.is_empty() {
+            let other_viewers = if row.resident_character_id.is_none() {
                 local_chat_party_viewer_ids(ctx, &row.other_party_id)
             } else {
                 Vec::new()
@@ -483,8 +484,9 @@ fn require_live_dialogue_presence(
     ctx: &ReducerContext,
     session: &DialogueSession,
     character_id: u64,
-) -> Result<crate::settlement_population::SettlementNpc, String> {
-    require_navigable_npc_location(ctx, &session.settlement_id, &session.location_id)?;
+) -> Result<crate::settlement_population::SettlementResidentProfile, String> {
+    let exact_place =
+        require_navigable_npc_place(ctx, &session.settlement_id, &session.location_id)?;
     let character = ctx
         .db
         .character()
@@ -512,30 +514,58 @@ fn require_live_dialogue_presence(
         .character_time()
         .character_id()
         .find(character_id)
-        .map_or(720, |time| time.minutes);
+        .map(|time| time.minutes)
+        .ok_or("Dialogue participant has no personal time authority")?;
+    let actor_settlement_presence =
+        adventuresim_core::strategic_presence::StrategicPresence::settlement_membership(
+            character_id,
+            session.settlement_id.clone(),
+            adventuresim_core::strategic_presence::PresenceFrontier {
+                observer_character_id: character_id,
+                personal_minute: minute,
+            },
+        )
+        .map_err(|_| "Dialogue settlement identity is invalid")?;
+    let actor_presence =
+        adventuresim_core::strategic_presence::StrategicPresence::validated_venue_selection(
+            &actor_settlement_presence,
+            exact_place,
+        )
+        .map_err(|_| "Dialogue location is not in the actor's settlement")?;
     let mut primary = None;
     for participant in npc_participants {
+        let npc_character_id = participant
+            .actor_id
+            .parse::<u64>()
+            .map_err(|_| "Dialogue NPC identity is invalid")?;
         let npc = ctx
             .db
-            .settlement_npc()
-            .id()
-            .find(&participant.actor_id)
+            .settlement_resident_profile()
+            .character_id()
+            .find(npc_character_id)
             .ok_or("Dialogue NPC is no longer authoritative")?;
         let presence = ctx
             .db
-            .settlement_npc_presence()
-            .npc_id()
-            .find(&npc.id)
+            .settlement_resident_presence()
+            .character_id()
+            .find(npc.character_id)
             .ok_or("Dialogue NPC has no authoritative presence")?;
+        let npc_presence = crate::settlement_population::npc_strategic_presence_at(
+            ctx,
+            &presence,
+            character_id,
+            minute,
+        )
+        .ok_or("Dialogue NPC is not present at the session location and time")?;
         if npc.home_settlement_id != session.settlement_id
-            || presence.settlement_id != session.settlement_id
-            || presence.location_id != session.location_id
-            || !crate::settlement_population::npc_is_present(&presence, minute)
+            || !adventuresim_core::strategic_presence::are_co_present(
+                &actor_presence,
+                npc_presence.presence(),
+            )
         {
             return Err("Dialogue NPC is not present at the session location and time".into());
         }
-        if (npc.organization_id.is_empty()
-            && npc.conversation_id == "organization-representative")
+        if (npc.organization_id.is_empty() && npc.conversation_id == "organization-representative")
             || (!npc.organization_id.is_empty()
                 && exact_organization_representative(
                     ctx,
@@ -549,7 +579,7 @@ fn require_live_dialogue_presence(
         }
         primary.get_or_insert(npc);
     }
-    Ok(primary.expect("nonempty NPC participants"))
+    primary.ok_or_else(|| "Dialogue requires an NPC participant".into())
 }
 
 fn require_navigable_npc_location(
@@ -577,4 +607,14 @@ fn require_navigable_npc_location(
     } else {
         Err("NPC location is not available in this settlement".into())
     }
+}
+
+fn require_navigable_npc_place(
+    ctx: &ReducerContext,
+    settlement_id: &str,
+    location_id: &str,
+) -> Result<adventuresim_core::strategic_place::StrategicPlaceId, String> {
+    require_navigable_npc_location(ctx, settlement_id, location_id)?;
+    crate::settlement_population::canonical_npc_place(settlement_id, location_id)
+        .ok_or_else(|| "NPC location has no canonical strategic place".into())
 }

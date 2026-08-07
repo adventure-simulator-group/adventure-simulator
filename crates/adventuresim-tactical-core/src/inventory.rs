@@ -71,6 +71,8 @@ pub struct WeaponItem {
     pub reach: f32,
     pub balance: f32,
     pub precise: bool,
+    pub melee: bool,
+    pub ranged: bool,
     pub blunt: bool,
     pub slash: bool,
     pub pierce: bool,
@@ -199,6 +201,13 @@ impl InventoryView<'_, '_, '_> {
         self.q_item.iter_many(items)
     }
 
+    /// Returns whether this actor owns a non-empty stack of the requested
+    /// tactical item without scanning other actors' inventories.
+    pub fn has_item_id(&self, item_id: &str) -> bool {
+        self.iter()
+            .any(|item| item.properties.id == item_id && item.quantity.0.get() > 0)
+    }
+
     fn equipped_weapon(&self) -> Option<ItemQueryItem<'_, '_>> {
         self.q_inventory
             .get(self.entity)
@@ -276,6 +285,36 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .unwrap_or_default()
     }
 
+    fn weapon_is_melee(&self) -> bool {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_some_and(|weapon| weapon.melee)
+    }
+
+    fn weapon_is_ranged(&self) -> bool {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_some_and(|weapon| weapon.ranged)
+    }
+
+    fn weapon_does_blunt(&self) -> bool {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_some_and(|weapon| weapon.blunt)
+    }
+
+    fn weapon_does_slash(&self) -> bool {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_some_and(|weapon| weapon.slash)
+    }
+
+    fn weapon_does_pierce(&self) -> bool {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_some_and(|weapon| weapon.pierce)
+    }
+
     fn weapon_holding_side(&self) -> Option<BodySide> {
         self.equipped_weapon()
             .and_then(|item| item.slot)
@@ -307,24 +346,6 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .unwrap_or_default()
     }
 
-    fn weapon_does_blunt(&self) -> bool {
-        self.equipped_weapon()
-            .and_then(|item| item.weapon)
-            .is_some_and(|weapon| weapon.blunt)
-    }
-
-    fn weapon_does_slash(&self) -> bool {
-        self.equipped_weapon()
-            .and_then(|item| item.weapon)
-            .is_some_and(|weapon| weapon.slash)
-    }
-
-    fn weapon_does_pierce(&self) -> bool {
-        self.equipped_weapon()
-            .and_then(|item| item.weapon)
-            .is_some_and(|weapon| weapon.pierce)
-    }
-
     fn armor_range_of_motion(&self, part: BodyPart) -> f32 {
         self.layered_armor_for(part).range_of_motion
     }
@@ -338,6 +359,16 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .and_then(|item| item.shield)
             .map(|shield| shield.block)
             .unwrap_or_default()
+    }
+
+    fn shield_holding_side(&self) -> Option<BodySide> {
+        self.equipped_shield()
+            .and_then(|item| item.slot)
+            .and_then(|slot| match slot {
+                EquipSlot::HoldingLeft => Some(BodySide::Left),
+                EquipSlot::HoldingRight => Some(BodySide::Right),
+                _ => None,
+            })
     }
 
     fn weapon_weight(&self) -> f32 {

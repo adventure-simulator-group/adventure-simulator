@@ -33,6 +33,7 @@ fn record_contract_issuer_interaction(
         .id()
         .find(&contract_id)
         .ok_or("Contract not found")?;
+    contract.parsed_state()?;
     let expected = match stage {
         ContractInteractionStage::Accept => ContractStatus::Offered,
         ContractInteractionStage::Report => ContractStatus::ReadyToReport,
@@ -48,15 +49,15 @@ fn record_contract_issuer_interaction(
     }
     let issuer = ctx
         .db
-        .settlement_npc()
-        .id()
-        .find(&contract.issuer_npc_id)
+        .settlement_resident_profile()
+        .character_id()
+        .find(contract.issuer_resident_character_id)
         .ok_or("Contract issuer is not persistent")?;
     let presence = ctx
         .db
-        .settlement_npc_presence()
-        .npc_id()
-        .find(&issuer.id)
+        .settlement_resident_presence()
+        .character_id()
+        .find(issuer.character_id)
         .ok_or("Contract issuer has no presence")?;
     let minute = ctx
         .db
@@ -68,7 +69,7 @@ fn record_contract_issuer_interaction(
         || issuer.service_id != contract.service_id
         || presence.settlement_id != contract.settlement_id
         || presence.location_id != location_id
-        || !crate::settlement_population::npc_is_present(&presence, minute)
+        || !crate::settlement_population::npc_is_present(ctx, &presence, minute)
     {
         return Err("Contract issuer is not available for interaction".into());
     }
@@ -78,7 +79,7 @@ fn record_contract_issuer_interaction(
         contract_id,
         party_id,
         stage,
-        issuer_npc_id: issuer.id,
+        issuer_resident_character_id: issuer.character_id,
         interacting_character_id: character_id,
         interacted_at_minute: crate::time::refresh_clock(ctx)?,
         dialogue_session_id,
@@ -123,7 +124,7 @@ fn record_dialogue_contract_issuer_interaction(
         .id()
         .find(&contract_id)
         .ok_or("Contract not found")?;
-    if issuer.id != contract.issuer_npc_id
+    if issuer.character_id != contract.issuer_resident_character_id
         || issuer.service_id != contract.service_id
         || session.settlement_id != contract.settlement_id
     {
@@ -163,9 +164,9 @@ pub fn simulate_contract_issuer_interaction(
         .ok_or("Contract not found")?;
     let presence = ctx
         .db
-        .settlement_npc_presence()
-        .npc_id()
-        .find(&contract.issuer_npc_id)
+        .settlement_resident_presence()
+        .character_id()
+        .find(contract.issuer_resident_character_id)
         .ok_or("Contract issuer has no presence")?;
     record_contract_issuer_interaction(
         ctx,
@@ -234,6 +235,7 @@ pub fn accept_contract(
     let Some(mut quest) = ctx.db.contract_authority().id().find(&contract_id) else {
         return Err("Quest not found".into());
     };
+    quest.parsed_state()?;
 
     if quest.status != ContractStatus::Offered {
         return Err("Quest is not available".into());
@@ -288,6 +290,9 @@ pub fn track_case_site(
     case_site_id: CaseSiteId,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
+    case_site_id
+        .to_place()
+        .ok_or("Case-site identity is malformed")?;
     let character = crate::character::require_living_character(ctx, character_id)?;
     let party_id = character
         .party_id
@@ -354,6 +359,7 @@ pub fn abandon_contract(
     let Some(mut quest) = ctx.db.contract_authority().id().find(&contract_id) else {
         return Err("Quest not found".into());
     };
+    quest.parsed_state()?;
 
     if quest.accepted_by.as_ref() != Some(&party_id) {
         return Err("This quest is not accepted by your party".into());

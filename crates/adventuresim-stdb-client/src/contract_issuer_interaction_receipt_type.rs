@@ -13,7 +13,7 @@ pub struct ContractIssuerInteractionReceipt {
     pub contract_id: String,
     pub party_id: String,
     pub stage: ContractInteractionStage,
-    pub issuer_npc_id: String,
+    pub issuer_resident_character_id: u64,
     pub interacting_character_id: u64,
     pub interacted_at_minute: u64,
     pub dialogue_session_id: String,
@@ -36,7 +36,8 @@ pub struct ContractIssuerInteractionReceiptCols {
     pub party_id: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, String>,
     pub stage:
         __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, ContractInteractionStage>,
-    pub issuer_npc_id: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, String>,
+    pub issuer_resident_character_id:
+        __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, u64>,
     pub interacting_character_id:
         __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, u64>,
     pub interacted_at_minute: __sdk::__query_builder::Col<ContractIssuerInteractionReceipt, u64>,
@@ -55,7 +56,10 @@ impl __sdk::__query_builder::HasCols for ContractIssuerInteractionReceipt {
             contract_id: __sdk::__query_builder::Col::new(table_name, "contract_id"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             stage: __sdk::__query_builder::Col::new(table_name, "stage"),
-            issuer_npc_id: __sdk::__query_builder::Col::new(table_name, "issuer_npc_id"),
+            issuer_resident_character_id: __sdk::__query_builder::Col::new(
+                table_name,
+                "issuer_resident_character_id",
+            ),
             interacting_character_id: __sdk::__query_builder::Col::new(
                 table_name,
                 "interacting_character_id",

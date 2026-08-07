@@ -23,6 +23,8 @@ pub(crate) const STRATEGIC_SOURCE: &str = concat!(
     include_str!("dialogue_effects.rs"),
     include_str!("governance.rs"),
     include_str!("inventory_trade.rs"),
+    include_str!("hostile_negotiation.rs"),
+    include_str!("hostile_surrender.rs"),
     include_str!("contracts.rs"),
     include_str!("travel_planning.rs"),
     include_str!("incidents.rs"),
@@ -31,7 +33,9 @@ pub(crate) const STRATEGIC_SOURCE: &str = concat!(
     include_str!("travel_tests.rs"),
     include_str!("travel_reducers.rs"),
     include_str!("custody_objectives.rs"),
+    include_str!("development_scenarios.rs"),
     include_str!("mission_bootstrap.rs"),
+    include_str!("challenges.rs"),
 );
 
 include!("autoresolve.rs");
@@ -46,6 +50,8 @@ include!("dialogue_prompts.rs");
 include!("dialogue_effects.rs");
 include!("governance.rs");
 include!("inventory_trade.rs");
+include!("hostile_negotiation.rs");
+include!("hostile_surrender.rs");
 include!("contracts.rs");
 include!("travel_planning.rs");
 include!("incidents.rs");
@@ -54,5 +60,7 @@ include!("encounters.rs");
 include!("travel_tests.rs");
 include!("travel_reducers.rs");
 include!("custody_objectives.rs");
+include!("development_scenarios.rs");
 include!("mission_bootstrap.rs");
+include!("challenges.rs");
 include!("tests.rs");

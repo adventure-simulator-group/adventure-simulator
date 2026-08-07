@@ -12,8 +12,31 @@ pub struct SpacetimeDbPlugin;
 impl Plugin for SpacetimeDbPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, connect_spacetimedb)
-            .add_systems(Update, update_spacetimedb)
+            .add_systems(
+                Update,
+                (
+                    update_spacetimedb,
+                    publish_spacetimedb_ready.after(update_spacetimedb),
+                ),
+            )
             .add_systems(Last, disconnect_spacetimedb);
+    }
+}
+
+/// A SpacetimeDB connection whose initial identity handshake has completed.
+///
+/// `DbConnection::build` returns before the SDK necessarily receives this
+/// identity. Systems which invoke reducers with the server identity must wait
+/// for this resource instead of calling the SDK's panicking `identity()` API.
+#[derive(Resource, Debug, Clone, Copy)]
+pub struct SpacetimeDbReady {
+    identity: Identity,
+}
+
+impl SpacetimeDbReady {
+    /// Identity assigned to this tactical server connection.
+    pub fn identity(self) -> Identity {
+        self.identity
     }
 }
 
@@ -25,17 +48,19 @@ impl Plugin for SpacetimeDbPlugin {
 pub struct SpacetimeDb {
     conn: DbConnection,
     connected_players: Arc<Mutex<Vec<ConnectedPlayer>>>,
+    terminal_results: Arc<Mutex<Vec<TerminalSubmissionResult>>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum TerminalSubmissionResult {
+    Accepted,
+    Rejected(String),
 }
 
 impl SpacetimeDb {
     /// Access spacetime db reducers.
     pub fn reducers(&self) -> &RemoteReducers {
         &self.conn.reducers
-    }
-
-    /// Get the server's SpacetimeDB identity.
-    pub fn identity(&self) -> Identity {
-        self.conn.identity()
     }
 
     /// Subscribe to `connected_players` and start collecting inserted rows.
@@ -67,12 +92,56 @@ impl SpacetimeDb {
     pub fn take_connected_players(&self) -> Vec<ConnectedPlayer> {
         std::mem::take(&mut *self.connected_players.lock().unwrap())
     }
+
+    /// Queue a terminal reducer and mailbox its eventual nested callback
+    /// result. Queue success is not reducer acceptance.
+    pub fn submit_terminal(
+        &self,
+        resolution: TacticalMissionResolution,
+        receipt: TacticalConsequenceReceipt,
+    ) -> spacetimedb_sdk::Result<()> {
+        let terminal_results = self.terminal_results.clone();
+        self.conn
+            .reducers
+            .end_tactical_server_then(resolution, receipt, move |_, result| {
+                let result = match result {
+                    Ok(Ok(())) => TerminalSubmissionResult::Accepted,
+                    Ok(Err(error)) => TerminalSubmissionResult::Rejected(error),
+                    Err(error) => TerminalSubmissionResult::Rejected(format!(
+                        "internal reducer callback error: {error:?}"
+                    )),
+                };
+                terminal_results.lock().unwrap().push(result);
+            })
+    }
+
+    pub fn take_terminal_results(&self) -> Vec<TerminalSubmissionResult> {
+        std::mem::take(&mut *self.terminal_results.lock().unwrap())
+    }
 }
 
 /// Pump the connection; SDK callbacks fire here and fill the mailboxes.
 pub fn update_spacetimedb(stdb: Res<SpacetimeDb>) -> Result {
     stdb.conn.frame_tick()?;
     Ok(())
+}
+
+/// Publish readiness only after `frame_tick` receives the initial identity.
+fn publish_spacetimedb_ready(
+    mut commands: Commands,
+    stdb: Res<SpacetimeDb>,
+    ready: Option<Res<SpacetimeDbReady>>,
+) {
+    if ready.is_some() {
+        return;
+    }
+
+    let Some(identity) = stdb.conn.try_identity() else {
+        return;
+    };
+
+    info!("SpacetimeDB connection is ready: {identity}");
+    commands.insert_resource(SpacetimeDbReady { identity });
 }
 
 /// On app exit, close the connection cleanly.
@@ -115,6 +184,7 @@ fn connect_spacetimedb(mut commands: Commands, args: Res<Args>) -> Result {
     commands.insert_resource(SpacetimeDb {
         conn,
         connected_players: default(),
+        terminal_results: default(),
     });
 
     Ok(())

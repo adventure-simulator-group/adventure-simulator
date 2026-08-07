@@ -30,9 +30,9 @@ pub(super) async fn discard_inventory_items(
             }
         }
     }
-    Redirect::to(&building.append_to(format!(
+    Redirect::to(&building.append_to(&state, &kind, &id, format!(
         "/locations/{kind}/{id}/party/{character_id}/inventory"
-    )))
+    )).await)
 }
 
 pub(super) async fn finalize_party_offer(
@@ -76,9 +76,9 @@ pub(super) async fn finalize_party_offer(
             }
         }
     }
-    Redirect::to(&building.append_to(format!(
+    Redirect::to(&building.append_to(&state, &kind, &id, format!(
         "/locations/{kind}/{id}/party/{character_id}/inventory"
-    )))
+    )).await)
 }
 
 pub(super) async fn transfer_party_item(
@@ -94,7 +94,7 @@ pub(super) async fn transfer_party_item(
         return Redirect::to("/characters");
     };
     if form.from_character_id != active_character.id && recipient_id != active_character.id {
-        return Redirect::to(&building.append_to(format!("/locations/{kind}/{id}")));
+        return Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}")).await);
     }
     let to_character_id = if form.from_character_id == active_character.id {
         recipient_id
@@ -121,9 +121,9 @@ pub(super) async fn transfer_party_item(
     } else {
         form.from_character_id
     };
-    Redirect::to(&building.append_to(format!(
+    Redirect::to(&building.append_to(&state, &kind, &id, format!(
         "/locations/{kind}/{id}/party/{comparison_character_id}/inventory"
-    )))
+    )).await)
 }
 
 pub(super) async fn merchants(
@@ -155,10 +155,11 @@ pub(super) async fn finalize_merchant_offer(
                 .into_iter()
                 .map(|entry| (entry.id, entry.quantity))
                 .unzip();
-            let provider_npc_id = merchant_provider_id(&state, &id, &service_id, location_id).await;
+            let provider_resident_character_id =
+                merchant_provider_id(&state, &id, &service_id, location_id).await;
             if items.is_empty() && sell_ids.is_empty() {
                 trade_completed = true;
-            } else if let Some(provider_npc_id) = provider_npc_id {
+            } else if let Some(provider_resident_character_id) = provider_resident_character_id {
                 match state
                     .db
                     .call(
@@ -167,7 +168,7 @@ pub(super) async fn finalize_merchant_offer(
                             json!(character.id),
                             json!(&id),
                             json!(&service_id),
-                            json!(provider_npc_id),
+                            json!(provider_resident_character_id),
                             json!(items),
                             json!(quantities),
                             json!(sell_ids),

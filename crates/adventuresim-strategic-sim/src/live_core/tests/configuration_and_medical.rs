@@ -9,6 +9,8 @@
             duration_days: 1,
             party_size: 2,
             run_nonce: "unit-test-nonce-0001".into(),
+            fixture_disease: DEFAULT_SIMULATION_DISEASE.into(),
+            require_quest_coverage: false,
             use_imported_world: false,
             expected_world_manifest_digest: None,
             failure_output: None,
@@ -18,6 +20,13 @@
         assert!(config.validate().is_err());
         config.database = "adventuresim-sim-test-1".into();
         assert!(config.validate().is_ok());
+        for disease in SIMULATION_DISEASE_SCENARIOS {
+            config.fixture_disease = disease.into();
+            assert!(config.validate().is_ok(), "rejected scenario {disease}");
+        }
+        config.fixture_disease = "private-episode-spoof".into();
+        assert!(config.validate().is_err());
+        config.fixture_disease = DEFAULT_SIMULATION_DISEASE.into();
         for spoofed in [
             "http://localhost.example.com:3000",
             "http://127.0.0.1@evil.example:3000",
@@ -120,6 +129,142 @@
     }
 
     #[test]
+    fn public_intervention_score_is_deterministic_and_penalizes_adverse_effects() {
+        use adventuresim_core::physiology::{
+            InterventionProfile, InterventionRoute, Meter, MeterVector,
+        };
+        let differential = vec![BackendPhysiologyDifferential {
+            disease_id: "dysentery".into(),
+            label: "bloody flux".into(),
+            likelihood_bps: 8_000,
+        }];
+        let helpful = InterventionProfile {
+            preparation_id: "helpful",
+            version: 1,
+            route: InterventionRoute::Oral,
+            duration_minutes: 60,
+            loss_delta_per_unit: MeterVector::from_entries(&[(Meter::Hydration, -0.2)]),
+            adverse_delta_per_unit: MeterVector::ZERO,
+        };
+        let adverse = InterventionProfile {
+            preparation_id: "adverse",
+            adverse_delta_per_unit: MeterVector::from_entries(&[(Meter::Hydration, 0.3)]),
+            ..helpful
+        };
+        let first = public_intervention_score(&differential, &helpful);
+        assert_eq!(first, public_intervention_score(&differential, &helpful));
+        assert!(first > 0);
+        assert!(public_intervention_score(&differential, &adverse) < first);
+    }
+
+    #[test]
+    fn chart_ranking_prefers_skilled_recent_clinician_and_rejects_stale_rows() {
+        assert_eq!(
+            compare_public_chart_rank(8_500, 900, 20, "physician", 3_000, 901, 10, "self"),
+            std::cmp::Ordering::Less,
+            "a minute-newer weak self chart must not displace a skilled clinician"
+        );
+        assert!(public_chart_is_fresh(2_000, 560));
+        assert!(!public_chart_is_fresh(2_001, 560));
+        assert!(!public_chart_is_fresh(559, 560));
+    }
+
+    #[test]
+    fn medical_policy_uses_only_authorized_public_chart_and_patient_inventory() {
+        let source = LIVE_CORE_SOURCE;
+        let chart = source
+            .split("fn public_physician_chart")
+            .nth(1)
+            .and_then(|tail| tail.split("fn public_intervention_offers").next())
+            .expect("public chart selector");
+        for boundary in [
+            "row.id == patient_id && row.alive",
+            "party_member()",
+            "self.character_ids.contains(&chart.observer_id)",
+            "observer.alive",
+            "observer.party_id.as_deref() == Some(party_id)",
+            "observer.current_settlement_id.as_deref() == Some(settlement_id)",
+            "chart.confidence_bps >= MIN_ACTIONABLE_PHYSIOLOGY_CONFIDENCE_BPS",
+        ] {
+            assert!(chart.contains(boundary), "missing chart boundary {boundary}");
+        }
+        assert!(!chart.contains("infection_episode"));
+
+        let recovery = source
+            .split("fn ensure_medically_safe")
+            .nth(1)
+            .and_then(|tail| tail.split("fn settlement_activity_day").next())
+            .expect("medical recovery driver");
+        for public_trace in [
+            "clinician=",
+            "chart_confidence_band=",
+            "public_differential=",
+            "public_score_micropoints=",
+            "storefront_quote=",
+            "authoritative_reducer_accepted",
+        ] {
+            assert!(recovery.contains(public_trace), "missing trace {public_trace}");
+        }
+        assert!(recovery.contains("clinician_id,"));
+        assert!(recovery.contains("character_id,"));
+        assert!(recovery.contains("preparation_inventory_id"));
+        assert!(recovery.contains("chart_unavailable_or_low_confidence"));
+        assert!(recovery.contains("active_public_intervention_supportive_rest"));
+        assert!(recovery.contains("authoritative_terminal_boundary"));
+        assert!(recovery.contains("medical_rest_requested_minutes=1440"));
+        assert!(recovery.contains("medical_rest_actual_minutes="));
+        assert!(recovery.contains("saturating_sub(medical_rest_started_at)"));
+        let schedule_sync = recovery.find("set_medical_rest_schedule(agent)").unwrap();
+        let chart_read = recovery.find("public_physician_chart(character_id)").unwrap();
+        let administration = recovery.find("administer_preparation_then").unwrap();
+        let post_administration_death_check = recovery[administration..]
+            .find("self.observe_deaths()")
+            .map(|offset| administration + offset)
+            .unwrap();
+        let medical_rest = recovery.find("medical_recovery_rest").unwrap();
+        assert!(schedule_sync < chart_read);
+        assert!(administration < post_administration_death_check);
+        assert!(post_administration_death_check < medical_rest);
+        assert!(!recovery.contains("infection_episode"));
+    }
+
+    #[test]
+    fn owned_supported_medicine_does_not_require_a_storefront_quote() {
+        let source = LIVE_CORE_SOURCE;
+        let offers = source
+            .split("fn public_intervention_offers")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(super) fn observable_medical_reserve").next())
+            .expect("public intervention offers");
+        let inventory = offers.find("let inventory_item_id").unwrap();
+        let quote = offers.find("let storefront_quote").unwrap();
+        assert!(inventory < quote);
+        assert!(offers.contains("inventory_item_id.is_none() && storefront_quote.is_none()"));
+        assert!(offers.contains("if !chart.known_interventions.is_empty()"));
+
+        let recovery = source
+            .split("fn ensure_medically_safe")
+            .nth(1)
+            .and_then(|tail| tail.split("fn settlement_activity_day").next())
+            .unwrap();
+        assert!(recovery.contains("offer.inventory_item_id.is_some()"));
+        assert!(recovery.contains("|| selected_intervention"));
+    }
+
+    #[test]
+    fn disposable_disease_fixture_is_validated_and_parameterized() {
+        let source = include_str!("../../../../adventuresim-stdb-module/src/simulation.rs");
+        let fixture = source
+            .split("pub fn seed_simulation_disease")
+            .nth(1)
+            .expect("disease fixture");
+        assert!(fixture.contains("disease_id: String"));
+        assert!(fixture.contains("parse_id(&disease_id)"));
+        assert!(fixture.contains("definition(disease)"));
+        assert!(!fixture.contains("DiseaseId::Influenza"));
+    }
+
+    #[test]
     fn equipment_spending_reserves_one_observable_medical_course() {
         assert_eq!(spending_budget_after_medical_reserve(20, Some(7)), 13);
         assert_eq!(spending_budget_after_medical_reserve(5, Some(7)), 0);
@@ -162,7 +307,7 @@
         for public_input in [
             "personal_gold(patient_id)",
             ".party_member()",
-            ".character()",
+            ".backend_characters()",
             "current_settlement_id",
             "observable_medical_reserve",
             ".party_inventory_item()",
@@ -171,6 +316,7 @@
             assert!(selector.contains(public_input), "missing {public_input}");
         }
         assert!(selector.contains("spendable >= sponsor_quote"));
+        assert!(selector.contains("party_stake.min(party_treasury)"));
         assert!(selector.contains("Reverse(option.spendable)"));
         assert!(!selector.contains("infection_episode"));
 
@@ -180,8 +326,11 @@
             .and_then(|tail| tail.split("fn settlement_activity_day").next())
             .expect("medical recovery driver");
         assert!(recovery.contains(".sponsor_party_member_inn_rest_then("));
+        assert!(recovery.contains("withdraw_stake_for_personal_purchase"));
         assert!(recovery.contains("sponsored_settlement_rest=completed"));
-        assert!(recovery.contains("exposure=not_publicly_projected"));
+        assert!(recovery.contains("thermal_before"));
+        assert!(recovery.contains("wetness_bps_before"));
+        assert!(recovery.contains("thermal_strain_before"));
         assert!(recovery.contains("emergency_temple_rest"));
         assert!(recovery.contains("actual_elapsed_minutes={actual_rest_minutes}"));
         assert!(recovery.contains("saturating_sub(rest_started_at)"));

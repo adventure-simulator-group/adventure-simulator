@@ -7,7 +7,7 @@ use axum::{
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::{
@@ -25,15 +25,16 @@ use super::{
 use crate::session::Session;
 use crate::spacetimedb::sql_string_literal;
 use crate::spacetimedb::{
-    AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BackendCorpse,
-    BackendInvestigationAction, BackendOutbreakPatient, BattleLootItem, BattleResult, Character,
-    CharacterAttributes, CharacterLimbs, CharacterStats, CharacterStrategicCondition,
-    CharacterTime, CharacterTrainingSchedule, ContractPresentation, ContractPresentationStatus,
-    FoodLot, InventoryQuantityTarget, ItemDefinition, Party, PartyInventoryItem, PartyStake,
-    Settlement,
+    AutoresolveReport, BackendCaseBattle, BackendCaseSitePin, BackendContextCharacter,
+    BackendCorpse, BackendHostileNegotiation, BackendHostileSurrender, BackendInvestigationAction,
+    BattleLootItem, BattleResult, Character, CharacterAttributes, CharacterLimbs, CharacterStats,
+    CharacterStrategicCondition, CharacterTime, CharacterTrainingSchedule, ContractPresentation,
+    ContractPresentationStatus, FoodLot, InventoryQuantityTarget, ItemDefinition, Party,
+    PartyInventoryItem, PartyStake, Settlement,
 };
 use crate::templates::quest::{
-    CaseSitePagePresentation, CaseSiteRecoveryNotice, quest_location_enemy_page,
+    CaseSitePagePresentation, CaseSiteRecoveryNotice, HostileNegotiationPresentation,
+    HostileSurrenderPresentation, QuestCounterparty, quest_location_enemy_page,
     quest_location_map_page,
 };
 
@@ -47,11 +48,27 @@ pub fn routes() -> Router<AppState> {
         .route("/locations/case-site/{id}", get(quest_location_base))
         .route("/locations/case-site/{id}/map", get(quest_location_map))
         .route("/locations/case-site/{id}/enemy", get(quest_location_enemy))
-        .route("/corpses/{corpse_id}/action", post(perform_corpse_action))
         .route(
-            "/outbreak-patients/{patient_ref}/physiology",
-            post(examine_outbreak_patient),
+            "/locations/case-site/{id}/counterparty/contact",
+            post(contact_quest_counterparty),
         )
+        .route(
+            "/locations/case-site/{id}/counterparty/bandage",
+            post(bandage_quest_counterparty),
+        )
+        .route(
+            "/locations/case-site/{id}/hostile/withdrawal",
+            post(negotiate_hostile_withdrawal),
+        )
+        .route(
+            "/locations/case-site/{id}/hostile/surrender/demand",
+            post(demand_hostile_surrender),
+        )
+        .route(
+            "/locations/case-site/{id}/hostile/surrender/offer",
+            post(answer_hostile_surrender_offer),
+        )
+        .route("/corpses/{corpse_id}/action", post(perform_corpse_action))
         .route(
             "/locations/case-site/{id}/loot",
             get(quest_location_legacy_loot),
@@ -66,6 +83,118 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/quests/{id}/autoresolve", post(autoresolve_quest))
         .route("/quests/{id}/loot/store", post(store_battle_loot))
+}
+
+#[derive(Deserialize)]
+struct HostileSurrenderForm {
+    spokesman_id: u64,
+    context_ref: String,
+    expected_revision: u32,
+    action_id: String,
+    accept: Option<bool>,
+}
+
+async fn call_hostile_surrender(
+    state: &AppState,
+    actor_id: u64,
+    case_site_id: &str,
+    form: HostileSurrenderForm,
+    offer: bool,
+) -> Response {
+    let mut args = vec![
+        json!(actor_id),
+        json!(case_site_id),
+        json!(form.spokesman_id),
+        json!(form.context_ref),
+        json!(form.expected_revision),
+    ];
+    if offer {
+        args.push(json!(form.accept.unwrap_or(false)));
+    }
+    args.push(json!(form.action_id));
+    let reducer = if offer {
+        "answer_hostile_surrender_offer"
+    } else {
+        "demand_hostile_surrender"
+    };
+    match state.db.call(reducer, &args).await {
+        Ok(()) => {
+            Redirect::to(&format!("/locations/case-site/{case_site_id}/enemy")).into_response()
+        }
+        Err(error) if error.to_string().contains("stale") => StatusCode::CONFLICT.into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+async fn demand_hostile_surrender(
+    State(state): State<AppState>,
+    Path(case_site_id): Path<String>,
+    session: Session,
+    Form(form): Form<HostileSurrenderForm>,
+) -> Response {
+    let Some(actor_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    call_hostile_surrender(&state, actor_id, &case_site_id, form, false).await
+}
+
+async fn answer_hostile_surrender_offer(
+    State(state): State<AppState>,
+    Path(case_site_id): Path<String>,
+    session: Session,
+    Form(form): Form<HostileSurrenderForm>,
+) -> Response {
+    let Some(actor_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    if form.accept.is_none() {
+        return (
+            StatusCode::BAD_REQUEST,
+            "Surrender offer requires an answer",
+        )
+            .into_response();
+    }
+    call_hostile_surrender(&state, actor_id, &case_site_id, form, true).await
+}
+
+#[derive(Deserialize)]
+struct HostileNegotiationForm {
+    spokesman_id: u64,
+    context_ref: String,
+    expected_revision: u32,
+    action_id: String,
+}
+
+async fn negotiate_hostile_withdrawal(
+    State(state): State<AppState>,
+    Path(case_site_id): Path<String>,
+    session: Session,
+    Form(form): Form<HostileNegotiationForm>,
+) -> Response {
+    let Some(actor_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call(
+            "negotiate_hostile_withdrawal",
+            &[
+                json!(actor_id),
+                json!(&case_site_id),
+                json!(form.spokesman_id),
+                json!(&form.context_ref),
+                json!(form.expected_revision),
+                json!(&form.action_id),
+            ],
+        )
+        .await
+    {
+        Ok(()) => {
+            Redirect::to(&format!("/locations/case-site/{case_site_id}/enemy")).into_response()
+        }
+        Err(error) if error.to_string().contains("stale") => StatusCode::CONFLICT.into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
 }
 
 #[derive(Serialize)]
@@ -358,8 +487,50 @@ struct QuestMapQuery {
 #[derive(Clone, Default, serde::Deserialize)]
 struct QuestEnemyQuery {
     corpse: Option<String>,
-    patient: Option<String>,
     medical: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct QuestCounterpartyBandageForm {
+    patient_id: u64,
+    limb_slug: String,
+    action_id: String,
+    context_ref: String,
+    expected_membership_revision: u32,
+}
+
+async fn bandage_quest_counterparty(
+    State(state): State<AppState>,
+    Path(case_site_id): Path<String>,
+    session: Session,
+    Form(form): Form<QuestCounterpartyBandageForm>,
+) -> Response {
+    let Some(actor_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call(
+            "treat_limb",
+            &[
+                json!(actor_id),
+                json!(form.patient_id),
+                json!(form.limb_slug),
+                json!("bandage"),
+                crate::spacetimedb::sats_option(None::<u64>),
+                json!(false),
+                json!(form.action_id),
+                crate::spacetimedb::sats_option(Some(form.context_ref)),
+                crate::spacetimedb::sats_option(Some(form.expected_membership_revision)),
+            ],
+        )
+        .await
+    {
+        Ok(()) => {
+            Redirect::to(&format!("/locations/case-site/{case_site_id}/enemy")).into_response()
+        }
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
 }
 
 enum QuestLocationTab {
@@ -640,33 +811,6 @@ async fn perform_corpse_action(
     };
     if let Err(error) = result {
         tracing::warn!(%error, actor_id, %corpse_id, "corpse medical action failed");
-    }
-    super::redirect_to_local(&form.return_to, "/")
-}
-
-#[derive(serde::Deserialize)]
-struct OutbreakPatientActionForm {
-    return_to: String,
-}
-
-async fn examine_outbreak_patient(
-    State(state): State<AppState>,
-    Path(patient_ref): Path<String>,
-    session: Session,
-    Form(form): Form<OutbreakPatientActionForm>,
-) -> Redirect {
-    let Some(actor_id) = session.character_id_u64() else {
-        return Redirect::to("/characters");
-    };
-    if let Err(error) = state
-        .db
-        .call(
-            "examine_outbreak_patient",
-            &[json!(actor_id), json!(&patient_ref)],
-        )
-        .await
-    {
-        tracing::warn!(%error, actor_id, %patient_ref, "outbreak patient physiology failed");
     }
     super::redirect_to_local(&form.return_to, "/")
 }
@@ -1017,7 +1161,7 @@ async fn render_quest_location(
     let living_party_members = living_party_members(&party_members);
     let stats: Vec<CharacterStats> = state
         .db
-        .query("SELECT * FROM character_stats")
+        .query("SELECT * FROM backend_character_stats")
         .await
         .unwrap_or_default();
     let default_rest_minutes = living_party_members
@@ -1035,22 +1179,22 @@ async fn render_quest_location(
     if let Some(party) = party.as_ref() {
         let attributes: Vec<CharacterAttributes> = state
             .db
-            .query("SELECT * FROM character_attributes")
+            .query("SELECT * FROM backend_character_attributes")
             .await
             .unwrap_or_default();
         let limbs: Vec<CharacterLimbs> = state
             .db
-            .query("SELECT * FROM character_limbs")
+            .query("SELECT * FROM backend_character_limbs")
             .await
             .unwrap_or_default();
         let times: Vec<CharacterTime> = state
             .db
-            .query("SELECT * FROM character_time")
+            .query("SELECT * FROM backend_character_times")
             .await
             .unwrap_or_default();
         let schedules: Vec<CharacterTrainingSchedule> = state
             .db
-            .query("SELECT * FROM character_training_schedule")
+            .query("SELECT * FROM backend_character_training_schedules")
             .await
             .unwrap_or_default();
         let member_ids: Vec<_> = living_party_members
@@ -1096,6 +1240,72 @@ async fn render_quest_location(
         can_control,
         party_ready,
     );
+    let context_memberships: Vec<BackendContextCharacter> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM backend_context_characters WHERE location_id = {} AND party_id = {}",
+            sql_string_literal(&site.case_site_id),
+            sql_string_literal(party.as_ref().map_or("", |party| party.id.as_str()))
+        ))
+        .await
+        .unwrap_or_default();
+    let mut counterparties = Vec::new();
+    for membership in context_memberships.into_iter().filter(|row| row.alive) {
+        if let Ok(Some(counterparty)) =
+            super::data::character(&state, membership.character_id).await
+        {
+            counterparties.push(QuestCounterparty {
+                character: counterparty,
+                contact_ref: membership.contact_ref,
+                revision: membership.revision,
+                membership_revision: membership.membership_revision,
+                contact_decision: membership.contact_decision,
+                treatment_decision: membership.treatment_decision,
+                treatment_limb_slug: membership.treatment_limb_slug,
+            });
+        }
+    }
+    let hostile_negotiation = state
+        .db
+        .query::<BackendHostileNegotiation>(&format!(
+            "SELECT * FROM backend_hostile_negotiations WHERE owner_character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .find(|row| row.case_site_id == site.case_site_id)
+        .and_then(|row| {
+            counterparties
+                .iter()
+                .find(|counterparty| counterparty.character.id == row.spokesman_id)
+                .map(|counterparty| HostileNegotiationPresentation {
+                    spokesman: counterparty.character.clone(),
+                    context_ref: row.context_ref,
+                    expected_revision: row.expected_revision,
+                    latest_response: row.latest_response,
+                })
+        });
+    let hostile_surrender = state
+        .db
+        .query::<BackendHostileSurrender>(&format!(
+            "SELECT * FROM backend_hostile_surrenders WHERE owner_character_id = {character_id}"
+        ))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .find(|row| row.case_site_id == site.case_site_id)
+        .and_then(|row| {
+            counterparties
+                .iter()
+                .find(|counterparty| counterparty.character.id == row.spokesman_id)
+                .map(|counterparty| HostileSurrenderPresentation {
+                    spokesman: counterparty.character.clone(),
+                    context_ref: row.context_ref,
+                    expected_revision: row.expected_revision,
+                    mode: row.mode,
+                    latest_response: row.latest_response,
+                })
+        });
     let onsite_actions = onsite_investigation_actions(
         state
             .db
@@ -1115,16 +1325,6 @@ async fn render_quest_location(
         .unwrap_or_default()
         .into_iter()
         .filter(|corpse| corpse.case_site_id == site.case_site_id && corpse.location == "scene")
-        .collect::<Vec<_>>();
-    let outbreak_patients = state
-        .db
-        .query::<BackendOutbreakPatient>(&format!(
-            "SELECT * FROM backend_outbreak_patients WHERE owner_character_id = {character_id}"
-        ))
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|patient| patient.source_site_id == site.case_site_id)
         .collect::<Vec<_>>();
     let selected_corpse_coordinate = match &tab {
         QuestLocationTab::Enemy(query) => query.corpse.as_deref().and_then(|corpse_id| {
@@ -1146,14 +1346,6 @@ async fn render_quest_location(
     };
     let selected_corpse =
         selected_corpse_coordinate.map(|(index, window)| (&corpses[index], window));
-    let selected_patient = match &tab {
-        QuestLocationTab::Enemy(query) => query.patient.as_deref().and_then(|patient_ref| {
-            outbreak_patients
-                .iter()
-                .find(|patient| patient.patient_ref == patient_ref)
-        }),
-        QuestLocationTab::Map(_) => None,
-    };
     let logged_in_as = character.as_ref().map(|c| c.name.as_str());
     let soap_preview = soap_rest_preview(
         &state,
@@ -1182,8 +1374,6 @@ async fn render_quest_location(
             logged_in_as,
             &corpses,
             None,
-            &outbreak_patients,
-            None,
         ),
         QuestLocationTab::Enemy(_query) => quest_location_enemy_page(
             &presentation,
@@ -1191,6 +1381,9 @@ async fn render_quest_location(
             &onsite_actions,
             character.as_ref(),
             &party_members,
+            &counterparties,
+            hostile_negotiation.as_ref(),
+            hostile_surrender.as_ref(),
             can_fight,
             resolved,
             autoresolve_report.as_ref(),
@@ -1208,8 +1401,6 @@ async fn render_quest_location(
             logged_in_as,
             &corpses,
             selected_corpse,
-            &outbreak_patients,
-            selected_patient,
         ),
     };
     Html(page.into_string()).into_response()
@@ -1240,7 +1431,7 @@ async fn party_readiness(
         let condition = state
             .db
             .query_one::<CharacterStrategicCondition>(&format!(
-                "SELECT * FROM character_strategic_condition WHERE character_id = {}",
+                "SELECT * FROM backend_character_strategic_conditions WHERE character_id = {}",
                 member.id
             ))
             .await;
@@ -1308,6 +1499,43 @@ async fn autoresolve_quest(
         .flatten()
         .and_then(|character| character.current_case_site_id);
     autoresolve_redirect(case_site_id.as_deref(), outcome)
+}
+
+#[derive(Debug, Deserialize)]
+struct QuestCounterpartyContactForm {
+    target_id: u64,
+    contact_ref: String,
+    expected_revision: u32,
+    action_id: String,
+}
+
+async fn contact_quest_counterparty(
+    State(state): State<AppState>,
+    Path(case_site_id): Path<String>,
+    session: Session,
+    Form(form): Form<QuestCounterpartyContactForm>,
+) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    let return_to = format!("/locations/case-site/{case_site_id}/enemy");
+    match state
+        .db
+        .call(
+            "contact_context_character",
+            &[
+                json!(character_id),
+                json!(form.target_id),
+                json!(form.contact_ref),
+                json!(form.expected_revision),
+                json!(form.action_id),
+            ],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to(&return_to).into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
 }
 
 fn autoresolve_redirect<E>(
@@ -1382,6 +1610,8 @@ mod quest_route_tests {
             generated_case,
             case_resolved: false,
             combat_available,
+            opposition_count: None,
+            opposition_combat_power: None,
         }
     }
 
@@ -1396,7 +1626,7 @@ mod quest_route_tests {
             xp_reward: 10,
             settlement_id: "settlement".into(),
             service_id: "tavern".into(),
-            issuer_npc_id: "npc:issuer".into(),
+            issuer_resident_character_id: "npc:issuer".into(),
             status: ContractPresentationStatus::Accepted,
             accepted_by: Some("party".into()),
             opposition_wording: "unknown opposition".into(),
@@ -1743,6 +1973,9 @@ mod quest_route_tests {
         assert!(loader.contains("case_site_combat_permitted"));
         assert!(loader.contains("battle.case_site_id.value == site.case_site_id"));
         assert!(!loader.contains("active_contract_id.as_deref() == Some(&presentation"));
+        assert!(
+            loader.contains("backend_context_characters WHERE location_id = {} AND party_id = {}")
+        );
     }
 
     #[test]

@@ -1153,21 +1153,13 @@ fn execute_case_finale(
         .find(&finale.case_id)
         .ok_or("Finale case not found")?;
     let now = crate::time::refresh_clock(ctx)?;
-    if finale.kind == FinaleKind::ResolveLocalProblem
+    let resolved_local_problem_id = if finale.kind == FinaleKind::ResolveLocalProblem
         && case.resolution_status == CaseResolutionStatus::Resolved
-        && let Some(problem_id) = case.local_problem_id.as_ref()
     {
-        crate::local_problem::apply_outcome(
-            ctx,
-            problem_id,
-            &crate::local_problem::LocalProblemOutcomeInput {
-                source_outcome_id: source_id.to_string(),
-                at_minute: now,
-                mitigation_bps: 10_000,
-                resolve: true,
-            },
-        )?;
-    }
+        case.local_problem_id.as_deref()
+    } else {
+        None
+    };
     if case.resolution_status == CaseResolutionStatus::Resolved {
         let quest_authority = ctx
             .db
@@ -1185,14 +1177,30 @@ fn execute_case_finale(
                     })
             });
         if let Some(authority) = quest_authority {
-            crate::reputation::award_case_resolution(
+            crate::world_event::commit_generated_case_resolution(
                 ctx,
+                &finale.id,
+                source_id,
                 &case.id,
                 &authority.public_case_id,
                 party_id,
                 &authority.settlement_id,
+                resolved_local_problem_id,
                 500,
                 now,
+            )?;
+        } else if let Some(problem_id) = resolved_local_problem_id {
+            // Preserve the legacy local-problem outcome for malformed or old
+            // private authority that has no generated reputation jurisdiction.
+            crate::local_problem::apply_outcome(
+                ctx,
+                problem_id,
+                &crate::local_problem::LocalProblemOutcomeInput {
+                    source_outcome_id: source_id.to_string(),
+                    at_minute: now,
+                    mitigation_bps: 10_000,
+                    resolve: true,
+                },
             )?;
         }
     }
@@ -1225,6 +1233,9 @@ fn hostile_resolution_for_objective(
         R::DriveOff {
             hostile_group_id: id,
         } if id == hostile_group_id => Some((HostileResolutionKind::DrivenOff, 30)),
+        R::Surrender {
+            hostile_group_id: id,
+        } if id == hostile_group_id => Some((HostileResolutionKind::Surrendered, 20)),
         _ => None,
     }
 }
@@ -1281,6 +1292,28 @@ pub(crate) fn generated_case_site_combat_eligible<'a>(
     finales: &[CaseFinaleAuthority],
     facts: &[adventuresim_core::case::OutcomeFact],
     party_id: &str,
+) -> Option<&'a HostileGroupAuthority> {
+    generated_case_site_hostile_resolution_eligible(
+        generated,
+        case,
+        case_site,
+        hostile_groups,
+        finales,
+        facts,
+        party_id,
+        None,
+    )
+}
+
+pub(crate) fn generated_case_site_hostile_resolution_eligible<'a>(
+    generated: &adventuresim_core::quest_generation::GeneratedCase,
+    case: &CaseAuthority,
+    case_site: &CaseSiteAuthority,
+    hostile_groups: &'a [HostileGroupAuthority],
+    finales: &[CaseFinaleAuthority],
+    facts: &[adventuresim_core::case::OutcomeFact],
+    party_id: &str,
+    required_resolution: Option<HostileResolutionKind>,
 ) -> Option<&'a HostileGroupAuthority> {
     if case.provenance_kind != "generated"
         || case.generated_case_id != case.id
@@ -1346,7 +1379,9 @@ pub(crate) fn generated_case_site_combat_eligible<'a>(
                                 &objective.requirement,
                                 hostile_group_id,
                             )
-                            .is_some()
+                            .is_some_and(|(resolution, _)| {
+                                required_resolution.is_none_or(|required| required == resolution)
+                            })
                     });
             hostile_pending
                 && finales.iter().any(|finale| {
@@ -1454,8 +1489,8 @@ pub(crate) fn ensure_bound_mission_authority(
             let group = ctx
                 .db
                 .hostile_group_authority()
-                .iter()
-                .find(|group| group.case_site_id == case_site.id)
+                .case_site_id_key()
+                .find(&case_site.id.value)
                 .ok_or("Case site has no materialized hostile group")?;
             if group.disposition != HostileGroupDisposition::Active {
                 return Err("Hostile group is already resolved".into());
@@ -1528,6 +1563,18 @@ pub(crate) fn ensure_bound_mission_authority(
                         _ => continue,
                     }
                 };
+            if resolution == HostileResolutionKind::Surrendered {
+                let authored = ctx
+                    .db
+                    .hostile_group_authority()
+                    .id()
+                    .find(&hostile_group_id)
+                    .and_then(|group| parse_threat(&group.enemy_type).ok())
+                    .is_some_and(adventuresim_core::strategic_action::hostile_surrender_is_authored);
+                if !authored {
+                    continue;
+                }
+            }
             let path_index =
                 u16::try_from(path_index).map_err(|_| "Case has too many objective paths")?;
             let id = mission_approach_capability_id(
@@ -1584,7 +1631,11 @@ pub(crate) fn ensure_bound_mission_authority(
         }
     }
     capabilities.sort_by(|left, right| left.id.cmp(&right.id));
-    if capabilities.is_empty() {
+    let tactical_capabilities = capabilities
+        .into_iter()
+        .filter(|capability| capability.resolution != HostileResolutionKind::Surrendered)
+        .collect::<Vec<_>>();
+    if tactical_capabilities.is_empty() {
         return Err("Case site has no unresolved observer-authorized combat approach".into());
     }
     let hostile_group = ctx
@@ -1593,6 +1644,12 @@ pub(crate) fn ensure_bound_mission_authority(
         .id()
         .find(&hostile_group_id)
         .ok_or("Bound hostile group disappeared")?;
+    let enemy_combat_scale_bps = hostile_group.combat_scale_bps;
+    let normalized_combat_power = hostile_group.normalized_combat_power;
+    let enemy_character_ids = crate::world_actor::context_character_ids(ctx, &hostile_group_id);
+    if enemy_character_ids.len() != hostile_group.enemy_count as usize {
+        return Err("Hostile group roster does not match group count".into());
+    }
     let authority = MissionAuthority {
         id: mission_id.to_string(),
         party_id: party_id.to_string(),
@@ -1604,17 +1661,24 @@ pub(crate) fn ensure_bound_mission_authority(
         status: MissionAttemptStatus::Bound,
         committed_resolution: None,
         committed_capture_subject_id: None,
+        committed_capture_custody_version: None,
         scene_key: scene_key.to_string(),
         hostile_version: hostile_group.escalation_incident_ordinal,
         enemy_count: hostile_group.enemy_count,
+        enemy_character_ids,
+        contacted_before_combat: crate::world_actor::party_contacted_context(
+            ctx,
+            party_id,
+            &hostile_group_id,
+        ),
         enemy_difficulty: hostile_group.base_difficulty,
-        enemy_combat_scale_bps: hostile_group.combat_scale_bps,
-        normalized_combat_power: hostile_group.normalized_combat_power,
+        enemy_combat_scale_bps,
+        normalized_combat_power,
         drop_item_id: hostile_group.drop_item_id.clone(),
         drop_quantity: hostile_group.drop_quantity,
     };
     ctx.db.mission_authority().insert(authority.clone());
-    for (index, capability) in capabilities.into_iter().enumerate() {
+    for (index, capability) in tactical_capabilities.into_iter().enumerate() {
         ctx.db
             .mission_outcome_candidate()
             .insert(mission_candidate_from_capability(

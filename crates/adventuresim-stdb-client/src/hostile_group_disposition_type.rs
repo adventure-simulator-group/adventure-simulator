@@ -14,6 +14,8 @@ pub enum HostileGroupDisposition {
 
     DrivenOff,
 
+    Surrendered,
+
     Captured,
 }
 

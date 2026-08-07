@@ -10,7 +10,6 @@ pub struct OrganizationMembership {
     pub id: u64,
     pub character_id: u64,
     pub organization_id: String,
-    pub rank_id: String,
     pub joined_minute: u64,
     pub dues_paid_through_minute: u64,
     pub status: String,
@@ -29,7 +28,6 @@ pub struct OrganizationMembershipCols {
     pub id: __sdk::__query_builder::Col<OrganizationMembership, u64>,
     pub character_id: __sdk::__query_builder::Col<OrganizationMembership, u64>,
     pub organization_id: __sdk::__query_builder::Col<OrganizationMembership, String>,
-    pub rank_id: __sdk::__query_builder::Col<OrganizationMembership, String>,
     pub joined_minute: __sdk::__query_builder::Col<OrganizationMembership, u64>,
     pub dues_paid_through_minute: __sdk::__query_builder::Col<OrganizationMembership, u64>,
     pub status: __sdk::__query_builder::Col<OrganizationMembership, String>,
@@ -44,7 +42,6 @@ impl __sdk::__query_builder::HasCols for OrganizationMembership {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             organization_id: __sdk::__query_builder::Col::new(table_name, "organization_id"),
-            rank_id: __sdk::__query_builder::Col::new(table_name, "rank_id"),
             joined_minute: __sdk::__query_builder::Col::new(table_name, "joined_minute"),
             dues_paid_through_minute: __sdk::__query_builder::Col::new(
                 table_name,

@@ -1,0 +1,162 @@
+{
+  "encounters": [
+    {
+      "id": "maiden_roadside_court_v1",
+      "version": 2,
+      "weight": 60,
+      "triggers": { "travel": true, "rest": true },
+      "provenance": {
+        "works": ["Parzival", "Wigalois", "Lanzelet", "Theuerdank", "Le Morte d'Arthur"],
+        "motifs": ["maiden_judged_at_roadside_court", "disputed_custom", "shifted_boundary", "protected_alms", "armed_intimidation", "betrayed_arbitration"],
+        "adaptation_note": "An original synthesis of imperiled maidens, improvised judgments, disputed road customs, protected alms, armed pressure, and corrupt bargains common in chivalric romance; it does not reproduce a particular episode."
+      },
+      "cast": [
+        { "id": "accused_noble_maiden", "name": "Accused young noble maiden", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } },
+        { "id": "toll_sergeant", "name": "Toll sergeant", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } },
+        { "id": "traveling_clerk", "name": "Traveling clerk", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } },
+        { "id": "veteran_shield_bearer", "name": "Veteran shield-bearer", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } }
+      ],
+      "opening": [
+        {
+          "speaker": "accused_noble_maiden",
+          "text": "This sergeant accuseth me of shifting his lord's verge stone to evade a lawful toll and seeketh my mule, wagon, and alms load as pledge. The proper bench lieth distant, and our attendants stood near fighting; therefore I freely sealed the traveling clerk's temporary arbitration compact and entrusted judgment unto him. I shall abide his award. My veteran shield-bearer now holdeth the sergeant's pressing men apart, and my retinue's spare heater shield shall reward a neutral champion who keepeth this hearing true and bloodless. The episcopal safe-conduct standeth visibly sealed upon my alms chest.",
+          "reviewed_shakespearean": true
+        },
+        {
+          "speaker": "toll_sergeant",
+          "text": "Her wheels passed beyond the standing verge, and my witnesses saw her people meddle there. My two mailed toll men bear swords and press only that none remove disputed proof or pledge. I too freely sealed the compact and shall accept the clerk's award.",
+          "reviewed_shakespearean": true
+        },
+        {
+          "speaker": "traveling_clerk",
+          "text": "By both parties' consent I preside beneath this boundary oak and wayside cross, not as sovereign bench. I alone keep and apply their compact, the elder verge record, seals, handwriting, and road custom. The writing inventories the maiden's mule, wagon, and load as disputed pledge; the sergeant's sealed personal forty-eight-groschen purse remaineth visibly at his belt and outside the bond. Bring me ordered facts, and I shall judge their legal force.",
+          "reviewed_shakespearean": true
+        },
+        {
+          "speaker": "veteran_shield_bearer",
+          "text": "His mailed swordsmen crowd my lady's unarmed carters and those who would inspect the stone. I shall brace between them and the hearing, yet need a neutral hand to gather proof or keep the agreed order whilst I contain their pressure.",
+          "reviewed_shakespearean": true
+        }
+      ],
+      "choices": [
+        {
+          "id": "recover_shifted_verge_evidence",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
+          "label": "Read the flood ruts and recover what lieth beneath the shifted verge",
+          "response": [{ "speaker": "traveling_clerk", "text": "Mark the elder socket, fresh drag, and wagon ruts where flood brake the common road. What thou recoverest from beneath the stone shall I compare unto mine office record and the parties' compact.", "reviewed_shakespearean": true }],
+          "result": "For thirty-five minutes thou inspectest flood wash and bent wagon ruts while the veteran's heater shield screeneth thee from the mailed toll men. When one swordsman thrusteth a blade shove around that screen, the veteran catcheth it upon the shield and holdeth without injury. Beneath the freshly shifted verge thou recoverest an office-stamped iron setting wedge snagged with torn sergeant's livery. The clerk correctly matchest both to his elder record, acquitteth the accused maiden under the compact, and leaveth mule, wagon, and alms load in her keeping. She granteth thee the declared spare heater shield for just aid.",
+          "deed": "recover_decisive_proof_beneath_shifted_verge_stone",
+          "outcome_tags": ["justice", "physical_evidence", "physical_observation"],
+          "checks": [{ "kind": "skill", "skill": "insight", "difficulty_milli": 1150 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "heater_shield", "quantity": 1 },
+            { "kind": "information", "information_id": "heater_shield_holds_blade_only_assault" }
+          ],
+          "personality": [{ "axis": "conscience", "delta": 110, "virtue": "justice" }],
+          "quest_reward_tags": ["prepare_heater_shield_against_blade_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 35 }
+        },
+        {
+          "id": "separate_sergeants_witnesses",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
+          "label": "Question the sergeant's witnesses separately beneath shielded calm",
+          "response": [{ "speaker": "traveling_clerk", "text": "Question each man beyond his fellows' prompting, yet leave the written order unto my hand. I shall record every answer against the compact, verge record, and witness marks.", "reviewed_shakespearean": true }],
+          "result": "For forty-five minutes thou bringest each witness separately behind the veteran shield-bearer's guarded side, where mailed companions cannot prompt or frighten him. One toll man striketh at the barrier with his sword; the veteran receiveth the stroke upon the heater shield and keepeth witness and carters unhurt. Their rehearsed story breaketh upon when the stone moved. The clerk recordeth the contradictions, faithfully applieth the compact, and acquitteth the maiden. Her mule, wagon, and alms remain hers, and she granteth thee the shield for honest questioning.",
+          "deed": "separate_false_witnesses_against_accused_maiden",
+          "outcome_tags": ["honesty", "witness_examination", "physical_observation"],
+          "requirements": [{ "kind": "skill", "skill": "charm", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "charm", "difficulty_milli": 1050 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "heater_shield", "quantity": 1 },
+            { "kind": "information", "information_id": "heater_shield_holds_blade_only_assault" }
+          ],
+          "personality": [{ "axis": "transparency", "delta": 110, "virtue": "honesty" }],
+          "quest_reward_tags": ["prepare_heater_shield_against_blade_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 45 }
+        },
+        {
+          "id": "order_hearing_under_clerks_judgment",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
+          "label": "Order witness turns and weapon custody beneath the clerk's judgment",
+          "response": [{ "speaker": "traveling_clerk", "text": "Set thou witness sequence, turns of speech, and custody for every loose weapon. I alone shall judge seals, handwriting, custom, and the compact's legal force, then pronounce mine award.", "reviewed_shakespearean": true }],
+          "result": "For fifty minutes thou orderest the hearing while the clerk alone judgeth seals and custom. The veteran setteth his heater shield as the barrier where each loose sword must enter custody. One mailed toll man answereth with a blade shove instead; the veteran catcheth it upon the shield, holdeth the custody line without injury, and the second man yieldeth both weapons. Unpressured testimony and the clerk's record clear the accused maiden. He awardeth her pledge back, and she payeth thy prudent service with the spare shield.",
+          "deed": "order_voluntary_hearing_beneath_traveling_clerks_expertise",
+          "outcome_tags": ["prudence", "command", "physical_observation"],
+          "requirements": [{ "kind": "skill", "skill": "command", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "command", "difficulty_milli": 1050 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "heater_shield", "quantity": 1 },
+            { "kind": "information", "information_id": "heater_shield_holds_blade_only_assault" }
+          ],
+          "personality": [{ "axis": "drive", "delta": 100, "virtue": "prudence" }],
+          "quest_reward_tags": ["prepare_heater_shield_against_blade_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 50 }
+        },
+        {
+          "id": "authenticate_maidens_alms_safe_conduct",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
+          "label": "Recognize the maiden's ordinary episcopal alms safe-conduct",
+          "response": [{ "speaker": "traveling_clerk", "text": "Thou knowest the ordinary form borne by episcopal alms. Help my hand reach the visible chest beneath shielded guard; I shall authenticate mitre, counterseal, handwriting, and earthly scope, then apply them unto the compact.", "reviewed_shakespearean": true }],
+          "result": "For thirty minutes thou recognizest the visible episcopal alms safe-conduct while the veteran screeneth clerk and accused maiden on their passage to the chest. A mailed toll man slash-shoveth at the document, but the heater shield turneth the blade and the veteran holdeth all behind him unhurt. No miracle speaketh and no divine judgment changeth the proof: the clerk authenticateth the ordinary seal and applieth its mundane exemption. He acquitteth the maiden and restoreth her pledge; she granteth thee the spare shield for faithful learning.",
+          "deed": "authenticate_accused_maidens_ordinary_alms_safe_conduct",
+          "outcome_tags": ["faith", "safe_conduct", "physical_observation"],
+          "requirements": [{ "kind": "religion", "religion": "roman_catholic" }],
+          "checks": [{ "kind": "religion", "religion": "roman_catholic", "difficulty_milli": 1050 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "heater_shield", "quantity": 1 },
+            { "kind": "information", "information_id": "heater_shield_holds_blade_only_assault" }
+          ],
+          "personality": [{ "axis": "conviction", "delta": 110, "virtue": "faith" }],
+          "quest_reward_tags": ["prepare_heater_shield_against_blade_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 30 }
+        },
+        {
+          "id": "champion_maiden_in_controlled_blade_test",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
+          "label": "Stand as the maiden's surety in a controlled blade test",
+          "response": [{ "speaker": "veteran_shield_bearer", "text": "Take thou the spare heater shield and stand upon the marked line before one toll sword. Hold against a single measured stroke; I shall contain the second man, and the clerk shall keep this proof within the voluntary compact.", "reviewed_shakespearean": true }],
+          "result": "For forty minutes thou standest as the accused maiden's neutral surety in the clerk's controlled test. One mailed toll man delivereth a measured sword-blade shove; thou bindest thy will, catchest it upon the spare heater shield, and holdest the marked line without injury while the veteran containeth his fellow. The failed intimidation lets testimony finish openly. The clerk applieth his record and acquitteth the maiden, who granteth thee the shield already in thy hand for courageous service.",
+          "deed": "champion_accused_maiden_in_controlled_blade_test",
+          "outcome_tags": ["courage", "steadfastness", "physical_observation"],
+          "checks": [{ "kind": "skill", "skill": "will", "difficulty_milli": 1200 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "heater_shield", "quantity": 1 },
+            { "kind": "information", "information_id": "heater_shield_holds_blade_only_assault" }
+          ],
+          "personality": [{ "axis": "nerve", "delta": 110, "virtue": "courage" }],
+          "quest_reward_tags": ["prepare_heater_shield_against_blade_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 40 }
+        },
+        {
+          "id": "suppress_verge_proof_against_maiden",
+          "interaction": { "kind": "blocked", "issue": "#374", "reason": "Evidence suppression and bribery need shared crime consequences." },
+          "label": "Inspect beneath the shifted verge, then give a false neutral report",
+          "response": [{ "speaker": "toll_sergeant", "text": "The clerk should hear no half-made charge. Step with me beyond the oak and compare the searched ground and witness stations apart; then return and give him one settled account.", "reviewed_shakespearean": true }],
+          "result": "Thou servest as neutral inspector for an hour while ongoing mailed pressure keepeth clerk and maiden from the stone. Beneath the veteran's shield cover, one toll man's blade shove is caught without injury; only thou canst then reach under the freshly shifted verge and retrieve an office-stamped iron wedge with torn sergeant's livery. Afterward the sergeant draweth thee privately beyond the hearing of clerk and maiden under the innocent pretext of comparing its place. There, and only there, he offereth his separately established personal forty-eight-groschen purse to suppress the proof. Thou acceptest, concealest wedge and cloth, and falsely reportest that the inspection found naught while misstating the witness order. The competent clerk correctly applieth law and compact to that deliberately falsified factual record, condemneth the accused maiden, and awardeth mule, wagon, alms chest, and load unto the sergeant as pledge. Still deceived concerning thy neutrality, she honorably payeth the promised spare shield fee. She suffereth no bodily harm, yet loseth transport, livelihood, and the poor's entrusted goods without present remedy.",
+          "deed": "suppress_decisive_verge_evidence_against_accused_maiden",
+          "outcome_tags": ["deception", "betrayal", "physical_observation", "exclusive_physical_evidence", "private_personal_bribe", "clerk_applied_corrupted_record", "material_harm_to_accused_maiden"],
+          "requirements": [{ "kind": "skill", "skill": "deception", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "deception", "difficulty_milli": 1200 }],
+          "effects": [
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 48 },
+            { "kind": "grant_item", "item_id": "heater_shield", "quantity": 1 },
+            { "kind": "information", "information_id": "heater_shield_holds_blade_only_assault" }
+          ],
+          "personality": [{ "axis": "transparency", "delta": -250, "virtue": "honesty" }],
+          "quest_reward_tags": ["prepare_heater_shield_against_blade_only_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 60 }
+        },
+        {
+          "id": "ignore",
+          "interaction": { "kind": "shared_systems", "character_actions": ["ignore_travel"] },
+          "label": "Leave the maiden's voluntarily paused hearing beneath the oak",
+          "response": [],
+          "result": "Thou leavest accused maiden and sergeant at their voluntarily paused arbitration beneath the boundary oak. The common road and nearby resting ground remain open.",
+          "deed": "leave_accused_maidens_roadside_arbitration_paused",
+          "outcome_tags": []
+        }
+      ],
+      "quest_reward_eligibility": ["physical_tactical_information", "material_preparation"]
+    }
+  ]
+}

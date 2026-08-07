@@ -5,6 +5,9 @@ pub fn travel_to_case_site(
     case_site_id: CaseSiteId,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
+    case_site_id
+        .to_place()
+        .ok_or("Case-site identity is malformed")?;
     travel_to_case_site_impl(ctx, character_id, case_site_id.value, None)
 }
 
@@ -16,7 +19,85 @@ pub fn travel_to_case_site_planned(
     route: JourneyRoutePlan,
 ) -> Result<(), String> {
     require_strategic_gateway(ctx)?;
+    case_site_id
+        .to_place()
+        .ok_or("Case-site identity is malformed")?;
     travel_to_case_site_impl(ctx, character_id, case_site_id.value, Some(route))
+}
+
+fn authoritative_straight_line_case_route(
+    departure_minute: u64,
+    origin: (f64, f64),
+    destination: (f64, f64),
+    distance_m: u64,
+    minutes: u64,
+) -> JourneyRoutePlan {
+    let points = vec![
+        JourneyRoutePoint {
+            latitude_e7: (origin.1 * 10_000_000.0).round() as i32,
+            longitude_e7: (origin.0 * 10_000_000.0).round() as i32,
+        },
+        JourneyRoutePoint {
+            latitude_e7: (destination.1 * 10_000_000.0).round() as i32,
+            longitude_e7: (destination.0 * 10_000_000.0).round() as i32,
+        },
+    ];
+    let weather = adventuresim_core::weather::weather_at(
+        adventuresim_core::weather::WORLD_WEATHER_SEED,
+        departure_minute,
+        points[0].latitude_e7 / 10,
+        points[0].longitude_e7 / 10,
+        0,
+    );
+    let precipitation = match weather.precipitation {
+        adventuresim_core::weather::Precipitation::Clear => JourneyPrecipitation::Clear,
+        adventuresim_core::weather::Precipitation::Rain => JourneyPrecipitation::Rain,
+        adventuresim_core::weather::Precipitation::Snow => JourneyPrecipitation::Snow,
+    };
+    let digest_domain = format!(
+        "authoritative-straight-line-v1:{departure_minute}:{:?}:{:?}:{distance_m}:{minutes}",
+        points[0], points[1]
+    );
+    let package_digest = format!(
+        "{:016x}{:016x}{:016x}{:016x}",
+        adventuresim_core::settlement_population::stable_hash(&digest_domain),
+        adventuresim_core::settlement_population::stable_hash(&(digest_domain.clone() + ":1")),
+        adventuresim_core::settlement_population::stable_hash(&(digest_domain.clone() + ":2")),
+        adventuresim_core::settlement_population::stable_hash(&(digest_domain + ":3")),
+    );
+    let span = JourneyTerrainSpan {
+        kind: JourneyTerrainKind::Open,
+        terrain: JourneyTerrainWeights {
+            plains: 1_000,
+            forest: 0,
+            hills: 0,
+            wetlands: 0,
+            urban: 0,
+        },
+        training_multiplier_permille: 1_000,
+        check_millirank: 0,
+        start_minute: 0,
+        duration_minutes: minutes,
+    };
+    JourneyRoutePlan {
+        package_digest,
+        weather_rules_version: weather.rules_version,
+        weather_interval_start: weather.interval_start_minute,
+        precipitation,
+        intensity_bps: weather.intensity_bps,
+        ground_moisture_bps: weather.ground_moisture_bps,
+        snow_cover_bps: weather.snow_cover_bps,
+        distance_m,
+        minutes,
+        points: points.clone(),
+        spans: vec![span.clone()],
+        return_route: Some(JourneyRouteLeg {
+            distance_m,
+            minutes,
+            points: points.into_iter().rev().collect(),
+            spans: vec![span],
+        }),
+    }
 }
 
 fn travel_to_case_site_impl(
@@ -63,7 +144,10 @@ fn travel_to_case_site_impl(
     }
     require_party_ready(ctx, &party_id)?;
     let traveler_ids = living_party_member_ids(ctx, &party_id);
-    let departure_minute = crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?;
+    let Some(departure_minute) = crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?
+    else {
+        return Ok(());
+    };
     party = revalidate_party_after_departure_sync(
         ctx,
         &party_id,
@@ -136,19 +220,26 @@ fn travel_to_case_site_impl(
     let travel_minutes = route
         .as_ref()
         .map_or_else(|| quest_journey_minutes(distance_m), |route| route.minutes);
+    let route = route.unwrap_or_else(|| {
+        authoritative_straight_line_case_route(
+            departure_minute,
+            origin_coordinates,
+            destination,
+            distance_m,
+            travel_minutes,
+        )
+    });
     start_party_journey(
         ctx,
         &party,
         origin_endpoint,
         JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
-            id: CaseSiteId {
-                value: site.id.value.clone(),
-            },
+            id: CaseSiteId::try_new(site.id.value.clone())?,
             name: site.name.clone(),
         }),
         travel_minutes,
         departure_minute,
-        route.as_ref(),
+        Some(&route),
     )?;
     crate::condition::prepare_party_waterskins(ctx, &party_id, departing_settlement)?;
     for member_id in traveler_ids.iter().copied() {
@@ -165,7 +256,7 @@ fn travel_to_case_site_impl(
         .ok_or("Party changed while its waterskins were filled")?;
     let proposed_leg_minutes =
         travel_minutes.min(party_next_walking_minutes(ctx, &party.id, travel_minutes)?);
-    let (leg_minutes, encounter, next_roll) = advance_party_movement_until_encounter(
+    let (leg_minutes, encounter, narrative, next_roll) = advance_party_movement_until_encounter(
         ctx,
         &party_id,
         &traveler_ids,
@@ -177,7 +268,7 @@ fn travel_to_case_site_impl(
         .id()
         .find(&party_id)
         .ok_or("Party changed during travel")?;
-    let interrupted = encounter.is_some();
+    let interrupted = encounter.is_some() || narrative.is_some();
     if interrupted || leg_minutes < travel_minutes {
         for member_id in living_party_member_ids(ctx, &party_id) {
             let mut member = ctx
@@ -187,7 +278,7 @@ fn travel_to_case_site_impl(
                 .find(member_id)
                 .ok_or("Party member not found")?;
             member.current_settlement_id = None;
-            crate::investigation::set_character_case_site(ctx, member.id, None);
+            crate::investigation::set_character_case_site(ctx, member.id, None)?;
             ctx.db.character().id().update(member);
         }
         set_party_journey_state(
@@ -203,12 +294,13 @@ fn travel_to_case_site_impl(
         ctx.db.party_authority().id().update(party);
         if interrupted {
             record_party_journey_interruption(ctx, &party_id, leg_minutes);
-            commit_encounter_scan(ctx, &party_id, next_roll, encounter)?;
+            commit_encounter_scan(ctx, &party_id, next_roll, encounter, narrative)?;
         } else {
-            if leg_minutes > 0 {
-                record_party_journey_camp(ctx, &party_id, leg_minutes)?;
-            }
-            commit_encounter_scan(ctx, &party_id, next_roll, None)?;
+            // A departure outside the walking window reaches a real initial
+            // camp at movement minute zero. Persist that reached identity just
+            // like every later camp so rest/continue and fixture custody agree.
+            record_party_journey_camp(ctx, &party_id, leg_minutes)?;
+            commit_encounter_scan(ctx, &party_id, next_roll, None, None)?;
         }
         return Ok(());
     }
@@ -219,7 +311,7 @@ fn travel_to_case_site_impl(
                 ctx,
                 member.id,
                 Some(case_site_id.clone()),
-            );
+            )?;
             ctx.db.character().id().update(member);
             mark_case_site_visited(ctx, member_id, &site)?;
         }
@@ -234,6 +326,91 @@ fn travel_to_case_site_impl(
     ctx.db.party_authority().id().update(party);
     commit_case_site_arrival_objectives(ctx, &party_id, &site)?;
     finish_party_journey(ctx, &party_id);
+    Ok(())
+}
+
+fn complete_settlement_arrival(
+    ctx: &ReducerContext,
+    traveler_ids: Vec<u64>,
+    mut party: Option<&mut Party>,
+    destination: &Settlement,
+    settlement_id: &str,
+    departing_case_site: Option<&str>,
+    travel_minutes_to_advance: Option<u64>,
+    rest_temporary_companions: bool,
+) -> Result<(), String> {
+    for traveler_id in traveler_ids {
+        if let Some(travel_minutes) = travel_minutes_to_advance
+            && !advance_travel_time(ctx, traveler_id, travel_minutes)?
+        {
+            return Ok(());
+        }
+        let mut traveler = ctx
+            .db
+            .character()
+            .id()
+            .find(traveler_id)
+            .ok_or("Party member not found")?;
+        traveler.current_settlement_id = Some(settlement_id.to_owned());
+        crate::investigation::set_character_case_site(ctx, traveler.id, None)?;
+        ctx.db.character().id().update(traveler);
+        crate::condition::replenish_needs_at_settlement(ctx, traveler_id)?;
+        crate::condition::refresh_character_strategic_condition(ctx, traveler_id)?;
+        crate::organization::reconcile_presentation(ctx, traveler_id)?;
+        crate::capability::refresh_character_capability(ctx, traveler_id)?;
+        if rest_temporary_companions {
+            crate::time::rest_temporary_party_member_until_healed_at_settlement(ctx, traveler_id)?;
+        }
+    }
+
+    if let Some(party) = party.as_mut() {
+        set_party_journey_state(party, Some(settlement_id.to_owned()), None, None, 0);
+        ctx.db.party_authority().id().update((*party).clone());
+        finish_party_journey(ctx, &party.id);
+        let departing_incident = departing_case_site.and_then(|site_id| {
+            ctx.db.strategic_incident().iter().find(|incident| {
+                incident.party_id == party.id
+                    && incident.case_site_id.value == site_id
+                    && incident.status == IncidentStatus::Pending
+            })
+        });
+        if let Some(incident) = departing_incident.as_ref() {
+            if incident.kind == IncidentKind::AuthorityArrest {
+                let minute = crate::time::refresh_clock(ctx)?;
+                crate::reputation::record_event(
+                    ctx,
+                    format!("avoid-authority:{}", incident.id.value),
+                    incident.instigator_id,
+                    &incident.settlement_id,
+                    "avoiding_authority",
+                    &incident.id.value,
+                    0,
+                    300,
+                    minute,
+                )?;
+                crate::reputation::record_discovered_offense(
+                    ctx,
+                    format!("offense:avoid-authority:{}", incident.id.value),
+                    incident.instigator_id,
+                    &incident.settlement_id,
+                    "avoiding_authority",
+                    2,
+                    minute,
+                );
+            }
+            finish_strategic_incident(ctx, &incident.id, IncidentStatus::Avoided)?;
+        }
+        if departing_incident.is_none() {
+            let religious = maybe_trigger_religious_incident(ctx, &party.id, destination)?;
+            if religious.is_none() {
+                maybe_trigger_activity_incident(
+                    ctx,
+                    party.leader_id,
+                    crate::time::ActivityRisks::default(),
+                )?;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -316,7 +493,7 @@ fn travel_to_settlement_impl(
         crate::condition::require_character_ready(ctx, character_id)?;
     }
 
-    let (travel_minutes, origin_kind, origin_id, origin_name) =
+    let (travel_minutes, origin_kind, origin_id, origin_name, zero_distance_case_site_return) =
         if let Some(origin_id) = &character.current_settlement_id {
             let Some(origin) = ctx.db.settlement().id().find(origin_id) else {
                 return Err("Character's current settlement does not exist".into());
@@ -349,7 +526,7 @@ fn travel_to_settlement_impl(
                 )?;
             }
             let minutes = route.as_ref().map_or(minutes, |route| route.minutes);
-            (minutes, "settlement", origin.id, origin.name)
+            (minutes, "settlement", origin.id, origin.name, false)
         } else if let Some(case_site_id) =
             crate::investigation::character_case_site_id(ctx, character_id)
         {
@@ -365,7 +542,10 @@ fn travel_to_settlement_impl(
                 destination.coord_y,
                 site.coordinates_are_geographic && destination.source_node_id.is_some(),
             );
-            if let Some(route) = route.as_ref() {
+            let zero_distance_return = distance_m == 0;
+            if !zero_distance_return
+                && let Some(route) = route.as_ref()
+            {
                 validate_journey_route(
                     ctx,
                     route,
@@ -374,12 +554,17 @@ fn travel_to_settlement_impl(
                 )?;
             }
             (
-                route
-                    .as_ref()
-                    .map_or_else(|| quest_journey_minutes(distance_m), |route| route.minutes),
+                if zero_distance_return {
+                    0
+                } else {
+                    route
+                        .as_ref()
+                        .map_or_else(|| quest_journey_minutes(distance_m), |route| route.minutes)
+                },
                 "case_site",
                 site.id.value,
                 site.name,
+                zero_distance_return,
             )
         } else {
             return Err("Character is not at a known location".into());
@@ -391,7 +576,23 @@ fn travel_to_settlement_impl(
     } else {
         vec![character_id]
     };
-    let departure_minute = crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?;
+    if zero_distance_case_site_return {
+        crate::foraging::current_strategic_place(ctx, character_id)?;
+        return complete_settlement_arrival(
+            ctx,
+            traveler_ids,
+            party.as_mut(),
+            &destination,
+            &settlement_id,
+            departing_case_site.as_deref(),
+            None,
+            false,
+        );
+    }
+    let Some(departure_minute) = crate::time::synchronize_party_departure_time(ctx, &traveler_ids)?
+    else {
+        return Ok(());
+    };
     if let Some(route) = route.as_ref() {
         validate_route_departure_weather_interval(route, departure_minute)?;
     }
@@ -422,9 +623,7 @@ fn travel_to_settlement_impl(
                     name: origin_name.clone(),
                 }),
                 "case_site" => JourneyEndpoint::CaseSite(JourneyCaseSiteEndpoint {
-                    id: CaseSiteId {
-                        value: origin_id.clone(),
-                    },
+                    id: CaseSiteId::try_new(origin_id.clone())?,
                     name: origin_name.clone(),
                 }),
                 _ => return Err("Journey origin kind is invalid".into()),
@@ -459,7 +658,7 @@ fn travel_to_settlement_impl(
         let party_id = current_party.id.clone();
         let proposed_leg_minutes =
             travel_minutes.min(party_next_walking_minutes(ctx, &party_id, travel_minutes)?);
-        let (leg_minutes, encounter, next_roll) = advance_party_movement_until_encounter(
+        let (leg_minutes, encounter, narrative, next_roll) = advance_party_movement_until_encounter(
             ctx,
             &party_id,
             &traveler_ids,
@@ -473,7 +672,7 @@ fn travel_to_settlement_impl(
                 .ok_or("Party changed during travel")?,
         );
         party_movement_committed = true;
-        let interrupted = encounter.is_some();
+        let interrupted = encounter.is_some() || narrative.is_some();
         if interrupted || leg_minutes < travel_minutes {
             for traveler_id in living_party_member_ids(ctx, &party_id) {
                 let mut traveler = ctx
@@ -483,7 +682,7 @@ fn travel_to_settlement_impl(
                     .find(traveler_id)
                     .ok_or("Party member not found")?;
                 traveler.current_settlement_id = None;
-                crate::investigation::set_character_case_site(ctx, traveler.id, None);
+                crate::investigation::set_character_case_site(ctx, traveler.id, None)?;
                 ctx.db.character().id().update(traveler);
             }
             let party = party.as_mut().expect("party was just reloaded");
@@ -500,85 +699,24 @@ fn travel_to_settlement_impl(
             ctx.db.party_authority().id().update(party.clone());
             if interrupted {
                 record_party_journey_interruption(ctx, &party.id, leg_minutes);
-                commit_encounter_scan(ctx, &party.id, next_roll, encounter)?;
+                commit_encounter_scan(ctx, &party.id, next_roll, encounter, narrative)?;
             } else {
-                if leg_minutes > 0 {
-                    record_party_journey_camp(ctx, &party.id, leg_minutes)?;
-                }
-                commit_encounter_scan(ctx, &party.id, next_roll, None)?;
+                record_party_journey_camp(ctx, &party.id, leg_minutes)?;
+                commit_encounter_scan(ctx, &party.id, next_roll, None, None)?;
             }
             return Ok(());
         }
     }
-    for traveler_id in traveler_ids {
-        if !party_movement_committed && !advance_travel_time(ctx, traveler_id, travel_minutes)? {
-            return Ok(());
-        }
-        let mut traveler = ctx
-            .db
-            .character()
-            .id()
-            .find(traveler_id)
-            .ok_or("Party member not found")?;
-        traveler.current_settlement_id = Some(settlement_id.clone());
-        crate::investigation::set_character_case_site(ctx, traveler.id, None);
-        ctx.db.character().id().update(traveler);
-        crate::condition::replenish_needs_at_settlement(ctx, traveler_id)?;
-        crate::condition::refresh_character_strategic_condition(ctx, traveler_id)?;
-        crate::organization::reconcile_presentation(ctx, traveler_id)?;
-        crate::capability::refresh_character_capability(ctx, traveler_id)?;
-        crate::time::rest_temporary_party_member_until_healed_at_settlement(ctx, traveler_id)?;
-    }
-
-    if let Some(ref mut party) = party {
-        set_party_journey_state(party, Some(settlement_id.clone()), None, None, 0);
-        ctx.db.party_authority().id().update(party.clone());
-        finish_party_journey(ctx, &party.id);
-        let departing_incident = departing_case_site.as_ref().and_then(|site_id| {
-            ctx.db.strategic_incident().iter().find(|incident| {
-                incident.case_site_id.value == *site_id
-                    && incident.status == IncidentStatus::Pending
-            })
-        });
-        if let Some(incident) = departing_incident.as_ref() {
-            if incident.kind == IncidentKind::AuthorityArrest {
-                let minute = crate::time::refresh_clock(ctx)?;
-                crate::reputation::record_event(
-                    ctx,
-                    format!("avoid-authority:{}", incident.id.value),
-                    incident.instigator_id,
-                    &incident.settlement_id,
-                    "avoiding_authority",
-                    &incident.id.value,
-                    0,
-                    300,
-                    minute,
-                )?;
-                crate::reputation::record_discovered_offense(
-                    ctx,
-                    format!("offense:avoid-authority:{}", incident.id.value),
-                    incident.instigator_id,
-                    &incident.settlement_id,
-                    "avoiding_authority",
-                    2,
-                    minute,
-                );
-            }
-            finish_strategic_incident(ctx, &incident.id, IncidentStatus::Avoided)?;
-        }
-        if departing_incident.is_none() {
-            let religious = maybe_trigger_religious_incident(ctx, &party.id, &destination)?;
-            if religious.is_none() {
-                maybe_trigger_activity_incident(
-                    ctx,
-                    party.leader_id,
-                    crate::time::ActivityRisks::default(),
-                )?;
-            }
-        }
-    }
-
-    Ok(())
+    complete_settlement_arrival(
+        ctx,
+        traveler_ids,
+        party.as_mut(),
+        &destination,
+        &settlement_id,
+        departing_case_site.as_deref(),
+        (!party_movement_committed).then_some(travel_minutes),
+        true,
+    )
 }
 
 #[reducer]
@@ -694,8 +832,11 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         .camp_destination
         .clone()
         .ok_or("The party is not camped")?;
-    // This also upgrades pre elapsed-itinerary rows before any celestial or
-    // progress coordinates are used.
+    let camp_place = current_journey_camp_place(ctx, &party_id)?;
+    crate::food::require_clear_current_camp_fireplace(ctx, &camp_place)?;
+    // Refresh only after the exact pre-refresh camp and every persisted
+    // fireplace custody row have been validated. Legacy itinerary repair can
+    // never mint a new identity around existing custody.
     refresh_party_journey_forecast(ctx, &party_id)?;
     let proposed_leg_minutes = party.camp_remaining_minutes.min(party_next_walking_minutes(
         ctx,
@@ -706,7 +847,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         return Err("Rest until the party reaches its next daylight walking window".into());
     }
     let traveler_ids = living_party_member_ids(ctx, &party_id);
-    let (leg_minutes, encounter, next_roll) = advance_party_movement_until_encounter(
+    let (leg_minutes, encounter, narrative, next_roll) = advance_party_movement_until_encounter(
         ctx,
         &party_id,
         &traveler_ids,
@@ -718,18 +859,16 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
         .id()
         .find(&party_id)
         .ok_or("Party changed during travel")?;
-    let interrupted = encounter.is_some();
+    let interrupted = encounter.is_some() || narrative.is_some();
     party.camp_remaining_minutes = party.camp_remaining_minutes.saturating_sub(leg_minutes);
     if interrupted || party.camp_remaining_minutes > 0 {
         ctx.db.party_authority().id().update(party);
         if interrupted {
             record_party_journey_interruption(ctx, &party_id, leg_minutes);
-            commit_encounter_scan(ctx, &party_id, next_roll, encounter)?;
+            commit_encounter_scan(ctx, &party_id, next_roll, encounter, narrative)?;
         } else {
-            if leg_minutes > 0 {
-                record_party_journey_camp(ctx, &party_id, leg_minutes)?;
-            }
-            commit_encounter_scan(ctx, &party_id, next_roll, None)?;
+            record_party_journey_camp(ctx, &party_id, leg_minutes)?;
+            commit_encounter_scan(ctx, &party_id, next_roll, None, None)?;
         }
         return Ok(());
     }
@@ -750,7 +889,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
                     .find(member_id)
                     .ok_or("Party member not found")?;
                 member.current_settlement_id = Some(destination_id.clone());
-                crate::investigation::set_character_case_site(ctx, member.id, None);
+                crate::investigation::set_character_case_site(ctx, member.id, None)?;
                 ctx.db.character().id().update(member);
                 crate::condition::replenish_needs_at_settlement(ctx, member_id)?;
                 crate::condition::refresh_character_strategic_condition(ctx, member_id)?;
@@ -782,7 +921,7 @@ pub fn continue_camp_travel(ctx: &ReducerContext, character_id: u64) -> Result<(
                     ctx,
                     member.id,
                     Some(destination_id.clone()),
-                );
+                )?;
                 ctx.db.character().id().update(member);
                 mark_case_site_visited(ctx, member_id, &site)?;
                 crate::condition::refresh_character_strategic_condition(ctx, member_id)?;

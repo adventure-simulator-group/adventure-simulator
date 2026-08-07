@@ -1,0 +1,122 @@
+{
+  "encounters": [
+    {
+      "id": "proud_traveler_errands_v1",
+      "version": 2,
+      "weight": 70,
+      "triggers": { "travel": true, "rest": false },
+      "provenance": {
+        "works": ["Parzival", "Lanzelet", "Le Morte d'Arthur"],
+        "motifs": ["proud_traveler", "roadside_service", "mired_household", "entrusted_purse"],
+        "adaptation_note": "An original synthesis of proud travelers, testing errands, and compromised household journeys common in chivalric romance; it does not reproduce a particular episode."
+      },
+      "cast": [
+        { "id": "proud_traveler", "name": "Proud traveler", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } }
+      ],
+      "opening": [
+        {
+          "speaker": "proud_traveler",
+          "text": "Good travelers, behold what service fortune sendeth you. My baggage cart standeth mired beyond this causeway, and my riders and servants have spent their strength in fruitless pulling. Render me worthy aid, and I shall remember the hand that gave it.",
+          "reviewed_shakespearean": true
+        }
+      ],
+      "choices": [
+        {
+          "id": "render_service",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
+          "label": "Render the requested service without bargaining",
+          "response": [{ "speaker": "proud_traveler", "text": "Thy courtesy hath done what pride alone could not. Take eight groschen, and mark what our close labor hath shown: where mire rose to mid-shin, mail-burdened riders and horses could scarce advance, whilst lightly burdened haulers yet moved freely.", "reviewed_shakespearean": true }],
+          "result": "Thou spendest an hour hauling beside the household, acceptest modest payment, and observest that mid-shin mud stops effective movement by mail-burdened riders and horses whilst lightly burdened haulers remain mobile.",
+          "deed": "render_service_to_proud_traveler",
+          "outcome_tags": ["courtesy", "service", "physical_observation"],
+          "effects": [
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 8 },
+            { "kind": "information", "information_id": "mid_shin_mud_checks_mail_burdened_movement" }
+          ],
+          "personality": [{ "axis": "sociability", "delta": 80, "virtue": "courtesy" }],
+          "quest_reward_tags": ["heavy_attackers_slow_in_mid_shin_mud"],
+          "transition": { "kind": "travel_delay", "minutes": 60 }
+        },
+        {
+          "id": "bargain_as_equals",
+          "interaction": { "kind": "blocked", "issue": "#373", "reason": "Bargaining with a Character needs the shared negotiation system." },
+          "label": "Bargain as an equal before lending aid",
+          "response": [{ "speaker": "proud_traveler", "text": "Thou speakest as one who knoweth the worth of labor. Sixteen groschen shall answer it. Our work hath proved besides that mid-shin mire stealeth movement from mail-burdened riders and horses, though lightly burdened haulers pass yet.", "reviewed_shakespearean": true }],
+          "result": "Thou bargainest for just payment, spendest half an hour hauling at close quarters, and observest mail-burdened riders and horses lose effective movement in mid-shin mud whilst lightly burdened haulers remain mobile.",
+          "deed": "bargain_as_equal_for_causeway_service",
+          "outcome_tags": ["justice", "bargain", "physical_observation"],
+          "requirements": [{ "kind": "skill", "skill": "charm", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "charm", "difficulty_milli": 1000 }],
+          "effects": [
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 16 },
+            { "kind": "information", "information_id": "mid_shin_mud_checks_mail_burdened_movement" }
+          ],
+          "personality": [{ "axis": "conscience", "delta": 90, "virtue": "justice" }],
+          "quest_reward_tags": ["heavy_attackers_slow_in_mid_shin_mud"],
+          "transition": { "kind": "travel_delay", "minutes": 30 }
+        },
+        {
+          "id": "order_household",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "relationship_personality"] },
+          "label": "Order his household into an efficient hauling line",
+          "response": [{ "speaker": "proud_traveler", "text": "Thy command hath lent one purpose unto many weary hands. The cart is free, and thou hast seen the measure plainly: mid-shin mire arresteth mail-burdened riders and horses, whilst lightly burdened haulers keep their movement.", "reviewed_shakespearean": true }],
+          "result": "Thou orderest and joinest the household hauling line for twenty minutes, observing that mid-shin mud checks mail-burdened riders and horses but leaves lightly burdened haulers mobile.",
+          "deed": "order_proud_travelers_household_at_causeway",
+          "outcome_tags": ["prudence", "command", "physical_observation"],
+          "requirements": [{ "kind": "skill", "skill": "command", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "command", "difficulty_milli": 1000 }],
+          "effects": [{ "kind": "information", "information_id": "mid_shin_mud_checks_mail_burdened_movement" }],
+          "personality": [{ "axis": "drive", "delta": 90, "virtue": "prudence" }],
+          "quest_reward_tags": ["heavy_attackers_slow_in_mid_shin_mud"],
+          "transition": { "kind": "travel_delay", "minutes": 20 }
+        },
+        {
+          "id": "rebuke_pride",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
+          "label": "Rebuke his pride and remind him of Christian duty",
+          "response": [{ "speaker": "proud_traveler", "text": "Thy rebuke striketh home. A Christian master oweth duty unto the exhausted servant, not scorn. I shall take my share of the rope. Accept two flasks of table wine, and remember what our common labor showed: mid-shin mire stayed the mail-burdened riders and horses, not the lightly burdened haulers.", "reviewed_shakespearean": true }],
+          "result": "Thou recallest the traveler to his duty toward exhausted servants and haulest beside them for forty minutes, receiving two flasks of wine and observing how mid-shin mud stops mail-burdened movement but not lightly burdened haulers.",
+          "deed": "rebuke_proud_traveler_by_christian_duty",
+          "outcome_tags": ["faith", "duty", "physical_observation"],
+          "requirements": [{ "kind": "religion", "religion": "roman_catholic" }],
+          "checks": [{ "kind": "religion", "religion": "roman_catholic", "difficulty_milli": 1000 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "table_wine", "quantity": 2 },
+            { "kind": "information", "information_id": "mid_shin_mud_checks_mail_burdened_movement" }
+          ],
+          "personality": [{ "axis": "conviction", "delta": 100, "virtue": "faith" }],
+          "quest_reward_tags": ["heavy_attackers_slow_in_mid_shin_mud"],
+          "transition": { "kind": "travel_delay", "minutes": 40 }
+        },
+        {
+          "id": "keep_entrusted_purse",
+          "interaction": { "kind": "blocked", "issue": "#377", "reason": "Keeping entrusted property needs shared ownership authority." },
+          "label": "Claim noble-household experience and keep the haulers' wage purse",
+          "response": [{ "speaker": "proud_traveler", "text": "Thou hast served a noble household and knowest how laborers must be ordered and paid. Take this purse of forty-eight groschen, stage the haulers, and give each man his wage when the cart standeth free; I trust the charge unto thee.", "reviewed_shakespearean": true }],
+          "result": "Thou falsely claimest household experience, spendest twenty minutes staging haulers and opening payment, and thereby observest that mid-shin mud stops mail-burdened riders and horses whilst lightly burdened haulers remain mobile; then thou abscondest with their forty-eight-groschen wage purse.",
+          "deed": "steal_proud_travelers_entrusted_purse",
+          "outcome_tags": ["deception", "theft", "physical_observation"],
+          "requirements": [{ "kind": "skill", "skill": "deception", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "deception", "difficulty_milli": 1100 }],
+          "effects": [
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 48 },
+            { "kind": "information", "information_id": "mid_shin_mud_checks_mail_burdened_movement" }
+          ],
+          "personality": [{ "axis": "transparency", "delta": -220, "virtue": "honesty" }],
+          "quest_reward_tags": ["heavy_attackers_slow_in_mid_shin_mud"],
+          "transition": { "kind": "travel_delay", "minutes": 20 }
+        },
+        {
+          "id": "ignore",
+          "interaction": { "kind": "shared_systems", "character_actions": ["ignore_travel"] },
+          "label": "Continue along the open edge of the causeway",
+          "response": [],
+          "result": "Thou passest along the open edge of the causeway and leavest the proud traveler to his mired cart.",
+          "deed": "ignore_proud_traveler_at_causeway",
+          "outcome_tags": []
+        }
+      ],
+      "quest_reward_eligibility": ["physical_tactical_information"]
+    }
+  ]
+}

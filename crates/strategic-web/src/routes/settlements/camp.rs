@@ -55,6 +55,7 @@ pub(super) struct CampQuery {
     forage: Option<bool>,
     forage_receipt: Option<String>,
     forage_error: Option<String>,
+    road_occurrence: Option<String>,
 }
 
 pub(super) async fn camp(
@@ -126,7 +127,7 @@ pub(super) async fn camp(
     let party_members = get_active_party_members(&state, Some(&character)).await;
     let member_times: Vec<CharacterTime> = state
         .db
-        .query("SELECT * FROM character_time")
+        .query("SELECT * FROM backend_character_times")
         .await
         .unwrap_or_default();
     let current_party_minute = party_members
@@ -148,6 +149,61 @@ pub(super) async fn camp(
         } else {
             legacy.total_minutes
         };
+    }
+    let direct_demo_contract_prefix = format!("contract:errantry-puzzle:demo:{}:", character.id);
+    let expects_direct_demo = party
+        .active_contract_id
+        .as_deref()
+        .is_some_and(|id| id.starts_with(&direct_demo_contract_prefix));
+    let mut challenges = Vec::new();
+    for attempt in 0..4 {
+        match state
+            .db
+            .query::<BackendChallenge>(&format!(
+                "SELECT * FROM backend_challenges WHERE owner_character_id = {}",
+                character.id
+            ))
+            .await
+        {
+            Ok(rows) => challenges = rows,
+            Err(error) => tracing::warn!(
+                %error,
+                character_id = character.id,
+                "camp challenge state unavailable"
+            ),
+        }
+        if !expects_direct_demo
+            || challenges
+                .iter()
+                .any(|challenge| is_direct_demo_challenge_id(&challenge.id, character.id))
+            || attempt == 3
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    }
+    let road_challenges = match state
+        .db
+        .query::<BackendRoadChallenge>(&format!(
+            "SELECT * FROM backend_road_challenges WHERE owner_character_id = {}",
+            character.id
+        ))
+        .await
+    {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                character_id = character.id,
+                "camp road challenge state unavailable"
+            );
+            Vec::new()
+        }
+    };
+    if let Some(path) =
+        direct_demo_challenge_redirect(&challenges, &road_challenges, character.id)
+    {
+        return Redirect::to(&path).into_response();
     }
     let itinerary = state
         .db
@@ -189,9 +245,33 @@ pub(super) async fn camp(
                 .into_response();
         }
     };
+    let mut counterparties = Vec::new();
+    if let Some(encounter) = encounter.as_ref().filter(|row| row.status == "awaiting_choice") {
+        let memberships: Vec<BackendContextCharacter> = state
+            .db
+            .query(&format!(
+                "SELECT * FROM backend_context_characters WHERE contact_ref = {} AND party_id = {}",
+                sql_string_literal(&encounter.encounter_id),
+                sql_string_literal(&party.id)
+            ))
+            .await
+            .unwrap_or_default();
+        for membership in memberships.into_iter().filter(|row| row.alive) {
+            if let Ok(Some(character)) = state
+                .db
+                .query_one::<Character>(&format!(
+                    "SELECT * FROM backend_characters WHERE id = {}",
+                    membership.character_id
+                ))
+                .await
+            {
+                counterparties.push(character);
+            }
+        }
+    }
     let stats: Vec<CharacterStats> = state
         .db
-        .query("SELECT * FROM character_stats")
+        .query("SELECT * FROM backend_character_stats")
         .await
         .unwrap_or_default();
     let fatigue_rest_minutes = party_members
@@ -263,6 +343,40 @@ pub(super) async fn camp(
     .flatten();
     let camp_destinations = camp_settlement_destinations(&state, &party, journey.as_ref()).await;
     let soap_preview = soap_rest_preview(&state, &party_members, Some(&party.id)).await;
+    let trial = challenges
+        .iter()
+        .find(|challenge| challenge.active && challenge.open && !challenge.solved);
+    let tactical_insight = challenges.iter().find_map(|challenge| {
+        (challenge.active && challenge.solved)
+            .then(|| {
+                Some((
+                    challenge.tactical_insight_text.as_deref()?,
+                    challenge.tactical_preparation_text.as_deref()?,
+                ))
+            })
+            .flatten()
+    });
+    let active_road_trial = road_challenges
+        .iter()
+        .find(|challenge| challenge.active && challenge.open);
+    let mut road_history = road_challenges
+        .iter()
+        .filter(|challenge| !challenge.open)
+        .collect::<Vec<_>>();
+    road_history.sort_by(|left, right| {
+        right
+            .absolute_minute
+            .cmp(&left.absolute_minute)
+            .then_with(|| right.id.cmp(&left.id))
+    });
+    if let Some(requested) = query.road_occurrence.as_deref()
+        && let Some(index) = road_history
+            .iter()
+            .position(|challenge| challenge.id == requested)
+    {
+        road_history.swap(0, index);
+    }
+    road_history.truncate(10);
     let foraging_dialog = if query.forage.unwrap_or(false) {
         Some(
             crate::routes::foraging::activity_dialog(
@@ -293,12 +407,90 @@ pub(super) async fn camp(
             planned_wake_minute,
             continue_block_reason,
             encounter.as_ref(),
+            &counterparties,
+            trial.map(|trial| {
+                (
+                    trial.case_id.as_str(),
+                    trial.id.as_str(),
+                    trial.presenter_catalog_id,
+                )
+            }),
+            tactical_insight,
+            active_road_trial,
+            &road_history,
             foraging_dialog,
             Some(&character.name),
         )
         .into_string(),
     )
     .into_response()
+}
+
+#[derive(Deserialize)]
+pub(super) struct ErrantryRoadChallengeForm {
+    challenge_id: String,
+    expected_revision: u32,
+    choice: String,
+    action_id: String,
+}
+
+pub(super) async fn resolve_errantry_road_challenge(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<ErrantryRoadChallengeForm>,
+) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call(
+            "resolve_errantry_road_challenge",
+            &[
+                json!(character_id),
+                json!(&form.challenge_id),
+                json!(form.expected_revision),
+                json!(form.choice),
+                json!(form.action_id),
+            ],
+        )
+        .await
+    {
+        Ok(()) => {
+            Redirect::to(&format!("/camp?road_occurrence={}", form.challenge_id)).into_response()
+        }
+        Err(error) if error.to_string().contains("stale") => StatusCode::CONFLICT.into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+fn direct_demo_challenge_redirect(
+    challenges: &[BackendChallenge],
+    road_challenges: &[BackendRoadChallenge],
+    character_id: u64,
+) -> Option<String> {
+    if road_challenges.iter().any(|challenge| {
+        challenge.owner_character_id == character_id && challenge.active && challenge.open
+    }) {
+        return None;
+    }
+    let mut playable = challenges.iter().filter(|challenge| {
+        challenge.owner_character_id == character_id
+            && challenge.active
+            && challenge.open
+            && !challenge.solved
+            && is_direct_demo_challenge_id(&challenge.id, character_id)
+    });
+    let challenge = playable.next()?;
+    playable
+        .next()
+        .is_none()
+        .then(|| format!("/quests/{}/challenges/{}", challenge.case_id, challenge.id))
+}
+
+fn is_direct_demo_challenge_id(challenge_id: &str, character_id: u64) -> bool {
+    challenge_id.starts_with("challenge:")
+        && challenge_id.contains(&format!(":demo:{character_id}:"))
 }
 
 pub(super) fn camp_continue_block_reason(
@@ -314,9 +506,124 @@ pub(super) fn camp_continue_block_reason(
     }
 }
 
+#[cfg(test)]
+mod direct_demo_redirect_tests {
+    use super::direct_demo_challenge_redirect;
+    use crate::spacetimedb::{
+        BackendChallenge, BackendRoadChallenge, ChallengePresenterCatalogId,
+    };
+
+    fn challenge(id: &str, active: bool, open: bool, solved: bool) -> BackendChallenge {
+        BackendChallenge {
+            id: id.into(),
+            case_id: "case:errantry-puzzle:demo:7:0".into(),
+            party_id: "party:7".into(),
+            owner_character_id: 7,
+            finale_case_site_id: "site:finale".into(),
+            puzzle_projection_json: "{}".into(),
+            presenter_catalog_id: ChallengePresenterCatalogId::LadyBeneathThornV1,
+            revision: 0,
+            open,
+            solved,
+            active,
+            last_attempt_correct: None,
+            last_submission_json: None,
+            tactical_insight_text: None,
+            tactical_preparation_text: None,
+        }
+    }
+
+    fn road_challenge(active: bool, open: bool) -> BackendRoadChallenge {
+        BackendRoadChallenge {
+            id: "road:demo:7".into(),
+            owner_character_id: 7,
+            absolute_minute: 0,
+            presentation_json: "{}".into(),
+            revision: 0,
+            open,
+            active,
+            result_transcript: None,
+            quest_reward_addendum: None,
+        }
+    }
+
+    #[test]
+    fn camp_forwards_only_one_unsolved_active_direct_demo() {
+        let demo = challenge("challenge:ordered-sigils:demo:7:0", true, true, false);
+        assert_eq!(
+            direct_demo_challenge_redirect(std::slice::from_ref(&demo), &[], 7).as_deref(),
+            Some(
+                "/quests/case:errantry-puzzle:demo:7:0/challenges/challenge:ordered-sigils:demo:7:0"
+            )
+        );
+
+        let production = challenge("challenge:ordered-sigils:order:7:0", true, true, false);
+        assert_eq!(direct_demo_challenge_redirect(&[production], &[], 7), None);
+
+        let solved = challenge("challenge:ordered-sigils:demo:7:0", true, false, true);
+        assert_eq!(direct_demo_challenge_redirect(&[solved], &[], 7), None);
+
+        let another = challenge("challenge:ordered-sigils:demo:7:1", true, true, false);
+        assert_eq!(direct_demo_challenge_redirect(&[demo, another], &[], 7), None);
+
+        let witnesses = challenge("challenge:truthful-witnesses:demo:7:2", true, true, false);
+        assert_eq!(
+            direct_demo_challenge_redirect(&[witnesses], &[], 7).as_deref(),
+            Some(
+                "/quests/case:errantry-puzzle:demo:7:0/challenges/challenge:truthful-witnesses:demo:7:2"
+            )
+        );
+    }
+
+    #[test]
+    fn active_road_challenge_precedes_placeholder_direct_demo() {
+        let demo = challenge("challenge:ordered-sigils:demo:7:0", true, true, false);
+        let active_road = road_challenge(true, true);
+        assert_eq!(
+            direct_demo_challenge_redirect(&[demo.clone()], &[active_road], 7),
+            None
+        );
+
+        let resolved_road = road_challenge(false, false);
+        assert!(direct_demo_challenge_redirect(&[demo], &[resolved_road], 7).is_some());
+    }
+}
+
+#[cfg(test)]
+mod road_challenge_route_tests {
+    #[test]
+    fn narrative_encounters_are_generic_chat_native_and_server_authoritative() {
+        let route = include_str!("camp.rs");
+        let router = include_str!("router.rs");
+        let template = include_str!("../../templates/settlement/travel.rs");
+        assert!(route.contains("SELECT * FROM backend_road_challenges"));
+        assert!(route.contains("challenge.active && challenge.open"));
+        assert!(route.contains("challenge.id == requested"));
+        assert!(route.contains("\"resolve_errantry_road_challenge\""));
+        assert!(router.contains("/camp/errantry-road-challenge"));
+        assert!(template.contains("aria-label=\"Roadside conversation\""));
+        assert!(template.contains("generic_road_encounter(road_trial)"));
+        assert!(template.contains("presentation.choices"));
+        assert!(template.contains("presentation.opening"));
+        assert!(template.contains("presentation.cast"));
+        assert!(template.contains("Roadside characters"));
+        assert!(template.contains("Request"));
+        assert!(template.contains("Refused"));
+        assert!(template.contains("Unavailable"));
+        assert!(template.contains("Emergency treatment"));
+        assert!(!template.contains("challenge.actor_character_id"));
+        assert!(!template.contains("EncounterDefinition"));
+        assert!(!template.contains("WoundedOrderCourierV1"));
+        assert!(!template.contains("Black Knight's men"));
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub(super) struct EncounterChoiceForm {
+    encounter_id: String,
     choice: String,
+    expected_revision: u32,
+    action_id: String,
 }
 
 pub(super) async fn resolve_camp_encounter(
@@ -331,7 +638,88 @@ pub(super) async fn resolve_camp_encounter(
         .db
         .call(
             "resolve_strategic_encounter",
-            &[json!(character_id), json!(form.choice)],
+            &[
+                json!(character_id),
+                json!(form.encounter_id),
+                json!(form.choice),
+                json!(form.expected_revision),
+                json!(form.action_id),
+            ],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to("/camp").into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct CounterpartyContactForm {
+    target_id: u64,
+    contact_ref: String,
+    expected_revision: u32,
+    action_id: String,
+}
+
+pub(super) async fn contact_camp_counterparty(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<CounterpartyContactForm>,
+) -> Response {
+    let Some(character_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call(
+            "contact_context_character",
+            &[
+                json!(character_id),
+                json!(form.target_id),
+                json!(form.contact_ref),
+                json!(form.expected_revision),
+                json!(form.action_id),
+            ],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to("/camp").into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct CounterpartyBandageForm {
+    patient_id: u64,
+    limb_slug: String,
+    action_id: String,
+    context_ref: String,
+    expected_membership_revision: u32,
+}
+
+pub(super) async fn bandage_camp_counterparty(
+    State(state): State<AppState>,
+    session: Session,
+    Form(form): Form<CounterpartyBandageForm>,
+) -> Response {
+    let Some(actor_id) = session.character_id_u64() else {
+        return Redirect::to("/characters").into_response();
+    };
+    match state
+        .db
+        .call(
+            "treat_limb",
+            &[
+                json!(actor_id),
+                json!(form.patient_id),
+                json!(form.limb_slug),
+                json!("bandage"),
+                crate::spacetimedb::sats_option(None::<u64>),
+                json!(false),
+                json!(form.action_id),
+                crate::spacetimedb::sats_option(Some(form.context_ref)),
+                crate::spacetimedb::sats_option(Some(form.expected_membership_revision)),
+            ],
         )
         .await
     {
@@ -420,12 +808,26 @@ pub(super) async fn rest_at_camp(
         )
         .await
     {
-        Ok(()) => Redirect::to("/camp").into_response(),
+        Ok(()) => {
+            if form.advance_development_clock {
+                let _ = state
+                    .db
+                    .call(
+                        "sync_development_clock_to_character",
+                        &[json!(character_id)],
+                    )
+                    .await;
+            }
+            Redirect::to("/camp").into_response()
+        }
         Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
     }
 }
 
-pub(super) async fn continue_camp_travel(State(state): State<AppState>, session: Session) -> Response {
+pub(super) async fn continue_camp_travel(
+    State(state): State<AppState>,
+    session: Session,
+) -> Response {
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
     };
@@ -536,7 +938,7 @@ pub(super) async fn travel_provision_forecast_for_minutes(
         let Some(needs) = state
             .db
             .query_one::<CharacterNeeds>(&format!(
-                "SELECT * FROM character_needs WHERE character_id = {}",
+                "SELECT * FROM backend_character_needs WHERE character_id = {}",
                 traveler.id
             ))
             .await
@@ -570,7 +972,8 @@ pub(super) async fn travel_provision_forecast_for_minutes(
                 });
             }
         }
-        let time = query_single::<CharacterTime>(state, "character_time", traveler.id).await;
+        let time =
+            query_single::<CharacterTime>(state, "backend_character_times", traveler.id).await;
         let personality = query_single::<CharacterPersonality>(
             state,
             "backend_character_personalities",

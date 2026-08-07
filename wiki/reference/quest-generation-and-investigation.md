@@ -41,9 +41,9 @@ server-private entropy and stored; public NPC IDs do not determine them. Named
 morale-event rows preserve why morale changes. Current settled morale,
 relationship affinity, familiarity, personality, and the chosen approach all
 affect resolution, while browser projections remain qualitative.
-Ordinary timed chat is available from the normal social menu rather than the
-quest transcript. It may improve or strain morale and affinity and always
-builds familiarity, but it never diagnoses pressure or releases testimony.
+Ordinary timed chat is a contextual topic in the selected resident's dialogue.
+It may improve or strain morale and affinity and always builds familiarity,
+but it never diagnoses pressure or releases testimony.
 Claim-specific Charm, Command, and Bluff responses remain available only in
 the active dialogue session where that observer heard the claim.
 
@@ -115,6 +115,13 @@ The editor is complete for the declarative surfaces represented by
 schema options. Tactical encounter execution and tactical enemy authoring are
 outside this editor; hostile identity, count, and site are configurable while
 the existing tactical/autoresolve systems consume them.
+
+`SolveChallenge` is a generic case objective but is not an investigation-editor
+surface yet. The editor schema does not offer it, and compilation rejects a
+manually supplied `SolveChallenge` requirement with a structural diagnostic at
+the exact objective requirement path. First-class authored challenges require
+challenge declarations, presenter binding, and authority materialization
+before this restriction can be removed.
 
 ## Authoring catalog
 
@@ -284,11 +291,14 @@ has no public table accessor. Gateway projections expose only symptoms and
 observer-owned knowledge; browsers never receive canonical causes, traces,
 undiscovered evidence, true/decoy status, or hidden coordinates.
 
-Persistent settlement NPCs also cross that boundary through a dedicated
-`BackendSettlementNpc` projection. The projected row contains the NPC's stable
-identity, home settlement, player-visible appearance, profession, household,
-local role, service, and conversation identity. It deliberately excludes the
-authoritative NPC's private `sex` and internal `projection_id`. Gateway-side
+Persistent settlement residents also cross that boundary through a dedicated
+`BackendSettlementResident` projection. The projected row joins the ordinary
+Character identity and age, private personality presentation, and
+`SettlementResidentProfile` metadata. It contains the resident's stable decimal
+character ID, home settlement, player-visible appearance, profession,
+household, local role, service, and conversation identity. It deliberately
+excludes private `sex` and the profile's internal `projection_id`; missing
+Character or personality authority fails closed. Gateway-side
 developer quest previews use visible age, presentation, profession, and role
 for witness discovery. Preview, authoritative developer compilation, and later
 victim-profile target validation share one visible-field candidate and
@@ -526,6 +536,34 @@ weighted `MissionOutcomeCandidate` rows after exact observer-authorized site
 entry. Investigation never fabricates a battle result and no tactical tick
 state is persisted.
 
+Sapient, authored-negotiable hostile groups may also expose a private
+pre-combat conversation at that exact site. Availability requires the current
+observer-scoped pending `DriveOff` approach, an active group and open generated
+case, no bound combat mission, the unique lowest-ordinal living hostile
+counterparty, and a shared spoken language. The form
+binds the public site, fixed hostile-context discriminator, spokesman, and
+membership revision; it never exposes the private group or canonical case ID.
+The response combines the actor's best live Charm/Command check on the normal
+0-5 scale with language, the spokesman's current affinity, and authored hostile
+morale. Refusal changes no case or group authority. Acceptance uses the
+existing `DriveOff` / `HostilesDrivenOff` path, revokes sibling approaches, and
+creates no battle, morale-victory, corpse, or loot rows.
+Generated recurring-hostile cases also support a narrow whole-group surrender
+alternative at the exact case site. Before combat, an eligible player may
+demand surrender; when the authored awareness/morale policy elects it, the
+hostile spokesman instead offers surrender and the player may accept or refuse.
+Acceptance revalidates the exact party, case, site, group, living spokesman,
+membership revision, pending objective, and absence of a bound mission before
+marking the group surrendered and recording `HostilesSurrendered`. It creates no
+battle, morale-victory, corpse, loot, custody, confiscation, or inventory rows.
+Refusal leaves combat and negotiated withdrawal available and records only the
+action receipt plus a small relationship consequence.
+
+This initial surrender slice does not model tactical or mid-battle surrender,
+random encounters, individuals, captivity, disarmament, parole, ransom,
+release, escape, defection, recruitment, theft, or law enforcement. It is not a
+general-purpose dialogue framework.
+
 An observer can open a generated case site without a contract only after the
 observer-owned exact pin and authoritative party occupancy agree on that site.
 The location page uses the validated public problem summary and site label; it
@@ -753,12 +791,52 @@ text use the site's safe generated name; opaque site IDs remain navigation
 authority and are not shown as destination labels. Watches, patrols, and
 ambush preparation remain strategic actions; they do not persist tactical tick
 state and cannot fabricate a combat result.
+After caller authorization, an exact existing attempt receipt is terminal
+before living-character, party, or current leader checks; death and party
+changes cannot make a committed request spend time again. A terminal injury or
+disease clip writes an interrupted receipt in the same transaction as its time
+effects. That receipt records no successful resolution, consequence, lead, or
+uncertainty change. Its capability revision advances so a surviving observer
+may make a distinct later request, while an exact retry of the clipped version
+returns before interval effects.
+Interrupted receipts and malformed private receipt payloads break the
+contiguous completed-failure chain and grant no bounded-progress credit.
 Before spending time the reducer revalidates party readiness, co-location,
 journey and camp state, unresolved encounters, predecessor knowledge,
 position, and typed prerequisites. Party clocks synchronize first, with night
 defined as before 06:00 or from 20:00 onward. Browser estimates are broad
 method-derived duration ranges; exact terrain, needs, fatigue, success, and
 risk remain authoritative.
+
+Exact-site attempts additionally pass through the shared strategic-action
+planner using the canonical case-site place, the current opaque capability
+revision, a private leader-or-approval rights decision, and a reducer-authored
+snapshot/binding. The reducer replans at the final mutation boundary and
+applies only the closed investigation interval and resolution effects. This
+does not change replay receipts, deterministic formulas, mutation order, or
+the public action DTO. Area and route actions remain on their existing path
+until those domains have a canonical strategic-place identity; they must not
+invent a case-site identity merely to enter the planner.
+The rights provenance digest comes from that exact checked typed question
+(actor subject, investigation resource and operation, and exact place or
+explicit global jurisdiction), not from a parallel action tuple.
+
+The planner's participant boundary suppresses completion effects, while the
+domain interval effect intentionally retains the historical per-member full
+duration request. Injury or disease clipping can therefore leave unequal
+party clocks before the existing leadership/objective normalization. Changing
+that behavior requires a separate party-time contract rather than an adapter
+side effect.
+
+Evidence-custody rows have an observer-private knowledge adapter with typed
+subject, proposition, source, confidence, visibility, chronology, and initial
+revision. Its numeric record key is only a deterministic adapter key; the
+existing string primary key remains authoritative and adapters must reject a
+collision between distinct persisted IDs. This adds no public evidence fields
+and does not make hidden evidence authority sufficient proof by itself. Route
+eligibility hydrates the record against the observer's exact personal clock;
+malformed, future, cross-observer, or colliding records fail the entire check
+closed.
 
 Location is revalidated at execution, not merely at issuance. Contact actions
 use the referred NPC's current settlement and presence window (or the same

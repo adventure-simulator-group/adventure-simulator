@@ -1,13 +1,14 @@
 use adventuresim_tactical_core::{
     inventory::{ItemQuery, ItemQueryItem},
-    player::{Player, PlayerId},
+    player::{CharacterId, Player},
     prelude::*,
 };
 use adventuresim_tactical_netcode::{
     aeronet::io::connection::{LocalAddr, PeerAddr},
     bevy_replicon::prelude::{ClientState, ClientStats},
+    client::WeaponGuardInputState,
     client::normalize_server_url,
-    message::SuccessfulAttackResponse,
+    message::{SuccessfulAttackResponse, TacticalOutcome, TacticalOutcomeResponse},
     prelude::*,
 };
 use bevy::{
@@ -17,8 +18,15 @@ use bevy::{
 };
 use bevy_flair::prelude::*;
 
+#[cfg(feature = "debug")]
+use crate::animation::TerrainIkEnabled;
+#[cfg(feature = "debug")]
+use crate::camera::{CameraDebugEnabled, CameraRigDebugState};
+#[cfg(feature = "debug")]
+use crate::debug::DebugGameSpeed;
 use crate::{
     Args,
+    camera::CameraAimState,
     player::{AttackState, ClientPlayer},
 };
 
@@ -36,12 +44,20 @@ impl Plugin for UiPlugin {
                     update_skills_ui.run_if(any_with_component::<ClientPlayer>),
                     update_limbs_ui.run_if(any_with_component::<ClientPlayer>),
                     update_incapacitation_ui.run_if(any_with_component::<ClientPlayer>),
+                    update_combat_state_ui.run_if(any_with_component::<ClientPlayer>),
                     update_items_ui.run_if(any_with_component::<ClientPlayer>),
                     update_attack_timer_ui.run_if(any_with_component::<ClientPlayer>),
+                    update_weapon_guard_ui,
+                    update_camera_ui,
+                    #[cfg(feature = "debug")]
+                    update_terrain_ik_debug_ui,
+                    #[cfg(feature = "debug")]
+                    update_game_speed_debug_ui,
                 ),
             )
             .add_observer(on_new_player_added_hook)
             .add_observer(on_successful_attack_display)
+            .add_observer(on_tactical_outcome_display)
             .add_systems(Update, update_attack_result_ui);
     }
 }
@@ -106,6 +122,33 @@ struct IncapacitationStatusSpan;
 struct AttackTimerSpan;
 
 #[derive(Component)]
+struct CombatStateSpan;
+
+#[derive(Component)]
+struct WeaponGuardSpan;
+
+#[derive(Component)]
+struct RaisedReticle;
+
+#[derive(Component)]
+struct AimBlockedSpan;
+
+#[cfg(feature = "debug")]
+#[derive(Component)]
+struct CameraDebugSpan;
+
+#[cfg(feature = "debug")]
+#[derive(Component)]
+struct TerrainIkDebugSpan;
+
+#[cfg(feature = "debug")]
+#[derive(Component)]
+struct GameSpeedDebugSpan;
+
+#[derive(Component)]
+struct TacticalOutcomeBanner;
+
+#[derive(Component)]
 struct AttackResultText {
     timer: Timer,
 }
@@ -132,7 +175,25 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         Node::default(),
         NodeStyleSheet::new(asset_server.load("ui.css")),
         children![
-            (Name::new("crosshair"), Node::default()),
+            (
+                Name::new("terminal-outcome"),
+                TacticalOutcomeBanner,
+                Visibility::Hidden,
+                ClassList::new("primary"),
+                Text::default(),
+            ),
+            (
+                Name::new("crosshair"),
+                RaisedReticle,
+                Visibility::Hidden,
+                Node::default(),
+                children![(
+                    Name::new("aim-blocked"),
+                    AimBlockedSpan,
+                    Visibility::Hidden,
+                    Text::new("MUZZLE BLOCKED"),
+                )],
+            ),
             (
                 Name::new("attack-info"),
                 Node::default(),
@@ -148,14 +209,23 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 ]
             ),
             (
+                Name::new("weapon-guard"),
+                Text::new("Guard: "),
+                children![(WeaponGuardSpan, TextSpan::new("Lowered"))],
+            ),
+            (
                 Name::new("controls"),
-                Text::new(""),
+                Text::new(
+                    "WASD to move | Space to jump | Mouse to look around | F9 to toggle camera\n",
+                ),
+                #[cfg(feature = "debug")]
                 children![
-                    TextSpan::new("WASD to move | Space to jump | Mouse to look around\n"),
-                    #[cfg(feature = "debug")]
                     TextSpan::new(
                         "DEBUG: F2 to toggle body | F3 to toggle hitbox | F4 to toggle hitscan"
-                    )
+                    ),
+                    (GameSpeedDebugSpan, TextSpan::new(" | F7 game speed: 1x")),
+                    (TerrainIkDebugSpan, TextSpan::new(" | F8 terrain IK: OFF")),
+                    (CameraDebugSpan, TextSpan::new(" | F6 camera rig: OFF"))
                 ],
             ),
             (
@@ -171,6 +241,11 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                         Name::new("fps"),
                         Text::new("FPS: "),
                         children![(FpsSpan, TextSpan::default())]
+                    ),
+                    (
+                        Name::new("combat-state"),
+                        Text::new("Combat: "),
+                        children![(CombatStateSpan, TextSpan::default())]
                     ),
                 ]
             ),
@@ -378,15 +453,139 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     ));
 }
 
+fn update_weapon_guard_ui(
+    guard: Res<WeaponGuardInputState>,
+    mut spans: Query<&mut TextSpan, With<WeaponGuardSpan>>,
+) {
+    if !guard.is_changed() {
+        return;
+    }
+    for mut span in &mut spans {
+        **span = match guard.desired {
+            WeaponGuardState::Lowered => "Lowered".to_owned(),
+            WeaponGuardState::Raised => "Raised".to_owned(),
+        };
+    }
+}
+
+fn update_camera_ui(
+    aim: Res<CameraAimState>,
+    mut reticle: Single<&mut Visibility, (With<RaisedReticle>, Without<AimBlockedSpan>)>,
+    mut blocked: Single<&mut Visibility, (With<AimBlockedSpan>, Without<RaisedReticle>)>,
+    #[cfg(feature = "debug")] enabled: Res<CameraDebugEnabled>,
+    #[cfg(feature = "debug")] debug: Res<CameraRigDebugState>,
+    #[cfg(feature = "debug")] mut debug_span: Single<&mut TextSpan, With<CameraDebugSpan>>,
+) {
+    **reticle = if aim.active {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+    **blocked = if aim.active && aim.blocked {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+    #[cfg(feature = "debug")]
+    {
+        debug_span.0 = if enabled.0 && debug.active {
+            format!(
+                " | F6 camera: {:.0}% | boom {:.2}/{:.2}m v{:.2} | focus v{:.2} | screen ({:.2},{:.2})/({:.2},{:.2}) | hard:{} soft:{}",
+                debug.raised_blend * 100.0,
+                debug.limited_distance,
+                debug.desired_distance,
+                debug.boom_velocity,
+                debug.focus_velocity.length(),
+                debug.screen_error.x,
+                debug.screen_error.y,
+                debug.sweet_spot.x,
+                debug.sweet_spot.y,
+                debug.collision_entity.is_some(),
+                debug.soft_occluder.is_some(),
+            )
+        } else {
+            " | F6 camera rig: OFF".to_owned()
+        };
+    }
+}
+
+#[cfg(feature = "debug")]
+fn update_terrain_ik_debug_ui(
+    enabled: Res<TerrainIkEnabled>,
+    mut span: Single<&mut TextSpan, With<TerrainIkDebugSpan>>,
+) {
+    if enabled.is_changed() {
+        span.0 = if enabled.0 {
+            " | F8 terrain IK: ON".to_owned()
+        } else {
+            " | F8 terrain IK: OFF".to_owned()
+        };
+    }
+}
+
+#[cfg(feature = "debug")]
+fn update_game_speed_debug_ui(
+    speed: Res<DebugGameSpeed>,
+    mut span: Single<&mut TextSpan, With<GameSpeedDebugSpan>>,
+) {
+    if speed.is_changed() {
+        span.0 = if speed.quarter_speed {
+            " | F7 game speed: 1/4x".to_owned()
+        } else {
+            " | F7 game speed: 1x".to_owned()
+        };
+    }
+}
+
+fn combat_state_label(state: &TacticalCombatState) -> String {
+    if state.is_incapacitated() {
+        format!(
+            "INCAPACITATED | Blood loss {:.0}% | Imbalance {:.0}%",
+            state.blood_loss_fraction * 100.0,
+            state.imbalance * 100.0
+        )
+    } else {
+        format!(
+            "Active | Blood loss {:.0}% | Imbalance {:.0}%",
+            state.blood_loss_fraction * 100.0,
+            state.imbalance * 100.0
+        )
+    }
+}
+
+fn update_combat_state_ui(
+    player: Single<&TacticalCombatState, With<ClientPlayer>>,
+    mut span: Single<&mut TextSpan, With<CombatStateSpan>>,
+) {
+    span.0 = combat_state_label(&player);
+}
+
+fn tactical_outcome_label(outcome: TacticalOutcome) -> (&'static str, &'static str) {
+    match outcome {
+        TacticalOutcome::Victory => ("VICTORY", "success"),
+        TacticalOutcome::Defeat => ("DEFEAT", "error"),
+    }
+}
+
+fn on_tactical_outcome_display(
+    event: On<TacticalOutcomeResponse>,
+    mut banner: Single<(&mut Text, &mut Visibility, &mut ClassList), With<TacticalOutcomeBanner>>,
+) {
+    let (label, class) = tactical_outcome_label(event.outcome);
+    banner.0.0 = label.to_owned();
+    *banner.1 = Visibility::Visible;
+    *banner.2 = ClassList::new(class);
+}
+
 fn update_stats_ui(
     diagnostics: Res<DiagnosticsStore>,
-    player: Single<(Ref<Transform>, &PlayerId), With<ClientPlayer>>,
+    player: Single<(Ref<Transform>, &CharacterId), With<ClientPlayer>>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<PositionSpan>>,
         Single<&mut TextSpan, With<FpsSpan>>,
     )>,
 ) {
-    let (transform, &PlayerId(_player_id)) = player.into_inner();
+    let (transform, &CharacterId(_player_id)) = player.into_inner();
 
     if transform.is_changed() {
         let translation = transform.translation;
@@ -395,7 +594,6 @@ fn update_stats_ui(
             translation.x, translation.y, translation.z
         );
     }
-
     if let Some(fps) = diagnostics
         .get(&FrameTimeDiagnosticsPlugin::FPS)
         .and_then(|fps| fps.smoothed())
@@ -405,7 +603,7 @@ fn update_stats_ui(
 }
 
 fn update_skills_ui(
-    player: Single<(&Skills, &PlayerId), (With<ClientPlayer>, Changed<Skills>)>,
+    player: Single<(&Skills, &CharacterId), (With<ClientPlayer>, Changed<Skills>)>,
     mut spans: Query<(&mut TextSpan, &SkillSpan)>,
 ) {
     let (skills, _player_id) = player.into_inner();
@@ -450,7 +648,7 @@ fn update_skills_ui(
 }
 
 fn update_limbs_ui(
-    player: Single<(&Limbs, &PlayerId), (With<ClientPlayer>, Changed<Limbs>)>,
+    player: Single<(&Limbs, &CharacterId), (With<ClientPlayer>, Changed<Limbs>)>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<HeadSpan>>,
         Single<&mut TextSpan, With<ChestSpan>>,
@@ -476,7 +674,7 @@ fn update_limbs_ui(
 /// a segmented bar (pain/blood loss/imbalance) plus a total/status readout,
 /// since the current HUD has no radial-gauge rendering path.
 fn update_incapacitation_ui(
-    player: Single<(&CombatState, &PlayerId), (With<ClientPlayer>, Changed<CombatState>)>,
+    player: Single<(&CombatState, &CharacterId), (With<ClientPlayer>, Changed<CombatState>)>,
     mut bars: Query<(&IncapacitationBarFill, &mut Node)>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<IncapacitationTotalSpan>>,
@@ -632,7 +830,7 @@ fn update_attack_timer_ui(
 fn on_successful_attack_display(
     event: On<SuccessfulAttackResponse>,
     mut cmd: Commands,
-    q_player: Query<(&Player, &PlayerId)>,
+    q_player: Query<(&Player, &CharacterId)>,
     mut span: Single<(Entity, &mut AttackResultText, &mut Text)>,
 ) {
     let Some((player, id)) = event.hit.first().and_then(|e| q_player.get(*e).ok()) else {
@@ -702,7 +900,7 @@ fn update_attack_result_ui(
 fn on_new_player_added_hook(
     event: On<Add, Player>,
     mut commands: Commands,
-    query: Query<(&PlayerId, &Player)>,
+    query: Query<(&CharacterId, &Player)>,
     args: Res<Args>,
     players_list: Single<Entity, With<PlayersList>>,
 ) -> Result {
@@ -733,4 +931,39 @@ fn on_new_player_added_hook(
     ));
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn combat_label_surfaces_live_and_incapacitated_state() {
+        let active = TacticalCombatState {
+            blood_loss_fraction: 0.25,
+            imbalance: 0.5,
+            ..default()
+        };
+        assert_eq!(
+            combat_state_label(&active),
+            "Active | Blood loss 25% | Imbalance 50%"
+        );
+        let incapacitated = TacticalCombatState {
+            incapacitation: 1.0,
+            ..active
+        };
+        assert!(combat_state_label(&incapacitated).starts_with("INCAPACITATED"));
+    }
+
+    #[test]
+    fn terminal_outcome_labels_are_unambiguous() {
+        assert_eq!(
+            tactical_outcome_label(TacticalOutcome::Victory),
+            ("VICTORY", "success")
+        );
+        assert_eq!(
+            tactical_outcome_label(TacticalOutcome::Defeat),
+            ("DEFEAT", "error")
+        );
+    }
 }

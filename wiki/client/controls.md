@@ -57,7 +57,22 @@ One feature we quite want in the game eventually is a split between *direct* and
 We posit control schemes for both modes below.
 
 ### Direct controls
-These are designed primarily for the first person, but we can add a third-person camera option after the MVP.
+The tactical client defaults to a stability-first third-person camera and
+retains <kbd>F9</kbd> as a development toggle for first person. One stateful rig
+supplies two continuous configurations. Lowered guard uses a centered orbit
+with bounded, vertically damped focus following and a modest screen-space
+sweet spot. Raised guard blends to a tighter right-shoulder view while
+preserving yaw, pitch, and the movement reference; direct look input is never
+rotationally smoothed in either configuration.
+
+The camera sweeps a volume from its shoulder pivot to the desired boom
+endpoint. Hard geometry retracts the boom immediately and clears with a slower
+hysteretic recovery; soft occluders may be tagged to remain outside the camera
+collision policy. Tight-space retraction also recenters the shoulder offset.
+Raised aiming selects a center-screen world point, then checks the actual path
+from a presentation muzzle origin. The reticle reports a blocked muzzle path,
+so the displaced camera cannot grant a shot through nearby cover. In debug
+builds, <kbd>F6</kbd> exposes rig, collision, smoothing, and aim telemetry.
 
 > Halbe: I assume that first person is easier because with third-person cameras, you need to handle a lot of edge cases to avoid awkwardness in tight spaces or near thin obstacles like trees, not to mention smoothing out the motion or reconciling the shoulder offset when aiming. However, if I am mistaken in my assumptions, we should implement whichever is easier for the MVP.
 
@@ -65,11 +80,12 @@ These are designed primarily for the first person, but we can add a third-person
 |-|-|-|-|
 | <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> | Left Stick | Movement. | |
 | Mouse | Right Stick | Look. | |
+| <kbd>F9</kbd> | | Toggle first-/third-person camera. | Third person preserves the same immediate look direction across centered and raised-weapon shoulder profiles. |
 | LMB | RT | Attack! | |
 | Release <kbd>SPACE</kbd> | Full LT | Dodge or jump. | <ul><li>A quick tap is more like a hop or dash. Holding the button for a bit before releasing makes it a full-body jump. You can tell whether you have held long enough for a full jump by the state of your character's animation.<li>LT has to be held all the way, then released, to jump. |
 | <kbd>SHIFT</kbd> | Partial LT | Crouch or duck. | <ul><li>When crouching and attacked, your character automatically ducks in an appropriate direction, but only if you were not crouching before the attack began.<li>LT is only held partially here, so releasing it to un-crouch does not cause you to jump.
 | <kbd>CTRL</kbd> | Left Stick Click | Prone–standing toggle. | <ul><li>Jump while held to dive.<li>Crouch to orient your character in the direction the camera is facing.<li>When prone, your character automatically switches to supine based on how you look around. Looking forward, you're prone; looking at your toes, you're supine.<li>Once prone/supine, jump causes you to roll if in a lateral direction, scamper otherwise. This is a very mediocre dodge.
-| Scroll | Right Stick Click | Aim. | <ul><li>Scrolling is an idempotent aiming input: up puts you in aim, down back to normal.<li>Default aim state when equipping something is off.<li>For melee weapons, stabbing without aiming = swinging.<li>For ranged weapons, shooting without aiming = bashing.<li>Aiming while pressing a [hand button](slots.md) with an item in your hand causes you to throw. When not aiming, you simply drop it.
+| Scroll | Right Stick Click | Aim / weapon guard. | <ul><li>Aim means the weapon guard is raised. Scrolling up always raises it and scrolling down always lowers it, so repeated wheel input is idempotent.<li>Right Stick Click toggles the state once per press.<li>The default is lowered. The HUD reports the desired state immediately while the server validates and replicates it.<li>For melee weapons, stabbing without aiming = swinging.<li>For ranged weapons, shooting without aiming = bashing.<li>Aiming while pressing a [hand button](slots.md) with an item in your hand causes you to throw. When not aiming, you simply drop it.
 | MMB or RMB | LB or RB | Grab with left/right hand. | <ul><li>When there is nothing in hand, pressing this grabs whatever you're looking at; *holding* this button, then pressing a [slot button](slots.md), equips the item in that slot into the chosen hand.<li>When there is something in a hand, pressing this drops it; *holding* this button, then pressing a slot button, places the item held in that hand into the chosen slot.
 
 This is somewhere between a real action game and an RPG wearing an action game's skin. We aren't actually simulating everything based on hitboxes and projectile trajectories, but we still want to use some of the player's mechanical skills, specifically accuracy and reaction time.[^3]

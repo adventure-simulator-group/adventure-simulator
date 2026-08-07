@@ -13,7 +13,7 @@ prepares biological medicine and remains separate from patient-facing
 Physiology and food-facing Cooking.
 
 The Terrain family includes **Snow**, a mental, intuitive,
-Intelligence-governed skill with a 30,000-hour curve. Snow has symmetric 0.20
+Instinct-governed skill with a 30,000-hour curve. Snow has symmetric 0.20
 ordinary correlation with Plains, Forest, Hills, Wetlands, and Urban. It is an
 overlay skill: snow-covered forest still uses and trains Forest while Snow
 blends into the check. Cover conservatively splits the existing
@@ -81,7 +81,7 @@ Proportional to the total muscle mass of the limb. Arm-strength is important for
 5. Olympic athlete
 
 ### Agility
-The speed of your muscular reflexes and your ability to control them. Arm-agility is important for accuracy and parrying, leg-agility is important for stealth and dodging.
+The speed of your muscular reflexes and your ability to control them. Arm-agility is important for accuracy and parrying, leg-agility is important for stealth and dodging. The mean Agility of both arms supplies 50% of Surgery's weighted governing aptitude; see the Surgery section for the complete formula.
 
 0. Paralyzed, unaware, or tied up
 1. Drunken oaf, orcs, zombies
@@ -95,8 +95,8 @@ In theory eyesight/hearing should be further subdivided into eyes/ears for damag
 
 ### Intelligence
 The depth at which your character can think. Intelligence governs learning and
-mastery for Physiology, Surgery, Cooking, Religion, Bestiary, and the Terrain
-leaves. It does not add to their final checks.
+mastery for Physiology, Cooking, Religion, and Bestiary, and supplies 30% of
+Surgery's weighted governing aptitude. It does not add to their final checks.
 
 0. Not capable of conscious thought
 1. Low-functioning autistic, toddler
@@ -107,8 +107,9 @@ leaves. It does not add to their final checks.
 
 ### Instinct
 Your ability to make snap judgements without thinking. Instinct governs
-learning and mastery for Will, Insight, Charm, Command, and Deception. It does
-not add to their final checks.
+learning and mastery for Will, Insight, Charm, Command, Deception, and the
+Terrain leaves, and supplies 20% of Surgery's weighted governing aptitude. It
+does not add to their final checks.
 
 0. Unconscious
 1. Takes a couple seconds to respond if you ask them a question
@@ -153,9 +154,12 @@ language. Reading converts real hours to effective target hours at `written
 rank / 5`, without applying the target aptitude's learning-speed multiplier
 again. Aptitude still caps the effective target rank. Terrain is governed by
 Instinct; its correlations and exposure sources are unchanged.
-Every skill has exactly one governing aptitude: Intelligence, Instinct, or
-Agility. Aptitude controls training speed and the effective-rank limit; trained
-skill rank supplies the check itself.
+Every skill has one to three governing aptitudes: Intelligence, Instinct, and
+Agility. Integer weights total exactly 100%, and existing single-aptitude skills
+use a 100% weight. The weighted arithmetic mean controls training speed and the
+effective-rank limit; trained skill rank supplies the check itself. Agility
+components also name their fixed limb distribution, such as both arms or both
+legs. Governing weights never add directly to a skill check.
 ## Training
 Skills increase on a much longer timescale than is conventional for RPGs. They are not increased via an abstract XP/leveling system, and very little of their value comes from using them during tactical play. Instead they are trained through activities in the character's off-screen settlement-downtime schedule. Individual skill-study allocations are not available.
 
@@ -179,7 +183,7 @@ remain omitted until training first awards hours.
 
 An ordinary day generates 600 fatigue-reservoir units before tiring activities. Leisure removes 100 units per hour, so six hours exactly offsets ordinary wakefulness. Labor adds another 50 units per hour. Leisure beyond six hours first removes activity fatigue, then fatigue carried into the interval; only the portion of the interval after the reservoir reaches zero earns morale, approaching 4 points per full qualifying day with a 200-unit diminishing-return scale. The schedule displays a one-day preview, but the server awards the result proportionally to the settlement-downtime time actually applied. Earned Leisure morale is kept as one refreshable source capped at 4 points, rather than being projected from the post-rest schedule or stacked into separate events. It decays at a fixed rate when no qualifying Leisure is occurring; qualifying Leisure refreshes it while adding the newly earned amount. This makes the result independent of whether downtime is applied all at once or through frequent synchronization. The compact schedule preview shows one Fatigue point per 100 reservoir units: Labor therefore shows `+0.5` per hour, while Leisure includes baseline and recovery so all visible Fatigue rows sum to the authoritative net change. Positive preview values remain green and negative values red, including negative Fatigue values that represent recovery.
 
-The rank meter is a five-segment display using the same yellow-green, yellow, orange, red, and violet progression as equipment repair difficulty. Daily allocations are changed in 15-minute steps with the left/right buttons or mouse wheel. Clicking a displayed allocation opens a time field. It accepts `h` or `hh` as whole hours, `h:mm` or `hh:mm`, and compact three- or four-digit times such as `830` or `0830`; entered values snap to the nearest 15 minutes and may not exceed `24:00`. The underlying schedule stores minutes, and the Leisure allocation shows the unallocated remainder. The editor updates these values immediately, serializes background saves, and reconciles with the server after the latest change is saved so live updates cannot momentarily restore an older plan. A failed save leaves the optimistic plan visible and presents a Retry action; making another edit also retries using the newest plan. Compact column icons label Currency (`💎`), Fame/Infamy (`⚖️`), Morale (`🙂`), Fatigue (`💤`), and daily allocation (`⌛`); each icon exposes the same label to assistive technology.
+The rank meter is a five-segment display using the same yellow-green, yellow, orange, red, and violet progression as equipment repair difficulty. Skill icons use the color of the segment containing the current effective rank rather than the governing aptitude's color. Bands do not round to the nearest rank: 0 through 1 uses yellow-green, values above 1 through 2 use yellow, and so on through violet; injury or another current-rank penalty can therefore lower the icon's band along with the bright portion of the meter. Daily allocations are changed in 15-minute steps with the left/right buttons or mouse wheel. Clicking a displayed allocation opens a time field. It accepts `h` or `hh` as whole hours, `h:mm` or `hh:mm`, and compact three- or four-digit times such as `830` or `0830`; entered values snap to the nearest 15 minutes and may not exceed `24:00`. The underlying schedule stores minutes, and the Leisure allocation shows the unallocated remainder. The editor updates these values immediately, serializes background saves, and reconciles with the server after the latest change is saved so live updates cannot momentarily restore an older plan. A failed save leaves the optimistic plan visible and presents a Retry action; making another edit also retries using the newest plan. Compact column icons label Currency (`💎`), Fame/Infamy (`⚖️`), Morale (`🙂`), Fatigue (`💤`), and daily allocation (`⌛`); each icon exposes the same label to assistive technology.
 
 Character summaries use that same five-color rank progression on compact,
 keyboard-focusable icons. Equipped hands contribute one icon for every unique
@@ -281,9 +285,13 @@ fn fatigue_penalty(player):
 const MAX_CHECK = 5
 fn skill_check(character, skill, limb_weights: LimbWeights):
 	hours = character.hours_trained(skill)
+	governing_aptitude = sum(
+		component.weight * character.healthy_raw_aptitude(component)
+		for component in skill.governing_aptitudes
+	) / 100
 	mut check = min(
 		MAX_CHECK * (hours / (hours + skill.half())),
-		character.healthy_governing_aptitude(skill),
+		governing_aptitude,
 	)
 	check *= character.injury_usability(skill, limb_weights)
 	if skill.type() == physical:
@@ -473,9 +481,12 @@ separate Terrain meta-skill and does not stack with Balance.
 5. Graceful elf
 
 ### Surgery (mental, trained, 10000 hours)
-Surgery represents trained operative wound care. Intelligence governs
-its training speed and mastery cap, while head injury remains a performance
-penalty. The Fellowship of Herbalists trains Herbalism; the College of
+Surgery represents trained operative wound care. Its governing aptitude is
+`50% × mean(left-arm Agility, right-arm Agility) + 30% × Intelligence + 20% × Instinct`.
+This weighted aptitude controls training speed and the mastery cap. Surgery
+remains a mental skill, so head injury remains its performance penalty; arm
+injury, armor, encumbrance, and fatigue do not gain new Surgery performance
+penalties from the aptitude blend. The Fellowship of Herbalists trains Herbalism; the College of
 Physicians trains Physiology; and the Surgeons' Guild trains Surgery.
 
 Projectile extraction, stitching, bandaging, and splinting all check Surgery
@@ -486,7 +497,7 @@ practice to contribute indirectly without making either a procedure input.
 ### Terrain (computed meta-skill; intuitive subskills, 30000 hours each)
 
 Terrain stores no hours of its own. Its expandable subskills are Plains,
-Forest, Hills, Wetlands, and Urban. Each is an intuitive, Intelligence-governed
+Forest, Hills, Wetlands, Urban, and Snow. Each is an intuitive, Instinct-governed
 mental skill. A route cell supplies a normalized mixture, and the
 displayed route/local Terrain value is the weighted combination of those
 subskills; without context the character rail shows their unweighted mean.

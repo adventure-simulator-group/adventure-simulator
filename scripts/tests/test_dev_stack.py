@@ -5,7 +5,7 @@ from pathlib import Path
 import socket
 import tempfile
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 import scripts.dev_stack as dev_stack
@@ -115,18 +115,14 @@ class WorkflowTests(unittest.TestCase):
         run_checked.return_value = mock.Mock(returncode=0, stdout="")
 
         self.assertEqual(dev_stack.seed("http://localhost:1", "db", "a" * 64), 0)
-        self.assertEqual(run_checked.call_args.args[0][-3:], ["bootstrap_development_world", "a" * 64, "false"])
+        self.assertEqual(run_checked.call_args.args[0][-2:], ["bootstrap_development_world", "a" * 64])
 
     @mock.patch.object(dev_stack, "run_checked")
-    def test_seed_includes_damaged_demo_character(self, run_checked):
+    def test_seed_has_no_optional_visual_fixture_flag(self, run_checked):
         run_checked.return_value = mock.Mock(returncode=0, stdout="")
 
-        self.assertEqual(
-            dev_stack.seed("http://localhost:1", "db", "a" * 64, include_damaged_demo=True),
-            0,
-        )
-
-        self.assertEqual(run_checked.call_args.args[0][-3:], ["bootstrap_development_world", "a" * 64, "true"])
+        self.assertEqual(dev_stack.seed("http://localhost:1", "db", "a" * 64), 0)
+        self.assertEqual(run_checked.call_args.args[0][-2:], ["bootstrap_development_world", "a" * 64])
 
     @mock.patch.object(dev_stack, "run_checked")
     def test_publish_messages_distinguish_reset(self, run_checked):
@@ -305,8 +301,11 @@ class WorkflowTests(unittest.TestCase):
     def test_just_recipe_shell_quotes_untrusted_parameters(self):
         source = Path(dev_stack.ROOT, "justfile").read_text()
         lines = [line for line in source.splitlines() if "run-profile" in line]
-        self.assertEqual(len(lines), 3)
-        for line in lines:
+        parameterized = [line for line in lines if "{{ quote(profile) }}" in line]
+        fixed_demos = [line for line in lines if line not in parameterized]
+        self.assertEqual(len(parameterized), 3)
+        self.assertEqual(len(fixed_demos), 0)
+        for line in parameterized:
             compact = line.replace(" ", "")
             self.assertIn("{{quote(profile)}}", compact)
             self.assertIn("{{quote(base_port)}}", compact)
@@ -336,6 +335,494 @@ class WorkflowTests(unittest.TestCase):
             dev_stack.remove_tactical_env_file()
             self.assertFalse(dev_stack.TACTICAL_ENV_FILE.exists())
             dev_stack.remove_tactical_env_file()
+
+    def test_supervised_env_omits_claim_and_records_profile_identity(self):
+        with mock.patch.object(
+            dev_stack, "TACTICAL_ENV_FILE", Path(tempfile.mkdtemp()) / ".env.tactical"
+        ):
+            dev_stack.write_tactical_env_file(
+                url="http://127.0.0.1:24920",
+                database="adventuresim-dev-tactical-play-animation-abc123",
+                port=24922,
+                mission_id="mission:animation-123",
+                scene_key="hills",
+                character_id=0,
+                enemy_count=1,
+                tactical_claim=None,
+                profile="tactical-play-animation",
+                worktree_fingerprint_value="abc123",
+                run_dir=Path("C:/Users/test/runtime/run"),
+                session_id="session-123",
+                play_mode="animation",
+            )
+            content = dev_stack.TACTICAL_ENV_FILE.read_text()
+            self.assertNotIn("ADVENTURESIM_TACTICAL_CLAIM", content)
+            self.assertIn("TACTICAL_SESSION_ID=session-123", content)
+            self.assertIn("TACTICAL_PLAY_MODE=animation", content)
+            self.assertIn("TACTICAL_RUN_DIR=C:/Users/test/runtime/run", content)
+            self.assertNotIn("TACTICAL_RUN_DIR=C:\\", content)
+
+    def test_tactical_play_parser_profiles(self):
+        parser = dev_stack.create_parser()
+        animation = parser.parse_args(["tactical-play", "animation"])
+        diagnostic = parser.parse_args(["tactical-play", "diagnostic"])
+        no_shadows = parser.parse_args([
+            "tactical-play", "diagnostic", "25020", "--graphics-preset", "no-shadows"
+        ])
+        traced = parser.parse_args([
+            "tactical-play", "animation", "--presentation-trace", "required"
+        ])
+        no_vsync = parser.parse_args([
+            "tactical-play", "animation", "--present-mode", "auto-no-vsync"
+        ])
+        captured = parser.parse_args([
+            "tactical-play", "diagnostic", "--window-capture", "required"
+        ])
+        display_dx12 = parser.parse_args([
+            "tactical-play", "diagnostic", "--capture-source", "display",
+            "--render-backend", "dx12",
+        ])
+        networking = parser.parse_args(["tactical-play", "networking", "25000"])
+        self.assertEqual(animation.base_port, 24920)
+        self.assertEqual(animation.presentation_trace, "auto")
+        self.assertEqual(diagnostic.mode, "diagnostic")
+        self.assertEqual(no_shadows.graphics_preset, "no-shadows")
+        self.assertEqual(traced.presentation_trace, "required")
+        self.assertEqual(no_vsync.present_mode, "auto-no-vsync")
+        self.assertEqual(diagnostic.window_capture, "auto")
+        self.assertEqual(diagnostic.capture_source, "window")
+        self.assertEqual(diagnostic.render_backend, "auto")
+        self.assertEqual(captured.window_capture, "required")
+        self.assertEqual(display_dx12.capture_source, "display")
+        self.assertEqual(display_dx12.render_backend, "dx12")
+        self.assertEqual(networking.base_port, 25000)
+
+    def test_removed_high_environment_light_preset_is_rejected(self):
+        parser = dev_stack.create_parser()
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            parser.parse_args([
+                "tactical-play",
+                "diagnostic",
+                "25020",
+                "--graphics-preset",
+                "high-environment-light",
+            ])
+
+    def test_animation_profile_does_not_enable_unbounded_frame_logging(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "adventuresim-tactical-client.exe"
+            executable.touch()
+            process = mock.Mock(pid=1234)
+            process.poll.return_value = None
+            config = {
+                "worktree_fingerprint": "abc",
+                "session_id": "session-123456789",
+                "character_id": 0,
+                "tactical_port": 24922,
+                "play_mode": "animation",
+                "window_capture": "off",
+            }
+            with mock.patch.object(
+                dev_stack, "tactical_executable", return_value=executable
+            ), mock.patch.object(
+                dev_stack, "spawn_recorded", return_value=process
+            ) as spawn, mock.patch.object(dev_stack.time, "sleep"):
+                dev_stack.launch_recorded_tactical_client(root, config)
+            command = spawn.call_args.args[0]
+            self.assertNotIn("--animation-log", command)
+            self.assertNotIn("--input-script", command)
+            self.assertNotIn("animation_log", config)
+
+    def test_diagnostic_profile_waits_for_capture_before_scripted_motion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "adventuresim-tactical-client.exe"
+            executable.touch()
+            process = mock.Mock(pid=1234)
+            process.poll.return_value = None
+            config = {
+                "worktree_fingerprint": "abc",
+                "session_id": "session-123456789",
+                "character_id": 0,
+                "tactical_port": 24922,
+                "play_mode": "diagnostic",
+                "window_capture": "required",
+            }
+            with mock.patch.object(
+                dev_stack, "tactical_executable", return_value=executable
+            ), mock.patch.object(
+                dev_stack, "spawn_recorded", return_value=process
+            ), mock.patch.object(dev_stack.time, "sleep"):
+                dev_stack.launch_recorded_tactical_client(root, config)
+            script = json.loads(Path(config["input_script"]).read_text())
+            self.assertEqual(script["commands"][0]["type"], "wait_for_signal")
+            self.assertEqual(
+                script["commands"][0]["path"], config["capture_ready_signal"]
+            )
+            self.assertEqual(script["commands"][1]["type"], "rotate")
+            self.assertIn("animation_log", config)
+
+    def test_presentmon_path_can_be_configured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "PresentMon.exe"
+            executable.touch()
+            with mock.patch.dict(os.environ, {"PRESENTMON_PATH": str(executable)}):
+                self.assertEqual(dev_stack.find_presentmon(), executable)
+
+    def test_obs_path_can_be_configured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "obs64.exe"
+            executable.touch()
+            with mock.patch.dict(os.environ, {"OBS_PATH": str(executable)}):
+                self.assertEqual(dev_stack.find_obs(), executable)
+
+    def test_obs_monitor_selection_matches_active_display(self):
+        items = [
+            {"itemName": "Display 1: Integrated Display (1920x1080)", "itemValue": "display-1"},
+            {"itemName": "Display 2: Home Monitor (2560x1440)", "itemValue": "display-2"},
+        ]
+        geometry = {
+            "monitor_name": "Home Monitor",
+            "monitor_width": 2560,
+            "monitor_height": 1440,
+            "monitor_left": 1920,
+            "monitor_top": 0,
+        }
+        self.assertEqual(dev_stack.select_obs_monitor_id(items, geometry), "display-2")
+        self.assertEqual(
+            dev_stack.select_obs_monitor_id(items, geometry, "display-1"),
+            "display-1",
+        )
+        with self.assertRaisesRegex(RuntimeError, "OBS_MONITOR_ID"):
+            dev_stack.select_obs_monitor_id(items, geometry, "missing")
+
+    def test_obs_monitor_selection_rejects_ambiguous_display(self):
+        items = [
+            {"itemName": "Display: Same Monitor", "itemValue": "one"},
+            {"itemName": "Display: Same Monitor", "itemValue": "two"},
+        ]
+        geometry = {
+            "monitor_name": "Same Monitor",
+            "monitor_width": 1920,
+            "monitor_height": 1080,
+            "monitor_left": 0,
+            "monitor_top": 0,
+        }
+        with self.assertRaisesRegex(RuntimeError, "uniquely match"):
+            dev_stack.select_obs_monitor_id(items, geometry)
+
+    def test_obs_screenshot_readiness_requires_nonblack_pixels(self):
+        def png_data_url(rgb):
+            def chunk(kind, data):
+                return (
+                    dev_stack.struct.pack(">I", len(data))
+                    + kind
+                    + data
+                    + b"\0\0\0\0"
+                )
+
+            header = dev_stack.struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+            payload = (
+                b"\x89PNG\r\n\x1a\n"
+                + chunk(b"IHDR", header)
+                + chunk(b"IDAT", dev_stack.zlib.compress(b"\0" + bytes(rgb)))
+                + chunk(b"IEND", b"")
+            )
+            return "data:image/png;base64," + dev_stack.base64.b64encode(payload).decode()
+
+        black = png_data_url((0, 0, 0))
+        visible = png_data_url((12, 24, 36))
+        self.assertFalse(dev_stack.obs_screenshot_has_visible_pixels(black))
+        self.assertTrue(dev_stack.obs_screenshot_has_visible_pixels(visible))
+        self.assertFalse(dev_stack.obs_screenshot_has_visible_pixels("not an image"))
+
+        class FakeWebSocket:
+            def __init__(self):
+                self.calls = 0
+
+            def request(self, request_type, data=None):
+                self.calls += 1
+                self.assert_request = (request_type, data)
+                return {"imageData": visible if self.calls >= 3 else black}
+
+        websocket = FakeWebSocket()
+        with mock.patch.object(dev_stack.time, "sleep"):
+            dev_stack.wait_for_obs_source_ready(websocket, "Tactical client", 1.0)
+        self.assertEqual(websocket.calls, 3)
+        self.assertEqual(websocket.assert_request[0], "GetSourceScreenshot")
+
+    def test_obs_workspace_uses_portable_named_profile_and_collection(self):
+        class FakeWebSocket:
+            def __init__(self):
+                self.calls = []
+
+            def request(self, request_type, data=None):
+                self.calls.append((request_type, data))
+                if request_type == "GetProfileList":
+                    return {
+                        "currentProfileName": "Developer Profile",
+                        "profiles": ["Developer Profile", "Portable Diagnostics"],
+                    }
+                if request_type == "GetSceneCollectionList":
+                    return {
+                        "currentSceneCollectionName": "Developer Scenes",
+                        "sceneCollections": ["Developer Scenes", "Portable Scenes"],
+                    }
+                return {}
+
+        websocket = FakeWebSocket()
+        config = {}
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {"OBS_PROFILE": "Portable Diagnostics", "OBS_COLLECTION": "Portable Scenes"},
+            clear=True,
+        ), mock.patch.object(dev_stack.time, "sleep"):
+            dev_stack.configure_obs_workspace(websocket, Path(directory), config)
+
+        self.assertIn(
+            ("SetCurrentProfile", {"profileName": "Portable Diagnostics"}),
+            websocket.calls,
+        )
+        self.assertIn(
+            (
+                "SetCurrentSceneCollection",
+                {"sceneCollectionName": "Portable Scenes"},
+            ),
+            websocket.calls,
+        )
+        self.assertFalse(any(call[0] == "CreateProfile" for call in websocket.calls))
+        self.assertFalse(
+            any(call[0] == "CreateSceneCollection" for call in websocket.calls)
+        )
+        self.assertEqual(config["obs_original_profile"], "Developer Profile")
+        self.assertEqual(config["obs_original_collection"], "Developer Scenes")
+
+    def test_restore_obs_workspace_removes_capture_and_restores_user_state(self):
+        class FakeWebSocket:
+            def __init__(self):
+                self.calls = []
+
+            def request(self, request_type, data=None):
+                self.calls.append((request_type, data))
+                return {}
+
+        websocket = FakeWebSocket()
+        config = {
+            "obs_original_scene": "Gameplay",
+            "obs_capture_scene": "Adventure Simulator diagnostic abc",
+            "obs_original_collection": "Developer Scenes",
+            "obs_capture_collection": "Portable Scenes",
+            "obs_original_profile": "Developer Profile",
+            "obs_capture_profile": "Portable Diagnostics",
+        }
+        with mock.patch.object(dev_stack.time, "sleep"):
+            dev_stack.restore_obs_workspace(websocket, config, remove_capture_scene=True)
+        self.assertEqual(
+            websocket.calls,
+            [
+                ("SetCurrentProgramScene", {"sceneName": "Gameplay"}),
+                (
+                    "RemoveScene",
+                    {"sceneName": "Adventure Simulator diagnostic abc"},
+                ),
+                (
+                    "SetCurrentSceneCollection",
+                    {"sceneCollectionName": "Developer Scenes"},
+                ),
+                ("SetCurrentProfile", {"profileName": "Developer Profile"}),
+            ],
+        )
+
+    def test_obs_stop_restores_workspace_even_when_record_stop_fails(self):
+        class FakeWebSocket:
+            def __init__(self):
+                self.calls = []
+                self.closed = False
+
+            def request(self, request_type, data=None):
+                self.calls.append((request_type, data))
+                if request_type == "StopRecord":
+                    raise RuntimeError("recording failed")
+                return {}
+
+            def close(self):
+                self.closed = True
+
+        websocket = FakeWebSocket()
+        capture = dev_stack.ObsCapture(mock.Mock(), websocket, Path("obs.identity.json"))
+        config = {
+            "obs_original_scene": "Idle",
+            "obs_capture_scene": "Adventure Simulator diagnostic abc",
+            "obs_original_collection": "Developer Scenes",
+            "obs_capture_collection": "Portable Scenes",
+            "obs_original_profile": "Developer Profile",
+            "obs_capture_profile": "Portable Diagnostics",
+        }
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            dev_stack, "stop_recorded"
+        ), mock.patch.object(dev_stack.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "recording failed"):
+                dev_stack.stop_obs_capture(capture, Path(directory), config)
+        self.assertIn(
+            ("SetCurrentSceneCollection", {"sceneCollectionName": "Developer Scenes"}),
+            websocket.calls,
+        )
+        self.assertIn(
+            ("SetCurrentProfile", {"profileName": "Developer Profile"}),
+            websocket.calls,
+        )
+        self.assertTrue(websocket.closed)
+
+    def test_capture_gate_is_written_atomically(self):
+        with tempfile.TemporaryDirectory() as directory:
+            signal = Path(directory) / "ready.json"
+            dev_stack.release_capture_gate({"capture_ready_signal": str(signal)})
+            self.assertEqual(json.loads(signal.read_text()), {"ready": True})
+
+    def test_presentation_trace_auto_is_bounded_to_diagnostic_mode(self):
+        self.assertEqual(
+            dev_stack.effective_presentation_trace(
+                dev_stack.TacticalPlayMode.DIAGNOSTIC, "auto"
+            ),
+            "auto",
+        )
+        self.assertEqual(
+            dev_stack.effective_presentation_trace(
+                dev_stack.TacticalPlayMode.ANIMATION, "auto"
+            ),
+            "off",
+        )
+        self.assertEqual(
+            dev_stack.effective_presentation_trace(
+                dev_stack.TacticalPlayMode.COMBAT, "required"
+            ),
+            "required",
+        )
+
+    def test_visual_and_networking_profiles_disable_combat(self):
+        self.assertEqual(
+            dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.ANIMATION), 0
+        )
+        self.assertEqual(
+            dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.DIAGNOSTIC), 0
+        )
+        self.assertEqual(
+            dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.NETWORKING), 0
+        )
+        self.assertEqual(
+            dev_stack.tactical_combat_scale(dev_stack.TacticalPlayMode.COMBAT), 10_000
+        )
+
+    @mock.patch.object(dev_stack, "profile_values")
+    @mock.patch.object(dev_stack, "build_tactical_play", return_value=9)
+    def test_build_failure_prevents_profile_or_mission_creation(self, _build, profile_values):
+        self.assertEqual(
+            dev_stack.tactical_play(dev_stack.TacticalPlayMode.ANIMATION, 24920), 9
+        )
+        profile_values.assert_not_called()
+
+    def test_supervised_state_rejects_stale_worktree_environment(self):
+        environment = {
+            "TACTICAL_PROFILE": "tactical-play-animation",
+            "TACTICAL_WORKTREE_FINGERPRINT": "another-worktree",
+            "TACTICAL_RUN_DIR": "unused",
+            "TACTICAL_SESSION_ID": "session",
+            "TACTICAL_SPACETIMEDB_URL": "http://127.0.0.1:24920",
+            "TACTICAL_SPACETIMEDB_MODULE": "db",
+            "TACTICAL_PORT": "24922",
+        }
+        with mock.patch.object(dev_stack, "read_tactical_env_file", return_value=environment):
+            with self.assertRaisesRegex(ValueError, "another worktree"):
+                dev_stack.supervised_tactical_state()
+
+    def test_readiness_rejects_unrecorded_listener(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            metadata = root / "server.json"
+            log = root / "server.log"
+            recorded = {"pid": 10, "executable": "server", "start_token": "1"}
+            metadata.write_text(json.dumps({"process": recorded}))
+            log.write_text("")
+            process = mock.Mock()
+            process.poll.return_value = None
+            with mock.patch.object(dev_stack, "identity_matches", return_value=True), \
+                 mock.patch.object(
+                     dev_stack,
+                     "listener_process_snapshot",
+                     return_value={"pid": 11, "executable": "other", "start_token": "1"},
+                 ):
+                with self.assertRaisesRegex(RuntimeError, "unrecorded process"):
+                    dev_stack.wait_for_tactical_server(
+                        process, metadata, log, "http://127.0.0.1:1", "db",
+                        "mission:test", 24922,
+                    )
+
+    def test_readiness_requires_consumed_claim_and_registered_authority(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            metadata = root / "server.json"
+            log = root / "server.log"
+            recorded = {"pid": 10, "executable": "server", "start_token": "1"}
+            metadata.write_text(json.dumps({"process": recorded}))
+            log.write_text("")
+            process = mock.Mock()
+            process.poll.return_value = None
+            with mock.patch.object(dev_stack, "identity_matches", return_value=True), \
+                 mock.patch.object(dev_stack, "listener_process_snapshot", return_value=recorded), \
+                 mock.patch.object(
+                     dev_stack, "sql_mission_row_exists", side_effect=[True, False, False]
+                 ) as sql:
+                self.assertEqual(
+                    dev_stack.wait_for_tactical_server(
+                        process, metadata, log, "http://127.0.0.1:1", "db",
+                        "mission:test", 24922,
+                    ),
+                    recorded,
+                )
+            self.assertEqual(sql.call_count, 3)
+
+    @mock.patch.object(dev_stack, "run_checked")
+    def test_sql_readiness_accepts_cli_quoted_text_rows(self, run_checked):
+        run_checked.return_value = mock.Mock(
+            returncode=0,
+            stdout=' mission_id\n------------\n "mission:animation-123" \n',
+        )
+        self.assertTrue(dev_stack.sql_mission_row_exists(
+            "http://127.0.0.1:24920",
+            "db",
+            "tactical_server_authority",
+            "mission:animation-123",
+        ))
+
+    def test_status_explains_consumed_claim_with_dead_server(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            (run_dir / "spacetime.identity.json").write_text(json.dumps({
+                "listener": {"pid": 10, "executable": "stdb", "start_token": "1"}
+            }))
+            environment = {
+                "TACTICAL_SPACETIMEDB_URL": "http://127.0.0.1:24920",
+                "TACTICAL_SPACETIMEDB_MODULE": "db",
+            }
+            config = {
+                "profile": "tactical-play-animation",
+                "worktree_fingerprint": "abc",
+                "mission_id": "mission:test",
+                "tactical_port": 24922,
+                "native_client": True,
+            }
+            output = io.StringIO()
+            with mock.patch.object(
+                dev_stack, "supervised_tactical_state",
+                return_value=(environment, config, run_dir),
+            ), mock.patch.object(dev_stack, "identity_matches", return_value=True), \
+                 mock.patch.object(
+                     dev_stack, "sql_mission_row_exists", side_effect=[True, False, False]
+                 ), redirect_stdout(output):
+                self.assertEqual(dev_stack.tactical_status(), 1)
+            self.assertIn("claim was already consumed", output.getvalue())
+            self.assertIn("Recovery: just tactical-play animation", output.getvalue())
 
     def test_strategic_only_recipes_skip_tactical_builds(self):
         source = Path(dev_stack.ROOT, "justfile").read_text()

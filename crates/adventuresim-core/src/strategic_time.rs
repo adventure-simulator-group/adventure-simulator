@@ -63,6 +63,10 @@ pub struct ItinerarySegment {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ItineraryForecast {
     pub segments: Vec<ItinerarySegment>,
+    /// Final fatigue ratios in the same bounded order as the input members.
+    pub member_final_fatigue: Vec<f32>,
+    /// Maximum fatigue ratios reached anywhere in the itinerary, in input order.
+    pub member_maximum_fatigue: Vec<f32>,
     pub total_elapsed_minutes: u64,
     pub total_movement_minutes: u64,
     pub truncated: bool,
@@ -204,6 +208,7 @@ pub fn forecast_itinerary(
         return None;
     }
     let mut members = members.to_vec();
+    let mut member_maximum_fatigue = members.iter().map(fatigue_fraction).collect::<Vec<_>>();
     let mut segments = Vec::new();
     let mut movement = 0_u64;
     let mut absolute = start_minute;
@@ -229,6 +234,9 @@ pub fn forecast_itinerary(
                     duration,
                     member.camp_schedule.clone(),
                 );
+            }
+            for (maximum, member) in member_maximum_fatigue.iter_mut().zip(&members) {
+                *maximum = (*maximum).max(fatigue_fraction(member));
             }
             let (average_end, maximum_end) = fatigue_summary(&members);
             segments.push(ItinerarySegment {
@@ -256,6 +264,9 @@ pub fn forecast_itinerary(
             member.calories_used +=
                 STRATEGIC_TRAVEL_KCAL_PER_DAY * duration as f32 / MINUTES_PER_DAY as f32;
         }
+        for (maximum, member) in member_maximum_fatigue.iter_mut().zip(&members) {
+            *maximum = (*maximum).max(fatigue_fraction(member));
+        }
         movement = movement.saturating_add(duration);
         let (average_end, maximum_end) = fatigue_summary(&members);
         segments.push(ItinerarySegment {
@@ -273,6 +284,8 @@ pub fn forecast_itinerary(
     }
     Some(ItineraryForecast {
         segments,
+        member_final_fatigue: members.iter().map(fatigue_fraction).collect(),
+        member_maximum_fatigue,
         total_elapsed_minutes: absolute.saturating_sub(start_minute),
         total_movement_minutes: movement,
         truncated,
@@ -319,6 +332,16 @@ pub fn elapsed_official_minutes(epoch_micros: i64, now_micros: i64) -> u64 {
 /// Convert wall-clock timestamps to the shared absolute strategic calendar.
 pub fn official_minutes(epoch_micros: i64, now_micros: i64) -> u64 {
     WORLD_START_MINUTE.saturating_add(elapsed_official_minutes(epoch_micros, now_micros))
+}
+
+/// Choose an epoch whose derived official clock is exactly `target_minutes`
+/// at `now_micros`. Developer tooling uses this to move a disposable world's
+/// wall clock alongside an explicitly advanced character without changing the
+/// production conversion rate.
+pub fn epoch_micros_for_official_minute(now_micros: i64, target_minutes: u64) -> Option<i64> {
+    let elapsed_minutes = target_minutes.saturating_sub(WORLD_START_MINUTE);
+    let elapsed_micros = (u128::from(elapsed_minutes) * 84_000_000).div_ceil(73);
+    now_micros.checked_sub(i64::try_from(elapsed_micros).ok()?)
 }
 
 /// Sum the daily minutes assigned to training and labor activities.
@@ -410,6 +433,20 @@ mod tests {
         const DAYS_BEFORE_AUGUST: u64 = 31 + 28 + 31 + 30 + 31 + 30 + 31;
         assert_eq!(WORLD_START_DAY_OF_YEAR, DAYS_BEFORE_AUGUST + 19);
         assert_eq!(official_minutes(42, 42), WORLD_START_MINUTE);
+    }
+
+    #[test]
+    fn developer_epoch_round_trips_exact_official_minutes() {
+        let now = 2_000_000_000_000_000_i64;
+        for target in [
+            WORLD_START_MINUTE,
+            WORLD_START_MINUTE + 1,
+            WORLD_START_MINUTE + MINUTES_PER_DAY,
+            WORLD_START_MINUTE + 16 * MINUTES_PER_YEAR,
+        ] {
+            let epoch = epoch_micros_for_official_minute(now, target).unwrap();
+            assert_eq!(official_minutes(epoch, now), target);
+        }
     }
 
     #[test]
@@ -548,6 +585,44 @@ mod tests {
                 ItinerarySegmentKind::Walking
             ]
         );
+    }
+
+    #[test]
+    fn itinerary_preserves_per_member_final_fatigue_in_input_order() {
+        let forecast = forecast_itinerary(
+            8 * 60,
+            60,
+            8 * 60,
+            false,
+            CampDurationPolicy::Auto,
+            &[
+                itinerary_member(0.0, 6_000.0),
+                itinerary_member(0.0, 12_000.0),
+            ],
+        )
+        .unwrap();
+        assert_eq!(forecast.member_final_fatigue.len(), 2);
+        assert_eq!(forecast.member_maximum_fatigue.len(), 2);
+        assert!(forecast.member_final_fatigue[0] > forecast.member_final_fatigue[1]);
+        assert!(forecast.member_maximum_fatigue[0] >= forecast.member_final_fatigue[0]);
+        assert_eq!(
+            forecast.segments.last().unwrap().maximum_fatigue_end,
+            forecast.member_final_fatigue[0]
+        );
+    }
+
+    #[test]
+    fn itinerary_preserves_per_member_peak_even_when_camp_lowers_final_fatigue() {
+        let forecast = forecast_itinerary(
+            6 * 60,
+            600,
+            8 * 60,
+            false,
+            CampDurationPolicy::Auto,
+            &[itinerary_member(5_000.0, 6_000.0)],
+        )
+        .unwrap();
+        assert!(forecast.member_maximum_fatigue[0] > forecast.member_final_fatigue[0]);
     }
 
     #[test]

@@ -128,7 +128,8 @@ macro_rules! open_catalog_id {
 open_catalog_id!(SiteKind {
     Cave => "cave", Crypt => "crypt", ForestCamp => "forest_camp",
     OccupiedHouse => "occupied_house", Riverside => "riverside",
-    Graveyard => "graveyard", Roadside => "roadside", AbandonedFarm => "abandoned_farm"
+    Graveyard => "graveyard", Roadside => "roadside", AbandonedFarm => "abandoned_farm",
+    Well => "well"
 });
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -279,7 +280,7 @@ pub struct GenerationContext {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WitnessCandidate {
-    pub npc_id: String,
+    pub resident_character_id: u64,
     pub display_name: String,
     pub demographic: WitnessDemographic,
     pub age_band: String,
@@ -299,7 +300,7 @@ pub struct WitnessCandidate {
 /// into private demographic sex.
 #[derive(Clone, Copy, Debug)]
 pub struct VisibleWitnessCandidateInput<'a> {
-    pub npc_id: &'a str,
+    pub resident_character_id: u64,
     pub display_name: &'a str,
     pub age_band: &'a str,
     pub presentation: &'a str,
@@ -319,7 +320,7 @@ pub struct VisibleWitnessCandidateInput<'a> {
 pub fn visible_witness_presence_version(input: &VisibleWitnessCandidateInput<'_>) -> u64 {
     let commitment = serde_json::to_string(&(
         "visible-witness-presence-v1",
-        input.npc_id,
+        input.resident_character_id,
         input.age_band.to_ascii_lowercase(),
         input.presentation.to_ascii_lowercase(),
         input.profession,
@@ -365,7 +366,7 @@ pub fn visible_witness_candidate(
         allowed_circumstances.insert(Circumstance::SecretRiversideMeeting);
     }
     Some(WitnessCandidate {
-        npc_id: input.npc_id.into(),
+        resident_character_id: input.resident_character_id,
         display_name: input.display_name.into(),
         demographic,
         age_band,
@@ -387,7 +388,7 @@ pub fn visible_witness_candidate(
 /// zero, not a low-probability candidate.
 pub fn retain_navigable_witnesses(
     candidates: Vec<WitnessCandidate>,
-    visible_tabs: &[crate::settlement_economy::SettlementNpcTab],
+    visible_tabs: &[crate::settlement_economy::SettlementResidentTab],
 ) -> Vec<WitnessCandidate> {
     candidates
         .into_iter()
@@ -405,7 +406,7 @@ pub fn retain_navigable_witnesses(
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GeneratedPatternTarget {
     pub cohort_id: String,
-    pub npc_id: String,
+    pub resident_character_id: u64,
     pub demographic: WitnessDemographic,
     pub age_band: String,
     pub sex: String,
@@ -421,7 +422,7 @@ pub fn pattern_target_matches(
     current: &WitnessCandidate,
     current_settlement_id: &str,
 ) -> bool {
-    expected.npc_id == current.npc_id
+    expected.resident_character_id == current.resident_character_id
         && expected.demographic == current.demographic
         && expected.age_band == current.age_band
         && expected.sex == current.sex
@@ -510,7 +511,7 @@ pub enum OutbreakCulpability {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResponsibleOutbreakNpc {
-    pub npc_id: String,
+    pub resident_character_id: u64,
     pub culpability: OutbreakCulpability,
 }
 
@@ -560,22 +561,15 @@ pub enum OutbreakEnvironmentalReservoir {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutbreakExposure {
     pub patient_ref: String,
-    /// Existing settlement NPC whose portrait and public identity present this
-    /// private medical subject after observer discovery.
-    pub presentation_npc_id: String,
+    /// Canonical existing settlement resident who is the medical subject.
+    pub patient_character_id: u64,
     /// Explicit authoritative kinship only. `None` means clergy/civic custody;
     /// generation must never infer family from witness adjacency.
-    pub family_npc_id: Option<String>,
-    /// Stable private disease inputs retained for replay and pathology.
-    pub patient_key: u64,
     pub episode_id: u64,
-    pub immunity_milli: u16,
-    pub phenotype_key_version: u16,
     pub exposed_at: u64,
     pub became_symptomatic_at: u64,
     pub died_at: Option<u64>,
     pub death_kind: Option<OutbreakPatientDeathKind>,
-    pub terminal_failure: Option<crate::disease::TerminalFailure>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -685,7 +679,7 @@ pub enum TestimonyDelivery {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WitnessBinding {
     pub id: WitnessId,
-    pub npc_id: String,
+    pub resident_character_id: u64,
     pub display_name: String,
     pub demographic: WitnessDemographic,
     pub circumstance: Circumstance,
@@ -825,8 +819,11 @@ pub const fn failed_action_outcome_wording(alternate_available: bool) -> &'stati
     }
 }
 
-pub fn exact_referral_contact(expected_npc_id: &str, addressed_npc_id: &str) -> bool {
-    expected_npc_id == addressed_npc_id
+pub fn exact_referral_contact(
+    expected_resident_character_id: u64,
+    addressed_resident_character_id: u64,
+) -> bool {
+    expected_resident_character_id == addressed_resident_character_id
 }
 
 pub fn generated_testimony_projection_plan(
@@ -926,7 +923,7 @@ pub fn transition_referred_contact_action(
     states: &mut [ReferredContactActionState],
     owner_character_id: u64,
     canonical_case_id: &str,
-    witness_npc_id: &str,
+    witness_resident_character_id: u64,
 ) -> Result<ReferredContactTransition, &'static str> {
     let matches: Vec<_> = states
         .iter()
@@ -936,7 +933,7 @@ pub fn transition_referred_contact_action(
                 && capability.case_id == canonical_case_id
                 && capability.method == "locate_contact"
                 && capability.target_kind == "contact"
-                && capability.target_id == witness_npc_id
+                && capability.target_id == witness_resident_character_id.to_string()
         })
         .map(|(index, _)| index)
         .collect();
@@ -1069,7 +1066,7 @@ pub struct GeneratedFinale {
 pub struct GeneratedDialogueProducer {
     pub action: GeneratedDialogueAction,
     pub objective_id: ObjectiveId,
-    pub recipient_npc_id: String,
+    pub recipient_resident_character_id: u64,
     pub subject_ref: Option<String>,
     pub asset_id: Option<String>,
 }

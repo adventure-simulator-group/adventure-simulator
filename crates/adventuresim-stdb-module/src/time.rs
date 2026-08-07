@@ -1,23 +1,34 @@
 use adventuresim_core::activity::{ActivityLocation, LocationActivity};
 use adventuresim_core::strategic_schedule::{
-    ActivityOutcomeInputs, DailySchedule, SkillHours, apply_organization_training,
-    apply_religion_training, apply_schedule_training, settlement_activity_outcome,
+    ActivityOutcomeInputs, DailySchedule, SkillHours, SocializingSociability,
+    apply_organization_training, apply_religion_training, apply_schedule_training_for_personality,
+    settlement_activity_outcome,
 };
 use adventuresim_core::strategic_time::{
     MINUTES_PER_DAY, MINUTES_PER_YEAR, WORLD_START_MINUTE, allocated_schedule_minutes,
-    official_minutes as calculate_official_minutes,
+    epoch_micros_for_official_minute, official_minutes as calculate_official_minutes,
 };
 use adventuresim_core::{capability::aggregate_bounded_party_check, prelude::*};
-use spacetimedb::{ReducerContext, ScheduleAt, SpacetimeType, Table, reducer, table};
+use spacetimedb::{ReducerContext, SpacetimeType, Table, reducer, table};
 
 use crate::capability::StrategicEquipment;
 use crate::character::character;
 use crate::condition::{character_condition as _, character_strategic_condition as _};
 use crate::disease::character_illness_status as _;
-use crate::investigation::{case_site_authority as _, character_case_site_occupancy as _};
+use crate::investigation::case_site_authority as _;
 use crate::organization::organization_membership as _;
+use crate::personality::{
+    Sociability as CharacterSociability, Transparency as CharacterTransparency,
+    character_personality,
+};
+use crate::relationship::{
+    CommitmentStatus, CourtshipStatus, MarriageStatus, character_kinship as _, courtship as _,
+    exclusive_commitment as _, household_member as _, marriage as _, npc_policy as _,
+    socializing_receipt as _,
+};
 use crate::strategic::{
-    party_authority, party_inventory_item as _, party_member as _, strategic_incident as _,
+    party_authority, party_inventory_item as _, party_journey_encounter_authority as _,
+    party_member as _, road_challenge_authority as _, strategic_incident as _,
 };
 use crate::{
     CharacterAttributes, CharacterSkills, CharacterStats, character_attributes, character_limbs,
@@ -46,19 +57,8 @@ pub struct WorldClock {
     pub epoch_micros: i64,
 }
 
-/// Legacy scheduler row retained so existing databases can migrate without
-/// dropping a table. New clocks are derived on demand and no longer schedule
-/// a write every second.
 #[derive(Clone, Debug)]
-#[table(accessor = world_clock_schedule, scheduled(refresh_world_clock))]
-pub struct WorldClockSchedule {
-    #[primary_key]
-    pub scheduled_id: u64,
-    pub scheduled_at: ScheduleAt,
-}
-
-#[derive(Clone, Debug)]
-#[table(accessor = character_time, public)]
+#[table(accessor = character_time)]
 pub struct CharacterTime {
     #[primary_key]
     pub character_id: u64,
@@ -72,6 +72,9 @@ pub struct ScheduleAllocation {
     pub reading_minutes: u16,
     pub combat_training_minutes: u16,
     pub carousing_minutes: u16,
+    /// Allocated relationship time.  Unlike Carousing this neither requires
+    /// an inn nor grants its incidental morale/incident outcome.
+    pub socializing_minutes: u16,
     pub apprenticeship_minutes: u16,
     pub apprenticeship_organization_id: Option<String>,
     pub profession_practice_minutes: u16,
@@ -115,16 +118,13 @@ pub enum ImmediateActivity {
     Raiding,
 }
 
-/// Daily settlement plan. The empty travel allocation is retained temporarily
-/// for database/client compatibility; travel never applies it.
+/// Daily settlement plan. Strategic travel never trains scheduled skills.
 #[derive(Clone, Debug)]
-#[table(accessor = character_training_schedule, public)]
+#[table(accessor = character_training_schedule)]
 pub struct CharacterTrainingSchedule {
     #[primary_key]
     pub character_id: u64,
     pub downtime: ScheduleAllocation,
-    /// Legacy compatibility field. Reducers keep this empty and travel ignores it.
-    pub travel: ScheduleAllocation,
 }
 
 impl ScheduleAllocation {
@@ -136,25 +136,11 @@ impl ScheduleAllocation {
             self.raiding_minutes,
             self.combat_training_minutes,
             self.carousing_minutes,
+            self.socializing_minutes,
             self.apprenticeship_minutes,
             self.profession_practice_minutes,
             self.reading_minutes,
         ])
-    }
-
-    fn uses_quarter_hours(&self) -> bool {
-        let values = vec![
-            self.labor_minutes,
-            self.prayer_minutes,
-            self.thievery_minutes,
-            self.raiding_minutes,
-            self.combat_training_minutes,
-            self.carousing_minutes,
-            self.apprenticeship_minutes,
-            self.profession_practice_minutes,
-            self.reading_minutes,
-        ];
-        values.into_iter().all(|minutes| minutes % 15 == 0)
     }
 }
 
@@ -190,11 +176,8 @@ fn activity_execution_location(
             origin_settlement_id: Some(settlement_id),
         });
     }
-    if let Some(occupancy) = ctx
-        .db
-        .character_case_site_occupancy()
-        .character_id()
-        .find(character_id)
+    if let Some(occupancy) =
+        crate::investigation::current_character_case_site_occupancy(ctx, character_id)
     {
         let site = ctx
             .db
@@ -236,6 +219,7 @@ pub(crate) fn effective_location_schedule(
         [
             schedule.combat_training_minutes,
             schedule.carousing_minutes,
+            schedule.socializing_minutes,
             schedule.apprenticeship_minutes,
             schedule.profession_practice_minutes,
             schedule.labor_minutes,
@@ -250,6 +234,7 @@ pub(crate) fn effective_location_schedule(
             true,
             true,
             true,
+            true,
             location.allows(LocationActivity::Thievery),
             location.allows(LocationActivity::Raiding),
         ],
@@ -257,12 +242,13 @@ pub(crate) fn effective_location_schedule(
     );
     effective.combat_training_minutes = redistributed[0];
     effective.carousing_minutes = redistributed[1];
-    effective.apprenticeship_minutes = redistributed[2];
-    effective.profession_practice_minutes = redistributed[3];
-    effective.labor_minutes = redistributed[4];
-    effective.prayer_minutes = redistributed[5];
-    effective.thievery_minutes = redistributed[6];
-    effective.raiding_minutes = redistributed[7];
+    effective.socializing_minutes = redistributed[2];
+    effective.apprenticeship_minutes = redistributed[3];
+    effective.profession_practice_minutes = redistributed[4];
+    effective.labor_minutes = redistributed[5];
+    effective.prayer_minutes = redistributed[6];
+    effective.thievery_minutes = redistributed[7];
+    effective.raiding_minutes = redistributed[8];
     effective
 }
 
@@ -297,23 +283,145 @@ pub fn refresh_clock(ctx: &ReducerContext) -> Result<u64, String> {
     Ok(official_minutes)
 }
 
-#[reducer]
-fn refresh_world_clock(ctx: &ReducerContext, schedule: WorldClockSchedule) -> Result<(), String> {
-    if ctx.sender() != ctx.database_identity() {
-        return Err("World clock may only be refreshed by its scheduler".into());
+fn development_related_npc_ids(ctx: &ReducerContext, character_id: u64) -> Vec<u64> {
+    let mut related = std::collections::BTreeSet::new();
+    for row in ctx.db.courtship().iter().filter(|row| {
+        row.status != CourtshipStatus::Ended
+            && (row.first_character_id == character_id || row.second_character_id == character_id)
+    }) {
+        related.insert(if row.first_character_id == character_id {
+            row.second_character_id
+        } else {
+            row.first_character_id
+        });
     }
-    // Remove scheduler rows created by older module versions. The authoritative
-    // value is calculated from `epoch_micros` whenever an action needs it, and
-    // browsers advance their initial snapshot locally.
-    ctx.db
-        .world_clock_schedule()
-        .scheduled_id()
-        .delete(schedule.scheduled_id);
+    for row in ctx.db.exclusive_commitment().iter().filter(|row| {
+        row.status == CommitmentStatus::Reserved
+            && (row.first_character_id == character_id || row.second_character_id == character_id)
+    }) {
+        related.insert(if row.first_character_id == character_id {
+            row.second_character_id
+        } else {
+            row.first_character_id
+        });
+    }
+    for row in ctx.db.marriage().iter().filter(|row| {
+        row.status == MarriageStatus::Active
+            && (row.first_character_id == character_id || row.second_character_id == character_id)
+    }) {
+        related.insert(if row.first_character_id == character_id {
+            row.second_character_id
+        } else {
+            row.first_character_id
+        });
+    }
+    if let Some(member) = ctx.db.household_member().character_id().find(character_id) {
+        related.extend(
+            ctx.db
+                .household_member()
+                .household_id()
+                .filter(&member.household_id)
+                .map(|row| row.character_id),
+        );
+    }
+    related.extend(
+        ctx.db
+            .character_kinship()
+            .subject_id()
+            .filter(character_id)
+            .map(|row| row.related_id),
+    );
+    related.remove(&character_id);
+    related
+        .into_iter()
+        .filter(|related_id| {
+            ctx.db
+                .npc_policy()
+                .character_id()
+                .find(*related_id)
+                .is_some()
+        })
+        .take(32)
+        .collect()
+}
+
+/// Developer-mode acceleration for disposable browser profiles. The target is
+/// derived from the authenticated character rather than caller-supplied time.
+/// Only their active partner, household, and immediate kin NPCs are advanced;
+/// ordinary world NPCs retain the bounded causal scheduler.
+#[reducer]
+pub fn sync_development_clock_to_character(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    let character_target_minutes = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or("Character time record not found")?
+        .minutes;
+    let now_micros = ctx.timestamp.to_micros_since_unix_epoch();
+    let current_minutes = refresh_clock(ctx)?;
+    let development_slice = MINUTES_PER_YEAR;
+    let target_minutes =
+        character_target_minutes.min(current_minutes.saturating_add(development_slice));
+    if target_minutes > current_minutes {
+        let mut clock = ctx
+            .db
+            .world_clock()
+            .id()
+            .find(0)
+            .ok_or("World clock is not initialized")?;
+        clock.official_minutes = target_minutes;
+        clock.epoch_micros = epoch_micros_for_official_minute(now_micros, target_minutes)
+            .ok_or("Developer clock target is out of range")?;
+        ctx.db.world_clock().id().update(clock);
+    }
+
+    // A wedding or birth can introduce a new household member, so perform two
+    // bounded passes. This developer-only path writes the small related cohort
+    // directly; simulating years of survival ticks can exceed a reducer budget.
+    for _ in 0..2 {
+        for related_id in development_related_npc_ids(ctx, character_id) {
+            if let Some(mut time) = ctx.db.character_time().character_id().find(related_id)
+                && time.minutes < target_minutes
+            {
+                time.minutes = target_minutes;
+                ctx.db.character_time().character_id().update(time);
+                settle_lifecycle_after_character_time_write(ctx, related_id, target_minutes)?;
+            }
+        }
+    }
     Ok(())
 }
 
 pub fn initialize_character_time(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
     ensure_character_time(ctx, character_id)
+}
+
+/// The single lifecycle boundary for an authoritative personal-clock write.
+/// Callers finish injury/disease settlement first so wedding cancellation and
+/// widowhood observe the final alive state at this frontier.
+pub(crate) fn settle_lifecycle_after_character_time_write(
+    ctx: &ReducerContext,
+    character_id: u64,
+    minute: u64,
+) -> Result<(), String> {
+    crate::relationship::settle_character_age(ctx, character_id, minute);
+    crate::continuity::settle_continuity_for_character(ctx, character_id, minute)?;
+    crate::residence::settle_residence_billing(ctx, character_id)?;
+    crate::relationship::settle_due_weddings(ctx, character_id, minute)?;
+    crate::relationship::settle_due_births(ctx, character_id, minute)?;
+    crate::relationship::settle_secret_courtship_discovery_for_character(
+        ctx,
+        character_id,
+        minute,
+    )?;
+    crate::relationship::settle_marriage_lifecycle_for_character(ctx, character_id, minute);
+    crate::outbreak::refresh_patient_context_after_time_write(ctx, character_id, minute);
+    Ok(())
 }
 
 /// Record time spent travelling without applying recovery, activities, or
@@ -332,6 +440,19 @@ pub fn advance_character_time(
         .find(character_id)
         .ok_or_else(|| "Character time record not found".to_string())?;
     let starting_minute = character_time.minutes;
+    let requested_end = starting_minute.saturating_add(minutes);
+    if let Some(boundary) = crate::relationship::next_lifecycle_boundary(
+        ctx,
+        character_id,
+        starting_minute,
+        requested_end,
+    ) {
+        let first = boundary.saturating_sub(starting_minute);
+        if !advance_character_time(ctx, character_id, first)? {
+            return Ok(false);
+        }
+        return advance_character_time(ctx, character_id, minutes.saturating_sub(first));
+    }
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, false)?;
     let (elapsed, terminal) =
@@ -354,10 +475,16 @@ pub fn advance_character_time(
     crate::organization::settle_membership_dues(ctx, character_id)?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         return Ok(false);
     }
     crate::condition::apply_travel_condition(ctx, character_id, starting_minute, elapsed, 0)?;
+    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(true)
 }
@@ -377,6 +504,24 @@ fn advance_character_time_in_plan(
         .find(character_id)
         .ok_or_else(|| "Character time record not found".to_string())?;
     let starting_minute = character_time.minutes;
+    let requested_end = starting_minute.saturating_add(minutes);
+    if let Some(boundary) = crate::relationship::next_lifecycle_boundary(
+        ctx,
+        character_id,
+        starting_minute,
+        requested_end,
+    ) {
+        let first = boundary.saturating_sub(starting_minute);
+        if !advance_character_time_in_plan(ctx, character_id, first, plan)? {
+            return Ok(false);
+        }
+        return advance_character_time_in_plan(
+            ctx,
+            character_id,
+            minutes.saturating_sub(first),
+            plan,
+        );
+    }
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, false)?;
     let (elapsed, terminal) = crate::disease::clip_elapsed_for_disease_in_plan(
@@ -396,10 +541,16 @@ fn advance_character_time_in_plan(
     crate::organization::settle_membership_dues(ctx, character_id)?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(settled.elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         return Ok(false);
     }
     crate::condition::apply_travel_condition(ctx, character_id, starting_minute, elapsed, 0)?;
+    crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     crate::capability::refresh_character_capability(ctx, character_id)?;
     Ok(true)
 }
@@ -546,12 +697,30 @@ pub(crate) fn synchronize_party_activity_time(
     ctx: &ReducerContext,
     member_ids: &[u64],
     leader_id: u64,
-) -> Result<u64, String> {
+) -> Result<Option<u64>, String> {
     if !member_ids.contains(&leader_id) {
         return Err("Party leader is not a living activity participant".into());
     }
     for member_id in member_ids {
         synchronize_character_time(ctx, *member_id)?;
+    }
+    if member_ids.iter().any(|member_id| {
+        ctx.db
+            .character()
+            .id()
+            .find(*member_id)
+            .is_none_or(|character| !character.alive)
+    }) {
+        if let Some(party_id) = ctx
+            .db
+            .character()
+            .id()
+            .find(leader_id)
+            .and_then(|character| character.party_id)
+        {
+            let _ = crate::strategic::normalize_and_elect_party_leader(ctx, &party_id);
+        }
+        return Ok(None);
     }
     let start = member_ids
         .iter()
@@ -565,6 +734,12 @@ pub(crate) fn synchronize_party_activity_time(
         .max()
         .ok_or("Party has no strategic clock")?;
     for member_id in member_ids {
+        let alive = ctx
+            .db
+            .character()
+            .id()
+            .find(*member_id)
+            .is_some_and(|character| character.alive);
         let minute = ctx
             .db
             .character_time()
@@ -572,13 +747,119 @@ pub(crate) fn synchronize_party_activity_time(
             .find(*member_id)
             .ok_or("Party member has no strategic clock")?
             .minutes;
-        if minute < start
-            && !advance_character_wait_time(ctx, *member_id, start.saturating_sub(minute))?
-        {
-            return Err("Every party member must survive clock synchronization".into());
+        let Some(catch_up) = terminal_catch_up_minutes(alive, minute, start) else {
+            continue;
+        };
+        if !advance_character_wait_time(ctx, *member_id, catch_up)? {
+            if let Some(party_id) = ctx
+                .db
+                .character()
+                .id()
+                .find(leader_id)
+                .and_then(|character| character.party_id)
+            {
+                let _ = crate::strategic::normalize_and_elect_party_leader(ctx, &party_id);
+            }
+            return Ok(None);
         }
     }
-    Ok(start)
+    Ok(Some(start))
+}
+
+fn terminal_catch_up_minutes(
+    alive_after_official_sync: bool,
+    minute: u64,
+    target: u64,
+) -> Option<u64> {
+    (alive_after_official_sync && minute < target).then(|| target.saturating_sub(minute))
+}
+
+/// Commit ordinary catch-up to a co-located party's furthest personal clock
+/// before a shared strategic action performs its atomic readiness check.
+/// Terminal consequences are intentionally committed here: callers observe
+/// and recover from them instead of repeatedly rolling them back with the
+/// attempted action.
+#[reducer]
+pub fn synchronize_party_for_activity(ctx: &ReducerContext, leader_id: u64) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, leader_id)?;
+    let leader = crate::character::require_living_character(ctx, leader_id)?;
+    let party_id = leader
+        .party_id
+        .clone()
+        .ok_or("Activity synchronization requires a party")?;
+    let party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    if party.leader_id != leader_id {
+        return Err("Only the current party leader can synchronize party activity".into());
+    }
+    let member_ids = crate::strategic::living_party_member_ids(ctx, &party_id);
+    if member_ids.is_empty() || !member_ids.contains(&leader_id) {
+        return Err("Party has no living leader for activity synchronization".into());
+    }
+    for member_id in &member_ids {
+        let member = ctx
+            .db
+            .character()
+            .id()
+            .find(*member_id)
+            .ok_or("Party member not found")?;
+        let together_at_settlement = leader.current_settlement_id.is_some()
+            && member.current_settlement_id == leader.current_settlement_id
+            && member.current_settlement_id == party.current_settlement_id;
+        if member.party_id.as_deref() != Some(party_id.as_str())
+            || !(together_at_settlement
+                || crate::world_actor::characters_are_contextually_present(
+                    ctx, leader_id, *member_id,
+                ))
+        {
+            return Err("Party members must be co-located before activity synchronization".into());
+        }
+    }
+    for member_id in &member_ids {
+        synchronize_character_time(ctx, *member_id)?;
+    }
+    let target = member_ids
+        .iter()
+        .map(|member_id| {
+            ctx.db
+                .character_time()
+                .character_id()
+                .find(*member_id)
+                .map(|time| time.minutes)
+                .ok_or("Party member has no strategic clock")
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .max()
+        .ok_or("Party has no strategic clock")?;
+    for member_id in &member_ids {
+        let alive = ctx
+            .db
+            .character()
+            .id()
+            .find(*member_id)
+            .is_some_and(|character| character.alive);
+        let minute = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(*member_id)
+            .ok_or("Party member has no strategic clock")?
+            .minutes;
+        if let Some(catch_up) = terminal_catch_up_minutes(alive, minute, target) {
+            let _survived = advance_character_wait_time(ctx, *member_id, catch_up)?;
+        }
+    }
+    let _ = crate::strategic::normalize_and_elect_party_leader(ctx, &party_id);
+    for member_id in crate::strategic::living_party_member_ids(ctx, &party_id) {
+        let _ = crate::condition::refresh_character_strategic_condition(ctx, member_id);
+        let _ = crate::capability::refresh_character_capability(ctx, member_id);
+    }
+    Ok(())
 }
 
 /// Neutral/location-appropriate personal time for waiting and procedures. It
@@ -598,6 +879,19 @@ pub fn advance_character_wait_time(
         .find(character_id)
         .ok_or("Character time record not found")?;
     let starting_minute = time.minutes;
+    let requested_end = starting_minute.saturating_add(minutes);
+    if let Some(boundary) = crate::relationship::next_lifecycle_boundary(
+        ctx,
+        character_id,
+        starting_minute,
+        requested_end,
+    ) {
+        let first = boundary.saturating_sub(starting_minute);
+        if !advance_character_wait_time(ctx, character_id, first)? {
+            return Ok(false);
+        }
+        return advance_character_wait_time(ctx, character_id, minutes.saturating_sub(first));
+    }
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, true)?;
     let (elapsed, terminal) =
@@ -618,7 +912,7 @@ pub fn advance_character_wait_time(
         settled.elapsed,
         false,
         if at_settlement {
-            adventuresim_core::survival::FieldShelter::Tent
+            adventuresim_core::survival::FieldShelter::Indoor
         } else {
             adventuresim_core::survival::FieldShelter::Bivouac
         },
@@ -626,6 +920,11 @@ pub fn advance_character_wait_time(
     crate::organization::settle_membership_dues(ctx, character_id)?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(settled.elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         return Ok(false);
     }
@@ -653,6 +952,25 @@ pub fn advance_character_wait_time_in_plan(
         .character_id()
         .find(character_id)
         .ok_or("Character time record not found")?;
+    let starting_minute = time.minutes;
+    let requested_end = starting_minute.saturating_add(minutes);
+    if let Some(boundary) = crate::relationship::next_lifecycle_boundary(
+        ctx,
+        character_id,
+        starting_minute,
+        requested_end,
+    ) {
+        let first = boundary.saturating_sub(starting_minute);
+        if !advance_character_wait_time_in_plan(ctx, character_id, first, plan)? {
+            return Ok(false);
+        }
+        return advance_character_wait_time_in_plan(
+            ctx,
+            character_id,
+            minutes.saturating_sub(first),
+            plan,
+        );
+    }
     let injury_limit =
         crate::surgery::preview_elapsed_for_injuries(ctx, character_id, minutes, true)?;
     let (elapsed, terminal) = crate::disease::clip_elapsed_for_disease_in_plan(
@@ -668,6 +986,11 @@ pub fn advance_character_wait_time_in_plan(
     crate::organization::settle_membership_dues(ctx, character_id)?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(settled.elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         return Ok(false);
     }
@@ -691,7 +1014,6 @@ fn default_schedule(character_id: u64) -> CharacterTrainingSchedule {
     CharacterTrainingSchedule {
         character_id,
         downtime: ScheduleAllocation::default(),
-        travel: ScheduleAllocation::default(),
     }
 }
 
@@ -742,13 +1064,9 @@ fn validate_organization_schedule(
             .ok_or("Professional practice time requires an organization")?;
         let row =
             crate::organization::require_activity_membership(ctx, character_id, organization_id)?;
-        let definition = adventuresim_core::organization::organization(organization_id)
-            .ok_or("Unknown organization")?;
-        let rank = definition
-            .rank(&row.rank_id)
-            .ok_or("Membership references an unknown organization rank")?;
-        if !rank.practice_allowed {
-            return Err("This organization rank does not permit independent practice".into());
+        let role = crate::organization::membership_role(ctx, &row)?;
+        if !role.practice_allowed {
+            return Err("This organization role does not permit independent practice".into());
         }
     }
     Ok(())
@@ -784,10 +1102,9 @@ fn effective_organization_schedule(
                     organization_id,
                 )
                 .ok()?;
-                let definition = adventuresim_core::organization::organization(organization_id)?;
-                definition.rank(&membership.rank_id)
+                crate::organization::membership_role(ctx, &membership).ok()
             })
-            .is_some_and(|rank| rank.practice_allowed);
+            .is_some_and(|role| role.practice_allowed);
         if !eligible {
             effective.profession_practice_minutes = 0;
         }
@@ -835,13 +1152,13 @@ fn apply_training(
     schedule: &ScheduleAllocation,
     elapsed: u64,
     activities: adventuresim_core::strategic_schedule::ActivityTrainingProfile,
-) -> f32 {
+) -> Result<f32, String> {
     let attributes = ctx
         .db
         .character_attributes()
         .character_id()
         .find(character_id)
-        .expect("character attributes must exist while training");
+        .ok_or("Character attributes not found while applying training")?;
     let mut hours = SkillHours {
         polearm: skills.polearm_hours,
         axe: skills.axe_hours,
@@ -876,11 +1193,36 @@ fn apply_training(
         tailoring: skills.tailoring_hours,
         smithing: skills.smithing_hours,
     };
-    let mut excess = apply_schedule_training(
+    let personality = ctx
+        .db
+        .character_personality()
+        .character_id()
+        .find(character_id);
+    let sociability =
+        personality.as_ref().map_or(
+            SocializingSociability::Neutral,
+            |personality| match personality.sociability {
+                CharacterSociability::Neutral => SocializingSociability::Neutral,
+                CharacterSociability::Gregarious => SocializingSociability::Gregarious,
+                CharacterSociability::Solitary => SocializingSociability::Solitary,
+            },
+        );
+    let transparency = personality
+        .as_ref()
+        .map_or(Transparency::Neutral, |personality| {
+            match personality.transparency {
+                CharacterTransparency::Neutral => Transparency::Neutral,
+                CharacterTransparency::Open => Transparency::Open,
+                CharacterTransparency::Guarded => Transparency::Guarded,
+            }
+        });
+    let mut excess = apply_schedule_training_for_personality(
         &mut hours,
         core_schedule(schedule),
         elapsed,
         activities,
+        sociability,
+        transparency,
         &attributes,
     );
     let prayer_religion = ctx
@@ -995,9 +1337,19 @@ fn apply_training(
     if schedule.reading_minutes > 0 {
         let reading_hours =
             elapsed as f32 / MINUTES_PER_DAY as f32 * f32::from(schedule.reading_minutes) / 60.0;
-        excess += apply_reading_training(ctx, character_id, skills, reading_hours, &attributes);
+        excess += apply_reading_training(ctx, character_id, skills, reading_hours, &attributes)?;
     }
-    excess
+    Ok(excess)
+}
+
+fn total_socializing_receipt_minutes(ctx: &ReducerContext, actor_id: u64) -> u64 {
+    ctx.db
+        .socializing_receipt()
+        .actor_id()
+        .filter(actor_id)
+        .fold(0_u64, |total, receipt| {
+            total.saturating_add(receipt.minutes)
+        })
 }
 
 fn terrain_book_skill(terrain: &str) -> Option<Skill> {
@@ -1094,31 +1446,32 @@ fn apply_selected_book(
     book: &adventuresim_core::item_catalog_schema::Book,
     real_hours: f32,
     attributes: &CharacterAttributes,
-) -> adventuresim_core::book::BoundedBookGain {
+) -> Result<adventuresim_core::book::BoundedBookGain, String> {
     use adventuresim_core::item_catalog_schema::BookTarget;
     let medium_rank = adventuresim_core::book::written_rank(
         skills.written_languages.effective(book.medium),
         attributes.intelligence,
     );
-    let Some((rank, aptitude)) = target_snapshot(skills, &book.target, attributes) else {
-        return Default::default();
-    };
+    let (rank, aptitude) = target_snapshot(skills, &book.target, attributes)
+        .ok_or("Book catalog contains an unsupported training target")?;
     let (lower, upper) = adventuresim_core::book::rank_band(book);
     match &book.target {
-        BookTarget::Written { language } => adventuresim_core::book::apply_written_book_training(
-            &mut skills.written_languages,
-            book.medium,
-            *language,
-            rank,
-            attributes.intelligence,
-            lower,
-            upper,
-            real_hours,
-        ),
+        BookTarget::Written { language } => {
+            Ok(adventuresim_core::book::apply_written_book_training(
+                &mut skills.written_languages,
+                book.medium,
+                *language,
+                rank,
+                attributes.intelligence,
+                lower,
+                upper,
+                real_hours,
+            ))
+        }
         BookTarget::Religion { religion } => {
             let baseline = skills.religion_hours;
             let direct = skills.religion_hours.direct_mut(*religion);
-            adventuresim_core::book::apply_bounded_book_training(
+            Ok(adventuresim_core::book::apply_bounded_book_training(
                 direct,
                 rank,
                 aptitude,
@@ -1132,12 +1485,12 @@ fn apply_selected_book(
                     *projected.direct_mut(*religion) = candidate;
                     projected.effective(*religion)
                 },
-            )
+            ))
         }
         BookTarget::Bestiary { category } => {
             let baseline = skills.bestiary_hours;
             let direct = skills.bestiary_hours.direct_mut(*category);
-            adventuresim_core::book::apply_bounded_book_training(
+            Ok(adventuresim_core::book::apply_bounded_book_training(
                 direct,
                 rank,
                 aptitude,
@@ -1151,10 +1504,11 @@ fn apply_selected_book(
                     *projected.direct_mut(*category) = candidate;
                     projected.effective(*category)
                 },
-            )
+            ))
         }
         BookTarget::Terrain { terrain } => {
-            let skill = terrain_book_skill(terrain).expect("validated terrain book");
+            let skill = terrain_book_skill(terrain)
+                .ok_or("Book catalog contains an unsupported terrain target")?;
             let transferred = skill
                 .ordinary_correlations()
                 .iter()
@@ -1163,7 +1517,7 @@ fn apply_selected_book(
                 })
                 .sum::<f32>()
                 .max(0.0);
-            adventuresim_core::book::apply_bounded_book_training(
+            Ok(adventuresim_core::book::apply_bounded_book_training(
                 direct_skill_hours_mut(skills, skill),
                 rank,
                 aptitude,
@@ -1173,11 +1527,11 @@ fn apply_selected_book(
                 medium_rank,
                 |rank| skill.hours_for_rank(rank),
                 |candidate| candidate.max(0.0) + transferred,
-            )
+            ))
         }
         BookTarget::Skill { .. } => {
             let skill = adventuresim_core::book::ordinary_skill(&book.target)
-                .expect("validated ordinary book target");
+                .ok_or("Book catalog contains an unsupported skill target")?;
             let transferred = skill
                 .ordinary_correlations()
                 .iter()
@@ -1186,7 +1540,7 @@ fn apply_selected_book(
                 })
                 .sum::<f32>()
                 .max(0.0);
-            adventuresim_core::book::apply_bounded_book_training(
+            Ok(adventuresim_core::book::apply_bounded_book_training(
                 direct_skill_hours_mut(skills, skill),
                 rank,
                 aptitude,
@@ -1205,7 +1559,7 @@ fn apply_selected_book(
                         candidate + transferred
                     }
                 },
-            )
+            ))
         }
     }
 }
@@ -1216,12 +1570,15 @@ fn apply_reading_training(
     skills: &mut CharacterSkills,
     mut real_hours: f32,
     attributes: &CharacterAttributes,
-) -> f32 {
+) -> Result<f32, String> {
     use crate::item::inventory_item;
     use adventuresim_core::book::{BookCandidate, select_candidate};
-    let Some(character) = ctx.db.character().id().find(character_id) else {
-        return 0.0;
-    };
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character disappeared while applying reading training")?;
     let personal = ctx
         .db
         .inventory_item()
@@ -1280,7 +1637,7 @@ fn apply_reading_training(
         }) else {
             break;
         };
-        let gain = apply_selected_book(skills, selected.book, real_hours, attributes);
+        let gain = apply_selected_book(skills, selected.book, real_hours, attributes)?;
         if gain.accepted_effective_hours <= 0.0 {
             unusable.insert(selected.item_id.to_owned());
             continue;
@@ -1291,7 +1648,7 @@ fn apply_reading_training(
         }
         real_hours = gain.unused_real_hours;
     }
-    excess
+    Ok(excess)
 }
 
 pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
@@ -1299,6 +1656,7 @@ pub(crate) fn core_schedule(schedule: &ScheduleAllocation) -> DailySchedule {
         reading_minutes: schedule.reading_minutes,
         combat_training_minutes: schedule.combat_training_minutes,
         carousing_minutes: schedule.carousing_minutes,
+        socializing_minutes: schedule.socializing_minutes,
         apprenticeship_minutes: schedule.apprenticeship_minutes,
         profession_practice_minutes: schedule.profession_practice_minutes,
         labor: schedule.labor_minutes,
@@ -1465,6 +1823,23 @@ fn apply_activity_outcomes_inner(
             elapsed,
             interval_end_minute,
         )?;
+        crate::relationship::apply_spouse_leisure_conception(
+            ctx,
+            character_id,
+            interval_end_minute.saturating_sub(elapsed),
+            interval_end_minute,
+            core_schedule(schedule),
+        )?;
+        crate::relationship::apply_spouse_leisure_morale(
+            ctx,
+            character_id,
+            interval_end_minute,
+            adventuresim_core::strategic_schedule::restorative_leisure_minutes(
+                core_schedule(schedule),
+                interval_end_minute.saturating_sub(elapsed),
+                elapsed,
+            ),
+        )?;
     }
     Ok(ActivityRisks {
         thievery_discovery: outcome.thievery_discovery_chance,
@@ -1581,17 +1956,28 @@ pub fn perform_immediate_activity(
         .character_time()
         .character_id()
         .update(character_time);
+    let at_settlement = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .is_some_and(|character| character.current_settlement_id.is_some());
     crate::condition::apply_weather_exposure(
         ctx,
         character_id,
         starting_minute,
         elapsed,
         false,
-        adventuresim_core::survival::FieldShelter::Tent,
+        if at_settlement {
+            adventuresim_core::survival::FieldShelter::Indoor
+        } else {
+            adventuresim_core::survival::FieldShelter::Bivouac
+        },
     )?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::condition::apply_elapsed_needs(ctx, character_id, elapsed)?;
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(ctx, character_id, interval_end)?;
     if terminal.is_some() || !settled.alive {
         crate::organization::settle_membership_dues(ctx, character_id)?;
         return Ok(());
@@ -1618,7 +2004,7 @@ pub fn perform_immediate_activity(
         &effective_schedule,
         MINUTES_PER_DAY,
         profile,
-    );
+    )?;
     crate::condition::record_mastery_training_morale(
         ctx,
         character_id,
@@ -1685,17 +2071,15 @@ fn apply_organization_outcomes(
             .ok_or("Eligible organization membership disappeared during the interval")?;
         let definition = adventuresim_core::organization::organization(organization_id)
             .ok_or("Unknown organization")?;
-        let rank = definition
-            .rank(&row.rank_id)
-            .ok_or("Membership references an unknown organization rank")?;
+        let role = crate::organization::membership_role(ctx, &row)?;
         let old = row.practice_minutes_accrued;
         row.practice_minutes_accrued = old.saturating_add(
             elapsed.saturating_mul(u64::from(schedule.profession_practice_minutes)),
         );
         let interval =
-            u64::from(rank.practice_reward_interval_minutes).saturating_mul(ACTIVITY_MINUTE_SCALE);
+            u64::from(role.practice_reward_interval_minutes).saturating_mul(ACTIVITY_MINUTE_SCALE);
         if interval == 0 {
-            return Err("Eligible organization rank has no practice reward cadence".into());
+            return Err("Eligible organization role has no practice reward cadence".into());
         }
         let reward = row.practice_minutes_accrued / interval - old / interval;
         match definition.activity.reward {
@@ -1769,6 +2153,17 @@ fn convalescence_minutes(ctx: &ReducerContext, character_id: u64, physiology_che
 
 /// Spend completed game days at a settlement. Injuries receive all selected
 /// rest first; only the remaining time is eligible for scheduled training.
+///
+/// The boolean entry points predate residences and remain for existing clients.
+/// New callers that need a home should use `rest_at_residence_hours`, which
+/// carries an explicit provision rather than pretending a residence is an inn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SettlementRestProvision {
+    Temple,
+    Inn,
+    Residence,
+}
+
 #[reducer]
 pub fn rest_at_settlement(
     ctx: &ReducerContext,
@@ -1782,7 +2177,11 @@ pub fn rest_at_settlement(
         ctx,
         character_id,
         u64::from(requested_days) * MINUTES_PER_DAY,
-        at_inn,
+        if at_inn {
+            SettlementRestProvision::Inn
+        } else {
+            SettlementRestProvision::Temple
+        },
         true,
         true,
         None,
@@ -1806,7 +2205,34 @@ pub fn rest_at_settlement_hours(
         ctx,
         character_id,
         requested_minutes,
-        at_inn,
+        if at_inn {
+            SettlementRestProvision::Inn
+        } else {
+            SettlementRestProvision::Temple
+        },
+        true,
+        true,
+        None,
+    )
+    .map(|_| ())
+}
+
+/// Rest at an active primary residence in the character's current settlement.
+/// A residence supplies the same full board as an inn, but its recurring costs
+/// are settled through the residence ledger rather than a per-stay fee.
+#[reducer]
+pub fn rest_at_residence_hours(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested_minutes: u64,
+) -> Result<(), String> {
+    crate::strategic::require_strategic_character_authority(ctx, character_id)?;
+    require_character_residence_rest(ctx, character_id)?;
+    rest_for_minutes(
+        ctx,
+        character_id,
+        requested_minutes,
+        SettlementRestProvision::Residence,
         true,
         true,
         None,
@@ -1888,7 +2314,7 @@ pub fn sponsor_party_member_inn_rest(
         ctx,
         patient_id,
         MINUTES_PER_DAY,
-        true,
+        SettlementRestProvision::Inn,
         true,
         true,
         Some(payer_id),
@@ -1905,7 +2331,7 @@ fn require_settlement_rest_service(
     };
     let service =
         required_settlement_rest_service(SettlementDowntimeAccess::PublicService { at_inn })
-            .expect("public settlement rest always names a service");
+            .ok_or("Public settlement rest has no configured service")?;
     if action_service_available(profile, service) {
         Ok(())
     } else {
@@ -1932,11 +2358,31 @@ fn require_character_rest_service(
     require_settlement_rest_service(&settlement.economy, at_inn)
 }
 
+fn require_character_residence_rest(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    let character = crate::character::require_living_character(ctx, character_id)?;
+    let settlement_id = character
+        .current_settlement_id
+        .as_deref()
+        .ok_or("Settlement rest requires the character to be at a settlement")?;
+    let (residence, presence) =
+        crate::residence::active_residence_presence(ctx, character_id, settlement_id)
+            .ok_or("You do not have a residence")?;
+    debug_assert!(
+        residence.status == crate::residence::ResidenceHoldingStatus::Active
+            && residence.settlement_id == settlement_id
+            && matches!(
+                presence.place(),
+                adventuresim_core::strategic_place::StrategicPlaceId::Residence { .. }
+            )
+    );
+    Ok(())
+}
+
 fn rest_for_minutes(
     ctx: &ReducerContext,
     character_id: u64,
     requested_minutes: u64,
-    at_inn: bool,
+    provision: SettlementRestProvision,
     explicit: bool,
     automatic_social: bool,
     inn_sponsor_id: Option<u64>,
@@ -1994,7 +2440,7 @@ fn rest_for_minutes(
     validate_settlement_rest_minutes(requested_minutes)?;
 
     let requested_cost = inn_stay_cost(requested_minutes)?;
-    if at_inn {
+    if provision == SettlementRestProvision::Inn {
         let patient_funds = crate::item::personal_currency_total(ctx, character_id);
         let sponsor_gap = requested_cost.saturating_sub(patient_funds);
         let payment_available = if sponsor_gap == 0 {
@@ -2057,9 +2503,9 @@ fn rest_for_minutes(
         starting_minute,
         elapsed,
         false,
-        adventuresim_core::survival::FieldShelter::Tent,
+        adventuresim_core::survival::FieldShelter::Indoor,
     )?;
-    if at_inn {
+    if provision == SettlementRestProvision::Inn {
         let elapsed_cost = inn_stay_cost(elapsed)?;
         let patient_contribution =
             crate::item::personal_currency_total(ctx, character_id).min(elapsed_cost);
@@ -2073,8 +2519,25 @@ fn rest_for_minutes(
         }
     }
     crate::social::settle_shared_party_time(ctx, character_id);
-    crate::condition::apply_settlement_rest_elapsed_needs(ctx, character_id, elapsed, at_inn)?;
+    crate::condition::apply_settlement_rest_elapsed_needs(
+        ctx,
+        character_id,
+        elapsed,
+        provision != SettlementRestProvision::Temple,
+    )?;
+    crate::condition::apply_settlement_leisure_condition(
+        ctx,
+        character_id,
+        core_schedule(&effective_schedule),
+        elapsed,
+        starting_minute.saturating_add(elapsed),
+    )?;
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         crate::organization::settle_membership_dues(ctx, character_id)?;
         return Ok(0);
@@ -2131,7 +2594,7 @@ fn rest_for_minutes(
             &effective_schedule,
             training_elapsed,
             activities,
-        );
+        )?;
         if let Some((_, language, coefficient)) = conversation_choice {
             excess += apply_oral_language_training(
                 ctx,
@@ -2200,7 +2663,7 @@ pub(crate) fn spend_private_settlement_downtime(
         ctx,
         character_id,
         requested_minutes,
-        false,
+        SettlementRestProvision::Temple,
         explicit,
         true,
         None,
@@ -2213,11 +2676,18 @@ fn spend_private_settlement_downtime_deferred_social(
     character_id: u64,
     requested_minutes: u64,
 ) -> Result<u64, String> {
+    if requested_minutes < MIN_SETTLEMENT_REST_MINUTES {
+        // Departure synchronization is not a player-selected rest. Advance an
+        // exact sub-hour skew through neutral wait authority rather than
+        // bypassing the public settlement-rest duration contract.
+        advance_character_wait_time(ctx, character_id, requested_minutes)?;
+        return Ok(0);
+    }
     rest_for_minutes(
         ctx,
         character_id,
         requested_minutes,
-        false,
+        SettlementRestProvision::Temple,
         false,
         false,
         None,
@@ -2230,7 +2700,7 @@ fn spend_private_settlement_downtime_deferred_social(
 pub(crate) fn synchronize_party_departure_time(
     ctx: &ReducerContext,
     member_ids: &[u64],
-) -> Result<u64, String> {
+) -> Result<Option<u64>, String> {
     if member_ids.is_empty() {
         return Err("Party has no living members".into());
     }
@@ -2287,7 +2757,26 @@ pub(crate) fn synchronize_party_departure_time(
     for (member_id, downtime) in automatic_chat_downtime {
         crate::social::apply_automatic_social_chats(ctx, member_id, downtime)?;
     }
-    Ok(departure)
+    let all_survived = member_ids.iter().all(|member_id| {
+        ctx.db
+            .character()
+            .id()
+            .find(*member_id)
+            .is_some_and(|character| character.alive)
+    });
+    if !all_survived {
+        if let Some(party_id) = member_ids.iter().find_map(|member_id| {
+            ctx.db
+                .character()
+                .id()
+                .find(*member_id)
+                .and_then(|character| character.party_id)
+        }) {
+            let _ = crate::strategic::normalize_and_elect_party_leader(ctx, &party_id);
+        }
+        return Ok(None);
+    }
+    Ok(Some(departure))
 }
 
 pub(crate) fn allowed_camp_schedule(schedule: &ScheduleAllocation) -> ScheduleAllocation {
@@ -2339,6 +2828,11 @@ fn advance_personal_camp_time(
     crate::social::settle_shared_party_time(ctx, member_id);
     crate::condition::apply_elapsed_needs(ctx, member_id, elapsed)?;
     crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        member_id,
+        starting_minute.saturating_add(elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         return Ok(0);
     }
@@ -2379,7 +2873,7 @@ fn advance_personal_camp_time(
             .find(member_id)
             .ok_or("Character skill record not found")?;
         let activities = activity_training_profile(ctx, member_id)?;
-        let excess = apply_training(ctx, member_id, &mut skills, &allowed, downtime, activities);
+        let excess = apply_training(ctx, member_id, &mut skills, &allowed, downtime, activities)?;
         crate::condition::record_mastery_training_morale(ctx, member_id, downtime, excess);
         ctx.db.character_skills().character_id().update(skills);
         crate::condition::apply_settlement_leisure_condition(
@@ -2498,6 +2992,42 @@ pub fn rest_at_camp(
     {
         return Err("The party is not at a field rest location".into());
     }
+    let narrative_authority = ctx
+        .db
+        .party_journey_encounter_authority()
+        .party_id()
+        .find(&party_id);
+    let pending_narrative =
+        if party.current_settlement_id.is_none() && party.camp_destination.is_some() {
+            narrative_authority.as_ref().and_then(|authority| {
+                adventuresim_core::encounter::first_narrative_encounter(
+                    authority.seed,
+                    authority.narrative_rest_elapsed_minutes,
+                    requested_minutes,
+                    adventuresim_core::encounter::NarrativeContext {
+                        kind: adventuresim_core::encounter::NarrativeBoundaryKind::Rest,
+                        in_settlement: false,
+                        another_interruption_pending: ctx
+                            .db
+                            .road_challenge_authority()
+                            .party_id()
+                            .filter(&party_id)
+                            .any(|occurrence| occurrence.open),
+                    },
+                )
+            })
+        } else {
+            None
+        };
+    let requested_minutes = pending_narrative
+        .as_ref()
+        .map_or(requested_minutes, |selection| {
+            selection.boundary_minute.saturating_sub(
+                narrative_authority
+                    .as_ref()
+                    .map_or(0, |authority| authority.narrative_rest_elapsed_minutes),
+            )
+        });
     let members = crate::strategic::living_party_member_ids(ctx, &party_id);
     // This reducer is an explicit player-chosen rest. Washing precedes disease
     // and injury interval clipping, and dead members were excluded above.
@@ -2584,6 +3114,7 @@ pub fn rest_at_camp(
         crate::social::settle_shared_party_time(ctx, member_id);
         crate::condition::apply_elapsed_needs(ctx, member_id, member_elapsed)?;
         crate::disease::finish_disease_interval(ctx, member_id, terminal)?;
+        settle_lifecycle_after_character_time_write(ctx, member_id, interval_end_minute)?;
         if terminal.is_some() || !settled.alive {
             continue;
         }
@@ -2651,7 +3182,7 @@ pub fn rest_at_camp(
                 .ok_or("Character skill record not found")?;
             let activities = activity_training_profile(ctx, member_id)?;
             let mut excess =
-                apply_training(ctx, member_id, &mut skills, &allowed, downtime, activities);
+                apply_training(ctx, member_id, &mut skills, &allowed, downtime, activities)?;
             if let Some((language, coefficient)) = language_choices.get(&member_id) {
                 excess += apply_oral_language_training(
                     ctx,
@@ -2694,6 +3225,26 @@ pub fn rest_at_camp(
         fatigue_after.0,
         fatigue_after.1,
     )?;
+    if let Some(mut authority) = narrative_authority {
+        authority.narrative_rest_elapsed_minutes = authority
+            .narrative_rest_elapsed_minutes
+            .saturating_add(elapsed);
+        let reached = pending_narrative.as_ref().is_some_and(|selection| {
+            selection.boundary_minute == authority.narrative_rest_elapsed_minutes
+        });
+        ctx.db
+            .party_journey_encounter_authority()
+            .party_id()
+            .update(authority);
+        if reached && let Some(narrative) = pending_narrative.as_ref() {
+            crate::strategic::materialize_chance_narrative_encounter(
+                ctx,
+                &party_id,
+                narrative,
+                crate::strategic::NarrativeEncounterOrigin::ChanceRest,
+            )?;
+        }
+    }
     // Reforecast the untravelled part from the fatigue that this particular
     // rest actually removed. The journey record retains all reached camps.
     crate::strategic::refresh_party_journey_forecast(ctx, &party_id)?;
@@ -2737,9 +3288,15 @@ fn party_fatigue_summary(ctx: &ReducerContext, members: &[u64]) -> Result<(f32, 
     Ok((total / members.len() as f32, maximum))
 }
 
-/// Advance through elapsed time. Returns true when a character was forced to
-/// catch up from more than a year behind; callers should skip their action.
-pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<bool, String> {
+/// Advance one stationary character through their ordinary saved schedule to
+/// an explicit personal frontier. This is shared by lazy player catch-up and
+/// bounded autonomous NPC policy; callers choose the target, never the
+/// character being observed.
+pub(crate) fn advance_stationary_character_to(
+    ctx: &ReducerContext,
+    character_id: u64,
+    target_minutes: u64,
+) -> Result<(), String> {
     ensure_character_time(ctx, character_id)?;
     let character = ctx
         .db
@@ -2750,25 +3307,51 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     if !character.alive {
         // A corpse's strategic minute remains the death minute. Lazy reads must
         // not train, recover, consume provisions, or advance it.
-        return Ok(false);
+        return Ok(());
     }
-    let official_minutes = refresh_clock(ctx)?;
     let mut character_time = ctx
         .db
         .character_time()
         .character_id()
         .find(character_id)
         .ok_or_else(|| "Character time record not found".to_string())?;
-    let forced_catch_up =
-        official_minutes.saturating_sub(character_time.minutes) > MINUTES_PER_YEAR;
-    let target_minutes = if forced_catch_up {
-        official_minutes.saturating_sub(MINUTES_PER_YEAR)
-    } else {
-        official_minutes
-    };
+    if target_minutes < character_time.minutes {
+        return Err("Character time cannot be advanced retroactively".into());
+    }
     let requested_elapsed = target_minutes.saturating_sub(character_time.minutes);
     if requested_elapsed == 0 {
-        return Ok(forced_catch_up);
+        return Ok(());
+    }
+    if let Some(boundary) = crate::relationship::next_lifecycle_boundary(
+        ctx,
+        character_id,
+        character_time.minutes,
+        target_minutes,
+    ) {
+        let was_npc_controlled = ctx
+            .db
+            .npc_policy()
+            .character_id()
+            .find(character_id)
+            .is_some();
+        advance_stationary_character_to(ctx, character_id, boundary)?;
+        let alive = ctx
+            .db
+            .character()
+            .id()
+            .find(character_id)
+            .is_some_and(|row| row.alive);
+        let npc_authority_transferred = was_npc_controlled
+            && ctx
+                .db
+                .npc_policy()
+                .character_id()
+                .find(character_id)
+                .is_none();
+        if !alive || npc_authority_transferred {
+            return Ok(());
+        }
+        return advance_stationary_character_to(ctx, character_id, target_minutes);
     }
     let starting_minute = character_time.minutes;
     let saved_schedule = ctx
@@ -2815,16 +3398,40 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         elapsed,
         false,
         if at_settlement {
-            adventuresim_core::survival::FieldShelter::Tent
+            adventuresim_core::survival::FieldShelter::Indoor
         } else {
             adventuresim_core::survival::FieldShelter::Bivouac
         },
     )?;
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::disease::finish_disease_interval(ctx, character_id, terminal)?;
+    settle_lifecycle_after_character_time_write(
+        ctx,
+        character_id,
+        starting_minute.saturating_add(elapsed),
+    )?;
     if terminal.is_some() || !settled.alive {
         crate::organization::settle_membership_dues(ctx, character_id)?;
-        return Ok(forced_catch_up);
+        return Ok(());
+    }
+    let training_elapsed = elapsed.saturating_sub(convalescing);
+    let socializing_before = total_socializing_receipt_minutes(ctx, character_id);
+    if at_settlement && training_elapsed > 0 {
+        crate::relationship::apply_scheduled_socializing(
+            ctx,
+            character_id,
+            effective_schedule.socializing_minutes,
+            target_minutes.saturating_sub(training_elapsed),
+            target_minutes,
+        )?;
+    }
+    let realized_socializing_minutes =
+        total_socializing_receipt_minutes(ctx, character_id).saturating_sub(socializing_before);
+    let mut realized_training_schedule = effective_schedule.clone();
+    if realized_socializing_minutes == 0 {
+        // An unavailable Socializing allocation is downtime/Leisure, not
+        // imaginary practice of Charm, Insight, or Deception.
+        realized_training_schedule.socializing_minutes = 0;
     }
     let mut skills = ctx
         .db
@@ -2833,15 +3440,14 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
         .find(character_id)
         .ok_or_else(|| "Character skill record not found".to_string())?;
     let activities = activity_training_profile(ctx, character_id)?;
-    let training_elapsed = elapsed.saturating_sub(convalescing);
     let excess = apply_training(
         ctx,
         character_id,
         &mut skills,
-        &effective_schedule,
+        &realized_training_schedule,
         training_elapsed,
         activities,
-    );
+    )?;
     crate::condition::record_mastery_training_morale(ctx, character_id, training_elapsed, excess);
     ctx.db.character_skills().character_id().update(skills);
     let risks = apply_activity_outcomes(
@@ -2861,6 +3467,47 @@ pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<
     }
     crate::condition::refresh_character_strategic_condition(ctx, character_id)?;
     crate::organization::settle_membership_dues(ctx, character_id)?;
+    Ok(())
+}
+
+fn official_synchronization_target(
+    official_minutes: u64,
+    current_minute: u64,
+) -> Option<(u64, bool)> {
+    if official_minutes <= current_minute {
+        return None;
+    }
+    let forced_catch_up = official_minutes.saturating_sub(current_minute) > MINUTES_PER_YEAR;
+    let target_minutes = if forced_catch_up {
+        official_minutes.saturating_sub(MINUTES_PER_YEAR)
+    } else {
+        official_minutes
+    };
+    Some((target_minutes, forced_catch_up))
+}
+
+/// Advance through elapsed wall-clock time. Returns true when a character was
+/// forced to catch up from more than a year behind; callers should skip their
+/// action.
+pub fn synchronize_character(ctx: &ReducerContext, character_id: u64) -> Result<bool, String> {
+    ensure_character_time(ctx, character_id)?;
+    let official_minutes = refresh_clock(ctx)?;
+    let current_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .ok_or_else(|| "Character time record not found".to_string())?
+        .minutes;
+    let Some((target_minutes, forced_catch_up)) =
+        official_synchronization_target(official_minutes, current_minute)
+    else {
+        // Explicit settlement downtime may legitimately put a personal clock
+        // ahead of official time. Synchronization only catches characters up;
+        // it must never ask the strict frontier helper to rewind one.
+        return Ok(false);
+    };
+    advance_stationary_character_to(ctx, character_id, target_minutes)?;
     Ok(forced_catch_up)
 }
 
@@ -2875,24 +3522,65 @@ pub fn update_training_schedule(
     ctx: &ReducerContext,
     character_id: u64,
     downtime: ScheduleAllocation,
-    _travel: ScheduleAllocation,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     crate::character::require_living_character(ctx, character_id)?;
     if synchronize_character(ctx, character_id)? {
         return Ok(());
     }
+    let plan = adventuresim_core::strategic_schedule::validate_daily_allocation(
+        [
+            downtime.labor_minutes,
+            downtime.prayer_minutes,
+            downtime.thievery_minutes,
+            downtime.raiding_minutes,
+            downtime.combat_training_minutes,
+            downtime.carousing_minutes,
+            downtime.socializing_minutes,
+            downtime.apprenticeship_minutes,
+            downtime.profession_practice_minutes,
+            downtime.reading_minutes,
+        ],
+        (
+            downtime.apprenticeship_minutes,
+            downtime.apprenticeship_organization_id.clone(),
+        ),
+        (
+            downtime.profession_practice_minutes,
+            downtime.practice_organization_id.clone(),
+        ),
+    )
+    .map_err(|error| error.to_string())?;
+    let [
+        labor,
+        prayer,
+        thievery,
+        raiding,
+        combat_training,
+        carousing,
+        socializing,
+        _,
+        _,
+        reading,
+    ] = plan.activities;
+    let downtime = ScheduleAllocation {
+        reading_minutes: reading.get(),
+        combat_training_minutes: combat_training.get(),
+        carousing_minutes: carousing.get(),
+        socializing_minutes: socializing.get(),
+        apprenticeship_minutes: plan.apprenticeship.minutes(),
+        apprenticeship_organization_id: plan.apprenticeship.organization_id(),
+        profession_practice_minutes: plan.practice.minutes(),
+        practice_organization_id: plan.practice.organization_id(),
+        labor_minutes: labor.get(),
+        prayer_minutes: prayer.get(),
+        thievery_minutes: thievery.get(),
+        raiding_minutes: raiding.get(),
+    };
     let schedule = CharacterTrainingSchedule {
         character_id,
         downtime,
-        travel: ScheduleAllocation::default(),
     };
-    if schedule.downtime.allocated_minutes() > MINUTES_PER_DAY {
-        return Err("The downtime plan must fit within 24 hours".into());
-    }
-    if !schedule.downtime.uses_quarter_hours() {
-        return Err("Schedule allocations must use 15-minute increments".into());
-    }
     validate_organization_schedule(ctx, character_id, &schedule.downtime)?;
     ctx.db
         .character_training_schedule()
@@ -2903,6 +3591,95 @@ pub fn update_training_schedule(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn official_time_synchronization_never_rewinds_a_personal_clock() {
+        assert_eq!(official_synchronization_target(100, 101), None);
+        assert_eq!(official_synchronization_target(100, 100), None);
+    }
+
+    #[test]
+    fn official_time_synchronization_advances_behind_characters() {
+        assert_eq!(official_synchronization_target(100, 99), Some((100, false)));
+        assert_eq!(
+            official_synchronization_target(MINUTES_PER_YEAR, 0),
+            Some((MINUTES_PER_YEAR, false))
+        );
+        assert_eq!(
+            official_synchronization_target(MINUTES_PER_YEAR + 1, 0),
+            Some((1, true))
+        );
+    }
+
+    #[test]
+    fn terminal_official_catch_up_is_not_advanced_a_second_time() {
+        assert_eq!(terminal_catch_up_minutes(false, 10, 20), None);
+        assert_eq!(terminal_catch_up_minutes(true, 10, 20), Some(10));
+        assert_eq!(terminal_catch_up_minutes(true, 20, 20), None);
+    }
+
+    #[test]
+    fn activity_and_departure_sync_commit_terminal_outcomes_without_error_rollback() {
+        let source = include_str!("time.rs");
+        let activity = source
+            .split("pub(crate) fn synchronize_party_activity_time")
+            .nth(1)
+            .and_then(|tail| tail.split("fn terminal_catch_up_minutes").next())
+            .unwrap();
+        assert!(activity.contains("Result<Option<u64>, String>"));
+        assert!(activity.contains("normalize_and_elect_party_leader"));
+        assert!(activity.contains("return Ok(None)"));
+        assert!(!activity.contains("Every party member must survive clock synchronization"));
+
+        let departure = source
+            .split("pub(crate) fn synchronize_party_departure_time")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn allowed_camp_schedule").next())
+            .unwrap();
+        assert!(departure.contains("Result<Option<u64>, String>"));
+        assert!(departure.contains("let all_survived"));
+        assert!(departure.contains("normalize_and_elect_party_leader"));
+        assert!(departure.contains("return Ok(None)"));
+    }
+
+    #[test]
+    fn explicit_stationary_frontiers_still_reject_retroactive_targets() {
+        let source = include_str!("time.rs");
+        let advance = source
+            .split("pub(crate) fn advance_stationary_character_to(")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn synchronize_character(ctx").next())
+            .expect("explicit stationary advancement");
+        assert!(advance.contains("if target_minutes < character_time.minutes"));
+        assert!(advance.contains("Character time cannot be advanced retroactively"));
+    }
+
+    #[test]
+    fn party_activity_preflight_commits_terminal_clock_catch_up() {
+        let source = include_str!("time.rs");
+        let reducer = source
+            .split("pub fn synchronize_party_for_activity")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn advance_character_wait_time").next())
+            .expect("party activity synchronization reducer");
+        let authority = reducer
+            .find("require_strategic_character_authority")
+            .unwrap();
+        let leadership = reducer.find("party.leader_id != leader_id").unwrap();
+        let co_location = reducer.find("member.current_settlement_id").unwrap();
+        let case_site = reducer.find("character_case_site_id").unwrap();
+        let official_sync = reducer.find("synchronize_character_time").unwrap();
+        let party_target = reducer.find("let target =").unwrap();
+        let catch_up = reducer.find("advance_character_wait_time").unwrap();
+        assert!(authority < leadership);
+        assert!(leadership < co_location);
+        assert!(leadership < case_site);
+        assert!(co_location < official_sync);
+        assert!(official_sync < party_target);
+        assert!(party_target < catch_up);
+        assert!(reducer.contains("let _survived ="));
+        assert!(!reducer.contains("Every party member must survive clock synchronization"));
+    }
 
     #[test]
     fn every_authoritative_clock_commit_has_one_exposure_application() {
@@ -2924,8 +3701,8 @@ mod tests {
             ),
             ("pub fn rest_at_camp", "fn party_fatigue_summary"),
             (
-                "fn synchronize_character",
-                "pub fn synchronize_character_time",
+                "pub(crate) fn advance_stationary_character_to",
+                "pub fn synchronize_character",
             ),
         ] {
             let body = source
@@ -2958,6 +3735,42 @@ mod tests {
         let validation = rest.find("\"field_shelter\"").unwrap();
         assert!(validation < rest.find("wash_party_before_explicit_rest").unwrap());
         assert!(rest.contains("FieldShelter::Tent"));
+    }
+
+    #[test]
+    fn settlement_rest_uses_indoor_exposure() {
+        let source = include_str!("time.rs");
+        let rest = source
+            .split("fn rest_for_minutes")
+            .nth(1)
+            .and_then(|tail| tail.split("fn inn_stay_cost").next())
+            .expect("settlement rest implementation");
+        assert!(rest.contains("FieldShelter::Indoor"));
+        assert!(!rest.contains("FieldShelter::Tent"));
+    }
+
+    #[test]
+    fn settlement_wait_and_downtime_use_indoor_exposure() {
+        let source = include_str!("time.rs");
+        for (start, end) in [
+            ("pub fn advance_character_wait_time", "fn default_schedule"),
+            (
+                "pub fn perform_immediate_activity",
+                "fn apply_organization_outcomes",
+            ),
+            (
+                "pub(crate) fn advance_stationary_character_to",
+                "pub fn synchronize_character",
+            ),
+        ] {
+            let body = source
+                .split(start)
+                .nth(1)
+                .and_then(|tail| tail.split(end).next())
+                .expect(start);
+            assert!(body.contains("FieldShelter::Indoor"), "{start}");
+            assert!(body.contains("FieldShelter::Bivouac"), "{start}");
+        }
     }
 
     #[test]
@@ -3187,6 +4000,27 @@ mod tests {
     }
 
     #[test]
+    fn sub_hour_departure_clock_skew_uses_exact_wait_not_settlement_rest() {
+        let source = include_str!("time.rs");
+        let synchronization_wait = source
+            .split("fn spend_private_settlement_downtime_deferred_social")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub(crate) fn synchronize_party_departure_time")
+                    .next()
+            })
+            .expect("private settlement departure synchronization");
+        let sub_hour = synchronization_wait
+            .split("if requested_minutes < MIN_SETTLEMENT_REST_MINUTES")
+            .nth(1)
+            .and_then(|tail| tail.split("rest_for_minutes(").next())
+            .expect("sub-hour exact wait branch");
+        assert!(sub_hour.contains("advance_character_wait_time("));
+        assert!(sub_hour.contains("requested_minutes"));
+        assert!(sub_hour.contains("return Ok(0)"));
+    }
+
+    #[test]
     fn immediate_activity_schedule_contains_only_the_selected_interval() {
         let schedule = immediate_activity_schedule(
             ImmediateActivity::ProfessionPractice,
@@ -3242,8 +4076,8 @@ mod tests {
         for (start, end) in [
             ("fn rest_for_minutes", "fn inn_stay_cost"),
             (
-                "pub fn synchronize_character(",
-                "/// Explicitly synchronize",
+                "pub(crate) fn advance_stationary_character_to(",
+                "/// Advance through elapsed wall-clock time",
             ),
         ] {
             let interval = source
@@ -3301,7 +4135,7 @@ mod tests {
             ..Default::default()
         };
         let mut hours = SkillHours::default();
-        apply_schedule_training(
+        adventuresim_core::strategic_schedule::apply_schedule_training(
             &mut hours,
             core_schedule(&allocation),
             MINUTES_PER_DAY * 2,
@@ -3329,5 +4163,53 @@ mod tests {
         assert!((health_recovered_per_day(2.5) - 0.035).abs() < f32::EPSILON);
         assert!((health_recovered_per_day(5.0) - 0.06).abs() < f32::EPSILON);
         assert!((health_recovered_per_day(8.0) - 0.06).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn authoritative_time_paths_split_at_lifecycle_boundaries() {
+        let source = include_str!("time.rs");
+        for (start, end) in [
+            (
+                "pub fn advance_character_time",
+                "fn advance_character_time_in_plan",
+            ),
+            (
+                "fn advance_character_time_in_plan",
+                "/// Actual strategic movement",
+            ),
+            (
+                "pub fn advance_character_wait_time",
+                "pub fn advance_character_wait_time_in_plan",
+            ),
+            (
+                "pub fn advance_character_wait_time_in_plan",
+                "fn default_schedule",
+            ),
+        ] {
+            let path = source
+                .split(start)
+                .nth(1)
+                .and_then(|tail| tail.split(end).next())
+                .expect("time advancement path");
+            assert!(path.contains("next_lifecycle_boundary"));
+            assert!(path.contains("minutes.saturating_sub(first)"));
+            assert!(path.contains("settle_lifecycle_after_character_time_write"));
+        }
+    }
+
+    #[test]
+    fn stationary_social_training_requires_realized_conversation_time() {
+        let source = include_str!("time.rs");
+        let stationary = source
+            .split("pub(crate) fn advance_stationary_character_to")
+            .nth(1)
+            .expect("stationary advancement");
+        let socializing = stationary
+            .find("apply_scheduled_socializing")
+            .expect("scheduled Socializing");
+        let training = stationary.find("apply_training").expect("training");
+        assert!(socializing < training);
+        assert!(stationary.contains("realized_socializing_minutes == 0"));
+        assert!(stationary.contains("realized_training_schedule.socializing_minutes = 0"));
     }
 }

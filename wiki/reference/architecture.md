@@ -1,8 +1,10 @@
 # Architecture
 
-Herbal preparation is a strategic reducer. It persists catalogue-backed
-ingredient/remedy inventory rows and trained Herbalism hours only; tactical
-positions, damage, HP, enemies, and other tactical tick state remain transient.
+Ingredient preparation and medicinal transformation are strategic reducers.
+They persist measured substance lots, exclusive preparation state, private
+versioned medicinal components, and stable-container passive processes.
+Tactical positions, damage, HP, enemies, and other tactical tick state remain
+transient.
 
 Static item definitions cross the strategic boundary as a build-time embedded
 catalog. YAML is authoring input only; the flattened SpacetimeDB `Item` table
@@ -32,7 +34,8 @@ SpacetimeDB stores durable world and character facts such as:
 - separate character wetness and signed thermal strain, with sustained
   frostbite committed through the durable limb-injury authority;
 - inventory, equipment condition, currency, and custody;
-- settlements, organizations, journeys, cases, contracts, and investigations;
+- settlements, organizations, journeys, cases, contracts, investigations, and
+  private puzzle authority with observer-safe challenge projections;
 - mission requests, authenticated outcome receipts, final battle results, and
   finalized loot;
 - compiled world identity, source manifests, and strategic route facts.
@@ -76,6 +79,53 @@ current party, character, location, time, custody, and source identity before
 changing state. Shared-core functions perform deterministic calculations, but
 do not grant authority by themselves.
 
+Contextual Character interactions share only a pure typed decision—allowed
+with a narrow reason, refused, or unavailable. Domain reducers still own exact
+presence, privacy, procedure, retry, and commit validation. This is not a
+universal permission table: medical emergency doctrine remains in Surgery and
+contact consequences remain in social/context authority.
+
+Hostile-group terminal outcomes share a battle-independent exact commit seam.
+Tactical victory may surround that seam with battle results, participant
+morale, corpses, and loot; accepted pre-combat withdrawal calls only the seam
+and emits the existing `HostilesDrivenOff` case fact. This keeps durable case
+resolution strategic without inventing tactical state for a conversation.
+
+Strategic systems share a closed, versioned vocabulary for place and fixture
+identity. A coarse settlement identity is not an exact venue, and constructing
+an inn, chapter, residence, case-site, camp, source, or fireplace identity does
+not establish existence, presence, visibility, knowledge, ownership, or
+permission. See [Strategic place and fixture identities](strategic-places.md).
+
+Consequences shared by multiple strategic domains may pass through a closed,
+versioned world-event envelope. The envelope records the directed actor and
+subjects, canonical settlement jurisdiction, occurrence minute, exact source
+identity, and a typed domain payload reference. It is private canonical
+authority: it is not an observation, knowledge grant, permission, public log,
+subscription, or asynchronous bus. Rights and knowledge decisions still occur
+in their owning reducers before an envelope is committed.
+
+The private event receipt first exact-matches a digest of stable reducer inputs,
+before reading mutable participant or consequence state. An exact retry is a
+successful no-op even if party membership later changes; reuse of an event ID
+with different fame, infamy, source, place, time, or other request provenance
+fails. On first application, the receipt also binds the complete envelope,
+affected-character snapshot, and closed ordered consequence plan. Every
+pre-existing subordinate row must exactly match its immutable authored fields
+before any consequence runs, which permits safe adoption of matching legacy
+rows but rejects collisions. New consequences run in their established order
+inside the originating SpacetimeDB transaction, and the receipt is inserted
+last so a failed consequence leaves neither partial state nor replay authority.
+Reputation continues to use its existing immutable-event spillover formula and
+caps; private offenses and local-problem outcomes retain their existing domain
+tables and visibility.
+
+Errantry challenges follow this boundary. The private seed and canonical
+assignment remain in durable strategic authority; the gateway receives only
+formal clues, allowed interactions, presentation, revision, and safe feedback.
+Attempts are revisioned durable receipts. Solving emits a typed strategic case
+fact and never persists tactical positions, damage, HP, or enemies.
+
 Multi-character strategic time actions snapshot disease exposure before the
 first participant clock mutates. The reducer-local plan projects only the
 explicit co-advancing set, prefetches bounded pair-presence coverage, and gives
@@ -100,8 +150,10 @@ The current deployment boundary is intentionally narrow:
 - `strategic-web` holds the registered strategic-gateway identity;
 - browsers submit ordinary HTTP actions to `strategic-web` and never receive a
   SpacetimeDB credential;
-- a selected-character cookie chooses presentation context but is not yet a
-  complete player-to-character authorization model;
+- one signed, opaque `adventuresim_session` bearer cookie identifies a
+  pseudonymous browser owner; character IDs and rosters never enter cookies;
+- private grants bind each generated character to exactly one browser owner,
+  and a private selection row chooses presentation context;
 - non-loopback use therefore requires the explicit insecure-development
   opt-in until account ownership is implemented;
 - tactical dispatch claims are one-use, digest-bound capabilities rather than
@@ -112,14 +164,40 @@ views of contracts, dialogue, investigations, evidence, physiology, and
 case-site knowledge. A public or subscribed row is not automatically safe to
 use as an authorization decision.
 
-The gateway settlement-NPC roster is likewise an explicit player-visible
-projection rather than the authoritative population row. It includes stable
-identity, home settlement, visible description, occupation, household, local
-role, service, and conversation routing. It omits private demographic sex and
-the internal projection traversal key. Browser quest discovery builds its
-candidate and commitment from visible age, presentation, profession, role, and
-presence. Presentation is committed as seen but is not interpreted as private
-sex; the public developer flow leaves that selector empty.
+Every persistent settlement resident is an ordinary full `Character` with one
+authoritative `u64` character ID, the usual component rows, one
+`CharacterTime`, and an `NpcPolicy`. There is no parallel NPC person record or
+string identity. `SettlementResidentProfile`, keyed by that character ID,
+contains only settlement-specific appearance, vocation, service, and
+conversation metadata; presence is keyed by the same ID. Recruitment adds that
+same Character to a party rather than materializing a replacement.
+
+The canonical `Character` table and its identity-bearing durable component
+tables are private. Only the registered strategic gateway may subscribe
+broadly through `BackendCharacters` and the corresponding backend component
+views; tactical servers continue to receive only their `ConnectedPlayer`
+view. This prevents a direct client from enumerating a globally exclusive NPC,
+or detecting a future birth through an otherwise ordinary time, physiology,
+skill, or needs row, while that lifecycle fact is still beyond the selected
+character's personal date. Death receipts and derived morale-source labels are
+private for the same reason: only gateway projections may read them broadly,
+and player-facing death presentation must apply the selected observer's
+personal-date boundary. Strategic web therefore reconstructs `Character.alive`
+for party, remembered-character, and settlement-resident presentation from the
+private death receipt and the selected observer's `CharacterTime`; a missing
+observer frontier is treated as insufficient authority to reveal the broad
+current death state.
+
+The gateway resident roster is an explicit player-visible join over Character,
+private personality, resident profile, and presence authority. It includes the
+decimal character ID, home settlement, visible description, occupation,
+household, local role, service, and conversation routing. It omits private
+demographic sex and the internal projection traversal key. A missing Character
+or private personality component fails closed rather than falling back to
+duplicated profile data. Browser quest discovery builds its candidate and
+commitment from visible age, presentation, profession, role, and presence.
+Presentation is committed as seen but is not interpreted as private sex; the
+public developer flow leaves that selector empty.
 
 ## Strategic web
 
@@ -143,11 +221,27 @@ First-character onboarding is a separate entry surface. The browser tab holds
 a private seed for deterministic candidate previews keyed by life stage.
 Confirmation sends only the generator version, seed, selected age tier, and
 slot; strategic authority regenerates and persists that exact candidate.
-Confirmed or selected character IDs are remembered in a bounded,
-browser-scoped roster cookie. The strategic header resolves only remembered,
-non-temporary rows into its character switcher. Both the roster and
-selected-character cookies are local selectors, not authentication or
-ownership proof.
+Confirmation atomically grants the generated character to the pseudonymous
+browser owner. The strategic header resolves its selected character and roster
+only through the gateway-only `BackendBrowserCharacterAccess` projection.
+Replaying the same deterministic candidate coordinates is idempotent for that
+owner and rejected for every other owner. Switching clears only the server-side
+selection; it does not discard grants or expose IDs in the cookie.
+
+The cookie is
+`v2.<random 32-byte base64url ID>.<issued Unix seconds>.<HMAC-SHA256>` and is
+`HttpOnly`, `SameSite=Lax`, and optionally `Secure`. The signature covers both
+the ID and issue time; the server rejects sessions older than 30 days and issue
+times more than five minutes in the future. The web server derives a
+domain-separated SHA-256 owner key from the verified random ID and never stores
+the raw token in SpacetimeDB. Invalid signatures and expired sessions are
+anonymous; backend resolution failures fail closed.
+
+All browser POST, PUT, PATCH, and DELETE routes in both onboarding and the
+selected-character application require an exact same-origin `Origin` matching
+the request Host and effective HTTP scheme. Missing, opaque (`null`),
+cross-port, cross-scheme, and otherwise foreign origins fail closed. Internal
+strategic navigation is read-only and does not bypass this mutation boundary.
 
 ### First-character authority
 
@@ -183,10 +277,87 @@ The current tactical stack uses Bevy Replicon over Aeronet WebSockets:
    compatible private strategic outcome, and commits durable consequences
    idempotently.
 
-The current combat prototype calculates attacks but does not yet apply tactical
-damage, so no client-controlled path can emit authoritative enemy deaths.
-Required-kill missions therefore fail closed unless the server's future combat
-pipeline emits the internal authoritative death event.
+The SpacetimeDB SDK connection is asynchronous: constructing it does not mean
+the server identity has arrived. The child pumps that connection until the
+identity is available, then installs reducer subscriptions and opens the
+tactical WebSocket listener. Bot creation and player joins use that cached
+ready identity and never call the SDK's panicking pre-handshake accessor.
+
+Tactical combatants carry an explicit transient Party or Enemy allegiance,
+independent of whether a client or the server controls them. Temporary mission
+characters are Enemy melee AI and connected adventurers are Party. Offensive
+AI deterministically selects the nearest opposing combatant, turns and pursues
+in a straight line through normal controller input, stops at the same shared
+body-and-arms plus weapon interaction range used by client hit detection, then
+uses a server-owned windup and cooldown to enter the same internal
+melee-resolution seam as client requests. This direct pursuit intentionally has
+no pathfinding yet.
+
+The client sends windup start and completion through one mapped ordered melee
+protocol. The tactical server validates melee allegiance, state, range, a fresh
+observed windup and cooldown, then authoritative physics line of sight before resolving an
+attack. Finite client-reported precision remains trusted because reconstructing
+animation and secondary physics is intentionally outside the headless server.
+The ordered wire messages are payload enums rather than phase-tagged field
+bags: starts cannot carry completion data, melee completions always name a
+target, and ranged completion distinguishes a miss from a targeted hit. Raw
+finite precision becomes `ReportedPrecision` without clamping or geometric
+reconstruction, and duration-backed authority types gate mutation.
+Accepted results mutate replicated limb health plus transient blood loss and
+imbalance. Shared autoresolve rules derive pain, blood-loss, and imbalance
+incapacitation and recover balance over time. Tactical enrollment projects
+authoritative body weight, current/maximum blood, and strategic condition
+contributions; the same shared derivation as autoresolve excludes pain and blood
+from starting incapacitation before recomputing them live. Actors currently
+over the threshold stop moving, attacking, defending, and participating in
+offensive AI target selection; imbalance-only incapacitation can recover.
+The numeric incapacitation value is the sole stored readiness authority;
+active, staggered, and incapacitated status are mechanically derived from it
+rather than synchronized through a second boolean or ECS marker.
+
+These per-tick effects remain in memory only. A mission enemy's first transition
+into incapacitation counts as its defeat; recovery and later incapacitation do
+not count it again. Once all required enemies are defeated, the tactical server
+immediately reports `Defeated`. Once every loaded Party combatant is
+incapacitated, it immediately reports `Failed`; simultaneous defeat also fails
+deterministically. Strategic authority binds the expected living Party count
+into the request and active server records, and the trusted dispatcher passes
+it to the child. Resolution waits until every expected adventurer has loaded at
+least once, no player is still loading, and all required enemies have loaded.
+Enrollment is then sealed. Once enrollment has begun, an empty Party has a
+ten-second reconnection grace before `Failed`, including when every client
+disconnects before the seal. A timeout-disabled development server where nobody
+ever joins remains available. Terminal submission retries a frozen result after
+synchronous errors no more than once per second, before reevaluating combat
+predicates. Queueing is not commitment: only an `end_tactical_server_then`
+callback confirming reducer acceptance latches the result and broadcasts the authoritative
+Victory/Defeat presentation event, keeps the transport alive for a bounded
+three-second display window, and then exits. The delay is strictly post-commit:
+it cannot defer strategic authority or create a second outcome. A configured
+timeout remains a bounded `Failed` fallback.
+Enrollment and terminal progress are private lifecycle enums. A resolution and
+its bounded receipt form one frozen value whose retry time, acknowledgement
+deadline, transport failure, committed presentation, and finished state exist
+only in their applicable variants.
+
+The terminal call carries a bounded authenticated consequence receipt frozen
+with the resolution. It contains only Party character IDs, applied (clamped)
+limb injuries, incremental blood loss, ammunition use, and bounded equipment
+contacts with durable inventory provenance. Strategic authority validates
+membership, server enrollment, custody, uniqueness, finite numeric ranges, and
+record caps before transactionally applying injuries, blood loss, capability,
+filth, ammunition, equipment wear, and defeat morale. Invalid receipts reject
+the whole terminal transaction and remain retryable; tactical data cannot
+choose outcomes, capture subjects, rewards, or XP. Positions, ticks, and enemy
+state remain transient. Player-fired ranged attacks use an ordered intent,
+server-validated weapon/range/line-of-sight/timing gate, and authoritative
+transient arrow consumption. Their bounded Party ammunition use is populated
+in the terminal receipt. Hit precision is the deliberate exception: the server
+rejects non-finite values but trusts finite client reports because authoritative
+skeletal animation and secondary physics are outside the headless simulation.
+Server-owned offensive AI uses the same internal ranged windup/completion and
+authoritative ammo path, holds a bounded standoff distance while firing, and
+falls back to melee behavior when ranged equipment or arrows are unavailable.
 
 Mission, hostile-group, battle, and outcome-source identities are separate.
 Tactical success never chooses a case objective, capture subject, contract
@@ -249,3 +420,20 @@ with [Source manifests](source-manifests.md),
 - [Organizations](organizations.md)
 - [Strategic simulation](strategic-simulation.md)
 - [Strategic route terrain](route-terrain.md)
+
+## Unified world actors
+
+All living world actors use the canonical `Character` aggregate. Hostility,
+patient status, and other roles belong to `CharacterContextMembership`, never
+to a character kind. Exact durable roster IDs cross into autoresolve and
+tactical handoff; tactical positions, live HP, damage, AI, and ticks remain
+transient and are never persisted to SpacetimeDB.
+
+Generated outbreak patients follow the same rule: the Patient membership
+references an existing resident Character and an ordinary infection episode.
+Private outbreak authority stores only case linkage and provenance. Shared
+resident presence tracks context suppression separately from health
+suppression. Leaving a case context restores only the former; ordinary disease
+recovery or death authority controls the latter. All NPC availability
+consumers share the same authoritative projection and never advertise a dead
+or still-ill provider from a stale schedule row.

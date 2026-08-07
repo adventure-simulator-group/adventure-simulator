@@ -1,3 +1,18 @@
+#[derive(serde::Deserialize)]
+struct MerchantProviderRow {
+    character_id: u64,
+    home_settlement_id: String,
+    service_id: String,
+}
+
+#[derive(serde::Deserialize)]
+struct MerchantProviderPresenceRow {
+    character_id: u64,
+    settlement_id: String,
+    location_id: String,
+    is_default: bool,
+}
+
 pub(super) fn merchant_service_location(service_id: &str) -> Option<&'static str> {
     match service_id {
         "merchants" => Some("market"),
@@ -18,10 +33,11 @@ pub(super) async fn merchant_provider_id(
 ) -> Option<String> {
     let settlement_literal = sql_string_literal(settlement_id);
     let providers_sql = format!(
-        "SELECT * FROM backend_settlement_npcs WHERE home_settlement_id = {settlement_literal}"
+        "SELECT * FROM backend_settlement_residents WHERE home_settlement_id = {settlement_literal}"
     );
-    let presences_sql =
-        format!("SELECT * FROM settlement_npc_presence WHERE settlement_id = {settlement_literal}");
+    let presences_sql = format!(
+        "SELECT * FROM settlement_resident_presence WHERE settlement_id = {settlement_literal}"
+    );
     let (providers, presences) = tokio::join!(
         state.db.query::<MerchantProviderRow>(&providers_sql),
         state
@@ -37,19 +53,22 @@ pub(super) async fn merchant_provider_id(
                 presences
                     .iter()
                     .any(|presence| {
-                        presence.npc_id == provider.id
+                        presence.character_id == provider.character_id
                             && presence.settlement_id == settlement_id
                             && presence.location_id == location_id
                             && presence.is_default
                     })
-                    .then_some(provider.id)
+                    .then_some(provider.character_id)
             })
     });
     let provider = matches.next()?;
-    matches.next().is_none().then_some(provider)
+    matches.next().is_none().then(|| provider.to_string())
 }
 
-pub(super) async fn provisioning_storefront_path(state: &AppState, settlement: &Settlement) -> Option<String> {
+pub(super) async fn provisioning_storefront_path(
+    state: &AppState,
+    settlement: &Settlement,
+) -> Option<String> {
     use adventuresim_core::settlement_economy::{Storefront, storefront_available};
 
     for (storefront, service_id, location_id) in [

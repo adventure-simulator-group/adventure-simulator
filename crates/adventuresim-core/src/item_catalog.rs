@@ -89,7 +89,9 @@ mod tests {
 
     #[test]
     fn embedded_catalog_is_sorted_unique_complete_and_revisioned() {
-        assert_eq!(catalog().len(), 160);
+        // Eight public herb-grade identities were removed and three shared
+        // preparation/container tools were added.
+        assert_eq!(catalog().len(), 158);
         assert!(revision().len() == 64 && revision().bytes().all(|b| b.is_ascii_hexdigit()));
         assert!(
             catalog()
@@ -121,8 +123,8 @@ mod tests {
             + "\n";
         assert_eq!(
             format!("{:x}", Sha256::digest(stable_ids.as_bytes())),
-            "d79be02b1f9d26be60b9beae9783a646c8d8c21706267777b66170d70937d4ca",
-            "stable-ID golden changed; review persistence and reseed impact"
+            "33c24085395b9870669395937afb7a9af75a4e5dc78e345029143765617d6829",
+            "stable-ID golden changed intentionally: herb grade IDs were removed and shared preparation tools added; development data must be reseeded"
         );
 
         let counts = catalog().iter().fold([0_u16; 10], |mut counts, item| {
@@ -141,7 +143,9 @@ mod tests {
             counts[index] += 1;
             counts
         });
-        assert_eq!(counts, [39, 6, 20, 14, 1, 1, 5, 24, 29, 21]);
+        // Bottle, jar, and mortar are shared Simple tools; eight public
+        // medicinal grade variants no longer occupy Ingredient identities.
+        assert_eq!(counts, [45, 6, 12, 14, 1, 1, 5, 24, 29, 21]);
     }
 
     #[test]

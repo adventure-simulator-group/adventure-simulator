@@ -12,11 +12,11 @@
           "priority": 0,
           "turns": [
             {
-              "speaker": "representative",
+              "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
               "fragments": [
-                { "kind": "text", "value": "Welcome to " },
+                { "kind": "text", "value": "Welcome unto " },
                 { "kind": "runtime", "slot": "organization_name" },
-                { "kind": "text", "value": ". I conduct the institution's " },
+                { "kind": "text", "value": ". I conduct this institution's " },
                 { "kind": "topic", "topic": "organization-business", "label": "business" },
                 { "kind": "text", "value": " here." }
               ]
@@ -46,9 +46,9 @@
               },
               "turns": [
                 {
-                  "speaker": "representative",
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                   "fragments": [
-                    { "kind": "text", "value": "If you seek a place among us, ask to " },
+                    { "kind": "text", "value": "If a place among us be sought, ask to " },
                     { "kind": "topic", "topic": "join", "label": "join" },
                     { "kind": "text", "value": "." }
                   ]
@@ -84,9 +84,13 @@
               },
               "turns": [
                 {
-                  "speaker": "representative",
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                   "fragments": [
-                    { "kind": "text", "value": "Your membership is suspended. You may " },
+                    { "kind": "text", "value": "Membership is suspended. " },
+                    { "kind": "runtime", "slot": "second_person_subject" },
+                    { "kind": "text", "value": " " },
+                    { "kind": "runtime", "slot": "second_person_may" },
+                    { "kind": "text", "value": " " },
                     { "kind": "topic", "topic": "dues", "label": "pay dues" },
                     { "kind": "text", "value": " to restore it." }
                   ]
@@ -122,9 +126,10 @@
               },
               "turns": [
                 {
-                  "speaker": "representative",
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                   "fragments": [
-                    { "kind": "text", "value": "Your membership is suspended, but this chapter has no dues payment to receive." }
+                    { "kind": "runtime", "slot": "second_person_possessive" },
+                    { "kind": "text", "value": " membership is suspended, yet this chapter hath no dues payment to receive." }
                   ]
                 }
               ],
@@ -145,9 +150,9 @@
               },
               "turns": [
                 {
-                  "speaker": "representative",
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                   "fragments": [
-                    { "kind": "text", "value": "Let us review your " },
+                    { "kind": "text", "value": "Let us review the " },
                     { "kind": "topic", "topic": "member-business", "label": "membership" },
                     { "kind": "text", "value": "." }
                   ]
@@ -185,11 +190,11 @@
               },
               "turns": [
                 {
-                  "speaker": "representative",
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                   "fragments": [
-                    { "kind": "text", "value": "You may " },
+                    { "kind": "text", "value": "It is permitted to " },
                     { "kind": "topic", "topic": "dues", "label": "pay dues" },
-                    { "kind": "text", "value": " for the next interval, or discuss your " },
+                    { "kind": "text", "value": " for the next interval, or discuss the " },
                     { "kind": "topic", "topic": "advancement-business", "label": "standing and advancement" },
                     { "kind": "text", "value": "." }
                   ]
@@ -211,9 +216,9 @@
               },
               "turns": [
                 {
-                  "speaker": "representative",
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                   "fragments": [
-                    { "kind": "text", "value": "This organization charges no dues. We can discuss your " },
+                    { "kind": "text", "value": "This organization chargeth no dues. We may discuss the " },
                     { "kind": "topic", "topic": "advancement-business", "label": "standing and advancement" },
                     { "kind": "text", "value": "." }
                   ]
@@ -252,11 +257,11 @@
               },
               "turns": [
                 {
-                  "speaker": "representative",
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                   "fragments": [
-                    { "kind": "text", "value": "You may " },
+                    { "kind": "text", "value": "It is permitted to " },
                     { "kind": "topic", "topic": "promotion", "label": "request promotion" },
-                    { "kind": "text", "value": ", or review how you " },
+                    { "kind": "text", "value": ", or review how one " },
                     { "kind": "topic", "topic": "presentation-business", "label": "represent the organization" },
                     { "kind": "text", "value": "." }
                   ]
@@ -279,9 +284,9 @@
               },
               "turns": [
                 {
-                  "speaker": "representative",
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                   "fragments": [
-                    { "kind": "text", "value": "There is no promotion to record now. We can review how you " },
+                    { "kind": "text", "value": "There is no promotion to record now. We may review how one " },
                     { "kind": "topic", "topic": "presentation-business", "label": "represent the organization" },
                     { "kind": "text", "value": "." }
                   ]
@@ -320,11 +325,11 @@
               },
               "turns": [
                 {
-                  "speaker": "representative",
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                   "fragments": [
-                    { "kind": "text", "value": "You may choose to " },
+                    { "kind": "text", "value": "It is permitted to choose to " },
                     { "kind": "topic", "topic": "present", "label": "present this organization" },
-                    { "kind": "text", "value": " in your travels." }
+                    { "kind": "text", "value": " in the course of travel." }
                   ]
                 }
               ],
@@ -345,9 +350,9 @@
               },
               "turns": [
                 {
-                  "speaker": "representative",
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                   "fragments": [
-                    { "kind": "text", "value": "You already travel under this organization's name." }
+                    { "kind": "text", "value": "This organization's name is already borne in travel." }
                   ]
                 }
               ],
@@ -375,13 +380,21 @@
               "priority": 0,
               "turns": [
                 {
-                  "speaker": "representative",
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                   "fragments": [
-                    { "kind": "text", "value": "You are asking to join " },
+                    { "kind": "text", "value": "Good " },
+                    { "kind": "runtime", "slot": "addressee_title" },
+                    { "kind": "text", "value": ", " },
+                    { "kind": "runtime", "slot": "second_person_subject" },
+                    { "kind": "text", "value": " " },
+                    { "kind": "runtime", "slot": "second_person_do" },
+                    { "kind": "text", "value": " ask to join " },
                     { "kind": "runtime", "slot": "organization_name" },
                     { "kind": "text", "value": ". " },
                     { "kind": "runtime", "slot": "organization_admission_terms" },
-                    { "kind": "text", "value": " Shall I enter your name on the rolls?" }
+                    { "kind": "text", "value": " Shall I enter " },
+                    { "kind": "runtime", "slot": "second_person_possessive" },
+                    { "kind": "text", "value": " name upon the rolls?" }
                   ]
                 }
               ],
@@ -397,9 +410,12 @@
                     "effects": [{ "kind": "join_organization" }],
                     "result_turns": [
                       {
-                        "speaker": "representative",
+                        "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                         "fragments": [
-                          { "kind": "text", "value": "Your membership is recorded. Observe our rules and keep your obligations current." }
+                          { "kind": "runtime", "slot": "second_person_possessive" },
+                          { "kind": "text", "value": " membership is recorded. Observe our rules and keep " },
+                          { "kind": "runtime", "slot": "second_person_possessive" },
+                          { "kind": "text", "value": " obligations current." }
                         ]
                       }
                     ]
@@ -409,9 +425,9 @@
                     "label": "Not now.",
                     "result_turns": [
                       {
-                        "speaker": "representative",
+                        "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                         "fragments": [
-                          { "kind": "text", "value": "Return if you change your mind." }
+                          { "kind": "text", "value": "Return if the mind be changed." }
                         ]
                       }
                     ]
@@ -453,10 +469,10 @@
               "priority": 0,
               "turns": [
                 {
-                  "speaker": "representative",
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                   "fragments": [
                     { "kind": "runtime", "slot": "organization_dues_terms" },
-                    { "kind": "text", "value": " I can receive one interval now and restore a suspended membership." }
+                    { "kind": "text", "value": " I may receive one interval now and restore a suspended membership." }
                   ]
                 }
               ],
@@ -472,9 +488,12 @@
                     "effects": [{ "kind": "pay_organization_dues" }],
                     "result_turns": [
                       {
-                        "speaker": "representative",
+                        "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                         "fragments": [
-                          { "kind": "text", "value": "Your payment is recorded and your standing is current." }
+                          { "kind": "runtime", "slot": "second_person_possessive" },
+                          { "kind": "text", "value": " payment is recorded, and " },
+                          { "kind": "runtime", "slot": "second_person_possessive" },
+                          { "kind": "text", "value": " standing is current." }
                         ]
                       }
                     ]
@@ -484,7 +503,7 @@
                     "label": "Not now.",
                     "result_turns": [
                       {
-                        "speaker": "representative",
+                        "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                         "fragments": [{ "kind": "text", "value": "Very well." }]
                       }
                     ]
@@ -513,10 +532,12 @@
               "priority": 0,
               "turns": [
                 {
-                  "speaker": "representative",
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                   "fragments": [
-                    { "kind": "runtime", "slot": "organization_rank_standing" },
-                    { "kind": "text", "value": " Shall I examine your claim to promotion?" }
+                    { "kind": "runtime", "slot": "organization_role_standing" },
+                    { "kind": "text", "value": " Shall I examine " },
+                    { "kind": "runtime", "slot": "second_person_possessive" },
+                    { "kind": "text", "value": " claim to promotion?" }
                   ]
                 }
               ],
@@ -532,9 +553,10 @@
                     "effects": [{ "kind": "request_organization_promotion" }],
                     "result_turns": [
                       {
-                        "speaker": "representative",
+                        "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                         "fragments": [
-                          { "kind": "text", "value": "Your new rank is recorded." }
+                          { "kind": "runtime", "slot": "second_person_possessive" },
+                          { "kind": "text", "value": " new role is recorded." }
                         ]
                       }
                     ]
@@ -544,7 +566,7 @@
                     "label": "Not now.",
                     "result_turns": [
                       {
-                        "speaker": "representative",
+                        "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                         "fragments": [{ "kind": "text", "value": "Very well." }]
                       }
                     ]
@@ -587,9 +609,9 @@
               "priority": 0,
               "turns": [
                 {
-                  "speaker": "representative",
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                   "fragments": [
-                    { "kind": "text", "value": "I will record that you travel under the name of " },
+                    { "kind": "text", "value": "I shall record travel under the name of " },
                     { "kind": "runtime", "slot": "organization_name" },
                     { "kind": "text", "value": "." }
                   ]
@@ -603,6 +625,7 @@
         {
           "id": "referred-testimony",
           "label": "What I saw",
+          "category": "quest",
           "initially_known": true,
           "conditions": {
             "op": "fact",
@@ -615,13 +638,13 @@
               "priority": 0,
               "turns": [
                 {
-                  "speaker": "player",
+                  "speaker": "player", "addressee": { "kind": "role", "role": "representative" },
                   "fragments": [
-                    { "kind": "text", "value": "I was told you know what happened. What did you see or hear?" }
+                    { "kind": "text", "value": "I was told the truth of this matter is known here. What was seen or heard?" }
                   ]
                 },
                 {
-                  "speaker": "representative",
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
                   "fragments": [{ "kind": "runtime", "slot": "testimony" }]
                 }
               ],
@@ -633,6 +656,7 @@
         {
           "id": "return-recovered-property",
           "label": "Return recovered property",
+          "category": "quest",
           "initially_known": true,
           "responses": [
             {
@@ -640,12 +664,12 @@
               "priority": 0,
               "turns": [
                 {
-                  "speaker": "player",
-                  "fragments": [{ "kind": "text", "value": "I found the missing property and brought it back." }]
+                  "speaker": "player", "addressee": { "kind": "role", "role": "representative" },
+                  "fragments": [{ "kind": "text", "value": "I found the missing property and brought it hither." }]
                 },
                 {
-                  "speaker": "representative",
-                  "fragments": [{ "kind": "text", "value": "I will see that it is returned to its proper place." }]
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
+                  "fragments": [{ "kind": "text", "value": "I shall see it restored to its proper place." }]
                 }
               ],
               "effects": [{ "kind": "investigation_action", "action": "return_asset" }],
@@ -656,6 +680,7 @@
         {
           "id": "expose-false-account",
           "label": "Challenge the account",
+          "category": "quest",
           "initially_known": true,
           "responses": [
             {
@@ -663,12 +688,12 @@
               "priority": 0,
               "turns": [
                 {
-                  "speaker": "player",
-                  "fragments": [{ "kind": "text", "value": "The evidence contradicts the story that was told." }]
+                  "speaker": "player", "addressee": { "kind": "role", "role": "representative" },
+                  "fragments": [{ "kind": "text", "value": "The evidence gainsayeth the tale that was told." }]
                 },
                 {
-                  "speaker": "representative",
-                  "fragments": [{ "kind": "text", "value": "Then state what you have proved, and the false account will be challenged." }]
+                  "speaker": "representative", "addressee": { "kind": "participant", "role": "player" },
+                  "fragments": [{ "kind": "text", "value": "Then state what hath been proved, and the false account shall be challenged." }]
                 }
               ],
               "effects": [{ "kind": "investigation_action", "action": "expose" }],

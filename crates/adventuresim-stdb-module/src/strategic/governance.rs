@@ -19,7 +19,7 @@ pub fn send_local_chat_message(
     if body.is_empty() || body.chars().count() > 500 {
         return Err("Messages must contain 1 to 500 characters".into());
     }
-    let (audience_party_id, other_party_id, npc_id) = match subject_kind.as_str() {
+    let (audience_party_id, other_party_id, resident_character_id) = match subject_kind.as_str() {
         "player" => {
             if !location_id.is_empty() {
                 return Err("Player conversations do not accept an NPC location".into());
@@ -29,13 +29,18 @@ pub fn send_local_chat_message(
                 &sender,
                 subject_id.parse().map_err(|_| "Invalid player subject")?,
             )?;
-            (audience_party_id, other_party_id, String::new())
+            (audience_party_id, other_party_id, None)
         }
-        "npc" => (
-            npc_conversation_party(ctx, &sender, &subject_id, &location_id)?,
-            String::new(),
-            subject_id,
-        ),
+        "npc" => {
+            let resident_character_id = subject_id
+                .parse::<u64>()
+                .map_err(|_| "Invalid NPC subject")?;
+            (
+                npc_conversation_party(ctx, &sender, &subject_id, &location_id)?,
+                String::new(),
+                Some(resident_character_id),
+            )
+        }
         _ => return Err("Unknown Local conversation subject".into()),
     };
     ctx.db.local_chat_message().insert(LocalChatMessage {
@@ -43,7 +48,7 @@ pub fn send_local_chat_message(
         gateway_bucket: 0,
         audience_party_id,
         other_party_id,
-        npc_id,
+        resident_character_id,
         sender_id,
         sender_name: sender.name,
         body: body.to_string(),
@@ -753,7 +758,7 @@ pub(crate) fn attach_seeded_party_member(
         ctx,
         member_id,
         crate::investigation::character_case_site_id(ctx, leader_id),
-    );
+    )?;
     crate::social::reset_familiarity_after_join(ctx, member_id);
     ctx.db.party_member().insert(PartyMember {
         id: 0,
@@ -1195,12 +1200,16 @@ fn recruitment_offer_bindings_are_live(
     let Some(leader) = ctx.db.character().id().find(offer.leader_id) else {
         return false;
     };
-    let npc = ctx.db.settlement_npc().id().find(&offer.settlement_npc_id);
+    let npc = ctx
+        .db
+        .settlement_resident_profile()
+        .character_id()
+        .find(offer.settlement_resident_id);
     let presence = ctx
         .db
-        .settlement_npc_presence()
-        .npc_id()
-        .find(&offer.settlement_npc_id);
+        .settlement_resident_presence()
+        .character_id()
+        .find(offer.settlement_resident_id);
     recruitment_offer_binding_fields_are_live(
         offer,
         RecruitmentOfferBindingFields {
@@ -1214,7 +1223,7 @@ fn recruitment_offer_bindings_are_live(
             presence_location_id: presence.as_ref().map(|row| row.location_id.as_str()),
             presence_is_current: presence
                 .as_ref()
-                .is_some_and(|row| crate::settlement_population::npc_is_present(row, now)),
+                .is_some_and(|row| crate::settlement_population::npc_is_present(ctx, row, now)),
         },
     )
 }
@@ -1542,7 +1551,7 @@ pub fn accept_party_join_request(
                 ctx,
                 member.character_id,
                 party.current_case_site_id.clone().map(|id| id.value),
-            );
+            )?;
             crate::social::reset_familiarity_after_join(ctx, member.character_id);
         }
     }

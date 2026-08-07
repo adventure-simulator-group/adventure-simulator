@@ -70,7 +70,7 @@ pub(super) async fn religion_dialogue(
     let condition = state
         .db
         .query::<CharacterCondition>(&format!(
-            "SELECT * FROM character_condition WHERE character_id = {}",
+            "SELECT * FROM backend_character_conditions WHERE character_id = {}",
             character.id
         ))
         .await
@@ -192,5 +192,5 @@ pub(super) async fn renounce_religion(
             tracing::warn!(%error, character_id, "failed to renounce character religion");
         }
     }
-    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{character_id}")))
+    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party/{character_id}")).await)
 }

@@ -16,6 +16,28 @@ const styles = fs.readFileSync(path.join(__dirname, "../static/css/strategic.css
 const components = fs.readFileSync(path.join(__dirname, "../static/css/components.css"), "utf8");
 const routes = readRustModuleSource(path.join(__dirname, "../src/routes/settlements/mod.rs"));
 
+test("encounter counterparties use durable characters and ordinary actions", () => {
+  const worldActors = fs.readFileSync(path.join(__dirname, "../../adventuresim-stdb-module/src/world_actor.rs"), "utf8");
+  const encounters = fs.readFileSync(path.join(__dirname, "../../adventuresim-stdb-module/src/strategic/encounters.rs"), "utf8");
+  const surgery = fs.readFileSync(path.join(__dirname, "../../adventuresim-stdb-module/src/surgery.rs"), "utf8");
+  const travel = fs.readFileSync(path.join(__dirname, "../src/templates/settlement/travel.rs"), "utf8");
+  assert.match(worldActors, /CharacterContextMembership/);
+  assert.match(worldActors, /apply_async_socializing/);
+  assert.match(worldActors, /materialize_road_encounter_cast/);
+  assert.match(worldActors, /Road cast retry found partial Character authority/);
+  assert.match(worldActors, /deactivate_context_roster/);
+  assert.match(worldActors, /row\.active = false/);
+  assert.match(encounters, /context_character_ids/);
+  assert.doesNotMatch(encounters, /u64::MAX\.saturating_sub\(index\)/);
+  assert.match(surgery, /treatment_is_authorized/);
+  assert.match(travel, /aria-label="Counterparty"/);
+  assert.match(travel, /presentation\.cast/);
+  assert.match(travel, /aria-label="Roadside characters"/);
+  assert.match(travel, /\{ "Talk" \}/);
+  assert.match(travel, /\{ "Bandage" \}/);
+  assert.doesNotMatch(travel, /challenge\.actor_character_id/);
+});
+
 test("character dialogs trap focus in either direction", () => {
   assert.equal(wrappedFocusIndex(3, 0, true), 2);
   assert.equal(wrappedFocusIndex(3, 2, false), 0);
@@ -42,13 +64,15 @@ test("automatic social preference submits immediately when the checkbox changes"
   assert.equal(submitAutomaticChatToggle({ matches: () => false }), false);
 });
 
-test("character actions use one dialog and raised-button contract", () => {
+test("modal character actions retain the raised-button contract while social uses the dock", () => {
   assert.match(template, /data-character-action-dialog/);
   assert.match(template, /aria-haspopup="dialog" aria-expanded=\(open\)/);
   assert.match(template, /character-menu-button limb-surgery-button/);
   assert.match(template, /role="dialog" aria-modal="true" aria-labelledby="surgery-dialog-title"/);
-  assert.match(template, /role="dialog" aria-modal="true" aria-labelledby="social-dialog-title"/);
-  assert.match(template, /role="dialog" aria-modal="true" aria-labelledby="cooking-dialog-title"/);
+  assert.match(template, /data-social-conversation/);
+  assert.doesNotMatch(socialTemplate, /aria-labelledby="social-dialog-title"/);
+  assert.doesNotMatch(template, /cooking-dialog-title/);
+  assert.match(template, /aria-label="Cook at fireplace"/);
   assert.match(styles, /\.character-menu-button[\s\S]*background: var\(--tactile-background\)/);
   assert.match(styles, /\.character-menu-button[\s\S]*box-shadow: var\(--tactile-shadow\)/);
   assert.match(styles, /\.character-menu-button:focus-visible[\s\S]*outline: 2px solid var\(--accent-light\)/);
@@ -60,7 +84,7 @@ test("character actions use one dialog and raised-button contract", () => {
   assert.match(styles, /\.social-dialog \{ width: min\(40rem, 100%\); \}/);
 });
 
-test("social and surgery inject overlays into the ordinary character renderers", () => {
+test("social replaces the ordinary chat dock while surgery remains an overlay", () => {
   assert.match(routes, /render_party_personal\([\s\S]*Some\(dialog\)/);
   assert.match(routes, /render_party_stats\([\s\S]*Some\(dialog\)/);
   const socialStart = socialTemplate.indexOf("pub fn party_social_dialog");
@@ -70,6 +94,11 @@ test("social and surgery inject overlays into the ordinary character renderers",
   const surgeryEnd = healthTemplate.indexOf("pub(super) fn strategic_condition_rail", surgeryStart);
   const surgeryDialog = healthTemplate.slice(surgeryStart, surgeryEnd);
   assert.doesNotMatch(socialDialog, /left-sidebar|right-sidebar|render_layout/);
+  assert.match(socialDialog, /role="tablist"/);
+  assert.match(socialDialog, /Recent Tidings/);
+  assert.match(socialDialog, /class="settlement-chat-messages"/);
+  assert.match(socialDialog, /data-local-chat-kind="player"/);
+  assert.match(socialDialog, /data-strategic-tooltip=\(belief_tooltip\(belief\)\)/);
   assert.doesNotMatch(surgeryDialog, /left-sidebar|right-sidebar|render_layout/);
   assert.match(socialDialog, /preserve_building/);
   assert.match(surgeryDialog, /preserve_building/);

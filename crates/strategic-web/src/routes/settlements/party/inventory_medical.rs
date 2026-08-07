@@ -396,7 +396,7 @@ pub(super) async fn deposit_party_inventory(
                 .await;
         }
     }
-    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party-inventory")))
+    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party-inventory")).await)
 }
 
 pub(super) async fn withdraw_party_inventory(
@@ -417,7 +417,7 @@ pub(super) async fn withdraw_party_inventory(
                 .await;
         }
     }
-    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party-inventory")))
+    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party-inventory")).await)
 }
 
 pub(super) fn transfer_entries(form: &PartyPoolTransferForm) -> Vec<(u64, u32)> {
@@ -457,7 +457,7 @@ pub(super) async fn liquidate_party_assets(
             )
             .await;
     }
-    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party-inventory")))
+    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party-inventory")).await)
 }
 
 pub(super) async fn remove_party_member(
@@ -488,7 +488,7 @@ pub(super) async fn remove_party_member(
             tracing::error!("Failed to remove party member: {error:?}");
         }
     }
-    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}")))
+    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}")).await)
 }
 
 pub(super) async fn party_stats(
@@ -530,7 +530,7 @@ pub(super) async fn render_party_stats(
             return Html("<h1>Strategic data is unavailable</h1>".to_string());
         }
     };
-    location.active_building = building.valid().map(str::to_owned);
+    location.active_building = building.valid_for(&location).map(str::to_owned);
     let Some((active_character, _)) =
         get_active_character(&state, session.character_id_u64()).await
     else {
@@ -543,14 +543,15 @@ pub(super) async fn render_party_stats(
     let selected = if character_id == active_character.id {
         active_character.clone()
     } else {
-        let characters: Vec<Character> = state
-            .db
-            .query(&format!(
-                "SELECT * FROM character WHERE id = {character_id}"
-            ))
+        let character = crate::routes::data::character_as_observed(
+            &state,
+            character_id,
+            active_character.id,
+        )
             .await
-            .unwrap_or_default();
-        match characters.into_iter().next() {
+            .ok()
+            .flatten();
+        match character {
             Some(character) => character,
             None => return Html("<h1>Party member not found</h1>".to_string()),
         }
@@ -589,21 +590,21 @@ pub(super) async fn render_party_stats(
     let selected_attributes: Vec<CharacterAttributes> = state
         .db
         .query(&format!(
-            "SELECT * FROM character_attributes WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_attributes WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
     let selected_skills: Vec<CharacterSkills> = state
         .db
         .query(&format!(
-            "SELECT * FROM character_skills WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_skills WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
     let selected_limbs: Vec<CharacterLimbs> = state
         .db
         .query(&format!(
-            "SELECT * FROM character_limbs WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_limbs WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
@@ -612,7 +613,7 @@ pub(super) async fn render_party_stats(
     let can_examine = false;
     let condition = get_strategic_condition(&state, character_id).await;
     let morale_sources = get_morale_sources(&state, character_id).await;
-    let religion = query_single::<CharacterCondition>(&state, "character_condition", character_id)
+    let religion = query_single::<CharacterCondition>(&state, "backend_character_conditions", character_id)
         .await
         .and_then(|condition| condition.religion_id);
     let reputation = query_local_reputation(&state, character_id, &location.id).await;
@@ -713,7 +714,7 @@ pub(crate) async fn medical_presentation(
     let current_minute = match state
         .db
         .query_one::<CharacterTime>(&format!(
-            "SELECT * FROM character_time WHERE character_id = {target_id}"
+            "SELECT * FROM backend_character_times WHERE character_id = {target_id}"
         ))
         .await
     {
@@ -816,7 +817,7 @@ pub(super) async fn stop_preparation(
     {
         tracing::warn!(%error, actor_id, patient_id, administration_id, "preparation stop rejected");
     }
-    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{patient_id}")))
+    Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party/{patient_id}")).await)
 }
 
 pub(super) async fn get_strategic_condition(
@@ -831,14 +832,14 @@ pub(super) async fn get_strategic_condition(
         tracing::warn!(%error, character_id, "failed to refresh strategic condition");
         return None;
     }
-    query_single(state, "character_strategic_condition", character_id).await
+    query_single(state, "backend_character_strategic_conditions", character_id).await
 }
 
 pub(super) async fn get_morale_sources(state: &AppState, character_id: u64) -> Vec<CharacterMoraleSource> {
     let mut sources: Vec<CharacterMoraleSource> = state
         .db
         .query(&format!(
-            "SELECT * FROM character_morale_source WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_morale_sources WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();

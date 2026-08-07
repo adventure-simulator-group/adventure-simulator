@@ -81,9 +81,12 @@
     .then((response) => response.json())
     .then(({ character_minutes: characterMinutes, official_minutes: officialMinutes }) => {
       window.strategicCharacterMinutes = characterMinutes;
+      const characterTime = format(characterMinutes);
+      const officialTime = format(officialMinutes);
       document.querySelectorAll("[data-player-time]").forEach((element) => {
-        element.textContent = format(characterMinutes);
-        element.title = `Official time: ${format(officialMinutes)}`;
+        element.textContent = characterTime;
+        element.setAttribute("aria-label", characterTime);
+        element.title = `Official time: ${officialTime}`;
       });
       applyLighting(characterMinutes);
       document.dispatchEvent(new CustomEvent("strategic-time-ready", {

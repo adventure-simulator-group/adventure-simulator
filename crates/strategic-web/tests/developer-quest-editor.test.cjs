@@ -46,32 +46,22 @@ test("submission handles structured 422 diagnostics, override, and duplicate pre
   assert.doesNotMatch(questSubmission, /location\.(assign|replace)|window\.location/);
 });
 
-test("autopsy demo loader is explicit, settlement-only, and redirects after success", () => {
-  assert.match(layout, /data-developer-autopsy-demo/);
-  assert.match(script, /fetch\("\/api\/developer\/autopsy-demo"/);
-  assert.match(script, /Prepare the selected character/);
-  assert.match(script, /window\.location\.assign\(body\.redirect_to/);
-  assert.match(route, /\.route\("\/api\/developer\/autopsy-demo"/);
-  assert.match(route, /"load_autopsy_demo"/);
-});
-
-test("outbreak demo uses real server materialization and ordinary rumor discovery", () => {
-  assert.match(layout, /data-developer-outbreak-demo/);
-  assert.match(script, /fetch\("\/api\/developer\/outbreak-demo"/);
-  assert.match(script, /discover it through an ordinary local rumor/);
-  assert.match(route, /\.route\("\/api\/developer\/outbreak-demo"/);
-  assert.match(route, /"load_outbreak_demo"/);
-  assert.match(route, /"discovery":"normal_rumor"/);
+test("selected-character fixture loaders are removed in favor of scenario characters", () => {
+  for (const surface of [layout.split("#[cfg(test)]")[0], script, route.split("#[cfg(any())]")[0]]) {
+    assert.doesNotMatch(surface, /developer-(?:autopsy|outbreak|puzzle)-demo/);
+    assert.doesNotMatch(surface, /api\/developer\/(?:autopsy|outbreak|puzzle)-demo/);
+  }
+  assert.match(layout, /\/developer\/scenarios/);
 });
 
 test("HTTP adapter derives settlement and leaves discovery to normal rumors", () => {
-  const productionRoute = route.split("#[cfg(test)]")[0];
+  const productionRoute = route.split("#[cfg(any())]")[0];
   assert.match(productionRoute, /current_settlement_id/);
   const request = productionRoute.split("struct SpawnRequest {")[1].split("}")[0];
   assert.doesNotMatch(request, /settlement_id/);
   assert.match(productionRoute, /"discovery":"normal_rumor"/);
   assert.doesNotMatch(productionRoute, /rumor_receipt|journal|case_site_pin|referral/);
-  assert.match(productionRoute, /SELECT \* FROM character_time WHERE character_id/);
+  assert.match(productionRoute, /SELECT \* FROM backend_character_times WHERE character_id/);
   assert.match(productionRoute, /now_minute/);
 });
 
@@ -108,22 +98,22 @@ test("track authoring defaults preserve typed segment authority", () => {
 
 test("NPC selection atomically hydrates locked witness and pattern bindings", () => {
   const binding = {
-    npc_id: "npc:two", display_name: "Else", demographic: "merchant",
+    resident_character_id: "npc:two", display_name: "Else", demographic: "merchant",
     age_band: "adult", sex: "female", profession: "merchant",
     visible_description: "tall", expected_location: "market",
     expected_location_label: "Market", presence_version: 42,
     allowed_circumstances: ["road"],
   };
-  const witness = { npc_id: "npc:one", circumstance: "night_window" };
+  const witness = { resident_character_id: "npc:one", circumstance: "night_window" };
   hydrateWitnessBinding(witness, binding);
   assert.deepEqual(
     {
-      npc_id: witness.npc_id, name: witness.display_name,
+      resident_character_id: witness.resident_character_id, name: witness.display_name,
       demographic: witness.demographic, circumstance: witness.circumstance,
       location: witness.expected_location, description: witness.visible_description,
     },
     {
-      npc_id: "npc:two", name: "Else", demographic: "merchant",
+      resident_character_id: "npc:two", name: "Else", demographic: "merchant",
       circumstance: "road", location: "market", description: "tall",
     },
   );
@@ -131,7 +121,7 @@ test("NPC selection atomically hydrates locked witness and pattern bindings", ()
   hydratePatternBinding(pattern, binding, "riverdale");
   assert.equal(pattern.expected_settlement_id, "riverdale");
   assert.equal(pattern.presence_version, 42);
-  assert.equal(pattern.npc_id, "npc:two");
+  assert.equal(pattern.resident_character_id, "npc:two");
 });
 
 test("open YAML content IDs are supplied by schema rather than JavaScript", () => {

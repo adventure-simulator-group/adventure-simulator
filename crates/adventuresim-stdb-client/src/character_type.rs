@@ -4,10 +4,13 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+use super::contextual_decision_state_type::ContextualDecisionState;
+
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Character {
     pub id: u64,
+    pub scan_id: u64,
     pub name: String,
     pub xp: u32,
     pub level: u32,
@@ -19,6 +22,7 @@ pub struct Character {
     pub temporary: bool,
     pub age_years: u16,
     pub alive: bool,
+    pub party_treatment_decision: ContextualDecisionState,
 }
 
 impl __sdk::InModule for Character {
@@ -30,6 +34,7 @@ impl __sdk::InModule for Character {
 /// Provides typed access to columns for query building.
 pub struct CharacterCols {
     pub id: __sdk::__query_builder::Col<Character, u64>,
+    pub scan_id: __sdk::__query_builder::Col<Character, u64>,
     pub name: __sdk::__query_builder::Col<Character, String>,
     pub xp: __sdk::__query_builder::Col<Character, u32>,
     pub level: __sdk::__query_builder::Col<Character, u32>,
@@ -41,6 +46,7 @@ pub struct CharacterCols {
     pub temporary: __sdk::__query_builder::Col<Character, bool>,
     pub age_years: __sdk::__query_builder::Col<Character, u16>,
     pub alive: __sdk::__query_builder::Col<Character, bool>,
+    pub party_treatment_decision: __sdk::__query_builder::Col<Character, ContextualDecisionState>,
 }
 
 impl __sdk::__query_builder::HasCols for Character {
@@ -48,6 +54,7 @@ impl __sdk::__query_builder::HasCols for Character {
     fn cols(table_name: &'static str) -> Self::Cols {
         CharacterCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
+            scan_id: __sdk::__query_builder::Col::new(table_name, "scan_id"),
             name: __sdk::__query_builder::Col::new(table_name, "name"),
             xp: __sdk::__query_builder::Col::new(table_name, "xp"),
             level: __sdk::__query_builder::Col::new(table_name, "level"),
@@ -62,6 +69,10 @@ impl __sdk::__query_builder::HasCols for Character {
             temporary: __sdk::__query_builder::Col::new(table_name, "temporary"),
             age_years: __sdk::__query_builder::Col::new(table_name, "age_years"),
             alive: __sdk::__query_builder::Col::new(table_name, "alive"),
+            party_treatment_decision: __sdk::__query_builder::Col::new(
+                table_name,
+                "party_treatment_decision",
+            ),
         }
     }
 }
@@ -71,6 +82,7 @@ impl __sdk::__query_builder::HasCols for Character {
 /// Provides typed access to indexed columns for query building.
 pub struct CharacterIxCols {
     pub id: __sdk::__query_builder::IxCol<Character, u64>,
+    pub scan_id: __sdk::__query_builder::IxCol<Character, u64>,
     pub server: __sdk::__query_builder::IxCol<Character, __sdk::Identity>,
 }
 
@@ -79,6 +91,7 @@ impl __sdk::__query_builder::HasIxCols for Character {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         CharacterIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            scan_id: __sdk::__query_builder::IxCol::new(table_name, "scan_id"),
             server: __sdk::__query_builder::IxCol::new(table_name, "server"),
         }
     }

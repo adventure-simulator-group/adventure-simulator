@@ -1,10 +1,27 @@
 # Physiology system
 
-During an outbreak, Physiology can examine living or dead patients through the
-existing window and contribute systemic findings. It does not read outbreak
-truth, identify the source, or complete the quest; those conclusions require
-the investigation evidence graph and exact remediation. See
+During an outbreak, living patients are ordinary canonical Characters in a
+case-site Patient context, so treatment and observation use the same Surgery
+and Physiology authority as any other co-present Character. Dead patients use
+the ordinary corpse interface. Neither system reads outbreak truth, identifies
+the source, or completes the quest; those conclusions require the investigation
+evidence graph and exact remediation. See
 [Outbreak investigations](outbreaks.md).
+
+Strategic treatment uses the same allowed/refused/unavailable contextual
+decision as contact. A Character explicitly permits ordinary care from current
+party members by default, but an authored contextual refusal wins. Refusal or
+unavailability consumes no time, bandage, soap, alcohol, or tool use. The only
+incapacity exception is emergency **Bandage** for the exact selected limb when
+it has a live open, unbandaged cut; incapacity never authorizes stitching,
+splinting, extraction, or another procedure. Exact request receipts make an
+identical completed retry idempotent and reject reuse for different treatment
+inputs. Each rendered attempt receives a fresh opaque request token; an
+interrupted attempt writes no completed receipt, so a new render may try again.
+Contextual treatment binds the sanitized context reference and exact membership
+revision at request and commit, while ordinary self/party care explicitly
+carries no contextual claim. Presentation selects the first open cut in
+canonical limb order and posts that exact limb, including for emergency care.
 
 Dead subjects remain available to the medical interface. External and internal
 post-mortem interpretation, its separation from Surgery and Bestiary, and
@@ -133,6 +150,11 @@ observer's Physiology capability band at that boundary, preventing later
 training from sharpening historical observations. Every notebook records at
 most one examination per day. Higher bands produce more finely quantized
 readings and a better-calibrated differential, but do not add examinations.
+
+Contacting a contextual Character opens the same kind of pair-presence span at
+the current clock frontier; merely discovering or rendering a Patient does
+not. Leaving the case site closes the span. This permits ordinary examination
+and close-contact transmission without granting retroactive shared time.
 
 The same private spans bound passive prevention. Each span pins both members'
 Physiology bands and is clamped to their lesser personal clock, so joining,

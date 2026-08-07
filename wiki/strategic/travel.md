@@ -160,6 +160,13 @@ the choices justified by the encounter. If combat begins, the tactical or
 autoresolve system owns the immediate fight; the journey retains only its
 validated interruption and result.
 
+While the encounter remains unresolved, its exact stopped position is not a
+camp and cannot be used for rest, custody, or onward travel. A final successful
+resolution promotes that same persisted movement minute to an idempotent
+reached camp stop when the party still owns the matching canonical incomplete
+journey. Preview refreshes, stale or unresolved encounters, absent journeys,
+and journeys already at their destination never create a camp identity.
+
 ## Case sites
 
 Travel to an exact known case site may leave the road network and follow native
@@ -170,6 +177,26 @@ reward.
 After resolving or abandoning the situation, the party plans onward travel
 from its actual case-site location.
 
+An activity incident also preserves departure provenance at its exact case
+site while a character remains a current member of the incident-owning party
+and that party still occupies that same site. This remains true after the
+incident is resolved or avoided, so resolving combat or surrendering does not
+erase the location before the party crosses back into the settlement. The
+resolver uses the existing case-site authority coordinates. It does not
+disclose the private incident or make unrelated quest sites exact; ordinary
+investigation knowledge remains required everywhere else. A still-pending
+matching incident blocks a fresh forage attempt (after immutable retry
+handling), even though its site remains recognizable for withdrawal.
+
+When an exact case site is co-located with its destination settlement, returning
+to the settlement is an immediate location-boundary transition rather than a
+journey. The server still verifies the actor, party, unresolved-encounter,
+readiness, and exact current-site authority, then applies the ordinary arrival
+state refresh and avoids only the pending incident for that same party and
+site. It does not synchronize clocks, consume or refill field supplies, advance
+time, create a camp, scan for travel encounters, or accept a caller-supplied
+nonzero route for the zero-distance crossing.
+
 ## Training and exposure
 
 Walking trains the Terrain skills corresponding to the ground crossed. Road
@@ -179,3 +206,8 @@ does not.
 The active route stores its validated geometry and terrain mixture so a
 character's later training cannot retroactively change a journey already in
 progress.
+
+Combat interruptions materialize an exact durable roster of full Characters.
+Camp renders those counterparties and permits contact before combat. Contact is
+revisioned and idempotent, makes both sides aware, and removes Sneak for the
+remainder of that encounter.

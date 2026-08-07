@@ -1,3 +1,25 @@
+fn observer_safe_relationship_answer(
+    status: &crate::spacetimedb::BackendCharacterRelationshipStatus,
+    observer_id: u64,
+) -> String {
+    let observer_is_partner = status.courtship_partner_id == Some(observer_id)
+        || status.wedding_partner_id == Some(observer_id);
+    let courtship_is_public = status.courtship_kind.as_ref().is_some_and(|kind| {
+        !matches!(kind, crate::spacetimedb::CourtshipKind::Informal)
+            || status.courtship_exposed
+            || observer_is_partner
+    });
+    if status.wedding_commitment_id.is_some() && (status.courtship_exposed || observer_is_partner) {
+        "I am promised in marriage, and the appointed day draws nigh.".to_owned()
+    } else if status.spouse_id.is_some() {
+        "I am wed, and bound in marriage.".to_owned()
+    } else if status.courtship_partner_id.is_some() && courtship_is_public {
+        "I am in courtship, though I shall not name whom without cause.".to_owned()
+    } else {
+        "I have no public pledge of courtship to declare.".to_owned()
+    }
+}
+
 pub(super) async fn party_social(
     State(state): State<AppState>,
     Path((kind, id, target_id)): Path<(String, String, u64)>,
@@ -11,16 +33,14 @@ pub(super) async fn party_social(
             return Html("<h1>Strategic data is unavailable</h1>".into());
         }
     };
-    location.active_building = building.valid().map(str::to_owned);
+    location.active_building = building.valid_for(&location).map(str::to_owned);
     let Some((active, _)) = get_active_character(&state, session.character_id_u64()).await else {
         return Html("<h1>Choose a character first</h1>".into());
     };
     let selected = if target_id == active.id {
         active.clone()
     } else {
-        match state
-            .db
-            .query_one::<Character>(&format!("SELECT * FROM character WHERE id = {target_id}"))
+        match crate::routes::data::character_as_observed(&state, target_id, active.id)
             .await
             .ok()
             .flatten()
@@ -56,7 +76,7 @@ pub(super) async fn party_social(
     let target_condition_result = state
         .db
         .query_one::<CharacterCondition>(&format!(
-            "SELECT * FROM character_condition WHERE character_id = {target_id}"
+            "SELECT * FROM backend_character_conditions WHERE character_id = {target_id}"
         ))
         .await;
     let religion_id = target_condition_result
@@ -71,7 +91,7 @@ pub(super) async fn party_social(
     let infamy = reputation
         .as_ref()
         .map_or(0.0, |value| value.infamy as f32 / 100.0);
-    let target_minute = query_single::<CharacterTime>(&state, "character_time", target_id)
+    let target_minute = query_single::<CharacterTime>(&state, "backend_character_times", target_id)
         .await
         .map_or(0, |v| v.minutes);
     let affinity_id = format!("{target_id}:{}", active.id);
@@ -147,6 +167,16 @@ pub(super) async fn party_social(
             .flatten()
             .is_some_and(|row| row.enabled)
     };
+    let relationship_answer = state
+        .db
+        .query_one::<crate::spacetimedb::BackendCharacterRelationshipStatus>(&format!(
+            "SELECT * FROM backend_character_relationship_statuses WHERE character_id = {target_id}"
+        ))
+        .await
+        .ok()
+        .flatten()
+        .map(|status| observer_safe_relationship_answer(&status, active.id));
+
     let actor_personality_result = state
         .db
         .query::<CharacterPersonality>(&format!(
@@ -169,7 +199,7 @@ pub(super) async fn party_social(
     let actor_skills_result = state
         .db
         .query_one::<CharacterSkills>(&format!(
-            "SELECT * FROM character_skills WHERE character_id = {}",
+            "SELECT * FROM backend_character_skills WHERE character_id = {}",
             active.id
         ))
         .await;
@@ -242,6 +272,7 @@ pub(super) async fn party_social(
             adventuresim_core::social::SocialActionKind::Flirt,
         ),
         prayer_disabled_reason,
+        relationship_answer,
         feedback: social_feedback(building.social_feedback.as_deref()),
         unavailable: !beliefs_available || !affinity_available || !familiarity_available,
     };
@@ -283,13 +314,14 @@ pub(super) struct SocialActionForm {
 
 #[derive(Deserialize)]
 pub(super) struct CasualChatForm {
-    requested_minutes: u64,
-    action_id: String,
+    requested_minutes: SocialDuration,
+    action_id: SocialActionId,
 }
 
 #[derive(Deserialize)]
 pub(super) struct BackendSocialChatReceiptRow {
-    outcome: String,
+    #[serde(deserialize_with = "crate::spacetimedb::deserialize_social_chat_outcome")]
+    outcome: SocialChatOutcome,
 }
 
 #[derive(Deserialize)]
@@ -321,8 +353,17 @@ pub(super) async fn set_automatic_social_chat(
     {
         tracing::warn!(%error, actor_id, target_id, "automatic social chat preference rejected");
     }
-    Redirect::to(&building.append_to(format!("/locations/{kind}/{id}/party/{target_id}/social")))
-        .into_response()
+    Redirect::to(
+        &building
+            .append_to(
+                &state,
+                &kind,
+                &id,
+                format!("/locations/{kind}/{id}/party/{target_id}/social"),
+            )
+            .await,
+    )
+    .into_response()
 }
 
 pub(super) async fn perform_social_action(
@@ -372,22 +413,19 @@ pub(super) async fn perform_social_action(
             social_action_error_feedback(&error.to_string())
         }
     };
-    Redirect::to(&building.append_to(format!(
-        "/locations/{kind}/{id}/party/{target_id}/social?social_feedback={feedback}"
-    )))
+    Redirect::to(
+        &building
+            .append_to(
+                &state,
+                &kind,
+                &id,
+                format!(
+                    "/locations/{kind}/{id}/party/{target_id}/social?social_feedback={feedback}"
+                ),
+            )
+            .await,
+    )
     .into_response()
-}
-
-pub(super) fn valid_casual_chat_minutes(minutes: u64) -> bool {
-    (15..=8 * 60).contains(&minutes) && minutes % 15 == 0
-}
-
-pub(super) fn valid_casual_chat_action_id(action_id: &str) -> bool {
-    !action_id.is_empty()
-        && action_id.len() <= 96
-        && action_id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
 pub(super) async fn chat_with_party_member(
@@ -400,16 +438,6 @@ pub(super) async fn chat_with_party_member(
     let Some(actor_id) = session.character_id_u64() else {
         return (StatusCode::UNAUTHORIZED, "Choose a character first").into_response();
     };
-    if !valid_casual_chat_minutes(form.requested_minutes) {
-        return (
-            StatusCode::BAD_REQUEST,
-            "Choose 15 minutes to 8 hours in 15-minute increments",
-        )
-            .into_response();
-    }
-    if !valid_casual_chat_action_id(&form.action_id) {
-        return (StatusCode::BAD_REQUEST, "Invalid conversation action ID").into_response();
-    }
     let result = state
         .db
         .call(
@@ -417,8 +445,8 @@ pub(super) async fn chat_with_party_member(
             &[
                 json!(actor_id),
                 json!(target_id),
-                json!(form.requested_minutes),
-                json!(&form.action_id),
+                json!(form.requested_minutes.minutes()),
+                json!(form.action_id.as_str()),
             ],
         )
         .await;
@@ -427,25 +455,33 @@ pub(super) async fn chat_with_party_member(
             .db
             .query_one::<BackendSocialChatReceiptRow>(&format!(
                 "SELECT * FROM backend_social_chat_receipts WHERE id = {} AND actor_id = {actor_id}",
-                sql_string_literal(&format!("{actor_id}:{}", form.action_id))
+                sql_string_literal(&format!("{actor_id}:{}", form.action_id.as_str()))
             ))
             .await
             .ok()
             .flatten()
-            .map_or("chat_unavailable", |row| match row.outcome.as_str() {
-                "positive" => "chat_positive",
-                "mixed" => "chat_mixed",
-                "negative" => "chat_negative",
-                _ => "chat_unavailable",
+            .map_or("chat_unavailable", |row| match row.outcome {
+                SocialChatOutcome::Positive => "chat_positive",
+                SocialChatOutcome::Mixed => "chat_mixed",
+                SocialChatOutcome::Negative => "chat_negative",
             }),
         Err(error) => {
             tracing::warn!(%error, actor_id, target_id, "casual party chat rejected");
             "chat_unavailable"
         }
     };
-    Redirect::to(&building.append_to(format!(
-        "/locations/{kind}/{id}/party/{target_id}/social?social_feedback={feedback}"
-    )))
+    Redirect::to(
+        &building
+            .append_to(
+                &state,
+                &kind,
+                &id,
+                format!(
+                    "/locations/{kind}/{id}/party/{target_id}/social?social_feedback={feedback}"
+                ),
+            )
+            .await,
+    )
     .into_response()
 }
 
@@ -490,7 +526,9 @@ pub(super) fn social_action_blocked_by_actor(
     !actor_allows_social_action(action, mirth, courtship)
 }
 
-pub(super) fn social_feedback(value: Option<&str>) -> Option<crate::templates::settlement::SocialFeedback> {
+pub(super) fn social_feedback(
+    value: Option<&str>,
+) -> Option<crate::templates::settlement::SocialFeedback> {
     use crate::templates::settlement::SocialFeedback;
     match value {
         Some("addressed") => Some(SocialFeedback {
@@ -514,15 +552,15 @@ pub(super) fn social_feedback(value: Option<&str>) -> Option<crate::templates::s
             is_error: true,
         }),
         Some("chat_positive") => Some(SocialFeedback {
-            message: "The conversation brings you closer.",
+            message: "Thy conversation hath drawn you closer.",
             is_error: false,
         }),
         Some("chat_mixed") => Some(SocialFeedback {
-            message: "The conversation has warm moments and awkward ones.",
+            message: "Your speech held both warmth and uneasy pauses.",
             is_error: false,
         }),
         Some("chat_negative") => Some(SocialFeedback {
-            message: "The conversation leaves some friction between you.",
+            message: "Your words have left some discord betwixt you.",
             is_error: false,
         }),
         Some("chat_unavailable") => Some(SocialFeedback {
@@ -530,5 +568,35 @@ pub(super) fn social_feedback(value: Option<&str>) -> Option<crate::templates::s
             is_error: true,
         }),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod relationship_privacy_tests {
+    use super::*;
+
+    fn informal(exposed: bool) -> crate::spacetimedb::BackendCharacterRelationshipStatus {
+        crate::spacetimedb::BackendCharacterRelationshipStatus {
+            character_id: 2,
+            spouse_id: None,
+            courtship_partner_id: Some(7),
+            courtship_kind: Some(crate::spacetimedb::CourtshipKind::Informal),
+            courtship_exposed: exposed,
+            wedding_commitment_id: None,
+            wedding_partner_id: None,
+            wedding_effective_minute: None,
+            wedding_settlement_id: None,
+            pregnancy_due_minute: None,
+            pregnancy_child_id: None,
+        }
+    }
+
+    #[test]
+    fn informal_courtship_is_visible_only_to_partner_or_after_exposure() {
+        assert!(
+            observer_safe_relationship_answer(&informal(false), 9).contains("no public pledge")
+        );
+        assert!(observer_safe_relationship_answer(&informal(false), 7).contains("in courtship"));
+        assert!(observer_safe_relationship_answer(&informal(true), 9).contains("in courtship"));
     }
 }

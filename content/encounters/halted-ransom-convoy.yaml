@@ -1,0 +1,161 @@
+{
+  "encounters": [
+    {
+      "id": "halted_ransom_convoy_v1",
+      "version": 2,
+      "weight": 60,
+      "triggers": { "travel": true, "rest": true },
+      "provenance": {
+        "works": ["Le Morte d'Arthur, Volume I, Book IV, Chapter VII", "Le Morte d'Arthur, Volume I, Book IV, Chapter XII"],
+        "motifs": ["lawful_captivity", "sworn_release", "conditional_conduct_after_surrender", "roadside_convoy_halt", "betrayed_custody"],
+        "adaptation_note": "An original roadside synthesis of Malory's captivity, release, and conduct motifs: Volume I, Book IV, Chapter VII has Damas's sworn combat covenant release twenty prisoners, while Book IV, Chapter XII joins judgment, restoration, and terms of future conduct. Malory contains no exact ransom-convoy episode corresponding to this encounter."
+      },
+      "cast": [
+        { "id": "ransom_clerk", "name": "Ransom clerk", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } },
+        { "id": "veteran_custody_sergeant", "name": "Veteran custody sergeant", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } },
+        { "id": "captured_knight", "name": "Captured knight", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } }
+      ],
+      "opening": [
+        { "speaker": "ransom_clerk", "text": "Our prison wagon halteth off the road where a washed culvert sprang the axle. This knight and his two retainers yielded in the field beneath the sealed surrender roll I hold here; it proveth lawful custody, though neither side's feud-right. I keep their names and ransom account at this writing board, and no parole or release passeth without my reading of seal and covenant.", "reviewed_shakespearean": true },
+        { "speaker": "veteran_custody_sergeant", "text": "The key ring hangeth at my belt; my guards keep the bonds and places I appoint whilst I direct wheel, crib, and axle. That open repair chest holdeth our separate forty-eight-groschen custody wage purse and a spare flanged mace, which I shall grant for sound aid. The captive's mail is plainly caved and many rings lie beaten flat, though he hath not told you how they came so.", "reviewed_shakespearean": true },
+        { "speaker": "captured_knight", "text": "One guard and my elder retainer wear Saint Leonard's badge as I do. Let the sealed roll speak of surrender; I shall not plead the quarrel whilst I remain bound.", "reviewed_shakespearean": true }
+      ],
+      "choices": [
+        {
+          "id": "choose_dry_repair_shoulder",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
+          "label": "Read the washed ground and choose a dry repair shoulder",
+          "response": [{ "speaker": "veteran_custody_sergeant", "text": "Read rut, bank, and seepage; choose where wheel and crib shall bear. My guards shall move when I signal, and my axle crew shall follow the ground thou findest.", "reviewed_shakespearean": true }],
+          "result": "For forty minutes thou readest the plain and findest firm chalk beyond the culvert wash. The sergeant shifts guards, bonds, wagon, and cribbing onto thy chosen shoulder whilst the clerk keepeth roll and identities sealed. Once the axle seateth and trust is earned, captive and sergeant agree upon the unexplained dents: sword edges skated upon the worn mail, but a flanged mace crushed rings into padding. The convoy continueth, and the sergeant granteth thee that mace for prudent ground-reading.",
+          "deed": "choose_dry_ground_for_ransom_convoy_axle_repair",
+          "outcome_tags": ["prudence", "terrain", "sergeant_owned_repair", "ordinary_repair_completed", "immediate_convoy_departure"],
+          "checks": [{ "kind": "skill", "skill": "terrain_plains", "difficulty_milli": 1100 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "flanged_mace", "quantity": 1 },
+            { "kind": "information", "information_id": "pure_blunt_mace_bypasses_worn_armor_edge_resistance" }
+          ],
+          "personality": [{ "axis": "drive", "delta": 110, "virtue": "prudence" }],
+          "quest_reward_tags": ["prepare_blunt_weapon_against_armored_blade_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 40 }
+        },
+        {
+          "id": "identify_dangerous_binding_swelling",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
+          "label": "Examine the prisoners for dangerous swelling and chafing",
+          "response": [{ "speaker": "veteran_custody_sergeant", "text": "Name where flesh requireth slack or padding, and no more. The keys stay at my belt; mine own hands shall tend buckle, chain, prisoner, and guard place.", "reviewed_shakespearean": true }],
+          "result": "For thirty minutes thou findest a retainer's swelling hand and the knight's raw wrist before either suffereth lasting hurt. At thy bounded advice the sergeant padeth and slackeneth each needful place, then secureth every restraint anew whilst ordinary axle work proceedeth. Grateful for safe handling, the knight explaineth his broad mail dents: edges scarcely bit, whereas the flanged head crushed worn rings and stuffing together; the sergeant confirmeth the capture. Repair complete, the convoy leaveth, and she granteth thee the mace.",
+          "deed": "identify_binding_injuries_under_sergeant_authority",
+          "outcome_tags": ["mercy", "physiology", "sergeant_owned_custody", "ordinary_repair_completed", "immediate_convoy_departure"],
+          "checks": [{ "kind": "skill", "skill": "physiology", "difficulty_milli": 1200 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "flanged_mace", "quantity": 1 },
+            { "kind": "information", "information_id": "pure_blunt_mace_bypasses_worn_armor_edge_resistance" }
+          ],
+          "personality": [{ "axis": "conscience", "delta": 110, "virtue": "mercy" }],
+          "quest_reward_tags": ["prepare_blunt_weapon_against_armored_blade_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 30 }
+        },
+        {
+          "id": "negotiate_immediate_sworn_parole",
+          "interaction": { "kind": "blocked", "issue": "#373", "reason": "Parole negotiation needs the shared persuasion and agreement system." },
+          "label": "Negotiate a face-saving immediate sworn parole",
+          "response": [{ "speaker": "ransom_clerk", "text": "Seek terms that preserve custody's honor and use the knight's existing oath at arms. I shall compare his name and seal, word the parole, and pronounce whether release be lawful.", "reviewed_shakespearean": true }],
+          "result": "For thirty-five minutes thou framest immediate parole as faithful performance of the field surrender, not concession upon the feud. In the trusted covenant hearing, the knight recounteth that sword edges glanced from worn mail before a flanged mace crushed ring and padding; the sergeant confirmeth his words from the field. The clerk authenticateth name, seal, and existing arms oath, then pronounceth parole; only then doth the sergeant unlock the three, who depart immediately. The officers and crew finish the ordinary axle repair and leave, whilst the sergeant granteth thee the spare mace for courteous settlement.",
+          "deed": "negotiate_authenticated_immediate_field_parole",
+          "outcome_tags": ["courtesy", "clerk_owned_release_terms", "sergeant_owned_custody", "immediate_parole", "ordinary_repair_completed", "whole_scene_closed"],
+          "requirements": [{ "kind": "skill", "skill": "charm", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "charm", "difficulty_milli": 1150 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "flanged_mace", "quantity": 1 },
+            { "kind": "information", "information_id": "pure_blunt_mace_bypasses_worn_armor_edge_resistance" }
+          ],
+          "personality": [{ "axis": "sociability", "delta": 110, "virtue": "courtesy" }],
+          "quest_reward_tags": ["prepare_blunt_weapon_against_armored_blade_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 35 }
+        },
+        {
+          "id": "coordinate_guarded_axle_turns",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
+          "label": "Coordinate hands, guards, and axle turns without crossing authority",
+          "response": [{ "speaker": "veteran_custody_sergeant", "text": "Repeat my turns and hand-signs, but command no bond or body. The clerk shall keep roll and count; my guards and axle crew shall move at my word.", "reviewed_shakespearean": true }],
+          "result": "For forty-five minutes thou coordinatest labor and timing whilst the clerk counteth named prisoners against the sealed roll and the sergeant placeth guards, restraints, levers, and bodies. When the axle seateth, orderly aid hath earned a candid comparison: the captive saith blades slid upon his worn mail, and the sergeant nameth the flanged mace that drove the visible rings into their padding. Every prisoner remaineth lawfully held and the repaired convoy continueth. The sergeant granteth thee the mace for loyal command.",
+          "deed": "coordinate_axle_repair_beneath_divided_custody_authority",
+          "outcome_tags": ["loyalty", "command", "clerk_owned_release_terms", "sergeant_owned_custody", "sergeant_owned_repair", "ordinary_repair_completed", "immediate_convoy_departure"],
+          "requirements": [{ "kind": "skill", "skill": "command", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "command", "difficulty_milli": 1050 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "flanged_mace", "quantity": 1 },
+            { "kind": "information", "information_id": "pure_blunt_mace_bypasses_worn_armor_edge_resistance" }
+          ],
+          "personality": [{ "axis": "drive", "delta": 110, "virtue": "loyalty" }],
+          "quest_reward_tags": ["prepare_blunt_weapon_against_armored_blade_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 45 }
+        },
+        {
+          "id": "hold_neutral_line_for_prisoner_lift",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
+          "label": "Stand the neutral line while loosened prisoners help lift",
+          "response": [{ "speaker": "veteran_custody_sergeant", "text": "Hold steady betwixt guard and captive, and suffer neither side to cross thy line. I shall choose whose hands are loosed, where each standeth, and when each bond returneth.", "reviewed_shakespearean": true }],
+          "result": "For fifty minutes thou holdest a neutral line under threat from either side whilst the sergeant briefly looseth the knight and retainers to lift at her appointed places. After the wheel beareth and every bond is resumed, the knight rewardeth thy steadiness with the truth behind his caved mail: sword strokes slipped, but a flanged mace compressed rings and padding beneath. The sergeant attesteth it and granteth thee that mace. Ordinary repair complete, the convoy leaveth immediately.",
+          "deed": "hold_neutral_line_during_temporary_prisoner_axle_lift",
+          "outcome_tags": ["courage", "sergeant_owned_custody", "temporary_labor_release", "restraints_resumed", "ordinary_repair_completed", "immediate_convoy_departure"],
+          "checks": [{ "kind": "skill", "skill": "will", "difficulty_milli": 1200 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "flanged_mace", "quantity": 1 },
+            { "kind": "information", "information_id": "pure_blunt_mace_bypasses_worn_armor_edge_resistance" }
+          ],
+          "personality": [{ "axis": "nerve", "delta": 120, "virtue": "courage" }],
+          "quest_reward_tags": ["prepare_blunt_weapon_against_armored_blade_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 50 }
+        },
+        {
+          "id": "swear_cross_marked_work_truce",
+          "interaction": { "kind": "shared_systems", "character_actions": ["investigation_information", "item_inventory_transfer", "relationship_personality"] },
+          "label": "Recognize the Saint Leonard signs and frame their familiar work oath",
+          "response": [{ "speaker": "ransom_clerk", "text": "Thou hast rightly known their matched Saint Leonard signs and the confraternity's work response. Recite its familiar form; I shall set a narrow covenant beneath the field seal, and the sergeant shall keep key, chain, and place.", "reviewed_shakespearean": true }],
+          "result": "For forty minutes thou usest knowledge of the matched Saint Leonard signs to propose their familiar cross-sworn work truce. The clerk drafteth and validateth its narrow terms; the sergeant looseth, placeth, and rebindeth the prisoners. Mortal oath and shared cadence earn a truthful field account, not a miracle: edges skated upon the knight's worn mail, whilst a flanged mace crushed rings and padding. The repaired convoy continueth with restraints resumed, and the sergeant granteth thee the mace for faithful fellowship.",
+          "deed": "keep_mundane_cross_sworn_axle_work_truce",
+          "outcome_tags": ["faith", "shared_confraternity_oath", "clerk_owned_release_terms", "sergeant_owned_custody", "temporary_work_truce", "ordinary_shared_cadence", "restraints_resumed", "ordinary_repair_completed", "immediate_convoy_departure"],
+          "requirements": [{ "kind": "religion", "religion": "roman_catholic" }],
+          "checks": [{ "kind": "religion", "religion": "roman_catholic", "difficulty_milli": 1050 }],
+          "effects": [
+            { "kind": "grant_item", "item_id": "flanged_mace", "quantity": 1 },
+            { "kind": "information", "information_id": "pure_blunt_mace_bypasses_worn_armor_edge_resistance" }
+          ],
+          "personality": [{ "axis": "conviction", "delta": 110, "virtue": "faith" }],
+          "quest_reward_tags": ["prepare_blunt_weapon_against_armored_blade_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 40 }
+        },
+        {
+          "id": "steal_custody_pay_and_release_escape",
+          "interaction": { "kind": "blocked", "issue": "#377", "reason": "Keys, custody, release, and theft need shared custody authority." },
+          "label": "Signal the divided lift, steal custody stores, and loose the prisoners",
+          "response": [{ "speaker": "veteran_custody_sergeant", "text": "Thy hand-signs suit a lift where wash and load cannot see each other. Stand between the stations and signal only at my word; the clerk shall count the named lifters below whilst I keep axle and crew above.", "reviewed_shakespearean": true }],
+          "result": "For an hour thy practiced deceit maketh thee a credible tool-runner and signaler for a real repair difficulty. Useful service earneth trust and the field account behind the knight's dented mail: sword edges skated, whilst the spare flanged mace crushed worn rings and padding. At the necessary synchronized lift, the clerk readeth the named lifters from the sealed roll at the downhill load station while thou takest thy signaling place close beside the sergeant at axle and crew above. Her key ring remaineth hooked securely upon her belt even after she slackeneth one prisoner's work-chain. Thy high deception sendeth each watcher toward a plausible load shift; when both her hands and full attention must hold the lever, thou covertly unhookest and palmest the belt ring. Thou openest the nearby chest, takest the separate forty-eight-groschen custody wage purse and bulky mace, and unlockest all three prisoners solely as escape cover. Amid their off-road flight and the lift's confusion, thou departest with purse and mace visible in hand whilst every prisoner escapeth unharmed.",
+          "deed": "steal_custody_pay_mace_and_keys_then_release_escape_cover",
+          "outcome_tags": ["deception", "theft", "stolen_custody_pay", "scene_local_prisoner_escape", "necessary_work_created_custody_gap", "all_prisoners_escaped_unharmed", "material_loss_to_convoy"],
+          "requirements": [{ "kind": "skill", "skill": "deception", "minimum_hours": 1 }],
+          "checks": [{ "kind": "skill", "skill": "deception", "difficulty_milli": 1300 }],
+          "effects": [
+            { "kind": "currency", "currency_id": "brandenburg_groschen", "amount": 48 },
+            { "kind": "grant_item", "item_id": "flanged_mace", "quantity": 1 },
+            { "kind": "information", "information_id": "pure_blunt_mace_bypasses_worn_armor_edge_resistance" }
+          ],
+          "personality": [{ "axis": "transparency", "delta": -250, "virtue": "honesty" }],
+          "quest_reward_tags": ["prepare_blunt_weapon_against_armored_blade_opposition"],
+          "transition": { "kind": "travel_delay", "minutes": 60 }
+        },
+        {
+          "id": "ignore",
+          "interaction": { "kind": "shared_systems", "character_actions": ["ignore_travel"] },
+          "label": "Leave the halted convoy to its own repair",
+          "response": [],
+          "result": "Thou leavest the clerk, sergeant, prisoners, and sprung wagon at the washed culvert. They continue their repair whilst the open road and nearby resting ground remain free.",
+          "deed": "leave_halted_ransom_convoy_untouched",
+          "outcome_tags": []
+        }
+      ],
+      "quest_reward_eligibility": ["physical_tactical_information", "material_preparation"]
+    }
+  ]
+}

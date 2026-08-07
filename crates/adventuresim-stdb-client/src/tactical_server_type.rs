@@ -14,10 +14,15 @@ pub struct TacticalServer {
     pub party_id: String,
     pub addr: String,
     pub cert_digest: String,
+    pub expected_party_members: u32,
+    pub authorized_party_member_ids: Vec<u64>,
     pub required_enemy_kills: u32,
     pub enemy_difficulty: i32,
     pub enemy_combat_scale_bps: u32,
+    pub countermeasure_multiplier_bps: u32,
     pub normalized_combat_power: u32,
+    pub enemy_character_ids: Vec<u64>,
+    pub party_has_surprise: bool,
 }
 
 impl __sdk::InModule for TacticalServer {
@@ -35,10 +40,15 @@ pub struct TacticalServerCols {
     pub party_id: __sdk::__query_builder::Col<TacticalServer, String>,
     pub addr: __sdk::__query_builder::Col<TacticalServer, String>,
     pub cert_digest: __sdk::__query_builder::Col<TacticalServer, String>,
+    pub expected_party_members: __sdk::__query_builder::Col<TacticalServer, u32>,
+    pub authorized_party_member_ids: __sdk::__query_builder::Col<TacticalServer, Vec<u64>>,
     pub required_enemy_kills: __sdk::__query_builder::Col<TacticalServer, u32>,
     pub enemy_difficulty: __sdk::__query_builder::Col<TacticalServer, i32>,
     pub enemy_combat_scale_bps: __sdk::__query_builder::Col<TacticalServer, u32>,
+    pub countermeasure_multiplier_bps: __sdk::__query_builder::Col<TacticalServer, u32>,
     pub normalized_combat_power: __sdk::__query_builder::Col<TacticalServer, u32>,
+    pub enemy_character_ids: __sdk::__query_builder::Col<TacticalServer, Vec<u64>>,
+    pub party_has_surprise: __sdk::__query_builder::Col<TacticalServer, bool>,
 }
 
 impl __sdk::__query_builder::HasCols for TacticalServer {
@@ -52,6 +62,14 @@ impl __sdk::__query_builder::HasCols for TacticalServer {
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             addr: __sdk::__query_builder::Col::new(table_name, "addr"),
             cert_digest: __sdk::__query_builder::Col::new(table_name, "cert_digest"),
+            expected_party_members: __sdk::__query_builder::Col::new(
+                table_name,
+                "expected_party_members",
+            ),
+            authorized_party_member_ids: __sdk::__query_builder::Col::new(
+                table_name,
+                "authorized_party_member_ids",
+            ),
             required_enemy_kills: __sdk::__query_builder::Col::new(
                 table_name,
                 "required_enemy_kills",
@@ -61,10 +79,19 @@ impl __sdk::__query_builder::HasCols for TacticalServer {
                 table_name,
                 "enemy_combat_scale_bps",
             ),
+            countermeasure_multiplier_bps: __sdk::__query_builder::Col::new(
+                table_name,
+                "countermeasure_multiplier_bps",
+            ),
             normalized_combat_power: __sdk::__query_builder::Col::new(
                 table_name,
                 "normalized_combat_power",
             ),
+            enemy_character_ids: __sdk::__query_builder::Col::new(
+                table_name,
+                "enemy_character_ids",
+            ),
+            party_has_surprise: __sdk::__query_builder::Col::new(table_name, "party_has_surprise"),
         }
     }
 }

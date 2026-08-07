@@ -524,7 +524,7 @@ pub fn referral_presentation(
     let description = format!("{contact_height}, {contact_build}, with {contact_hair}");
     if source.is_some_and(|(source_id, _)| source_id == contact_id) {
         return ReferralPresentation {
-            lead: format!("{summary} I am the person you were sent to. Ask me about "),
+            lead: format!("{summary} I am the person sought. Ask me of "),
             topic: Some(("what I saw".into(), "referred-testimony".into())),
             trailing: ".".into(),
         };
@@ -533,11 +533,11 @@ pub fn referral_presentation(
         source_id != contact_id && source_name.eq_ignore_ascii_case(contact_name)
     }) {
         return ReferralPresentation::plain(format!(
-            "{summary} Ask the other {contact_name}—not me. The one you want is the {contact_profession}: {description}, usually found at the {tab}."
+            "{summary} Ask the other {contact_name}—not me. The sought person is the {contact_profession}: {description}, commonly found at the {tab}."
         ));
     }
     ReferralPresentation::plain(format!(
-        "{summary} Ask {contact_name}—the {contact_profession}, {description}, usually found at the {tab}."
+        "{summary} Ask {contact_name}—the {contact_profession}, {description}, commonly found at the {tab}."
     ))
 }
 
@@ -597,7 +597,7 @@ mod tests {
 
         assert_eq!(
             text.text(),
-            "Livestock have been disappearing. Ask the other Hans Wagner—not me. The one you want is the householder: average height, slender, with brown hair, usually found at the Residences."
+            "Livestock have been disappearing. Ask the other Hans Wagner—not me. The sought person is the householder: average height, slender, with brown hair, commonly found at the Residences."
         );
 
         let self_referral = referral_presentation(
@@ -613,7 +613,7 @@ mod tests {
         );
         assert_eq!(
             self_referral.text(),
-            "I saw it myself. I am the person you were sent to. Ask me about what I saw."
+            "I saw it myself. I am the person sought. Ask me of what I saw."
         );
         assert_eq!(
             self_referral.topic,

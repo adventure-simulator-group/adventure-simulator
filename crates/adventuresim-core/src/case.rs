@@ -121,6 +121,9 @@ pub enum ObjectiveRequirement {
     DriveOff {
         hostile_group_id: String,
     },
+    Surrender {
+        hostile_group_id: String,
+    },
     Capture {
         subject_id: SubjectId,
     },
@@ -151,6 +154,9 @@ pub enum ObjectiveRequirement {
     /// The exact physical intervention required by private outbreak authority.
     RemediateSource {
         remediation_id: String,
+    },
+    SolveChallenge {
+        challenge_id: String,
     },
     Expose {
         subject_ref: String,
@@ -202,6 +208,9 @@ pub enum OutcomeFactKind {
     HostilesDrivenOff {
         hostile_group_id: String,
     },
+    HostilesSurrendered {
+        hostile_group_id: String,
+    },
     SubjectCaptured {
         subject_id: SubjectId,
     },
@@ -231,6 +240,9 @@ pub enum OutcomeFactKind {
     },
     SourceRemediated {
         remediation_id: String,
+    },
+    ChallengeSolved {
+        challenge_id: String,
     },
     Exposed {
         subject_ref: String,
@@ -419,6 +431,14 @@ fn match_fact(requirement: &ObjectiveRequirement, fact: &OutcomeFactKind) -> Opt
                 hostile_group_id: b,
             },
         ) if a == b => true,
+        (
+            R::Surrender {
+                hostile_group_id: a,
+            },
+            F::HostilesSurrendered {
+                hostile_group_id: b,
+            },
+        ) if a == b => true,
         (R::Capture { subject_id: a }, F::SubjectCaptured { subject_id: b })
         | (R::Rescue { subject_id: a }, F::SubjectRescued { subject_id: b })
         | (R::Release { subject_id: a }, F::SubjectReleased { subject_id: b })
@@ -466,6 +486,11 @@ fn match_fact(requirement: &ObjectiveRequirement, fact: &OutcomeFactKind) -> Opt
             true
         }
         (R::RemediateSource { remediation_id: a }, F::SourceRemediated { remediation_id: b })
+            if a == b =>
+        {
+            true
+        }
+        (R::SolveChallenge { challenge_id: a }, F::ChallengeSolved { challenge_id: b })
             if a == b =>
         {
             true
@@ -649,6 +674,76 @@ mod tests {
         assert_eq!(
             expression
                 .evaluate(&cid("case:wolves"), "party:a", &negotiated)
+                .state,
+            EvaluationState::Satisfied
+        );
+    }
+
+    #[test]
+    fn challenge_fact_satisfies_only_its_typed_challenge_objective() {
+        let expression = ObjectiveExpression::new(vec![ObjectivePath {
+            objectives: vec![Objective {
+                id: oid("objective:solve"),
+                requirement: ObjectiveRequirement::SolveChallenge {
+                    challenge_id: "challenge:five-signs".into(),
+                },
+            }],
+        }])
+        .unwrap();
+        let wrong = fact(
+            "fact:wrong",
+            "case:trial",
+            "party:knights",
+            OutcomeFactKind::Negotiated {
+                subject_ref: "challenge:five-signs".into(),
+            },
+        );
+        assert_eq!(
+            expression
+                .evaluate(&cid("case:trial"), "party:knights", &[wrong])
+                .state,
+            EvaluationState::Pending
+        );
+        let solved = fact(
+            "fact:solved",
+            "case:trial",
+            "party:knights",
+            OutcomeFactKind::ChallengeSolved {
+                challenge_id: "challenge:five-signs".into(),
+            },
+        );
+        assert_eq!(
+            expression
+                .evaluate(&cid("case:trial"), "party:knights", &[solved])
+                .state,
+            EvaluationState::Satisfied
+        );
+    }
+
+    #[test]
+    fn optional_preliminary_challenge_does_not_gate_finale_defeat() {
+        let expression = ObjectiveExpression::new(vec![ObjectivePath {
+            objectives: vec![Objective {
+                id: oid("objective:finale"),
+                requirement: ObjectiveRequirement::Defeat {
+                    hostile_group_id: "hostile-group:errantry-finale".into(),
+                    count: 4,
+                },
+            }],
+        }])
+        .unwrap();
+        let finale = fact(
+            "fact:finale",
+            "case:errantry",
+            "party:knights",
+            OutcomeFactKind::HostilesDefeated {
+                hostile_group_id: "hostile-group:errantry-finale".into(),
+                count: 4,
+            },
+        );
+        assert_eq!(
+            expression
+                .evaluate(&cid("case:errantry"), "party:knights", &[finale])
                 .state,
             EvaluationState::Satisfied
         );

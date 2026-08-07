@@ -141,13 +141,33 @@ pub struct Contract {
     pub settlement_id: String,
     #[index(btree)]
     pub service_id: String,
-    pub issuer_npc_id: String,
+    pub issuer_resident_character_id: u64,
     pub status: ContractStatus,
     pub accepted_by: Option<String>,
     pub opposition_wording: String,
     pub opposition_count_wording: String,
     pub accepted_at_minute: Option<u64>,
     pub paid_at_minute: Option<u64>,
+}
+
+impl Contract {
+    /// Parse the flattened row before lifecycle-sensitive reducer logic uses it.
+    pub fn parsed_state(&self) -> Result<adventuresim_core::strategic_state::ContractState, String> {
+        use adventuresim_core::strategic_state::FlatContractStatus as Flat;
+        let status = match self.status {
+            ContractStatus::Offered => Flat::Offered,
+            ContractStatus::Accepted => Flat::Accepted,
+            ContractStatus::ReadyToReport => Flat::ReadyToReport,
+            ContractStatus::Paid => Flat::Paid,
+            ContractStatus::Withdrawn => Flat::Withdrawn,
+        };
+        adventuresim_core::strategic_state::ContractState::parse(
+            status,
+            self.accepted_by.clone(),
+            self.accepted_at_minute,
+            self.paid_at_minute,
+        ).map_err(|error| error.to_string())
+    }
 }
 
 /// Trusted-gateway projection. This is not a direct player subscription; web
@@ -163,11 +183,15 @@ pub struct BackendContract {
     pub xp_reward: i32,
     pub settlement_id: String,
     pub service_id: String,
-    pub issuer_npc_id: String,
+    pub issuer_resident_character_id: u64,
     pub status: ContractStatus,
     pub accepted_by: Option<String>,
     pub opposition_wording: String,
     pub opposition_count_wording: String,
+    /// Observer-safe aggregate built from the exact enemy Combatants that
+    /// autoresolve will construct: authored profile, base difficulty, incident
+    /// scale, equipment, training, and current enemy count.
+    pub opposition_combat_power: u64,
     pub accepted_at_minute: Option<u64>,
     pub paid_at_minute: Option<u64>,
     /// Conservative public one-way preflight distance: the greatest distance
@@ -186,13 +210,43 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
         .gateway_bucket()
         .filter(0u8)
         .filter_map(|row| {
-            let distance_m = ctx
+            let sites = ctx
                 .db
                 .case_site_authority()
                 .case_id()
                 .filter(&row.case_id)
-                .map(|site| site.distance_m)
-                .max()?;
+                .collect::<Vec<_>>();
+            let distance_m = sites.iter().map(|site| site.distance_m).max()?;
+            let opposition_combat_power = sites
+                .iter()
+                .filter_map(|site| {
+                    ctx.db
+                        .hostile_group_authority()
+                        .case_site_id_key()
+                        .find(&site.id.value)
+                        .filter(|group| {
+                            crate::investigation::canonical_case_site_place(
+                                &group.case_site_id_key,
+                            )
+                            .zip(group.case_site_id.to_place())
+                            .is_some_and(|(key_place, typed_place)| key_place == typed_place)
+                                && group.case_site_id == site.id
+                        })
+                })
+                .map(|group| {
+                    autoresolve_enemy(
+                        u64::MAX,
+                        &group.enemy_type,
+                        group.base_difficulty,
+                        group.combat_scale_bps,
+                    )
+                    .ok()
+                    .and_then(|enemy| {
+                        adventuresim_core::autoresolve::autoresolve_combat_power(&enemy)
+                            .checked_mul(u64::from(group.enemy_count))
+                    })
+                })
+                .try_fold(0u64, |total, power| total.checked_add(power?))?;
             Some(BackendContract {
                 id: row.id,
                 case_id: row.case_id,
@@ -203,11 +257,12 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
                 xp_reward: row.xp_reward,
                 settlement_id: row.settlement_id,
                 service_id: row.service_id,
-                issuer_npc_id: row.issuer_npc_id,
+                issuer_resident_character_id: row.issuer_resident_character_id,
                 status: row.status,
                 accepted_by: row.accepted_by,
                 opposition_wording: row.opposition_wording,
                 opposition_count_wording: row.opposition_count_wording,
+                opposition_combat_power,
                 accepted_at_minute: row.accepted_at_minute,
                 paid_at_minute: row.paid_at_minute,
                 distance_m,
@@ -326,7 +381,7 @@ pub struct ContractIssuerInteractionReceipt {
     pub contract_id: String,
     pub party_id: String,
     pub stage: ContractInteractionStage,
-    pub issuer_npc_id: String,
+    pub issuer_resident_character_id: u64,
     pub interacting_character_id: u64,
     pub interacted_at_minute: u64,
     pub dialogue_session_id: String,
@@ -372,6 +427,10 @@ pub struct StrategicIncident {
     pub id: IncidentId,
     #[unique]
     pub source_id: IncidentSourceId,
+    /// Random, unlinkable capability used by the trusted gateway to invoke
+    /// public incident actions without disclosing the source-derived ID.
+    #[unique]
+    pub action_token: String,
     #[index(btree)]
     pub party_id: String,
     pub settlement_id: String,
@@ -430,7 +489,7 @@ pub struct RecruitmentOffer {
     #[index(btree)]
     pub settlement_id: String,
     #[unique]
-    pub settlement_npc_id: String,
+    pub settlement_resident_id: u64,
     pub location_id: String,
     pub leader_id: u64,
     pub status: RecruitmentOfferStatus,
@@ -600,6 +659,7 @@ pub struct PartyJourneyEncounterAuthority {
     pub party_id: String,
     pub seed: u64,
     pub next_roll: u64,
+    pub narrative_rest_elapsed_minutes: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, SpacetimeType)]
@@ -633,6 +693,7 @@ pub struct StrategicEncounter {
     pub enemy_aware: bool,
     pub available_choices: Vec<String>,
     pub status: String,
+    pub revision: u32,
     pub selected_choice: Option<String>,
     pub selection_explanation: String,
     pub party_speed_m_per_minute: u32,
@@ -641,6 +702,21 @@ pub struct StrategicEncounter {
     pub penalty_minutes: u64,
     pub loss_preview: Vec<StrategicEncounterLoss>,
     pub outcome: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+#[table(accessor = strategic_encounter_resolution_receipt)]
+pub struct StrategicEncounterResolutionReceipt {
+    #[primary_key]
+    pub id: String,
+    pub encounter_id: String,
+    pub party_id: String,
+    pub character_id: u64,
+    pub action_id: String,
+    pub choice: String,
+    pub expected_revision: u32,
+    pub resulting_revision: u32,
+    pub outcome: String,
 }
 
 /// Typed elapsed-time camp coordinates for the journey tracker. Keeping these
@@ -740,7 +816,7 @@ pub struct PartyJourneyRoute {
     pub return_route: Option<JourneyRouteLeg>,
 }
 
-fn strategic_view_is_gateway(ctx: &ViewContext) -> bool {
+pub(crate) fn strategic_view_is_gateway(ctx: &ViewContext) -> bool {
     ctx.db
         .strategic_gateway_authority()
         .id()
@@ -1108,15 +1184,35 @@ pub struct MissionAuthority {
     pub status: MissionAttemptStatus,
     pub committed_resolution: Option<HostileResolutionKind>,
     pub committed_capture_subject_id: Option<String>,
+    pub committed_capture_custody_version: Option<u32>,
     pub scene_key: String,
     /// Immutable combat/loot snapshot captured when this mission binds.
     pub hostile_version: u16,
     pub enemy_count: u32,
+    /// Immutable exact roster captured at bind time.
+    pub enemy_character_ids: Vec<u64>,
+    /// Immutable awareness snapshot. Contact removes the party's opening surprise.
+    pub contacted_before_combat: bool,
     pub enemy_difficulty: i32,
     pub enemy_combat_scale_bps: u32,
     pub normalized_combat_power: u32,
     pub drop_item_id: Option<String>,
     pub drop_quantity: u32,
+}
+
+impl MissionAuthority {
+    /// Parse the flattened storage representation into its valid sum type.
+    pub fn parsed_state(&self) -> Result<adventuresim_core::strategic_state::MissionAttemptState, String> {
+        use adventuresim_core::strategic_state::{FlatMissionState, FlatMissionStatus as Status, FlatResolution as Resolution};
+        adventuresim_core::strategic_state::MissionAttemptState::parse(FlatMissionState {
+            status: match self.status { MissionAttemptStatus::Bound => Status::Bound, MissionAttemptStatus::Committed => Status::Committed, MissionAttemptStatus::Failed => Status::Failed, MissionAttemptStatus::Cancelled => Status::Cancelled },
+            case_site_id: self.case_site_id.as_ref().map(|id| id.value.clone()),
+            hostile_group_id: self.hostile_group_id.clone(),
+            resolution: self.committed_resolution.map(|resolution| match resolution { HostileResolutionKind::Defeated => Resolution::Defeated, HostileResolutionKind::DrivenOff => Resolution::DrivenOff, HostileResolutionKind::Surrendered => Resolution::Surrendered, HostileResolutionKind::Captured => Resolution::Captured, HostileResolutionKind::CaptureTargetKilled => Resolution::CaptureTargetKilled }),
+            subject_id: self.committed_capture_subject_id.clone(),
+            custody_version: self.committed_capture_custody_version,
+        }).map_err(|error| error.to_string())
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, SpacetimeType)]
@@ -1133,6 +1229,7 @@ pub enum MissionAttemptStatus {
 pub enum HostileResolutionKind {
     Defeated,
     DrivenOff,
+    Surrendered,
     Captured,
     CaptureTargetKilled,
 }
@@ -1185,6 +1282,7 @@ pub enum HostileGroupDisposition {
     Active,
     Defeated,
     DrivenOff,
+    Surrendered,
     Captured,
 }
 
@@ -1219,6 +1317,10 @@ fn validate_hostile_resolution_contract(
 pub struct HostileGroupAuthority {
     #[primary_key]
     pub id: String,
+    /// Primitive query key for view contexts; it must exactly mirror the typed
+    /// authority ID below.
+    #[unique]
+    pub case_site_id_key: String,
     #[unique]
     pub case_site_id: CaseSiteId,
     pub enemy_type: String,
@@ -1250,18 +1352,38 @@ fn materialize_hostile_group(
         hostile_group_authority_row(hostile_group_id, site, enemy_type, enemy_count, difficulty)?;
     if let Some(existing) = ctx.db.hostile_group_authority().id().find(&group.id) {
         return if existing.case_site_id == group.case_site_id
+            && existing.case_site_id_key == group.case_site_id_key
+            && crate::investigation::canonical_case_site_place(&existing.case_site_id_key)
+                .zip(existing.case_site_id.to_place())
+                .is_some_and(|(key_place, typed_place)| key_place == typed_place)
             && existing.enemy_type == group.enemy_type
             && existing.base_enemy_count == group.base_enemy_count
             && existing.base_difficulty == group.base_difficulty
             && existing.baseline_enemy_power == group.baseline_enemy_power
             && existing.drop_item_id == group.drop_item_id
         {
+            crate::world_actor::materialize_context_roster(
+                ctx,
+                crate::world_actor::CharacterContextKind::HostileGroup,
+                &existing.id,
+                &existing.case_site_id.value,
+                &existing.enemy_type,
+                existing.enemy_count,
+            )?;
             Ok(existing)
         } else {
             Err("Hostile-group ID is already bound to different authority".into())
         };
     }
     ctx.db.hostile_group_authority().insert(group.clone());
+    crate::world_actor::materialize_context_roster(
+        ctx,
+        crate::world_actor::CharacterContextKind::HostileGroup,
+        &group.id,
+        &group.case_site_id.value,
+        &group.enemy_type,
+        group.enemy_count,
+    )?;
     Ok(group)
 }
 
@@ -1288,6 +1410,7 @@ fn hostile_group_authority_row(
     );
     Ok(HostileGroupAuthority {
         id: hostile_group_id.to_string(),
+        case_site_id_key: site.id.value.clone(),
         case_site_id: site.id.clone(),
         drop_item_id: autoresolve_drop(&enemy_type)?.map(str::to_string),
         drop_quantity: base_enemy_count,
@@ -1318,6 +1441,24 @@ pub struct OutcomeSourceAuthority {
     pub hostile_group_id: Option<String>,
     pub resolution: HostileResolutionKind,
     pub party_id: String,
+}
+
+/// Battle-independent exact receipt for the authoritative hostile-group
+/// transition. Tactical victory and pre-combat withdrawal both call the same
+/// seam; only the tactical caller creates battle, morale, corpse, or loot rows.
+#[derive(Clone, Debug)]
+#[table(accessor = hostile_resolution_receipt)]
+pub struct HostileResolutionReceipt {
+    #[primary_key]
+    pub id: String,
+    pub party_id: String,
+    pub mission_id: Option<String>,
+    pub hostile_group_id: String,
+    pub observer_character_id: u64,
+    pub case_id: String,
+    pub case_site_id: CaseSiteId,
+    pub resolution: HostileResolutionKind,
+    pub capture_subject_id: Option<String>,
 }
 
 #[derive(SpacetimeType, serde::Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]

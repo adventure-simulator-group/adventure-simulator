@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use adventuresim_core::{
     bestiary::ThreatId,
+    errantry::{FeyPresenterCatalogId, FeySpeechPart, fey_speech},
     strategic_time::{ItinerarySegment, ItinerarySegmentKind},
 };
 use maud::{Markup, html};
@@ -16,8 +17,9 @@ use super::{
 };
 use crate::routes::travel::{TravelDestination, TravelProvisionForecast};
 use crate::spacetimedb::{
-    Character, ContractPresentation, JourneyPrecipitation, JourneyTerrainKind, Party, PartyJourney,
-    PartyJourneyItinerary, PartyJourneyRoute, Settlement, StrategicEncounter,
+    BackendRoadChallenge, ChallengePresenterCatalogId, Character, ContractPresentation,
+    JourneyPrecipitation, JourneyTerrainKind, Party, PartyJourney, PartyJourneyItinerary,
+    PartyJourneyRoute, Settlement, StrategicEncounter,
 };
 use crate::templates::{
     camp_location_layout_with_session, decorative_game_icon, empty_state, game_icon,
@@ -382,10 +384,6 @@ pub(crate) fn map_destination_detail(
                             " Travel is only available to settlements connected to the current location."
                         }
                     }
-                }))
-            } @else {
-                (sidebar_section("Destination", html! {
-                    p class="text-muted small-copy" { "Select a destination to inspect it and plan travel." }
                 }))
             }
         }
@@ -819,6 +817,11 @@ pub fn camp_page(
     planned_wake_minute: u16,
     continue_block_reason: Option<&str>,
     encounter: Option<&StrategicEncounter>,
+    counterparties: &[Character],
+    trial: Option<(&str, &str, ChallengePresenterCatalogId)>,
+    tactical_insight: Option<(&str, &str)>,
+    road_trial: Option<&BackendRoadChallenge>,
+    road_history: &[&BackendRoadChallenge],
     foraging_dialog: Option<Markup>,
     logged_in_as: Option<&str>,
 ) -> Markup {
@@ -870,12 +873,64 @@ pub fn camp_page(
         }
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, "/camp", None, false))
+            @if active_character.is_some() {
+                nav class="settlement-npc-strip counterparty-strip camp-counterparty-strip" aria-label="Camp counterparties" {
+                    a class="npc-portrait fireplace-portrait" href="/camp/fireplace"
+                        aria-label="Cook at fireplace" title="Cook at fireplace" {
+                        span class="npc-portrait-image fireplace-portrait-image" aria-hidden="true" {
+                            (decorative_game_icon("campfire"))
+                        }
+                        span class="npc-portrait-name" { "Campfire" }
+                        span class="btn btn-secondary btn-small" aria-hidden="true" { "Cook" }
+                    }
+                }
+            }
             (visual_stage("camp", "Camp", "A resting place beside the party's onward route"))
-            (settlement_chat_area("Camp", active_character))
+            @if let Some((finding, preparation)) = tactical_insight {
+                section class="strategic-notice" data-tactical-insight aria-label="Tactical insight" {
+                    h3 { "Tactical insight" }
+                    p { (finding) }
+                    p { strong { "Prepare accordingly: " } (preparation) }
+                }
+            }
+            @if let Some((case_id, challenge_id, presenter_catalog_id)) = trial {
+                @let opening = match presenter_catalog_id {
+                    ChallengePresenterCatalogId::LadyBeneathThornV1 =>
+                        fey_speech(
+                            FeyPresenterCatalogId::LadyBeneathThornV1,
+                            FeySpeechPart::Introduction,
+                        )[0],
+                };
+                section class="settlement-chat challenge-chat-invitation" aria-label="Fey conversation" {
+                    div class="settlement-chat-layout" {
+                        div class="settlement-chat-conversation" {
+                            div class="settlement-chat-messages" aria-live="polite" {
+                                p class="supernatural-spoken-line" {
+                                    strong { "The Lady Beneath the Thorn: " }
+                                    (opening)
+                                }
+                                a class="btn btn-primary"
+                                    href=(format!("/quests/{case_id}/challenges/{challenge_id}")) {
+                                    "Enter the trial"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            @if let Some(road_trial) = road_trial {
+                (generic_road_encounter(road_trial))
+            }
+            @for challenge in road_history {
+                (generic_road_encounter(challenge))
+            }
+            @if trial.is_none() && road_trial.is_none() && road_history.is_empty() {
+                (settlement_chat_area("Camp", active_character))
+            }
         }
         aside class="right-sidebar camp-journey-sidebar" {
             @if let Some(encounter) = encounter.filter(|encounter| encounter.status == "awaiting_choice") {
-                (strategic_encounter_panel(encounter))
+                (strategic_encounter_panel(encounter, counterparties))
             }
             div class="sidebar-section camp-journey-section" {
                 h3 class="sidebar-header" { "Journey" }
@@ -919,7 +974,99 @@ fn camp_continue_control(block_reason: Option<&str>) -> Markup {
     }
 }
 
-fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
+fn generic_road_encounter(challenge: &BackendRoadChallenge) -> Markup {
+    let Ok(presentation) = serde_json::from_str::<
+        adventuresim_core::road_encounter_catalog::EncounterPresentation,
+    >(&challenge.presentation_json) else {
+        return html! { p class="encounter-warning" { "This encounter's authored record is unavailable." } };
+    };
+    html! {
+        section class="settlement-chat challenge-chat-invitation" aria-label="Roadside conversation" {
+            @if challenge.active && challenge.open && !presentation.cast.is_empty() {
+              nav class="settlement-npc-strip counterparty-strip" aria-label="Roadside characters" {
+                @for character in &presentation.cast {
+                  div class="npc-portrait counterparty-portrait" data-character-id=(character.character_id) {
+                    span class="npc-portrait-image" aria-hidden="true" { "?" }
+                    span class="npc-portrait-name" { (&character.name) }
+                    @if character.contact_decision == adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Request {
+                      form action="/camp/counterparty/contact" method="post" {
+                        input type="hidden" name="target_id" value=(character.character_id);
+                        input type="hidden" name="contact_ref" value=(&challenge.id);
+                        input type="hidden" name="expected_revision" value=(character.contact_revision);
+                        input type="hidden" name="action_id" value=(format!("road-contact:{}:{}:{}", challenge.id, character.contact_revision, character.character_id));
+                        button type="submit" class="btn btn-secondary btn-small" { "Request" }
+                      }
+                    } @else {
+                      button type="button" class="btn btn-secondary btn-small" disabled {
+                        (match character.contact_decision {
+                            adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Refused => "Refused",
+                            _ => "Unavailable",
+                        })
+                      }
+                    }
+                    @if character.treatment_limb_slug.is_some() && matches!(character.treatment_decision,
+                        adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Request
+                        | adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::EmergencyTreatment) {
+                      form action="/camp/counterparty/bandage" method="post" {
+                        input type="hidden" name="patient_id" value=(character.character_id);
+                        input type="hidden" name="limb_slug" value=(character.treatment_limb_slug.as_deref().unwrap_or_default());
+                        input type="hidden" name="action_id" value=(crate::templates::fresh_request_token("treatment"));
+                        input type="hidden" name="context_ref" value=(&challenge.id);
+                        input type="hidden" name="expected_membership_revision" value=(character.membership_revision);
+                        button type="submit" class="btn btn-secondary btn-small" {
+                          (if character.treatment_decision == adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::EmergencyTreatment { "Emergency treatment" } else { "Request treatment" })
+                        }
+                      }
+                    } @else {
+                      button type="button" class="btn btn-secondary btn-small" disabled {
+                        (match character.treatment_decision {
+                            adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Refused => "Refused",
+                            _ => "Unavailable",
+                        })
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            div class="settlement-chat-layout" { div class="settlement-chat-conversation" {
+                div class="settlement-chat-messages" aria-live="polite" {
+                    @for line in &presentation.opening {
+                        p class=(if line.supernatural { "supernatural-spoken-line" } else { "" }) {
+                            strong { (line.speaker_name.as_str()) ": " } (line.text.as_str())
+                        }
+                    }
+                    @if challenge.open {
+                        div class="dialogue-actions" {
+                            @for choice in &presentation.choices {
+                                form action="/camp/errantry-road-challenge" method="post" {
+                                    input type="hidden" name="challenge_id" value=(&challenge.id);
+                                    input type="hidden" name="expected_revision" value=(challenge.revision);
+                                    input type="hidden" name="choice" value=(&choice.id);
+                                    input type="hidden" name="action_id" value=(format!("road-choice:{}:{}:{}", challenge.id, challenge.revision, choice.id));
+                                    button type="submit" class="btn btn-primary" disabled[!choice.available] { (choice.label.as_str()) }
+                                }
+                            }
+                        }
+                    } @else {
+                        @for line in &presentation.response {
+                            p class=(if line.supernatural { "supernatural-spoken-line" } else { "" }) {
+                                strong { (line.speaker_name.as_str()) ": " } (line.text.as_str())
+                            }
+                        }
+                        @if let Some(transcript) = challenge.result_transcript.as_deref() { p { (transcript) } }
+                        @if let Some(addendum) = challenge.quest_reward_addendum.as_deref() { p class="text-muted" { (addendum) } }
+                    }
+                }
+            } }
+        }
+    }
+}
+
+fn strategic_encounter_panel(
+    encounter: &StrategicEncounter,
+    counterparties: &[Character],
+) -> Markup {
     let threat = encounter.archetype.parse::<ThreatId>().ok();
     let threat_name = threat
         .map(|id| id.display_name(u32::from(encounter.enemy_count)))
@@ -944,6 +1091,23 @@ fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
             }
             p { (awareness) }
             p class="text-muted small-copy" { (encounter.selection_explanation.as_str()) }
+            @if !counterparties.is_empty() {
+                nav class="settlement-npc-strip counterparty-strip" aria-label="Counterparty" {
+                    @for character in counterparties {
+                        div class="npc-portrait counterparty-portrait" {
+                            span class="npc-portrait-image" aria-hidden="true" { "?" }
+                            span class="npc-portrait-name" { (&character.name) }
+                            form action="/camp/counterparty/contact" method="post" {
+                                input type="hidden" name="target_id" value=(character.id);
+                                input type="hidden" name="contact_ref" value=(&encounter.encounter_id);
+                                input type="hidden" name="expected_revision" value=(encounter.revision);
+                                input type="hidden" name="action_id" value=(format!("contact:{}:{}:{}", encounter.encounter_id, encounter.revision, character.id));
+                                button type="submit" class="btn btn-secondary btn-small" { "Request" }
+                            }
+                        }
+                    }
+                }
+            }
             @if let Some(reason) = encounter.run_ineligibility.as_deref() {
                 p class="encounter-warning" { "Cannot run: " (reason) }
             }
@@ -963,7 +1127,10 @@ fn strategic_encounter_panel(encounter: &StrategicEncounter) -> Markup {
             div class="encounter-actions" {
                 @for choice in &encounter.available_choices {
                     form action="/camp/encounter" method="post" {
+                        input type="hidden" name="encounter_id" value=(&encounter.encounter_id);
                         input type="hidden" name="choice" value=(choice);
+                        input type="hidden" name="expected_revision" value=(encounter.revision);
+                        input type="hidden" name="action_id" value=(format!("encounter-choice:{}:{}:{}", encounter.encounter_id, encounter.revision, choice));
                         button type="submit" class="btn btn-primary btn-small btn-block" {
                             (match choice.as_str() {
                                 "sneak" => "Sneak past",
@@ -1097,6 +1264,7 @@ mod tests {
             enemy_aware: true,
             available_choices: vec!["attack".into(), "surrender".into()],
             status: "awaiting_choice".into(),
+            revision: 4,
             selected_choice: None,
             selection_explanation: "deterministic awareness".into(),
             party_speed_m_per_minute: 60,
@@ -1113,12 +1281,14 @@ mod tests {
             }],
             outcome: None,
         };
-        let rendered = strategic_encounter_panel(&encounter).into_string();
+        let rendered = strategic_encounter_panel(&encounter, &[]).into_string();
         assert!(rendered.contains("The enemy surprised your party"));
         assert!(rendered.contains("Cannot run: too slow"));
         assert!(rendered.contains("12 × gold_coin"));
         assert!(rendered.contains("value=\"attack\""));
         assert!(rendered.contains("value=\"surrender\""));
+        assert!(rendered.contains("name=\"expected_revision\" value=\"4\""));
+        assert!(rendered.contains("encounter-choice:party:3:4:surrender"));
         assert!(!rendered.contains("value=\"run\""));
         assert!(!rendered.contains("value=\"sneak\""));
     }
@@ -1246,6 +1416,15 @@ mod tests {
     }
 
     #[test]
+    fn unselected_map_omits_the_destination_frame() {
+        let markup = map_destination_detail(
+            None, None, false, true, None, None, None, false, None, "/map",
+        )
+        .into_string();
+        assert!(!markup.contains("sidebar-header\">Destination"));
+    }
+
+    #[test]
     fn connected_settlement_selection_keeps_existing_travel_action() {
         let mut destination = quest_destination();
         destination.id = "viabundus-2".into();
@@ -1270,6 +1449,26 @@ mod tests {
         assert!(markup.contains("data-travel-submit"));
         assert!(markup.contains("Begin journey"));
         assert!(!markup.contains("No direct route"));
+    }
+
+    #[test]
+    fn selected_character_road_encounter_loader_is_removed() {
+        let source = include_str!("travel.rs");
+        let camp = source
+            .split("pub fn camp_page")
+            .nth(1)
+            .and_then(|tail| tail.split("fn camp_continue_control").next())
+            .unwrap();
+        assert!(!camp.contains("data-developer-road-encounter-catalog"));
+        assert!(!camp.contains("data-developer-road-encounter-demo"));
+
+        let shared_layout = include_str!("../layout.rs");
+        assert!(!shared_layout.contains("data-developer-road-encounter-demo"));
+        assert!(!shared_layout.contains("wounded_knight_linden_v1"));
+        let script = include_str!("../../../static/developer-quest-editor.js");
+        assert!(!script.contains("data-developer-road-encounter-catalog"));
+        assert!(!script.contains("wounded_knight_linden_v1"));
+        assert!(!script.contains("button.dataset.catalogId"));
     }
 
     #[test]

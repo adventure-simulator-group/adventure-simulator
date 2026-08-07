@@ -12,6 +12,8 @@ pub enum HostileResolutionKind {
 
     DrivenOff,
 
+    Surrendered,
+
     Captured,
 
     CaptureTargetKilled,

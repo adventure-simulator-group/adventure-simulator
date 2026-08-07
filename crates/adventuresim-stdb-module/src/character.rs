@@ -2,16 +2,20 @@ use adventuresim_core::starting_character::{
     StartingAgeTier, StartingCharacterSpec, StartingInclination, StartingPersonalityTrait,
     StartingPresentation, StartingSex, StartingSlot,
 };
-use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, reducer, table};
+use spacetimedb::{
+    Identity, ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view,
+};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::{
     ItemSlot, Settlement, add_inventory_item,
     alcohol::alcohol_consumption,
-    capability::character_capability,
+    capability::{character_capability, character_capability__view},
     condition::{
-        character_condition, character_exposure, character_morale_source, character_needs,
-        character_strategic_condition, morale_event, religious_demand,
+        character_condition, character_condition__view, character_exposure,
+        character_exposure__view, character_morale_source, character_morale_source__view,
+        character_needs, character_needs__view, character_strategic_condition,
+        character_strategic_condition__view, morale_event, religious_demand,
     },
     disease::{
         character_illness_status, committed_cut, disease_notice, infection_episode,
@@ -20,20 +24,33 @@ use crate::{
     enter_mission, inventory_item,
     item::item,
     organization::{organization_membership, organization_presentation},
-    personality::character_personality,
+    personality::{
+        character_personality, character_personality_scores, personality_development_event,
+    },
+    relationship::{child_identity_reservation, npc_policy},
     repair::{item_condition, repair_order},
-    strategic::{inventory_quantity_target, party_authority, party_member, settlement},
+    settlement_population::settlement_resident_presence,
+    strategic::{
+        inventory_quantity_target, party_authority, party_member, settlement, strategic_encounter,
+        strategic_gateway_authority__view,
+    },
     surgery::{limb_injury, retained_projectile},
     tactical::tactical_server_authority,
-    time::{character_time, character_training_schedule},
+    time::{
+        character_time, character_time__view, character_training_schedule,
+        character_training_schedule__view,
+    },
 };
 
 /// General character info
 #[derive(Clone, Debug)]
-#[table(accessor = character, public)]
+#[table(accessor = character)]
 pub struct Character {
     #[primary_key]
     pub id: u64,
+    /// Private full-table scan seam used only by trusted projections.
+    #[index(btree)]
+    pub scan_id: u64,
     pub name: String,
     pub xp: u32,
     pub level: u32,
@@ -50,6 +67,157 @@ pub struct Character {
     /// future death system, but parties already use this to govern succession.
     #[default(true)]
     pub alive: bool,
+    /// Explicit ordinary care preference for another member of this
+    /// Character's current party. Context-specific refusals take precedence.
+    pub party_treatment_decision: crate::world_actor::ContextualDecisionState,
+}
+
+/// Full Character rows are private because a globally exclusive NPC may have
+/// been born or moved at a date the requesting player has not reached. The
+/// strategic gateway remains the sole broad reader and applies actor-specific
+/// chronological filtering in its public presentations.
+#[view(accessor = backend_characters, public)]
+pub fn backend_characters(ctx: &ViewContext) -> Vec<Character> {
+    if !character_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db.character().scan_id().filter(0u64..).collect()
+}
+
+fn character_view_is_gateway(ctx: &ViewContext) -> bool {
+    ctx.db
+        .strategic_gateway_authority()
+        .id()
+        .find(0)
+        .is_some_and(|authority| authority.identity == ctx.sender())
+}
+
+fn gateway_character_ids(ctx: &ViewContext) -> Vec<u64> {
+    if !character_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    ctx.db
+        .character()
+        .scan_id()
+        .filter(0u64..)
+        .map(|character| character.id)
+        .collect()
+}
+
+#[view(accessor = backend_character_attributes, public)]
+pub fn backend_character_attributes(ctx: &ViewContext) -> Vec<CharacterAttributes> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_attributes().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_stats, public)]
+pub fn backend_character_stats(ctx: &ViewContext) -> Vec<CharacterStats> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_stats().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_skills, public)]
+pub fn backend_character_skills(ctx: &ViewContext) -> Vec<CharacterSkills> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_skills().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_limbs, public)]
+pub fn backend_character_limbs(ctx: &ViewContext) -> Vec<CharacterLimbs> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_limbs().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_times, public)]
+pub fn backend_character_times(ctx: &ViewContext) -> Vec<crate::time::CharacterTime> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_time().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_training_schedules, public)]
+pub fn backend_character_training_schedules(
+    ctx: &ViewContext,
+) -> Vec<crate::time::CharacterTrainingSchedule> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_training_schedule().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_capabilities, public)]
+pub fn backend_character_capabilities(
+    ctx: &ViewContext,
+) -> Vec<crate::capability::CharacterCapability> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_capability().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_conditions, public)]
+pub fn backend_character_conditions(
+    ctx: &ViewContext,
+) -> Vec<crate::condition::CharacterCondition> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_condition().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_needs, public)]
+pub fn backend_character_needs(ctx: &ViewContext) -> Vec<crate::condition::CharacterNeeds> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_needs().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_exposures, public)]
+pub fn backend_character_exposures(ctx: &ViewContext) -> Vec<crate::condition::CharacterExposure> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_exposure().character_id().find(id))
+        .collect()
+}
+
+#[view(accessor = backend_character_strategic_conditions, public)]
+pub fn backend_character_strategic_conditions(
+    ctx: &ViewContext,
+) -> Vec<crate::condition::CharacterStrategicCondition> {
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| {
+            ctx.db
+                .character_strategic_condition()
+                .character_id()
+                .find(id)
+        })
+        .collect()
+}
+
+/// Morale source labels can reveal private religion, household, and romantic
+/// state (including the spouse-leisure source). Only the trusted gateway may
+/// read the broad projection; browser handlers must still scope rows to the
+/// selected character or an authorized party member.
+#[view(accessor = backend_character_morale_sources, public)]
+pub fn backend_character_morale_sources(
+    ctx: &ViewContext,
+) -> Vec<crate::condition::CharacterMoraleSource> {
+    let mut rows = Vec::new();
+    for id in gateway_character_ids(ctx) {
+        rows.extend(ctx.db.character_morale_source().character_id().filter(id));
+    }
+    rows
 }
 
 /// Durable receipt for an idempotent first-character confirmation.
@@ -72,12 +240,14 @@ impl StartingAgeTierCoordinate {
 
 /// Durable receipt for an idempotent first-character confirmation.
 #[derive(Clone, Debug)]
-#[table(accessor = starting_character_claim, public)]
+#[table(accessor = starting_character_claim)]
 pub struct StartingCharacterClaim {
     #[primary_key]
     pub request_key: String,
     #[unique]
     pub character_id: u64,
+    #[index(btree)]
+    pub owner_key: String,
     pub generator_version: u16,
     pub seed: String,
     pub age_tier: StartingAgeTierCoordinate,
@@ -111,7 +281,7 @@ pub enum DeathSource {
 /// Immutable first-known death context. Tactical state is deliberately absent;
 /// committed outcomes pass only their durable cause/source into this boundary.
 #[derive(Clone, Debug)]
-#[table(accessor = character_death, public)]
+#[table(accessor = character_death)]
 pub struct CharacterDeath {
     #[primary_key]
     pub character_id: u64,
@@ -119,6 +289,21 @@ pub struct CharacterDeath {
     pub source: DeathSource,
     pub source_id: Option<String>,
     pub strategic_minute: u64,
+}
+
+/// Death authority is private because its timestamp may lie beyond another
+/// character's personal frontier. Strategic simulation consumes this trusted
+/// broad projection. Any player-facing presentation must additionally compare
+/// `strategic_minute` with the selected observer's CharacterTime.
+#[view(accessor = backend_character_deaths, public)]
+pub fn backend_character_deaths(ctx: &ViewContext) -> Vec<CharacterDeath> {
+    if !character_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    gateway_character_ids(ctx)
+        .into_iter()
+        .filter_map(|id| ctx.db.character_death().character_id().find(id))
+        .collect()
 }
 
 pub fn require_living_character(
@@ -147,7 +332,34 @@ pub fn transition_character_to_dead(
     source: DeathSource,
     source_id: Option<String>,
 ) -> Result<CharacterDeath, String> {
+    let strategic_minute = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .map_or(0, |time| time.minutes);
+    transition_character_to_dead_at(
+        ctx,
+        character_id,
+        cause,
+        source,
+        source_id,
+        strategic_minute,
+    )
+}
+
+/// Exact-minute variant for materializing already-elapsed authored history.
+/// The character's clock is never rewound; a future death is rejected.
+pub fn transition_character_to_dead_at(
+    ctx: &ReducerContext,
+    character_id: u64,
+    cause: DeathCause,
+    source: DeathSource,
+    source_id: Option<String>,
+    strategic_minute: u64,
+) -> Result<CharacterDeath, String> {
     if let Some(death) = ctx.db.character_death().character_id().find(character_id) {
+        crate::food::cleanup_fireplace_custody_for_death(ctx, character_id)?;
         return Ok(death);
     }
     let mut character = ctx
@@ -156,12 +368,15 @@ pub fn transition_character_to_dead(
         .id()
         .find(character_id)
         .ok_or("Character not found")?;
-    let strategic_minute = ctx
+    let current_minute = ctx
         .db
         .character_time()
         .character_id()
         .find(character_id)
         .map_or(0, |time| time.minutes);
+    if strategic_minute > current_minute {
+        return Err("Character death cannot be after their personal clock".into());
+    }
     let death = ctx.db.character_death().insert(CharacterDeath {
         character_id,
         cause,
@@ -169,6 +384,7 @@ pub fn transition_character_to_dead(
         source_id,
         strategic_minute,
     });
+    crate::food::cleanup_fireplace_custody_for_death(ctx, character_id)?;
     crate::corpse::persist_character_death_corpse(
         ctx,
         character_id,
@@ -178,11 +394,32 @@ pub fn transition_character_to_dead(
     crate::social::settle_shared_party_time(ctx, character_id);
     crate::social::close_physiology_presence(ctx, character_id);
     character.alive = false;
+    if let Some(mut presence) = ctx
+        .db
+        .settlement_resident_presence()
+        .character_id()
+        .find(character_id)
+    {
+        presence.context_suppressed = false;
+        presence.health_suppressed = true;
+        ctx.db
+            .settlement_resident_presence()
+            .character_id()
+            .update(presence);
+    }
     // Keep an active tactical assignment until that server commits or removes
     // the character. This lets mission teardown find and cascade temporary
     // combatants that died in transient tactical state.
     let party_id = character.party_id.clone();
     ctx.db.character().id().update(character);
+    crate::browser_session::clear_dead_character_selection(ctx, character_id);
+    crate::continuity::settle_pending_inheritances_for_heir(ctx, character_id, strategic_minute)?;
+    crate::continuity::record_estate_disposition_for_death(ctx, character_id, strategic_minute)?;
+    crate::relationship::settle_relationship_lifecycle_for_death(
+        ctx,
+        character_id,
+        strategic_minute,
+    )?;
     crate::social::prune_invalid_automatic_social_chats(ctx);
     if let Some(party_id) = party_id {
         crate::strategic::normalize_and_elect_party_leader(ctx, &party_id)?;
@@ -224,7 +461,7 @@ pub fn backfill_character_deaths_and_leadership(ctx: &ReducerContext) -> Result<
 
 /// [`Character`] attributes
 #[derive(Clone, Debug)]
-#[table(accessor = character_attributes, public)]
+#[table(accessor = character_attributes)]
 pub struct CharacterAttributes {
     #[primary_key]
     pub character_id: u64,
@@ -247,7 +484,7 @@ pub struct CharacterAttributes {
 
 /// [`Character`] stats
 #[derive(Clone, Debug)]
-#[table(accessor = character_stats, public)]
+#[table(accessor = character_stats)]
 pub struct CharacterStats {
     #[primary_key]
     pub character_id: u64,
@@ -257,7 +494,7 @@ pub struct CharacterStats {
 
 /// [`Character`] skills
 #[derive(Clone, Debug)]
-#[table(accessor = character_skills, public)]
+#[table(accessor = character_skills)]
 pub struct CharacterSkills {
     #[primary_key]
     pub character_id: u64,
@@ -299,7 +536,7 @@ pub struct CharacterSkills {
 
 /// [`Character`] limbs
 #[derive(Clone, Debug)]
-#[table(accessor = character_limbs, public)]
+#[table(accessor = character_limbs)]
 pub struct CharacterLimbs {
     #[primary_key]
     pub character_id: u64,
@@ -643,6 +880,7 @@ pub fn create_temporary_character(ctx: &ReducerContext, server: Identity) -> Res
         id,
         tactical_server.enemy_difficulty,
         tactical_server.enemy_combat_scale_bps,
+        tactical_server.countermeasure_multiplier_bps,
     )?;
     enter_mission(ctx, id, server)
 }
@@ -652,12 +890,16 @@ fn scale_temporary_enemy(
     character_id: u64,
     base_difficulty: i32,
     combat_scale_bps: u32,
+    countermeasure_multiplier_bps: u32,
 ) -> Result<(), String> {
     let authored = 1.0 + (base_difficulty.clamp(1, 20) - 1) as f32 * 0.1;
-    let physical = authored
-        * adventuresim_core::threat_escalation::combat_physical_multiplier(combat_scale_bps);
-    let training = authored
-        * adventuresim_core::threat_escalation::combat_training_multiplier(combat_scale_bps);
+    let (physical_scale, training_scale) =
+        adventuresim_core::threat_escalation::combat_scaling_multipliers(
+            combat_scale_bps,
+            countermeasure_multiplier_bps,
+        );
+    let physical = authored * physical_scale;
+    let training = authored * training_scale;
     let mut attributes = ctx
         .db
         .character_attributes()
@@ -922,7 +1164,7 @@ fn delete_character_data(
     {
         ctx.db.organization_membership().id().delete(row.id);
     }
-    crate::social_estate::delete_character_social_roles(ctx, character.id);
+    crate::social_roles::delete_character_social_roles(ctx, character.id);
     if ctx
         .db
         .organization_presentation()
@@ -966,6 +1208,34 @@ fn delete_character_data(
         .character_personality()
         .character_id()
         .delete(character.id);
+    ctx.db
+        .character_personality_scores()
+        .character_id()
+        .delete(character.id);
+    // Development is character-owned audit history in this pre-launch model;
+    // canonical deletion removes it so a reused development source cannot
+    // point at a character that no longer exists.
+    for event in ctx
+        .db
+        .personality_development_event()
+        .character_id()
+        .filter(character.id)
+        .collect::<Vec<_>>()
+    {
+        ctx.db
+            .personality_development_event()
+            .source_id()
+            .delete(&event.source_id);
+    }
+    if ctx
+        .db
+        .npc_policy()
+        .character_id()
+        .find(character.id)
+        .is_some()
+    {
+        ctx.db.npc_policy().character_id().delete(character.id);
+    }
     ctx.db
         .character_capability()
         .character_id()
@@ -1046,6 +1316,7 @@ pub fn create_named_character_with_id(
 #[reducer]
 pub fn create_starting_character(
     ctx: &ReducerContext,
+    owner_key: String,
     generator_version: u16,
     seed: String,
     age_tier: StartingAgeTierCoordinate,
@@ -1070,7 +1341,16 @@ pub fn create_starting_character(
             .id()
             .find(claim.character_id)
             .ok_or("candidate claim exists without its character")?;
+        if claim.owner_key != owner_key {
+            return Err("candidate was already claimed by a different browser owner".into());
+        }
         if existing.id == spec.id && existing.name == spec.name {
+            crate::browser_session::grant_browser_character_internal(
+                ctx,
+                &owner_key,
+                existing.id,
+                &request_key,
+            )?;
             return Ok(());
         }
         return Err("candidate claim does not match regenerated character".into());
@@ -1082,13 +1362,20 @@ pub fn create_starting_character(
     ctx.db
         .starting_character_claim()
         .insert(StartingCharacterClaim {
-            request_key,
+            request_key: request_key.clone(),
             character_id: spec.id,
+            owner_key: owner_key.clone(),
             generator_version,
             seed,
             age_tier: coordinate,
             slot,
         });
+    crate::browser_session::grant_browser_character_internal(
+        ctx,
+        &owner_key,
+        spec.id,
+        &request_key,
+    )?;
     Ok(())
 }
 
@@ -1357,9 +1644,12 @@ pub(crate) fn seed_religion_scholar_character(ctx: &ReducerContext) -> Result<()
 }
 
 /// Seed an isolated, selectable character for exercising every bounded
-/// Herbalism method and public grade in the strategic UI.
+/// Herbalism method, public grade, and terrain-backed foraging flow in the
+/// strategic UI.
 pub(crate) fn seed_herbalism_demo_character(ctx: &ReducerContext) -> Result<(), String> {
     const HERBALISM_DEMO_CHARACTER_ID: u64 = 9_999_999_999_999_986;
+    const HERBALISM_DEMO_SETTLEMENT_ID: &str = "dev-scenario-foraging";
+    crate::strategic::ensure_foraging_demo_settlement(ctx)?;
     if ctx
         .db
         .character()
@@ -1369,10 +1659,61 @@ pub(crate) fn seed_herbalism_demo_character(ctx: &ReducerContext) -> Result<(), 
     {
         insert_new_character(
             ctx,
-            "Herbalism Demo".to_string(),
+            "Herbalism and Foraging Demo".to_string(),
             HERBALISM_DEMO_CHARACTER_ID,
             false,
         )?;
+    }
+    // Pin this durable visual fixture and its solo party to an empirically
+    // sampled final-pack woodland cell so the integrated Forage action is
+    // always demonstrable after a normal seed.
+    let mut character = ctx
+        .db
+        .character()
+        .id()
+        .find(HERBALISM_DEMO_CHARACTER_ID)
+        .ok_or_else(|| "Herbalism and foraging demo character is missing".to_string())?;
+    character.name = "Herbalism and Foraging Demo".into();
+    let party_id = character
+        .party_id
+        .clone()
+        .ok_or_else(|| "Herbalism and foraging demo has no solo party".to_string())?;
+    let mut party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id)
+        .ok_or_else(|| "Herbalism and foraging demo party is missing".to_string())?;
+    let members = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(&party_id)
+        .collect::<Vec<_>>();
+    if !party.is_solo
+        || party.leader_id != HERBALISM_DEMO_CHARACTER_ID
+        || members.len() != 1
+        || members[0].character_id != HERBALISM_DEMO_CHARACTER_ID
+    {
+        return Err("Herbalism and foraging demo no longer has its isolated solo party".into());
+    }
+    crate::investigation::set_character_case_site(ctx, HERBALISM_DEMO_CHARACTER_ID, None)?;
+    character.current_settlement_id = Some(HERBALISM_DEMO_SETTLEMENT_ID.into());
+    ctx.db.character().id().update(character);
+    party.current_settlement_id = Some(HERBALISM_DEMO_SETTLEMENT_ID.into());
+    party.current_case_site_id = None;
+    party.camp_destination = None;
+    party.camp_remaining_minutes = 0;
+    ctx.db.party_authority().id().update(party);
+    crate::strategic::finish_party_journey(ctx, &party_id);
+    if ctx
+        .db
+        .strategic_encounter()
+        .party_id()
+        .find(&party_id)
+        .is_some()
+    {
+        ctx.db.strategic_encounter().party_id().delete(&party_id);
     }
     let mut skills = ctx
         .db
@@ -1384,13 +1725,15 @@ pub(crate) fn seed_herbalism_demo_character(ctx: &ReducerContext) -> Result<(), 
     skills.physiology_hours = 4_000.0;
     ctx.db.character_skills().character_id().update(skills);
     for (item_id, quantity) in [
-        ("willow_bark_poor", 2),
         ("willow_bark", 2),
-        ("willow_bark_fine", 2),
-        ("comfrey_fine", 2),
+        ("comfrey", 2),
         ("poppy", 2),
         ("tincture_spirit", 4),
-        ("sage_poor", 2),
+        ("sage", 2),
+        ("glass_bottle", 2),
+        ("glass_jar", 1),
+        ("mortar_and_pestle", 1),
+        ("knife", 1),
     ] {
         if ctx
             .db
@@ -1401,7 +1744,7 @@ pub(crate) fn seed_herbalism_demo_character(ctx: &ReducerContext) -> Result<(), 
             .is_none()
         {
             add_inventory_item(ctx, HERBALISM_DEMO_CHARACTER_ID, item_id, quantity)
-                .ok_or_else(|| format!("Failed to add {item_id} to Herbalism Demo"))?;
+                .ok_or_else(|| format!("Failed to add {item_id} to Herbalism and Foraging Demo"))?;
         }
     }
     crate::capability::refresh_character_capability(ctx, HERBALISM_DEMO_CHARACTER_ID)?;
@@ -1500,14 +1843,89 @@ pub(crate) fn insert_new_character(
     id: u64,
     temporary: bool,
 ) -> Result<(), String> {
-    insert_character_with_origin(ctx, name, id, temporary, temporary, None, None)
+    let mode = if temporary {
+        CharacterCreationMode::TemporaryNpc
+    } else {
+        CharacterCreationMode::Player
+    };
+    insert_character_with_origin(
+        ctx,
+        name,
+        id,
+        CharacterCreationOptions {
+            origin_settlement_id: None,
+            mode,
+            create_solo_party: true,
+            stable_seed: id,
+            initial_time_minute: None,
+            field_actor: false,
+        },
+        None,
+        None,
+    )
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CharacterCreationMode {
+    Player,
+    PersistentNpc,
+    TemporaryNpc,
+    Newborn,
+}
+
+impl CharacterCreationMode {
+    const fn is_npc(self) -> bool {
+        matches!(
+            self,
+            Self::PersistentNpc | Self::TemporaryNpc | Self::Newborn
+        )
+    }
+
+    const fn temporary(self) -> bool {
+        matches!(self, Self::TemporaryNpc)
+    }
+
+    const fn newborn(self) -> bool {
+        matches!(self, Self::Newborn)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CharacterCreationOptions<'a> {
+    pub origin_settlement_id: Option<&'a str>,
+    pub mode: CharacterCreationMode,
+    pub create_solo_party: bool,
+    pub stable_seed: u64,
+    pub initial_time_minute: Option<u64>,
+    pub field_actor: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct NpcLifeFacts {
     pub age_years: u16,
     pub organization_id: Option<String>,
     pub literacy: Option<adventuresim_world_schema::WrittenLanguage>,
+}
+
+impl NpcLifeFacts {
+    /// Produce the baseline life facts for a persistent NPC without consulting
+    /// reducer RNG. Authored organization and literacy can be overlaid by the
+    /// population importer before creation.
+    pub(crate) fn from_stable_seed(stable_seed: u64) -> Self {
+        let draw = stable_mix(stable_seed ^ 0x6c69_6665_2d61_6765);
+        Self {
+            age_years: 18 + (draw % 43) as u16,
+            organization_id: None,
+            literacy: None,
+        }
+    }
+}
+
+fn stable_mix(mut value: u64) -> u64 {
+    value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
 }
 
 pub(crate) fn insert_new_npc_character(
@@ -1516,17 +1934,82 @@ pub(crate) fn insert_new_npc_character(
     id: u64,
     temporary: bool,
 ) -> Result<(), String> {
-    insert_character_with_origin(ctx, name, id, temporary, true, None, None)
+    let mode = if temporary {
+        CharacterCreationMode::TemporaryNpc
+    } else {
+        CharacterCreationMode::PersistentNpc
+    };
+    let life = NpcLifeFacts::from_stable_seed(id);
+    insert_character_with_origin(
+        ctx,
+        name,
+        id,
+        CharacterCreationOptions {
+            origin_settlement_id: None,
+            mode,
+            create_solo_party: temporary,
+            stable_seed: id,
+            initial_time_minute: None,
+            field_actor: false,
+        },
+        None,
+        Some(&life),
+    )
 }
 
-pub(crate) fn insert_new_npc_character_with_life(
+/// Create a persistent, full-component NPC at an explicit settlement. Unlike a
+/// player character or tactical temporary, the NPC begins outside any party.
+pub(crate) fn insert_persistent_npc_character(
     ctx: &ReducerContext,
     name: String,
     id: u64,
-    temporary: bool,
-    facts: NpcLifeFacts,
+    origin_settlement_id: &str,
+    stable_seed: u64,
+    initial_time_minute: Option<u64>,
 ) -> Result<(), String> {
-    insert_character_with_origin(ctx, name, id, temporary, true, None, Some(&facts))
+    let life = NpcLifeFacts::from_stable_seed(stable_seed);
+    insert_character_with_origin(
+        ctx,
+        name,
+        id,
+        CharacterCreationOptions {
+            origin_settlement_id: Some(origin_settlement_id),
+            mode: CharacterCreationMode::PersistentNpc,
+            create_solo_party: false,
+            stable_seed,
+            initial_time_minute,
+            field_actor: false,
+        },
+        None,
+        Some(&life),
+    )
+}
+
+/// Create a durable, fully componentized character whose authoritative
+/// placement is a non-settlement context (an encounter, case site, or group).
+pub(crate) fn insert_persistent_field_character(
+    ctx: &ReducerContext,
+    name: String,
+    id: u64,
+    stable_seed: u64,
+    initial_time_minute: Option<u64>,
+) -> Result<(), String> {
+    let life = NpcLifeFacts::from_stable_seed(stable_seed);
+    insert_character_with_origin(
+        ctx,
+        name,
+        id,
+        CharacterCreationOptions {
+            origin_settlement_id: None,
+            mode: CharacterCreationMode::PersistentNpc,
+            create_solo_party: false,
+            stable_seed,
+            initial_time_minute,
+            field_actor: true,
+        },
+        None,
+        Some(&life),
+    )
 }
 
 fn insert_starting_character(
@@ -1537,8 +2020,14 @@ fn insert_starting_character(
         ctx,
         spec.name.clone(),
         spec.id,
-        false,
-        false,
+        CharacterCreationOptions {
+            origin_settlement_id: None,
+            mode: CharacterCreationMode::Player,
+            create_solo_party: true,
+            stable_seed: spec.id,
+            initial_time_minute: None,
+            field_actor: false,
+        },
         Some(spec),
         None,
     )
@@ -1576,7 +2065,7 @@ pub(crate) fn set_character_languages_for_settlement(
     );
     skills.oral_languages = oral;
     // Relocating a character can replace their authored vernacular identity
-    // during bootstrap, but literacy comes from estate and institutional
+    // during bootstrap, but literacy comes from organization roles and institutional
     // training and must not be erased by a change of settlement.
     ctx.db.character_skills().character_id().update(skills);
     Ok(())
@@ -1618,12 +2107,21 @@ pub(crate) fn insert_character_with_origin(
     ctx: &ReducerContext,
     name: String,
     id: u64,
-    temporary: bool,
-    npc: bool,
+    options: CharacterCreationOptions<'_>,
     starting: Option<&StartingCharacterSpec>,
     npc_life: Option<&NpcLifeFacts>,
 ) -> Result<(), String> {
     log::info!("New character created: {name} (ID: {id})");
+    let temporary = options.mode.temporary();
+    let npc = options.mode.is_npc();
+    let newborn = options.mode.newborn();
+    let reserved = ctx.db.child_identity_reservation().character_id().find(id);
+    if reserved.is_some() && !newborn {
+        return Err("Character identity is reserved for a pending birth".into());
+    }
+    if newborn && reserved.is_none() {
+        return Err("Newborn creation requires a reserved child identity".into());
+    }
 
     let settlements: Vec<Settlement> = ctx.db.settlement().iter().collect();
     if settlements.is_empty() {
@@ -1631,9 +2129,22 @@ pub(crate) fn insert_character_with_origin(
     }
     let mut settlements = settlements;
     settlements.sort_by(|left, right| left.id.cmp(&right.id));
-    let selector = starting.map_or_else(|| ctx.random::<u64>(), |spec| spec.settlement_selector);
-    let start_settlement = if let Some(starting_organization) =
-        starting.and_then(|spec| spec.organization.as_ref())
+    let selector = starting.map_or_else(
+        || {
+            if npc {
+                stable_mix(options.stable_seed ^ 0x7365_7474_6c65_6d65)
+            } else {
+                ctx.random::<u64>()
+            }
+        },
+        |spec| spec.settlement_selector,
+    );
+    let start_settlement = if let Some(origin_settlement_id) = options.origin_settlement_id {
+        settlements
+            .iter()
+            .find(|settlement| settlement.id == origin_settlement_id)
+            .ok_or_else(|| format!("Unknown origin settlement {origin_settlement_id}"))?
+    } else if let Some(starting_organization) = starting.and_then(|spec| spec.organization.as_ref())
     {
         let organization =
             adventuresim_core::organization::organization(&starting_organization.organization_id)
@@ -1665,13 +2176,14 @@ pub(crate) fn insert_character_with_origin(
 
     let character = ctx.db.character().insert(Character {
         id,
+        scan_id: id,
         name,
         xp: 0,
         level: 1,
         // Legacy scalar retained only for schema compatibility. Currency is
         // authoritative in inventory.
         gold: 0,
-        current_settlement_id: Some(start_settlement.id.clone()),
+        current_settlement_id: (!options.field_actor).then(|| start_settlement.id.clone()),
         party_id: None,
         server: Identity::ZERO,
         in_server: false,
@@ -1681,15 +2193,26 @@ pub(crate) fn insert_character_with_origin(
             |spec| spec.age_years,
         ),
         alive: true,
+        party_treatment_decision: crate::world_actor::ContextualDecisionState::Allowed,
     });
-    if !temporary {
+    let initial_minute = options.initial_time_minute.unwrap_or(0);
+    let birth_minute =
+        i128::from(initial_minute).saturating_sub(i128::from(character.age_years).saturating_mul(
+            i128::from(adventuresim_core::strategic_time::MINUTES_PER_YEAR),
+        ));
+    crate::relationship::record_character_birth(
+        ctx,
+        character.id,
+        birth_minute.clamp(i128::from(i64::MIN), i128::from(i64::MAX)) as i64,
+    );
+    if !temporary && !newborn {
         let urban = matches!(
             start_settlement.category,
             crate::strategic::SettlementCategory::Town
                 | crate::strategic::SettlementCategory::City
                 | crate::strategic::SettlementCategory::Capital
         );
-        crate::social_estate::ensure_character_social_roles(
+        crate::social_roles::ensure_character_social_roles(
             ctx,
             character.id,
             &start_settlement.id,
@@ -1726,20 +2249,9 @@ pub(crate) fn insert_character_with_origin(
         .insert(character_attributes.clone());
     let (oral_languages, mut written_languages) =
         adventuresim_world_schema::initial_character_languages(start_settlement.languages, id, npc);
-    let creation_literacy = npc_life.and_then(|facts| facts.literacy).or_else(|| {
-        (!temporary
-            && crate::social_estate::character_estate(ctx, id)
-                .is_ok_and(|estate| estate == adventuresim_core::organization::Estate::Noble))
-        .then(|| {
-            if start_settlement.languages.dominant_german()
-                == adventuresim_world_schema::OralLanguage::Low
-            {
-                adventuresim_world_schema::WrittenLanguage::Low
-            } else {
-                adventuresim_world_schema::WrittenLanguage::German
-            }
-        })
-    });
+    let creation_literacy = npc_life
+        .and_then(|facts| facts.literacy)
+        .or(crate::social_roles::character_creation_literacy(ctx, id)?);
     let life_skills = (starting.is_none() && (!temporary || npc)).then(|| {
         let profile = adventuresim_core::strategic_schedule::ActivityTrainingProfile {
             combat: adventuresim_core::strategic_schedule::CombatTrainingProfile {
@@ -1756,7 +2268,7 @@ pub(crate) fn insert_character_with_origin(
             .and_then(adventuresim_core::organization::organization);
         adventuresim_core::life_simulation::simulate_life(
             adventuresim_core::life_simulation::LifeSimulationInput {
-                stable_seed: id ^ 0x6765_6e65_7269_6300,
+                stable_seed: options.stable_seed ^ 0x6765_6e65_7269_6300,
                 age_years: npc_life.map_or(25, |facts| facts.age_years),
                 attributes: &character_attributes,
                 organization,
@@ -1922,6 +2434,16 @@ pub(crate) fn insert_character_with_origin(
         ),
     });
     crate::time::initialize_character_time(ctx, id)?;
+    if let Some(minutes) = options.initial_time_minute {
+        let mut time = ctx
+            .db
+            .character_time()
+            .character_id()
+            .find(id)
+            .ok_or("New character time was not initialized")?;
+        time.minutes = minutes;
+        ctx.db.character_time().character_id().update(time);
+    }
     let _character_limbs = ctx.db.character_limbs().insert(CharacterLimbs {
         character_id: id,
         left_arm_health: 1.0,
@@ -1932,6 +2454,7 @@ pub(crate) fn insert_character_with_origin(
         chest_health: 1.0,
         stomach_health: 1.0,
     });
+    crate::condition::initialize_character_condition(ctx, character.id)?;
     if starting.is_some() {
         let mut personality = crate::personality::CharacterPersonality::neutral(id);
         for personality_trait in &starting.expect("checked above").personality.traits {
@@ -2000,18 +2523,27 @@ pub(crate) fn insert_character_with_origin(
             StartingInclination::Women => crate::personality::Inclination::Women,
             StartingInclination::Neither => crate::personality::Inclination::Neither,
         };
-        ctx.db.character_personality().insert(personality);
+        // Starting-character preview traits become score endpoints; the
+        // gateway row is only their derived visible projection.
+        crate::personality::initialize_personality_from_visible(ctx, personality);
     } else {
-        crate::personality::initialize_personality(ctx, id, npc);
+        if npc {
+            crate::personality::initialize_npc_personality(ctx, id, options.stable_seed);
+        } else {
+            crate::personality::initialize_personality(ctx, id, false);
+        }
     }
 
-    // Starter items
-    crate::item::credit_personal_currency(
-        ctx,
-        character.id,
-        &start_settlement.id,
-        starting.map_or(100, |s| s.currency),
-    )?;
+    // Newborns receive the full durable character component surface, but no
+    // adult economic or equipment package.
+    if !newborn {
+        crate::item::credit_personal_currency(
+            ctx,
+            character.id,
+            &start_settlement.id,
+            starting.map_or(100, |s| s.currency),
+        )?;
+    }
     if let Some(spec) = starting {
         for item in &spec.inventory {
             if let Some(slot) = item.equipped {
@@ -2034,7 +2566,7 @@ pub(crate) fn insert_character_with_origin(
                 add_inventory_item(ctx, character.id, &item.item_id, item.quantity);
             }
         }
-    } else {
+    } else if !newborn {
         add_inventory_item(ctx, character.id, "torch", 1);
         add_inventory_item(ctx, character.id, "bandage", 3);
         for (item, slot) in [
@@ -2052,13 +2584,15 @@ pub(crate) fn insert_character_with_origin(
         }
     }
 
-    crate::strategic::create_solo_party_for_character(ctx, character.id)?;
+    if options.create_solo_party {
+        crate::strategic::create_solo_party_for_character(ctx, character.id)?;
+    }
     if let Some(starting_organization) = starting.and_then(|spec| spec.organization.as_ref()) {
         let definition =
             adventuresim_core::organization::organization(&starting_organization.organization_id)
                 .ok_or("Starting organization is not in the catalog")?;
-        if definition.rank(&starting_organization.rank_id).is_none() {
-            return Err("Starting rank is not in the organization catalog".into());
+        if definition.role(&starting_organization.role_id).is_none() {
+            return Err("Starting role is not in the organization catalog".into());
         }
         let now = ctx
             .db
@@ -2077,7 +2611,6 @@ pub(crate) fn insert_character_with_origin(
                 id: 0,
                 character_id: character.id,
                 organization_id: starting_organization.organization_id.clone(),
-                rank_id: starting_organization.rank_id.clone(),
                 joined_minute,
                 dues_paid_through_minute: paid_through,
                 status: crate::organization::MEMBERSHIP_ACTIVE.into(),
@@ -2090,14 +2623,14 @@ pub(crate) fn insert_character_with_origin(
                 character_id: character.id,
                 organization_id: starting_organization.organization_id.clone(),
             });
-        crate::social_estate::ensure_character_professional_role(
+        crate::social_roles::ensure_character_professional_role(
             ctx,
             character.id,
             &starting_organization.organization_id,
+            &starting_organization.role_id,
         )?;
     }
     crate::capability::refresh_character_capability(ctx, character.id)?;
-    crate::condition::initialize_character_condition(ctx, character.id)?;
     if let Some(religion_id) = starting.and_then(|spec| spec.religion_id.as_ref()) {
         let mut condition = ctx
             .db
@@ -2113,8 +2646,138 @@ pub(crate) fn insert_character_with_origin(
     }
     crate::condition::refresh_character_strategic_condition(ctx, character.id)?;
     crate::equipment_law::enforce_equipment_compliance(ctx, character.id)?;
+    validate_full_character_components(ctx, character.id)?;
 
     Ok(())
+}
+
+/// Verify the ordinary durable component set shared by player characters and
+/// persistent NPCs. This is deliberately a runtime invariant rather than a
+/// migration/link-table shim: population import must create real Characters.
+pub(crate) fn validate_full_character_components(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<(), String> {
+    let mut missing = Vec::new();
+    if ctx.db.character().id().find(character_id).is_none() {
+        missing.push("character");
+    }
+    if ctx
+        .db
+        .character_stats()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("stats");
+    }
+    if ctx
+        .db
+        .character_attributes()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("attributes");
+    }
+    if ctx
+        .db
+        .character_skills()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("skills");
+    }
+    if ctx
+        .db
+        .character_limbs()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("limbs");
+    }
+    if ctx
+        .db
+        .character_personality()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("personality");
+    }
+    if ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("time");
+    }
+    if ctx
+        .db
+        .character_training_schedule()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("training_schedule");
+    }
+    if ctx
+        .db
+        .character_capability()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("capability");
+    }
+    if ctx
+        .db
+        .character_condition()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("condition");
+    }
+    if ctx
+        .db
+        .character_needs()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("needs");
+    }
+    if ctx
+        .db
+        .character_exposure()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("exposure");
+    }
+    if ctx
+        .db
+        .character_strategic_condition()
+        .character_id()
+        .find(character_id)
+        .is_none()
+    {
+        missing.push("strategic_condition");
+    }
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Character {character_id} is missing full components: {}",
+            missing.join(", ")
+        ))
+    }
 }
 
 #[reducer]
@@ -2342,6 +3005,7 @@ fn equip_equipment_internal(
     if enforce_law {
         crate::equipment_law::require_item_legal(ctx, character_id, inventory_item_id)?;
     }
+    crate::inventory_container::detach_row_for_action(ctx, "personal", inventory_item_id)?;
     let root_occupancies = placement
         .occupancy
         .iter()
@@ -2621,8 +3285,9 @@ pub fn add_and_equip_item(
 #[cfg(test)]
 mod starting_character_boundary_tests {
     use super::{
-        attachment_point_matches_requirement, attachment_would_create_cycle,
-        conflicting_root_requirements, first_free_attachment_capacity, initial_membership_minutes,
+        CharacterCreationMode, NpcLifeFacts, attachment_point_matches_requirement,
+        attachment_would_create_cycle, conflicting_root_requirements,
+        first_free_attachment_capacity, initial_membership_minutes,
     };
     use crate::item::{
         EquipmentAttachmentPoint, EquipmentChannel, EquipmentLocation,
@@ -2638,6 +3303,219 @@ mod starting_character_boundary_tests {
                 9_000,
                 9_000 + 30 * adventuresim_core::strategic_time::MINUTES_PER_DAY
             )
+        );
+    }
+
+    #[test]
+    fn herbalism_foraging_demo_resets_mutually_exclusive_presence() {
+        let source = include_str!("character.rs");
+        let fixture = source
+            .split("pub(crate) fn seed_herbalism_demo_character")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn seed_bestiary_scholar_character")
+            .next()
+            .unwrap();
+        for required in [
+            "if !party.is_solo",
+            "party.leader_id != HERBALISM_DEMO_CHARACTER_ID",
+            "members.len() != 1",
+            "members[0].character_id != HERBALISM_DEMO_CHARACTER_ID",
+            "set_character_case_site(ctx, HERBALISM_DEMO_CHARACTER_ID, None)",
+            "ensure_foraging_demo_settlement(ctx)",
+            "character.current_settlement_id = Some(HERBALISM_DEMO_SETTLEMENT_ID.into())",
+            "party.current_settlement_id = Some(HERBALISM_DEMO_SETTLEMENT_ID.into())",
+            "party.current_case_site_id = None",
+            "party.camp_destination = None",
+            "party.camp_remaining_minutes = 0",
+            "finish_party_journey(ctx, &party_id)",
+            "strategic_encounter().party_id().delete(&party_id)",
+        ] {
+            assert!(fixture.contains(required), "missing reset step: {required}");
+        }
+        let validation = fixture.find("if !party.is_solo").unwrap();
+        let first_reset = fixture
+            .find("set_character_case_site(ctx, HERBALISM_DEMO_CHARACTER_ID, None)")
+            .unwrap();
+        assert!(
+            validation < first_reset,
+            "party ownership must be validated first"
+        );
+        let scenarios = include_str!("strategic/development_scenarios.rs");
+        let settlement = scenarios
+            .split("pub(crate) fn ensure_foraging_demo_settlement")
+            .nth(1)
+            .unwrap()
+            .split("fn ensure_scenario_character_at")
+            .next()
+            .unwrap();
+        assert!(settlement.contains("const ID: &str = \"dev-scenario-foraging\""));
+        assert!(settlement.contains("settlement.coord_x = 9.75"));
+        assert!(settlement.contains("settlement.coord_y = 51.75"));
+        assert!(
+            settlement.find("settlement.coord_y = 51.75").unwrap()
+                < settlement.find("ensure_settlement_activity").unwrap()
+        );
+    }
+
+    #[test]
+    fn stable_npc_life_is_order_independent_and_adult_bounded() {
+        let first = NpcLifeFacts::from_stable_seed(31);
+        let _unrelated = NpcLifeFacts::from_stable_seed(99);
+        let repeated = NpcLifeFacts::from_stable_seed(31);
+        assert_eq!(first, repeated);
+        assert!((18..=60).contains(&first.age_years));
+    }
+
+    #[test]
+    fn creation_modes_separate_persistent_npcs_from_tactical_temporaries() {
+        assert!(!CharacterCreationMode::Player.is_npc());
+        assert!(!CharacterCreationMode::Player.temporary());
+        assert!(CharacterCreationMode::PersistentNpc.is_npc());
+        assert!(!CharacterCreationMode::PersistentNpc.temporary());
+        assert!(CharacterCreationMode::TemporaryNpc.is_npc());
+        assert!(CharacterCreationMode::TemporaryNpc.temporary());
+        assert!(CharacterCreationMode::Newborn.is_npc());
+        assert!(!CharacterCreationMode::Newborn.temporary());
+        assert!(CharacterCreationMode::Newborn.newborn());
+
+        let source = include_str!("character.rs");
+        let persistent = source
+            .split("pub(crate) fn insert_persistent_npc_character")
+            .nth(1)
+            .unwrap()
+            .split("fn insert_starting_character")
+            .next()
+            .unwrap();
+        assert!(persistent.contains("origin_settlement_id: Some(origin_settlement_id)"));
+        assert!(persistent.contains("CharacterCreationMode::PersistentNpc"));
+        assert!(persistent.contains("create_solo_party: false"));
+        assert!(persistent.contains("initial_time_minute"));
+    }
+
+    #[test]
+    fn full_character_rows_are_gateway_only() {
+        let source = include_str!("character.rs");
+        assert!(source.contains("#[table(accessor = character)]"));
+        assert!(!source.contains("#[table(accessor = character, public)]"));
+        for component in [
+            "character_attributes",
+            "character_stats",
+            "character_skills",
+            "character_limbs",
+        ] {
+            assert!(source.contains(&format!("#[table(accessor = {component})]")));
+            assert!(!source.contains(&format!("#[table(accessor = {component}, public)]")));
+        }
+        let projection = source.split("pub fn backend_characters").nth(1).unwrap();
+        assert!(projection.contains("strategic_gateway_authority()"));
+        assert!(projection.contains("authority.identity == ctx.sender()"));
+        assert!(projection.contains("character().scan_id().filter(0u64..)"));
+        for view in [
+            "backend_character_attributes",
+            "backend_character_stats",
+            "backend_character_skills",
+            "backend_character_limbs",
+            "backend_character_times",
+            "backend_character_training_schedules",
+            "backend_character_capabilities",
+            "backend_character_conditions",
+            "backend_character_needs",
+            "backend_character_exposures",
+            "backend_character_strategic_conditions",
+            "backend_character_morale_sources",
+            "backend_character_deaths",
+        ] {
+            assert!(projection.contains(&format!("pub fn {view}")));
+        }
+        assert!(source.contains("#[table(accessor = character_death)]"));
+        assert!(!source.contains("#[table(accessor = character_death, public)]"));
+        let condition_source = include_str!("condition.rs");
+        assert!(condition_source.contains("#[table(accessor = character_morale_source)]"));
+        assert!(!condition_source.contains("#[table(accessor = character_morale_source, public)]"));
+    }
+
+    #[test]
+    fn newborns_have_full_components_without_an_adult_starter_package() {
+        let source = include_str!("character.rs");
+        let insertion = source
+            .split("pub(crate) fn insert_character_with_origin")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn validate_full_character_components")
+            .next()
+            .unwrap();
+        assert!(insertion.contains("Newborn creation requires a reserved child identity"));
+        assert!(insertion.contains("if !newborn {\n        crate::item::credit_personal_currency"));
+        assert!(insertion.contains("} else if !newborn {\n        add_inventory_item"));
+        assert!(insertion.contains("validate_full_character_components(ctx, character.id)?"));
+    }
+
+    #[test]
+    fn completed_creation_checks_the_full_component_invariant() {
+        let source = include_str!("character.rs");
+        let insertion = source
+            .split("pub(crate) fn insert_character_with_origin")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn validate_full_character_components")
+            .next()
+            .unwrap();
+        assert!(insertion.contains("validate_full_character_components(ctx, character.id)?"));
+        for component in [
+            "character_stats",
+            "character_attributes",
+            "character_skills",
+            "character_limbs",
+            "character_personality",
+            "character_time",
+            "character_training_schedule",
+            "character_capability",
+            "character_condition",
+            "character_needs",
+            "character_exposure",
+            "character_strategic_condition",
+        ] {
+            assert!(
+                source.contains(component),
+                "missing invariant for {component}"
+            );
+        }
+    }
+
+    #[test]
+    fn creation_initializes_condition_before_capability_dependent_side_effects() {
+        let source = include_str!("character.rs");
+        let insertion = source
+            .split("pub(crate) fn insert_character_with_origin")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn validate_full_character_components")
+            .next()
+            .unwrap();
+        let condition = insertion
+            .find("crate::condition::initialize_character_condition(ctx, character.id)?")
+            .unwrap();
+        let currency = insertion
+            .find("crate::item::credit_personal_currency(")
+            .unwrap();
+        let starter_inventory = insertion
+            .find("add_inventory_item(ctx, character.id, \"torch\", 1)")
+            .unwrap();
+        let capability = insertion
+            .find("crate::capability::refresh_character_capability(ctx, character.id)?")
+            .unwrap();
+        assert!(
+            condition < capability,
+            "capability refresh loads the character condition and must run after initialization"
+        );
+        assert!(
+            condition < currency,
+            "currency mutations may refresh capability and must run after condition initialization"
+        );
+        assert!(
+            condition < starter_inventory,
+            "starter inventory mutations may refresh capability and must run after condition initialization"
         );
     }
 

@@ -41,7 +41,7 @@ fn enemy_fear_multiplier(enemy_type: &str) -> Result<f32, String> {
 
 /// Durable strategic inputs for blood loss and religious morale relationships.
 #[derive(Clone, Debug)]
-#[table(accessor = character_condition, public)]
+#[table(accessor = character_condition)]
 pub struct CharacterCondition {
     #[primary_key]
     pub character_id: u64,
@@ -54,7 +54,7 @@ pub struct CharacterCondition {
 /// Durable strategic food and water state. Positive balances are short-term
 /// physiological reserves; negative balances represent unsupported need.
 #[derive(Clone, Debug)]
-#[table(accessor = character_needs, public)]
+#[table(accessor = character_needs)]
 pub struct CharacterNeeds {
     #[primary_key]
     pub character_id: u64,
@@ -67,7 +67,7 @@ pub struct CharacterNeeds {
 /// separate from filth: water changes exposure but carries no dirt/blood
 /// provenance and washing never consumes it.
 #[derive(Clone, Debug, PartialEq)]
-#[table(accessor = character_exposure, public)]
+#[table(accessor = character_exposure)]
 pub struct CharacterExposure {
     #[primary_key]
     pub character_id: u64,
@@ -96,7 +96,7 @@ pub struct MoraleEvent {
 
 /// Refreshable server-authoritative projection used by strategic clients.
 #[derive(Clone, Debug, PartialEq)]
-#[table(accessor = character_strategic_condition, public)]
+#[table(accessor = character_strategic_condition)]
 pub struct CharacterStrategicCondition {
     #[primary_key]
     pub character_id: u64,
@@ -128,7 +128,7 @@ pub struct CharacterStrategicCondition {
 
 /// A signed contribution to the character's current projected morale.
 #[derive(Clone, Debug)]
-#[table(accessor = character_morale_source, public)]
+#[table(accessor = character_morale_source)]
 pub struct CharacterMoraleSource {
     #[primary_key]
     pub id: String,
@@ -391,6 +391,9 @@ fn inventory_quantity(ctx: &ReducerContext, character_id: u64, item_id: &str) ->
         .inventory_item()
         .character_and_item_id()
         .filter((character_id, item_id))
+        .filter(|entry| {
+            !crate::inventory_container::row_is_fireplace_rooted(ctx, "personal", entry.id)
+        })
         .map(|entry| entry.quantity)
         .sum()
 }
@@ -403,7 +406,7 @@ fn water_reserve_days(needs: &CharacterNeeds) -> f32 {
     needs.water_balance_ml.max(0.0) / TRAVEL_WATER_ML_PER_DAY
 }
 
-fn water_capacity_ml(ctx: &ReducerContext, character_id: u64) -> u32 {
+pub(crate) fn water_capacity_ml(ctx: &ReducerContext, character_id: u64) -> u32 {
     let capacity_per_container = ctx
         .db
         .item()
@@ -411,6 +414,24 @@ fn water_capacity_ml(ctx: &ReducerContext, character_id: u64) -> u32 {
         .find(WATERSKIN_ID.to_string())
         .map_or(0, |item| item.water_capacity_ml);
     inventory_quantity(ctx, character_id, WATERSKIN_ID).saturating_mul(capacity_per_container)
+}
+
+pub(crate) fn party_water_capacity_ml(ctx: &ReducerContext, party_id: &str) -> u32 {
+    let capacity = ctx
+        .db
+        .item()
+        .id()
+        .find(WATERSKIN_ID.to_string())
+        .map_or(0, |item| item.water_capacity_ml);
+    ctx.db
+        .party_inventory_item()
+        .party_id()
+        .filter(party_id)
+        .filter(|row| row.item_id == WATERSKIN_ID)
+        .filter(|row| !crate::inventory_container::row_is_fireplace_rooted(ctx, "party", row.id))
+        .map(|row| row.quantity)
+        .sum::<u32>()
+        .saturating_mul(capacity)
 }
 
 pub fn prepare_party_waterskins(
@@ -430,6 +451,7 @@ pub fn prepare_party_waterskins(
         .party_id()
         .filter(party_id)
         .filter(|row| row.item_id == WATERSKIN_ID)
+        .filter(|row| !crate::inventory_container::row_is_fireplace_rooted(ctx, "party", row.id))
         .map(|row| row.quantity)
         .sum();
     let mut party = ctx
@@ -625,15 +647,49 @@ fn apply_elapsed_needs_with_provision(
                 party.pooled_water_ml,
                 needs.carried_water_ml,
             );
+            let pooled_drunk = (pooled_drunk.max(0.0) * 1_000.0).floor() / 1_000.0;
+            crate::outbreak::consume_water_holding_contributions(
+                ctx,
+                "party",
+                &party_id,
+                party.pooled_water_ml,
+                pooled_drunk,
+                character_id,
+            )?;
             party.pooled_water_ml -= pooled_drunk;
             ctx.db.party_authority().id().update(party);
             needs.water_balance_ml += pooled_drunk;
+            let contained = crate::inventory_container::consume_contained_water(
+                ctx,
+                character_id,
+                "party",
+                &party_id,
+                (-needs.water_balance_ml).max(0.0).ceil() as u64,
+            )?;
+            needs.water_balance_ml += contained as f32;
         }
         let drunk = (-needs.water_balance_ml)
             .max(0.0)
             .min(needs.carried_water_ml);
+        let drunk = (drunk * 1_000.0).floor() / 1_000.0;
+        crate::outbreak::consume_water_holding_contributions(
+            ctx,
+            "personal",
+            &character_id.to_string(),
+            needs.carried_water_ml,
+            drunk,
+            character_id,
+        )?;
         needs.carried_water_ml -= drunk;
         needs.water_balance_ml += drunk;
+        let contained = crate::inventory_container::consume_contained_water(
+            ctx,
+            character_id,
+            "personal",
+            &character_id.to_string(),
+            (-needs.water_balance_ml).max(0.0).ceil() as u64,
+        )?;
+        needs.water_balance_ml += contained as f32;
     }
     ctx.db.character_needs().character_id().update(needs);
     Ok(())
@@ -922,7 +978,8 @@ fn base_morale(
                           stimulus: crate::personality::MoraleStimulus| {
         // True personality changes the authoritative magnitude, but labels are
         // public presentation data and must never reveal that private truth.
-        let (magnitude, _) = crate::personality::react_raw(&personality, stimulus, magnitude);
+        let (magnitude, _) =
+            crate::personality::react_raw_for_character(ctx, character_id, stimulus, magnitude);
         raw_sources.push(ProjectedMoraleSource {
             key,
             kind,
@@ -951,12 +1008,22 @@ fn base_morale(
         .sum::<f32>()
         .min(f32::from(adventuresim_core::filth::MAX_FILTH));
     let filth_fraction = filth_total / f32::from(adventuresim_core::filth::MAX_FILTH);
-    let hygiene_morale = match personality.hygiene {
-        crate::personality::Hygiene::Slovenly => 0.0,
-        crate::personality::Hygiene::Neutral => -8.0 * filth_fraction,
-        crate::personality::Hygiene::Cleanly if filth_total == 0.0 => 2.0,
-        crate::personality::Hygiene::Cleanly => -20.0 * filth_fraction,
+    let hygiene_score =
+        crate::personality::personality_scores_or_neutral(ctx, character_id).hygiene;
+    let baseline_hygiene_morale = -8.0 * filth_fraction;
+    let hygiene_endpoint = if hygiene_score >= 0 {
+        if filth_total == 0.0 {
+            2.0
+        } else {
+            -20.0 * filth_fraction
+        }
+    } else {
+        0.0
     };
+    let hygiene_ratio = f32::from(hygiene_score.unsigned_abs())
+        / f32::from(crate::personality::PERSONALITY_SCORE_LIMIT as u16);
+    let hygiene_morale =
+        baseline_hygiene_morale + (hygiene_endpoint - baseline_hygiene_morale) * hygiene_ratio;
     if hygiene_morale != 0.0 {
         add_source(
             "cleanliness".into(),
@@ -1012,7 +1079,7 @@ fn base_morale(
             );
         }
         let prayer_fervor = fervor_fraction(
-            personality.conviction.strength(),
+            crate::personality::conviction_strength_for_character(ctx, character_id),
             religion.own_cohort,
             0.0,
             religion.party_command,
@@ -1259,8 +1326,9 @@ fn evaluate_strategic_condition(
                     .find(member_id)
                     .ok_or("Party member not found")?;
                 let (social_multiplier, social_trait) =
-                    crate::personality::ally_restoration_multiplier(
-                        &crate::personality::personality_or_neutral(ctx, character_id),
+                    crate::personality::ally_restoration_multiplier_for_character(
+                        ctx,
+                        character_id,
                     );
                 ally_lifts.push((
                     member_id,
@@ -1494,13 +1562,20 @@ fn refresh_party_strategic_condition_projection(
     party_members: &[u64],
 ) -> Result<Vec<CharacterStrategicCondition>, String> {
     let (morale_bonus_cap, morale_bonus_shares) = party_morale_support(ctx, party_members)?;
-    party_members
+    let rows = party_members
         .iter()
         .copied()
         .map(|member_id| {
             refresh_one_strategic_condition(ctx, member_id, morale_bonus_cap, &morale_bonus_shares)
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    // Combat power consumes this projection. Keep its public aggregate in the
+    // same transaction as the condition rows so disease, time, and recovery
+    // changes cannot leave a stale readiness snapshot behind.
+    for row in &rows {
+        crate::capability::refresh_character_capability(ctx, row.character_id)?;
+    }
+    Ok(rows)
 }
 
 pub fn refresh_character_strategic_condition(
@@ -1718,6 +1793,40 @@ pub fn upsert_refreshable_morale_event_at_without_refresh(
     Ok(())
 }
 
+/// Replace a bounded morale source with rules-owned magnitude and duration.
+/// Lifecycle systems use this when personality must not alter a contractual
+/// effect's retention window.
+pub(crate) fn upsert_fixed_morale_event_without_refresh(
+    ctx: &ReducerContext,
+    character_id: u64,
+    kind: &str,
+    magnitude: f32,
+    occurred_at_minute: u64,
+    expires_at_minute: u64,
+    source_id: &str,
+) {
+    let existing = ctx
+        .db
+        .morale_event()
+        .character_id()
+        .filter(character_id)
+        .find(|event| event.source_id.as_deref() == Some(source_id));
+    let event = MoraleEvent {
+        id: existing.as_ref().map_or(0, |event| event.id),
+        character_id,
+        kind: kind.into(),
+        magnitude,
+        occurred_at_minute,
+        expires_at_minute,
+        source_id: Some(source_id.into()),
+    };
+    if existing.is_some() {
+        ctx.db.morale_event().id().update(event);
+    } else {
+        ctx.db.morale_event().insert(event);
+    }
+}
+
 fn insert_morale_event_without_refresh(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1743,8 +1852,9 @@ fn insert_morale_event_without_refresh(
 
 fn stored_morale_event_duration(ctx: &ReducerContext, character_id: u64, magnitude: f32) -> u64 {
     if magnitude < 0.0 {
-        crate::personality::negative_event_duration(
-            &crate::personality::personality_or_neutral(ctx, character_id),
+        crate::personality::negative_event_duration_for_character(
+            ctx,
+            character_id,
             RECENT_MORALE_DURATION_MINUTES,
         )
     } else {
@@ -2017,6 +2127,12 @@ pub fn apply_settlement_leisure_condition(
         outcome.morale_earning_minutes,
         interval_end_minute,
     );
+    crate::residence::apply_residence_leisure_morale(
+        ctx,
+        character_id,
+        outcome.morale,
+        interval_end_minute,
+    )?;
     Ok(())
 }
 

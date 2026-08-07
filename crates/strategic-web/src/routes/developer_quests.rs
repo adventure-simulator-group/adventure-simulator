@@ -1,12 +1,15 @@
 //! Developer-mode quest authoring HTTP adapter.
 //!
-//! Developer mode is browser-local UI hiding, not authorization. These routes
-//! require an active character but intentionally add no developer credential.
+//! The module reducer enforces both gateway identity and the compiled
+//! development capability. Browser-local developer mode only controls display.
 
-use super::{AppState, BackendSettlementNpcRow as NpcRow};
+use super::{AppState, BackendSettlementResidentRow as NpcRow};
 use crate::{
     session::Session,
-    spacetimedb::{Character, CharacterTime, Settlement, sql_string_literal},
+    spacetimedb::{
+        BackendDevelopmentQuest, BackendDevelopmentScenario, Character, CharacterTime, Settlement,
+        sql_string_literal,
+    },
 };
 use adventuresim_core::{
     developer_quest::{self as dq, DeveloperGenerationContext, DeveloperQuestDefinition},
@@ -17,10 +20,10 @@ use adventuresim_core::{
     settlement_economy::player_visible_npc_tabs,
 };
 use axum::{
-    Json, Router,
+    Form, Json, Router,
     extract::State,
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
 };
 use serde::Deserialize;
@@ -28,7 +31,7 @@ use serde_json::{Value, json};
 
 #[derive(Clone, Deserialize)]
 struct PresenceRow {
-    npc_id: String,
+    character_id: u64,
     settlement_id: String,
     location_id: String,
     start_minute: u16,
@@ -47,10 +50,88 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/developer/quests/schema", get(schema))
         .route("/api/developer/quests", post(spawn))
-        .route("/api/developer/autopsy-demo", post(load_autopsy_demo))
-        .route("/api/developer/outbreak-demo", post(load_outbreak_demo))
+        .route("/developer/scenarios", get(inspector))
+        .route("/developer/scenarios/incident", post(trigger_incident))
 }
 
+#[derive(Deserialize)]
+struct TriggerIncidentForm {
+    scenario_slug: String,
+    problem_id: String,
+    request_id: String,
+}
+
+async fn inspector(State(state): State<AppState>) -> Response {
+    let quests = match state
+        .db
+        .query::<BackendDevelopmentQuest>("SELECT * FROM backend_development_quests")
+        .await
+    {
+        Ok(quests) => quests,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    if quests.is_empty() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let markup = maud::html! {
+        main class="developer-scenario-inspector" {
+            h1 { "Strategic quest inspector" }
+            p { "Player-safe summaries are shown separately from private canonical identifiers." }
+            nav { a href="/characters" { "Test scenario roster" } }
+            label for="quest-filter" { "Filter quests" }
+            input id="quest-filter" type="search" data-scenario-search placeholder="Scenario, symptom, or status";
+            section data-scenario-group {
+            @for quest in quests {
+                article class="panel" data-scenario-card data-scenario-search-text=(format!("{} {} {} {}", quest.scenario_slug, quest.quest_kind, quest.title, quest.status).to_ascii_lowercase()) {
+                    h2 { @if quest.scenario_slug.is_empty() { (&quest.title) } @else { (&quest.scenario_slug) } }
+                    p { strong { "Kind: " } (&quest.quest_kind) }
+                    p { strong { "Player-safe: " } (&quest.player_safe_summary) }
+                    dl {
+                        dt { "Private subject ID" } dd { code { (&quest.subject_id) } }
+                        dt { "Canonical case ID" } dd { code { (&quest.canonical_case_id) } }
+                        dt { "Status" } dd { (&quest.status) }
+                        @if quest.quest_kind == "generated problem" {
+                            dt { "Incidents" } dd { (quest.incident_count) }
+                            dt { "Public awareness" } dd { (quest.public_awareness_bps) " bps" }
+                        }
+                    }
+                    @if quest.supports_incident_action {
+                        form action="/developer/scenarios/incident" method="post" {
+                            input type="hidden" name="scenario_slug" value=(&quest.scenario_slug);
+                            input type="hidden" name="problem_id" value=(&quest.subject_id);
+                            input type="hidden" name="request_id" value=(format!("web:{}:{}", quest.subject_id, quest.incident_count.saturating_add(1)));
+                            button class="btn btn-primary" type="submit" { "Trigger next incident / attack" }
+                        }
+                    }
+                }
+            }
+            }
+        }
+        script src="/static/development-scenarios.js?v=1" defer {}
+    };
+    Html(markup.into_string()).into_response()
+}
+
+async fn trigger_incident(
+    State(state): State<AppState>,
+    Form(form): Form<TriggerIncidentForm>,
+) -> Response {
+    match state
+        .db
+        .call(
+            "trigger_development_scenario_incident",
+            &[
+                json!(form.scenario_slug),
+                json!(form.problem_id),
+                json!(form.request_id),
+            ],
+        )
+        .await
+    {
+        Ok(()) => Redirect::to("/developer/scenarios").into_response(),
+        Err(error) => (StatusCode::UNPROCESSABLE_ENTITY, error.to_string()).into_response(),
+    }
+}
 async fn active_context(
     state: &AppState,
     session: &Session,
@@ -60,7 +141,7 @@ async fn active_context(
     let character = state
         .db
         .query_one::<Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
+            "SELECT * FROM backend_characters WHERE id = {character_id}"
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
@@ -80,16 +161,16 @@ async fn active_context(
     let now_minute = state
         .db
         .query_one::<CharacterTime>(&format!(
-            "SELECT * FROM character_time WHERE character_id = {character_id}"
+            "SELECT * FROM backend_character_times WHERE character_id = {character_id}"
         ))
         .await
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .map_or(0, |time| time.minutes);
     let literal = sql_string_literal(&settlement_id);
     let npc_sql =
-        format!("SELECT * FROM backend_settlement_npcs WHERE home_settlement_id = {literal}");
+        format!("SELECT * FROM backend_settlement_residents WHERE home_settlement_id = {literal}");
     let presence_sql =
-        format!("SELECT * FROM settlement_npc_presence WHERE settlement_id = {literal}");
+        format!("SELECT * FROM settlement_resident_presence WHERE settlement_id = {literal}");
     let (npcs, presences) = tokio::join!(
         state.db.query::<NpcRow>(&npc_sql),
         state.db.query::<PresenceRow>(&presence_sql)
@@ -109,9 +190,11 @@ async fn active_context(
         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
         .into_iter()
         .filter_map(|npc| {
-            let presence = presences.iter().find(|row| row.npc_id == npc.id)?;
+            let presence = presences
+                .iter()
+                .find(|row| row.character_id == npc.character_id)?;
             visible_witness_candidate(VisibleWitnessCandidateInput {
-                npc_id: &npc.id,
+                resident_character_id: npc.character_id,
                 display_name: &npc.name,
                 age_band: &npc.age_band,
                 presentation: &npc.presentation,
@@ -130,7 +213,7 @@ async fn active_context(
         })
         .collect::<Vec<_>>();
     candidates = retain_navigable_witnesses(candidates, &visible_tabs);
-    candidates.sort_by(|left, right| left.npc_id.cmp(&right.npc_id));
+    candidates.sort_by(|left, right| left.resident_character_id.cmp(&right.resident_character_id));
     let context = GenerationContext {
         seed,
         observer_entropy_hi: seed.rotate_left(17),
@@ -147,10 +230,21 @@ async fn active_context(
     Ok((character_id, settlement, context))
 }
 
+async fn development_enabled(state: &AppState) -> bool {
+    state
+        .db
+        .query::<BackendDevelopmentScenario>("SELECT * FROM backend_development_scenarios")
+        .await
+        .is_ok_and(|rows| !rows.is_empty())
+}
+
 async fn schema(
     State(state): State<AppState>,
     session: Session,
 ) -> Result<Json<Value>, StatusCode> {
+    if !development_enabled(&state).await {
+        return Err(StatusCode::NOT_FOUND);
+    }
     let seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -171,6 +265,9 @@ async fn spawn(
     session: Session,
     Json(request): Json<SpawnRequest>,
 ) -> Response {
+    if !development_enabled(&state).await {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     let (character_id, _, context) = match active_context(&state, &session, 0x0ddc_0ffe).await {
         Ok(context) => context,
         Err(status) => {
@@ -271,178 +368,5 @@ async fn spawn(
             }]})),
         )
             .into_response(),
-    }
-}
-
-async fn load_autopsy_demo(State(state): State<AppState>, session: Session) -> Response {
-    let Some(character_id) = session.character_id_u64() else {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"message":"Select a character before loading the autopsy demo"})),
-        )
-            .into_response();
-    };
-    let character = match state
-        .db
-        .query_one::<crate::spacetimedb::Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
-        .await
-    {
-        Ok(Some(character)) => character,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({"message":"Selected character was not found"})),
-            )
-                .into_response();
-        }
-        Err(error) => {
-            tracing::error!(%error, character_id, "failed to load autopsy demo character");
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"message":"Strategic data is unavailable"})),
-            )
-                .into_response();
-        }
-    };
-    let Some(settlement_id) = character.current_settlement_id else {
-        return (
-            StatusCode::CONFLICT,
-            Json(json!({"message":"Load the autopsy demo while in a settlement"})),
-        )
-            .into_response();
-    };
-    match state
-        .db
-        .call("load_autopsy_demo", &[json!(character_id)])
-        .await
-    {
-        Ok(()) => (
-            StatusCode::CREATED,
-            Json(json!({
-                "status":"loaded",
-                "redirect_to":format!("/locations/settlement/{settlement_id}")
-            })),
-        )
-            .into_response(),
-        Err(error) => (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({"message":error.to_string()})),
-        )
-            .into_response(),
-    }
-}
-
-async fn load_outbreak_demo(State(state): State<AppState>, session: Session) -> Response {
-    let Some(character_id) = session.character_id_u64() else {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"message":"Select a character before loading the outbreak demo"})),
-        )
-            .into_response();
-    };
-    let character = match state
-        .db
-        .query_one::<crate::spacetimedb::Character>(&format!(
-            "SELECT * FROM character WHERE id = {character_id}"
-        ))
-        .await
-    {
-        Ok(Some(character)) => character,
-        Ok(None) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({"message":"Selected character was not found"})),
-            )
-                .into_response();
-        }
-        Err(error) => {
-            tracing::error!(%error, character_id, "failed to load outbreak demo character");
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"message":"Strategic data is unavailable"})),
-            )
-                .into_response();
-        }
-    };
-    let Some(settlement_id) = character.current_settlement_id else {
-        return (
-            StatusCode::CONFLICT,
-            Json(json!({"message":"Load the outbreak demo while in a settlement"})),
-        )
-            .into_response();
-    };
-    match state
-        .db
-        .call("load_outbreak_demo", &[json!(character_id)])
-        .await
-    {
-        Ok(()) => (
-            StatusCode::CREATED,
-            Json(json!({
-                "status":"loaded",
-                "discovery":"normal_rumor",
-                "redirect_to":format!("/locations/settlement/{settlement_id}")
-            })),
-        )
-            .into_response(),
-        Err(error) => (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({"message":error.to_string()})),
-        )
-            .into_response(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn endpoint_contract_does_not_accept_a_settlement_id() {
-        let source = include_str!("developer_quests.rs");
-        assert!(source.contains("current_settlement_id"));
-        assert!(!source.contains("struct SpawnRequest {\n    settlement"));
-        assert!(source.contains("StatusCode::UNPROCESSABLE_ENTITY"));
-        assert!(source.contains("allow_implausible"));
-    }
-
-    #[test]
-    fn autopsy_demo_loader_uses_selected_character_and_server_derived_settlement() {
-        let source = include_str!("developer_quests.rs");
-        assert!(source.contains("/api/developer/autopsy-demo"));
-        assert!(source.contains("\"load_autopsy_demo\", &[json!(character_id)]"));
-        assert!(source.contains("character.current_settlement_id"));
-    }
-
-    #[test]
-    fn quest_preview_uses_only_the_gateway_npc_projection() {
-        let source = include_str!("developer_quests.rs");
-        let production = source
-            .split("#[cfg(test)]")
-            .next()
-            .expect("developer quest production source");
-        let transport = include_str!("mod.rs");
-        let row = transport
-            .split("pub(crate) struct BackendSettlementNpcRow {")
-            .nth(1)
-            .and_then(|tail| tail.split_once('}').map(|(body, _)| body))
-            .expect("NPC transport row");
-        assert!(source.contains("BackendSettlementNpcRow as NpcRow"));
-        assert!(row.contains("presentation: String"));
-        assert!(!row.contains("sex: String"));
-        assert!(!row.contains("projection_id:"));
-        assert!(!production.contains("npc.sex"));
-        assert!(production.contains("visible_witness_candidate"));
-        assert!(production.contains("presentation: &npc.presentation"));
-    }
-
-    #[test]
-    fn outbreak_demo_loader_preserves_normal_discovery() {
-        let source = include_str!("developer_quests.rs");
-        assert!(source.contains("/api/developer/outbreak-demo"));
-        assert!(source.contains("\"load_outbreak_demo\", &[json!(character_id)]"));
-        let loader = source.split("async fn load_outbreak_demo").nth(1).unwrap();
-        assert!(loader.contains("\"discovery\":\"normal_rumor\""));
-        assert!(!loader.contains("rumor_receipt"));
     }
 }

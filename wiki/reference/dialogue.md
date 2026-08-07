@@ -43,7 +43,8 @@ in the current session. Generic greetings and ordinary conversation therefore
 show no claim controls. Once engaged, each highlighted claim is a real
 accessible control, including green and uncertain claims. Activating one opens
 its local Charm, Command, and Bluff responses immediately below the utterance.
-Relationship, familiarity, and demeanor remain in the normal social popup.
+Relationship, familiarity, and demeanor appear as icon-and-meter context beside
+the selected speaker.
 Hidden concern binding, diagnostic correctness, personality fit, checks, rolls,
 and chances remain private.
 Hearing testimony spends no additional time for Insight. Charm is the
@@ -53,14 +54,42 @@ five strategic minutes. A claim can receive at most one response; other claims
 remain actionable. Action receipts and session revisions make retries
 idempotent and stale requests fail closed.
 
-Ordinary conversation is deliberately outside the quest dialogue controls.
-The normal social menu offers a duration-selectable chat with a present local;
-claim responses appear only in the relevant active dialogue session after that
-witness's quest testimony is heard. Casual
-chat can still change that NPC's
+Ordinary conversation and relationship proposals are contextual dialogue
+topics for the selected local, not a separate social popup. Choosing the
+conversation icon reveals a few spoken time-commitment responses; choosing the
+rose reveals only currently legal courtship or wedding responses. The exact
+duration is available in each response's tooltip and accessible label rather
+than displayed as a raw number. Claim responses remain available only in the
+relevant active dialogue session after that witness's quest testimony is
+heard. Casual chat can still change that NPC's
 private morale, directional affinity, and familiarity, so time spent getting
 to know someone can affect a later confrontation without revealing whether
 they have quest information.
+
+Contextual contact applies to every living, co-present Character role whose
+authored context permits the request, including road-encounter counterparties
+and Patients. The shared decision is deliberately small: a request is allowed,
+refused, or unavailable. Refused and unavailable contact changes no awareness,
+affinity, familiarity, time, or receipt state. Road content does not own a
+parallel dialogue or affinity table: **Request** uses the shared
+social mutation and durable relationship edge. At a combat choice point,
+contact establishes mutual awareness and removes the opening stealth choice.
+For a non-combat road conversation it still records contact revision and
+ordinary social consequences, leaving persuasion and nonviolent resolution to
+#373.
+The resulting contextual exchange is client dialogue presentation: local-chat
+live reconciliation preserves it, while selecting another NPC or reloading the
+page may clear it. The social and romance reducers remain the authoritative
+record of the underlying time and relationship mutation.
+
+Social and romance state uses closed Rust discriminants across the module,
+generated client, and web gateway: affinity, familiarity, morale, chat outcome,
+chat target, courtship kind, and romance action are not free-form strings.
+The gateway validates conversation durations and idempotency keys into dedicated
+types before route logic runs. Reducer rejections carry a stable typed courtship
+reason alongside human-readable detail, so dialogue presentation never depends
+on matching error prose. JSON keeps the corresponding snake-case values as the
+browser wire representation.
 
 A challenge succeeds only when that particular claim is factually inaccurate
 and its social check succeeds. Accurate claims and insufficient checks share the same safe
@@ -71,12 +100,24 @@ realized clamped affinity change, never the exact relationship value.
 
 ## Persistent settlement actors
 
-Settlement dialogue is authorized against persistent `settlement_npc` identities and
-their authoritative strategic `settlement_npc_presence`, rather than a client-created
+Settlement dialogue is authorized against persistent `settlement_resident` identities and
+their authoritative strategic `settlement_resident_presence`, rather than a client-created
 `<settlement>:<service>` name. A location may contain several NPCs; changing the
 addressed portrait changes the actor while the character remains at that location.
 Service providers retain their service conversation, while ordinary residents use the
 compiled `local-resident` conversation and cannot receive service-only topics.
+
+The route location is only a candidate. The server first proves that it is a
+navigable location in the actor's current settlement, resolves its canonical
+place, and then projects the actor and every NPC at the actor's personal-time
+frontier through the shared strategic presence contract. The game does not yet
+persist within-settlement travel: a dialogue reducer may instantaneously select
+any server-validated, currently navigable venue in that settlement. The client
+cannot bypass settlement, navigability, schedule, health, or NPC checks, and the
+selection does not create navigation state. Historical death, infection-course,
+and remediation facts determine NPC suppression at the observer frontier. A service-linked chapter
+representative may share the service venue; the chapter fixture and exact
+representative fields still authorize organization business separately.
 
 The public NPC row contains only visible identity and presentation: name, age band,
 presentation, height, build, hair/facial hair, complexion, visible features, clothing,
@@ -128,7 +169,9 @@ one start response exactly once when it creates a session; use it for greetings
 instead of making the browser select a topic implicitly. Topics have
 stable IDs, labels, knowledge/eligibility conditions, and explicitly prioritized
 responses. A response contains attributed turns composed of text and inline
-topic fragments. It may also contain an allowlisted typed runtime slot for a
+topic fragments. Every turn explicitly addresses either the acting participant,
+one role that must bind exactly one participant, or an explicitly group-addressed
+role. It may also contain an allowlisted typed runtime slot for a
 speaker's visible identity, place, symptom, claim, uncertainty, referral,
 evidence, testimony, or contract terms. Authored literals and runtime slots
 remain distinct in the compiled catalog and source map. The server resolves
@@ -145,7 +188,7 @@ Choices may contain `result_turns`; these are appended to the durable transcript
 only after the prompt resolves and its effects succeed.
 
 Conditions are a typed tree: `always`, `all`, `any`, `not`, and `fact`. Fact keys
-are allowlisted in `FactKey`; participant estate, profession, organization, religion,
+are allowlisted in `FactKey`; participant role/profession, organization, religion,
 familiarity, clothing,
 service role, location, time period, quest state, and flags are supported. New
 world facts require a Rust resolver change. Never put executable code, SQL, or
@@ -153,16 +196,24 @@ client-trusted effects in content. Effects are likewise a closed enum. A client
 sends catalog revision and stable topic/choice IDs; the authoritative reducer
 resolves turns and effects from the embedded catalog.
 
-`participant_estate` is resolved once per participant from that actor's
-server-authoritative estate basis and intrinsic organization-role definition.
-It supports both durable Characters and persistent settlement NPCs without
-enumerating house IDs in authored dialogue. Because role-keyed scalar facts
-would otherwise overwrite each other, the compiler rejects
-`participant_estate` for any authored dialogue role whose maximum cardinality
-is greater than one. Its comparison value must be textual `serf`, `freeman`,
-`burgher`, or `noble`. `participant_profession` retains its existing meaning;
-the broader multi-profession predicate is intentionally deferred until all
-professional assignment sources can populate it faithfully.
+`participant_role` is a multi-valued boolean fact resolved from every
+server-authoritative organization-role assignment. It may match a specific
+role ID, profession, or both without enumerating organization IDs in dialogue.
+This permits `noble`, `serf`, `citizen`, and professional identities to coexist
+without overwriting one another. `participant_profession` retains the
+resident's presented service profession semantics where that narrower fact is
+desired.
+
+Direct address uses typed runtime fragments for the visible title and the
+second-person subject, object, possessives, reflexive, and verb agreement.
+Only an explicitly group-addressed role receives plural formal `you`. A singular addressee receives
+familiar `thou` when the speaker socially outranks them or the pair are spouse,
+active lovers/courtiers, immediate parent/child/siblings, or have forty shared
+hours; otherwise speech uses formal `you`. The register is resolved once when
+the shared transcript event is authored, never separately per viewer. Public
+role metadata chooses one winning public identity by address priority, and
+both title and social precedence come from that same role: clergy overrides
+family, noble family overrides citizen, and unrecognized roles cannot leak.
 
 Investigation dialogue uses generic facts and effects rather than per-case
 content IDs. A local-problem referral records the character-owned safe rumor
@@ -173,6 +224,9 @@ name a known contact or describe them,
 give their occupation/relationship and expected location, and retain explicit
 uncertainty. Truthfulness, private motives, hidden causes, and undiscovered
 evidence never participate in topic eligibility.
+The named contact need not be standing at that expected location when another
+local repeats the rumor; questioning the contact still requires ordinary live
+co-presence at the referred location.
 When the addressed NPC is the named contact, the referral switches to
 first-person wording and presents the testimony subject as an inline clickable
 phrase. A different same-named NPC is still explicitly disambiguated.
@@ -219,7 +273,10 @@ existing membership authority. Membership state, promotion availability,
 dues, and current presentation are server-built dialogue facts. Before asking
 for confirmation, the representative names the organization and states the
 joining fee and admission requirements, the dues amount, interval, and current
-standing, or the current rank and next-rank requirements as applicable.
+standing, or the current role and every directly reachable role's requirements
+as applicable. When a role branches, the authoritative prompt expands into one
+stable choice per authored destination role; the selected destination is passed
+explicitly to the promotion reducer and revalidated as a direct transition.
 Committed prompt answers are retry-safe when a response is lost; a new answer
 or an action receipt from a different prompt cannot mutate a closed prompt.
 The representative's greeting anchors a highlighted organization-business
@@ -228,12 +285,27 @@ nonmembers see joining, suspended members see dues only where dues exist, and
 current members can follow a gated chain through dues, promotion, and
 presentation without seeing actions unavailable in their current state.
 
-The web conversation surface exposes topics only as highlighted phrases in
-NPC dialogue. Clicking one asks about that subject; there is no separate list
-of generic or undiscovered topics. While a prompt is open, the shared composer
+The web conversation surface exposes discovered topics both as highlighted
+phrases in NPC dialogue and in four icon tabs: **Quests**, **Lore**, **Recent
+Tidings**, and **Of Thee**. Each compiled topic carries a typed presentation
+category; the browser never infers it from an ID. The tab list is built only
+from owner-scoped authoritative topic-option rows, so it cannot reveal an
+undiscovered topic. Recent Tidings is privacy-safe for residents when detailed
+source authorization is absent, while Of Thee expresses qualitative
+relationship state as spoken questions and answers. While a prompt is open, the shared composer
 matches its choices, shows a unique prefix as grey inline completion, and lets
 Tab accept it. Multi-select answers use comma-separated choice labels. Other
 text continues through the independent free-form chat stream.
+
+Of Thee answers are server-authored observer-safe projections bound to the
+selected subject and projection revision. They are appended as transient
+contextual exchanges in the same visible message stream and are not durable
+free-form chat history. Switching subjects clears them before the next request;
+late responses cannot be attributed to the newly selected person. Party
+portraits retain ordinary profile selection, while choosing Recent Tidings
+deep-loads that subject's authorized social projection into the same functional
+chat dock. Self-selection disables free-form posting and exposes reflection in
+Recent Tidings.
 
 ## Developer mode and source editing
 
@@ -250,3 +322,9 @@ root `data-developer-mode` attribute; do not create independent toggles.
 Schema changes are pre-launch and intentionally have no migration or legacy
 compatibility path. Recreate/reseed the development database and regenerate the
 SpacetimeDB client when deploying this schema.
+
+Ordinary social contact also applies to any living, co-present Character,
+including quest and random-encounter counterparties. It uses ordinary affinity
+and familiarity without broadening the compiled fact/contract dialogue engine.
+Random-encounter contact creates mutual awareness and permanently removes that
+encounter's opening Sneak option.

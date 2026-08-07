@@ -30,14 +30,17 @@ pub(crate) use chrome::{
     CharacterPortraitView, character_portrait_overlay, party_portrait_overlay,
     settlement_description,
 };
-pub use chrome::{settlement_npc_location_page, settlement_overview_page};
+pub use chrome::{
+    ChildPresentation, RelationshipPresentation, WeddingPresentation, settlement_overview_page,
+    settlement_residence_page, settlement_resident_location_page,
+};
 pub use context::{LocationKind, LocationView};
 pub use rest::{RestSummary, SoapRestPreview, rest_result_page};
-pub(crate) use rest::{party_rest_menu, rest_default_minutes};
+pub(crate) use rest::{party_rest_menu, rest_default_minutes, rest_service_menu};
 pub(crate) use social::settlement_chat_area_with_info;
 pub use social::{SocialFeedback, SocialPresentation, party_social_dialog};
 pub use trade::{
-    MerchantShop, live_merchant_shop_page, merchants_page, party_discard_page,
+    MerchantShop, fireplace_page, live_merchant_shop_page, merchants_page, party_discard_page,
     party_inventory_page, party_pool_page, religion_page,
 };
 pub(in crate::templates) use trade::{

@@ -6,12 +6,13 @@ fn outbreak(seed: u64) -> GeneratedCase {
 fn outbreak_catalog_covers_sources_and_all_initial_diseases() {
     use crate::disease::DiseaseId;
 
-    let cases = (0..10).map(outbreak).collect::<Vec<_>>();
+    let cases = (0..12).map(outbreak).collect::<Vec<_>>();
     let diseases = cases
         .iter()
         .map(|case| case.outbreak.as_ref().unwrap().disease)
         .collect::<Vec<_>>();
     for disease in [
+        DiseaseId::Dysentery,
         DiseaseId::Influenza,
         DiseaseId::Mahrdruck,
         DiseaseId::ShroudFever,
@@ -19,6 +20,22 @@ fn outbreak_catalog_covers_sources_and_all_initial_diseases() {
         DiseaseId::Kobeldunst,
     ] {
         assert!(diseases.contains(&disease));
+    }
+    let water = outbreak(0);
+    assert!(matches!(
+        water.outbreak.as_ref().unwrap().source,
+        OutbreakSource::Sanitation {
+            practice: OutbreakSanitationPractice::ContaminatedWell
+        }
+    ));
+    for site in cases.iter().flat_map(|case| &case.sites) {
+        assert!(
+            crate::quest_catalog::catalog()
+                .site(site.kind.as_str())
+                .is_some(),
+            "generated outbreak site {} is absent from the startup catalog",
+            site.kind.as_str()
+        );
     }
     assert!(cases.iter().any(|case| matches!(
         case.outbreak.as_ref().unwrap().source,
@@ -78,10 +95,11 @@ fn every_outbreak_has_two_routes_and_a_complete_non_corpse_path() {
             .collect::<BTreeSet<_>>();
         assert!(routes.contains(&RouteClass::PhysicalTrail));
         assert!(routes.contains(&RouteClass::SocialInquiry));
-        assert!(case
-            .actions
-            .iter()
-            .all(|action| action.target_kind != "corpse"));
+        assert!(
+            case.actions
+                .iter()
+                .all(|action| action.target_kind != "corpse")
+        );
         assert!(validate(&case).is_ok());
     }
 }
@@ -106,10 +124,12 @@ fn outbreak_needs_physical_evidence_but_not_fabricated_tracks() {
     inspection
         .outputs
         .retain(|output| !matches!(output, GeneratedActionOutput::Evidence { .. }));
-    assert!(validate(&missing_physical_evidence)
-        .unwrap_err()
-        .iter()
-        .any(|error| error.contains("physical inspection route")));
+    assert!(
+        validate(&missing_physical_evidence)
+            .unwrap_err()
+            .iter()
+            .any(|error| error.contains("physical inspection route"))
+    );
 }
 
 #[test]
@@ -119,38 +139,45 @@ fn outbreak_validator_rejects_incoherent_private_truth_and_routes() {
         chronology.outbreak.as_ref().unwrap().exposure_chronology[0]
             .became_symptomatic_at
             .saturating_add(1);
-    assert!(validate(&chronology)
-        .unwrap_err()
-        .iter()
-        .any(|error| error.contains("chronology")));
+    assert!(
+        validate(&chronology)
+            .unwrap_err()
+            .iter()
+            .any(|error| error.contains("chronology"))
+    );
 
     let mut incompatible = outbreak(0);
     incompatible.outbreak.as_mut().unwrap().transmission_route =
         crate::disease::TransmissionVector::Environmental;
-    assert!(validate(&incompatible)
-        .unwrap_err()
-        .iter()
-        .any(|error| error.contains("transmission route")));
+    assert!(
+        validate(&incompatible)
+            .unwrap_err()
+            .iter()
+            .any(|error| error.contains("transmission route"))
+    );
 
     let mut one_route = outbreak(0);
     one_route
         .actions
         .retain(|action| action.route == RouteClass::PhysicalTrail);
     one_route.actions[0].alternate = one_route.actions[0].id.clone();
-    assert!(validate(&one_route)
-        .unwrap_err()
-        .iter()
-        .any(|error| error.contains("independent physical")));
+    assert!(
+        validate(&one_route)
+            .unwrap_err()
+            .iter()
+            .any(|error| error.contains("independent physical"))
+    );
 
     let mut wrong_remediation = outbreak(0);
-    wrong_remediation.outbreak.as_mut().unwrap().remediation =
-        OutbreakRemediation::Behavior {
-            action: OutbreakBehaviorAction::IsolatePatients,
-        };
-    assert!(validate(&wrong_remediation)
-        .unwrap_err()
-        .iter()
-        .any(|error| error.contains("remediation")));
+    wrong_remediation.outbreak.as_mut().unwrap().remediation = OutbreakRemediation::Behavior {
+        action: OutbreakBehaviorAction::IsolatePatients,
+    };
+    assert!(
+        validate(&wrong_remediation)
+            .unwrap_err()
+            .iter()
+            .any(|error| error.contains("remediation"))
+    );
 }
 
 #[test]
@@ -164,34 +191,48 @@ fn patient_courses_and_bindings_are_exact_and_carriers_have_no_direct_fix() {
             .map(|exposure| exposure.patient_ref.as_str())
             .collect::<BTreeSet<_>>();
         assert_eq!(refs.len(), truth.exposure_chronology.len());
+        let character_ids = truth
+            .exposure_chronology
+            .iter()
+            .map(|exposure| exposure.patient_character_id)
+            .collect::<BTreeSet<_>>();
+        let episode_ids = truth
+            .exposure_chronology
+            .iter()
+            .map(|exposure| exposure.episode_id)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(character_ids.len(), truth.exposure_chronology.len());
+        assert_eq!(episode_ids.len(), truth.exposure_chronology.len());
         for exposure in &truth.exposure_chronology {
             let definition = crate::disease::definition(truth.disease);
             assert_eq!(
                 exposure.became_symptomatic_at,
                 exposure.exposed_at + definition.incubation_minutes
             );
-            assert!(!exposure.presentation_npc_id.is_empty());
-            assert!(case
-                .witnesses
-                .iter()
-                .any(|witness| witness.npc_id == exposure.presentation_npc_id));
-            assert_ne!(
-                exposure.family_npc_id.as_deref(),
-                Some(exposure.presentation_npc_id.as_str())
-            );
-            if let Some(family_npc_id) = &exposure.family_npc_id {
-                assert!(case
-                    .witnesses
+            assert_ne!(exposure.patient_character_id, 0);
+            assert!(
+                case.witnesses
                     .iter()
-                    .any(|witness| witness.npc_id == *family_npc_id));
-            }
+                    .any(|witness| witness.resident_character_id
+                        == exposure.patient_character_id)
+            );
         }
+        let fatal_ids = truth
+            .exposure_chronology
+            .iter()
+            .filter(|exposure| exposure.died_at.is_some())
+            .map(|exposure| exposure.patient_character_id.to_string())
+            .collect::<BTreeSet<_>>();
+        let social_target = case
+            .actions
+            .iter()
+            .find(|action| action.route == RouteClass::SocialInquiry && action.active_initially)
+            .expect("social outbreak route");
+        assert!(!fatal_ids.contains(&social_target.target_id));
         let physical = case
             .actions
             .iter()
-            .find(|action| {
-                action.active_initially && action.route == RouteClass::PhysicalTrail
-            })
+            .find(|action| action.active_initially && action.route == RouteClass::PhysicalTrail)
             .unwrap();
         assert_eq!(physical.target_id, truth.patient_presentation_site.0);
         assert!(case.sites.iter().any(|site| {
@@ -201,9 +242,12 @@ fn patient_courses_and_bindings_are_exact_and_carriers_have_no_direct_fix() {
             truth.remediation,
             OutbreakRemediation::ResolveCarrierThreat { .. }
         ) {
-            assert!(case.actions.iter().all(|action| action.outputs.iter().all(
-                |output| !matches!(output, GeneratedActionOutput::Remediation { .. })
-            )));
+            assert!(case.actions.iter().all(|action| {
+                action
+                    .outputs
+                    .iter()
+                    .all(|output| !matches!(output, GeneratedActionOutput::Remediation { .. }))
+            }));
         }
         assert!(validate(&case).is_ok());
     }
@@ -211,9 +255,7 @@ fn patient_courses_and_bindings_are_exact_and_carriers_have_no_direct_fix() {
 
 #[test]
 fn only_the_exact_source_remediation_fact_satisfies_the_case() {
-    use crate::case::{
-        CaseId, EvaluationState, OutcomeFact, OutcomeFactId, OutcomeFactKind,
-    };
+    use crate::case::{CaseId, EvaluationState, OutcomeFact, OutcomeFactId, OutcomeFactKind};
 
     let case = outbreak(0);
     let case_id = CaseId::new(case.canonical_case_id.clone()).unwrap();
@@ -233,7 +275,11 @@ fn only_the_exact_source_remediation_fact_satisfies_the_case() {
     };
     assert_eq!(
         case.objectives
-            .evaluate(&case_id, "party:test", &[fact("wrong", "outbreak-remediation:wrong")])
+            .evaluate(
+                &case_id,
+                "party:test",
+                &[fact("wrong", "outbreak-remediation:wrong")]
+            )
             .state,
         EvaluationState::Pending
     );

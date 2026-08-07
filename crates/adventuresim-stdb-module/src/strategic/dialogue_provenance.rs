@@ -3,6 +3,9 @@ enum ReferralDeliveryAuthority {
     PublicThreat,
 }
 
+use crate::relationship::{character_kinship as _, courtship as _};
+use crate::social::character_familiarity as _;
+
 fn referral_delivery_authority(
     ctx: &ReducerContext,
     delivery: &crate::local_problem::LocalProblemRumorDelivery,
@@ -23,7 +26,7 @@ fn referral_delivery_authority(
     ) {
         adventuresim_core::threat_escalation::ReferralDeliveryAuthorityKind::LocalProblem => {
             Ok(ReferralDeliveryAuthority::LocalProblem(
-                receipt.expect("classified local-problem receipt"),
+                receipt.ok_or("Classified local-problem receipt disappeared")?,
             ))
         }
         adventuresim_core::threat_escalation::ReferralDeliveryAuthorityKind::PublicThreat => {
@@ -56,7 +59,7 @@ fn render_quest_referral_variant(
     ctx: &ReducerContext,
     session: &DialogueSession,
     character_id: u64,
-    current_speaker_npc_id: &str,
+    current_speaker_resident_character_id: u64,
     delivery: &crate::local_problem::LocalProblemRumorDelivery,
 ) -> Result<(String, String), String> {
     let facts = dialogue_fact_context(ctx, session, character_id)?;
@@ -65,22 +68,25 @@ fn render_quest_referral_variant(
     else {
         return Err("Quest referral is not a local-problem delivery".into());
     };
-    let contact = ctx
-        .db
-        .settlement_npc()
-        .id()
-        .find(&receipt.contact_npc_id)
-        .ok_or("Rumor referral contact is unavailable")?;
-    let source = ctx
-        .db
-        .settlement_npc()
-        .id()
-        .find(&current_speaker_npc_id.to_owned());
+    let contact = crate::settlement_population::resolve_settlement_resident(
+        ctx,
+        receipt.contact_resident_character_id,
+    )
+    .ok_or("Rumor referral contact is unavailable")?;
+    let source = crate::settlement_population::resolve_settlement_resident(
+        ctx,
+        current_speaker_resident_character_id,
+    );
+    let contact_id = contact.character_id.to_string();
+    let source_id = source
+        .as_ref()
+        .map(|source| source.character_id.to_string());
     if !referral_variant_can_replace_authoritative_wording(
         source
             .as_ref()
-            .map(|source| (source.id.as_str(), source.name.as_str())),
-        &contact.id,
+            .zip(source_id.as_deref())
+            .map(|(source, id)| (id, source.name.as_str())),
+        &contact_id,
         &contact.name,
     ) {
         // The authoritative presentation distinguishes self-referrals and
@@ -97,10 +103,13 @@ fn render_quest_referral_variant(
         return Ok((delivery.fragments_json.clone(), "[]".into()));
     };
     let mut values = std::collections::BTreeMap::new();
-    values.insert("summary".into(), receipt.safe_summary);
-    values.insert("contact_name".into(), contact.name);
-    values.insert("contact_profession".into(), contact.profession);
-    values.insert("contact_location".into(), receipt.expected_location_id);
+    values.insert("summary".into(), receipt.safe_summary.clone());
+    values.insert("contact_name".into(), contact.name.clone());
+    values.insert("contact_profession".into(), contact.profession.clone());
+    values.insert(
+        "contact_location".into(),
+        receipt.expected_location_id.clone(),
+    );
     let text = variant.render(&values)?;
     let fragments = vec![adventuresim_dialogue::Fragment::Text { value: text }];
     let json = serde_json::to_string(&fragments)
@@ -143,7 +152,7 @@ mod referral_variant_tests {
 
     #[test]
     fn referral_renderer_uses_the_current_speaker_not_discovery_provenance() {
-        let source = STRATEGIC_SOURCE;
+        let source = crate::strategic::STRATEGIC_SOURCE;
         let start = source
             .split("pub fn start_dialogue")
             .nth(1)
@@ -156,8 +165,8 @@ mod referral_variant_tests {
             .nth(1)
             .and_then(|tail| tail.split("#[cfg(test)]").next())
             .expect("referral renderer");
-        assert!(renderer.contains("current_speaker_npc_id"));
-        assert!(!renderer.contains("receipt.source_npc_id"));
+        assert!(renderer.contains("current_speaker_resident_character_id"));
+        assert!(!renderer.contains("receipt.source_resident_character_id"));
     }
 }
 
@@ -312,7 +321,7 @@ fn local_service_organization_representative(
     settlement_id: &str,
     location_id: &str,
     service_id: &str,
-) -> Option<crate::settlement_population::SettlementNpc> {
+) -> Option<crate::settlement_population::ResolvedSettlementResident> {
     adventuresim_core::organization::organizations_for_chapter(settlement_id)
         .filter(|organization| organization.service_id.as_deref() == Some(service_id))
         .find_map(|organization| {
@@ -329,16 +338,16 @@ fn local_service_organization_representative(
                         &organization.id,
                     )
                 })
-                .and_then(|id| ctx.db.settlement_npc().id().find(&id))
+                .and_then(|id| crate::settlement_population::resolve_settlement_resident(ctx, id))
                 .filter(|npc| {
                     exact_organization_representative(ctx, npc, settlement_id, location_id)
                         .as_deref()
                         == Some(organization.id.as_str())
                         && ctx
                             .db
-                            .settlement_npc_presence()
-                            .npc_id()
-                            .find(&npc.id)
+                            .settlement_resident_presence()
+                            .character_id()
+                            .find(npc.character_id)
                             .is_some_and(|presence| {
                                 presence.settlement_id == settlement_id
                                     && presence.location_id == location_id
@@ -383,14 +392,19 @@ fn dialogue_fact_context(
             ),
         );
         if participant.character_id.is_none() {
-            if let Some(npc) = ctx.db.settlement_npc().id().find(&participant.actor_id) {
-                let estate = crate::social_estate::settlement_npc_estate(ctx, &npc.id)?;
-                result.facts.insert(
-                    FactKey::ParticipantEstate {
-                        role: participant.role.clone(),
-                    },
-                    FactValue::Text(estate.id().into()),
-                );
+            if let Ok(npc_character_id) = participant.actor_id.parse::<u64>()
+                && let Some(npc) =
+                    crate::settlement_population::resolve_settlement_resident(ctx, npc_character_id)
+            {
+                for organization_role in crate::social_roles::character_roles(ctx, npc.character_id)? {
+                    result.facts.insert(
+                        FactKey::ParticipantRole {
+                            role: participant.role.clone(),
+                            profession: organization_role.profession.clone(),
+                        },
+                        FactValue::Bool(true),
+                    );
+                }
                 if !npc.service_id.is_empty() {
                     result.facts.insert(
                         FactKey::Service {
@@ -448,7 +462,12 @@ fn dialogue_fact_context(
                         .into(),
                     ),
                 );
-                if let Some(presence) = ctx.db.settlement_npc_presence().npc_id().find(&npc.id) {
+                if let Some(presence) = ctx
+                    .db
+                    .settlement_resident_presence()
+                    .character_id()
+                    .find(npc.character_id)
+                {
                     result
                         .facts
                         .insert(FactKey::LocationRole, FactValue::Text(presence.location_id));
@@ -456,13 +475,15 @@ fn dialogue_fact_context(
             }
         }
         if let Some(id) = participant.character_id {
-            let estate = crate::social_estate::character_estate(ctx, id)?;
-            result.facts.insert(
-                FactKey::ParticipantEstate {
-                    role: participant.role.clone(),
-                },
-                FactValue::Text(estate.id().into()),
-            );
+            for organization_role in crate::social_roles::character_roles(ctx, id)? {
+                result.facts.insert(
+                    FactKey::ParticipantRole {
+                        role: participant.role.clone(),
+                        profession: organization_role.profession.clone(),
+                    },
+                    FactValue::Bool(true),
+                );
+            }
             if let Some(character) = ctx.db.character().id().find(id) {
                 let age = match character.age_years {
                     0..=12 => "child",
@@ -594,14 +615,24 @@ fn dialogue_fact_context(
             .iter()
             .filter(|participant| participant.character_id.is_none())
         {
-            let Some(npc) = ctx.db.settlement_npc().id().find(&representative.actor_id) else {
+            let Ok(resident_character_id) = representative.actor_id.parse::<u64>() else {
+                continue;
+            };
+            let Some(npc) = ctx
+                .db
+                .settlement_resident_profile()
+                .character_id()
+                .find(resident_character_id)
+            else {
                 continue;
             };
             let Ok(organization_id) = dialogue_organization_id(ctx, session, &npc) else {
                 continue;
             };
             let definition = adventuresim_core::organization::organization(&organization_id)
-                .expect("bound organization was resolved");
+                .ok_or_else(|| {
+                    format!("Dialogue organization authority references unknown {organization_id}")
+                })?;
             let membership = crate::organization::membership(ctx, character_id, &organization_id);
             let minute = ctx
                 .db
@@ -630,7 +661,14 @@ fn dialogue_fact_context(
                 },
                 FactValue::Bool(membership.as_ref().is_some_and(|row| {
                     crate::organization::membership_is_current(row, minute)
-                        && definition.next_rank(&row.rank_id).is_some()
+                        && crate::social_roles::assigned_organization_role(
+                            ctx,
+                            character_id,
+                            &organization_id,
+                        )
+                        .is_ok_and(|assignment| {
+                            definition.promotion_targets(&assignment.role_id).next().is_some()
+                        })
                 })),
             );
             result.facts.insert(
@@ -677,8 +715,16 @@ fn dialogue_fact_context(
             },
             FactValue::Bool(delivery_receipt.is_some() || has_public_delivery),
         );
-        let exact_referral =
-            dialogue_referred_witness(ctx, character_id, session, &npc.actor_id)?.is_some();
+        let exact_referral = npc
+            .actor_id
+            .parse::<u64>()
+            .ok()
+            .map(|resident_character_id| {
+                dialogue_referred_witness(ctx, character_id, session, resident_character_id)
+            })
+            .transpose()?
+            .flatten()
+            .is_some();
         result.facts.insert(
             FactKey::ParticipantReferralContact {
                 role: npc.role.clone(),
@@ -908,21 +954,26 @@ fn bind_organization_business_terms(
     ctx: &ReducerContext,
     session: &DialogueSession,
     character_id: u64,
-    npc: &crate::settlement_population::SettlementNpc,
+    npc: &crate::settlement_population::SettlementResidentProfile,
     bindings: &mut adventuresim_dialogue::RuntimeBindings,
 ) -> Result<(), String> {
     use adventuresim_dialogue::RuntimeSlot as S;
     let organization_id = dialogue_organization_id(ctx, session, npc)?;
+    let familiar = dialogue_pair_uses_familiar(ctx, npc.character_id, character_id);
+    let possessive = if familiar { "Thy" } else { "Your" };
     let definition = adventuresim_core::organization::organization(&organization_id)
         .ok_or("Organization representative has an unknown organization")?;
     bindings.bind(S::OrganizationName, definition.name.clone());
 
     let admission_requirements = organization_requirements_summary(
-        definition
-            .admission
-            .requirements
-            .iter()
-            .chain(definition.ranks[0].requirements.iter()),
+        definition.admission.requirements.iter().chain(
+            definition
+                .entry_role_ids
+                .first()
+                .and_then(|role_id| definition.role(role_id))
+                .into_iter()
+                .flat_map(|role| role.requirements.iter()),
+        ),
     );
     let fee = if definition.admission.joining_fee == 0 {
         "There is no joining fee".to_owned()
@@ -939,7 +990,7 @@ fn bind_organization_business_terms(
     };
     bindings.bind(
         S::OrganizationAdmissionTerms,
-        format!("{fee}; admission requires {admission_requirements}."),
+        format!("{fee}; admission requireth {admission_requirements}."),
     );
 
     let membership = crate::organization::membership(ctx, character_id, &organization_id);
@@ -960,7 +1011,7 @@ fn bind_organization_business_terms(
         bindings.bind(
             S::OrganizationDuesTerms,
             format!(
-                "Your standing is {standing}. Dues are {} coin{} every {} day{}.",
+                "{possessive} standing is {standing}. Dues are {} coin{} every {} day{}.",
                 dues.amount,
                 if dues.amount == 1 { "" } else { "s" },
                 dues.interval_days,
@@ -970,32 +1021,187 @@ fn bind_organization_business_terms(
     } else {
         bindings.bind(
             S::OrganizationDuesTerms,
-            format!("Your standing is {standing}. This organization charges no dues."),
+            format!("{possessive} standing is {standing}. This organization chargeth no dues."),
         );
     }
 
-    let rank_standing = membership
+    let role_standing = membership
         .as_ref()
-        .and_then(|membership| {
-            let current = definition.rank(&membership.rank_id)?;
-            Some(
-                if let Some(next) = definition.next_rank(&membership.rank_id) {
-                    format!(
-                        "Your current rank is {}. The next rank is {}; it requires {}.",
-                        current.name,
-                        next.name,
-                        organization_requirements_summary(next.requirements.iter()),
-                    )
+        .and_then(|_| {
+            let assignment = crate::social_roles::assigned_organization_role(
+                ctx,
+                character_id,
+                &organization_id,
+            ).ok()?;
+            let current = definition.role(&assignment.role_id)?;
+            let targets = definition.promotion_targets(&assignment.role_id).collect::<Vec<_>>();
+            Some(if targets.is_empty() {
+                    format!("{possessive} current role is {}. No promotion proceedeth from it.", current.name)
                 } else {
+                    let choices = targets.iter().map(|role| role.name.as_str()).collect::<Vec<_>>().join(" or ");
                     format!(
-                        "Your current rank is {}, the organization's highest rank.",
-                        current.name
+                        "{possessive} current role is {}. The available promotion role{} {}: {}.",
+                        current.name,
+                        if targets.len() == 1 { " is" } else { "s are" },
+                        choices,
+                        targets.iter().map(|role| format!("{} requireth {}", role.name, organization_requirements_summary(role.requirements.iter()))).collect::<Vec<_>>().join("; "),
                     )
-                },
-            )
+                })
         })
-        .unwrap_or_else(|| "You do not hold a rank in this organization.".into());
-    bindings.bind(S::OrganizationRankStanding, rank_standing);
+        .unwrap_or_else(|| {
+            if familiar {
+                "Thou dost not hold a role in this organization.".into()
+            } else {
+                "You do not hold a role in this organization.".into()
+            }
+        });
+    bindings.bind(S::OrganizationRoleStanding, role_standing);
+    Ok(())
+}
+
+fn dialogue_actor_id(participant: &DialogueParticipant) -> Option<u64> {
+    participant.character_id.or_else(|| participant.actor_id.parse().ok())
+}
+
+fn dialogue_public_role(
+    ctx: &ReducerContext,
+    character_id: u64,
+) -> Result<Option<&'static adventuresim_core::organization::OrganizationRoleDefinition>, String> {
+    Ok(crate::social_roles::character_roles(ctx, character_id)?
+        .into_iter()
+        .filter(|role| role.publicly_recognizable && !role.address_title.is_empty())
+        .max_by_key(|role| (role.address_priority, role.id.as_str())))
+}
+
+fn dialogue_social_precedence(ctx: &ReducerContext, character_id: u64) -> Result<i16, String> {
+    Ok(dialogue_public_role(ctx, character_id)?
+        .map(|role| role.social_precedence)
+        .unwrap_or_default())
+}
+
+fn dialogue_address_title(ctx: &ReducerContext, character_id: u64) -> Result<String, String> {
+    if let Some(role) = dialogue_public_role(ctx, character_id)? {
+        return Ok(role.address_title.clone());
+    }
+    if let Some(organization_id) = crate::organization::effective_presented_organization(ctx, character_id)
+        && let Some(profession) = adventuresim_core::organization::organization(&organization_id)
+            .and_then(|definition| definition.starting_role.as_ref())
+    {
+        return Ok(profession.profession.label().to_owned());
+    }
+    Ok(crate::settlement_population::resolve_settlement_resident(ctx, character_id)
+        .map(|resident| resident.profession.replace('_', " "))
+        .unwrap_or_else(|| "traveler".into()))
+}
+
+fn dialogue_pair_is_intimate(ctx: &ReducerContext, left: u64, right: u64) -> bool {
+    use crate::relationship::{CourtshipStatus, KinshipKind};
+    let immediate_kin = ctx
+        .db
+        .character_kinship()
+        .subject_id()
+        .filter(left)
+        .any(|edge| {
+            edge.related_id == right
+                && matches!(
+                    edge.kind,
+                    KinshipKind::Parent
+                        | KinshipKind::Child
+                        | KinshipKind::Sibling
+                        | KinshipKind::Spouse
+                )
+        });
+    let active_courtship = ctx
+        .db
+        .courtship()
+        .first_character_id()
+        .filter(left)
+        .chain(ctx.db.courtship().first_character_id().filter(right))
+        .any(|courtship| {
+        ((courtship.first_character_id == left && courtship.second_character_id == right)
+            || (courtship.first_character_id == right && courtship.second_character_id == left))
+            && matches!(courtship.status, CourtshipStatus::Active | CourtshipStatus::Exposed)
+        });
+    let low_id = left.min(right);
+    let high_id = left.max(right);
+    let familiar = ctx
+        .db
+        .character_familiarity()
+        .low_id()
+        .filter(low_id)
+        .any(|familiarity| {
+        familiarity.high_id == high_id
+            && familiarity.shared_minutes >= 40 * 60
+        });
+    immediate_kin || active_courtship || familiar
+}
+
+fn dialogue_pair_uses_familiar(ctx: &ReducerContext, speaker_id: u64, addressee_id: u64) -> bool {
+    dialogue_pair_is_intimate(ctx, speaker_id, addressee_id)
+        || dialogue_social_precedence(ctx, speaker_id).unwrap_or_default()
+            > dialogue_social_precedence(ctx, addressee_id).unwrap_or_default()
+}
+
+fn bind_pairwise_address(
+    ctx: &ReducerContext,
+    session: &DialogueSession,
+    speaker: &DialogueParticipant,
+    acting_character_id: u64,
+    addressee: &adventuresim_dialogue::Addressee,
+    bindings: &mut adventuresim_dialogue::RuntimeBindings,
+) -> Result<(), String> {
+    use adventuresim_dialogue::RuntimeSlot as S;
+    let participants = ctx
+        .db
+        .dialogue_participant()
+        .session_id()
+        .filter(&session.id)
+        .filter(|participant| {
+            participant.id != speaker.id
+                && participant.role == addressee.role()
+                && (!matches!(addressee, adventuresim_dialogue::Addressee::Participant { .. })
+                    || dialogue_actor_id(participant) == Some(acting_character_id))
+        })
+        .collect::<Vec<_>>();
+    if participants.is_empty() {
+        return Err("Dialogue has no participant bound to the addressed role".into());
+    }
+    if !addressee.is_group() && participants.len() != 1 {
+        return Err("A singular dialogue addressee role must bind exactly one participant".into());
+    }
+    let addressees = participants
+        .iter()
+        .filter_map(dialogue_actor_id)
+        .collect::<Vec<_>>();
+    let singular = !addressee.is_group();
+    let speaker_id = dialogue_actor_id(speaker);
+    let outranks = singular && speaker_id.is_some_and(|speaker_id| {
+        dialogue_social_precedence(ctx, speaker_id).unwrap_or_default()
+            > dialogue_social_precedence(ctx, addressees[0]).unwrap_or_default()
+    });
+    let intimate = singular && speaker_id.is_some_and(|speaker_id| {
+        dialogue_pair_is_intimate(ctx, speaker_id, addressees[0])
+    });
+    let register = adventuresim_core::organization::second_person_register(
+        singular, outranks, intimate,
+    );
+    bindings.bind(S::SecondPersonSubject, register.subject);
+    bindings.bind(S::SecondPersonObject, register.object);
+    bindings.bind(S::SecondPersonPossessive, register.possessive);
+    bindings.bind(S::SecondPersonPossessivePronoun, register.possessive_pronoun);
+    bindings.bind(S::SecondPersonReflexive, register.reflexive);
+    bindings.bind(S::SecondPersonBe, register.be);
+    bindings.bind(S::SecondPersonHave, register.have);
+    bindings.bind(S::SecondPersonDo, register.do_word);
+    bindings.bind(S::SecondPersonWill, register.will);
+    bindings.bind(S::SecondPersonMay, register.may);
+    bindings.bind(S::SecondPersonShould, register.should);
+    let title = if singular {
+        dialogue_address_title(ctx, addressees[0])?
+    } else {
+        "gentlefolk".into()
+    };
+    bindings.bind(S::AddresseeTitle, title);
     Ok(())
 }
 
@@ -1004,6 +1210,7 @@ fn dialogue_runtime_bindings(
     session: &DialogueSession,
     character_id: u64,
     speaker_role: &str,
+    addressee: Option<&adventuresim_dialogue::Addressee>,
 ) -> Result<adventuresim_dialogue::RuntimeBindings, String> {
     use adventuresim_dialogue::RuntimeSlot as S;
     let participant = ctx
@@ -1011,15 +1218,23 @@ fn dialogue_runtime_bindings(
         .dialogue_participant()
         .session_id()
         .filter(&session.id)
-        .find(|participant| participant.character_id.is_none() && participant.role == speaker_role)
-        .ok_or("Dialogue has no NPC speaker")?;
-    let npc = ctx
-        .db
-        .settlement_npc()
-        .id()
-        .find(&participant.actor_id)
-        .ok_or("Dialogue NPC is no longer authoritative")?;
+        .find(|participant| participant.role == speaker_role)
+        .ok_or("Dialogue has no bound speaker")?;
     let mut bindings = adventuresim_dialogue::RuntimeBindings::default();
+    if let Some(addressee) = addressee {
+        bind_pairwise_address(
+            ctx,
+            session,
+            &participant,
+            character_id,
+            addressee,
+            &mut bindings,
+        )?;
+    }
+    let npc_character_id = dialogue_actor_id(&participant).ok_or("Dialogue speaker identity is invalid")?;
+    let Some(npc) = crate::settlement_population::resolve_settlement_resident(ctx, npc_character_id) else {
+        return Ok(bindings);
+    };
     bindings.bind(S::SpeakerName, npc.name.clone());
     bindings.bind(
         S::SpeakerDescription,
@@ -1038,10 +1253,7 @@ fn dialogue_runtime_bindings(
             &npc.service_id,
         )
     {
-        bindings.bind(
-            S::OrganizationRepresentativeName,
-            representative.name,
-        );
+        bindings.bind(S::OrganizationRepresentativeName, representative.name);
     }
     if !npc.organization_id.is_empty() {
         bind_organization_business_terms(ctx, session, character_id, &npc, &mut bindings)?;
@@ -1121,12 +1333,11 @@ fn dialogue_runtime_bindings(
         && let ReferralDeliveryAuthority::LocalProblem(receipt) =
             referral_delivery_authority(ctx, &delivery)?
     {
-        let contact = ctx
-            .db
-            .settlement_npc()
-            .id()
-            .find(&receipt.contact_npc_id)
-            .ok_or("Rumor referral contact is unavailable")?;
+        let contact = crate::settlement_population::resolve_settlement_resident(
+            ctx,
+            receipt.contact_resident_character_id,
+        )
+        .ok_or("Rumor referral contact is unavailable")?;
         let authority = ctx
             .db
             .quest_generation_authority()
@@ -1138,14 +1349,14 @@ fn dialogue_runtime_bindings(
             .witnesses
             .iter()
             .find(|witness| {
-                witness.npc_id == receipt.contact_npc_id
+                witness.resident_character_id == receipt.contact_resident_character_id
                     && witness.expected_location == receipt.expected_location_id
             })
             .ok_or("Referral contact is not the generated witness")?;
         bindings.bind(S::Symptom, receipt.safe_summary.clone());
         bindings.bind(S::Claim, receipt.safe_summary);
         bindings.bind(S::Uncertainty, "an unconfirmed local account");
-        bindings.bind(S::ReferralName, contact.name);
+        bindings.bind(S::ReferralName, contact.name.clone());
         bindings.bind(
             S::ReferralDescription,
             format!(
@@ -1157,14 +1368,14 @@ fn dialogue_runtime_bindings(
                 contact.visible_features
             ),
         );
-        bindings.bind(S::ReferralRole, contact.profession);
+        bindings.bind(S::ReferralRole, contact.profession.clone());
         let referral_location =
             adventuresim_core::quest_generation::referral_display_location(witness);
         bindings.bind(S::ReferralLocation, referral_location.to_owned());
         bindings.bind(S::DescribedLocation, referral_location.to_owned());
     }
     if let Some((_, selected_witness)) =
-        dialogue_referred_witness(ctx, character_id, session, &npc.id)?
+        dialogue_referred_witness(ctx, character_id, session, npc.character_id)?
     {
         let testimony =
             adventuresim_core::quest_generation::initial_testimony_projection(&selected_witness)

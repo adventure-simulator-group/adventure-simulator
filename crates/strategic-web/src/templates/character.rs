@@ -9,10 +9,10 @@ use super::settlement::{
 use super::{entry_layout, item_display_name, item_type_icon, panel, sidebar_section};
 use crate::medical::MedicalPresentation;
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterCapability, CharacterLimbs, CharacterPersonality,
-    CharacterSkills, Conscience, Conviction, Courtship, Drive, Hygiene, Inclination, Mirth, Nerve,
-    OrganizationMembership, OrganizationPresentation, Outlook, Presentation, SelfKnowledge,
-    SelfRegard, Sex, Sociability, Temperance, Transparency,
+    BackendDevelopmentScenario, Character, CharacterAttributes, CharacterCapability,
+    CharacterLimbs, CharacterPersonality, CharacterSkills, Conscience, Conviction, Courtship,
+    Drive, Hygiene, Inclination, Mirth, Nerve, OrganizationMembership, OrganizationPresentation,
+    Outlook, Presentation, SelfKnowledge, SelfRegard, Sex, Sociability, Temperance, Transparency,
 };
 use adventuresim_core::starting_character::{
     StartingAgeTier, StartingCharacterSpec, StartingInclination, StartingPersonalityTrait,
@@ -25,7 +25,11 @@ use adventuresim_core::{
 };
 
 /// List all characters and select the adventurer who enters the strategic layer.
-pub fn characters_list_page(characters: &[Character], current_character_id: Option<u64>) -> Markup {
+pub fn characters_list_page(
+    characters: &[Character],
+    scenarios: &[BackendDevelopmentScenario],
+    current_character_id: Option<u64>,
+) -> Markup {
     let content = html! {
         aside class="left-sidebar" {
             (sidebar_section("Choose an adventurer", html! {
@@ -70,6 +74,32 @@ pub fn characters_list_page(characters: &[Character], current_character_id: Opti
             }
             a href="/characters/candidates" class="btn btn-primary candidate-play-action" {
                 "Create another adventurer"
+            }
+            @if !scenarios.is_empty() {
+                section class="panel mt-2" data-development-scenarios {
+                    h2 { "Test scenarios" }
+                    p class="small-copy text-muted" { "Search and enter a prebuilt strategic state. Reset the isolated profile to restore every scenario." }
+                    label for="scenario-search" class="sr-only" { "Search test scenarios" }
+                    input id="scenario-search" type="search" placeholder="Search scenarios" data-scenario-search;
+                    @for category in scenarios.iter().map(|scenario| &scenario.category).collect::<std::collections::BTreeSet<_>>() {
+                        section data-scenario-group {
+                            h3 { (category) }
+                            div class="character-select-grid" {
+                                @for scenario in scenarios.iter().filter(|scenario| &scenario.category == category) {
+                                    article class="panel" data-scenario-card data-scenario-search-text=(format!("{} {} {}", scenario.category, scenario.label, scenario.description).to_ascii_lowercase()) {
+                                        h4 { (&scenario.label) }
+                                        p class="small-copy" { (&scenario.description) }
+                                        form action=(format!("/characters/{}/select", scenario.primary_character_id)) method="post" {
+                                            input type="hidden" name="next" value=(&scenario.entry_route);
+                                            button type="submit" class="btn btn-primary btn-block" { "Select and open" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                script src="/static/development-scenarios.js?v=1" defer {}
             }
         }
 
@@ -141,7 +171,7 @@ mod tests {
             automatic_social_chat_enabled: false,
         };
 
-        let markup = characters_list_page(&[character], Some(7)).into_string();
+        let markup = characters_list_page(&[character], &[], Some(7)).into_string();
         assert!(markup.contains("Dead"));
         assert!(markup.contains("Currently viewed"));
         assert!(markup.contains("View Fallen Adventurer"));
@@ -178,14 +208,10 @@ mod tests {
     }
 }
 
-const PROTOTYPE_NOTICE: &str = "Early prototype: All text and images are placeholders. Features and saved progress may change or be reset during development.";
-
 pub fn character_candidates_bootstrap_page(version: u16) -> Markup {
     let content = html! {
         main class="center-content candidate-bootstrap" {
-            p class="prototype-disclaimer" role="note" { (PROTOTYPE_NOTICE) }
             h2 class="page-title" { "Choose a stage of life" }
-            p class="small-copy text-muted" { "Choose how established your adventurer is before meeting the candidates." }
             noscript { p role="alert" { "JavaScript is required to prepare a private candidate roster." } }
             div data-candidate-bootstrap data-generator-version=(version) {}
             nav class="candidate-age-options" aria-label="Starting age" {
@@ -259,10 +285,8 @@ pub fn character_candidates_page(
     let attributes_title = format!("{}'s attributes", candidate.character.name);
     let skills_title = format!("{}'s skills", candidate.character.name);
     let portraits = character_portrait_overlay("Candidate adventurers", None, &portraits);
-    let center_before = html! {
-            p class="prototype-disclaimer" role="note" { (PROTOTYPE_NOTICE) }
-            span data-candidate-roster data-age-tier=(age_tier.as_str()) hidden {}
-    };
+    let center_before =
+        html! { span data-candidate-roster data-age-tier=(age_tier.as_str()) hidden {} };
     let center_after = html! {
             @if show_inventory {
                 (candidate_inventory_view(spec))
@@ -608,8 +632,8 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             ),
         ] {
             if present {
-                weapon_precision = weapon_precision
-                    .max(skill.capped_rank_for_aptitude(hours, spec.attributes.agility));
+                weapon_precision =
+                    weapon_precision.max(skill.capped_training_rank(hours, &spec.attributes));
             }
         }
         let capability = CharacterCapability {
@@ -632,29 +656,23 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
             slash,
             pierce,
             athletics: Skill::Dodge
-                .capped_rank_for_aptitude(spec.skills.dodge, spec.attributes.agility)
-                .max(
-                    Skill::Balance
-                        .capped_rank_for_aptitude(spec.skills.balance, spec.attributes.agility),
-                ),
+                .capped_training_rank(spec.skills.dodge, &spec.attributes)
+                .max(Skill::Balance.capped_training_rank(spec.skills.balance, &spec.attributes)),
             endurance: spec.attributes.endurance,
             physiology: Skill::Physiology
-                .capped_rank_for_aptitude(spec.skills.physiology, spec.attributes.intelligence),
-            knife: Skill::Knife
-                .capped_rank_for_aptitude(spec.skills.knife, spec.attributes.agility),
+                .capped_training_rank(spec.skills.physiology, &spec.attributes),
+            knife: Skill::Knife.capped_training_rank(spec.skills.knife, &spec.attributes),
             tailoring: Skill::Tailoring
-                .capped_rank_for_aptitude(spec.skills.tailoring, spec.attributes.agility),
-            surgery: Skill::Surgery.capped_rank_for_aptitude(
+                .capped_training_rank(spec.skills.tailoring, &spec.attributes),
+            surgery: Skill::Surgery.capped_training_rank(
                 effective_skill_hours.effective_skill_hours(Skill::Surgery),
-                spec.attributes.intelligence,
+                &spec.attributes,
             ),
-            command: Skill::Command
-                .capped_rank_for_aptitude(spec.skills.command, spec.attributes.instinct),
-            religion: Skill::Religion.capped_rank_for_aptitude(
-                spec.skills.religion.maximum_effective(),
-                spec.attributes.intelligence,
-            ),
+            command: Skill::Command.capped_training_rank(spec.skills.command, &spec.attributes),
+            religion: Skill::Religion
+                .capped_training_rank(spec.skills.religion.maximum_effective(), &spec.attributes),
             weapon_precision,
+            autoresolve_combat_power: 0,
         };
         let organization_memberships = spec
             .organization
@@ -671,7 +689,7 @@ impl From<&StartingCharacterSpec> for CandidatePresentation {
                     id: 0,
                     character_id: spec.id,
                     organization_id: organization.organization_id.clone(),
-                    rank_id: organization.rank_id.clone(),
+                    role_id: organization.role_id.clone(),
                     joined_minute: 0,
                     dues_paid_through_minute: paid_through,
                     status: "active".into(),
@@ -788,7 +806,7 @@ fn candidate_personality(spec: &StartingCharacterSpec) -> CharacterPersonality {
 
 #[cfg(test)]
 mod creation_tests {
-    use super::{CandidatePresentation, PROTOTYPE_NOTICE, character_candidates_page};
+    use super::{CandidatePresentation, character_candidates_page};
     use adventuresim_core::organization::StartingProfession;
     use adventuresim_core::starting_character::{StartingAgeTier, StartingItem, roster};
 
@@ -810,7 +828,7 @@ mod creation_tests {
         )
         .into_string();
         assert_eq!(markup.matches("class=\"party-portrait\"").count(), 5);
-        assert!(markup.contains(PROTOTYPE_NOTICE));
+        assert!(!markup.contains("prototype-disclaimer"));
         assert!(!markup.contains("role=\"dialog\""));
         assert!(markup.contains("class=\"party-portrait-overlay\""));
         assert!(markup.contains("class=\"party-attributes-list\""));
@@ -906,6 +924,7 @@ mod creation_tests {
         .into_iter()
         .find(|candidate| candidate.profession == Some(StartingProfession::Herbalist))
         .unwrap();
+        adult.skills.physiology = 100.0;
         let preview = CandidatePresentation::from(&adult);
         assert!(preview.capability.physiology > 0.0);
         assert_eq!(preview.capability.surgery, 0.0);
@@ -925,6 +944,26 @@ mod creation_tests {
         adult.skills.tailoring = 0.0;
         let direct_only = CandidatePresentation::from(&adult).capability.surgery;
         assert!(correlated > direct_only);
+    }
+
+    #[test]
+    fn candidate_surgery_capability_uses_the_weighted_governing_aptitude() {
+        let mut candidate = roster(
+            adventuresim_core::starting_character::GENERATOR_VERSION,
+            "00112233445566778899aabbccddeeff",
+            StartingAgeTier::Young,
+        )
+        .unwrap()
+        .remove(0);
+        candidate.attributes.intelligence = 4.0;
+        candidate.attributes.instinct = 1.0;
+        candidate.attributes.agility = 3.5;
+        candidate.skills.surgery = adventuresim_core::skill::Skill::Surgery.hours_for_rank(4.0);
+        candidate.skills.knife = 0.0;
+        candidate.skills.tailoring = 0.0;
+
+        let surgery = CandidatePresentation::from(&candidate).capability.surgery;
+        assert!((surgery - 3.15).abs() < 0.001);
     }
 
     #[test]

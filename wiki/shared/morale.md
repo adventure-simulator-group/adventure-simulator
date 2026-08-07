@@ -7,10 +7,10 @@ separate consequence: a successful approach can release bound testimony, while
 a benign concern yields only clarification. This separation prevents morale or
 affinity results from becoming a hidden-truth oracle.
 
-The character-sheet morale meter is informational. A raised Social meta-skill
-icon beside its heading opens the observer-specific morale sources, beliefs,
-and available social actions in a modal dialog without replacing either
-character rail. The icon remains inset while that dialog is open; the privacy
+The character-sheet morale meter is informational. Its conversation icon opens
+the selected character's **Recent Tidings** in the shared Conversation Dock,
+with observer-specific morale sources, beliefs, and available social actions.
+The privacy
 boundary remains the active observer's beliefs rather than authoritative
 personality state. Manual response buttons show a response-specific icon and
 short label; hovering the icon explains the contextual approach, skill, and
@@ -92,10 +92,12 @@ Food quality and disease will become additional named sources when those systems
 
 # Personality reactions
 
-Personality stores thirteen immutable behavioral axes. The existing nine are
+Personality stores thirteen private, mutable behavioral scores. Each is a
+bounded signed fixed-point value from -10,000 to 10,000. The existing nine are
 joined by **Merry/Grave**, **Amorous/Proper**, **Open/Guarded**, and
 **Introspective/Self-deceiving**. Generated profiles still activate exactly
-two to four non-neutral behavioral axes. Presentation and Inclination are
+two to four visible non-neutral behavioral axes by initializing those scores
+at their endpoints; every other score begins at zero. Presentation and Inclination are
 always assigned and do not count toward sparsity. Conscience is present but
 has no morale hook until outcomes carry durable moral context.
 
@@ -107,7 +109,10 @@ Neutral characters seek 15 ml pure ethanol on ordinary evenings and 45 ml on
 the first evening without another qualifying heavy evening in the prior seven
 days; satisfaction grants +1 or +3 morale and failure gives -1 or -3. Drunkards
 seek 45 ml every evening, gaining +5 when satisfied and -5 when unsatisfied.
-The values are named balancing constants. A durable per-character/evening row
+Those are the neutral and endpoint balancing values. The actual nightly morale
+magnitude interpolates continuously from neutral at score zero toward zero at
+the Temperate endpoint or +/-5 at the Drunkard endpoint; seeking and consumption
+still use the visible discrete preference. A durable per-character/evening row
 records consumed ethanol and whether morale was evaluated, so long rests,
 short-rest sequences, departure clock synchronization, and emergency drinking
 cannot duplicate an evening. The latest result replaces one refreshable
@@ -120,7 +125,16 @@ Its existing schedule effect is not interpreted as an additional inventory-
 backed alcohol reward; the nightly alcohol event is the only alcohol-specific
 morale source.
 
-Reactions modify each raw source before positive/negative ranking and Will mitigation. Brave/Fearful halves/doubles outmatched fear; Ambitious/Content multiplies victory and defeat by 1.5/0.5; Sanguine favors positive sources by 1.25 and negative sources by 0.75 while Brooding does the reverse. Sanguine negative events last half the normal duration and Brooding ones last twice as long. Proud multiplies victory by 1.5 and defeat by 3, while Humble multiplies both by 0.75. Zealous/Irreverent multiplies religious conviction, prayer, discord, neglect, and religious events by 1.5/0.5. Gregarious/Solitary multiplies incoming named ally restoration by 1.5/0.5 before the existing cap at neutral morale.
+Reactions modify each raw source before positive/negative ranking and Will
+mitigation. Zero score is a 1.0 multiplier; potency interpolates monotonically
+to the former discrete multiplier at either endpoint. Thus the old Brave,
+Fearful, Ambitious, Content, Sanguine, Brooding, Proud, Humble, Zealous,
+Irreverent, Gregarious, and Solitary endpoint balance remains unchanged while
+deeds can alter their potency continuously. The browser receives only a
+derived label once a score crosses the +/-5,000 visibility threshold. Conscience
+uses Compassionate at +5,000, Callous from -5,000 through -7,999, and Cruel at
+-8,000 or below. Tooltips remain qualitative so an exact hidden score cannot
+be inferred.
 
 Personality changes what an event means, but true tags are never appended to public source labels. Will governs coping with ranked negative morale, Command governs the party restoration budget, Religion governs tradition-specific knowledge, and Conviction governs personal and cohort ardor.
 
@@ -159,9 +173,24 @@ It is therefore an explanation of the current net morale, like a treated
 injury segment, rather than extra morale. Color, striping, and meter text all
 identify the segment.
 
-Each negative morale point produces one percentage point of fear incapacitation, so -100 morale is the meaningful left endpoint of the meter. The center represents neutral morale. The right side shows the character's allocated share of the party's current ally-restoration percentage relative to the party's present `5% × aggregate Command` limit. Selecting the meter opens the dedicated social panel and source actions.
+Each negative morale point produces one percentage point of fear incapacitation, so -100 morale is the meaningful left endpoint of the meter. The center represents neutral morale. The right side shows the character's allocated share of the party's current ally-restoration percentage relative to the party's present `5% × aggregate Command` limit. Selecting the meter opens Recent Tidings and its source actions. Every current source remains a distinct card. Signed, accessibly worded strength accompanies a yellow neutral color that moves toward green for increasingly positive values and toward red for increasingly negative values. Positive and neutral sources are read-only.
 
-The strategic condition and morale-source tables are refreshable projections. Durable state remains in character condition, injuries, strategic time, time-stamped morale events, and static personality. A negative event's persisted expiration already includes its Sanguine or Brooding duration adjustment, so `expires_at_minute` is authoritative rather than a projection-only reinterpretation. Personality is assigned before ordinary NPC events are recorded and is immutable thereafter. Personality is strategic identity, never tactical tick state. A missing legacy personality row is safely treated as fully neutral.
+The strategic condition and morale-source tables are refreshable projections.
+Durable state includes private personality scores and immutable development
+events. Active raw morale sources are reinterpreted using the character's
+current disposition whenever the projection refreshes: a later deed therefore
+changes how a still-active event is presently appraised. Negative-event expiry
+remains authoritative once recorded. Personality development is strategic
+state, never tactical tick state. Gameplay systems identify development by an
+authoritative source; an exact replay is a no-op and conflicting reuse fails
+closed.
+
+Discrete profiles are converted to score authority only at character creation
+or an explicitly named fixture/import reset. Ordinary demographic or
+single-axis updates project from the existing score row and cannot reconstruct
+authority from the lossy visible labels. Canonical character deletion removes
+both the score row and that character's development audit events; audit events
+are character-owned history rather than permanent world chronicles.
 
 # Religion
 
@@ -214,7 +243,7 @@ The incident temporarily occupies the party's active-encounter slot while preser
 
 Morale sources are not dialogue memories. Each source has a closed topic such
 as defeat, injury, fatigue, hunger, faith, or filth. The character page's
-Morale meter opens a social panel where a party member can listen, commiserate,
+The morale meter opens Recent Tidings where a party member can listen, commiserate,
 use humor, rally with Command, offer a deceptive reframe, or flirt. Labels are
 generic and grounded in the durable source; the game does not invent incidental
 details about a battle or conversation.
