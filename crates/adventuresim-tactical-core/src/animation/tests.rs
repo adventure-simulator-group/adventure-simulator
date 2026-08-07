@@ -868,7 +868,7 @@ mod legacy_tests {
     }
 
     #[test]
-    fn gait_anchor_weights_advance_uniformly_at_recording_cadences() {
+    fn gait_anchor_weights_use_monotone_cubic_quarters() {
         for frames_per_cycle in [20, 40] {
             let step = 1.0 / frames_per_cycle as f32;
             let samples = (0..frames_per_cycle)
@@ -897,11 +897,23 @@ mod legacy_tests {
                     }
                 })
                 .collect::<Vec<_>>();
-            let expected = 4.0 * step;
             assert!(
-                travel.iter().all(|delta| (delta - expected).abs() < 0.0001),
-                "nonuniform gait travel at {frames_per_cycle} frames/cycle: {travel:?}"
+                travel.iter().all(|delta| *delta >= 0.0 && *delta < 0.3),
+                "non-monotone or discontinuous gait travel at {frames_per_cycle} frames/cycle: {travel:?}"
             );
+            let start = gait_pair(0.0, SemanticPose::WalkContact, SemanticPose::WalkPassing);
+            let near_start = gait_pair(step, SemanticPose::WalkContact, SemanticPose::WalkPassing);
+            let start_delta = near_start.get(1).map_or(0.0, |sample| sample.weight)
+                - start.get(1).map_or(0.0, |sample| sample.weight);
+            let middle = gait_pair(0.125, SemanticPose::WalkContact, SemanticPose::WalkPassing);
+            let near_middle = gait_pair(
+                0.125 + step,
+                SemanticPose::WalkContact,
+                SemanticPose::WalkPassing,
+            );
+            let middle_delta = near_middle.get(1).map_or(0.0, |sample| sample.weight)
+                - middle.get(1).map_or(0.0, |sample| sample.weight);
+            assert!(start_delta < middle_delta, "Hermite endpoints ease into motion");
         }
     }
 

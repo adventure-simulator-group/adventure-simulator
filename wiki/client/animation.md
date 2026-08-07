@@ -617,18 +617,20 @@ character-space mirrored contact, mirrored contact to mirrored passing, and
 mirrored passing back to contact. It does not traverse later exported gait
 timeline data or any baked in-between frames between the two anchors. The
 client pauses distinct Bevy graph nodes at the exact catalog frames and blends
-their bone transforms using the evaluator's linear quarter-cycle weight.
+their bone transforms using a monotone cubic Hermite quarter-cycle weight.
+The semantic anchors remain exact, while zero endpoint velocity prevents the
+knee and ankle velocity discontinuity produced by linear sparse-pose blending.
 Each graph contribution is a complete unmirrored or pre-mirrored endpoint.
 Parity is never averaged into a fractional post-FK reflection: at the middle
 of passing-to-opposite-contact, Bevy blends half of each complete pose rather
 than pulling both legs toward their reflected counterparts. Character-space reflection retains anatomical lateral spacing
 rather than swapping bones discretely. Support narrows through the walk/run
 blend and releases both feet for roughly 90-110 ms at each 5.5 m/s run flight
-beat; the visual gait keeps at least 0.10 m of sole clearance during that flight.
+beat; the visual gait keeps at least 0.05 m of sole clearance during that flight.
 With terrain IK enabled, only the current contact leg is ground-constrained by
 the analytic terrain solver. On support loss, the unsupported swing leg releases
 in owner space from its last solve target toward authored FK at no more than
-3.4 m/s (about 5.3 cm per 64 Hz sample), without a world plant, terrain floor,
+3.1 m/s (about 4.8 cm per 64 Hz sample), without a world plant, terrain floor,
 or terrain projection. Each release converges on a frozen snapshot of the
 authored swing target before refreshing that goal, so a rapidly moving authored
 pose cannot make the validation mistake bounded following for foot sticking.
@@ -639,20 +641,90 @@ latter part of its swing,
 it may instead approach a phase-predicted touchdown ahead of the projected
 center of mass. That target converges vertically on sampled terrain only as
 contact approaches, so uneven ground cannot pin the foot during clearance.
-High support locks the stance foot horizontally in world space until release.
-Support diagnostics require the rendered sole to remain within 0.012 m of the
+Touchdown acquisition begins during the run's preceding swing, follows a
+smooth clearance arc, and evaluates its frozen-start world trajectory directly
+from 0.75 phase before contact. Target continuity and the shared nine-degree
+world-foot orientation limit bound the 5.5 m/s reference run; the analytic leg
+solve is not delayed by a second joint follower. The swing's world start is
+frozen with the contact plan, and a bounded-slope deterministic Hermite path reaches
+touchdown 0.15 phase before the profile's support-entry radius rather than
+recursively easing from the current foot until the center of contact. When a
+new plan begins during an unfinished release, its start is the prior visible
+solve target transported by the current owner displacement rather than held
+for one frame in world space or replaced by the newly restored authored FK
+foot. If sampled
+terrain makes the early plan vertically unreachable, the solve follows its
+nearest reachable point without replacing the eventual touchdown. Before
+freezing a run plan, its terrain-sampled XZ is projected into the shared reach
+region of the predicted upper-leg root at support entry, center, and exit,
+including the permitted 0.25 m pelvis reach allowance; reachable flat contacts remain
+unchanged. The frozen
+prediction survives the swing-to-support handoff instead of
+being recomputed from a later body position. An unacquired plan remains frozen
+through its nominal support lobe so a reach-limited ankle can finish the last
+bounded samples into contact; it expires only if that lobe ends without contact
+or an explicit reach failure invalidates it. Expiry clears the endpoint, visible
+swing start, and start phase atomically so a replacement cannot inherit timing
+from the failed plan. Once the rendered sole reaches contact,
+high support solves directly to the frozen world plant. For walk and stop,
+nominal phase requests the next step but the current acquired plant remains the
+logical support until the opposite rendered sole has actually acquired its
+replacement contact or an explicit reach check releases it. Run instead releases
+at the signed outer edge of its raw post-contact support lobe and raises the sole
+directly onto its 5 cm clearance floor, so its authored aerial interval remains
+real while the rising landing shoulder can still acquire. That first Run release
+sample transports the ankle by the controller's owner-local root displacement
+instead of holding the old world plant, so root travel plus lift cannot become
+one oversized visible step; walk and stop retain world-hold behavior. Toe-off marks the
+remainder of that raw support lobe exhausted, preventing
+the release-created next plan from re-entering support and losing its frozen
+start metadata on the following sample; divergence of
+the newly restored authored FK swing is not a plant-discontinuity signal. A reach-released foot marks that
+support lobe exhausted until the raw gait enters true flight, so residual nominal
+weight cannot reacquire or replan the same contact before the next step. The
+unsuppressed raw cadence clears that latch in flight independently of reported
+contact or retained plan state; the next rising raw support shoulder can then
+lower a reachable frozen endpoint from the 5 cm flight floor and acquire it.
+Running overlays a bounded sagittal foot-roll curve on the authored/slope-aligned
+orientation: modest heel presentation approaches contact, the sole flattens
+early in stance, and a modest toe-off releases back to neutral swing. The
+shared angular limiter permits at most 9 degrees per 64 Hz sample, including
+the first terrain-alignment frame; Run holds the prior foot orientation on the
+first toe-off sample before returning to that shared bound.
+Support diagnostics require the rendered sole to remain within 0.01 m of the
 sampled terrain contact. This narrow allowance covers the measured residual
 introduced by the complete analytic and scene-hierarchy solve; a foot outside
-that same shared tolerance is always reported as unsupported.
+that same shared tolerance is always reported as unsupported. This truthful
+post-propagation report is separate from solver transition ownership, so a
+single rendered miss cannot make the next tick forget that it must release
+from the preceding planted chain.
 Both legs are supported at stable idle; action poses opt out of ordinary terrain
 IK because they do not yet publish explicit foot-contact semantics. A footprint
 is acquired only near full contact. At the edge of leg reach, shared
 virtual-time rate-bounded pelvis
 lowering absorbs the reach deficit first, and left and right targets remain on
-separate pelvis-space tracks. Upright motion keeps a 20-degree soft extension
-reserve. Crouch may use the remaining anatomically valid reach down to eight
-degrees to conform without dragging a compact stance. Both use a forward,
-slightly outward anatomical bend hemisphere. Arm and
+separate pelvis-space tracks. The complete airborne Run target is limited in
+owner-local 3D to 9 cm per sample only after terrain height and clearance are
+applied. Raw-flight plans retain the 5 cm sole floor even after horizontal
+progress reaches the endpoint, descending only once nominal support is eligible
+and the frozen contact is within one bounded follower step. That same
+follower remains active through nominal support until the propagated sole
+actually acquires the frozen endpoint; only an acquired world plant bypasses
+it. If controller travel plus the final 5 cm descent would exceed that budget,
+the still-unacquired last footprint transports once with the owner's current
+displacement, is re-sampled and reach-checked there, and freezes in world space
+as soon as the sole acquires it. Uphill advancement projects XZ and clearance jointly so continuity never
+trades for penetration. Upright motion keeps a 20-degree soft
+extension reserve. Crouch and terrain swing keep at least 12 degrees of flexion
+to conform without dragging a compact stance. A run also anticipates
+its frozen planned contact during late approach, blending at most 0.25 m of
+shared visual-rig-root drop so the pelvis and both thigh roots remain coherent
+and support entry never collapses an already visible target under the hip. This
+contact-coupled correction reinforces the existing phase
+minima and retains the two-peak run-height contract. The remembered knee bend
+is parallel-transported by the shortest hip-target direction rotation before
+each length solve, avoiding a new analytic pole choice near full extension.
+Both use a forward, slightly outward anatomical bend hemisphere. Arm and
 leg swing share the same phase reconstruction before optional terrain IK; only
 the legs receive that final terrain solve. An explicit hand or weapon
 constraint can then override the reconstructed arm carriage.
@@ -669,10 +741,11 @@ compensation applies only to upright, lowered-guard `humanoid_unarmed`
 locomotion; crouching, guard movement, and specialized packs receive zero
 compensation until measured independently. One visual-only profile evaluation
 owns height: contacts at phase 0 and 0.5 are minima, grounded gaits use smooth
-compression/recovery curves, and running uses a gravity-shaped parabolic arc
+compression/recovery curves, and running uses a smooth sine-squared arc
 across each full contact-to-contact half-step so the sole is already elevated
-when shared support releases. Its 0.09 m run apex and 0.04 m walk,
-0.03 m raised-guard, and 0.025 m crouch bounce are continuously blended
+when shared support releases. Its 0.09 m raw run apex compensates for the
+authored passing rise to display about 0.06 m; the 0.04 m walk,
+0.03 m raised-guard, and 0.025 m crouch bounce profiles are continuously blended
 across speed and state changes. The curve never changes authoritative owner Y,
 grounded state, or posture. Guard's separate reach correction remains an
 additive baseline concern rather than a gait wave.
@@ -693,15 +766,25 @@ sparse clips in one frame. The crossfade applies on both locomotion activation
 and release, with separate start/stop speed thresholds to prevent threshold
 chatter. If the projected center of mass is outside the current support region,
 one foot remains the sole support while the other follows a short clearance arc
-to a bounded capture point beyond the projected center of mass. The capture
-uses a 0.28-second nominal arc but does not settle into idle until the swing
+  to a bounded capture point beyond the projected center of mass. The capture
+  seeds both chains from their prior post-propagation ankle snapshots rather
+  than the newly restored idle FK or a potentially unreachable solve goal, then
+  retains the selected support at that exact visible footprint while discarding
+  any run contact plan left over from the preceding stride. The swing
+  uses a 0.28-second nominal arc but does not settle into idle until the swing
 sole reaches the frozen planned XZ within 2 cm and terrain contact within 1 cm;
-a bounded timeout may finish only from an already grounded, supportable stance.
-It never converts both feet into sliding
+  a bounded timeout may finish only from an already grounded, supportable stance.
+  It never converts both feet into sliding
 supports or strands the body behind the new contact.
 If locomotion restarts before capture contact, the frozen stop target is
-cancelled and the moving foot uses the same bounded airborne release back to
-authored locomotion; it is not snapped to either the stale plant or new gait.
+discarded immediately so ordinary phase-owned contact acquisition cannot be
+  starved by a cancelled settle. The visible foot still uses the same bounded
+  airborne release back to authored locomotion; it is not snapped to either the
+  stale plant or new gait. A completed settle promotes both final solve targets
+  to a stable dual-plant idle stance and clears only transient plans/releases;
+  it neither freezes a raised sparse-run swing nor snaps the wide settled step
+  under the body in one frame. New movement releases those plants through the
+  ordinary bounded gait handoff.
 A real airborne-to-grounded sequence triggers one 0.04-0.08 m, roughly 0.16
 second landing compression. A landing-only analytic solve flexes the actual
 hips/knees back to retained pre-compression world foot plants throughout recovery.
@@ -760,17 +843,28 @@ For steady height scenarios, every complete cycle after warmup must contain
 exactly two prominent peaks in the phase 0.25 and 0.75 passing windows. A
 0.003 m prominence threshold filters sampling jitter while still rejecting an
 extra visible beat.
+The steady terrain run additionally requires non-vacuous alternating left and
+right support acquisitions after warmup, 85-120 ms unsupported intervals,
+contact clearance and cumulative plant drift within 1 cm, a 10-degree maximum
+foot rotation step, and a 2 cm maximum pelvis-height step.
+The flight-phase stop and tap/restart probes apply their +1 cm transient toe
+floor only after locomotion begins or while stop-settle owns a foot. Their
+zero-speed, no-settle pre-roll remains covered by the general -1 cm terrain
+penetration tolerance and is not mislabeled as a Run flight sample.
 Typed scenario metadata distinguishes ordinary, transition, terrain,
 raised-guard, and landing gates. The suite includes a speed ramp, an
 apex-adjacent hard stop, real forward-input camera/controller turns through 90
 and 180 degrees, airborne landing, and a two-cycle cadence/contact fixture.
 Every logical sample is evaluated repeatedly across the three review views;
-the gate compares bones within 0.5 mm/0.1 degrees and requires unchanged
-contact/landing sequences and event counts. Success also gates lean and phase
+the gate compares bones within 0.5 mm/0.05 degrees and requires unchanged
+contact/landing sequences and event counts. The first fixed-tick evaluation
+owns IK state advancement and the complete cached local pose; later views
+restore that pose without re-entering or mutating support/release state.
+Success also gates lean and phase
 continuity, hard-stop pelvis continuity from the moving-to-zero edge through
 settling, two ordered contacts per cycle and
 shared step distance, event order/count/deduplication, contact soles from
--0.02 m to 0.04 m, run flight soles from 0.10 m to 0.30 m, landing knee flex, foot
+-0.02 m to 0.04 m, run flight soles from 0.05 m to 0.20 m, landing knee flex, foot
 preservation within 1 cm, and landing penetration no lower than -1 cm.
 The fixture supplies deterministic controller observations at the shared
 server projection boundary and follows rendered terrain height only in the
@@ -790,8 +884,10 @@ require no more than 0.01 m cumulative support drift and at least 0.16 m
 inter-foot separation; steady upright terrain IK retains the 0.035 m drift
 bound. Crouch permits 0.051 m for compact reach correction. Transient
 stop/restart probes receive the same 0.035 m supported-slip and plant-drift
-bounds as other terrain IK, while foot and knee continuity is capped at 0.055 m
-per 64 Hz sample.
+bounds as other terrain IK. Their explicit 5.5 m/s Run segments use the 0.095 m
+foot budget required by 0.086 m of owner travel per 64 Hz sample, while the knee
+remains capped at 0.10 m; lower-speed transition probes retain the 0.055 m foot
+budget.
 The analytic knee-flexion reserve and bend-hemisphere gates use that same
 procedural scope; they are not asserted against authored FK-only motion.
 Ordinary FK-only motion is reviewed through continuity, clearance, phase-height,

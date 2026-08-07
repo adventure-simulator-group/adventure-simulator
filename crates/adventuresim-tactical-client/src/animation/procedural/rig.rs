@@ -258,7 +258,7 @@ pub(in crate::animation) struct SoleAxisCaptured;
 /// cardinal local up axis would pitch the feet even on flat terrain.
 pub(crate) fn capture_humanoid_rig_axes(
     mut commands: Commands,
-    feet: Query<(Entity, &HumanoidBone), (Added<HumanoidBone>, Without<SoleAxisCaptured>)>,
+    feet: Query<(Entity, &HumanoidBone), Without<SoleAxisCaptured>>,
     mut rigs: Query<&mut HumanoidRig>,
     helper: TransformHelper,
 ) {
@@ -269,7 +269,33 @@ pub(crate) fn capture_humanoid_rig_axes(
         let Ok(global) = helper.compute_global_transform(entity) else {
             continue;
         };
-        let axis = sole_up_axis_from_bind(global.rotation());
+        let raw_axis = sole_up_axis_from_bind(global.rotation());
+        let toe_role = if bone.role == BoneRole::FootLeft {
+            BoneRole::ToeLeft
+        } else {
+            BoneRole::ToeRight
+        };
+        // Rig topology and scene globals can become available a frame after
+        // the foot component. Do not mark the axis captured until the toe is
+        // present; otherwise the one-shot fallback preserves a pitched bind
+        // axis for the lifetime of the scene.
+        let Some(forward_local) = rigs
+            .get(bone.owner)
+            .ok()
+            .and_then(|rig| rig.get(&toe_role).copied())
+            .and_then(|toe| helper.compute_global_transform(toe).ok())
+            .map(|toe| global.rotation().inverse() * (toe.translation() - global.translation()))
+            .and_then(|axis| axis.try_normalize())
+        else {
+            continue;
+        };
+        // The animated toe translation is the actual longitudinal foot axis.
+        // Orthogonalize the bind-derived sole normal against it so mapping the
+        // sole to terrain cannot leave the toe vector pitched through ground.
+        let axis = raw_axis
+            .reject_from_normalized(forward_local)
+            .try_normalize()
+            .unwrap_or(raw_axis);
         if let Some(axis) = axis.try_normalize() {
             commands.entity(entity).insert(SoleAxisCaptured);
             if let Ok(mut rig) = rigs.get_mut(bone.owner) {

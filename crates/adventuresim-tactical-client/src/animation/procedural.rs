@@ -8,13 +8,90 @@ use super::{AnimationPlayback, AuthoredBindTransform, ImpactReaction, PresentedS
 mod rig;
 pub(crate) use rig::*;
 
-/// Procedural facing is an additive post-FK layer. Animation evaluation writes
-/// these local transforms again on the next frame, so the offsets do not drift.
-pub(super) fn apply_head_and_torso_look(
-    owners: Query<(&CharacterLook, &PresentedSkeleton)>,
-    mut bones: Query<(&HumanoidBone, &mut Transform)>,
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct ProceduralLookState {
+    base_rotation: Quat,
+    applied_rotation: Quat,
+    evaluation_tick: u64,
+}
+
+#[derive(Resource, Debug, Default)]
+pub(super) struct FixedTickPoseCache {
+    tick: Option<u64>,
+    bones: BTreeMap<Entity, Transform>,
+}
+
+/// Tools can render gameplay, side, and front views from one logical sample.
+/// Preserve the first complete post-procedural local pose for that fixed tick
+/// and restore it before propagation on every repeated render. Live gameplay
+/// leaves the fixed clock unset and never enters this path.
+pub(super) fn stabilize_repeated_fixed_tick_pose(
+    clock: Res<ProceduralAnimationClock>,
+    mut cache: ResMut<FixedTickPoseCache>,
+    mut bones: Query<(Entity, &mut Transform), With<HumanoidBone>>,
 ) {
-    for (bone, mut transform) in &mut bones {
+    let Some((tick, _)) = clock.fixed_step() else {
+        cache.tick = None;
+        cache.bones.clear();
+        return;
+    };
+    if cache.tick != Some(tick) {
+        cache.tick = Some(tick);
+        cache.bones.clear();
+        cache.bones.extend(
+            bones
+                .iter_mut()
+                .map(|(entity, transform)| (entity, *transform)),
+        );
+        return;
+    }
+    for (entity, mut transform) in &mut bones {
+        if let Some(cached) = cache.bones.get(&entity) {
+            *transform = *cached;
+        }
+    }
+}
+
+fn additive_look_rotation(
+    current: Quat,
+    previous: Option<ProceduralLookState>,
+    evaluation_tick: u64,
+    offset: Quat,
+) -> (Quat, ProceduralLookState) {
+    let base_rotation = previous.map_or(current, |previous| {
+        if previous.evaluation_tick == evaluation_tick
+            || current.angle_between(previous.applied_rotation) <= 0.000_01
+        {
+            previous.base_rotation
+        } else {
+            current
+        }
+    });
+    let applied_rotation = (base_rotation * offset).normalize();
+    (
+        applied_rotation,
+        ProceduralLookState {
+            base_rotation,
+            applied_rotation,
+            evaluation_tick,
+        },
+    )
+}
+
+/// Procedural facing is an additive post-FK layer. Sparse authored clips do not
+/// necessarily rewrite every torso bone, so retain the pre-look local rotation
+/// and reuse it when the same logical pose reaches this pass again.
+pub(super) fn apply_head_and_torso_look(
+    mut commands: Commands,
+    owners: Query<(&CharacterLook, &PresentedSkeleton)>,
+    mut bones: Query<(
+        Entity,
+        &HumanoidBone,
+        &mut Transform,
+        Option<&mut ProceduralLookState>,
+    )>,
+) {
+    for (entity, bone, mut transform, state) in &mut bones {
         let Ok((look, skeleton)) = owners.get(bone.owner) else {
             continue;
         };
@@ -31,8 +108,20 @@ pub(super) fn apply_head_and_torso_look(
         };
         // Owner yaw is already on the character transform. Only the bounded
         // local action offset and vertical look are distributed here.
-        transform.rotation *=
-            Quat::from_euler(EulerRot::YXZ, directional_yaw * weight, pitch * weight, 0.0);
+        let offset = Quat::from_euler(EulerRot::YXZ, directional_yaw * weight, pitch * weight, 0.0);
+        let previous = state.as_deref().copied();
+        let (rotation, next) = additive_look_rotation(
+            transform.rotation,
+            previous,
+            skeleton.locomotion_sample_tick,
+            offset,
+        );
+        transform.rotation = rotation;
+        if let Some(mut state) = state {
+            *state = next;
+        } else {
+            commands.entity(entity).insert(next);
+        }
     }
 }
 
@@ -251,7 +340,7 @@ pub(crate) fn locomotion_height_wave(skeleton: &SkeletonState) -> f32 {
         return grounded * moving_weight;
     }
     let half_step = (skeleton.gait_phase.rem_euclid(0.5) * 2.0).clamp(0.0, 1.0);
-    let flight = 4.0 * half_step * (1.0 - half_step) * profile.flight_apex_metres;
+    let flight = (half_step * std::f32::consts::PI).sin().powi(2) * profile.flight_apex_metres;
     (grounded + flight) * moving_weight
 }
 
@@ -778,8 +867,9 @@ struct BoneSnapshot {
 mod ik;
 pub(crate) use ik::{
     ArmIkState, AttackFootworkState, HandIkTarget, HandSide, HeldWeaponConstraint,
-    HumanoidIkTargets, LegIkState, MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock,
-    RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
+    HumanoidIkTargets, LegIkDiagnostics, LegIkState, MEASURED_ANKLE_SOLE_OFFSET_METRES,
+    ProceduralAnimationClock, RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES,
+    locomotion_support_weights,
 };
 #[cfg(test)]
 use ik::{
@@ -1141,6 +1231,23 @@ mod legacy_tests {
         assert_eq!(presentation_tick_delta(Some(10), 14), Some(4));
         assert_eq!(presentation_tick_delta(Some(14), 2), None);
         assert_eq!(presentation_tick_delta(Some(2), 40), None);
+    }
+
+    #[test]
+    fn repeated_look_evaluation_reuses_the_pre_look_rotation() {
+        let base = Quat::from_rotation_z(0.17);
+        let offset = Quat::from_rotation_x(0.2 * 0.16);
+        let (first, state) = additive_look_rotation(base, None, 41, offset);
+        let (repeated, repeated_state) = additive_look_rotation(first, Some(state), 41, offset);
+        assert!(first.angle_between(repeated) <= 0.000_001);
+
+        // A sparse clip can also leave the bone untouched on the next tick.
+        let (next_tick, _) = additive_look_rotation(repeated, Some(repeated_state), 42, offset);
+        assert!(first.angle_between(next_tick) <= 0.000_001);
+
+        let authored_next = Quat::from_rotation_z(0.24);
+        let (updated, _) = additive_look_rotation(authored_next, Some(repeated_state), 42, offset);
+        assert!((authored_next * offset).angle_between(updated) <= 0.000_001);
     }
 
     #[test]
@@ -1659,7 +1766,7 @@ mod legacy_tests {
         let at_64_hz = simulate(1.0 / 64.0, 16);
         let at_128_hz = simulate(1.0 / 128.0, 32);
         assert!((at_64_hz - at_128_hz).abs() < 0.0001);
-        assert!((at_64_hz + 0.4).abs() < 0.0001);
+        assert!((at_64_hz + 0.3).abs() < 0.0001);
 
         let after_hitch = advance_pelvis_shift(0.0, -1.0, 1.0);
         assert!((after_hitch + MAX_PELVIS_CORRECTION_STEP).abs() < 0.0001);

@@ -59,6 +59,9 @@ pub const RUN_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
     step_distance: 1.78,
     support_phase_radius: 0.175,
     bounce_metres: 0.0,
+    // The authored ordinary passing rise contributes about 3.3 cm and is
+    // normalized out by presentation. Nine centimetres here therefore leaves
+    // a grounded visual flight response near the intended six centimetres.
     flight_apex_metres: 0.09,
     landing: HUMANOID_LANDING_PROFILE,
 };

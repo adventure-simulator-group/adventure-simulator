@@ -20,7 +20,7 @@ pub(crate) mod ragdoll;
 #[allow(unused_imports)]
 pub(crate) use procedural::{
     ArmIkState, AttackFootworkState, BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint,
-    HumanoidBone, HumanoidIkTargets, LegIkState, LocomotionBodyResponseState,
+    HumanoidBone, HumanoidIkTargets, LegIkDiagnostics, LegIkState, LocomotionBodyResponseState,
     LocomotionHeightState, MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock,
     RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
 };
@@ -840,9 +840,12 @@ fn drive_fk_players(
             player.stop_all();
             continue;
         }
-        for (_, active) in player.playing_animations_mut() {
-            active.set_weight(0.0);
-        }
+        // Semantic FK samples exact paused anchor times every evaluation.
+        // Reusing the previous graph's active-node state lets dependency blend
+        // poses feed a small amount of their prior output into a repeated
+        // render of the same logical tick. Rebuild this tiny paused set so one
+        // tick is idempotent across gameplay/side/front evaluations.
+        player.stop_all();
         for weighted in &playback.clips {
             player
                 .play(weighted.clip.node)

@@ -178,7 +178,11 @@ pub(super) fn gait_pair(
     passing: SemanticPose,
 ) -> Vec<PoseSample> {
     let quarter = phase.rem_euclid(1.0) * 4.0;
-    let progress = quarter.fract();
+    // A smooth cubic Hermite coordinate gives every sparse contact/flight
+    // anchor zero endpoint velocity. Linear quarter interpolation changed
+    // velocity discontinuously at each anchor and produced a visible knee and
+    // ankle snap even though the poses themselves were continuous.
+    let progress = smoothstep01(quarter.fract());
     let (start, start_mirrored, end, end_mirrored) = match quarter.floor() as u8 {
         0 => (contact, false, passing, false),
         1 => (passing, false, contact, true),

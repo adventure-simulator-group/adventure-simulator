@@ -236,6 +236,7 @@ impl Plugin for TacticalAnimationPlugin {
             .init_resource::<semantic_graph::SemanticGraphTelemetry>()
             .init_resource::<TerrainIkEnabled>()
             .init_resource::<ProceduralAnimationClock>()
+            .init_resource::<procedural::FixedTickPoseCache>()
             .add_message::<LocomotionPresentationEvent>()
             .add_systems(Startup, request_animation_packs)
             .add_observer(on_successful_attack)
@@ -280,6 +281,7 @@ impl Plugin for TacticalAnimationPlugin {
                     procedural::apply_support_foot_grounding,
                     procedural::apply_terrain_leg_ik,
                     procedural::apply_arm_and_weapon_constraints,
+                    procedural::stabilize_repeated_fixed_tick_pose,
                 )
                     .chain()
                     .after(AnimationSystems)
