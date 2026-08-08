@@ -5,6 +5,10 @@ use super::*;
 pub enum PoseSampling {
     /// Sample the pose's authoritative catalog frame.
     Anchor,
+    /// Sample the complete authored motion at the shared normalized gait
+    /// phase. The graph still owns this sample's blend weight; the runtime
+    /// only converts phase to the motion's authored timeline.
+    Cycle { phase: f32 },
     /// Blend two semantic anchor poses. The client samples both catalog frames
     /// exactly and never evaluates exported in-between keys.
     Span { end: SemanticPose, progress: f32 },
@@ -126,21 +130,32 @@ fn locomotion_samples(speed: f32, phase: f32, crouch: f32) -> Vec<PoseSample> {
     append_scaled(&mut samples, idle, 1.0 - locomotion);
     append_scaled(
         &mut samples,
-        gait_pair(phase, SemanticPose::WalkContact, SemanticPose::WalkPassing),
+        vec![cycle_sample(SemanticPose::WalkContact, phase)],
         locomotion * (1.0 - run) * (1.0 - crouch),
     );
     append_scaled(
         &mut samples,
-        gait_pair(phase, SemanticPose::RunContact, SemanticPose::RunFlight),
+        vec![cycle_sample(SemanticPose::RunContact, phase)],
         locomotion * run * (1.0 - crouch),
     );
     append_scaled(
         &mut samples,
-        gait_pair(phase, SemanticPose::WalkContact, SemanticPose::WalkPassing),
+        vec![cycle_sample(SemanticPose::WalkContact, phase)],
         locomotion * crouch,
     );
     samples.retain(|sample| sample.weight > f32::EPSILON);
     samples
+}
+
+fn cycle_sample(pose: SemanticPose, phase: f32) -> PoseSample {
+    PoseSample {
+        pose,
+        sampling: PoseSampling::Cycle {
+            phase: phase.rem_euclid(1.0),
+        },
+        weight: 1.0,
+        mirror_lower_body: false,
+    }
 }
 
 fn append_scaled(into: &mut Vec<PoseSample>, samples: Vec<PoseSample>, scale: f32) {

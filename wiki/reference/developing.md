@@ -607,15 +607,18 @@ must run on a trusted internal branch/check or remain explicitly unavailable
 for that fork event.
 
 After changing the canonical unarmed `walk.glb` or `run.glb`, regenerate the
-complete mirrored gait endpoint clips with:
+closed runtime cycles and their mirrored comparison clips with:
 
 ```powershell
+python scripts/build_locomotion_cycles.py
 python scripts/mirror_gait_assets.py
+python scripts/build_locomotion_cycles.py --check
 python scripts/mirror_gait_assets.py --check
 ```
 
-The generator requires Python 3 and NumPy. Runtime locomotion blends these
-binary-parity endpoint clips; it does not fractionally mirror an FK result.
+The generators require Python 3 and NumPy. Runtime locomotion samples the
+closed canonical cycle directly; mirrored files remain available for semantic
+fallback and comparison. It does not fractionally mirror an FK result.
 
 For normal native tactical development, use the supervised launcher:
 
@@ -655,6 +658,8 @@ Use `just tactical-play diagnostic` to run the same native gameplay client
 with a bounded analogue-input script and a per-render-frame animation-state
 JSONL log. The generated script, `animation-state-<session>.jsonl`, and process
 logs are written to the supervised run directory reported by `just tactical-status`.
+The bounded script keeps forward movement held while raising and lowering guard,
+so the trace also verifies that raised-stance replication and locomotion remain live.
 This is the preferred reproducer when deterministic `animation-viewer`
 captures disagree with visible networked gameplay.
 Scripted diagnostic mode forces the default third-person camera and suppresses

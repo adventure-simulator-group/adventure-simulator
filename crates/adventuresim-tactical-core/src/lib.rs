@@ -37,7 +37,8 @@ pub mod prelude {
     pub use crate::physics::{
         AdventureSimulatorPhysicsSet, TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
         TACTICAL_RUN_SPEED_METRES_PER_SECOND, tactical_character_controller,
-        tactical_movement_speed, tactical_movement_speed_for_guard,
+        tactical_movement_acceleration_hz_for_guard, tactical_movement_speed,
+        tactical_movement_speed_for_guard,
     };
     pub use crate::player::{
         Attributes, BestiaryCategories, CharacterId, ControlledPlayer, Limbs, Player, Skills,

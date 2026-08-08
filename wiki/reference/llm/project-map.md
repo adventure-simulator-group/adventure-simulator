@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1885)
+## Files (1888)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -1289,6 +1289,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/animation/procedural.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/procedural/ik/body_response.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/procedural/ik/hands.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/animation/procedural/ik/locomotion.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/procedural/ik/mod.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/procedural/ik/solver.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/animation/procedural/rig.rs` — Rust source module.
@@ -1786,6 +1787,7 @@ development, or other wiki document before changing a subsystem.
 - `flake.nix` — Nix environment configuration or lockfile.
 - `justfile` — Repository support file.
 - `rust-toolchain.toml` — Tooling or build configuration.
+- `scripts/build_locomotion_cycles.py` — Development or documentation automation script.
 - `scripts/build_wasm.py` — Development or documentation automation script.
 - `scripts/dev_stack.py` — Development or documentation automation script.
 - `scripts/init_forest_cover.py` — Development or documentation automation script.
@@ -1810,6 +1812,7 @@ development, or other wiki document before changing a subsystem.
 - `scripts/test_world_data_bundle.py` — Development or documentation automation script.
 - `scripts/test_world_runtime_release.py` — Development or documentation automation script.
 - `scripts/test_world_source_init.py` — Development or documentation automation script.
+- `scripts/tests/test_build_locomotion_cycles.py` — Development or documentation automation script.
 - `scripts/tests/test_dev_stack.py` — Development or documentation automation script.
 - `scripts/tests/test_just_tasks.py` — Development or documentation automation script.
 - `scripts/tests/test_prepare_animation_motion.py` — Development or documentation automation script.

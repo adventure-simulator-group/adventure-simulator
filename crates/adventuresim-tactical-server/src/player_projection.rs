@@ -575,16 +575,16 @@ pub(crate) fn restore_authoritative_movement_intent(
     for (movement_intent, skeleton, mut accumulated_input) in &mut players {
         accumulated_input.last_movement =
             if let Some((direction, speed)) = skeleton.attack_movement() {
-                if skeleton.action_phase() >= 0.5 {
-                    None
-                } else {
-                    let cap = match skeleton.weapon_guard() {
-                        WeaponGuardState::Lowered => TACTICAL_RUN_SPEED_METRES_PER_SECOND,
-                        WeaponGuardState::Raised => TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
-                    };
-                    (speed > 0.01 && direction != Vec2::ZERO)
-                        .then_some(direction * (speed / cap).clamp(0.0, 1.0))
-                }
+                let cap = match skeleton.weapon_guard() {
+                    WeaponGuardState::Lowered => TACTICAL_RUN_SPEED_METRES_PER_SECOND,
+                    WeaponGuardState::Raised => TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
+                };
+                // A moving attack owns its captured movement through the
+                // completed switching action. Releasing or reversing input
+                // cannot stop the controller underneath the attack step; the
+                // latest player intent resumes once the end guard commits.
+                (speed > 0.01 && direction != Vec2::ZERO)
+                    .then_some(direction * (speed / cap).clamp(0.0, 1.0))
             } else {
                 movement_intent.0
             };
@@ -812,7 +812,7 @@ mod tests {
     }
 
     #[test]
-    fn attack_holds_captured_velocity_until_contact_then_settles_before_resuming_input() {
+    fn moving_attack_holds_captured_velocity_until_the_end_guard_commits() {
         let mut skeleton = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
         skeleton.begin_attack(
             AttackSpec::melee_from_local_velocity(Vec3::new(0.0, 0.0, -2.0)),
@@ -823,7 +823,7 @@ mod tests {
         let player = world
             .spawn((
                 Player::default(),
-                AuthoritativeMovementIntent(Some(Vec2::Y)),
+                AuthoritativeMovementIntent(Some(Vec2::X)),
                 skeleton,
                 input::AccumulatedInput::default(),
             ))
@@ -837,9 +837,13 @@ mod tests {
                 .get::<input::AccumulatedInput>(player)
                 .unwrap()
                 .last_movement,
-            Some(Vec2::NEG_Y)
+            Some(Vec2::Y)
         );
 
+        world
+            .get_mut::<AuthoritativeMovementIntent>(player)
+            .unwrap()
+            .0 = None;
         world
             .get_mut::<SkeletonState>(player)
             .unwrap()
@@ -850,7 +854,24 @@ mod tests {
                 .get::<input::AccumulatedInput>(player)
                 .unwrap()
                 .last_movement,
-            None
+            Some(Vec2::Y)
+        );
+
+        world
+            .get_mut::<AuthoritativeMovementIntent>(player)
+            .unwrap()
+            .0 = Some(Vec2::X);
+        world
+            .get_mut::<SkeletonState>(player)
+            .unwrap()
+            .advance_action(20);
+        schedule.run(&mut world);
+        assert_eq!(
+            world
+                .get::<input::AccumulatedInput>(player)
+                .unwrap()
+                .last_movement,
+            Some(Vec2::Y)
         );
 
         world
@@ -863,7 +884,7 @@ mod tests {
                 .get::<input::AccumulatedInput>(player)
                 .unwrap()
                 .last_movement,
-            Some(Vec2::Y)
+            Some(Vec2::X)
         );
     }
 }

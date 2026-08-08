@@ -1493,10 +1493,12 @@ def launch_recorded_tactical_client(
                 "type": "move", "direction": "forward",
                 "input_speed": 0.5, "duration_seconds": 2.0,
             },
+            {"type": "guard", "raised": True},
             {
                 "type": "move", "direction": "forward",
                 "input_speed": 1.0, "duration_seconds": 2.0,
             },
+            {"type": "guard", "raised": False},
             {"type": "wait", "duration_seconds": 0.5},
         ])
         atomic_write_json(input_script, {

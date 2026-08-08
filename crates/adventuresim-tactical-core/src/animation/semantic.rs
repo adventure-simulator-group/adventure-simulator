@@ -243,7 +243,7 @@ mod contract_tests {
             moving
         );
 
-        let invalid = r#"{"motion":"moving","local_direction":[null,0.0],"speed":2.0,"swing_foot":"Left","step_sequence":9}"#;
+        let invalid = r#"{"moving":{"local_direction":[null,0.0],"speed":2.0,"swing_foot":"Left","step_sequence":9}}"#;
         assert!(serde_json::from_str::<RaisedLocomotionIntent>(invalid).is_err());
         assert_eq!(
             RaisedLocomotionIntent::moving(Vec2::ZERO, f32::NAN, LeadFoot::Left, 9),
@@ -263,6 +263,21 @@ mod contract_tests {
         assert_eq!(normalized.body(), BodyState::Prone);
         assert_eq!(normalized.stance(), StanceState::Lowered);
         assert_eq!(normalized.action(), ActionState::default());
+    }
+
+    #[test]
+    fn raised_stance_round_trips_through_replication_codec() {
+        for locomotion in [
+            RaisedLocomotionIntent::planted(7),
+            RaisedLocomotionIntent::moving(Vec2::Y, 2.0, LeadFoot::Right, 8),
+        ] {
+            let state = SkeletonState::default()
+                .with_weapon_guard(WeaponGuardState::Raised)
+                .with_raised_locomotion(locomotion);
+            let encoded = postcard::to_allocvec(&state).unwrap();
+            let decoded: SkeletonState = postcard::from_bytes(&encoded).unwrap();
+            assert_eq!(decoded, state);
+        }
     }
 }
 

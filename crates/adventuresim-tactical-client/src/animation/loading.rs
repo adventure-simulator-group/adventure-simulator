@@ -177,7 +177,15 @@ pub(super) fn collect_loaded_packs(
                 .into_iter()
                 .map(|frame| (frame, graph.add_clip(handle.clone(), 1.0, graph.root)))
                 .collect();
-            (key, LoadedClip { node, anchor_nodes })
+            let duration_seconds = clips.get(&handle).map_or(0.0, AnimationClip::duration);
+            (
+                key,
+                LoadedClip {
+                    node,
+                    duration_seconds,
+                    anchor_nodes,
+                },
+            )
         })
         .collect();
     runtime.graph = Some(graphs.add(graph));

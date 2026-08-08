@@ -92,7 +92,7 @@ impl Default for StanceState {
 pub struct RaisedLocomotionIntent(RaisedLocomotionKind);
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "motion", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 enum RaisedLocomotionKind {
     Planted {
         step_sequence: u32,
@@ -385,7 +385,12 @@ impl AttackSpec {
                 0.0
             },
             movement_direction: if local_velocity.is_finite() {
-                Vec2::new(local_velocity.x, local_velocity.z).normalize_or_zero()
+                // Ahoy's controller input uses +Y for forward while Bevy
+                // local velocity uses -Z. Store the captured physical input
+                // direction, not an unconverted X/Z projection, because the
+                // server feeds this value back to the controller during the
+                // attack preparation.
+                Vec2::new(local_velocity.x, -local_velocity.z).normalize_or_zero()
             } else {
                 Vec2::ZERO
             },
@@ -866,13 +871,7 @@ impl SkeletonState {
         let preparation = timeline.preparation_ticks.max(1);
         let contact_tick = timeline.start_tick.saturating_add(preparation);
         let end_tick = contact_tick.saturating_add(preparation);
-        // A saturated timeline cannot receive the following tick that would
-        // normally clear its retained endpoint, so finish it immediately.
-        if current_tick > end_tick || (end_tick == u64::MAX && current_tick == end_tick) {
-            self.action = ActionState::default();
-            return;
-        }
-        if current_tick == end_tick {
+        if current_tick >= end_tick {
             if let Some(start_lead) = switching_attack_start_lead
                 && self.lead_foot == start_lead
             {
@@ -887,6 +886,15 @@ impl SkeletonState {
                     LeadFoot::Left => 0.0,
                     LeadFoot::Right => 0.5,
                 };
+            }
+            // A saturated timeline cannot receive the following tick that
+            // normally clears its retained endpoint. More generally, action
+            // advancement may arrive after the exact endpoint; commit the
+            // stance above before clearing so a missed tick cannot snap a
+            // switching attack back to its starting guard.
+            if current_tick > end_tick || end_tick == u64::MAX {
+                self.action = ActionState::default();
+                return;
             }
             timeline.phase = 1.0;
             return;

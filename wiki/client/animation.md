@@ -6,10 +6,9 @@ they do not change the replicated skeleton contract, semantic pack fallback,
 root-motion prohibition, or authoritative attack timing described below.
 
 The tactical animation system turns authoritative character state into a
-convincing skeletal pose. Its authored assets are deliberately sparse:
-animators provide important poses and contact points, while the runtime blends
-between them, places feet, adjusts limbs with inverse kinematics (IK), and adds
-secondary motion.
+convincing skeletal pose. One-shot actions may use sparse semantic poses.
+Ordinary idle, walk, and run instead evaluate complete runtime motions; the
+runtime does not plan their steps or synthesize their swing trajectories.
 
 The system takes heavy inspiration from Wolfire Games' *Overgrowth*, while
 keeping Adventure Simulator's gameplay authority separate from client-side
@@ -99,7 +98,9 @@ variant can contain locomotion intent. Raised intent is itself tagged as
 `planted` or `moving`. Both retain the wrapping step sequence needed to detect
 coalesced handoffs, while only `moving` can contain normalized finite direction,
 positive speed, and a swing foot. Construction and deserialization validate
-those payloads, and lowering discards the intent entirely. Repeated writes of
+those payloads. Its externally tagged representation is deliberately compatible
+with Replicon's non-self-describing `postcard` wire codec. Lowering discards the
+intent entirely. Repeated writes of
 the already-current guard state preserve live footwork and gait phase.
 
 A discrete raised/lowered change is presentation-crossfaded from the currently
@@ -137,8 +138,10 @@ The animation evaluator consumes skeleton state in this order:
 4. Interpolate authored poses using continuous blend coordinates.
 5. Apply masked or additive layers such as directional ducking and impact
    flinches.
-6. Apply foot placement, hip correction, terrain IK, hand/weapon constraints,
-   and head/torso look. Body facing is already present on the replicated root.
+6. For ordinary locomotion, apply graph-weighted terrain correction, one shared
+   hip correction, and one two-bone solve per leg. Specialized combat footwork,
+   hand/weapon constraints, and head/torso look follow. Body facing is already
+   present on the replicated root.
 7. Apply optional secondary animation.
 
 The dependency-backed semantic bridge routes ordinary grounded locomotion and
@@ -162,7 +165,7 @@ continue overriding only a subset.
 
 The existing authored FK player remains ordered before bind restoration,
 whole-body mirroring, body response, terrain IK/attack footwork, and weapon
-constraints. Gait endpoint parity still selects binary pre-mirrored clips;
+constraints. Ordinary locomotion samples complete continuous cycles;
 guard/action fallback still chooses one coherent whole-body mirror. The bridge
 does not consume root motion, emit gameplay events, choose actions or contacts,
 advance authoritative phases, displace the controller, add a second
@@ -194,11 +197,13 @@ Graph load, schema, or query failures are fatal. Use `just animation-graph-previ
 for deterministic viewer/capture evidence; editor clip preview does not replace
 the viewer manifest and failure gates.
 
-Authoring stays sparse: export meaningful contact, passing/flight, guard,
-attack-contact, and recovery anchors from the canonical rig; record their frame
-indices in the code-owned catalog; use full-body masks only where the existing
-resolver requires them; and keep phase markers aligned with authoritative gait
-or action phase. Graphs and masks are presentation assets. They cannot choose
+Action authoring may stay sparse. Walk and run authoring supplies contact and
+passing/flight poses; `scripts/build_locomotion_cycles.py` combines them with
+their character-space mirrors into closed runtime motions. The graph samples
+those complete cycles at authoritative gait phase. Record semantic frames in
+the code-owned catalog, use full-body masks only where the resolver requires
+them, and keep phase markers aligned with authoritative gait or action phase.
+Graphs and masks are presentation assets. They cannot choose
 actions or contacts, advance phase, emit authoritative gameplay events, apply
 root motion to the controller, or move server state. The editor feature and its
 large UI/preview dependencies are native-only and disabled in shipping Wasm.
@@ -350,10 +355,22 @@ glTF name, assigns semantic anchors to file/frame pairs. A missing, malformed,
 or short motion invalidates only that motion so pack and similar-pose fallback
 can continue.
 
-Prepare each motion by validating and copying its source export exactly:
+Prepare non-locomotion motions by validating and copying their source export
+exactly:
 
 ```powershell
-python scripts/prepare_animation_motion.py assets_src/biped/unarmed/walk.glb assets/animations/biped/unarmed/base.glb assets/animations/biped/unarmed/walk.glb --last-frame 32
+python scripts/prepare_animation_motion.py assets_src/biped/unarmed/idle_relaxed.glb assets/animations/biped/unarmed/base.glb assets/animations/biped/unarmed/idle_relaxed.glb --last-frame 0
+```
+
+Walk and run are the exception. Their source exports contain the authored
+contact and passing/flight poses, while the committed runtime files are closed
+cycles baked from those poses and their character-space mirrors:
+
+```powershell
+python scripts/build_locomotion_cycles.py
+python scripts/mirror_gait_assets.py
+python scripts/build_locomotion_cycles.py --check
+python scripts/mirror_gait_assets.py --check
 ```
 
 The same command with `--check` verifies committed output. Motion scenes and
@@ -411,8 +428,8 @@ preview, but does not introduce additional semantic names:
 
 | File basename | Frame assignments |
 |---|---|
-| `walk` | 0 `walk_contact`; 8 `walk_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
-| `run` | 0 `run_contact`; 5 `run_flight`; 10 opposite contact; 15 opposite flight; 20 loop closure |
+| `walk` runtime | 0 `walk_contact`; 16 `walk_passing`; 32 opposite contact; 48 opposite passing; 64 loop closure. The source passing pose is frame 8. |
+| `run` runtime | 0 `run_contact`; 16 `run_flight`; 32 opposite contact; 48 opposite flight; 64 loop closure. The runtime flight key is the exact source frame-5 pose; moderate its silhouette in the authored asset rather than the cycle builder. |
 | `prone_crawl` | 0 `prone_crawl_contact`; 8 `prone_crawl_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
 | `supine_scamper` | 0 `supine_scamper_contact`; 8 `supine_scamper_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
 
@@ -595,7 +612,10 @@ the guard lowered and 2.0 metres per second with the guard raised. Analogue
 input preserves its radial magnitude, so half stick deflection requests 2.75
 m/s lowered or 1.0 m/s raised. Radial clamping prevents diagonal overspeed,
 generic controllers without skeleton state use the lowered cap, and Ahoy still
-applies its existing crouch multiplier and acceleration/deceleration. Gait phase 0 through 1 is
+applies its existing crouch multiplier and deceleration. Raised guard scales
+Ahoy's acceleration frequency from 8 Hz to 22 Hz, so its 2.0 m/s cap and the
+ordinary 5.5 m/s run cap both produce the same 44 m/s² full-input ground
+acceleration. Gait phase 0 through 1 is
 one complete left-right cycle rather than one step. Shared typed walk, run,
 crouch, and raised-guard profiles own reference speed, step distance, support,
 flight, bounce, and compression metadata used by both authoritative projection
@@ -610,6 +630,31 @@ select an authored gait. Measured post-physics planar velocity owns idle/walk/ru
 selection and stride cadence, while measured acceleration is used only for
 procedural body response. The debug game-clock switch therefore cannot directly
 select a different gait.
+
+Ordinary idle, walk, and run now follow one compact ownership contract:
+
+1. The dependency animation graph returns idle/walk/run weights at the shared
+   predicted authoritative phase.
+2. Walk and run sample their closed 64-frame runtime cycles continuously.
+3. The same graph-returned samples provide left/right IK weights. Walk retains
+   support; run uses a narrow contact lobe and publishes real zero-weight
+   flight intervals; idle loads both feet. Simulation support timing remains a
+   separate authoritative locomotion concern.
+4. Terrain IK keeps each animated ankle's XZ, adjusts only toward sampled
+   terrain height and normal by that foot's weight, computes one bounded shared
+   pelvis drop, and solves each leg once.
+5. Ordinary locomotion has no world-space plants, planned contacts, procedural
+   swing arc, stop capture, support-acquisition latch, or post-propagation
+   ownership correction. Starts and stops use the single presentation
+   crossfade between graph poses.
+
+This deliberately follows Overgrowth's division: authored locomotion owns the
+performance and IK only conforms the final FK pose to terrain. Combat guard and
+attack footwork remain specialized systems outside this ordinary-locomotion
+contract.
+
+<!-- Historical ordinary-locomotion implementation notes retained temporarily
+for archaeology; they describe the state machine bypassed by the current path.
 
 Contact and passing/flight anchors are authoritative sparse gait inputs. The
 evaluator constructs four smooth quarters: contact to passing, passing to the
@@ -796,6 +841,8 @@ completion. At stable rest, ordinary support blends symmetrically back to both
 feet. During a stop-settle capture, support stays exclusive to the selected
 contact foot until the moving foot reaches its planned contact.
 
+-->
+
 Monotonic contact and landing sequences drive deduplicated client presentation
 messages for future audio/VFX only. Up to eight plausible missed contacts are
 reconstructed in alternating order. A backward/reset or larger delta silently
@@ -804,12 +851,10 @@ collapse to one latest observation. `sample_tick` is the observation tick of
 the replicated sequence state, not a reconstructed historical event time.
 
 Terrain conformity defaults on. Debug clients expose `F8` as a runtime A/B
-toggle. Disabling it
-leaves authored FK, gait endpoint blending, torso stabilization, contact-edge visual
-grounding, and procedural combat foot placement intact. Ordinary walk, run,
-and crouch keep their authored leg motion without the analytic terrain solve.
-The enabled path adds terrain height and
-normal sampling, world-space plants, and terrain-derived pelvis conformity.
+toggle. Disabling it leaves graph-evaluated authored FK, locomotion height, and
+procedural combat foot placement intact. The enabled ordinary path adds only
+weighted terrain height/normal correction, one shared pelvis drop, and one
+two-bone solve per leg; it never creates a world-space plant.
 Debug clients also expose `F7` to toggle the connected local tactical mission
 between normal and quarter-speed game time. Both client presentation and the
 authoritative server clock change together, so movement, physics, combat, and
@@ -829,12 +874,11 @@ steady 5.5 m/s run, raised-guard tap-stop, gradual 90-degree turn, and exact
 screenshot rendering from advancing retained IK state more than once for the
 same logical tick, while the complete FK/IK pipeline still reevaluates each
 view. The replay captures one raw gameplay-camera image plus side and front
-diagnostic images of that exact pose. Its manifest records final world-space bones, support weights,
-continuity, planted-foot drift under a stable body, signed foot tracks and separation, knee flexion
-and bend hemisphere, desired body-forward alignment, bounded per-tick turning
-residual (including look-facing guards), terrain-relative foot clearance,
-authored and planned foot targets, effective support ownership, stop-settle
-progress, estimated center of mass, capture point, and final support margin,
+diagnostic images of that exact pose. Its manifest records final world-space
+bones, graph IK weights, continuity, signed foot tracks and separation, knee
+flexion and bend hemisphere, desired body-forward alignment, bounded per-tick
+turning residual (including look-facing guards), terrain-relative foot
+clearance, and authored/solved foot targets,
 phase-indexed height extrema and peak count, contact-phase sole clearance,
 controller vertical range, run flight duration/sole clearance, authoritative acceleration, retained lean,
 landing compression, contact identity, landing identity, and fixed tick; those
@@ -843,10 +887,9 @@ For steady height scenarios, every complete cycle after warmup must contain
 exactly two prominent peaks in the phase 0.25 and 0.75 passing windows. A
 0.003 m prominence threshold filters sampling jitter while still rejecting an
 extra visible beat.
-The steady terrain run additionally requires non-vacuous alternating left and
-right support acquisitions after warmup, 85-120 ms unsupported intervals,
-contact clearance and cumulative plant drift within 1 cm, a 10-degree maximum
-foot rotation step, and a 2 cm maximum pelvis-height step.
+The steady terrain run additionally requires alternating graph contact weights,
+80-200 ms unsupported intervals, bounded contact clearance, and a 2 cm maximum
+pelvis-height step. Ordinary feet are not tested as stationary world plants.
 The flight-phase stop and tap/restart probes apply their +1 cm transient toe
 floor only after locomotion begins or while stop-settle owns a foot. Their
 zero-speed, no-settle pre-roll remains covered by the general -1 cm terrain
@@ -878,32 +921,32 @@ The vertical-excursion gate remains 0.20 m for ordinary flat-ground motion and
 the terrain relief measured beneath its sampled feet to the ordinary 0.20 m
 envelope; this separates required pelvis reach correction from authored body
 bob without weakening the flat-ground check. Cumulative planted-foot drift and
-per-frame supported slip are gated only where procedural plants exist: raised
-guard and the terrain probes. Raised-guard scenarios
+per-frame supported slip are gated only where world-space procedural plants
+exist: raised guard and attack footwork. Raised-guard scenarios
 require no more than 0.01 m cumulative support drift and at least 0.16 m
-inter-foot separation; steady upright terrain IK retains the 0.035 m drift
-bound. Crouch permits 0.051 m for compact reach correction. Transient
-stop/restart probes receive the same 0.035 m supported-slip and plant-drift
-bounds as other terrain IK. Their explicit 5.5 m/s Run segments use the 0.095 m
-foot budget required by 0.086 m of owner travel per 64 Hz sample, while the knee
-remains capped at 0.10 m; lower-speed transition probes retain the 0.055 m foot
-budget.
+inter-foot separation. Ordinary terrain locomotion is instead gated by pose
+continuity, penetration, reach, knee flexion, and slope alignment. Explicit
+5.5 m/s Run segments use a 0.15 m foot budget for complete authored cycle
+motion in addition to 0.086 m of owner travel per 64 Hz sample, while the knee
+uses a 0.13 m budget. The exact authored flight pose measures 0.143 m of foot
+motion and 0.125 m of knee motion per sample; lower-speed non-run probes retain
+the 0.055 m foot and 0.10 m knee budgets. Strict terrain-Run probes permit a
+0.16 m knee step for slope-aligned contact acquisition (measured at 0.152 m).
+Terrain-run slope alignment permits the direct graph-weighted contact rotation
+without adding a temporal foot-orientation cache.
 The analytic knee-flexion reserve and bend-hemisphere gates use that same
 procedural scope; they are not asserted against authored FK-only motion.
 Ordinary FK-only motion is reviewed through continuity, clearance, phase-height,
 and visual gates rather than being mislabeled as world-planted. Ordinary terrain
-probes additionally require an unloaded swing foot to remain free of any ground
-constraint until its next contact. Outside final acquisition it must stay within
-3 cm of authored FK, except during the explicitly reported airborne release;
-that release advances no more than 5.5 cm per sample and monotonically closes
-on each frozen authored release goal. Final acquisition converges monotonically on one
-frozen touchdown. A planned touchdown is accepted only when it is ahead of the
-exported projected capture point. Stop probes require a bounded capture
-point and a final center of mass inside the resulting support capsule.
+probes require unloaded swing feet to remain free of terrain correction and
+near-full graph contact weights to converge on terrain. Stops are graph
+crossfades and do not require a capture-point or planned-footprint diagnostic.
 Start/stop, guard-entry, and crouch-state transitions permit at most 0.04 m of
 pelvis-height change per 64 Hz sample; the pre-existing guard entry itself uses
 about 0.033 m of that budget.
-Loop-seam gates apply only to repeatable cycles. Start/stop, facing-turn, and
+Loop-seam gates apply only to repeatable cycles. The complete authored Run
+cycle permits a 0.03 m sampled positional seam (measured at 0.029 m); other
+repeatable cycles retain the 0.015 m gate. Start/stop, facing-turn, and
 raised-guard release-at-peak scenarios are transition probes whose final
 simulation state intentionally differs from the state that initiated them;
 their continuity remains covered by the per-frame displacement and rotation
@@ -931,7 +974,12 @@ alternates one swing foot with exactly one world-space support foot. Each
 compact step projects authoritative local velocity from the step origin,
 retains the authored guard's separated stance tracks, interpolates horizontally
 with a smooth curve, and adds a sine clearance arc. Step reach scales with
-analogue speed and is bounded to combat-shuffle distances.
+analogue speed and is bounded to combat-shuffle distances. Raised swings use a
+high continuity ceiling rather than the old low IK velocity limit: the ceiling
+is above the measured worst ordinary 2 m/s guard step, so replacing the support
+foot can still meet its semantic contact deadline. Unusually long recovery
+steps remain bounded and converge over subsequent procedural steps instead of
+snapping in one frame.
 
 Cadence follows current authoritative speed throughout the first step, so a
 small acceleration sample cannot slow a complete cycle. Ordinary turns are
@@ -1055,20 +1103,33 @@ movement-input vector. The server observation remains authoritative and the
 presentation reconciles to it.
 
 Forward and backward reuse the same authored contact pose. On a forward step,
-the initial rear foot passes the planted lead foot; on a backward step, the
-initial lead foot passes behind the planted rear foot. Both are exactly one
-`switch` step and therefore finish in the opposite guard. Maximum extension is
-at the server-owned contact tick. During recovery the original support foot
-may settle into the new guard, but the planner does not start another step.
+the spatially rear foot passes the planted forward foot; on a backward step,
+the spatially forward foot passes behind the planted rear foot. This choice is
+made from the visible world-space stance rather than trusting a semantic lead
+label that may be transitioning. Both are exactly one `switch` step during the
+attack and therefore finish in the opposite guard. Maximum extension and the
+moving foot's ground contact coincide with the server-owned contact tick.
 The procedural targets are client-only world-space data: they do not translate
-the controller, extend hit range, or enter persistent state. If a fast-moving
-root makes a literal world plant unreachable, the step becomes an airborne
-lunge: both feet leave the ground during preparation and the moving foot lands
-as the sole support at contact. The original foot rejoins during recovery.
-The server carries the captured direction and speed through preparation, stops
-attack-owned translation at contact, and resumes current movement input only
-after recovery. Large facing changes recover with an in-place guard pivot
-rather than dragging the contact plant through a second step. Capture telemetry
+the controller, extend hit range, or enter persistent state. The attack begins
+immediately. If its selected moving foot is airborne, presentation first lowers
+that foot vertically and temporarily ignores the authored lateral foot target;
+the remaining preparation samples compress the interpolation so contact still
+arrives on the authoritative hit tick. The other foot's ball remains an exact
+world plant through the strike while its ankle may rotate or pivot around it.
+
+After the action, both feet are compared with the terrain-conformed destination
+guard at the final owner position and facing. Error inside the small recovery
+threshold is accepted. Otherwise the farther foot takes a bounded procedural
+step; recovery may alternate through additional steps so neither foot is
+starved while a moving root advances the goal. Once each necessary correction
+has landed, raised locomotion retains those exact plants until the next
+replicated step sequence instead of replaying an already-consumed gait phase.
+The server carries the captured direction and speed through the complete
+switching action. Releasing or reversing movement cannot stop the controller
+underneath the attack step; current movement input resumes only after the end
+guard commits. Multiple attack-timed steps and an explicit attack-turning
+policy are intentionally deferred; this iteration always times one attack step
+to contact. Capture telemetry
 records requested and reach-constrained targets separately so any analytic
 reach yield is measured rather than misreported as a perfect plant.
 

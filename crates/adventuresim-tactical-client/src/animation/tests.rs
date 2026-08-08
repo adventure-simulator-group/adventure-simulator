@@ -49,7 +49,7 @@ mod legacy_tests {
             AttackSpec {
                 step: AttackStep::Forward,
                 step_speed: 3.0,
-                movement_direction: Vec2::NEG_Y,
+                movement_direction: Vec2::Y,
                 movement_speed: 3.0,
                 ..default()
             },
@@ -64,7 +64,7 @@ mod legacy_tests {
 
         assert_eq!(inputs.action, SkeletonAction::Attack);
         assert_eq!(inputs.captured_step, AttackStep::Forward);
-        assert_eq!(inputs.captured_step_direction, Vec2::NEG_Y);
+        assert_eq!(inputs.captured_step_direction, Vec2::Y);
         assert_eq!(inputs.captured_step_speed, 3.0);
         assert_eq!(before, serde_json::to_vec(&presented.state).unwrap());
     }
@@ -169,7 +169,7 @@ mod legacy_tests {
             .base
             .iter()
             .map(|sample| match sample.sampling {
-                PoseSampling::Anchor => 1,
+                PoseSampling::Anchor | PoseSampling::Cycle { .. } => 1,
                 PoseSampling::Span { .. } => 2,
             })
             .sum::<usize>();
@@ -525,7 +525,7 @@ mod legacy_tests {
             root.poses[&SemanticPose::WalkPassing],
             PoseAnchor {
                 motion: "walk".to_owned(),
-                frame: 8,
+                frame: 16,
             }
         );
         assert_eq!(
@@ -646,6 +646,7 @@ mod legacy_tests {
                 key,
                 LoadedClip {
                     node: AnimationNodeIndex::new(node_base),
+                    duration_seconds: 64.0 / ANIMATION_FPS,
                     anchor_nodes,
                 },
             );
@@ -682,7 +683,7 @@ mod legacy_tests {
             })
         );
         assert!(weighted.iter().any(|sample| {
-            (sample.time_seconds - 8.0 / ANIMATION_FPS).abs() < 0.0001
+            (sample.time_seconds - 16.0 / ANIMATION_FPS).abs() < 0.0001
                 && (sample.weight - 0.5).abs() < 0.0001
         }));
     }
@@ -743,6 +744,7 @@ mod legacy_tests {
             (HUMANOID_UNARMED_PACK.to_owned(), "run_mirrored".to_owned()),
             LoadedClip {
                 node: AnimationNodeIndex::new(9_000),
+                duration_seconds: 64.0 / ANIMATION_FPS,
                 anchor_nodes: BTreeMap::from([(0, mirrored_node)]),
             },
         );
@@ -1232,6 +1234,7 @@ mod legacy_tests {
             clips: Vec::new(),
             use_authored_bind_pose: true,
             whole_body_mirror: mirror,
+            foot_ik_weights: Vec2::ZERO,
         }
     }
 

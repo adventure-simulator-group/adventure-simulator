@@ -19,7 +19,7 @@ class PrepareAnimationMotionTests(unittest.TestCase):
     RUNTIME_DIR = pathlib.Path("assets/animations/biped/unarmed")
 
     def test_arrived_motions_match_base_and_catalog_timelines(self):
-        expected = {"idle_relaxed": 0, "walk": 32, "run": 20}
+        expected = {"idle_relaxed": 0}
         for motion, last_frame in expected.items():
             with self.subTest(motion=motion):
                 duration, targets = MODULE.prepare_motion(
@@ -32,13 +32,13 @@ class PrepareAnimationMotionTests(unittest.TestCase):
                 self.assertGreaterEqual(duration + 0.5 / MODULE.ANIMATION_FPS, last_frame / 30.0)
                 self.assertEqual(targets, 75)
 
-    def test_runtime_motion_is_an_exact_source_copy(self):
-        source = self.SOURCE_DIR / "walk.glb"
+    def test_non_locomotion_runtime_motion_is_an_exact_source_copy(self):
+        source = self.SOURCE_DIR / "idle_relaxed.glb"
         with tempfile.TemporaryDirectory() as directory:
-            destination = pathlib.Path(directory) / "walk.glb"
-            MODULE.prepare_motion(source, self.BASE, destination, last_frame=32)
+            destination = pathlib.Path(directory) / "idle_relaxed.glb"
+            MODULE.prepare_motion(source, self.BASE, destination, last_frame=0)
             self.assertEqual(destination.read_bytes(), source.read_bytes())
-            MODULE.prepare_motion(source, self.BASE, destination, last_frame=32, check=True)
+            MODULE.prepare_motion(source, self.BASE, destination, last_frame=0, check=True)
 
     def test_foreign_animation_target_is_rejected(self):
         base, _ = MODULE.read_glb(self.BASE)

@@ -235,7 +235,7 @@ fn encode_sparse_inputs(
     let mut flattened = Vec::new();
     for (sample_index, sample) in samples.iter().enumerate() {
         match sample.sampling {
-            PoseSampling::Anchor => flattened.push((
+            PoseSampling::Anchor | PoseSampling::Cycle { .. } => flattened.push((
                 FlatAnchorRole::Anchor {
                     sample: sample_index,
                 },
@@ -341,7 +341,9 @@ fn decode_graph_pose(
     }
     for (index, sample) in samples.iter_mut().enumerate() {
         match &mut sample.sampling {
-            PoseSampling::Anchor => sample.weight = start_weights[index],
+            PoseSampling::Anchor | PoseSampling::Cycle { .. } => {
+                sample.weight = start_weights[index]
+            }
             PoseSampling::Span { progress, .. } => {
                 let total = start_weights[index] + end_weights[index];
                 if total <= f32::EPSILON {
