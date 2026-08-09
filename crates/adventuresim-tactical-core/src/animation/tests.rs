@@ -637,6 +637,25 @@ mod legacy_tests {
     }
 
     #[test]
+    fn raised_guard_jog_layers_ordinary_locomotion_under_static_guard() {
+        let evaluation = AnimationEvaluation::from_skeleton(
+            &SkeletonState::default()
+                .with_local_velocity(Vec3::new(0.0, 0.0, -3.75))
+                .with_gait_phase(0.25)
+                .with_weapon_guard(WeaponGuardState::Raised)
+                .with_raised_locomotion(raised_intent(Vec3::new(0.0, 0.0, -3.75))),
+        );
+        assert_eq!(evaluation.base[0].pose, SemanticPose::GuardLeadLeft);
+        assert!(evaluation.lower_body.iter().any(|sample| matches!(
+            sample.pose,
+            SemanticPose::WalkContact
+                | SemanticPose::WalkPassing
+                | SemanticPose::RunContact
+                | SemanticPose::RunFlight
+        )));
+    }
+
+    #[test]
     fn entering_raised_guard_resets_to_static_guard_endpoint_once() {
         let mut state = SkeletonState::default()
             .with_gait_phase(0.63)

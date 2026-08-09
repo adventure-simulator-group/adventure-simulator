@@ -1,3 +1,4 @@
+use adventuresim_core::prelude::*;
 use avian3d::{collider_tree::ColliderTreeSystems, prelude::*};
 use bevy::prelude::*;
 use bevy_ahoy::{
@@ -5,7 +6,35 @@ use bevy_ahoy::{
     input::AccumulatedInput,
 };
 
-use crate::animation::{SkeletonState, WeaponGuardState};
+use crate::{
+    animation::{SkeletonState, WeaponGuardState},
+    player::TacticalPlayerViewer,
+};
+
+#[derive(
+    Component,
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    Reflect,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+pub enum MovementPace {
+    #[default]
+    Walk,
+    Jog,
+    Sprint,
+}
+
+pub const TACTICAL_WALK_SPEED_METRES_PER_SECOND: f32 = 2.0;
+pub const BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND: f32 = 0.0031875;
+pub const BREATH_PER_METRE_PER_SECOND: f32 = 0.0034;
+const REFERENCE_LEG_STRENGTH: f32 = 3.0;
+const REFERENCE_BURDEN_KG: f32 = 70.0;
 
 /// Maximum ordinary tactical movement speed, in metres per second.
 pub const TACTICAL_RUN_SPEED_METRES_PER_SECOND: f32 = 5.5;
@@ -20,6 +49,31 @@ pub const TACTICAL_GUARD_SPEED_METRES_PER_SECOND: f32 = 2.0;
 pub const TACTICAL_RUN_ACCELERATION_HZ: f32 = 8.0;
 pub const TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED: f32 =
     TACTICAL_RUN_SPEED_METRES_PER_SECOND * TACTICAL_RUN_ACCELERATION_HZ;
+
+pub fn tactical_jog_speed(endurance: f32) -> f32 {
+    (endurance.max(0.0) * BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND / BREATH_PER_METRE_PER_SECOND)
+        .clamp(
+            TACTICAL_WALK_SPEED_METRES_PER_SECOND,
+            TACTICAL_RUN_SPEED_METRES_PER_SECOND,
+        )
+}
+
+pub fn tactical_sprint_speed(
+    left_leg_strength: f32,
+    right_leg_strength: f32,
+    left_leg_health: f32,
+    right_leg_health: f32,
+    burden_kg: f32,
+) -> f32 {
+    let effective_strength = ((left_leg_strength * left_leg_health.max(0.0)
+        + right_leg_strength * right_leg_health.max(0.0))
+        * 0.5)
+        .max(0.0);
+    let strength_ratio = effective_strength / REFERENCE_LEG_STRENGTH;
+    let burden_ratio = REFERENCE_BURDEN_KG / burden_kg.max(1.0);
+    (TACTICAL_RUN_SPEED_METRES_PER_SECOND * (strength_ratio * burden_ratio).sqrt())
+        .clamp(TACTICAL_WALK_SPEED_METRES_PER_SECOND, 8.0)
+}
 
 /// Builds the shared tactical controller instead of inheriting Ahoy's much
 /// faster general-purpose default.
@@ -55,6 +109,29 @@ pub fn tactical_movement_speed_for_guard(
     let cap = match weapon_guard {
         WeaponGuardState::Lowered => TACTICAL_RUN_SPEED_METRES_PER_SECOND,
         WeaponGuardState::Raised => TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
+    };
+    cap * movement.map_or(0.0, |movement| movement.length().clamp(0.0, 1.0))
+}
+
+pub fn tactical_movement_speed_for_pace(
+    movement: Option<Vec2>,
+    pace: MovementPace,
+    weapon_guard: WeaponGuardState,
+    jog_speed: f32,
+    sprint_speed: f32,
+) -> f32 {
+    let requested = match pace {
+        MovementPace::Walk => TACTICAL_WALK_SPEED_METRES_PER_SECOND,
+        MovementPace::Jog => jog_speed,
+        MovementPace::Sprint => sprint_speed,
+    };
+    let cap = if weapon_guard == WeaponGuardState::Raised {
+        match pace {
+            MovementPace::Sprint => jog_speed,
+            _ => requested.min(TACTICAL_GUARD_SPEED_METRES_PER_SECOND),
+        }
+    } else {
+        requested
     };
     cap * movement.map_or(0.0, |movement| movement.length().clamp(0.0, 1.0))
 }
@@ -125,15 +202,50 @@ impl Plugin for AdventureSimulatorPhysicsPlugin {
 
 fn apply_analogue_movement_speed(
     mut controllers: Query<(
+        Entity,
         &AccumulatedInput,
         &mut CharacterController,
         Option<&SkeletonState>,
+        Option<&MovementPace>,
     )>,
+    viewer: TacticalPlayerViewer,
 ) {
-    for (input, mut controller, skeleton) in &mut controllers {
+    for (entity, input, mut controller, skeleton, pace) in &mut controllers {
         let guard = skeleton.map_or(WeaponGuardState::Lowered, SkeletonState::weapon_guard);
-        controller.speed = tactical_movement_speed_for_guard(input.last_movement, guard);
-        controller.acceleration_hz = tactical_movement_acceleration_hz_for_guard(guard);
+        let Some(pace) = pace else {
+            controller.speed = tactical_movement_speed_for_guard(input.last_movement, guard);
+            controller.acceleration_hz = tactical_movement_acceleration_hz_for_guard(guard);
+            continue;
+        };
+        let (jog, sprint) =
+            viewer
+                .get(entity)
+                .map_or((3.75, TACTICAL_RUN_SPEED_METRES_PER_SECOND), |player| {
+                    let burden = player.body_weight() + player.inventory_weight();
+                    (
+                        tactical_jog_speed(
+                            player.raw_single_body_part_attr(SimpleAttribute::Endurance),
+                        ),
+                        tactical_sprint_speed(
+                            player.raw_limb_attr(LimbAttribute::Strength, BodyPart::LeftLeg),
+                            player.raw_limb_attr(LimbAttribute::Strength, BodyPart::RightLeg),
+                            player.body_part_health(BodyPart::LeftLeg),
+                            player.body_part_health(BodyPart::RightLeg),
+                            burden,
+                        ),
+                    )
+                });
+        controller.speed =
+            tactical_movement_speed_for_pace(input.last_movement, *pace, guard, jog, sprint);
+        let magnitude = input
+            .last_movement
+            .map_or(0.0, |movement| movement.length().clamp(0.0, 1.0));
+        controller.acceleration_hz = if magnitude > f32::EPSILON {
+            TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED
+                / (controller.speed / magnitude).max(0.01)
+        } else {
+            tactical_movement_acceleration_hz_for_guard(guard)
+        };
     }
 }
 
@@ -230,6 +342,31 @@ mod tests {
         assert_eq!(
             guarded,
             TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED
+        );
+    }
+
+    #[test]
+    fn character_paces_are_reference_normalized_and_guard_sprint_becomes_jog() {
+        assert!((tactical_jog_speed(4.0) - 3.75).abs() < 0.0001);
+        assert_eq!(
+            tactical_sprint_speed(
+                REFERENCE_LEG_STRENGTH,
+                REFERENCE_LEG_STRENGTH,
+                1.0,
+                1.0,
+                REFERENCE_BURDEN_KG,
+            ),
+            TACTICAL_RUN_SPEED_METRES_PER_SECOND
+        );
+        assert_eq!(
+            tactical_movement_speed_for_pace(
+                Some(Vec2::Y),
+                MovementPace::Sprint,
+                WeaponGuardState::Raised,
+                3.75,
+                6.5,
+            ),
+            3.75
         );
     }
 }

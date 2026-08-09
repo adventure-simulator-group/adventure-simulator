@@ -212,8 +212,8 @@ fn balance_damage(attacker, defender, attack_directness):
 ### Exhaustion (grey)
 Exhaustion represents how out of breath your character is. Most actions will not actually exhaust faster than it recuperates, but climbing, sprinting, and fighting with heavy weapons, shield, and armor can.
 ```rs
-const BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND = 0.002
-# someone with 2 endurance (poorly fed Napoleonic soldier) can march 1.2m/s all day. Therefore a simple linear ratio between velocity and breath must be about:
+const BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND = 0.0031875
+# A character with 4 endurance can jog at 3.75m/s without gaining or losing exhaustion.
 const BREATH_PER_METERS_PER_SECOND = 0.0034
  
 fn update_stamina(player):

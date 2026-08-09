@@ -1460,10 +1460,6 @@ fn drive_sequence(
             Quat::from_euler(EulerRot::YXZ, frame.camera_yaw, frame.camera_pitch, 0.0);
         look.yaw = frame.camera_yaw;
         look.pitch = frame.camera_pitch;
-        let wheel = match frame.weapon_guard {
-            WeaponGuardState::Raised => 1.0,
-            WeaponGuardState::Lowered => -1.0,
-        };
         let attack_start_frame = frame.scenario.starts_with("attack-step-").then_some(8);
         if frame.action != SkeletonAction::Attack
             || attack_start_frame == Some(frame.scenario_frame)
@@ -1471,7 +1467,7 @@ fn drive_sequence(
             skeleton.lead_foot = frame.lead_foot;
         }
         terrain_ik.0 = terrain_ik_enabled_for_frame(&frame);
-        guard_input.apply_controls(wheel, false);
+        guard_input.desired = frame.weapon_guard;
         set_weapon_guard(&mut skeleton, guard_input.desired);
         let grounded = metadata.kind != ScenarioKind::Landing || frame.scenario_frame >= 32;
         let vertical_velocity = if metadata.kind == ScenarioKind::Landing && !grounded {

@@ -35,10 +35,12 @@ pub mod prelude {
         InventoryItems, ItemOf, ItemProperties, ItemQuantity, ShieldItem, WeaponItem,
     };
     pub use crate::physics::{
-        AdventureSimulatorPhysicsSet, TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
-        TACTICAL_RUN_SPEED_METRES_PER_SECOND, tactical_character_controller,
+        AdventureSimulatorPhysicsSet, BREATH_PER_METRE_PER_SECOND,
+        BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND, MovementPace,
+        TACTICAL_GUARD_SPEED_METRES_PER_SECOND, TACTICAL_RUN_SPEED_METRES_PER_SECOND,
+        TACTICAL_WALK_SPEED_METRES_PER_SECOND, tactical_character_controller, tactical_jog_speed,
         tactical_movement_acceleration_hz_for_guard, tactical_movement_speed,
-        tactical_movement_speed_for_guard,
+        tactical_movement_speed_for_guard, tactical_movement_speed_for_pace, tactical_sprint_speed,
     };
     pub use crate::player::{
         Attributes, BestiaryCategories, CharacterId, ControlledPlayer, Limbs, Player, Skills,

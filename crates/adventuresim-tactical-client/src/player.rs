@@ -1,6 +1,7 @@
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::ClientTriggerExt,
+    client::DirectControlState,
     message::{DefendRequest, MeleeActionRequest, RangedActionRequest},
 };
 use bevy::prelude::*;
@@ -63,7 +64,10 @@ impl Plugin for PlayerPlugin {
             .add_observer(on_parry_fired)
             .add_systems(
                 Update,
-                update_attack_state_system.run_if(any_with_component::<AttackState>),
+                (
+                    apply_direct_combat_controls,
+                    update_attack_state_system.run_if(any_with_component::<AttackState>),
+                ),
             );
     }
 }
@@ -142,10 +146,6 @@ fn on_new_player_added_hook(
                     ))
                 ),
                 (
-                    Action::<input::Jump>::new(),
-                    bindings![KeyCode::Space, GamepadButton::South],
-                ),
-                (
                     Action::<input::RotateCamera>::new(),
                     Bindings::spawn((
                         Spawn((Binding::mouse_motion(), Scale::splat(0.15))),
@@ -154,14 +154,6 @@ fn on_new_player_added_hook(
                             DeadZone::default(),
                         )),
                     ))
-                ),
-                (
-                    Action::<Attack>::new(),
-                    bindings![MouseButton::Left],
-                ),
-                (
-                    Action::<Dodge>::new(),
-                    bindings![KeyCode::KeyF],
                 ),
                 (
                     Action::<Parry>::new(),
@@ -332,13 +324,23 @@ fn on_attack_fired_hook(
     viewer: TacticalPlayerViewer,
     time: Res<Time>,
 ) {
-    let Ok((attacking, mut skeleton)) = q_character.get_mut(event.context) else {
+    try_start_attack(event.context, &mut cmd, &mut q_character, &viewer, &time);
+}
+
+fn try_start_attack(
+    entity: Entity,
+    cmd: &mut Commands,
+    q_character: &mut Query<(Has<AttackState>, &mut SkeletonState)>,
+    viewer: &TacticalPlayerViewer,
+    time: &Time,
+) {
+    let Ok((attacking, mut skeleton)) = q_character.get_mut(entity) else {
         return;
     };
     if attacking {
         return;
     }
-    let Ok((reach, ranged, melee)) = viewer.get(event.context).map(|character| {
+    let Ok((reach, ranged, melee)) = viewer.get(entity).map(|character| {
         (
             character.weapon_reach(),
             character.weapon_is_ranged(),
@@ -353,7 +355,7 @@ fn on_attack_fired_hook(
         warn!("Trying to attack without a usable equipped weapon");
         return;
     }
-    cmd.entity(event.context)
+    cmd.entity(entity)
         .insert(AttackState::new(PRE_HIT_DELAY, reach, ranged));
     let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
     let predicted = if ranged {
@@ -370,6 +372,28 @@ fn on_attack_fired_hook(
         cmd.client_trigger(RangedActionRequest::Start);
     } else {
         cmd.client_trigger(MeleeActionRequest::Start);
+    }
+}
+
+fn apply_direct_combat_controls(
+    controls: Res<DirectControlState>,
+    mut cmd: Commands,
+    players: Query<Entity, With<ControlledPlayer>>,
+    mut q_character: Query<(Has<AttackState>, &mut SkeletonState)>,
+    viewer: TacticalPlayerViewer,
+    time: Res<Time>,
+) {
+    for entity in &players {
+        if controls.attack_just_pressed {
+            try_start_attack(entity, &mut cmd, &mut q_character, &viewer, &time);
+        }
+        if controls.dodge_just_pressed {
+            if let Ok((_, mut skeleton)) = q_character.get_mut(entity) {
+                let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
+                skeleton.begin_dodge(DodgeSpec::default(), start, start + 8);
+            }
+            cmd.client_trigger(DefendRequest::Dodge);
+        }
     }
 }
 

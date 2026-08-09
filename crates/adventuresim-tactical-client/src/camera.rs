@@ -1,6 +1,6 @@
 use adventuresim_tactical_core::prelude::{
-    CharacterControllerCameraOf, CharacterControllerState, Collider, ShapeCastConfig, SpatialQuery,
-    SpatialQueryFilter, WeaponGuardState,
+    CharacterControllerCameraOf, CharacterControllerState, Collider, PlayerEquipment,
+    ShapeCastConfig, SpatialQuery, SpatialQueryFilter, TacticalPlayerViewer, WeaponGuardState,
 };
 use adventuresim_tactical_netcode::client::WeaponGuardInputState;
 use bevy::prelude::*;
@@ -382,17 +382,29 @@ fn update_camera_aim(
     spatial: SpatialQuery,
     cameras: Query<(&Transform, &CharacterControllerCameraOf)>,
     controllers: Query<&Transform, Without<CharacterControllerCameraOf>>,
+    viewer: TacticalPlayerViewer,
     mut aim: ResMut<CameraAimState>,
 ) {
-    aim.active = mode.third_person && guard.desired == WeaponGuardState::Raised;
-    if !aim.active {
+    let raised = mode.third_person && guard.desired == WeaponGuardState::Raised;
+    if !raised {
+        aim.active = false;
         aim.blocked = false;
         aim.camera_hit = None;
         aim.actual_hit = None;
         return;
     }
+    aim.active = false;
 
     for (camera, camera_of) in &cameras {
+        aim.active = viewer
+            .get(camera_of.character_controller)
+            .is_ok_and(|player| player.weapon_is_ranged());
+        if !aim.active {
+            aim.blocked = false;
+            aim.camera_hit = None;
+            aim.actual_hit = None;
+            continue;
+        }
         let Ok(controller) = controllers.get(camera_of.character_controller) else {
             continue;
         };

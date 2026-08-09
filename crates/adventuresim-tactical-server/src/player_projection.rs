@@ -38,6 +38,12 @@ pub(crate) struct LoadingPlayer {
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq)]
 pub(crate) struct AuthoritativeMovementIntent(Option<Vec2>);
 
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct AuthoritativePostureIntent {
+    crouch: bool,
+    prone: bool,
+}
+
 /// Durable inventory provenance retained only on the authoritative server.
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct TacticalInventoryItemId(pub u64);
@@ -319,6 +325,8 @@ fn spawn_connected_player(
             tactical_character_controller(),
             CharacterLook::default(),
             AuthoritativeMovementIntent::default(),
+            AuthoritativePostureIntent::default(),
+            MovementPace::default(),
         ),
     ));
 
@@ -480,20 +488,35 @@ pub(crate) fn on_player_input(
             &TacticalCombatState,
             &mut SkeletonState,
             &mut AuthoritativeMovementIntent,
+            &mut AuthoritativePostureIntent,
+            &mut MovementPace,
         ),
         With<Player>,
     >,
 ) {
-    let Some(validated) =
-        validate_player_input(input.look, input.movement, input.jump, input.weapon_guard)
-    else {
+    let Some(validated) = validate_player_input(
+        input.look,
+        input.movement,
+        input.jump,
+        input.crouch,
+        input.prone,
+        input.pace,
+        input.weapon_guard,
+    ) else {
         return;
     };
     let Some(entity) = input.client_id.entity() else {
         return;
     };
-    let Ok((mut accumulated_input, mut look, combat_state, mut skeleton, mut movement_intent)) =
-        players.get_mut(entity)
+    let Ok((
+        mut accumulated_input,
+        mut look,
+        combat_state,
+        mut skeleton,
+        mut movement_intent,
+        mut posture_intent,
+        mut pace,
+    )) = players.get_mut(entity)
     else {
         return;
     };
@@ -501,6 +524,9 @@ pub(crate) fn on_player_input(
         accumulated_input.last_movement = None;
         movement_intent.0 = None;
         accumulated_input.jumped = None;
+        accumulated_input.crouched = false;
+        posture_intent.crouch = false;
+        posture_intent.prone = false;
         set_weapon_guard(
             &mut skeleton,
             authoritative_weapon_guard(validated.weapon_guard, true),
@@ -510,7 +536,11 @@ pub(crate) fn on_player_input(
     look.yaw = validated.yaw;
     look.pitch = validated.pitch;
     accumulated_input.last_movement = validated.movement;
+    accumulated_input.crouched = validated.crouch || validated.prone;
     movement_intent.0 = validated.movement;
+    posture_intent.crouch = validated.crouch;
+    posture_intent.prone = validated.prone;
+    *pace = validated.pace;
     set_weapon_guard(
         &mut skeleton,
         authoritative_weapon_guard(validated.weapon_guard, false),
@@ -526,6 +556,9 @@ struct ValidatedPlayerInput {
     yaw: f32,
     pitch: f32,
     jump: bool,
+    crouch: bool,
+    prone: bool,
+    pace: MovementPace,
     weapon_guard: WeaponGuardState,
 }
 
@@ -533,6 +566,9 @@ fn validate_player_input(
     look: Vec2,
     movement: Option<Vec2>,
     jump: bool,
+    crouch: bool,
+    prone: bool,
+    pace: MovementPace,
     weapon_guard: WeaponGuardState,
 ) -> Option<ValidatedPlayerInput> {
     if !look.is_finite() || movement.is_some_and(|movement| !movement.is_finite()) {
@@ -544,6 +580,9 @@ fn validate_player_input(
             - std::f32::consts::PI,
         pitch: look.y.clamp(-1.5, 1.5),
         jump,
+        crouch,
+        prone,
+        pace,
         weapon_guard,
     })
 }
@@ -567,12 +606,13 @@ pub(crate) fn restore_authoritative_movement_intent(
         (
             &AuthoritativeMovementIntent,
             &SkeletonState,
+            &AuthoritativePostureIntent,
             &mut AccumulatedInput,
         ),
         With<Player>,
     >,
 ) {
-    for (movement_intent, skeleton, mut accumulated_input) in &mut players {
+    for (movement_intent, skeleton, posture, mut accumulated_input) in &mut players {
         accumulated_input.last_movement =
             if let Some((direction, speed)) = skeleton.attack_movement() {
                 let cap = match skeleton.weapon_guard() {
@@ -588,6 +628,7 @@ pub(crate) fn restore_authoritative_movement_intent(
             } else {
                 movement_intent.0
             };
+        accumulated_input.crouched = posture.crouch || posture.prone;
     }
 }
 
@@ -602,11 +643,12 @@ pub(crate) fn update_skeleton_locomotion(
             &mut SkeletonState,
             &mut Transform,
             &TacticalCombatState,
+            &AuthoritativePostureIntent,
         ),
         With<Player>,
     >,
 ) {
-    for (controller, velocity, mut skeleton, mut transform, combat_state) in &mut players {
+    for (controller, velocity, mut skeleton, mut transform, combat_state, posture) in &mut players {
         if combat_state.is_incapacitated() {
             let lowered = authoritative_weapon_guard(skeleton.weapon_guard(), true);
             set_weapon_guard(&mut skeleton, lowered);
@@ -631,6 +673,9 @@ pub(crate) fn update_skeleton_locomotion(
                 tick,
             },
         );
+        if posture.prone && controller.grounded.is_some() {
+            skeleton.transition_body(BodyState::Prone);
+        }
     }
 }
 
@@ -675,11 +720,12 @@ fn player_spawn_offset(collider: &Collider) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        AuthoritativeMovementIntent, Player, WeaponGuardState, authoritative_weapon_guard, input,
-        mission_enemy_health_scale, mission_enemy_scale, restore_authoritative_movement_intent,
-        tactical_movement_speed_for_guard, validate_player_input,
+        AuthoritativeMovementIntent, AuthoritativePostureIntent, Player, WeaponGuardState,
+        authoritative_weapon_guard, input, mission_enemy_health_scale, mission_enemy_scale,
+        restore_authoritative_movement_intent, tactical_movement_speed_for_guard,
+        validate_player_input,
     };
-    use adventuresim_tactical_core::prelude::{AttackSpec, SkeletonState};
+    use adventuresim_tactical_core::prelude::{AttackSpec, MovementPace, SkeletonState};
     use bevy::prelude::*;
 
     #[test]
@@ -712,9 +758,15 @@ mod tests {
             (Vec2::ZERO, Some(Vec2::new(f32::NEG_INFINITY, 0.0))),
             (Vec2::ZERO, Some(Vec2::new(0.0, f32::NAN))),
         ] {
-            if let Some(validated) =
-                validate_player_input(look, movement, true, WeaponGuardState::Raised)
-            {
+            if let Some(validated) = validate_player_input(
+                look,
+                movement,
+                true,
+                false,
+                false,
+                MovementPace::Sprint,
+                WeaponGuardState::Raised,
+            ) {
                 controller_input = (
                     Vec2::new(validated.yaw, validated.pitch),
                     validated.movement,
@@ -740,6 +792,9 @@ mod tests {
             Vec2::new(std::f32::consts::TAU * 4.0 + 0.25, 99.0),
             Some(Vec2::splat(10.0)),
             true,
+            false,
+            false,
+            MovementPace::Sprint,
             WeaponGuardState::Raised,
         )
         .unwrap();
@@ -770,6 +825,7 @@ mod tests {
                 Player::default(),
                 AuthoritativeMovementIntent(Some(Vec2::X)),
                 SkeletonState::default(),
+                AuthoritativePostureIntent::default(),
                 input::AccumulatedInput::default(),
             ))
             .id();
@@ -825,6 +881,7 @@ mod tests {
                 Player::default(),
                 AuthoritativeMovementIntent(Some(Vec2::X)),
                 skeleton,
+                AuthoritativePostureIntent::default(),
                 input::AccumulatedInput::default(),
             ))
             .id();
