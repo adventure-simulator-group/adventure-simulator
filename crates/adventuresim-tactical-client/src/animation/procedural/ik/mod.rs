@@ -15,6 +15,114 @@ pub(super) use hands::secondary_grip_world;
 pub(in crate::animation) use locomotion::apply as apply_ordinary_locomotion_ik;
 pub(super) use solver::*;
 
+/// Final lower-body invariant pass. Pose owners and terrain alignment may
+/// choose different targets and foot rotations, but no later presentation
+/// stage may leave a rendered knee outside the foot-facing anatomical cone.
+pub(in crate::animation) fn enforce_anatomical_knee_yaw(
+    rigs: Query<(Entity, &HumanoidRig)>,
+    parents: Query<&ChildOf>,
+    mut states: Query<&mut LegIkState>,
+    mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
+) {
+    for (owner, rig) in &rigs {
+        let mut final_offsets = [0.0; 2];
+        let (rig_origin, rig_rotation) = rig
+            .rig_scene()
+            .and_then(|entity| transforms.p0().compute_global_transform(entity).ok())
+            .map(|global| (global.translation(), global.rotation()))
+            .unwrap_or((Vec3::ZERO, Quat::IDENTITY));
+        for (leg_index, (upper_role, lower_role, foot_role, left)) in [
+            (
+                BoneRole::ThighLeft,
+                BoneRole::ShinLeft,
+                BoneRole::FootLeft,
+                true,
+            ),
+            (
+                BoneRole::ThighRight,
+                BoneRole::ShinRight,
+                BoneRole::FootRight,
+                false,
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (Some(&upper), Some(&lower), Some(&foot)) = (
+                rig.get(&upper_role),
+                rig.get(&lower_role),
+                rig.get(&foot_role),
+            ) else {
+                continue;
+            };
+            let Some((upper_snapshot, lower_snapshot, foot_snapshot)) =
+                snapshot_chain(upper, lower, foot, &parents, &transforms.p0())
+            else {
+                continue;
+            };
+            let hip = upper_snapshot.global.translation();
+            let knee = lower_snapshot.global.translation();
+            let target = foot_snapshot.global.translation();
+            let upper_length = hip.distance(knee);
+            let lower_length = knee.distance(target);
+            let leg_direction = (target - hip).normalize_or_zero();
+            let side = anatomical_side(rig_rotation, rig_origin, hip, left);
+            let canonical = pole_to_world(rig_rotation, canonical_knee_pole(side));
+            let current_bend = (knee - hip)
+                .reject_from_normalized(leg_direction)
+                .try_normalize()
+                .unwrap_or(canonical);
+            let pole = constrain_rendered_leg_pole(
+                rig,
+                left,
+                hip,
+                target,
+                target,
+                current_bend,
+                &parents,
+                &transforms.p0(),
+            );
+            if let Some(solution) = solve_two_bone_with_reach(
+                hip,
+                knee,
+                target,
+                target,
+                upper_length,
+                lower_length,
+                pole,
+                maximum_reach(upper_length, lower_length),
+            ) {
+                apply_two_bone_solution(upper, lower, foot, solution, &parents, &mut transforms);
+                if let Some((final_upper, final_lower, final_foot)) =
+                    snapshot_chain(upper, lower, foot, &parents, &transforms.p0())
+                    && let Some(end_direction) = (final_foot.global.translation()
+                        - final_upper.global.translation())
+                    .try_normalize()
+                    && let Some(bend) = (final_lower.global.translation()
+                        - final_upper.global.translation())
+                    .reject_from_normalized(end_direction)
+                    .xz()
+                    .try_normalize()
+                    && let Some(facing) = rendered_foot_facing(
+                        rig,
+                        left,
+                        final_foot.global.translation(),
+                        &parents,
+                        &transforms.p0(),
+                    )
+                    .and_then(|facing| facing.xz().try_normalize())
+                {
+                    final_offsets[leg_index] = bend.angle_to(facing).abs().to_degrees();
+                }
+            }
+        }
+        if let Ok(mut state) = states.get_mut(owner) {
+            state.0.left_knee_foot_yaw_offset_degrees = final_offsets[0];
+            state.0.right_knee_foot_yaw_offset_degrees = final_offsets[1];
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct LocomotionSettleState {
     support_left: bool,
@@ -47,6 +155,8 @@ struct LegIkMemory {
     right_terrain_pole_world: Option<Vec3>,
     left_terrain_end_direction: Option<Vec3>,
     right_terrain_end_direction: Option<Vec3>,
+    left_knee_foot_yaw_offset_degrees: f32,
+    right_knee_foot_yaw_offset_degrees: f32,
     left_rotation_chain: Option<LegRotationChain>,
     right_rotation_chain: Option<LegRotationChain>,
     left_foot_orientation_world: Option<Quat>,
@@ -266,6 +376,8 @@ pub(crate) struct LegIkDiagnostics {
     pub left_release_target: Option<Vec3>,
     pub right_release_target: Option<Vec3>,
     pub settle_progress: Option<f32>,
+    pub left_knee_foot_yaw_offset_degrees: f32,
+    pub right_knee_foot_yaw_offset_degrees: f32,
 }
 
 impl LegIkState {
@@ -298,6 +410,8 @@ impl LegIkState {
                 .right_release_target
                 .and_then(|target| Some(self.0.rig_origin? + self.0.rig_rotation? * target)),
             settle_progress: settle.map(|state| state.progress),
+            left_knee_foot_yaw_offset_degrees: self.0.left_knee_foot_yaw_offset_degrees,
+            right_knee_foot_yaw_offset_degrees: self.0.right_knee_foot_yaw_offset_degrees,
         };
         diagnostics
     }
@@ -352,6 +466,7 @@ pub(crate) struct AttackFootworkState {
     lead: LeadFoot,
     step: AttackStep,
     footwork: Footwork,
+    takes_step: bool,
     swing_left: bool,
     last_origin: Vec3,
     last_rotation: Quat,
@@ -1684,6 +1799,16 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     foot_facing,
                 )
                 .unwrap_or(canonical_world);
+                let pole = constrain_rendered_leg_pole(
+                    rig,
+                    left,
+                    upper_snapshot.global.translation(),
+                    foot_snapshot.global.translation(),
+                    target,
+                    pole,
+                    &parents,
+                    &transforms.p0(),
+                );
                 if let Some(solution) = solve_two_bone_with_reach(
                     upper_snapshot.global.translation(),
                     lower_snapshot.global.translation(),
@@ -2214,7 +2339,17 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     canonical_world,
                 )
                 .unwrap_or(canonical_world);
-                if let Some(solution) = solve_two_bone_preserving_with_reach(
+                let pole = constrain_rendered_leg_pole(
+                    rig,
+                    left,
+                    upper_snapshot.global.translation(),
+                    foot_position,
+                    target,
+                    pole,
+                    &parents,
+                    &transforms.p0(),
+                );
+                if let Some(solution) = solve_two_bone_with_reach(
                     upper_snapshot.global.translation(),
                     lower_snapshot.global.translation(),
                     foot_position,
@@ -2880,6 +3015,16 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                         canonical_world,
                     )
                     .unwrap_or(canonical_world);
+                    let pole = constrain_rendered_leg_pole(
+                        rig,
+                        left,
+                        upper_snapshot.global.translation(),
+                        foot_position,
+                        target,
+                        pole,
+                        &parents,
+                        &transforms.p0(),
+                    );
                     let mut resolved_end = None;
                     if let Some(solution) = solve_two_bone_with_reach(
                         upper_snapshot.global.translation(),
@@ -3059,6 +3204,16 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     canonical_world,
                 );
                 let pole = remembered.unwrap_or(canonical_world);
+                let pole = constrain_rendered_leg_pole(
+                    rig,
+                    left,
+                    upper_snapshot.global.translation(),
+                    foot_position,
+                    target,
+                    pole,
+                    &parents,
+                    &transforms.p0(),
+                );
                 if let Some(solution) = solve_two_bone_with_reach(
                     upper_snapshot.global.translation(),
                     lower_snapshot.global.translation(),
@@ -3574,30 +3729,37 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     )
                 })
                 .unwrap_or(canonical_world);
-            let solution =
+            let pole = constrain_rendered_leg_pole(
+                rig,
+                left,
+                upper_snapshot.global.translation(),
+                foot_position,
+                target,
+                pole,
+                &parents,
+                &transforms.p0(),
+            );
+            let solve_reach =
                 if skeleton.posture() == Posture::Crouched || skeleton.animation_speed() <= 0.05 {
-                    solve_two_bone_preserving_with_reach(
-                        upper_snapshot.global.translation(),
-                        lower_snapshot.global.translation(),
-                        foot_position,
-                        target,
-                        upper_length,
-                        lower_length,
-                        pole,
-                        terrain_maximum_reach(upper_length, lower_length),
-                    )
+                    terrain_maximum_reach(upper_length, lower_length)
                 } else {
-                    solve_two_bone_with_reach(
-                        upper_snapshot.global.translation(),
-                        lower_snapshot.global.translation(),
-                        foot_position,
-                        target,
-                        upper_length,
-                        lower_length,
-                        pole,
-                        maximum_reach(upper_length, lower_length),
-                    )
+                    maximum_reach(upper_length, lower_length)
                 };
+            // The transported pole already provides temporal continuity.
+            // Authored-bend preservation happens inside the generic solver
+            // after pole selection and can rotate the resulting knee outside
+            // the anatomical foot-facing cone, so leg IK must use the final
+            // constrained pole without another authored blend.
+            let solution = solve_two_bone_with_reach(
+                upper_snapshot.global.translation(),
+                lower_snapshot.global.translation(),
+                foot_position,
+                target,
+                upper_length,
+                lower_length,
+                pole,
+                solve_reach,
+            );
             let mut reported_support_weight = 0.0;
             if let Some(solution) = solution {
                 let sole_at_contact = terrain.height_at(solution.end.xz()).is_some_and(|height| {
@@ -4037,6 +4199,7 @@ fn apply_attack_step(
             lead: start_lead,
             step,
             footwork,
+            takes_step: footwork == Footwork::Switch || movement_speed > 0.05,
             swing_left,
             last_origin: rig_origin,
             last_rotation: rig_rotation,
@@ -4109,11 +4272,11 @@ fn apply_attack_step(
     let mut finish_after_solve = false;
     let (left_target, right_target, left_support, right_support) = if attack_active {
         state.recovering = false;
-        let takes_step = state.footwork == Footwork::Switch
-            || skeleton
-                .attack_movement()
-                .is_some_and(|(_, speed)| speed > 0.05);
-        if !takes_step {
+        // Step ownership is latched when the attack begins. Do not consult the
+        // live/replicated velocity again here: a brief authoritative velocity
+        // drop must not turn a moving attack into a two-foot plant halfway
+        // through its strike.
+        if !state.takes_step {
             (state.left_plant, state.right_plant, 1.0, 1.0)
         } else {
             if phase <= 0.5 {
@@ -4362,6 +4525,16 @@ fn apply_attack_step(
             foot_facing,
         )
         .unwrap_or(canonical_world);
+        let pole = constrain_rendered_leg_pole(
+            rig,
+            left,
+            upper_snapshot.global.translation(),
+            foot_snapshot.global.translation(),
+            target,
+            pole,
+            parents,
+            &transforms.p0(),
+        );
         if let Some(solution) = solve_two_bone_with_reach(
             upper_snapshot.global.translation(),
             lower_snapshot.global.translation(),
@@ -4423,6 +4596,16 @@ fn apply_attack_step(
                         corrected_upper.global.translation(),
                         attack_reach,
                     );
+                    let corrected_pole = constrain_rendered_leg_pole(
+                        rig,
+                        left,
+                        corrected_upper.global.translation(),
+                        corrected_foot.global.translation(),
+                        target,
+                        pole,
+                        parents,
+                        &transforms.p0(),
+                    );
                     if let Some(solution) = solve_two_bone_with_reach(
                         corrected_upper.global.translation(),
                         corrected_lower.global.translation(),
@@ -4430,7 +4613,7 @@ fn apply_attack_step(
                         target,
                         upper_length,
                         lower_length,
-                        pole,
+                        corrected_pole,
                         attack_reach,
                     ) {
                         apply_two_bone_solution(upper, lower, foot, solution, parents, transforms);
@@ -5056,6 +5239,38 @@ fn constrain_knee_pole_to_foot_facing(
     Vec3::new(clamped_yaw.x, vertical, clamped_yaw.y).try_normalize()
 }
 
+/// Applies the anatomical knee-yaw invariant at the final leg-solve boundary.
+///
+/// Individual pose owners may transport, preserve, or reconstruct their pole
+/// differently, but every valid humanoid leg has the same hard constraint:
+/// its effective pole stays within the foot-facing cone. Keeping this wrapper
+/// beside the raw constraint prevents ordinary terrain and landing paths from
+/// bypassing the combat-specific stabilizer.
+pub(super) fn constrain_rendered_leg_pole(
+    rig: &HumanoidRig,
+    left: bool,
+    hip: Vec3,
+    foot_position: Vec3,
+    target: Vec3,
+    pole: Vec3,
+    parents: &Query<&ChildOf>,
+    transforms: &TransformHelper,
+) -> Vec3 {
+    rendered_foot_facing(rig, left, foot_position, parents, transforms)
+        .and_then(|facing| {
+            constrain_knee_pole_to_foot_facing(
+                pole,
+                target - hip,
+                facing,
+                KNEE_POLE_MAX_FOOT_FACING_OFFSET_RADIANS,
+            )
+        })
+        // Sparse/non-humanoid rigs may not expose a toe direction. Preserve
+        // their previous graceful fallback; canonical humanoids always take
+        // the constrained branch.
+        .unwrap_or(pole)
+}
+
 fn rendered_foot_facing(
     rig: &HumanoidRig,
     left: bool,
@@ -5063,13 +5278,39 @@ fn rendered_foot_facing(
     parents: &Query<&ChildOf>,
     transforms: &TransformHelper,
 ) -> Option<Vec3> {
+    let foot = *rig.get(if left {
+        &BoneRole::FootLeft
+    } else {
+        &BoneRole::FootRight
+    })?;
     let toe = *rig.get(if left {
         &BoneRole::ToeLeft
     } else {
         &BoneRole::ToeRight
     })?;
+    let foot_rotation = snapshot(foot, parents, transforms)?.global.rotation();
     let toe_position = snapshot(toe, parents, transforms)?.global.translation();
-    (toe_position - foot_position).try_normalize()
+    let toe_direction = (toe_position - foot_position).try_normalize()?;
+
+    // Toe-to-ankle projected directly onto the ground reverses yaw when a
+    // running or slope-aligned foot pitches through vertical. Recover yaw
+    // from the pitch-stable lateral axis instead: forward cross sole-up gives
+    // anatomical right, and world-up cross right gives horizontal forward.
+    // This preserves the direction the foot is facing even at heel/toe roll.
+    if let Some(sole_up) = rig
+        .sole_axis(left)
+        .map(|axis| foot_rotation * axis)
+        .and_then(Vec3::try_normalize)
+        && let Some(lateral) = toe_direction.cross(sole_up).try_normalize()
+        && let Some(facing) = Vec3::Y.cross(lateral).xz().try_normalize()
+    {
+        return Some(Vec3::new(facing.x, 0.0, facing.y));
+    }
+
+    toe_direction
+        .xz()
+        .try_normalize()
+        .map(|facing| Vec3::new(facing.x, 0.0, facing.y))
 }
 
 fn projected_body_center(rig: &HumanoidRig, transforms: &TransformHelper) -> Option<Vec3> {
@@ -6113,11 +6354,16 @@ fn attack_step_contact_distance(
             distance_to_support + ATTACK_SWITCH_PASS_DISTANCE_METRES
         }
     };
-    // The foot lands with the strike while remaining reachable from a root
-    // that continues along the captured movement vector. Slow attacks still
-    // read as a deliberate guard step; fast attacks cover their contact-time
-    // root travel instead of leaving the foot to catch up during recovery.
-    semantic_step.max(root_travel_to_contact)
+    // The endpoint needs both components at ordinary combat speeds: root
+    // travel carries the whole body through contact, while the semantic
+    // distance moves the swing foot relative to that body. Taking only the
+    // larger component made the foot nearly match the advancing root, which
+    // read as a locked leg even though its world-space target was moving.
+    // Taper the added stride only between a normal 2 m/s attack and the
+    // 5.5 m/s sprint fixture, where root travel already consumes the safe leg
+    // reach and an extra full stance length would tear the support contact.
+    let relative_step_scale = 1.0 - smoothstep(2.0, 5.5, movement_speed);
+    root_travel_to_contact + semantic_step * relative_step_scale
 }
 
 pub(super) fn plan_guard_step_endpoint(
@@ -9048,13 +9294,30 @@ mod slope_cache_tests {
     }
 
     #[test]
-    fn moving_attack_step_reaches_the_contact_time_root_travel() {
+    fn moving_attack_step_advances_beyond_the_contact_time_root_travel() {
         let speed = 2.0;
         let preparation_seconds = 0.30;
         let distance = attack_step_contact_distance(
             Footwork::Stay,
             Vec3::ZERO,
             Vec3::new(0.0, 0.0, 0.3),
+            Vec3::Z,
+            speed,
+            preparation_seconds,
+        );
+        let root_travel = speed * preparation_seconds;
+        assert_eq!(distance, root_travel + guard_step_length(speed));
+        assert!(distance > root_travel);
+    }
+
+    #[test]
+    fn sprint_attack_step_does_not_exceed_contact_time_root_travel() {
+        let speed = 5.5;
+        let preparation_seconds = 0.30;
+        let distance = attack_step_contact_distance(
+            Footwork::Switch,
+            Vec3::new(0.0, 0.0, -0.2),
+            Vec3::new(0.0, 0.0, 0.2),
             Vec3::Z,
             speed,
             preparation_seconds,

@@ -519,13 +519,25 @@ weights. Optional hand and held-weapon constraints are client presentation
 only: the primary socket places the weapon before its secondary grip targets
 the off hand. None of these targets are replicated in `SkeletonState`.
 
-Attack foot IK preserves the authored knee plane instead of choosing a fresh
-world-space pole for each target. The previous rendered bend is
-parallel-transported as the hip-to-foot direction changes, then checked against
-the leg's anatomical hemisphere. The current authored bend is the first
-fallback and the canonical forward/outward pole is used only through a
-straight-leg singularity. Native attack-step captures reject both an inward
-knee hemisphere and any fixed-sample pole flip.
+Every procedural leg solve constrains the effective knee pole to within
+plus-or-minus pi/8 radians of that foot's rendered facing direction. This is a
+lower-body anatomical invariant across ordinary locomotion, stationary terrain
+contact, crouching, landing, raised guard, and attack footwork; a pose owner may
+not bypass it by preserving an authored bend after pole selection. Attack foot
+IK additionally parallel-transports the previous rendered bend as the
+hip-to-foot direction changes, checks it against the leg's anatomical
+hemisphere, and uses the canonical forward/outward pole only through a
+straight-leg singularity. Native captures measure the final rendered
+knee-to-foot yaw relationship, not only the requested pole.
+
+Moving attacks latch step ownership and movement direction when the strike
+begins. Through ordinary combat speeds, the contact endpoint combines the
+controller's root travel with a deliberate guard-relative stride so the swing
+foot visibly advances with the weapon or fist instead of merely following the
+body. The added stride tapers toward sprint speed to preserve leg reach and
+support contact. Native attack-step captures require rendered foot travel
+relative to the root before contact; moving an unconstrained IK request alone
+does not satisfy the gate.
 
 The server-owned character transform remains authoritative. Authored root
 offsets may shape a step or lean visually, but the evaluator reconciles them

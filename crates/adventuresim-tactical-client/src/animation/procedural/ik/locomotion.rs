@@ -171,7 +171,17 @@ pub(in crate::animation) fn apply(
                 canonical,
             )
             .unwrap_or(canonical);
-            if let Some(solution) = solve_two_bone(
+            let pole = constrain_rendered_leg_pole(
+                rig,
+                left,
+                upper_snapshot.global.translation(),
+                foot_snapshot.global.translation(),
+                target,
+                pole,
+                &parents,
+                &transforms.p0(),
+            );
+            if let Some(solution) = solve_two_bone_with_reach(
                 upper_snapshot.global.translation(),
                 lower_snapshot.global.translation(),
                 foot_snapshot.global.translation(),
@@ -179,6 +189,7 @@ pub(in crate::animation) fn apply(
                 upper_length,
                 lower_length,
                 pole,
+                maximum_reach(upper_length, lower_length),
             ) {
                 apply_two_bone_solution(upper, lower, foot, solution, &parents, &mut transforms);
             }

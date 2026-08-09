@@ -493,6 +493,7 @@ struct ScenarioMetrics {
     minimum_inter_foot_separation_metres: f32,
     minimum_knee_flexion_degrees: f32,
     minimum_knee_hemisphere_dot: f32,
+    maximum_knee_foot_yaw_offset_degrees: f32,
     maximum_facing_motion_error_degrees: f32,
     maximum_facing_tracking_excess_degrees: f32,
     maximum_guard_facing_error_degrees: f32,
@@ -559,6 +560,8 @@ struct FrameSample {
     ik_left_release_target: Option<[f32; 3]>,
     ik_right_release_target: Option<[f32; 3]>,
     ik_settle_progress: Option<f32>,
+    ik_left_knee_foot_yaw_offset_degrees: f32,
+    ik_right_knee_foot_yaw_offset_degrees: f32,
     attack_requested_left_foot_target: Option<[f32; 3]>,
     attack_requested_right_foot_target: Option<[f32; 3]>,
     attack_constrained_left_foot_target: Option<[f32; 3]>,
@@ -2012,6 +2015,8 @@ fn capture_frame(
             ik_left_release_target: leg_ik.left_release_target.map(|value| value.to_array()),
             ik_right_release_target: leg_ik.right_release_target.map(|value| value.to_array()),
             ik_settle_progress: leg_ik.settle_progress,
+            ik_left_knee_foot_yaw_offset_degrees: leg_ik.left_knee_foot_yaw_offset_degrees,
+            ik_right_knee_foot_yaw_offset_degrees: leg_ik.right_knee_foot_yaw_offset_degrees,
             attack_requested_left_foot_target: attack_requested_left.map(|value| value.to_array()),
             attack_requested_right_foot_target: attack_requested_right
                 .map(|value| value.to_array()),
@@ -2666,6 +2671,8 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
                 || metrics.scenario.starts_with("attack-step-stationary")
                 || (metrics.minimum_knee_flexion_degrees >= 3.9
                     && metrics.minimum_knee_hemisphere_dot >= 0.0))
+            && (!procedural_solver_gates_apply
+                || metrics.maximum_knee_foot_yaw_offset_degrees <= 22.6)
             && metrics.maximum_facing_tracking_excess_degrees <= 0.2
             && metrics.final_facing_motion_error_degrees <= 3.0
             && (attack
@@ -2942,6 +2949,22 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
             return false;
         }
         let final_lead = samples.last().map(|frame| frame.lead_foot);
+        let rendered_root_relative_range = |bone_name: &str| {
+            let positions = active
+                .iter()
+                .take_while(|frame| frame.action_phase <= 0.5 + 0.001)
+                .filter_map(|frame| {
+                    let bone = Vec3::from_array(frame.bones.get(bone_name)?.position);
+                    Some(bone - Vec3::from_array(frame.root_position_metres))
+                })
+                .collect::<Vec<_>>();
+            positions.first().map_or(0.0, |first| {
+                positions
+                    .iter()
+                    .map(|position| position.distance(*first))
+                    .fold(0.0, f32::max)
+            })
+        };
         if expected_footwork == Footwork::Stay && expected_step == AttackStep::Stay {
             let stable = [true, false].into_iter().all(|left| {
                 let positions = active
@@ -2992,9 +3015,17 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
             };
             let left_range = requested_range(true);
             let right_range = requested_range(false);
+            let moving_foot = if left_range > right_range {
+                "left_foot"
+            } else {
+                "right_foot"
+            };
             return final_lead == Some(start_lead)
                 && left_range.min(right_range) <= 0.01
                 && left_range.max(right_range) > 0.03
+                // A moving target alone is insufficient: the rendered foot
+                // must visibly advance relative to the attacking body.
+                && rendered_root_relative_range(moving_foot) >= 0.16
                 && active
                     .iter()
                     .all(|frame| frame.attack_support_handoffs == 0);
@@ -3187,6 +3218,7 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
         let valid = (requested_plant_stable || airborne_lunge)
             && maximum_slip <= slip_limit
             && direction_valid
+            && rendered_root_relative_range(moving_foot) >= 0.16
             && maximum_at_contact
             && constrained_continuous
             && recovery_root_motion_valid
@@ -3452,6 +3484,9 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
                 minimum_inter_foot_separation_metres: minimum_inter_foot_separation(&metric_frames),
                 minimum_knee_flexion_degrees: minimum_knee_flexion(&procedural_frames),
                 minimum_knee_hemisphere_dot: minimum_knee_hemisphere(&procedural_frames),
+                maximum_knee_foot_yaw_offset_degrees: maximum_knee_foot_yaw_offset(
+                    &procedural_frames,
+                ),
                 maximum_facing_motion_error_degrees: maximum_facing_error(&metric_frames),
                 maximum_facing_tracking_excess_degrees: maximum_facing_tracking_excess(
                     &metric_frames,
@@ -3608,6 +3643,18 @@ fn minimum_knee_hemisphere(frames: &[&FrameSample]) -> f32 {
             })
         })
         .fold(f32::INFINITY, f32::min)
+}
+
+fn maximum_knee_foot_yaw_offset(frames: &[&FrameSample]) -> f32 {
+    frames
+        .iter()
+        .flat_map(|frame| {
+            [
+                frame.ik_left_knee_foot_yaw_offset_degrees,
+                frame.ik_right_knee_foot_yaw_offset_degrees,
+            ]
+        })
+        .fold(0.0, f32::max)
 }
 
 fn maximum_facing_error(frames: &[&FrameSample]) -> f32 {
@@ -4346,7 +4393,7 @@ fn review_html(manifest: &CaptureManifest) -> String {
                 })
             };
             format!(
-                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.2}</td><td>{:.3}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.4}</td></tr>",
+                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.2}</td><td>{:.3}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.4}</td></tr>",
                 scenario.scenario,
                 scenario.frame_count,
                 describe(&scenario.worst_displacement, "m"),
@@ -4359,6 +4406,7 @@ fn review_html(manifest: &CaptureManifest) -> String {
                 scenario.minimum_inter_foot_separation_metres,
                 scenario.minimum_knee_flexion_degrees,
                 scenario.minimum_knee_hemisphere_dot,
+                scenario.maximum_knee_foot_yaw_offset_degrees,
                 scenario.maximum_facing_motion_error_degrees,
                 scenario.maximum_facing_tracking_excess_degrees,
                 scenario.maximum_guard_facing_error_degrees,
@@ -4376,7 +4424,7 @@ body{{font:15px system-ui;background:#111820;color:#e8eef5;margin:24px}}button,s
 <div>{scenario_buttons}</div><label>View <select id="view"><option value="gameplay">gameplay (raw)</option><option value="side">side diagnostic</option><option value="front">front diagnostic</option></select></label>
 <label>Playback <select id="rate"><option value="1">normal</option><option value="2">half speed</option><option value="4">quarter speed</option></select></label>
 <p id="telemetry"></p><img id="player"><div id="contact"></div>
-<table><thead><tr><th>scenario</th><th>frames</th><th>worst root-relative displacement</th><th>worst rotation</th><th>loop seam m</th><th>loop seam deg</th><th>supported slip m/frame</th><th>planted interval drift m</th><th>signed foot track m</th><th>inter-foot separation m</th><th>knee flexion deg</th><th>knee hemisphere dot</th><th>maximum facing error deg</th><th>tracking excess deg</th><th>guard facing error deg</th><th>final facing error deg</th><th>minimum terrain-relative foot clearance m</th></tr></thead><tbody>{metrics}</tbody></table>
+<table><thead><tr><th>scenario</th><th>frames</th><th>worst root-relative displacement</th><th>worst rotation</th><th>loop seam m</th><th>loop seam deg</th><th>supported slip m/frame</th><th>planted interval drift m</th><th>signed foot track m</th><th>inter-foot separation m</th><th>knee flexion deg</th><th>knee hemisphere dot</th><th>knee-foot yaw offset deg</th><th>maximum facing error deg</th><th>tracking excess deg</th><th>guard facing error deg</th><th>final facing error deg</th><th>minimum terrain-relative foot clearance m</th></tr></thead><tbody>{metrics}</tbody></table>
 <script>const all={frame_json},scenarioNames={scenario_names_json};let scenario=scenarioNames[0]||"",i=0,timer;const player=document.querySelector('#player'),view=document.querySelector('#view'),rate=document.querySelector('#rate'),telemetry=document.querySelector('#telemetry');
 function frames(){{return all.filter(x=>x.scenario===scenario)}}function show(){{const list=frames(),f=list.length?list[i%list.length]:null;if(!f){{player.removeAttribute('src');telemetry.textContent='No completed capture frames';return}}player.src=f.screenshots[view.value];telemetry.textContent=`${{f.scenario}} frame ${{f.scenario_frame}} | guard ${{f.weapon_guard}} lead ${{f.lead_foot}} | ${{f.speed_metres_per_second.toFixed(2)}} m/s | phase ${{f.gait_phase.toFixed(3)}} | world plants L ${{f.left_support_weight.toFixed(2)}} R ${{f.right_support_weight.toFixed(2)}}`;}}
 function play(){{clearInterval(timer);timer=setInterval(()=>{{i=(i+1)%frames().length;show()}},1000/64*Number(rate.value))}}function contacts(){{const f=frames(),step=Math.max(1,Math.floor(f.length/12)),box=document.querySelector('#contact');box.innerHTML='';for(let n=0;n<f.length;n+=step){{let x=document.createElement('img');x.src=f[n].screenshots[view.value];x.title=`frame ${{f[n].scenario_frame}} phase ${{f[n].gait_phase.toFixed(3)}}`;box.appendChild(x)}}}}
@@ -4554,6 +4602,8 @@ mod tests {
             ik_left_release_target: None,
             ik_right_release_target: None,
             ik_settle_progress: None,
+            ik_left_knee_foot_yaw_offset_degrees: 0.0,
+            ik_right_knee_foot_yaw_offset_degrees: 0.0,
             attack_requested_left_foot_target: None,
             attack_requested_right_foot_target: None,
             attack_constrained_left_foot_target: None,
@@ -4940,6 +4990,8 @@ mod tests {
             ik_left_release_target: None,
             ik_right_release_target: None,
             ik_settle_progress: None,
+            ik_left_knee_foot_yaw_offset_degrees: 0.0,
+            ik_right_knee_foot_yaw_offset_degrees: 0.0,
             attack_requested_left_foot_target: None,
             attack_requested_right_foot_target: None,
             attack_constrained_left_foot_target: None,
@@ -4964,6 +5016,9 @@ mod tests {
 
         frame.guard_action = true;
         assert!(maximum_guard_facing_error(&[&frame]) > 179.0);
+
+        frame.ik_left_knee_foot_yaw_offset_degrees = 90.0;
+        assert!(maximum_knee_foot_yaw_offset(&[&frame]) > 45.0);
     }
 
     #[test]
@@ -5200,6 +5255,8 @@ mod tests {
             ik_left_release_target: None,
             ik_right_release_target: None,
             ik_settle_progress: None,
+            ik_left_knee_foot_yaw_offset_degrees: 0.0,
+            ik_right_knee_foot_yaw_offset_degrees: 0.0,
             attack_requested_left_foot_target: None,
             attack_requested_right_foot_target: None,
             attack_constrained_left_foot_target: None,

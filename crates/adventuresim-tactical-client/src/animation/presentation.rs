@@ -280,6 +280,7 @@ impl Plugin for TacticalAnimationPlugin {
                     procedural::apply_impact_reaction,
                     procedural::apply_ordinary_locomotion_ik,
                     procedural::apply_terrain_leg_ik,
+                    procedural::enforce_anatomical_knee_yaw,
                     procedural::apply_arm_and_weapon_constraints,
                     procedural::stabilize_repeated_fixed_tick_pose,
                 )

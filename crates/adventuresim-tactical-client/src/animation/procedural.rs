@@ -643,6 +643,16 @@ pub(super) fn apply_landing_leg_compression(
             };
             let side = if left { -1.0 } else { 1.0 };
             let pole = owner_transform.rotation() * canonical_knee_pole(side);
+            let pole = constrain_rendered_leg_pole(
+                rig,
+                left,
+                upper_snapshot.global.translation(),
+                foot_snapshot.global.translation(),
+                target,
+                pole,
+                &parents,
+                &transforms.p0(),
+            );
             if let Some(solution) = solve_landing_two_bone(
                 upper_snapshot.global.translation(),
                 lower_snapshot.global.translation(),
@@ -767,11 +777,11 @@ use ik::{
 };
 pub(super) use ik::{
     apply_arm_and_weapon_constraints, apply_locomotion_body_response, apply_ordinary_locomotion_ik,
-    apply_terrain_leg_ik, refresh_raised_support_after_propagation,
+    apply_terrain_leg_ik, enforce_anatomical_knee_yaw, refresh_raised_support_after_propagation,
 };
 use ik::{
-    apply_two_bone_solution, canonical_knee_pole, presentation_tick_delta, smoothstep,
-    snapshot_chain, solve_landing_two_bone,
+    apply_two_bone_solution, canonical_knee_pole, constrain_rendered_leg_pole,
+    presentation_tick_delta, smoothstep, snapshot_chain, solve_landing_two_bone,
 };
 
 #[cfg(test)]
