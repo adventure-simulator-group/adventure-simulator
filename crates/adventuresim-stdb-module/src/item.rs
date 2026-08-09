@@ -254,6 +254,9 @@ pub struct Item {
     /// Whether this definition has authored durability and receives condition rows.
     pub repairable: bool,
     pub accuracy: f32,
+    pub swing_precision: f32,
+    pub stab_precision: f32,
+    pub prefers_stab: bool,
     pub reach: f32,
     pub block: f32,
     pub coverage: f32,
@@ -467,6 +470,9 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
         }
         K::Weapon {
             slot: authored_slot,
+            preferred_attack,
+            swing_precision,
+            stab_precision,
             accuracy,
             reach_m,
             penetration,
@@ -480,6 +486,12 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
             item.kind = ItemKind::Weapon;
             item.slot = slot(*authored_slot);
             item.accuracy = *accuracy;
+            item.swing_precision = *swing_precision;
+            item.stab_precision = *stab_precision;
+            item.prefers_stab = matches!(
+                preferred_attack,
+                adventuresim_core::item_catalog::MeleeAttackStyle::Stab
+            );
             item.reach = *reach_m;
             item.penetration = *penetration;
             item.balance = *balance;

@@ -537,6 +537,8 @@ struct FrameSample {
     action: SkeletonAction,
     action_phase: f32,
     attack_step: AttackStep,
+    attack_footwork: Footwork,
+    strike_family: StrikeFamily,
     guard_action: bool,
     left_support_weight: f32,
     right_support_weight: f32,
@@ -1042,6 +1044,20 @@ fn capture_plan() -> Vec<PlannedFrame> {
             false,
         ),
         attack_step_scenario(
+            "attack-step-moving-stay",
+            2.0,
+            Vec2::NEG_Y,
+            LeadFoot::Left,
+            false,
+        ),
+        attack_step_scenario(
+            "attack-step-stationary-slash",
+            0.0,
+            Vec2::ZERO,
+            LeadFoot::Left,
+            false,
+        ),
+        attack_step_scenario(
             "attack-step-high-speed-reversal",
             5.5,
             Vec2::NEG_Y,
@@ -1518,11 +1534,24 @@ fn drive_sequence(
                     64
                 };
             match frame.action {
-                SkeletonAction::Attack => skeleton.begin_attack(
-                    AttackSpec::melee_from_local_velocity(local_velocity),
-                    start,
-                    contact,
-                ),
+                SkeletonAction::Attack => {
+                    let attack = if frame.scenario == "attack-step-moving-stay" {
+                        AttackSpec::melee_from_local_velocity_and_style(
+                            local_velocity,
+                            StrikeFamily::Thrust,
+                            Footwork::Stay,
+                        )
+                    } else if frame.scenario == "attack-step-stationary-slash" {
+                        AttackSpec::melee_from_local_velocity_and_style(
+                            local_velocity,
+                            StrikeFamily::Slash,
+                            Footwork::Switch,
+                        )
+                    } else {
+                        AttackSpec::melee_from_local_velocity(local_velocity)
+                    };
+                    skeleton.begin_attack(attack, start, contact)
+                }
                 SkeletonAction::Dodge => skeleton.begin_dodge(DodgeSpec::default(), start, contact),
                 SkeletonAction::Block => skeleton.begin_block(BlockSpec::default(), start, contact),
                 SkeletonAction::None => {}
@@ -1938,6 +1967,8 @@ fn capture_frame(
             action: skeleton.action_kind(),
             action_phase: skeleton.action_phase(),
             attack_step: skeleton.attack_step(),
+            attack_footwork: skeleton.footwork(),
+            strike_family: skeleton.strike_family(),
             guard_action: frame.weapon_guard == WeaponGuardState::Raised
                 || matches!(frame.action, SkeletonAction::Attack | SkeletonAction::Block),
             left_support_weight,
@@ -2606,7 +2637,10 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             && metrics.minimum_inter_foot_separation_metres
                 >= inter_foot_separation_limit(&metrics.scenario)
             && (!procedural_solver_gates_apply
-                || metrics.scenario == "attack-step-stationary"
+                // Stationary attack fixtures include the authored fully
+                // extended guard leg; moving procedural steps retain the
+                // analytic knee-reserve gate below.
+                || metrics.scenario.starts_with("attack-step-stationary")
                 || (metrics.minimum_knee_flexion_degrees >= 3.9
                     && metrics.minimum_knee_hemisphere_dot >= 0.0))
             && metrics.maximum_facing_tracking_excess_degrees <= 0.2
@@ -2813,6 +2847,8 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
         "attack-step-backward-left-lead",
         "attack-step-backward-right-lead",
         "attack-step-stationary",
+        "attack-step-moving-stay",
+        "attack-step-stationary-slash",
         "attack-step-high-speed-reversal",
         "attack-step-reversal",
         "attack-step-yaw-only",
@@ -2839,6 +2875,17 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
         } else {
             AttackStep::Forward
         };
+        let expected_footwork =
+            if matches!(name, "attack-step-stationary" | "attack-step-moving-stay") {
+                Footwork::Stay
+            } else {
+                Footwork::Switch
+            };
+        let expected_family = if name == "attack-step-stationary-slash" {
+            StrikeFamily::Slash
+        } else {
+            StrikeFamily::Thrust
+        };
         let active = samples
             .iter()
             .copied()
@@ -2847,6 +2894,8 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
         if active.is_empty()
             || active.iter().any(|frame| {
                 frame.attack_step != expected_step
+                    || frame.attack_footwork != expected_footwork
+                    || frame.strike_family != expected_family
                     || (frame.action_phase < 0.999 && frame.lead_foot != start_lead)
             })
             || active
@@ -2866,7 +2915,7 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
             return false;
         }
         let final_lead = samples.last().map(|frame| frame.lead_foot);
-        if expected_step == AttackStep::Stay {
+        if expected_footwork == Footwork::Stay && expected_step == AttackStep::Stay {
             let stable = [true, false].into_iter().all(|left| {
                 let positions = active
                     .iter()
@@ -2892,6 +2941,36 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
                         && frame.right_support_weight >= 0.99
                         && frame.attack_support_handoffs == 0
                 });
+        }
+        if expected_footwork == Footwork::Stay {
+            let requested_range = |left: bool| {
+                let positions = active
+                    .iter()
+                    .take_while(|frame| frame.action_phase <= 0.5 + 0.001)
+                    .filter_map(|frame| {
+                        if left {
+                            frame.attack_requested_left_foot_target
+                        } else {
+                            frame.attack_requested_right_foot_target
+                        }
+                    })
+                    .map(Vec3::from_array)
+                    .collect::<Vec<_>>();
+                positions.first().map_or(f32::INFINITY, |first| {
+                    positions
+                        .iter()
+                        .map(|position| position.distance(*first))
+                        .fold(0.0, f32::max)
+                })
+            };
+            let left_range = requested_range(true);
+            let right_range = requested_range(false);
+            return final_lead == Some(start_lead)
+                && left_range.min(right_range) <= 0.01
+                && left_range.max(right_range) > 0.03
+                && active
+                    .iter()
+                    .all(|frame| frame.attack_support_handoffs == 0);
         }
         let opposite = match start_lead {
             LeadFoot::Left => LeadFoot::Right,
@@ -3042,13 +3121,20 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
                 })
                 .all(|step| step <= ATTACK_MAXIMUM_CONSTRAINED_TARGET_STEP_METRES)
         });
+        let stationary_attack = active
+            .first()
+            .is_some_and(|frame| frame.speed_metres_per_second <= 0.05);
         let recovery_root_motion_valid = active
             .windows(2)
             .filter(|pair| pair[0].action_phase >= 0.5 && pair[1].action_phase <= 1.0)
             .all(|pair| {
-                Vec3::from_array(pair[0].root_position_metres)
-                    .distance(Vec3::from_array(pair[1].root_position_metres))
-                    >= 0.01
+                let root_step = Vec3::from_array(pair[0].root_position_metres)
+                    .distance(Vec3::from_array(pair[1].root_position_metres));
+                if stationary_attack {
+                    root_step <= 0.01
+                } else {
+                    root_step >= 0.01
+                }
             });
         let final_attack = active.last().copied();
         let airborne_lunge = name.contains("high-speed");
@@ -4387,6 +4473,8 @@ mod tests {
             action: SkeletonAction::None,
             action_phase: 0.0,
             attack_step: AttackStep::Stay,
+            attack_footwork: Footwork::Stay,
+            strike_family: StrikeFamily::Thrust,
             guard_action: false,
             left_support_weight: 1.0,
             right_support_weight: 1.0,
@@ -4747,6 +4835,8 @@ mod tests {
             action: SkeletonAction::None,
             action_phase: 0.0,
             attack_step: AttackStep::Stay,
+            attack_footwork: Footwork::Stay,
+            strike_family: StrikeFamily::Thrust,
             guard_action: false,
             left_support_weight: 1.0,
             right_support_weight: 1.0,
@@ -5005,6 +5095,8 @@ mod tests {
             action: SkeletonAction::None,
             action_phase: 0.0,
             attack_step: AttackStep::Stay,
+            attack_footwork: Footwork::Stay,
+            strike_family: StrikeFamily::Thrust,
             guard_action: false,
             left_support_weight,
             right_support_weight: 0.0,

@@ -62,6 +62,7 @@ struct LegIkMemory {
     right_foot_target: Option<Vec3>,
     left_foot_world_target: Option<Vec3>,
     right_foot_world_target: Option<Vec3>,
+    attack_stance_close: Option<bool>,
     // The last propagated ankle positions are the last pose the player
     // actually saw. At the start of a stop, FK has already restored the new
     // idle sample before IK runs, so sampling globals in the IK pass would
@@ -228,6 +229,7 @@ const MAX_SETTLE_CAPTURE_SPEED: f32 = 1.1;
 const ATTACK_AIRBORNE_LUNGE_MIN_SPEED: f32 = 3.5;
 const ATTACK_FLAT_SOLE_CLEARANCE: f32 = 0.01;
 const ATTACK_SETTLE_SPEED_METRES_PER_SECOND: f32 = 1.5;
+const ATTACK_SWITCH_PASS_DISTANCE_METRES: f32 = 0.08;
 const ATTACK_SETTLE_MAXIMUM_PHASE: f32 = 0.2;
 const ATTACK_RECOVERY_NO_STEP_DISTANCE_METRES: f32 = 0.075;
 const ATTACK_RECOVERY_COMPLETE_DISTANCE_METRES: f32 = 0.005;
@@ -237,6 +239,12 @@ const ATTACK_RECOVERY_MAXIMUM_STEP_SECONDS: f32 = 0.30;
 
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub(crate) struct LegIkState(LegIkMemory);
+
+impl LegIkState {
+    pub(crate) fn feet_are_close_for_attack(&self) -> Option<bool> {
+        self.0.attack_stance_close
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub(crate) struct LegIkDiagnostics {
@@ -328,6 +336,7 @@ pub(crate) struct AttackFootworkState {
     start_tick: u64,
     lead: LeadFoot,
     step: AttackStep,
+    footwork: Footwork,
     swing_left: bool,
     last_origin: Vec3,
     last_rotation: Quat,
@@ -1237,6 +1246,13 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 right_foot_snapshot.global.translation() + Vec3::Y * -raised_pelvis_shift;
             let visible_left = memory.left_foot_world_target.unwrap_or(left_authored);
             let visible_right = memory.right_foot_world_target.unwrap_or(right_authored);
+            memory.attack_stance_close = attack_stance_is_close(
+                visible_left,
+                visible_right,
+                left_authored,
+                right_authored,
+                rig_rotation,
+            );
             let discontinuous =
                 footwork.initialized && rig_origin.distance_squared(footwork.step_origin) > 4.0;
             let sequence_delta = guard_step_sequence_delta(
@@ -3700,6 +3716,11 @@ fn apply_attack_step(
     } else {
         state.step
     };
+    let footwork = if attack_active {
+        skeleton.footwork()
+    } else {
+        state.footwork
+    };
     let start_lead = if attack_active {
         skeleton.attack_start_lead()
     } else {
@@ -3715,6 +3736,7 @@ fn apply_attack_step(
             || state.start_tick != start_tick
             || state.lead != start_lead
             || state.step != step
+            || state.footwork != footwork
             || (state.initialized
                 && (rig_origin.distance(state.last_origin) > MAX_OWNER_TRANSLATION_PER_TICK
                     || rig_rotation.angle_between(state.last_rotation).to_degrees()
@@ -3722,12 +3744,16 @@ fn apply_attack_step(
             || phase + 0.001 < state.previous_phase);
     if replacement {
         let swing_left = attack_swing_is_left(
-            step,
+            footwork,
             visible_left,
             visible_right,
             rig_origin,
             rig_rotation,
             skeleton.world_velocity,
+            skeleton
+                .attack_movement()
+                .map(|(direction, _)| direction)
+                .unwrap_or(Vec2::ZERO),
             start_lead,
         );
         let swing_start = if swing_left {
@@ -3741,16 +3767,43 @@ fn apply_attack_step(
         let settle_seconds = (swing_start.y - settled_swing_start.y).max(0.0)
             / ATTACK_SETTLE_SPEED_METRES_PER_SECOND;
         let settle_end_phase = attack_settle_end_phase(settle_seconds, preparation_seconds);
+        let (movement_direction, movement_speed) =
+            skeleton.attack_movement().unwrap_or((Vec2::Y, 0.0));
+        let world_direction = (rig_rotation
+            * Vec3::new(movement_direction.x, 0.0, movement_direction.y))
+        .normalize_or_zero();
+        let support = if swing_left {
+            visible_right
+        } else {
+            visible_left
+        };
+        let step_distance = attack_step_contact_distance(
+            footwork,
+            settled_swing_start,
+            support,
+            world_direction,
+            movement_speed,
+            preparation_seconds,
+        );
+        let mut swing_end = settled_swing_start + world_direction * step_distance;
+        // Authored attack clips are free to lift or delay their FK foot, but
+        // procedural attack footwork must arrive on the ground with contact.
+        // Use the planted ankle's height when the attack begins during an
+        // airborne locomotion lobe. Otherwise the moving foot can reach its
+        // horizontal contact endpoint while still visibly raised, making the
+        // later recovery grounding read as the actual step.
+        swing_end.y = support.y;
         state = AttackFootworkState {
             initialized: true,
             start_tick,
             lead: start_lead,
             step,
+            footwork,
             swing_left,
             last_origin: rig_origin,
             last_rotation: rig_rotation,
             swing_start,
-            swing_end: settled_swing_start,
+            swing_end,
             settle_end_phase,
             settled_swing_start,
             recovering: false,
@@ -3800,7 +3853,7 @@ fn apply_attack_step(
     };
     if advances {
         if attack_active
-            && state.step != AttackStep::Stay
+            && state.footwork == Footwork::Switch
             && state.previous_phase < 0.5
             && phase >= 0.5
         {
@@ -3814,18 +3867,23 @@ fn apply_attack_step(
     let mut finish_after_solve = false;
     let (left_target, right_target, left_support, right_support) = if attack_active {
         state.recovering = false;
-        if state.step == AttackStep::Stay {
+        let takes_step = state.footwork == Footwork::Switch
+            || skeleton
+                .attack_movement()
+                .is_some_and(|(_, speed)| speed > 0.05);
+        if !takes_step {
             (state.left_plant, state.right_plant, 1.0, 1.0)
         } else {
             if phase <= 0.5 {
-                state.swing_end = attack_grounded_target(
-                    if state.swing_left {
-                        left_authored
-                    } else {
-                        right_authored
-                    },
-                    terrain,
-                );
+                // The attack can be latched before the ordinary locomotion IK
+                // publishes its final support plant for that presentation
+                // frame. Refresh only the endpoint height from the retained
+                // planted foot; its horizontal strike endpoint stays fixed.
+                state.swing_end.y = if state.swing_left {
+                    state.right_solve_target.unwrap_or(state.right_plant).y
+                } else {
+                    state.left_solve_target.unwrap_or(state.left_plant).y
+                };
             }
             let swing_target = if phase < state.settle_end_phase {
                 let settle = smoothstep(0.0, state.settle_end_phase.max(f32::EPSILON), phase);
@@ -4135,7 +4193,11 @@ fn apply_attack_step(
             memory.right_support_weight = Some(support_weight);
         }
     }
-    if finish_after_solve {
+    if finish_after_solve && skeleton.raised_locomotion().is_moving() {
+        // A moving character can hand these exact plants to the ordinary
+        // raised-step planner. At idle, keep attack recovery ownership so a
+        // late graph transition into the resting guard is absorbed as another
+        // bounded correction instead of snapping both feet on the next frame.
         let left_plant = state.left_solve_target.unwrap_or(state.left_plant);
         let right_plant = state.right_solve_target.unwrap_or(state.right_plant);
         let swing_left = skeleton.raised_locomotion().swing_foot() == Some(LeadFoot::Left);
@@ -5435,14 +5497,16 @@ pub(crate) fn locomotion_support_weights(skeleton: &SkeletonState) -> (f32, f32)
         return (0.0, 0.0);
     }
     if skeleton.action_kind() == SkeletonAction::Attack {
-        let step = skeleton.attack_step();
-        if step == AttackStep::Stay {
+        let takes_step = skeleton.footwork() == Footwork::Switch
+            || skeleton
+                .attack_movement()
+                .is_some_and(|(_, speed)| speed > 0.05);
+        if !takes_step {
             return (1.0, 1.0);
         }
-        let swing_left = match step {
-            AttackStep::Forward => skeleton.attack_start_lead() == LeadFoot::Right,
-            AttackStep::Backward => skeleton.attack_start_lead() == LeadFoot::Left,
-            AttackStep::Stay => unreachable!(),
+        let swing_left = match skeleton.footwork() {
+            Footwork::Stay => skeleton.attack_start_lead() == LeadFoot::Left,
+            Footwork::Switch => skeleton.attack_start_lead() == LeadFoot::Right,
         };
         if skeleton.attack_step_speed() >= ATTACK_AIRBORNE_LUNGE_MIN_SPEED {
             let phase = skeleton.action_phase();
@@ -5542,38 +5606,68 @@ fn attack_grounded_target(mut target: Vec3, terrain: Option<&SceneTerrain>) -> V
     target
 }
 
+fn attack_stance_is_close(
+    visible_left: Vec3,
+    visible_right: Vec3,
+    guard_left: Vec3,
+    guard_right: Vec3,
+    rig_rotation: Quat,
+) -> Option<bool> {
+    let forward = (rig_rotation * Vec3::Z).xz().normalize_or_zero();
+    if forward == Vec2::ZERO
+        || !visible_left.is_finite()
+        || !visible_right.is_finite()
+        || !guard_left.is_finite()
+        || !guard_right.is_finite()
+    {
+        return None;
+    }
+    let visible_separation = (visible_left - visible_right).xz().dot(forward).abs();
+    let guard_separation = (guard_left - guard_right).xz().dot(forward).abs();
+    (guard_separation > 0.01).then_some(visible_separation <= guard_separation * 0.5)
+}
+
 fn attack_swing_is_left(
-    step: AttackStep,
+    footwork: Footwork,
     left: Vec3,
     right: Vec3,
     rig_origin: Vec3,
     rig_rotation: Quat,
     world_velocity: Vec3,
+    local_movement_direction: Vec2,
     start_lead: LeadFoot,
 ) -> bool {
-    if step == AttackStep::Stay {
-        return false;
-    }
     let travel = world_velocity.xz().normalize_or_zero();
     let fallback_forward = (rig_rotation * Vec3::Z).xz().normalize_or_zero();
-    let body_forward = match step {
-        AttackStep::Forward if travel != Vec2::ZERO => travel,
-        AttackStep::Backward if travel != Vec2::ZERO => -travel,
-        _ => fallback_forward,
+    let local_travel = (rig_rotation
+        * Vec3::new(local_movement_direction.x, 0.0, local_movement_direction.y))
+    .xz()
+    .normalize_or_zero();
+    let movement_forward = if travel != Vec2::ZERO {
+        travel
+    } else if local_travel != Vec2::ZERO {
+        local_travel
+    } else {
+        fallback_forward
+    };
+    let body_forward = if footwork == Footwork::Stay {
+        fallback_forward
+    } else {
+        movement_forward
     };
     let left_forward = (left - rig_origin).xz().dot(body_forward);
     let right_forward = (right - rig_origin).xz().dot(body_forward);
     if (left_forward - right_forward).abs() <= 0.005 {
-        return match step {
-            AttackStep::Forward => start_lead == LeadFoot::Right,
-            AttackStep::Backward => start_lead == LeadFoot::Left,
-            AttackStep::Stay => false,
+        return if footwork == Footwork::Stay {
+            start_lead == LeadFoot::Left
+        } else {
+            start_lead == LeadFoot::Right
         };
     }
-    match step {
-        AttackStep::Forward => left_forward < right_forward,
-        AttackStep::Backward => left_forward > right_forward,
-        AttackStep::Stay => false,
+    if footwork == Footwork::Stay {
+        left_forward > right_forward
+    } else {
+        left_forward < right_forward
     }
 }
 
@@ -5584,6 +5678,29 @@ fn attack_settle_end_phase(settle_seconds: f32, preparation_seconds: f32) -> f32
         (settle_seconds / preparation_seconds.max(1.0 / LOCOMOTION_SAMPLE_HZ) * 0.5)
             .clamp(0.0, ATTACK_SETTLE_MAXIMUM_PHASE)
     }
+}
+
+fn attack_step_contact_distance(
+    footwork: Footwork,
+    swing_start: Vec3,
+    support: Vec3,
+    world_direction: Vec3,
+    movement_speed: f32,
+    preparation_seconds: f32,
+) -> f32 {
+    let root_travel_to_contact = movement_speed.max(0.0) * preparation_seconds.max(0.0);
+    let semantic_step = match footwork {
+        Footwork::Stay => guard_step_length(movement_speed),
+        Footwork::Switch => {
+            let distance_to_support = (support - swing_start).dot(world_direction).max(0.0);
+            distance_to_support + ATTACK_SWITCH_PASS_DISTANCE_METRES
+        }
+    };
+    // The foot lands with the strike while remaining reachable from a root
+    // that continues along the captured movement vector. Slow attacks still
+    // read as a deliberate guard step; fast attacks cover their contact-time
+    // root travel instead of leaving the foot to catch up during recovery.
+    semantic_step.max(root_travel_to_contact)
 }
 
 pub(super) fn plan_guard_step_endpoint(
@@ -8310,24 +8427,95 @@ mod slope_cache_tests {
         let front = Vec3::new(0.2, 0.1, 0.4);
         for lead in [LeadFoot::Left, LeadFoot::Right] {
             assert!(attack_swing_is_left(
-                AttackStep::Forward,
+                Footwork::Switch,
                 back,
                 front,
                 Vec3::ZERO,
                 Quat::IDENTITY,
                 Vec3::Z,
+                Vec2::Y,
                 lead,
             ));
             assert!(!attack_swing_is_left(
-                AttackStep::Backward,
+                Footwork::Switch,
                 back,
                 front,
                 Vec3::ZERO,
                 Quat::IDENTITY,
                 -Vec3::Z,
+                -Vec2::Y,
                 lead,
             ));
         }
+    }
+
+    #[test]
+    fn stay_attack_steps_the_body_forward_foot() {
+        let back = Vec3::new(-0.2, 0.1, -0.1);
+        let front = Vec3::new(0.2, 0.1, 0.1);
+        for lead in [LeadFoot::Left, LeadFoot::Right] {
+            assert!(!attack_swing_is_left(
+                Footwork::Stay,
+                back,
+                front,
+                Vec3::ZERO,
+                Quat::IDENTITY,
+                -Vec3::Z,
+                -Vec2::Y,
+                lead,
+            ));
+        }
+    }
+
+    #[test]
+    fn attack_stance_close_threshold_is_half_guard_separation() {
+        let guard_left = Vec3::new(-0.2, 0.0, -0.4);
+        let guard_right = Vec3::new(0.2, 0.0, 0.4);
+        let left = Vec3::new(-0.2, 0.0, -0.2);
+        assert_eq!(
+            attack_stance_is_close(
+                left,
+                Vec3::new(0.2, 0.0, 0.2),
+                guard_left,
+                guard_right,
+                Quat::IDENTITY,
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            attack_stance_is_close(
+                left,
+                Vec3::new(0.2, 0.0, 0.201),
+                guard_left,
+                guard_right,
+                Quat::IDENTITY,
+            ),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn moving_attack_step_reaches_the_contact_time_root_travel() {
+        let speed = 2.0;
+        let preparation_seconds = 0.30;
+        let distance = attack_step_contact_distance(
+            Footwork::Stay,
+            Vec3::ZERO,
+            Vec3::new(0.0, 0.0, 0.3),
+            Vec3::Z,
+            speed,
+            preparation_seconds,
+        );
+        assert_eq!(distance, speed * preparation_seconds);
+    }
+
+    #[test]
+    fn stationary_switch_step_passes_the_planted_foot_before_contact() {
+        let swing = Vec3::new(0.0, 0.0, -0.2);
+        let support = Vec3::new(0.0, 0.0, 0.2);
+        let distance =
+            attack_step_contact_distance(Footwork::Switch, swing, support, Vec3::Z, 0.0, 0.30);
+        assert_eq!(distance, 0.4 + ATTACK_SWITCH_PASS_DISTANCE_METRES);
     }
 
     #[test]

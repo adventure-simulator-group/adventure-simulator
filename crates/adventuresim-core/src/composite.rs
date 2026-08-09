@@ -320,6 +320,7 @@ where
     pub fn resolve_melee_attack(
         &self,
         side: BodySide,
+        attack_style: MeleeAttackStyle,
         defender: &Self,
         defender_categories: &[BestiaryCategory],
         defender_response: DefenderResponse,
@@ -334,6 +335,7 @@ where
             &self.essentials,
             &self.equipment,
             side,
+            attack_style,
             hit_precision,
             self.precision_damage_multiplier_cap(defender_categories),
             flanking,

@@ -712,7 +712,10 @@ mod tests {
         let target = app.world_mut().spawn(Limbs::default()).id();
         app.world_mut().trigger(FromClient {
             client_id: ClientId::Client(attacker),
-            message: MeleeActionRequest::Start,
+            message: MeleeActionRequest::Start {
+                strike_family: StrikeFamily::Thrust,
+                footwork: Footwork::Stay,
+            },
         });
         app.world_mut()
             .resource_mut::<Time<()>>()

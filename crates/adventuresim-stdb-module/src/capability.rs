@@ -664,6 +664,13 @@ fn combat_weapon(item: &Item) -> CombatWeapon {
         slash: item.slash,
         pierce: item.pierce,
         accuracy: item.accuracy,
+        swing_precision: item.swing_precision,
+        stab_precision: item.stab_precision,
+        preferred_melee_style: if item.prefers_stab {
+            MeleeAttackStyle::Stab
+        } else {
+            MeleeAttackStyle::Swing
+        },
         weight: item.weight,
         penetration: item.penetration,
         melee_reach: if item.melee { item.reach } else { 0.0 },
@@ -708,6 +715,25 @@ impl PlayerEquipment for StrategicEquipment {
     }
     fn weapon_accuracy(&self) -> f32 {
         self.weapon.as_ref().map_or(0.0, |item| item.accuracy)
+    }
+    fn weapon_swing_precision(&self) -> f32 {
+        self.weapon
+            .as_ref()
+            .map_or(0.0, |item| item.swing_precision)
+    }
+    fn weapon_stab_precision(&self) -> f32 {
+        self.weapon.as_ref().map_or(0.0, |item| item.stab_precision)
+    }
+    fn weapon_preferred_melee_style(&self) -> MeleeAttackStyle {
+        self.weapon
+            .as_ref()
+            .map_or(MeleeAttackStyle::Swing, |item| {
+                if item.prefers_stab {
+                    MeleeAttackStyle::Stab
+                } else {
+                    MeleeAttackStyle::Swing
+                }
+            })
     }
     fn weapon_weight(&self) -> f32 {
         self.weapon.as_ref().map_or(0.0, |item| item.weight)

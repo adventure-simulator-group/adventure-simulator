@@ -53,7 +53,11 @@ pub(super) fn on_melee_attack_started(
     );
     if let Ok(mut skeleton) = skeletons.get_mut(event.attacker) {
         let start = animation_tick(&time);
-        let attack = AttackSpec::melee_from_local_velocity(skeleton.local_velocity);
+        let attack = AttackSpec::melee_from_local_velocity_and_style(
+            skeleton.local_velocity,
+            event.strike_family,
+            event.footwork,
+        );
         skeleton.begin_attack(attack, start, start + duration_ticks(event.windup));
     }
 }
@@ -102,7 +106,10 @@ pub(super) fn on_melee_action_request(
         return;
     };
     match **event {
-        MeleeActionRequest::Start => {
+        MeleeActionRequest::Start {
+            strike_family,
+            footwork,
+        } => {
             let Ok(mut authority) = authorities.get_mut(attacker) else {
                 return;
             };
@@ -114,7 +121,11 @@ pub(super) fn on_melee_action_request(
             );
             if let Ok(mut skeleton) = skeletons.get_mut(attacker) {
                 let start = animation_tick(&time);
-                let attack = AttackSpec::melee_from_local_velocity(skeleton.local_velocity);
+                let attack = AttackSpec::melee_from_local_velocity_and_style(
+                    skeleton.local_velocity,
+                    strike_family,
+                    footwork,
+                );
                 skeleton.begin_attack(attack, start, start + duration_ticks(CLIENT_MELEE_WINDUP));
             }
         }
@@ -129,11 +140,16 @@ pub(super) fn on_melee_action_request(
             };
             // Finite precision is intentionally accepted as reported. Full
             // animation and secondary physics remain client-owned.
+            let strike_family = skeletons
+                .get_mut(attacker)
+                .map(|skeleton| skeleton.strike_family())
+                .unwrap_or(StrikeFamily::Thrust);
             cmd.trigger(MeleeAttackIntent {
                 attacker,
                 target,
                 body_part,
                 reported_precision,
+                strike_family,
             });
         }
     }

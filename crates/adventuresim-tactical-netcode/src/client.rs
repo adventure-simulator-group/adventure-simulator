@@ -40,6 +40,7 @@ pub struct DirectControlState {
     pub crouch: bool,
     pub prone: bool,
     pub attack_just_pressed: bool,
+    pub alternate_attack: bool,
     pub dodge_just_pressed: bool,
     caps_jog: bool,
     guarded_space: bool,
@@ -54,6 +55,7 @@ impl Default for DirectControlState {
             crouch: false,
             prone: false,
             attack_just_pressed: false,
+            alternate_attack: false,
             dodge_just_pressed: false,
             caps_jog: false,
             guarded_space: false,
@@ -90,6 +92,10 @@ fn update_direct_control_input(
             > 0.01
     });
     let moving = keyboard_moving || gamepad_moving;
+    let left_trigger_value = gamepads
+        .iter()
+        .filter_map(|gamepad| gamepad.get(GamepadButton::LeftTrigger2))
+        .fold(0.0_f32, f32::max);
     let left_trigger = gamepads
         .iter()
         .any(|gamepad| gamepad.pressed(GamepadButton::LeftTrigger2));
@@ -152,8 +158,14 @@ fn update_direct_control_input(
     if keys.just_released(KeyCode::Space) {
         controls.guarded_space = false;
     }
-    controls.attack_just_pressed = raised
-        && (mouse.just_pressed(MouseButton::Left) || (left_trigger && right_trigger_just_pressed));
+    let mouse_guard = mouse.pressed(MouseButton::Right);
+    let mouse_preferred_attack = mouse_guard && mouse.just_pressed(MouseButton::Left);
+    let mouse_alternate_attack = mouse_guard && mouse.just_pressed(MouseButton::Middle);
+    let controller_attack = left_trigger && right_trigger_just_pressed;
+    controls.attack_just_pressed =
+        mouse_preferred_attack || mouse_alternate_attack || controller_attack;
+    controls.alternate_attack =
+        mouse_alternate_attack || (controller_attack && left_trigger_value < 0.95);
     controls.dodge_just_pressed = keyboard_dodge
         || (left_trigger && right_bumper_just_pressed && moving && !controls.reserved_throw_chord);
     controls.crouch = raised

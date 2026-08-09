@@ -50,7 +50,7 @@ pub(super) fn on_attack_started(
         With<OffensiveCombatAi>,
     >,
 ) {
-    if !matches!(**event, MeleeActionRequest::Start) {
+    if !matches!(**event, MeleeActionRequest::Start { .. }) {
         return;
     }
     let Some(attacker) = event.client_id.entity() else {

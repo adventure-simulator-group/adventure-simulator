@@ -1669,6 +1669,12 @@ pub struct ItemDefinition {
     #[serde(default)]
     pub accuracy: f32,
     #[serde(default)]
+    pub swing_precision: f32,
+    #[serde(default)]
+    pub stab_precision: f32,
+    #[serde(default)]
+    pub prefers_stab: bool,
+    #[serde(default)]
     pub reach: f32,
     #[serde(default)]
     pub block: f32,
@@ -1877,6 +1883,9 @@ impl Default for ItemDefinition {
             attachment_points: Vec::new(),
             repairable: false,
             accuracy: 0.0,
+            swing_precision: 0.0,
+            stab_precision: 0.0,
+            prefers_stab: false,
             reach: 0.0,
             block: 0.0,
             coverage: 0.0,

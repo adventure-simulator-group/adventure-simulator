@@ -13,7 +13,10 @@ field changes real-time behavior; tactical enemy state remains transient.
 When the player clicks the [Attack button](../client/controls.md#direct-controls), initiating an attack animation, we run a shapecast in front of the player character. If there is an intersection between the attacker's hitreg and some other actor's hitbox, we calculate [input precision](../client/controls.md#direct-controls). Then comes the skill check algorithm.
 
 Client melee requests and server-controlled melee AI feed one internal server
-attack-intent path. Client-reported input precision is preserved: reproducing
+attack-intent path. Each melee weapon declares a preferred slash or stab and
+separate swing and stab precision terms; the selected animation family selects
+the matching combat term. Unarmed fists are a stab-preferring melee fallback.
+Client-reported input precision is preserved: reproducing
 full animation and secondary physics on the headless server is not an intended
 authority boundary, while character and equipment statistics still bound the
 combat calculation.
@@ -45,7 +48,7 @@ every frontal AI.
 
 Before resolution, the headless server rejects self or friendly attacks,
 missing allegiance or combat state, incapacitated participants, non-finite
-precision, missing weapons, attacks beyond shared interaction range plus a
+precision, invalid weapon state, attacks beyond shared interaction range plus a
 small 0.25-meter network-motion allowance, requests outside a fresh
 server-observed windup/cooldown, and blocked authoritative physics line of
 sight. Cheap state, timing, and range checks run before the physics cast. Finite
@@ -100,7 +103,7 @@ Broadly speaking, the flow goes like this:
 	2. Multiply by weapon term (small knife: 2.0, long hammer: 0.5)
 	3. Multiply final value by [input precision](../client/controls.md)
 
-The weapon term also provides the strategic recruitment **weapon precision** scale. The current discrete recommendations are 0.5 for clubs and hammers, 1.0 for axes, 1.5 for ordinary swords and spears, and 2.0 for purpose-built precise weapons such as rapiers or bodkin ammunition. Damage type is not a recruitment role: slash, pierce, and blunt weapons are compared through this single precision scale instead.
+For melee weapons, the weapon term is selected from separate **swing precision** and **stab precision** values. Edges and impact faces generally have swing precision at or below 0.5, while points can be substantially more exact. The catalog's war hammer is the unusual high-swing-precision example because its compact four-sided beak concentrates a swung attack on a small target. Ranged weapons retain their single accuracy term. Damage type is not a recruitment role.
 2. calculate `dodge_defense`:
 	1. Calculate `armor_dodge_term` from their armor.
 		1. This isn't actually the weight of the armor; it's based on articulations on joints.

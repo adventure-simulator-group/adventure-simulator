@@ -247,6 +247,7 @@ enum ActionKind {
     Attack {
         target_height: f32,
         strike_family: StrikeFamily,
+        footwork: Footwork,
         step: AttackStep,
         step_speed: f32,
         movement_direction: Vec2,
@@ -288,6 +289,7 @@ impl<'de> Deserialize<'de> for ActionState {
             ActionKind::Attack {
                 target_height,
                 strike_family,
+                footwork,
                 step,
                 step_speed,
                 movement_direction,
@@ -301,6 +303,7 @@ impl<'de> Deserialize<'de> for ActionState {
                     AttackSpec::default().target_height
                 },
                 strike_family,
+                footwork,
                 step,
                 step_speed: if step_speed.is_finite() {
                     step_speed.clamp(0.0, 8.0)
@@ -346,6 +349,7 @@ pub struct DodgeSpec {
 pub struct AttackSpec {
     pub target_height: f32,
     pub strike_family: StrikeFamily,
+    pub footwork: Footwork,
     /// Longitudinal step snapshotted from authoritative movement velocity at
     /// attack start. It is semantic rather than a free vector so later input
     /// or facing changes cannot repick the attacking foot.
@@ -363,6 +367,7 @@ impl Default for AttackSpec {
         Self {
             target_height: 0.5,
             strike_family: StrikeFamily::Thrust,
+            footwork: Footwork::Stay,
             step: AttackStep::Stay,
             step_speed: 0.0,
             movement_direction: Vec2::ZERO,
@@ -376,24 +381,45 @@ impl AttackSpec {
     /// observed by the authority. Forward is Bevy's conventional -Z axis;
     /// lateral-only and tiny longitudinal motion deliberately remain planted.
     pub fn melee_from_local_velocity(local_velocity: Vec3) -> Self {
-        let step = AttackStep::from_local_velocity(local_velocity);
+        let footwork = if AttackStep::from_local_velocity(local_velocity) == AttackStep::Stay {
+            Footwork::Stay
+        } else {
+            Footwork::Switch
+        };
+        Self::melee_from_local_velocity_and_style(local_velocity, StrikeFamily::Thrust, footwork)
+    }
+
+    pub fn melee_from_local_velocity_and_style(
+        local_velocity: Vec3,
+        strike_family: StrikeFamily,
+        footwork: Footwork,
+    ) -> Self {
+        let mut step = AttackStep::from_local_velocity(local_velocity);
+        let mut movement_direction = if local_velocity.is_finite() {
+            Vec2::new(local_velocity.x, -local_velocity.z).normalize_or_zero()
+        } else {
+            Vec2::ZERO
+        };
+        if strike_family == StrikeFamily::Slash
+            && footwork == Footwork::Switch
+            && movement_direction == Vec2::ZERO
+        {
+            step = AttackStep::Forward;
+            movement_direction = Vec2::Y;
+        }
         Self {
+            strike_family,
+            footwork,
             step,
             step_speed: if local_velocity.is_finite() {
-                local_velocity.z.abs().clamp(0.0, 8.0)
+                local_velocity.xz().length().clamp(0.0, 8.0)
             } else {
                 0.0
             },
-            movement_direction: if local_velocity.is_finite() {
-                // Ahoy's controller input uses +Y for forward while Bevy
-                // local velocity uses -Z. Store the captured physical input
-                // direction, not an unconverted X/Z projection, because the
-                // server feeds this value back to the controller during the
-                // attack preparation.
-                Vec2::new(local_velocity.x, -local_velocity.z).normalize_or_zero()
-            } else {
-                Vec2::ZERO
-            },
+            // Ahoy's controller input uses +Y for forward while Bevy local
+            // velocity uses -Z. Store the captured physical direction; a
+            // stationary slash receives an explicit forward presentation step.
+            movement_direction,
             movement_speed: if local_velocity.is_finite() {
                 local_velocity.xz().length().clamp(0.0, 8.0)
             } else {
@@ -433,6 +459,22 @@ pub enum StrikeFamily {
     #[default]
     Thrust,
     Slash,
+}
+
+impl StrikeFamily {
+    pub fn from_melee_style(style: MeleeAttackStyle) -> Self {
+        match style {
+            MeleeAttackStyle::Swing => Self::Slash,
+            MeleeAttackStyle::Stab => Self::Thrust,
+        }
+    }
+
+    pub fn melee_style(self) -> MeleeAttackStyle {
+        match self {
+            Self::Slash => MeleeAttackStyle::Swing,
+            Self::Thrust => MeleeAttackStyle::Stab,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
@@ -745,7 +787,10 @@ impl SkeletonState {
         }
     }
     pub fn footwork(&self) -> Footwork {
-        self.attack_step().footwork()
+        match self.action {
+            ActionState(ActionKind::Attack { footwork, .. }) => footwork,
+            _ => Footwork::Stay,
+        }
     }
     pub fn attack_step(&self) -> AttackStep {
         match self.action {
@@ -846,6 +891,7 @@ impl SkeletonState {
         self.replace_action(ActionState(ActionKind::Attack {
             target_height,
             strike_family: spec.strike_family,
+            footwork: spec.footwork,
             step: spec.step,
             step_speed: if spec.step_speed.is_finite() {
                 spec.step_speed.clamp(0.0, 8.0)
@@ -879,7 +925,7 @@ impl SkeletonState {
     pub fn advance_action(&mut self, current_tick: u64) {
         let switching_attack_start_lead = match self.action {
             ActionState(ActionKind::Attack {
-                step: AttackStep::Forward | AttackStep::Backward,
+                footwork: Footwork::Switch,
                 start_lead,
                 ..
             }) => Some(start_lead),
