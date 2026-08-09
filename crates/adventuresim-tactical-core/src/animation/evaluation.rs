@@ -29,6 +29,9 @@ pub struct PoseSample {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AnimationEvaluation {
     pub base: Vec<PoseSample>,
+    /// Optional locomotion layer evaluated only on the pelvis and legs. This
+    /// lets a raised upper-body guard retain an ordinary walk/run blend.
+    pub lower_body: Vec<PoseSample>,
     pub action: Vec<PoseSample>,
     pub movement_speed: f32,
     pub gait_phase: f32,
@@ -73,9 +76,18 @@ impl AnimationEvaluation {
                 locomotion_samples(speed, gait_phase, crouch_amount)
             }
         };
+        let lower_body = if state.guarded_sprint_locomotion()
+            && state.raised_locomotion().is_moving()
+            && speed > 0.05
+        {
+            locomotion_samples(speed, gait_phase, 0.0)
+        } else {
+            Vec::new()
+        };
         let action = action_samples(state);
         Self {
             base,
+            lower_body,
             action,
             movement_speed: speed,
             gait_phase,

@@ -625,7 +625,7 @@ mod legacy_tests {
             }
             let node_base = runtime.clips.len() * 256;
             let pack = &catalog.packs[HUMANOID_UNARMED_PACK];
-            let anchor_nodes = pack
+            let anchor_nodes: BTreeMap<u16, AnimationNodeIndex> = pack
                 .poses
                 .values()
                 .filter(|candidate| candidate.motion == anchor.motion)
@@ -647,7 +647,11 @@ mod legacy_tests {
                 LoadedClip {
                     node: AnimationNodeIndex::new(node_base),
                     duration_seconds: 64.0 / ANIMATION_FPS,
-                    anchor_nodes,
+                    anchor_nodes: anchor_nodes.clone(),
+                    upper_node: AnimationNodeIndex::new(node_base),
+                    upper_anchor_nodes: anchor_nodes.clone(),
+                    lower_node: AnimationNodeIndex::new(node_base),
+                    lower_anchor_nodes: anchor_nodes,
                 },
             );
         }
@@ -746,6 +750,10 @@ mod legacy_tests {
                 node: AnimationNodeIndex::new(9_000),
                 duration_seconds: 64.0 / ANIMATION_FPS,
                 anchor_nodes: BTreeMap::from([(0, mirrored_node)]),
+                upper_node: AnimationNodeIndex::new(9_000),
+                upper_anchor_nodes: BTreeMap::from([(0, mirrored_node)]),
+                lower_node: AnimationNodeIndex::new(9_000),
+                lower_anchor_nodes: BTreeMap::from([(0, mirrored_node)]),
             },
         );
         let mut weighted = Vec::new();
@@ -810,6 +818,32 @@ mod legacy_tests {
             world.resource::<AnimationRuntime>().canonical_targets.len(),
             3
         );
+    }
+
+    #[test]
+    fn composite_mask_keeps_root_pelvis_and_legs_out_of_the_upper_body() {
+        for lower in [
+            "Skeleton",
+            "root",
+            "pelvis",
+            "thigh.L",
+            "thigh_twist.R",
+            "shin.L",
+            "foot.R",
+            "toe.L",
+        ] {
+            assert!(is_lower_body_animation_target(lower), "{lower}");
+        }
+        for upper in [
+            "stomach_01",
+            "stomach_02",
+            "chest",
+            "clavicle.L",
+            "upper_arm.R",
+            "head",
+        ] {
+            assert!(!is_lower_body_animation_target(upper), "{upper}");
+        }
     }
 
     #[test]

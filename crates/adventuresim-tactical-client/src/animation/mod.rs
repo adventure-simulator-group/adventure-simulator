@@ -28,6 +28,8 @@ const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
 const ANIMATION_FPS: f32 = 30.0;
 const PRESENTATION_CROSSFADE_SECONDS: f32 = 0.18;
+const LOWER_BODY_MASK_GROUP: u32 = 0;
+const UPPER_BODY_MASK_GROUP: u32 = 1;
 // Player transforms sit at the center of the 1.9 m server collider, while
 // authored rigs use a floor-level origin. Keep visual feet on the collider's
 // lower face so the first-person camera lands at the authored head.
@@ -79,14 +81,41 @@ struct LoadedClip {
     node: AnimationNodeIndex,
     duration_seconds: f32,
     anchor_nodes: BTreeMap<u16, AnimationNodeIndex>,
+    upper_node: AnimationNodeIndex,
+    upper_anchor_nodes: BTreeMap<u16, AnimationNodeIndex>,
+    lower_node: AnimationNodeIndex,
+    lower_anchor_nodes: BTreeMap<u16, AnimationNodeIndex>,
 }
 
 impl LoadedClip {
     fn at_anchor(&self, frame: u16) -> Self {
+        self.at_anchor_layer(frame, ClipLayer::Whole)
+    }
+
+    fn at_anchor_layer(&self, frame: u16, layer: ClipLayer) -> Self {
         let mut clip = self.clone();
-        clip.node = self.anchor_nodes.get(&frame).copied().unwrap_or(self.node);
+        clip.node = match layer {
+            ClipLayer::Whole => self.anchor_nodes.get(&frame).copied().unwrap_or(self.node),
+            ClipLayer::Upper => self
+                .upper_anchor_nodes
+                .get(&frame)
+                .copied()
+                .unwrap_or(self.upper_node),
+            ClipLayer::Lower => self
+                .lower_anchor_nodes
+                .get(&frame)
+                .copied()
+                .unwrap_or(self.lower_node),
+        };
         clip
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClipLayer {
+    Whole,
+    Upper,
+    Lower,
 }
 
 #[derive(Resource, Default)]
@@ -104,6 +133,8 @@ struct AnimationRuntime {
     graph: Option<Handle<AnimationGraph>>,
     revision: u64,
     canonical_targets: HashSet<AnimationTargetId>,
+    lower_body_targets: HashSet<AnimationTargetId>,
+    upper_body_targets: HashSet<AnimationTargetId>,
 }
 
 #[derive(Component, Debug)]
@@ -249,15 +280,34 @@ fn evaluate_skeletons(
                 mirrored > exact
             });
         let mut weighted = Vec::<WeightedClip>::new();
+        let base_layer = if evaluation.action.is_empty() && !evaluation.lower_body.is_empty() {
+            ClipLayer::Upper
+        } else {
+            ClipLayer::Whole
+        };
         for sample in samples {
-            append_resolved_sample(
+            append_resolved_sample_layer(
                 &mut weighted,
                 &runtime,
                 &catalog,
                 &skeleton.animation_pack,
                 *sample,
                 coherent_guard_parity,
+                base_layer,
             );
+        }
+        if evaluation.action.is_empty() {
+            for sample in &evaluation.lower_body {
+                append_resolved_sample_layer(
+                    &mut weighted,
+                    &runtime,
+                    &catalog,
+                    &skeleton.animation_pack,
+                    *sample,
+                    None,
+                    ClipLayer::Lower,
+                );
+            }
         }
         let target = PlaybackPose {
             use_authored_bind_pose: weighted.is_empty(),
@@ -732,8 +782,9 @@ fn append_weighted_anchor(
     resolved: &ResolvedAnchor,
     frame: u16,
     weight: f32,
+    layer: ClipLayer,
 ) {
-    let clip = resolved.clip.at_anchor(frame);
+    let clip = resolved.clip.at_anchor_layer(frame, layer);
     append_weighted_clip(
         weighted,
         &clip,
@@ -778,6 +829,26 @@ fn append_resolved_sample(
     sample: PoseSample,
     forced_mirror_parity: Option<bool>,
 ) {
+    append_resolved_sample_layer(
+        weighted,
+        runtime,
+        catalog,
+        pack,
+        sample,
+        forced_mirror_parity,
+        ClipLayer::Whole,
+    );
+}
+
+fn append_resolved_sample_layer(
+    weighted: &mut Vec<WeightedClip>,
+    runtime: &AnimationRuntime,
+    catalog: &AnimationPackCatalog,
+    pack: &str,
+    sample: PoseSample,
+    forced_mirror_parity: Option<bool>,
+    layer: ClipLayer,
+) {
     let start = match forced_mirror_parity {
         Some(mirrored) => resolve_anchor_with_parity(runtime, catalog, pack, sample.pose, mirrored),
         None => resolve_anchor(runtime, catalog, pack, sample.pose),
@@ -789,7 +860,7 @@ fn append_resolved_sample(
     };
     match sample.sampling {
         PoseSampling::Anchor => {
-            append_weighted_anchor(weighted, &start, start.anchor.frame, sample.weight)
+            append_weighted_anchor(weighted, &start, start.anchor.frame, sample.weight, layer)
         }
         PoseSampling::Cycle { phase } => {
             append_weighted_clip(
@@ -810,7 +881,7 @@ fn append_resolved_sample(
                 None => resolve_anchor(runtime, catalog, pack, end_pose),
             };
             let Some(end) = end else {
-                append_weighted_anchor(weighted, &start, start.anchor.frame, sample.weight);
+                append_weighted_anchor(weighted, &start, start.anchor.frame, sample.weight, layer);
                 return;
             };
             if start.pack_id == end.pack_id && start.anchor.motion == end.anchor.motion {
@@ -819,8 +890,15 @@ fn append_resolved_sample(
                     &start,
                     start.anchor.frame,
                     sample.weight * (1.0 - progress),
+                    layer,
                 );
-                append_weighted_anchor(weighted, &end, end.anchor.frame, sample.weight * progress);
+                append_weighted_anchor(
+                    weighted,
+                    &end,
+                    end.anchor.frame,
+                    sample.weight * progress,
+                    layer,
+                );
             } else if let Some(reference) = catalog.packs[end.pack_id]
                 .references
                 .get(&end.anchor.motion)
@@ -836,8 +914,15 @@ fn append_resolved_sample(
                     &end,
                     reference.frame,
                     sample.weight * (1.0 - progress),
+                    layer,
                 );
-                append_weighted_anchor(weighted, &end, end.anchor.frame, sample.weight * progress);
+                append_weighted_anchor(
+                    weighted,
+                    &end,
+                    end.anchor.frame,
+                    sample.weight * progress,
+                    layer,
+                );
             } else if let Some(reference) = catalog.packs[start.pack_id]
                 .references
                 .get(&start.anchor.motion)
@@ -853,16 +938,30 @@ fn append_resolved_sample(
                     &start,
                     start.anchor.frame,
                     sample.weight * (1.0 - progress),
+                    layer,
                 );
-                append_weighted_anchor(weighted, &start, reference.frame, sample.weight * progress);
+                append_weighted_anchor(
+                    weighted,
+                    &start,
+                    reference.frame,
+                    sample.weight * progress,
+                    layer,
+                );
             } else {
                 append_weighted_anchor(
                     weighted,
                     &start,
                     start.anchor.frame,
                     sample.weight * (1.0 - progress),
+                    layer,
                 );
-                append_weighted_anchor(weighted, &end, end.anchor.frame, sample.weight * progress);
+                append_weighted_anchor(
+                    weighted,
+                    &end,
+                    end.anchor.frame,
+                    sample.weight * progress,
+                    layer,
+                );
             }
         }
     }

@@ -395,15 +395,20 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 fn update_weapon_guard_ui(
     guard: Res<WeaponGuardInputState>,
+    players: Query<Entity, With<ControlledPlayer>>,
+    viewer: TacticalPlayerViewer,
     mut spans: Query<&mut TextSpan, With<WeaponGuardSpan>>,
 ) {
-    if !guard.is_changed() {
-        return;
-    }
+    let ranged = players
+        .iter()
+        .next()
+        .and_then(|entity| viewer.get(entity).ok())
+        .is_some_and(|player| player.weapon_is_ranged());
     for mut span in &mut spans {
         **span = match guard.desired {
             WeaponGuardState::Lowered => "Lowered".to_owned(),
-            WeaponGuardState::Raised => "Raised".to_owned(),
+            WeaponGuardState::Raised if ranged => "Aiming".to_owned(),
+            WeaponGuardState::Raised => "Blocking".to_owned(),
         };
     }
 }

@@ -14,7 +14,8 @@ pub(super) fn owns(skeleton: &SkeletonState) -> bool {
     skeleton.is_grounded()
         && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
         && skeleton.action_kind() == SkeletonAction::None
-        && skeleton.weapon_guard() == WeaponGuardState::Lowered
+        && (skeleton.weapon_guard() == WeaponGuardState::Lowered
+            || skeleton.guarded_sprint_locomotion())
 }
 
 /// Overgrowth-style ordinary locomotion IK: the graph supplies the complete
@@ -288,9 +289,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ordinary_ownership_excludes_guard_and_actions() {
+    fn ordinary_ownership_selects_guarded_sprint_but_excludes_guard_steps_and_actions() {
         let ordinary = SkeletonState::default();
         assert!(owns(&ordinary));
+
+        let guard_step = ordinary.clone().with_weapon_guard(WeaponGuardState::Raised);
+        assert!(!owns(&guard_step));
+
+        let guarded_sprint = guard_step.with_guarded_sprint_locomotion(true);
+        assert!(owns(&guarded_sprint));
 
         let mut attacking = ordinary.clone();
         attacking.begin_attack(AttackSpec::default(), 0, 1);

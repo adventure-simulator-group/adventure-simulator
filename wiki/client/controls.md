@@ -78,15 +78,18 @@ builds, <kbd>F6</kbd> exposes rig, collision, smoothing, and aim telemetry.
 
 | **M+KB** | **Controller** | **Function** | **Notes** |
 |-|-|-|-|
-| <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> | Left Stick | Movement. | |
+| <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> | Left Stick | Movement. | Keyboard movement walks by default, jogs while Caps Lock is on, and sprints while <kbd>Shift</kbd> is held. Analogue stick deflection selects the continuous pace up to sprint at full deflection. Jog is the character's endurance-neutral pace; sprint is limited by leg strength relative to total carried weight. |
 | Mouse | Right Stick | Look. | |
 | <kbd>F9</kbd> | | Toggle first-/third-person camera. | Third person preserves the same immediate look direction across centered and raised-weapon shoulder profiles. |
-| LMB | RT | Attack! | |
-| Release <kbd>SPACE</kbd> | Full LT | Dodge or jump. | <ul><li>A quick tap is more like a hop or dash. Holding the button for a bit before releasing makes it a full-body jump. You can tell whether you have held long enough for a full jump by the state of your character's animation.<li>LT has to be held all the way, then released, to jump. |
-| <kbd>SHIFT</kbd> | Partial LT | Crouch or duck. | <ul><li>When crouching and attacked, your character automatically ducks in an appropriate direction, but only if you were not crouching before the attack began.<li>LT is only held partially here, so releasing it to un-crouch does not cause you to jump.
-| <kbd>CTRL</kbd> | Left Stick Click | Prone–standing toggle. | <ul><li>Jump while held to dive.<li>Crouch to orient your character in the direction the camera is facing.<li>When prone, your character automatically switches to supine based on how you look around. Looking forward, you're prone; looking at your toes, you're supine.<li>Once prone/supine, jump causes you to roll if in a lateral direction, scamper otherwise. This is a very mediocre dodge.
-| Scroll | Right Stick Click | Aim / weapon guard. | <ul><li>Aim means the weapon guard is raised. Scrolling up always raises it and scrolling down always lowers it, so repeated wheel input is idempotent.<li>Right Stick Click toggles the state once per press.<li>The default is lowered. The HUD reports the desired state immediately while the server validates and replicates it.<li>For melee weapons, stabbing without aiming = swinging.<li>For ranged weapons, shooting without aiming = bashing.<li>Aiming while pressing a [hand button](slots.md) with an item in your hand causes you to throw. When not aiming, you simply drop it.
-| MMB or RMB | LB or RB | Grab with left/right hand. | <ul><li>When there is nothing in hand, pressing this grabs whatever you're looking at; *holding* this button, then pressing a [slot button](slots.md), equips the item in that slot into the chosen hand.<li>When there is something in a hand, pressing this drops it; *holding* this button, then pressing a slot button, places the item held in that hand into the chosen slot.
+| Hold RMB | Hold LT | Aim / block. | This state never toggles or persists: releasing the button immediately lowers the weapon. A ranged weapon aims; a melee weapon blocks. Ordinary raised movement uses procedural combat steps. Sprint input while raised instead produces an endurance-neutral jog with the upper body still aiming or blocking. |
+| <kbd>Space</kbd> | RT | Jump. | Controller South/A is deliberately unbound. |
+| RMB + LMB | LT + RT | Attack. | An attack already in progress continues if aim/block is released, then finishes with the weapon lowered. |
+| LMB | RB | Grab with the right hand. | Grabbing is not yet implemented in the tactical layer. Holding RB and then pressing LT will eventually throw a held weapon; that chord is reserved but not implemented. |
+| MMB | LB | Grab with the left hand. | LT + LB remains a left-hand grab. Grabbing is not yet implemented in the tactical layer. |
+| RMB + <kbd>Shift</kbd> while still, or RMB + <kbd>Space</kbd> | LT + RB while still | Duck. | Ducking is a lasting crouch while the chord is held. "Still" is determined from movement input, not current velocity. Pressing guarded <kbd>Space</kbd> begins the duck immediately. |
+| Release RMB + <kbd>Space</kbd> | LT + RB while moving | Dodge. | Releasing <kbd>Space</kbd> after a guarded duck dodges. Controller movement is determined from stick input, not current velocity. |
+| <kbd>Ctrl</kbd> | Left Stick Click | Toggle prone / standing. | This is a persistent toggle. |
+| <kbd>Ctrl</kbd> + <kbd>Space</kbd> | RT + Left Stick Click | Dive. | The chord suppresses both the ordinary jump and prone-toggle actions. |
 
 This is somewhere between a real action game and an RPG wearing an action game's skin. We aren't actually simulating everything based on hitboxes and projectile trajectories, but we still want to use some of the player's mechanical skills, specifically accuracy and reaction time.[^3]
 
