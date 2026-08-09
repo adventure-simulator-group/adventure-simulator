@@ -169,6 +169,40 @@ advance authoritative phases, displace the controller, add a second
 inertializer, or add another IK pass. The existing 0.18-second presentation
 crossfade remains the sole transition smoothing.
 
+### Graph authoring capability map
+
+The pinned dependency supplies generic semantic anchor nodes, 1D and 2D sparse
+blend spaces, nested reusable graphs, bone-masked linear layers,
+additive/difference layers, semantic mirroring, marker synchronization, and
+presentation-only transitions/inertialization. Adventure Simulator's initial
+bridge intentionally uses only the smallest subset: a registered custom sparse
+semantic blend node, a fixed dependency pose-blend chain, and dependency pose
+evaluation for ordinary locomotion and raised guard/attack. Existing code
+continues to own sparse 1D speed/gait-phase
+and directional selection, nested effective-pack fallback, binary gait endpoint
+mirroring, coherent whole-body guard mirroring, and the single 0.18-second
+presentation crossfade. Bone masks remain in the authored resolver. The bridge
+does not yet claim to use the dependency's 2D blend-space, nested-graph,
+additive/difference, marker-sync, or inertializer nodes.
+
+Launch the project-compatible native editor with `just animation-graph-editor
+assets`. It registers the custom sparse blend node, reports optional missing
+motion files, validates anchor frame bounds and deterministic catalog fallback,
+then validates and queries the same centralized runtime graphs for a
+representative ordinary stride and right-lead attack before opening the UI.
+Graph load, schema, or query failures are fatal. Use `just animation-graph-preview`
+for deterministic viewer/capture evidence; editor clip preview does not replace
+the viewer manifest and failure gates.
+
+Authoring stays sparse: export meaningful contact, passing/flight, guard,
+attack-contact, and recovery anchors from the canonical rig; record their frame
+indices in the code-owned catalog; use full-body masks only where the existing
+resolver requires them; and keep phase markers aligned with authoritative gait
+or action phase. Graphs and masks are presentation assets. They cannot choose
+actions or contacts, advance phase, emit authoritative gameplay events, apply
+root motion to the controller, or move server state. The editor feature and its
+large UI/preview dependencies are native-only and disabled in shipping Wasm.
+
 Overgrowth similarly supplies named blend coordinates such as movement speed,
 ground speed, crouch height, and attack height from AngelScript, then evaluates
 nested synchronized animation groups against the same normalized time in

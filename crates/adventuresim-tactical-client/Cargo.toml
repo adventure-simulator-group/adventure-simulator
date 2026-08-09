@@ -63,3 +63,9 @@ name = "animation-viewer"
 path = "src/animation_viewer_main.rs"
 doc = false
 required-features = ["debug"]
+
+[[bin]]
+name = "animation-graph-editor"
+path = "src/animation_graph_editor_main.rs"
+doc = false
+required-features = ["animation-graph-editor"]

@@ -2,6 +2,8 @@ use super::*;
 
 #[cfg(test)]
 mod legacy_tests {
+    use std::path::Path;
+
     use super::*;
     use bevy_animation_graph::core::animation_graph::{DEFAULT_OUTPUT_POSE, TargetPin};
     use semantic_graph::{SemanticGraphPath, SemanticGraphTrace};
@@ -272,6 +274,41 @@ mod legacy_tests {
             resolve(production.evaluation.action[0]),
             resolve(changed.evaluation.action[0])
         );
+    }
+
+    #[test]
+    fn editor_preflight_resolves_deterministic_routes_and_mirror_fallback() {
+        let asset_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("assets");
+        let report = catalog::validate_editor_asset_root(&asset_root).unwrap();
+        assert!(report.motion_count > 0);
+        assert!(report.missing_motion_count > 0);
+        assert_eq!(report.missing_motion_count, report.warnings.len());
+        assert!(
+            report
+                .route_resolutions
+                .iter()
+                .any(|resolution| resolution.route == "ordinary_locomotion")
+        );
+        assert!(report.route_resolutions.iter().any(|resolution| {
+            resolution.route == "raised_guard_attack" && resolution.mirrored
+        }));
+
+        let mut app = graph_test_app();
+        let graph_routes = app
+            .world_mut()
+            .run_system_cached(semantic_graph::editor_graph_preflight)
+            .unwrap()
+            .unwrap();
+        assert_eq!(graph_routes.len(), 2);
+        assert!(graph_routes.iter().all(|route| {
+            route.requested_path == route.selected_path && route.sample_count > 0
+        }));
+        assert!(graph_routes.iter().any(|route| {
+            route.label.contains("right-lead")
+                && route.selected_path == SemanticGraphPath::RaisedGuardAttack
+        }));
     }
 
     #[test]

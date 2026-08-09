@@ -304,6 +304,14 @@ tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:t
 tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto": preflight verify-db-client
     @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }}
 
+# Launch the native-only graph editor after validating semantic packs and routes.
+animation-graph-editor asset_source="assets":
+    @cargo run -p adventuresim-tactical-client --no-default-features --features animation-graph-editor --bin animation-graph-editor -- --asset-source {{ quote(asset_source) }}
+
+# Capture a deterministic semantic-route preview with the gameplay viewer.
+animation-graph-preview scenario="steady-walk-2.0" output="target/animation-captures/graph-preview":
+    @cargo run -p adventuresim-tactical-client --bin animation-viewer -- --scenario {{ quote(scenario) }} --output {{ quote(output) }}
+
 # Report whether the supervised tactical database, claim, authority, listener,
 # and recorded child identities are healthy.
 tactical-status:
