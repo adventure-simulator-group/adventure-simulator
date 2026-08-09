@@ -1145,6 +1145,27 @@ network replication, recovery, or get-up behavior remains future work. The
 base evaluator preserves a clean final-pose stage so those decisions do not
 change authored pack semantics.
 
+The active fixture mode uses the fork's validated Avian adapter to drive the
+existing revolute knee and elbow joints. Strength ramps at the fixed physics
+rate; switching to passive ramps toward an explicit zero-torque, disabled
+motor rather than retaining an implicit solver default. Target, velocity,
+frequency, damping, and torque inputs are finite-checked and clamped by the
+dependency. This is hinge-only: Avian's spherical joints have limits but no
+corresponding angular motor API, so the hips, shoulders, spine, and neck are
+not claimed as actively driven.
+
+`just ragdoll-capture` advances animated, active, and passive modes for exact
+fixed-solver tick counts independent of render cadence, then records screenshots plus
+bounded telemetry in `manifest.json`. It gates finite metrics, driven hinge
+count, active error convergence, and passive zero strength, writing
+`failure.txt` on failure. The fixture terrain is also a real static physics
+collider restricted to the ragdoll layer, and capture rejects active or passive
+poses whose pelvis falls through the terrain or remains in high-speed motion.
+Settling is evaluated across the final half-second of fixed physics samples,
+not from one potentially misleading instant at the end of a bounce.
+These numeric gates catch wiring, collision, and solver regressions; the images
+remain the authority for presentation quality.
+
 ## Stylistic principles
 
 Animations should remain realistic in accordance with the

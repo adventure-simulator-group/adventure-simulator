@@ -25,6 +25,10 @@ use clap::Parser;
 struct Args {
     #[arg(long, default_value = "assets")]
     asset_root: PathBuf,
+
+    /// Capture animated, active, and passive review frames and exit.
+    #[arg(long)]
+    output: Option<PathBuf>,
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -37,7 +41,7 @@ fn main() {
             .expect("ragdoll viewer needs a working directory")
             .join(args.asset_root)
     };
-    ragdoll_viewer::run(asset_root);
+    ragdoll_viewer::run(asset_root, args.output);
 }
 
 #[cfg(target_family = "wasm")]

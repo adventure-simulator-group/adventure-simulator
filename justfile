@@ -317,6 +317,11 @@ animation-graph-preview scenario="steady-walk-2.0" output="target/animation-capt
 ragdoll-viewer asset_source="assets":
     @cargo run -p adventuresim-tactical-client --features animation-graph-physics --bin ragdoll-viewer -- --asset-root {{ quote(asset_source) }}
 
+# Capture animated, active-motor, and passive ragdoll review frames plus
+# manifest.json/failure.txt validation gates, then exit.
+ragdoll-capture output="target/animation-captures/ragdoll-review" asset_source="assets":
+    @cargo run -p adventuresim-tactical-client --features animation-graph-physics --bin ragdoll-viewer -- --asset-root {{ quote(asset_source) }} --output {{ quote(output) }}
+
 # Report whether the supervised tactical database, claim, authority, listener,
 # and recorded child identities are healthy.
 tactical-status:

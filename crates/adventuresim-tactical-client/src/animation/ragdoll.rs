@@ -16,9 +16,10 @@ use bevy_animation_graph::core::ragdoll::relative_kinematic_body::{
     RelativeKinematicBody, RelativeKinematicBodyPositionBased,
 };
 use bevy_animation_graph::core::ragdoll::{
+    active_motor_avian::apply_active_motor,
     definition::{
-        Body, BodyId, BodyMode, Collider, ColliderMassMode, ColliderShape, Joint, JointVariant,
-        Ragdoll, RevoluteJoint, SphericalJoint,
+        ActiveRevoluteMotor, Body, BodyId, BodyMode, Collider, ColliderMassMode, ColliderShape,
+        Joint, JointVariant, Ragdoll, RevoluteJoint, SphericalJoint,
     },
     spawning::spawn_ragdoll_avian,
 };
@@ -55,19 +56,43 @@ const SPHERICAL_LINKS: [(BoneRole, BoneRole); 6] = [
     (BoneRole::Chest, BoneRole::UpperArmRight),
 ];
 
-const HINGE_LINKS: [(BoneRole, BoneRole); 6] = [
-    (BoneRole::ThighLeft, BoneRole::ShinLeft),
-    (BoneRole::ShinLeft, BoneRole::FootLeft),
-    (BoneRole::ThighRight, BoneRole::ShinRight),
-    (BoneRole::ShinRight, BoneRole::FootRight),
-    (BoneRole::UpperArmLeft, BoneRole::ForearmLeft),
-    (BoneRole::UpperArmRight, BoneRole::ForearmRight),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HingeKind {
+    Knee,
+    Elbow,
+    PassiveAnkle,
+}
+
+const HINGE_LINKS: [(BoneRole, BoneRole, HingeKind); 6] = [
+    (BoneRole::ThighLeft, BoneRole::ShinLeft, HingeKind::Knee),
+    (
+        BoneRole::ShinLeft,
+        BoneRole::FootLeft,
+        HingeKind::PassiveAnkle,
+    ),
+    (BoneRole::ThighRight, BoneRole::ShinRight, HingeKind::Knee),
+    (
+        BoneRole::ShinRight,
+        BoneRole::FootRight,
+        HingeKind::PassiveAnkle,
+    ),
+    (
+        BoneRole::UpperArmLeft,
+        BoneRole::ForearmLeft,
+        HingeKind::Elbow,
+    ),
+    (
+        BoneRole::UpperArmRight,
+        BoneRole::ForearmRight,
+        HingeKind::Elbow,
+    ),
 ];
 
 #[derive(Resource, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum RagdollMode {
     #[default]
     Animated,
+    Active,
     Passive,
 }
 
@@ -75,7 +100,16 @@ impl RagdollMode {
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Animated => "animated",
+            Self::Active => "active motors",
             Self::Passive => "passive ragdoll",
+        }
+    }
+
+    pub(crate) fn next(self) -> Self {
+        match self {
+            Self::Animated => Self::Active,
+            Self::Active => Self::Passive,
+            Self::Passive => Self::Animated,
         }
     }
 }
@@ -83,18 +117,65 @@ impl RagdollMode {
 #[derive(Resource, Default)]
 pub(crate) struct RagdollReset(pub(crate) bool);
 
+#[derive(Resource, Debug, Clone)]
+pub(crate) struct ActiveMotorProfile {
+    pub(crate) strength: f32,
+    pub(crate) target_knee_radians: f32,
+    pub(crate) target_elbow_radians: f32,
+    pub(crate) max_torque: f32,
+}
+
+impl Default for ActiveMotorProfile {
+    fn default() -> Self {
+        Self {
+            strength: 1.0,
+            target_knee_radians: 0.35,
+            target_elbow_radians: 0.25,
+            max_torque: 140.0,
+        }
+    }
+}
+
+#[derive(Resource, Debug, Clone, Default, serde::Serialize)]
+pub(crate) struct RagdollMotorTelemetry {
+    pub(crate) samples: Vec<MotorTelemetrySample>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct MotorTelemetrySample {
+    pub(crate) tick: u64,
+    pub(crate) strength: f32,
+    pub(crate) driven_hinges: usize,
+    pub(crate) mean_error_radians: f32,
+    pub(crate) maximum_error_radians: f32,
+    pub(crate) pelvis_speed: f32,
+    pub(crate) finite: bool,
+}
+
+#[derive(Resource, Default)]
+struct ActiveMotorBlend {
+    strength: f32,
+    tick: u64,
+}
+
 #[derive(Component)]
 struct RagdollOwnedBone;
 
 /// Client-only camera/presentation focus following the solved pelvis. It does
 /// not affect the replicated player root, controller, or gameplay hitboxes.
 #[derive(Component, Debug, Clone, Copy)]
-pub(crate) struct RagdollPresentationFocus(pub(crate) Vec3);
+pub(crate) struct RagdollPresentationFocus {
+    pub(crate) position: Vec3,
+    pub(crate) linear_velocity: Vec3,
+}
 
 /// Marks bodies owned by this bridge rather than BAG's AnimatedScene target
 /// writer. Such bodies must not retain either relative-kinematic component.
 #[derive(Component)]
 struct ManuallyOwnedRagdollBody;
+
+#[derive(Component)]
+pub(crate) struct RagdollPresentationReady;
 
 #[derive(Debug, Clone, Copy)]
 struct BodyBinding {
@@ -111,6 +192,15 @@ struct JointFrameBinding {
     basis_world: Quat,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct HingeBinding {
+    joint: Entity,
+    body1: Entity,
+    body2: Entity,
+    kind: HingeKind,
+    axis_sign: f32,
+}
+
 #[derive(Component)]
 struct JointFramesConfigured;
 
@@ -125,6 +215,7 @@ struct HumanoidRagdoll {
     root: Entity,
     bindings: Vec<BodyBinding>,
     joint_frames: Vec<JointFrameBinding>,
+    hinges: Vec<HingeBinding>,
     focus_body: Option<Entity>,
 }
 
@@ -134,6 +225,9 @@ impl Plugin for HumanoidRagdollPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<RagdollMode>()
             .init_resource::<RagdollReset>()
+            .init_resource::<ActiveMotorProfile>()
+            .init_resource::<ActiveMotorBlend>()
+            .init_resource::<RagdollMotorTelemetry>()
             .add_systems(
                 Update,
                 (
@@ -143,13 +237,19 @@ impl Plugin for HumanoidRagdollPlugin {
             )
             .add_systems(
                 FixedPostUpdate,
-                (configure_joint_frames, drive_or_release_bodies)
+                (
+                    configure_joint_frames,
+                    drive_or_release_bodies,
+                    apply_active_motors,
+                )
                     .chain()
                     .before(PhysicsSystems::First),
             )
             .add_systems(
                 FixedPostUpdate,
-                capture_solved_body_poses.after(PhysicsSystems::Last),
+                (sample_motor_telemetry, capture_solved_body_poses)
+                    .chain()
+                    .after(PhysicsSystems::Last),
             )
             .add_systems(
                 PostUpdate,
@@ -217,7 +317,7 @@ fn spawn_missing_humanoid_ragdolls(
             }
         }
         let joint_frames = joint_roles
-            .into_iter()
+            .iter()
             .filter_map(|binding| {
                 Some(JointFrameBinding {
                     joint: *spawned.joints.get(&binding.joint)?,
@@ -225,6 +325,18 @@ fn spawn_missing_humanoid_ragdolls(
                     body2: *spawned.bodies.get(&binding.body2)?,
                     pivot_world: binding.pivot_world,
                     basis_world: binding.basis_world,
+                })
+            })
+            .collect();
+        let hinges = joint_roles
+            .iter()
+            .filter_map(|binding| {
+                Some(HingeBinding {
+                    joint: *spawned.joints.get(&binding.joint)?,
+                    body1: *spawned.bodies.get(&binding.body1)?,
+                    body2: *spawned.bodies.get(&binding.body2)?,
+                    kind: binding.hinge_kind?,
+                    axis_sign: 1.0,
                 })
             })
             .collect();
@@ -236,10 +348,15 @@ fn spawn_missing_humanoid_ragdolls(
                 root: spawned.root,
                 bindings,
                 joint_frames,
+                hinges,
                 focus_body,
             },
             CapturedRagdollPose::default(),
-            RagdollPresentationFocus(focus_position.unwrap_or_default()),
+            RagdollPresentationFocus {
+                position: focus_position.unwrap_or_default(),
+                linear_velocity: Vec3::ZERO,
+            },
+            RagdollPresentationReady,
         ));
     }
 }
@@ -252,6 +369,7 @@ struct JointDefinitionBinding {
     body2: BodyId,
     pivot_world: Vec3,
     basis_world: Quat,
+    hinge_kind: Option<HingeKind>,
 }
 
 fn build_definition(
@@ -315,10 +433,11 @@ fn build_definition(
             body2: ids[&child],
             pivot_world: position,
             basis_world: child_global.rotation(),
+            hinge_kind: None,
         });
         ragdoll.add_joint(joint);
     }
-    for (parent, child) in HINGE_LINKS {
+    for (parent, child, kind) in HINGE_LINKS {
         let child_global = globals.get(*rig.get(&child)?).ok()?;
         let position = child_global.translation();
         let mut joint = Joint::new();
@@ -342,6 +461,7 @@ fn build_definition(
             body2: ids[&child],
             pivot_world: position,
             basis_world: child_global.rotation(),
+            hinge_kind: Some(kind),
         });
         ragdoll.add_joint(joint);
     }
@@ -454,23 +574,162 @@ fn drive_or_release_bodies(
     }
 }
 
+fn motor_target(kind: HingeKind, profile: &ActiveMotorProfile) -> Option<f32> {
+    match kind {
+        HingeKind::Knee => Some(profile.target_knee_radians),
+        HingeKind::Elbow => Some(profile.target_elbow_radians),
+        HingeKind::PassiveAnkle => None,
+    }
+}
+
+fn apply_active_motors(
+    mode: Res<RagdollMode>,
+    profile: Res<ActiveMotorProfile>,
+    time: Res<Time<Fixed>>,
+    mut blend: ResMut<ActiveMotorBlend>,
+    ragdolls: Query<&HumanoidRagdoll>,
+    mut joints: Query<&mut AvianRevoluteJoint>,
+) {
+    let requested = if *mode == RagdollMode::Active {
+        profile.strength.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let max_step = 4.0 * time.delta_secs();
+    blend.strength += (requested - blend.strength).clamp(-max_step, max_step);
+    blend.tick = blend.tick.saturating_add(1);
+
+    for ragdoll in &ragdolls {
+        for hinge in &ragdoll.hinges {
+            let Some(target) = motor_target(hinge.kind, &profile) else {
+                if let Ok(mut joint) = joints.get_mut(hinge.joint) {
+                    let _ = apply_active_motor(
+                        &mut joint,
+                        ActiveRevoluteMotor::default(),
+                        hinge.axis_sign,
+                    );
+                }
+                continue;
+            };
+            let settings = ActiveRevoluteMotor {
+                enabled: blend.strength > f32::EPSILON,
+                target_position: target,
+                target_velocity: 0.0,
+                max_torque: profile.max_torque * blend.strength,
+                frequency_hz: 6.0 * blend.strength,
+                damping_ratio: 1.0,
+            };
+            if let Ok(mut joint) = joints.get_mut(hinge.joint) {
+                let _ = apply_active_motor(&mut joint, settings, hinge.axis_sign);
+            }
+        }
+    }
+}
+
+fn wrapped_angle(angle: f32) -> f32 {
+    (angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
+}
+
+fn revolute_angle(joint: &AvianRevoluteJoint, rotation1: Quat, rotation2: Quat) -> Option<f32> {
+    let basis1 = joint.local_basis1()?;
+    let basis2 = joint.local_basis2()?;
+    let axis = joint.hinge_axis.try_normalize()?;
+    let orthogonal = axis.any_orthonormal_vector();
+    let a1 = rotation1 * basis1 * axis;
+    let b1 = rotation1 * basis1 * orthogonal;
+    let b2 = rotation2 * basis2 * orthogonal;
+    Some(b1.cross(b2).dot(a1).atan2(b1.dot(b2)))
+}
+
+fn sample_motor_telemetry(
+    profile: Res<ActiveMotorProfile>,
+    blend: Res<ActiveMotorBlend>,
+    ragdolls: Query<&HumanoidRagdoll>,
+    joints: Query<&AvianRevoluteJoint>,
+    rotations: Query<&Rotation>,
+    linear_velocities: Query<&LinearVelocity>,
+    mut telemetry: ResMut<RagdollMotorTelemetry>,
+) {
+    for ragdoll in &ragdolls {
+        let mut driven = 0;
+        let mut error_sum = 0.0;
+        let mut maximum_error = 0.0_f32;
+        let mut finite = true;
+        for hinge in &ragdoll.hinges {
+            let Some(target) = motor_target(hinge.kind, &profile) else {
+                continue;
+            };
+            let (Ok(joint), Ok(rotation1), Ok(rotation2)) = (
+                joints.get(hinge.joint),
+                rotations.get(hinge.body1),
+                rotations.get(hinge.body2),
+            ) else {
+                finite = false;
+                continue;
+            };
+            if joint.motor.enabled {
+                driven += 1;
+            }
+            let Some(angle) = revolute_angle(joint, rotation1.0, rotation2.0) else {
+                finite = false;
+                continue;
+            };
+            let error = wrapped_angle(target * hinge.axis_sign - angle).abs();
+            finite &= error.is_finite();
+            if error.is_finite() {
+                error_sum += error;
+                maximum_error = maximum_error.max(error);
+            }
+        }
+        let driven_contract_count = ragdoll
+            .hinges
+            .iter()
+            .filter(|hinge| motor_target(hinge.kind, &profile).is_some())
+            .count();
+        let pelvis_speed = ragdoll
+            .focus_body
+            .and_then(|body| linear_velocities.get(body).ok())
+            .map_or(f32::NAN, |velocity| velocity.0.length());
+        finite &= pelvis_speed.is_finite();
+        telemetry.samples.push(MotorTelemetrySample {
+            tick: blend.tick,
+            strength: blend.strength,
+            driven_hinges: driven,
+            mean_error_radians: if driven_contract_count == 0 {
+                0.0
+            } else {
+                error_sum / driven_contract_count as f32
+            },
+            maximum_error_radians: maximum_error,
+            pelvis_speed,
+            finite,
+        });
+        const MAX_TELEMETRY_SAMPLES: usize = 256;
+        if telemetry.samples.len() > MAX_TELEMETRY_SAMPLES {
+            let excess = telemetry.samples.len() - MAX_TELEMETRY_SAMPLES;
+            telemetry.samples.drain(..excess);
+        }
+    }
+}
+
 fn capture_solved_body_poses(
     mut ragdolls: Query<(
         &HumanoidRagdoll,
         &mut CapturedRagdollPose,
         &mut RagdollPresentationFocus,
     )>,
-    body_poses: Query<(&Position, &Rotation)>,
+    body_poses: Query<(&Position, &Rotation, &LinearVelocity)>,
 ) {
     for (ragdoll, mut captured, mut focus) in &mut ragdolls {
         captured.0.clear();
         if let Some(focus_body) = ragdoll.focus_body
-            && let Ok((position, _)) = body_poses.get(focus_body)
+            && let Ok((position, _, linear_velocity)) = body_poses.get(focus_body)
         {
-            focus.0 = position.0;
+            focus.position = position.0;
+            focus.linear_velocity = linear_velocity.0;
         }
         for binding in &ragdoll.bindings {
-            if let Ok((position, rotation)) = body_poses.get(binding.body) {
+            if let Ok((position, rotation, _)) = body_poses.get(binding.body) {
                 captured.0.insert(
                     binding.bone,
                     Transform::from_translation(position.0).with_rotation(rotation.0),
@@ -588,8 +847,12 @@ mod tests {
             .map(|(role, _, _)| *role)
             .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(unique.len(), BODY_SPECS.len());
-        assert!(HINGE_LINKS.contains(&(BoneRole::ThighLeft, BoneRole::ShinLeft)));
-        assert!(HINGE_LINKS.contains(&(BoneRole::UpperArmRight, BoneRole::ForearmRight)));
+        assert!(HINGE_LINKS.contains(&(BoneRole::ThighLeft, BoneRole::ShinLeft, HingeKind::Knee)));
+        assert!(HINGE_LINKS.contains(&(
+            BoneRole::UpperArmRight,
+            BoneRole::ForearmRight,
+            HingeKind::Elbow
+        )));
     }
 
     #[test]
@@ -648,5 +911,30 @@ mod tests {
         );
         assert!(!world.entity(body).contains::<RelativeKinematicBody>());
         assert!(world.entity(body).contains::<ManuallyOwnedRagdollBody>());
+    }
+
+    #[test]
+    fn mode_cycle_is_animated_active_passive() {
+        assert_eq!(RagdollMode::Animated.next(), RagdollMode::Active);
+        assert_eq!(RagdollMode::Active.next(), RagdollMode::Passive);
+        assert_eq!(RagdollMode::Passive.next(), RagdollMode::Animated);
+    }
+
+    #[test]
+    fn ankle_hinges_are_explicitly_not_driven() {
+        let profile = ActiveMotorProfile::default();
+        assert_eq!(motor_target(HingeKind::PassiveAnkle, &profile), None);
+        assert!(motor_target(HingeKind::Knee, &profile).is_some());
+        assert!(motor_target(HingeKind::Elbow, &profile).is_some());
+    }
+
+    #[test]
+    fn revolute_metric_matches_joint_frame_signed_angle() {
+        let joint = AvianRevoluteJoint::new(Entity::PLACEHOLDER, Entity::PLACEHOLDER)
+            .with_hinge_axis(Vec3::X);
+        let expected = 0.6;
+        let measured = revolute_angle(&joint, Quat::IDENTITY, Quat::from_rotation_x(expected))
+            .expect("local joint frames yield an angle");
+        assert!((wrapped_angle(expected - measured)).abs() < 1.0e-5);
     }
 }

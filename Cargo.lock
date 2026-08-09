@@ -1220,7 +1220,7 @@ dependencies = [
 [[package]]
 name = "bevy_animation_graph"
 version = "0.11.0"
-source = "git+https://github.com/adventure-simulator-group/bevy_animation_graph?rev=07cc881457c1f9a1f843e0f4b95cbfe28b71c921#07cc881457c1f9a1f843e0f4b95cbfe28b71c921"
+source = "git+https://github.com/adventure-simulator-group/bevy_animation_graph?rev=dbd9801ce08a5794a7ebc8fe35470cbe5bbe5a88#dbd9801ce08a5794a7ebc8fe35470cbe5bbe5a88"
 dependencies = [
  "avian3d",
  "bevy",
@@ -1239,7 +1239,7 @@ dependencies = [
 [[package]]
 name = "bevy_animation_graph_builtin_nodes"
 version = "0.11.0"
-source = "git+https://github.com/adventure-simulator-group/bevy_animation_graph?rev=07cc881457c1f9a1f843e0f4b95cbfe28b71c921#07cc881457c1f9a1f843e0f4b95cbfe28b71c921"
+source = "git+https://github.com/adventure-simulator-group/bevy_animation_graph?rev=dbd9801ce08a5794a7ebc8fe35470cbe5bbe5a88#dbd9801ce08a5794a7ebc8fe35470cbe5bbe5a88"
 dependencies = [
  "avian3d",
  "bevy",
@@ -1257,7 +1257,7 @@ dependencies = [
 [[package]]
 name = "bevy_animation_graph_core"
 version = "0.11.0"
-source = "git+https://github.com/adventure-simulator-group/bevy_animation_graph?rev=07cc881457c1f9a1f843e0f4b95cbfe28b71c921#07cc881457c1f9a1f843e0f4b95cbfe28b71c921"
+source = "git+https://github.com/adventure-simulator-group/bevy_animation_graph?rev=dbd9801ce08a5794a7ebc8fe35470cbe5bbe5a88#dbd9801ce08a5794a7ebc8fe35470cbe5bbe5a88"
 dependencies = [
  "avian3d",
  "bevy",
@@ -1274,7 +1274,7 @@ dependencies = [
 [[package]]
 name = "bevy_animation_graph_editor"
 version = "0.11.0"
-source = "git+https://github.com/adventure-simulator-group/bevy_animation_graph?rev=07cc881457c1f9a1f843e0f4b95cbfe28b71c921#07cc881457c1f9a1f843e0f4b95cbfe28b71c921"
+source = "git+https://github.com/adventure-simulator-group/bevy_animation_graph?rev=dbd9801ce08a5794a7ebc8fe35470cbe5bbe5a88#dbd9801ce08a5794a7ebc8fe35470cbe5bbe5a88"
 dependencies = [
  "bevy",
  "bevy-inspector-egui",
@@ -1296,7 +1296,7 @@ dependencies = [
 [[package]]
 name = "bevy_animation_graph_proc_macros"
 version = "0.11.0"
-source = "git+https://github.com/adventure-simulator-group/bevy_animation_graph?rev=07cc881457c1f9a1f843e0f4b95cbfe28b71c921#07cc881457c1f9a1f843e0f4b95cbfe28b71c921"
+source = "git+https://github.com/adventure-simulator-group/bevy_animation_graph?rev=dbd9801ce08a5794a7ebc8fe35470cbe5bbe5a88#dbd9801ce08a5794a7ebc8fe35470cbe5bbe5a88"
 dependencies = [
  "quote",
  "syn 2.0.118",
