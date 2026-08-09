@@ -644,11 +644,14 @@ pub(crate) fn update_skeleton_locomotion(
             &mut Transform,
             &TacticalCombatState,
             &AuthoritativePostureIntent,
+            &MovementPace,
         ),
         With<Player>,
     >,
 ) {
-    for (controller, velocity, mut skeleton, mut transform, combat_state, posture) in &mut players {
+    for (controller, velocity, mut skeleton, mut transform, combat_state, posture, pace) in
+        &mut players
+    {
         if combat_state.is_incapacitated() {
             let lowered = authoritative_weapon_guard(skeleton.weapon_guard(), true);
             set_weapon_guard(&mut skeleton, lowered);
@@ -673,6 +676,7 @@ pub(crate) fn update_skeleton_locomotion(
                 tick,
             },
         );
+        skeleton.set_guarded_sprint_locomotion(*pace == MovementPace::Sprint);
         if posture.prone && controller.grounded.is_some() {
             skeleton.transition_body(BodyState::Prone);
         }

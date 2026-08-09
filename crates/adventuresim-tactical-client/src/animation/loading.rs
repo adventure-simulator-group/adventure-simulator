@@ -378,13 +378,7 @@ pub(super) fn bind_animation_target_paths(
     path.push(name.clone());
     let target = AnimationTargetId::from_names(path.iter());
     runtime.canonical_targets.insert(target);
-    let bone_name = name.as_str().to_ascii_lowercase();
-    let lower_body = bone_name == "skeleton"
-        || bone_name.contains("hips")
-        || bone_name.contains("thigh")
-        || bone_name.contains("shin")
-        || bone_name.contains("foot")
-        || bone_name.contains("toe");
+    let lower_body = is_lower_body_animation_target(name.as_str());
     if lower_body {
         runtime.lower_body_targets.insert(target);
     } else {
@@ -404,6 +398,18 @@ pub(super) fn bind_animation_target_paths(
             );
         }
     }
+}
+
+pub(super) fn is_lower_body_animation_target(name: &str) -> bool {
+    let bone_name = name.to_ascii_lowercase();
+    bone_name == "skeleton"
+        || bone_name == "root"
+        || bone_name == "pelvis"
+        || bone_name.contains("hips")
+        || bone_name.contains("thigh")
+        || bone_name.contains("shin")
+        || bone_name.contains("foot")
+        || bone_name.contains("toe")
 }
 
 pub(super) fn identify_animation_players(

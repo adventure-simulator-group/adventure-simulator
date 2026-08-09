@@ -643,6 +643,7 @@ mod legacy_tests {
                 .with_local_velocity(Vec3::new(0.0, 0.0, -3.75))
                 .with_gait_phase(0.25)
                 .with_weapon_guard(WeaponGuardState::Raised)
+                .with_guarded_sprint_locomotion(true)
                 .with_raised_locomotion(raised_intent(Vec3::new(0.0, 0.0, -3.75))),
         );
         assert_eq!(evaluation.base[0].pose, SemanticPose::GuardLeadLeft);
@@ -653,6 +654,21 @@ mod legacy_tests {
                 | SemanticPose::RunContact
                 | SemanticPose::RunFlight
         )));
+    }
+
+    #[test]
+    fn ordinary_guard_movement_keeps_procedural_legs_even_above_guard_speed() {
+        let evaluation = AnimationEvaluation::from_skeleton(
+            &SkeletonState::default()
+                .with_local_velocity(Vec3::new(0.0, 0.0, -3.75))
+                .with_gait_phase(0.25)
+                .with_weapon_guard(WeaponGuardState::Raised)
+                .with_raised_locomotion(raised_intent(Vec3::new(0.0, 0.0, -3.75))),
+        );
+
+        assert!(evaluation.lower_body.is_empty());
+        assert_eq!(evaluation.base.len(), 1);
+        assert_eq!(evaluation.base[0].pose, SemanticPose::GuardLeadLeft);
     }
 
     #[test]

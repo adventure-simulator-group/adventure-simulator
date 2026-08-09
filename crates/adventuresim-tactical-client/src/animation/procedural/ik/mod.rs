@@ -779,6 +779,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
         let raised_guard_follower = !attack_footwork_active
             && raised_footwork_posture_is_valid(skeleton)
             && skeleton.weapon_guard() == WeaponGuardState::Raised
+            && !skeleton.guarded_sprint_locomotion()
             && skeleton.action_kind() == SkeletonAction::None
             && skeleton.raised_locomotion().is_moving();
         let raised_footwork_was_active = raised_states

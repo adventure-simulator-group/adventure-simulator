@@ -57,7 +57,8 @@ impl Plugin for PlayerPlugin {
         // Replication supplies Transform but not a render hierarchy root.
         // Require visibility before Add<Player> observers attach mesh children
         // so authored rigs cannot inherit from a component-less parent.
-        app.register_required_components_with::<Player, _>(|| Visibility::Inherited)
+        app.init_resource::<DirectControlState>()
+            .register_required_components_with::<Player, _>(|| Visibility::Inherited)
             .add_observer(on_new_player_added_hook)
             .add_observer(on_attack_fired_hook)
             .add_observer(on_dodge_fired)

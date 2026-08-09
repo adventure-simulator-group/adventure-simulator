@@ -76,9 +76,9 @@ impl AnimationEvaluation {
                 locomotion_samples(speed, gait_phase, crouch_amount)
             }
         };
-        let lower_body = if state.posture() == Posture::Upright
-            && state.weapon_guard() == WeaponGuardState::Raised
-            && speed > RAISED_GUARD_LOCOMOTION_PROFILE.reference_speed
+        let lower_body = if state.guarded_sprint_locomotion()
+            && state.raised_locomotion().is_moving()
+            && speed > 0.05
         {
             locomotion_samples(speed, gait_phase, 0.0)
         } else {

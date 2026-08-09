@@ -968,8 +968,8 @@ diagonal direction, release during a step, and a mid-step lateral
 reversal.
 
 During lowered travel, forward walk and run continue to serve diagonal and
-lateral travel. Raised upright grounded movement freezes the current lead and
-samples only its static guard pose. A client-only procedural lower-body pass
+lateral travel. Ordinary raised upright grounded movement freezes the current
+lead and samples only its static guard pose. A client-only procedural lower-body pass
 alternates one swing foot with exactly one world-space support foot. Each
 compact step projects authoritative local velocity from the step origin,
 retains the authored guard's separated stance tracks, interpolates horizontally
@@ -990,6 +990,14 @@ entire two-step pulse. The guard lead never doubles as swing-side state and
 remains fixed across forward, backward, lateral, and diagonal motion. Authored
 guard walk and strafe files remain available for comparison but are not sampled
 by continuous raised locomotion.
+
+Raised sprint input is the sole exception. Its gameplay speed remains the
+character's endurance-neutral jog, but presentation layers the static guard on
+the upper body over the ordinary walk/run interpolation on the lower body. The
+animation graph masks the locomotion clip off `stomach_01` and every descendant
+upper-body target while masking the guard clip off `root`, `pelvis`, and every
+leg target. Ordinary locomotion terrain IK owns this composite's legs;
+procedural combat stepping owns every non-sprint raised movement.
 
 Semantic intent carries a wrapping step sequence and a swing side separate
 from guard lead. The sequence increments at every handoff, allowing a client

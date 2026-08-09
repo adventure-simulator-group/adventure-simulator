@@ -81,7 +81,7 @@ builds, <kbd>F6</kbd> exposes rig, collision, smoothing, and aim telemetry.
 | <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> | Left Stick | Movement. | Keyboard movement walks by default, jogs while Caps Lock is on, and sprints while <kbd>Shift</kbd> is held. Analogue stick deflection selects the continuous pace up to sprint at full deflection. Jog is the character's endurance-neutral pace; sprint is limited by leg strength relative to total carried weight. |
 | Mouse | Right Stick | Look. | |
 | <kbd>F9</kbd> | | Toggle first-/third-person camera. | Third person preserves the same immediate look direction across centered and raised-weapon shoulder profiles. |
-| Hold RMB | Hold LT | Aim / block. | This state never toggles or persists: releasing the button immediately lowers the weapon. A ranged weapon aims; a melee weapon blocks. Sprint input while raised produces an endurance-neutral jog with the upper body still aiming or blocking. |
+| Hold RMB | Hold LT | Aim / block. | This state never toggles or persists: releasing the button immediately lowers the weapon. A ranged weapon aims; a melee weapon blocks. Ordinary raised movement uses procedural combat steps. Sprint input while raised instead produces an endurance-neutral jog with the upper body still aiming or blocking. |
 | <kbd>Space</kbd> | RT | Jump. | Controller South/A is deliberately unbound. |
 | RMB + LMB | LT + RT | Attack. | An attack already in progress continues if aim/block is released, then finishes with the weapon lowered. |
 | LMB | RB | Grab with the right hand. | Grabbing is not yet implemented in the tactical layer. Holding RB and then pressing LT will eventually throw a held weapon; that chord is reserved but not implemented. |

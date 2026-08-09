@@ -499,6 +499,7 @@ pub struct SkeletonState {
     pub landing_sequence: u64,
     pub landing_impact_speed: f32,
     pub lead_foot: LeadFoot,
+    guarded_sprint_locomotion: bool,
     stance: StanceState,
     action: ActionState,
     pub animation_pack: String,
@@ -517,6 +518,7 @@ struct SkeletonStateWire {
     landing_sequence: u64,
     landing_impact_speed: f32,
     lead_foot: LeadFoot,
+    guarded_sprint_locomotion: bool,
     stance: StanceState,
     action: ActionState,
     animation_pack: String,
@@ -549,11 +551,13 @@ impl<'de> Deserialize<'de> for SkeletonState {
                 0.0
             },
             lead_foot: wire.lead_foot,
+            guarded_sprint_locomotion: wire.guarded_sprint_locomotion,
             stance: wire.stance,
             action: wire.action,
             animation_pack: wire.animation_pack,
         };
         state.transition_body(wire.body);
+        state.set_guarded_sprint_locomotion(wire.guarded_sprint_locomotion);
         Ok(state)
     }
 }
@@ -572,6 +576,7 @@ impl Default for SkeletonState {
             landing_sequence: 0,
             landing_impact_speed: 0.0,
             lead_foot: LeadFoot::Left,
+            guarded_sprint_locomotion: false,
             stance: StanceState::Lowered,
             action: ActionState::default(),
             animation_pack: "humanoid_unarmed".to_owned(),
@@ -594,6 +599,7 @@ pub fn set_weapon_guard(skeleton: &mut SkeletonState, weapon_guard: WeaponGuardS
         (StanceState::Lowered, WeaponGuardState::Raised) => {}
         (StanceState::Raised { .. }, WeaponGuardState::Lowered) => {
             skeleton.stance = StanceState::Lowered;
+            skeleton.guarded_sprint_locomotion = false;
         }
     }
 }
@@ -646,6 +652,9 @@ impl SkeletonState {
     /// Entering a downed mode also cancels presentation actions.
     pub fn transition_body(&mut self, body: BodyState) {
         self.body = body;
+        if body != BodyState::Grounded(GroundedPosture::Upright) {
+            self.guarded_sprint_locomotion = false;
+        }
         if body.is_downed() {
             self.stance = StanceState::Lowered;
             self.action = ActionState::default();
@@ -665,6 +674,20 @@ impl SkeletonState {
     pub fn with_raised_locomotion(mut self, locomotion: RaisedLocomotionIntent) -> Self {
         self.set_raised_locomotion(locomotion);
         self
+    }
+    pub fn set_guarded_sprint_locomotion(&mut self, enabled: bool) {
+        self.guarded_sprint_locomotion = enabled
+            && self.body == BodyState::Grounded(GroundedPosture::Upright)
+            && self.weapon_guard() == WeaponGuardState::Raised;
+    }
+    pub fn with_guarded_sprint_locomotion(mut self, enabled: bool) -> Self {
+        self.set_guarded_sprint_locomotion(enabled);
+        self
+    }
+    pub fn guarded_sprint_locomotion(&self) -> bool {
+        self.guarded_sprint_locomotion
+            && self.body == BodyState::Grounded(GroundedPosture::Upright)
+            && self.weapon_guard() == WeaponGuardState::Raised
     }
     pub fn weapon_guard(&self) -> WeaponGuardState {
         match self.stance {

@@ -821,6 +821,32 @@ mod legacy_tests {
     }
 
     #[test]
+    fn composite_mask_keeps_root_pelvis_and_legs_out_of_the_upper_body() {
+        for lower in [
+            "Skeleton",
+            "root",
+            "pelvis",
+            "thigh.L",
+            "thigh_twist.R",
+            "shin.L",
+            "foot.R",
+            "toe.L",
+        ] {
+            assert!(is_lower_body_animation_target(lower), "{lower}");
+        }
+        for upper in [
+            "stomach_01",
+            "stomach_02",
+            "chest",
+            "clavicle.L",
+            "upper_arm.R",
+            "head",
+        ] {
+            assert!(!is_lower_body_animation_target(upper), "{upper}");
+        }
+    }
+
+    #[test]
     fn authored_rig_attaches_to_a_player_with_skeleton_state() {
         let mut world = World::new();
         let mut runtime = AnimationRuntime::default();
