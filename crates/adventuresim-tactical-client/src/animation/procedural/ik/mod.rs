@@ -368,6 +368,10 @@ pub(crate) struct AttackFootworkState {
     pub(crate) left_solve_target: Option<Vec3>,
     pub(crate) right_solve_target: Option<Vec3>,
     pub(crate) maximum_reach_yield: f32,
+    left_knee_bend_world: Option<Vec3>,
+    right_knee_bend_world: Option<Vec3>,
+    left_end_direction: Option<Vec3>,
+    right_end_direction: Option<Vec3>,
 }
 
 impl Default for RaisedFootworkState {
@@ -3842,6 +3846,10 @@ fn apply_attack_step(
             left_solve_target: None,
             right_solve_target: None,
             maximum_reach_yield: 0.0,
+            left_knee_bend_world: None,
+            right_knee_bend_world: None,
+            left_end_direction: None,
+            right_end_direction: None,
         };
     }
     if !state.initialized {
@@ -4084,17 +4092,34 @@ fn apply_attack_step(
             left,
         );
         let remembered = if left {
-            memory.left_leg
+            state.left_knee_bend_world
         } else {
-            memory.right_leg
+            state.right_knee_bend_world
+        }
+        .or_else(|| {
+            if left {
+                memory.left_leg
+            } else {
+                memory.right_leg
+            }
+            .map(|bend| pole_to_world(rig_rotation, bend))
+        });
+        let previous_end_direction = if left {
+            state.left_end_direction
+        } else {
+            state.right_end_direction
         };
         let canonical = canonical_knee_pole(side);
-        let pole = pole_to_world(
-            rig_rotation,
-            remembered
-                .filter(|pole| pole.dot(canonical) > 0.2)
-                .unwrap_or(canonical),
-        );
+        let canonical_world = pole_to_world(rig_rotation, canonical);
+        let pole = stabilized_knee_pole(
+            remembered,
+            previous_end_direction,
+            upper_snapshot.global.translation(),
+            lower_snapshot.global.translation(),
+            target,
+            canonical_world,
+        )
+        .unwrap_or(canonical_world);
         if let Some(solution) = solve_two_bone_with_reach(
             upper_snapshot.global.translation(),
             lower_snapshot.global.translation(),
@@ -4111,8 +4136,12 @@ fn apply_attack_step(
             if advances && let Some(valid) = bend.try_normalize() {
                 if left {
                     memory.left_leg = Some(pole_to_owner(rig_rotation, valid));
+                    state.left_knee_bend_world = Some(valid);
+                    state.left_end_direction = Some(solution.end_direction);
                 } else {
                     memory.right_leg = Some(pole_to_owner(rig_rotation, valid));
+                    state.right_knee_bend_world = Some(valid);
+                    state.right_end_direction = Some(solution.end_direction);
                 }
             }
         }
@@ -4653,6 +4682,51 @@ fn transported_terrain_pole(
     let previous = previous.try_normalize()?;
     let next = next_end_direction.try_normalize()?;
     (Quat::from_rotation_arc(previous, next) * remembered).try_normalize()
+}
+
+/// Keeps a leg's authored bend plane attached to the hip-to-foot direction.
+///
+/// Overgrowth's leg solve rotates the animated knee, ankle, and foot together
+/// when the IK target moves, which transports the authored knee plane instead
+/// of selecting a fresh world-space pole every frame. Our analytic solver does
+/// the equivalent explicitly: parallel-transport the last rendered bend, fall
+/// back to the current authored bend, and reject either if it crosses the
+/// anatomical hemisphere. The canonical pole is only the final singularity
+/// fallback.
+fn stabilized_knee_pole(
+    remembered_bend: Option<Vec3>,
+    previous_end_direction: Option<Vec3>,
+    hip: Vec3,
+    authored_knee: Vec3,
+    target: Vec3,
+    canonical_world: Vec3,
+) -> Option<Vec3> {
+    let next_end_direction = (target - hip).try_normalize()?;
+    let canonical_bend = canonical_world
+        .reject_from_normalized(next_end_direction)
+        .try_normalize()
+        .or_else(|| canonical_world.try_normalize())?;
+    let in_anatomical_hemisphere = |bend: Vec3| {
+        bend.reject_from_normalized(next_end_direction)
+            .try_normalize()
+            .filter(|bend| bend.dot(canonical_bend) > 0.0)
+    };
+
+    let transported = remembered_bend
+        .and_then(|bend| {
+            let bend = bend.try_normalize()?;
+            previous_end_direction.map_or(Some(bend), |previous| {
+                let previous = previous.try_normalize()?;
+                (Quat::from_rotation_arc(previous, next_end_direction) * bend).try_normalize()
+            })
+        })
+        .and_then(in_anatomical_hemisphere);
+    let authored = (authored_knee - hip)
+        .reject_from_normalized(next_end_direction)
+        .try_normalize()
+        .and_then(in_anatomical_hemisphere);
+
+    transported.or(authored).or(Some(canonical_bend))
 }
 
 fn projected_body_center(rig: &HumanoidRig, transforms: &TransformHelper) -> Option<Vec3> {
@@ -6422,6 +6496,77 @@ mod slope_cache_tests {
             transported.dot(next_direction).abs()
                 <= retained.dot(previous_direction).abs() + 0.0001
         );
+    }
+
+    #[test]
+    fn attack_knee_bend_parallel_transports_with_the_leg() {
+        let previous_end = Vec3::NEG_Y;
+        let remembered = Vec3::Z;
+        let next_end = Vec3::X;
+        let expected = Quat::from_rotation_arc(previous_end, next_end) * remembered;
+        let pole = stabilized_knee_pole(
+            Some(remembered),
+            Some(previous_end),
+            Vec3::ZERO,
+            Vec3::new(0.0, -0.5, 0.1),
+            next_end,
+            expected,
+        )
+        .unwrap();
+
+        assert!(pole.dot(expected) > 0.999);
+        assert!(pole.dot(next_end).abs() < 0.0001);
+    }
+
+    #[test]
+    fn attack_knee_bend_survives_a_straight_leg_singularity() {
+        let previous_end = Vec3::NEG_Y;
+        let remembered = Vec3::Z;
+        let next_target = Vec3::new(0.02, -1.0, 0.0).normalize();
+        let expected = Quat::from_rotation_arc(previous_end, next_target) * remembered;
+        let pole = stabilized_knee_pole(
+            Some(remembered),
+            Some(previous_end),
+            Vec3::ZERO,
+            next_target * 0.5,
+            next_target,
+            Vec3::Z,
+        )
+        .unwrap();
+
+        assert!(pole.dot(expected) > 0.999);
+        assert!(pole.dot(Vec3::Z) > 0.0);
+    }
+
+    #[test]
+    fn attack_knee_bend_rejects_an_inward_authored_pole() {
+        let pole = stabilized_knee_pole(
+            None,
+            None,
+            Vec3::ZERO,
+            Vec3::new(0.0, -0.5, -0.2),
+            Vec3::NEG_Y,
+            Vec3::Z,
+        )
+        .unwrap();
+
+        assert!(pole.dot(Vec3::Z) > 0.999);
+    }
+
+    #[test]
+    fn attack_knee_bend_retains_the_pre_attack_rendered_pole() {
+        let remembered = Vec3::new(0.3, 0.0, 0.95).normalize();
+        let pole = stabilized_knee_pole(
+            Some(remembered),
+            None,
+            Vec3::ZERO,
+            Vec3::new(0.0, -0.5, 0.4),
+            Vec3::NEG_Y,
+            Vec3::Z,
+        )
+        .unwrap();
+
+        assert!(pole.dot(remembered) > 0.999);
     }
 
     #[test]

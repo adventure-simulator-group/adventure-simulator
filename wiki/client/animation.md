@@ -519,6 +519,14 @@ weights. Optional hand and held-weapon constraints are client presentation
 only: the primary socket places the weapon before its secondary grip targets
 the off hand. None of these targets are replicated in `SkeletonState`.
 
+Attack foot IK preserves the authored knee plane instead of choosing a fresh
+world-space pole for each target. The previous rendered bend is
+parallel-transported as the hip-to-foot direction changes, then checked against
+the leg's anatomical hemisphere. The current authored bend is the first
+fallback and the canonical forward/outward pole is used only through a
+straight-leg singularity. Native attack-step captures reject both an inward
+knee hemisphere and any fixed-sample pole flip.
+
 The server-owned character transform remains authoritative. Authored root
 offsets may shape a step or lean visually, but the evaluator reconciles them
 with actual movement. Terrain alignment, final foot height, and exact contact

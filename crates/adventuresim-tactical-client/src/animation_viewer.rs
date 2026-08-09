@@ -2904,6 +2904,10 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
         {
             return false;
         }
+        if !attack_knee_bends_valid(&active) {
+            warn!(scenario = name, "attack knee bend validation failed");
+            return false;
+        }
         let contact = active.iter().min_by(|left, right| {
             (left.action_phase - 0.5)
                 .abs()
@@ -3186,6 +3190,35 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
             );
         }
         valid
+    })
+}
+
+fn attack_knee_bends_valid(frames: &[&FrameSample]) -> bool {
+    let bend = |frame: &FrameSample, left: bool| {
+        let (hip_name, knee_name, foot_name) = if left {
+            ("left_hip", "left_knee", "left_foot")
+        } else {
+            ("right_hip", "right_knee", "right_foot")
+        };
+        let hip = body_local(frame, hip_name)?;
+        let knee = body_local(frame, knee_name)?;
+        let foot = body_local(frame, foot_name)?;
+        let axis = (foot - hip).try_normalize()?;
+        (knee - hip).reject_from_normalized(axis).try_normalize()
+    };
+
+    [true, false].into_iter().all(|left| {
+        let side = if left { -1.0 } else { 1.0 };
+        let canonical = (Vec3::Z + Vec3::X * side * 0.18).normalize();
+        let bends = frames
+            .iter()
+            .filter_map(|frame| bend(frame, left))
+            .collect::<Vec<_>>();
+        !bends.is_empty()
+            && bends.iter().all(|bend| bend.dot(canonical) > 0.0)
+            // A transported bend can turn with the leg, but it may not jump
+            // across the chain to the opposite pole between fixed samples.
+            && bends.windows(2).all(|pair| pair[0].dot(pair[1]) > 0.0)
     })
 }
 
