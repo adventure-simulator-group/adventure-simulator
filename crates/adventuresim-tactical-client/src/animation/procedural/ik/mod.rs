@@ -5033,18 +5033,27 @@ fn constrain_knee_pole_to_foot_facing(
     maximum_offset_radians: f32,
 ) -> Option<Vec3> {
     let leg_direction = leg_direction.try_normalize()?;
-    let facing = foot_facing
-        .reject_from_normalized(leg_direction)
-        .try_normalize()?;
-    let pole = pole.reject_from_normalized(leg_direction).try_normalize()?;
-    let signed_offset = leg_direction
-        .dot(facing.cross(pole))
-        .atan2(facing.dot(pole));
-    (Quat::from_axis_angle(
-        leg_direction,
-        signed_offset.clamp(-maximum_offset_radians, maximum_offset_radians),
-    ) * facing)
-        .try_normalize()
+    let facing_yaw = foot_facing.xz().try_normalize()?;
+    let pole_yaw = pole.xz().try_normalize().unwrap_or(facing_yaw);
+    let signed_offset = facing_yaw
+        .perp_dot(pole_yaw)
+        .atan2(facing_yaw.dot(pole_yaw));
+    let clamped_offset = signed_offset.clamp(-maximum_offset_radians, maximum_offset_radians);
+    let (sin, cos) = clamped_offset.sin_cos();
+    let clamped_yaw = Vec2::new(
+        facing_yaw.x * cos - facing_yaw.y * sin,
+        facing_yaw.x * sin + facing_yaw.y * cos,
+    );
+
+    // Preserve the clamped ground-plane yaw exactly, then choose the vertical
+    // component that makes the pole perpendicular to the hip-to-foot axis.
+    // Clamping only after projecting into that plane does not bound yaw for a
+    // diagonal leg and was the source of visibly sideways knees.
+    if leg_direction.y.abs() <= 0.0001 {
+        return None;
+    }
+    let vertical = -clamped_yaw.dot(leg_direction.xz()) / leg_direction.y;
+    Vec3::new(clamped_yaw.x, vertical, clamped_yaw.y).try_normalize()
 }
 
 fn rendered_foot_facing(
@@ -6920,7 +6929,23 @@ mod slope_cache_tests {
         .unwrap();
 
         assert!(pole.dot(leg_direction).abs() < 0.0001);
-        assert!(pole.angle_between(foot_facing) <= std::f32::consts::FRAC_PI_8 + 0.0001);
+        assert!(pole.xz().angle_to(foot_facing.xz()).abs() <= std::f32::consts::FRAC_PI_8 + 0.0001);
+    }
+
+    #[test]
+    fn diagonal_leg_cannot_rotate_clamped_pole_yaw_sideways() {
+        let leg_direction = Vec3::new(0.0, -0.3, 0.954).normalize();
+        let foot_facing = Vec3::Z;
+        let pole = constrain_knee_pole_to_foot_facing(
+            Vec3::X,
+            leg_direction,
+            foot_facing,
+            std::f32::consts::FRAC_PI_8,
+        )
+        .unwrap();
+
+        assert!(pole.dot(leg_direction).abs() < 0.0001);
+        assert!(pole.xz().angle_to(foot_facing.xz()).abs() <= std::f32::consts::FRAC_PI_8 + 0.0001);
     }
 
     #[test]
