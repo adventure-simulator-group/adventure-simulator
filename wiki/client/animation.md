@@ -880,6 +880,35 @@ An attack recipe declares:
 A stay attack ends with the same foot forward. A switch attack takes one step
 and ends with the opposite foot forward.
 
+For melee attacks, the tactical authority snapshots the controller-local
+physical velocity when the attack starts. Meaningful forward velocity selects
+`forward`, meaningful backward velocity selects `backward`, and stationary or
+lateral-only motion selects `stay` in the initial longitudinal implementation.
+Later input, velocity reversal, or camera yaw cannot repick this semantic.
+Ranged attacks remain `stay`. For immediate contact synchronization the owning
+client predicts the same typed choice from the last physical velocity already
+stored in its replicated `SkeletonState`; it does not send or trust a fresh
+movement-input vector. The server observation remains authoritative and the
+presentation reconciles to it.
+
+Forward and backward reuse the same authored contact pose. On a forward step,
+the initial rear foot passes the planted lead foot; on a backward step, the
+initial lead foot passes behind the planted rear foot. Both are exactly one
+`switch` step and therefore finish in the opposite guard. Maximum extension is
+at the server-owned contact tick. During recovery the original support foot
+may settle into the new guard, but the planner does not start another step.
+The procedural targets are client-only world-space data: they do not translate
+the controller, extend hit range, or enter persistent state. If a fast-moving
+root makes a literal world plant unreachable, the step becomes an airborne
+lunge: both feet leave the ground during preparation and the moving foot lands
+as the sole support at contact. The original foot rejoins during recovery.
+The server carries the captured direction and speed through preparation, stops
+attack-owned translation at contact, and resumes current movement input only
+after recovery. Large facing changes recover with an in-place guard pivot
+rather than dragging the contact plant through a second step. Capture telemetry
+records requested and reach-constrained targets separately so any analytic
+reach yield is measured rather than misreported as a perfect plant.
+
 Each strike family has one contact pose for each starting lead. Names use
 `attack_<family>_lead_<left|right>_contact`; for example,
 `attack_thrust_lead_left_contact`. `stay` and `switch` remain gameplay and
@@ -901,10 +930,9 @@ The strike-family construction rules are:
 
 For `lead_left`, the contact is constructed from `guard_lead_left`; for
 `lead_right`, it is constructed from `guard_lead_right`. The runtime preserves
-those planted targets for a stay attack. For a switch attack, the stance-step
-planner passes or steps the initially rear foot beyond the initial lead and
-blends toward the opposite guard, timing the new support foot to arrive by
-contact or immediately afterward.
+those planted targets for a stay attack. The switch-step direction and moving
+foot follow the authoritative rules above, and the moving foot reaches maximum
+extension at contact before both legs recover toward the opposite guard.
 
 The full visual sequence is:
 

@@ -356,7 +356,16 @@ fn on_attack_fired_hook(
     cmd.entity(event.context)
         .insert(AttackState::new(PRE_HIT_DELAY, reach, ranged));
     let start = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-    skeleton.begin_attack(AttackSpec::default(), start, start + 19);
+    let predicted = if ranged {
+        AttackSpec::default()
+    } else {
+        // Predict only from the last physical velocity already present in the
+        // replicated skeleton. The authority repeats the same typed
+        // classification from its observation; no input vector crosses the
+        // reliable action boundary.
+        AttackSpec::melee_from_local_velocity(skeleton.local_velocity)
+    };
+    skeleton.begin_attack(predicted, start, start + 19);
     if ranged {
         cmd.client_trigger(RangedActionRequest::Start);
     } else {
