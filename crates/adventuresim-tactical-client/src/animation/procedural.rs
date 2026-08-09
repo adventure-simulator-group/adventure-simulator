@@ -778,24 +778,29 @@ struct BoneSnapshot {
 mod ik;
 pub(crate) use ik::{
     ArmIkState, HandIkTarget, HandSide, HeldWeaponConstraint, HumanoidIkTargets, LegIkState,
-    ProceduralAnimationClock, RaisedFootworkState, locomotion_support_weights,
+    MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock, RaisedFootworkState,
+    SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
 };
 #[cfg(test)]
 use ik::{
-    FOOT_TRACK_INNER, FOOT_TRACK_OUTER, GUARD_TARGET_INTER_FOOT_SEPARATION, MAX_FOOT_TARGET_STEP,
-    MAX_PELVIS_CORRECTION_STEP, MIN_INTER_FOOT_SEPARATION, TwoBoneSolution, advance_foot_target,
-    advance_pelvis_shift, body_response_target, constrain_foot_to_track,
+    FOOT_TRACK_INNER, FOOT_TRACK_OUTER, GUARD_TARGET_INTER_FOOT_SEPARATION,
+    MAX_PELVIS_CORRECTION_STEP, MIN_INTER_FOOT_SEPARATION, TwoBoneSolution,
+    advance_foot_target_at_speed, advance_pelvis_shift, authored_knee_pole_world,
+    balance_recovery_direction, body_response_target, constrain_foot_to_track,
     constrain_guard_swing_to_live_corridor, constrain_target_to_reach, guard_step_sequence_delta,
-    landing_maximum_reach, maximum_reach, plan_guard_step_endpoint, plant_is_continuous,
-    raised_footwork_posture_is_valid, secondary_grip_world, solve_two_bone,
-    terrain_conformed_guard_target, terrain_leg_has_support,
-};
-use ik::{
-    MEASURED_ANKLE_SOLE_OFFSET_METRES, apply_two_bone_solution, canonical_knee_pole,
-    presentation_tick_delta, smoothstep, snapshot_chain, solve_landing_two_bone,
+    landing_maximum_reach, maximum_reach, plan_guard_step_endpoint, plan_settle_landing,
+    plant_is_continuous, projected_capture_point, raised_footwork_posture_is_valid,
+    retained_plant_requires_release, secondary_grip_world, settle_swing_side, settle_swing_target,
+    slope_aligned_world_rotation, sole_is_at_contact, solve_two_bone,
+    terrain_conformed_guard_target, terrain_ik_posture_is_valid, terrain_leg_has_support,
 };
 pub(super) use ik::{
     apply_arm_and_weapon_constraints, apply_locomotion_body_response, apply_terrain_leg_ik,
+    refresh_raised_support_after_propagation,
+};
+use ik::{
+    apply_two_bone_solution, canonical_knee_pole, presentation_tick_delta, smoothstep,
+    snapshot_chain, solve_landing_two_bone,
 };
 
 #[cfg(test)]
@@ -833,16 +838,17 @@ mod legacy_tests {
         apply_two_bone_solution(upper, lower, end, solution, &parents, &mut transforms);
     }
 
-    fn test_joint_positions(
+    fn test_joint_pose(
         In((lower, end)): In<(Entity, Entity)>,
         helper: TransformHelper,
-    ) -> (Vec3, Vec3) {
+    ) -> (Vec3, Vec3, Quat) {
         (
             helper
                 .compute_global_transform(lower)
                 .unwrap()
                 .translation(),
             helper.compute_global_transform(end).unwrap().translation(),
+            helper.compute_global_transform(end).unwrap().rotation(),
         )
     }
 
@@ -1267,7 +1273,7 @@ mod legacy_tests {
     }
 
     #[test]
-    fn ordinary_idle_and_stopping_restore_symmetric_terrain_support() {
+    fn ordinary_swing_support_is_not_filled_in_by_low_speed() {
         let idle = SkeletonState::default().with_gait_phase(0.25);
         assert_eq!(locomotion_support_weights(&idle), (1.0, 1.0));
 
@@ -1277,8 +1283,112 @@ mod legacy_tests {
         let (left, right) = locomotion_support_weights(&stopping);
         let (raw_left, raw_right) =
             gait_support_weights(locomotion_profile(&stopping), stopping.gait_phase);
-        assert!(left > raw_left && right > raw_right);
-        assert!(left > 0.5 && right > 0.5);
+        assert!(left <= raw_left && right <= raw_right);
+        assert!(left <= 0.05 || right <= 0.05);
+    }
+
+    #[test]
+    fn settle_landing_is_ahead_of_the_capture_point() {
+        let com = Vec3::new(0.0, 1.0, 0.0);
+        let velocity = Vec3::new(0.8, 0.0, -2.0);
+        let direction = velocity.normalize();
+        let capture = projected_capture_point(com, velocity, 1.0);
+        let landing = plan_settle_landing(Vec3::ZERO, Quat::IDENTITY, capture, direction, -1.0);
+        assert!((landing - capture).dot(direction) >= 0.119);
+        assert!(landing.is_finite());
+    }
+
+    #[test]
+    fn settle_swing_leaves_and_returns_to_ground_only_at_contact() {
+        let start = Vec3::new(-0.12, 0.085, 0.25);
+        let landing = Vec3::new(-0.12, 0.085, -0.35);
+        assert_eq!(settle_swing_target(start, landing, 0.0), start);
+        assert!(settle_swing_target(start, landing, 0.5).y > start.y + 0.09);
+        assert!(settle_swing_target(start, landing, 0.75).z < start.z);
+        assert!(settle_swing_target(start, landing, 1.0).abs_diff_eq(landing, 0.0001));
+    }
+
+    #[test]
+    fn airborne_release_is_bounded_to_fifty_three_millimetres_per_tick() {
+        let previous = Vec3::ZERO;
+        let desired = Vec3::Z;
+        let next = advance_foot_target_at_speed(Some(previous), desired, 1.0 / 64.0, 3.4);
+        assert!(next.distance(previous) <= 0.053_126);
+        assert!(next.distance(desired) < previous.distance(desired));
+        assert_eq!(
+            advance_foot_target_at_speed(None, desired, 1.0 / 64.0, 3.4),
+            desired
+        );
+        assert_eq!(
+            advance_foot_target_at_speed(Some(previous), Vec3::NAN, 1.0 / 64.0, 3.4),
+            previous
+        );
+    }
+
+    #[test]
+    fn rendered_sole_contact_uses_the_shared_hierarchy_tolerance() {
+        let terrain_height = 2.0;
+        let exact_ankle = terrain_height + MEASURED_ANKLE_SOLE_OFFSET_METRES;
+        assert!(sole_is_at_contact(exact_ankle, terrain_height));
+        assert!(sole_is_at_contact(
+            exact_ankle + SOLE_CONTACT_TOLERANCE_METRES - 0.00001,
+            terrain_height
+        ));
+        assert!(!sole_is_at_contact(
+            exact_ankle + SOLE_CONTACT_TOLERANCE_METRES + 0.0001,
+            terrain_height
+        ));
+    }
+
+    #[test]
+    fn settle_landing_retains_the_actual_swing_track() {
+        let origin = Vec3::new(2.0, 0.0, -3.0);
+        let rotation = Quat::from_rotation_y(0.7);
+        for local_x in [-0.14_f32, 0.14_f32] {
+            let swing_start = origin + rotation * Vec3::new(local_x, 0.085, 0.2);
+            let side = settle_swing_side(origin, rotation, swing_start, -local_x.signum());
+            assert_eq!(side, local_x.signum());
+            let capture = origin + rotation * Vec3::NEG_Z * 0.2;
+            let landing =
+                plan_settle_landing(origin, rotation, capture, rotation * Vec3::NEG_Z, side);
+            let landing_local = rotation.inverse() * (landing - origin);
+            assert!(landing_local.x * local_x.signum() >= FOOT_TRACK_INNER);
+        }
+    }
+
+    #[test]
+    fn unsupported_idle_recovers_from_feet_toward_projected_com() {
+        let com = Vec3::new(0.0, 1.0, -0.45);
+        let left = Vec3::new(-0.12, 0.085, 0.0);
+        let right = Vec3::new(0.12, 0.085, 0.1);
+        let direction = balance_recovery_direction(com, Some(left), Some(right), Vec3::Z);
+        assert!(direction.dot(Vec3::NEG_Z) > 0.95);
+        let landing = plan_settle_landing(Vec3::ZERO, Quat::IDENTITY, com, direction, -1.0);
+        assert!((landing - com).dot(direction) >= 0.119);
+    }
+
+    #[test]
+    fn exhausted_support_releases_before_the_plant_can_skate() {
+        let plant = Vec3::new(0.1, 0.085, -0.4);
+        assert!(!retained_plant_requires_release(
+            plant,
+            plant + Vec3::X * 0.014
+        ));
+        assert!(retained_plant_requires_release(
+            plant,
+            plant + Vec3::Z * 0.016
+        ));
+    }
+
+    #[test]
+    fn first_support_solve_seeds_the_authored_knee_in_the_canonical_hemisphere() {
+        let hip = Vec3::ZERO;
+        let target = Vec3::NEG_Y * 1.8;
+        let authored_knee = Vec3::new(0.0, -0.9, 0.2);
+        let seeded = authored_knee_pole_world(hip, authored_knee, target, Vec3::Z)
+            .expect("authored bend shares the canonical hemisphere");
+        assert!(seeded.dot(Vec3::Z) > 0.99);
+        assert!(authored_knee_pole_world(hip, authored_knee, target, Vec3::NEG_Z).is_none());
     }
 
     #[test]
@@ -1393,6 +1503,30 @@ mod legacy_tests {
     }
 
     #[test]
+    fn slope_alignment_is_idempotent_across_repeated_evaluation() {
+        let bind = Quat::from_xyzw(0.8856122, 0.00000032, 0.00000032, 0.46442544).normalize();
+        let sole_up = sole_up_axis_from_bind(bind).normalize();
+        let current = Quat::from_rotation_y(0.7) * bind;
+        let steep_normal = Vec3::new(0.8, 0.3, -0.4).normalize();
+
+        let once = slope_aligned_world_rotation(current, sole_up, steep_normal).unwrap();
+        let twice = slope_aligned_world_rotation(once, sole_up, steep_normal).unwrap();
+
+        assert!(once.angle_between(twice).to_degrees() < 0.0001);
+        assert!((once * sole_up).angle_between(Vec3::Y).to_degrees() <= 28.0001);
+    }
+
+    #[test]
+    fn terrain_ik_accepts_grounded_crouch_but_not_airborne() {
+        let crouched = SkeletonState::default()
+            .with_body_state(BodyState::Grounded(GroundedPosture::Crouched));
+        assert!(terrain_ik_posture_is_valid(&crouched));
+
+        let airborne = SkeletonState::default().with_body_state(BodyState::Airborne);
+        assert!(!terrain_ik_posture_is_valid(&airborne));
+    }
+
+    #[test]
     fn remembered_pole_follows_owner_yaw() {
         let original_yaw = Quat::from_rotation_y(0.3);
         let owner_local = Vec3::new(0.2, -0.1, -0.97).normalize();
@@ -1424,13 +1558,19 @@ mod legacy_tests {
         let upper_twist = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
         let lower = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
         let lower_twist = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
-        let end = world.spawn(Transform::from_xyz(0.0, -0.5, 0.0)).id();
+        let authored_foot_rotation = Quat::from_euler(EulerRot::YXZ, 0.35, -0.45, 0.2).normalize();
+        let end = world
+            .spawn(Transform::from_xyz(0.0, -0.5, 0.0).with_rotation(authored_foot_rotation))
+            .id();
         world.entity_mut(upper).add_child(upper_twist);
         world.entity_mut(upper_twist).add_child(lower);
         world.entity_mut(lower).add_child(lower_twist);
         world.entity_mut(lower_twist).add_child(end);
         let upper_twist_bind = *world.get::<Transform>(upper_twist).unwrap();
         let lower_twist_bind = *world.get::<Transform>(lower_twist).unwrap();
+        let (_, _, authored_foot_world_rotation) = world
+            .run_system_cached_with(test_joint_pose, (lower, end))
+            .unwrap();
         let solution = solve_two_bone(
             Vec3::ZERO,
             Vec3::NEG_Y,
@@ -1444,11 +1584,17 @@ mod legacy_tests {
         world
             .run_system_cached_with(apply_test_two_bone, (upper, lower, end, solution))
             .unwrap();
-        let (knee, ankle) = world
-            .run_system_cached_with(test_joint_positions, (lower, end))
+        let (knee, ankle, solved_foot_world_rotation) = world
+            .run_system_cached_with(test_joint_pose, (lower, end))
             .unwrap();
         assert!(knee.abs_diff_eq(solution.knee, 0.0002));
         assert!(ankle.abs_diff_eq(solution.end, 0.0002));
+        assert!(
+            authored_foot_world_rotation
+                .angle_between(solved_foot_world_rotation)
+                .to_degrees()
+                < 0.0001
+        );
         assert_eq!(
             *world.get::<Transform>(upper_twist).unwrap(),
             upper_twist_bind
@@ -1496,21 +1642,6 @@ mod legacy_tests {
         let constrained = constrain_target_to_reach(target, root, 1.5);
         assert!(constrained.distance(root) <= 1.5001);
         assert_eq!(constrained.y, target.y);
-    }
-
-    #[test]
-    fn sparse_swing_targets_advance_at_a_bounded_speed() {
-        let previous = Vec3::ZERO;
-        let desired = Vec3::X;
-        let advanced = advance_foot_target(Some(previous), desired, 1.0 / 64.0);
-        assert!((advanced.length() - 0.1875).abs() < 0.0001);
-        let hitch_advanced = advance_foot_target(Some(previous), desired, 1.0);
-        assert!((hitch_advanced.length() - MAX_FOOT_TARGET_STEP).abs() < 0.0001);
-        assert_eq!(advance_foot_target(None, desired, 1.0 / 64.0), desired);
-        assert_eq!(
-            advance_foot_target(Some(previous), Vec3::NAN, 1.0 / 64.0),
-            previous
-        );
     }
 
     #[test]

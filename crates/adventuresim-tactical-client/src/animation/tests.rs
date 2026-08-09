@@ -5,8 +5,8 @@ mod legacy_tests {
     use super::*;
 
     #[test]
-    fn terrain_ik_defaults_off() {
-        assert!(!TerrainIkEnabled::default().0);
+    fn terrain_ik_defaults_on() {
+        assert!(TerrainIkEnabled::default().0);
     }
 
     #[test]
