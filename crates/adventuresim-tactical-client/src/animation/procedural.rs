@@ -8,13 +8,90 @@ use super::{AnimationPlayback, AuthoredBindTransform, ImpactReaction, PresentedS
 mod rig;
 pub(crate) use rig::*;
 
-/// Procedural facing is an additive post-FK layer. Animation evaluation writes
-/// these local transforms again on the next frame, so the offsets do not drift.
-pub(super) fn apply_head_and_torso_look(
-    owners: Query<(&CharacterLook, &PresentedSkeleton)>,
-    mut bones: Query<(&HumanoidBone, &mut Transform)>,
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct ProceduralLookState {
+    base_rotation: Quat,
+    applied_rotation: Quat,
+    evaluation_tick: u64,
+}
+
+#[derive(Resource, Debug, Default)]
+pub(super) struct FixedTickPoseCache {
+    tick: Option<u64>,
+    bones: BTreeMap<Entity, Transform>,
+}
+
+/// Tools can render gameplay, side, and front views from one logical sample.
+/// Preserve the first complete post-procedural local pose for that fixed tick
+/// and restore it before propagation on every repeated render. Live gameplay
+/// leaves the fixed clock unset and never enters this path.
+pub(super) fn stabilize_repeated_fixed_tick_pose(
+    clock: Res<ProceduralAnimationClock>,
+    mut cache: ResMut<FixedTickPoseCache>,
+    mut bones: Query<(Entity, &mut Transform), With<HumanoidBone>>,
 ) {
-    for (bone, mut transform) in &mut bones {
+    let Some((tick, _)) = clock.fixed_step() else {
+        cache.tick = None;
+        cache.bones.clear();
+        return;
+    };
+    if cache.tick != Some(tick) {
+        cache.tick = Some(tick);
+        cache.bones.clear();
+        cache.bones.extend(
+            bones
+                .iter_mut()
+                .map(|(entity, transform)| (entity, *transform)),
+        );
+        return;
+    }
+    for (entity, mut transform) in &mut bones {
+        if let Some(cached) = cache.bones.get(&entity) {
+            *transform = *cached;
+        }
+    }
+}
+
+fn additive_look_rotation(
+    current: Quat,
+    previous: Option<ProceduralLookState>,
+    evaluation_tick: u64,
+    offset: Quat,
+) -> (Quat, ProceduralLookState) {
+    let base_rotation = previous.map_or(current, |previous| {
+        if previous.evaluation_tick == evaluation_tick
+            || current.angle_between(previous.applied_rotation) <= 0.000_01
+        {
+            previous.base_rotation
+        } else {
+            current
+        }
+    });
+    let applied_rotation = (base_rotation * offset).normalize();
+    (
+        applied_rotation,
+        ProceduralLookState {
+            base_rotation,
+            applied_rotation,
+            evaluation_tick,
+        },
+    )
+}
+
+/// Procedural facing is an additive post-FK layer. Sparse authored clips do not
+/// necessarily rewrite every torso bone, so retain the pre-look local rotation
+/// and reuse it when the same logical pose reaches this pass again.
+pub(super) fn apply_head_and_torso_look(
+    mut commands: Commands,
+    owners: Query<(&CharacterLook, &PresentedSkeleton)>,
+    mut bones: Query<(
+        Entity,
+        &HumanoidBone,
+        &mut Transform,
+        Option<&mut ProceduralLookState>,
+    )>,
+) {
+    for (entity, bone, mut transform, state) in &mut bones {
         let Ok((look, skeleton)) = owners.get(bone.owner) else {
             continue;
         };
@@ -31,8 +108,20 @@ pub(super) fn apply_head_and_torso_look(
         };
         // Owner yaw is already on the character transform. Only the bounded
         // local action offset and vertical look are distributed here.
-        transform.rotation *=
-            Quat::from_euler(EulerRot::YXZ, directional_yaw * weight, pitch * weight, 0.0);
+        let offset = Quat::from_euler(EulerRot::YXZ, directional_yaw * weight, pitch * weight, 0.0);
+        let previous = state.as_deref().copied();
+        let (rotation, next) = additive_look_rotation(
+            transform.rotation,
+            previous,
+            skeleton.locomotion_sample_tick,
+            offset,
+        );
+        transform.rotation = rotation;
+        if let Some(mut state) = state {
+            *state = next;
+        } else {
+            commands.entity(entity).insert(next);
+        }
     }
 }
 
@@ -173,9 +262,6 @@ pub(super) fn apply_pose_mirroring(
 const HEIGHT_TRANSITION_SPEED_METRES_PER_SECOND: f32 = 0.4;
 const LOCOMOTION_STOP_HEIGHT_SPEED_METRES_PER_SECOND: f32 = 0.8;
 const NORMALIZATION_TRANSITION_PER_SECOND: f32 = 8.0;
-const SUPPORT_GROUNDING_TRANSITION_METRES_PER_SECOND: f32 = 0.8;
-const MINIMUM_SUPPORT_GROUNDING_OFFSET_METRES: f32 = -0.18;
-const MAXIMUM_SUPPORT_GROUNDING_OFFSET_METRES: f32 = 0.08;
 // The upright lowered-guard humanoid_unarmed root/pelvis rotations lift its
 // pelvis by about 33 mm at passing even after local Y is normalized. This is a
 // measured state-and-pack calibration, not a safe assumption elsewhere.
@@ -201,18 +287,6 @@ pub(crate) struct LocomotionHeightState {
     last_posture: Option<Posture>,
     last_action: Option<SkeletonAction>,
     last_grounded: Option<bool>,
-    evaluation_tick: Option<u64>,
-}
-
-/// Presentation-only vertical calibration sampled at authoritative contacts.
-/// The correction moves the complete authored rig and never reconstructs a
-/// knee or changes the server-owned controller transform.
-#[derive(Component, Debug, Clone, Copy, Default)]
-pub(crate) struct SupportFootGroundingState {
-    initialized: bool,
-    current_offset_metres: f32,
-    target_offset_metres: f32,
-    contact_sequence: u64,
     evaluation_tick: Option<u64>,
 }
 
@@ -251,7 +325,7 @@ pub(crate) fn locomotion_height_wave(skeleton: &SkeletonState) -> f32 {
         return grounded * moving_weight;
     }
     let half_step = (skeleton.gait_phase.rem_euclid(0.5) * 2.0).clamp(0.0, 1.0);
-    let flight = 4.0 * half_step * (1.0 - half_step) * profile.flight_apex_metres;
+    let flight = (half_step * std::f32::consts::PI).sin().powi(2) * profile.flight_apex_metres;
     (grounded + flight) * moving_weight
 }
 
@@ -445,110 +519,6 @@ pub(super) fn stabilize_locomotion_torso(
             normalized_translation,
             height.normalization_weight.clamp(0.0, 1.0),
         );
-    }
-}
-
-fn ordinary_support_grounding_is_active(skeleton: &SkeletonState) -> bool {
-    skeleton.is_grounded()
-        && skeleton.action_kind() == SkeletonAction::None
-        && skeleton.weapon_guard() == WeaponGuardState::Lowered
-        && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
-        && skeleton.animation_speed() > 0.05
-}
-
-fn support_grounding_target(foot_height: f32, floor_height: f32, sole_offset: f32) -> f32 {
-    (floor_height + sole_offset - foot_height).clamp(
-        MINIMUM_SUPPORT_GROUNDING_OFFSET_METRES,
-        MAXIMUM_SUPPORT_GROUNDING_OFFSET_METRES,
-    )
-}
-
-/// Grounds ordinary locomotion by translating the complete visual rig from
-/// its supported sole. The correction is acquired only at a contact edge and
-/// held through swing/flight, preserving authored leg geometry and the shared
-/// phase-owned height curve without enabling analytic leg IK.
-pub(super) fn apply_support_foot_grounding(
-    mut commands: Commands,
-    mut owners: Query<(&PresentedSkeleton, Option<&mut SupportFootGroundingState>)>,
-    rigs: Query<(Entity, &HumanoidRig)>,
-    parents: Query<&ChildOf>,
-    mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
-) {
-    for (owner, rig) in &rigs {
-        let Ok((skeleton, state)) = owners.get_mut(owner) else {
-            continue;
-        };
-        let Some(&root) = rig.get(&BoneRole::Root) else {
-            continue;
-        };
-        let active = ordinary_support_grounding_is_active(skeleton);
-        let mut next = state.as_deref().copied().unwrap_or_default();
-        let tick_delta =
-            presentation_tick_delta(next.evaluation_tick, skeleton.locomotion_sample_tick)
-                .unwrap_or_default();
-        let new_contact = !next.initialized || next.contact_sequence != skeleton.contact_sequence;
-        if active && new_contact {
-            let foot_role = match skeleton.contact_foot {
-                LeadFoot::Left => BoneRole::FootLeft,
-                LeadFoot::Right => BoneRole::FootRight,
-            };
-            if let (Some(&foot), Some(scene_root)) = (rig.get(&foot_role), rig.rig_scene()) {
-                let foot_global = transforms.p0().compute_global_transform(foot).ok();
-                let scene_global = transforms.p0().compute_global_transform(scene_root).ok();
-                if let (Some(foot_global), Some(scene_global)) = (foot_global, scene_global) {
-                    next.target_offset_metres = support_grounding_target(
-                        foot_global.translation().y,
-                        scene_global.translation().y,
-                        MEASURED_ANKLE_SOLE_OFFSET_METRES,
-                    );
-                    next.contact_sequence = skeleton.contact_sequence;
-                    if !next.initialized {
-                        next.current_offset_metres = next.target_offset_metres;
-                    }
-                }
-            }
-        } else if !active {
-            next.target_offset_metres = 0.0;
-        }
-        next.initialized = true;
-        next.evaluation_tick = Some(skeleton.locomotion_sample_tick);
-        if tick_delta > 0 {
-            next.current_offset_metres = advance_towards(
-                next.current_offset_metres,
-                next.target_offset_metres,
-                SUPPORT_GROUNDING_TRANSITION_METRES_PER_SECOND * tick_delta as f32
-                    / LOCOMOTION_SAMPLE_HZ,
-            );
-        }
-
-        if next.current_offset_metres.abs() > 0.0001 {
-            let local_delta = parents
-                .get(root)
-                .ok()
-                .and_then(|parent| {
-                    transforms
-                        .p0()
-                        .compute_global_transform(parent.parent())
-                        .ok()
-                })
-                .map(|parent| {
-                    parent
-                        .affine()
-                        .inverse()
-                        .transform_vector3(Vec3::Y * next.current_offset_metres)
-                })
-                .unwrap_or(Vec3::Y * next.current_offset_metres);
-            if local_delta.is_finite()
-                && let Ok(mut transform) = transforms.p1().get_mut(root)
-            {
-                transform.translation += local_delta;
-            }
-        }
-        if let Some(mut state) = state {
-            *state = next;
-        } else {
-            commands.entity(owner).insert(next);
-        }
     }
 }
 
@@ -778,8 +748,9 @@ struct BoneSnapshot {
 mod ik;
 pub(crate) use ik::{
     ArmIkState, AttackFootworkState, HandIkTarget, HandSide, HeldWeaponConstraint,
-    HumanoidIkTargets, LegIkState, MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock,
-    RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
+    HumanoidIkTargets, LegIkDiagnostics, LegIkState, MEASURED_ANKLE_SOLE_OFFSET_METRES,
+    ProceduralAnimationClock, RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES,
+    locomotion_support_weights,
 };
 #[cfg(test)]
 use ik::{
@@ -795,8 +766,8 @@ use ik::{
     terrain_conformed_guard_target, terrain_ik_posture_is_valid, terrain_leg_has_support,
 };
 pub(super) use ik::{
-    apply_arm_and_weapon_constraints, apply_locomotion_body_response, apply_terrain_leg_ik,
-    refresh_raised_support_after_propagation,
+    apply_arm_and_weapon_constraints, apply_locomotion_body_response, apply_ordinary_locomotion_ik,
+    apply_terrain_leg_ik, refresh_raised_support_after_propagation,
 };
 use ik::{
     apply_two_bone_solution, canonical_knee_pole, presentation_tick_delta, smoothstep,
@@ -808,15 +779,8 @@ mod contract_tests {
     use super::*;
 
     #[test]
-    fn measured_sole_offset_is_shared_by_grounding_and_ik() {
-        const GROUNDING_TOLERANCE_METRES: f32 = 0.000_001;
-
+    fn measured_sole_offset_matches_the_authored_rig() {
         assert!((MEASURED_ANKLE_SOLE_OFFSET_METRES - 0.085).abs() < f32::EPSILON);
-        let target = support_grounding_target(1.135, 1.0, MEASURED_ANKLE_SOLE_OFFSET_METRES);
-        assert!(
-            (target - -0.05).abs() <= GROUNDING_TOLERANCE_METRES,
-            "grounding target {target} differed from the expected offset"
-        );
     }
 
     #[test]
@@ -1062,44 +1026,6 @@ mod legacy_tests {
     }
 
     #[test]
-    fn support_grounding_places_the_sole_on_the_visual_floor() {
-        assert!((support_grounding_target(1.135, 1.0, 0.085) + 0.05).abs() < 0.0001);
-        assert_eq!(
-            support_grounding_target(2.0, 1.0, 0.085),
-            MINIMUM_SUPPORT_GROUNDING_OFFSET_METRES
-        );
-        assert_eq!(
-            support_grounding_target(0.5, 1.0, 0.085),
-            MAXIMUM_SUPPORT_GROUNDING_OFFSET_METRES
-        );
-    }
-
-    #[test]
-    fn support_grounding_is_limited_to_ordinary_grounded_locomotion() {
-        let moving = SkeletonState::default().with_local_velocity(Vec3::NEG_Z * 2.0);
-        assert!(ordinary_support_grounding_is_active(&moving));
-        assert!(!ordinary_support_grounding_is_active(
-            &moving.clone().with_weapon_guard(WeaponGuardState::Raised)
-        ));
-        let mut airborne = moving.clone();
-        project_skeleton_locomotion(
-            &mut airborne,
-            SkeletonLocomotionInput {
-                orientation: Quat::IDENTITY,
-                linear_velocity: Vec3::NEG_Z * 2.0,
-                grounded: false,
-                crouching: false,
-                delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
-                tick: 1,
-            },
-        );
-        assert!(!ordinary_support_grounding_is_active(&airborne));
-        let mut action = moving;
-        action.begin_attack(AttackSpec::default(), 0, 1);
-        assert!(!ordinary_support_grounding_is_active(&action));
-    }
-
-    #[test]
     fn central_height_normalization_applies_only_during_active_locomotion() {
         let moving = SkeletonState::default().with_local_velocity(Vec3::NEG_Z * 2.0);
         assert_eq!(locomotion_normalization_target(&moving), 1.0);
@@ -1141,6 +1067,23 @@ mod legacy_tests {
         assert_eq!(presentation_tick_delta(Some(10), 14), Some(4));
         assert_eq!(presentation_tick_delta(Some(14), 2), None);
         assert_eq!(presentation_tick_delta(Some(2), 40), None);
+    }
+
+    #[test]
+    fn repeated_look_evaluation_reuses_the_pre_look_rotation() {
+        let base = Quat::from_rotation_z(0.17);
+        let offset = Quat::from_rotation_x(0.2 * 0.16);
+        let (first, state) = additive_look_rotation(base, None, 41, offset);
+        let (repeated, repeated_state) = additive_look_rotation(first, Some(state), 41, offset);
+        assert!(first.angle_between(repeated) <= 0.000_001);
+
+        // A sparse clip can also leave the bone untouched on the next tick.
+        let (next_tick, _) = additive_look_rotation(repeated, Some(repeated_state), 42, offset);
+        assert!(first.angle_between(next_tick) <= 0.000_001);
+
+        let authored_next = Quat::from_rotation_z(0.24);
+        let (updated, _) = additive_look_rotation(authored_next, Some(repeated_state), 42, offset);
+        assert!((authored_next * offset).angle_between(updated) <= 0.000_001);
     }
 
     #[test]
@@ -1659,7 +1602,7 @@ mod legacy_tests {
         let at_64_hz = simulate(1.0 / 64.0, 16);
         let at_128_hz = simulate(1.0 / 128.0, 32);
         assert!((at_64_hz - at_128_hz).abs() < 0.0001);
-        assert!((at_64_hz + 0.4).abs() < 0.0001);
+        assert!((at_64_hz + 0.3).abs() < 0.0001);
 
         let after_hitch = advance_pelvis_shift(0.0, -1.0, 1.0);
         assert!((after_hitch + MAX_PELVIS_CORRECTION_STEP).abs() < 0.0001);

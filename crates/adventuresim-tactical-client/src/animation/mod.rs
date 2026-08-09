@@ -20,7 +20,7 @@ pub(crate) mod ragdoll;
 #[allow(unused_imports)]
 pub(crate) use procedural::{
     ArmIkState, AttackFootworkState, BoneRole, HandIkTarget, HandSide, HeldWeaponConstraint,
-    HumanoidBone, HumanoidIkTargets, LegIkState, LocomotionBodyResponseState,
+    HumanoidBone, HumanoidIkTargets, LegIkDiagnostics, LegIkState, LocomotionBodyResponseState,
     LocomotionHeightState, MEASURED_ANKLE_SOLE_OFFSET_METRES, ProceduralAnimationClock,
     RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, locomotion_support_weights,
 };
@@ -77,6 +77,7 @@ struct LoadedClip {
     /// node has one seek position, so sparse pose anchors use separate nodes
     /// below when two frames from the same source clip must be blended.
     node: AnimationNodeIndex,
+    duration_seconds: f32,
     anchor_nodes: BTreeMap<u16, AnimationNodeIndex>,
 }
 
@@ -110,6 +111,7 @@ pub(super) struct AnimationPlayback {
     clips: Vec<WeightedClip>,
     use_authored_bind_pose: bool,
     pub(super) whole_body_mirror: f32,
+    pub(super) foot_ik_weights: Vec2,
     weapon_guard: WeaponGuardState,
     ordinary_locomotion_active: bool,
     presentation_transition: Option<PlaybackTransition>,
@@ -129,6 +131,7 @@ impl Default for AnimationPlayback {
             clips: Vec::new(),
             use_authored_bind_pose: true,
             whole_body_mirror: 0.0,
+            foot_ik_weights: Vec2::ZERO,
             weapon_guard: WeaponGuardState::Lowered,
             ordinary_locomotion_active: false,
             presentation_transition: None,
@@ -150,6 +153,7 @@ struct PlaybackPose {
     clips: Vec<WeightedClip>,
     use_authored_bind_pose: bool,
     whole_body_mirror: f32,
+    foot_ik_weights: Vec2,
 }
 
 #[derive(Debug, Clone)]
@@ -270,6 +274,7 @@ fn evaluate_skeletons(
                     0.0
                 }
             },
+            foot_ik_weights: graph_foot_ik_weights(&evaluation),
             clips: weighted,
         };
         let ordinary_locomotion_candidate = skeleton.is_grounded()
@@ -300,6 +305,7 @@ fn evaluate_skeletons(
                 clips: target.clips,
                 use_authored_bind_pose: target.use_authored_bind_pose,
                 whole_body_mirror: target.whole_body_mirror,
+                foot_ik_weights: target.foot_ik_weights,
                 weapon_guard: skeleton.weapon_guard(),
                 ordinary_locomotion_active,
                 presentation_transition: None,
@@ -366,6 +372,7 @@ fn playback_pose(playback: &AnimationPlayback) -> PlaybackPose {
         clips: playback.clips.clone(),
         use_authored_bind_pose: playback.use_authored_bind_pose,
         whole_body_mirror: playback.whole_body_mirror,
+        foot_ik_weights: playback.foot_ik_weights,
     }
 }
 
@@ -373,6 +380,7 @@ fn apply_playback_pose(playback: &mut AnimationPlayback, pose: PlaybackPose) {
     playback.clips = pose.clips;
     playback.use_authored_bind_pose = pose.use_authored_bind_pose;
     playback.whole_body_mirror = pose.whole_body_mirror;
+    playback.foot_ik_weights = pose.foot_ik_weights;
 }
 
 fn blend_playback_poses(from: &PlaybackPose, to: &PlaybackPose, progress: f32) -> PlaybackPose {
@@ -384,7 +392,53 @@ fn blend_playback_poses(from: &PlaybackPose, to: &PlaybackPose, progress: f32) -
         use_authored_bind_pose: clips.is_empty(),
         clips,
         whole_body_mirror: from.whole_body_mirror.lerp(to.whole_body_mirror, progress),
+        foot_ik_weights: from.foot_ik_weights.lerp(to.foot_ik_weights, progress),
     }
+}
+
+/// IK ownership follows the dependency graph's returned locomotion samples.
+/// The curve shapes are animation metadata: walk keeps one supported foot,
+/// run has genuine intervals with neither foot loaded, and idle loads both.
+fn graph_foot_ik_weights(evaluation: &AnimationEvaluation) -> Vec2 {
+    let samples = if evaluation.action.is_empty() {
+        &evaluation.base
+    } else {
+        return Vec2::ZERO;
+    };
+    let mut result = Vec2::ZERO;
+    let mut total = 0.0;
+    for sample in samples {
+        let mut weights = match (sample.pose, sample.sampling) {
+            (SemanticPose::IdleRelaxed | SemanticPose::CrouchIdle, _) => Vec2::ONE,
+            (SemanticPose::WalkContact, PoseSampling::Cycle { phase }) => {
+                let (left, right) = gait_support_weights(WALK_LOCOMOTION_PROFILE, phase);
+                Vec2::new(left, right)
+            }
+            (SemanticPose::RunContact, PoseSampling::Cycle { phase }) => {
+                // Simulation support spans the complete stance interval. IK
+                // is animation metadata and should only become strong near
+                // the authored contact itself, after the foot has descended.
+                let contact_profile = LocomotionProfile {
+                    support_phase_radius: 0.11,
+                    ..RUN_LOCOMOTION_PROFILE
+                };
+                let (left, right) = gait_support_weights(contact_profile, phase);
+                Vec2::new(left, right)
+            }
+            _ => Vec2::ZERO,
+        };
+        if sample.mirror_lower_body {
+            weights = Vec2::new(weights.y, weights.x);
+        }
+        result += weights * sample.weight;
+        total += sample.weight;
+    }
+    if total > f32::EPSILON {
+        result / total
+    } else {
+        Vec2::ZERO
+    }
+    .clamp(Vec2::ZERO, Vec2::ONE)
 }
 
 fn append_scaled_playback_clips(
@@ -737,6 +791,15 @@ fn append_resolved_sample(
         PoseSampling::Anchor => {
             append_weighted_anchor(weighted, &start, start.anchor.frame, sample.weight)
         }
+        PoseSampling::Cycle { phase } => {
+            append_weighted_clip(
+                weighted,
+                &start.clip,
+                start.mirrored,
+                start.clip.duration_seconds * phase.rem_euclid(1.0),
+                sample.weight,
+            );
+        }
         PoseSampling::Span { end, progress } => {
             let end_pose = end;
             let progress = progress.clamp(0.0, 1.0);
@@ -840,9 +903,14 @@ fn drive_fk_players(
             player.stop_all();
             continue;
         }
-        for (_, active) in player.playing_animations_mut() {
-            active.set_weight(0.0);
-        }
+        // The graph produces weighted semantic samples. Anchors seek to their
+        // authored frame; locomotion cycles seek continuously through the
+        // complete motion at the shared authoritative phase.
+        // Reusing the previous graph's active-node state lets dependency blend
+        // poses feed a small amount of their prior output into a repeated
+        // render of the same logical tick. Rebuild this tiny paused set so one
+        // tick is idempotent across gameplay/side/front evaluations.
+        player.stop_all();
         for weighted in &playback.clips {
             player
                 .play(weighted.clip.node)

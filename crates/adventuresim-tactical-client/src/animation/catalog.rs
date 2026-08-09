@@ -180,8 +180,8 @@ impl AnimationPackCatalog {
             )?;
         }
         for (motion, last_frame, anchors) in [
-            ("walk", 32, [(0, "walk_contact"), (8, "walk_passing")]),
-            ("run", 20, [(0, "run_contact"), (5, "run_flight")]),
+            ("walk", 64, [(0, "walk_contact"), (16, "walk_passing")]),
+            ("run", 64, [(0, "run_contact"), (16, "run_flight")]),
             (
                 "prone_crawl",
                 32,
@@ -204,8 +204,8 @@ impl AnimationPackCatalog {
         }
         // Pre-reflected copies of the sparse gait anchors are selected only
         // as mirrored blend endpoints; they own no independent semantics.
-        builder.motion("walk_mirrored", 32);
-        builder.motion("run_mirrored", 20);
+        builder.motion("walk_mirrored", 64);
+        builder.motion("run_mirrored", 64);
         for (motion, pose) in [
             ("duck_lead_left_backward", "duck_lead_left_backward"),
             ("duck_lead_left_left", "duck_lead_left_left"),

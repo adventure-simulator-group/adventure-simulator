@@ -236,6 +236,7 @@ impl Plugin for TacticalAnimationPlugin {
             .init_resource::<semantic_graph::SemanticGraphTelemetry>()
             .init_resource::<TerrainIkEnabled>()
             .init_resource::<ProceduralAnimationClock>()
+            .init_resource::<procedural::FixedTickPoseCache>()
             .add_message::<LocomotionPresentationEvent>()
             .add_systems(Startup, request_animation_packs)
             .add_observer(on_successful_attack)
@@ -249,8 +250,8 @@ impl Plugin for TacticalAnimationPlugin {
                     identify_animation_players,
                     procedural::bind_humanoid_bones,
                     procedural::cache_humanoid_rigs,
-                    procedural::capture_humanoid_rig_axes,
                     capture_authored_bind_transforms,
+                    procedural::capture_humanoid_rig_axes,
                     semantic_graph::evaluate_semantic_graph_paths,
                     evaluate_skeletons,
                     log_animation_diagnostics,
@@ -277,9 +278,10 @@ impl Plugin for TacticalAnimationPlugin {
                     procedural::apply_locomotion_body_response,
                     procedural::apply_head_and_torso_look,
                     procedural::apply_impact_reaction,
-                    procedural::apply_support_foot_grounding,
+                    procedural::apply_ordinary_locomotion_ik,
                     procedural::apply_terrain_leg_ik,
                     procedural::apply_arm_and_weapon_constraints,
+                    procedural::stabilize_repeated_fixed_tick_pose,
                 )
                     .chain()
                     .after(AnimationSystems)

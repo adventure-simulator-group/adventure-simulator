@@ -39,6 +39,9 @@ enum ScriptCommand {
     Wait {
         duration_seconds: f32,
     },
+    Guard {
+        raised: bool,
+    },
     WaitForSignal {
         path: String,
     },
@@ -71,6 +74,7 @@ struct ScriptedInput {
     command_index: usize,
     command_elapsed: f32,
     look: Vec2,
+    weapon_guard: WeaponGuardState,
     started: bool,
     exit_after_script: bool,
     finished_elapsed: Option<f32>,
@@ -142,6 +146,7 @@ impl Plugin for DiagnosticPlugin {
                 command_index: 0,
                 command_elapsed: 0.0,
                 look: Vec2::ZERO,
+                weapon_guard: WeaponGuardState::Lowered,
                 started: false,
                 exit_after_script: self.exit_after_script,
                 finished_elapsed: None,
@@ -276,9 +281,21 @@ fn drive_scripted_input(
             continue;
         }
 
+        if let ScriptCommand::Guard { raised } = command {
+            script.weapon_guard = if raised {
+                WeaponGuardState::Raised
+            } else {
+                WeaponGuardState::Lowered
+            };
+            script.command_index += 1;
+            script.command_elapsed = 0.0;
+            continue;
+        }
+
         if let ScriptCommand::WaitForSignal { path } = &command {
             let request = PlayerInputRequest {
                 look: script.look,
+                weapon_guard: script.weapon_guard,
                 ..default()
             };
             input_override.0 = Some(request);
@@ -308,13 +325,15 @@ fn drive_scripted_input(
                 Some(direction.vector() * input_speed),
             ),
             ScriptCommand::Wait { duration_seconds } => ("wait", duration_seconds, None),
-            ScriptCommand::Rotate { .. } | ScriptCommand::WaitForSignal { .. } => unreachable!(),
+            ScriptCommand::Rotate { .. }
+            | ScriptCommand::Guard { .. }
+            | ScriptCommand::WaitForSignal { .. } => unreachable!(),
         };
         let request = PlayerInputRequest {
             movement,
             look: script.look,
             jump: false,
-            weapon_guard: WeaponGuardState::Lowered,
+            weapon_guard: script.weapon_guard,
         };
         input_override.0 = Some(request);
         let next_status = DiagnosticInputStatus {
@@ -339,7 +358,7 @@ mod tests {
     #[test]
     fn example_script_parses_and_validates() {
         let script: InputScript = serde_json::from_str(
-            r#"{"commands":[{"type":"rotate","degrees_right":90.0},{"type":"move","direction":"forward","input_speed":0.5,"duration_seconds":2.0},{"type":"wait","duration_seconds":0.5}]}"#,
+            r#"{"commands":[{"type":"rotate","degrees_right":90.0},{"type":"guard","raised":true},{"type":"move","direction":"forward","input_speed":0.5,"duration_seconds":2.0},{"type":"guard","raised":false},{"type":"wait","duration_seconds":0.5}]}"#,
         )
         .unwrap();
         assert!(validate_script(&script).is_ok());

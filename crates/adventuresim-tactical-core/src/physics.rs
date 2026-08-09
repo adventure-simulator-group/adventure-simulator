@@ -13,13 +13,30 @@ pub const TACTICAL_RUN_SPEED_METRES_PER_SECOND: f32 = 5.5;
 /// Maximum server-authoritative movement speed while the weapon guard is raised.
 pub const TACTICAL_GUARD_SPEED_METRES_PER_SECOND: f32 = 2.0;
 
+/// Ahoy multiplies requested speed by this frequency to obtain ground
+/// acceleration. Scale the raised-guard frequency against its lower speed cap
+/// so full and partial analogue input accelerate exactly as quickly as normal
+/// running while retaining the 2 m/s maximum.
+pub const TACTICAL_RUN_ACCELERATION_HZ: f32 = 8.0;
+pub const TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED: f32 =
+    TACTICAL_RUN_SPEED_METRES_PER_SECOND * TACTICAL_RUN_ACCELERATION_HZ;
+
 /// Builds the shared tactical controller instead of inheriting Ahoy's much
 /// faster general-purpose default.
 pub fn tactical_character_controller() -> CharacterController {
     CharacterController {
         speed: TACTICAL_RUN_SPEED_METRES_PER_SECOND,
+        acceleration_hz: TACTICAL_RUN_ACCELERATION_HZ,
         ..default()
     }
+}
+
+pub fn tactical_movement_acceleration_hz_for_guard(weapon_guard: WeaponGuardState) -> f32 {
+    let speed_cap = match weapon_guard {
+        WeaponGuardState::Lowered => TACTICAL_RUN_SPEED_METRES_PER_SECOND,
+        WeaponGuardState::Raised => TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
+    };
+    TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED / speed_cap
 }
 
 /// Preserves the analogue movement magnitude after Ahoy normalizes its wish
@@ -114,12 +131,9 @@ fn apply_analogue_movement_speed(
     )>,
 ) {
     for (input, mut controller, skeleton) in &mut controllers {
-        controller.speed = skeleton.map_or_else(
-            || tactical_movement_speed(input.last_movement),
-            |skeleton| {
-                tactical_movement_speed_for_guard(input.last_movement, skeleton.weapon_guard())
-            },
-        );
+        let guard = skeleton.map_or(WeaponGuardState::Lowered, SkeletonState::weapon_guard);
+        controller.speed = tactical_movement_speed_for_guard(input.last_movement, guard);
+        controller.acceleration_hz = tactical_movement_acceleration_hz_for_guard(guard);
     }
 }
 
@@ -186,8 +200,36 @@ mod tests {
             TACTICAL_GUARD_SPEED_METRES_PER_SECOND * 0.5
         );
         assert_eq!(
+            world
+                .get::<CharacterController>(raised)
+                .unwrap()
+                .acceleration_hz,
+            TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED
+                / TACTICAL_GUARD_SPEED_METRES_PER_SECOND
+        );
+        assert_eq!(
             world.get::<CharacterController>(generic).unwrap().speed,
             TACTICAL_RUN_SPEED_METRES_PER_SECOND
+        );
+        assert_eq!(
+            world
+                .get::<CharacterController>(generic)
+                .unwrap()
+                .acceleration_hz,
+            TACTICAL_RUN_ACCELERATION_HZ
+        );
+    }
+
+    #[test]
+    fn raised_guard_and_running_have_equal_absolute_acceleration() {
+        let running = TACTICAL_RUN_SPEED_METRES_PER_SECOND
+            * tactical_movement_acceleration_hz_for_guard(WeaponGuardState::Lowered);
+        let guarded = TACTICAL_GUARD_SPEED_METRES_PER_SECOND
+            * tactical_movement_acceleration_hz_for_guard(WeaponGuardState::Raised);
+        assert_eq!(running, guarded);
+        assert_eq!(
+            guarded,
+            TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED
         );
     }
 }
