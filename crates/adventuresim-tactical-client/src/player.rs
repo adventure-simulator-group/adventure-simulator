@@ -322,16 +322,27 @@ fn on_attack_fired_hook(
     event: On<Fire<Attack>>,
     mut cmd: Commands,
     mut q_character: Query<(Has<AttackState>, &mut SkeletonState)>,
+    q_leg_ik: Query<&crate::animation::LegIkState>,
     viewer: TacticalPlayerViewer,
     time: Res<Time>,
 ) {
-    try_start_attack(event.context, &mut cmd, &mut q_character, &viewer, &time);
+    try_start_attack(
+        event.context,
+        false,
+        &mut cmd,
+        &mut q_character,
+        &q_leg_ik,
+        &viewer,
+        &time,
+    );
 }
 
 fn try_start_attack(
     entity: Entity,
+    alternate_attack: bool,
     cmd: &mut Commands,
     q_character: &mut Query<(Has<AttackState>, &mut SkeletonState)>,
+    q_leg_ik: &Query<&crate::animation::LegIkState>,
     viewer: &TacticalPlayerViewer,
     time: &Time,
 ) {
@@ -341,11 +352,12 @@ fn try_start_attack(
     if attacking {
         return;
     }
-    let Ok((reach, ranged, melee)) = viewer.get(entity).map(|character| {
+    let Ok((reach, ranged, melee, preferred_style)) = viewer.get(entity).map(|character| {
         (
             character.weapon_reach(),
             character.weapon_is_ranged(),
             character.weapon_is_melee(),
+            character.weapon_preferred_melee_style(),
         )
     }) else {
         warn!("Trying to attack, but can't get weapon reach. Not holding any weapons ?");
@@ -366,13 +378,46 @@ fn try_start_attack(
         // replicated skeleton. The authority repeats the same typed
         // classification from its observation; no input vector crosses the
         // reliable action boundary.
-        AttackSpec::melee_from_local_velocity(skeleton.local_velocity)
+        let preferred_family = StrikeFamily::from_melee_style(preferred_style);
+        let strike_family = if alternate_attack {
+            match preferred_family {
+                StrikeFamily::Slash => StrikeFamily::Thrust,
+                StrikeFamily::Thrust => StrikeFamily::Slash,
+            }
+        } else {
+            preferred_family
+        };
+        let moving = skeleton.local_velocity.xz().length() > 0.05;
+        let feet_close = q_leg_ik
+            .get(entity)
+            .ok()
+            .and_then(crate::animation::LegIkState::feet_are_close_for_attack)
+            .unwrap_or(false);
+        let footwork = if moving {
+            if feet_close {
+                Footwork::Stay
+            } else {
+                Footwork::Switch
+            }
+        } else if strike_family == StrikeFamily::Slash {
+            Footwork::Switch
+        } else {
+            Footwork::Stay
+        };
+        AttackSpec::melee_from_local_velocity_and_style(
+            skeleton.local_velocity,
+            strike_family,
+            footwork,
+        )
     };
     skeleton.begin_attack(predicted, start, start + 19);
     if ranged {
         cmd.client_trigger(RangedActionRequest::Start);
     } else {
-        cmd.client_trigger(MeleeActionRequest::Start);
+        cmd.client_trigger(MeleeActionRequest::Start {
+            strike_family: predicted.strike_family,
+            footwork: predicted.footwork,
+        });
     }
 }
 
@@ -381,12 +426,21 @@ fn apply_direct_combat_controls(
     mut cmd: Commands,
     players: Query<Entity, With<ControlledPlayer>>,
     mut q_character: Query<(Has<AttackState>, &mut SkeletonState)>,
+    q_leg_ik: Query<&crate::animation::LegIkState>,
     viewer: TacticalPlayerViewer,
     time: Res<Time>,
 ) {
     for entity in &players {
         if controls.attack_just_pressed {
-            try_start_attack(entity, &mut cmd, &mut q_character, &viewer, &time);
+            try_start_attack(
+                entity,
+                controls.alternate_attack,
+                &mut cmd,
+                &mut q_character,
+                &q_leg_ik,
+                &viewer,
+                &time,
+            );
         }
         if controls.dodge_just_pressed {
             if let Ok((_, mut skeleton)) = q_character.get_mut(entity) {

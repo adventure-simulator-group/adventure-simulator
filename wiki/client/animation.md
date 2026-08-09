@@ -519,6 +519,26 @@ weights. Optional hand and held-weapon constraints are client presentation
 only: the primary socket places the weapon before its secondary grip targets
 the off hand. None of these targets are replicated in `SkeletonState`.
 
+Every procedural leg solve constrains the effective knee pole to within
+plus-or-minus pi/8 radians of that foot's rendered facing direction. This is a
+lower-body anatomical invariant across ordinary locomotion, stationary terrain
+contact, crouching, landing, raised guard, and attack footwork; a pose owner may
+not bypass it by preserving an authored bend after pole selection. Attack foot
+IK additionally parallel-transports the previous rendered bend as the
+hip-to-foot direction changes, checks it against the leg's anatomical
+hemisphere, and uses the canonical forward/outward pole only through a
+straight-leg singularity. Native captures measure the final rendered
+knee-to-foot yaw relationship, not only the requested pole.
+
+Moving attacks latch step ownership and movement direction when the strike
+begins. Through ordinary combat speeds, the contact endpoint combines the
+controller's root travel with a deliberate guard-relative stride so the swing
+foot visibly advances with the weapon or fist instead of merely following the
+body. The added stride tapers toward sprint speed to preserve leg reach and
+support contact. Native attack-step captures require rendered foot travel
+relative to the root before contact; moving an unconstrained IK request alone
+does not satisfy the gate.
+
 The server-owned character transform remains authoritative. Authored root
 offsets may shape a step or lean visually, but the evaluator reconciles them
 with actual movement. Terrain alignment, final foot height, and exact contact
@@ -1013,7 +1033,19 @@ terrain IK disabled through `F8`. Raised planning and terrain conformity intenti
 share one ordered solver pass so pole, plant, and pelvis memory are sampled
 once per frame. When terrain conformity is enabled, the same
 targets additionally follow height and slope without replacing their planted
-XZ positions. Raised grounded idle uses the static guard. Raised crouched and airborne
+XZ positions. Raised grounded idle keeps the static authored guard while the
+procedural solver retains the feet in world space. If rotating the guard moves
+an authored foot more than 4 cm from its plant, the client replants one foot at
+a time over 0.16 seconds along a short lifted arc around the body. The other
+foot remains the support, and the moving target is constrained to the live
+guard corridor and minimum stance separation. Knee bend directions are
+parallel-transported with each leg and corrected continuously toward their
+anatomical hemisphere so a turn cannot abruptly flip a pole target. The final
+raised-guard and attack knee pole has its ground-plane yaw constrained to
+within plus or minus pi/8 radians of the rendered foot-to-toe direction, then
+receives the vertical component required by the leg's valid bend plane. This
+pivot state, like all procedural foot targets, is
+presentation-only and is never replicated. Raised crouched and airborne
 characters retain the existing crouch and airborne posture rules; specialized
 raised variants can be added later.
 
@@ -1096,27 +1128,30 @@ An attack recipe declares:
 - its contact, continuation, recovery, and cancellation timing; and
 - its hand/weapon constraints.
 
-A stay attack ends with the same foot forward. A switch attack takes one step
-and ends with the opposite foot forward.
+A stay attack keeps the same guard orientation. When it begins while moving
+with the feet close together, the rear foot plants and the forward foot takes
+one step without passing it. When stationary, stay plants both feet. A switch
+attack plants the foot that is forward along the captured movement direction,
+steps the rear foot past it, and ends in the opposite guard.
 
 For melee attacks, the tactical authority snapshots the controller-local
-physical velocity when the attack starts. Meaningful forward velocity selects
-`forward`, meaningful backward velocity selects `backward`, and stationary or
-lateral-only motion selects `stay` in the initial longitudinal implementation.
-Later input, velocity reversal, or camera yaw cannot repick this semantic.
+physical velocity when the attack starts. Attack steps follow that captured
+movement direction, including lateral and backward movement. Later input,
+velocity reversal, or camera yaw cannot repick this semantic.
 Ranged attacks remain `stay`. For immediate contact synchronization the owning
 client predicts the same typed choice from the last physical velocity already
 stored in its replicated `SkeletonState`; it does not send or trust a fresh
 movement-input vector. The server observation remains authoritative and the
 presentation reconciles to it.
 
-Forward and backward reuse the same authored contact pose. On a forward step,
-the spatially rear foot passes the planted forward foot; on a backward step,
-the spatially forward foot passes behind the planted rear foot. This choice is
-made from the visible world-space stance rather than trusting a semantic lead
-label that may be transitioning. Both are exactly one `switch` step during the
-attack and therefore finish in the opposite guard. Maximum extension and the
-moving foot's ground contact coincide with the server-owned contact tick.
+At attack start, the visible feet are projected onto the guard's fore-aft axis.
+They count as close when their separation is no greater than half the authored
+guard separation (equivalently, a foot has crossed halfway from its guard
+position toward the hips). A moving close stance selects `stay`; a moving
+separated stance selects `switch`. A stationary thrust selects a planted
+`stay`, while every slash selects a step and therefore uses a forward `switch`
+when stationary. Maximum extension and the moving foot's ground contact
+coincide with the server-owned contact tick.
 The procedural targets are client-only world-space data: they do not translate
 the controller, extend hit range, or enter persistent state. The attack begins
 immediately. If its selected moving foot is airborne, presentation first lowers
@@ -1140,6 +1175,12 @@ policy are intentionally deferred; this iteration always times one attack step
 to contact. Capture telemetry
 records requested and reach-constrained targets separately so any analytic
 reach yield is measured rather than misreported as a perfect plant.
+
+The equipped weapon declares a preferred family and separate swing and stab
+precision terms. Normal attack input selects the preferred family; alternate
+input selects the other family. Unarmed fists prefer thrusts. These semantic
+families travel with the attack request and select both the contact pose and
+the combat precision term.
 
 Each strike family has one contact pose for each starting lead. Names use
 `attack_<family>_lead_<left|right>_contact`; for example,

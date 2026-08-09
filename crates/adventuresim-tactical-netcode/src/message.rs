@@ -70,7 +70,10 @@ mod debug_game_time_scale_tests {
 /// overtake its server-observed start.
 #[derive(Debug, Clone, Copy, Event, Serialize, Deserialize, MapEntities)]
 pub enum MeleeActionRequest {
-    Start,
+    Start {
+        strike_family: StrikeFamily,
+        footwork: Footwork,
+    },
     Complete {
         #[entities]
         target: Entity,

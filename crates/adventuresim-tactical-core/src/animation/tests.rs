@@ -956,6 +956,7 @@ mod legacy_tests {
         let mut state = SkeletonState::default().with_lead_foot(LeadFoot::Left);
         state.begin_attack(
             AttackSpec {
+                footwork: Footwork::Switch,
                 step: AttackStep::Forward,
                 ..default()
             },
@@ -993,7 +994,7 @@ mod legacy_tests {
     }
 
     #[test]
-    fn melee_attack_snapshots_longitudinal_velocity_semantically() {
+    fn melee_attack_snapshots_planar_velocity_semantically() {
         let forward = AttackSpec::melee_from_local_velocity(Vec3::NEG_Z * 2.0);
         assert_eq!(forward.step, AttackStep::Forward);
         assert_eq!(forward.movement_direction, Vec2::Y);
@@ -1011,7 +1012,7 @@ mod legacy_tests {
         );
         let dominant_lateral = AttackSpec::melee_from_local_velocity(Vec3::new(5.5, 0.0, -0.14));
         assert_eq!(dominant_lateral.step, AttackStep::Stay);
-        assert!((dominant_lateral.step_speed - 0.14).abs() < 0.0001);
+        assert!((dominant_lateral.step_speed - Vec2::new(5.5, 0.14).length()).abs() < 0.0001);
         assert_eq!(
             AttackSpec::melee_from_local_velocity(Vec3::splat(f32::NAN)).step,
             AttackStep::Stay

@@ -171,6 +171,7 @@ pub fn resolve_melee_attack_by_parts(
     attacker_essentials: &impl PlayerEssentials,
     attacker_equip: &impl PlayerEquipment,
     attacker_side: BodySide,
+    attack_style: crate::equipment::MeleeAttackStyle,
     hit_precision: f32,
     precision_damage_multiplier_cap: f32,
     flanking: f32,
@@ -196,7 +197,7 @@ pub fn resolve_melee_attack_by_parts(
                 weights,
             )
         })
-        * attacker_equip.weapon_accuracy()
+        * attacker_equip.weapon_melee_precision(attack_style)
         * hit_precision.clamp(0.0, 1.0);
 
     // (2)-(5) Calculate defense of the defender depending on the response

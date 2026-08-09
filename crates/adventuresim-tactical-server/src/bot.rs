@@ -117,6 +117,9 @@ mod tests {
         world.entity_mut(weapon).insert(WeaponItem {
             skill_weights: [0.0; 9],
             accuracy: 1.0,
+            swing_precision: 0.45,
+            stab_precision: 0.6,
+            prefers_stab: false,
             penetration: 1.0,
             reach: KATZBALGER_REACH,
             balance: 0.0,
@@ -153,6 +156,9 @@ mod tests {
         world.entity_mut(weapon).insert(WeaponItem {
             skill_weights: [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0],
             accuracy: 1.0,
+            swing_precision: 0.45,
+            stab_precision: 0.6,
+            prefers_stab: false,
             penetration: 1.0,
             reach: TEST_WEAPON_REACH,
             balance: 0.0,

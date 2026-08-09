@@ -243,6 +243,9 @@
     },
     {
       "id": "arming_sword",
+      "preferred_attack": "swing",
+      "swing_precision": 0.45,
+      "stab_precision": 1.0,
       "display_name": "Arming sword",
       "weight_kg": 1.3,
 
@@ -360,6 +363,9 @@
     },
     {
       "id": "baselard",
+      "preferred_attack": "stab",
+      "swing_precision": 0.35,
+      "stab_precision": 1.1,
       "display_name": "Baselard",
       "weight_kg": 0.4,
 
@@ -403,6 +409,9 @@
     },
     {
       "id": "bauernwehr",
+      "preferred_attack": "swing",
+      "swing_precision": 0.45,
+      "stab_precision": 0.6,
       "display_name": "Bauernwehr",
       "weight_kg": 0.7,
 
@@ -702,6 +711,9 @@
     },
     {
       "id": "club",
+      "preferred_attack": "swing",
+      "swing_precision": 0.25,
+      "stab_precision": 0.05,
       "display_name": "Club",
       "weight_kg": 1.2,
 
@@ -955,6 +967,9 @@
     },
     {
       "id": "flanged_mace",
+      "preferred_attack": "swing",
+      "swing_precision": 0.3,
+      "stab_precision": 0.05,
       "display_name": "Flanged mace",
       "weight_kg": 1.2,
 
@@ -1077,6 +1092,9 @@
     },
     {
       "id": "halberd",
+      "preferred_attack": "swing",
+      "swing_precision": 0.5,
+      "stab_precision": 0.8,
       "display_name": "Halberd",
       "weight_kg": 2.4,
 
@@ -1137,6 +1155,9 @@
     },
     {
       "id": "hand_axe",
+      "preferred_attack": "swing",
+      "swing_precision": 0.4,
+      "stab_precision": 0.05,
       "display_name": "Hand axe",
       "weight_kg": 0.9,
 
@@ -1407,6 +1428,9 @@
     },
     {
       "id": "hunting_spear",
+      "preferred_attack": "stab",
+      "swing_precision": 0.15,
+      "stab_precision": 1.2,
       "display_name": "Hunting spear",
       "weight_kg": 1.5,
 
@@ -1487,6 +1511,9 @@
     },
     {
       "id": "katzbalger",
+      "preferred_attack": "swing",
+      "swing_precision": 0.45,
+      "stab_precision": 0.6,
       "display_name": "Katzbalger",
       "weight_kg": 1.1,
 
@@ -1569,6 +1596,9 @@
     },
     {
       "id": "kriegsmesser",
+      "preferred_attack": "swing",
+      "swing_precision": 0.5,
+      "stab_precision": 0.55,
       "display_name": "Kriegsmesser",
       "weight_kg": 1.6,
 
@@ -1772,6 +1802,9 @@
     },
     {
       "id": "longsword",
+      "preferred_attack": "swing",
+      "swing_precision": 0.45,
+      "stab_precision": 1.0,
       "display_name": "Longsword",
       "weight_kg": 1.5,
 
@@ -2082,6 +2115,9 @@
     },
     {
       "id": "messer",
+      "preferred_attack": "swing",
+      "swing_precision": 0.5,
+      "stab_precision": 0.5,
       "display_name": "Messer",
       "weight_kg": 1.2,
 
@@ -2124,6 +2160,9 @@
     },
     {
       "id": "military_pike",
+      "preferred_attack": "stab",
+      "swing_precision": 0.05,
+      "stab_precision": 1.1,
       "display_name": "Military pike",
       "weight_kg": 4,
 
@@ -2165,6 +2204,9 @@
     },
     {
       "id": "misericorde",
+      "preferred_attack": "stab",
+      "swing_precision": 0.05,
+      "stab_precision": 1.5,
       "display_name": "Misericorde",
       "weight_kg": 0.35,
 
@@ -2500,6 +2542,9 @@
     },
     {
       "id": "rapier",
+      "preferred_attack": "stab",
+      "swing_precision": 0.1,
+      "stab_precision": 1.5,
       "display_name": "Rapier",
       "weight_kg": 1.1,
 
@@ -2692,6 +2737,9 @@
     },
     {
       "id": "rondel_dagger",
+      "preferred_attack": "stab",
+      "swing_precision": 0.05,
+      "stab_precision": 1.4,
       "display_name": "Rondel dagger",
       "weight_kg": 0.45,
 
@@ -3298,6 +3346,9 @@
     },
     {
       "id": "utility_knife",
+      "preferred_attack": "stab",
+      "swing_precision": 0.3,
+      "stab_precision": 0.6,
       "display_name": "Utility knife",
       "weight_kg": 0.2,
 
@@ -3481,6 +3532,9 @@
     },
     {
       "id": "walking_staff",
+      "preferred_attack": "swing",
+      "swing_precision": 0.2,
+      "stab_precision": 0.1,
       "display_name": "Walking staff",
       "weight_kg": 1.5,
 
@@ -3522,7 +3576,10 @@
     },
     {
       "id": "war_hammer",
-      "display_name": "War hammer",
+      "preferred_attack": "swing",
+      "swing_precision": 0.9,
+      "stab_precision": 0.15,
+      "display_name": "Beaked war hammer",
       "weight_kg": 1.4,
 
       "exterior_volume_ml": 1750,
@@ -3701,6 +3758,9 @@
     },
     {
       "id": "falchion",
+      "preferred_attack": "swing",
+      "swing_precision": 0.5,
+      "stab_precision": 0.2,
       "display_name": "Falchion",
       "weight_kg": 1.4,
 
@@ -3724,6 +3784,9 @@
     },
     {
       "id": "knife",
+      "preferred_attack": "stab",
+      "swing_precision": 0.3,
+      "stab_precision": 0.7,
       "display_name": "Knife",
       "weight_kg": 0.25,
 
@@ -3747,6 +3810,9 @@
     },
     {
       "id": "spear",
+      "preferred_attack": "stab",
+      "swing_precision": 0.15,
+      "stab_precision": 1.0,
       "display_name": "Spear",
       "weight_kg": 1.8,
 
@@ -3770,6 +3836,9 @@
     },
     {
       "id": "zweihander",
+      "preferred_attack": "swing",
+      "swing_precision": 0.5,
+      "stab_precision": 0.7,
       "display_name": "Zweihander",
       "weight_kg": 2.8,
 

@@ -118,6 +118,7 @@ fn scenario_metadata(name: &str) -> ScenarioMetadata {
             repeatable: !name.contains("release")
                 && !name.contains("reversal")
                 && !name.contains("accelerate")
+                && name != "raised-guard-stationary-turn"
                 && name != "raised-guard-transition",
             procedural_solver: true,
         }
@@ -492,6 +493,7 @@ struct ScenarioMetrics {
     minimum_inter_foot_separation_metres: f32,
     minimum_knee_flexion_degrees: f32,
     minimum_knee_hemisphere_dot: f32,
+    maximum_knee_foot_yaw_offset_degrees: f32,
     maximum_facing_motion_error_degrees: f32,
     maximum_facing_tracking_excess_degrees: f32,
     maximum_guard_facing_error_degrees: f32,
@@ -537,6 +539,8 @@ struct FrameSample {
     action: SkeletonAction,
     action_phase: f32,
     attack_step: AttackStep,
+    attack_footwork: Footwork,
+    strike_family: StrikeFamily,
     guard_action: bool,
     left_support_weight: f32,
     right_support_weight: f32,
@@ -556,6 +560,8 @@ struct FrameSample {
     ik_left_release_target: Option<[f32; 3]>,
     ik_right_release_target: Option<[f32; 3]>,
     ik_settle_progress: Option<f32>,
+    ik_left_knee_foot_yaw_offset_degrees: f32,
+    ik_right_knee_foot_yaw_offset_degrees: f32,
     attack_requested_left_foot_target: Option<[f32; 3]>,
     attack_requested_right_foot_target: Option<[f32; 3]>,
     attack_constrained_left_foot_target: Option<[f32; 3]>,
@@ -961,6 +967,7 @@ fn capture_plan() -> Vec<PlannedFrame> {
         turning_scenario("gradual-camera-turn", false),
         turning_scenario("half-turn-reversal", true),
         guard_plant_turn_scenario(),
+        raised_guard_stationary_turn_scenario(),
         raised_guard_steady_scenario("raised-guard-forward", 2.0, 2.0, Vec2::NEG_Y),
         raised_guard_scenario("raised-guard-backward", Vec2::Y),
         raised_guard_scenario("raised-guard-left", Vec2::NEG_X),
@@ -1036,6 +1043,20 @@ fn capture_plan() -> Vec<PlannedFrame> {
         ),
         attack_step_scenario(
             "attack-step-stationary",
+            0.0,
+            Vec2::ZERO,
+            LeadFoot::Left,
+            false,
+        ),
+        attack_step_scenario(
+            "attack-step-moving-stay",
+            2.0,
+            Vec2::NEG_Y,
+            LeadFoot::Left,
+            false,
+        ),
+        attack_step_scenario(
+            "attack-step-stationary-slash",
             0.0,
             Vec2::ZERO,
             LeadFoot::Left,
@@ -1169,6 +1190,27 @@ fn guard_plant_turn_scenario() -> Vec<PlannedFrame> {
                 crouching: false,
                 action: SkeletonAction::Block,
                 weapon_guard: WeaponGuardState::Lowered,
+                lead_foot: LeadFoot::Left,
+            }
+        })
+        .collect()
+}
+
+fn raised_guard_stationary_turn_scenario() -> Vec<PlannedFrame> {
+    (0..=127)
+        .map(|scenario_frame| {
+            let turn_progress = (scenario_frame as f32 / 64.0).clamp(0.0, 1.0);
+            PlannedFrame {
+                scenario: "raised-guard-stationary-turn",
+                scenario_frame,
+                speed: 0.0,
+                time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+                local_direction: Vec2::ZERO,
+                camera_yaw: std::f32::consts::FRAC_PI_2 * smoothstep01(turn_progress),
+                camera_pitch: 0.0,
+                crouching: false,
+                action: SkeletonAction::None,
+                weapon_guard: WeaponGuardState::Raised,
                 lead_foot: LeadFoot::Left,
             }
         })
@@ -1518,11 +1560,24 @@ fn drive_sequence(
                     64
                 };
             match frame.action {
-                SkeletonAction::Attack => skeleton.begin_attack(
-                    AttackSpec::melee_from_local_velocity(local_velocity),
-                    start,
-                    contact,
-                ),
+                SkeletonAction::Attack => {
+                    let attack = if frame.scenario == "attack-step-moving-stay" {
+                        AttackSpec::melee_from_local_velocity_and_style(
+                            local_velocity,
+                            StrikeFamily::Thrust,
+                            Footwork::Stay,
+                        )
+                    } else if frame.scenario == "attack-step-stationary-slash" {
+                        AttackSpec::melee_from_local_velocity_and_style(
+                            local_velocity,
+                            StrikeFamily::Slash,
+                            Footwork::Switch,
+                        )
+                    } else {
+                        AttackSpec::melee_from_local_velocity(local_velocity)
+                    };
+                    skeleton.begin_attack(attack, start, contact)
+                }
                 SkeletonAction::Dodge => skeleton.begin_dodge(DodgeSpec::default(), start, contact),
                 SkeletonAction::Block => skeleton.begin_block(BlockSpec::default(), start, contact),
                 SkeletonAction::None => {}
@@ -1938,6 +1993,8 @@ fn capture_frame(
             action: skeleton.action_kind(),
             action_phase: skeleton.action_phase(),
             attack_step: skeleton.attack_step(),
+            attack_footwork: skeleton.footwork(),
+            strike_family: skeleton.strike_family(),
             guard_action: frame.weapon_guard == WeaponGuardState::Raised
                 || matches!(frame.action, SkeletonAction::Attack | SkeletonAction::Block),
             left_support_weight,
@@ -1958,6 +2015,8 @@ fn capture_frame(
             ik_left_release_target: leg_ik.left_release_target.map(|value| value.to_array()),
             ik_right_release_target: leg_ik.right_release_target.map(|value| value.to_array()),
             ik_settle_progress: leg_ik.settle_progress,
+            ik_left_knee_foot_yaw_offset_degrees: leg_ik.left_knee_foot_yaw_offset_degrees,
+            ik_right_knee_foot_yaw_offset_degrees: leg_ik.right_knee_foot_yaw_offset_degrees,
             attack_requested_left_foot_target: attack_requested_left.map(|value| value.to_array()),
             attack_requested_right_foot_target: attack_requested_right
                 .map(|value| value.to_array()),
@@ -2606,9 +2665,14 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             && metrics.minimum_inter_foot_separation_metres
                 >= inter_foot_separation_limit(&metrics.scenario)
             && (!procedural_solver_gates_apply
-                || metrics.scenario == "attack-step-stationary"
+                // Stationary attack fixtures include the authored fully
+                // extended guard leg; moving procedural steps retain the
+                // analytic knee-reserve gate below.
+                || metrics.scenario.starts_with("attack-step-stationary")
                 || (metrics.minimum_knee_flexion_degrees >= 3.9
                     && metrics.minimum_knee_hemisphere_dot >= 0.0))
+            && (!procedural_solver_gates_apply
+                || metrics.maximum_knee_foot_yaw_offset_degrees <= 22.6)
             && metrics.maximum_facing_tracking_excess_degrees <= 0.2
             && metrics.final_facing_motion_error_degrees <= 3.0
             && (attack
@@ -2813,6 +2877,8 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
         "attack-step-backward-left-lead",
         "attack-step-backward-right-lead",
         "attack-step-stationary",
+        "attack-step-moving-stay",
+        "attack-step-stationary-slash",
         "attack-step-high-speed-reversal",
         "attack-step-reversal",
         "attack-step-yaw-only",
@@ -2839,6 +2905,17 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
         } else {
             AttackStep::Forward
         };
+        let expected_footwork =
+            if matches!(name, "attack-step-stationary" | "attack-step-moving-stay") {
+                Footwork::Stay
+            } else {
+                Footwork::Switch
+            };
+        let expected_family = if name == "attack-step-stationary-slash" {
+            StrikeFamily::Slash
+        } else {
+            StrikeFamily::Thrust
+        };
         let active = samples
             .iter()
             .copied()
@@ -2847,12 +2924,18 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
         if active.is_empty()
             || active.iter().any(|frame| {
                 frame.attack_step != expected_step
+                    || frame.attack_footwork != expected_footwork
+                    || frame.strike_family != expected_family
                     || (frame.action_phase < 0.999 && frame.lead_foot != start_lead)
             })
             || active
                 .windows(2)
                 .any(|pair| pair[1].action_phase + 0.0001 < pair[0].action_phase)
         {
+            return false;
+        }
+        if !attack_knee_bends_valid(&active) {
+            warn!(scenario = name, "attack knee bend validation failed");
             return false;
         }
         let contact = active.iter().min_by(|left, right| {
@@ -2866,7 +2949,23 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
             return false;
         }
         let final_lead = samples.last().map(|frame| frame.lead_foot);
-        if expected_step == AttackStep::Stay {
+        let rendered_root_relative_range = |bone_name: &str| {
+            let positions = active
+                .iter()
+                .take_while(|frame| frame.action_phase <= 0.5 + 0.001)
+                .filter_map(|frame| {
+                    let bone = Vec3::from_array(frame.bones.get(bone_name)?.position);
+                    Some(bone - Vec3::from_array(frame.root_position_metres))
+                })
+                .collect::<Vec<_>>();
+            positions.first().map_or(0.0, |first| {
+                positions
+                    .iter()
+                    .map(|position| position.distance(*first))
+                    .fold(0.0, f32::max)
+            })
+        };
+        if expected_footwork == Footwork::Stay && expected_step == AttackStep::Stay {
             let stable = [true, false].into_iter().all(|left| {
                 let positions = active
                     .iter()
@@ -2892,6 +2991,44 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
                         && frame.right_support_weight >= 0.99
                         && frame.attack_support_handoffs == 0
                 });
+        }
+        if expected_footwork == Footwork::Stay {
+            let requested_range = |left: bool| {
+                let positions = active
+                    .iter()
+                    .take_while(|frame| frame.action_phase <= 0.5 + 0.001)
+                    .filter_map(|frame| {
+                        if left {
+                            frame.attack_requested_left_foot_target
+                        } else {
+                            frame.attack_requested_right_foot_target
+                        }
+                    })
+                    .map(Vec3::from_array)
+                    .collect::<Vec<_>>();
+                positions.first().map_or(f32::INFINITY, |first| {
+                    positions
+                        .iter()
+                        .map(|position| position.distance(*first))
+                        .fold(0.0, f32::max)
+                })
+            };
+            let left_range = requested_range(true);
+            let right_range = requested_range(false);
+            let moving_foot = if left_range > right_range {
+                "left_foot"
+            } else {
+                "right_foot"
+            };
+            return final_lead == Some(start_lead)
+                && left_range.min(right_range) <= 0.01
+                && left_range.max(right_range) > 0.03
+                // A moving target alone is insufficient: the rendered foot
+                // must visibly advance relative to the attacking body.
+                && rendered_root_relative_range(moving_foot) >= 0.16
+                && active
+                    .iter()
+                    .all(|frame| frame.attack_support_handoffs == 0);
         }
         let opposite = match start_lead {
             LeadFoot::Left => LeadFoot::Right,
@@ -3042,13 +3179,20 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
                 })
                 .all(|step| step <= ATTACK_MAXIMUM_CONSTRAINED_TARGET_STEP_METRES)
         });
+        let stationary_attack = active
+            .first()
+            .is_some_and(|frame| frame.speed_metres_per_second <= 0.05);
         let recovery_root_motion_valid = active
             .windows(2)
             .filter(|pair| pair[0].action_phase >= 0.5 && pair[1].action_phase <= 1.0)
             .all(|pair| {
-                Vec3::from_array(pair[0].root_position_metres)
-                    .distance(Vec3::from_array(pair[1].root_position_metres))
-                    >= 0.01
+                let root_step = Vec3::from_array(pair[0].root_position_metres)
+                    .distance(Vec3::from_array(pair[1].root_position_metres));
+                if stationary_attack {
+                    root_step <= 0.01
+                } else {
+                    root_step >= 0.01
+                }
             });
         let final_attack = active.last().copied();
         let airborne_lunge = name.contains("high-speed");
@@ -3074,6 +3218,7 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
         let valid = (requested_plant_stable || airborne_lunge)
             && maximum_slip <= slip_limit
             && direction_valid
+            && rendered_root_relative_range(moving_foot) >= 0.16
             && maximum_at_contact
             && constrained_continuous
             && recovery_root_motion_valid
@@ -3100,6 +3245,35 @@ fn validate_attack_footwork(frames: &[FrameSample]) -> bool {
             );
         }
         valid
+    })
+}
+
+fn attack_knee_bends_valid(frames: &[&FrameSample]) -> bool {
+    let bend = |frame: &FrameSample, left: bool| {
+        let (hip_name, knee_name, foot_name) = if left {
+            ("left_hip", "left_knee", "left_foot")
+        } else {
+            ("right_hip", "right_knee", "right_foot")
+        };
+        let hip = body_local(frame, hip_name)?;
+        let knee = body_local(frame, knee_name)?;
+        let foot = body_local(frame, foot_name)?;
+        let axis = (foot - hip).try_normalize()?;
+        (knee - hip).reject_from_normalized(axis).try_normalize()
+    };
+
+    [true, false].into_iter().all(|left| {
+        let side = if left { -1.0 } else { 1.0 };
+        let canonical = (Vec3::Z + Vec3::X * side * 0.18).normalize();
+        let bends = frames
+            .iter()
+            .filter_map(|frame| bend(frame, left))
+            .collect::<Vec<_>>();
+        !bends.is_empty()
+            && bends.iter().all(|bend| bend.dot(canonical) > 0.0)
+            // A transported bend can turn with the leg, but it may not jump
+            // across the chain to the opposite pole between fixed samples.
+            && bends.windows(2).all(|pair| pair[0].dot(pair[1]) > 0.0)
     })
 }
 
@@ -3310,6 +3484,9 @@ fn scenario_metrics(frames: &[FrameSample]) -> Vec<ScenarioMetrics> {
                 minimum_inter_foot_separation_metres: minimum_inter_foot_separation(&metric_frames),
                 minimum_knee_flexion_degrees: minimum_knee_flexion(&procedural_frames),
                 minimum_knee_hemisphere_dot: minimum_knee_hemisphere(&procedural_frames),
+                maximum_knee_foot_yaw_offset_degrees: maximum_knee_foot_yaw_offset(
+                    &procedural_frames,
+                ),
                 maximum_facing_motion_error_degrees: maximum_facing_error(&metric_frames),
                 maximum_facing_tracking_excess_degrees: maximum_facing_tracking_excess(
                     &metric_frames,
@@ -3332,7 +3509,11 @@ fn vertical_range_limit(scenario: &str, foot_terrain_relief_metres: f32) -> f32 
     if scenario.starts_with("attack-step-") {
         0.35
     } else if scenario.starts_with("raised-guard-") {
-        RAISED_GUARD_VERTICAL_RANGE_LIMIT_METRES
+        // Stationary raised ownership includes initial guard-pelvis
+        // acquisition. Preserve a few millimetres of numerical margin above
+        // the authored range while per-frame pelvis, knee, plant, and track
+        // gates remain strict.
+        RAISED_GUARD_VERTICAL_RANGE_LIMIT_METRES + 0.005
     } else if scenario == "hard-stop" {
         // The scenario intentionally spans the run apex and exact final idle.
         // Per-frame release continuity is enforced separately at 2 cm.
@@ -3462,6 +3643,18 @@ fn minimum_knee_hemisphere(frames: &[&FrameSample]) -> f32 {
             })
         })
         .fold(f32::INFINITY, f32::min)
+}
+
+fn maximum_knee_foot_yaw_offset(frames: &[&FrameSample]) -> f32 {
+    frames
+        .iter()
+        .flat_map(|frame| {
+            [
+                frame.ik_left_knee_foot_yaw_offset_degrees,
+                frame.ik_right_knee_foot_yaw_offset_degrees,
+            ]
+        })
+        .fold(0.0, f32::max)
 }
 
 fn maximum_facing_error(frames: &[&FrameSample]) -> f32 {
@@ -4200,7 +4393,7 @@ fn review_html(manifest: &CaptureManifest) -> String {
                 })
             };
             format!(
-                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.2}</td><td>{:.3}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.4}</td></tr>",
+                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.4}</td><td>{:.2}</td><td>{:.3}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.2}</td><td>{:.4}</td></tr>",
                 scenario.scenario,
                 scenario.frame_count,
                 describe(&scenario.worst_displacement, "m"),
@@ -4213,6 +4406,7 @@ fn review_html(manifest: &CaptureManifest) -> String {
                 scenario.minimum_inter_foot_separation_metres,
                 scenario.minimum_knee_flexion_degrees,
                 scenario.minimum_knee_hemisphere_dot,
+                scenario.maximum_knee_foot_yaw_offset_degrees,
                 scenario.maximum_facing_motion_error_degrees,
                 scenario.maximum_facing_tracking_excess_degrees,
                 scenario.maximum_guard_facing_error_degrees,
@@ -4230,7 +4424,7 @@ body{{font:15px system-ui;background:#111820;color:#e8eef5;margin:24px}}button,s
 <div>{scenario_buttons}</div><label>View <select id="view"><option value="gameplay">gameplay (raw)</option><option value="side">side diagnostic</option><option value="front">front diagnostic</option></select></label>
 <label>Playback <select id="rate"><option value="1">normal</option><option value="2">half speed</option><option value="4">quarter speed</option></select></label>
 <p id="telemetry"></p><img id="player"><div id="contact"></div>
-<table><thead><tr><th>scenario</th><th>frames</th><th>worst root-relative displacement</th><th>worst rotation</th><th>loop seam m</th><th>loop seam deg</th><th>supported slip m/frame</th><th>planted interval drift m</th><th>signed foot track m</th><th>inter-foot separation m</th><th>knee flexion deg</th><th>knee hemisphere dot</th><th>maximum facing error deg</th><th>tracking excess deg</th><th>guard facing error deg</th><th>final facing error deg</th><th>minimum terrain-relative foot clearance m</th></tr></thead><tbody>{metrics}</tbody></table>
+<table><thead><tr><th>scenario</th><th>frames</th><th>worst root-relative displacement</th><th>worst rotation</th><th>loop seam m</th><th>loop seam deg</th><th>supported slip m/frame</th><th>planted interval drift m</th><th>signed foot track m</th><th>inter-foot separation m</th><th>knee flexion deg</th><th>knee hemisphere dot</th><th>knee-foot yaw offset deg</th><th>maximum facing error deg</th><th>tracking excess deg</th><th>guard facing error deg</th><th>final facing error deg</th><th>minimum terrain-relative foot clearance m</th></tr></thead><tbody>{metrics}</tbody></table>
 <script>const all={frame_json},scenarioNames={scenario_names_json};let scenario=scenarioNames[0]||"",i=0,timer;const player=document.querySelector('#player'),view=document.querySelector('#view'),rate=document.querySelector('#rate'),telemetry=document.querySelector('#telemetry');
 function frames(){{return all.filter(x=>x.scenario===scenario)}}function show(){{const list=frames(),f=list.length?list[i%list.length]:null;if(!f){{player.removeAttribute('src');telemetry.textContent='No completed capture frames';return}}player.src=f.screenshots[view.value];telemetry.textContent=`${{f.scenario}} frame ${{f.scenario_frame}} | guard ${{f.weapon_guard}} lead ${{f.lead_foot}} | ${{f.speed_metres_per_second.toFixed(2)}} m/s | phase ${{f.gait_phase.toFixed(3)}} | world plants L ${{f.left_support_weight.toFixed(2)}} R ${{f.right_support_weight.toFixed(2)}}`;}}
 function play(){{clearInterval(timer);timer=setInterval(()=>{{i=(i+1)%frames().length;show()}},1000/64*Number(rate.value))}}function contacts(){{const f=frames(),step=Math.max(1,Math.floor(f.length/12)),box=document.querySelector('#contact');box.innerHTML='';for(let n=0;n<f.length;n+=step){{let x=document.createElement('img');x.src=f[n].screenshots[view.value];x.title=`frame ${{f[n].scenario_frame}} phase ${{f[n].gait_phase.toFixed(3)}}`;box.appendChild(x)}}}}
@@ -4387,6 +4581,8 @@ mod tests {
             action: SkeletonAction::None,
             action_phase: 0.0,
             attack_step: AttackStep::Stay,
+            attack_footwork: Footwork::Stay,
+            strike_family: StrikeFamily::Thrust,
             guard_action: false,
             left_support_weight: 1.0,
             right_support_weight: 1.0,
@@ -4406,6 +4602,8 @@ mod tests {
             ik_left_release_target: None,
             ik_right_release_target: None,
             ik_settle_progress: None,
+            ik_left_knee_foot_yaw_offset_degrees: 0.0,
+            ik_right_knee_foot_yaw_offset_degrees: 0.0,
             attack_requested_left_foot_target: None,
             attack_requested_right_foot_target: None,
             attack_constrained_left_foot_target: None,
@@ -4463,12 +4661,21 @@ mod tests {
     fn terrain_and_steady_raised_gate_classification_remain_distinct() {
         assert!(scenario_uses_terrain_ik("cross-slope-walk"));
         assert!(!scenario_uses_terrain_ik("raised-guard-forward"));
+        assert!(!scenario_uses_terrain_ik("raised-guard-stationary-turn"));
         assert!(!scenario_uses_terrain_ik("steady-walk-2.0"));
         assert!(raised_scenario_requires_zero_flight("raised-guard-forward"));
+        assert!(raised_scenario_requires_zero_flight(
+            "raised-guard-stationary-turn"
+        ));
         assert!(!raised_scenario_requires_zero_flight(
             "raised-guard-tap-stop-right"
         ));
         assert!(!raised_scenario_requires_zero_flight("cross-slope-walk"));
+
+        let stationary_turn = scenario_metadata("raised-guard-stationary-turn");
+        assert_eq!(stationary_turn.kind, ScenarioKind::RaisedGuard);
+        assert!(!stationary_turn.repeatable);
+        assert!(stationary_turn.procedural_solver);
     }
 
     #[test]
@@ -4513,6 +4720,21 @@ mod tests {
                 frame.scenario == scenario && frame.weapon_guard == WeaponGuardState::Raised
             }));
         }
+        let stationary_turn = plan
+            .iter()
+            .filter(|frame| frame.scenario == "raised-guard-stationary-turn")
+            .collect::<Vec<_>>();
+        assert_eq!(stationary_turn.len(), 128);
+        assert!(stationary_turn.iter().all(|frame| {
+            frame.speed == 0.0
+                && frame.local_direction == Vec2::ZERO
+                && frame.weapon_guard == WeaponGuardState::Raised
+        }));
+        assert!(stationary_turn.first().unwrap().camera_yaw.abs() < 0.0001);
+        assert!(
+            (stationary_turn.last().unwrap().camera_yaw - std::f32::consts::FRAC_PI_2).abs()
+                < 0.0001
+        );
         let transition = plan
             .iter()
             .filter(|frame| frame.scenario == "raised-guard-transition")
@@ -4747,6 +4969,8 @@ mod tests {
             action: SkeletonAction::None,
             action_phase: 0.0,
             attack_step: AttackStep::Stay,
+            attack_footwork: Footwork::Stay,
+            strike_family: StrikeFamily::Thrust,
             guard_action: false,
             left_support_weight: 1.0,
             right_support_weight: 1.0,
@@ -4766,6 +4990,8 @@ mod tests {
             ik_left_release_target: None,
             ik_right_release_target: None,
             ik_settle_progress: None,
+            ik_left_knee_foot_yaw_offset_degrees: 0.0,
+            ik_right_knee_foot_yaw_offset_degrees: 0.0,
             attack_requested_left_foot_target: None,
             attack_requested_right_foot_target: None,
             attack_constrained_left_foot_target: None,
@@ -4790,6 +5016,9 @@ mod tests {
 
         frame.guard_action = true;
         assert!(maximum_guard_facing_error(&[&frame]) > 179.0);
+
+        frame.ik_left_knee_foot_yaw_offset_degrees = 90.0;
+        assert!(maximum_knee_foot_yaw_offset(&[&frame]) > 45.0);
     }
 
     #[test]
@@ -5005,6 +5234,8 @@ mod tests {
             action: SkeletonAction::None,
             action_phase: 0.0,
             attack_step: AttackStep::Stay,
+            attack_footwork: Footwork::Stay,
+            strike_family: StrikeFamily::Thrust,
             guard_action: false,
             left_support_weight,
             right_support_weight: 0.0,
@@ -5024,6 +5255,8 @@ mod tests {
             ik_left_release_target: None,
             ik_right_release_target: None,
             ik_settle_progress: None,
+            ik_left_knee_foot_yaw_offset_degrees: 0.0,
+            ik_right_knee_foot_yaw_offset_degrees: 0.0,
             attack_requested_left_foot_target: None,
             attack_requested_right_foot_target: None,
             attack_constrained_left_foot_target: None,

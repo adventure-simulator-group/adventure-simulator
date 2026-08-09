@@ -113,7 +113,10 @@ pub(in crate::animation::procedural) fn solve_landing_two_bone(
             root.distance(current_end),
             compression,
         ),
-        true,
+        // Landing supplies a foot-facing-constrained leg pole. Reblending the
+        // authored knee here would occur after that constraint and could
+        // recreate an anatomically impossible sideways bend.
+        false,
     )
 }
 
@@ -154,29 +157,6 @@ pub(in crate::animation::procedural) fn advance_foot_target_at_speed(
     }
     let maximum_step = maximum_speed.max(0.0) * delta_seconds.max(0.0);
     previous + (desired - previous).clamp_length_max(maximum_step)
-}
-
-pub(in crate::animation::procedural) fn solve_two_bone_preserving_with_reach(
-    root: Vec3,
-    current_knee: Vec3,
-    current_end: Vec3,
-    target: Vec3,
-    upper_length: f32,
-    lower_length: f32,
-    pole_direction: Vec3,
-    maximum_target_reach: f32,
-) -> Option<TwoBoneSolution> {
-    solve_two_bone_internal(
-        root,
-        current_knee,
-        current_end,
-        target,
-        upper_length,
-        lower_length,
-        pole_direction,
-        maximum_target_reach,
-        true,
-    )
 }
 
 fn solve_two_bone_internal(

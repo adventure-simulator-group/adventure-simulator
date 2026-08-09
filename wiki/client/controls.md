@@ -83,9 +83,10 @@ builds, <kbd>F6</kbd> exposes rig, collision, smoothing, and aim telemetry.
 | <kbd>F9</kbd> | | Toggle first-/third-person camera. | Third person preserves the same immediate look direction across centered and raised-weapon shoulder profiles. |
 | Hold RMB | Hold LT | Aim / block. | This state never toggles or persists: releasing the button immediately lowers the weapon. A ranged weapon aims; a melee weapon blocks. Ordinary raised movement uses procedural combat steps. Sprint input while raised instead produces an endurance-neutral jog with the upper body still aiming or blocking. |
 | <kbd>Space</kbd> | RT | Jump. | Controller South/A is deliberately unbound. |
-| RMB + LMB | LT + RT | Attack. | An attack already in progress continues if aim/block is released, then finishes with the weapon lowered. |
+| RMB + LMB | LT at least 95% + RT | Preferred attack. | Each melee weapon prefers either a slash or a stab. Fists and spears prefer stabs; swords and most other weapons prefer slashes. An attack already in progress continues if aim/block is released, then finishes with the weapon lowered. |
+| RMB + MMB | LT below 95% + RT | Alternate attack. | Performs the weapon's non-preferred family: stab for a slash-preferring weapon, or slash for a stab-preferring weapon. MMB remains a left-hand grab when RMB is not held. |
 | LMB | RB | Grab with the right hand. | Grabbing is not yet implemented in the tactical layer. Holding RB and then pressing LT will eventually throw a held weapon; that chord is reserved but not implemented. |
-| MMB | LB | Grab with the left hand. | LT + LB remains a left-hand grab. Grabbing is not yet implemented in the tactical layer. |
+| MMB | LB | Grab with the left hand. | MMB is a grab only when RMB is not held. LT + LB remains a left-hand grab. Grabbing is not yet implemented in the tactical layer. |
 | RMB + <kbd>Shift</kbd> while still, or RMB + <kbd>Space</kbd> | LT + RB while still | Duck. | Ducking is a lasting crouch while the chord is held. "Still" is determined from movement input, not current velocity. Pressing guarded <kbd>Space</kbd> begins the duck immediately. |
 | Release RMB + <kbd>Space</kbd> | LT + RB while moving | Dodge. | Releasing <kbd>Space</kbd> after a guarded duck dodges. Controller movement is determined from stick input, not current velocity. |
 | <kbd>Ctrl</kbd> | Left Stick Click | Toggle prone / standing. | This is a persistent toggle. |

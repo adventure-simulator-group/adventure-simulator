@@ -485,6 +485,17 @@ pub struct EncumbranceSummary {
     pub capacity_kg: f32,
 }
 
+/// The two mechanically distinct melee paths exposed by direct controls.
+/// `Swing` covers cuts, chops, and swung impact/pick attacks; `Stab` covers
+/// punches and point-first thrusts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MeleeAttackStyle {
+    #[default]
+    Swing,
+    Stab,
+}
+
 impl EncumbranceSummary {
     pub fn new(burden_kg: f32, capacity_kg: f32) -> Self {
         Self {
@@ -559,7 +570,25 @@ pub trait PlayerEquipment {
     fn weapon_does_pierce(&self) -> bool {
         false
     }
+    /// Precision for ranged attacks. Melee attacks use the style-specific
+    /// values below so a weapon can be easy to thrust accurately but hard to
+    /// place precisely during a swing (or vice versa).
     fn weapon_accuracy(&self) -> f32;
+    fn weapon_swing_precision(&self) -> f32 {
+        self.weapon_accuracy()
+    }
+    fn weapon_stab_precision(&self) -> f32 {
+        self.weapon_accuracy()
+    }
+    fn weapon_preferred_melee_style(&self) -> MeleeAttackStyle {
+        MeleeAttackStyle::Swing
+    }
+    fn weapon_melee_precision(&self, style: MeleeAttackStyle) -> f32 {
+        match style {
+            MeleeAttackStyle::Swing => self.weapon_swing_precision(),
+            MeleeAttackStyle::Stab => self.weapon_stab_precision(),
+        }
+    }
     fn weapon_weight(&self) -> f32;
     fn weapon_penetration(&self) -> f32;
     fn weapon_reach(&self) -> f32;
