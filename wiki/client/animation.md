@@ -1123,16 +1123,27 @@ semantics.
 
 ## Secondary animation
 
-Clients may eventually use joint motors or other procedural dynamics to give
-bones inertia and react to movement, collisions, weapons, clothing, and
-equipment. Overgrowth can mix authored animation with active-ragdoll physics;
+The native `ragdoll-viewer` now provides a deliberately isolated passive
+ragdoll for the existing Cascadeur humanoid. It maps a conservative set of
+major bones through reusable `bevy_animation_graph` ragdoll definitions and
+runs a complete Avian solver without changing the live client's query-only
+physics setup. Twist bones, toes, clavicles, neck intermediates, and weapon
+sockets remain excluded from the rigid-body topology. The ragdoll owns only
+rendered bone transforms while active; it never moves the replicated player
+root, gameplay collider, hitboxes, or persistent strategic state.
+
+Clients may also use joint motors or other procedural dynamics to give bones
+inertia and react to movement, collisions, weapons, clothing, and equipment.
+Overgrowth can mix authored animation with active-ragdoll physics;
 its animation output carries per-bone physics weights through
 [`animation.cpp`](https://github.com/WolfireGames/overgrowth/blob/245fe4828631c84c0023d29d1525f5716ccb6106/Source/Asset/Asset/animation.cpp#L1269-L1425)
 and `RiggedObject` applies them to joint strength.
 
-Secondary animation is not in scope for the MVP. The base evaluator should
-nevertheless preserve a clean final-pose stage so it can be added without
-changing skeleton state or authored pack semantics.
+The focused fixture is an engineering/review capability rather than an MVP
+combat or death mechanic. Integrating ragdoll state with authoritative combat,
+network replication, recovery, or get-up behavior remains future work. The
+base evaluator preserves a clean final-pose stage so those decisions do not
+change authored pack semantics.
 
 ## Stylistic principles
 

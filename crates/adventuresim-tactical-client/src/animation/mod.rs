@@ -14,6 +14,8 @@ use bevy::{
 };
 
 mod procedural;
+#[cfg(all(not(target_family = "wasm"), feature = "animation-graph-physics"))]
+pub(crate) mod ragdoll;
 
 #[allow(unused_imports)]
 pub(crate) use procedural::{

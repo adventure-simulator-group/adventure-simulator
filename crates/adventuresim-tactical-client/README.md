@@ -160,6 +160,23 @@ measured for upright, lowered-guard `humanoid_unarmed` locomotion only;
 crouching, guard movement, and specialized packs receive no inferred
 compensation.
 
+## Native ragdoll fixture
+
+`just ragdoll-viewer` launches the existing Cascadeur `humanoid_unarmed` rig
+over a complete Avian solver. Press `T` to switch between animated kinematic
+bodies and a passive ragdoll, and `R` to reset to animation. A deterministic
+three-quarter camera follows the client-only solved pelvis, keeping the
+rendered rig and passive fall in frame without requiring a gameplay controller
+or collider. The fixture maps pelvis, chest, head, major limbs, hands, and
+feet. Twist bones, toes, clavicles, neck intermediates, and weapon sockets stay
+under authored hierarchy control rather than receiving duplicate rigid bodies.
+
+This is a native presentation fixture, not a new gameplay authority. Its
+solver bodies collide with terrain but not one another, never replace the
+replicated player root or gameplay hitbox, and are discarded with the client.
+The ordinary live client deliberately retains its collider-query-only physics
+configuration.
+
 ## Deterministic animation capture
 
 Regenerate the mirrored endpoint clips after changing `walk.glb` or `run.glb`
