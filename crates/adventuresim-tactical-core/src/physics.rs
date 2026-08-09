@@ -1,4 +1,4 @@
-use avian3d::prelude::*;
+use avian3d::{collider_tree::ColliderTreeSystems, prelude::*};
 use bevy::prelude::*;
 use bevy_ahoy::{
     AhoyPlugins, AhoySystems, CharacterController, camera::AhoyCameraPlugin,
@@ -83,6 +83,13 @@ impl Plugin for AdventureSimulatorPhysicsPlugin {
                 ColliderTreePlugin::<Collider>::default(),
                 AhoyCameraPlugin,
             ))
+            // `SolverSystems::Finalize` is normally nested by Avian's solver
+            // plugin. This read-only fixture omits the solver, so retain the
+            // collider-tree completion step in the equivalent physics phase.
+            .configure_sets(
+                PhysicsSchedule,
+                ColliderTreeSystems::EndOptimize.in_set(PhysicsStepSystems::Finalize),
+            )
             .register_required_components::<RigidBody, RigidBodyDisabled>();
         }
 
@@ -95,18 +102,7 @@ impl Plugin for AdventureSimulatorPhysicsPlugin {
                     ..default()
                 },
             )
-            .init_resource::<PhysicsLengthUnit>()
-            .insert_resource(PhysicsDebugRenderConfig {
-                enable_axes: true,
-                enable_colliders: true,
-                enable_aabb: false,
-                enable_bvh: false,
-                enable_contacts: false,
-                enable_joints: false,
-                enable_raycasts: false,
-                enable_shapecasts: false,
-                enable_islands: false,
-            });
+            .init_resource::<PhysicsLengthUnit>();
     }
 }
 

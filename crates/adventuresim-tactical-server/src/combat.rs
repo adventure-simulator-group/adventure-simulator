@@ -9,7 +9,7 @@ mod ranged;
 use adventuresim_core::item_references::ARROW_ID;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
-    bevy_replicon::prelude::{FromClient, SendMode, ServerTriggerExt, ToClients},
+    bevy_replicon::prelude::{FromClient, SendTargets, ServerTriggerExt, ToClients},
     message::{DefendRequest, MeleeActionRequest, RangedActionRequest, SuccessfulAttackResponse},
 };
 use bevy::prelude::*;

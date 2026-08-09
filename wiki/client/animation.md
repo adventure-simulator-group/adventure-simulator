@@ -1,5 +1,10 @@
 # Animation
 
+The tactical renderer uses Bevy 0.19. Its `WorldAsset` scene terminology,
+atmosphere entity, and linear-space bloom are engine presentation details;
+they do not change the replicated skeleton contract, semantic pack fallback,
+root-motion prohibition, or authoritative attack timing described below.
+
 The tactical animation system turns authoritative character state into a
 convincing skeletal pose. Its authored assets are deliberately sparse:
 animators provide important poses and contact points, while the runtime blends

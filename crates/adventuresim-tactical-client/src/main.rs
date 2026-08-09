@@ -11,7 +11,6 @@ use adventuresim_tactical_core::physics::AdventureSimulatorPhysicsPlugin;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::*;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
-use bevy::input_focus::InputDispatchPlugin;
 use bevy::prelude::*;
 use bevy::window::PresentMode;
 use bevy::{
@@ -159,7 +158,6 @@ fn run(args: Args) {
         default_plugins,
         FrameTimeDiagnosticsPlugin::default(),
         EnhancedInputPlugin,
-        InputDispatchPlugin,
     ))
     .add_plugins((
         AdventureSimulatorCorePlugins
@@ -184,10 +182,11 @@ fn run(args: Args) {
         (
             capture_cursor.run_if(
                 input_just_pressed(MouseButton::Left)
-                    .and(any_with_component::<CharacterController>),
+                    .and_then(any_with_component::<CharacterController>),
             ),
             release_cursor.run_if(
-                input_just_pressed(KeyCode::Escape).and(any_with_component::<CharacterController>),
+                input_just_pressed(KeyCode::Escape)
+                    .and_then(any_with_component::<CharacterController>),
             ),
         ),
     )

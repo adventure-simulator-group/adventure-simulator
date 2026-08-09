@@ -168,7 +168,7 @@ fn draw_debug_rays(
         }
 
         let alpha = EaseFunction::QuadraticOut.sample_unchecked(ray.timer.fraction_remaining());
-        if let Some(asset) = gizmo_assets.get_mut(&ray.handle) {
+        if let Some(mut asset) = gizmo_assets.get_mut(&ray.handle) {
             for color in &mut asset.list_colors {
                 color.set_alpha(alpha);
             }

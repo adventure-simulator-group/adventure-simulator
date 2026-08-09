@@ -231,7 +231,7 @@ pub(super) fn attach_loaded_rig_scenes(
             parent.spawn((
                 Name::new("Authored animation rig"),
                 AnimationRigScene(player),
-                SceneRoot(scene.clone()),
+                WorldAssetRoot(scene.clone()),
                 Transform::from_xyz(0.0, PLAYER_VISUAL_Y_OFFSET, 0.0),
                 Visibility::Hidden,
             ));
