@@ -26,6 +26,7 @@ use console_error_panic_hook;
 use wasm_bindgen::prelude::*;
 
 mod animation;
+mod animation_graph_nodes;
 mod camera;
 #[cfg(feature = "debug")]
 mod debug;

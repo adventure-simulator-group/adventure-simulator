@@ -227,11 +227,13 @@ struct LocomotionEventCursor {
 
 impl Plugin for TacticalAnimationPlugin {
     fn build(&self, app: &mut App) {
-        // The dependency is intentionally dormant in this integration layer.
-        // Semantic paths opt into it explicitly; the legacy evaluator remains
-        // the sole pose-output authority until then.
+        if !app.is_plugin_added::<bevy_animation_graph::AnimationGraphPlugin>() {
+            app.add_plugins(bevy_animation_graph::AnimationGraphPlugin::default());
+        }
         app.init_resource::<AnimationPackCatalog>()
             .init_resource::<AnimationRuntime>()
+            .init_resource::<semantic_graph::SemanticGraphLibrary>()
+            .init_resource::<semantic_graph::SemanticGraphTelemetry>()
             .init_resource::<TerrainIkEnabled>()
             .init_resource::<ProceduralAnimationClock>()
             .add_message::<LocomotionPresentationEvent>()
@@ -249,6 +251,7 @@ impl Plugin for TacticalAnimationPlugin {
                     procedural::cache_humanoid_rigs,
                     procedural::capture_humanoid_rig_axes,
                     capture_authored_bind_transforms,
+                    semantic_graph::evaluate_semantic_graph_paths,
                     evaluate_skeletons,
                     log_animation_diagnostics,
                     tick_impact_reactions,
@@ -280,6 +283,7 @@ impl Plugin for TacticalAnimationPlugin {
                 )
                     .chain()
                     .after(AnimationSystems)
+                    .after(bevy_animation_graph::core::plugin::AnimationGraphSet::Final)
                     .before(TransformSystems::Propagate),
             )
             .add_systems(

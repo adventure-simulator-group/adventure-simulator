@@ -24,6 +24,7 @@ use crate::animation::{
     LocomotionPresentationEventKind, MEASURED_ANKLE_SOLE_OFFSET_METRES, PresentedSkeleton,
     ProceduralAnimationClock, RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES,
     TacticalAnimationPlugin, TerrainIkEnabled, locomotion_support_weights,
+    semantic_graph::{SemanticGraphPath, SemanticGraphTrace},
 };
 use crate::{
     camera::{CameraMode, TacticalCameraPlugin, TacticalCameraSet, third_person_offset},
@@ -336,6 +337,7 @@ struct CaptureManifest {
     scenarios: Vec<ScenarioMetrics>,
     frames: Vec<FrameSample>,
     presentation_events: Vec<PresentationEventSample>,
+    semantic_graph_path_counts: BTreeMap<String, u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -375,6 +377,7 @@ struct CaptureValidation {
     hard_stop_height_continuity_valid: bool,
     repeated_evaluation_valid: bool,
     attack_footwork_valid: bool,
+    semantic_graph_paths_exercised: bool,
     views_are_distinct: bool,
     duplicate_view_frames: Vec<String>,
     note: &'static str,
@@ -504,6 +507,9 @@ struct FrameSample {
     attack_constrained_right_foot_target: Option<[f32; 3]>,
     attack_support_handoffs: u8,
     attack_maximum_reach_yield_metres: f32,
+    semantic_graph_requested_path: SemanticGraphPath,
+    semantic_graph_selected_path: SemanticGraphPath,
+    semantic_graph_runtime_evaluated: bool,
     screenshots: BTreeMap<String, String>,
     bones: BTreeMap<String, BoneSample>,
 }
@@ -1646,6 +1652,7 @@ fn capture_frame(
             Option<&LocomotionBodyResponseState>,
             Option<&LocomotionHeightState>,
             Option<&LegIkState>,
+            Option<&SemanticGraphTrace>,
         ),
         With<CaptureSubject>,
     >,
@@ -1666,6 +1673,7 @@ fn capture_frame(
         body_response,
         height_state,
         leg_ik,
+        semantic_graph,
     )) = subjects.single()
     else {
         wait_or_fail(&mut sequence, "capture subject is missing", &mut exit);
@@ -1675,6 +1683,14 @@ fn capture_frame(
         wait_or_fail(
             &mut sequence,
             "capture subject has no AnimationPlayback",
+            &mut exit,
+        );
+        return;
+    };
+    let Some(semantic_graph) = semantic_graph else {
+        wait_or_fail(
+            &mut sequence,
+            "capture subject has no semantic graph trace",
             &mut exit,
         );
         return;
@@ -1889,6 +1905,9 @@ fn capture_frame(
                 .map(|value| value.to_array()),
             attack_support_handoffs,
             attack_maximum_reach_yield_metres: attack_maximum_reach_yield,
+            semantic_graph_requested_path: semantic_graph.requested_path,
+            semantic_graph_selected_path: semantic_graph.path,
+            semantic_graph_runtime_evaluated: semantic_graph.runtime_evaluated,
             screenshots: VIEWS
                 .into_iter()
                 .map(|view| {
@@ -2554,9 +2573,20 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     let views_are_distinct = sequence.duplicate_view_frames.is_empty();
     let repeated_evaluation_valid = sequence.repeated_evaluation_valid;
     let attack_footwork_valid = validate_attack_footwork(&frames);
+    let semantic_graph_paths_exercised = frames.iter().all(|frame| {
+        frame.semantic_graph_requested_path == SemanticGraphPath::LegacyFallback
+            || (frame.semantic_graph_runtime_evaluated
+                && frame.semantic_graph_selected_path == frame.semantic_graph_requested_path)
+    });
+    let semantic_graph_path_counts = frames.iter().fold(BTreeMap::new(), |mut counts, frame| {
+        *counts
+            .entry(frame.semantic_graph_selected_path.as_str().to_owned())
+            .or_insert(0) += 1;
+        counts
+    });
     let manifest = CaptureManifest {
         sample_hz: SAMPLE_HZ,
-        pipeline: "shared tactical player, scene, camera, authoritative locomotion projection, authored FK, and final procedural passes",
+        pipeline: "shared tactical player, scene, camera, authoritative locomotion projection, dependency-backed semantic graph, authored FK, and final procedural passes",
         views: VIEWS,
         validation: CaptureValidation {
             finite_transforms,
@@ -2584,6 +2614,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
             hard_stop_height_continuity_valid,
             repeated_evaluation_valid,
             attack_footwork_valid,
+            semantic_graph_paths_exercised,
             views_are_distinct,
             duplicate_view_frames: sequence.duplicate_view_frames.clone(),
             note: "Continuity metrics are regression signals, not biomechanical proof; review index.html at normal and slow speed.",
@@ -2591,6 +2622,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         scenarios,
         frames,
         presentation_events,
+        semantic_graph_path_counts,
     };
     let manifest_path = sequence.output.join("manifest.json");
     fs::write(
@@ -2626,6 +2658,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
         && hard_stop_height_continuity_valid
         && repeated_evaluation_valid
         && attack_footwork_valid
+        && semantic_graph_paths_exercised
         && views_are_distinct
     {
         exit.write(AppExit::Success);
@@ -3952,6 +3985,9 @@ mod tests {
             attack_constrained_right_foot_target: None,
             attack_support_handoffs: 0,
             attack_maximum_reach_yield_metres: 0.0,
+            semantic_graph_requested_path: SemanticGraphPath::LegacyFallback,
+            semantic_graph_selected_path: SemanticGraphPath::LegacyFallback,
+            semantic_graph_runtime_evaluated: false,
             screenshots,
             bones: BTreeMap::new(),
         };
@@ -4309,6 +4345,9 @@ mod tests {
             attack_constrained_right_foot_target: None,
             attack_support_handoffs: 0,
             attack_maximum_reach_yield_metres: 0.0,
+            semantic_graph_requested_path: SemanticGraphPath::LegacyFallback,
+            semantic_graph_selected_path: SemanticGraphPath::LegacyFallback,
+            semantic_graph_runtime_evaluated: false,
             screenshots: BTreeMap::new(),
             bones,
         };
@@ -4422,6 +4461,9 @@ mod tests {
             attack_constrained_right_foot_target: None,
             attack_support_handoffs: 0,
             attack_maximum_reach_yield_metres: 0.0,
+            semantic_graph_requested_path: SemanticGraphPath::LegacyFallback,
+            semantic_graph_selected_path: SemanticGraphPath::LegacyFallback,
+            semantic_graph_runtime_evaluated: false,
             screenshots: BTreeMap::new(),
             bones: BTreeMap::from([
                 ("left_foot".into(), foot(left_x, left_terrain_height)),

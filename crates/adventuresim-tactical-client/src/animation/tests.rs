@@ -3,20 +3,275 @@ use super::*;
 #[cfg(test)]
 mod legacy_tests {
     use super::*;
+    use bevy_animation_graph::core::animation_graph::{DEFAULT_OUTPUT_POSE, TargetPin};
+    use semantic_graph::{SemanticGraphPath, SemanticGraphTrace};
+
+    fn graph_test_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .add_plugins(bevy::asset::AssetPlugin::default())
+            .add_plugins(bevy_animation_graph::AnimationGraphPlugin::default())
+            .init_resource::<semantic_graph::SemanticGraphLibrary>();
+        app
+    }
+
+    fn route(app: &mut App, skeleton: SkeletonState) -> SemanticGraphTrace {
+        app.world_mut()
+            .run_system_cached_with(
+                semantic_graph::route_semantic_graph_for_test,
+                (PresentedSkeleton::new(skeleton, None), Entity::PLACEHOLDER),
+            )
+            .unwrap()
+    }
 
     #[test]
-    fn dependency_layer_keeps_legacy_evaluator_active() {
-        let mut app = App::new();
-        app.add_plugins(TacticalAnimationPlugin);
-
-        assert!(!app.is_plugin_added::<bevy_animation_graph::AnimationGraphPlugin>());
-
+    fn ordinary_semantic_graph_runtime_drives_legacy_equivalent_samples() {
+        let mut app = graph_test_app();
         let skeleton = SkeletonState::default()
             .with_local_velocity(Vec3::NEG_Z * 2.0)
             .with_world_velocity(Vec3::NEG_Z * 2.0);
         let before = AnimationEvaluation::from_skeleton(&skeleton);
-        let after = AnimationEvaluation::from_skeleton(&skeleton);
-        assert_eq!(before, after);
+        let after = route(&mut app, skeleton);
+        assert_eq!(after.path, SemanticGraphPath::OrdinaryLocomotion);
+        assert!(after.runtime_evaluated);
+        assert_eq!(before, after.evaluation);
+    }
+
+    #[test]
+    fn semantic_graph_inputs_are_read_only_and_cover_attack_capture() {
+        let mut skeleton = SkeletonState::default()
+            .with_weapon_guard(WeaponGuardState::Raised)
+            .with_local_velocity(Vec3::NEG_Z * 3.0)
+            .with_world_velocity(Vec3::NEG_Z * 3.0);
+        skeleton.begin_attack(
+            AttackSpec {
+                step: AttackStep::Forward,
+                step_speed: 3.0,
+                movement_direction: Vec2::NEG_Y,
+                movement_speed: 3.0,
+                ..default()
+            },
+            10,
+            20,
+        );
+        skeleton.advance_action(15);
+        let before = serde_json::to_vec(&skeleton).unwrap();
+        let presented = PresentedSkeleton::new(skeleton, None);
+        let evaluation = AnimationEvaluation::from_skeleton(&presented);
+        let inputs = semantic_graph::SemanticGraphInputs::from_presented(&presented, &evaluation);
+
+        assert_eq!(inputs.action, SkeletonAction::Attack);
+        assert_eq!(inputs.captured_step, AttackStep::Forward);
+        assert_eq!(inputs.captured_step_direction, Vec2::NEG_Y);
+        assert_eq!(inputs.captured_step_speed, 3.0);
+        assert_eq!(before, serde_json::to_vec(&presented.state).unwrap());
+    }
+
+    #[test]
+    fn semantic_graph_routes_raised_attack_without_retiming_contact() {
+        let mut app = graph_test_app();
+        for (tick, expected_phase) in [(10, 0.0), (15, 0.25), (20, 0.5), (25, 0.75), (30, 1.0)] {
+            let mut skeleton = SkeletonState::default()
+                .with_weapon_guard(WeaponGuardState::Raised)
+                .with_lead_foot(LeadFoot::Left);
+            skeleton.begin_attack(AttackSpec::default(), 10, 20);
+            skeleton.advance_action(tick);
+            let presented = PresentedSkeleton::new(skeleton.clone(), None);
+            let legacy = AnimationEvaluation::from_skeleton(&skeleton);
+            let routed = route(&mut app, skeleton);
+
+            assert_eq!(routed.path, SemanticGraphPath::RaisedGuardAttack);
+            assert!(routed.runtime_evaluated);
+            assert_eq!(routed.evaluation, legacy);
+            assert!((routed.inputs.gait_phase - presented.gait_phase).abs() < f32::EPSILON);
+            assert!((routed.evaluation.action_phase - expected_phase).abs() < f32::EPSILON);
+        }
+    }
+
+    #[test]
+    fn missing_dependency_graph_output_falls_back_to_legacy() {
+        let mut app = graph_test_app();
+        let handle = app
+            .world()
+            .resource::<semantic_graph::SemanticGraphLibrary>()
+            .ordinary
+            .clone();
+        app.world_mut()
+            .resource_mut::<Assets<bevy_animation_graph::core::animation_graph::AnimationGraph>>()
+            .get_mut(&handle)
+            .unwrap()
+            .remove_edge_by_target(&TargetPin::OutputData(DEFAULT_OUTPUT_POSE.into()));
+
+        let skeleton = SkeletonState::default()
+            .with_local_velocity(Vec3::NEG_Z)
+            .with_world_velocity(Vec3::NEG_Z);
+        let legacy = AnimationEvaluation::from_skeleton(&skeleton);
+        let routed = route(&mut app, skeleton);
+
+        assert_eq!(routed.path, SemanticGraphPath::LegacyFallback);
+        assert!(!routed.runtime_evaluated);
+        assert_eq!(routed.evaluation, legacy);
+    }
+
+    #[test]
+    fn dropped_dependency_graph_asset_falls_back_to_legacy() {
+        let mut app = graph_test_app();
+        let handle = app
+            .world()
+            .resource::<semantic_graph::SemanticGraphLibrary>()
+            .raised
+            .clone();
+        app.world_mut()
+            .resource_mut::<Assets<bevy_animation_graph::core::animation_graph::AnimationGraph>>()
+            .remove(&handle);
+
+        let skeleton = SkeletonState::default().with_weapon_guard(WeaponGuardState::Raised);
+        let legacy = AnimationEvaluation::from_skeleton(&skeleton);
+        let routed = route(&mut app, skeleton);
+
+        assert_eq!(routed.path, SemanticGraphPath::LegacyFallback);
+        assert!(!routed.runtime_evaluated);
+        assert_eq!(routed.evaluation, legacy);
+    }
+
+    #[test]
+    fn malformed_late_graph_marker_discards_all_partial_decode_changes() {
+        let mut app = graph_test_app();
+        app.world_mut()
+            .resource_mut::<semantic_graph::SemanticGraphLibrary>()
+            .corrupt_last_marker = true;
+        let skeleton = SkeletonState::default()
+            .with_local_velocity(Vec3::NEG_Z * 2.0)
+            .with_world_velocity(Vec3::NEG_Z * 2.0);
+        let legacy = AnimationEvaluation::from_skeleton(&skeleton);
+        let routed = route(&mut app, skeleton);
+
+        assert_eq!(routed.requested_path, SemanticGraphPath::OrdinaryLocomotion);
+        assert_eq!(routed.path, SemanticGraphPath::LegacyFallback);
+        assert!(!routed.runtime_evaluated);
+        assert_eq!(routed.evaluation, legacy);
+    }
+
+    #[test]
+    fn non_identity_graph_blend_changes_weighted_fk_playback_input() {
+        let mut skeleton = SkeletonState::default()
+            .with_local_velocity(Vec3::NEG_Z * 3.75)
+            .with_world_velocity(Vec3::NEG_Z * 3.75);
+        skeleton.gait_phase = 0.25;
+        assert!(AnimationEvaluation::from_skeleton(&skeleton).base.len() > 1);
+
+        let mut production_app = graph_test_app();
+        let production = route(&mut production_app, skeleton.clone());
+        let mut changed_app = graph_test_app();
+        let active_anchors = AnimationEvaluation::from_skeleton(&skeleton)
+            .base
+            .iter()
+            .map(|sample| match sample.sampling {
+                PoseSampling::Anchor => 1,
+                PoseSampling::Span { .. } => 2,
+            })
+            .sum::<usize>();
+        let mut factors = [0.0; semantic_graph::MAX_GRAPH_ANCHORS - 1];
+        factors[..active_anchors.saturating_sub(1)].fill(0.25);
+        changed_app
+            .world_mut()
+            .resource_mut::<semantic_graph::SemanticGraphLibrary>()
+            .factor_override = Some(factors);
+        let changed = route(&mut changed_app, skeleton);
+
+        assert!(production.runtime_evaluated);
+        assert!(changed.runtime_evaluated);
+        assert_ne!(production.evaluation, changed.evaluation);
+
+        let catalog = AnimationPackCatalog::default();
+        let runtime = runtime_with_available([
+            SemanticPose::WalkContact,
+            SemanticPose::WalkPassing,
+            SemanticPose::RunContact,
+            SemanticPose::RunFlight,
+        ]);
+        let resolve_playback = |evaluation: &AnimationEvaluation| {
+            let samples = if evaluation.action.is_empty() {
+                &evaluation.base
+            } else {
+                &evaluation.action
+            };
+            let mut clips = Vec::new();
+            for sample in samples {
+                append_resolved_sample(
+                    &mut clips,
+                    &runtime,
+                    &catalog,
+                    HUMANOID_UNARMED_PACK,
+                    *sample,
+                    None,
+                );
+            }
+            AnimationPlayback { clips, ..default() }
+        };
+        let production_playback = resolve_playback(&production.evaluation);
+        let changed_playback = resolve_playback(&changed.evaluation);
+        let production_weights = production_playback
+            .clips
+            .iter()
+            .map(|clip| (clip.clip.node, clip.weight))
+            .collect::<Vec<_>>();
+        let changed_weights = changed_playback
+            .clips
+            .iter()
+            .map(|clip| (clip.clip.node, clip.weight))
+            .collect::<Vec<_>>();
+        assert_ne!(production_weights, changed_weights);
+    }
+
+    #[test]
+    fn non_identity_attack_graph_blend_changes_span_fk_playback_input() {
+        let mut skeleton = SkeletonState::default().with_lead_foot(LeadFoot::Left);
+        skeleton.begin_attack(AttackSpec::default(), 10, 20);
+        skeleton.advance_action(15);
+        let legacy = AnimationEvaluation::from_skeleton(&skeleton);
+        assert!(matches!(
+            legacy.action[0].sampling,
+            PoseSampling::Span { progress, .. } if progress > 0.0 && progress < 1.0
+        ));
+
+        let mut production_app = graph_test_app();
+        let production = route(&mut production_app, skeleton.clone());
+        let mut changed_app = graph_test_app();
+        changed_app
+            .world_mut()
+            .resource_mut::<semantic_graph::SemanticGraphLibrary>()
+            .factor_override = Some([0.0; semantic_graph::MAX_GRAPH_ANCHORS - 1]);
+        let changed = route(&mut changed_app, skeleton);
+
+        assert!(production.runtime_evaluated);
+        assert!(changed.runtime_evaluated);
+        assert_ne!(production.evaluation.action, changed.evaluation.action);
+
+        let catalog = AnimationPackCatalog::default();
+        let runtime = runtime_with_available([
+            SemanticPose::GuardLeadLeft,
+            SemanticPose::AttackThrustLeadLeftContact,
+        ]);
+        let resolve = |sample: PoseSample| {
+            let mut weighted = Vec::new();
+            append_resolved_sample(
+                &mut weighted,
+                &runtime,
+                &catalog,
+                HUMANOID_UNARMED_PACK,
+                sample,
+                None,
+            );
+            weighted
+                .into_iter()
+                .map(|clip| (clip.clip.node, clip.weight))
+                .collect::<Vec<_>>()
+        };
+        assert_ne!(
+            resolve(production.evaluation.action[0]),
+            resolve(changed.evaluation.action[0])
+        );
     }
 
     #[test]

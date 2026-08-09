@@ -141,6 +141,34 @@ The animation evaluator consumes skeleton state in this order:
    and head/torso look. Body facing is already present on the replicated root.
 7. Apply optional secondary animation.
 
+The dependency-backed semantic bridge routes ordinary grounded locomotion and
+raised-guard/attack evaluation through real dependency `AnimationGraph`
+queries. Its inputs are a read-only snapshot of
+`PresentedSkeleton` plus `AnimationEvaluation`: speed, local direction,
+gait/action phase, crouch/airborne state, attack height, lead and support feet,
+contact sequence, effective pack, and the attack's captured step
+direction/speed. The bridge flattens anchor samples directly and span samples
+into separate start/end contributions. A chain of dependency pose-blend nodes
+composes those weights; the graph-returned start/end weights atomically
+reconstruct each `PoseSample` total and span progress before driving the existing
+effective-pack resolver. Persistent contexts are keyed by player and route and
+seek meaningful gait/action phase; despawned-player contexts are pruned. A
+missing, malformed, non-finite, out-of-range, or non-normalized graph output
+discards the entire temporary decode and selects the untouched legacy
+evaluation. Resolution
+therefore remains exact pose, same-pack mirrored counterpart, then parent
+fallback, independently for each requested semantic. Specialized packs can
+continue overriding only a subset.
+
+The existing authored FK player remains ordered before bind restoration,
+whole-body mirroring, body response, terrain IK/attack footwork, and weapon
+constraints. Gait endpoint parity still selects binary pre-mirrored clips;
+guard/action fallback still chooses one coherent whole-body mirror. The bridge
+does not consume root motion, emit gameplay events, choose actions or contacts,
+advance authoritative phases, displace the controller, add a second
+inertializer, or add another IK pass. The existing 0.18-second presentation
+crossfade remains the sole transition smoothing.
+
 Overgrowth similarly supplies named blend coordinates such as movement speed,
 ground speed, crouch height, and attack height from AngelScript, then evaluates
 nested synchronized animation groups against the same normalized time in
