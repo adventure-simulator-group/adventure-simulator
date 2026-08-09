@@ -118,6 +118,7 @@ fn scenario_metadata(name: &str) -> ScenarioMetadata {
             repeatable: !name.contains("release")
                 && !name.contains("reversal")
                 && !name.contains("accelerate")
+                && name != "raised-guard-stationary-turn"
                 && name != "raised-guard-transition",
             procedural_solver: true,
         }
@@ -963,6 +964,7 @@ fn capture_plan() -> Vec<PlannedFrame> {
         turning_scenario("gradual-camera-turn", false),
         turning_scenario("half-turn-reversal", true),
         guard_plant_turn_scenario(),
+        raised_guard_stationary_turn_scenario(),
         raised_guard_steady_scenario("raised-guard-forward", 2.0, 2.0, Vec2::NEG_Y),
         raised_guard_scenario("raised-guard-backward", Vec2::Y),
         raised_guard_scenario("raised-guard-left", Vec2::NEG_X),
@@ -1185,6 +1187,27 @@ fn guard_plant_turn_scenario() -> Vec<PlannedFrame> {
                 crouching: false,
                 action: SkeletonAction::Block,
                 weapon_guard: WeaponGuardState::Lowered,
+                lead_foot: LeadFoot::Left,
+            }
+        })
+        .collect()
+}
+
+fn raised_guard_stationary_turn_scenario() -> Vec<PlannedFrame> {
+    (0..=127)
+        .map(|scenario_frame| {
+            let turn_progress = (scenario_frame as f32 / 64.0).clamp(0.0, 1.0);
+            PlannedFrame {
+                scenario: "raised-guard-stationary-turn",
+                scenario_frame,
+                speed: 0.0,
+                time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+                local_direction: Vec2::ZERO,
+                camera_yaw: std::f32::consts::FRAC_PI_2 * smoothstep01(turn_progress),
+                camera_pitch: 0.0,
+                crouching: false,
+                action: SkeletonAction::None,
+                weapon_guard: WeaponGuardState::Raised,
                 lead_foot: LeadFoot::Left,
             }
         })
@@ -3451,7 +3474,11 @@ fn vertical_range_limit(scenario: &str, foot_terrain_relief_metres: f32) -> f32 
     if scenario.starts_with("attack-step-") {
         0.35
     } else if scenario.starts_with("raised-guard-") {
-        RAISED_GUARD_VERTICAL_RANGE_LIMIT_METRES
+        // Stationary raised ownership includes initial guard-pelvis
+        // acquisition. Preserve a few millimetres of numerical margin above
+        // the authored range while per-frame pelvis, knee, plant, and track
+        // gates remain strict.
+        RAISED_GUARD_VERTICAL_RANGE_LIMIT_METRES + 0.005
     } else if scenario == "hard-stop" {
         // The scenario intentionally spans the run apex and exact final idle.
         // Per-frame release continuity is enforced separately at 2 cm.
@@ -4584,12 +4611,21 @@ mod tests {
     fn terrain_and_steady_raised_gate_classification_remain_distinct() {
         assert!(scenario_uses_terrain_ik("cross-slope-walk"));
         assert!(!scenario_uses_terrain_ik("raised-guard-forward"));
+        assert!(!scenario_uses_terrain_ik("raised-guard-stationary-turn"));
         assert!(!scenario_uses_terrain_ik("steady-walk-2.0"));
         assert!(raised_scenario_requires_zero_flight("raised-guard-forward"));
+        assert!(raised_scenario_requires_zero_flight(
+            "raised-guard-stationary-turn"
+        ));
         assert!(!raised_scenario_requires_zero_flight(
             "raised-guard-tap-stop-right"
         ));
         assert!(!raised_scenario_requires_zero_flight("cross-slope-walk"));
+
+        let stationary_turn = scenario_metadata("raised-guard-stationary-turn");
+        assert_eq!(stationary_turn.kind, ScenarioKind::RaisedGuard);
+        assert!(!stationary_turn.repeatable);
+        assert!(stationary_turn.procedural_solver);
     }
 
     #[test]
@@ -4634,6 +4670,21 @@ mod tests {
                 frame.scenario == scenario && frame.weapon_guard == WeaponGuardState::Raised
             }));
         }
+        let stationary_turn = plan
+            .iter()
+            .filter(|frame| frame.scenario == "raised-guard-stationary-turn")
+            .collect::<Vec<_>>();
+        assert_eq!(stationary_turn.len(), 128);
+        assert!(stationary_turn.iter().all(|frame| {
+            frame.speed == 0.0
+                && frame.local_direction == Vec2::ZERO
+                && frame.weapon_guard == WeaponGuardState::Raised
+        }));
+        assert!(stationary_turn.first().unwrap().camera_yaw.abs() < 0.0001);
+        assert!(
+            (stationary_turn.last().unwrap().camera_yaw - std::f32::consts::FRAC_PI_2).abs()
+                < 0.0001
+        );
         let transition = plan
             .iter()
             .filter(|frame| frame.scenario == "raised-guard-transition")

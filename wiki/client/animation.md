@@ -1021,9 +1021,17 @@ terrain IK disabled through `F8`. Raised planning and terrain conformity intenti
 share one ordered solver pass so pole, plant, and pelvis memory are sampled
 once per frame. When terrain conformity is enabled, the same
 targets additionally follow height and slope without replacing their planted
-XZ positions. Raised grounded idle uses the static guard. Raised crouched and airborne
-characters retain the existing crouch and airborne posture rules; specialized
-raised variants can be added later.
+XZ positions. Raised grounded idle keeps the static authored guard while the
+procedural solver retains the feet in world space. If rotating the guard moves
+an authored foot more than 4 cm from its plant, the client replants one foot at
+a time over 0.16 seconds along a short lifted arc around the body. The other
+foot remains the support, and the moving target is constrained to the live
+guard corridor and minimum stance separation. Knee bend directions are
+parallel-transported with each leg and corrected continuously toward their
+anatomical hemisphere so a turn cannot abruptly flip a pole target. This pivot
+state, like all procedural foot targets, is presentation-only and is never
+replicated. Raised crouched and airborne characters retain the existing crouch
+and airborne posture rules; specialized raised variants can be added later.
 
 ### Combat guards
 

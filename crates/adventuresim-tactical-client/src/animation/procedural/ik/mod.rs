@@ -181,6 +181,9 @@ const RAISED_SETTLE_TARGET_SPEED: f32 =
 // deadline-driven while bounding unusually long post-attack recovery steps
 // instead of teleporting them.
 const RAISED_SWING_TARGET_SPEED: f32 = 0.12 * CONTINUITY_SAMPLE_HZ;
+const GUARD_PIVOT_TRIGGER_METRES: f32 = 0.04;
+const GUARD_PIVOT_STEP_SECONDS: f32 = 0.16;
+const GUARD_PIVOT_LIFT_METRES: f32 = 0.08;
 // A 576 degree/second cap is nine degrees at the 64 Hz presentation
 // cadence, retaining numeric margin below the ten-degree review gate. Contact
 // and swing orientation share this boundary so terrain
@@ -308,6 +311,7 @@ pub(crate) struct ArmIkState(ArmIkMemory);
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct RaisedFootworkState {
     pub(crate) initialized: bool,
+    was_moving: bool,
     awaiting_step_sequence: bool,
     half_step: u8,
     lead: LeadFoot,
@@ -325,6 +329,16 @@ pub(crate) struct RaisedFootworkState {
     pub(crate) right_support_weight: f32,
     pub(crate) left_solve_target: Option<Vec3>,
     pub(crate) right_solve_target: Option<Vec3>,
+    pivot_active: bool,
+    pivot_left: bool,
+    pivot_progress: f32,
+    pivot_origin: Vec3,
+    pivot_start: Vec3,
+    pivot_end: Vec3,
+    left_knee_bend_world: Option<Vec3>,
+    right_knee_bend_world: Option<Vec3>,
+    left_end_direction: Option<Vec3>,
+    right_end_direction: Option<Vec3>,
 }
 
 /// One client-only, world-space attack step. The replicated state supplies a
@@ -378,6 +392,7 @@ impl Default for RaisedFootworkState {
     fn default() -> Self {
         Self {
             initialized: false,
+            was_moving: false,
             awaiting_step_sequence: false,
             half_step: 0,
             lead: LeadFoot::Left,
@@ -395,6 +410,16 @@ impl Default for RaisedFootworkState {
             right_support_weight: 0.0,
             left_solve_target: None,
             right_solve_target: None,
+            pivot_active: false,
+            pivot_left: false,
+            pivot_progress: 0.0,
+            pivot_origin: Vec3::ZERO,
+            pivot_start: Vec3::ZERO,
+            pivot_end: Vec3::ZERO,
+            left_knee_bend_world: None,
+            right_knee_bend_world: None,
+            left_end_direction: None,
+            right_end_direction: None,
         }
     }
 }
@@ -793,8 +818,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             && raised_footwork_posture_is_valid(skeleton)
             && skeleton.weapon_guard() == WeaponGuardState::Raised
             && !skeleton.guarded_sprint_locomotion()
-            && skeleton.action_kind() == SkeletonAction::None
-            && skeleton.raised_locomotion().is_moving();
+            && skeleton.action_kind() == SkeletonAction::None;
         let raised_footwork_was_active = raised_states
             .get(owner)
             .is_ok_and(|state| state.initialized);
@@ -1271,6 +1295,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             {
                 footwork = RaisedFootworkState {
                     initialized: true,
+                    was_moving: skeleton.raised_locomotion().is_moving(),
                     awaiting_step_sequence: false,
                     half_step,
                     lead: skeleton.lead_foot,
@@ -1301,6 +1326,16 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     right_support_weight: 0.0,
                     left_solve_target: None,
                     right_solve_target: None,
+                    pivot_active: false,
+                    pivot_left: false,
+                    pivot_progress: 0.0,
+                    pivot_origin: Vec3::ZERO,
+                    pivot_start: Vec3::ZERO,
+                    pivot_end: Vec3::ZERO,
+                    left_knee_bend_world: None,
+                    right_knee_bend_world: None,
+                    left_end_direction: None,
+                    right_end_direction: None,
                 };
             } else if advances && sequence_delta == 1 {
                 if footwork.swing_left {
@@ -1338,6 +1373,30 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             let live_speed = skeleton.world_velocity.with_y(0.0).length();
             let live_step_scale = (live_speed / latched_speed.max(0.01)).clamp(0.0, 1.0);
             let step_length = guard_step_length(latched_speed) * live_step_scale;
+            let stationary_guard = !skeleton.raised_locomotion().is_moving();
+            if !stationary_guard && !footwork.was_moving {
+                // Begin a new cadence from the feet that were actually
+                // rendered during idle. A stationary pivot or initial guard
+                // acquisition may have moved them away from the older cadence
+                // seed even when no pivot remains active.
+                footwork.left_plant = visible_left;
+                footwork.right_plant = visible_right;
+                footwork.step_origin = rig_origin;
+                footwork.step_rotation = rig_rotation;
+                footwork.swing_stance_local = rig_rotation.inverse()
+                    * ((if footwork.swing_left {
+                        visible_left
+                    } else {
+                        visible_right
+                    }) - rig_origin);
+                footwork.swing_start = if footwork.swing_left {
+                    visible_left
+                } else {
+                    visible_right
+                };
+                footwork.pivot_active = false;
+                footwork.pivot_progress = 0.0;
+            }
             let planning_origin = if live_step_scale <= 0.05 {
                 rig_origin
             } else {
@@ -1421,6 +1480,123 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 right_target = swing_target;
             }
 
+            if stationary_guard {
+                if footwork.was_moving {
+                    // A replicated stop can occur mid-swing. Adopt the last
+                    // rendered targets before stationary pivot ownership
+                    // begins instead of restoring older plant coordinates.
+                    footwork.left_plant = visible_left;
+                    footwork.right_plant = visible_right;
+                    footwork.pivot_active = false;
+                    footwork.pivot_progress = 0.0;
+                }
+                // Rotation has no controller velocity and therefore cannot
+                // advance the replicated guard cadence. Keep the stance
+                // plausible in presentation by correcting one world plant at
+                // a time once the rotated authored stance is far enough away.
+                // The endpoint is latched so continued camera motion cannot
+                // make the foot chase a target that never lands.
+                if advances {
+                    if footwork.pivot_active {
+                        footwork.pivot_progress = (footwork.pivot_progress
+                            + state_delta_seconds.max(0.0) / GUARD_PIVOT_STEP_SECONDS)
+                            .min(1.0);
+                        if footwork.pivot_progress >= 1.0 {
+                            if footwork.pivot_left {
+                                footwork.left_plant = footwork.pivot_end;
+                            } else {
+                                footwork.right_plant = footwork.pivot_end;
+                            }
+                            footwork.pivot_active = false;
+                        }
+                    }
+                    if !footwork.pivot_active {
+                        let left_error = (left_authored - footwork.left_plant).xz().length();
+                        let right_error = (right_authored - footwork.right_plant).xz().length();
+                        if left_error.max(right_error) > GUARD_PIVOT_TRIGGER_METRES {
+                            footwork.pivot_active = true;
+                            let left_separation =
+                                (left_authored - footwork.right_plant).xz().length();
+                            let right_separation =
+                                (right_authored - footwork.left_plant).xz().length();
+                            footwork.pivot_left = if left_error <= GUARD_PIVOT_TRIGGER_METRES {
+                                false
+                            } else if right_error <= GUARD_PIVOT_TRIGGER_METRES {
+                                true
+                            } else {
+                                left_separation >= right_separation
+                            };
+                            footwork.pivot_progress = 0.0;
+                            footwork.pivot_origin = rig_origin;
+                            footwork.pivot_start = if footwork.pivot_left {
+                                footwork.left_plant
+                            } else {
+                                footwork.right_plant
+                            };
+                            let authored_end = if footwork.pivot_left {
+                                left_authored
+                            } else {
+                                right_authored
+                            };
+                            let authored_local =
+                                rig_rotation.inverse() * (authored_end - rig_origin);
+                            let side = if authored_local.x.abs() > 0.001 {
+                                authored_local.x.signum()
+                            } else if footwork.pivot_left {
+                                -1.0
+                            } else {
+                                1.0
+                            };
+                            footwork.pivot_end = constrain_guard_swing_to_live_corridor(
+                                authored_end,
+                                if footwork.pivot_left {
+                                    footwork.right_plant
+                                } else {
+                                    footwork.left_plant
+                                },
+                                rig_origin,
+                                rig_rotation,
+                                side,
+                            );
+                        }
+                    }
+                }
+                left_target = footwork.left_plant;
+                right_target = footwork.right_plant;
+                if footwork.pivot_active {
+                    let progress = smoothstep(0.0, 1.0, footwork.pivot_progress);
+                    let pivot_target = guard_pivot_target(
+                        footwork.pivot_start,
+                        footwork.pivot_end,
+                        footwork.pivot_origin,
+                        if footwork.pivot_left {
+                            footwork.right_plant
+                        } else {
+                            footwork.left_plant
+                        },
+                        progress,
+                    );
+                    if footwork.pivot_left {
+                        left_target = pivot_target;
+                    } else {
+                        right_target = pivot_target;
+                    }
+                }
+            } else if footwork.pivot_active {
+                // Movement supersedes a presentation-only pivot. Preserve the
+                // last visible target as the new plant before normal cadence
+                // resumes instead of snapping back to the pivot origin.
+                if footwork.pivot_left {
+                    footwork.left_plant =
+                        footwork.left_solve_target.unwrap_or(footwork.pivot_start);
+                } else {
+                    footwork.right_plant =
+                        footwork.right_solve_target.unwrap_or(footwork.pivot_start);
+                }
+                footwork.pivot_active = false;
+            }
+            footwork.was_moving = !stationary_guard;
+
             let mut airborne_orientation_owned = [true; 2];
             for (leg_index, (upper, lower, foot, target, left, support)) in [
                 (
@@ -1429,7 +1605,11 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     left_foot,
                     left_target,
                     true,
-                    footwork.awaiting_step_sequence || !footwork.swing_left,
+                    if stationary_guard {
+                        !footwork.pivot_active || !footwork.pivot_left
+                    } else {
+                        footwork.awaiting_step_sequence || !footwork.swing_left
+                    },
                 ),
                 (
                     right_upper,
@@ -1437,7 +1617,11 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     right_foot,
                     right_target,
                     false,
-                    footwork.awaiting_step_sequence || footwork.swing_left,
+                    if stationary_guard {
+                        !footwork.pivot_active || footwork.pivot_left
+                    } else {
+                        footwork.awaiting_step_sequence || footwork.swing_left
+                    },
                 ),
             ]
             .into_iter()
@@ -1463,13 +1647,34 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     left,
                 );
                 let remembered = if left {
-                    memory.left_leg
+                    footwork.left_knee_bend_world
                 } else {
-                    memory.right_leg
+                    footwork.right_knee_bend_world
+                }
+                .or_else(|| {
+                    if left {
+                        memory.left_leg
+                    } else {
+                        memory.right_leg
+                    }
+                    .map(|bend| pole_to_world(rig_rotation, bend))
+                });
+                let previous_end_direction = if left {
+                    footwork.left_end_direction
+                } else {
+                    footwork.right_end_direction
                 };
                 let canonical_pole = canonical_knee_pole(side);
-                let remembered = remembered.filter(|pole| pole.dot(canonical_pole) > 0.2);
-                let pole = pole_to_world(rig_rotation, remembered.unwrap_or(canonical_pole));
+                let canonical_world = pole_to_world(rig_rotation, canonical_pole);
+                let pole = stabilized_knee_pole(
+                    remembered,
+                    previous_end_direction,
+                    upper_snapshot.global.translation(),
+                    lower_snapshot.global.translation(),
+                    target,
+                    canonical_world,
+                )
+                .unwrap_or(canonical_world);
                 if let Some(solution) = solve_two_bone_with_reach(
                     upper_snapshot.global.translation(),
                     lower_snapshot.global.translation(),
@@ -1495,8 +1700,12 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     {
                         if left {
                             memory.left_leg = Some(pole_to_owner(rig_rotation, valid));
+                            footwork.left_knee_bend_world = Some(valid);
+                            footwork.left_end_direction = Some(solution.end_direction);
                         } else {
                             memory.right_leg = Some(pole_to_owner(rig_rotation, valid));
+                            footwork.right_knee_bend_world = Some(valid);
+                            footwork.right_end_direction = Some(solution.end_direction);
                         }
                     }
                 }
@@ -1579,8 +1788,24 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
             // cached-chain/orientation seam. This is the same local-transform
             // state that transform propagation exposes to viewer telemetry.
             for (foot, left, nominal_support) in [
-                (left_foot, true, !footwork.swing_left),
-                (right_foot, false, footwork.swing_left),
+                (
+                    left_foot,
+                    true,
+                    if stationary_guard {
+                        !footwork.pivot_active || !footwork.pivot_left
+                    } else {
+                        !footwork.swing_left
+                    },
+                ),
+                (
+                    right_foot,
+                    false,
+                    if stationary_guard {
+                        !footwork.pivot_active || footwork.pivot_left
+                    } else {
+                        footwork.swing_left
+                    },
+                ),
             ] {
                 let Some(rendered) = snapshot(foot, &parents, &transforms.p0()) else {
                     continue;
@@ -4233,6 +4458,7 @@ fn apply_attack_step(
         let visible_swing = if swing_left { left_plant } else { right_plant };
         let handoff = RaisedFootworkState {
             initialized: true,
+            was_moving: skeleton.raised_locomotion().is_moving(),
             awaiting_step_sequence: true,
             half_step: (skeleton.gait_phase.rem_euclid(1.0) >= 0.5) as u8,
             lead: skeleton.lead_foot,
@@ -4250,6 +4476,7 @@ fn apply_attack_step(
             right_support_weight: 1.0,
             left_solve_target: Some(left_plant),
             right_solve_target: Some(right_plant),
+            ..default()
         };
         if let Ok(mut raised) = raised_states.get_mut(owner) {
             *raised = handoff;
@@ -4684,6 +4911,40 @@ fn transported_terrain_pole(
     (Quat::from_rotation_arc(previous, next) * remembered).try_normalize()
 }
 
+fn guard_pivot_target(start: Vec3, end: Vec3, origin: Vec3, support: Vec3, progress: f32) -> Vec3 {
+    let progress = progress.clamp(0.0, 1.0);
+    let start_offset = (start - origin).xz();
+    let end_offset = (end - origin).xz();
+    let Some(start_direction) = start_offset.try_normalize() else {
+        return start.lerp(end, progress);
+    };
+    let Some(end_direction) = end_offset.try_normalize() else {
+        return start.lerp(end, progress);
+    };
+    let start_angle = start_direction.y.atan2(start_direction.x);
+    let end_angle = end_direction.y.atan2(end_direction.x);
+    let angle_delta = (end_angle - start_angle + std::f32::consts::PI)
+        .rem_euclid(std::f32::consts::TAU)
+        - std::f32::consts::PI;
+    let angle = start_angle + angle_delta * progress;
+    let radius = start_offset.length().lerp(end_offset.length(), progress);
+    let mut planar = Vec2::new(angle.cos(), angle.sin()) * radius;
+    let support_planar = (support - origin).xz();
+    let separation = planar - support_planar;
+    if separation.length() < GUARD_TARGET_INTER_FOOT_SEPARATION {
+        let away = separation
+            .try_normalize()
+            .unwrap_or_else(|| planar.normalize_or_zero());
+        planar = support_planar + away * GUARD_TARGET_INTER_FOOT_SEPARATION;
+    }
+    Vec3::new(
+        origin.x + planar.x,
+        start.y.lerp(end.y, progress)
+            + (std::f32::consts::PI * progress).sin() * GUARD_PIVOT_LIFT_METRES,
+        origin.z + planar.y,
+    )
+}
+
 /// Keeps a leg's authored bend plane attached to the hip-to-foot direction.
 ///
 /// Overgrowth's leg solve rotates the animated knee, ankle, and foot together
@@ -4707,9 +4968,17 @@ fn stabilized_knee_pole(
         .try_normalize()
         .or_else(|| canonical_world.try_normalize())?;
     let in_anatomical_hemisphere = |bend: Vec3| {
-        bend.reject_from_normalized(next_end_direction)
-            .try_normalize()
-            .filter(|bend| bend.dot(canonical_bend) > 0.0)
+        let bend = bend
+            .reject_from_normalized(next_end_direction)
+            .try_normalize()?;
+        let alignment = bend.dot(canonical_bend);
+        if alignment >= 0.05 {
+            Some(bend)
+        } else {
+            // Correct continuously at the boundary instead of discarding the
+            // remembered pole and selecting an unrelated fallback next tick.
+            (bend + canonical_bend * (0.05 - alignment)).try_normalize()
+        }
     };
 
     let transported = remembered_bend
@@ -6567,6 +6836,20 @@ mod slope_cache_tests {
         .unwrap();
 
         assert!(pole.dot(remembered) > 0.999);
+    }
+
+    #[test]
+    fn guard_pivot_follows_an_arc_around_the_body() {
+        let origin = Vec3::ZERO;
+        let start = Vec3::new(-0.3, 0.1, 0.0);
+        let end = Vec3::new(0.0, 0.1, 0.3);
+        let support = Vec3::new(0.3, 0.1, 0.0);
+        let midpoint = guard_pivot_target(start, end, origin, support, 0.5);
+
+        assert!((midpoint.xz().length() - 0.3).abs() < 0.0001);
+        assert!(midpoint.y > start.y);
+        assert!(midpoint.x < 0.0 && midpoint.z > 0.0);
+        assert!(midpoint.xz().distance(support.xz()) >= GUARD_TARGET_INTER_FOOT_SEPARATION);
     }
 
     #[test]
