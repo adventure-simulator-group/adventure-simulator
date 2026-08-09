@@ -5,6 +5,21 @@ mod legacy_tests {
     use super::*;
 
     #[test]
+    fn dependency_layer_keeps_legacy_evaluator_active() {
+        let mut app = App::new();
+        app.add_plugins(TacticalAnimationPlugin);
+
+        assert!(!app.is_plugin_added::<bevy_animation_graph::AnimationGraphPlugin>());
+
+        let skeleton = SkeletonState::default()
+            .with_local_velocity(Vec3::NEG_Z * 2.0)
+            .with_world_velocity(Vec3::NEG_Z * 2.0);
+        let before = AnimationEvaluation::from_skeleton(&skeleton);
+        let after = AnimationEvaluation::from_skeleton(&skeleton);
+        assert_eq!(before, after);
+    }
+
+    #[test]
     fn terrain_ik_defaults_on() {
         assert!(TerrainIkEnabled::default().0);
     }

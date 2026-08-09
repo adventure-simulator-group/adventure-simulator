@@ -227,6 +227,9 @@ struct LocomotionEventCursor {
 
 impl Plugin for TacticalAnimationPlugin {
     fn build(&self, app: &mut App) {
+        // The dependency is intentionally dormant in this integration layer.
+        // Semantic paths opt into it explicitly; the legacy evaluator remains
+        // the sole pose-output authority until then.
         app.init_resource::<AnimationPackCatalog>()
             .init_resource::<AnimationRuntime>()
             .init_resource::<TerrainIkEnabled>()

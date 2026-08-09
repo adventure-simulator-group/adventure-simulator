@@ -10,10 +10,13 @@ license.workspace = true
 default = ["debug"]
 debug = ["bevy/debug", "adventuresim-tactical-core/avian_debug"]
 tracy = ["bevy/trace_tracy", "dep:tracing-tracy", "dep:tracing-subscriber", "dep:tracy-client-sys"]
+animation-graph-editor = ["dep:bevy_animation_graph_editor"]
+animation-graph-physics = ["bevy_animation_graph/physics_avian"]
 
 [dependencies]
 bevy.workspace = true
 bevy_flair.workspace = true
+bevy_animation_graph.workspace = true
 adventuresim-tactical-core = { workspace = true, features = ["meshgen"] }
 adventuresim-tactical-netcode = { workspace = true, features = ["client"] }
 clap.workspace = true
@@ -26,6 +29,7 @@ tracy-client-sys = { version = "=0.28.0", optional = true }
 
 [target."cfg(not(target_family = \"wasm\"))".dependencies]
 bevy = { workspace = true, default-features = true, features = ["file_watcher"] }
+bevy_animation_graph_editor = { workspace = true, optional = true }
 
 [target."cfg(target_family = \"wasm\")".dependencies]
 bevy = { workspace = true, default-features = false, features = [
@@ -58,3 +62,4 @@ doc = false
 name = "animation-viewer"
 path = "src/animation_viewer_main.rs"
 doc = false
+required-features = ["debug"]

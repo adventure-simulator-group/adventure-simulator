@@ -581,6 +581,31 @@ timeout fails closed without presenting an uncommitted result.
 
 ## Testing a Single Server
 
+### Private animation-graph dependency
+
+The tactical client pins the private
+`adventure-simulator-group/bevy_animation_graph` repository by full commit SHA.
+Developers must configure a Git credential with read access; `gh auth setup-git`
+is the preferred local GitHub CLI integration. If Cargo's embedded transport
+does not find that helper, set `CARGO_NET_GIT_FETCH_WITH_CLI=true`.
+
+Use a fresh empty Cargo home to verify both the immutable lock and credential:
+
+```powershell
+$fetchCargoHome = Join-Path $env:TEMP ("animation-graph-fetch-" + [guid]::NewGuid())
+New-Item -ItemType Directory -Path $fetchCargoHome | Out-Null
+$env:CARGO_HOME = $fetchCargoHome
+$env:CARGO_NET_GIT_FETCH_WITH_CLI = "true"
+cargo fetch --locked
+```
+
+CI needs a GitHub App token, fine-grained PAT, or deploy credential explicitly
+authorized for the sibling private repository. The Adventure Simulator
+workflow's repo-scoped `GITHUB_TOKEN` cannot read it. Repository secrets are
+also withheld from untrusted fork pull requests, so private-fetch verification
+must run on a trusted internal branch/check or remain explicitly unavailable
+for that fork event.
+
 After changing the canonical unarmed `walk.glb` or `run.glb`, regenerate the
 complete mirrored gait endpoint clips with:
 
