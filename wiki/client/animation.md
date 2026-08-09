@@ -1028,10 +1028,13 @@ a time over 0.16 seconds along a short lifted arc around the body. The other
 foot remains the support, and the moving target is constrained to the live
 guard corridor and minimum stance separation. Knee bend directions are
 parallel-transported with each leg and corrected continuously toward their
-anatomical hemisphere so a turn cannot abruptly flip a pole target. This pivot
-state, like all procedural foot targets, is presentation-only and is never
-replicated. Raised crouched and airborne characters retain the existing crouch
-and airborne posture rules; specialized raised variants can be added later.
+anatomical hemisphere so a turn cannot abruptly flip a pole target. The final
+raised-guard and attack knee pole is projected into the leg's valid bend plane
+and constrained to within plus or minus pi/8 radians of the rendered
+foot-to-toe direction. This pivot state, like all procedural foot targets, is
+presentation-only and is never replicated. Raised crouched and airborne
+characters retain the existing crouch and airborne posture rules; specialized
+raised variants can be added later.
 
 ### Combat guards
 

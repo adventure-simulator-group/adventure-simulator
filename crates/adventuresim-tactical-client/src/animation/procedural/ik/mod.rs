@@ -184,6 +184,7 @@ const RAISED_SWING_TARGET_SPEED: f32 = 0.12 * CONTINUITY_SAMPLE_HZ;
 const GUARD_PIVOT_TRIGGER_METRES: f32 = 0.04;
 const GUARD_PIVOT_STEP_SECONDS: f32 = 0.16;
 const GUARD_PIVOT_LIFT_METRES: f32 = 0.08;
+const KNEE_POLE_MAX_FOOT_FACING_OFFSET_RADIANS: f32 = std::f32::consts::FRAC_PI_8;
 // A 576 degree/second cap is nine degrees at the 64 Hz presentation
 // cadence, retaining numeric margin below the ten-degree review gate. Contact
 // and swing orientation share this boundary so terrain
@@ -1666,6 +1667,13 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 };
                 let canonical_pole = canonical_knee_pole(side);
                 let canonical_world = pole_to_world(rig_rotation, canonical_pole);
+                let foot_facing = rendered_foot_facing(
+                    rig,
+                    left,
+                    foot_snapshot.global.translation(),
+                    &parents,
+                    &transforms.p0(),
+                );
                 let pole = stabilized_knee_pole(
                     remembered,
                     previous_end_direction,
@@ -1673,6 +1681,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                     lower_snapshot.global.translation(),
                     target,
                     canonical_world,
+                    foot_facing,
                 )
                 .unwrap_or(canonical_world);
                 if let Some(solution) = solve_two_bone_with_reach(
@@ -4336,6 +4345,13 @@ fn apply_attack_step(
         };
         let canonical = canonical_knee_pole(side);
         let canonical_world = pole_to_world(rig_rotation, canonical);
+        let foot_facing = rendered_foot_facing(
+            rig,
+            left,
+            foot_snapshot.global.translation(),
+            parents,
+            &transforms.p0(),
+        );
         let pole = stabilized_knee_pole(
             remembered,
             previous_end_direction,
@@ -4343,6 +4359,7 @@ fn apply_attack_step(
             lower_snapshot.global.translation(),
             target,
             canonical_world,
+            foot_facing,
         )
         .unwrap_or(canonical_world);
         if let Some(solution) = solve_two_bone_with_reach(
@@ -4961,6 +4978,7 @@ fn stabilized_knee_pole(
     authored_knee: Vec3,
     target: Vec3,
     canonical_world: Vec3,
+    foot_facing: Option<Vec3>,
 ) -> Option<Vec3> {
     let next_end_direction = (target - hip).try_normalize()?;
     let canonical_bend = canonical_world
@@ -4995,7 +5013,54 @@ fn stabilized_knee_pole(
         .try_normalize()
         .and_then(in_anatomical_hemisphere);
 
-    transported.or(authored).or(Some(canonical_bend))
+    let selected = transported.or(authored).unwrap_or(canonical_bend);
+    foot_facing
+        .and_then(|facing| {
+            constrain_knee_pole_to_foot_facing(
+                selected,
+                next_end_direction,
+                facing,
+                KNEE_POLE_MAX_FOOT_FACING_OFFSET_RADIANS,
+            )
+        })
+        .or(Some(selected))
+}
+
+fn constrain_knee_pole_to_foot_facing(
+    pole: Vec3,
+    leg_direction: Vec3,
+    foot_facing: Vec3,
+    maximum_offset_radians: f32,
+) -> Option<Vec3> {
+    let leg_direction = leg_direction.try_normalize()?;
+    let facing = foot_facing
+        .reject_from_normalized(leg_direction)
+        .try_normalize()?;
+    let pole = pole.reject_from_normalized(leg_direction).try_normalize()?;
+    let signed_offset = leg_direction
+        .dot(facing.cross(pole))
+        .atan2(facing.dot(pole));
+    (Quat::from_axis_angle(
+        leg_direction,
+        signed_offset.clamp(-maximum_offset_radians, maximum_offset_radians),
+    ) * facing)
+        .try_normalize()
+}
+
+fn rendered_foot_facing(
+    rig: &HumanoidRig,
+    left: bool,
+    foot_position: Vec3,
+    parents: &Query<&ChildOf>,
+    transforms: &TransformHelper,
+) -> Option<Vec3> {
+    let toe = *rig.get(if left {
+        &BoneRole::ToeLeft
+    } else {
+        &BoneRole::ToeRight
+    })?;
+    let toe_position = snapshot(toe, parents, transforms)?.global.translation();
+    (toe_position - foot_position).try_normalize()
 }
 
 fn projected_body_center(rig: &HumanoidRig, transforms: &TransformHelper) -> Option<Vec3> {
@@ -6780,6 +6845,7 @@ mod slope_cache_tests {
             Vec3::new(0.0, -0.5, 0.1),
             next_end,
             expected,
+            None,
         )
         .unwrap();
 
@@ -6800,6 +6866,7 @@ mod slope_cache_tests {
             next_target * 0.5,
             next_target,
             Vec3::Z,
+            None,
         )
         .unwrap();
 
@@ -6816,6 +6883,7 @@ mod slope_cache_tests {
             Vec3::new(0.0, -0.5, -0.2),
             Vec3::NEG_Y,
             Vec3::Z,
+            None,
         )
         .unwrap();
 
@@ -6832,10 +6900,42 @@ mod slope_cache_tests {
             Vec3::new(0.0, -0.5, 0.4),
             Vec3::NEG_Y,
             Vec3::Z,
+            None,
         )
         .unwrap();
 
         assert!(pole.dot(remembered) > 0.999);
+    }
+
+    #[test]
+    fn knee_pole_is_clamped_to_pi_over_eight_from_foot_facing() {
+        let leg_direction = Vec3::NEG_Y;
+        let foot_facing = Vec3::Z;
+        let pole = constrain_knee_pole_to_foot_facing(
+            Vec3::X,
+            leg_direction,
+            foot_facing,
+            std::f32::consts::FRAC_PI_8,
+        )
+        .unwrap();
+
+        assert!(pole.dot(leg_direction).abs() < 0.0001);
+        assert!(pole.angle_between(foot_facing) <= std::f32::consts::FRAC_PI_8 + 0.0001);
+    }
+
+    #[test]
+    fn knee_pole_inside_foot_facing_cone_is_unchanged() {
+        let leg_direction = Vec3::NEG_Y;
+        let expected = Quat::from_rotation_y(0.2) * Vec3::Z;
+        let pole = constrain_knee_pole_to_foot_facing(
+            expected,
+            leg_direction,
+            Vec3::Z,
+            std::f32::consts::FRAC_PI_8,
+        )
+        .unwrap();
+
+        assert!(pole.dot(expected) > 0.9999);
     }
 
     #[test]
