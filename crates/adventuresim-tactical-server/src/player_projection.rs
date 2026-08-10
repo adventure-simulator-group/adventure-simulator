@@ -37,7 +37,7 @@ pub(crate) struct LoadingPlayer {
 /// per-fixed-loop accumulator, this survives missing unreliable input packets
 /// until an explicit request replaces it.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq)]
-pub(crate) struct AuthoritativeMovementIntent(Option<Vec2>);
+pub(crate) struct AuthoritativeMovementIntent(pub(crate) Option<Vec2>);
 
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct AuthoritativePostureIntent {

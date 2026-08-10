@@ -9,11 +9,12 @@ pub(crate) fn update_tactical_combat_state(
         Entity,
         &mut TacticalCombatState,
         Option<&mut input::AccumulatedInput>,
+        Option<&mut AuthoritativeMovementIntent>,
         Option<&MovementPace>,
         Option<&SkeletonState>,
     )>,
 ) {
-    for (entity, mut state, mut input, pace, skeleton) in &mut states {
+    for (entity, mut state, mut input, mut movement_intent, pace, skeleton) in &mut states {
         let was_incapacitated = state.is_incapacitated();
         let Ok(view) = viewer.get(entity) else {
             continue;
@@ -27,7 +28,7 @@ pub(crate) fn update_tactical_combat_state(
             view.body_part_health(BodyPart::RightLeg),
             burden,
         );
-        let movement = input.as_deref().and_then(|input| input.last_movement);
+        let movement = movement_intent.as_deref().and_then(|intent| intent.0);
         let movement_exhaustion_change = tactical_movement_exhaustion_change_per_second(
             movement,
             pace.copied().unwrap_or_default(),
@@ -55,6 +56,9 @@ pub(crate) fn update_tactical_combat_state(
             if let Some(input) = input.as_deref_mut() {
                 input.last_movement = None;
                 input.jumped = None;
+            }
+            if let Some(movement_intent) = movement_intent.as_deref_mut() {
+                movement_intent.0 = None;
             }
             if !was_incapacitated {
                 cmd.entity(entity).remove::<PendingDefenderResponse>();

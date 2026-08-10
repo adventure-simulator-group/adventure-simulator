@@ -15,7 +15,7 @@ use adventuresim_tactical_netcode::{
 use bevy::prelude::*;
 use std::{collections::HashMap, num::NonZeroU32, time::Duration};
 
-use crate::player_projection::PlayerProjectionSet;
+use crate::player_projection::{AuthoritativeMovementIntent, PlayerProjectionSet};
 pub(crate) use authority::{
     CombatDuration, CombatInstant, MeleeAttackAuthority, RangedAttackAuthority, ReportedPrecision,
 };
@@ -722,10 +722,8 @@ mod tests {
                     exhaustion: 0.25,
                     ..default()
                 },
-                input::AccumulatedInput {
-                    last_movement: Some(Vec2::Y),
-                    ..default()
-                },
+                input::AccumulatedInput { ..default() },
+                AuthoritativeMovementIntent(Some(Vec2::Y)),
                 MovementPace::Jog,
                 // External physics velocity must not affect movement exertion.
                 LinearVelocity(Vec3::new(jog_speed + 10.0, 0.0, 0.0)),
@@ -762,9 +760,9 @@ mod tests {
 
         app.world_mut()
             .entity_mut(actor)
-            .get_mut::<input::AccumulatedInput>()
+            .get_mut::<AuthoritativeMovementIntent>()
             .unwrap()
-            .last_movement = None;
+            .0 = None;
         app.world_mut()
             .resource_mut::<Time<()>>()
             .advance_by(Duration::from_secs(1));
