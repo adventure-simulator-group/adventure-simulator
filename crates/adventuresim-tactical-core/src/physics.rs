@@ -79,6 +79,17 @@ pub fn tactical_breath_recovery_per_second(endurance: f32) -> f32 {
     tactical_jog_speed(endurance) * BREATH_PER_METRE_PER_SECOND
 }
 
+/// Positive values accumulate tactical breath exhaustion; negative values
+/// recover it. Moving at the endurance-derived jog speed is the equilibrium.
+pub fn tactical_exhaustion_change_per_second(planar_speed: f32, endurance: f32) -> f32 {
+    let planar_speed = if planar_speed.is_finite() {
+        planar_speed.max(0.0)
+    } else {
+        0.0
+    };
+    planar_speed * BREATH_PER_METRE_PER_SECOND - tactical_breath_recovery_per_second(endurance)
+}
+
 pub fn tactical_sprint_speed(
     left_leg_strength: f32,
     right_leg_strength: f32,
@@ -427,6 +438,12 @@ mod tests {
                 .abs()
                 < f32::EPSILON
         );
+        assert!(tactical_exhaustion_change_per_second(8.0, 3.0) > 0.0);
+        assert!(
+            tactical_exhaustion_change_per_second(tactical_jog_speed(3.0), 3.0).abs()
+                < f32::EPSILON
+        );
+        assert!(tactical_exhaustion_change_per_second(0.0, 3.0) < 0.0);
         assert_eq!(
             tactical_sprint_speed(
                 REFERENCE_LEG_STRENGTH,

@@ -702,6 +702,72 @@ mod tests {
     }
 
     #[test]
+    fn jog_holds_exhaustion_sprint_adds_it_and_rest_recovers_it() {
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .add_systems(Update, update_tactical_combat_state);
+        let endurance = 3.0;
+        let jog_speed = tactical_jog_speed(endurance);
+        let actor = app
+            .world_mut()
+            .spawn((
+                Player::default(),
+                Attributes {
+                    endurance,
+                    ..default()
+                },
+                TacticalCombatState {
+                    exhaustion: 0.25,
+                    ..default()
+                },
+                LinearVelocity(Vec3::new(jog_speed, 0.0, 0.0)),
+            ))
+            .id();
+
+        app.world_mut()
+            .resource_mut::<Time<()>>()
+            .advance_by(Duration::from_secs(1));
+        app.update();
+        let jog_exhaustion = app
+            .world()
+            .entity(actor)
+            .get::<TacticalCombatState>()
+            .unwrap()
+            .exhaustion;
+        assert!((jog_exhaustion - 0.25).abs() < f32::EPSILON);
+
+        app.world_mut()
+            .entity_mut(actor)
+            .insert(LinearVelocity(Vec3::new(8.0, 0.0, 0.0)));
+        app.world_mut()
+            .resource_mut::<Time<()>>()
+            .advance_by(Duration::from_secs(1));
+        app.update();
+        let sprint_exhaustion = app
+            .world()
+            .entity(actor)
+            .get::<TacticalCombatState>()
+            .unwrap()
+            .exhaustion;
+        assert!(sprint_exhaustion > jog_exhaustion);
+
+        app.world_mut()
+            .entity_mut(actor)
+            .insert(LinearVelocity::ZERO);
+        app.world_mut()
+            .resource_mut::<Time<()>>()
+            .advance_by(Duration::from_secs(1));
+        app.update();
+        let resting_exhaustion = app
+            .world()
+            .entity(actor)
+            .get::<TacticalCombatState>()
+            .unwrap()
+            .exhaustion;
+        assert!(resting_exhaustion < sprint_exhaustion);
+    }
+
+    #[test]
     fn batched_completions_consume_one_windup_once() {
         let mut app = App::new();
         app.insert_resource(Time::<()>::default())

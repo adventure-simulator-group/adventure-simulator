@@ -73,7 +73,7 @@ const INCAPACITATION_WHEEL_RADIUS: f32 = 52.0;
 const INCAPACITATION_WHEEL_WIDTH: f32 = 8.0;
 const INCAPACITATION_WHEEL_RESOLUTION: f32 = 96.0;
 
-fn incapacitation_wheel_segments(sources: TacticalIncapacitationSources) -> [(f32, Color32); 8] {
+fn incapacitation_wheel_segments(sources: TacticalIncapacitationSources) -> [(f32, Color32); 9] {
     [
         (sources.pain, Color32::from_rgb(0xd9, 0x73, 0xa2)),
         (sources.blood_loss, Color32::from_rgb(0xc8, 0x47, 0x47)),
@@ -82,6 +82,7 @@ fn incapacitation_wheel_segments(sources: TacticalIncapacitationSources) -> [(f3
         (sources.hunger, Color32::from_rgb(0xb5, 0x7a, 0x35)),
         (sources.thirst, Color32::from_rgb(0x3f, 0x9f, 0xa8)),
         (sources.thermal, Color32::from_rgb(0x7d, 0x8e, 0xe8)),
+        (sources.exhaustion, Color32::from_rgb(0x80, 0x80, 0x80)),
         (sources.imbalance, Color32::WHITE),
     ]
 }
@@ -572,14 +573,16 @@ fn update_game_speed_debug_ui(
 fn combat_state_label(state: &TacticalCombatState) -> String {
     if state.is_incapacitated() {
         format!(
-            "INCAPACITATED | Blood loss {:.0}% | Imbalance {:.0}%",
+            "INCAPACITATED | Blood loss {:.0}% | Exhaustion {:.0}% | Imbalance {:.0}%",
             state.blood_loss_fraction * 100.0,
+            state.exhaustion * 100.0,
             state.imbalance * 100.0
         )
     } else {
         format!(
-            "Active | Blood loss {:.0}% | Imbalance {:.0}%",
+            "Active | Blood loss {:.0}% | Exhaustion {:.0}% | Imbalance {:.0}%",
             state.blood_loss_fraction * 100.0,
+            state.exhaustion * 100.0,
             state.imbalance * 100.0
         )
     }
@@ -940,7 +943,7 @@ mod tests {
         };
         assert_eq!(
             combat_state_label(&active),
-            "Active | Blood loss 25% | Imbalance 50%"
+            "Active | Blood loss 25% | Exhaustion 0% | Imbalance 50%"
         );
         let incapacitated = TacticalCombatState {
             incapacitation: 1.0,
@@ -971,15 +974,17 @@ mod tests {
             hunger: 0.5,
             thirst: 0.6,
             thermal: 0.7,
-            imbalance: 0.8,
+            exhaustion: 0.8,
+            imbalance: 0.9,
         });
 
         assert_eq!(
             segments.map(|(amount, _)| amount),
-            [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+            [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
         );
         assert_eq!(segments[0].1, Color32::from_rgb(0xd9, 0x73, 0xa2));
         assert_eq!(segments[1].1, Color32::from_rgb(0xc8, 0x47, 0x47));
-        assert_eq!(segments[7].1, Color32::WHITE);
+        assert_eq!(segments[7].1, Color32::from_rgb(0x80, 0x80, 0x80));
+        assert_eq!(segments[8].1, Color32::WHITE);
     }
 }
