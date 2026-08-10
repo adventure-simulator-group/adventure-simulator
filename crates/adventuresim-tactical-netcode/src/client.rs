@@ -8,6 +8,8 @@ use aeronet_websocket::client::{ClientConfig, WebSocketClient, WebSocketClientPl
 use bevy::prelude::*;
 use bevy_replicon::prelude::*;
 
+const SPRINT_HOLD_THRESHOLD_SECONDS: f32 = 0.25;
+
 #[derive(Default)]
 pub struct AdventureSimulatorClientPlugin;
 
@@ -46,6 +48,7 @@ pub struct DirectControlState {
     pub roll_just_pressed: bool,
     pub downed_align: bool,
     caps_jog: bool,
+    sprint: SprintInputState,
     reserved_throw_chord: bool,
     posture_command: PostureCommand,
     posture_control_armed: bool,
@@ -67,6 +70,7 @@ impl Default for DirectControlState {
             roll_just_pressed: false,
             downed_align: false,
             caps_jog: false,
+            sprint: SprintInputState::default(),
             reserved_throw_chord: false,
             posture_command: PostureCommand::default(),
             posture_control_armed: false,
@@ -78,6 +82,37 @@ impl Default for DirectControlState {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct SprintInputState {
+    active: bool,
+    shift_down: bool,
+    held_seconds: f32,
+    deactivating_press: bool,
+}
+
+impl SprintInputState {
+    fn update(&mut self, shift_down: bool, delta_seconds: f32) {
+        // The current frame's delta ends at this sample, so it belongs to a
+        // key that was already down. Counting it here includes the release
+        // frame without pretending a new press began at the frame's start.
+        if self.shift_down && !self.deactivating_press {
+            self.held_seconds += delta_seconds.max(0.0);
+        }
+        if shift_down && !self.shift_down {
+            self.deactivating_press = self.active;
+            self.active = !self.active;
+            self.held_seconds = 0.0;
+        } else if !shift_down && self.shift_down {
+            if !self.deactivating_press && self.held_seconds > SPRINT_HOLD_THRESHOLD_SECONDS {
+                self.active = false;
+            }
+            self.held_seconds = 0.0;
+            self.deactivating_press = false;
+        }
+        self.shift_down = shift_down;
+    }
+}
+
 /// Optional input supplied by native diagnostic tooling. The request still
 /// crosses the ordinary client/server transport and authoritative controller;
 /// only the physical keyboard/gamepad sampling is replaced.
@@ -85,6 +120,7 @@ impl Default for DirectControlState {
 pub struct PlayerInputOverride(pub Option<PlayerInputRequest>);
 
 fn update_direct_control_input(
+    time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
     gamepads: Query<&Gamepad>,
@@ -95,6 +131,8 @@ fn update_direct_control_input(
     if keys.just_pressed(KeyCode::CapsLock) {
         controls.caps_jog = !controls.caps_jog;
     }
+    let shift_down = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    controls.sprint.update(shift_down, time.delta_secs());
     let keyboard_direction = Vec2::new(
         (keys.pressed(KeyCode::KeyD) as u8 as f32) - (keys.pressed(KeyCode::KeyA) as u8 as f32),
         (keys.pressed(KeyCode::KeyW) as u8 as f32) - (keys.pressed(KeyCode::KeyS) as u8 as f32),
@@ -266,7 +304,7 @@ fn update_direct_control_input(
     let charging_keyboard_jump = controls.space_jump_armed && space_pressed && !downed;
     controls.jump_charge = charging_keyboard_jump;
     controls.crouch = raised
-        && ((keys.pressed(KeyCode::ShiftLeft) && !moving)
+        && ((shift_down && !moving)
             || (left_trigger && right_bumper && !moving && !controls.reserved_throw_chord));
     let jump_requested = !keyboard_dive
         && !gamepad_dive
@@ -280,7 +318,7 @@ fn update_direct_control_input(
         controls.space_jump_armed = false;
     }
     controls.pace = if keyboard_moving {
-        if keys.pressed(KeyCode::ShiftLeft) {
+        if controls.sprint.active {
             MovementPace::Sprint
         } else if controls.caps_jog {
             MovementPace::Jog
@@ -444,6 +482,7 @@ mod tests {
 
     fn input_fixture() -> (World, Schedule) {
         let mut world = World::new();
+        world.insert_resource(Time::<()>::default());
         world.insert_resource(ButtonInput::<KeyCode>::default());
         world.insert_resource(ButtonInput::<MouseButton>::default());
         world.insert_resource(WeaponGuardInputState::default());
@@ -451,6 +490,67 @@ mod tests {
         let mut schedule = Schedule::default();
         schedule.add_systems(update_direct_control_input);
         (world, schedule)
+    }
+
+    #[test]
+    fn shift_tap_latches_sprint_until_the_next_press() {
+        let mut sprint = SprintInputState::default();
+        sprint.update(true, 0.0);
+        assert!(sprint.active);
+        sprint.update(true, 0.1);
+        sprint.update(false, 0.0);
+        assert!(sprint.active);
+
+        sprint.update(true, 0.0);
+        assert!(!sprint.active);
+        sprint.update(true, 1.0);
+        sprint.update(false, 0.0);
+        assert!(!sprint.active);
+    }
+
+    #[test]
+    fn held_shift_sprints_immediately_and_stops_on_release() {
+        let mut sprint = SprintInputState::default();
+        sprint.update(true, 0.0);
+        assert!(sprint.active);
+        sprint.update(true, SPRINT_HOLD_THRESHOLD_SECONDS + 0.01);
+        assert!(sprint.active);
+        sprint.update(false, 0.0);
+        assert!(!sprint.active);
+    }
+
+    #[test]
+    fn shift_release_at_exact_hold_threshold_remains_toggled() {
+        let mut sprint = SprintInputState::default();
+        sprint.update(true, 0.0);
+        sprint.update(false, SPRINT_HOLD_THRESHOLD_SECONDS);
+        assert!(sprint.active);
+    }
+
+    #[test]
+    fn caps_lock_toggles_keyboard_movement_between_walk_and_jog() {
+        let (mut world, mut schedule) = input_fixture();
+        let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+        keys.press(KeyCode::KeyW);
+        keys.press(KeyCode::CapsLock);
+        drop(keys);
+        schedule.run(&mut world);
+        assert_eq!(
+            world.resource::<DirectControlState>().pace,
+            MovementPace::Jog
+        );
+
+        let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+        keys.clear_just_pressed(KeyCode::CapsLock);
+        keys.release(KeyCode::CapsLock);
+        keys.clear_just_released(KeyCode::CapsLock);
+        keys.press(KeyCode::CapsLock);
+        drop(keys);
+        schedule.run(&mut world);
+        assert_eq!(
+            world.resource::<DirectControlState>().pace,
+            MovementPace::Walk
+        );
     }
 
     #[test]

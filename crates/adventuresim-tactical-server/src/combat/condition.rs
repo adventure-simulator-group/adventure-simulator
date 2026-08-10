@@ -9,13 +9,35 @@ pub(crate) fn update_tactical_combat_state(
         Entity,
         &mut TacticalCombatState,
         Option<&mut input::AccumulatedInput>,
+        Option<&mut AuthoritativeMovementIntent>,
+        Option<&MovementPace>,
+        Option<&SkeletonState>,
     )>,
 ) {
-    for (entity, mut state, mut input) in &mut states {
+    for (entity, mut state, mut input, mut movement_intent, pace, skeleton) in &mut states {
         let was_incapacitated = state.is_incapacitated();
         let Ok(view) = viewer.get(entity) else {
             continue;
         };
+        let endurance = view.raw_single_body_part_attr(SimpleAttribute::Endurance);
+        let burden = view.body_weight() + view.inventory_weight();
+        let sprint_speed = tactical_sprint_speed(
+            view.raw_limb_attr(LimbAttribute::Strength, BodyPart::LeftLeg),
+            view.raw_limb_attr(LimbAttribute::Strength, BodyPart::RightLeg),
+            view.body_part_health(BodyPart::LeftLeg),
+            view.body_part_health(BodyPart::RightLeg),
+            burden,
+        );
+        let movement = movement_intent.as_deref().and_then(|intent| intent.0);
+        let movement_exhaustion_change = tactical_movement_exhaustion_change_per_second(
+            movement,
+            pace.copied().unwrap_or_default(),
+            skeleton.map_or(WeaponGuardState::Lowered, SkeletonState::weapon_guard),
+            endurance,
+            sprint_speed,
+        );
+        state.exhaustion =
+            (state.exhaustion + movement_exhaustion_change * time.delta_secs()).max(0.0);
         let balance = view.skill_check(Skill::Balance, LimbWeights::both_legs());
         state.imbalance = recover_combat_imbalance(state.imbalance, balance, time.delta_secs());
         let Ok(limbs) = limbs.get(entity) else {
@@ -29,11 +51,14 @@ pub(crate) fn update_tactical_combat_state(
             limbs.total_damage(),
             will,
             state.imbalance,
-        );
+        ) + state.exhaustion;
         if state.is_incapacitated() {
             if let Some(input) = input.as_deref_mut() {
                 input.last_movement = None;
                 input.jumped = None;
+            }
+            if let Some(movement_intent) = movement_intent.as_deref_mut() {
+                movement_intent.0 = None;
             }
             if !was_incapacitated {
                 cmd.entity(entity).remove::<PendingDefenderResponse>();

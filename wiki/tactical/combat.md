@@ -220,14 +220,32 @@ fn balance_damage(attacker, defender, attack_directness):
 ```
 ### Exhaustion (grey)
 Exhaustion represents how out of breath your character is. Most actions will not actually exhaust faster than it recuperates, but climbing, sprinting, and fighting with heavy weapons, shield, and armor can.
+In tactical combat it is transient, server-authoritative grey incapacitation.
+The movement contribution is based on server-authoritative locomotion intent,
+not measured physics velocity: full jogging contributes exactly zero, walking
+or partial input recovers exhaustion, and sprinting adds it. External impulses
+therefore cannot create breath exhaustion, while poison, climbing, combat, and
+other future sources remain free to add independent rates. Tactical breath
+changes use a 5x response scale so exertion and recovery resolve quickly enough
+to matter during a fight without changing any movement-speed thresholds. Wheel
+segments below 0.5% are hidden as subpixel display noise without changing state.
 ```rs
-const BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND = 0.0031875
-# A character with 4 endurance can jog at 3.75m/s without gaining or losing exhaustion.
 const BREATH_PER_METERS_PER_SECOND = 0.0034
+const TACTICAL_BREATH_RESPONSE_SCALE = 5.0
+
+# Sustainable jog speed is 1.8m/s at endurance 1, 2.0m/s at endurance 2,
+# and the elite-marathon average of 5.83m/s at endurance 5. Between those
+# anchors, most of the extraordinary performance is reserved for high endurance.
+fn sustainable_jog_speed(endurance):
+	if endurance <= 1:
+		t = clamp(endurance, 0, 1)
+		return lerp(1.4, 1.8, t * t * (3 - 2 * t))
+	t = (clamp(endurance, 1, 5) - 1) / 4
+	return 1.8 + 4.03 * pow(t, 2.166)
  
 fn update_stamina(player):
-	player.breath_damage += dt * character.velocity * BREATH_PER_METERS_PER_SECOND
-	player.breath_damage -= dt * character.endurance * BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND 
+	breath_delta = (character.velocity - sustainable_jog_speed(character.endurance)) * BREATH_PER_METERS_PER_SECOND
+	player.breath_damage += dt * breath_delta * TACTICAL_BREATH_RESPONSE_SCALE
 ```
 ### Pain (pink)
 [Injuries](../shared/health.md) are a source of constant pain. Pain is divided by will.

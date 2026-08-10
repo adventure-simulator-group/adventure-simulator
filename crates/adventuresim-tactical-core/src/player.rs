@@ -101,6 +101,7 @@ pub struct TacticalCombatState {
     pub starting_thirst: f32,
     pub starting_thermal: f32,
     pub blood_loss_fraction: f32,
+    pub exhaustion: f32,
     pub imbalance: f32,
     pub incapacitation: f32,
 }
@@ -116,6 +117,7 @@ impl Default for TacticalCombatState {
             starting_thirst: 0.0,
             starting_thermal: 0.0,
             blood_loss_fraction: 0.0,
+            exhaustion: 0.0,
             imbalance: 0.0,
             incapacitation: 0.0,
         }
@@ -141,6 +143,7 @@ impl TacticalCombatState {
             hunger: self.starting_hunger.max(0.0),
             thirst: self.starting_thirst.max(0.0),
             thermal: self.starting_thermal.max(0.0),
+            exhaustion: self.exhaustion.max(0.0),
             imbalance: self.imbalance.max(0.0),
         }
     }
@@ -172,6 +175,7 @@ pub struct TacticalIncapacitationSources {
     pub hunger: f32,
     pub thirst: f32,
     pub thermal: f32,
+    pub exhaustion: f32,
     pub imbalance: f32,
 }
 
@@ -184,6 +188,7 @@ impl TacticalIncapacitationSources {
             + self.hunger
             + self.thirst
             + self.thermal
+            + self.exhaustion
             + self.imbalance
     }
 }
@@ -468,6 +473,7 @@ mod tactical_combat_state_tests {
             starting_thirst: 0.07,
             starting_thermal: 0.05,
             blood_loss_fraction: 0.15,
+            exhaustion: 0.12,
             imbalance: 0.2,
             ..default()
         };
@@ -480,8 +486,9 @@ mod tactical_combat_state_tests {
         assert_eq!(sources.hunger, 0.08);
         assert_eq!(sources.thirst, 0.07);
         assert_eq!(sources.thermal, 0.05);
+        assert_eq!(sources.exhaustion, 0.12);
         assert_eq!(sources.imbalance, 0.2);
-        assert!((sources.total() - 1.55).abs() < 0.0001);
+        assert!((sources.total() - 1.67).abs() < 0.0001);
         assert!(
             (sources.total()
                 - combat_incapacitation(
@@ -491,8 +498,9 @@ mod tactical_combat_state_tests {
                     0.0,
                     4.0,
                     state.imbalance,
-                ))
-            .abs()
+                )
+                - state.exhaustion)
+                .abs()
                 < 0.0001
         );
     }
