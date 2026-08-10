@@ -3,6 +3,7 @@ use std::num::NonZeroU32;
 use adventuresim_core::{
     body::{BodyPart, BodySide},
     equipment::MeleeAttackStyle,
+    item_catalog::{EquipmentChannel, EquipmentLocation},
     prelude::PlayerEquipment,
 };
 use bevy::{
@@ -93,24 +94,54 @@ pub struct ItemProperties {
     pub weight: f32,
 }
 
-#[derive(Component, Reflect, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+#[derive(
+    Component, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq, MapEntities,
+)]
 pub struct EquipmentTopology {
     pub placement_id: Option<String>,
     pub occupancies: Vec<EquipmentTopologyOccupancy>,
 }
 
-#[derive(Reflect, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, MapEntities)]
 pub struct EquipmentTopologyOccupancy {
     pub occupancy_id: String,
-    pub anchor_kind: String,
-    pub location: Option<String>,
-    pub parent_inventory_item_id: Option<u64>,
-    pub attachment_point_id: Option<String>,
-    pub channel: String,
+    pub anchor: TacticalEquipmentAnchor,
+    pub channel: EquipmentChannel,
     pub order: u16,
     pub requirement_index: u16,
     pub capacity_index: u16,
 }
+
+/// Tactical topology never exposes durable inventory row IDs to a client.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, MapEntities)]
+pub enum TacticalEquipmentAnchor {
+    CharacterLocation(EquipmentLocation),
+    ItemAttachment {
+        #[entities]
+        parent: Entity,
+        attachment_point_id: String,
+    },
+}
+
+#[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub struct EquipmentPhysical {
+    pub dimensions_m: Vec3,
+    pub grip_to_tip_m: f32,
+    pub grip_offset_m: Vec3,
+}
+
+impl EquipmentPhysical {
+    pub fn is_valid(self) -> bool {
+        self.dimensions_m.is_finite()
+            && self.dimensions_m.cmpgt(Vec3::ZERO).all()
+            && self.grip_to_tip_m.is_finite()
+            && self.grip_to_tip_m >= 0.0
+            && self.grip_offset_m.is_finite()
+    }
+}
+
+#[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TacticalSceneItem;
 
 #[derive(
     Component,
@@ -547,33 +578,30 @@ mod tests {
             occupancies: vec![
                 EquipmentTopologyOccupancy {
                     occupancy_id: "character:1:Chest:60:0".into(),
-                    anchor_kind: "CharacterLocation".into(),
-                    location: Some("Chest".into()),
-                    parent_inventory_item_id: None,
-                    attachment_point_id: None,
-                    channel: "Accessory".into(),
+                    anchor: TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::Chest),
+                    channel: EquipmentChannel::Accessory,
                     order: 0,
                     requirement_index: 0,
                     capacity_index: 0,
                 },
                 EquipmentTopologyOccupancy {
                     occupancy_id: "item:41:left:0".into(),
-                    anchor_kind: "ItemAttachment".into(),
-                    location: None,
-                    parent_inventory_item_id: Some(41),
-                    attachment_point_id: Some("left".into()),
-                    channel: "Mount".into(),
+                    anchor: TacticalEquipmentAnchor::ItemAttachment {
+                        parent: Entity::from_bits(41),
+                        attachment_point_id: "left".into(),
+                    },
+                    channel: EquipmentChannel::Mount,
                     order: 0,
                     requirement_index: 0,
                     capacity_index: 0,
                 },
                 EquipmentTopologyOccupancy {
                     occupancy_id: "item:42:right:0".into(),
-                    anchor_kind: "ItemAttachment".into(),
-                    location: None,
-                    parent_inventory_item_id: Some(42),
-                    attachment_point_id: Some("right".into()),
-                    channel: "Mount".into(),
+                    anchor: TacticalEquipmentAnchor::ItemAttachment {
+                        parent: Entity::from_bits(42),
+                        attachment_point_id: "right".into(),
+                    },
+                    channel: EquipmentChannel::Mount,
                     order: 1,
                     requirement_index: 1,
                     capacity_index: 0,
@@ -582,7 +610,10 @@ mod tests {
         };
         assert_eq!(topology.placement_id.as_deref(), Some("double_strap"));
         assert_eq!(topology.occupancies.len(), 3);
-        assert_eq!(topology.occupancies[1].parent_inventory_item_id, Some(41));
+        assert!(matches!(
+            topology.occupancies[1].anchor,
+            TacticalEquipmentAnchor::ItemAttachment { .. }
+        ));
         assert_eq!(topology.occupancies[2].requirement_index, 1);
     }
 }

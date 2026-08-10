@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::{collections::BTreeMap, num::NonZeroU32};
 
 use adventuresim_stdb_client::*;
 use adventuresim_tactical_core::physics::TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND;
@@ -116,6 +116,57 @@ fn tactical_covered_parts(parts: &[EquipmentBodyPart]) -> [bool; 7] {
         covered[index] = true;
     }
     covered
+}
+
+fn tactical_equipment_location(
+    location: adventuresim_stdb_client::EquipmentLocation,
+) -> adventuresim_core::item_catalog::EquipmentLocation {
+    use adventuresim_core::item_catalog::EquipmentLocation as Core;
+    use adventuresim_stdb_client::EquipmentLocation as Durable;
+    match location {
+        Durable::Head => Core::Head,
+        Durable::Face => Core::Face,
+        Durable::Neck => Core::Neck,
+        Durable::Chest => Core::Chest,
+        Durable::Stomach => Core::Stomach,
+        Durable::Back => Core::Back,
+        Durable::LeftShoulder => Core::LeftShoulder,
+        Durable::RightShoulder => Core::RightShoulder,
+        Durable::LeftArm => Core::LeftArm,
+        Durable::RightArm => Core::RightArm,
+        Durable::LeftHand => Core::LeftHand,
+        Durable::RightHand => Core::RightHand,
+        Durable::LeftLeg => Core::LeftLeg,
+        Durable::RightLeg => Core::RightLeg,
+        Durable::LeftFoot => Core::LeftFoot,
+        Durable::RightFoot => Core::RightFoot,
+        Durable::LeftBelt => Core::LeftBelt,
+        Durable::RightBelt => Core::RightBelt,
+        Durable::FrontBelt => Core::FrontBelt,
+        Durable::BackBelt => Core::BackBelt,
+        Durable::LeftPocket => Core::LeftPocket,
+        Durable::RightPocket => Core::RightPocket,
+        Durable::BackLeftPocket => Core::BackLeftPocket,
+        Durable::BackRightPocket => Core::BackRightPocket,
+    }
+}
+
+fn tactical_equipment_channel(
+    channel: adventuresim_stdb_client::EquipmentChannel,
+) -> adventuresim_core::item_catalog::EquipmentChannel {
+    use adventuresim_core::item_catalog::EquipmentChannel as Core;
+    use adventuresim_stdb_client::EquipmentChannel as Durable;
+    match channel {
+        Durable::Held => Core::Held,
+        Durable::BaseClothing => Core::BaseClothing,
+        Durable::Padding => Core::Padding,
+        Durable::FlexibleArmor => Core::FlexibleArmor,
+        Durable::RigidArmor => Core::RigidArmor,
+        Durable::Outerwear => Core::Outerwear,
+        Durable::Accessory => Core::Accessory,
+        Durable::Mount => Core::Mount,
+        Durable::Containment => Core::Containment,
+    }
 }
 
 pub(crate) fn spawn_connected_players(
@@ -367,6 +418,14 @@ fn spawn_connected_player(
         ),
     ));
 
+    // Reserve every tactical entity before projecting topology so attachment
+    // edges map to replicated ECS identities even when their parent appears
+    // later in the durable snapshot. Durable row IDs remain server-only.
+    let tactical_items: BTreeMap<u64, Entity> = player
+        .items
+        .iter()
+        .map(|item| (item.inventory_item_id, cmd.spawn_empty().id()))
+        .collect();
     for item in &player.items {
         let Some(quantity) = NonZeroU32::new(item.quantity) else {
             warn!(
@@ -375,7 +434,9 @@ fn spawn_connected_player(
             );
             continue;
         };
-        let mut item_cmd = cmd.spawn((
+        let item_entity = tactical_items[&item.inventory_item_id];
+        let mut item_cmd = cmd.entity(item_entity);
+        item_cmd.insert((
             Replicated,
             TacticalInventoryItemId(item.inventory_item_id),
             ItemOf(entity),
@@ -384,7 +445,18 @@ fn spawn_connected_player(
                 weight: item.item.weight,
                 id: item.item.id.clone(),
             },
+            Transform::default(),
         ));
+        if let Some(definition) = adventuresim_core::item_catalog::definition(&item.item.id)
+            && let Some(equipment) = &definition.equipment
+        {
+            let physical = equipment.physical;
+            item_cmd.insert(EquipmentPhysical {
+                dimensions_m: Vec3::from_array(physical.dimensions_m),
+                grip_to_tip_m: physical.grip_to_tip_m,
+                grip_offset_m: Vec3::from_array(physical.grip_offset_m),
+            });
+        }
         item_cmd.insert(EquipmentTopology {
             placement_id: item.selected_placement_id.clone(),
             occupancies: item
@@ -392,11 +464,27 @@ fn spawn_connected_player(
                 .iter()
                 .map(|occupancy| EquipmentTopologyOccupancy {
                     occupancy_id: occupancy.id.clone(),
-                    anchor_kind: format!("{:?}", occupancy.anchor_kind),
-                    location: occupancy.location.map(|location| format!("{location:?}")),
-                    parent_inventory_item_id: occupancy.parent_inventory_item_id,
-                    attachment_point_id: occupancy.attachment_point_id.clone(),
-                    channel: format!("{:?}", occupancy.channel),
+                    anchor: match occupancy.anchor_kind {
+                        EquipmentAnchorKind::CharacterLocation => {
+                            TacticalEquipmentAnchor::CharacterLocation(
+                                tactical_equipment_location(
+                                    occupancy.location.expect("validated character location"),
+                                ),
+                            )
+                        }
+                        EquipmentAnchorKind::ItemAttachment => {
+                            TacticalEquipmentAnchor::ItemAttachment {
+                                parent: tactical_items[&occupancy
+                                    .parent_inventory_item_id
+                                    .expect("validated attachment parent")],
+                                attachment_point_id: occupancy
+                                    .attachment_point_id
+                                    .clone()
+                                    .expect("validated attachment point"),
+                            }
+                        }
+                    },
+                    channel: tactical_equipment_channel(occupancy.channel),
                     order: occupancy.order,
                     requirement_index: occupancy.requirement_index,
                     capacity_index: occupancy.capacity_index,
@@ -467,13 +555,15 @@ fn spawn_connected_player(
         }
 
         if item.occupancies.iter().any(|occupancy| {
-            occupancy.channel == EquipmentChannel::Held
-                && occupancy.location == Some(EquipmentLocation::LeftHand)
+            occupancy.channel == adventuresim_stdb_client::EquipmentChannel::Held
+                && occupancy.location
+                    == Some(adventuresim_stdb_client::EquipmentLocation::LeftHand)
         }) {
             item_cmd.insert(EquipSlot::HoldingLeft);
         } else if item.occupancies.iter().any(|occupancy| {
-            occupancy.channel == EquipmentChannel::Held
-                && occupancy.location == Some(EquipmentLocation::RightHand)
+            occupancy.channel == adventuresim_stdb_client::EquipmentChannel::Held
+                && occupancy.location
+                    == Some(adventuresim_stdb_client::EquipmentLocation::RightHand)
         }) {
             item_cmd.insert(EquipSlot::HoldingRight);
         }

@@ -34,8 +34,9 @@ pub mod prelude {
     };
     pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
     pub use crate::inventory::{
-        ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentTopology, EquipmentTopologyOccupancy,
-        InventoryItems, ItemOf, ItemProperties, ItemQuantity, ShieldItem, WeaponItem,
+        ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentPhysical, EquipmentTopology,
+        EquipmentTopologyOccupancy, InventoryItems, ItemOf, ItemProperties, ItemQuantity,
+        ShieldItem, TacticalEquipmentAnchor, TacticalSceneItem, WeaponItem,
     };
     pub use crate::physics::{
         AdventureSimulatorPhysicsSet, BREATH_PER_METRE_PER_SECOND, MovementPace,
@@ -55,6 +56,7 @@ pub mod prelude {
     };
     pub use crate::scene::{SceneId, SceneTerrain, TerrainGenerator};
     pub use adventuresim_core::prelude::*;
+    pub use adventuresim_core::item_catalog::{EquipmentChannel, EquipmentLocation};
     pub use avian3d::prelude::*;
     pub use bevy_ahoy::{
         AhoySystems, CharacterController, CharacterControllerState, CharacterLook,

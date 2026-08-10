@@ -2,6 +2,7 @@
 
 mod bot;
 mod combat;
+mod equipment;
 mod mission;
 mod player_projection;
 mod stdb;
@@ -90,6 +91,7 @@ fn main() {
     .add_plugins((
         stdb::SpacetimeDbPlugin,
         combat::CombatPlugin,
+        equipment::TacticalEquipmentPlugin,
         bot::BotPlugin,
     ))
     .insert_resource(MissionState::new(

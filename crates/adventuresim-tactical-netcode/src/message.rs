@@ -33,6 +33,60 @@ pub struct PlayerInputRequest {
     pub weapon_guard: WeaponGuardState,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EquipmentHand {
+    Left,
+    Right,
+}
+
+impl EquipmentHand {
+    pub const fn slot(self) -> EquipSlot {
+        match self {
+            Self::Left => EquipSlot::HoldingLeft,
+            Self::Right => EquipSlot::HoldingRight,
+        }
+    }
+
+    pub const fn location(self) -> EquipmentLocation {
+        match self {
+            Self::Left => EquipmentLocation::LeftHand,
+            Self::Right => EquipmentLocation::RightHand,
+        }
+    }
+}
+
+/// One ordered, mapped command is committed when a grab button is released.
+/// Slot depth is a presentation selection; the server recomputes the ordered
+/// candidate list from its authoritative topology before mutating anything.
+#[derive(Debug, Clone, Copy, Event, Serialize, Deserialize, MapEntities)]
+pub enum EquipmentActionRequest {
+    Slot {
+        #[entities]
+        actor: Entity,
+        hand: EquipmentHand,
+        location: EquipmentLocation,
+        depth: u16,
+    },
+    Hand {
+        #[entities]
+        actor: Entity,
+        hand: EquipmentHand,
+        destination: EquipmentHand,
+    },
+    Drop {
+        #[entities]
+        actor: Entity,
+        hand: EquipmentHand,
+    },
+    Pickup {
+        #[entities]
+        actor: Entity,
+        hand: EquipmentHand,
+        #[entities]
+        item: Entity,
+    },
+}
+
 /// Durable edge identity for jumping over the unreliable continuous-input
 /// channel. The latest sequence is repeated in every input packet, so dropping
 /// the release packet delays a jump rather than losing it.
