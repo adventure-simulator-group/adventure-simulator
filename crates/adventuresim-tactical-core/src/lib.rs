@@ -34,9 +34,10 @@ pub mod prelude {
     };
     pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
     pub use crate::inventory::{
-        ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentPhysical, EquipmentTopology,
+        ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentActionState, EquipmentPhysical, EquipmentTopology,
         EquipmentTopologyOccupancy, InventoryItems, ItemOf, ItemProperties, ItemQuantity,
         ShieldItem, TacticalEquipmentAnchor, TacticalSceneItem, WeaponItem,
+        TACTICAL_ITEM_LAYER, TACTICAL_TERRAIN_LAYER,
     };
     pub use crate::physics::{
         AdventureSimulatorPhysicsSet, BREATH_PER_METRE_PER_SECOND, MovementPace,

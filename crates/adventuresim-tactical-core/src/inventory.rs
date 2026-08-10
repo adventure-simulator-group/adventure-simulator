@@ -6,6 +6,7 @@ use adventuresim_core::{
     item_catalog::{EquipmentChannel, EquipmentLocation},
     prelude::PlayerEquipment,
 };
+use avian3d::prelude::LayerMask;
 use bevy::{
     ecs::{
         entity::MapEntities, lifecycle::HookContext, query::QueryData, system::SystemParam,
@@ -15,6 +16,9 @@ use bevy::{
 };
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumCount, VariantArray};
+
+pub const TACTICAL_TERRAIN_LAYER: LayerMask = LayerMask(1 << 5);
+pub const TACTICAL_ITEM_LAYER: LayerMask = LayerMask(1 << 4);
 
 #[derive(Component, Serialize, Deserialize, Debug, Reflect, PartialEq, Eq, Deref, DerefMut)]
 pub struct ItemQuantity(pub NonZeroU32);
@@ -142,6 +146,13 @@ impl EquipmentPhysical {
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TacticalSceneItem;
+
+/// Replicated optimistic-concurrency token for tactical equipment actions.
+/// The authority increments it after every accepted mutation.
+#[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EquipmentActionState {
+    pub revision: u32,
+}
 
 #[derive(
     Component,

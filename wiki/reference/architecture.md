@@ -446,6 +446,9 @@ bootstrap maps durable equipment rows to replicated tactical entities, then
 all hand, body-slot, attachment, drop, and pickup changes mutate only that ECS
 snapshot. Durable inventory IDs remain server-only, the terminal tactical
 receipt contains no final equipment topology, and teardown restores strategic
-custody/equipment unchanged. Reconnection to the same live tactical server
-therefore observes its existing transient snapshot; starting a new mission
-projects the durable graph again.
+custody/equipment unchanged. Reconnection to the same live tactical server has
+a bounded 30-second, server-owned grace period. The replacement connection
+entity receives the existing combat/controller components and every tactical
+item relationship, so topology and scene state survive without durable writes.
+Grace expiry performs the ordinary strategic leave and discards the abandoned
+tactical projection. Starting a new mission projects the durable graph again.

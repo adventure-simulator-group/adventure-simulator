@@ -59,29 +59,32 @@ impl EquipmentHand {
 /// Slot depth is a presentation selection; the server recomputes the ordered
 /// candidate list from its authoritative topology before mutating anything.
 #[derive(Debug, Clone, Copy, Event, Serialize, Deserialize, MapEntities)]
-pub enum EquipmentActionRequest {
+pub struct EquipmentActionRequest {
+    #[entities]
+    pub actor: Entity,
+    pub sequence: u32,
+    pub expected_revision: u32,
+    pub hand: EquipmentHand,
+    #[entities]
+    pub expected_hand_item: Option<Entity>,
+    pub action: EquipmentAction,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, MapEntities)]
+pub enum EquipmentAction {
     Slot {
-        #[entities]
-        actor: Entity,
-        hand: EquipmentHand,
         location: EquipmentLocation,
         depth: u16,
+        #[entities]
+        expected_destination: Option<Entity>,
     },
     Hand {
-        #[entities]
-        actor: Entity,
-        hand: EquipmentHand,
         destination: EquipmentHand,
-    },
-    Drop {
         #[entities]
-        actor: Entity,
-        hand: EquipmentHand,
+        expected_destination: Option<Entity>,
     },
+    Drop,
     Pickup {
-        #[entities]
-        actor: Entity,
-        hand: EquipmentHand,
         #[entities]
         item: Entity,
     },

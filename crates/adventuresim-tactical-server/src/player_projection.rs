@@ -118,6 +118,13 @@ fn tactical_covered_parts(parts: &[EquipmentBodyPart]) -> [bool; 7] {
     covered
 }
 
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct DisconnectedPlayer {
+    remaining_secs: f32,
+}
+
+const RECONNECT_GRACE_SECS: f32 = 30.0;
+
 fn tactical_equipment_location(
     location: adventuresim_stdb_client::EquipmentLocation,
 ) -> adventuresim_core::item_catalog::EquipmentLocation {
@@ -398,6 +405,9 @@ fn spawn_connected_player(
             starting_thermal: player.strategic_thermal,
             ..default()
         },
+        EquipmentActionState::default(),
+    ));
+    cmd.entity(entity).insert((
         MeleeAttackAuthority::default(),
         RangedAttackAuthority::default(),
         if player.mission_side == TacticalMissionSide::Enemy {
@@ -462,8 +472,12 @@ fn spawn_connected_player(
             occupancies: item
                 .occupancies
                 .iter()
-                .map(|occupancy| EquipmentTopologyOccupancy {
-                    occupancy_id: occupancy.id.clone(),
+                .enumerate()
+                .map(|(occupancy_index, occupancy)| EquipmentTopologyOccupancy {
+                    occupancy_id: format!(
+                        "tactical:{}:{occupancy_index}",
+                        item_entity.to_bits()
+                    ),
                     anchor: match occupancy.anchor_kind {
                         EquipmentAnchorKind::CharacterLocation => {
                             TacticalEquipmentAnchor::CharacterLocation(
@@ -580,6 +594,8 @@ pub(crate) fn on_join_request(
     mut state: ResMut<MissionState>,
     loading_players: Query<(), With<LoadingPlayer>>,
     players: Query<(), With<Player>>,
+    disconnected_players: Query<(Entity, &CharacterId), With<DisconnectedPlayer>>,
+    inventory_items: Query<(Entity, &ItemOf)>,
     conn: Res<SpacetimeDb>,
     ready: Res<SpacetimeDbReady>,
 ) -> Result {
@@ -587,6 +603,49 @@ pub(crate) fn on_join_request(
         return Ok(());
     };
     if loading_players.contains(client) || players.contains(client) {
+        return Ok(());
+    }
+    if let Some((disconnected, _)) = disconnected_players
+        .iter()
+        .find(|(_, character)| reconnect_matches(join.character_id, CharacterId(character.0)))
+    {
+        commands.entity(disconnected).move_components::<(
+            Name,
+            Player,
+            CharacterId,
+            BestiaryCategories,
+            Skills,
+            Limbs,
+            Attributes,
+            Stats,
+            TacticalCombatState,
+            EquipmentActionState,
+            TacticalCombatSide,
+        )>(client);
+        commands.entity(disconnected).move_components::<(
+            Transform,
+            CharacterLook,
+            AuthoritativeMovementIntent,
+            AuthoritativePostureIntent,
+            MovementPace,
+            LinearVelocity,
+            SkeletonState,
+            MeleeAttackAuthority,
+            RangedAttackAuthority,
+        )>(client);
+        commands.entity(disconnected).move_components::<(
+            Collider,
+            CollisionMargin,
+            CharacterController,
+            AccumulatedInput,
+        )>(client);
+        for (item, owner) in &inventory_items {
+            if owner.0 == disconnected {
+                commands.entity(item).insert(ItemOf(client));
+            }
+        }
+        commands.entity(disconnected).despawn();
+        info!(character_id = join.character_id.0, "Rebound reconnect to transient tactical state");
         return Ok(());
     }
     if !state.allows_party_join(join.character_id) {
@@ -962,7 +1021,7 @@ pub(crate) fn update_skeleton_locomotion(
 pub(crate) fn on_client_disconnected(
     disconnected: On<Disconnected>,
     query: Query<(Option<&CharacterId>, Option<&LoadingPlayer>)>,
-    conn: Res<SpacetimeDb>,
+    mut commands: Commands,
 ) -> Result {
     let entity = disconnected.event_target();
     let Ok((player_id, loading)) = query.get(entity) else {
@@ -974,7 +1033,9 @@ pub(crate) fn on_client_disconnected(
     else {
         return Ok(());
     };
-    conn.reducers().leave_mission(character_id)?;
+    commands.entity(entity).insert(DisconnectedPlayer {
+        remaining_secs: RECONNECT_GRACE_SECS,
+    });
     match &disconnected.reason {
         DisconnectReason::ByUser(reason) => {
             info!("Character {character_id} disconnected by server request: {reason}")
@@ -987,6 +1048,35 @@ pub(crate) fn on_client_disconnected(
         }
     }
     Ok(())
+}
+
+fn reconnect_matches(requested: CharacterId, existing: CharacterId) -> bool {
+    requested == existing
+}
+
+pub(crate) fn expire_disconnected_players(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut disconnected: Query<(Entity, &CharacterId, &mut DisconnectedPlayer)>,
+    items: Query<(Entity, &ItemOf)>,
+    conn: Res<SpacetimeDb>,
+) {
+    for (entity, character, mut grace) in &mut disconnected {
+        grace.remaining_secs -= time.delta_secs();
+        if grace.remaining_secs > 0.0 {
+            continue;
+        }
+        if let Err(error) = conn.reducers().leave_mission(character.0) {
+            warn!(character_id = character.0, ?error, "Failed to expire disconnected mission member");
+            continue;
+        }
+        for (item, owner) in &items {
+            if owner.0 == entity {
+                commands.entity(item).despawn();
+            }
+        }
+        commands.entity(entity).despawn();
+    }
 }
 
 fn posture_transition_locks_body_facing(skeleton: &SkeletonState) -> bool {
@@ -1028,17 +1118,25 @@ mod tests {
         advance_posture_transition_facing, apply_posture_action, authoritative_weapon_guard,
         dive_horizontal_velocity, input, mission_enemy_health_scale, mission_enemy_scale,
         posture_transition_locks_body_facing, restore_authoritative_movement_intent,
-        sequence_is_newer, tactical_movement_speed_for_guard, validate_player_input,
+        reconnect_matches, sequence_is_newer, tactical_movement_speed_for_guard,
+        validate_player_input, RECONNECT_GRACE_SECS,
     };
     use adventuresim_tactical_core::prelude::{
         AttackSpec, BodyState, DiveDirection, GroundedPosture, MovementPace, PostureTransitionKind,
-        RollDirection, SkeletonAction, SkeletonState, advance_body_facing,
+        CharacterId, RollDirection, SkeletonAction, SkeletonState, advance_body_facing,
         downed_camera_roll_target,
     };
     use adventuresim_tactical_netcode::prelude::{
         JumpCommand, PostureActionRequest, PostureCommand,
     };
     use bevy::prelude::*;
+
+    #[test]
+    fn reconnect_rebind_requires_exact_character_identity() {
+        assert!(reconnect_matches(CharacterId(7), CharacterId(7)));
+        assert!(!reconnect_matches(CharacterId(7), CharacterId(8)));
+        assert!(RECONNECT_GRACE_SECS > 0.0);
+    }
 
     #[test]
     fn same_durable_enemy_identity_projects_different_mission_strength() {

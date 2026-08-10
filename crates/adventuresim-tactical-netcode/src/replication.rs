@@ -38,6 +38,7 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .replicate::<ItemProperties>()
             .replicate::<EquipmentTopology>()
             .replicate::<EquipmentPhysical>()
+            .replicate::<EquipmentActionState>()
             .replicate::<TacticalSceneItem>()
             .replicate::<EquipSlot>()
             .replicate::<ItemOf>()
@@ -60,6 +61,7 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             Collider,
             Or<(With<Player>, With<Sensor>, With<TacticalSceneItem>)>,
         >()
-        .replicate_once_filtered::<RigidBody, Or<(With<Player>, With<TacticalSceneItem>)>>();
+        .replicate_once_filtered::<RigidBody, Or<(With<Player>, With<TacticalSceneItem>)>>()
+        .replicate_once_filtered::<CollisionLayers, With<TacticalSceneItem>>();
     }
 }

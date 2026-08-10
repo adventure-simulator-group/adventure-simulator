@@ -116,11 +116,19 @@ an empty hand is a no-op. The opposite-hand and pointed-scene destinations are
 explicit HUD choices.
 
 The tactical server re-resolves every selection against mapped ECS entities
-and validates control, source state, compatibility, all occupancy conflicts,
-children, and pickup range/line of sight before applying a batch. Parent-based
-placements that cannot be proven from the current topology fail closed. These
+and validates control, action sequence/revision, expected source/destination,
+compatibility, every parent requirement, attachment tags/capacity, cycles,
+children, and pickup range/line of sight before applying a batch. Ordered DAG
+traversal exposes occupied children and empty authored attachment capacities;
+multi-parent placement reserves every required edge atomically. These
 changes exist only in the mission ECS snapshot and never replace the durable
 strategic equipment graph.
+
+The HUD renders each reachable layer outside-to-inside and then through child
+attachment points. Near layers use lighter labels, the chosen depth is
+highlighted, catalog icon slugs identify items, and a joined marker identifies
+multi-location equipment. Occupied destinations state that their item will be
+swapped into the active hand.
 
 ## Bags
 Your entire inventory won't necessarily fit into the slot system, which is fine. The slot system is intended not to replace "standard inventory management" altogether but to make a *significant subset* of your inventory more manageable, that being the subset of items that you need readily accessible. If you don't need a given item readily accessible, you can put it in a bag.

@@ -4,20 +4,31 @@ use adventuresim_core::item_catalog;
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::{
     bevy_replicon::prelude::FromClient,
-    prelude::{EquipmentActionRequest, EquipmentHand},
+    prelude::{EquipmentAction, EquipmentActionRequest, EquipmentHand},
 };
 use bevy::prelude::*;
+use std::collections::{HashMap, HashSet, VecDeque};
 
-pub(crate) const ITEM_LAYER: LayerMask = LayerMask(1 << 4);
 const PICKUP_RANGE_M: f32 = 2.0;
 
 pub(crate) struct TacticalEquipmentPlugin;
 
 impl Plugin for TacticalEquipmentPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(on_equipment_action);
+        app.init_resource::<PendingEquipmentActions>()
+            .init_resource::<LastEquipmentSequence>()
+            .add_observer(queue_equipment_action)
+            .add_systems(Update, process_equipment_actions);
     }
 }
+
+#[derive(Resource, Default)]
+struct PendingEquipmentActions(VecDeque<(Entity, EquipmentActionRequest)>);
+
+#[derive(Resource, Default)]
+struct LastEquipmentSequence(HashMap<Entity, u32>);
+
+const MAX_PENDING_PER_ACTOR: usize = 4;
 
 type ItemView<'a> = (
     Entity,
@@ -30,50 +41,99 @@ type ItemView<'a> = (
     Option<&'a Transform>,
 );
 
-fn on_equipment_action(
+fn queue_equipment_action(
     request: On<FromClient<EquipmentActionRequest>>,
-    mut commands: Commands,
-    players: Query<(&Transform, &CharacterLook), With<Player>>,
-    items: Query<ItemView<'_>>,
-    spatial: SpatialQuery,
+    mut pending: ResMut<PendingEquipmentActions>,
 ) {
     let Some(controlled) = request.client_id.entity() else {
         return;
     };
-    let actor = match **request {
-        EquipmentActionRequest::Slot { actor, .. }
-        | EquipmentActionRequest::Hand { actor, .. }
-        | EquipmentActionRequest::Drop { actor, .. }
-        | EquipmentActionRequest::Pickup { actor, .. } => actor,
-    };
-    if actor != controlled || players.get(actor).is_err() {
-        warn!(?actor, ?controlled, "rejected equipment request for uncontrolled actor");
+    if request.actor != controlled || !can_enqueue(&pending.0, controlled) {
+        return;
+    }
+    pending.0.push_back((controlled, **request));
+}
+
+fn can_enqueue(queue: &VecDeque<(Entity, EquipmentActionRequest)>, actor: Entity) -> bool {
+    queue.iter().filter(|(queued, _)| *queued == actor).count() < MAX_PENDING_PER_ACTOR
+}
+
+#[allow(clippy::too_many_arguments)]
+fn process_equipment_actions(
+    mut commands: Commands,
+    mut pending: ResMut<PendingEquipmentActions>,
+    mut sequences: ResMut<LastEquipmentSequence>,
+    players: Query<(&Transform, &CharacterLook), With<Player>>,
+    mut action_states: Query<&mut EquipmentActionState>,
+    items: Query<ItemView<'_>>,
+    spatial: SpatialQuery,
+) {
+    // Exactly one action is validated and committed per frame. Deferred ECS
+    // mutations are therefore applied before another queued action can read
+    // the actor's topology.
+    let Some((controlled, request)) = pending.0.pop_front() else { return };
+    if request.actor != controlled || players.get(controlled).is_err() {
+        return;
+    }
+    let Ok(mut state) = action_states.get_mut(controlled) else { return };
+    let last = sequences.0.get(&controlled).copied().unwrap_or(0);
+    if !sequence_is_newer(request.sequence, last)
+        || request.expected_revision != state.revision
+        || hand_item(controlled, request.hand, &items) != request.expected_hand_item
+    {
         return;
     }
 
-    match **request {
-        EquipmentActionRequest::Slot {
-            hand,
+    let accepted = match request.action {
+        EquipmentAction::Slot {
             location,
             depth,
-            ..
-        } => transfer_slot(&mut commands, actor, hand, location, depth, &items),
-        EquipmentActionRequest::Hand {
-            hand, destination, ..
-        } => transfer_hand(&mut commands, actor, hand, destination, &items),
-        EquipmentActionRequest::Drop { hand, .. } => {
-            drop_hand(&mut commands, actor, hand, &players, &items)
+            expected_destination,
+        } => {
+            if ordered_at_location(controlled, location, &items)
+                .get(depth as usize)
+                .map(ReachableTarget::expected_entity)
+                != expected_destination
+            {
+                false
+            } else {
+                transfer_slot(&mut commands, controlled, request.hand, location, depth, &items)
+            }
         }
-        EquipmentActionRequest::Pickup { hand, item, .. } => pickup(
+        EquipmentAction::Hand { destination, expected_destination } => {
+            if hand_item(controlled, destination, &items) != expected_destination {
+                false
+            } else {
+                transfer_hand(&mut commands, controlled, request.hand, destination, &items)
+            }
+        }
+        EquipmentAction::Drop => drop_hand(
             &mut commands,
-            actor,
-            hand,
+            controlled,
+            request.hand,
+            &players,
+            &items,
+            &spatial,
+        ),
+        EquipmentAction::Pickup { item } => pickup(
+            &mut commands,
+            controlled,
+            request.hand,
             item,
             &players,
             &items,
             &spatial,
         ),
+    };
+    if accepted {
+        sequences.0.insert(controlled, request.sequence);
+        state.revision = state.revision.wrapping_add(1);
     }
+}
+
+fn sequence_is_newer(candidate: u32, previous: u32) -> bool {
+    let distance = candidate.wrapping_sub(previous);
+    distance != 0 && distance <= u32::MAX / 2
 }
 
 fn hand_item(actor: Entity, hand: EquipmentHand, items: &Query<ItemView<'_>>) -> Option<Entity> {
@@ -89,7 +149,7 @@ fn ordered_at_location(
     actor: Entity,
     location: EquipmentLocation,
     items: &Query<ItemView<'_>>,
-) -> Vec<Entity> {
+) -> Vec<ReachableTarget> {
     let mut found: Vec<_> = items
         .iter()
         .filter(|(_, _, owner, _, _, _, scene, _)| {
@@ -110,7 +170,75 @@ fn ordered_at_location(
         })
         .collect();
     found.sort_by(|left, right| right.0.cmp(&left.0));
-    found.into_iter().map(|(_, entity)| entity).collect()
+    let mut reachable = Vec::new();
+    let mut visited = HashSet::new();
+    for (_, entity) in found {
+        append_reachable(entity, items, &mut visited, &mut reachable);
+    }
+    reachable
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ReachableTarget {
+    Occupied(Entity),
+    EmptyAttachment {
+        parent: Entity,
+        attachment_point_id: String,
+        channel: EquipmentChannel,
+        capacity_index: u16,
+    },
+}
+
+impl ReachableTarget {
+    fn expected_entity(&self) -> Entity {
+        match self {
+            Self::Occupied(entity) => *entity,
+            Self::EmptyAttachment { parent, .. } => *parent,
+        }
+    }
+}
+
+fn append_reachable(
+    entity: Entity,
+    items: &Query<ItemView<'_>>,
+    visited: &mut HashSet<Entity>,
+    output: &mut Vec<ReachableTarget>,
+) {
+    if !visited.insert(entity) {
+        return;
+    }
+    output.push(ReachableTarget::Occupied(entity));
+    let Ok((_, properties, _, _, _, _, _, _)) = items.get(entity) else { return };
+    let Some(equipment) = item_catalog::definition(&properties.id)
+        .and_then(|definition| definition.equipment.as_ref())
+    else { return };
+    let mut points: Vec<_> = equipment.attachment_points.iter().collect();
+    points.sort_by_key(|point| (point.order, point.id.as_str()));
+    for point in points {
+        for capacity_index in 0..point.capacity {
+            let child = items.iter().find_map(|(child, _, _, topology, _, _, _, _)| {
+                topology.occupancies.iter().any(|occupancy| {
+                    matches!(
+                        &occupancy.anchor,
+                        TacticalEquipmentAnchor::ItemAttachment { parent, attachment_point_id }
+                            if *parent == entity
+                                && attachment_point_id == &point.id
+                                && occupancy.capacity_index == capacity_index
+                    )
+                }).then_some(child)
+            });
+            if let Some(child) = child {
+                append_reachable(child, items, visited, output);
+            } else {
+                output.push(ReachableTarget::EmptyAttachment {
+                    parent: entity,
+                    attachment_point_id: point.id.clone(),
+                    channel: point.channel,
+                    capacity_index,
+                });
+            }
+        }
+    }
 }
 
 fn has_children(entity: Entity, items: &Query<ItemView<'_>>) -> bool {
@@ -170,6 +298,201 @@ fn placement_topology(item_id: &str, location: EquipmentLocation) -> Option<Equi
     })
 }
 
+#[derive(Clone)]
+struct AttachmentTarget {
+    parent: Entity,
+    attachment_point_id: String,
+    channel: EquipmentChannel,
+    capacity_index: u16,
+}
+
+fn attachment_target_accepts(
+    moving_tags: &[String],
+    target: &AttachmentTarget,
+    items: &Query<ItemView<'_>>,
+) -> bool {
+    let Ok((_, parent_properties, _, _, _, _, _, _)) = items.get(target.parent) else {
+        return false;
+    };
+    item_catalog::definition(&parent_properties.id)
+        .and_then(|definition| definition.equipment.as_ref())
+        .and_then(|equipment| {
+            equipment
+                .attachment_points
+                .iter()
+                .find(|point| point.id == target.attachment_point_id)
+        })
+        .is_some_and(|point| {
+            point.channel == target.channel
+                && (point.accepts_tags.is_empty()
+                    || point
+                        .accepts_tags
+                        .iter()
+                        .any(|accepted| moving_tags.contains(accepted)))
+        })
+}
+
+fn attachment_topology(
+    item_id: &str,
+    selected: &ReachableTarget,
+    actor: Entity,
+    items: &Query<ItemView<'_>>,
+) -> Option<EquipmentTopology> {
+    let moving = item_catalog::definition(item_id)?.equipment.as_ref()?;
+    let mut available = Vec::<AttachmentTarget>::new();
+    let mut explicitly_selected = Vec::<(Entity, String, u16)>::new();
+    match selected {
+        ReachableTarget::EmptyAttachment {
+            parent,
+            attachment_point_id,
+            channel,
+            capacity_index,
+        } => {
+            explicitly_selected.push((*parent, attachment_point_id.clone(), *capacity_index));
+            available.push(AttachmentTarget {
+                parent: *parent,
+                attachment_point_id: attachment_point_id.clone(),
+                channel: *channel,
+                capacity_index: *capacity_index,
+            });
+        }
+        ReachableTarget::Occupied(entity) => {
+            let (_, _, _, topology, _, _, _, _) = items.get(*entity).ok()?;
+            available.extend(topology.occupancies.iter().filter_map(|occupancy| {
+                match &occupancy.anchor {
+                    TacticalEquipmentAnchor::ItemAttachment {
+                        parent,
+                        attachment_point_id,
+                    } => {
+                        explicitly_selected.push((
+                            *parent,
+                            attachment_point_id.clone(),
+                            occupancy.capacity_index,
+                        ));
+                        Some(AttachmentTarget {
+                            parent: *parent,
+                            attachment_point_id: attachment_point_id.clone(),
+                            channel: occupancy.channel,
+                            capacity_index: occupancy.capacity_index,
+                        })
+                    }
+                    _ => None,
+                }
+            }));
+        }
+    }
+    // Additional empty points are selected deterministically for multi-parent
+    // placements. Existing occupied capacities are never silently displaced.
+    for (parent, parent_properties, owner, _, _, _, scene, _) in items.iter() {
+        if scene || owner.is_none_or(|owner| owner.0 != actor) {
+            continue;
+        }
+        let Some(parent_equipment) = item_catalog::definition(&parent_properties.id)
+            .and_then(|definition| definition.equipment.as_ref())
+        else { continue };
+        for point in &parent_equipment.attachment_points {
+            for capacity_index in 0..point.capacity {
+                let occupied = items.iter().any(|(_, _, _, topology, _, _, _, _)| {
+                    topology.occupancies.iter().any(|occupancy| {
+                        matches!(
+                            &occupancy.anchor,
+                            TacticalEquipmentAnchor::ItemAttachment { parent: found, attachment_point_id }
+                                if *found == parent
+                                    && attachment_point_id == &point.id
+                                    && occupancy.capacity_index == capacity_index
+                        )
+                    })
+                });
+                if !occupied
+                    && !available.iter().any(|target| {
+                        target.parent == parent
+                            && target.attachment_point_id == point.id
+                            && target.capacity_index == capacity_index
+                    })
+                {
+                    available.push(AttachmentTarget {
+                        parent,
+                        attachment_point_id: point.id.clone(),
+                        channel: point.channel,
+                        capacity_index,
+                    });
+                }
+            }
+        }
+    }
+    available.sort_by(|left, right| {
+        let left_selected = explicitly_selected.iter().any(|selected| {
+            selected == &(left.parent, left.attachment_point_id.clone(), left.capacity_index)
+        });
+        let right_selected = explicitly_selected.iter().any(|selected| {
+            selected == &(right.parent, right.attachment_point_id.clone(), right.capacity_index)
+        });
+        right_selected
+            .cmp(&left_selected)
+            .then(left.parent
+            .to_bits()
+            .cmp(&right.parent.to_bits())
+            .then(left.attachment_point_id.cmp(&right.attachment_point_id))
+            .then(left.capacity_index.cmp(&right.capacity_index)))
+    });
+    for placement in &moving.placements {
+        if placement.occupancy.is_empty() && !placement.parents.is_empty() {
+            let mut chosen = Vec::new();
+            for requirement in &placement.parents {
+                let Some(target) = available.iter().find(|target| {
+                    target.channel == requirement.channel
+                        && attachment_target_accepts(&moving.attachment_tags, target, items)
+                        && !chosen.iter().any(|chosen: &&AttachmentTarget| {
+                            chosen.parent == target.parent
+                                && chosen.attachment_point_id == target.attachment_point_id
+                                && chosen.capacity_index == target.capacity_index
+                        })
+                }) else { break };
+                chosen.push(target);
+            }
+            if chosen.len() != placement.parents.len() {
+                continue;
+            }
+            if !explicitly_selected.iter().all(|selected| {
+                chosen.iter().any(|target| {
+                    selected
+                        == &(
+                            target.parent,
+                            target.attachment_point_id.clone(),
+                            target.capacity_index,
+                        )
+                })
+            }) {
+                continue;
+            }
+            return Some(EquipmentTopology {
+                placement_id: Some(placement.id.clone()),
+                occupancies: chosen
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, target)| EquipmentTopologyOccupancy {
+                        occupancy_id: format!(
+                            "tactical:{}:{}:{}",
+                            target.parent.to_bits(),
+                            target.attachment_point_id,
+                            target.capacity_index
+                        ),
+                        anchor: TacticalEquipmentAnchor::ItemAttachment {
+                            parent: target.parent,
+                            attachment_point_id: target.attachment_point_id.clone(),
+                        },
+                        channel: target.channel,
+                        order: placement.parents[index].order,
+                        requirement_index: index as u16,
+                        capacity_index: target.capacity_index,
+                    })
+                    .collect(),
+            });
+        }
+    }
+    None
+}
+
 fn topology_conflicts(
     actor: Entity,
     proposed: &EquipmentTopology,
@@ -184,7 +507,9 @@ fn topology_conflicts(
                 topology.occupancies.iter().any(|current| {
                     candidate.anchor == current.anchor
                         && candidate.channel == current.channel
-                        && (candidate.channel.singleton_per_location()
+                        && (matches!(candidate.anchor, TacticalEquipmentAnchor::ItemAttachment { .. })
+                            && candidate.capacity_index == current.capacity_index
+                            || candidate.channel.singleton_per_location()
                             || candidate.order == current.order)
                 })
             })
@@ -198,45 +523,64 @@ fn transfer_slot(
     location: EquipmentLocation,
     depth: u16,
     items: &Query<ItemView<'_>>,
-) {
+) -> bool {
     if matches!(location, EquipmentLocation::LeftHand | EquipmentLocation::RightHand) {
-        return;
+        return false;
     }
     let held = hand_item(actor, hand, items);
     let destination = ordered_at_location(actor, location, items)
         .get(depth as usize)
-        .copied();
+        .cloned();
     match held {
         None => {
-            let Some(item) = destination else { return };
+            let Some(ReachableTarget::Occupied(item)) = destination else { return false };
             if has_children(item, items) {
-                return;
+                return false;
             }
             commands.entity(item).insert((hand_topology(hand), hand.slot()));
+            true
         }
         Some(moving) => {
             let Ok((_, properties, _, _, _, _, _, _)) = items.get(moving) else {
-                return;
+                return false;
             };
-            let Some(proposed) = placement_topology(&properties.id, location) else {
-                return;
+            if has_children(moving, items) {
+                return false;
+            }
+            let selected_entity = destination.as_ref().map(ReachableTarget::expected_entity);
+            let proposed = match destination.as_ref() {
+                Some(ReachableTarget::EmptyAttachment { .. }) => {
+                    attachment_topology(&properties.id, destination.as_ref().unwrap(), actor, items)
+                }
+                Some(ReachableTarget::Occupied(item))
+                    if items.get(*item).is_ok_and(|(_, _, _, topology, _, _, _, _)| {
+                        topology.occupancies.iter().any(|occupancy| {
+                            matches!(occupancy.anchor, TacticalEquipmentAnchor::ItemAttachment { .. })
+                        })
+                    }) => attachment_topology(&properties.id, destination.as_ref().unwrap(), actor, items),
+                _ => placement_topology(&properties.id, location),
             };
-            if destination.is_some_and(|item| has_children(item, items))
+            let Some(proposed) = proposed else { return false };
+            if destination.as_ref().is_some_and(|target| match target {
+                ReachableTarget::Occupied(item) => has_children(*item, items),
+                ReachableTarget::EmptyAttachment { .. } => false,
+            })
                 || topology_conflicts(
                     actor,
                     &proposed,
-                    &destination.map_or(vec![moving], |item| vec![moving, item]),
+                    &selected_entity.map_or(vec![moving], |item| vec![moving, item]),
                     items,
                 )
             {
-                return;
+                return false;
             }
             // Every condition is proven before these deferred mutations: a
             // multi-location placement or occupied swap commits as one batch.
             commands.entity(moving).insert(proposed).remove::<EquipSlot>();
-            if let Some(swapped) = destination {
+            if let Some(ReachableTarget::Occupied(swapped)) = destination {
                 commands.entity(swapped).insert((hand_topology(hand), hand.slot()));
             }
+            true
         }
     }
 }
@@ -247,9 +591,9 @@ fn transfer_hand(
     source: EquipmentHand,
     destination: EquipmentHand,
     items: &Query<ItemView<'_>>,
-) {
+) -> bool {
     if source == destination {
-        return;
+        return false;
     }
     let moving = hand_item(actor, source, items);
     let swapped = hand_item(actor, destination, items);
@@ -263,6 +607,7 @@ fn transfer_hand(
             .entity(swapped)
             .insert((hand_topology(source), source.slot()));
     }
+    moving.is_some() || swapped.is_some()
 }
 
 fn drop_hand(
@@ -271,14 +616,44 @@ fn drop_hand(
     hand: EquipmentHand,
     players: &Query<(&Transform, &CharacterLook), With<Player>>,
     items: &Query<ItemView<'_>>,
-) {
-    let Some(item) = hand_item(actor, hand, items) else { return };
-    let Ok((_, _, _, _, _, physical, _, _)) = items.get(item) else { return };
+    spatial: &SpatialQuery,
+) -> bool {
+    let Some(item) = hand_item(actor, hand, items) else { return false };
+    if has_children(item, items) {
+        return false;
+    }
+    let Ok((_, _, _, _, _, physical, _, _)) = items.get(item) else { return false };
     let Some(physical) = physical.copied().filter(|physical| physical.is_valid()) else {
-        return;
+        return false;
     };
-    let Ok((actor_transform, _)) = players.get(actor) else { return };
-    let position = actor_transform.translation + *actor_transform.forward() * 0.8 + Vec3::Y * 0.5;
+    let Ok((actor_transform, _)) = players.get(actor) else { return false };
+    let shape = Collider::cuboid(
+        physical.dimensions_m.x,
+        physical.dimensions_m.y,
+        physical.dimensions_m.z,
+    );
+    let Some(position) = [0.9_f32, 1.2, 1.5].into_iter().find_map(|distance| {
+        let grip = actor_transform.translation
+            + *actor_transform.forward() * distance
+            + Vec3::Y * 0.65;
+        let centre = grip - physical.grip_offset_m;
+        spatial
+            .shape_intersections(
+                &shape,
+                centre,
+                Quat::IDENTITY,
+                &SpatialQueryFilter::from_excluded_entities([item]),
+            )
+            .is_empty()
+            .then_some(grip)
+    }) else {
+        return false;
+    };
+    let collider = Collider::compound(vec![(
+        -physical.grip_offset_m,
+        Quat::IDENTITY,
+        shape,
+    )]);
     commands
         .entity(item)
         .remove::<ItemOf>()
@@ -288,13 +663,10 @@ fn drop_hand(
             TacticalSceneItem,
             Transform::from_translation(position),
             RigidBody::Dynamic,
-            Collider::cuboid(
-                physical.dimensions_m.x,
-                physical.dimensions_m.y,
-                physical.dimensions_m.z,
-            ),
-            CollisionLayers::new(ITEM_LAYER, LayerMask::ALL),
+            collider,
+            CollisionLayers::new(TACTICAL_ITEM_LAYER, TACTICAL_TERRAIN_LAYER),
         ));
+    true
 }
 
 fn pickup(
@@ -305,17 +677,17 @@ fn pickup(
     players: &Query<(&Transform, &CharacterLook), With<Player>>,
     items: &Query<ItemView<'_>>,
     spatial: &SpatialQuery,
-) {
+) -> bool {
     if hand_item(actor, hand, items).is_some() {
-        return;
+        return false;
     }
-    let Ok((actor_transform, look)) = players.get(actor) else { return };
+    let Ok((actor_transform, look)) = players.get(actor) else { return false };
     let origin = actor_transform.translation + Vec3::Y * 0.6;
     let direction = Dir3::new(
         Quat::from_euler(EulerRot::YXZ, look.yaw, look.pitch, 0.0) * Vec3::NEG_Z,
     )
     .unwrap_or(Dir3::NEG_Z);
-    let mut candidates: Vec<_> = items
+    let candidate = items
         .iter()
         .filter(|(_, _, _, _, _, physical, scene, transform)| {
             *scene && physical.is_some() && transform.is_some()
@@ -331,18 +703,17 @@ fn pickup(
                 && off_axis <= half_width)
                 .then_some((ray_distance, entity.to_bits(), entity))
         })
-        .collect();
-    candidates.sort_by(|left, right| left.0.total_cmp(&right.0).then(left.1.cmp(&right.1)));
-    if candidates.first().map(|candidate| candidate.2) != Some(requested) {
-        return;
+        .min_by(|left, right| left.0.total_cmp(&right.0).then(left.1.cmp(&right.1)));
+    if candidate.map(|candidate| candidate.2) != Some(requested) {
+        return false;
     }
-    let target = candidates[0];
+    let target = candidate.expect("requested candidate was compared above");
     let blocker_filter = SpatialQueryFilter::from_excluded_entities([actor, requested]);
     if spatial
         .cast_ray(origin, direction, target.0, true, &blocker_filter)
         .is_some()
     {
-        return;
+        return false;
     }
     commands
         .entity(requested)
@@ -351,11 +722,13 @@ fn pickup(
         .remove::<Collider>()
         .remove::<CollisionLayers>()
         .insert((ItemOf(actor), hand_topology(hand), hand.slot(), Transform::default()));
+    true
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::ecs::system::RunSystemOnce;
 
     #[test]
     fn multi_location_catalog_placement_is_planned_as_one_topology() {
@@ -385,5 +758,181 @@ mod tests {
     #[test]
     fn parent_only_stack_destination_fails_closed_in_body_planner() {
         assert!(placement_topology("arming_sword", EquipmentLocation::Chest).is_none());
+    }
+
+    #[test]
+    fn sequence_replay_and_old_half_range_are_rejected() {
+        assert!(sequence_is_newer(2, 1));
+        assert!(!sequence_is_newer(1, 1));
+        assert!(!sequence_is_newer(1, 2));
+        assert!(sequence_is_newer(0, u32::MAX));
+    }
+
+    #[test]
+    fn per_actor_pending_work_is_rate_bounded() {
+        let actor = Entity::from_bits(7);
+        let request = EquipmentActionRequest {
+            actor,
+            sequence: 1,
+            expected_revision: 0,
+            hand: EquipmentHand::Right,
+            expected_hand_item: None,
+            action: EquipmentAction::Drop,
+        };
+        let mut queue = VecDeque::new();
+        for _ in 0..MAX_PENDING_PER_ACTOR {
+            assert!(can_enqueue(&queue, actor));
+            queue.push_back((actor, request));
+        }
+        assert!(!can_enqueue(&queue, actor));
+        assert!(can_enqueue(&queue, Entity::from_bits(8)));
+    }
+
+    fn spawn_test_item(world: &mut World, actor: Entity, id: &str, topology: EquipmentTopology) -> Entity {
+        world
+            .spawn((
+                ItemProperties { id: id.into(), weight: 1.0 },
+                ItemOf(actor),
+                topology,
+                Transform::default(),
+            ))
+            .id()
+    }
+
+    #[test]
+    fn nested_traversal_exposes_authored_empty_points_in_order() {
+        let mut world = World::new();
+        let actor = world.spawn_empty().id();
+        let belt = spawn_test_item(
+            &mut world,
+            actor,
+            "leather_belt",
+            EquipmentTopology {
+                placement_id: Some("worn".into()),
+                occupancies: vec![EquipmentTopologyOccupancy {
+                    occupancy_id: "belt".into(),
+                    anchor: TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::LeftBelt),
+                    channel: EquipmentChannel::Accessory,
+                    order: 0,
+                    requirement_index: 0,
+                    capacity_index: 0,
+                }],
+            },
+        );
+        let reachable = world
+            .run_system_once(move |items: Query<ItemView<'_>>| {
+                ordered_at_location(actor, EquipmentLocation::LeftBelt, &items)
+            })
+            .unwrap();
+        assert_eq!(reachable.first(), Some(&ReachableTarget::Occupied(belt)));
+        assert!(matches!(reachable.get(1), Some(ReachableTarget::EmptyAttachment { attachment_point_id, .. }) if attachment_point_id == "left"));
+    }
+
+    #[test]
+    fn multi_parent_attachment_is_atomic_and_capacity_fail_closed() {
+        let mut world = World::new();
+        let actor = world.spawn_empty().id();
+        let belt = spawn_test_item(
+            &mut world,
+            actor,
+            "leather_belt",
+            EquipmentTopology {
+                placement_id: Some("worn".into()),
+                occupancies: vec![EquipmentTopologyOccupancy {
+                    occupancy_id: "belt".into(),
+                    anchor: TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::LeftBelt),
+                    channel: EquipmentChannel::Accessory,
+                    order: 0,
+                    requirement_index: 0,
+                    capacity_index: 0,
+                }],
+            },
+        );
+        let selected = ReachableTarget::EmptyAttachment {
+            parent: belt,
+            attachment_point_id: "left".into(),
+            channel: EquipmentChannel::Mount,
+            capacity_index: 0,
+        };
+        let planned = world
+            .run_system_once(move |items: Query<ItemView<'_>>| {
+                attachment_topology("sword_sheath", &selected, actor, &items)
+            })
+            .unwrap()
+            .expect("two belt mounts are available");
+        assert_eq!(planned.occupancies.len(), 2);
+        assert!(planned.occupancies.iter().all(|occupancy| {
+            matches!(occupancy.anchor, TacticalEquipmentAnchor::ItemAttachment { parent, .. } if parent == belt)
+        }));
+        for (index, point) in ["left", "right"].into_iter().enumerate() {
+            spawn_test_item(
+                &mut world,
+                actor,
+                "leather_satchel",
+                EquipmentTopology {
+                    placement_id: Some("occupied".into()),
+                    occupancies: vec![EquipmentTopologyOccupancy {
+                        occupancy_id: format!("occupied-{point}"),
+                        anchor: TacticalEquipmentAnchor::ItemAttachment {
+                            parent: belt,
+                            attachment_point_id: point.into(),
+                        },
+                        channel: EquipmentChannel::Mount,
+                        order: index as u16,
+                        requirement_index: 0,
+                        capacity_index: 0,
+                    }],
+                },
+            );
+        }
+        let incompatible = ReachableTarget::EmptyAttachment {
+            parent: belt,
+            attachment_point_id: "front".into(),
+            channel: EquipmentChannel::Mount,
+            capacity_index: 0,
+        };
+        assert!(world
+            .run_system_once(move |items: Query<ItemView<'_>>| {
+                attachment_topology("sword_sheath", &incompatible, actor, &items)
+            })
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn descendants_block_drop_and_graph_reparenting() {
+        let mut world = World::new();
+        let actor = world.spawn_empty().id();
+        let parent = spawn_test_item(&mut world, actor, "leather_belt", EquipmentTopology::default());
+        spawn_test_item(
+            &mut world,
+            actor,
+            "leather_satchel",
+            EquipmentTopology {
+                placement_id: Some("belt_left".into()),
+                occupancies: vec![EquipmentTopologyOccupancy {
+                    occupancy_id: "edge".into(),
+                    anchor: TacticalEquipmentAnchor::ItemAttachment {
+                        parent,
+                        attachment_point_id: "left".into(),
+                    },
+                    channel: EquipmentChannel::Mount,
+                    order: 0,
+                    requirement_index: 0,
+                    capacity_index: 0,
+                }],
+            },
+        );
+        assert!(world
+            .run_system_once(move |items: Query<ItemView<'_>>| has_children(parent, &items))
+            .unwrap());
+    }
+
+    #[test]
+    fn item_and_terrain_layers_are_isolated() {
+        let item = CollisionLayers::new(TACTICAL_ITEM_LAYER, TACTICAL_TERRAIN_LAYER);
+        let terrain = CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL);
+        assert!(item.interacts_with(terrain));
+        assert!(!item.interacts_with(CollisionLayers::DEFAULT));
     }
 }

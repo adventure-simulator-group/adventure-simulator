@@ -385,10 +385,13 @@ dirt and blood filth, morale, loot classification, and diagnostics). Random
 encounter reports use encounter IDs and never create quest battle results or
 complete an active quest.
 
-Dropped equipment uses a dedicated physics/query layer. Its authored box
+Dropped equipment uses dedicated item and terrain-support physics/query layers. Its authored box
 collider supports terrain and pointing pickup queries, but melee hit selection
 still targets only limb hitboxes and server combat line-of-sight explicitly
 excludes tactical scene-item boxes. Equipment therefore cannot extend a melee
-hit shape or provide improvised combat cover. Pickup remains server-authorized
+hit shape, collide with characters, affect camera collision, or provide
+improvised combat cover. The collider is offset from the grip by the same
+authored transform as the visible mesh, and drop searches bounded candidate
+positions with shape-overlap rejection before creating a body. Pickup remains server-authorized
 and requires the pointed candidate to win the deterministic ray-distance then
 entity-identity ordering, be in range, and have unobstructed line of sight.

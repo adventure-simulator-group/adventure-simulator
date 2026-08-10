@@ -18,7 +18,7 @@ pub mod prelude {
     #[cfg(feature = "client")]
     pub use crate::client::{AdventureSimulatorClient, PlayerInputOverride};
     pub use crate::message::{
-        DebugGameTimeScaleRequest, DefendRequest, EquipmentActionRequest, EquipmentHand,
+        DebugGameTimeScaleRequest, DefendRequest, EquipmentAction, EquipmentActionRequest, EquipmentHand,
         JoinRequest, JumpCommand, MeleeActionRequest, PlayerInputRequest, PostureActionRequest,
         PostureCommand, RangedActionRequest, TacticalOutcome, TacticalOutcomeResponse,
     };
