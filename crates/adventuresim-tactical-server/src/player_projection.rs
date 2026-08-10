@@ -37,7 +37,7 @@ pub(crate) struct LoadingPlayer {
 /// per-fixed-loop accumulator, this survives missing unreliable input packets
 /// until an explicit request replaces it.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq)]
-pub(crate) struct AuthoritativeMovementIntent(Option<Vec2>);
+pub(crate) struct AuthoritativeMovementIntent(pub(crate) Option<Vec2>);
 
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct AuthoritativePostureIntent {
@@ -340,6 +340,11 @@ fn spawn_connected_player(
         TacticalCombatState {
             starting_incapacitation,
             starting_blood_fraction,
+            starting_fear: player.strategic_fear,
+            starting_fatigue: player.strategic_fatigue,
+            starting_hunger: player.strategic_hunger,
+            starting_thirst: player.strategic_thirst,
+            starting_thermal: player.strategic_thermal,
             ..default()
         },
         MeleeAttackAuthority::default(),

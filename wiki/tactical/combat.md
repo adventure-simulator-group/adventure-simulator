@@ -183,6 +183,12 @@ melee pursuit/attack cadence when it cannot make a ranged attack.
 ## Incapacitation
 A character's incapacitation represents the sum of all disabling effects on them and corresponds to the state of their animation. When above half, they are "staggered" and each additional 1% of incapacitation causes a 2% penalty to movement and attribute checks, and when above 100% they are completely incapacitated (which also causes knockdown). Most negative effects that a character has can affect their incapacitation, past a certain threshold. Your incapacitation is displayed as a wheel in the center of the screen. If it is at 0%, the wheel is invisible, and as it increases it starts from 12 o'clock and extends as an arc clockwise. Each factor that contributes to incapacitation has a different color to differentiate them.
 
+The tactical client draws this wheel with EGUI around the center reticle. It
+preserves the strategic fear, fatigue, hunger, thirst, and temperature source
+breakdown captured at mission enrollment, then combines those segments with
+live recomputed pain and blood loss plus transient white imbalance. The arc
+clamps at one revolution, and the reticle remains visible inside it.
+
 The strategic character panel uses the same colors for its segmented incapacitation meter, source meters, and source icons. Hunger and thirst share centered meters with their physiological reserves: reserve fills right, while incapacitation fills left after crossing zero. Exact percentages remain available on hover and to assistive technology, while the default view emphasizes the relative contribution of each source.
 
 Each of the following factors range from 0% to at least 100%.
@@ -214,14 +220,32 @@ fn balance_damage(attacker, defender, attack_directness):
 ```
 ### Exhaustion (grey)
 Exhaustion represents how out of breath your character is. Most actions will not actually exhaust faster than it recuperates, but climbing, sprinting, and fighting with heavy weapons, shield, and armor can.
+In tactical combat it is transient, server-authoritative grey incapacitation.
+The movement contribution is based on server-authoritative locomotion intent,
+not measured physics velocity: full jogging contributes exactly zero, walking
+or partial input recovers exhaustion, and sprinting adds it. External impulses
+therefore cannot create breath exhaustion, while poison, climbing, combat, and
+other future sources remain free to add independent rates. Tactical breath
+changes use a 5x response scale so exertion and recovery resolve quickly enough
+to matter during a fight without changing any movement-speed thresholds. Wheel
+segments below 0.5% are hidden as subpixel display noise without changing state.
 ```rs
-const BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND = 0.0031875
-# A character with 4 endurance can jog at 3.75m/s without gaining or losing exhaustion.
 const BREATH_PER_METERS_PER_SECOND = 0.0034
+const TACTICAL_BREATH_RESPONSE_SCALE = 5.0
+
+# Sustainable jog speed is 1.8m/s at endurance 1, 2.0m/s at endurance 2,
+# and the elite-marathon average of 5.83m/s at endurance 5. Between those
+# anchors, most of the extraordinary performance is reserved for high endurance.
+fn sustainable_jog_speed(endurance):
+	if endurance <= 1:
+		t = clamp(endurance, 0, 1)
+		return lerp(1.4, 1.8, t * t * (3 - 2 * t))
+	t = (clamp(endurance, 1, 5) - 1) / 4
+	return 1.8 + 4.03 * pow(t, 2.166)
  
 fn update_stamina(player):
-	player.breath_damage += dt * character.velocity * BREATH_PER_METERS_PER_SECOND
-	player.breath_damage -= dt * character.endurance * BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND 
+	breath_delta = (character.velocity - sustainable_jog_speed(character.endurance)) * BREATH_PER_METERS_PER_SECOND
+	player.breath_damage += dt * breath_delta * TACTICAL_BREATH_RESPONSE_SCALE
 ```
 ### Pain (pink)
 [Injuries](../shared/health.md) are a source of constant pain. Pain is divided by will.

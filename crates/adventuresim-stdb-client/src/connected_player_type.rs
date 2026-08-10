@@ -32,6 +32,11 @@ pub struct ConnectedPlayer {
     pub strategic_incapacitation: f32,
     pub strategic_pain: f32,
     pub strategic_blood_loss: f32,
+    pub strategic_fear: f32,
+    pub strategic_fatigue: f32,
+    pub strategic_hunger: f32,
+    pub strategic_thirst: f32,
+    pub strategic_thermal: f32,
 }
 
 impl __sdk::InModule for ConnectedPlayer {
@@ -59,6 +64,11 @@ pub struct ConnectedPlayerCols {
     pub strategic_incapacitation: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
     pub strategic_pain: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
     pub strategic_blood_loss: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_fear: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_fatigue: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_hunger: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_thirst: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_thermal: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
 }
 
 impl __sdk::__query_builder::HasCols for ConnectedPlayer {
@@ -94,6 +104,11 @@ impl __sdk::__query_builder::HasCols for ConnectedPlayer {
                 table_name,
                 "strategic_blood_loss",
             ),
+            strategic_fear: __sdk::__query_builder::Col::new(table_name, "strategic_fear"),
+            strategic_fatigue: __sdk::__query_builder::Col::new(table_name, "strategic_fatigue"),
+            strategic_hunger: __sdk::__query_builder::Col::new(table_name, "strategic_hunger"),
+            strategic_thirst: __sdk::__query_builder::Col::new(table_name, "strategic_thirst"),
+            strategic_thermal: __sdk::__query_builder::Col::new(table_name, "strategic_thermal"),
         }
     }
 }

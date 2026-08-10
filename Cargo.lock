@@ -180,6 +180,7 @@ dependencies = [
  "bevy",
  "bevy_animation_graph",
  "bevy_animation_graph_editor",
+ "bevy_egui",
  "bevy_flair",
  "clap",
  "console_error_panic_hook",
