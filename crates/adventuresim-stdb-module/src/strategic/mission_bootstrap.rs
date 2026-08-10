@@ -646,7 +646,7 @@ pub(crate) fn seed_world(
     ctx: &ReducerContext,
     include_errantry_demo_chapter: bool,
 ) -> Result<(), String> {
-    const DEMO_SOURCES: &str = "- **Adventure Simulator renderer demo:** Hand-authored geographic fixture for exercising map and terrain-routing UI.";
+    const DEMO_SOURCES: &str = "- **Fabelgeist renderer demo:** Hand-authored geographic fixture for exercising map and terrain-routing UI.";
 
     for (id, latitude, longitude) in [
         (RIVERDALE_RENDERER_DEMO_NODE, 53.50, 10.00),
@@ -849,7 +849,7 @@ pub(crate) fn seed_world(
                 religion_id: religious_status.church().religion_id().into(),
                 currency_id: crate::item::settlement_currency_id(id).into(),
                 source_node_id,
-                sources: "- **Adventure Simulator demo data:** Hand-authored settlement and deterministic placeholder environment; no external world-data source was imported.".into(),
+                sources: "- **Fabelgeist demo data:** Hand-authored settlement and deterministic placeholder environment; no external world-data source was imported.".into(),
             });
         }
     }

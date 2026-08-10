@@ -83,7 +83,7 @@ positioned parchment texture keeps adjacent tile gutters identical.
 The stable `strategic-map-v1.json` and `strategic-map-tiles-v1.pack` filenames
 are versioned, not content-addressed; the pack digest query parameter is every
 tile route's cache key.
-Adventure Simulator's contributions to the generated map and terrain packs are
+Fabelgeist's contributions to the generated map and terrain packs are
 distributed under CC BY-SA 4.0 rather than the repository software's AGPL.
 Every bundle must retain the generated `STRATEGIC_MAP_DATA_LICENSE.md` notice
 or provide a reasonably prominent link to the canonical `MAP_DATA_LICENSE.md`;

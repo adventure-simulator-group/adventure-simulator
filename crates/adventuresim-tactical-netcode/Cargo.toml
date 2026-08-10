@@ -1,6 +1,6 @@
 [package]
 name = "adventuresim-tactical-netcode"
-description = "Adventure Simulator: Server/Client netcode library"
+description = "Fabelgeist: Server/Client netcode library"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true

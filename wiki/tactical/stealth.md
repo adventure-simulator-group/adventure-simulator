@@ -1,6 +1,6 @@
 # Strategic
 
-This is the intended strategic/tactical contract. The stealth detection model and its tactical handoff are not yet implemented; [#212](https://github.com/adventure-simulator-group/adventure-simulator/issues/212) tracks the work. Current quest combat is not evidence that stealth scenes already exist.
+This is the intended strategic/tactical contract. The stealth detection model and its tactical handoff are not yet implemented; [#212](https://github.com/adventure-simulator-group/fabelgeist/issues/212) tracks the work. Current quest combat is not evidence that stealth scenes already exist.
 When traveling, the party has a detection radius and a perception multiplier. The detection radius is the radius at which an enemy with a perception multiplier of 1.0 will detect you.
 
 The detection radius is *mostly* based on party size versus the party member with the highest [stealth score](../shared/stats.md), who is ostensibly scouting ahead of the rest of the party. But every party member's stealth score does contribute marginally, which could mean multiple scouts if there's multiple with relatively high scores or just ensuring that everyone avoids leaving tracks.

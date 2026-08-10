@@ -1,6 +1,6 @@
 [package]
 name = "adventuresim-tactical-client"
-description = "Adventure Simulator: Wasm game client"
+description = "Fabelgeist: Wasm game client"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true

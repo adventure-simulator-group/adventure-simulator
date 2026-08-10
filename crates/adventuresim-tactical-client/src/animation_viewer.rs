@@ -189,7 +189,7 @@ pub(crate) fn run(
                 })
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        title: "Adventure Simulator Animation Review Capture".into(),
+                        title: "Fabelgeist Animation Review Capture".into(),
                         resolution: (960, 720).into(),
                         present_mode: PresentMode::AutoVsync,
                         ..default()

@@ -1,4 +1,4 @@
-# Adventure Simulator - local development
+# Fabelgeist - local development
 # Install just: cargo install just
 # List commands: just --list
 

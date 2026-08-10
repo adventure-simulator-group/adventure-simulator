@@ -1,6 +1,6 @@
 # adventuresim-stdb-module
 
-The SpacetimeDB module owns Adventure Simulator's persistent strategic state and
+The SpacetimeDB module owns Fabelgeist's persistent strategic state and
 authoritative strategic mutations.
 
 ## Persistence boundary

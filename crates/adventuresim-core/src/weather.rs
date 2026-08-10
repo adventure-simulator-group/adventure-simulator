@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 pub const WEATHER_RULES_VERSION: u16 = 2;
 /// One domain seed shared by every authoritative and player-visible weather
-/// query in the Adventure Simulator world.
+/// query in the Fabelgeist world.
 pub const WORLD_WEATHER_SEED: u64 = 0x4144_5645_4e54_5552;
 pub const WEATHER_INTERVAL_MINUTES: u64 = 360;
 pub const WEATHER_CELL_MICRODEGREES: i32 = 250_000;

@@ -1,4 +1,4 @@
-//! Native, opt-in Adventure Simulator animation-graph authoring tool.
+//! Native, opt-in Fabelgeist animation-graph authoring tool.
 
 // This bin reuses the tactical animation/catalog modules solely for project
 // validation; their runtime systems are intentionally not installed here.
@@ -19,13 +19,11 @@ mod native {
 
     pub(super) fn run() {
         let asset_root = asset_source_argument().unwrap_or_else(|| {
-            eprintln!(
-                "error: Adventure Simulator's graph editor requires --asset-source <assets-dir>"
-            );
+            eprintln!("error: Fabelgeist's graph editor requires --asset-source <assets-dir>");
             std::process::exit(2);
         });
         let report = validate_editor_asset_root(&asset_root).unwrap_or_else(|errors| {
-            eprintln!("Adventure Simulator animation graph validation failed:");
+            eprintln!("Fabelgeist animation graph validation failed:");
             for error in errors {
                 eprintln!("  - {error}");
             }
@@ -70,11 +68,11 @@ mod native {
             .world_mut()
             .run_system_cached(editor_graph_preflight)
             .unwrap_or_else(|error| {
-                eprintln!("Adventure Simulator graph preflight system failed: {error}");
+                eprintln!("Fabelgeist graph preflight system failed: {error}");
                 std::process::exit(2);
             })
             .unwrap_or_else(|errors| {
-                eprintln!("Adventure Simulator animation graph validation failed:");
+                eprintln!("Fabelgeist animation graph validation failed:");
                 for error in errors {
                     eprintln!("  - {error}");
                 }

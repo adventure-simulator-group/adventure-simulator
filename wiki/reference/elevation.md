@@ -72,7 +72,7 @@ remain independent and a wooded hillside stays a mixed terrain cell.
 The compiler writes `STRATEGIC_MAP_DATA_LICENSE.md` beside the terrain and map
 outputs. It contains the prescribed Copernicus WorldDEM-30 production credit,
 liability notice, modification statement, and the separate CC BY-SA licence
-for Adventure Simulator's contributions. Distribute that notice with the pack;
+for Fabelgeist's contributions. Distribute that notice with the pack;
 the repository software's AGPL does not license these generated data artifacts.
 
 The manifest and pack are separately SHA-256 addressed. Readers reject wrong

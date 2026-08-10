@@ -45,6 +45,7 @@
 - [Foraging](reference/foraging.md)
 - [Measured inventory architecture](reference/measured-inventory.md)
 - [Physiology system](reference/physiology.md)
+- [Fantastic diseases](reference/fantastic-diseases.md)
 - [Autopsies](reference/autopsies.md)
 - [Outbreak investigations](reference/outbreaks.md)
 
@@ -55,12 +56,14 @@
 - [Time](strategic/time.md)
 - [Travel](strategic/travel.md)
 - [Settlement](strategic/settlement.md)
+- [Settlement reputation](strategic/reputation.md)
 - [Trade](strategic/trade.md)
 - [Dialogue architecture](reference/dialogue.md)
 - [Organizations](reference/organizations.md)
 - [Quest generation and investigation](reference/quest-generation-and-investigation.md)
 - [Quest authority](reference/quest-authority.md)
 - [Errantry and modular challenges](reference/errantry-and-challenges.md)
+- [Puzzle laboratory](reference/puzzle-lab.md)
 - [Romance road encounters](reference/romance-road-encounters.md)
 
 # Tactical

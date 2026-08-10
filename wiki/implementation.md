@@ -1,6 +1,6 @@
 # Game layers
 
-Adventure Simulator alternates between an asynchronous strategic game and a
+Fabelgeist alternates between an asynchronous strategic game and a
 real-time tactical game. The split exists to make realistic travel, recovery,
 trade, and social play practical without pretending the whole world is one
 continuous simulation.

@@ -55,7 +55,7 @@ pub(crate) fn run(asset_root: PathBuf, output: Option<PathBuf>) {
                 })
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        title: "Adventure Simulator Ragdoll Viewer".into(),
+                        title: "Fabelgeist Ragdoll Viewer".into(),
                         resolution: (960, 720).into(),
                         present_mode: PresentMode::AutoVsync,
                         ..default()

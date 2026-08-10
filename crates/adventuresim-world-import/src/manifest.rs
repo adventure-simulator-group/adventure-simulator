@@ -206,7 +206,7 @@ pub(crate) fn viabundus(directory: &Path) -> Result<SourceProvenance> {
         SourceLicense::CcBySa4_0,
         &[
             "Attribute Viabundus and retain the CC BY-SA 4.0 notice on distributed adapted database material.",
-            "Adventure Simulator applies the conservative CC BY-SA treatment; compatibility with differently licensed combined outputs is unresolved and must not be presented as legal resolution.",
+            "Fabelgeist applies the conservative CC BY-SA treatment; compatibility with differently licensed combined outputs is unresolved and must not be presented as legal resolution.",
         ],
         SourceAccess::AnonymousDownload,
         SourceSpatialCoverage::Geographic {
@@ -268,7 +268,7 @@ pub(crate) fn hyde35() -> SourceProvenance {
         None,
         SourceLicense::CcBy3_0,
         &[
-            "HYDE 3.5 is licensed CC BY 3.0; retain attribution, the license link, and an indication of Adventure Simulator's interpolation and classification changes.",
+            "HYDE 3.5 is licensed CC BY 3.0; retain attribution, the license link, and an indication of Fabelgeist's interpolation and classification changes.",
             "Cite the HYDE project and the HYDE 3.5 release README.",
         ],
         SourceAccess::ManualPreparation,
@@ -331,7 +331,7 @@ pub(crate) fn forest(directory: &Path) -> Result<SourceProvenance> {
         Some("10.2909/82f93572-9888-47ef-97a1-5cac5985a26a"),
         SourceLicense::CopernicusClms,
         &[
-            "© European Union, Copernicus Land Monitoring Service; identify modifications made by Adventure Simulator.",
+            "© European Union, Copernicus Land Monitoring Service; identify modifications made by Fabelgeist.",
             "Do not imply endorsement by the European Union or the Copernicus programme.",
         ],
         SourceAccess::AuthenticatedDownload,
@@ -406,7 +406,7 @@ pub(crate) fn jung(directory: &Path) -> Result<SourceProvenance> {
         SourceLicense::CcBy4_0,
         &[
             "Cite Jung et al. and the Zenodo v1.1 record.",
-            "Adventure Simulator converts model posterior means and categories into bounded gameplay vegetation evidence; these changes must be identified.",
+            "Fabelgeist converts model posterior means and categories into bounded gameplay vegetation evidence; these changes must be identified.",
         ],
         SourceAccess::AnonymousDownload,
         SourceSpatialCoverage::Geographic {
@@ -470,7 +470,7 @@ pub(crate) fn soil(
         SourceLicense::CcBy4_0,
         &[
             "Credit ISRIC — World Soil Information and cite SoilGrids version 2.",
-            "Adventure Simulator reprojects, aggregates, and converts SoilGrids predictions into bounded gameplay soil classes; these changes must be identified.",
+            "Fabelgeist reprojects, aggregates, and converts SoilGrids predictions into bounded gameplay soil classes; these changes must be identified.",
         ],
         SourceAccess::AnonymousDownload,
         SourceSpatialCoverage::Geographic {
@@ -500,7 +500,7 @@ pub(crate) fn geology(_path: &Path) -> SourceProvenance {
         None,
         SourceLicense::CcBy4_0,
         &[
-            "Attribute EGDI and contributing national geological surveys; identify Adventure Simulator's classification and sampling changes.",
+            "Attribute EGDI and contributing national geological surveys; identify Fabelgeist's classification and sampling changes.",
             "For Malta, include Geological Map of the Maltese Islands, Continental Shelf Department, Oil Exploration Directorate, Office of the Prime Minister, Malta, and retain the source disclaimer.",
         ],
         SourceAccess::ManualPreparation,
@@ -533,7 +533,7 @@ pub(crate) fn religion(path: &Path) -> Result<SourceProvenance> {
         SourceLicense::RightsReserved,
         &[
             "© IEG Mainz / Andreas Kunz. The source images are not redistributed.",
-            "Only Adventure Simulator's coarse hand-curated 1544 bounding-region intermediate may be distributed from this repository; it is not a facsimile or precise historical boundary dataset.",
+            "Only Fabelgeist's coarse hand-curated 1544 bounding-region intermediate may be distributed from this repository; it is not a facsimile or precise historical boundary dataset.",
         ],
         SourceAccess::CuratedRepositoryAsset,
         SourceSpatialCoverage::Geographic {
@@ -626,7 +626,7 @@ pub(crate) fn hydrology() -> SourceProvenance {
         Some("10.2909/393359a7-7ebd-4a52-80ac-1a18d5f3db9c"),
         SourceLicense::CopernicusClms,
         &[
-            "© European Union, Copernicus Land Monitoring Service; identify Adventure Simulator's clipping, classification, and inferred-crossing modifications.",
+            "© European Union, Copernicus Land Monitoring Service; identify Fabelgeist's clipping, classification, and inferred-crossing modifications.",
             "Do not imply endorsement by the European Union or the Copernicus programme.",
         ],
         SourceAccess::AuthenticatedDownload,
@@ -1018,7 +1018,7 @@ mod tests {
     fn fixture_digest_is_stable() {
         assert_eq!(
             digest(1544, SpatialGridSpec::default(), &[fixture()]).unwrap(),
-            "4173eb5d011b980a9f6e9bdfab0b2038249c5a7d9418a0e5348171d8b134aed4"
+            "e06cf6c350bb3b109c9be774c9f169a94952bdf21943015965a1e7dd91e5830d"
         );
     }
 

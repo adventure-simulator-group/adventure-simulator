@@ -361,7 +361,7 @@ struct EditSource {
 
 fn edit_source(source: adventuresim_dialogue::SourceRef) -> Option<EditSource> {
     let edit_url = adventuresim_dialogue::github_edit_url(
-        "adventure-simulator-group/adventure-simulator",
+        "adventure-simulator-group/fabelgeist",
         option_env!("ADVENTURESIM_SOURCE_REF").unwrap_or("main"),
         &source,
     )?;

@@ -600,7 +600,7 @@ cargo fetch --locked
 ```
 
 CI needs a GitHub App token, fine-grained PAT, or deploy credential explicitly
-authorized for the sibling private repository. The Adventure Simulator
+authorized for the sibling private repository. The Fabelgeist
 workflow's repo-scoped `GITHUB_TOKEN` cannot read it. Repository secrets are
 also withheld from untrusted fork pull requests, so private-fetch verification
 must run on a trusted internal branch/check or remain explicitly unavailable
@@ -692,7 +692,7 @@ when OBS is unavailable. OBS 28 or newer must have been started once so its
 built-in WebSocket configuration exists. The launcher searches PATH and the
 standard Windows install location; `OBS_PATH` and `OBS_WEBSOCKET_CONFIG`
 override those paths. `OBS_PROFILE` and `OBS_COLLECTION` rename the dedicated
-workspace (both default to `Adventure Simulator Diagnostics`). The
+workspace (both default to `Fabelgeist Diagnostics`). The
 seventh argument selects `window` (the default Windows Graphics Capture path)
 or `display`. Display capture creates a monitor source, automatically matches
 the monitor containing the tactical window, and crops it to the client area's

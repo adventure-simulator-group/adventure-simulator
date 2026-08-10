@@ -1,7 +1,7 @@
 # Timber-framed strategic scene assets
 
 The `building/{village,town,city}/{public-square,residences,keep}.png`
-facades are project-native assets created for Adventure Simulator in July
+facades are project-native assets created for Fabelgeist in July
 2026. They were generated deterministically from simple rectangles, polygons,
 arches, and scanline fills; no external artwork or generative image model was
 used.

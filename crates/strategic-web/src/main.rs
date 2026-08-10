@@ -1,6 +1,6 @@
 //! Strategic Layer Web Server
 //!
-//! An SSR, HATEOAS-style web UI for the Adventure Simulator strategic layer.
+//! An SSR, HATEOAS-style web UI for the Fabelgeist strategic layer.
 //! Uses Axum + Maud + Datastar with SpacetimeDB as the backend.
 
 mod config;

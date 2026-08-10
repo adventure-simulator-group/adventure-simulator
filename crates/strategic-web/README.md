@@ -1,6 +1,6 @@
 # Strategic Web
 
-SSR, HATEOAS-style web UI for the Adventure Simulator strategic layer.
+SSR, HATEOAS-style web UI for the Fabelgeist strategic layer.
 
 ## Architecture
 

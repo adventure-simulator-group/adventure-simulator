@@ -221,7 +221,7 @@ def tactical_window_capture_geometry(process_id: int) -> dict[str, object]:
         title_length = user32.GetWindowTextLengthW(window)
         title = ctypes.create_unicode_buffer(title_length + 1)
         user32.GetWindowTextW(window, title, len(title))
-        if title.value == "Adventure Simulator - Tactical":
+        if title.value == "Fabelgeist - Tactical":
             matching.append(window)
         return True
 
@@ -1638,9 +1638,9 @@ def configure_obs_workspace(
     run_dir: Path,
     config: dict[str, object],
 ) -> None:
-    profile_name = os.environ.get("OBS_PROFILE", "Adventure Simulator Diagnostics")
+    profile_name = os.environ.get("OBS_PROFILE", "Fabelgeist Diagnostics")
     collection_name = os.environ.get(
-        "OBS_COLLECTION", "Adventure Simulator Diagnostics"
+        "OBS_COLLECTION", "Fabelgeist Diagnostics"
     )
     profiles = websocket.request("GetProfileList")
     original_profile = str(profiles.get("currentProfileName", ""))
@@ -1717,7 +1717,7 @@ def launch_obs_capture(
     password = secrets.token_urlsafe(24)
     suffix = str(config["session_id"])[:12]
     capture_source = str(config.get("capture_source", "window"))
-    scene_name = f"Adventure Simulator diagnostic {suffix}"
+    scene_name = f"Fabelgeist diagnostic {suffix}"
     input_name = f"Tactical client {suffix}"
     capture_config = {
         "role": f"obs-{capture_source}-capture",
@@ -1789,13 +1789,13 @@ def launch_obs_capture(
         original_scene = websocket.request("GetCurrentProgramScene").get("currentProgramSceneName")
         scenes = websocket.request("GetSceneList").get("scenes", [])
         scene_names = {str(scene.get("sceneName", "")) for scene in scenes}
-        idle_scene = "Adventure Simulator Diagnostics"
+        idle_scene = "Fabelgeist Diagnostics"
         if idle_scene not in scene_names:
             websocket.request("CreateScene", {"sceneName": idle_scene})
             scene_names.add(idle_scene)
         stale_scenes = [
             scene.get("sceneName") for scene in scenes
-            if str(scene.get("sceneName", "")).startswith("Adventure Simulator diagnostic ")
+            if str(scene.get("sceneName", "")).startswith("Fabelgeist diagnostic ")
         ]
         if original_scene in stale_scenes:
             original_scene = idle_scene
@@ -1814,7 +1814,7 @@ def launch_obs_capture(
                 "inputKind": "window_capture",
                 "inputSettings": {
                     "window": (
-                        "Adventure Simulator - Tactical:Window Class:"
+                        "Fabelgeist - Tactical:Window Class:"
                         "adventuresim-tactical-client.exe"
                     ),
                     # OBS automatic selection chooses BitBlt for Bevy's winit

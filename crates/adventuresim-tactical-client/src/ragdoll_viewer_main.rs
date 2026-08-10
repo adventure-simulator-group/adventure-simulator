@@ -25,7 +25,7 @@ use clap::Parser;
 
 #[cfg(not(target_family = "wasm"))]
 #[derive(Debug, Parser)]
-#[command(version, about = "Review the Adventure Simulator humanoid ragdoll")]
+#[command(version, about = "Review the Fabelgeist humanoid ragdoll")]
 struct Args {
     #[arg(long, default_value = "assets")]
     asset_root: PathBuf,
