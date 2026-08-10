@@ -149,6 +149,21 @@ unit conversions. Optional capability sections are absent when inapplicable;
 fields within a present section are required unless documented otherwise.
 Recipes are outside this catalog.
 
+### Tactical placeholder dimensions
+
+Every item with an `equipment` section authors `equipment.physical`. Its
+`dimensions_m` is a finite, strictly positive `[width, length, thickness]`
+box in local X/Y/Z. `grip_offset_m` gives the grip relative to the ordinary
+box-centre origin, and `grip_to_tip_m` records gameplay reach from that grip
+without stretching the box. Weapon tips point along local +Y. The tactical
+client constrains the authored grip root to `weapon.L` or `weapon.R`; inspection
+of the current rig shows those sockets already use the required direction, so
+the documented socket correction is the identity transform.
+
+The same dimensions produce the visible placeholder mesh and dropped-item
+collider. Do not infer them from `exterior_volume_ml`, which is container
+displacement rather than a useful exterior shape.
+
 ## Workflow
 
 ```powershell

@@ -56,6 +56,7 @@ pub mod prelude {
     };
     pub use crate::scene::{SceneId, SceneTerrain, TerrainGenerator};
     pub use adventuresim_core::prelude::*;
+    pub use adventuresim_core::item_catalog;
     pub use adventuresim_core::item_catalog::{EquipmentChannel, EquipmentLocation};
     pub use avian3d::prelude::*;
     pub use bevy_ahoy::{

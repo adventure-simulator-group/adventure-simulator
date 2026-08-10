@@ -440,3 +440,12 @@ suppression. Leaving a case context restores only the former; ordinary disease
 recovery or death authority controls the latter. All NPC availability
 consumers share the same authoritative projection and never advertise a dead
 or still-ill provider from a stale schedule row.
+
+Tactical equipment switching follows the same persistence boundary. Mission
+bootstrap maps durable equipment rows to replicated tactical entities, then
+all hand, body-slot, attachment, drop, and pickup changes mutate only that ECS
+snapshot. Durable inventory IDs remain server-only, the terminal tactical
+receipt contains no final equipment topology, and teardown restores strategic
+custody/equipment unchanged. Reconnection to the same live tactical server
+therefore observes its existing transient snapshot; starting a new mission
+projects the durable graph again.

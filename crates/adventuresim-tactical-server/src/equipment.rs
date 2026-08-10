@@ -352,3 +352,38 @@ fn pickup(
         .remove::<CollisionLayers>()
         .insert((ItemOf(actor), hand_topology(hand), hand.slot(), Transform::default()));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn multi_location_catalog_placement_is_planned_as_one_topology() {
+        let topology = placement_topology("linen_tunic", EquipmentLocation::Chest)
+            .expect("tunic chest placement");
+        assert!(topology.occupancies.len() > 1);
+        assert!(topology.occupancies.iter().any(|occupancy| {
+            occupancy.anchor
+                == TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::LeftArm)
+        }));
+        assert!(topology.occupancies.iter().any(|occupancy| {
+            occupancy.anchor
+                == TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::RightArm)
+        }));
+    }
+
+    #[test]
+    fn hand_topology_contains_only_the_selected_mapped_hand() {
+        let topology = hand_topology(EquipmentHand::Left);
+        assert_eq!(topology.occupancies.len(), 1);
+        assert_eq!(
+            topology.occupancies[0].anchor,
+            TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::LeftHand)
+        );
+    }
+
+    #[test]
+    fn parent_only_stack_destination_fails_closed_in_body_planner() {
+        assert!(placement_topology("arming_sword", EquipmentLocation::Chest).is_none());
+    }
+}

@@ -212,6 +212,7 @@ fn update_attack_state_system(
     )>,
     q_camera: Query<&Transform>,
     q_collider: Query<(&ColliderOf, &LimbHitbox)>,
+    q_scene_items: Query<Entity, With<TacticalSceneItem>>,
 ) {
     for (attacker, attacker_transform, mut state, camera) in &mut q_attacker {
         state.pre_hit_timer.tick(time.delta());
@@ -269,7 +270,8 @@ fn update_attack_state_system(
         };
         let delta = intended_point - origin;
         let direction = Dir3::new(delta).unwrap_or(camera_direction);
-        let obstruction_filter = SpatialQueryFilter::from_excluded_entities([attacker]);
+        let excluded: Vec<_> = q_scene_items.iter().chain([attacker]).collect();
+        let obstruction_filter = SpatialQueryFilter::from_excluded_entities(excluded);
         let obstruction = spatial.cast_ray(
             origin,
             direction,

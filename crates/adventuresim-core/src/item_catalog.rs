@@ -342,6 +342,37 @@ mod tests {
     }
 
     #[test]
+    fn every_equipment_item_has_finite_positive_tactical_geometry() {
+        let equipment: Vec<_> = catalog()
+            .iter()
+            .filter_map(|item| item.equipment.as_ref().map(|equipment| (item, equipment)))
+            .collect();
+        assert_eq!(equipment.len(), 64);
+        for (item, equipment) in equipment {
+            assert!(
+                equipment
+                    .physical
+                    .dimensions_m
+                    .iter()
+                    .all(|dimension| dimension.is_finite() && *dimension > 0.0),
+                "{}",
+                item.id
+            );
+            assert!(equipment.physical.grip_to_tip_m.is_finite());
+            assert!(equipment.physical.grip_to_tip_m >= 0.0);
+            assert!(
+                equipment
+                    .physical
+                    .grip_offset_m
+                    .iter()
+                    .all(|offset| offset.is_finite()),
+                "{}",
+                item.id
+            );
+        }
+    }
+
+    #[test]
     fn every_held_catalog_item_has_explicit_authored_hand_placements() {
         for definition in catalog() {
             let slot = match &definition.kind {

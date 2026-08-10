@@ -384,3 +384,11 @@ projectiles, blood loss, ammunition, weapon/shield/armor contact wear, combat
 dirt and blood filth, morale, loot classification, and diagnostics). Random
 encounter reports use encounter IDs and never create quest battle results or
 complete an active quest.
+
+Dropped equipment uses a dedicated physics/query layer. Its authored box
+collider supports terrain and pointing pickup queries, but melee hit selection
+still targets only limb hitboxes and server combat line-of-sight explicitly
+excludes tactical scene-item boxes. Equipment therefore cannot extend a melee
+hit shape or provide improvised combat cover. Pickup remains server-authorized
+and requires the pointed candidate to win the deterministic ray-distance then
+entity-identity ordering, be in range, and have unobstructed line of sight.

@@ -34,6 +34,7 @@ mod camera;
 mod debug;
 #[cfg(not(target_family = "wasm"))]
 mod diagnostics;
+mod equipment;
 #[allow(dead_code)] // Viewer-only input diagnostics are compiled into this binary.
 mod player;
 mod presentation;
@@ -175,6 +176,7 @@ fn run(args: Args) {
     .add_plugins((
         ui::UiPlugin,
         player::PlayerPlugin,
+        equipment::TacticalEquipmentPlugin,
         animation::TacticalAnimationPlugin,
         camera::TacticalCameraPlugin,
         args.graphics_preset.presentation(),

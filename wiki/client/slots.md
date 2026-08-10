@@ -98,6 +98,30 @@ press Escape to close it. An equipped item's current placement is highlighted
 and carries its item icon in either map. Clicking an equipped control still
 unequips it.
 
+## Tactical implementation
+
+In direct tactical control, holding LMB opens the right-hand egui map and
+holding MMB opens the left-hand map. RMB-held aim/attack takes precedence and
+prevents a new grab. If both grab buttons compete, the first active grab owns
+the interaction until release. Slot input is preview-only while held; one
+ordered request commits on release. Repeating a key walks that key's authored
+location alternatives and then deeper layers deterministically. WASD is never
+consumed by the map.
+
+An empty hand may draw an occupied reachable layer. A full hand may place into
+a compatible empty destination or atomically swap an occupied destination
+into the hand. The HUD dims invalid choices and flashes rejected input without
+sending a mutation. Releasing without a selection drops a held item; releasing
+an empty hand is a no-op. The opposite-hand and pointed-scene destinations are
+explicit HUD choices.
+
+The tactical server re-resolves every selection against mapped ECS entities
+and validates control, source state, compatibility, all occupancy conflicts,
+children, and pickup range/line of sight before applying a batch. Parent-based
+placements that cannot be proven from the current topology fail closed. These
+changes exist only in the mission ECS snapshot and never replace the durable
+strategic equipment graph.
+
 ## Bags
 Your entire inventory won't necessarily fit into the slot system, which is fine. The slot system is intended not to replace "standard inventory management" altogether but to make a *significant subset* of your inventory more manageable, that being the subset of items that you need readily accessible. If you don't need a given item readily accessible, you can put it in a bag.
 
