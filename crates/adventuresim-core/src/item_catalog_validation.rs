@@ -493,7 +493,9 @@ fn validate_equipment(
                 Some(values)
                     if values.len() == 3
                         && values.iter().all(|value| {
-                            value.as_f64().is_some_and(|value| value.is_finite() && value > 0.0)
+                            value
+                                .as_f64()
+                                .is_some_and(|value| value.is_finite() && value > 0.0)
                         }) => {}
                 _ => errors.push(format!(
                     "{file}: {path}.physical.dimensions_m: expected three finite positive metres"

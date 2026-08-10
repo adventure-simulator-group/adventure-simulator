@@ -18,6 +18,18 @@ pub enum DefendRequest {
 #[derive(Debug, Clone, Copy, Event, Serialize, Deserialize)]
 pub struct JoinRequest {
     pub character_id: CharacterId,
+    pub reconnect_token: Option<ReconnectToken>,
+}
+
+/// A server-generated bearer capability for resuming one transient tactical
+/// session. It is sent only to its owning connection and rotated on use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ReconnectToken(pub [u8; 32]);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Event, Serialize, Deserialize)]
+pub struct ReconnectCapability {
+    pub character_id: CharacterId,
+    pub token: ReconnectToken,
 }
 
 #[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize)]

@@ -34,10 +34,10 @@ pub mod prelude {
     };
     pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
     pub use crate::inventory::{
-        ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentActionState, EquipmentPhysical, EquipmentTopology,
-        EquipmentTopologyOccupancy, InventoryItems, ItemOf, ItemProperties, ItemQuantity,
-        ShieldItem, TacticalEquipmentAnchor, TacticalSceneItem, WeaponItem,
-        TACTICAL_ITEM_LAYER, TACTICAL_TERRAIN_LAYER,
+        ArmorItem, ArmorSide, ArmorSlot, EquipSlot, EquipmentActionState, EquipmentPhysical,
+        EquipmentTopology, EquipmentTopologyOccupancy, InventoryItems, ItemOf, ItemProperties,
+        ItemQuantity, ShieldItem, TACTICAL_ITEM_LAYER, TACTICAL_TERRAIN_LAYER,
+        TacticalEquipmentAnchor, TacticalSceneItem, WeaponItem, rebuild_inventory_holding_cache,
     };
     pub use crate::physics::{
         AdventureSimulatorPhysicsSet, BREATH_PER_METRE_PER_SECOND, MovementPace,
@@ -56,9 +56,9 @@ pub mod prelude {
         TacticalPlayerViewer,
     };
     pub use crate::scene::{SceneId, SceneTerrain, TerrainGenerator};
-    pub use adventuresim_core::prelude::*;
     pub use adventuresim_core::item_catalog;
     pub use adventuresim_core::item_catalog::{EquipmentChannel, EquipmentLocation};
+    pub use adventuresim_core::prelude::*;
     pub use avian3d::prelude::*;
     pub use bevy_ahoy::{
         AhoySystems, CharacterController, CharacterControllerState, CharacterLook,

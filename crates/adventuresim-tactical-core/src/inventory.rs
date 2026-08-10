@@ -98,9 +98,7 @@ pub struct ItemProperties {
     pub weight: f32,
 }
 
-#[derive(
-    Component, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq, MapEntities,
-)]
+#[derive(Component, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq, MapEntities)]
 pub struct EquipmentTopology {
     pub placement_id: Option<String>,
     pub occupancies: Vec<EquipmentTopologyOccupancy>,
@@ -114,6 +112,36 @@ pub struct EquipmentTopologyOccupancy {
     pub order: u16,
     pub requirement_index: u16,
     pub capacity_index: u16,
+}
+
+/// Recomputes the legacy combat hand caches after an ownership root is
+/// rebound. Relationship hooks maintain the item list, but changing `ItemOf`
+/// alone does not rerun the `EquipSlot` hooks that populate these caches.
+pub fn rebuild_inventory_holding_cache(world: &mut World, root: Entity) {
+    let mut weapon = None;
+    let mut shield = None;
+    let mut query = world.query::<(
+        Entity,
+        &ItemOf,
+        &EquipSlot,
+        Has<WeaponItem>,
+        Has<ShieldItem>,
+    )>();
+    for (entity, owner, slot, is_weapon, is_shield) in query.iter(world) {
+        if owner.0 != root || !matches!(slot, EquipSlot::HoldingLeft | EquipSlot::HoldingRight) {
+            continue;
+        }
+        if is_weapon {
+            weapon = Some(entity);
+        }
+        if is_shield {
+            shield = Some(entity);
+        }
+    }
+    if let Some(mut inventory) = world.get_mut::<InventoryItems>(root) {
+        inventory.holding_weapon = weapon;
+        inventory.holding_shield = shield;
+    }
 }
 
 /// Tactical topology never exposes durable inventory row IDs to a client.
@@ -149,7 +177,9 @@ pub struct TacticalSceneItem;
 
 /// Replicated optimistic-concurrency token for tactical equipment actions.
 /// The authority increments it after every accepted mutation.
-#[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq,
+)]
 pub struct EquipmentActionState {
     pub revision: u32,
 }
@@ -537,6 +567,50 @@ fn on_equip_slot_removed(mut world: DeferredWorld, ctx: HookContext) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rebuilding_holding_cache_preserves_weapon_and_shield_after_owner_rebind() {
+        let mut world = World::new();
+        let owner = world.spawn(InventoryItems::default()).id();
+        let weapon = world
+            .spawn((
+                ItemOf(owner),
+                EquipSlot::HoldingRight,
+                WeaponItem {
+                    skill_weights: [0.0; 9],
+                    accuracy: 0.0,
+                    swing_precision: 0.0,
+                    stab_precision: 0.0,
+                    prefers_stab: false,
+                    penetration: 0.0,
+                    reach: 1.0,
+                    balance: 0.0,
+                    precise: false,
+                    melee: true,
+                    ranged: false,
+                    blunt: false,
+                    slash: true,
+                    pierce: false,
+                },
+            ))
+            .id();
+        let shield = world
+            .spawn((
+                ItemOf(owner),
+                EquipSlot::HoldingLeft,
+                ShieldItem { block: 1.0 },
+            ))
+            .id();
+        {
+            let mut inventory = world.get_mut::<InventoryItems>(owner).unwrap();
+            inventory.holding_weapon = None;
+            inventory.holding_shield = None;
+        }
+        rebuild_inventory_holding_cache(&mut world, owner);
+        let inventory = world.get::<InventoryItems>(owner).unwrap();
+        assert_eq!(inventory.holding_weapon, Some(weapon));
+        assert_eq!(inventory.holding_shield, Some(shield));
+    }
 
     #[test]
     fn tactical_handoff_folds_multiple_layers_once_per_inventory_item() {

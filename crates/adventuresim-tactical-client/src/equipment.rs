@@ -6,7 +6,7 @@ use adventuresim_tactical_netcode::{
     prelude::{EquipmentAction, EquipmentActionRequest, EquipmentHand},
 };
 use bevy::prelude::*;
-use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
+use bevy_egui::{EguiContexts, EguiPrimaryContextPass, EguiTextureHandle, egui};
 
 use crate::{
     animation::{HandSide, HeldWeaponConstraint},
@@ -15,13 +15,84 @@ use crate::{
 
 const PICKUP_RANGE_M: f32 = 2.0;
 const INVALID_FLASH_SECS: f32 = 0.18;
+const EQUIPMENT_ICON_SLUGS: [&str; 56] = [
+    "ancient-sword",
+    "arm-bandage",
+    "armor-cuisses",
+    "armor-vest",
+    "barbute",
+    "belt-armor",
+    "bo",
+    "bordered-shield",
+    "bow-arrow",
+    "bowie-knife",
+    "bracer",
+    "breastplate",
+    "broad-dagger",
+    "broadsword",
+    "brodie-helmet",
+    "chain-mail",
+    "chest-armor",
+    "crested-helmet",
+    "crossbow",
+    "daggers",
+    "flanged-mace",
+    "greaves",
+    "halberd",
+    "heavy-helm",
+    "helmet",
+    "knapsack",
+    "layered-armor",
+    "light-helm",
+    "mailed-fist",
+    "mail-shirt",
+    "metal-skirt",
+    "musket",
+    "piercing-sword",
+    "plain-dagger",
+    "pocket-bow",
+    "pteruges",
+    "relic-blade",
+    "rifle",
+    "roman-shield",
+    "round-shield",
+    "saber-slash",
+    "shield",
+    "shirt",
+    "skirt",
+    "sleeveless-jacket",
+    "spear-hook",
+    "spears",
+    "stiletto",
+    "sword-hilt",
+    "templar-shield",
+    "trousers",
+    "two-handed-sword",
+    "visored-helm",
+    "warhammer",
+    "wood-axe",
+    "wood-club",
+];
+
+fn icon_uv(slug: &str) -> egui::Rect {
+    let index = EQUIPMENT_ICON_SLUGS.binary_search(&slug).unwrap_or(0);
+    let column = (index % 8) as f32;
+    let row = (index / 8) as f32;
+    egui::Rect::from_min_max(
+        egui::pos2(column / 8.0, row / 7.0),
+        egui::pos2((column + 1.0) / 8.0, (row + 1.0) / 7.0),
+    )
+}
 
 pub(crate) struct TacticalEquipmentPlugin;
 
 impl Plugin for TacticalEquipmentPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GrabSession>()
-            .add_systems(PreUpdate, update_grab_input.after(bevy::input::InputSystems))
+            .add_systems(
+                PreUpdate,
+                update_grab_input.after(bevy::input::InputSystems),
+            )
             .add_systems(Update, (spawn_item_placeholders, update_item_placeholders))
             .add_systems(EguiPrimaryContextPass, draw_slot_hud);
     }
@@ -29,7 +100,10 @@ impl Plugin for TacticalEquipmentPlugin {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GrabSelection {
-    Slot { location: EquipmentLocation, depth: u16 },
+    Slot {
+        location: EquipmentLocation,
+        depth: u16,
+    },
     Hand(EquipmentHand),
     Scene(Entity),
 }
@@ -110,11 +184,16 @@ fn update_grab_input(
     let held = held_item(actor, hand, &item_owners);
 
     for mapping in INPUT_ADDRESS_MAPPINGS {
-        let Some(key) = key_code(mapping.input) else { continue };
+        let Some(key) = key_code(mapping.input) else {
+            continue;
+        };
         if !keys.just_pressed(key) {
             continue;
         }
-        let repeat = if session.repeated_input.is_some_and(|(input, _)| input == mapping.input) {
+        let repeat = if session
+            .repeated_input
+            .is_some_and(|(input, _)| input == mapping.input)
+        {
             session.repeated_input.unwrap().1.saturating_add(1)
         } else {
             0
@@ -129,9 +208,9 @@ fn update_grab_input(
                     .is_some_and(|equipment| {
                         equipment.placements.iter().any(|placement| {
                             placement
-                                    .occupancy
-                                    .iter()
-                                    .any(|occupancy| occupancy.location == location)
+                                .occupancy
+                                .iter()
+                                .any(|occupancy| occupancy.location == location)
                                 || (!placement.parents.is_empty()
                                     && ordered_preview_at_location(actor, location, &topologies)
                                         .get(depth as usize)
@@ -208,15 +287,23 @@ fn ordered_preview_at_location(
         .iter()
         .filter(|(_, owner, _, _)| owner.0 == actor)
         .filter_map(|(entity, _, topology, _)| {
-            topology.occupancies.iter().find_map(|occupancy| match occupancy.anchor {
-                TacticalEquipmentAnchor::CharacterLocation(found) if found == location => {
-                    Some(((occupancy.channel.order(), occupancy.order), entity))
-                }
-                _ => None,
-            })
+            topology
+                .occupancies
+                .iter()
+                .find_map(|occupancy| match occupancy.anchor {
+                    TacticalEquipmentAnchor::CharacterLocation(found) if found == location => {
+                        Some(((occupancy.channel.order(), occupancy.order), entity))
+                    }
+                    _ => None,
+                })
         })
         .collect();
-    found.sort_by(|left, right| right.0.cmp(&left.0).then(left.1.to_bits().cmp(&right.1.to_bits())));
+    found.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then(left.1.to_bits().cmp(&right.1.to_bits()))
+    });
     let mut output = Vec::new();
     let mut visited = std::collections::HashSet::new();
     for (_, entity) in found {
@@ -234,17 +321,25 @@ fn append_preview(
     if !visited.insert(entity) {
         return;
     }
-    output.push(PreviewTarget { entity, occupied: true });
-    let Ok((_, _, _, properties)) = items.get(entity) else { return };
+    output.push(PreviewTarget {
+        entity,
+        occupied: true,
+    });
+    let Ok((_, _, _, properties)) = items.get(entity) else {
+        return;
+    };
     let Some(equipment) = item_catalog::definition(&properties.id)
         .and_then(|definition| definition.equipment.as_ref())
-    else { return };
+    else {
+        return;
+    };
     let mut points: Vec<_> = equipment.attachment_points.iter().collect();
     points.sort_by_key(|point| (point.order, point.id.as_str()));
     for point in points {
         for capacity_index in 0..point.capacity {
-            let child = items.iter().find_map(|(child, _, topology, _)| {
-                topology.occupancies.iter().any(|occupancy| {
+            let child =
+                items.iter().find_map(|(child, _, topology, _)| {
+                    topology.occupancies.iter().any(|occupancy| {
                     matches!(
                         &occupancy.anchor,
                         TacticalEquipmentAnchor::ItemAttachment { parent, attachment_point_id }
@@ -253,13 +348,16 @@ fn append_preview(
                                 && occupancy.capacity_index == capacity_index
                     )
                 }).then_some(child)
-            });
+                });
             if let Some(child) = child {
                 append_preview(child, items, visited, output);
             } else {
                 // Empty attachment points address their mapped parent. Depth
                 // disambiguates the exact authored point/capacity on server.
-                output.push(PreviewTarget { entity, occupied: false });
+                output.push(PreviewTarget {
+                    entity,
+                    occupied: false,
+                });
             }
         }
     }
@@ -272,37 +370,64 @@ fn slot_label(location: EquipmentLocation) -> String {
 fn hud_layers(
     actor: Entity,
     location: EquipmentLocation,
-    items: &Query<(Entity, &ItemOf, Option<&EquipSlot>, &ItemProperties, &EquipmentTopology)>,
+    items: &Query<(
+        Entity,
+        &ItemOf,
+        Option<&EquipSlot>,
+        &ItemProperties,
+        &EquipmentTopology,
+    )>,
 ) -> Vec<PreviewTarget> {
     let mut roots: Vec<_> = items
         .iter()
         .filter(|(_, owner, _, _, _)| owner.0 == actor)
         .filter_map(|(entity, _, _, _, topology)| {
-            topology.occupancies.iter().find_map(|occupancy| match occupancy.anchor {
-                TacticalEquipmentAnchor::CharacterLocation(found) if found == location => {
-                    Some(((occupancy.channel.order(), occupancy.order), entity))
-                }
-                _ => None,
-            })
+            topology
+                .occupancies
+                .iter()
+                .find_map(|occupancy| match occupancy.anchor {
+                    TacticalEquipmentAnchor::CharacterLocation(found) if found == location => {
+                        Some(((occupancy.channel.order(), occupancy.order), entity))
+                    }
+                    _ => None,
+                })
         })
         .collect();
-    roots.sort_by(|left, right| right.0.cmp(&left.0).then(left.1.to_bits().cmp(&right.1.to_bits())));
+    roots.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then(left.1.to_bits().cmp(&right.1.to_bits()))
+    });
     let mut output = Vec::new();
     let mut visited = std::collections::HashSet::new();
     fn append(
         entity: Entity,
-        items: &Query<(Entity, &ItemOf, Option<&EquipSlot>, &ItemProperties, &EquipmentTopology)>,
+        items: &Query<(
+            Entity,
+            &ItemOf,
+            Option<&EquipSlot>,
+            &ItemProperties,
+            &EquipmentTopology,
+        )>,
         visited: &mut std::collections::HashSet<Entity>,
         output: &mut Vec<PreviewTarget>,
     ) {
         if !visited.insert(entity) {
             return;
         }
-        output.push(PreviewTarget { entity, occupied: true });
-        let Ok((_, _, _, properties, _)) = items.get(entity) else { return };
+        output.push(PreviewTarget {
+            entity,
+            occupied: true,
+        });
+        let Ok((_, _, _, properties, _)) = items.get(entity) else {
+            return;
+        };
         let Some(equipment) = item_catalog::definition(&properties.id)
             .and_then(|definition| definition.equipment.as_ref())
-        else { return };
+        else {
+            return;
+        };
         let mut points: Vec<_> = equipment.attachment_points.iter().collect();
         points.sort_by_key(|point| (point.order, point.id.as_str()));
         for point in points {
@@ -321,7 +446,10 @@ fn hud_layers(
                 if let Some(child) = child {
                     append(child, items, visited, output);
                 } else {
-                    output.push(PreviewTarget { entity, occupied: false });
+                    output.push(PreviewTarget {
+                        entity,
+                        occupied: false,
+                    });
                 }
             }
         }
@@ -334,8 +462,16 @@ fn hud_layers(
 
 fn draw_slot_hud(
     mut contexts: EguiContexts,
+    asset_server: Res<AssetServer>,
+    mut icon_atlas: Local<Option<Handle<Image>>>,
     player: Single<Entity, With<ClientPlayer>>,
-    items: Query<(Entity, &ItemOf, Option<&EquipSlot>, &ItemProperties, &EquipmentTopology)>,
+    items: Query<(
+        Entity,
+        &ItemOf,
+        Option<&EquipSlot>,
+        &ItemProperties,
+        &EquipmentTopology,
+    )>,
     scene_items: Query<(Entity, &ItemProperties), With<TacticalSceneItem>>,
     cameras: Query<&GlobalTransform, With<Camera3d>>,
     spatial: SpatialQuery,
@@ -346,7 +482,11 @@ fn draw_slot_hud(
     let held = items.iter().find(|(_, owner, slot, _, _)| {
         owner.0 == actor && slot.is_some_and(|slot| *slot == hand.slot())
     });
-    let Ok(context) = contexts.ctx_mut() else { return };
+    let atlas = icon_atlas.get_or_insert_with(|| asset_server.load("tactical-equipment-icons.png"));
+    let atlas_texture = contexts.add_image(EguiTextureHandle::Weak(atlas.id()));
+    let Ok(context) = contexts.ctx_mut() else {
+        return;
+    };
     let invalid = session.invalid_flash_remaining > 0.0;
     egui::Window::new(match hand {
         EquipmentHand::Left => "Left-hand grab",
@@ -358,6 +498,7 @@ fn draw_slot_hud(
     .show(context, |ui| {
         ui.label(held.map_or("Empty hand", |(_, _, _, item, _)| item.id.as_str()));
         let size = egui::vec2(86.0, 55.0);
+        let mut joined_cells = Vec::new();
         egui::Grid::new("tactical-slot-qwerty")
             .num_columns(7)
             .spacing(egui::vec2(5.0, 5.0))
@@ -407,9 +548,7 @@ fn draw_slot_hud(
                                     let suffix = if held.is_some() { "swap → hand" } else { "draw → hand" };
                                     let text = if layer.occupied {
                                         format!(
-                                            "{}{} {}\n{} · {}",
-                                            if multi { "↔ " } else { "" },
-                                            icon,
+                                            "{}\n{} · {}",
                                             item.id,
                                             depth + 1,
                                             suffix
@@ -434,7 +573,14 @@ fn draw_slot_hud(
                                     } else {
                                         egui::Color32::TRANSPARENT
                                     });
-                                    if ui.add_enabled(valid && (held.is_some() || layer.occupied), button).clicked() {
+                                    let response = ui.horizontal(|ui| {
+                                        ui.add(egui::Image::new((atlas_texture, egui::vec2(22.0, 22.0))).uv(icon_uv(icon)));
+                                        ui.add_enabled(valid && (held.is_some() || layer.occupied), button)
+                                    }).inner;
+                                    if multi {
+                                        joined_cells.push((response.rect, layer.entity));
+                                    }
+                                    if response.clicked() {
                                         session.selection = Some(GrabSelection::Slot {
                                             location,
                                             depth: depth as u16,
@@ -449,6 +595,26 @@ fn draw_slot_hud(
                     ui.end_row();
                 }
             });
+        for (index, (left, entity)) in joined_cells.iter().enumerate() {
+            for (right, other) in joined_cells.iter().skip(index + 1) {
+                if entity != other { continue; }
+                let horizontally_adjacent = (left.center().y - right.center().y).abs() < 8.0
+                    && (left.right() - right.left()).abs().min((right.right() - left.left()).abs()) < 16.0;
+                let vertically_adjacent = (left.center().x - right.center().x).abs() < 8.0
+                    && (left.bottom() - right.top()).abs().min((right.bottom() - left.top()).abs()) < 16.0;
+                if horizontally_adjacent || vertically_adjacent {
+                    let segment = if horizontally_adjacent {
+                        let (first, second) = if left.center().x < right.center().x { (left, right) } else { (right, left) };
+                        [egui::pos2(first.right(), first.center().y), egui::pos2(second.left(), second.center().y)]
+                    } else {
+                        let (first, second) = if left.center().y < right.center().y { (left, right) } else { (right, left) };
+                        [egui::pos2(first.center().x, first.bottom()), egui::pos2(second.center().x, second.top())]
+                    };
+                    context.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("equipment-cell-joins")))
+                        .line_segment(segment, egui::Stroke::new(5.0_f32, egui::Color32::from_rgb(75, 115, 165)));
+                }
+            }
+        }
         let other = match hand { EquipmentHand::Left => EquipmentHand::Right, EquipmentHand::Right => EquipmentHand::Left };
         if ui.button(format!("{:?} hand", other)).clicked() {
             session.selection = Some(GrabSelection::Hand(other));
@@ -536,14 +702,27 @@ fn update_item_placeholders(
                 secondary_grip_local: None,
             });
         } else if let Some(owner) = owner.and_then(|owner| owners.get(owner.0).ok()) {
-            let offset = topology.occupancies.first().map_or(Vec3::Y, |occupancy| match occupancy.anchor {
-                TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::Head) => Vec3::Y * 1.7,
-                TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::LeftArm) => Vec3::new(-0.45, 1.0, 0.0),
-                TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::RightArm) => Vec3::new(0.45, 1.0, 0.0),
-                TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::LeftLeg) => Vec3::new(-0.2, 0.45, 0.0),
-                TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::RightLeg) => Vec3::new(0.2, 0.45, 0.0),
-                _ => Vec3::Y,
-            });
+            let offset = topology
+                .occupancies
+                .first()
+                .map_or(Vec3::Y, |occupancy| match occupancy.anchor {
+                    TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::Head) => {
+                        Vec3::Y * 1.7
+                    }
+                    TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::LeftArm) => {
+                        Vec3::new(-0.45, 1.0, 0.0)
+                    }
+                    TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::RightArm) => {
+                        Vec3::new(0.45, 1.0, 0.0)
+                    }
+                    TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::LeftLeg) => {
+                        Vec3::new(-0.2, 0.45, 0.0)
+                    }
+                    TacticalEquipmentAnchor::CharacterLocation(EquipmentLocation::RightLeg) => {
+                        Vec3::new(0.2, 0.45, 0.0)
+                    }
+                    _ => Vec3::Y,
+                });
             *transform = Transform::from_translation(owner.transform_point(offset));
             commands.entity(entity).remove::<HeldWeaponConstraint>();
         }
@@ -565,13 +744,20 @@ mod tests {
     #[test]
     fn movement_keys_are_not_slot_addresses() {
         for key in ["w", "a", "s", "d"] {
-            assert!(INPUT_ADDRESS_MAPPINGS.iter().all(|mapping| mapping.input != key));
+            assert!(
+                INPUT_ADDRESS_MAPPINGS
+                    .iter()
+                    .all(|mapping| mapping.input != key)
+            );
         }
     }
 
     #[test]
     fn repeated_input_walks_location_alternatives_then_depth() {
-        let mapping = INPUT_ADDRESS_MAPPINGS.iter().find(|mapping| mapping.input == "t").unwrap();
+        let mapping = INPUT_ADDRESS_MAPPINGS
+            .iter()
+            .find(|mapping| mapping.input == "t")
+            .unwrap();
         assert!(mapping.locations.len() > 1);
         let repeat = mapping.locations.len() as u16;
         assert_eq!(repeat as usize % mapping.locations.len(), 0);
@@ -581,6 +767,25 @@ mod tests {
     #[test]
     fn armor_slots_use_body_anchor_instead_of_stale_hand_constraint() {
         assert_eq!(holding_side(Some(&EquipSlot::ArmorChest)), None);
-        assert_eq!(holding_side(Some(&EquipSlot::HoldingLeft)), Some(HandSide::Left));
+        assert_eq!(
+            holding_side(Some(&EquipSlot::HoldingLeft)),
+            Some(HandSide::Left)
+        );
+    }
+
+    #[test]
+    fn every_equipment_catalog_icon_is_present_in_tactical_atlas() {
+        for definition in item_catalog::catalog()
+            .iter()
+            .filter(|definition| definition.equipment.is_some())
+        {
+            assert!(
+                EQUIPMENT_ICON_SLUGS
+                    .binary_search(&definition.presentation.icon.as_str())
+                    .is_ok(),
+                "missing tactical atlas icon {}",
+                definition.presentation.icon
+            );
+        }
     }
 }

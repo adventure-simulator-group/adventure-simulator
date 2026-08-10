@@ -126,7 +126,8 @@ strategic equipment graph.
 
 The HUD renders each reachable layer outside-to-inside and then through child
 attachment points. Near layers use lighter labels, the chosen depth is
-highlighted, catalog icon slugs identify items, and a joined marker identifies
+highlighted, catalog Game Icons are drawn from a deterministic tactical sprite
+atlas, and contiguous mapped cells are connected into one visual span for
 multi-location equipment. Occupied destinations state that their item will be
 swapped into the active hand.
 

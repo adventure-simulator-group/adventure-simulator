@@ -277,6 +277,21 @@ The current tactical stack uses Bevy Replicon over Aeronet WebSockets:
    compatible private strategic outcome, and commits durable consequences
    idempotently.
 
+A running tactical client receives a private, server-generated 256-bit
+reconnect capability after enrollment. The client retains it in process across
+WebSocket reconnects on both native and wasm, and presents it with the character
+identity. The server binds it to that transient character/session, consumes and
+rotates it on every successful rebind, and rejects missing, wrong, or replayed
+capabilities; character IDs alone never authorize a rebind. Capabilities are
+targeted server events, not replicated components, and expire with the
+server-owned grace record. Rebinding moves the replicated root and inventory
+relationships/caches to the new connection without writing tactical state to
+SpacetimeDB. The server synchronously claims the grace record before queuing
+rebind commands, so duplicate same-frame proofs cannot both succeed; a record
+at or past its deadline cannot be claimed, and a claimed record cannot expire
+under the deferred rebind. Explicit terminal resolution and grace expiry retain
+their normal strategic teardown behavior.
+
 The SpacetimeDB SDK connection is asynchronous: constructing it does not mean
 the server identity has arrived. The child pumps that connection until the
 identity is available, then installs reducer subscriptions and opens the

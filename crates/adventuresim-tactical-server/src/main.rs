@@ -32,8 +32,8 @@ use crate::{
         process_terminal_submission_results,
     },
     player_projection::{
-        PlayerProjectionSet, on_client_disconnected, on_join_request, on_player_input,
-        expire_disconnected_players, restore_authoritative_movement_intent, spawn_connected_players,
+        PlayerProjectionSet, expire_disconnected_players, on_client_disconnected, on_join_request,
+        on_player_input, restore_authoritative_movement_intent, spawn_connected_players,
         update_skeleton_locomotion,
     },
     stdb::{SpacetimeDb, SpacetimeDbReady},

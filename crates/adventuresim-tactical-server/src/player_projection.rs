@@ -5,8 +5,11 @@ use adventuresim_tactical_core::physics::TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_P
 use adventuresim_tactical_core::{inventory::ItemProperties, prelude::*};
 use adventuresim_tactical_netcode::{
     aeronet::io::connection::{DisconnectReason, Disconnected},
-    bevy_replicon::prelude::{FromClient, Replicated},
-    prelude::{JoinRequest, JumpCommand, PlayerInputRequest, PostureActionRequest, PostureCommand},
+    bevy_replicon::prelude::{FromClient, Replicated, SendTargets, ServerTriggerExt, ToClients},
+    prelude::{
+        JoinRequest, JumpCommand, PlayerInputRequest, PostureActionRequest, PostureCommand,
+        ReconnectCapability, ReconnectToken,
+    },
 };
 use bevy::prelude::*;
 use bevy::time::Stopwatch;
@@ -15,6 +18,10 @@ use crate::{
     Args,
     bot::{MissionEnemy, OffensiveCombatAi},
     combat::{MeleeAttackAuthority, RangedAttackAuthority, TacticalCombatSide},
+    equipment::{
+        LastEquipmentSequence, PendingEquipmentActions, purge_equipment_lifecycle,
+        reconnect_equipment_lifecycle,
+    },
     mission::MissionState,
     stdb::{SpacetimeDb, SpacetimeDbReady},
 };
@@ -120,7 +127,16 @@ fn tactical_covered_parts(parts: &[EquipmentBodyPart]) -> [bool; 7] {
 
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct DisconnectedPlayer {
+    character_id: CharacterId,
+    reconnect_token: ReconnectToken,
     remaining_secs: f32,
+    claimed: bool,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct ReconnectSession {
+    character_id: CharacterId,
+    token: ReconnectToken,
 }
 
 const RECONNECT_GRACE_SECS: f32 = 30.0;
@@ -474,17 +490,12 @@ fn spawn_connected_player(
                 .iter()
                 .enumerate()
                 .map(|(occupancy_index, occupancy)| EquipmentTopologyOccupancy {
-                    occupancy_id: format!(
-                        "tactical:{}:{occupancy_index}",
-                        item_entity.to_bits()
-                    ),
+                    occupancy_id: format!("tactical:{}:{occupancy_index}", item_entity.to_bits()),
                     anchor: match occupancy.anchor_kind {
                         EquipmentAnchorKind::CharacterLocation => {
-                            TacticalEquipmentAnchor::CharacterLocation(
-                                tactical_equipment_location(
-                                    occupancy.location.expect("validated character location"),
-                                ),
-                            )
+                            TacticalEquipmentAnchor::CharacterLocation(tactical_equipment_location(
+                                occupancy.location.expect("validated character location"),
+                            ))
                         }
                         EquipmentAnchorKind::ItemAttachment => {
                             TacticalEquipmentAnchor::ItemAttachment {
@@ -570,8 +581,7 @@ fn spawn_connected_player(
 
         if item.occupancies.iter().any(|occupancy| {
             occupancy.channel == adventuresim_stdb_client::EquipmentChannel::Held
-                && occupancy.location
-                    == Some(adventuresim_stdb_client::EquipmentLocation::LeftHand)
+                && occupancy.location == Some(adventuresim_stdb_client::EquipmentLocation::LeftHand)
         }) {
             item_cmd.insert(EquipSlot::HoldingLeft);
         } else if item.occupancies.iter().any(|occupancy| {
@@ -594,8 +604,15 @@ pub(crate) fn on_join_request(
     mut state: ResMut<MissionState>,
     loading_players: Query<(), With<LoadingPlayer>>,
     players: Query<(), With<Player>>,
-    disconnected_players: Query<(Entity, &CharacterId), With<DisconnectedPlayer>>,
+    mut disconnected_players: Query<(
+        Entity,
+        &mut DisconnectedPlayer,
+        Has<Player>,
+        Has<LoadingPlayer>,
+    )>,
     inventory_items: Query<(Entity, &ItemOf)>,
+    mut pending_actions: ResMut<PendingEquipmentActions>,
+    mut action_sequences: ResMut<LastEquipmentSequence>,
     conn: Res<SpacetimeDb>,
     ready: Res<SpacetimeDbReady>,
 ) -> Result {
@@ -605,10 +622,18 @@ pub(crate) fn on_join_request(
     if loading_players.contains(client) || players.contains(client) {
         return Ok(());
     }
-    if let Some((disconnected, _)) = disconnected_players
-        .iter()
-        .find(|(_, character)| reconnect_matches(join.character_id, CharacterId(character.0)))
-    {
+    let reconnect =
+        disconnected_players
+            .iter_mut()
+            .find_map(|(entity, mut session, projected, loading)| {
+                try_claim_reconnect(join.character_id, join.reconnect_token, &mut session)
+                    .then_some((entity, projected, loading))
+            });
+    if let Some((disconnected, projected, loading)) = reconnect {
+        let token = fresh_reconnect_token();
+        if projected {
+            queue_replication_rebind(&mut commands, client);
+        }
         commands.entity(disconnected).move_components::<(
             Name,
             Player,
@@ -639,13 +664,46 @@ pub(crate) fn on_join_request(
             CharacterController,
             AccumulatedInput,
         )>(client);
+        if projected {
+            commands
+                .entity(disconnected)
+                .move_components::<InventoryItems>(client);
+        } else if loading {
+            commands
+                .entity(disconnected)
+                .move_components::<LoadingPlayer>(client);
+        }
+        commands.entity(client).insert(ReconnectSession {
+            character_id: join.character_id,
+            token,
+        });
+        send_reconnect_capability(&mut commands, join.client_id, join.character_id, token);
+        reconnect_equipment_lifecycle(
+            disconnected,
+            client,
+            &mut pending_actions,
+            &mut action_sequences,
+        );
         for (item, owner) in &inventory_items {
             if owner.0 == disconnected {
                 commands.entity(item).insert(ItemOf(client));
             }
         }
+        if projected {
+            commands.queue(move |world: &mut World| rebuild_inventory_holding_cache(world, client));
+        }
         commands.entity(disconnected).despawn();
-        info!(character_id = join.character_id.0, "Rebound reconnect to transient tactical state");
+        info!(
+            character_id = join.character_id.0,
+            "Rebound reconnect to transient tactical state"
+        );
+        return Ok(());
+    }
+    if join.reconnect_token.is_some() {
+        warn!(
+            character_id = join.character_id.0,
+            "Rejected invalid or consumed reconnect capability"
+        );
         return Ok(());
     }
     if !state.allows_party_join(join.character_id) {
@@ -658,9 +716,17 @@ pub(crate) fn on_join_request(
     conn.reducers()
         .enter_mission(join.character_id.0, ready.identity())?;
     state.begin_enrollment();
-    commands.entity(client).insert(LoadingPlayer {
-        requested_character: join.character_id,
-    });
+    let token = fresh_reconnect_token();
+    commands.entity(client).insert((
+        LoadingPlayer {
+            requested_character: join.character_id,
+        },
+        ReconnectSession {
+            character_id: join.character_id,
+            token,
+        },
+    ));
+    send_reconnect_capability(&mut commands, join.client_id, join.character_id, token);
     info!(
         "Character {} connected and entered mission, awaiting loading",
         join.character_id.0
@@ -1020,22 +1086,20 @@ pub(crate) fn update_skeleton_locomotion(
 
 pub(crate) fn on_client_disconnected(
     disconnected: On<Disconnected>,
-    query: Query<(Option<&CharacterId>, Option<&LoadingPlayer>)>,
+    query: Query<&ReconnectSession>,
     mut commands: Commands,
 ) -> Result {
     let entity = disconnected.event_target();
-    let Ok((player_id, loading)) = query.get(entity) else {
-        return Ok(());
-    };
-    let Some(character_id) = player_id
-        .map(|id| id.0)
-        .or_else(|| loading.map(|id| id.requested_character.0))
-    else {
+    let Ok(session) = query.get(entity) else {
         return Ok(());
     };
     commands.entity(entity).insert(DisconnectedPlayer {
+        character_id: session.character_id,
+        reconnect_token: session.token,
         remaining_secs: RECONNECT_GRACE_SECS,
+        claimed: false,
     });
+    let character_id = session.character_id.0;
     match &disconnected.reason {
         DisconnectReason::ByUser(reason) => {
             info!("Character {character_id} disconnected by server request: {reason}")
@@ -1050,24 +1114,79 @@ pub(crate) fn on_client_disconnected(
     Ok(())
 }
 
-fn reconnect_matches(requested: CharacterId, existing: CharacterId) -> bool {
-    requested == existing
+fn fresh_reconnect_token() -> ReconnectToken {
+    ReconnectToken(rand::random())
+}
+
+fn reconnect_matches(
+    requested: CharacterId,
+    supplied: Option<ReconnectToken>,
+    existing: &DisconnectedPlayer,
+) -> bool {
+    !existing.claimed
+        && existing.remaining_secs > 0.0
+        && requested == existing.character_id
+        && supplied == Some(existing.reconnect_token)
+}
+
+fn try_claim_reconnect(
+    requested: CharacterId,
+    supplied: Option<ReconnectToken>,
+    existing: &mut DisconnectedPlayer,
+) -> bool {
+    if !reconnect_matches(requested, supplied, existing) {
+        return false;
+    }
+    // Immediate mutation serializes duplicate ordered events even though the
+    // component moves below are deferred until the command queue is applied.
+    existing.claimed = true;
+    true
+}
+
+fn send_reconnect_capability(
+    commands: &mut Commands,
+    client_id: adventuresim_tactical_netcode::bevy_replicon::prelude::ClientId,
+    character_id: CharacterId,
+    token: ReconnectToken,
+) {
+    commands.server_trigger(ToClients {
+        targets: SendTargets::Single(client_id),
+        message: ReconnectCapability {
+            character_id,
+            token,
+        },
+    });
+}
+
+fn queue_replication_rebind(commands: &mut Commands, client: Entity) {
+    commands.entity(client).insert(Replicated);
 }
 
 pub(crate) fn expire_disconnected_players(
     time: Res<Time>,
     mut commands: Commands,
-    mut disconnected: Query<(Entity, &CharacterId, &mut DisconnectedPlayer)>,
+    mut disconnected: Query<(Entity, &mut DisconnectedPlayer)>,
     items: Query<(Entity, &ItemOf)>,
+    mut pending_actions: ResMut<PendingEquipmentActions>,
+    mut action_sequences: ResMut<LastEquipmentSequence>,
     conn: Res<SpacetimeDb>,
 ) {
-    for (entity, character, mut grace) in &mut disconnected {
+    for (entity, mut grace) in &mut disconnected {
+        // A successful reconnect synchronously owns this root. Its deferred
+        // moves must complete before any expiry teardown can touch it.
+        if grace.claimed {
+            continue;
+        }
         grace.remaining_secs -= time.delta_secs();
         if grace.remaining_secs > 0.0 {
             continue;
         }
-        if let Err(error) = conn.reducers().leave_mission(character.0) {
-            warn!(character_id = character.0, ?error, "Failed to expire disconnected mission member");
+        if let Err(error) = conn.reducers().leave_mission(grace.character_id.0) {
+            warn!(
+                character_id = grace.character_id.0,
+                ?error,
+                "Failed to expire disconnected mission member"
+            );
             continue;
         }
         for (item, owner) in &items {
@@ -1075,6 +1194,7 @@ pub(crate) fn expire_disconnected_players(
                 commands.entity(item).despawn();
             }
         }
+        purge_equipment_lifecycle(entity, &mut pending_actions, &mut action_sequences);
         commands.entity(entity).despawn();
     }
 }
@@ -1113,29 +1233,123 @@ fn player_spawn_offset(collider: &Collider) -> f32 {
 mod tests {
     use super::{
         AuthoritativeMovementIntent, AuthoritativePostureIntent,
-        BACKWARD_DIVE_POSTURE_TRANSITION_TICKS, CameraFacingIntent,
-        GROUND_POSTURE_TRANSITION_TICKS, Player, WeaponGuardState,
+        BACKWARD_DIVE_POSTURE_TRANSITION_TICKS, CameraFacingIntent, DisconnectedPlayer,
+        GROUND_POSTURE_TRANSITION_TICKS, Player, RECONNECT_GRACE_SECS, WeaponGuardState,
         advance_posture_transition_facing, apply_posture_action, authoritative_weapon_guard,
         dive_horizontal_velocity, input, mission_enemy_health_scale, mission_enemy_scale,
-        posture_transition_locks_body_facing, restore_authoritative_movement_intent,
-        reconnect_matches, sequence_is_newer, tactical_movement_speed_for_guard,
-        validate_player_input, RECONNECT_GRACE_SECS,
+        posture_transition_locks_body_facing, queue_replication_rebind, reconnect_matches,
+        restore_authoritative_movement_intent, sequence_is_newer,
+        tactical_movement_speed_for_guard, try_claim_reconnect, validate_player_input,
     };
     use adventuresim_tactical_core::prelude::{
-        AttackSpec, BodyState, DiveDirection, GroundedPosture, MovementPace, PostureTransitionKind,
-        CharacterId, RollDirection, SkeletonAction, SkeletonState, advance_body_facing,
+        AttackSpec, BodyState, CharacterId, DiveDirection, GroundedPosture, MovementPace,
+        PostureTransitionKind, RollDirection, SkeletonAction, SkeletonState, advance_body_facing,
         downed_camera_roll_target,
     };
+    use adventuresim_tactical_netcode::bevy_replicon::prelude::Replicated;
     use adventuresim_tactical_netcode::prelude::{
-        JumpCommand, PostureActionRequest, PostureCommand,
+        JumpCommand, PostureActionRequest, PostureCommand, ReconnectToken,
     };
     use bevy::prelude::*;
 
+    #[derive(Resource)]
+    struct RebindTarget(Entity);
+
+    fn mark_rebind_target(mut commands: Commands, target: Res<RebindTarget>) {
+        queue_replication_rebind(&mut commands, target.0);
+    }
+
     #[test]
-    fn reconnect_rebind_requires_exact_character_identity() {
-        assert!(reconnect_matches(CharacterId(7), CharacterId(7)));
-        assert!(!reconnect_matches(CharacterId(7), CharacterId(8)));
+    fn reconnect_rebind_requires_character_and_single_current_capability() {
+        let current = ReconnectToken([7; 32]);
+        let session = DisconnectedPlayer {
+            character_id: CharacterId(7),
+            reconnect_token: current,
+            remaining_secs: RECONNECT_GRACE_SECS,
+            claimed: false,
+        };
+        assert!(reconnect_matches(CharacterId(7), Some(current), &session));
+        assert!(!reconnect_matches(CharacterId(8), Some(current), &session));
+        assert!(!reconnect_matches(
+            CharacterId(7),
+            Some(ReconnectToken([8; 32])),
+            &session
+        ));
+        assert!(!reconnect_matches(CharacterId(7), None, &session));
         assert!(RECONNECT_GRACE_SECS > 0.0);
+    }
+
+    #[test]
+    fn consumed_reconnect_capability_cannot_be_reused_after_rotation() {
+        let old = ReconnectToken([7; 32]);
+        let rotated = DisconnectedPlayer {
+            character_id: CharacterId(7),
+            reconnect_token: ReconnectToken([9; 32]),
+            remaining_secs: RECONNECT_GRACE_SECS,
+            claimed: false,
+        };
+        assert!(!reconnect_matches(CharacterId(7), Some(old), &rotated));
+    }
+
+    #[test]
+    fn same_frame_duplicate_reconnect_is_claimed_exactly_once() {
+        let token = ReconnectToken([4; 32]);
+        let mut session = DisconnectedPlayer {
+            character_id: CharacterId(7),
+            reconnect_token: token,
+            remaining_secs: 1.0,
+            claimed: false,
+        };
+        assert!(try_claim_reconnect(
+            CharacterId(7),
+            Some(token),
+            &mut session
+        ));
+        assert!(!try_claim_reconnect(
+            CharacterId(7),
+            Some(token),
+            &mut session
+        ));
+    }
+
+    #[test]
+    fn reconnect_at_or_after_expiry_deadline_is_rejected() {
+        for remaining_secs in [0.0, -f32::EPSILON] {
+            let token = ReconnectToken([6; 32]);
+            let mut session = DisconnectedPlayer {
+                character_id: CharacterId(7),
+                reconnect_token: token,
+                remaining_secs,
+                claimed: false,
+            };
+            assert!(!try_claim_reconnect(
+                CharacterId(7),
+                Some(token),
+                &mut session
+            ));
+            assert!(!session.claimed);
+        }
+    }
+
+    #[test]
+    fn reconnect_rebind_marks_new_connection_replicated() {
+        let mut app = App::new();
+        let target = app.world_mut().spawn_empty().id();
+        app.insert_resource(RebindTarget(target));
+        app.add_systems(Update, mark_rebind_target);
+        app.update();
+        assert!(app.world().get::<Replicated>(target).is_some());
+    }
+
+    #[test]
+    fn disconnected_loading_player_expiry_has_character_without_projection() {
+        let marker = DisconnectedPlayer {
+            character_id: CharacterId(42),
+            reconnect_token: ReconnectToken([3; 32]),
+            remaining_secs: RECONNECT_GRACE_SECS,
+            claimed: false,
+        };
+        assert_eq!(marker.character_id, CharacterId(42));
     }
 
     #[test]
