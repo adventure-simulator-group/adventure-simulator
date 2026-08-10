@@ -285,13 +285,51 @@ impl PostureTransitionKind {
     }
 }
 
-/// Continuous camera-driven roll around a downed character's head-to-feet
-/// axis. Whole values are contact poses (even = prone, odd = supine); halfway
-/// values are the two authored side-supported poses. Values are intentionally
-/// unwrapped so crossing the rear-camera seam does not reverse the roll.
+/// Discrete camera-facing pose selected while a character is downed.
+/// Interpolation occurs only while moving between these four sector centers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DownedFacingPose {
+    #[default]
+    Prone,
+    RollRight,
+    Supine,
+    RollLeft,
+}
+
+impl DownedFacingPose {
+    fn from_half_turns(value: f32) -> Self {
+        match (value * 2.0).round() as i64 % 4 {
+            0 => Self::Prone,
+            1 | -3 => Self::RollRight,
+            2 | -2 => Self::Supine,
+            3 | -1 => Self::RollLeft,
+            _ => unreachable!("remainder is bounded to four downed poses"),
+        }
+    }
+
+    fn canonical_half_turns(self) -> f32 {
+        match self {
+            Self::Prone => 0.0,
+            Self::RollRight => 0.5,
+            Self::Supine => 1.0,
+            Self::RollLeft => -0.5,
+        }
+    }
+
+    fn half_turns_near(self, reference: f32) -> f32 {
+        let canonical = self.canonical_half_turns();
+        canonical + ((reference - canonical) / 2.0).round() * 2.0
+    }
+}
+
+/// Camera-driven roll around a downed character's head-to-feet axis. The
+/// target is one of four sticky sectors; `half_turns` is the transient
+/// interpolation coordinate. Values remain unwrapped so crossing the rear
+/// camera seam does not reverse an in-progress roll.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct DownedFacingState {
     half_turns: f32,
+    target: DownedFacingPose,
     lateral_motion: f32,
 }
 
@@ -307,6 +345,8 @@ impl DownedFacingState {
         } else {
             0.0
         };
+        self.target =
+            DownedFacingPose::from_half_turns(self.target.half_turns_near(self.half_turns));
         self
     }
 
@@ -316,6 +356,10 @@ impl DownedFacingState {
 
     pub fn lateral_motion(self) -> f32 {
         self.lateral_motion
+    }
+
+    pub fn target(self) -> DownedFacingPose {
+        self.target
     }
 }
 
@@ -1119,12 +1163,14 @@ impl SkeletonState {
                 direction: DiveDirection::Left,
             } => Some(DownedFacingState {
                 half_turns: -0.5,
+                target: DownedFacingPose::RollLeft,
                 lateral_motion: 0.0,
             }),
             PostureTransitionKind::DiveToDowned {
                 direction: DiveDirection::Right,
             } => Some(DownedFacingState {
                 half_turns: 0.5,
+                target: DownedFacingPose::RollRight,
                 lateral_motion: 0.0,
             }),
             _ => None,
@@ -1133,9 +1179,10 @@ impl SkeletonState {
     pub fn is_posture_transitioning(&self) -> bool {
         self.posture_transition.is_some()
     }
-    /// Follows or settles the continuous downed roll. While aim is held the
-    /// target comes from camera yaw; after release it is the nearest whole
-    /// contact pose. Returns true while the camera-driven state remains active.
+    /// Follows or settles the downed roll. Held aim selects one of four sticky
+    /// camera sectors; only a sector change interpolates the pose. After
+    /// release, the raw camera angle selects the nearer whole contact pose.
+    /// Returns true while the camera-driven state remains active.
     pub fn advance_downed_facing(
         &mut self,
         camera_target_half_turns: f32,
@@ -1151,34 +1198,51 @@ impl SkeletonState {
         } else {
             0.0
         };
-        let initial = match self.body {
-            BodyState::Prone => (camera_target / 2.0).round() * 2.0,
-            BodyState::Supine => ((camera_target - 1.0) / 2.0).round() * 2.0 + 1.0,
+        let initial_target = match self.body {
+            BodyState::Prone => DownedFacingPose::Prone,
+            BodyState::Supine => DownedFacingPose::Supine,
             _ => unreachable!("downed body checked above"),
         };
-        let current = self
-            .downed_facing
+        let initial = initial_target.half_turns_near(camera_target);
+        let previous = self.downed_facing;
+        let current = previous
             .map(DownedFacingState::half_turns)
             .unwrap_or(initial);
         let target = if aim_held {
-            camera_target + ((current - camera_target) / 2.0).round() * 2.0
+            const SECTOR_HALF_WIDTH: f32 = 0.25;
+            const EDGE_STICKINESS: f32 = 1.0 / 18.0; // ten degrees
+            let committed = previous.map(|state| state.target).unwrap_or(initial_target);
+            let committed_half_turns = committed.half_turns_near(current);
+            let camera_unwrapped =
+                camera_target + ((committed_half_turns - camera_target) / 2.0).round() * 2.0;
+            let target_pose = if (camera_unwrapped - committed_half_turns).abs()
+                > SECTOR_HALF_WIDTH + EDGE_STICKINESS
+            {
+                DownedFacingPose::from_half_turns(camera_unwrapped)
+            } else {
+                committed
+            };
+            target_pose.half_turns_near(camera_unwrapped)
         } else {
-            let lower = current.floor();
-            let fraction = current - lower;
-            if (fraction - 0.5).abs() <= 1.0e-4 {
-                let lower_matches_body = match self.body {
-                    BodyState::Prone => (lower as i64).rem_euclid(2) == 0,
-                    BodyState::Supine => (lower as i64).rem_euclid(2) != 0,
+            let camera_near_current =
+                camera_target + ((current - camera_target) / 2.0).round() * 2.0;
+            let lower = camera_near_current.floor();
+            if (camera_near_current - lower - 0.5).abs() <= 1.0e-4 {
+                match self.body {
+                    BodyState::Prone => (camera_near_current / 2.0).round() * 2.0,
+                    BodyState::Supine => ((camera_near_current - 1.0) / 2.0).round() * 2.0 + 1.0,
                     _ => unreachable!("downed body checked above"),
-                };
-                if lower_matches_body {
-                    lower
-                } else {
-                    lower + 1.0
                 }
             } else {
-                current.round()
+                camera_near_current.round()
             }
+        };
+        let target_pose = if aim_held {
+            DownedFacingPose::from_half_turns(target)
+        } else if (target as i64).rem_euclid(2) == 0 {
+            DownedFacingPose::Prone
+        } else {
+            DownedFacingPose::Supine
         };
         let step = if maximum_step.is_finite() {
             maximum_step.max(0.0)
@@ -1188,6 +1252,7 @@ impl SkeletonState {
         let next = current + (target - current).clamp(-step, step);
         self.downed_facing = Some(DownedFacingState {
             half_turns: next,
+            target: target_pose,
             lateral_motion: if (next - current).abs() > 1.0e-5 {
                 (next - current).signum()
             } else {

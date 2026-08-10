@@ -20,17 +20,17 @@ pub mod prelude {
     pub use crate::animation::{
         ActionState, AnimationEvaluation, AnimationPack, AnimationPackLibrary, AttackLine,
         AttackSpec, AttackStep, BODY_TURN_SPEED_RADIANS, BlockSpec, BodyState,
-        CROUCH_LOCOMOTION_PROFILE, DOWNED_TURN_SPEED_RADIANS, DiveDirection, DodgeSpec, Footwork,
-        GroundedPosture, HUMANOID_LANDING_PROFILE, JumpAnticipation, LOCOMOTION_SAMPLE_HZ,
-        LandingProfile, LeadFoot, LocomotionGait, LocomotionProfile, PackValidationError,
-        PoseSample, PoseSampling, Posture, PostureTransitionKind, PostureTransitionState,
-        RAISED_GUARD_LOCOMOTION_PROFILE, RUN_LOCOMOTION_PROFILE, RaisedLocomotionIntent,
-        ResolvedPose, RollDirection, SemanticPose, SkeletonAction, SkeletonLocomotionInput,
-        SkeletonState, StanceState, StrikeFamily, WALK_LOCOMOTION_PROFILE, WeaponGuardState,
-        advance_body_facing, advance_downed_body_facing, controller_yaw, dive_landing_facing_delta,
-        downed_camera_roll_target, gait_cycle_phase_delta, gait_support_weights, guard_step_length,
-        locomotion_profile, ordinary_step_distance, project_skeleton_locomotion, set_weapon_guard,
-        supine_get_up_counter_yaw_delta,
+        CROUCH_LOCOMOTION_PROFILE, DOWNED_TURN_SPEED_RADIANS, DiveDirection, DodgeSpec,
+        DownedFacingPose, Footwork, GroundedPosture, HUMANOID_LANDING_PROFILE, JumpAnticipation,
+        LOCOMOTION_SAMPLE_HZ, LandingProfile, LeadFoot, LocomotionGait, LocomotionProfile,
+        PackValidationError, PoseSample, PoseSampling, Posture, PostureTransitionKind,
+        PostureTransitionState, RAISED_GUARD_LOCOMOTION_PROFILE, RUN_LOCOMOTION_PROFILE,
+        RaisedLocomotionIntent, ResolvedPose, RollDirection, SemanticPose, SkeletonAction,
+        SkeletonLocomotionInput, SkeletonState, StanceState, StrikeFamily, WALK_LOCOMOTION_PROFILE,
+        WeaponGuardState, advance_body_facing, advance_downed_body_facing, controller_yaw,
+        dive_landing_facing_delta, downed_camera_roll_target, gait_cycle_phase_delta,
+        gait_support_weights, guard_step_length, locomotion_profile, ordinary_step_distance,
+        project_skeleton_locomotion, set_weapon_guard, supine_get_up_counter_yaw_delta,
     };
     pub use crate::combat::{Attack, Dodge, HANDS_REACH, Parry, melee_interaction_range};
     pub use crate::inventory::{

@@ -280,6 +280,64 @@ mod contract_tests {
     }
 
     #[test]
+    fn aimed_downed_facing_uses_four_discrete_sticky_sectors() {
+        let mut state = SkeletonState::default().with_body_state(BodyState::Prone);
+
+        // The prone sector nominally ends at 0.25 half-turns (45 degrees),
+        // but remains committed through the ten-degree sticky margin.
+        assert!(state.advance_downed_facing(0.30, true, 1.0));
+        assert_eq!(
+            state.downed_facing().unwrap().target(),
+            DownedFacingPose::Prone
+        );
+        assert_eq!(state.downed_facing().unwrap().half_turns(), 0.0);
+        assert!(AnimationEvaluation::from_skeleton(&state).action.is_empty());
+
+        assert!(state.advance_downed_facing(0.31, true, 1.0));
+        assert_eq!(
+            state.downed_facing().unwrap().target(),
+            DownedFacingPose::RollRight
+        );
+        assert_eq!(state.downed_facing().unwrap().half_turns(), 0.5);
+
+        // Reversing across the nominal boundary does not chatter back. It
+        // must clear the opposite side of the hysteresis deadband first.
+        assert!(state.advance_downed_facing(0.24, true, 1.0));
+        assert_eq!(
+            state.downed_facing().unwrap().target(),
+            DownedFacingPose::RollRight
+        );
+        assert_eq!(state.downed_facing().unwrap().half_turns(), 0.5);
+        assert!(state.advance_downed_facing(0.19, true, 1.0));
+        assert_eq!(
+            state.downed_facing().unwrap().target(),
+            DownedFacingPose::Prone
+        );
+        assert_eq!(state.downed_facing().unwrap().half_turns(), 0.0);
+    }
+
+    #[test]
+    fn aimed_downed_facing_interpolates_only_after_sector_commit() {
+        let mut state = SkeletonState::default().with_body_state(BodyState::Prone);
+        assert!(state.advance_downed_facing(0.5, true, 0.125));
+        let transition = state.downed_facing().unwrap();
+        assert_eq!(transition.target(), DownedFacingPose::RollRight);
+        assert_eq!(transition.half_turns(), 0.125);
+        assert_eq!(transition.lateral_motion(), 1.0);
+        assert!(!AnimationEvaluation::from_skeleton(&state).action.is_empty());
+
+        for _ in 0..3 {
+            state.advance_downed_facing(0.5, true, 0.125);
+        }
+        assert_eq!(state.downed_facing().unwrap().half_turns(), 0.5);
+        state.advance_downed_facing(0.55, true, 0.125);
+        let settled = state.downed_facing().unwrap();
+        assert_eq!(settled.target(), DownedFacingPose::RollRight);
+        assert_eq!(settled.half_turns(), 0.5);
+        assert_eq!(settled.lateral_motion(), 0.0);
+    }
+
+    #[test]
     fn downed_turning_advances_contact_gait_without_planar_velocity() {
         let mut state = SkeletonState::default().with_body_state(BodyState::Supine);
         state.set_downed_turning(true);

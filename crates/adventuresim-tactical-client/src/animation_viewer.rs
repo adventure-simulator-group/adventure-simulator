@@ -1753,6 +1753,18 @@ fn drive_sequence(
         terrain_ik.0 = terrain_ik_enabled_for_frame(&frame);
         guard_input.desired = frame.weapon_guard;
         set_weapon_guard(&mut skeleton, guard_input.desired);
+        if frame.scenario == "downed-prone-look-at" {
+            let target = downed_camera_roll_target(transform.rotation, orientation);
+            skeleton.advance_downed_facing(
+                target,
+                true,
+                if frame.scenario_frame == 0 {
+                    0.0
+                } else {
+                    1.0 / 84.0
+                },
+            );
+        }
         let dive_impact = frame.scenario.ends_with("-impact");
         let grounded = if dive_impact {
             frame.scenario_frame == 0 || frame.scenario_frame >= 17

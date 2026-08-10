@@ -1397,12 +1397,16 @@ a lateral direction rolls from prone to supine; the same motion plays backward
 from supine to prone, with the opposite authored side
 selected so the requested travel direction remains unchanged. Releasing an
 armed posture control begins the applicable get-up.
-While aim/block is held downed, camera yaw drives a continuous roll around the
-character's head-to-feet axis. A 90-degree yaw difference holds the appropriate
-`prone_supine_roll_<left|right>` side-supported midpoint, and 180 degrees reaches
-the opposite prone/supine contact. Releasing aim at an intermediate angle
-settles to whichever contact endpoint is nearer. This path reuses the same two
-roll midpoints and requires no additional animation.
+While aim/block is held downed, camera yaw selects one of four discrete sectors
+around the character's head-to-feet axis: prone, right side-supported roll,
+supine, or left side-supported roll. Their nominal boundaries lie halfway
+between the 90-degree sector centers. A selected sector remains committed for
+10 degrees beyond its nominal edge, producing a 20-degree hysteresis deadband
+when the camera reverses near a boundary. The pose is static while the camera
+remains inside that sticky sector and interpolates through the authored roll
+only after another sector is committed. Releasing aim settles to whichever
+prone/supine contact endpoint is nearer to the camera angle. This path reuses
+the same two roll midpoints and requires no additional animation.
 Supine may also result from a hit or physical fall and uses the direct
 `supine_transition` motion when recovery does not first require a ragdoll handoff.
 The initial controls do not include prone strafing.
