@@ -271,6 +271,11 @@ pub struct ConnectedPlayer {
     pub strategic_incapacitation: f32,
     pub strategic_pain: f32,
     pub strategic_blood_loss: f32,
+    pub strategic_fear: f32,
+    pub strategic_fatigue: f32,
+    pub strategic_hunger: f32,
+    pub strategic_thirst: f32,
+    pub strategic_thermal: f32,
 }
 
 #[derive(SpacetimeType, Clone, Copy, Debug, PartialEq, Eq)]
@@ -368,6 +373,11 @@ pub fn connected_players(ctx: &ViewContext) -> Vec<ConnectedPlayer> {
                 strategic_incapacitation: strategic.incapacitation,
                 strategic_pain: strategic.pain,
                 strategic_blood_loss: strategic.blood_loss,
+                strategic_fear: strategic.fear,
+                strategic_fatigue: strategic.fatigue,
+                strategic_hunger: strategic.hunger,
+                strategic_thirst: strategic.thirst,
+                strategic_thermal: strategic.thermal,
             })
         })
         .collect()

@@ -307,8 +307,11 @@ Accepted results mutate replicated limb health plus transient blood loss and
 imbalance. Shared autoresolve rules derive pain, blood-loss, and imbalance
 incapacitation and recover balance over time. Tactical enrollment projects
 authoritative body weight, current/maximum blood, and strategic condition
-contributions; the same shared derivation as autoresolve excludes pain and blood
-from starting incapacitation before recomputing them live. Actors currently
+contributions. It preserves the source values for fear, fatigue, hunger,
+thirst, and temperature so the client can present the same segmented condition
+language as the strategic UI; the same shared derivation as autoresolve
+excludes pain and blood from starting incapacitation before recomputing them
+live. Actors currently
 over the threshold stop moving, attacking, defending, and participating in
 offensive AI target selection; imbalance-only incapacitation can recover.
 The numeric incapacitation value is the sole stored readiness authority;

@@ -6,6 +6,13 @@ Bevy. Skeletal animation is presentation-only: the server replicates compact
 the client selects and blends authored poses, then applies procedural look and
 terrain leg IK.
 
+EGUI renders the centered incapacitation wheel without taking pointer input.
+The segmented arc surrounds the retained Bevy UI crosshair, starts at 12
+o'clock, and uses the strategic condition colors for live pain and blood loss
+plus enrolled fear, fatigue, hunger, thirst, and temperature; tactical
+imbalance is white. Zero incapacitation draws nothing and a full revolution is
+the visible maximum.
+
 The gameplay camera is likewise client presentation. A single retained rig
 blends from centered lowered-guard exploration to raised-guard right-shoulder
 aiming without smoothing manual yaw or pitch. Focus translation uses bounded

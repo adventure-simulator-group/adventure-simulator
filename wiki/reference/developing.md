@@ -781,7 +781,9 @@ the recovery is `just tactical-play animation`. Launch through repository
 recipes so the worktree, working directory, binary, and asset roots agree.
 
 Fight the single enemy or allow the Party character to become incapacitated.
-The client shows live blood-loss/imbalance/incapacitation status, then an
+The client shows a centered segmented EGUI incapacitation wheel around the
+reticle, alongside the diagnostic live blood-loss/imbalance/incapacitation
+status, then an
 authoritative `VICTORY` or `DEFEAT` banner after the reducer callback confirms
 strategic acceptance.
 The server remains connected for the bounded three-second presentation window

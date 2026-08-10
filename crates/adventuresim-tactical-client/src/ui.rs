@@ -16,6 +16,10 @@ use bevy::{
     ecs::schedule::common_conditions::any_with_component,
     prelude::*,
 };
+use bevy_egui::{
+    EguiContexts, EguiPlugin, EguiPrimaryContextPass,
+    egui::{self, Color32, Pos2, Stroke},
+};
 use bevy_flair::prelude::*;
 
 #[cfg(feature = "debug")]
@@ -34,8 +38,12 @@ pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(FlairPlugin)
+        app.add_plugins((FlairPlugin, EguiPlugin::default()))
             .add_systems(Startup, setup_ui)
+            .add_systems(
+                EguiPrimaryContextPass,
+                draw_incapacitation_wheel.run_if(any_with_component::<ClientPlayer>),
+            )
             .add_systems(
                 Update,
                 (
@@ -59,6 +67,85 @@ impl Plugin for UiPlugin {
             .add_observer(on_tactical_outcome_display)
             .add_systems(Update, update_attack_result_ui);
     }
+}
+
+const INCAPACITATION_WHEEL_RADIUS: f32 = 52.0;
+const INCAPACITATION_WHEEL_WIDTH: f32 = 8.0;
+const INCAPACITATION_WHEEL_RESOLUTION: f32 = 96.0;
+
+fn incapacitation_wheel_segments(sources: TacticalIncapacitationSources) -> [(f32, Color32); 8] {
+    [
+        (sources.pain, Color32::from_rgb(0xd9, 0x73, 0xa2)),
+        (sources.blood_loss, Color32::from_rgb(0xc8, 0x47, 0x47)),
+        (sources.fear, Color32::from_rgb(0x4f, 0x83, 0xcc)),
+        (sources.fatigue, Color32::from_rgb(0x20, 0x20, 0x20)),
+        (sources.hunger, Color32::from_rgb(0xb5, 0x7a, 0x35)),
+        (sources.thirst, Color32::from_rgb(0x3f, 0x9f, 0xa8)),
+        (sources.thermal, Color32::from_rgb(0x7d, 0x8e, 0xe8)),
+        (sources.imbalance, Color32::WHITE),
+    ]
+}
+
+fn draw_incapacitation_wheel(
+    mut contexts: EguiContexts,
+    player: Single<(Entity, &TacticalCombatState, &Limbs), With<ClientPlayer>>,
+    viewer: TacticalPlayerViewer,
+) -> Result {
+    let (entity, state, limbs) = player.into_inner();
+    let view = viewer.get(entity)?;
+    let will = view.skill_check(Skill::Will, LimbWeights::all_equal());
+    let sources = state.incapacitation_sources(limbs.total_damage(), will);
+    if state.incapacitation <= 0.0 {
+        return Ok(());
+    }
+
+    let context = contexts.ctx_mut()?;
+    let painter = context.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("incapacitation-wheel"),
+    ));
+    let center = context.content_rect().center();
+
+    if state.is_incapacitated() {
+        painter.circle_stroke(
+            center,
+            INCAPACITATION_WHEEL_RADIUS,
+            Stroke::new(
+                INCAPACITATION_WHEEL_WIDTH + 6.0,
+                Color32::from_rgba_unmultiplied(0xc8, 0x47, 0x47, 70),
+            ),
+        );
+    }
+
+    let mut cursor = -std::f32::consts::FRAC_PI_2;
+    let mut remaining = 1.0_f32;
+    for (raw_amount, color) in incapacitation_wheel_segments(sources) {
+        let amount = raw_amount.max(0.0).min(remaining);
+        if amount <= 0.0 {
+            continue;
+        }
+        let end = cursor + amount * std::f32::consts::TAU;
+        let steps = (amount * INCAPACITATION_WHEEL_RESOLUTION).ceil().max(2.0) as usize;
+        let points = (0..=steps)
+            .map(|step| {
+                let angle = cursor + (end - cursor) * step as f32 / steps as f32;
+                Pos2::new(
+                    center.x + INCAPACITATION_WHEEL_RADIUS * angle.cos(),
+                    center.y + INCAPACITATION_WHEEL_RADIUS * angle.sin(),
+                )
+            })
+            .collect();
+        painter.add(egui::Shape::line(
+            points,
+            Stroke::new(INCAPACITATION_WHEEL_WIDTH, color),
+        ));
+        cursor = end;
+        remaining -= amount;
+        if remaining <= 0.0 {
+            break;
+        }
+    }
+    Ok(())
 }
 
 #[derive(Component)]
@@ -872,5 +959,27 @@ mod tests {
             tactical_outcome_label(TacticalOutcome::Defeat),
             ("DEFEAT", "error")
         );
+    }
+
+    #[test]
+    fn incapacitation_wheel_uses_strategic_order_then_white_imbalance() {
+        let segments = incapacitation_wheel_segments(TacticalIncapacitationSources {
+            pain: 0.1,
+            blood_loss: 0.2,
+            fear: 0.3,
+            fatigue: 0.4,
+            hunger: 0.5,
+            thirst: 0.6,
+            thermal: 0.7,
+            imbalance: 0.8,
+        });
+
+        assert_eq!(
+            segments.map(|(amount, _)| amount),
+            [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+        );
+        assert_eq!(segments[0].1, Color32::from_rgb(0xd9, 0x73, 0xa2));
+        assert_eq!(segments[1].1, Color32::from_rgb(0xc8, 0x47, 0x47));
+        assert_eq!(segments[7].1, Color32::WHITE);
     }
 }

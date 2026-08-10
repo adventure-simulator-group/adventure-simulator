@@ -340,6 +340,11 @@ fn spawn_connected_player(
         TacticalCombatState {
             starting_incapacitation,
             starting_blood_fraction,
+            starting_fear: player.strategic_fear,
+            starting_fatigue: player.strategic_fatigue,
+            starting_hunger: player.strategic_hunger,
+            starting_thirst: player.strategic_thirst,
+            starting_thermal: player.strategic_thermal,
             ..default()
         },
         MeleeAttackAuthority::default(),
