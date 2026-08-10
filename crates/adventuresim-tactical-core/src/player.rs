@@ -8,6 +8,18 @@ use crate::inventory::{InventoryView, InventoryViewer};
 /// BEI Component alias to mark players that are controlled by the present client.
 pub type ControlledPlayer = Actions<Player>;
 
+/// Requested ordinary locomotion gait. The authoritative server combines this
+/// intent with character attributes, guard state, and breath exhaustion.
+#[derive(
+    Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, Copy, PartialEq, Eq,
+)]
+pub enum MovementGait {
+    Walk,
+    #[default]
+    Jog,
+    Sprint,
+}
+
 /// Component for a player entity, for both client-controlled
 /// active player and other players.
 #[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq, Eq)]
@@ -17,6 +29,7 @@ pub type ControlledPlayer = Actions<Player>;
     Skills,
     Attributes,
     Stats,
+    MovementGait,
     crate::animation::SkeletonState
 )]
 #[component(immutable)]
@@ -97,6 +110,9 @@ pub struct TacticalCombatState {
     pub starting_blood_fraction: f32,
     pub blood_loss_fraction: f32,
     pub imbalance: f32,
+    /// Transient breath exhaustion from moving above the sustainable pace.
+    /// Zero is fully recovered and one has reduced sprinting to a jog.
+    pub breath_exhaustion: f32,
     pub incapacitation: f32,
 }
 
@@ -107,6 +123,7 @@ impl Default for TacticalCombatState {
             starting_blood_fraction: 1.0,
             blood_loss_fraction: 0.0,
             imbalance: 0.0,
+            breath_exhaustion: 0.0,
             incapacitation: 0.0,
         }
     }

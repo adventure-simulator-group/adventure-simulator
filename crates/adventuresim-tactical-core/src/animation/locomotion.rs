@@ -62,6 +62,9 @@ pub const RUN_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
     flight_apex_metres: 0.09,
     landing: HUMANOID_LANDING_PROFILE,
 };
+/// Elite sprint anchor used to lengthen strides above the authored run pace.
+pub const SPRINT_REFERENCE_SPEED: f32 = 12.0;
+pub const SPRINT_STEP_DISTANCE: f32 = 2.6;
 pub const CROUCH_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
     gait: LocomotionGait::Crouch,
     reference_speed: 1.5,
@@ -123,13 +126,20 @@ pub fn ordinary_step_distance(speed: f32) -> f32 {
             WALK_LOCOMOTION_PROFILE.step_distance,
             speed / WALK_LOCOMOTION_PROFILE.reference_speed,
         )
-    } else {
+    } else if speed <= RUN_LOCOMOTION_PROFILE.reference_speed {
         let blend = ((speed - WALK_LOCOMOTION_PROFILE.reference_speed)
             / (RUN_LOCOMOTION_PROFILE.reference_speed - WALK_LOCOMOTION_PROFILE.reference_speed))
             .clamp(0.0, 1.0);
         WALK_LOCOMOTION_PROFILE
             .step_distance
             .lerp(RUN_LOCOMOTION_PROFILE.step_distance, blend)
+    } else {
+        let blend = ((speed - RUN_LOCOMOTION_PROFILE.reference_speed)
+            / (SPRINT_REFERENCE_SPEED - RUN_LOCOMOTION_PROFILE.reference_speed))
+            .clamp(0.0, 1.0);
+        RUN_LOCOMOTION_PROFILE
+            .step_distance
+            .lerp(SPRINT_STEP_DISTANCE, blend)
     }
 }
 

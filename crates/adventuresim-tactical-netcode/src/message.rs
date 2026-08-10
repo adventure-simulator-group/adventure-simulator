@@ -24,6 +24,7 @@ pub struct PlayerInputRequest {
     pub movement: Option<Vec2>,
     pub look: Vec2,
     pub jump: bool,
+    pub gait: MovementGait,
     pub weapon_guard: WeaponGuardState,
 }
 

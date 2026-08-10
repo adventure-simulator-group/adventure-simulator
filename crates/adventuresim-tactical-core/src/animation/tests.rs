@@ -334,6 +334,7 @@ mod legacy_tests {
         assert!(
             (ordinary_step_distance(5.5) - RUN_LOCOMOTION_PROFILE.step_distance).abs() < 0.0001
         );
+        assert!((ordinary_step_distance(12.0) - SPRINT_STEP_DISTANCE).abs() < 0.0001);
         let (walk_left, walk_right) = gait_support_weights(WALK_LOCOMOTION_PROFILE, 0.25);
         assert!(walk_left + walk_right > 0.0);
         assert_eq!(

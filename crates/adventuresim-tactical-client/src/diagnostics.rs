@@ -314,6 +314,7 @@ fn drive_scripted_input(
             movement,
             look: script.look,
             jump: false,
+            gait: MovementGait::Jog,
             weapon_guard: WeaponGuardState::Lowered,
         };
         input_override.0 = Some(request);

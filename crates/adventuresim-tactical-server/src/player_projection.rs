@@ -38,6 +38,15 @@ pub(crate) struct LoadingPlayer {
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq)]
 pub(crate) struct AuthoritativeMovementIntent(Option<Vec2>);
 
+type PlayerInputComponents<'a> = (
+    &'a mut AccumulatedInput,
+    &'a mut CharacterLook,
+    &'a TacticalCombatState,
+    &'a mut SkeletonState,
+    &'a mut AuthoritativeMovementIntent,
+    &'a mut MovementGait,
+);
+
 /// Durable inventory provenance retained only on the authoritative server.
 #[derive(Component, Debug, Clone, Copy)]
 pub(crate) struct TacticalInventoryItemId(pub u64);
@@ -473,27 +482,28 @@ pub(crate) fn on_join_request(
 
 pub(crate) fn on_player_input(
     input: On<FromClient<PlayerInputRequest>>,
-    mut players: Query<
-        (
-            &mut AccumulatedInput,
-            &mut CharacterLook,
-            &TacticalCombatState,
-            &mut SkeletonState,
-            &mut AuthoritativeMovementIntent,
-        ),
-        With<Player>,
-    >,
+    mut players: Query<PlayerInputComponents<'_>, With<Player>>,
 ) {
-    let Some(validated) =
-        validate_player_input(input.look, input.movement, input.jump, input.weapon_guard)
-    else {
+    let Some(validated) = validate_player_input(
+        input.look,
+        input.movement,
+        input.jump,
+        input.gait,
+        input.weapon_guard,
+    ) else {
         return;
     };
     let Some(entity) = input.client_id.entity() else {
         return;
     };
-    let Ok((mut accumulated_input, mut look, combat_state, mut skeleton, mut movement_intent)) =
-        players.get_mut(entity)
+    let Ok((
+        mut accumulated_input,
+        mut look,
+        combat_state,
+        mut skeleton,
+        mut movement_intent,
+        mut gait,
+    )) = players.get_mut(entity)
     else {
         return;
     };
@@ -501,6 +511,7 @@ pub(crate) fn on_player_input(
         accumulated_input.last_movement = None;
         movement_intent.0 = None;
         accumulated_input.jumped = None;
+        *gait = MovementGait::Walk;
         set_weapon_guard(
             &mut skeleton,
             authoritative_weapon_guard(validated.weapon_guard, true),
@@ -511,6 +522,7 @@ pub(crate) fn on_player_input(
     look.pitch = validated.pitch;
     accumulated_input.last_movement = validated.movement;
     movement_intent.0 = validated.movement;
+    *gait = validated.gait;
     set_weapon_guard(
         &mut skeleton,
         authoritative_weapon_guard(validated.weapon_guard, false),
@@ -526,6 +538,7 @@ struct ValidatedPlayerInput {
     yaw: f32,
     pitch: f32,
     jump: bool,
+    gait: MovementGait,
     weapon_guard: WeaponGuardState,
 }
 
@@ -533,6 +546,7 @@ fn validate_player_input(
     look: Vec2,
     movement: Option<Vec2>,
     jump: bool,
+    gait: MovementGait,
     weapon_guard: WeaponGuardState,
 ) -> Option<ValidatedPlayerInput> {
     if !look.is_finite() || movement.is_some_and(|movement| !movement.is_finite()) {
@@ -544,6 +558,7 @@ fn validate_player_input(
             - std::f32::consts::PI,
         pitch: look.y.clamp(-1.5, 1.5),
         jump,
+        gait,
         weapon_guard,
     })
 }
@@ -654,9 +669,10 @@ fn player_spawn_offset(collider: &Collider) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        AuthoritativeMovementIntent, Player, WeaponGuardState, authoritative_weapon_guard, input,
-        mission_enemy_health_scale, mission_enemy_scale, restore_authoritative_movement_intent,
-        tactical_movement_speed_for_guard, validate_player_input,
+        AuthoritativeMovementIntent, MovementGait, Player, WeaponGuardState,
+        authoritative_weapon_guard, input, mission_enemy_health_scale, mission_enemy_scale,
+        restore_authoritative_movement_intent, sustainable_jog_speed, tactical_movement_speed,
+        validate_player_input,
     };
     use bevy::prelude::*;
 
@@ -682,6 +698,7 @@ mod tests {
             Vec2::new(0.4, -0.2),
             Some(Vec2::new(0.25, 0.5)),
             false,
+            MovementGait::Jog,
             WeaponGuardState::Lowered,
         );
         for (look, movement) in [
@@ -690,13 +707,18 @@ mod tests {
             (Vec2::ZERO, Some(Vec2::new(f32::NEG_INFINITY, 0.0))),
             (Vec2::ZERO, Some(Vec2::new(0.0, f32::NAN))),
         ] {
-            if let Some(validated) =
-                validate_player_input(look, movement, true, WeaponGuardState::Raised)
-            {
+            if let Some(validated) = validate_player_input(
+                look,
+                movement,
+                true,
+                MovementGait::Sprint,
+                WeaponGuardState::Raised,
+            ) {
                 controller_input = (
                     Vec2::new(validated.yaw, validated.pitch),
                     validated.movement,
                     validated.jump,
+                    validated.gait,
                     validated.weapon_guard,
                 );
             }
@@ -707,6 +729,7 @@ mod tests {
                 Vec2::new(0.4, -0.2),
                 Some(Vec2::new(0.25, 0.5)),
                 false,
+                MovementGait::Jog,
                 WeaponGuardState::Lowered,
             )
         );
@@ -718,6 +741,7 @@ mod tests {
             Vec2::new(std::f32::consts::TAU * 4.0 + 0.25, 99.0),
             Some(Vec2::splat(10.0)),
             true,
+            MovementGait::Sprint,
             WeaponGuardState::Raised,
         )
         .unwrap();
@@ -725,6 +749,7 @@ mod tests {
         assert_eq!(validated.pitch, 1.5);
         assert!(validated.movement.unwrap().length() <= 1.0001);
         assert!(validated.yaw.is_finite() && validated.pitch.is_finite());
+        assert_eq!(validated.gait, MovementGait::Sprint);
         assert_eq!(validated.weapon_guard, WeaponGuardState::Raised);
     }
 
@@ -758,11 +783,15 @@ mod tests {
             let accumulated = world.get::<input::AccumulatedInput>(player).unwrap();
             assert_eq!(accumulated.last_movement, Some(Vec2::X));
             assert_eq!(
-                tactical_movement_speed_for_guard(
+                tactical_movement_speed(
                     accumulated.last_movement,
-                    WeaponGuardState::Lowered
+                    MovementGait::Jog,
+                    WeaponGuardState::Lowered,
+                    3.0,
+                    3.0,
+                    0.0,
                 ),
-                5.5
+                sustainable_jog_speed(3.0)
             );
             world
                 .get_mut::<input::AccumulatedInput>(player)
@@ -783,7 +812,14 @@ mod tests {
             None
         );
         assert_eq!(
-            tactical_movement_speed_for_guard(None, WeaponGuardState::Lowered),
+            tactical_movement_speed(
+                None,
+                MovementGait::Jog,
+                WeaponGuardState::Lowered,
+                3.0,
+                3.0,
+                0.0,
+            ),
             0.0
         );
     }

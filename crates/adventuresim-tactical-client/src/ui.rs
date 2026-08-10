@@ -413,15 +413,17 @@ fn update_game_speed_debug_ui(
 fn combat_state_label(state: &TacticalCombatState) -> String {
     if state.is_incapacitated() {
         format!(
-            "INCAPACITATED | Blood loss {:.0}% | Imbalance {:.0}%",
+            "INCAPACITATED | Blood loss {:.0}% | Imbalance {:.0}% | Breath {:.0}%",
             state.blood_loss_fraction * 100.0,
-            state.imbalance * 100.0
+            state.imbalance * 100.0,
+            state.breath_exhaustion * 100.0
         )
     } else {
         format!(
-            "Active | Blood loss {:.0}% | Imbalance {:.0}%",
+            "Active | Blood loss {:.0}% | Imbalance {:.0}% | Breath {:.0}%",
             state.blood_loss_fraction * 100.0,
-            state.imbalance * 100.0
+            state.imbalance * 100.0,
+            state.breath_exhaustion * 100.0
         )
     }
 }
@@ -781,7 +783,7 @@ mod tests {
         };
         assert_eq!(
             combat_state_label(&active),
-            "Active | Blood loss 25% | Imbalance 50%"
+            "Active | Blood loss 25% | Imbalance 50% | Breath 0%"
         );
         let incapacitated = TacticalCombatState {
             incapacitation: 1.0,

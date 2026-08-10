@@ -212,14 +212,40 @@ fn balance_damage(attacker, defender, attack_directness):
 ### Exhaustion (grey)
 Exhaustion represents how out of breath your character is. Most actions will not actually exhaust faster than it recuperates, but climbing, sprinting, and fighting with heavy weapons, shield, and armor can.
 ```rs
-const BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND = 0.002
-# someone with 2 endurance (poorly fed Napoleonic soldier) can march 1.2m/s all day. Therefore a simple linear ratio between velocity and breath must be about:
-const BREATH_PER_METERS_PER_SECOND = 0.0034
- 
-fn update_stamina(player):
-	player.breath_damage += dt * character.velocity * BREATH_PER_METERS_PER_SECOND
-	player.breath_damage -= dt * character.endurance * BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND 
+const BREATH_EXHAUSTION_PER_EXCESS_METRE_SECOND = 0.01
+const BREATH_RECOVERY_PER_SPARE_METRE_SECOND = 0.02
+
+# Endurance 1 speed-walks at 1.8 m/s, Endurance 2 reaches the ordinary
+# walk/run transition at 2.0 m/s, and Endurance 5 sustains elite marathon
+# pace at 5.83 m/s. Values below 1 use a smoothstep from zero.
+fn sustainable_jog_speed(endurance):
+	if endurance <= 1:
+		t = clamp(endurance, 0, 1)
+		return 1.8 * t * t * (3 - 2 * t)
+	t = (clamp(endurance, 1, 5) - 1) / 4
+	return 1.8 + 4.03 * pow(t, 2.166)
+
+# Mean left/right leg Strength 1, 3, and 5 produce approximately 4, 8,
+# and 12 m/s. The sub-1 cubic meets the zero-speed cripple anchor without a
+# discontinuity at Strength 1.
+fn sprint_speed(average_leg_strength):
+	strength = max(average_leg_strength, 0)
+	if strength < 1:
+		return -6 * strength^3 + 10 * strength^2
+	return 2 + 2 * strength
+
+fn update_breath(player):
+	spare_speed = sustainable_jog_speed(player.endurance) - horizontal_speed(player)
+	if spare_speed >= 0:
+		player.breath_exhaustion -= dt * spare_speed * BREATH_RECOVERY_PER_SPARE_METRE_SECOND
+	else:
+		player.breath_exhaustion += dt * -spare_speed * BREATH_EXHAUSTION_PER_EXCESS_METRE_SECOND
+	player.breath_exhaustion = clamp(player.breath_exhaustion, 0, 1)
 ```
+
+Jogging at the character's sustainable speed is breath-neutral. Walking or
+standing recovers breath. Sprinting accumulates breath exhaustion, which
+smoothly reduces the sprint cap toward the sustainable jogging pace.
 ### Pain (pink)
 [Injuries](../shared/health.md) are a source of constant pain. Pain is divided by will.
 

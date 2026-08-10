@@ -36,12 +36,12 @@ pub mod prelude {
     };
     pub use crate::physics::{
         AdventureSimulatorPhysicsSet, TACTICAL_GUARD_SPEED_METRES_PER_SECOND,
-        TACTICAL_RUN_SPEED_METRES_PER_SECOND, tactical_character_controller,
-        tactical_movement_speed, tactical_movement_speed_for_guard,
+        TACTICAL_WALK_SPEED_METRES_PER_SECOND, sustainable_jog_speed,
+        tactical_character_controller, tactical_movement_speed, tactical_sprint_speed,
     };
     pub use crate::player::{
-        Attributes, BestiaryCategories, CharacterId, ControlledPlayer, Limbs, Player, Skills,
-        Stats, TacticalCombatState, TacticalPlayerView, TacticalPlayerViewer,
+        Attributes, BestiaryCategories, CharacterId, ControlledPlayer, Limbs, MovementGait, Player,
+        Skills, Stats, TacticalCombatState, TacticalPlayerView, TacticalPlayerViewer,
     };
     pub use crate::scene::{SceneId, SceneTerrain, TerrainGenerator};
     pub use adventuresim_core::prelude::*;
