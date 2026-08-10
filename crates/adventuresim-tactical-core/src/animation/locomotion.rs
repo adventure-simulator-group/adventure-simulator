@@ -83,9 +83,32 @@ pub const RAISED_GUARD_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile
     flight_apex_metres: 0.0,
     landing: HUMANOID_LANDING_PROFILE,
 };
+pub const PRONE_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
+    gait: LocomotionGait::Crouch,
+    reference_speed: 1.0,
+    step_distance: 1.06,
+    support_phase_radius: 0.30,
+    bounce_metres: 0.0,
+    flight_apex_metres: 0.0,
+    landing: HUMANOID_LANDING_PROFILE,
+};
+pub const SUPINE_LOCOMOTION_PROFILE: LocomotionProfile = LocomotionProfile {
+    gait: LocomotionGait::Crouch,
+    reference_speed: 0.8,
+    step_distance: 1.028,
+    support_phase_radius: 0.30,
+    bounce_metres: 0.0,
+    flight_apex_metres: 0.0,
+    landing: HUMANOID_LANDING_PROFILE,
+};
 
 pub fn locomotion_profile(state: &SkeletonState) -> LocomotionProfile {
     let speed = state.animation_speed();
+    match state.body() {
+        BodyState::Prone => return PRONE_LOCOMOTION_PROFILE,
+        BodyState::Supine => return SUPINE_LOCOMOTION_PROFILE,
+        _ => {}
+    }
     if state.posture() == Posture::Crouched {
         return CROUCH_LOCOMOTION_PROFILE;
     }

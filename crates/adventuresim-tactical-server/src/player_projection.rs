@@ -1,11 +1,12 @@
 use std::num::NonZeroU32;
 
 use adventuresim_stdb_client::*;
+use adventuresim_tactical_core::physics::TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND;
 use adventuresim_tactical_core::{inventory::ItemProperties, prelude::*};
 use adventuresim_tactical_netcode::{
     aeronet::io::connection::{DisconnectReason, Disconnected},
     bevy_replicon::prelude::{FromClient, Replicated},
-    prelude::{JoinRequest, PlayerInputRequest},
+    prelude::{JoinRequest, JumpCommand, PlayerInputRequest, PostureActionRequest, PostureCommand},
 };
 use bevy::prelude::*;
 use bevy::time::Stopwatch;
@@ -41,8 +42,39 @@ pub(crate) struct AuthoritativeMovementIntent(Option<Vec2>);
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct AuthoritativePostureIntent {
     crouch: bool,
-    prone: bool,
+    facing: CameraFacingIntent,
+    last_jump_sequence: u32,
+    last_command_sequence: u32,
 }
+
+/// One camera-facing owner is selected per accepted input. In particular,
+/// aim-following and modifier-driven body alignment cannot both be active, and
+/// there is no persistent "suspended while upright" combination to leak out
+/// of an authored posture transition.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum CameraFacingIntent {
+    #[default]
+    Free,
+    Aim,
+    DownedAlign,
+}
+
+impl CameraFacingIntent {
+    fn from_input(weapon_guard: WeaponGuardState, downed_align: bool) -> Self {
+        if downed_align {
+            Self::DownedAlign
+        } else if weapon_guard == WeaponGuardState::Raised {
+            Self::Aim
+        } else {
+            Self::Free
+        }
+    }
+}
+
+const GROUND_POSTURE_TRANSITION_TICKS: u64 = 51;
+// Five authored frames at 30 FPS, rounded up to the 64 Hz fixed simulation.
+const DIVE_POSTURE_TRANSITION_TICKS: u64 = 20;
+const BACKWARD_DIVE_POSTURE_TRANSITION_TICKS: u64 = 32;
 
 /// Durable inventory provenance retained only on the authoritative server.
 #[derive(Component, Debug, Clone, Copy)]
@@ -493,6 +525,7 @@ pub(crate) fn on_player_input(
             &mut AuthoritativeMovementIntent,
             &mut AuthoritativePostureIntent,
             &mut MovementPace,
+            &mut LinearVelocity,
         ),
         With<Player>,
     >,
@@ -502,7 +535,9 @@ pub(crate) fn on_player_input(
         input.movement,
         input.jump,
         input.crouch,
-        input.prone,
+        input.jump_charge,
+        input.downed_align,
+        input.posture,
         input.pace,
         input.weapon_guard,
     ) else {
@@ -519,17 +554,28 @@ pub(crate) fn on_player_input(
         mut movement_intent,
         mut posture_intent,
         mut pace,
+        mut velocity,
     )) = players.get_mut(entity)
     else {
         return;
     };
+    let jump_requested =
+        sequence_is_newer(validated.jump.sequence, posture_intent.last_jump_sequence);
+    if jump_requested {
+        // Consume the edge even when the current body state cannot jump. The
+        // client repeats this sequence indefinitely, so retaining it through
+        // incapacitation or an airborne interval would create a stale jump
+        // as soon as the player became grounded again.
+        posture_intent.last_jump_sequence = validated.jump.sequence;
+    }
     if combat_state.is_incapacitated() {
         accumulated_input.last_movement = None;
         movement_intent.0 = None;
         accumulated_input.jumped = None;
         accumulated_input.crouched = false;
         posture_intent.crouch = false;
-        posture_intent.prone = false;
+        posture_intent.facing = CameraFacingIntent::Free;
+        skeleton.set_jump_anticipation(false);
         set_weapon_guard(
             &mut skeleton,
             authoritative_weapon_guard(validated.weapon_guard, true),
@@ -539,18 +585,44 @@ pub(crate) fn on_player_input(
     look.yaw = validated.yaw;
     look.pitch = validated.pitch;
     accumulated_input.last_movement = validated.movement;
-    accumulated_input.crouched = validated.crouch || validated.prone;
+    if sequence_is_newer(
+        validated.posture.sequence,
+        posture_intent.last_command_sequence,
+    ) {
+        posture_intent.last_command_sequence = validated.posture.sequence;
+        if let Some(action) = validated.posture.action {
+            if let Some(direction) =
+                apply_posture_action(action, &mut skeleton, &mut accumulated_input)
+            {
+                let horizontal = dive_horizontal_velocity(look.yaw, direction);
+                velocity.x = horizontal.x;
+                velocity.z = horizontal.z;
+            }
+        }
+    }
+    accumulated_input.crouched =
+        validated.crouch || skeleton.body().is_downed() || skeleton.is_posture_transitioning();
     movement_intent.0 = validated.movement;
     posture_intent.crouch = validated.crouch;
-    posture_intent.prone = validated.prone;
+    posture_intent.facing =
+        CameraFacingIntent::from_input(validated.weapon_guard, validated.downed_align);
+    skeleton.set_jump_anticipation(validated.jump_charge);
     *pace = validated.pace;
     set_weapon_guard(
         &mut skeleton,
         authoritative_weapon_guard(validated.weapon_guard, false),
     );
-    if validated.jump {
+    if jump_requested
+        && !skeleton.is_posture_transitioning()
+        && matches!(skeleton.body(), BodyState::Grounded(_))
+    {
         accumulated_input.jumped = Some(Stopwatch::new());
     }
+}
+
+fn sequence_is_newer(candidate: u32, previous: u32) -> bool {
+    let distance = candidate.wrapping_sub(previous);
+    distance != 0 && distance <= u32::MAX / 2
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -558,9 +630,11 @@ struct ValidatedPlayerInput {
     movement: Option<Vec2>,
     yaw: f32,
     pitch: f32,
-    jump: bool,
+    jump: JumpCommand,
     crouch: bool,
-    prone: bool,
+    jump_charge: bool,
+    downed_align: bool,
+    posture: PostureCommand,
     pace: MovementPace,
     weapon_guard: WeaponGuardState,
 }
@@ -568,9 +642,11 @@ struct ValidatedPlayerInput {
 fn validate_player_input(
     look: Vec2,
     movement: Option<Vec2>,
-    jump: bool,
+    jump: JumpCommand,
     crouch: bool,
-    prone: bool,
+    jump_charge: bool,
+    downed_align: bool,
+    posture: PostureCommand,
     pace: MovementPace,
     weapon_guard: WeaponGuardState,
 ) -> Option<ValidatedPlayerInput> {
@@ -584,10 +660,70 @@ fn validate_player_input(
         pitch: look.y.clamp(-1.5, 1.5),
         jump,
         crouch,
-        prone,
+        jump_charge,
+        downed_align,
+        posture,
         pace,
         weapon_guard,
     })
+}
+
+fn apply_posture_action(
+    action: PostureActionRequest,
+    skeleton: &mut SkeletonState,
+    accumulated_input: &mut AccumulatedInput,
+) -> Option<DiveDirection> {
+    let tick = skeleton.locomotion_sample_tick;
+    let transition = match action {
+        PostureActionRequest::Toggle => match skeleton.body() {
+            BodyState::Grounded(_) => Some(PostureTransitionKind::UprightToProne),
+            BodyState::Prone => Some(PostureTransitionKind::ProneToUpright),
+            BodyState::Supine => Some(PostureTransitionKind::SupineToUpright),
+            BodyState::Airborne | BodyState::Ragdolled => None,
+        },
+        PostureActionRequest::RollLeft => roll_transition(skeleton.body(), RollDirection::Left),
+        PostureActionRequest::RollRight => roll_transition(skeleton.body(), RollDirection::Right),
+        PostureActionRequest::Dive { direction } => {
+            matches!(skeleton.body(), BodyState::Grounded(_))
+                .then_some(PostureTransitionKind::DiveToDowned { direction })
+        }
+    };
+    let Some(transition) = transition else {
+        return None;
+    };
+    let duration = match transition {
+        PostureTransitionKind::DiveToDowned {
+            direction: DiveDirection::Backward,
+        } => BACKWARD_DIVE_POSTURE_TRANSITION_TICKS,
+        PostureTransitionKind::DiveToDowned { .. } => DIVE_POSTURE_TRANSITION_TICKS,
+        _ => GROUND_POSTURE_TRANSITION_TICKS,
+    };
+    if !skeleton.begin_posture_transition(transition, tick, duration) {
+        return None;
+    }
+    if let PostureTransitionKind::DiveToDowned { direction } = transition {
+        accumulated_input.jumped = Some(Stopwatch::new());
+        return Some(direction);
+    }
+    None
+}
+
+fn dive_horizontal_velocity(yaw: f32, direction: DiveDirection) -> Vec3 {
+    let local = match direction {
+        DiveDirection::Forward => Vec3::NEG_Z,
+        DiveDirection::Backward => Vec3::Z,
+        DiveDirection::Left => Vec3::NEG_X,
+        DiveDirection::Right => Vec3::X,
+    };
+    Quat::from_rotation_y(yaw) * local * TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND
+}
+
+fn roll_transition(body: BodyState, direction: RollDirection) -> Option<PostureTransitionKind> {
+    match body {
+        BodyState::Prone => Some(PostureTransitionKind::ProneToSupine { direction }),
+        BodyState::Supine => Some(PostureTransitionKind::SupineToProne { direction }),
+        _ => None,
+    }
 }
 
 fn authoritative_weapon_guard(
@@ -631,7 +767,14 @@ pub(crate) fn restore_authoritative_movement_intent(
             } else {
                 movement_intent.0
             };
-        accumulated_input.crouched = posture.crouch || posture.prone;
+        accumulated_input.crouched =
+            posture.crouch || skeleton.body().is_downed() || skeleton.is_posture_transitioning();
+        let roll_motion = skeleton.downed_lateral_motion();
+        if roll_motion.abs() > f32::EPSILON {
+            accumulated_input.last_movement = Some(Vec2::X * roll_motion);
+        } else if skeleton.is_posture_transitioning() {
+            accumulated_input.last_movement = None;
+        }
     }
 }
 
@@ -646,13 +789,13 @@ pub(crate) fn update_skeleton_locomotion(
             &mut SkeletonState,
             &mut Transform,
             &TacticalCombatState,
-            &AuthoritativePostureIntent,
             &MovementPace,
+            &AuthoritativePostureIntent,
         ),
         With<Player>,
     >,
 ) {
-    for (controller, velocity, mut skeleton, mut transform, combat_state, posture, pace) in
+    for (controller, velocity, mut skeleton, mut transform, combat_state, pace, posture) in
         &mut players
     {
         if combat_state.is_incapacitated() {
@@ -660,14 +803,48 @@ pub(crate) fn update_skeleton_locomotion(
             set_weapon_guard(&mut skeleton, lowered);
         }
         let tick = (time.elapsed_secs_f64() * LOCOMOTION_SAMPLE_HZ as f64).round() as u64;
-        transform.rotation = advance_body_facing(
-            transform.rotation,
-            controller.orientation,
-            velocity.0,
-            skeleton.action_kind(),
-            skeleton.weapon_guard(),
-            time.delta_secs(),
-        );
+        let posture_transitioning = posture_transition_locks_body_facing(&skeleton);
+        if posture_transitioning {
+            // Authored transitions own their direction relative to a fixed
+            // root. This also suspends held downed alignment until a roll or
+            // get-up has reached its endpoint.
+            skeleton.set_downed_turning(false);
+        } else if skeleton.body().is_downed() && !skeleton.is_posture_transitioning() {
+            let target = downed_camera_roll_target(transform.rotation, controller.orientation);
+            if posture.facing == CameraFacingIntent::DownedAlign {
+                let next = advance_downed_body_facing(
+                    transform.rotation,
+                    controller.orientation,
+                    time.delta_secs(),
+                );
+                skeleton.set_downed_turning(transform.rotation.angle_between(next) > 1.0e-5);
+                transform.rotation = next;
+                skeleton.advance_downed_facing(
+                    target,
+                    false,
+                    time.delta_secs() * LOCOMOTION_SAMPLE_HZ
+                        / GROUND_POSTURE_TRANSITION_TICKS as f32,
+                );
+            } else {
+                skeleton.set_downed_turning(false);
+                skeleton.advance_downed_facing(
+                    target,
+                    posture.facing == CameraFacingIntent::Aim,
+                    time.delta_secs() * LOCOMOTION_SAMPLE_HZ
+                        / GROUND_POSTURE_TRANSITION_TICKS as f32,
+                );
+            }
+        } else {
+            skeleton.set_downed_turning(false);
+            transform.rotation = advance_body_facing(
+                transform.rotation,
+                controller.orientation,
+                velocity.0,
+                skeleton.action_kind(),
+                skeleton.weapon_guard(),
+                time.delta_secs(),
+            );
+        }
         project_skeleton_locomotion(
             &mut skeleton,
             SkeletonLocomotionInput {
@@ -679,10 +856,14 @@ pub(crate) fn update_skeleton_locomotion(
                 tick,
             },
         );
+        let previous_transition = skeleton.posture_transition();
+        skeleton.advance_posture_transition(tick);
+        advance_posture_transition_facing(
+            &mut transform,
+            previous_transition,
+            skeleton.posture_transition(),
+        );
         skeleton.set_guarded_sprint_locomotion(*pace == MovementPace::Sprint);
-        if posture.prone && controller.grounded.is_some() {
-            skeleton.transition_body(BodyState::Prone);
-        }
     }
 }
 
@@ -716,6 +897,28 @@ pub(crate) fn on_client_disconnected(
     Ok(())
 }
 
+fn posture_transition_locks_body_facing(skeleton: &SkeletonState) -> bool {
+    // Every authored posture transition encodes its own direction relative to
+    // the current root. Turning the root toward residual/controller velocity
+    // double-rotates directional dives and can reverse a get-up mid-pose.
+    skeleton.is_posture_transitioning()
+}
+
+fn advance_posture_transition_facing(
+    transform: &mut Transform,
+    previous_transition: Option<PostureTransitionState>,
+    current_transition: Option<PostureTransitionState>,
+) {
+    // Directional dives transfer their authored yaw to the root during
+    // landing. Supine get-up applies an inverse half-turn that cancels the
+    // authored pose's implicit convention change in world space. Prone get-up
+    // receives neither correction.
+    transform.rotation = (transform.rotation
+        * dive_landing_facing_delta(previous_transition, current_transition)
+        * supine_get_up_counter_yaw_delta(previous_transition, current_transition))
+    .normalize();
+}
+
 fn player_collider() -> Collider {
     Collider::cylinder(0.4, 1.9)
 }
@@ -727,12 +930,22 @@ fn player_spawn_offset(collider: &Collider) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        AuthoritativeMovementIntent, AuthoritativePostureIntent, Player, WeaponGuardState,
-        authoritative_weapon_guard, input, mission_enemy_health_scale, mission_enemy_scale,
-        restore_authoritative_movement_intent, tactical_movement_speed_for_guard,
-        validate_player_input,
+        AuthoritativeMovementIntent, AuthoritativePostureIntent,
+        BACKWARD_DIVE_POSTURE_TRANSITION_TICKS, CameraFacingIntent,
+        GROUND_POSTURE_TRANSITION_TICKS, Player, WeaponGuardState,
+        advance_posture_transition_facing, apply_posture_action, authoritative_weapon_guard,
+        dive_horizontal_velocity, input, mission_enemy_health_scale, mission_enemy_scale,
+        posture_transition_locks_body_facing, restore_authoritative_movement_intent,
+        sequence_is_newer, tactical_movement_speed_for_guard, validate_player_input,
     };
-    use adventuresim_tactical_core::prelude::{AttackSpec, MovementPace, SkeletonState};
+    use adventuresim_tactical_core::prelude::{
+        AttackSpec, BodyState, DiveDirection, GroundedPosture, MovementPace, PostureTransitionKind,
+        RollDirection, SkeletonAction, SkeletonState, advance_body_facing,
+        downed_camera_roll_target,
+    };
+    use adventuresim_tactical_netcode::prelude::{
+        JumpCommand, PostureActionRequest, PostureCommand,
+    };
     use bevy::prelude::*;
 
     #[test]
@@ -756,7 +969,7 @@ mod tests {
         let mut controller_input = (
             Vec2::new(0.4, -0.2),
             Some(Vec2::new(0.25, 0.5)),
-            false,
+            JumpCommand::default(),
             WeaponGuardState::Lowered,
         );
         for (look, movement) in [
@@ -768,9 +981,11 @@ mod tests {
             if let Some(validated) = validate_player_input(
                 look,
                 movement,
-                true,
+                JumpCommand { sequence: 1 },
                 false,
                 false,
+                false,
+                PostureCommand::default(),
                 MovementPace::Sprint,
                 WeaponGuardState::Raised,
             ) {
@@ -787,10 +1002,18 @@ mod tests {
             (
                 Vec2::new(0.4, -0.2),
                 Some(Vec2::new(0.25, 0.5)),
-                false,
+                JumpCommand::default(),
                 WeaponGuardState::Lowered,
             )
         );
+    }
+
+    #[test]
+    fn jump_sequence_accepts_each_command_once_across_loss_and_reordering() {
+        assert!(sequence_is_newer(1, 0));
+        assert!(!sequence_is_newer(1, 1));
+        assert!(!sequence_is_newer(0, 1));
+        assert!(sequence_is_newer(0, u32::MAX));
     }
 
     #[test]
@@ -798,9 +1021,11 @@ mod tests {
         let validated = validate_player_input(
             Vec2::new(std::f32::consts::TAU * 4.0 + 0.25, 99.0),
             Some(Vec2::splat(10.0)),
+            JumpCommand { sequence: 7 },
+            false,
             true,
-            false,
-            false,
+            true,
+            PostureCommand::default(),
             MovementPace::Sprint,
             WeaponGuardState::Raised,
         )
@@ -810,6 +1035,9 @@ mod tests {
         assert!(validated.movement.unwrap().length() <= 1.0001);
         assert!(validated.yaw.is_finite() && validated.pitch.is_finite());
         assert_eq!(validated.weapon_guard, WeaponGuardState::Raised);
+        assert_eq!(validated.jump.sequence, 7);
+        assert!(validated.jump_charge);
+        assert!(validated.downed_align);
     }
 
     #[test]
@@ -822,6 +1050,160 @@ mod tests {
             authoritative_weapon_guard(WeaponGuardState::Raised, true),
             WeaponGuardState::Lowered
         );
+    }
+
+    #[test]
+    fn camera_facing_intent_makes_overlapping_modes_unrepresentable() {
+        assert_eq!(
+            CameraFacingIntent::from_input(WeaponGuardState::Lowered, false),
+            CameraFacingIntent::Free
+        );
+        assert_eq!(
+            CameraFacingIntent::from_input(WeaponGuardState::Raised, false),
+            CameraFacingIntent::Aim
+        );
+        assert_eq!(
+            CameraFacingIntent::from_input(WeaponGuardState::Raised, true),
+            CameraFacingIntent::DownedAlign
+        );
+    }
+
+    #[test]
+    fn guarded_backward_dive_then_get_up_commits_the_supine_counter_yaw() {
+        let mut skeleton = SkeletonState::default();
+        assert!(skeleton.begin_posture_transition(
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Backward,
+            },
+            0,
+            BACKWARD_DIVE_POSTURE_TRANSITION_TICKS,
+        ));
+        let mut transform = Transform::from_rotation(Quat::from_rotation_y(std::f32::consts::PI));
+
+        skeleton.transition_body(BodyState::Airborne);
+        skeleton.advance_posture_transition(1);
+        skeleton.transition_body(BodyState::Grounded(GroundedPosture::Crouched));
+        skeleton.advance_posture_transition(2);
+        let previous = skeleton.posture_transition();
+        skeleton.advance_posture_transition(BACKWARD_DIVE_POSTURE_TRANSITION_TICKS + 2);
+        advance_posture_transition_facing(&mut transform, previous, skeleton.posture_transition());
+        assert_eq!(skeleton.body(), BodyState::Supine);
+        assert!((transform.rotation * Vec3::Z).abs_diff_eq(Vec3::Z, 0.000_01));
+
+        assert!(skeleton.begin_posture_transition(
+            PostureTransitionKind::SupineToUpright,
+            BACKWARD_DIVE_POSTURE_TRANSITION_TICKS + 3,
+            GROUND_POSTURE_TRANSITION_TICKS,
+        ));
+        assert_eq!(
+            CameraFacingIntent::from_input(WeaponGuardState::Raised, false),
+            CameraFacingIntent::Aim
+        );
+        let landing_rotation = transform.rotation;
+        let previous = skeleton.posture_transition();
+        skeleton.advance_posture_transition(
+            BACKWARD_DIVE_POSTURE_TRANSITION_TICKS + 3 + GROUND_POSTURE_TRANSITION_TICKS / 2,
+        );
+        advance_posture_transition_facing(&mut transform, previous, skeleton.posture_transition());
+        assert!(
+            transform.rotation.abs_diff_eq(landing_rotation, 0.000_01),
+            "supine-to-midpoint recovery must not begin the counter-yaw"
+        );
+
+        let previous = skeleton.posture_transition();
+        skeleton.advance_posture_transition(
+            BACKWARD_DIVE_POSTURE_TRANSITION_TICKS + GROUND_POSTURE_TRANSITION_TICKS + 4,
+        );
+        advance_posture_transition_facing(&mut transform, previous, skeleton.posture_transition());
+        assert_eq!(
+            skeleton.body(),
+            BodyState::Grounded(GroundedPosture::Upright)
+        );
+        assert!((transform.rotation * Vec3::Z).abs_diff_eq(Vec3::NEG_Z, 0.000_01));
+        let standing_rotation = transform.rotation;
+        transform.rotation = advance_body_facing(
+            transform.rotation,
+            Quat::IDENTITY,
+            Vec3::ZERO,
+            SkeletonAction::None,
+            WeaponGuardState::Raised,
+            1.0,
+        );
+        assert!(!transform.rotation.abs_diff_eq(standing_rotation, 0.000_01));
+        assert!(!transform.rotation.abs_diff_eq(landing_rotation, 0.000_01));
+    }
+
+    #[test]
+    fn prone_get_up_still_preserves_its_root_heading() {
+        let mut skeleton = SkeletonState::default().with_body_state(BodyState::Prone);
+        assert!(skeleton.begin_posture_transition(
+            PostureTransitionKind::ProneToUpright,
+            0,
+            GROUND_POSTURE_TRANSITION_TICKS,
+        ));
+        let initial = Quat::from_rotation_y(0.73);
+        let mut transform = Transform::from_rotation(initial);
+
+        let previous = skeleton.posture_transition();
+        skeleton.advance_posture_transition(GROUND_POSTURE_TRANSITION_TICKS / 2);
+        advance_posture_transition_facing(&mut transform, previous, skeleton.posture_transition());
+        assert!(transform.rotation.abs_diff_eq(initial, 0.000_01));
+
+        let previous = skeleton.posture_transition();
+        skeleton.advance_posture_transition(GROUND_POSTURE_TRANSITION_TICKS + 1);
+        advance_posture_transition_facing(&mut transform, previous, skeleton.posture_transition());
+        assert!(transform.rotation.abs_diff_eq(initial, 0.000_01));
+    }
+
+    #[test]
+    fn toggle_roll_and_supine_release_use_authoritative_transition_sequence() {
+        let mut skeleton = SkeletonState::default();
+        let mut input = input::AccumulatedInput::default();
+        let _ = apply_posture_action(PostureActionRequest::Toggle, &mut skeleton, &mut input);
+        assert_eq!(
+            skeleton.posture_transition().unwrap().kind(),
+            PostureTransitionKind::UprightToProne
+        );
+        skeleton.advance_posture_transition(GROUND_POSTURE_TRANSITION_TICKS);
+        assert_eq!(skeleton.body(), BodyState::Prone);
+
+        let _ = apply_posture_action(PostureActionRequest::RollLeft, &mut skeleton, &mut input);
+        assert_eq!(
+            skeleton.posture_transition().unwrap().kind(),
+            PostureTransitionKind::ProneToSupine {
+                direction: RollDirection::Left,
+            }
+        );
+        assert_eq!(skeleton.downed_lateral_motion(), -1.0);
+        skeleton.advance_posture_transition(GROUND_POSTURE_TRANSITION_TICKS * 2);
+        assert_eq!(skeleton.body(), BodyState::Supine);
+
+        let _ = apply_posture_action(PostureActionRequest::Toggle, &mut skeleton, &mut input);
+        assert_eq!(
+            skeleton.posture_transition().unwrap().kind(),
+            PostureTransitionKind::SupineToUpright
+        );
+    }
+
+    #[test]
+    fn dive_preserves_requested_direction_and_starts_airborne_motion() {
+        let mut skeleton = SkeletonState::default();
+        let mut input = input::AccumulatedInput::default();
+        let launched = apply_posture_action(
+            PostureActionRequest::Dive {
+                direction: DiveDirection::Backward,
+            },
+            &mut skeleton,
+            &mut input,
+        );
+        assert_eq!(launched, Some(DiveDirection::Backward));
+        assert_eq!(
+            skeleton.posture_transition().unwrap().kind(),
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Backward,
+            }
+        );
+        assert!(input.jumped.is_some());
     }
 
     #[test]
@@ -871,6 +1253,38 @@ mod tests {
         assert_eq!(
             tactical_movement_speed_for_guard(None, WeaponGuardState::Lowered),
             0.0
+        );
+    }
+
+    #[test]
+    fn roll_transition_overrides_normal_movement_with_lateral_controller_input() {
+        let mut skeleton = SkeletonState::default().with_body_state(BodyState::Prone);
+        assert!(skeleton.begin_posture_transition(
+            PostureTransitionKind::ProneToSupine {
+                direction: RollDirection::Left,
+            },
+            0,
+            GROUND_POSTURE_TRANSITION_TICKS,
+        ));
+        let mut world = World::new();
+        let player = world
+            .spawn((
+                Player::default(),
+                AuthoritativeMovementIntent(Some(Vec2::Y)),
+                skeleton,
+                AuthoritativePostureIntent::default(),
+                input::AccumulatedInput::default(),
+            ))
+            .id();
+        let mut schedule = Schedule::default();
+        schedule.add_systems(restore_authoritative_movement_intent);
+        schedule.run(&mut world);
+        assert_eq!(
+            world
+                .get::<input::AccumulatedInput>(player)
+                .unwrap()
+                .last_movement,
+            Some(-Vec2::X)
         );
     }
 
@@ -950,5 +1364,130 @@ mod tests {
                 .last_movement,
             Some(Vec2::X)
         );
+    }
+
+    #[test]
+    fn authored_roll_locks_root_facing_until_contact() {
+        let mut skeleton = SkeletonState::default().with_body_state(BodyState::Prone);
+        assert!(skeleton.begin_posture_transition(
+            PostureTransitionKind::ProneToSupine {
+                direction: RollDirection::Right,
+            },
+            0,
+            GROUND_POSTURE_TRANSITION_TICKS,
+        ));
+        assert!(posture_transition_locks_body_facing(&skeleton));
+
+        skeleton.advance_posture_transition(GROUND_POSTURE_TRANSITION_TICKS);
+        assert!(!posture_transition_locks_body_facing(&skeleton));
+        assert_eq!(skeleton.body(), BodyState::Supine);
+    }
+
+    #[test]
+    fn every_authored_posture_transition_locks_root_facing() {
+        for transition in [
+            PostureTransitionKind::UprightToProne,
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Left,
+            },
+        ] {
+            let mut skeleton = SkeletonState::default();
+            assert!(skeleton.begin_posture_transition(transition, 0, 10));
+            assert!(posture_transition_locks_body_facing(&skeleton));
+        }
+
+        for transition in [
+            PostureTransitionKind::ProneToUpright,
+            PostureTransitionKind::ProneToSupine {
+                direction: RollDirection::Right,
+            },
+        ] {
+            let mut skeleton = SkeletonState::default().with_body_state(BodyState::Prone);
+            assert!(skeleton.begin_posture_transition(transition, 0, 10));
+            assert!(posture_transition_locks_body_facing(&skeleton));
+        }
+
+        let mut supine = SkeletonState::default().with_body_state(BodyState::Supine);
+        assert!(supine.begin_posture_transition(PostureTransitionKind::SupineToUpright, 0, 10));
+        assert!(posture_transition_locks_body_facing(&supine));
+    }
+
+    #[test]
+    fn dive_launch_velocity_follows_the_requested_camera_relative_direction() {
+        let yaw = std::f32::consts::FRAC_PI_2;
+        assert!(dive_horizontal_velocity(yaw, DiveDirection::Forward).x < -6.9);
+        assert!(dive_horizontal_velocity(yaw, DiveDirection::Backward).x > 6.9);
+        assert!(dive_horizontal_velocity(0.0, DiveDirection::Left).x < -6.9);
+        assert!(dive_horizontal_velocity(0.0, DiveDirection::Right).x > 6.9);
+    }
+
+    #[test]
+    fn directional_dive_handoff_preserves_its_landing_heading() {
+        for (direction, expected_world_heading, expected_half_roll) in [
+            (DiveDirection::Forward, Vec3::NEG_Z, None),
+            (DiveDirection::Backward, Vec3::Z, None),
+            (DiveDirection::Left, Vec3::NEG_X, Some(-0.5)),
+            (DiveDirection::Right, Vec3::X, Some(0.5)),
+        ] {
+            let mut skeleton = SkeletonState::default();
+            assert!(skeleton.begin_posture_transition(
+                PostureTransitionKind::DiveToDowned { direction },
+                0,
+                10,
+            ));
+            let mut transform =
+                Transform::from_rotation(Quat::from_rotation_y(std::f32::consts::PI));
+
+            skeleton.transition_body(BodyState::Airborne);
+            skeleton.advance_posture_transition(1);
+            skeleton.transition_body(BodyState::Grounded(GroundedPosture::Crouched));
+            skeleton.advance_posture_transition(2);
+
+            let previous = skeleton.posture_transition();
+            skeleton.advance_posture_transition(7);
+            advance_posture_transition_facing(
+                &mut transform,
+                previous,
+                skeleton.posture_transition(),
+            );
+            let halfway = transform.rotation * Vec3::Z;
+            if direction != DiveDirection::Forward {
+                assert!(
+                    !halfway.abs_diff_eq(Vec3::NEG_Z, 0.000_01),
+                    "{direction:?} recovery left the complete yaw handoff until its endpoint"
+                );
+                assert!(
+                    !halfway.abs_diff_eq(expected_world_heading, 0.000_01),
+                    "{direction:?} recovery applied the complete yaw handoff at first contact"
+                );
+            }
+
+            let previous = skeleton.posture_transition();
+            skeleton.advance_posture_transition(12);
+            advance_posture_transition_facing(
+                &mut transform,
+                previous,
+                skeleton.posture_transition(),
+            );
+            let facing = transform.rotation * Vec3::Z;
+            assert!(
+                facing.abs_diff_eq(expected_world_heading, 0.000_01),
+                "{direction:?}"
+            );
+            assert_eq!(
+                skeleton.downed_facing().map(|facing| facing.half_turns()),
+                expected_half_roll,
+                "{direction:?}"
+            );
+            if let Some(expected_half_roll) = expected_half_roll {
+                assert!(
+                    (downed_camera_roll_target(transform.rotation, Quat::IDENTITY)
+                        - expected_half_roll)
+                        .abs()
+                        < 0.000_01,
+                    "{direction:?}"
+                );
+            }
+        }
     }
 }

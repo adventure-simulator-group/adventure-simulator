@@ -128,7 +128,7 @@ pub(super) fn log_animation_diagnostics(
         let transition = playback.presentation_transition.as_ref().map(|transition| {
             serde_json::json!({
                 "elapsed_seconds": transition.elapsed_seconds,
-                "progress": (transition.elapsed_seconds / PRESENTATION_CROSSFADE_SECONDS)
+                "progress": (transition.elapsed_seconds / transition.duration_seconds)
                     .clamp(0.0, 1.0),
             })
         });

@@ -22,22 +22,14 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSET_DIR = ROOT / "assets" / "animations" / "biped" / "unarmed"
-MOTIONS = ("walk", "run")
-PAIRED_BONES = (
-    ("clavicle.L", "clavicle.R"),
-    ("upper_arm.L", "upper_arm.R"),
-    ("upper_arm_twist.L", "upper_arm_twist.R"),
-    ("forearm.L", "forearm.R"),
-    ("forearm_twist.L", "forearm_twist.R"),
-    ("hand.L", "hand.R"),
-    ("weapon.L", "weapon.R"),
-    ("thigh.L", "thigh.R"),
-    ("thigh_twist.L", "thigh_twist.R"),
-    ("shin.L", "shin.R"),
-    ("shin_twist.L", "shin_twist.R"),
-    ("foot.L", "foot.R"),
-    ("toe.L", "toe.R"),
-)
+MIRRORED_MOTIONS = {
+    "walk": "walk_mirrored",
+    "run": "run_mirrored",
+    "prone_crawl": "prone_crawl_mirrored",
+    "supine_scamper": "supine_scamper_mirrored",
+    "dive_left": "dive_right",
+    "prone_supine_roll_left": "prone_supine_roll_right",
+}
 REFLECTION = np.diag((-1.0, 1.0, 1.0, 1.0))
 
 
@@ -160,7 +152,16 @@ def mirrored_glb(source: Path) -> bytes:
     for parent, node in enumerate(nodes):
         for child in node.get("children", ()):
             parents[child] = parent
-    pairs = [(by_name[left], by_name[right]) for left, right in PAIRED_BONES]
+    # Cascadeur exports the complete bilateral hierarchy with `.L` / `.R`
+    # suffixes. Discover every pair so palms, fingers, breasts, and any future
+    # authored descendants follow their exchanged hand/limb parents.
+    pairs = [
+        (left, by_name[f"{name[:-2]}.R"])
+        for name, left in by_name.items()
+        if isinstance(name, str)
+        and name.endswith(".L")
+        and f"{name[:-2]}.R" in by_name
+    ]
 
     channels: dict[tuple[int, str], np.ndarray] = {}
     animation = document["animations"][0]
@@ -194,17 +195,39 @@ def mirrored_glb(source: Path) -> bytes:
         for index, matrix in enumerate(local):
             parent = parents.get(index)
             global_matrices.append(matrix if parent is None else global_matrices[parent] @ matrix)
-        desired = list(global_matrices)
+        counterpart = {index: index for index in range(len(nodes))}
         for left, right in pairs:
-            desired[left] = REFLECTION @ global_matrices[right] @ REFLECTION
-            desired[right] = REFLECTION @ global_matrices[left] @ REFLECTION
-        for left, right in pairs:
-            for target in (left, right):
-                parent = parents.get(target)
-                local_matrix = desired[target] if parent is None else np.linalg.inv(desired[parent]) @ desired[target]
-                translation, rotation, scale = decompose(local_matrix)
+            counterpart[left] = right
+            counterpart[right] = left
+        # Mirror every animated center-line bone as well as exchanging paired
+        # limbs. Leaving pelvis/spine/head unreflected happened to be tolerable
+        # for upright gait, but twists a strongly asymmetric downed pose apart.
+        desired = [
+            REFLECTION @ global_matrices[counterpart[index]] @ REFLECTION
+            for index in range(len(nodes))
+        ]
+        animated_nodes = {node for node, _path in channels}
+        for target in animated_nodes:
+            parent = parents.get(target)
+            local_matrix = (
+                desired[target]
+                if parent is None
+                else np.linalg.inv(desired[parent]) @ desired[target]
+            )
+            translation, rotation, scale = decompose(local_matrix)
+            # q and -q encode the same orientation, but Bevy blends active
+            # sibling clips component-wise before normalization. Keep each
+            # mirrored key in the same quaternion hemisphere as the canonical
+            # target bone so a contact-to-mirrored-contact blend cannot pass
+            # through a near-zero quaternion and tear the skinned hierarchy.
+            source_rotation = source_values.get((target, "rotation"))
+            if source_rotation is not None and np.dot(rotation, source_rotation[frame]) < 0.0:
+                rotation = -rotation
+            if (target, "translation") in channels:
                 channels[(target, "translation")][frame] = translation
+            if (target, "rotation") in channels:
                 channels[(target, "rotation")][frame] = rotation
+            if (target, "scale") in channels:
                 channels[(target, "scale")][frame] = scale
 
     return encode_glb(document, binary)
@@ -215,9 +238,9 @@ def main() -> None:
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     stale: list[Path] = []
-    for motion in MOTIONS:
+    for motion, output_motion in MIRRORED_MOTIONS.items():
         source = ASSET_DIR / f"{motion}.glb"
-        output = ASSET_DIR / f"{motion}_mirrored.glb"
+        output = ASSET_DIR / f"{output_motion}.glb"
         generated = mirrored_glb(source)
         if args.check:
             if not output.exists() or output.read_bytes() != generated:

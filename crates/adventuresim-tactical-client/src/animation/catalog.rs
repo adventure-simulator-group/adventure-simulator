@@ -182,16 +182,6 @@ impl AnimationPackCatalog {
         for (motion, last_frame, anchors) in [
             ("walk", 64, [(0, "walk_contact"), (16, "walk_passing")]),
             ("run", 64, [(0, "run_contact"), (16, "run_flight")]),
-            (
-                "prone_crawl",
-                32,
-                [(0, "prone_crawl_contact"), (8, "prone_crawl_passing")],
-            ),
-            (
-                "supine_scamper",
-                32,
-                [(0, "supine_scamper_contact"), (8, "supine_scamper_passing")],
-            ),
         ] {
             builder.motion(motion, last_frame);
             for (frame, pose) in anchors {
@@ -202,11 +192,25 @@ impl AnimationPackCatalog {
                 )?;
             }
         }
+        for (motion, pose) in [
+            ("prone_crawl", "prone_crawl_contact"),
+            ("supine_scamper", "supine_scamper_contact"),
+        ] {
+            builder.motion(motion, 0);
+            builder.pose(
+                motion,
+                0,
+                SemanticPose::from_str(pose).expect("typed catalog pose"),
+            )?;
+        }
         // Pre-reflected copies of the sparse gait anchors are selected only
         // as mirrored blend endpoints; they own no independent semantics.
         builder.motion("walk_mirrored", 64);
         builder.motion("run_mirrored", 64);
+        builder.motion("prone_crawl_mirrored", 0);
+        builder.motion("supine_scamper_mirrored", 0);
         for (motion, pose) in [
+            ("duck_lead_left_forward", "duck_lead_left_forward"),
             ("duck_lead_left_backward", "duck_lead_left_backward"),
             ("duck_lead_left_left", "duck_lead_left_left"),
             ("duck_lead_left_right", "duck_lead_left_right"),
@@ -217,6 +221,15 @@ impl AnimationPackCatalog {
                 0,
                 SemanticPose::from_str(pose).expect("typed catalog pose"),
             )?;
+        }
+        for (motion, pose) in [
+            ("dive_forward", SemanticPose::DiveForward),
+            ("dive_backward", SemanticPose::DiveBackward),
+            ("dive_left", SemanticPose::DiveLeft),
+            ("dive_right", SemanticPose::DiveRight),
+        ] {
+            builder.motion(motion, 0);
+            builder.pose(motion, 0, pose)?;
         }
         for (motion, pose) in [
             ("airborne_center", SemanticPose::AirborneCenter),
@@ -253,32 +266,18 @@ impl AnimationPackCatalog {
             builder.reference(motion, 0, lead)?;
             builder.reference(motion, 14, lead)?;
         }
-        for (motion, last_frame, frame, pose) in [
-            (
-                "upright_prone_transition",
-                24,
-                12,
-                "upright_prone_transition",
-            ),
-            ("dive", 18, 10, "dive_impact"),
+        for (motion, pose) in [
+            ("prone_transition", "prone_transition"),
+            ("prone_supine_roll_left", "prone_supine_roll_left"),
+            ("prone_supine_roll_right", "prone_supine_roll_right"),
+            ("supine_transition", "supine_transition"),
         ] {
-            builder.motion(motion, last_frame);
+            builder.motion(motion, 0);
             builder.pose(
                 motion,
-                frame,
+                0,
                 SemanticPose::from_str(pose).expect("typed catalog pose"),
             )?;
-            match motion {
-                "upright_prone_transition" => {
-                    builder.reference(motion, 0, "crouch_idle")?;
-                    builder.reference(motion, 24, "prone_idle")?;
-                }
-                "dive" => {
-                    builder.reference(motion, 0, "airborne_travel")?;
-                    builder.reference(motion, 18, "prone_idle")?;
-                }
-                _ => {}
-            }
         }
         let (id, pack) = builder.finish();
         let mut library = AnimationPackLibrary::default();

@@ -28,6 +28,7 @@ const HUMANOID_UNARMED_PACK: &str = "humanoid_unarmed";
 const BIPED_BASE_GLB: &str = "animations/biped/unarmed/base.glb";
 const ANIMATION_FPS: f32 = 30.0;
 const PRESENTATION_CROSSFADE_SECONDS: f32 = 0.18;
+const DOWNED_PRESENTATION_CROSSFADE_SECONDS: f32 = 0.5;
 const LOWER_BODY_MASK_GROUP: u32 = 0;
 const UPPER_BODY_MASK_GROUP: u32 = 1;
 // Player transforms sit at the center of the 1.9 m server collider, while
@@ -119,7 +120,7 @@ enum ClipLayer {
 }
 
 #[derive(Resource, Default)]
-struct AnimationRuntime {
+pub(super) struct AnimationRuntime {
     requested_base: Option<Handle<Gltf>>,
     base_processed: bool,
     base_failed: bool,
@@ -135,6 +136,14 @@ struct AnimationRuntime {
     canonical_targets: HashSet<AnimationTargetId>,
     lower_body_targets: HashSet<AnimationTargetId>,
     upper_body_targets: HashSet<AnimationTargetId>,
+}
+
+impl AnimationRuntime {
+    pub(super) fn motion_is_processed(&self, motion: &str) -> bool {
+        self.processed_motions
+            .iter()
+            .any(|(_, processed)| processed == motion)
+    }
 }
 
 #[derive(Component, Debug)]
@@ -153,6 +162,10 @@ impl AnimationPlayback {
     #[allow(dead_code)] // Used by the standalone animation-viewer binary.
     pub(super) fn authored_pose_is_ready(&self) -> bool {
         !self.use_authored_bind_pose && !self.clips.is_empty()
+    }
+
+    pub(super) fn presentation_is_settled(&self) -> bool {
+        self.authored_pose_is_ready() && self.presentation_transition.is_none()
     }
 }
 
@@ -191,6 +204,7 @@ struct PlaybackPose {
 struct PlaybackTransition {
     from: PlaybackPose,
     elapsed_seconds: f32,
+    duration_seconds: f32,
 }
 
 #[derive(Component)]
@@ -327,9 +341,7 @@ fn evaluate_skeletons(
             foot_ik_weights: graph_foot_ik_weights(&evaluation),
             clips: weighted,
         };
-        let ordinary_locomotion_candidate = skeleton.is_grounded()
-            && skeleton.action_kind() == SkeletonAction::None
-            && skeleton.weapon_guard() == WeaponGuardState::Lowered;
+        let ordinary_locomotion_candidate = ordinary_locomotion_candidate(&skeleton);
         if let Some(mut playback) = playback {
             // Hysteresis prevents sub-threshold velocity noise from repeatedly
             // restarting the idle/locomotion presentation transition.
@@ -345,6 +357,11 @@ fn evaluate_skeletons(
                 target,
                 skeleton.weapon_guard(),
                 ordinary_locomotion_active,
+                if skeleton.body().is_downed() {
+                    DOWNED_PRESENTATION_CROSSFADE_SECONDS
+                } else {
+                    PRESENTATION_CROSSFADE_SECONDS
+                },
                 &procedural_clock,
                 time.delta_secs(),
             );
@@ -365,11 +382,20 @@ fn evaluate_skeletons(
     }
 }
 
+fn ordinary_locomotion_candidate(skeleton: &SkeletonState) -> bool {
+    !skeleton.is_posture_transitioning()
+        && ((skeleton.is_grounded()
+            && skeleton.action_kind() == SkeletonAction::None
+            && skeleton.weapon_guard() == WeaponGuardState::Lowered)
+            || skeleton.downed_turning())
+}
+
 fn update_presentation_crossfade(
     playback: &mut AnimationPlayback,
     target: PlaybackPose,
     weapon_guard: WeaponGuardState,
     ordinary_locomotion_active: bool,
+    transition_duration_seconds: f32,
     procedural_clock: &ProceduralAnimationClock,
     render_delta_seconds: f32,
 ) {
@@ -389,6 +415,7 @@ fn update_presentation_crossfade(
         playback.presentation_transition = Some(PlaybackTransition {
             from: playback_pose(playback),
             elapsed_seconds: 0.0,
+            duration_seconds: transition_duration_seconds.max(f32::EPSILON),
         });
         playback.weapon_guard = weapon_guard;
     }
@@ -403,8 +430,7 @@ fn update_presentation_crossfade(
         if !transition_started {
             transition.elapsed_seconds += delta_seconds;
         }
-        let progress =
-            (transition.elapsed_seconds / PRESENTATION_CROSSFADE_SECONDS).clamp(0.0, 1.0);
+        let progress = (transition.elapsed_seconds / transition.duration_seconds).clamp(0.0, 1.0);
         let pose = blend_playback_poses(&transition.from, &target, progress);
         transition_complete = progress >= 1.0;
         pose

@@ -312,6 +312,14 @@ mod legacy_tests {
     }
 
     #[test]
+    fn runtime_catalog_registers_both_downed_gait_mirror_endpoints() {
+        let catalog = catalog::AnimationPackCatalog::default();
+        let pack = catalog.packs.get(HUMANOID_UNARMED_PACK).unwrap();
+        assert!(pack.motions.contains_key("prone_crawl_mirrored"));
+        assert!(pack.motions.contains_key("supine_scamper_mirrored"));
+    }
+
+    #[test]
     fn terrain_ik_defaults_on() {
         assert!(TerrainIkEnabled::default().0);
     }
@@ -507,7 +515,7 @@ mod legacy_tests {
                 "required pose {required:?} did not resolve"
             );
         }
-        // The 34 required semantics collapse to 28 authored variants when
+        // The 40 required semantics collapse to 31 authored variants when
         // each supported whole-body mirror pair is represented once.
         let authored_variants = SemanticPose::HUMANOID_REQUIRED
             .into_iter()
@@ -516,7 +524,7 @@ mod legacy_tests {
                     .is_none_or(|counterpart| pose.as_str() < counterpart.as_str())
             })
             .count();
-        assert_eq!(authored_variants, 28);
+        assert_eq!(authored_variants, 31);
         assert_eq!(
             root.motions["walk"].path,
             "animations/biped/unarmed/walk.glb"
@@ -541,6 +549,25 @@ mod legacy_tests {
                 motion: "duck_lead_left_backward".to_owned(),
                 frame: 0,
             }
+        );
+        assert_eq!(
+            root.poses[&SemanticPose::DuckLeadLeftForward],
+            PoseAnchor {
+                motion: "duck_lead_left_forward".to_owned(),
+                frame: 0,
+            }
+        );
+        assert_eq!(root.motions["duck_lead_left_forward"].last_frame, 0);
+        assert_eq!(
+            root.poses[&SemanticPose::DiveForward],
+            PoseAnchor {
+                motion: "dive_forward".to_owned(),
+                frame: 0,
+            }
+        );
+        assert_eq!(
+            SemanticPose::DiveRight.mirrored_counterpart(),
+            Some(SemanticPose::DiveLeft)
         );
         for pose in [
             SemanticPose::GuardWalkLeadLeft,
@@ -1286,6 +1313,7 @@ mod legacy_tests {
             mirror_test_pose(0.2),
             WeaponGuardState::Raised,
             false,
+            PRESENTATION_CROSSFADE_SECONDS,
             &clock,
             0.0,
         );
@@ -1307,6 +1335,7 @@ mod legacy_tests {
             mirror_test_pose(0.2),
             WeaponGuardState::Raised,
             false,
+            PRESENTATION_CROSSFADE_SECONDS,
             &clock,
             0.0,
         );
@@ -1316,6 +1345,7 @@ mod legacy_tests {
             mirror_test_pose(0.2),
             WeaponGuardState::Raised,
             false,
+            PRESENTATION_CROSSFADE_SECONDS,
             &clock,
             0.0,
         );
@@ -1338,6 +1368,7 @@ mod legacy_tests {
             mirror_test_pose(0.0),
             WeaponGuardState::Lowered,
             false,
+            PRESENTATION_CROSSFADE_SECONDS,
             &clock,
             0.0,
         );
@@ -1349,6 +1380,7 @@ mod legacy_tests {
             mirror_test_pose(0.0),
             WeaponGuardState::Lowered,
             false,
+            PRESENTATION_CROSSFADE_SECONDS,
             &clock,
             1.0,
         );
@@ -1360,6 +1392,7 @@ mod legacy_tests {
             mirror_test_pose(0.0),
             WeaponGuardState::Lowered,
             false,
+            PRESENTATION_CROSSFADE_SECONDS,
             &clock,
             0.0,
         );
@@ -1380,6 +1413,7 @@ mod legacy_tests {
             mirror_test_pose(0.2),
             WeaponGuardState::Raised,
             false,
+            PRESENTATION_CROSSFADE_SECONDS,
             &clock,
             0.0,
         );
@@ -1389,6 +1423,7 @@ mod legacy_tests {
             mirror_test_pose(0.2),
             WeaponGuardState::Raised,
             false,
+            PRESENTATION_CROSSFADE_SECONDS,
             &clock,
             0.0,
         );
@@ -1400,6 +1435,7 @@ mod legacy_tests {
             mirror_test_pose(0.8),
             WeaponGuardState::Lowered,
             false,
+            PRESENTATION_CROSSFADE_SECONDS,
             &clock,
             0.0,
         );
@@ -1440,5 +1476,15 @@ mod legacy_tests {
         assert_eq!(latest_coalesced_landing(7, 9), Some(9));
         assert_eq!(latest_coalesced_landing(9, 7), None);
         assert_eq!(latest_coalesced_landing(2, 20), None);
+    }
+
+    #[test]
+    fn downed_camera_alignment_enters_the_idle_locomotion_crossfade() {
+        let idle = SkeletonState::default().with_body_state(BodyState::Supine);
+        assert!(!ordinary_locomotion_candidate(&idle));
+
+        let mut turning = idle;
+        turning.set_downed_turning(true);
+        assert!(ordinary_locomotion_candidate(&turning));
     }
 }

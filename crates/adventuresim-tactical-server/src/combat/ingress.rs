@@ -22,12 +22,15 @@ pub(super) fn on_defender_response(
         return;
     }
 
-    if let Ok(mut skeleton) = skeletons.get_mut(entity) {
-        let start = animation_tick(&time);
-        match **event {
-            DefendRequest::Dodge => skeleton.begin_dodge(DodgeSpec::default(), start, start + 8),
-            DefendRequest::Parry => skeleton.begin_block(BlockSpec::default(), start, start + 8),
-        }
+    let Ok(mut skeleton) = skeletons.get_mut(entity) else {
+        return;
+    };
+    let start = animation_tick(&time);
+    match **event {
+        DefendRequest::Dodge => skeleton.begin_dodge(DodgeSpec::default(), start, start + 8),
+        DefendRequest::Roll if !accepts_roll_dodge(&skeleton) => return,
+        DefendRequest::Roll => {}
+        DefendRequest::Parry => skeleton.begin_block(BlockSpec::default(), start, start + 8),
     }
 
     cmd.entity(entity).insert(PendingDefenderResponse {
@@ -81,6 +84,9 @@ pub(super) fn resolve_defender_response(
 
     match pending.choice {
         DefendRequest::Dodge => DefenderResponse::Dodge { input_reflex },
+        DefendRequest::Roll => DefenderResponse::Dodge {
+            input_reflex: roll_dodge_reflex(input_reflex),
+        },
         DefendRequest::Parry => {
             if defender_view.shield_block_bonus() > 0.0 {
                 DefenderResponse::Parry { input_reflex }
@@ -88,6 +94,39 @@ pub(super) fn resolve_defender_response(
                 DefenderResponse::None
             }
         }
+    }
+}
+
+const ROLL_DODGE_EFFECTIVENESS: f32 = 0.35;
+
+fn roll_dodge_reflex(input_reflex: f32) -> f32 {
+    input_reflex.clamp(0.0, 1.0) * ROLL_DODGE_EFFECTIVENESS
+}
+
+fn accepts_roll_dodge(skeleton: &SkeletonState) -> bool {
+    skeleton.body().is_downed()
+}
+
+#[cfg(test)]
+mod roll_tests {
+    use super::*;
+
+    #[test]
+    fn roll_is_a_bounded_fraction_of_an_ordinary_dodge() {
+        assert!((roll_dodge_reflex(1.0) - 0.35).abs() < f32::EPSILON);
+        assert_eq!(roll_dodge_reflex(-1.0), 0.0);
+        assert_eq!(roll_dodge_reflex(2.0), 0.35);
+    }
+
+    #[test]
+    fn roll_defense_is_restricted_to_prone_and_supine() {
+        assert!(!accepts_roll_dodge(&SkeletonState::default()));
+        assert!(accepts_roll_dodge(
+            &SkeletonState::default().with_body_state(BodyState::Prone)
+        ));
+        assert!(accepts_roll_dodge(
+            &SkeletonState::default().with_body_state(BodyState::Supine)
+        ));
     }
 }
 

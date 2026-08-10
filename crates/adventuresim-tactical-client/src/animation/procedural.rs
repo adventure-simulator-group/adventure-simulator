@@ -15,6 +15,14 @@ pub(crate) struct ProceduralLookState {
     evaluation_tick: u64,
 }
 
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct ProceduralCrouchState {
+    base: Transform,
+    applied: Transform,
+    amount: f32,
+    evaluation_tick: u64,
+}
+
 #[derive(Resource, Debug, Default)]
 pub(super) struct FixedTickPoseCache {
     tick: Option<u64>,
@@ -83,7 +91,7 @@ fn additive_look_rotation(
 /// and reuse it when the same logical pose reaches this pass again.
 pub(super) fn apply_head_and_torso_look(
     mut commands: Commands,
-    owners: Query<(&CharacterLook, &PresentedSkeleton)>,
+    owners: Query<(&CharacterLook, &PresentedSkeleton, &GlobalTransform)>,
     mut bones: Query<(
         Entity,
         &HumanoidBone,
@@ -92,10 +100,9 @@ pub(super) fn apply_head_and_torso_look(
     )>,
 ) {
     for (entity, bone, mut transform, state) in &mut bones {
-        let Ok((look, skeleton)) = owners.get(bone.owner) else {
+        let Ok((look, skeleton, owner_transform)) = owners.get(bone.owner) else {
             continue;
         };
-        let pitch = look.pitch.clamp(-0.65, 0.65);
         let directional_yaw = skeleton.action_direction().x.clamp(-1.0, 1.0) * 0.35;
         let weight = match bone.role {
             BoneRole::StomachOne => 0.08,
@@ -106,9 +113,21 @@ pub(super) fn apply_head_and_torso_look(
             BoneRole::Head => 0.26,
             _ => continue,
         };
+        let aim = guarded_camera_look(look, owner_transform.rotation(), skeleton.weapon_guard());
+        let aim_offset = match (aim, bone.role) {
+            (Some(offset), BoneRole::NeckOne | BoneRole::NeckTwo | BoneRole::Head) => offset,
+            _ => Vec2::ZERO,
+        };
         // Owner yaw is already on the character transform. Only the bounded
-        // local action offset and vertical look are distributed here.
-        let offset = Quat::from_euler(EulerRot::YXZ, directional_yaw * weight, pitch * weight, 0.0);
+        // residual camera direction and local action offset are distributed
+        // here. Camera pitch belongs exclusively to held aim/block; ordinary
+        // camera look must not nod the presented head and neck.
+        let offset = Quat::from_euler(
+            EulerRot::YXZ,
+            directional_yaw * weight + aim_offset.x,
+            aim_offset.y,
+            0.0,
+        );
         let previous = state.as_deref().copied();
         let (rotation, next) = additive_look_rotation(
             transform.rotation,
@@ -117,6 +136,107 @@ pub(super) fn apply_head_and_torso_look(
             offset,
         );
         transform.rotation = rotation;
+        if let Some(mut state) = state {
+            *state = next;
+        } else {
+            commands.entity(entity).insert(next);
+        }
+    }
+}
+
+fn guarded_camera_look(
+    look: &CharacterLook,
+    owner_rotation: Quat,
+    weapon_guard: WeaponGuardState,
+) -> Option<Vec2> {
+    (weapon_guard == WeaponGuardState::Raised)
+        .then(|| constrained_camera_look(look, owner_rotation))
+}
+
+fn constrained_camera_look(look: &CharacterLook, owner_rotation: Quat) -> Vec2 {
+    const JOINT_LIMIT: f32 = std::f32::consts::PI / 8.0;
+    const JOINT_COUNT: f32 = 3.0;
+    let camera_forward = Quat::from_euler(EulerRot::YXZ, look.yaw, look.pitch, 0.0) * Vec3::NEG_Z;
+    let local = owner_rotation.inverse() * camera_forward;
+    let yaw = local.x.atan2(local.z);
+    let pitch = local.y.atan2(local.xz().length().max(f32::EPSILON));
+    Vec2::new(
+        (yaw / JOINT_COUNT).clamp(-JOINT_LIMIT, JOINT_LIMIT),
+        (pitch / JOINT_COUNT).clamp(-JOINT_LIMIT, JOINT_LIMIT),
+    )
+}
+
+/// Space begins an upright jump with a small procedural anticipation rather
+/// than launching on the press edge. FK remains authored; this layer lowers
+/// the pelvis and shares a modest forward fold across the spine.
+pub(super) fn apply_jump_charge_crouch(
+    mut commands: Commands,
+    owners: Query<&PresentedSkeleton>,
+    mut bones: Query<(
+        Entity,
+        &HumanoidBone,
+        &mut Transform,
+        Option<&mut ProceduralCrouchState>,
+    )>,
+) {
+    for (entity, bone, mut transform, state) in &mut bones {
+        let Ok(skeleton) = owners.get(bone.owner) else {
+            continue;
+        };
+        let crouched = skeleton.jump_anticipation() == JumpAnticipation::Charging;
+        let previous = state.as_deref().copied();
+        let base = previous.map_or(*transform, |previous| {
+            if previous.evaluation_tick == skeleton.locomotion_sample_tick
+                || transform
+                    .translation
+                    .abs_diff_eq(previous.applied.translation, 0.000_01)
+                    && transform.rotation.angle_between(previous.applied.rotation) <= 0.000_01
+            {
+                previous.base
+            } else {
+                *transform
+            }
+        });
+        let previous_amount = previous.map_or(0.0, |previous| previous.amount);
+        let amount = if previous
+            .is_some_and(|previous| previous.evaluation_tick == skeleton.locomotion_sample_tick)
+        {
+            previous_amount
+        } else {
+            let target = if crouched { 1.0 } else { 0.0 };
+            previous_amount + (target - previous_amount).clamp(-0.125, 0.125)
+        };
+        let mut applied = base;
+        if amount > f32::EPSILON {
+            match bone.role {
+                BoneRole::Pelvis => applied.translation.y -= 0.12 * amount,
+                BoneRole::StomachOne => {
+                    applied.rotation =
+                        (applied.rotation * Quat::from_rotation_x(0.09 * amount)).normalize()
+                }
+                BoneRole::StomachTwo => {
+                    applied.rotation =
+                        (applied.rotation * Quat::from_rotation_x(0.075 * amount)).normalize()
+                }
+                BoneRole::Chest => {
+                    applied.rotation =
+                        (applied.rotation * Quat::from_rotation_x(0.06 * amount)).normalize()
+                }
+                _ => continue,
+            }
+        } else if !matches!(
+            bone.role,
+            BoneRole::Pelvis | BoneRole::StomachOne | BoneRole::StomachTwo | BoneRole::Chest
+        ) {
+            continue;
+        }
+        *transform = applied;
+        let next = ProceduralCrouchState {
+            base,
+            applied,
+            amount,
+            evaluation_tick: skeleton.locomotion_sample_tick,
+        };
         if let Some(mut state) = state {
             *state = next;
         } else {
@@ -311,7 +431,10 @@ pub(crate) struct LocomotionBodyResponseState {
 }
 
 pub(crate) fn locomotion_height_wave(skeleton: &SkeletonState) -> f32 {
-    if !skeleton.is_grounded() || skeleton.action_kind() != SkeletonAction::None {
+    if !skeleton.is_grounded()
+        || skeleton.is_posture_transitioning()
+        || skeleton.action_kind() != SkeletonAction::None
+    {
         return 0.0;
     }
     let speed = skeleton.animation_speed();
@@ -343,6 +466,7 @@ fn authored_height_compensation(skeleton: &SkeletonState) -> f32 {
 
 fn locomotion_normalization_target(skeleton: &SkeletonState) -> f32 {
     (skeleton.is_grounded()
+        && !skeleton.is_posture_transitioning()
         && skeleton.action_kind() == SkeletonAction::None
         && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
         && skeleton.animation_speed() > 0.05) as u8 as f32
@@ -431,12 +555,20 @@ pub(super) fn stabilize_locomotion_torso(
             next.last_landing_sequence = skeleton.landing_sequence;
         }
         if landed {
-            next.landing_compression = landing_compression_for_impact(
-                locomotion_profile(skeleton),
-                skeleton.landing_impact_speed,
-            );
-            next.landing_recovery_metres_per_second =
-                next.landing_compression / locomotion_profile(skeleton).landing.recovery_seconds;
+            if skeleton.is_posture_transitioning() {
+                // Authored dive/get-up recovery owns the complete skeleton.
+                // Do not retain airborne feet or layer ordinary upright
+                // landing compression over its terrain-timed contact blend.
+                next.landing_compression = 0.0;
+                next.landing_recovery_metres_per_second = 0.0;
+            } else {
+                next.landing_compression = landing_compression_for_impact(
+                    locomotion_profile(skeleton),
+                    skeleton.landing_impact_speed,
+                );
+                next.landing_recovery_metres_per_second = next.landing_compression
+                    / locomotion_profile(skeleton).landing.recovery_seconds;
+            }
             next.landing_left_foot_target = None;
             next.landing_right_foot_target = None;
             next.landing_plant_owner_position = None;
@@ -451,6 +583,7 @@ pub(super) fn stabilize_locomotion_torso(
             );
         }
         if !skeleton.is_grounded()
+            || skeleton.is_posture_transitioning()
             || skeleton.action_kind() != SkeletonAction::None
             || next.landing_compression <= 0.001
         {
@@ -548,6 +681,7 @@ pub(super) fn apply_landing_leg_compression(
             continue;
         };
         if !skeleton.is_grounded()
+            || skeleton.is_posture_transitioning()
             || skeleton.action_kind() != SkeletonAction::None
             || height.landing_compression <= 0.001
         {
@@ -917,6 +1051,38 @@ mod legacy_tests {
         }
         assert_eq!(BoneRole::from_name("weapon"), None);
         assert_eq!(BoneRole::from_name("Cylinder"), None);
+    }
+
+    #[test]
+    fn raised_camera_look_is_shared_across_three_heavily_limited_joints() {
+        let look = CharacterLook {
+            yaw: std::f32::consts::FRAC_PI_2,
+            pitch: 1.2,
+        };
+        let per_joint = constrained_camera_look(&look, Quat::IDENTITY);
+        assert!(per_joint.x.abs() <= std::f32::consts::PI / 8.0 + 0.000_01);
+        assert!(per_joint.y.abs() <= std::f32::consts::PI / 8.0 + 0.000_01);
+        assert!(per_joint.x.abs() > 0.3);
+        assert!(per_joint.y.abs() > 0.3);
+    }
+
+    #[test]
+    fn camera_pitch_reaches_head_and_neck_only_while_guard_is_raised() {
+        let look = CharacterLook {
+            yaw: 0.0,
+            pitch: 0.6,
+        };
+        assert_eq!(
+            guarded_camera_look(&look, Quat::IDENTITY, WeaponGuardState::Lowered),
+            None
+        );
+        assert!(
+            guarded_camera_look(&look, Quat::IDENTITY, WeaponGuardState::Raised)
+                .unwrap()
+                .y
+                .abs()
+                > 0.1
+        );
     }
 
     #[test]
@@ -1636,6 +1802,19 @@ mod legacy_tests {
             .reject_from_normalized(solved.end_direction)
             .normalize();
         assert!(bend.dot(pole) > 0.0);
+    }
+
+    #[test]
+    fn standing_knee_yaw_constraint_preserves_downed_and_transition_poses() {
+        assert!(ik::anatomical_knee_yaw_posture_is_valid(
+            &SkeletonState::default()
+        ));
+        assert!(!ik::anatomical_knee_yaw_posture_is_valid(
+            &SkeletonState::default().with_body_state(BodyState::Prone)
+        ));
+        let mut transition = SkeletonState::default();
+        assert!(transition.begin_posture_transition(PostureTransitionKind::UprightToProne, 0, 10,));
+        assert!(!ik::anatomical_knee_yaw_posture_is_valid(&transition));
     }
 
     #[test]
