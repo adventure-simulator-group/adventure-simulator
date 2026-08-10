@@ -222,9 +222,12 @@ fn balance_damage(attacker, defender, attack_directness):
 Exhaustion represents how out of breath your character is. Most actions will not actually exhaust faster than it recuperates, but climbing, sprinting, and fighting with heavy weapons, shield, and armor can.
 In tactical combat it is transient, server-authoritative grey incapacitation.
 Measured planar movement at the sustainable jog speed neither adds nor removes
-exhaustion; faster movement adds it and slower movement recovers it.
+exhaustion; faster movement adds it and slower movement recovers it. Tactical
+breath changes use a 5x response scale so exertion and recovery resolve quickly
+enough to matter during a fight without changing any movement-speed thresholds.
 ```rs
 const BREATH_PER_METERS_PER_SECOND = 0.0034
+const TACTICAL_BREATH_RESPONSE_SCALE = 5.0
 
 # Sustainable jog speed is 1.8m/s at endurance 1, 2.0m/s at endurance 2,
 # and the elite-marathon average of 5.83m/s at endurance 5. Between those
@@ -237,8 +240,8 @@ fn sustainable_jog_speed(endurance):
 	return 1.8 + 4.03 * pow(t, 2.166)
  
 fn update_stamina(player):
-	player.breath_damage += dt * character.velocity * BREATH_PER_METERS_PER_SECOND
-	player.breath_damage -= dt * sustainable_jog_speed(character.endurance) * BREATH_PER_METERS_PER_SECOND
+	breath_delta = (character.velocity - sustainable_jog_speed(character.endurance)) * BREATH_PER_METERS_PER_SECOND
+	player.breath_damage += dt * breath_delta * TACTICAL_BREATH_RESPONSE_SCALE
 ```
 ### Pain (pink)
 [Injuries](../shared/health.md) are a source of constant pain. Pain is divided by will.

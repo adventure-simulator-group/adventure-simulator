@@ -32,6 +32,7 @@ pub enum MovementPace {
 
 pub const TACTICAL_WALK_SPEED_METRES_PER_SECOND: f32 = 1.4;
 pub const BREATH_PER_METRE_PER_SECOND: f32 = 0.0034;
+pub const TACTICAL_BREATH_RESPONSE_SCALE: f32 = 5.0;
 const REFERENCE_LEG_STRENGTH: f32 = 3.0;
 const REFERENCE_BURDEN_KG: f32 = 70.0;
 const MINIMUM_JOG_SPEED_METRES_PER_SECOND: f32 = 1.8;
@@ -87,7 +88,8 @@ pub fn tactical_exhaustion_change_per_second(planar_speed: f32, endurance: f32) 
     } else {
         0.0
     };
-    planar_speed * BREATH_PER_METRE_PER_SECOND - tactical_breath_recovery_per_second(endurance)
+    (planar_speed * BREATH_PER_METRE_PER_SECOND - tactical_breath_recovery_per_second(endurance))
+        * TACTICAL_BREATH_RESPONSE_SCALE
 }
 
 pub fn tactical_sprint_speed(
@@ -439,6 +441,14 @@ mod tests {
                 < f32::EPSILON
         );
         assert!(tactical_exhaustion_change_per_second(8.0, 3.0) > 0.0);
+        assert!(
+            (tactical_exhaustion_change_per_second(8.0, 3.0)
+                - (8.0 - tactical_jog_speed(3.0))
+                    * BREATH_PER_METRE_PER_SECOND
+                    * TACTICAL_BREATH_RESPONSE_SCALE)
+                .abs()
+                < f32::EPSILON
+        );
         assert!(
             tactical_exhaustion_change_per_second(tactical_jog_speed(3.0), 3.0).abs()
                 < f32::EPSILON
