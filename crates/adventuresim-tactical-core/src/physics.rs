@@ -30,13 +30,18 @@ pub enum MovementPace {
     Sprint,
 }
 
-pub const TACTICAL_WALK_SPEED_METRES_PER_SECOND: f32 = 2.0;
-pub const BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND: f32 = 0.0031875;
+pub const TACTICAL_WALK_SPEED_METRES_PER_SECOND: f32 = 1.4;
 pub const BREATH_PER_METRE_PER_SECOND: f32 = 0.0034;
 const REFERENCE_LEG_STRENGTH: f32 = 3.0;
 const REFERENCE_BURDEN_KG: f32 = 70.0;
+const MINIMUM_JOG_SPEED_METRES_PER_SECOND: f32 = 1.8;
+const ELITE_MARATHON_SPEED_METRES_PER_SECOND: f32 = 5.83;
+const JOG_ENDURANCE_CURVE_EXPONENT: f32 = 2.166;
+const REFERENCE_SPRINT_SPEED_METRES_PER_SECOND: f32 = 8.0;
+const ELITE_SPRINT_SPEED_METRES_PER_SECOND: f32 = 12.4;
 
-/// Maximum ordinary tactical movement speed, in metres per second.
+/// Authored ordinary-run reference speed and fallback for entities without
+/// character attributes, in metres per second.
 pub const TACTICAL_RUN_SPEED_METRES_PER_SECOND: f32 = 5.5;
 
 /// Maximum server-authoritative movement speed while the weapon guard is raised.
@@ -57,11 +62,21 @@ pub const TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED: f32 =
     TACTICAL_RUN_SPEED_METRES_PER_SECOND * TACTICAL_RUN_ACCELERATION_HZ;
 
 pub fn tactical_jog_speed(endurance: f32) -> f32 {
-    (endurance.max(0.0) * BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND / BREATH_PER_METRE_PER_SECOND)
-        .clamp(
-            TACTICAL_WALK_SPEED_METRES_PER_SECOND,
-            TACTICAL_RUN_SPEED_METRES_PER_SECOND,
-        )
+    let endurance = endurance.clamp(0.0, 5.0);
+    if endurance <= 1.0 {
+        let smooth_endurance = endurance * endurance * (3.0 - 2.0 * endurance);
+        return TACTICAL_WALK_SPEED_METRES_PER_SECOND
+            .lerp(MINIMUM_JOG_SPEED_METRES_PER_SECOND, smooth_endurance);
+    }
+
+    let normalized = (endurance - 1.0) / 4.0;
+    MINIMUM_JOG_SPEED_METRES_PER_SECOND
+        + (ELITE_MARATHON_SPEED_METRES_PER_SECOND - MINIMUM_JOG_SPEED_METRES_PER_SECOND)
+            * normalized.powf(JOG_ENDURANCE_CURVE_EXPONENT)
+}
+
+pub fn tactical_breath_recovery_per_second(endurance: f32) -> f32 {
+    tactical_jog_speed(endurance) * BREATH_PER_METRE_PER_SECOND
 }
 
 pub fn tactical_sprint_speed(
@@ -77,8 +92,13 @@ pub fn tactical_sprint_speed(
         .max(0.0);
     let strength_ratio = effective_strength / REFERENCE_LEG_STRENGTH;
     let burden_ratio = REFERENCE_BURDEN_KG / burden_kg.max(1.0);
-    (TACTICAL_RUN_SPEED_METRES_PER_SECOND * (strength_ratio * burden_ratio).sqrt())
-        .clamp(TACTICAL_WALK_SPEED_METRES_PER_SECOND, 8.0)
+    let strength_speed = (REFERENCE_SPRINT_SPEED_METRES_PER_SECOND
+        - TACTICAL_WALK_SPEED_METRES_PER_SECOND)
+        * strength_ratio;
+    (TACTICAL_WALK_SPEED_METRES_PER_SECOND + strength_speed * burden_ratio.sqrt()).clamp(
+        TACTICAL_WALK_SPEED_METRES_PER_SECOND,
+        ELITE_SPRINT_SPEED_METRES_PER_SECOND,
+    )
 }
 
 /// Builds the shared tactical controller instead of inheriting Ahoy's much
@@ -388,7 +408,25 @@ mod tests {
 
     #[test]
     fn character_paces_are_reference_normalized_and_guard_sprint_becomes_jog() {
-        assert!((tactical_jog_speed(4.0) - 3.75).abs() < 0.0001);
+        for (endurance, expected_speed) in [
+            (0.0, TACTICAL_WALK_SPEED_METRES_PER_SECOND),
+            (1.0, 1.8),
+            (2.0, 2.0),
+            (3.0, 2.70),
+            (4.0, 3.96),
+            (5.0, ELITE_MARATHON_SPEED_METRES_PER_SECOND),
+        ] {
+            assert!(
+                (tactical_jog_speed(endurance) - expected_speed).abs() < 0.015,
+                "endurance {endurance} should jog near {expected_speed} m/s"
+            );
+        }
+        assert!(
+            (tactical_breath_recovery_per_second(3.0)
+                - tactical_jog_speed(3.0) * BREATH_PER_METRE_PER_SECOND)
+                .abs()
+                < f32::EPSILON
+        );
         assert_eq!(
             tactical_sprint_speed(
                 REFERENCE_LEG_STRENGTH,
@@ -397,18 +435,31 @@ mod tests {
                 1.0,
                 REFERENCE_BURDEN_KG,
             ),
-            TACTICAL_RUN_SPEED_METRES_PER_SECOND
+            REFERENCE_SPRINT_SPEED_METRES_PER_SECOND
+        );
+        assert_eq!(
+            tactical_sprint_speed(5.0, 5.0, 1.0, 1.0, REFERENCE_BURDEN_KG),
+            ELITE_SPRINT_SPEED_METRES_PER_SECOND
         );
         assert_eq!(
             tactical_movement_speed_for_pace(
                 Some(Vec2::Y),
                 MovementPace::Sprint,
                 WeaponGuardState::Raised,
-                3.75,
+                3.96,
                 6.5,
             ),
-            3.75
+            3.96
         );
+    }
+
+    #[test]
+    fn sprint_speed_retains_injury_and_burden_penalties() {
+        let healthy = tactical_sprint_speed(3.0, 3.0, 1.0, 1.0, REFERENCE_BURDEN_KG);
+        let injured = tactical_sprint_speed(3.0, 3.0, 0.5, 0.5, REFERENCE_BURDEN_KG);
+        let burdened = tactical_sprint_speed(3.0, 3.0, 1.0, 1.0, REFERENCE_BURDEN_KG * 2.0);
+        assert!(injured < healthy);
+        assert!(burdened < healthy);
     }
 
     #[test]
