@@ -75,7 +75,10 @@ const EQUIPMENT_ICON_SLUGS: [&str; 56] = [
 ];
 
 fn icon_uv(slug: &str) -> egui::Rect {
-    let index = EQUIPMENT_ICON_SLUGS.binary_search(&slug).unwrap_or(0);
+    let index = EQUIPMENT_ICON_SLUGS
+        .iter()
+        .position(|candidate| *candidate == slug)
+        .unwrap_or(0);
     let column = (index % 8) as f32;
     let row = (index / 8) as f32;
     egui::Rect::from_min_max(
@@ -780,9 +783,7 @@ mod tests {
             .filter(|definition| definition.equipment.is_some())
         {
             assert!(
-                EQUIPMENT_ICON_SLUGS
-                    .binary_search(&definition.presentation.icon.as_str())
-                    .is_ok(),
+                EQUIPMENT_ICON_SLUGS.contains(&definition.presentation.icon.as_str()),
                 "missing tactical atlas icon {}",
                 definition.presentation.icon
             );
