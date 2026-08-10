@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "strategic-web")]
-#[command(about = "Strategic layer web server for Adventure Simulator")]
+#[command(about = "Strategic layer web server for Fabelgeist")]
 pub struct Config {
     /// SpacetimeDB host URL
     #[arg(

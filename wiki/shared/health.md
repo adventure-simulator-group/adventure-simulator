@@ -4,7 +4,7 @@ Durable post-mortem anatomy is a bounded strategic outcome rather than tactical
 tick state. See [Autopsies](../reference/autopsies.md) for custody,
 decomposition, permission, and medical skill boundaries.
 
-Adventure Simulator uses durable injuries, blood loss, disease, pain, and
+Fabelgeist uses durable injuries, blood loss, disease, pain, and
 recovery rather than a single rapidly refilling combat-health pool. The
 strategic/tactical split keeps that depth playable: immediate danger happens in
 combat, while treatment and long recovery can advance through strategic time.

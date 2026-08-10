@@ -1,4 +1,4 @@
-# Adventure Simulator agent guide
+# Fabelgeist agent guide
 
 ## Orientation
 

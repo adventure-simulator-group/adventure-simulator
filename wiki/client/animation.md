@@ -11,7 +11,7 @@ Ordinary idle, walk, and run instead evaluate complete runtime motions; the
 runtime does not plan their steps or synthesize their swing trajectories.
 
 The system takes heavy inspiration from Wolfire Games' *Overgrowth*, while
-keeping Adventure Simulator's gameplay authority separate from client-side
+keeping Fabelgeist's gameplay authority separate from client-side
 presentation. The useful model to borrow is its layered pipeline: script-level
 state selects animations and blend coordinates; synchronized animation groups
 share a normalized phase; the animation client performs blending, layers,
@@ -177,7 +177,7 @@ crossfade remains the sole transition smoothing.
 The pinned dependency supplies generic semantic anchor nodes, 1D and 2D sparse
 blend spaces, nested reusable graphs, bone-masked linear layers,
 additive/difference layers, semantic mirroring, marker synchronization, and
-presentation-only transitions/inertialization. Adventure Simulator's initial
+presentation-only transitions/inertialization. Fabelgeist's initial
 bridge intentionally uses only the smallest subset: a registered custom sparse
 semantic blend node, a fixed dependency pose-blend chain, and dependency pose
 evaluation for ordinary locomotion and raised guard/attack. Existing code

@@ -42,7 +42,7 @@ const TERRAIN_SIZE: usize = 100;
 
 #[derive(Parser, Debug, Clone, Resource)]
 #[command(name = "adventuresim-tactical-server")]
-#[command(about = "Tactical mission server for Adventure Simulator")]
+#[command(about = "Tactical mission server for Fabelgeist")]
 struct Args {
     #[arg(long, default_value = "127.0.0.1:6000")]
     addr: SocketAddr,

@@ -8,7 +8,7 @@ use bevy_animation_graph::core::{
 };
 
 /// Non-trivially composes two sparse semantic poses inside the dependency
-/// runtime. Adventure Simulator supplies normalized factors; the graph-returned
+/// runtime. Fabelgeist supplies normalized factors; the graph-returned
 /// pose is decoded into the authored FK sample weights.
 #[derive(Reflect, Clone, Debug, Default)]
 #[reflect(Default, NodeLike)]
@@ -24,7 +24,7 @@ impl SparseSemanticBlendNode {
 
 impl NodeLike for SparseSemanticBlendNode {
     fn display_name(&self) -> String {
-        "Adventure Simulator sparse semantic blend".into()
+        "Fabelgeist sparse semantic blend".into()
     }
 
     fn update(&self, mut ctx: NodeContext) -> Result<(), GraphError> {

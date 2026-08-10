@@ -1,4 +1,4 @@
-//! Adventure Simulator - WASM Tactical Client
+//! Fabelgeist - WASM Tactical Client
 //!
 //! A Bevy-based 3D game client that runs in the browser (WASM).
 //! Features:
@@ -148,7 +148,7 @@ fn run(args: Args) {
     );
     let default_plugins = DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
-            title: "Adventure Simulator - Tactical".into(),
+            title: "Fabelgeist - Tactical".into(),
             canvas: Some("#game-canvas".into()),
             fit_canvas_to_parent: true,
             prevent_default_event_handling: true,

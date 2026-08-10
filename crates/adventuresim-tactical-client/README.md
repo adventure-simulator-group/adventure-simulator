@@ -1,4 +1,4 @@
-# Adventure Simulator tactical client
+# Fabelgeist tactical client
 
 The tactical client renders transient server-authoritative combat state with
 Bevy. Skeletal animation is presentation-only: the server replicates compact
@@ -89,7 +89,7 @@ queries the same centralized sparse-blend graph assets used by gameplay for a
 representative ordinary stride and right-lead attack before opening the upstream editor.
 Missing optional catalog motions are warnings; an invalid anchor or a missing
 motion required by either deterministic route is fatal; graph asset, schema, or
-query failure is also fatal. It registers Adventure Simulator's sparse semantic
+query failure is also fatal. It registers Fabelgeist's sparse semantic
 blend node. The preview recipe uses
 the real deterministic gameplay viewer and its `manifest.json`/`failure.txt`
 gates; editor clip preview is useful for authoring but is not acceptance

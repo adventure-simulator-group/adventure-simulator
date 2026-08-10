@@ -185,7 +185,7 @@ pub fn item_display_name(item_id: &str) -> String {
 pub fn item_source_edit_url(item_id: &str) -> Option<String> {
     let source = adventuresim_core::item_catalog::source_for_item(item_id)?;
     adventuresim_dialogue::github_edit_url_for_location(
-        "adventure-simulator-group/adventure-simulator",
+        "adventure-simulator-group/fabelgeist",
         option_env!("ADVENTURESIM_SOURCE_REF").unwrap_or("main"),
         &source.file,
         source.line,
@@ -624,11 +624,7 @@ mod icon_tests {
     #[test]
     fn item_source_links_use_the_compiled_location_and_configured_ref() {
         let url = item_source_edit_url("arming_sword").unwrap();
-        assert!(
-            url.starts_with(
-                "https://github.com/adventure-simulator-group/adventure-simulator/edit/"
-            )
-        );
+        assert!(url.starts_with("https://github.com/adventure-simulator-group/fabelgeist/edit/"));
         assert!(url.contains("/content/items/catalog.yaml#L"));
         assert_eq!(item_source_edit_url("modded_item"), None);
     }
