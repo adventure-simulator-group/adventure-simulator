@@ -35,6 +35,16 @@ pub enum GroundedPosture {
     Crouched,
 }
 
+/// Presentation-only anticipation for a release-triggered jump. This is kept
+/// separate from `GroundedPosture::Crouched`: charging a jump must not select
+/// crouched locomotion or change the authoritative movement speed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum JumpAnticipation {
+    #[default]
+    Inactive,
+    Charging,
+}
+
 impl BodyState {
     pub fn is_grounded(self) -> bool {
         matches!(self, Self::Grounded(_))
@@ -52,6 +62,10 @@ impl BodyState {
 
     pub fn is_downed(self) -> bool {
         matches!(self, Self::Prone | Self::Supine | Self::Ragdolled)
+    }
+
+    pub fn is_surface_supported(self) -> bool {
+        matches!(self, Self::Grounded(_) | Self::Prone | Self::Supine)
     }
 }
 
@@ -208,6 +222,212 @@ pub enum SkeletonAction {
     Dodge,
     Attack,
     Block,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+pub enum RollDirection {
+    #[default]
+    Left,
+    Right,
+}
+
+impl RollDirection {
+    pub fn opposite(self) -> Self {
+        match self {
+            Self::Left => Self::Right,
+            Self::Right => Self::Left,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Reflect)]
+pub enum DiveDirection {
+    #[default]
+    Forward,
+    Backward,
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PostureTransitionKind {
+    UprightToProne,
+    ProneToUpright,
+    ProneToSupine { direction: RollDirection },
+    SupineToProne { direction: RollDirection },
+    SupineToUpright,
+    DiveToDowned { direction: DiveDirection },
+}
+
+impl PostureTransitionKind {
+    fn accepts(self, body: BodyState) -> bool {
+        match self {
+            Self::UprightToProne | Self::DiveToDowned { .. } => {
+                matches!(body, BodyState::Grounded(_))
+            }
+            Self::ProneToUpright | Self::ProneToSupine { .. } => body == BodyState::Prone,
+            Self::SupineToProne { .. } | Self::SupineToUpright => body == BodyState::Supine,
+        }
+    }
+
+    fn target(self) -> BodyState {
+        match self {
+            Self::UprightToProne | Self::SupineToProne { .. } => BodyState::Prone,
+            Self::DiveToDowned {
+                direction: DiveDirection::Backward,
+            } => BodyState::Supine,
+            Self::DiveToDowned { .. } => BodyState::Prone,
+            Self::ProneToSupine { .. } => BodyState::Supine,
+            Self::ProneToUpright | Self::SupineToUpright => {
+                BodyState::Grounded(GroundedPosture::Upright)
+            }
+        }
+    }
+}
+
+/// Continuous camera-driven roll around a downed character's head-to-feet
+/// axis. Whole values are contact poses (even = prone, odd = supine); halfway
+/// values are the two authored side-supported poses. Values are intentionally
+/// unwrapped so crossing the rear-camera seam does not reverse the roll.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct DownedFacingState {
+    half_turns: f32,
+    lateral_motion: f32,
+}
+
+impl DownedFacingState {
+    fn normalized(mut self) -> Self {
+        self.half_turns = if self.half_turns.is_finite() {
+            self.half_turns
+        } else {
+            0.0
+        };
+        self.lateral_motion = if self.lateral_motion.is_finite() {
+            self.lateral_motion.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
+        self
+    }
+
+    pub fn half_turns(self) -> f32 {
+        self.half_turns
+    }
+
+    pub fn lateral_motion(self) -> f32 {
+        self.lateral_motion
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PostureTransitionState {
+    kind: PostureTransitionKind,
+    start_tick: u64,
+    duration_ticks: u64,
+    phase: f32,
+    dive_was_airborne: bool,
+    dive_landing_tick: Option<u64>,
+}
+
+impl PostureTransitionState {
+    fn new(kind: PostureTransitionKind, start_tick: u64, duration_ticks: u64) -> Self {
+        Self {
+            kind,
+            start_tick,
+            duration_ticks: duration_ticks.max(1),
+            phase: 0.0,
+            dive_was_airborne: false,
+            dive_landing_tick: None,
+        }
+    }
+
+    fn normalized(mut self) -> Self {
+        self.duration_ticks = self.duration_ticks.max(1);
+        self.phase = if self.phase.is_finite() {
+            self.phase.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        self
+    }
+
+    pub fn kind(self) -> PostureTransitionKind {
+        self.kind
+    }
+
+    pub fn phase(self) -> f32 {
+        self.phase
+    }
+
+    /// Returns the authored dive recovery progress after terrain contact.
+    /// The first half of a dive is duck-to-airborne and remains fixed at its
+    /// airborne endpoint until impact; only the second half transfers the
+    /// directional pose into its canonical downed contact pose.
+    pub fn dive_recovery(self) -> Option<(DiveDirection, f32)> {
+        let PostureTransitionKind::DiveToDowned { direction } = self.kind else {
+            return None;
+        };
+        Some((direction, ((self.phase - 0.5) * 2.0).clamp(0.0, 1.0)))
+    }
+}
+
+/// Incremental root-yaw handoff that cancels the authored dive pose's return
+/// to canonical forward during landing recovery. Applying this after each
+/// posture-transition advance keeps the character's world-space head-to-feet
+/// direction fixed from contact through the final downed pose.
+pub fn dive_landing_facing_delta(
+    previous: Option<PostureTransitionState>,
+    current: Option<PostureTransitionState>,
+) -> Quat {
+    let Some((direction, previous_progress)) =
+        previous.and_then(PostureTransitionState::dive_recovery)
+    else {
+        return Quat::IDENTITY;
+    };
+    let current_progress = current
+        .and_then(PostureTransitionState::dive_recovery)
+        .filter(|(current_direction, _)| *current_direction == direction)
+        .map_or(1.0, |(_, progress)| progress);
+    let total_yaw = match direction {
+        DiveDirection::Forward => 0.0,
+        // The authored backward-dive-to-supine span resolves its ambiguous
+        // half turn through positive yaw. Transfer the root through the
+        // equivalent negative branch so the two rotations cancel instead of
+        // composing into a visible full flip.
+        DiveDirection::Backward => -std::f32::consts::PI,
+        DiveDirection::Left => std::f32::consts::FRAC_PI_2,
+        DiveDirection::Right => -std::f32::consts::FRAC_PI_2,
+    };
+    Quat::from_rotation_y(total_yaw * (current_progress - previous_progress).clamp(0.0, 1.0))
+}
+
+/// Returns the incremental root counter-yaw for a supine get-up.
+///
+/// Supine contact poses use the head-facing orientation required by the
+/// continuous prone/supine roll coordinate. Interpolating that convention
+/// into canonical upright poses therefore contains an implicit positive-pi
+/// turn during the midpoint-to-upright half of the transition. Applying the
+/// equivalent negative root turn only during that same half cancels the turn
+/// in world space while leaving the root in the correct upright orientation at
+/// the endpoint. No other posture transition receives this correction.
+pub fn supine_get_up_counter_yaw_delta(
+    previous: Option<PostureTransitionState>,
+    current: Option<PostureTransitionState>,
+) -> Quat {
+    let Some(previous) =
+        previous.filter(|transition| transition.kind() == PostureTransitionKind::SupineToUpright)
+    else {
+        return Quat::IDENTITY;
+    };
+    let previous_progress = ((previous.phase() - 0.5) * 2.0).clamp(0.0, 1.0);
+    let current_progress = current
+        .filter(|transition| transition.kind() == PostureTransitionKind::SupineToUpright)
+        .map_or(1.0, |transition| {
+            ((transition.phase() - 0.5) * 2.0).clamp(0.0, 1.0)
+        });
+    Quat::from_rotation_y(
+        -std::f32::consts::PI * (current_progress - previous_progress).clamp(0.0, 1.0),
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -531,6 +751,7 @@ pub enum AttackLine {
 #[derive(Component, Debug, Clone, PartialEq, Serialize)]
 pub struct SkeletonState {
     body: BodyState,
+    jump_anticipation: JumpAnticipation,
     pub local_velocity: Vec3,
     pub world_velocity: Vec3,
     pub gait_phase: f32,
@@ -544,12 +765,16 @@ pub struct SkeletonState {
     guarded_sprint_locomotion: bool,
     stance: StanceState,
     action: ActionState,
+    posture_transition: Option<PostureTransitionState>,
+    downed_facing: Option<DownedFacingState>,
+    downed_turning: bool,
     pub animation_pack: String,
 }
 
 #[derive(Deserialize)]
 struct SkeletonStateWire {
     body: BodyState,
+    jump_anticipation: JumpAnticipation,
     local_velocity: Vec3,
     world_velocity: Vec3,
     gait_phase: f32,
@@ -563,6 +788,9 @@ struct SkeletonStateWire {
     guarded_sprint_locomotion: bool,
     stance: StanceState,
     action: ActionState,
+    posture_transition: Option<PostureTransitionState>,
+    downed_facing: Option<DownedFacingState>,
+    downed_turning: bool,
     animation_pack: String,
 }
 
@@ -575,6 +803,7 @@ impl<'de> Deserialize<'de> for SkeletonState {
         let finite = |value: Vec3| value.is_finite().then_some(value).unwrap_or(Vec3::ZERO);
         let mut state = Self {
             body: BodyState::default(),
+            jump_anticipation: JumpAnticipation::Inactive,
             local_velocity: finite(wire.local_velocity),
             world_velocity: finite(wire.world_velocity),
             gait_phase: if wire.gait_phase.is_finite() {
@@ -596,9 +825,15 @@ impl<'de> Deserialize<'de> for SkeletonState {
             guarded_sprint_locomotion: wire.guarded_sprint_locomotion,
             stance: wire.stance,
             action: wire.action,
+            posture_transition: wire
+                .posture_transition
+                .map(PostureTransitionState::normalized),
+            downed_facing: wire.downed_facing.map(DownedFacingState::normalized),
+            downed_turning: wire.downed_turning,
             animation_pack: wire.animation_pack,
         };
         state.transition_body(wire.body);
+        state.set_jump_anticipation(wire.jump_anticipation == JumpAnticipation::Charging);
         state.set_guarded_sprint_locomotion(wire.guarded_sprint_locomotion);
         Ok(state)
     }
@@ -608,6 +843,7 @@ impl Default for SkeletonState {
     fn default() -> Self {
         Self {
             body: BodyState::default(),
+            jump_anticipation: JumpAnticipation::Inactive,
             local_velocity: Vec3::ZERO,
             world_velocity: Vec3::ZERO,
             gait_phase: 0.0,
@@ -621,6 +857,9 @@ impl Default for SkeletonState {
             guarded_sprint_locomotion: false,
             stance: StanceState::Lowered,
             action: ActionState::default(),
+            posture_transition: None,
+            downed_facing: None,
+            downed_turning: false,
             animation_pack: "humanoid_unarmed".to_owned(),
         }
     }
@@ -632,7 +871,9 @@ pub fn set_weapon_guard(skeleton: &mut SkeletonState, weapon_guard: WeaponGuardS
     match (skeleton.stance, weapon_guard) {
         (StanceState::Lowered, WeaponGuardState::Lowered)
         | (StanceState::Raised { .. }, WeaponGuardState::Raised) => {}
-        (StanceState::Lowered, WeaponGuardState::Raised) if !skeleton.body.is_downed() => {
+        (StanceState::Lowered, WeaponGuardState::Raised)
+            if !skeleton.body.is_downed() && skeleton.posture_transition.is_none() =>
+        {
             skeleton.gait_phase = 0.0;
             skeleton.stance = StanceState::Raised {
                 locomotion: RaisedLocomotionIntent::default(),
@@ -695,6 +936,13 @@ impl SkeletonState {
     pub fn transition_body(&mut self, body: BodyState) {
         self.body = body;
         if body != BodyState::Grounded(GroundedPosture::Upright) {
+            self.jump_anticipation = JumpAnticipation::Inactive;
+        }
+        if !body.is_downed() {
+            self.downed_facing = None;
+            self.downed_turning = false;
+        }
+        if body != BodyState::Grounded(GroundedPosture::Upright) {
             self.guarded_sprint_locomotion = false;
         }
         if body.is_downed() {
@@ -756,8 +1004,216 @@ impl SkeletonState {
     pub fn posture(&self) -> Posture {
         self.body.posture()
     }
+    pub fn jump_anticipation(&self) -> JumpAnticipation {
+        self.jump_anticipation
+    }
+    pub fn set_jump_anticipation(&mut self, charging: bool) {
+        self.jump_anticipation = if charging
+            && self.body == BodyState::Grounded(GroundedPosture::Upright)
+            && self.posture_transition.is_none()
+        {
+            JumpAnticipation::Charging
+        } else {
+            JumpAnticipation::Inactive
+        };
+    }
+    pub fn posture_transition(&self) -> Option<PostureTransitionState> {
+        self.posture_transition
+    }
+    pub fn downed_facing(&self) -> Option<DownedFacingState> {
+        self.downed_facing
+    }
+    pub fn downed_turning(&self) -> bool {
+        self.downed_turning && self.body.is_downed() && self.posture_transition.is_none()
+    }
+    pub fn set_downed_turning(&mut self, turning: bool) {
+        self.downed_turning = turning && self.body.is_downed() && self.posture_transition.is_none();
+    }
+    pub fn downed_lateral_motion(&self) -> f32 {
+        if let Some(transition) = self.posture_transition {
+            return match transition.kind {
+                PostureTransitionKind::ProneToSupine { direction }
+                | PostureTransitionKind::SupineToProne { direction } => match direction {
+                    RollDirection::Left => -1.0,
+                    RollDirection::Right => 1.0,
+                },
+                _ => 0.0,
+            };
+        }
+        self.downed_facing
+            .map(DownedFacingState::lateral_motion)
+            .unwrap_or(0.0)
+    }
+    pub fn begin_posture_transition(
+        &mut self,
+        kind: PostureTransitionKind,
+        start_tick: u64,
+        duration_ticks: u64,
+    ) -> bool {
+        if self.posture_transition.is_some() || !kind.accepts(self.body) {
+            return false;
+        }
+        self.stance = StanceState::Lowered;
+        self.jump_anticipation = JumpAnticipation::Inactive;
+        self.guarded_sprint_locomotion = false;
+        self.action = ActionState::default();
+        self.downed_facing = None;
+        self.downed_turning = false;
+        self.posture_transition = Some(PostureTransitionState::new(
+            kind,
+            start_tick,
+            duration_ticks,
+        ));
+        true
+    }
+    pub fn advance_posture_transition(&mut self, current_tick: u64) {
+        let Some(mut transition) = self.posture_transition else {
+            return;
+        };
+        let elapsed = current_tick.saturating_sub(transition.start_tick);
+        if matches!(transition.kind, PostureTransitionKind::DiveToDowned { .. }) {
+            if !self.body.is_surface_supported() {
+                transition.dive_was_airborne = true;
+                transition.phase = 0.5;
+                self.posture_transition = Some(transition);
+                return;
+            }
+            if transition.dive_was_airborne {
+                let landing_tick = *transition.dive_landing_tick.get_or_insert(current_tick);
+                let recovery_elapsed = current_tick.saturating_sub(landing_tick);
+                if recovery_elapsed >= transition.duration_ticks {
+                    self.finish_posture_transition(transition.kind);
+                    return;
+                }
+                transition.phase =
+                    0.5 + 0.5 * recovery_elapsed as f32 / transition.duration_ticks as f32;
+                self.posture_transition = Some(transition);
+                return;
+            }
+            if elapsed >= transition.duration_ticks {
+                self.finish_posture_transition(transition.kind);
+                return;
+            }
+            transition.phase = 0.5 * elapsed as f32 / transition.duration_ticks as f32;
+            self.posture_transition = Some(transition);
+            return;
+        }
+        if elapsed >= transition.duration_ticks {
+            self.posture_transition = None;
+            self.transition_body(transition.kind.target());
+            return;
+        }
+        transition.phase = elapsed as f32 / transition.duration_ticks as f32;
+        self.posture_transition = Some(transition);
+    }
+    fn finish_posture_transition(&mut self, kind: PostureTransitionKind) {
+        self.posture_transition = None;
+        self.transition_body(kind.target());
+        // A lateral dive's recovery already ends at the matching authored
+        // side-supported roll pose. Seed the continuous roll coordinate at
+        // that exact midpoint so camera-following can continue from it rather
+        // than briefly returning through prone idle. Without held aim, the
+        // ordinary downed-facing update settles this midpoint back to prone.
+        self.downed_facing = match kind {
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Left,
+            } => Some(DownedFacingState {
+                half_turns: -0.5,
+                lateral_motion: 0.0,
+            }),
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Right,
+            } => Some(DownedFacingState {
+                half_turns: 0.5,
+                lateral_motion: 0.0,
+            }),
+            _ => None,
+        };
+    }
+    pub fn is_posture_transitioning(&self) -> bool {
+        self.posture_transition.is_some()
+    }
+    /// Follows or settles the continuous downed roll. While aim is held the
+    /// target comes from camera yaw; after release it is the nearest whole
+    /// contact pose. Returns true while the camera-driven state remains active.
+    pub fn advance_downed_facing(
+        &mut self,
+        camera_target_half_turns: f32,
+        aim_held: bool,
+        maximum_step: f32,
+    ) -> bool {
+        if !self.body.is_downed() || self.posture_transition.is_some() {
+            self.downed_facing = None;
+            return false;
+        }
+        let camera_target = if camera_target_half_turns.is_finite() {
+            camera_target_half_turns
+        } else {
+            0.0
+        };
+        let initial = match self.body {
+            BodyState::Prone => (camera_target / 2.0).round() * 2.0,
+            BodyState::Supine => ((camera_target - 1.0) / 2.0).round() * 2.0 + 1.0,
+            _ => unreachable!("downed body checked above"),
+        };
+        let current = self
+            .downed_facing
+            .map(DownedFacingState::half_turns)
+            .unwrap_or(initial);
+        let target = if aim_held {
+            camera_target + ((current - camera_target) / 2.0).round() * 2.0
+        } else {
+            let lower = current.floor();
+            let fraction = current - lower;
+            if (fraction - 0.5).abs() <= 1.0e-4 {
+                let lower_matches_body = match self.body {
+                    BodyState::Prone => (lower as i64).rem_euclid(2) == 0,
+                    BodyState::Supine => (lower as i64).rem_euclid(2) != 0,
+                    _ => unreachable!("downed body checked above"),
+                };
+                if lower_matches_body {
+                    lower
+                } else {
+                    lower + 1.0
+                }
+            } else {
+                current.round()
+            }
+        };
+        let step = if maximum_step.is_finite() {
+            maximum_step.max(0.0)
+        } else {
+            0.0
+        };
+        let next = current + (target - current).clamp(-step, step);
+        self.downed_facing = Some(DownedFacingState {
+            half_turns: next,
+            lateral_motion: if (next - current).abs() > 1.0e-5 {
+                (next - current).signum()
+            } else {
+                0.0
+            },
+        });
+
+        if (next - next.round()).abs() <= 1.0e-4 {
+            let contact = next.round() as i64;
+            self.transition_body(if contact.rem_euclid(2) == 0 {
+                BodyState::Prone
+            } else {
+                BodyState::Supine
+            });
+            if !aim_held {
+                self.downed_facing = None;
+                return false;
+            }
+        }
+        true
+    }
     pub fn is_grounded(&self) -> bool {
         self.body.is_grounded()
+    }
+    pub fn is_surface_supported(&self) -> bool {
+        self.body.is_surface_supported()
     }
     pub fn action(&self) -> ActionState {
         self.action
@@ -855,14 +1311,19 @@ impl SkeletonState {
     }
 
     pub fn animation_speed(&self) -> f32 {
-        self.animation_local_velocity().xz().length()
+        let physical = self.animation_local_velocity().xz().length();
+        if self.downed_turning() {
+            physical.max(0.8)
+        } else {
+            physical
+        }
     }
 
     /// Replaces the current action. This deliberately preserves the existing
     /// last-writer-wins compatibility policy until gameplay defines rejection
     /// or cancellation rules between actions.
     fn replace_action(&mut self, action: ActionState) {
-        self.action = if self.body.is_downed() {
+        self.action = if self.body.is_downed() || self.posture_transition.is_some() {
             ActionState::default()
         } else {
             action
@@ -991,6 +1452,8 @@ pub struct SkeletonLocomotionInput {
 
 /// Maximum server-authoritative body turn speed during ordinary locomotion.
 pub const BODY_TURN_SPEED_RADIANS: f32 = std::f32::consts::PI / 0.25;
+/// Deliberate head-direction alignment speed while prone or supine.
+pub const DOWNED_TURN_SPEED_RADIANS: f32 = std::f32::consts::FRAC_PI_2;
 
 /// Returns the controller's yaw without allowing camera pitch or roll to tilt
 /// planar locomotion into or out of the ground plane.
@@ -1040,9 +1503,44 @@ pub fn advance_body_facing(
     Quat::from_rotation_y(current_yaw + delta.clamp(-maximum, maximum))
 }
 
+/// Rotates a downed body's fixed head direction toward camera yaw only while
+/// the caller keeps the alignment modifier held.
+pub fn advance_downed_body_facing(
+    current: Quat,
+    controller_orientation: Quat,
+    delta_seconds: f32,
+) -> Quat {
+    let current_yaw = body_yaw(current);
+    let desired_forward = controller_yaw(controller_orientation) * Vec3::NEG_Z;
+    let desired_yaw = desired_forward.x.atan2(desired_forward.z);
+    let mut delta = (desired_yaw - current_yaw + std::f32::consts::PI)
+        .rem_euclid(std::f32::consts::TAU)
+        - std::f32::consts::PI;
+    if (delta + std::f32::consts::PI).abs() <= 1.0e-5 {
+        delta = std::f32::consts::PI;
+    }
+    let maximum = (DOWNED_TURN_SPEED_RADIANS * delta_seconds.max(0.0)).min(std::f32::consts::PI);
+    Quat::from_rotation_y(current_yaw + delta.clamp(-maximum, maximum))
+}
+
 fn body_yaw(rotation: Quat) -> f32 {
     let forward = rotation * Vec3::Z;
     forward.x.atan2(forward.z)
+}
+
+/// Converts camera yaw into the continuous downed-roll coordinate relative to
+/// the body's fixed head direction. A quarter turn is the half-roll pose and a
+/// half turn is the opposite contact pose.
+pub fn downed_camera_roll_target(body_rotation: Quat, controller_orientation: Quat) -> f32 {
+    let body = body_yaw(body_rotation);
+    let camera_forward = controller_yaw(controller_orientation) * Vec3::NEG_Z;
+    let camera = camera_forward.x.atan2(camera_forward.z);
+    let mut delta = (camera - body + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
+        - std::f32::consts::PI;
+    if (delta + std::f32::consts::PI).abs() <= 1.0e-5 {
+        delta = std::f32::consts::PI;
+    }
+    delta / std::f32::consts::PI
 }
 
 /// Projects controller motion into the compact replicated animation state.
@@ -1063,7 +1561,7 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
         0.0
     };
     let previous_world_velocity = skeleton.world_velocity;
-    let was_grounded = skeleton.is_grounded();
+    let was_supported = skeleton.body.is_surface_supported();
     let previous_guard_sequence = skeleton.raised_locomotion().step_sequence();
     let previous_guard_swing = skeleton.raised_locomotion().swing_foot();
     let local_velocity = controller_yaw(input.orientation).inverse() * linear_velocity;
@@ -1077,21 +1575,31 @@ pub fn project_skeleton_locomotion(skeleton: &mut SkeletonState, input: Skeleton
     skeleton.local_velocity = local_velocity;
     skeleton.world_velocity = linear_velocity;
     skeleton.locomotion_sample_tick = input.tick;
-    if !was_grounded && input.grounded {
+    if !was_supported && input.grounded {
         skeleton.landing_sequence = skeleton.landing_sequence.wrapping_add(1);
         skeleton.landing_impact_speed = (-previous_world_velocity.y).max(0.0);
     }
     skeleton.transition_body(if input.grounded {
-        if input.crouching {
-            BodyState::Grounded(GroundedPosture::Crouched)
-        } else {
-            BodyState::Grounded(GroundedPosture::Upright)
+        match skeleton.body {
+            BodyState::Prone | BodyState::Supine => skeleton.body,
+            _ if input.crouching => BodyState::Grounded(GroundedPosture::Crouched),
+            _ => BodyState::Grounded(GroundedPosture::Upright),
         }
     } else {
         BodyState::Airborne
     });
 
-    let ground_speed = physical_speed;
+    let ground_speed = if skeleton.downed_turning() {
+        // Turning in place has no physical velocity, but its crawl/scamper
+        // cycle should run at twice the former synthetic cadence.
+        physical_speed.max(0.8) * 2.0
+    } else if skeleton.body.is_downed() {
+        // Downed movement caps are tripled while authored cadence is only
+        // doubled, so drive phase from two thirds of physical speed.
+        physical_speed * (2.0 / 3.0)
+    } else {
+        physical_speed
+    };
     let attack_active = skeleton.action_kind() == SkeletonAction::Attack;
     if skeleton.weapon_guard() == WeaponGuardState::Raised
         && skeleton.posture() == Posture::Upright

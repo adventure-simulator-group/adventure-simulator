@@ -19,12 +19,23 @@ pub(super) use solver::*;
 /// choose different targets and foot rotations, but no later presentation
 /// stage may leave a rendered knee outside the foot-facing anatomical cone.
 pub(in crate::animation) fn enforce_anatomical_knee_yaw(
+    owners: Query<&PresentedSkeleton>,
     rigs: Query<(Entity, &HumanoidRig)>,
     parents: Query<&ChildOf>,
     mut states: Query<&mut LegIkState>,
     mut transforms: ParamSet<(TransformHelper, Query<&mut Transform>)>,
 ) {
     for (owner, rig) in &rigs {
+        let Ok(skeleton) = owners.get(owner) else {
+            continue;
+        };
+        // Downed and posture-transition poses deliberately use knee bend
+        // planes that need not follow a standing foot-facing cone. Preserve
+        // their authored thigh/shin relationship exactly; terrain IK already
+        // rejects these postures independently.
+        if !anatomical_knee_yaw_posture_is_valid(skeleton) {
+            continue;
+        }
         let mut final_offsets = [0.0; 2];
         let (rig_origin, rig_rotation) = rig
             .rig_scene()
@@ -121,6 +132,10 @@ pub(in crate::animation) fn enforce_anatomical_knee_yaw(
             state.0.right_knee_foot_yaw_offset_degrees = final_offsets[1];
         }
     }
+}
+
+pub(super) fn anatomical_knee_yaw_posture_is_valid(skeleton: &SkeletonState) -> bool {
+    !skeleton.body().is_downed() && !skeleton.is_posture_transitioning()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -4698,6 +4713,7 @@ pub(super) fn raised_footwork_posture_is_valid(skeleton: &SkeletonState) -> bool
 
 pub(super) fn terrain_ik_posture_is_valid(skeleton: &SkeletonState) -> bool {
     skeleton.is_grounded()
+        && !skeleton.is_posture_transitioning()
         && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
         && matches!(
             skeleton.action_kind(),

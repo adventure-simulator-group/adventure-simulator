@@ -518,6 +518,62 @@ mod legacy_tests {
     }
 
     #[test]
+    fn camera_yaw_maps_quarter_and_half_turns_to_downed_roll() {
+        let body = Quat::IDENTITY;
+        let same_heading = Quat::from_rotation_y(std::f32::consts::PI);
+        let side_heading = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
+        assert!(downed_camera_roll_target(body, same_heading).abs() < 0.0001);
+        assert!(
+            (downed_camera_roll_target(body, side_heading).abs() - 0.5).abs() < 0.0001
+        );
+        assert!((downed_camera_roll_target(body, Quat::IDENTITY) - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn lateral_dive_lands_at_its_half_roll_without_crossing_prone_idle() {
+        for (direction, expected_half_turns, expected_pose) in [
+            (
+                DiveDirection::Left,
+                -0.5,
+                SemanticPose::ProneSupineRollLeft,
+            ),
+            (
+                DiveDirection::Right,
+                0.5,
+                SemanticPose::ProneSupineRollRight,
+            ),
+        ] {
+            let mut state = SkeletonState::default();
+            assert!(state.begin_posture_transition(
+                PostureTransitionKind::DiveToDowned { direction },
+                0,
+                10,
+            ));
+            state.transition_body(BodyState::Airborne);
+            state.advance_posture_transition(1);
+            state.transition_body(BodyState::Grounded(GroundedPosture::Upright));
+            state.advance_posture_transition(2);
+            state.advance_posture_transition(12);
+
+            assert_eq!(state.body(), BodyState::Prone);
+            assert_eq!(
+                state.downed_facing().map(DownedFacingState::half_turns),
+                Some(expected_half_turns)
+            );
+            let evaluation = AnimationEvaluation::from_skeleton(&state);
+            assert_eq!(evaluation.action[0].pose, expected_pose);
+        }
+    }
+
+    #[test]
+    fn downed_camera_alignment_turns_slowly_and_stops_at_the_observed_step() {
+        let first = advance_downed_body_facing(Quat::IDENTITY, Quat::IDENTITY, 0.5);
+        assert!((Quat::IDENTITY.angle_between(first) - std::f32::consts::FRAC_PI_4).abs() < 0.0001);
+        let unchanged_without_another_step = first;
+        assert_eq!(first, unchanged_without_another_step);
+    }
+
+    #[test]
     fn guard_faces_look_while_locomotion_faces_world_velocity() {
         let look = Quat::from_rotation_y(0.8);
         let guard = advance_body_facing(
@@ -1224,5 +1280,20 @@ mod legacy_tests {
         assert_eq!(state.action_phase(), 1.0);
         state.advance_action(31);
         assert_eq!(state.action(), ActionState::default());
+    }
+
+    #[test]
+    fn jump_anticipation_is_upright_presentation_not_crouched_posture() {
+        let mut state = SkeletonState::default();
+        state.set_jump_anticipation(true);
+        assert_eq!(state.jump_anticipation(), JumpAnticipation::Charging);
+        assert_eq!(
+            state.body(),
+            BodyState::Grounded(GroundedPosture::Upright)
+        );
+        assert_eq!(state.posture(), Posture::Upright);
+
+        state.transition_body(BodyState::Airborne);
+        assert_eq!(state.jump_anticipation(), JumpAnticipation::Inactive);
     }
 }

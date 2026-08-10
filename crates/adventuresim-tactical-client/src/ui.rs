@@ -198,7 +198,7 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
             (
                 Name::new("controls"),
                 Text::new(
-                    "WASD to move | Space to jump | Mouse to look around | F9 to toggle camera\n",
+                    "WASD to move | Space to jump | Release Ctrl: prone/get up | Prone: Space + A/D to roll | Mouse to look around | F9 to toggle camera\n",
                 ),
                 #[cfg(feature = "debug")]
                 children![

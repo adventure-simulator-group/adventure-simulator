@@ -12,22 +12,28 @@ pub enum SemanticPose {
     RunContact,
     RunFlight,
     CrouchIdle,
+    DuckLeadLeftForward,
     DuckLeadLeftBackward,
     DuckLeadLeftLeft,
     DuckLeadLeftRight,
+    DuckLeadRightForward,
     DuckLeadRightBackward,
     DuckLeadRightLeft,
     DuckLeadRightRight,
+    DiveForward,
+    DiveBackward,
+    DiveLeft,
+    DiveRight,
     AirborneCenter,
     AirborneTravel,
     ProneIdle,
     SupineIdle,
     ProneCrawlContact,
-    ProneCrawlPassing,
     SupineScamperContact,
-    SupineScamperPassing,
-    UprightProneTransition,
-    DiveImpact,
+    ProneTransition,
+    ProneSupineRollLeft,
+    ProneSupineRollRight,
+    SupineTransition,
     GuardLeadLeft,
     GuardLeadRight,
     GuardWalkLeadLeft,
@@ -53,8 +59,8 @@ mod contract_tests {
     use super::*;
 
     #[test]
-    fn humanoid_contract_resolves_from_twenty_eight_authored_poses() {
-        assert_eq!(SemanticPose::HUMANOID_REQUIRED.len(), 34);
+    fn humanoid_contract_resolves_from_thirty_one_authored_poses() {
+        assert_eq!(SemanticPose::HUMANOID_REQUIRED.len(), 40);
         let authored = SemanticPose::HUMANOID_REQUIRED
             .into_iter()
             .filter(|pose| {
@@ -62,7 +68,7 @@ mod contract_tests {
                     .is_none_or(|other| pose.as_str() < other.as_str())
             })
             .collect::<BTreeSet<_>>();
-        assert_eq!(authored.len(), 28);
+        assert_eq!(authored.len(), 31);
         let mut library = AnimationPackLibrary::default();
         library
             .insert(AnimationPack {
@@ -226,6 +232,204 @@ mod contract_tests {
     }
 
     #[test]
+    fn roll_transition_uses_directional_midpoint_and_commits_supine() {
+        let mut state = SkeletonState::default().with_body_state(BodyState::Prone);
+        assert!(state.begin_posture_transition(
+            PostureTransitionKind::ProneToSupine {
+                direction: RollDirection::Right,
+            },
+            10,
+            20,
+        ));
+        state.advance_posture_transition(20);
+        let evaluation = AnimationEvaluation::from_skeleton(&state);
+        assert_eq!(evaluation.action.len(), 1);
+        assert_eq!(
+            evaluation.action[0].pose,
+            SemanticPose::ProneSupineRollRight
+        );
+        assert_eq!(
+            evaluation.action[0].sampling,
+            PoseSampling::Span {
+                end: SemanticPose::SupineIdle,
+                progress: 0.0,
+            }
+        );
+        state.advance_posture_transition(30);
+        assert_eq!(state.body(), BodyState::Supine);
+        assert!(state.posture_transition().is_none());
+    }
+
+    #[test]
+    fn aimed_downed_facing_holds_half_roll_and_reaches_supine() {
+        let mut state = SkeletonState::default().with_body_state(BodyState::Prone);
+        assert!(state.advance_downed_facing(0.5, true, 1.0));
+        assert_eq!(state.downed_facing().unwrap().half_turns(), 0.5);
+        assert_eq!(state.downed_lateral_motion(), 1.0);
+        assert_eq!(state.body(), BodyState::Prone);
+        let evaluation = AnimationEvaluation::from_skeleton(&state);
+        assert_eq!(
+            evaluation.action[0].pose,
+            SemanticPose::ProneSupineRollRight
+        );
+
+        assert!(state.advance_downed_facing(1.0, true, 1.0));
+        assert_eq!(state.body(), BodyState::Supine);
+        assert_eq!(state.downed_facing().unwrap().half_turns(), 1.0);
+        assert!(AnimationEvaluation::from_skeleton(&state).action.is_empty());
+    }
+
+    #[test]
+    fn downed_turning_advances_contact_gait_without_planar_velocity() {
+        let mut state = SkeletonState::default().with_body_state(BodyState::Supine);
+        state.set_downed_turning(true);
+        assert_eq!(state.animation_speed(), 0.8);
+        project_skeleton_locomotion(
+            &mut state,
+            SkeletonLocomotionInput {
+                orientation: Quat::IDENTITY,
+                linear_velocity: Vec3::ZERO,
+                grounded: true,
+                crouching: true,
+                delta_seconds: 0.25,
+                tick: 1,
+            },
+        );
+        let expected = gait_cycle_phase_delta(SUPINE_LOCOMOTION_PROFILE, 1.6, 0.25);
+        assert!((state.gait_phase - expected).abs() < 0.000_01);
+        let evaluation = AnimationEvaluation::from_skeleton(&state);
+        assert!(
+            evaluation
+                .base
+                .iter()
+                .all(|sample| sample.pose == SemanticPose::SupineScamperContact)
+        );
+    }
+
+    #[test]
+    fn tripled_prone_travel_uses_twice_the_previous_authored_cadence() {
+        let mut state = SkeletonState::default().with_body_state(BodyState::Prone);
+        project_skeleton_locomotion(
+            &mut state,
+            SkeletonLocomotionInput {
+                orientation: Quat::IDENTITY,
+                linear_velocity: Vec3::NEG_Z * 3.0,
+                grounded: true,
+                crouching: true,
+                delta_seconds: 0.25,
+                tick: 1,
+            },
+        );
+        let former = gait_cycle_phase_delta(PRONE_LOCOMOTION_PROFILE, 1.0, 0.25);
+        assert!((state.gait_phase - former * 2.0).abs() < 0.000_01);
+    }
+
+    #[test]
+    fn releasing_aim_settles_downed_roll_to_nearest_contact() {
+        let mut toward_prone = SkeletonState::default().with_body_state(BodyState::Prone);
+        toward_prone.advance_downed_facing(0.4, true, 1.0);
+        assert!(!toward_prone.advance_downed_facing(0.4, false, 1.0));
+        assert_eq!(toward_prone.body(), BodyState::Prone);
+        assert!(toward_prone.downed_facing().is_none());
+
+        let mut toward_supine = SkeletonState::default().with_body_state(BodyState::Prone);
+        toward_supine.advance_downed_facing(0.6, true, 1.0);
+        assert!(!toward_supine.advance_downed_facing(0.6, false, 1.0));
+        assert_eq!(toward_supine.body(), BodyState::Supine);
+        assert!(toward_supine.downed_facing().is_none());
+
+        let mut exact_half_roll = SkeletonState::default().with_body_state(BodyState::Prone);
+        exact_half_roll.advance_downed_facing(0.5, true, 1.0);
+        exact_half_roll.advance_downed_facing(0.5, false, 1.0);
+        assert_eq!(exact_half_roll.body(), BodyState::Prone);
+    }
+
+    #[test]
+    fn dive_holds_takeoff_until_contact_then_recovers_to_prone() {
+        let mut state = SkeletonState::default();
+        assert!(state.begin_posture_transition(
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Forward,
+            },
+            0,
+            11,
+        ));
+        state.advance_posture_transition(5);
+        assert!(state.posture_transition().unwrap().phase() < 0.5);
+
+        state.transition_body(BodyState::Airborne);
+        state.advance_posture_transition(6);
+        assert_eq!(state.posture_transition().unwrap().phase(), 0.5);
+        state.advance_posture_transition(100);
+        assert_eq!(state.posture_transition().unwrap().phase(), 0.5);
+
+        state.transition_body(BodyState::Grounded(GroundedPosture::Crouched));
+        state.advance_posture_transition(101);
+        assert_eq!(state.posture_transition().unwrap().phase(), 0.5);
+        state.advance_posture_transition(106);
+        assert!(state.posture_transition().unwrap().phase() > 0.5);
+        state.advance_posture_transition(112);
+        assert_eq!(state.body(), BodyState::Prone);
+        assert!(state.posture_transition().is_none());
+    }
+
+    #[test]
+    fn backward_dive_recovers_to_supine_after_contact() {
+        let mut state = SkeletonState::default();
+        assert!(state.begin_posture_transition(
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Backward,
+            },
+            0,
+            11,
+        ));
+        state.transition_body(BodyState::Airborne);
+        state.advance_posture_transition(6);
+        state.transition_body(BodyState::Grounded(GroundedPosture::Crouched));
+        state.advance_posture_transition(7);
+        state.advance_posture_transition(18);
+        assert_eq!(state.body(), BodyState::Supine);
+        assert!(state.posture_transition().is_none());
+    }
+
+    #[test]
+    fn supported_prone_projection_does_not_repeat_landing_or_restore_upright() {
+        let mut state = SkeletonState::default().with_body_state(BodyState::Prone);
+        state.landing_sequence = 7;
+        project_skeleton_locomotion(
+            &mut state,
+            SkeletonLocomotionInput {
+                orientation: Quat::IDENTITY,
+                linear_velocity: Vec3::ZERO,
+                grounded: true,
+                crouching: true,
+                delta_seconds: 1.0 / LOCOMOTION_SAMPLE_HZ,
+                tick: 1,
+            },
+        );
+        assert_eq!(state.body(), BodyState::Prone);
+        assert_eq!(state.landing_sequence, 7);
+    }
+
+    #[test]
+    fn prone_crawl_blends_directly_between_mirrored_contacts() {
+        let state = SkeletonState::default()
+            .with_body_state(BodyState::Prone)
+            .with_local_velocity(Vec3::NEG_Z)
+            .with_gait_phase(0.25);
+        let evaluation = AnimationEvaluation::from_skeleton(&state);
+        assert_eq!(evaluation.base.len(), 2);
+        assert!(evaluation.base.iter().all(|sample| {
+            sample.pose == SemanticPose::ProneCrawlContact
+                && sample.sampling == PoseSampling::Anchor
+        }));
+        assert!(!evaluation.base[0].mirror_lower_body);
+        assert!(evaluation.base[1].mirror_lower_body);
+        assert!((evaluation.base[0].weight - 0.5).abs() < 0.0001);
+        assert!((evaluation.base[1].weight - 0.5).abs() < 0.0001);
+    }
+
+    #[test]
     fn action_replacement_is_explicitly_last_writer_wins() {
         let mut state = SkeletonState::default();
         state.begin_attack(AttackSpec::default(), 10, 20);
@@ -282,29 +486,35 @@ mod contract_tests {
 }
 
 impl SemanticPose {
-    pub const ALL: [Self; 40] = [
+    pub const ALL: [Self; 46] = [
         Self::IdleRelaxed,
         Self::WalkContact,
         Self::WalkPassing,
         Self::RunContact,
         Self::RunFlight,
         Self::CrouchIdle,
+        Self::DuckLeadLeftForward,
         Self::DuckLeadLeftBackward,
         Self::DuckLeadLeftLeft,
         Self::DuckLeadLeftRight,
+        Self::DuckLeadRightForward,
         Self::DuckLeadRightBackward,
         Self::DuckLeadRightLeft,
         Self::DuckLeadRightRight,
+        Self::DiveForward,
+        Self::DiveBackward,
+        Self::DiveLeft,
+        Self::DiveRight,
         Self::AirborneCenter,
         Self::AirborneTravel,
         Self::ProneIdle,
         Self::SupineIdle,
         Self::ProneCrawlContact,
-        Self::ProneCrawlPassing,
         Self::SupineScamperContact,
-        Self::SupineScamperPassing,
-        Self::UprightProneTransition,
-        Self::DiveImpact,
+        Self::ProneTransition,
+        Self::ProneSupineRollLeft,
+        Self::ProneSupineRollRight,
+        Self::SupineTransition,
         Self::GuardLeadLeft,
         Self::GuardLeadRight,
         Self::GuardWalkLeadLeft,
@@ -324,31 +534,37 @@ impl SemanticPose {
         Self::BlockThrustLeadLeft,
         Self::BlockThrustLeadRight,
     ];
-    /// The 34 semantics every complete humanoid family must resolve. A root
-    /// pack may author only 28 files because six pairs permit mirroring.
-    pub const HUMANOID_REQUIRED: [Self; 34] = [
+    /// The 40 semantics every complete humanoid family must resolve. A root
+    /// pack may author only 32 poses because eight pairs permit mirroring.
+    pub const HUMANOID_REQUIRED: [Self; 40] = [
         Self::IdleRelaxed,
         Self::WalkContact,
         Self::WalkPassing,
         Self::RunContact,
         Self::RunFlight,
         Self::CrouchIdle,
+        Self::DuckLeadLeftForward,
         Self::DuckLeadLeftBackward,
         Self::DuckLeadLeftLeft,
         Self::DuckLeadLeftRight,
+        Self::DuckLeadRightForward,
         Self::DuckLeadRightBackward,
         Self::DuckLeadRightLeft,
         Self::DuckLeadRightRight,
+        Self::DiveForward,
+        Self::DiveBackward,
+        Self::DiveLeft,
+        Self::DiveRight,
         Self::AirborneCenter,
         Self::AirborneTravel,
         Self::ProneIdle,
         Self::SupineIdle,
         Self::ProneCrawlContact,
-        Self::ProneCrawlPassing,
         Self::SupineScamperContact,
-        Self::SupineScamperPassing,
-        Self::UprightProneTransition,
-        Self::DiveImpact,
+        Self::ProneTransition,
+        Self::ProneSupineRollLeft,
+        Self::ProneSupineRollRight,
+        Self::SupineTransition,
         Self::GuardLeadLeft,
         Self::GuardLeadRight,
         Self::AttackThrustLeadLeftContact,
@@ -372,22 +588,28 @@ impl SemanticPose {
             RunContact => "run_contact",
             RunFlight => "run_flight",
             CrouchIdle => "crouch_idle",
+            DuckLeadLeftForward => "duck_lead_left_forward",
             DuckLeadLeftBackward => "duck_lead_left_backward",
             DuckLeadLeftLeft => "duck_lead_left_left",
             DuckLeadLeftRight => "duck_lead_left_right",
+            DuckLeadRightForward => "duck_lead_right_forward",
             DuckLeadRightBackward => "duck_lead_right_backward",
             DuckLeadRightLeft => "duck_lead_right_left",
             DuckLeadRightRight => "duck_lead_right_right",
+            DiveForward => "dive_forward",
+            DiveBackward => "dive_backward",
+            DiveLeft => "dive_left",
+            DiveRight => "dive_right",
             AirborneCenter => "airborne_center",
             AirborneTravel => "airborne_travel",
             ProneIdle => "prone_idle",
             SupineIdle => "supine_idle",
             ProneCrawlContact => "prone_crawl_contact",
-            ProneCrawlPassing => "prone_crawl_passing",
             SupineScamperContact => "supine_scamper_contact",
-            SupineScamperPassing => "supine_scamper_passing",
-            UprightProneTransition => "upright_prone_transition",
-            DiveImpact => "dive_impact",
+            ProneTransition => "prone_transition",
+            ProneSupineRollLeft => "prone_supine_roll_left",
+            ProneSupineRollRight => "prone_supine_roll_right",
+            SupineTransition => "supine_transition",
             GuardLeadLeft => "guard_lead_left",
             GuardLeadRight => "guard_lead_right",
             GuardWalkLeadLeft => "guard_walk_lead_left",
@@ -416,12 +638,16 @@ impl SemanticPose {
     pub fn mirrored_counterpart(self) -> Option<Self> {
         use SemanticPose::*;
         Some(match self {
+            DuckLeadLeftForward => DuckLeadRightForward,
             DuckLeadLeftBackward => DuckLeadRightBackward,
             DuckLeadLeftLeft => DuckLeadRightRight,
             DuckLeadLeftRight => DuckLeadRightLeft,
+            DuckLeadRightForward => DuckLeadLeftForward,
             DuckLeadRightBackward => DuckLeadLeftBackward,
             DuckLeadRightLeft => DuckLeadLeftRight,
             DuckLeadRightRight => DuckLeadLeftLeft,
+            DiveLeft => DiveRight,
+            DiveRight => DiveLeft,
             GuardLeadLeft => GuardLeadRight,
             GuardLeadRight => GuardLeadLeft,
             GuardWalkLeadLeft => GuardWalkLeadRight,
@@ -434,6 +660,8 @@ impl SemanticPose {
             AttackThrustLeadRightContact => AttackThrustLeadLeftContact,
             AttackSlashLeadLeftContact => AttackSlashLeadRightContact,
             AttackSlashLeadRightContact => AttackSlashLeadLeftContact,
+            ProneSupineRollLeft => ProneSupineRollRight,
+            ProneSupineRollRight => ProneSupineRollLeft,
             _ => return None,
         })
     }
@@ -449,15 +677,22 @@ impl SemanticPose {
             RunContact => WalkContact,
             RunFlight => WalkPassing,
             CrouchIdle => IdleRelaxed,
-            DuckLeadLeftBackward | DuckLeadLeftLeft | DuckLeadLeftRight => GuardLeadLeft,
-            DuckLeadRightBackward | DuckLeadRightLeft | DuckLeadRightRight => GuardLeadRight,
+            DuckLeadLeftForward | DuckLeadLeftBackward | DuckLeadLeftLeft | DuckLeadLeftRight => {
+                GuardLeadLeft
+            }
+            DuckLeadRightForward
+            | DuckLeadRightBackward
+            | DuckLeadRightLeft
+            | DuckLeadRightRight => GuardLeadRight,
+            DiveForward | DiveBackward | DiveLeft | DiveRight => AirborneTravel,
             AirborneCenter => RunFlight,
             AirborneTravel => AirborneCenter,
             ProneIdle | SupineIdle => CrouchIdle,
-            ProneCrawlContact | ProneCrawlPassing => ProneIdle,
-            SupineScamperContact | SupineScamperPassing => SupineIdle,
-            UprightProneTransition => CrouchIdle,
-            DiveImpact => AirborneTravel,
+            ProneCrawlContact => ProneIdle,
+            SupineScamperContact => SupineIdle,
+            ProneTransition => CrouchIdle,
+            ProneSupineRollLeft | ProneSupineRollRight => ProneIdle,
+            SupineTransition => CrouchIdle,
             GuardLeadLeft => IdleRelaxed,
             GuardLeadRight => IdleRelaxed,
             GuardWalkLeadLeft => GuardLeadLeft,

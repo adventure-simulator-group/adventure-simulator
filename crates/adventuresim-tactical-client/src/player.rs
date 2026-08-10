@@ -449,6 +449,9 @@ fn apply_direct_combat_controls(
             }
             cmd.client_trigger(DefendRequest::Dodge);
         }
+        if controls.roll_just_pressed {
+            cmd.client_trigger(DefendRequest::Roll);
+        }
     }
 }
 

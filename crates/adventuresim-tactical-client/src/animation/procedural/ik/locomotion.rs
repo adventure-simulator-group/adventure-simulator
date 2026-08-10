@@ -12,6 +12,7 @@ pub(in crate::animation) struct OrdinaryLocomotionIkState {
 
 pub(super) fn owns(skeleton: &SkeletonState) -> bool {
     skeleton.is_grounded()
+        && !skeleton.is_posture_transitioning()
         && matches!(skeleton.posture(), Posture::Upright | Posture::Crouched)
         && skeleton.action_kind() == SkeletonAction::None
         && (skeleton.weapon_guard() == WeaponGuardState::Lowered
@@ -313,5 +314,13 @@ mod tests {
         let mut attacking = ordinary.clone();
         attacking.begin_attack(AttackSpec::default(), 0, 1);
         assert!(!owns(&attacking));
+    }
+
+    #[test]
+    fn authored_posture_transition_excludes_ordinary_locomotion_ik() {
+        let mut skeleton = SkeletonState::default();
+        assert!(owns(&skeleton));
+        assert!(skeleton.begin_posture_transition(PostureTransitionKind::UprightToProne, 0, 10,));
+        assert!(!owns(&skeleton));
     }
 }

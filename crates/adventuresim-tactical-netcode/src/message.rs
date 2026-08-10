@@ -2,13 +2,14 @@ use adventuresim_tactical_core::prelude::*;
 use bevy::{ecs::entity::MapEntities, prelude::*};
 use serde::{Deserialize, Serialize};
 
-/// Sent by the client whenever the player presses dodge or parry.
+/// Sent by the client whenever the player dodges, rolls defensively, or parries.
 ///
 /// This is a simplified version of [`DefenderResponse`] that omits
 /// `input_reflex` — the server computes reflex from timestamp delta.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Event, Serialize, Deserialize)]
 pub enum DefendRequest {
     Dodge,
+    Roll,
     Parry,
 }
 
@@ -23,11 +24,35 @@ pub struct JoinRequest {
 pub struct PlayerInputRequest {
     pub movement: Option<Vec2>,
     pub look: Vec2,
-    pub jump: bool,
+    pub jump: JumpCommand,
     pub crouch: bool,
-    pub prone: bool,
+    pub jump_charge: bool,
+    pub downed_align: bool,
+    pub posture: PostureCommand,
     pub pace: MovementPace,
     pub weapon_guard: WeaponGuardState,
+}
+
+/// Durable edge identity for jumping over the unreliable continuous-input
+/// channel. The latest sequence is repeated in every input packet, so dropping
+/// the release packet delays a jump rather than losing it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JumpCommand {
+    pub sequence: u32,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PostureCommand {
+    pub sequence: u32,
+    pub action: Option<PostureActionRequest>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PostureActionRequest {
+    Toggle,
+    RollLeft,
+    RollRight,
+    Dive { direction: DiveDirection },
 }
 
 /// Debug-build request to run the tactical simulation at normal or quarter

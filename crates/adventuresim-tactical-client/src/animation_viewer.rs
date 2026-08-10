@@ -19,11 +19,12 @@ use bevy::{
 use serde::Serialize;
 
 use crate::animation::{
-    AnimationPlayback, ArmIkState, AttackFootworkState, BoneRole, HumanoidBone, LegIkDiagnostics,
-    LegIkState, LocomotionBodyResponseState, LocomotionHeightState, LocomotionPresentationEvent,
-    LocomotionPresentationEventKind, MEASURED_ANKLE_SOLE_OFFSET_METRES, PresentedSkeleton,
-    ProceduralAnimationClock, RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES,
-    TacticalAnimationPlugin, TerrainIkEnabled, locomotion_support_weights,
+    AnimationPlayback, AnimationRuntime, ArmIkState, AttackFootworkState, BoneRole, HumanoidBone,
+    LegIkDiagnostics, LegIkState, LocomotionBodyResponseState, LocomotionHeightState,
+    LocomotionPresentationEvent, LocomotionPresentationEventKind,
+    MEASURED_ANKLE_SOLE_OFFSET_METRES, PresentedSkeleton, ProceduralAnimationClock,
+    RaisedFootworkState, SOLE_CONTACT_TOLERANCE_METRES, TacticalAnimationPlugin, TerrainIkEnabled,
+    locomotion_support_weights,
     semantic_graph::{SemanticGraphPath, SemanticGraphTrace},
 };
 use crate::{
@@ -87,7 +88,17 @@ struct ScenarioMetadata {
 }
 
 fn scenario_metadata(name: &str) -> ScenarioMetadata {
-    if name == "terrain-toggle-mid-stride" {
+    if name.starts_with("downed-")
+        || name.starts_with("dive-")
+        || name.ends_with("-get-up")
+        || name == "jump-charge-crouch"
+    {
+        ScenarioMetadata {
+            kind: ScenarioKind::Transition,
+            repeatable: false,
+            procedural_solver: false,
+        }
+    } else if name == "terrain-toggle-mid-stride" {
         ScenarioMetadata {
             kind: ScenarioKind::Terrain,
             repeatable: false,
@@ -285,6 +296,8 @@ struct CaptureSequence {
     repeated_evaluation_baseline: Option<RepeatedEvaluationSnapshot>,
     repeated_evaluation_valid: bool,
     active_scenario: Option<&'static str>,
+    warmup_frames: u32,
+    motion_ready_frames: u32,
     simulation_tick: u64,
     scenario_distance: f32,
 }
@@ -316,6 +329,8 @@ impl CaptureSequence {
             repeated_evaluation_baseline: None,
             repeated_evaluation_valid: true,
             active_scenario: None,
+            warmup_frames: 0,
+            motion_ready_frames: 0,
             simulation_tick: 0,
             scenario_distance: 0.0,
         }
@@ -958,6 +973,26 @@ fn attack_step_scenario(
 
 fn capture_plan() -> Vec<PlannedFrame> {
     [
+        downed_contact_scenario("downed-prone-crawl", BodyState::Prone),
+        downed_contact_scenario("downed-supine-scamper", BodyState::Supine),
+        downed_look_scenario(),
+        ordinary_camera_pitch_scenario(),
+        posture_transition_scenario(
+            "dive-forward",
+            BodyState::Grounded(GroundedPosture::Upright),
+        ),
+        posture_transition_scenario(
+            "dive-backward",
+            BodyState::Grounded(GroundedPosture::Upright),
+        ),
+        posture_transition_scenario("dive-left", BodyState::Grounded(GroundedPosture::Upright)),
+        posture_transition_scenario("dive-right", BodyState::Grounded(GroundedPosture::Upright)),
+        dive_impact_scenario("dive-left-impact"),
+        dive_impact_scenario("dive-right-impact"),
+        dive_impact_scenario("dive-backward-impact"),
+        posture_transition_scenario("prone-get-up", BodyState::Prone),
+        posture_transition_scenario("supine-get-up", BodyState::Supine),
+        jump_charge_scenario(),
         steady_scenario("steady-walk-2.0", 2.0, 2.0),
         steady_scenario("walk-run-blend-3.75", 3.75, 2.0),
         steady_scenario("steady-run-5.5", 5.5, 2.0),
@@ -1125,6 +1160,186 @@ fn capture_plan() -> Vec<PlannedFrame> {
     .into_iter()
     .flatten()
     .collect()
+}
+
+fn downed_contact_scenario(name: &'static str, _body: BodyState) -> Vec<PlannedFrame> {
+    (0..=84)
+        .map(|scenario_frame| PlannedFrame {
+            scenario: name,
+            scenario_frame,
+            speed: 0.0,
+            time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+            local_direction: Vec2::ZERO,
+            camera_yaw: 0.0,
+            camera_pitch: 0.0,
+            crouching: true,
+            action: SkeletonAction::None,
+            weapon_guard: WeaponGuardState::Lowered,
+            lead_foot: LeadFoot::Left,
+        })
+        .collect()
+}
+
+fn downed_look_scenario() -> Vec<PlannedFrame> {
+    (0..=64)
+        .map(|scenario_frame| PlannedFrame {
+            scenario: "downed-prone-look-at",
+            scenario_frame,
+            speed: 0.0,
+            time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+            local_direction: Vec2::ZERO,
+            camera_yaw: std::f32::consts::FRAC_PI_2,
+            camera_pitch: 0.6,
+            crouching: true,
+            action: SkeletonAction::None,
+            weapon_guard: WeaponGuardState::Raised,
+            lead_foot: LeadFoot::Left,
+        })
+        .collect()
+}
+
+fn ordinary_camera_pitch_scenario() -> Vec<PlannedFrame> {
+    (0..=64)
+        .map(|scenario_frame| PlannedFrame {
+            scenario: "ordinary-camera-pitch",
+            scenario_frame,
+            speed: 0.0,
+            time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+            local_direction: Vec2::ZERO,
+            camera_yaw: 0.0,
+            camera_pitch: if scenario_frame < 16 {
+                0.0
+            } else if scenario_frame < 40 {
+                0.6
+            } else {
+                -0.6
+            },
+            crouching: false,
+            action: SkeletonAction::None,
+            weapon_guard: WeaponGuardState::Lowered,
+            lead_foot: LeadFoot::Left,
+        })
+        .collect()
+}
+
+fn posture_transition_scenario(name: &'static str, _start: BodyState) -> Vec<PlannedFrame> {
+    // Stop just before the runtime-owned endpoint handoff. The viewer is
+    // validating the authored transition arc; ordinary base-pose captures
+    // validate the contact endpoint independently.
+    (0..=80)
+        .map(|scenario_frame| PlannedFrame {
+            scenario: name,
+            scenario_frame,
+            speed: 0.0,
+            time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+            local_direction: Vec2::ZERO,
+            camera_yaw: 0.0,
+            camera_pitch: 0.0,
+            crouching: true,
+            action: SkeletonAction::None,
+            weapon_guard: WeaponGuardState::Lowered,
+            lead_foot: LeadFoot::Left,
+        })
+        .collect()
+}
+
+fn dive_impact_scenario(name: &'static str) -> Vec<PlannedFrame> {
+    let final_frame = if name == "dive-backward-impact" {
+        56
+    } else {
+        48
+    };
+    (0..=final_frame)
+        .map(|scenario_frame| PlannedFrame {
+            scenario: name,
+            scenario_frame,
+            speed: 0.0,
+            time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+            local_direction: Vec2::ZERO,
+            camera_yaw: 0.0,
+            camera_pitch: 0.0,
+            // The live controller reports crouching for the complete authored
+            // posture transition, including its terrain-contact recovery.
+            crouching: true,
+            action: SkeletonAction::None,
+            weapon_guard: WeaponGuardState::Lowered,
+            lead_foot: LeadFoot::Left,
+        })
+        .collect()
+}
+
+fn jump_charge_scenario() -> Vec<PlannedFrame> {
+    (0..=64)
+        .map(|scenario_frame| PlannedFrame {
+            scenario: "jump-charge-crouch",
+            scenario_frame,
+            speed: 0.0,
+            time_seconds: scenario_frame as f32 / SAMPLE_HZ,
+            local_direction: Vec2::ZERO,
+            camera_yaw: 0.0,
+            camera_pitch: 0.0,
+            crouching: (4..48).contains(&scenario_frame),
+            action: SkeletonAction::None,
+            weapon_guard: WeaponGuardState::Lowered,
+            lead_foot: LeadFoot::Left,
+        })
+        .collect()
+}
+
+fn downed_body_for_scenario(scenario: &str) -> Option<BodyState> {
+    match scenario {
+        "downed-prone-crawl" | "downed-prone-look-at" => Some(BodyState::Prone),
+        "downed-supine-scamper" => Some(BodyState::Supine),
+        _ => None,
+    }
+}
+
+fn required_motion_for_scenario(scenario: &str) -> Option<&'static str> {
+    match scenario {
+        "downed-prone-crawl" => Some("prone_crawl"),
+        "downed-supine-scamper" => Some("supine_scamper"),
+        "downed-prone-look-at" => Some("prone_idle"),
+        "dive-forward" => Some("dive_forward"),
+        "dive-backward" | "dive-backward-impact" => Some("dive_backward"),
+        "dive-left" | "dive-left-impact" => Some("dive_left"),
+        "dive-right" | "dive-right-impact" => Some("dive_right"),
+        "prone-get-up" => Some("prone_transition"),
+        "supine-get-up" => Some("supine_transition"),
+        _ => None,
+    }
+}
+
+fn transition_for_scenario(scenario: &str) -> Option<(BodyState, PostureTransitionKind)> {
+    let upright = BodyState::Grounded(GroundedPosture::Upright);
+    match scenario {
+        "dive-forward" => Some((
+            upright,
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Forward,
+            },
+        )),
+        "dive-backward" | "dive-backward-impact" => Some((
+            upright,
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Backward,
+            },
+        )),
+        "dive-left" | "dive-left-impact" => Some((
+            upright,
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Left,
+            },
+        )),
+        "dive-right" | "dive-right-impact" => Some((
+            upright,
+            PostureTransitionKind::DiveToDowned {
+                direction: DiveDirection::Right,
+            },
+        )),
+        "prone-get-up" => Some((BodyState::Prone, PostureTransitionKind::ProneToUpright)),
+        "supine-get-up" => Some((BodyState::Supine, PostureTransitionKind::SupineToUpright)),
+        _ => None,
+    }
 }
 
 fn turning_scenario(name: &'static str, reversal: bool) -> Vec<PlannedFrame> {
@@ -1426,6 +1641,7 @@ fn drive_sequence(
     mut procedural_clock: ResMut<ProceduralAnimationClock>,
     mut terrain_ik: ResMut<TerrainIkEnabled>,
     mut guard_input: ResMut<WeaponGuardInputState>,
+    animation_runtime: Res<AnimationRuntime>,
     terrain: Single<&SceneTerrain>,
     mut subjects: Query<
         (
@@ -1450,6 +1666,7 @@ fn drive_sequence(
     let frame = sequence.plan[sequence.index].clone();
     let metadata = scenario_metadata(frame.scenario);
     let mut gait_phase = 0.0;
+    let mut presentation_settled = false;
     for (
         mut skeleton,
         mut transform,
@@ -1466,6 +1683,7 @@ fn drive_sequence(
         let Some(playback) = playback else {
             return;
         };
+        presentation_settled = playback.presentation_is_settled();
         if !playback.authored_pose_is_ready() {
             return;
         }
@@ -1473,6 +1691,7 @@ fn drive_sequence(
         if sequence.active_scenario != Some(frame.scenario) {
             sequence.active_scenario = Some(frame.scenario);
             sequence.scenario_distance = 0.0;
+            sequence.motion_ready_frames = 0;
             *skeleton = SkeletonState::default();
             *guard_input = WeaponGuardInputState::default();
             if let Some(mut ik_state) = ik_state {
@@ -1496,6 +1715,29 @@ fn drive_sequence(
             let ground = terrain.height_at(Vec2::ZERO).unwrap_or_default();
             transform.translation = Vec3::new(0.0, ground + CAPTURE_ROOT_GROUND_OFFSET_METRES, 0.0);
             transform.rotation = Quat::from_rotation_y(std::f32::consts::PI);
+            if let Some((start_body, _)) = transition_for_scenario(frame.scenario) {
+                skeleton.transition_body(start_body);
+                // Prime the authored endpoint before beginning the transition.
+                // Live characters have already evaluated their prone/supine or
+                // upright base; a fresh viewer subject otherwise crossfades
+                // from its default standing pose during the first samples.
+                sequence.warmup_frames = 8;
+            }
+        }
+
+        if let Some(body) = downed_body_for_scenario(frame.scenario) {
+            skeleton.transition_body(body);
+            let preload_locomotion = frame.scenario_frame == 0
+                && matches!(
+                    required_motion_for_scenario(frame.scenario),
+                    Some("prone_crawl" | "supine_scamper")
+                )
+                && !required_motion_for_scenario(frame.scenario)
+                    .is_some_and(|motion| animation_runtime.motion_is_processed(motion));
+            skeleton.set_downed_turning(
+                frame.scenario != "downed-prone-look-at"
+                    && (preload_locomotion || frame.scenario_frame >= 4),
+            );
         }
 
         let orientation =
@@ -1511,12 +1753,18 @@ fn drive_sequence(
         terrain_ik.0 = terrain_ik_enabled_for_frame(&frame);
         guard_input.desired = frame.weapon_guard;
         set_weapon_guard(&mut skeleton, guard_input.desired);
-        let grounded = metadata.kind != ScenarioKind::Landing || frame.scenario_frame >= 32;
-        let vertical_velocity = if metadata.kind == ScenarioKind::Landing && !grounded {
-            -4.5
+        let dive_impact = frame.scenario.ends_with("-impact");
+        let grounded = if dive_impact {
+            frame.scenario_frame == 0 || frame.scenario_frame >= 17
         } else {
-            0.0
+            metadata.kind != ScenarioKind::Landing || frame.scenario_frame >= 32
         };
+        let vertical_velocity =
+            if (metadata.kind == ScenarioKind::Landing || dive_impact) && !grounded {
+                -4.5
+            } else {
+                0.0
+            };
         let requested_local_velocity = Vec3::new(
             frame.local_direction.x * frame.speed,
             vertical_velocity,
@@ -1533,8 +1781,25 @@ fn drive_sequence(
             })
             .unwrap_or(requested_local_velocity);
         let world_velocity = controller_yaw(orientation) * local_velocity;
-        sequence.simulation_tick =
-            next_capture_simulation_tick(sequence.simulation_tick, sequence.index == 0);
+        sequence.simulation_tick = next_capture_simulation_tick(
+            sequence.simulation_tick,
+            sequence.index == 0 && sequence.warmup_frames == 0,
+        );
+        if sequence.warmup_frames == 0
+            && frame.scenario_frame == 0
+            && let Some((start_body, transition)) = transition_for_scenario(frame.scenario)
+        {
+            skeleton.transition_body(start_body);
+            // Matches the live server's terrain-contact dive recovery.
+            let duration = if frame.scenario == "dive-backward-impact" {
+                32
+            } else if dive_impact {
+                20
+            } else {
+                84
+            };
+            skeleton.begin_posture_transition(transition, sequence.simulation_tick, duration);
+        }
         let delta_seconds = if frame.scenario_frame == 0 {
             0.0
         } else {
@@ -1583,27 +1848,58 @@ fn drive_sequence(
                 SkeletonAction::None => {}
             }
         }
-        transform.rotation = advance_body_facing(
-            transform.rotation,
-            orientation,
-            world_velocity,
-            frame.action,
-            skeleton.weapon_guard(),
-            delta_seconds,
-        );
+        if !skeleton.is_posture_transitioning() {
+            transform.rotation = advance_body_facing(
+                transform.rotation,
+                orientation,
+                world_velocity,
+                frame.action,
+                skeleton.weapon_guard(),
+                delta_seconds,
+            );
+        }
         sequence.scenario_distance += frame.speed * delta_seconds;
+        let jump_charging = frame.scenario == "jump-charge-crouch" && frame.crouching;
         project_skeleton_locomotion(
             &mut skeleton,
             SkeletonLocomotionInput {
                 orientation,
                 linear_velocity: world_velocity,
                 grounded,
-                crouching: frame.crouching,
+                crouching: frame.crouching && frame.scenario != "jump-charge-crouch",
                 delta_seconds,
                 tick: sequence.simulation_tick,
             },
         );
+        skeleton.set_jump_anticipation(jump_charging);
+        if sequence.warmup_frames == 0 && transition_for_scenario(frame.scenario).is_some() {
+            let previous_transition = skeleton.posture_transition();
+            skeleton.advance_posture_transition(sequence.simulation_tick);
+            transform.rotation = (transform.rotation
+                * dive_landing_facing_delta(previous_transition, skeleton.posture_transition())
+                * supine_get_up_counter_yaw_delta(
+                    previous_transition,
+                    skeleton.posture_transition(),
+                ))
+            .normalize();
+        }
         gait_phase = skeleton.gait_phase;
+    }
+    if sequence.warmup_frames > 0 {
+        sequence.warmup_frames -= 1;
+        return;
+    }
+    if frame.scenario_frame == 0
+        && let Some(motion) = required_motion_for_scenario(frame.scenario)
+    {
+        if !animation_runtime.motion_is_processed(motion) || !presentation_settled {
+            sequence.motion_ready_frames = 0;
+            return;
+        }
+        sequence.motion_ready_frames += 1;
+        if sequence.motion_ready_frames < 2 {
+            return;
+        }
     }
     for mut label in &mut labels {
         **label = format!(
@@ -2220,7 +2516,13 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
                 || metrics.maximum_pelvis_vertical_step_metres <= 0.02)
     });
     let no_ground_penetration = scenarios.iter().all(|metrics| {
-        if scenario_metadata(&metrics.scenario).kind == ScenarioKind::Attack {
+        if metrics.scenario.starts_with("dive-") || metrics.scenario.ends_with("-get-up") {
+            // These authored whole-body poses intentionally put the character
+            // on the surface. Ankle/sole contact metrics assume upright feet
+            // and report false penetration once the feet rotate onto a side
+            // or heel; visual review and finite/continuity gates remain active.
+            true
+        } else if scenario_metadata(&metrics.scenario).kind == ScenarioKind::Attack {
             // Gait-phase contact selection does not describe a one-shot attack
             // handoff. Its dedicated validator checks the actual requested
             // plant; retain only the raw ankle penetration guard here.
@@ -2327,6 +2629,7 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
                 && !(pair[0].speed_metres_per_second <= 0.05
                     && pair[1].speed_metres_per_second <= 0.05
                     && !pair[0].scenario.starts_with("raised-guard-tap-stop")
+                    && !pair[0].scenario.starts_with("downed-")
                     && delta != 0)
         }) && ["raised-guard-tap-stop-left", "raised-guard-tap-stop-right"]
             .iter()
@@ -2634,6 +2937,18 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
     let hard_stop_height_continuity_valid =
         hard_stop_maximum_pelvis_step_metres.is_none_or(|maximum_step| maximum_step <= 0.02);
     let biomechanics_within_review_bounds = scenarios.iter().all(|metrics| {
+        if metrics.scenario.starts_with("downed-")
+            || metrics.scenario.starts_with("dive-")
+            || metrics.scenario.ends_with("-get-up")
+            || metrics.scenario == "jump-charge-crouch"
+            || metrics.scenario == "ordinary-camera-pitch"
+        {
+            // Posture scenarios deliberately leave the upright foot-track and
+            // knee hemispheres; the stationary camera-pitch diagnostic has no
+            // gait to validate. Their acceptance gates are finite output,
+            // continuity, penetration, and visual review of the authored arc.
+            return true;
+        }
         // Raised guard deliberately adds a little vertical readiness through
         // the pelvis and torso. Keep the stricter ordinary-locomotion gate,
         // while allowing the documented guard silhouette (including the
@@ -2805,6 +3120,11 @@ fn finish_capture(sequence: &mut CaptureSequence, exit: &mut MessageWriter<AppEx
 fn foot_continuity_limit(scenario: &str) -> f32 {
     if scenario.starts_with("attack-step-") {
         0.21
+    } else if scenario.starts_with("dive-") || scenario.ends_with("-get-up") {
+        // One-shot authored whole-body transitions move freely rather than
+        // preserving an upright gait plant. Keep a strict per-sample teleport
+        // guard while allowing the measured supine hand/foot recovery speed.
+        0.10
     } else if scenario.starts_with("raised-guard") {
         // A guard swing replaces a 2 m/s body support in one half-step and
         // therefore legitimately travels faster than the owner. The measured

@@ -332,9 +332,11 @@ fn drive_scripted_input(
         let request = PlayerInputRequest {
             movement,
             look: script.look,
-            jump: false,
+            jump: default(),
             crouch: false,
-            prone: false,
+            jump_charge: false,
+            downed_align: false,
+            posture: default(),
             pace: MovementPace::Sprint,
             weapon_guard: script.weapon_guard,
         };

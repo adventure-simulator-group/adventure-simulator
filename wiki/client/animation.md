@@ -362,9 +362,13 @@ exactly:
 python scripts/prepare_animation_motion.py assets_src/biped/unarmed/idle_relaxed.glb assets/animations/biped/unarmed/base.glb assets/animations/biped/unarmed/idle_relaxed.glb --last-frame 0
 ```
 
-Walk and run are the exception. Their source exports contain the authored
-contact and passing/flight poses, while the committed runtime files are closed
-cycles baked from those poses and their character-space mirrors:
+Walk and run are the cycle-building exception. Their source exports contain
+the authored contact and passing/flight poses, while the committed runtime
+files are closed cycles baked from those poses and their character-space
+mirrors. The mirror command also pre-bakes runtime counterparts for the two
+downed gait contacts, `dive_left`, and `prone_supine_roll_left`, preventing a
+fractional post-blend reflection when those poses interpolate into an
+unmirrored endpoint:
 
 ```powershell
 python scripts/build_locomotion_cycles.py
@@ -430,8 +434,20 @@ preview, but does not introduce additional semantic names:
 |---|---|
 | `walk` runtime | 0 `walk_contact`; 16 `walk_passing`; 32 opposite contact; 48 opposite passing; 64 loop closure. The source passing pose is frame 8. |
 | `run` runtime | 0 `run_contact`; 16 `run_flight`; 32 opposite contact; 48 opposite flight; 64 loop closure. The runtime flight key is the exact source frame-5 pose; moderate its silhouette in the authored asset rather than the cycle builder. |
-| `prone_crawl` | 0 `prone_crawl_contact`; 8 `prone_crawl_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
-| `supine_scamper` | 0 `supine_scamper_contact`; 8 `supine_scamper_passing`; 16 opposite contact; 24 opposite passing; 32 loop closure |
+| `prone_crawl` | 0 `prone_crawl_contact` |
+| `supine_scamper` | 0 `supine_scamper_contact` |
+
+Prone and supine locomotion interpolate directly between the authored contact
+and its character-space mirror. They do not require authored passing poses or
+baked cycle files; the compact mid-cycle blend is close enough for these low,
+constrained gaits. The publication mirror step emits exact
+`prone_crawl_mirrored` and `supine_scamper_mirrored` runtime clips, so both
+endpoints remain present throughout the blend, and the root animation catalog
+loads both generated files as ordinary motion endpoints. Character-space baking
+reflects the center-line pelvis, torso, neck, and head transforms and exchanges
+every matching `.L`/`.R` bone pair, including the complete palm, thumb, and
+finger hierarchies. Exchanging only the major limbs tears asymmetric downed
+poses away from their authored torso support and leaves their hands behind.
 
 Raised-guard locomotion files each contain one directional movement pose at
 frame 0. They are not gait cycles and do not contain or imply an opposite-foot
@@ -446,31 +462,88 @@ half. The other runtime endpoint is the separate same-lead static guard:
 | `guard_strafe_lead_right_left` (optional counterpart) | 0 `guard_strafe_lead_right_left` movement extreme |
 | `guard_strafe_lead_right_right` (optional counterpart) | 0 `guard_strafe_lead_right_right` movement extreme |
 
-Each guard-relative duck extreme is a single pose in its own file at frame 0.
-The runtime blends from the current guard to the extreme and back. The lead
-and final direction components are both semantic: a left-lead dodge toward
+Each guard-relative duck file contains only its named extreme at frame 0. The
+lead and final direction components are both semantic: a left-lead dodge toward
 anatomical left is not interchangeable with a left-lead dodge toward right.
 
-| File basename | Semantic pose at frame 0 |
+| File basename | Frame assignments |
 |---|---|
-| `duck_lead_left_backward` | `duck_lead_left_backward` |
-| `duck_lead_left_left` | `duck_lead_left_left` |
-| `duck_lead_left_right` | `duck_lead_left_right` |
-| `duck_lead_right_backward` (optional counterpart) | `duck_lead_right_backward` |
-| `duck_lead_right_left` (optional counterpart) | `duck_lead_right_left` |
-| `duck_lead_right_right` (optional counterpart) | `duck_lead_right_right` |
+| `duck_lead_left_forward` | 0 `duck_lead_left_forward` |
+| `duck_lead_left_backward` | 0 `duck_lead_left_backward` |
+| `duck_lead_left_left` | 0 `duck_lead_left_left` |
+| `duck_lead_left_right` | 0 `duck_lead_left_right` |
+| `duck_lead_right_forward` (optional counterpart) | 0 `duck_lead_right_forward` |
+| `duck_lead_right_backward` (optional counterpart) | 0 `duck_lead_right_backward` |
+| `duck_lead_right_left` (optional counterpart) | 0 `duck_lead_right_left` |
+| `duck_lead_right_right` (optional counterpart) | 0 `duck_lead_right_right` |
 
 An exact file always wins. If one side is absent, the runtime mirrors the
 opposite-side pose from the same pack before consulting its parent pack. A
 whole-body mirror swaps both the stance lead and anatomical direction, so the
-pairs are `left_backward`/`right_backward`, `left_left`/`right_right`, and
-`left_right`/`right_left`.
+pairs are `left_forward`/`right_forward`, `left_backward`/`right_backward`,
+`left_left`/`right_right`, and `left_right`/`right_left`.
 
-Airborne motion uses the two single-pose files listed above. The runtime blends
+Directional dive poses are independent of the guard lead that preceded them:
+
+| File basename | Frame assignment |
+|---|---|
+| `dive_forward` | Frame 0 `dive_forward`, both feet unsupported |
+| `dive_backward` | Frame 0 `dive_backward`, both feet unsupported |
+| `dive_left` | Frame 0 `dive_left`, both feet unsupported |
+| `dive_right` (optional counterpart) | Frame 0 `dive_right`, both feet unsupported |
+
+The runtime interpolates from the selected guard-specific duck pose to the
+direction-only frame-0 dive pose, freezes that pose for terrain-dependent
+airtime, and begins the contact-pose interpolation only after authoritative
+contact. A forward dive recovers to `prone_idle`, a backward dive recovers to
+`supine_idle`, and lateral dives recover directly to their matching
+`prone_supine_roll_<left|right>` side-supported midpoint. The latter seeds the
+continuous downed-roll coordinate at that midpoint, so held camera-following
+continues without passing through prone idle; without held aim it settles back
+to prone normally. The transition root remains fixed through takeoff and
+flight while the authored pose owns direction. During terrain-contact recovery,
+the server progressively transfers the dive's directional yaw from the authored
+pose to the character root at the same rate that the pose returns to canonical
+contact coordinates. This equal-and-opposite handoff preserves one world-space
+landing heading instead of visibly turning toward camera-forward and snapping
+back at the endpoint. Backward recovery chooses the negative-pi root branch
+against the authored pose's positive-pi half turn, avoiding an otherwise
+equivalent endpoint reached through a visible full flip. Forward and lateral
+airborne-to-contact recoveries own the rendered skeleton for 20 fixed ticks
+(0.3125 seconds at 64 Hz); the 180-degree backward-to-supine recovery uses 32
+ticks (0.5 seconds) to retain the same continuity bound. During either span,
+ordinary-locomotion IK, terrain IK, landing leg
+compression, locomotion body response, and upright height normalization must
+remain disabled until that transition completes. The dive files contain neither an impact pose nor
+arrival at prone or supine idle. These are standalone single-pose files; the
+older frame-5 convention belonged to the discarded combined duck/dive layout
+and is not part of the runtime contract. When `dive_right` is absent, the runtime mirrors `dive_left` in
+character space.
+
+The shared supine contact convention keeps the head toward local +Z so rolls
+remain coherent with prone and both side-supported poses. Relative to canonical
+upright coordinates, that convention contributes an implicit positive-pi turn
+inside the midpoint-to-upright half of `supine_transition`. The server leaves
+the root fixed throughout the supine-to-midpoint half, then progressively
+applies the equivalent negative-pi turn during the midpoint-to-upright half.
+These two turns cancel in world space: the rendered character does not change
+heading, while the authoritative root finishes in the correct upright orientation.
+This counter-yaw applies only to `SupineToUpright`; `prone_transition` and all
+rolls are unchanged. Authored transitions own body facing only while active.
+At the upright endpoint, a continuously held aim input immediately resumes
+ordinary camera-facing; it does not require a release and second press.
+The authoritative input state represents camera-facing ownership with one enum:
+free/settling, aim-driven downed roll, or modifier-driven downed body alignment.
+Those modes cannot overlap, and no persistent facing-suspension flag can survive
+a transition into upright movement.
+
+Ordinary jump/dodge airborne motion uses the two generic single-pose files
+listed above. The runtime blends
 from a directional crouch/load into `airborne_center` or `airborne_travel`,
 modifies the traveling pose from horizontal velocity, and returns through a
-directional crouch/load on landing. There are no separate authored launch,
-direction, or landing samples in the complete pack.
+directional crouch/load on landing. Those generic airborne files have no
+separate authored launch, direction, or landing samples; the four dive poses
+are the explicit exception described above.
 
 Attacks likewise use the single-pose contact files listed above. There are no
 required commit or follow-through poses, and `stay` versus `switch` is not part
@@ -492,17 +565,22 @@ block_thrust_lead_left
 block_thrust_lead_right
 ```
 
-The remaining ground transitions each use one motion-coherent file:
+The remaining ground transitions are single midpoint poses. Runtime blends
+between their separately authored contact endpoints:
 
 | File basename | Frame assignments |
 |---|---|
-| `upright_prone_transition` | 0 upright/crouch reference; 12 `upright_prone_transition`; 24 `prone_idle` reference |
-| `dive` | 0 launch reference; 10 `dive_impact`; 18 `prone_idle` reference |
+| `prone_transition` | 0 `prone_transition` |
+| `prone_supine_roll_left` | 0 `prone_supine_roll_left`. Runtime mirrors this canonical leftward roll when `prone_supine_roll_right` is absent. Supine-to-prone reverses the opposite-side motion so the player's requested travel direction remains left or right in world space. |
+| `prone_supine_roll_right` (optional counterpart) | 0 `prone_supine_roll_right` |
+| `supine_transition` | 0 `supine_transition` |
 
-Endpoint references make each file understandable when previewed and provide
-useful interpolation, but they do not redefine semantic poses owned by another
-file. The catalog entries above designate exactly one authoritative file and
-frame for every required semantic pose.
+The catalog entries above designate exactly one authoritative file and frame
+for every required semantic pose; endpoint interpolation is runtime-owned.
+The publication mirror step also emits exact `prone_supine_roll_right` and
+`dive_right` runtime clips from their leftward sources. This keeps interpolation
+between a mirrored midpoint and an unmirrored contact pose from becoming a
+fractional post-blend reflection.
 
 The canonical procedural rig uses `root`, `pelvis`, `stomach_01`,
 `stomach_02`, `chest`, `neck_01`, `neck_02`, and `head`; paired clavicle,
@@ -577,8 +655,8 @@ collision and damage.
 Locomotion semantic anchors use the **left** side as their canonical first
 half-cycle. When a sparse gait source contains only that half, generated
 mirrored clips reflect the complete bilateral limb motion—including clavicles,
-arms, hands, legs, feet, and twist bones—to construct the opposite half and
-closure before runtime FK blending.
+arms, palms, every finger segment, legs, feet, and twist bones—to construct the
+opposite half and closure before runtime FK blending.
 Guard, attack, and guard-relative duck counterparts use presence-based
 mirroring. The runtime prefers an exact pose in the requested pack, then a
 whole-body mirrored opposite-side pose from that same pack, and only then the
@@ -793,6 +871,17 @@ Both use a forward, slightly outward anatomical bend hemisphere. Arm and
 leg swing share the same phase reconstruction before optional terrain IK; only
 the legs receive that final terrain solve. An explicit hand or weapon
 constraint can then override the reconstructed arm carriage.
+
+Holding aim/block adds a camera-relative look pass after FK. The two neck bones
+and head share the residual yaw and pitch, with each joint clamped to pi/8 per
+axis. Without held aim/block, camera pitch is not applied to the neck or head;
+ordinary action-direction yaw remains available. An upright keyboard jump also uses a procedural anticipation while Space
+is held: the pelvis lowers 0.12 m and the stomach/chest chain receives a small
+distributed forward fold. This is a distinct presentation state rather than
+`GroundedPosture::Crouched`, so it does not select crouched locomotion or alter
+the controller's requested pace or speed. Releasing Space launches and removes
+that layer.
+
 Locomotion bounds root, pelvis, torso, neck, and head translations around bind
 before look and final IK while preserving authored rotations. Authored visual
 root/pelvis Y is normalized only
@@ -1066,25 +1155,33 @@ feet whenever whole-body mirroring would change the weapon hand incorrectly.
 ### Crouching and directional ducking
 
 Directional ducking begins from the active guard rather than a neutral crouch.
-Each lead has backward, anatomical-left, and anatomical-right semantics. A
-symmetrical pack may author the three extremes for one lead; the opposite lead
-then comes from the mirrored counterpart. Both lateral extremes for a single
+Each lead has forward, backward, anatomical-left, and anatomical-right
+semantics. A symmetrical pack may author the four extremes for one lead; the
+opposite lead then comes from the mirrored counterpart. Both lateral extremes for a single
 lead remain distinct and cannot be constructed by mirroring each other,
 because that would also exchange the lead feet. Keep the guard's planted foot
 locations and normal hand carriage.
 
 | Pose | Animator brief |
 |---|---|
+| `duck_lead_<left\|right>_forward` | From the named guard lead, lower and incline the body forward behind the hands and forearms while preserving a controlled base. Frame 0 is the deepest sustainable forward duck. |
 | `duck_lead_<left\|right>_backward` | From the named guard lead, withdraw the head and upper torso backward while sitting the pelvis down and back between the feet. Increase knee flexion to preserve balance and avoid creating the motion solely by arching the lower back. Keep the gaze generally forward and do not lift both toes or heels. |
 | `duck_lead_<left\|right>_left` | From the named guard lead, shift the pelvis, ribcage, and especially the head toward anatomical left. Load the left leg more heavily, flex it, and allow the right leg to lengthen without moving either foot. Incline or rotate the torso only enough to keep balance and protect the head. Do not cross the legs. |
 | `duck_lead_<left\|right>_right` | From the named guard lead, make the corresponding anatomical-right displacement while retaining that same lead. This is a separately authored extreme when the pack supplies both lateral directions for the lead; do not derive it by reflecting the other lateral pose without also changing lead. |
 
 The same-pack counterpart rule mirrors an entire lead/direction pair only when
-the requested counterpart file is absent. Forward/downward ducking remains
-procedural: it applies a bounded forward head, ribcage, and pelvis displacement
-with planted-foot IK. Diagonal ducks blend these components. Direction still
+the requested counterpart file is absent. Direction still
 describes the defender's desired body or head displacement in local space, not
 merely the attacker's bearing.
+
+All duck files are frame-0-only stance poses. They contain no dive continuation.
+
+The four standalone stance-independent `dive_<direction>` files place their
+airborne pose at frame 0. Each represents the first instant both feet are unsupported, with a compact,
+protected silhouette suited to being held for arbitrary airtime. For backward
+and lateral dives, use a controlled turn, drop, or shoulder-led launch without
+encoding the prior guard lead. Do not animate impact or arrival at prone or
+supine idle; contact timing and the subsequent idle blend are runtime-owned.
 
 Directional ducks should preferably be authored as pose deltas or masked
 overrides over their named guard. Packs need only omit counterparts that remain
@@ -1288,37 +1385,54 @@ The initial complete set contains:
 | `prone_idle` | Lie face-down with the chest and pelvis close to the floor. Support the upper body lightly on the forearms or hands so the head can look forward without an extreme neck extension. Keep the legs extended or modestly bent and separated enough for stability. Mark the torso/pelvis and supporting forearms as floor contacts as appropriate. Do not trap held equipment beneath the chest when a neutral alternative exists. |
 | `supine_idle` | Lie on the back with the head and shoulders slightly raised enough to see forward. Flex the knees enough to keep the feet available for movement, with one or both soles planted, and keep the arms in a protective usable position rather than flat in a rigid anatomical display pose. |
 | `prone_crawl_contact` | Show a contralateral crawling support: left forearm/hand reaches or plants forward while the right knee/inside leg advances, with the right arm and left leg contributing rearward support. Keep hips and chest low and mark the current supporting surfaces. This is the maximum useful extension of the crawl, not a long military split. |
-| `prone_crawl_passing` | Bring the advancing right knee and left arm back beneath the body as the torso passes over the support polygon. Limbs are compact and changing roles; avoid a moment where the entire body appears unsupported. This is the neutral midpoint between mirrored crawl contacts. |
 | `supine_scamper_contact` | On the back, plant the left heel/foot and the opposite hand or forearm as the canonical extended support, with the pelvis slightly lifted or unloaded enough to move. The right leg is advancing toward its next plant. Protect the head and keep the neck from bearing body weight. |
-| `supine_scamper_passing` | Bring the advancing foot under the knee and move the torso through the support provided by heels and arms. Keep the pelvis near the floor but visibly mobile, and preserve a guarded upper body. This is the midpoint used between mirrored scamper contacts. |
-| `upright_prone_transition` | Pose the stable intermediate between standing/crouching and prone: both hands or forearms and at least one knee contact the floor, the head remains protected and able to look forward, and the pelvis is low enough to continue down without dropping the chest through the ground. It must also work in reverse as the main get-up intermediate. |
-| `dive_impact` | Pose first controlled contact after a forward dive. Use forearms and/or hands to absorb impact with bent elbows, turn or raise the head clear of the floor, keep the chest just above contact, and let knees/hips flex behind the body. Do not land on locked wrists, straight elbows, the face, or the weapon. |
+| `prone_transition` | Pose the stable intermediate between standing/crouching and prone: both hands or forearms and at least one knee contact the floor, the head remains protected and able to look forward, and the pelvis is low enough to continue down without dropping the chest through the ground. It must work in both directions. |
+| `prone_supine_roll_left` | Pose the stable side-supported midpoint of a leftward roll between prone and supine. Keep the head clear of the floor, draw the near arm and held equipment out of the torso's path, and use the shoulder, flank, hip, and bent legs to distribute contact without balancing on the neck or spine. The silhouette must remain valid when mirrored for `prone_supine_roll_right` and when traversed backward from supine. |
+| `prone_supine_roll_right` | Optional authored counterpart to the canonical leftward roll for equipment or anatomy that cannot be mirrored cleanly. Preserve the same contacts and endpoint compatibility on the opposite side. |
+| `supine_transition` | Pose the protected midpoint between supine and upright/crouched support. Turn partly onto one side, post with a hand or forearm, bring at least one foot beneath the body, and keep the head protected while the pelvis changes level. Avoid a symmetric sit-up that leaves both hands and feet unavailable. It must work in both directions, even though direct controls currently use only the get-up direction. |
 
 Backward crawling may initially reverse the forward cycle, and getting up may
-reverse the upright-to-prone transition. The planned controls do not include
-prone strafing or a deliberate prone-to-supine roll, so neither has an authored
-pose. Supine may still result from a hit or physical fall; recovery from it is
-an automatic get-up or ragdoll transition rather than a player-controlled roll.
+reverse the upright-to-prone transition. Pressing the jump/roll modifier with
+a lateral direction rolls from prone to supine; the same motion plays backward
+from supine to prone, with the opposite authored side
+selected so the requested travel direction remains unchanged. Releasing an
+armed posture control begins the applicable get-up.
+While aim/block is held downed, camera yaw drives a continuous roll around the
+character's head-to-feet axis. A 90-degree yaw difference holds the appropriate
+`prone_supine_roll_<left|right>` side-supported midpoint, and 180 degrees reaches
+the opposite prone/supine contact. Releasing aim at an intermediate angle
+settles to whichever contact endpoint is nearer. This path reuses the same two
+roll midpoints and requires no additional animation.
+Supine may also result from a hit or physical fall and uses the direct
+`supine_transition` motion when recovery does not first require a ragdoll handoff.
+The initial controls do not include prone strafing.
+
+Prone travel is capped at 3.0 m/s and supine scampering at 2.4 m/s, three times
+their initial controller caps. Their authored contact-to-mirror cadence runs at
+twice its initial rate rather than inheriting the full physical speed increase.
+All authored posture transitions keep the gameplay root facing fixed: the
+directional dive and get-up poses encode their own direction relative to that
+root and must not be rotated a second time toward residual velocity.
 
 ## Initial complete-pack size
 
 The humanoid unarmed root must satisfy every required semantic pose because it
 has no parent pack. Exact files and the presence-based mirrored counterparts
-both satisfy that requirement. The contract contains 34 resolvable semantics;
-six mirrored pairs allow the root to satisfy it with 28 authored files. Its
+both satisfy that requirement. The contract contains 40 resolvable semantics;
+nine mirrored pairs allow the root to satisfy it with 31 authored poses. Its
 tentative authored size is:
 
 | Family | Authored poses |
 |---|---:|
 | Standing and locomotion | 6 |
-| Directional ducking | 3 |
-| Jumping and dodging | 2 |
-| Prone and supine | 8 |
+| Directional ducking | 4 |
+| Jumping, dodging, and diving | 5 |
+| Prone and supine | 7 |
 | Combat guards | 1 |
 | Thrust/punch attacks | 1 |
 | Slash/swipe attacks | 1 |
 | Blocks | 6 |
-| **Complete unarmed root** | **28** |
+| **Complete unarmed root** | **31** |
 
 Most specialized packs should be substantially smaller because they inherit
 unchanged poses. A symmetric pack that overrides one strike family needs one

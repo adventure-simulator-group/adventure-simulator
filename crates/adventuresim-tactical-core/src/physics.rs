@@ -41,6 +41,12 @@ pub const TACTICAL_RUN_SPEED_METRES_PER_SECOND: f32 = 5.5;
 
 /// Maximum server-authoritative movement speed while the weapon guard is raised.
 pub const TACTICAL_GUARD_SPEED_METRES_PER_SECOND: f32 = 2.0;
+pub const TACTICAL_PRONE_SPEED_METRES_PER_SECOND: f32 = 3.0;
+pub const TACTICAL_SUPINE_SPEED_METRES_PER_SECOND: f32 = 2.4;
+pub const TACTICAL_ROLL_SPEED_METRES_PER_SECOND: f32 = 0.65;
+pub const TACTICAL_JUMP_HEIGHT_METRES: f32 = 1.8;
+pub const TACTICAL_DIVE_JUMP_HEIGHT_METRES: f32 = 0.65;
+pub const TACTICAL_DIVE_HORIZONTAL_SPEED_METRES_PER_SECOND: f32 = 7.0;
 
 /// Ahoy multiplies requested speed by this frequency to obtain ground
 /// acceleration. Scale the raised-guard frequency against its lower speed cap
@@ -81,6 +87,7 @@ pub fn tactical_character_controller() -> CharacterController {
     CharacterController {
         speed: TACTICAL_RUN_SPEED_METRES_PER_SECOND,
         acceleration_hz: TACTICAL_RUN_ACCELERATION_HZ,
+        jump_height: TACTICAL_JUMP_HEIGHT_METRES,
         ..default()
     }
 }
@@ -211,9 +218,40 @@ fn apply_analogue_movement_speed(
     viewer: TacticalPlayerViewer,
 ) {
     for (entity, input, mut controller, skeleton, pace) in &mut controllers {
+        controller.jump_height = if skeleton.is_some_and(|skeleton| {
+            matches!(
+                skeleton
+                    .posture_transition()
+                    .map(|transition| transition.kind()),
+                Some(crate::animation::PostureTransitionKind::DiveToDowned { .. })
+            )
+        }) {
+            TACTICAL_DIVE_JUMP_HEIGHT_METRES
+        } else {
+            TACTICAL_JUMP_HEIGHT_METRES
+        };
         let guard = skeleton.map_or(WeaponGuardState::Lowered, SkeletonState::weapon_guard);
+        let roll_motion = skeleton.map_or(0.0, SkeletonState::downed_lateral_motion);
+        if roll_motion.abs() > f32::EPSILON {
+            controller.speed = TACTICAL_ROLL_SPEED_METRES_PER_SECOND * roll_motion.abs();
+            controller.acceleration_hz =
+                TACTICAL_GROUND_ACCELERATION_METRES_PER_SECOND_SQUARED / controller.speed.max(0.01);
+            continue;
+        }
+        if skeleton.is_some_and(SkeletonState::is_posture_transitioning) {
+            controller.speed = 0.0;
+            continue;
+        }
+        let posture_cap = skeleton.and_then(|skeleton| match skeleton.body() {
+            crate::animation::BodyState::Prone => Some(TACTICAL_PRONE_SPEED_METRES_PER_SECOND),
+            crate::animation::BodyState::Supine => Some(TACTICAL_SUPINE_SPEED_METRES_PER_SECOND),
+            _ => None,
+        });
         let Some(pace) = pace else {
             controller.speed = tactical_movement_speed_for_guard(input.last_movement, guard);
+            if let Some(cap) = posture_cap {
+                controller.speed = controller.speed.min(cap);
+            }
             controller.acceleration_hz = tactical_movement_acceleration_hz_for_guard(guard);
             continue;
         };
@@ -237,6 +275,9 @@ fn apply_analogue_movement_speed(
                 });
         controller.speed =
             tactical_movement_speed_for_pace(input.last_movement, *pace, guard, jog, sprint);
+        if let Some(cap) = posture_cap {
+            controller.speed = controller.speed.min(cap);
+        }
         let magnitude = input
             .last_movement
             .map_or(0.0, |movement| movement.length().clamp(0.0, 1.0));
@@ -367,6 +408,90 @@ mod tests {
                 6.5,
             ),
             3.75
+        );
+    }
+
+    #[test]
+    fn prone_and_supine_ignore_faster_paces_and_transition_stops_motion() {
+        let mut world = World::new();
+        let prone = world
+            .spawn((
+                AccumulatedInput {
+                    last_movement: Some(Vec2::Y),
+                    ..default()
+                },
+                CharacterController::default(),
+                SkeletonState::default().with_body_state(crate::animation::BodyState::Prone),
+                MovementPace::Sprint,
+            ))
+            .id();
+        let supine = world
+            .spawn((
+                AccumulatedInput {
+                    last_movement: Some(Vec2::Y),
+                    ..default()
+                },
+                CharacterController::default(),
+                SkeletonState::default().with_body_state(crate::animation::BodyState::Supine),
+                MovementPace::Sprint,
+            ))
+            .id();
+        let mut transitioning = SkeletonState::default();
+        assert!(transitioning.begin_posture_transition(
+            crate::animation::PostureTransitionKind::UprightToProne,
+            0,
+            10,
+        ));
+        let transition = world
+            .spawn((
+                AccumulatedInput {
+                    last_movement: Some(Vec2::Y),
+                    ..default()
+                },
+                CharacterController::default(),
+                transitioning,
+                MovementPace::Sprint,
+            ))
+            .id();
+        let mut rolling =
+            SkeletonState::default().with_body_state(crate::animation::BodyState::Prone);
+        assert!(rolling.begin_posture_transition(
+            crate::animation::PostureTransitionKind::ProneToSupine {
+                direction: crate::animation::RollDirection::Left,
+            },
+            0,
+            10,
+        ));
+        let roll = world
+            .spawn((
+                AccumulatedInput {
+                    last_movement: Some(-Vec2::X),
+                    ..default()
+                },
+                CharacterController::default(),
+                rolling,
+                MovementPace::Sprint,
+            ))
+            .id();
+        let mut schedule = Schedule::default();
+        schedule.add_systems(apply_analogue_movement_speed);
+        schedule.run(&mut world);
+
+        assert_eq!(
+            world.get::<CharacterController>(prone).unwrap().speed,
+            TACTICAL_PRONE_SPEED_METRES_PER_SECOND
+        );
+        assert_eq!(
+            world.get::<CharacterController>(supine).unwrap().speed,
+            TACTICAL_SUPINE_SPEED_METRES_PER_SECOND
+        );
+        assert_eq!(
+            world.get::<CharacterController>(transition).unwrap().speed,
+            0.0
+        );
+        assert_eq!(
+            world.get::<CharacterController>(roll).unwrap().speed,
+            TACTICAL_ROLL_SPEED_METRES_PER_SECOND
         );
     }
 }
