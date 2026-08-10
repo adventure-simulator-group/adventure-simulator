@@ -714,13 +714,21 @@ mod tests {
                 Player::default(),
                 Attributes {
                     endurance,
+                    left_leg_strength: 3.0,
+                    right_leg_strength: 3.0,
                     ..default()
                 },
                 TacticalCombatState {
                     exhaustion: 0.25,
                     ..default()
                 },
-                LinearVelocity(Vec3::new(jog_speed, 0.0, 0.0)),
+                input::AccumulatedInput {
+                    last_movement: Some(Vec2::Y),
+                    ..default()
+                },
+                MovementPace::Jog,
+                // External physics velocity must not affect movement exertion.
+                LinearVelocity(Vec3::new(jog_speed + 10.0, 0.0, 0.0)),
             ))
             .id();
 
@@ -736,9 +744,10 @@ mod tests {
             .exhaustion;
         assert!((jog_exhaustion - 0.25).abs() < f32::EPSILON);
 
-        app.world_mut()
+        *app.world_mut()
             .entity_mut(actor)
-            .insert(LinearVelocity(Vec3::new(8.0, 0.0, 0.0)));
+            .get_mut::<MovementPace>()
+            .unwrap() = MovementPace::Sprint;
         app.world_mut()
             .resource_mut::<Time<()>>()
             .advance_by(Duration::from_secs(1));
@@ -753,7 +762,9 @@ mod tests {
 
         app.world_mut()
             .entity_mut(actor)
-            .insert(LinearVelocity::ZERO);
+            .get_mut::<input::AccumulatedInput>()
+            .unwrap()
+            .last_movement = None;
         app.world_mut()
             .resource_mut::<Time<()>>()
             .advance_by(Duration::from_secs(1));

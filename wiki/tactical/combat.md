@@ -221,10 +221,14 @@ fn balance_damage(attacker, defender, attack_directness):
 ### Exhaustion (grey)
 Exhaustion represents how out of breath your character is. Most actions will not actually exhaust faster than it recuperates, but climbing, sprinting, and fighting with heavy weapons, shield, and armor can.
 In tactical combat it is transient, server-authoritative grey incapacitation.
-Measured planar movement at the sustainable jog speed neither adds nor removes
-exhaustion; faster movement adds it and slower movement recovers it. Tactical
-breath changes use a 5x response scale so exertion and recovery resolve quickly
-enough to matter during a fight without changing any movement-speed thresholds.
+The movement contribution is based on server-authoritative locomotion intent,
+not measured physics velocity: full jogging contributes exactly zero, walking
+or partial input recovers exhaustion, and sprinting adds it. External impulses
+therefore cannot create breath exhaustion, while poison, climbing, combat, and
+other future sources remain free to add independent rates. Tactical breath
+changes use a 5x response scale so exertion and recovery resolve quickly enough
+to matter during a fight without changing any movement-speed thresholds. Wheel
+segments below 0.5% are hidden as subpixel display noise without changing state.
 ```rs
 const BREATH_PER_METERS_PER_SECOND = 0.0034
 const TACTICAL_BREATH_RESPONSE_SCALE = 5.0

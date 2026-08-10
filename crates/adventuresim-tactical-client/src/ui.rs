@@ -72,6 +72,7 @@ impl Plugin for UiPlugin {
 const INCAPACITATION_WHEEL_RADIUS: f32 = 26.0;
 const INCAPACITATION_WHEEL_WIDTH: f32 = 8.0;
 const INCAPACITATION_WHEEL_RESOLUTION: f32 = 96.0;
+const MIN_VISIBLE_INCAPACITATION_SEGMENT: f32 = 0.005;
 
 fn incapacitation_wheel_segments(sources: TacticalIncapacitationSources) -> [(f32, Color32); 9] {
     [
@@ -85,6 +86,11 @@ fn incapacitation_wheel_segments(sources: TacticalIncapacitationSources) -> [(f3
         (sources.exhaustion, Color32::from_rgb(0x80, 0x80, 0x80)),
         (sources.imbalance, Color32::WHITE),
     ]
+}
+
+fn visible_incapacitation_wheel_amount(raw_amount: f32, remaining: f32) -> Option<f32> {
+    let amount = raw_amount.max(0.0).min(remaining);
+    (amount >= MIN_VISIBLE_INCAPACITATION_SEGMENT).then_some(amount)
 }
 
 fn draw_incapacitation_wheel(
@@ -121,10 +127,9 @@ fn draw_incapacitation_wheel(
     let mut cursor = -std::f32::consts::FRAC_PI_2;
     let mut remaining = 1.0_f32;
     for (raw_amount, color) in incapacitation_wheel_segments(sources) {
-        let amount = raw_amount.max(0.0).min(remaining);
-        if amount <= 0.0 {
+        let Some(amount) = visible_incapacitation_wheel_amount(raw_amount, remaining) else {
             continue;
-        }
+        };
         let end = cursor + amount * std::f32::consts::TAU;
         let steps = (amount * INCAPACITATION_WHEEL_RESOLUTION).ceil().max(2.0) as usize;
         let points = (0..=steps)
@@ -986,5 +991,11 @@ mod tests {
         assert_eq!(segments[1].1, Color32::from_rgb(0xc8, 0x47, 0x47));
         assert_eq!(segments[7].1, Color32::from_rgb(0x80, 0x80, 0x80));
         assert_eq!(segments[8].1, Color32::WHITE);
+    }
+
+    #[test]
+    fn incapacitation_wheel_hides_subpixel_segments_without_changing_state() {
+        assert_eq!(visible_incapacitation_wheel_amount(0.0049, 1.0), None);
+        assert_eq!(visible_incapacitation_wheel_amount(0.005, 1.0), Some(0.005));
     }
 }

@@ -9,20 +9,34 @@ pub(crate) fn update_tactical_combat_state(
         Entity,
         &mut TacticalCombatState,
         Option<&mut input::AccumulatedInput>,
-        Option<&LinearVelocity>,
+        Option<&MovementPace>,
+        Option<&SkeletonState>,
     )>,
 ) {
-    for (entity, mut state, mut input, velocity) in &mut states {
+    for (entity, mut state, mut input, pace, skeleton) in &mut states {
         let was_incapacitated = state.is_incapacitated();
         let Ok(view) = viewer.get(entity) else {
             continue;
         };
         let endurance = view.raw_single_body_part_attr(SimpleAttribute::Endurance);
-        let planar_speed =
-            velocity.map_or(0.0, |velocity| Vec2::new(velocity.x, velocity.z).length());
-        state.exhaustion = (state.exhaustion
-            + tactical_exhaustion_change_per_second(planar_speed, endurance) * time.delta_secs())
-        .max(0.0);
+        let burden = view.body_weight() + view.inventory_weight();
+        let sprint_speed = tactical_sprint_speed(
+            view.raw_limb_attr(LimbAttribute::Strength, BodyPart::LeftLeg),
+            view.raw_limb_attr(LimbAttribute::Strength, BodyPart::RightLeg),
+            view.body_part_health(BodyPart::LeftLeg),
+            view.body_part_health(BodyPart::RightLeg),
+            burden,
+        );
+        let movement = input.as_deref().and_then(|input| input.last_movement);
+        let movement_exhaustion_change = tactical_movement_exhaustion_change_per_second(
+            movement,
+            pace.copied().unwrap_or_default(),
+            skeleton.map_or(WeaponGuardState::Lowered, SkeletonState::weapon_guard),
+            endurance,
+            sprint_speed,
+        );
+        state.exhaustion =
+            (state.exhaustion + movement_exhaustion_change * time.delta_secs()).max(0.0);
         let balance = view.skill_check(Skill::Balance, LimbWeights::both_legs());
         state.imbalance = recover_combat_imbalance(state.imbalance, balance, time.delta_secs());
         let Ok(limbs) = limbs.get(entity) else {

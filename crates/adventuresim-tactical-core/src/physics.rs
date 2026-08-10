@@ -81,15 +81,38 @@ pub fn tactical_breath_recovery_per_second(endurance: f32) -> f32 {
 }
 
 /// Positive values accumulate tactical breath exhaustion; negative values
-/// recover it. Moving at the endurance-derived jog speed is the equilibrium.
-pub fn tactical_exhaustion_change_per_second(planar_speed: f32, endurance: f32) -> f32 {
-    let planar_speed = if planar_speed.is_finite() {
-        planar_speed.max(0.0)
+/// recover it. `effort_speed` describes intentional exertion rather than
+/// physics velocity, so external impulses do not make a character winded.
+pub fn tactical_exhaustion_change_per_second(effort_speed: f32, endurance: f32) -> f32 {
+    let effort_speed = if effort_speed.is_finite() {
+        effort_speed.max(0.0)
     } else {
         0.0
     };
-    (planar_speed * BREATH_PER_METRE_PER_SECOND - tactical_breath_recovery_per_second(endurance))
+    (effort_speed * BREATH_PER_METRE_PER_SECOND - tactical_breath_recovery_per_second(endurance))
         * TACTICAL_BREATH_RESPONSE_SCALE
+}
+
+/// Movement's additive contribution to tactical exhaustion. A full jog is
+/// explicitly capped at neutral, while partial jog input and walking recover
+/// exhaustion and sprinting accumulates it. Other exhaustion sources can add
+/// their own rates without being cleared by the selected movement pace.
+pub fn tactical_movement_exhaustion_change_per_second(
+    movement: Option<Vec2>,
+    pace: MovementPace,
+    weapon_guard: WeaponGuardState,
+    endurance: f32,
+    sprint_speed: f32,
+) -> f32 {
+    let jog_speed = tactical_jog_speed(endurance);
+    let effort_speed =
+        tactical_movement_speed_for_pace(movement, pace, weapon_guard, jog_speed, sprint_speed);
+    let change = tactical_exhaustion_change_per_second(effort_speed, endurance);
+    if pace == MovementPace::Jog {
+        change.min(0.0)
+    } else {
+        change
+    }
 }
 
 pub fn tactical_sprint_speed(
@@ -454,6 +477,34 @@ mod tests {
                 < f32::EPSILON
         );
         assert!(tactical_exhaustion_change_per_second(0.0, 3.0) < 0.0);
+        assert_eq!(
+            tactical_movement_exhaustion_change_per_second(
+                Some(Vec2::Y),
+                MovementPace::Jog,
+                WeaponGuardState::Lowered,
+                3.0,
+                8.0,
+            ),
+            0.0
+        );
+        assert!(
+            tactical_movement_exhaustion_change_per_second(
+                Some(Vec2::splat(0.71)),
+                MovementPace::Jog,
+                WeaponGuardState::Lowered,
+                3.0,
+                8.0,
+            ) <= 0.0
+        );
+        assert!(
+            tactical_movement_exhaustion_change_per_second(
+                Some(Vec2::Y),
+                MovementPace::Sprint,
+                WeaponGuardState::Lowered,
+                3.0,
+                8.0,
+            ) > 0.0
+        );
         assert_eq!(
             tactical_sprint_speed(
                 REFERENCE_LEG_STRENGTH,
