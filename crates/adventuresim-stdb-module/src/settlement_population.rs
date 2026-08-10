@@ -417,19 +417,18 @@ fn insert_resident_with_seed(
             settlement_id,
             urban,
         )?;
-        if existing.profession == "cleric" {
-            if let Some(organization_id) =
+        if existing.profession == "cleric"
+            && let Some(organization_id) =
                 crate::social_roles::religious_organization_for(&settlement.religion_id)
-            {
-                crate::social_roles::ensure_character_professional_role(
-                    ctx,
-                    character_id,
-                    organization_id,
-                    adventuresim_core::organization::organization(organization_id)
-                        .and_then(|definition| definition.entry_role_ids.first())
-                        .ok_or("Religious organization has no entry role")?,
-                )?;
-            }
+        {
+            crate::social_roles::ensure_character_professional_role(
+                ctx,
+                character_id,
+                organization_id,
+                adventuresim_core::organization::organization(organization_id)
+                    .and_then(|definition| definition.entry_role_ids.first())
+                    .ok_or("Religious organization has no entry role")?,
+            )?;
         }
         return Ok(());
     }
@@ -460,7 +459,7 @@ fn insert_resident_with_seed(
     } else {
         supplied_role
     };
-    let female = population::stable_hash(&format!("{seed}:sex")) % 2 == 0;
+    let female = population::stable_hash(&format!("{seed}:sex")).is_multiple_of(2);
     let age_band = age(profile.age);
     let household = format!(
         "the {} {}",
@@ -504,7 +503,7 @@ fn insert_resident_with_seed(
             build: profile.build.clone(),
             hair: profile.hair.clone(),
             facial_hair: if !female
-                && population::stable_hash(&seed) % 3 == 0
+                && population::stable_hash(&seed).is_multiple_of(3)
                 && !matches!(age_band, NpcAgeBand::Child)
             {
                 "a neatly kept beard".into()
@@ -545,7 +544,7 @@ fn insert_resident_with_seed(
         .db
         .settlement()
         .id()
-        .find(&settlement_id.to_owned())
+        .find(settlement_id.to_owned())
         .ok_or("Settlement population references an unknown settlement")?;
     let urban = matches!(
         settlement.category,
@@ -559,19 +558,18 @@ fn insert_resident_with_seed(
         settlement_id,
         urban,
     )?;
-    if resident.profession == "cleric" {
-        if let Some(organization_id) =
+    if resident.profession == "cleric"
+        && let Some(organization_id) =
             crate::social_roles::religious_organization_for(&settlement.religion_id)
-        {
-            crate::social_roles::ensure_character_professional_role(
-                ctx,
-                resident.character_id,
-                organization_id,
-                adventuresim_core::organization::organization(organization_id)
-                    .and_then(|definition| definition.entry_role_ids.first())
-                    .ok_or("Religious organization has no entry role")?,
-            )?;
-        }
+    {
+        crate::social_roles::ensure_character_professional_role(
+            ctx,
+            resident.character_id,
+            organization_id,
+            adventuresim_core::organization::organization(organization_id)
+                .and_then(|definition| definition.entry_role_ids.first())
+                .ok_or("Religious organization has no entry role")?,
+        )?;
     }
     let (start_minute, end_minute) = match profile.schedule {
         Schedule::Day => (360, 1200),
@@ -667,7 +665,7 @@ pub fn ensure_settlement_population(
         .db
         .settlement()
         .id()
-        .find(&settlement_id.to_string())
+        .find(settlement_id.to_string())
         .is_some_and(|settlement| {
             matches!(
                 settlement.category,
@@ -697,7 +695,7 @@ pub fn ensure_settlement_population(
             .db
             .settlement()
             .id()
-            .find(&settlement_id.to_owned())
+            .find(settlement_id.to_owned())
             .ok_or("Organization chapter references an unknown settlement")?;
         let physical_location = adventuresim_core::organization::chapter_effective_location_id(
             organization,
@@ -849,6 +847,7 @@ mod tests {
         assert!(canonical_npc_place("lubeck", "unknown-route-value").is_none());
     }
 
+    #[allow(dead_code)] // Shared fixture retained for tests compiled outside the module target.
     fn settlement_resident_profile() -> SettlementResidentProfile {
         SettlementResidentProfile {
             character_id: 42,

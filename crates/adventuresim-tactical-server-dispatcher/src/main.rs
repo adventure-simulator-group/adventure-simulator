@@ -101,7 +101,7 @@ fn main() {
     let bin = args.tactical_server_bin.clone();
     let stdb_url = args.spacetimedb_url.clone();
     let stdb_module = args.spacetimedb_module.clone();
-    let host = args.host.clone();
+    let host = args.host;
 
     conn.db
         .tactical_server_request()

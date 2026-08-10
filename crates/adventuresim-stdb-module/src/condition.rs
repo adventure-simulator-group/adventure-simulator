@@ -256,12 +256,11 @@ fn exposure_location(ctx: &ReducerContext, character_id: u64) -> ExposureLocatio
         );
     }
     if let Some(party_id) = character.party_id {
-        if let Some(party) = ctx.db.party_authority().id().find(&party_id) {
-            if let Some(site_id) = party.current_case_site_id
-                && let Some(site) = ctx.db.case_site_authority().id_key().find(site_id.value)
-            {
-                return ExposureLocation::Fixed(site.latitude_e7 / 10, site.longitude_e7 / 10, 0);
-            }
+        if let Some(party) = ctx.db.party_authority().id().find(&party_id)
+            && let Some(site_id) = party.current_case_site_id
+            && let Some(site) = ctx.db.case_site_authority().id_key().find(site_id.value)
+        {
+            return ExposureLocation::Fixed(site.latitude_e7 / 10, site.longitude_e7 / 10, 0);
         }
         if let (Some(journey), Some(route)) = (
             ctx.db.party_journey_authority().party_id().find(&party_id),
@@ -302,8 +301,7 @@ pub fn apply_weather_exposure(
     let clothing = StrategicEquipment::load(ctx, character_id).survival_clothing();
     let location = exposure_location(ctx, character_id);
     let weather = (0..elapsed_minutes).map(|offset| {
-        let (latitude, longitude, elevation) =
-            location.position(moving.then_some(offset).unwrap_or(0));
+        let (latitude, longitude, elevation) = location.position(if moving { offset } else { 0 });
         adventuresim_core::weather::weather_at(
             adventuresim_core::weather::WORLD_WEATHER_SEED,
             starting_minute.saturating_add(offset),
@@ -458,7 +456,7 @@ pub fn prepare_party_waterskins(
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party not found")?;
     party.pooled_water_ml = departure_water_volume(
         party.pooled_water_ml,

@@ -595,14 +595,13 @@ pub(crate) fn on_player_input(
         posture_intent.last_command_sequence,
     ) {
         posture_intent.last_command_sequence = validated.posture.sequence;
-        if let Some(action) = validated.posture.action {
-            if let Some(direction) =
+        if let Some(action) = validated.posture.action
+            && let Some(direction) =
                 apply_posture_action(action, &mut skeleton, &mut accumulated_input)
-            {
-                let horizontal = dive_horizontal_velocity(look.yaw, direction);
-                velocity.x = horizontal.x;
-                velocity.z = horizontal.z;
-            }
+        {
+            let horizontal = dive_horizontal_velocity(look.yaw, direction);
+            velocity.x = horizontal.x;
+            velocity.z = horizontal.z;
         }
     }
     accumulated_input.crouched =
@@ -693,9 +692,7 @@ fn apply_posture_action(
                 .then_some(PostureTransitionKind::DiveToDowned { direction })
         }
     };
-    let Some(transition) = transition else {
-        return None;
-    };
+    let transition = transition?;
     let duration = match transition {
         PostureTransitionKind::DiveToDowned {
             direction: DiveDirection::Backward,

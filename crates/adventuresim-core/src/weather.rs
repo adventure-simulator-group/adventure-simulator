@@ -195,9 +195,9 @@ fn seasonal_wetness_bps(interval: u64) -> u16 {
 
 fn temperature_deci_c(interval: u64, cell_latitude: i32, elevation_m: i16) -> i32 {
     let day = (interval * WEATHER_INTERVAL_MINUTES / 1_440) % 365;
-    let seasonal = if day < 60 || day >= 330 {
+    let seasonal = if !(60..330).contains(&day) {
         -40
-    } else if day < 120 || day >= 270 {
+    } else if !(120..270).contains(&day) {
         50
     } else {
         150

@@ -373,6 +373,7 @@ fn weighted_pair(a: SemanticPose, b: SemanticPose, b_weight: f32) -> Vec<PoseSam
     samples
 }
 
+#[cfg(test)]
 pub(super) fn gait_pair(
     phase: f32,
     contact: SemanticPose,

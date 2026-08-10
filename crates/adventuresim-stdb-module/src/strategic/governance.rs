@@ -429,7 +429,7 @@ pub(crate) fn normalize_and_elect_party_leader(
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party not found")?;
     let living = living_party_member_ids(ctx, party_id);
     if living.is_empty() {

@@ -489,7 +489,7 @@ pub fn generate(
 }
 
 fn generated_sex(seed: &str, tier: StartingAgeTier, slot: u8) -> StartingSex {
-    if tier_hash("sex", seed, tier, slot) % 2 == 0 {
+    if tier_hash("sex", seed, tier, slot).is_multiple_of(2) {
         StartingSex::Female
     } else {
         StartingSex::Male
@@ -665,12 +665,15 @@ fn starting_activity_profile(
     use crate::strategic_schedule::{
         ActivityTrainingProfile, CombatTrainingProfile, EquippedCombatItem,
     };
-    let hands = inventory.iter().filter_map(|item| {
-        matches!(
-            item.equipped,
-            Some(StartingSlot::LeftHand | StartingSlot::RightHand)
-        )
-        .then(|| {
+    let hands = inventory
+        .iter()
+        .filter(|&item| {
+            matches!(
+                item.equipped,
+                Some(StartingSlot::LeftHand | StartingSlot::RightHand)
+            )
+        })
+        .map(|item| {
             let definition = crate::item_catalog::definition(&item.item_id);
             let (shield, balance) = definition.map_or((false, 1.0), |definition| match &definition
                 .kind
@@ -684,8 +687,7 @@ fn starting_activity_profile(
                 shield,
                 balance,
             }
-        })
-    });
+        });
     ActivityTrainingProfile {
         combat: CombatTrainingProfile::from_equipped_hands(hands),
     }
@@ -1107,7 +1109,7 @@ fn professional_personality(
     };
     let mut traits = vec![
         first,
-        if tier_hash("professional-personality", seed, tier, slot) % 2 == 0 {
+        if tier_hash("professional-personality", seed, tier, slot).is_multiple_of(2) {
             alternate_a
         } else {
             alternate_b

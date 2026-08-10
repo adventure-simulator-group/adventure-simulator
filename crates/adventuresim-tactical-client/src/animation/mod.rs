@@ -341,7 +341,7 @@ fn evaluate_skeletons(
             foot_ik_weights: graph_foot_ik_weights(&evaluation),
             clips: weighted,
         };
-        let ordinary_locomotion_candidate = ordinary_locomotion_candidate(&skeleton);
+        let ordinary_locomotion_candidate = ordinary_locomotion_candidate(skeleton);
         if let Some(mut playback) = playback {
             // Hysteresis prevents sub-threshold velocity noise from repeatedly
             // restarting the idle/locomotion presentation transition.
@@ -891,7 +891,7 @@ fn append_resolved_sample_layer(
         PoseSampling::Cycle { phase } => {
             append_weighted_clip(
                 weighted,
-                &start.clip,
+                start.clip,
                 start.mirrored,
                 start.clip.duration_seconds * phase.rem_euclid(1.0),
                 sample.weight,

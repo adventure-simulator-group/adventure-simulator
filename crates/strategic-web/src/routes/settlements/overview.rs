@@ -169,8 +169,8 @@ pub(super) async fn settlement_map(
         .max()
         .unwrap_or(0)
         .max(1);
-    if can_travel {
-        if let Some(party) = active_party.as_ref() {
+    if can_travel
+        && let Some(party) = active_party.as_ref() {
             let attributes: Vec<CharacterAttributes> = state
                 .db
                 .query("SELECT * FROM backend_character_attributes")
@@ -206,7 +206,6 @@ pub(super) async fn settlement_map(
                 party,
             );
         }
-    }
     if can_travel {
         for destination in &mut destinations {
             destination.provision_forecast = travel_provision_forecast(

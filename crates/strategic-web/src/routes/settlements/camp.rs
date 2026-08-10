@@ -580,7 +580,7 @@ mod direct_demo_redirect_tests {
         let demo = challenge("challenge:ordered-sigils:demo:7:0", true, true, false);
         let active_road = road_challenge(true, true);
         assert_eq!(
-            direct_demo_challenge_redirect(&[demo.clone()], &[active_road], 7),
+            direct_demo_challenge_redirect(std::slice::from_ref(&demo), &[active_road], 7),
             None
         );
 

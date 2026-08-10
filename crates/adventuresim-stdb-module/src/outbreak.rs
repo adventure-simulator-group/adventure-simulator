@@ -416,7 +416,7 @@ pub fn collect_fixture_water_into_container(
         .db
         .water_material_lot()
         .id()
-        .find(&source.material_lot_id)
+        .find(source.material_lot_id)
         .ok_or("Water collection is unavailable")?;
     if lot.outbreak_case_id != authority.case_id {
         return Err("Water collection action is unavailable".into());
@@ -743,7 +743,7 @@ pub(crate) fn water_holding_contamination(
             continue;
         }
         let amount_ml = amount_microliters as f32 / 1_000.0;
-        let held_anchor_concentration = selected_load as f32 / (amount_ml as f32 * 1_000.0);
+        let held_anchor_concentration = selected_load as f32 / (amount_ml * 1_000.0);
         let current = adventuresim_core::food::contamination_at(
             held_anchor_concentration,
             lot.growth_per_hour,
@@ -764,7 +764,7 @@ pub(crate) fn source_material_knowledge_provenance(
         .db
         .outbreak_authority()
         .case_id()
-        .find(&case_id.to_owned())
+        .find(case_id.to_owned())
     else {
         return Ok(None);
     };
@@ -831,7 +831,7 @@ pub(crate) fn case_patient_visible_to_character_view(
         .db
         .outbreak_authority()
         .case_id()
-        .find(&case_id.to_owned())
+        .find(case_id.to_owned())
     else {
         return false;
     };
@@ -856,7 +856,7 @@ pub(crate) fn case_patient_visible_to_character(
         .db
         .outbreak_authority()
         .case_id()
-        .find(&case_id.to_owned())
+        .find(case_id.to_owned())
     else {
         return false;
     };
@@ -908,12 +908,10 @@ fn materialize_patient_corpse(
         .character_death()
         .character_id()
         .find(exposure.patient_character_id)
+        && (existing.strategic_minute != death_minute
+            || existing.source_id.as_deref() != Some(death_source_id.as_str()))
     {
-        if existing.strategic_minute != death_minute
-            || existing.source_id.as_deref() != Some(death_source_id.as_str())
-        {
-            return Err("Outbreak patient death provenance collision".into());
-        }
+        return Err("Outbreak patient death provenance collision".into());
     }
     crate::character::transition_character_to_dead_at(
         ctx,
@@ -1079,8 +1077,7 @@ pub(crate) fn materialize_generated_outbreak(
     let transmission_route = format!("{:?}", outbreak.transmission_route).to_ascii_lowercase();
     let source_json =
         serde_json::to_string(&outbreak.source).map_err(|_| "Could not encode outbreak source")?;
-    let responsible_resident_character_id =
-        responsible.map(|value| value.resident_character_id.clone());
+    let responsible_resident_character_id = responsible.map(|value| value.resident_character_id);
     let culpability =
         responsible.map(|value| format!("{:?}", value.culpability).to_ascii_lowercase());
     let carrier_threat_id = carrier.map(str::to_owned);
@@ -1126,14 +1123,14 @@ pub(crate) fn materialize_generated_outbreak(
             .db
             .outbreak_water_source()
             .fixture_id()
-            .find(&physical_source_fixture.to_string())
+            .find(physical_source_fixture.to_string())
             .is_some_and(|source| {
                 source.material_lot_id == material_lot_id
                     && ctx
                         .db
                         .water_material_lot()
                         .id()
-                        .find(&source.material_lot_id)
+                        .find(source.material_lot_id)
                         .is_some_and(|lot| {
                             lot.source_fixture_id == source.fixture_id
                                 && lot.outbreak_case_id == generated.canonical_case_id
@@ -1203,7 +1200,7 @@ pub(crate) fn materialize_generated_outbreak(
         let fixture_id = physical_source_fixture.to_string();
         let material_lot_id = water_material_lot_id(&generated.canonical_case_id);
         ctx.db.water_material_lot().insert(WaterMaterialLot {
-            id: material_lot_id.clone(),
+            id: material_lot_id,
             source_fixture_id: fixture_id.clone(),
             outbreak_case_id: generated.canonical_case_id.clone(),
             liquid_item_id: crate::inventory_container::WATER_ITEM_ID.into(),
@@ -1482,7 +1479,7 @@ pub(crate) fn commit_source_remediation(
         .db
         .outbreak_authority()
         .case_id()
-        .find(&case_id.to_owned())
+        .find(case_id.to_owned())
         .ok_or("Outbreak authority not found")?;
     let source_fixture = outbreak_source_fixture(case_id, source_site_id)?;
     if authority.remediation_id != remediation_id
@@ -1768,7 +1765,7 @@ pub(crate) fn commit_carrier_remediation(
         .db
         .outbreak_authority()
         .case_id()
-        .find(&case_id.to_owned())
+        .find(case_id.to_owned())
         .ok_or("Outbreak authority not found")?;
     if authority.source_kind != "threat_vector" || authority.remediation_id != remediation_id {
         return Err("Hostile outcome does not match the authoritative carrier source".into());
@@ -1837,7 +1834,7 @@ pub(crate) fn exposure_windows(
         .db
         .outbreak_authority()
         .problem_id()
-        .find(&problem_id.to_owned())
+        .find(problem_id.to_owned())
     else {
         return vec![(problem_id.to_owned(), from, to)];
     };
@@ -1947,7 +1944,7 @@ pub(crate) fn discover_case_corpses(
         .db
         .outbreak_authority()
         .case_id()
-        .find(&case_id.to_owned())
+        .find(case_id.to_owned())
         .is_none()
     {
         return Ok(());

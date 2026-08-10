@@ -301,11 +301,9 @@ pub fn plan_due_period_settlement(
     charge_per_period: u64,
 ) -> DueSettlementPlan {
     let periods_due = due_periods(next_due_minute, through_minute).count() as u64;
-    let affordable = if charge_per_period == 0 {
-        periods_due
-    } else {
-        available_funds / charge_per_period
-    };
+    let affordable = available_funds
+        .checked_div(charge_per_period)
+        .unwrap_or(periods_due);
     let periods_paid = periods_due.min(affordable);
     let amount_spent = periods_paid.saturating_mul(charge_per_period);
     let first_unpaid_due_minute = (periods_paid < periods_due).then(|| {

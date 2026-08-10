@@ -270,13 +270,13 @@ fn encode_sparse_inputs(
     let mut poses = Vec::with_capacity(MAX_GRAPH_ANCHORS);
     for active_index in 0..MAX_GRAPH_ANCHORS {
         let mut pose = Pose::default();
-        for index in 0..flattened.len() {
+        for (index, marker_id) in marker_ids.iter().enumerate().take(flattened.len()) {
             pose.add_bone(
                 BonePose {
                     translation: Some(Vec3::X * (index == active_index) as u8 as f32),
                     ..default()
                 },
-                marker_ids[index],
+                *marker_id,
             );
         }
         poses.push(pose);

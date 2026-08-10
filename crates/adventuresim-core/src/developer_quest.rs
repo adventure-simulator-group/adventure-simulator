@@ -415,10 +415,10 @@ fn declared_ids(definition: &DeveloperQuestDefinition) -> Vec<(String, &str)> {
                 }
                 ObjectiveRequirement::Retrieve { asset_id }
                 | ObjectiveRequirement::Return { asset_id, .. }
-                | ObjectiveRequirement::Exchange { asset_id, .. } => {
-                    if declared_assets.insert(asset_id.as_str()) {
-                        ids.push((format!("{path}.asset_id"), asset_id.as_str()));
-                    }
+                | ObjectiveRequirement::Exchange { asset_id, .. }
+                    if declared_assets.insert(asset_id.as_str()) =>
+                {
+                    ids.push((format!("{path}.asset_id"), asset_id.as_str()));
                 }
                 _ => {}
             }
@@ -1086,17 +1086,16 @@ fn validate_custody(
             | R::Release { subject_id } => Some((subject_id.as_str(), "subject")),
             _ => None,
         };
-        if let Some((id, kind)) = object {
-            if let Some(existing) = required.insert(id.to_owned(), kind)
-                && existing != kind
-            {
-                diagnostics.push(diagnostic(
-                    "objectives",
-                    "ambiguous_custody_kind",
-                    format!("{id} is used as both an asset and subject"),
-                    DiagnosticTier::Structural,
-                ));
-            }
+        if let Some((id, kind)) = object
+            && let Some(existing) = required.insert(id.to_owned(), kind)
+            && existing != kind
+        {
+            diagnostics.push(diagnostic(
+                "objectives",
+                "ambiguous_custody_kind",
+                format!("{id} is used as both an asset and subject"),
+                DiagnosticTier::Structural,
+            ));
         }
     }
     let mut supplied = BTreeSet::new();
@@ -1182,7 +1181,7 @@ fn namespace_definition(
         .iter()
         .map(|id| {
             let kind = id.split_once(':').map_or("internal", |(kind, _)| kind);
-            let replacement = qg::observer_scoped_id(base, kind, &id);
+            let replacement = qg::observer_scoped_id(base, kind, id);
             (id.clone(), replacement)
         })
         .collect::<BTreeMap<_, _>>();
@@ -2150,14 +2149,14 @@ mod tests {
     #[test]
     fn switching_to_another_schema_candidate_compiles_with_atomic_binding() {
         let mut definition = generated_definition();
-        let current_npc = definition.witnesses[0].resident_character_id.clone();
+        let current_npc = definition.witnesses[0].resident_character_id;
         let replacement = context()
             .witness_candidates
             .into_iter()
             .find(|candidate| candidate.resident_character_id != current_npc)
             .unwrap();
         let witness = &mut definition.witnesses[0];
-        witness.resident_character_id = replacement.resident_character_id.clone();
+        witness.resident_character_id = replacement.resident_character_id;
         witness.display_name = replacement.display_name.clone();
         witness.demographic = replacement.demographic;
         witness.expected_location = replacement.expected_location.clone();
@@ -2171,8 +2170,7 @@ mod tests {
         }
         for producer in &mut definition.dialogue_producers {
             if producer.recipient_resident_character_id == current_npc {
-                producer.recipient_resident_character_id =
-                    replacement.resident_character_id.clone();
+                producer.recipient_resident_character_id = replacement.resident_character_id;
             }
         }
         let generated = compile(&DeveloperGenerationContext {

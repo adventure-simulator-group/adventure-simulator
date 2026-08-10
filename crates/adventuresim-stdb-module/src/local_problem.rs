@@ -637,8 +637,8 @@ fn ensure_generated_incidents_inner(
                 occurred_at,
                 event_id: event_id.clone(),
                 proposition_id: proposition_id.clone(),
-                witness_resident_character_id: witness.resident_character_id.clone(),
-                victim_resident_character_id: victim.resident_character_id.clone(),
+                witness_resident_character_id: witness.resident_character_id,
+                victim_resident_character_id: victim.resident_character_id,
                 circumstance: format!("{circumstance:?}").to_ascii_lowercase(),
                 site_id: site.id.0.clone(),
                 evidence_id: evidence_id.clone(),
@@ -1011,7 +1011,7 @@ pub(crate) fn apply_outcome(
         .db
         .local_problem_authority()
         .id()
-        .find(&problem_id.to_owned())
+        .find(problem_id.to_owned())
         .ok_or("Local problem not found")?;
     problem.mitigation_bps = problem.mitigation_bps.max(input.mitigation_bps);
     if input.resolve {
@@ -1030,7 +1030,7 @@ pub(crate) fn apply_outcome(
             .db
             .local_problem_symptom()
             .problem_id()
-            .find(&problem_id.to_owned())
+            .find(problem_id.to_owned())
     {
         symptom.active_until = symptom.active_until.min(input.at_minute);
         ctx.db.local_problem_symptom().problem_id().update(symptom);
@@ -1075,7 +1075,7 @@ fn validated_problem_generation(
         return None;
     }
     let validated = validate_quest_generation_authority(&candidates[0]).ok()?;
-    let settlement = ctx.db.settlement().id().find(&settlement_id.to_string())?;
+    let settlement = ctx.db.settlement().id().find(settlement_id.to_string())?;
     if validated.manifest.canonical_case_id != problem.opaque_case_ref
         || validated.manifest.problem_id != problem.id
         || validated.context.settlement_id != settlement_id
@@ -1251,7 +1251,6 @@ fn public_threat_in_hearing_range(
     public_awareness_bps: u16,
     normalized_combat_power: u32,
 ) -> bool {
-    let afflicted_node = afflicted_node;
     adventuresim_core::threat_escalation::hearing_allows(
         listener_settlement_id == afflicted_settlement_id,
         afflicted_node.is_some_and(|node| graph.adjacent_settlements.contains(&node)),
@@ -1286,7 +1285,7 @@ fn surface_public_threat(
         .db
         .settlement()
         .id()
-        .find(&listener_settlement_id.to_string())
+        .find(listener_settlement_id.to_string())
         .ok_or("Listener settlement is missing")?;
     let graph = listener
         .source_node_id
@@ -1352,7 +1351,7 @@ fn surface_public_threat(
             .db
             .public_threat_disclosure()
             .id()
-            .find(&format!(
+            .find(format!(
                 "public-threat:{character_id}:{}",
                 validated.manifest.public_case_id
             ))
@@ -1401,7 +1400,7 @@ fn surface_public_threat(
         exact_site_id: site.id.0.clone(),
         approximate_count: count_band.into(),
         source_kind: source_kind.into(),
-        source_resident_character_id: source_npc.character_id.clone(),
+        source_resident_character_id: source_npc.character_id,
         learned_at: observer_minute,
     };
     if ctx
@@ -1497,7 +1496,7 @@ fn surface_new_problem(
         .db
         .local_problem_receipt()
         .id()
-        .find(&format!("{character_id}:{}", problem.id))
+        .find(format!("{character_id}:{}", problem.id))
         .is_some()
     {
         return Ok(false);
@@ -1620,7 +1619,7 @@ pub(crate) fn discover_development_problem(
         .db
         .local_problem_authority()
         .id()
-        .find(&problem_id.to_owned())
+        .find(problem_id.to_owned())
         .ok_or("Development quest problem is missing")?;
     if problem.scope_key != format!("settlement:{settlement_id}") {
         return Err("Development quest problem is outside its scenario settlement".into());
@@ -1787,7 +1786,7 @@ pub fn surface_problem(
             ctx.db
                 .local_problem_receipt()
                 .id()
-                .find(&format!("{character_id}:{}", problem.id))
+                .find(format!("{character_id}:{}", problem.id))
                 .is_some()
         });
         let surfaced = if let Some(problem) = preferred_problem.as_ref()
@@ -1836,7 +1835,7 @@ pub fn surface_problem(
             .db
             .local_problem_receipt()
             .id()
-            .find(&format!("{character_id}:{}", problem.id))
+            .find(format!("{character_id}:{}", problem.id))
         else {
             continue;
         };
@@ -1855,7 +1854,7 @@ pub fn surface_problem(
                 ctx.db
                     .local_problem_incident_receipt()
                     .id()
-                    .find(&format!("{character_id}:{}", incident.id))
+                    .find(format!("{character_id}:{}", incident.id))
                     .is_none()
             })
             .collect();

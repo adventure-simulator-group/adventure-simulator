@@ -194,7 +194,7 @@ impl MeleeAttackAuthority {
 
     fn authorize(&mut self, target: Entity, now: CombatInstant, cooldown: CombatDuration) -> bool {
         let valid = self.windup.as_ref().is_some_and(|windup| {
-            windup.target.map_or(true, |observed| observed == target)
+            windup.target.is_none_or(|observed| observed == target)
                 && now >= windup.ready_at
                 && now <= windup.expires_at
                 && now >= self.cooldown_until
@@ -218,7 +218,7 @@ impl MeleeAttackAuthority {
 
     pub(crate) fn permits(&self, target: Entity, now: CombatInstant) -> bool {
         self.windup.as_ref().is_some_and(|windup| {
-            windup.target.map_or(true, |observed| observed == target)
+            windup.target.is_none_or(|observed| observed == target)
                 && now >= windup.ready_at
                 && now <= windup.expires_at
                 && now >= self.cooldown_until
@@ -279,6 +279,7 @@ impl RangedAttackAuthority {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
@@ -322,7 +323,7 @@ pub(super) fn validate_ranged_intent(
     if !facts.weapon_is_ranged || !facts.weapon_range.is_finite() || facts.weapon_range <= 0.0 {
         return Err(RangedIntentRejection::NotRanged);
     }
-    if let Some(_) = facts.target {
+    if facts.target.is_some() {
         let Some(target_side) = facts.target_side else {
             return Err(RangedIntentRejection::MissingSide);
         };

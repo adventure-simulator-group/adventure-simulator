@@ -127,9 +127,7 @@ fn qualifying_cutting_weapon_binding(ctx: &ReducerContext, character_id: u64) ->
     carried_item_rows(ctx, character_id)
         .into_iter()
         .filter_map(|(scope, row_id, item_id)| {
-            let Some(item) = ctx.db.item().id().find(item_id) else {
-                return None;
-            };
+            let item = ctx.db.item().id().find(item_id)?;
             if !item.slash || item.accuracy < 0.5 {
                 return None;
             }
@@ -453,7 +451,7 @@ pub fn prepare_ingredient_lot(
     .map_err(|_| "Ingredient preparation authority changed before commit")?;
     adventuresim_core::material::validate_material_commit(
         &authority.material_receipt,
-        &[fresh.material_snapshot.clone()],
+        std::slice::from_ref(&fresh.material_snapshot),
     )
     .map_err(|_| "Ingredient material changed before commit")?;
 
@@ -581,7 +579,7 @@ pub fn prepare_ingredient_lot(
     }
     adventuresim_core::material::validate_material_commit(
         &post.material_receipt,
-        &[post.material_snapshot.clone()],
+        std::slice::from_ref(&post.material_snapshot),
     )
     .map_err(|_| "Ingredient material changed during preparation")?;
     let committed_material_digest = encode_digest(post.material_receipt.input_digest().bytes());
@@ -1505,9 +1503,7 @@ fn view_cutting_weapon_binding(ctx: &ViewContext, actor: &crate::Character) -> O
     view_carried_item_rows(ctx, actor)
         .into_iter()
         .filter_map(|(scope, row_id, item_id)| {
-            let Some(item) = ctx.db.item().id().find(item_id) else {
-                return None;
-            };
+            let item = ctx.db.item().id().find(item_id)?;
             if !item.slash || item.accuracy < 0.5 {
                 return None;
             }
@@ -1695,7 +1691,7 @@ pub fn backend_ingredient_preparation_plans(
                     ctx.db
                         .strategic_encounter()
                         .party_id()
-                        .find(&party_id.to_string())
+                        .find(party_id.to_string())
                         .is_some_and(|encounter| encounter.status == "awaiting_choice")
                         || ctx
                             .db
@@ -3840,15 +3836,17 @@ fn add_fireplace_ingredients_at(
             && !food::pan_fry_has_enough_fat(culinary_fat_mass, ingredient_mass),
     );
     // Everything above is preflight. Mutation starts here and remains atomic.
-    if station.instrument_object_id.is_some() && contained_water_ml > 0 {
+    if let Some(instrument_object_id) = station.instrument_object_id
+        && contained_water_ml > 0
+    {
         ctx.db
             .container_liquid()
             .container_object_id()
-            .delete(station.instrument_object_id.unwrap());
+            .delete(instrument_object_id);
         crate::outbreak::delete_water_holding_contributions(
             ctx,
             "container",
-            &station.instrument_object_id.unwrap().to_string(),
+            &instrument_object_id.to_string(),
         );
     }
     if method == CookingMethod::Stew {
@@ -4100,9 +4098,8 @@ pub fn retrieve_fireplace_dish(
     {
         return Err("Cooked contamination contribution loads do not conserve".into());
     }
-    let personal_id;
-    let party_id;
-    match source_kind {
+
+    let (personal_id, party_id) = match source_kind {
         "personal" => {
             let row = ctx.db.inventory_item().insert(crate::InventoryItem {
                 id: 0,
@@ -4111,8 +4108,7 @@ pub fn retrieve_fireplace_dish(
                 quantity: 1,
             });
             crate::inventory_amount::initialize_personal(ctx, row.id);
-            personal_id = Some(row.id);
-            party_id = None;
+            (Some(row.id), None)
         }
         "party" => {
             let row = ctx.db.party_inventory_item().insert(PartyInventoryItem {
@@ -4122,11 +4118,10 @@ pub fn retrieve_fireplace_dish(
                 quantity: 1,
             });
             crate::inventory_amount::initialize_party(ctx, row.id);
-            personal_id = None;
-            party_id = Some(row.id);
+            (None, Some(row.id))
         }
         _ => return Err("Invalid retrieval inventory".into()),
-    }
+    };
     if let Some(parent_object_id) = container_object_id {
         let row_id = personal_id.or(party_id).expect("cooked meal inventory row");
         let meal = ctx.db.inventory_object().insert(crate::InventoryObject {

@@ -155,7 +155,7 @@ pub fn autoresolve_mission(
         .db
         .hostile_group_authority()
         .id()
-        .find(&hostile_group_id.to_string())
+        .find(hostile_group_id.to_string())
         .ok_or("Hostile group not found")?;
     if hostile_group.disposition != HostileGroupDisposition::Active {
         return Err("Hostile group is already resolved".into());
@@ -746,7 +746,7 @@ pub(crate) fn seed_world(
     }
 
     for (id, name, x, y, source_node_id, pop, scene, religious_status) in settlements {
-        if ctx.db.settlement().id().find(&id.to_string()).is_none() {
+        if ctx.db.settlement().id().find(id.to_string()).is_none() {
             let languages = match id {
                 "oakenshire" => adventuresim_world_schema::SettlementLanguageProfile {
                     east_central_bp: 1_500,
@@ -1036,7 +1036,7 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
                     .filter(|presence| crate::settlement_population::npc_is_present(ctx, presence, now))
                     .map(|presence| (npc, presence))
             })
-            .min_by_key(|(npc, _)| (!npc.service_id.is_empty(), npc.character_id.clone()))
+            .min_by_key(|(npc, _)| (!npc.service_id.is_empty(), npc.character_id))
         else {
             break;
         };
@@ -1080,7 +1080,7 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
         ctx.db.party_authority().id().update(party);
 
         let mut requirements = RecruitmentRequirements::default();
-        if ctx.random::<u64>() % 2 == 0 {
+        if ctx.random::<u64>().is_multiple_of(2) {
             requirements.melee = true;
         } else {
             requirements.ranged = true;
@@ -1210,7 +1210,7 @@ fn generated_witness_candidates(
         })
         .collect::<Vec<_>>();
     candidates = retain_navigable_witnesses(candidates, &visible_tabs);
-    candidates.sort_by(|left, right| left.resident_character_id.cmp(&right.resident_character_id));
+    candidates.sort_by_key(|left| left.resident_character_id);
     candidates
 }
 
@@ -1251,7 +1251,7 @@ fn developer_witness_candidates(
         })
         .collect::<Vec<_>>();
     candidates = retain_navigable_witnesses(candidates, &visible_tabs);
-    candidates.sort_by(|left, right| left.resident_character_id.cmp(&right.resident_character_id));
+    candidates.sort_by_key(|left| left.resident_character_id);
     candidates
 }
 
@@ -1332,7 +1332,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         .db
         .settlement()
         .id()
-        .find(&settlement_id.to_string())
+        .find(settlement_id.to_string())
         .ok_or("Settlement not found")?;
     let ordinal = ctx
         .db
@@ -2119,7 +2119,7 @@ fn materialize_generated_quest(
         priority: 1,
         status: FinaleStatus::Available,
     });
-    crate::local_problem::materialize_generated_problem(ctx, &generated, settlement_id)?;
+    crate::local_problem::materialize_generated_problem(ctx, generated, settlement_id)?;
     crate::outbreak::materialize_generated_outbreak(
         ctx,
         generated,

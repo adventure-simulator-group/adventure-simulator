@@ -616,7 +616,7 @@ fn camp_flame_effect() -> Markup {
 fn building_tint(settlement: &str, service: &str, material: &str) -> String {
     let hash = settlement
         .bytes()
-        .chain([b':'])
+        .chain(*b":")
         .chain(service.bytes())
         .fold(0xcbf29ce484222325_u64, |hash, byte| {
             (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
@@ -636,7 +636,7 @@ fn building_tint(settlement: &str, service: &str, material: &str) -> String {
         "religion" => 11,
         _ => (hash % 12) as usize,
     };
-    let settlement_shift = ((hash >> 24) % 9) as u64;
+    let settlement_shift = (hash >> 24) % 9;
     let hue = if material == "stone" {
         [46, 198, 218, 205, 224, 252, 282, 164, 128, 68, 36, 214][service_slot] + settlement_shift
     } else {

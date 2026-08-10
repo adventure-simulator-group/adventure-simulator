@@ -132,7 +132,7 @@ fn private_concern_never_changes_complete_initial_dialogue_shape() {
                     .into_iter()
                     .map(|(index, draft)| {
                         (
-                            primary.resident_character_id.clone(),
+                            primary.resident_character_id,
                             primary.display_name.clone(),
                             index,
                             draft.spoken_text.clone(),
@@ -485,7 +485,7 @@ fn referred_witness_pipeline_fits_every_stable_id_budget_in_both_families() {
         let mut context = context(seed, family);
         for (index, witness) in context.witness_candidates.iter_mut().enumerate() {
             witness.resident_character_id =
-                9_007_199_254_740_993 + u64::from(seed) * 16 + index as u64;
+                9_007_199_254_740_993 + seed * 16 + index as u64;
         }
         let generated = generate(&context).unwrap();
         validate(&generated).unwrap();

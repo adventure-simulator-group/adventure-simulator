@@ -26,3 +26,6 @@ spacetimedb-sdk.workspace = true
 
 # CLI
 clap = { workspace = true }
+
+[lints]
+workspace = true

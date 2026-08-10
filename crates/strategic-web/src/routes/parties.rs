@@ -630,7 +630,7 @@ async fn party_location_url(state: &AppState, party_id: &str) -> String {
         .db
         .query(&format!(
             "SELECT * FROM party WHERE id = {}",
-            sql_string_literal(&party_id)
+            sql_string_literal(party_id)
         ))
         .await
         .unwrap_or_default();
@@ -769,22 +769,6 @@ async fn party_notifications(
     })
 }
 
-#[cfg(test)]
-mod party_notification_tests {
-    use super::LeaderVoteNotification;
-
-    #[test]
-    fn leadership_vote_ids_serialize_without_javascript_precision_loss() {
-        let notification = LeaderVoteNotification {
-            voter_id: 9_000_001_u64.to_string(),
-            candidate_id: 11_108_535_685_347_685_334_u64.to_string(),
-        };
-        let json = serde_json::to_value(notification).unwrap();
-        assert_eq!(json["voter_id"], "9000001");
-        assert_eq!(json["candidate_id"], "11108535685347685334");
-    }
-}
-
 async fn approve_action_request(
     State(state): State<AppState>,
     Path(id): Path<u64>,
@@ -806,11 +790,11 @@ async fn approve_action_request(
             return Redirect::to("/?party-action-error=unavailable");
         }
     };
-    if let Some(request) = requests.into_iter().next() {
-        if let Err(error) = approve_party_action(&state, leader_id, &request).await {
-            tracing::warn!(%error, request_id = id, "party action approval failed");
-            return Redirect::to("/?party-action-error=approval");
-        }
+    if let Some(request) = requests.into_iter().next()
+        && let Err(error) = approve_party_action(&state, leader_id, &request).await
+    {
+        tracing::warn!(%error, request_id = id, "party action approval failed");
+        return Redirect::to("/?party-action-error=approval");
     }
     Redirect::to("/")
 }
@@ -887,5 +871,21 @@ async fn get_character(state: &AppState, character_id: u64) -> Option<Character>
             tracing::error!(%error, "failed to load character");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod party_notification_tests {
+    use super::LeaderVoteNotification;
+
+    #[test]
+    fn leadership_vote_ids_serialize_without_javascript_precision_loss() {
+        let notification = LeaderVoteNotification {
+            voter_id: 9_000_001_u64.to_string(),
+            candidate_id: 11_108_535_685_347_685_334_u64.to_string(),
+        };
+        let json = serde_json::to_value(notification).unwrap();
+        assert_eq!(json["voter_id"], "9000001");
+        assert_eq!(json["candidate_id"], "11108535685347685334");
     }
 }

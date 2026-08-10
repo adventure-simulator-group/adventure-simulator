@@ -513,13 +513,13 @@ impl Catalog {
         }
         for relation in relations.values() {
             for candidate in &relation.candidates {
-                if let Some(bridge) = &candidate.required_bridge {
-                    if !bridges.contains(bridge) {
-                        return Err(format!(
-                            "relation {} references missing bridge {bridge}",
-                            relation.id
-                        ));
-                    }
+                if let Some(bridge) = &candidate.required_bridge
+                    && !bridges.contains(bridge)
+                {
+                    return Err(format!(
+                        "relation {} references missing bridge {bridge}",
+                        relation.id
+                    ));
                 }
             }
         }

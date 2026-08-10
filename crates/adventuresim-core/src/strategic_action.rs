@@ -415,7 +415,7 @@ pub enum ActionEffect<E: DomainEffect> {
         from_minute: u64,
         to_minute: u64,
     },
-    TransferObjectCustody(CustodyTransfer),
+    TransferObjectCustody(Box<CustodyTransfer>),
     Domain(E),
 }
 
@@ -593,7 +593,7 @@ pub enum PlanningOutcome<
     E: DomainEffect,
     P: PublicPreview,
 > {
-    Ready(AuthoritativeActionPlan<T, R, C, I, E, P>),
+    Ready(Box<AuthoritativeActionPlan<T, R, C, I, E, P>>),
     Rejected(PrivateRejection<R, C>),
 }
 
@@ -623,14 +623,14 @@ where
     }
     let time = resolve_time(input.current_minute, input.duration, &input.boundaries);
     let calculation = calculate(&input.coordinates, &time);
-    PlanningOutcome::Ready(AuthoritativeActionPlan {
+    PlanningOutcome::Ready(Box::new(AuthoritativeActionPlan {
         coordinates: input.coordinates,
         provenance: input.provenance,
         snapshot: input.snapshot,
         requirements: input.requirements,
         time,
         calculation,
-    })
+    }))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

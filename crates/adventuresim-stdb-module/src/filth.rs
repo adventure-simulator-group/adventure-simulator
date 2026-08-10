@@ -350,49 +350,49 @@ pub fn deposit(
         filth_id: row.id,
         source_character_id,
     });
-    if substance == FilthSubstance::Blood {
-        if let Some(source) = source_character_id {
-            let immunity = ctx
-                .db
-                .character_attributes()
-                .character_id()
-                .find(source)
-                .map_or(3.0, |attributes| attributes.immunity);
-            let mut seen = std::collections::BTreeSet::new();
-            for episode in ctx.db.infection_episode().character_id().filter(source) {
-                let disease_id = crate::disease::parse_id(&episode.disease_id)?;
-                if !adventuresim_core::disease::definition(disease_id)
-                    .supports(adventuresim_core::disease::TransmissionVector::Blood)
-                    || episode.contracted_at > at
-                    || matches!(
-                        adventuresim_core::disease::evaluate(
-                            adventuresim_core::disease::InfectionEpisode {
-                                id: episode.id,
-                                character_id: source,
-                                disease_id,
-                                contracted_at: episode.contracted_at,
-                                ruleset_version: episode.ruleset_version,
-                                phenotype_key_version: episode.phenotype_key_version,
-                            },
-                            at,
-                            immunity,
-                        )
-                        .stage,
-                        adventuresim_core::disease::DiseaseStage::Resolved
+    if substance == FilthSubstance::Blood
+        && let Some(source) = source_character_id
+    {
+        let immunity = ctx
+            .db
+            .character_attributes()
+            .character_id()
+            .find(source)
+            .map_or(3.0, |attributes| attributes.immunity);
+        let mut seen = std::collections::BTreeSet::new();
+        for episode in ctx.db.infection_episode().character_id().filter(source) {
+            let disease_id = crate::disease::parse_id(&episode.disease_id)?;
+            if !adventuresim_core::disease::definition(disease_id)
+                .supports(adventuresim_core::disease::TransmissionVector::Blood)
+                || episode.contracted_at > at
+                || matches!(
+                    adventuresim_core::disease::evaluate(
+                        adventuresim_core::disease::InfectionEpisode {
+                            id: episode.id,
+                            character_id: source,
+                            disease_id,
+                            contracted_at: episode.contracted_at,
+                            ruleset_version: episode.ruleset_version,
+                            phenotype_key_version: episode.phenotype_key_version,
+                        },
+                        at,
+                        immunity,
                     )
-                    || !seen.insert((disease_id as u8, episode.id))
-                {
-                    continue;
-                }
-                ctx.db
-                    .filth_disease_snapshot()
-                    .insert(FilthDiseaseSnapshot {
-                        id: 0,
-                        filth_id: row.id,
-                        disease_id: crate::disease::disease_key(disease_id).into(),
-                        episode_id: episode.id,
-                    });
+                    .stage,
+                    adventuresim_core::disease::DiseaseStage::Resolved
+                )
+                || !seen.insert((disease_id as u8, episode.id))
+            {
+                continue;
             }
+            ctx.db
+                .filth_disease_snapshot()
+                .insert(FilthDiseaseSnapshot {
+                    id: 0,
+                    filth_id: row.id,
+                    disease_id: crate::disease::disease_key(disease_id).into(),
+                    episode_id: episode.id,
+                });
         }
     }
     Ok(Some(row.id))

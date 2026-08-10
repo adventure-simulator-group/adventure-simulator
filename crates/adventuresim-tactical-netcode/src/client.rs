@@ -530,22 +530,24 @@ mod tests {
     #[test]
     fn caps_lock_toggles_keyboard_movement_between_walk_and_jog() {
         let (mut world, mut schedule) = input_fixture();
-        let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-        keys.press(KeyCode::KeyW);
-        keys.press(KeyCode::CapsLock);
-        drop(keys);
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.press(KeyCode::KeyW);
+            keys.press(KeyCode::CapsLock);
+        }
         schedule.run(&mut world);
         assert_eq!(
             world.resource::<DirectControlState>().pace,
             MovementPace::Jog
         );
 
-        let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-        keys.clear_just_pressed(KeyCode::CapsLock);
-        keys.release(KeyCode::CapsLock);
-        keys.clear_just_released(KeyCode::CapsLock);
-        keys.press(KeyCode::CapsLock);
-        drop(keys);
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear_just_pressed(KeyCode::CapsLock);
+            keys.release(KeyCode::CapsLock);
+            keys.clear_just_released(KeyCode::CapsLock);
+            keys.press(KeyCode::CapsLock);
+        }
         schedule.run(&mut world);
         assert_eq!(
             world.resource::<DirectControlState>().pace,
@@ -565,10 +567,11 @@ mod tests {
             PostureCommand::default()
         );
 
-        let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-        keys.clear_just_pressed(KeyCode::ControlLeft);
-        keys.release(KeyCode::ControlLeft);
-        drop(keys);
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear_just_pressed(KeyCode::ControlLeft);
+            keys.release(KeyCode::ControlLeft);
+        }
         schedule.run(&mut world);
         assert_eq!(
             world.resource::<DirectControlState>().posture_command,
@@ -587,20 +590,22 @@ mod tests {
             .press(KeyCode::ControlLeft);
         schedule.run(&mut world);
 
-        let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-        keys.clear_just_pressed(KeyCode::ControlLeft);
-        keys.press(KeyCode::KeyA);
-        drop(keys);
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear_just_pressed(KeyCode::ControlLeft);
+            keys.press(KeyCode::KeyA);
+        }
         schedule.run(&mut world);
         assert_eq!(
             world.resource::<DirectControlState>().posture_command,
             PostureCommand::default()
         );
 
-        let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-        keys.clear_just_pressed(KeyCode::KeyA);
-        keys.release(KeyCode::ControlLeft);
-        drop(keys);
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear_just_pressed(KeyCode::KeyA);
+            keys.release(KeyCode::ControlLeft);
+        }
         schedule.run(&mut world);
         assert_eq!(
             world.resource::<DirectControlState>().posture_command,
@@ -618,10 +623,11 @@ mod tests {
             ControlledPlayer::default(),
             SkeletonState::default().with_body_state(BodyState::Prone),
         ));
-        let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-        keys.press(KeyCode::Space);
-        keys.press(KeyCode::KeyA);
-        drop(keys);
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.press(KeyCode::Space);
+            keys.press(KeyCode::KeyA);
+        }
 
         schedule.run(&mut world);
         assert_eq!(
@@ -652,10 +658,11 @@ mod tests {
             0
         );
 
-        let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-        keys.clear_just_pressed(KeyCode::Space);
-        keys.release(KeyCode::Space);
-        drop(keys);
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear_just_pressed(KeyCode::Space);
+            keys.release(KeyCode::Space);
+        }
         schedule.run(&mut world);
         assert!(!world.resource::<DirectControlState>().jump_charge);
         assert!(!world.resource::<DirectControlState>().crouch);
@@ -678,10 +685,11 @@ mod tests {
         assert!(world.resource::<DirectControlState>().jump_charge);
         assert!(!world.resource::<DirectControlState>().crouch);
 
-        let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-        keys.clear_just_pressed(KeyCode::Space);
-        keys.release(KeyCode::Space);
-        drop(keys);
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.clear_just_pressed(KeyCode::Space);
+            keys.release(KeyCode::Space);
+        }
         schedule.run(&mut world);
         assert_eq!(
             world.resource::<DirectControlState>().jump_command.sequence,
@@ -692,11 +700,12 @@ mod tests {
     #[test]
     fn jump_charge_preserves_the_selected_movement_pace() {
         let (mut world, mut schedule) = input_fixture();
-        let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-        keys.press(KeyCode::KeyW);
-        keys.press(KeyCode::ShiftLeft);
-        keys.press(KeyCode::Space);
-        drop(keys);
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.press(KeyCode::KeyW);
+            keys.press(KeyCode::ShiftLeft);
+            keys.press(KeyCode::Space);
+        }
 
         schedule.run(&mut world);
         let controls = world.resource::<DirectControlState>();
@@ -745,11 +754,12 @@ mod tests {
     #[test]
     fn dive_chord_captures_held_movement_direction() {
         let (mut world, mut schedule) = input_fixture();
-        let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
-        keys.press(KeyCode::ControlLeft);
-        keys.press(KeyCode::Space);
-        keys.press(KeyCode::KeyD);
-        drop(keys);
+        {
+            let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+            keys.press(KeyCode::ControlLeft);
+            keys.press(KeyCode::Space);
+            keys.press(KeyCode::KeyD);
+        }
 
         schedule.run(&mut world);
         assert_eq!(

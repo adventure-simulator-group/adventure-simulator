@@ -270,14 +270,14 @@ fn apply_written(
 fn credential_curriculum(requirements: &[Requirement]) -> Vec<TrainingEntry> {
     requirements
         .iter()
-        .filter_map(|requirement| match requirement {
-            Requirement::ProfessedReligion { religion } => Some(TrainingEntry {
+        .map(|requirement| match requirement {
+            Requirement::ProfessedReligion { religion } => TrainingEntry {
                 weight: 1.0,
                 target: TrainingTarget::Religion {
                     religion: religion.clone(),
                 },
-            }),
-            Requirement::SkillRating { skill, leaf, .. } => Some(TrainingEntry {
+            },
+            Requirement::SkillRating { skill, leaf, .. } => TrainingEntry {
                 weight: 1.0,
                 target: match (skill.as_str(), leaf) {
                     ("religion", Some(religion)) => TrainingTarget::Religion {
@@ -290,7 +290,7 @@ fn credential_curriculum(requirements: &[Requirement]) -> Vec<TrainingEntry> {
                         skill: skill.clone(),
                     },
                 },
-            }),
+            },
         })
         .collect()
 }

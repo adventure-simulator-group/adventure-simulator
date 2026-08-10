@@ -2836,7 +2836,7 @@ fn record_lifecycle_failure(
 }
 
 fn quarantine_invalid_birth(ctx: &ReducerContext, pregnancy_id: &str, effective_minute: u64) {
-    let Some(mut pregnancy) = ctx.db.pregnancy().id().find(&pregnancy_id.to_owned()) else {
+    let Some(mut pregnancy) = ctx.db.pregnancy().id().find(pregnancy_id.to_owned()) else {
         return;
     };
     if pregnancy.status != PregnancyStatus::Active {
@@ -2981,7 +2981,7 @@ fn affinity_at(ctx: &ReducerContext, subject_id: u64, actor_id: u64, minute: u64
         .db
         .character_affinity()
         .id()
-        .find(&format!("{subject_id}:{actor_id}"))
+        .find(format!("{subject_id}:{actor_id}"))
     else {
         return Some(0.0);
     };
@@ -3429,10 +3429,7 @@ pub fn settle_secret_courtship_discovery_for_character(
         .collect();
     courtship_ids.sort();
     for courtship_id in courtship_ids {
-        loop {
-            let Some(courtship) = ctx.db.courtship().id().find(&courtship_id) else {
-                break;
-            };
+        while let Some(courtship) = ctx.db.courtship().id().find(&courtship_id) {
             if courtship.status != CourtshipStatus::Active
                 || courtship.next_discovery_day > current_day
             {
@@ -4076,7 +4073,7 @@ pub fn expire_wedding_reservation(
         .db
         .exclusive_commitment()
         .id()
-        .find(&commitment_id.to_owned())
+        .find(commitment_id.to_owned())
         .ok_or("Commitment not found")?;
     commitment.parsed_state()?;
     transition_commitment_terminal(

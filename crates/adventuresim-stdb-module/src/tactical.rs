@@ -149,15 +149,17 @@ pub fn tactical_server_request(ctx: &ViewContext) -> Vec<TacticalServerRequest> 
         .id()
         .find(0)
         .is_some_and(|authority| authority.identity == ctx.sender());
-    is_gateway
-        .then(|| {
+    if is_gateway {
+        {
             ctx.db
                 .tactical_server_request_authority()
                 .gateway_bucket()
                 .filter(0u8)
                 .collect()
-        })
-        .unwrap_or_default()
+        }
+    } else {
+        Default::default()
+    }
 }
 
 #[view(accessor = tactical_server, public)]
@@ -479,7 +481,7 @@ pub fn enter_mission(
         .db
         .character()
         .id()
-        .find(&character_id)
+        .find(character_id)
         .ok_or_else(|| format!("Character {character_id} not found"))?;
     // An unassigned character may join. An assignment to this server is an
     // idempotent retry, and a stale assignment whose server no longer exists
@@ -500,7 +502,7 @@ pub fn enter_mission(
         .db
         .tactical_server_authority()
         .identity()
-        .find(&server)
+        .find(server)
         .ok_or_else(|| format!("Server {server} not found"))?;
 
     if !character.temporary {
@@ -553,7 +555,7 @@ pub fn leave_mission(ctx: &ReducerContext, character_id: u64) -> Result<(), Stri
         .db
         .character()
         .id()
-        .find(&character_id)
+        .find(character_id)
         .ok_or_else(|| format!("Character {character_id} not found"))?;
     leave_mission_for_server(ctx, character, server.identity)
 }
@@ -1130,7 +1132,7 @@ fn end_tactical_server_by_instance(
         .db
         .tactical_server_authority()
         .identity()
-        .find(&server.identity)
+        .find(server.identity)
         .is_none()
     {
         return Err(format!(

@@ -229,11 +229,8 @@ pub fn forecast_itinerary(
             let required = common_fatigue_clear_minutes(&members);
             let (average_start, _) = fatigue_summary(&members);
             for member in &mut members {
-                member.calories_used = camp_fatigue_after(
-                    member.calories_used,
-                    duration,
-                    member.camp_schedule.clone(),
-                );
+                member.calories_used =
+                    camp_fatigue_after(member.calories_used, duration, member.camp_schedule);
             }
             for (maximum, member) in member_maximum_fatigue.iter_mut().zip(&members) {
                 *maximum = (*maximum).max(fatigue_fraction(member));

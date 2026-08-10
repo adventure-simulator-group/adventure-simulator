@@ -36,7 +36,8 @@ impl TryFrom<u16> for ActivityMinutes {
     type Error = ScheduleParseError;
 
     fn try_from(minutes: u16) -> Result<Self, Self::Error> {
-        (minutes % 15 == 0)
+        minutes
+            .is_multiple_of(15)
             .then_some(Self(minutes))
             .ok_or(ScheduleParseError::NotQuarterHour)
     }

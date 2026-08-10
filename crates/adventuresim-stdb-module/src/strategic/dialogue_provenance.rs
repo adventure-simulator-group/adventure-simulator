@@ -1,5 +1,5 @@
 enum ReferralDeliveryAuthority {
-    LocalProblem(crate::local_problem::LocalProblemReceipt),
+    LocalProblem(Box<crate::local_problem::LocalProblemReceipt>),
     PublicThreat,
 }
 
@@ -25,9 +25,9 @@ fn referral_delivery_authority(
         public_disclosure.is_some(),
     ) {
         adventuresim_core::threat_escalation::ReferralDeliveryAuthorityKind::LocalProblem => {
-            Ok(ReferralDeliveryAuthority::LocalProblem(
+            Ok(ReferralDeliveryAuthority::LocalProblem(Box::new(
                 receipt.ok_or("Classified local-problem receipt disappeared")?,
-            ))
+            )))
         }
         adventuresim_core::threat_escalation::ReferralDeliveryAuthorityKind::PublicThreat => {
             Ok(ReferralDeliveryAuthority::PublicThreat)
@@ -326,7 +326,7 @@ fn local_service_organization_representative(
         .filter(|organization| organization.service_id.as_deref() == Some(service_id))
         .find_map(|organization| {
             let chapter = organization.chapter(settlement_id)?;
-            let settlement = ctx.db.settlement().id().find(&settlement_id.to_owned())?;
+            let settlement = ctx.db.settlement().id().find(settlement_id.to_owned())?;
             (adventuresim_core::organization::chapter_effective_location_id(
                 organization,
                 chapter,
@@ -391,8 +391,8 @@ fn dialogue_fact_context(
                     .count() as i64,
             ),
         );
-        if participant.character_id.is_none() {
-            if let Ok(npc_character_id) = participant.actor_id.parse::<u64>()
+        if participant.character_id.is_none()
+            && let Ok(npc_character_id) = participant.actor_id.parse::<u64>()
                 && let Some(npc) =
                     crate::settlement_population::resolve_settlement_resident(ctx, npc_character_id)
             {
@@ -473,7 +473,6 @@ fn dialogue_fact_context(
                         .insert(FactKey::LocationRole, FactValue::Text(presence.location_id));
                 }
             }
-        }
         if let Some(id) = participant.character_id {
             for organization_role in crate::social_roles::character_roles(ctx, id)? {
                 result.facts.insert(
@@ -537,8 +536,8 @@ fn dialogue_fact_context(
                     FactValue::Text(religion),
                 );
             }
-            if let Some(character) = ctx.db.character().id().find(id) {
-                if let Some(party_id) = character.party_id.as_ref() {
+            if let Some(character) = ctx.db.character().id().find(id)
+                && let Some(party_id) = character.party_id.as_ref() {
                     let leader = ctx
                         .db
                         .party_authority()
@@ -565,7 +564,6 @@ fn dialogue_fact_context(
                         ),
                     );
                 }
-            }
             {
                 let mut equipped = ctx
                     .db
@@ -840,8 +838,8 @@ fn dialogue_fact_context(
             .insert(FactKey::TimePeriod, FactValue::Text(period.into()));
     }
     let service = dialogue_service_id(ctx, session)?;
-    if !service.is_empty() {
-        if let Some(contract) = ctx
+    if !service.is_empty()
+        && let Some(contract) = ctx
             .db
             .contract_authority()
             .service_id()
@@ -855,7 +853,6 @@ fn dialogue_fact_context(
                 FactValue::Text(format!("{:?}", contract.status).to_lowercase()),
             );
         }
-    }
     Ok(result)
 }
 

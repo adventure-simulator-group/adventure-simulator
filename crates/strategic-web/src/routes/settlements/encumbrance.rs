@@ -37,7 +37,7 @@ pub(super) async fn inventory_encumbrance_summaries(
     items: &[ItemDefinition],
     include_party: bool,
 ) -> InventoryEncumbranceSummaries {
-    let aggregate_members = include_party.then_some(members).unwrap_or_default();
+    let aggregate_members = if include_party { members } else { Default::default() };
     let (member_ids, encumbrance_ids) =
         encumbrance_query_ids(aggregate_members, active_character.id);
     let all_inventories = stream::iter(member_ids)
@@ -74,9 +74,7 @@ pub(super) async fn inventory_encumbrance_summaries(
             &food_lots,
             &rows,
         ),
-        party: include_party
-            .then(|| party_encumbrance(members, &all_inventories, pooled, items, &food_lots, &rows))
-            .unwrap_or_default(),
+        party: if include_party { party_encumbrance(members, &all_inventories, pooled, items, &food_lots, &rows) } else { Default::default() },
     }
 }
 

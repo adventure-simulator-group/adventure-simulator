@@ -125,7 +125,7 @@ impl LiveRunner {
                     .character_illness_status()
                     .iter()
                     .find(|row| row.character_id == capability.character_id)
-                    .map_or(true, |row| !row.symptomatic && !row.critical);
+                    .is_none_or(|row| !row.symptomatic && !row.critical);
                 PublicPartyCombatant {
                     capability,
                     ready: condition_ready && illness_safe,

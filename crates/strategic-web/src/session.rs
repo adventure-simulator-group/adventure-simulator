@@ -2,7 +2,6 @@
 
 use std::{
     fmt,
-    future::Future,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -210,54 +209,52 @@ impl IntoResponse for SessionUnavailable {
 impl FromRequestParts<AppState> for Session {
     type Rejection = SessionUnavailable;
 
-    fn from_request_parts(
+    async fn from_request_parts(
         parts: &mut Parts,
         state: &AppState,
-    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        async move {
-            let jar = CookieJar::from_request_parts(parts, state)
-                .await
-                .unwrap_or_default();
-            let Some(token) = jar
-                .get(SESSION_COOKIE)
-                .map(|cookie| cookie.value().to_owned())
-            else {
-                return Ok(Session::default());
-            };
-            let Some(owner_key) = state.session_codec.verify(&token) else {
-                // A malformed, expired, or forged cookie has no authority.
-                return Ok(Session::default());
-            };
-            let rows = state
-                .db
-                .query::<BackendBrowserCharacterAccess>(&format!(
-                    "SELECT * FROM backend_browser_character_access WHERE owner_key = {}",
-                    sql_string_literal(&owner_key)
-                ))
-                .await
-                .map_err(|error| {
-                    tracing::error!(%error, "failed to resolve browser character grants");
-                    SessionUnavailable
-                })?;
-            if rows.iter().any(|row| row.owner_key != owner_key) {
-                tracing::error!("browser character access projection returned a foreign owner");
-                return Err(SessionUnavailable);
-            }
-            let character_id = rows
-                .iter()
-                .find(|row| row.selected)
-                .map(|row| CharacterId(row.character_id));
-            let character_ids = rows
-                .into_iter()
-                .map(|row| CharacterId(row.character_id))
-                .collect();
-            Ok(Session {
-                owner_key: Some(owner_key),
-                token: Some(token),
-                character_id,
-                character_ids,
-            })
+    ) -> Result<Self, Self::Rejection> {
+        let jar = CookieJar::from_request_parts(parts, state)
+            .await
+            .unwrap_or_default();
+        let Some(token) = jar
+            .get(SESSION_COOKIE)
+            .map(|cookie| cookie.value().to_owned())
+        else {
+            return Ok(Session::default());
+        };
+        let Some(owner_key) = state.session_codec.verify(&token) else {
+            // A malformed, expired, or forged cookie has no authority.
+            return Ok(Session::default());
+        };
+        let rows = state
+            .db
+            .query::<BackendBrowserCharacterAccess>(&format!(
+                "SELECT * FROM backend_browser_character_access WHERE owner_key = {}",
+                sql_string_literal(&owner_key)
+            ))
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, "failed to resolve browser character grants");
+                SessionUnavailable
+            })?;
+        if rows.iter().any(|row| row.owner_key != owner_key) {
+            tracing::error!("browser character access projection returned a foreign owner");
+            return Err(SessionUnavailable);
         }
+        let character_id = rows
+            .iter()
+            .find(|row| row.selected)
+            .map(|row| CharacterId(row.character_id));
+        let character_ids = rows
+            .into_iter()
+            .map(|row| CharacterId(row.character_id))
+            .collect();
+        Ok(Session {
+            owner_key: Some(owner_key),
+            token: Some(token),
+            character_id,
+            character_ids,
+        })
     }
 }
 

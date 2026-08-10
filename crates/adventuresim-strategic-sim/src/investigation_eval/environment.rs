@@ -257,21 +257,16 @@ impl InvestigationEnvironment {
                             .iter()
                             .enumerate()
                             .find(|(_, candidate)| candidate.id == *referred)
+                            && self.visible_witnesses.insert(referred_index)
                         {
-                            if self.visible_witnesses.insert(referred_index) {
-                                self.frame.discovery.referrals.push(WitnessReferral {
-                                    witness_id: opaque_handle("witness", referred_index),
-                                    display_name: referred_witness.display_name.clone(),
-                                    physical_description: referred_witness
-                                        .visible_description
-                                        .clone(),
-                                    expected_location: referred_witness
-                                        .expected_location_label
-                                        .clone(),
-                                    interviewed: false,
-                                    availability: WitnessAvailability::Available,
-                                });
-                            }
+                            self.frame.discovery.referrals.push(WitnessReferral {
+                                witness_id: opaque_handle("witness", referred_index),
+                                display_name: referred_witness.display_name.clone(),
+                                physical_description: referred_witness.visible_description.clone(),
+                                expected_location: referred_witness.expected_location_label.clone(),
+                                interviewed: false,
+                                availability: WitnessAvailability::Available,
+                            });
                         }
                     }
                 }

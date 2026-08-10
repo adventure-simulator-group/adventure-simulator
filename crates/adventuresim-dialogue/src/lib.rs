@@ -220,7 +220,7 @@ impl RuntimeBindings {
                     let testimony = self
                         .testimony
                         .as_ref()
-                        .ok_or_else(|| DialogueError::MissingRuntimeSlot(RuntimeSlot::Testimony))?;
+                        .ok_or(DialogueError::MissingRuntimeSlot(RuntimeSlot::Testimony))?;
                     for (line_index, line) in testimony.iter().enumerate() {
                         if line.spoken_text.chars().count() > 512
                             || line.claim_text.is_empty()
@@ -321,7 +321,7 @@ impl RuntimeBindings {
             } else {
                 1
             };
-            source_refs.extend(std::iter::repeat(source.clone()).take(count));
+            source_refs.extend(std::iter::repeat_n(source.clone(), count));
         }
         if source_refs.len() != fragments.len() {
             return Err(DialogueError::SourceAlignment);

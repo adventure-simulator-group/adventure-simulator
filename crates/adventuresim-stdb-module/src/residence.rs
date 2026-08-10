@@ -362,10 +362,16 @@ pub fn backend_character_residence_statuses(
                 // Billing is the owner's private economic state. Household
                 // occupants need the home and comfort facts, not timestamps
                 // that may have been advanced beyond their personal date.
-                last_billed_minute: owns_holding
-                    .then_some(holding.last_billed_minute)
-                    .unwrap_or(0),
-                next_due_minute: owns_holding.then_some(holding.next_due_minute).unwrap_or(0),
+                last_billed_minute: if owns_holding {
+                    holding.last_billed_minute
+                } else {
+                    0
+                },
+                next_due_minute: if owns_holding {
+                    holding.next_due_minute
+                } else {
+                    0
+                },
             })
         })
         .collect()
@@ -469,7 +475,7 @@ fn offer(
     ctx.db
         .settlement_residence_offer()
         .id()
-        .find(&offer_id(settlement_id, tier))
+        .find(offer_id(settlement_id, tier))
         .ok_or_else(|| "Residence offer not found".to_string())
 }
 

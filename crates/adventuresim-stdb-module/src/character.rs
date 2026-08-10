@@ -868,7 +868,7 @@ pub fn create_temporary_character(ctx: &ReducerContext, server: Identity) -> Res
 
     let name = petname::Petnames::default()
         .generate(&mut ctx.rng(), 1, " ")
-        .ok_or_else(|| format!("Can't generate a name for a temporary character"))?;
+        .ok_or_else(|| "Can't generate a name for a temporary character".to_string())?;
     let name = format!("bot-{name}");
 
     let mut id = ctx.random();
@@ -2050,7 +2050,7 @@ pub(crate) fn set_character_languages_for_settlement(
         .db
         .settlement()
         .id()
-        .find(&settlement_id.to_string())
+        .find(settlement_id.to_string())
         .ok_or_else(|| format!("Unknown settlement {settlement_id}"))?;
     let mut skills = ctx
         .db
@@ -2455,9 +2455,9 @@ pub(crate) fn insert_character_with_origin(
         stomach_health: 1.0,
     });
     crate::condition::initialize_character_condition(ctx, character.id)?;
-    if starting.is_some() {
+    if let Some(starting) = starting {
         let mut personality = crate::personality::CharacterPersonality::neutral(id);
-        for personality_trait in &starting.expect("checked above").personality.traits {
+        for personality_trait in &starting.personality.traits {
             use crate::personality::{
                 Conscience, Conviction, Courtship, Drive, Hygiene, Mirth, Nerve, Outlook,
                 SelfKnowledge, SelfRegard, Sociability, Temperance, Transparency,
@@ -2508,16 +2508,16 @@ pub(crate) fn insert_character_with_origin(
                 }
             }
         }
-        personality.sex = match starting.expect("checked above").personality.sex {
+        personality.sex = match starting.personality.sex {
             StartingSex::Female => crate::personality::Sex::Female,
             StartingSex::Male => crate::personality::Sex::Male,
         };
-        personality.presentation = match starting.expect("checked above").personality.presentation {
+        personality.presentation = match starting.personality.presentation {
             StartingPresentation::Man => crate::personality::Presentation::Man,
             StartingPresentation::Ambiguous => crate::personality::Presentation::Ambiguous,
             StartingPresentation::Woman => crate::personality::Presentation::Woman,
         };
-        personality.inclination = match starting.expect("checked above").personality.inclination {
+        personality.inclination = match starting.personality.inclination {
             StartingInclination::Men => crate::personality::Inclination::Men,
             StartingInclination::Either => crate::personality::Inclination::Either,
             StartingInclination::Women => crate::personality::Inclination::Women,

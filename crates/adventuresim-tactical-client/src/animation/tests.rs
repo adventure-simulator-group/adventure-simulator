@@ -876,8 +876,10 @@ mod legacy_tests {
     #[test]
     fn authored_rig_attaches_to_a_player_with_skeleton_state() {
         let mut world = World::new();
-        let mut runtime = AnimationRuntime::default();
-        runtime.base_scene = Some(Handle::default());
+        let runtime = AnimationRuntime {
+            base_scene: Some(Handle::default()),
+            ..default()
+        };
         world.insert_resource(runtime);
         let owner = world
             .spawn((Player::default(), SkeletonState::default()))

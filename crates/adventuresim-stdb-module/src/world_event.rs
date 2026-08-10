@@ -750,11 +750,11 @@ fn validate_consequence_order(
                 Some(WorldEventConsequence::LocalProblemOutcome { .. })
             ));
             let participant_consequences = &consequences[consequence_start..];
-            if participant_consequences.len() % 2 != 0 {
+            if !participant_consequences.len().is_multiple_of(2) {
                 return Err("Case-resolution consequences are not canonical".into());
             }
             let mut prior_character_id = None;
-            for pair in participant_consequences.chunks_exact(2) {
+            for pair in participant_consequences.as_chunks::<2>().0 {
                 let [
                     WorldEventConsequence::CaseParticipantSnapshot {
                         character_id: snapshot_character,

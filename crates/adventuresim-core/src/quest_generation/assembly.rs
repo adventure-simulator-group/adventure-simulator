@@ -1,6 +1,6 @@
 pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, GenerationError> {
     if context.requested_family == Some(TemplateFamily::Outbreak)
-        || (context.requested_family.is_none() && context.seed % 7 == 0)
+        || (context.requested_family.is_none() && context.seed.is_multiple_of(7))
     {
         return generate_outbreak(context);
     }
@@ -99,7 +99,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
             .expect("victim pattern hard-zeroed without a target")];
         GeneratedPatternTarget {
             cohort_id: scoped_id(&prefix, "cohort", "victim-profile"),
-            resident_character_id: candidate.resident_character_id.clone(),
+            resident_character_id: candidate.resident_character_id,
             demographic: candidate.demographic,
             age_band: candidate.age_band.clone(),
             sex: candidate.sex.clone(),
@@ -124,8 +124,8 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let decoy_site = SiteId::new(scoped_id(&prefix, "site", "decoy"));
     let witness1 = WitnessId::new(scoped_id(&prefix, "witness", "primary"));
     let witness2 = WitnessId::new(scoped_id(&prefix, "witness", "corroborating"));
-    let npc1 = primary.resident_character_id.clone();
-    let npc2 = secondary.resident_character_id.clone();
+    let npc1 = primary.resident_character_id;
+    let npc2 = secondary.resident_character_id;
     let presented_site_kind = if reliability == Reliability::Truthful {
         site
     } else {
@@ -220,8 +220,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
     let has_private_pattern_detail = hash(
         context.observer_entropy_hi ^ context.observer_entropy_lo.rotate_left(17),
         "testimony-concern:private-pattern-detail",
-    ) % 2
-        == 0;
+    ).is_multiple_of(2);
     let evidence_site_label = if family == TemplateFamily::RecurringDepredation {
         "the latest incident site"
     } else {
@@ -500,8 +499,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
         .witness_candidates
         .get(2)
         .unwrap_or(secondary)
-        .resident_character_id
-        .clone();
+        .resident_character_id;
     let (objectives, finales, custody, dialogue_producers) = match family {
         TemplateFamily::RecurringDepredation => {
             let mut paths = vec![
@@ -652,7 +650,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     vec![GeneratedDialogueProducer {
                         action: GeneratedDialogueAction::ReturnAsset,
                         objective_id: return_id,
-                        recipient_resident_character_id: issuer.clone(),
+                        recipient_resident_character_id: issuer,
                         subject_ref: None,
                         asset_id: Some(asset.as_str().into()),
                     }],
@@ -684,7 +682,7 @@ pub fn generate(context: &GenerationContext) -> Result<GeneratedCase, Generation
                     vec![GeneratedDialogueProducer {
                         action: GeneratedDialogueAction::Expose,
                         objective_id,
-                        recipient_resident_character_id: issuer.clone(),
+                        recipient_resident_character_id: issuer,
                         subject_ref: Some(description_prop.clone()),
                         asset_id: None,
                     }],
@@ -895,12 +893,12 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                 action: OutbreakSanitationAction::CloseWell,
             },
             Some(ResponsibleOutbreakNpc {
-                resident_character_id: context.witness_candidates[1].resident_character_id.clone(),
+                resident_character_id: context.witness_candidates[1].resident_character_id,
                 culpability: OutbreakCulpability::Negligent,
             }),
             None,
         ),
-        DiseaseId::Influenza if (context.seed / 5) % 2 == 0 => (
+        DiseaseId::Influenza if (context.seed / 5).is_multiple_of(2) => (
             SiteKind::OccupiedHouse,
             OutbreakSource::Sanitation {
                 practice: OutbreakSanitationPractice::UnwashedSharedBedding,
@@ -909,7 +907,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                 action: OutbreakSanitationAction::LaunderBedding,
             },
             Some(ResponsibleOutbreakNpc {
-                resident_character_id: context.witness_candidates[1].resident_character_id.clone(),
+                resident_character_id: context.witness_candidates[1].resident_character_id,
                 culpability: OutbreakCulpability::Negligent,
             }),
             None,
@@ -923,7 +921,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
                 action: OutbreakBehaviorAction::SeparateSleepers,
             },
             Some(ResponsibleOutbreakNpc {
-                resident_character_id: context.witness_candidates[1].resident_character_id.clone(),
+                resident_character_id: context.witness_candidates[1].resident_character_id,
                 culpability: OutbreakCulpability::Innocent,
             }),
             None,
@@ -1042,7 +1040,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
     let witnesses = vec![
         WitnessBinding {
             id: witness1.clone(),
-            resident_character_id: primary.resident_character_id.clone(),
+            resident_character_id: primary.resident_character_id,
             display_name: primary.display_name.clone(),
             demographic: primary.demographic,
             circumstance: primary
@@ -1063,7 +1061,7 @@ fn generate_outbreak(context: &GenerationContext) -> Result<GeneratedCase, Gener
         },
         WitnessBinding {
             id: witness2,
-            resident_character_id: secondary.resident_character_id.clone(),
+            resident_character_id: secondary.resident_character_id,
             display_name: secondary.display_name.clone(),
             demographic: secondary.demographic,
             circumstance: secondary

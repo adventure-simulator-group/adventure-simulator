@@ -125,11 +125,10 @@ impl LiveRunner {
                 .iter()
                 .find(|candidate| self.personal_item_quantity(candidate.0, item_id) > 0)
                 .map(|candidate| candidate.0);
-            if actor.is_none() {
-                if let (Some(candidate), Some(settlement_id)) =
+            if actor.is_none()
+                && let (Some(candidate), Some(settlement_id)) =
                     (candidates.first(), settlement_id.as_deref())
-                {
-                    if self.acquire_first_aid_material(
+                    && self.acquire_first_aid_material(
                         candidate.0,
                         &party_id,
                         settlement_id,
@@ -138,8 +137,6 @@ impl LiveRunner {
                     )? {
                         actor = Some(candidate.0);
                     }
-                }
-            }
             let Some(actor_id) = actor else {
                 self.event(
                     agent,
@@ -265,7 +262,7 @@ impl LiveRunner {
                 let spendable = purse
                     .saturating_add(party_stake.min(party_treasury))
                     .saturating_sub(medical_reserve);
-                (spendable >= sponsor_quote).then(|| SettlementRestSponsor {
+                (spendable >= sponsor_quote).then_some(SettlementRestSponsor {
                     payer_id: payer.id,
                     payer_agent_id,
                     purse,
@@ -901,14 +898,13 @@ impl LiveRunner {
             });
             let required_rest_cost = medicated_rest_venue
                 .or(natural_rest_venue)
-                .map(|at_inn| {
+                .and_then(|at_inn| {
                     if at_inn {
                         adventuresim_core::strategic_economy::inn_full_board_cost(1_440)
                     } else {
                         Some(0)
                     }
-                })
-                .flatten();
+                });
             let observable_care_total =
                 observable_quote
                     .zip(medicated_rest_venue)
@@ -1605,7 +1601,7 @@ impl LiveRunner {
                 .find(|row| row.character_id == member_id)
                 .map_or(party_frontier, |row| row.minutes);
             let member_wait = target_minute.saturating_sub(member_minute);
-            if member_wait < 60 || member_wait > 1_440 {
+            if !(60..=1_440).contains(&member_wait) {
                 continue;
             }
             let Ok(Some(venue)) = self.settlement_activity_venue(member_id, 0) else {

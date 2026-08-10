@@ -797,7 +797,11 @@ mod tests {
     fn advisory_licenses_require_matching_current_presentation_and_role() {
         use adventuresim_core::organization::Privilege;
         let warden = ranger_membership("warden", "active", 100);
-        let common = advisory_privileges_for(Some("lodge_hart_king"), &[warden.clone()], Some(100));
+        let common = advisory_privileges_for(
+            Some("lodge_hart_king"),
+            std::slice::from_ref(&warden),
+            Some(100),
+        );
         assert!(common.contains(&Privilege::ForageLowGame));
         assert!(common.contains(&Privilege::ForageFish));
         assert!(common.contains(&Privilege::ForagePlants));
@@ -808,10 +812,14 @@ mod tests {
             advisory_privileges_for(Some("lodge_hart_king"), &[master], Some(100))
                 .contains(&Privilege::ForageHighGame)
         );
-        assert!(advisory_privileges_for(None, &[warden.clone()], Some(100)).is_empty());
+        assert!(advisory_privileges_for(None, std::slice::from_ref(&warden), Some(100)).is_empty());
         assert!(
-            advisory_privileges_for(Some("hunt_pale_lantern"), &[warden.clone()], Some(100))
-                .is_empty()
+            advisory_privileges_for(
+                Some("hunt_pale_lantern"),
+                std::slice::from_ref(&warden),
+                Some(100)
+            )
+            .is_empty()
         );
         let lapsed = ranger_membership("master", "active", 99);
         assert!(advisory_privileges_for(Some("lodge_hart_king"), &[lapsed], Some(100)).is_empty());
