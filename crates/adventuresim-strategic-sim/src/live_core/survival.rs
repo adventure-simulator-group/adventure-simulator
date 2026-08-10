@@ -941,7 +941,7 @@ impl LiveRunner {
                 .copied()
                 .collect::<HashSet<_>>()
                 .len();
-            layers.extend(std::iter::repeat((item.padding, item.coverage)).take(protected_regions));
+            layers.extend(std::iter::repeat_n((item.padding, item.coverage), protected_regions));
         }
         Some(adventuresim_core::survival::insulation_from_layers(layers))
     }
@@ -2452,7 +2452,7 @@ impl LiveRunner {
         let result = reducer_call!(self, operation, |cb| self
             .connection
             .reducers
-            .rest_at_camp_then(character_id, minutes, shelter.clone(), cb));
+            .rest_at_camp_then(character_id, minutes, shelter, cb));
         match self.call(result) {
             Ok(()) => {
                 if matches!(shelter, FieldShelter::Tent) {

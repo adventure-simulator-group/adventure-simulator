@@ -183,14 +183,13 @@ pub(super) async fn renounce_religion(
     Query(building): Query<BuildingQuery>,
     session: Session,
 ) -> Redirect {
-    if session.character_id_u64() == Some(character_id) {
-        if let Err(error) = state
+    if session.character_id_u64() == Some(character_id)
+        && let Err(error) = state
             .db
             .call("set_character_religion", &[json!(character_id), json!("")])
             .await
         {
             tracing::warn!(%error, character_id, "failed to renounce character religion");
         }
-    }
     Redirect::to(&building.append_to(&state, &kind, &id, format!("/locations/{kind}/{id}/party/{character_id}")).await)
 }

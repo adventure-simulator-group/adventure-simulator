@@ -83,16 +83,13 @@ pub enum WeaponGuardState {
     Raised,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub enum StanceState {
+    #[default]
     Lowered,
-    Raised { locomotion: RaisedLocomotionIntent },
-}
-
-impl Default for StanceState {
-    fn default() -> Self {
-        Self::Lowered
-    }
+    Raised {
+        locomotion: RaisedLocomotionIntent,
+    },
 }
 
 /// Compact authoritative input for client-side raised-guard foot placement.
@@ -844,7 +841,7 @@ impl<'de> Deserialize<'de> for SkeletonState {
         D: serde::Deserializer<'de>,
     {
         let wire = SkeletonStateWire::deserialize(deserializer)?;
-        let finite = |value: Vec3| value.is_finite().then_some(value).unwrap_or(Vec3::ZERO);
+        let finite = |value: Vec3| if value.is_finite() { value } else { Vec3::ZERO };
         let mut state = Self {
             body: BodyState::default(),
             jump_anticipation: JumpAnticipation::Inactive,

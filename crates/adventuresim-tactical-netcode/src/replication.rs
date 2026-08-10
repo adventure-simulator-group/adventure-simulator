@@ -18,7 +18,7 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             app.add_plugins(StatesPlugin);
         }
 
-        app.insert_resource(Time::<Fixed>::from_hz(FIXED_TIMESTEP_HZ as f64))
+        app.insert_resource(Time::<Fixed>::from_hz(FIXED_TIMESTEP_HZ))
             .add_plugins(RepliconPlugins)
             .replicate::<Player>()
             .replicate::<CharacterId>()

@@ -398,7 +398,8 @@ pub(crate) struct LegIkDiagnostics {
 impl LegIkState {
     pub(crate) fn diagnostics(&self) -> LegIkDiagnostics {
         let settle = self.0.settle;
-        let diagnostics = LegIkDiagnostics {
+
+        LegIkDiagnostics {
             left_authored_target: self.0.left_authored_world_target,
             right_authored_target: self.0.right_authored_world_target,
             left_planned_contact: settle
@@ -427,8 +428,7 @@ impl LegIkState {
             settle_progress: settle.map(|state| state.progress),
             left_knee_foot_yaw_offset_degrees: self.0.left_knee_foot_yaw_offset_degrees,
             right_knee_foot_yaw_offset_degrees: self.0.right_knee_foot_yaw_offset_degrees,
-        };
-        diagnostics
+        }
     }
 }
 
@@ -3562,7 +3562,8 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                 } else {
                     RUN_SWING_MINIMUM_SOLE_CLEARANCE_METRES
                 };
-                let chosen = advance_run_airborne_world_target(
+
+                advance_run_airborne_world_target(
                     previous_owner_target,
                     planted_target,
                     rig_origin,
@@ -3574,8 +3575,7 @@ pub(in crate::animation) fn apply_terrain_leg_ik(
                             height + MEASURED_ANKLE_SOLE_OFFSET_METRES + acquisition_clearance
                         })
                     },
-                );
-                chosen
+                )
             } else if previous_support.is_some_and(terrain_leg_has_support) {
                 planted_target
             } else {
@@ -7057,9 +7057,9 @@ mod slope_cache_tests {
         let retained = retained_terrain_pole(shallow, canonical).unwrap();
         assert!(retained.dot(canonical) > 0.0);
 
-        let first_root = Vec3::new(-0.100270, 2.863136, -10.316130);
+        let first_root = Vec3::new(-0.100270, 2.863136, -10.316_13);
         let next_root = Vec3::new(-0.100349, 2.875328, -10.407523);
-        let target = Vec3::new(-0.120271, 2.308135, -11.034690);
+        let target = Vec3::new(-0.120271, 2.308135, -11.034_69);
         let authored_knee = first_root + Vec3::new(0.0, -0.52, -0.05);
         let authored_foot = authored_knee + Vec3::new(0.0, -0.43, -0.04);
         let terrain_reach = terrain_maximum_reach(0.523, 0.430);
@@ -7522,6 +7522,7 @@ mod slope_cache_tests {
     }
 
     #[test]
+    #[allow(clippy::assertions_on_constants)] // Locks the authored continuity budget constants.
     fn raised_stop_settle_keeps_terrain_ik_alive_across_ticks() {
         let mut settle = LocomotionSettleState {
             support_left: true,
@@ -8597,6 +8598,7 @@ mod slope_cache_tests {
     }
 
     #[test]
+    #[allow(clippy::assertions_on_constants)] // Locks the authored run-release speed envelope.
     fn run_release_follows_root_once_and_lifts_only_clearance_floor() {
         let release_clearance = run_airborne_clearance_for_sample(true, 0.81, None, false);
         assert_eq!(release_clearance, RUN_SWING_MINIMUM_SOLE_CLEARANCE_METRES);

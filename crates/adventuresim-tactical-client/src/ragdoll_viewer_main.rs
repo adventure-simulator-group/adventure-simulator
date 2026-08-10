@@ -1,5 +1,9 @@
 //! Focused native presentation/physics fixture for the Cascadeur humanoid.
 
+// This binary reuses gameplay animation, camera, and input modules while
+// installing only the focused ragdoll fixture.
+#![allow(dead_code)]
+
 #[cfg(not(target_family = "wasm"))]
 mod animation;
 #[cfg(not(target_family = "wasm"))]

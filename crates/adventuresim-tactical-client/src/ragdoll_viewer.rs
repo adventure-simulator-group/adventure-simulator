@@ -348,6 +348,83 @@ fn capture_modes(
     );
 }
 
+fn finish_capture(capture: &RagdollCapture, exit: &mut MessageWriter<AppExit>) {
+    let Some(output) = &capture.output else {
+        return;
+    };
+    let active = capture
+        .captures
+        .iter()
+        .find(|sample| sample.mode == "active");
+    let passive = capture
+        .captures
+        .iter()
+        .find(|sample| sample.mode == "passive");
+    let active_final = active
+        .and_then(|sample| sample.telemetry.as_ref())
+        .map(|sample| sample.mean_error_radians);
+    let validation = CaptureValidation {
+        all_modes_captured: capture.captures.len() == CAPTURE_MODES.len(),
+        finite_telemetry: capture
+            .captures
+            .iter()
+            .filter_map(|sample| sample.telemetry.as_ref())
+            .all(|sample| sample.finite),
+        active_hinges_driven: active
+            .and_then(|sample| sample.telemetry.as_ref())
+            .is_some_and(|sample| sample.driven_hinges == 4 && sample.strength >= 0.95),
+        active_convergence_observed: capture.active_initial_error.zip(active_final).is_some_and(
+            |(initial, final_error)| {
+                if initial <= 0.05 {
+                    final_error <= 0.05
+                } else {
+                    final_error <= initial * 0.8
+                }
+            },
+        ),
+        passive_zero_strength: passive
+            .and_then(|sample| sample.telemetry.as_ref())
+            .is_some_and(|sample| sample.strength <= 0.001 && sample.driven_hinges == 0),
+        terrain_contact_bounded: [active, passive]
+            .into_iter()
+            .flatten()
+            .all(pelvis_has_bounded_support),
+        pelvis_settled: [active, passive]
+            .into_iter()
+            .flatten()
+            .all(supported_and_settled),
+        note: "Terrain contact and settling are machine-gated; screenshots require visual review.",
+    };
+    let valid = validation.all_modes_captured
+        && validation.finite_telemetry
+        && validation.active_hinges_driven
+        && validation.active_convergence_observed
+        && validation.passive_zero_strength
+        && validation.terrain_contact_bounded
+        && validation.pelvis_settled;
+    let manifest = CaptureManifest {
+        pipeline: "cascadeur_humanoid_avian_ragdoll",
+        controls: "T cycles animated -> active -> passive; R resets",
+        captures: capture.captures.clone(),
+        validation,
+    };
+    fs::write(
+        output.join("manifest.json"),
+        serde_json::to_vec_pretty(&manifest).expect("ragdoll manifest serializes"),
+    )
+    .unwrap_or_else(|error| panic!("failed to write ragdoll manifest: {error}"));
+    if !valid {
+        fs::write(
+            output.join("failure.txt"),
+            "Ragdoll capture validation failed; inspect manifest.json and screenshots.\n",
+        )
+        .unwrap_or_else(|error| panic!("failed to write ragdoll failure marker: {error}"));
+        exit.write(AppExit::Error(1.try_into().expect("one is non-zero")));
+    } else {
+        exit.write(AppExit::Success);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -405,82 +482,5 @@ mod tests {
         assert!(camera.forward().as_vec3().dot(expected) > 0.9999);
         let distance = (camera.translation - subject).length();
         assert!(distance > 3.5 && distance < 4.0);
-    }
-}
-
-fn finish_capture(capture: &RagdollCapture, exit: &mut MessageWriter<AppExit>) {
-    let Some(output) = &capture.output else {
-        return;
-    };
-    let active = capture
-        .captures
-        .iter()
-        .find(|sample| sample.mode == "active");
-    let passive = capture
-        .captures
-        .iter()
-        .find(|sample| sample.mode == "passive");
-    let active_final = active
-        .and_then(|sample| sample.telemetry.as_ref())
-        .map(|sample| sample.mean_error_radians);
-    let validation = CaptureValidation {
-        all_modes_captured: capture.captures.len() == CAPTURE_MODES.len(),
-        finite_telemetry: capture
-            .captures
-            .iter()
-            .filter_map(|sample| sample.telemetry.as_ref())
-            .all(|sample| sample.finite),
-        active_hinges_driven: active
-            .and_then(|sample| sample.telemetry.as_ref())
-            .is_some_and(|sample| sample.driven_hinges == 4 && sample.strength >= 0.95),
-        active_convergence_observed: capture.active_initial_error.zip(active_final).is_some_and(
-            |(initial, final_error)| {
-                if initial <= 0.05 {
-                    final_error <= 0.05
-                } else {
-                    final_error <= initial * 0.8
-                }
-            },
-        ),
-        passive_zero_strength: passive
-            .and_then(|sample| sample.telemetry.as_ref())
-            .is_some_and(|sample| sample.strength <= 0.001 && sample.driven_hinges == 0),
-        terrain_contact_bounded: [active, passive]
-            .into_iter()
-            .flatten()
-            .all(pelvis_has_bounded_support),
-        pelvis_settled: [active, passive]
-            .into_iter()
-            .flatten()
-            .all(|sample| supported_and_settled(sample)),
-        note: "Terrain contact and settling are machine-gated; screenshots require visual review.",
-    };
-    let valid = validation.all_modes_captured
-        && validation.finite_telemetry
-        && validation.active_hinges_driven
-        && validation.active_convergence_observed
-        && validation.passive_zero_strength
-        && validation.terrain_contact_bounded
-        && validation.pelvis_settled;
-    let manifest = CaptureManifest {
-        pipeline: "cascadeur_humanoid_avian_ragdoll",
-        controls: "T cycles animated -> active -> passive; R resets",
-        captures: capture.captures.clone(),
-        validation,
-    };
-    fs::write(
-        output.join("manifest.json"),
-        serde_json::to_vec_pretty(&manifest).expect("ragdoll manifest serializes"),
-    )
-    .unwrap_or_else(|error| panic!("failed to write ragdoll manifest: {error}"));
-    if !valid {
-        fs::write(
-            output.join("failure.txt"),
-            "Ragdoll capture validation failed; inspect manifest.json and screenshots.\n",
-        )
-        .unwrap_or_else(|error| panic!("failed to write ragdoll failure marker: {error}"));
-        exit.write(AppExit::Error(1.try_into().expect("one is non-zero")));
-    } else {
-        exit.write(AppExit::Success);
     }
 }

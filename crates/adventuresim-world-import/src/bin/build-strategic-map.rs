@@ -924,7 +924,7 @@ fn active(row: &BTreeMap<String, String>, year: i32) -> bool {
 }
 
 fn coordinates(wkt: &str) -> Vec<Point> {
-    wkt.split(|c: char| matches!(c, '(' | ')' | ','))
+    wkt.split(['(', ')', ','])
         .filter_map(|part| {
             let mut values = part
                 .split_whitespace()

@@ -16,7 +16,7 @@ impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DebugVisualsConfig>()
             .init_resource::<DebugGameSpeed>()
-            .register_required_components_with::<Collider, _>(|| DebugRender::none())
+            .register_required_components_with::<Collider, _>(DebugRender::none)
             .add_systems(Update, toggle_debug_visuals)
             .add_systems(Update, draw_debug_rays)
             .add_systems(Update, draw_camera_rig)

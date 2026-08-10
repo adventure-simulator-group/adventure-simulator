@@ -222,7 +222,7 @@ pub(crate) fn exact_organization_representative(
 ) -> Option<String> {
     let organization = adventuresim_core::organization::organization(&npc.organization_id)?;
     let chapter = organization.chapter(settlement_id)?;
-    let settlement = ctx.db.settlement().id().find(&settlement_id.to_owned())?;
+    let settlement = ctx.db.settlement().id().find(settlement_id.to_owned())?;
     let observed_place =
         crate::settlement_population::canonical_npc_place(settlement_id, location_id)?;
     let effective_location = adventuresim_core::organization::chapter_effective_location_id(
@@ -406,7 +406,7 @@ fn apply_dialogue_investigation_action(
                 .db
                 .case_custody()
                 .object_id()
-                .find(&asset_id.as_str().to_string())
+                .find(asset_id.as_str().to_string())
                 .ok_or("Returned asset has no custody authority")?;
             if Some(current.version) != binding.expected_custody_version
                 || current.case_id != case.id
@@ -435,7 +435,7 @@ fn apply_dialogue_investigation_action(
                 .db
                 .case_custody()
                 .object_id()
-                .find(&subject_id.as_str().to_string())
+                .find(subject_id.as_str().to_string())
                 .ok_or("Released subject has no custody authority")?;
             if Some(current.version) != binding.expected_custody_version
                 || current.case_id != case.id
@@ -466,7 +466,7 @@ fn apply_dialogue_investigation_action(
                 .db
                 .case_custody()
                 .object_id()
-                .find(&asset_id.as_str().to_string())
+                .find(asset_id.as_str().to_string())
                 .ok_or("Exchanged asset has no custody authority")?;
             if Some(current.version) != binding.expected_custody_version
                 || current.case_id != case.id

@@ -203,13 +203,15 @@ fn failure_artifact_version_nine_serializes_safe_operation_context() {
 }
 
 fn quest_coverage_report() -> CoreLoopReport {
-    let mut metrics = CoreLoopMetrics::default();
-    metrics.quests_attempted = 2;
-    metrics.direct_contracts_attempted = 1;
-    metrics.direct_contracts_completed = 1;
-    metrics.generated_case_intakes = 1;
-    metrics.generated_discovery_actions_fruitful = 1;
-    metrics.generated_quests_discovered = 1;
+    let metrics = CoreLoopMetrics {
+        quests_attempted: 2,
+        direct_contracts_attempted: 1,
+        direct_contracts_completed: 1,
+        generated_case_intakes: 1,
+        generated_discovery_actions_fruitful: 1,
+        generated_quests_discovered: 1,
+        ..CoreLoopMetrics::default()
+    };
     CoreLoopReport {
         format_version: crate::FORMAT_VERSION,
         backend_kind: "spacetimedb".into(),

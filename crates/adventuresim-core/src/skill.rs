@@ -337,9 +337,11 @@ mod tests {
         struct PhysiologySkills(f32);
         impl PlayerSkills for PhysiologySkills {
             fn skill_hours_trained(&self, skill: Skill) -> f32 {
-                (skill == Skill::Physiology)
-                    .then_some(self.0)
-                    .unwrap_or(0.0)
+                if skill == Skill::Physiology {
+                    self.0
+                } else {
+                    0.0
+                }
             }
         }
         let low = Aptitudes {
@@ -370,7 +372,7 @@ mod tests {
         struct SurgerySkills(f32);
         impl PlayerSkills for SurgerySkills {
             fn skill_hours_trained(&self, skill: Skill) -> f32 {
-                (skill == Skill::Surgery).then_some(self.0).unwrap_or(0.0)
+                if skill == Skill::Surgery { self.0 } else { 0.0 }
             }
         }
         let attributes = Aptitudes {

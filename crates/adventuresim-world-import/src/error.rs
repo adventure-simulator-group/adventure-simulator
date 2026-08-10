@@ -14,10 +14,13 @@ pub enum Error {
     #[error("failed to read shapefile {path}: {source}")]
     Shapefile {
         path: PathBuf,
-        source: shapefile::Error,
+        source: Box<shapefile::Error>,
     },
     #[error("failed to read dBase table {path}: {source}")]
-    Dbase { path: PathBuf, source: dbase::Error },
+    Dbase {
+        path: PathBuf,
+        source: Box<dbase::Error>,
+    },
     #[error("failed to read GeoPackage {path}: {source}")]
     GeoPackage {
         path: PathBuf,

@@ -638,8 +638,7 @@ fn run_core_loop_inner(
             if quest_lane_plan
                 .as_ref()
                 .is_some_and(|plan| plan.generated_case_id.is_none())
-            {
-                if let Some(fixture) = select_public_quest_fixture_if_present(
+                && let Some(fixture) = select_public_quest_fixture_if_present(
                     runner.connection.db.simulation_quest_fixture().iter(),
                     claimed_run_id,
                     expected_quest_fixture_parties
@@ -657,7 +656,6 @@ fn run_core_loop_inner(
                     }
                     plan.generated_case_id = Some(fixture.generated_case_id);
                 }
-            }
             let party_time_before = runner.public_party_elapsed_max(party_id);
             let Some((pre_recovery_leader, _)) = runner.current_leader(party_id) else {
                 continue;

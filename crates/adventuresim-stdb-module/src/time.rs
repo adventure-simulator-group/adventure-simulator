@@ -1240,31 +1240,30 @@ fn apply_training(
         schedule.prayer_minutes,
         &attributes,
     );
-    if let Some(character) = ctx.db.character().id().find(character_id) {
-        if let Some(settlement_id) = character.current_settlement_id {
-            if let Some(settlement) = ctx.db.settlement().id().find(&settlement_id) {
-                // Ordinary life supplies bounded ambient exposure during the
-                // waking two-thirds of actual elapsed settlement time.
-                let exposure = elapsed as f32 / 60.0 * (2.0 / 3.0);
-                for (language, coefficient) in [
-                    (
-                        OralLanguage::EastCentral,
-                        settlement.languages.east_central_bp,
-                    ),
-                    (
-                        OralLanguage::WestCentral,
-                        settlement.languages.west_central_bp,
-                    ),
-                    (OralLanguage::Low, settlement.languages.low_bp),
-                ] {
-                    excess += adventuresim_core::skill::apply_language_training(
-                        skills.oral_languages.direct_mut(language),
-                        exposure * f32::from(coefficient) / 10_000.0,
-                        attributes.instinct,
-                    )
-                    .excess_effective_hours;
-                }
-            }
+    if let Some(character) = ctx.db.character().id().find(character_id)
+        && let Some(settlement_id) = character.current_settlement_id
+        && let Some(settlement) = ctx.db.settlement().id().find(&settlement_id)
+    {
+        // Ordinary life supplies bounded ambient exposure during the
+        // waking two-thirds of actual elapsed settlement time.
+        let exposure = elapsed as f32 / 60.0 * (2.0 / 3.0);
+        for (language, coefficient) in [
+            (
+                OralLanguage::EastCentral,
+                settlement.languages.east_central_bp,
+            ),
+            (
+                OralLanguage::WestCentral,
+                settlement.languages.west_central_bp,
+            ),
+            (OralLanguage::Low, settlement.languages.low_bp),
+        ] {
+            excess += adventuresim_core::skill::apply_language_training(
+                skills.oral_languages.direct_mut(language),
+                exposure * f32::from(coefficient) / 10_000.0,
+                attributes.instinct,
+            )
+            .excess_effective_hours;
         }
     }
     for (minutes, organization_id) in [
@@ -1925,7 +1924,8 @@ pub fn perform_immediate_activity(
     if location.policy == ActivityLocation::IneligibleNamedLocation {
         return Err("Immediate activities are unavailable at this location".into());
     }
-    if !(60..=MINUTES_PER_DAY).contains(&requested_minutes) || requested_minutes % 60 != 0 {
+    if !(60..=MINUTES_PER_DAY).contains(&requested_minutes) || !requested_minutes.is_multiple_of(60)
+    {
         return Err("Activity duration must use whole hours from one to 24 hours".into());
     }
     ensure_character_time(ctx, character_id)?;

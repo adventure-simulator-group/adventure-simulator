@@ -416,7 +416,7 @@ fmt:
     @cargo fmt --all
 
 lint:
-    @cargo clippy --workspace -- -D warnings
+    @cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 clean:
     @cargo clean

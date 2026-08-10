@@ -302,7 +302,7 @@ pub fn start_dialogue(
         let (fragments_json, source_refs_json) = match &authority {
             ReferralDeliveryAuthority::PublicThreat => (
                 delivery.fragments_json.clone(),
-                serde_json::to_string(&[delivery.receipt_id.clone()])
+                serde_json::to_string(std::slice::from_ref(&delivery.receipt_id))
                     .map_err(|_| "Could not encode public referral source")?,
             ),
             ReferralDeliveryAuthority::LocalProblem(_) => render_quest_referral_variant(

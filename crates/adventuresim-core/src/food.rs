@@ -317,9 +317,7 @@ pub fn cooked_contamination(current: f32, method: CookingMethod) -> f32 {
         CookingMethod::Roast => 1.0e-5,
         CookingMethod::Bake => 4.0e-6,
     };
-    (current.max(0.0) * kill)
-        .max(RECONTAMINATION_FLOOR)
-        .min(MAX_CONTAMINATION)
+    (current.max(0.0) * kill).clamp(RECONTAMINATION_FLOOR, MAX_CONTAMINATION)
 }
 
 pub fn scale_contamination_contributions(

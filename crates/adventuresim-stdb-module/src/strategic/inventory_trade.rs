@@ -157,7 +157,7 @@ fn objective_item_value(ctx: &ReducerContext, item_id: &str) -> Result<u64, Stri
     ctx.db
         .item()
         .id()
-        .find(&item_id.to_string())
+        .find(item_id.to_string())
         .and_then(|item| item.base_value)
         .map(u64::from)
         .ok_or_else(|| format!("Item {item_id} has no objective value"))
@@ -467,7 +467,7 @@ pub(crate) fn add_to_party_inventory_checked(
             .db
             .party_authority()
             .id()
-            .find(&party_id.to_string())
+            .find(party_id.to_string())
             .and_then(|party| ctx.db.character_time().character_id().find(party.leader_id))
             .map_or(0, |time| time.minutes);
         for _ in 0..quantity {
@@ -573,7 +573,7 @@ fn credit_party_reserve(ctx: &ReducerContext, party_id: &str, value: u64) -> Res
         .db
         .party_inventory_state()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
     {
         state.reserve_value = state
             .reserve_value
@@ -763,7 +763,7 @@ pub(crate) fn complete_bound_mission_success(
         .db
         .mission_authority()
         .id()
-        .find(&mission_id.to_string())
+        .find(mission_id.to_string())
         .ok_or("Mission authority not found")?;
     mission.parsed_state()?;
     if mission.status == MissionAttemptStatus::Committed {
@@ -884,7 +884,7 @@ pub(crate) fn fail_bound_mission_attempt(
         .db
         .mission_authority()
         .id()
-        .find(&mission_id.to_string())
+        .find(mission_id.to_string())
     else {
         return Ok(());
     };
@@ -950,7 +950,7 @@ pub(crate) fn commit_hostile_resolution_authority(
         .db
         .hostile_resolution_receipt()
         .id()
-        .find(&receipt_id.to_string())
+        .find(receipt_id.to_string())
     {
         return if existing.party_id == party_id
             && existing.mission_id.as_deref() == mission_id
@@ -970,18 +970,17 @@ pub(crate) fn commit_hostile_resolution_authority(
         .db
         .hostile_group_authority()
         .id()
-        .find(&hostile_group_id.to_string())
+        .find(hostile_group_id.to_string())
         .ok_or("Hostile group not found")?;
     if group.disposition != HostileGroupDisposition::Active {
         return Err("Hostile group is already resolved".into());
     }
-    if resolution == HostileResolutionKind::Surrendered {
-        if !adventuresim_core::strategic_action::hostile_surrender_is_authored(parse_threat(
+    if resolution == HostileResolutionKind::Surrendered
+        && !adventuresim_core::strategic_action::hostile_surrender_is_authored(parse_threat(
             &group.enemy_type,
         )?) {
             return Err("Hostile group has no authored surrender policy".into());
         }
-    }
     let site = ctx
         .db
         .case_site_authority()
@@ -997,7 +996,7 @@ pub(crate) fn commit_hostile_resolution_authority(
             .db
             .mission_authority()
             .id()
-            .find(&mission_id.to_string())
+            .find(mission_id.to_string())
             .ok_or("Mission authority not found")?;
         if mission.party_id != party_id
             || mission.hostile_group_id.as_deref() != Some(hostile_group_id)
@@ -1039,7 +1038,7 @@ pub(crate) fn commit_hostile_resolution_authority(
             .db
             .party_authority()
             .id()
-            .find(&party_id.to_string())
+            .find(party_id.to_string())
             .filter(|party| party.leader_id == observer_character_id)
             .ok_or("Hostile resolution observer is not the party leader")?;
         if party.current_case_site_id.as_ref() != Some(case_site_id) {
@@ -1114,7 +1113,7 @@ pub(crate) fn commit_hostile_resolution_authority(
                 .db
                 .case_custody()
                 .object_id()
-                .find(&subject_id.to_string())
+                .find(subject_id.to_string())
                 .ok_or("Captured subject has no custody authority")?;
             let site = ctx
                 .db
@@ -1209,7 +1208,7 @@ fn commit_hostile_battle_resolution(
         .db
         .outcome_source_authority()
         .id()
-        .find(&outcome_source_id.to_string())
+        .find(outcome_source_id.to_string())
     {
         return if existing.battle_id == battle_id
             && existing.party_id == party_id
@@ -1227,7 +1226,7 @@ fn commit_hostile_battle_resolution(
             ctx.db
                 .hostile_group_authority()
                 .id()
-                .find(&id.to_string())
+                .find(id.to_string())
                 .ok_or_else(|| "Hostile group not found".to_string())
         })
         .transpose()?;
@@ -1236,7 +1235,7 @@ fn commit_hostile_battle_resolution(
             .db
             .mission_authority()
             .id()
-            .find(&mission_id.to_string())
+            .find(mission_id.to_string())
             .ok_or("Mission authority not found")?;
         if mission.party_id != party_id || mission.hostile_group_id.as_deref() != hostile_group_id {
             return Err("Battle attribution does not match mission authority".into());
@@ -1282,7 +1281,7 @@ fn commit_hostile_battle_resolution(
             .db
             .mission_authority()
             .id()
-            .find(&mission_id.to_string())
+            .find(mission_id.to_string())
             .ok_or("Mission authority not found")?;
         if let Some(ref site_id) = mission.case_site_id {
             let site = ctx
@@ -1313,7 +1312,7 @@ fn commit_hostile_battle_resolution(
             ctx.db
                 .mission_authority()
                 .id()
-                .find(&id.to_string())
+                .find(id.to_string())
                 .map(|mission| {
                     let normalized = mission
                         .normalized_combat_power
@@ -1385,14 +1384,14 @@ fn commit_hostile_battle_resolution(
             ctx.db
                 .mission_authority()
                 .id()
-                .find(&mission_id.to_string())
+                .find(mission_id.to_string())
                 .ok_or("Mission authority not found")?
                 .observer_character_id
         } else {
             ctx.db
                 .party_authority()
                 .id()
-                .find(&party_id.to_string())
+                .find(party_id.to_string())
                 .ok_or("Party authority not found")?
                 .leader_id
         };
@@ -2304,13 +2303,13 @@ fn validate_personal_storefront_purchase(
         .db
         .settlement()
         .id()
-        .find(&settlement_id.to_string())
+        .find(settlement_id.to_string())
         .ok_or("Settlement not found")?;
     let item = ctx
         .db
         .item()
         .id()
-        .find(&item_id.to_string())
+        .find(item_id.to_string())
         .ok_or("Merchant item not found")?;
     if matches!(
         item.kind,

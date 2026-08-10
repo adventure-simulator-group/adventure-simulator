@@ -590,13 +590,13 @@ fn encode(value: &str) -> String {
 fn decode(value: &str) -> Result<String, PlaceIdentityError> {
     if value.is_empty()
         || value.len() > MAX_STRATEGIC_ID_COMPONENT_BYTES * 2
-        || value.len() % 2 != 0
+        || !value.len().is_multiple_of(2)
     {
         return Err(PlaceIdentityError::InvalidComponent);
     }
     let bytes = value.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len() / 2);
-    for pair in bytes.chunks_exact(2) {
+    for pair in bytes.as_chunks::<2>().0 {
         let high = decode_hex(pair[0]).ok_or(PlaceIdentityError::InvalidComponent)?;
         let low = decode_hex(pair[1]).ok_or(PlaceIdentityError::InvalidComponent)?;
         decoded.push((high << 4) | low);
@@ -607,12 +607,15 @@ fn decode(value: &str) -> Result<String, PlaceIdentityError> {
 }
 
 fn decode_place(value: &str) -> Result<StrategicPlaceId, PlaceIdentityError> {
-    if value.is_empty() || value.len() > MAX_STRATEGIC_PLACE_ID_BYTES * 2 || value.len() % 2 != 0 {
+    if value.is_empty()
+        || value.len() > MAX_STRATEGIC_PLACE_ID_BYTES * 2
+        || !value.len().is_multiple_of(2)
+    {
         return Err(PlaceIdentityError::MalformedEncoding);
     }
     let bytes = value.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len() / 2);
-    for pair in bytes.chunks_exact(2) {
+    for pair in bytes.as_chunks::<2>().0 {
         let high = decode_hex(pair[0]).ok_or(PlaceIdentityError::MalformedEncoding)?;
         let low = decode_hex(pair[1]).ok_or(PlaceIdentityError::MalformedEncoding)?;
         decoded.push((high << 4) | low);

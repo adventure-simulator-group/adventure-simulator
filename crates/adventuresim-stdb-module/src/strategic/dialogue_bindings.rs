@@ -379,7 +379,7 @@ fn evidence_can_be_presented(
         .db
         .investigation_evidence_authority()
         .id()
-        .find(&evidence_id.to_string())
+        .find(evidence_id.to_string())
     else {
         return false;
     };
@@ -391,7 +391,7 @@ fn evidence_can_be_presented(
             .db
             .case_custody()
             .object_id()
-            .find(&evidence_id.to_string())
+            .find(evidence_id.to_string())
             .is_some_and(|custody| {
                 custody.case_id == case.id
                     && ((custody.holder_kind == CustodyHolderKind::Party
@@ -507,7 +507,7 @@ fn dialogue_objective_recipient(
                 .db
                 .case_custody()
                 .object_id()
-                .find(&asset_id.as_str().to_string())
+                .find(asset_id.as_str().to_string())
                 .is_some_and(|custody| {
                     custody.case_id == case.id
                         && custody.holder_kind == CustodyHolderKind::Party
@@ -520,7 +520,7 @@ fn dialogue_objective_recipient(
                 .db
                 .case_custody()
                 .object_id()
-                .find(&subject_id.as_str().to_string())
+                .find(subject_id.as_str().to_string())
                 .is_some_and(|custody| {
                     custody.case_id == case.id
                         && custody.holder_kind == CustodyHolderKind::Party
@@ -538,7 +538,7 @@ fn dialogue_objective_recipient(
                 .db
                 .case_custody()
                 .object_id()
-                .find(&asset_id.as_str().to_string())
+                .find(asset_id.as_str().to_string())
                 .is_some_and(|custody| {
                     custody.case_id == case.id
                         && custody.holder_kind == CustodyHolderKind::Party
@@ -738,13 +738,13 @@ fn issue_dialogue_investigation_bindings(
                             .db
                             .case_custody()
                             .object_id()
-                            .find(&asset_id.as_str().to_string())
+                            .find(asset_id.as_str().to_string())
                             .map(|row| row.version),
                         adventuresim_core::case::ObjectiveRequirement::Release { subject_id } => {
                             ctx.db
                                 .case_custody()
                                 .object_id()
-                                .find(&subject_id.as_str().to_string())
+                                .find(subject_id.as_str().to_string())
                                 .map(|row| row.version)
                         }
                         _ => None,

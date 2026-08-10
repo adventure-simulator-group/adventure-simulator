@@ -1121,7 +1121,7 @@ fn capability_has_live_support_view(
             ctx.db
                 .investigation_action_capability()
                 .id()
-                .find(&id.to_owned())
+                .find(id.to_owned())
         },
         |id| capability_has_successful_attempt_view(ctx, id),
     ) {
@@ -1629,7 +1629,7 @@ fn victim_cohort_is_current_view(
     }
     let expected = adventuresim_core::quest_generation::GeneratedPatternTarget {
         cohort_id: target.cohort_id.clone(),
-        resident_character_id: target.resident_character_id.clone(),
+        resident_character_id: target.resident_character_id,
         demographic,
         age_band: target.age_band.clone(),
         sex: target.sex.clone(),
@@ -1643,7 +1643,7 @@ fn victim_cohort_is_current_view(
         crate::strategic::developer_npc_witness_candidate(&npc, &presence)
     } else {
         Some(adventuresim_core::quest_generation::WitnessCandidate {
-            resident_character_id: npc.character_id.clone(),
+            resident_character_id: npc.character_id,
             display_name: npc.name.clone(),
             demographic: crate::strategic::generated_npc_demographic(&npc),
             age_band: format!("{:?}", npc.age_band).to_ascii_lowercase(),

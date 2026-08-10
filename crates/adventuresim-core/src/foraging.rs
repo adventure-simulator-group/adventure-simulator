@@ -322,7 +322,7 @@ pub struct ForageResolution {
 }
 
 pub fn validate_duration(minutes: u64) -> Result<(), &'static str> {
-    if (MIN_FORAGE_MINUTES..=MAX_FORAGE_MINUTES).contains(&minutes) && minutes % 60 == 0 {
+    if (MIN_FORAGE_MINUTES..=MAX_FORAGE_MINUTES).contains(&minutes) && minutes.is_multiple_of(60) {
         Ok(())
     } else {
         Err("Foraging duration must use whole hours from one to 24 hours")

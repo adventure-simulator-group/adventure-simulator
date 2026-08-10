@@ -28,7 +28,7 @@ pub fn generated_testimony_pipeline(
         ]))?,
         proposition: AtomicProposition::new(
             PropositionId::new(draft.proposition_id.clone())?,
-            &witness.resident_character_id.to_string(),
+            witness.resident_character_id.to_string(),
             "reported",
             &draft.truthful_text,
         )?,

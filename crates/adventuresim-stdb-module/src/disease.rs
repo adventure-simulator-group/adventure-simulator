@@ -480,7 +480,7 @@ fn derive_chart_reading(
             .iter()
             .filter(|value| {
                 value.administered_at <= minute
-                    && value.stopped_at.map_or(true, |stopped| minute <= stopped)
+                    && value.stopped_at.is_none_or(|stopped| minute <= stopped)
             })
             .map(|value| {
                 if band >= 3 {
@@ -931,6 +931,7 @@ fn try_party_physiology_check_at(
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // Retained for focused disease fixtures compiled separately from this target.
 pub(crate) fn protected_exposure_at(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1359,6 +1360,7 @@ pub fn plan_party_disease_interval(
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // Retained for focused disease fixtures compiled separately from this target.
 fn party_contact_episodes_through(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1483,6 +1485,7 @@ fn party_contact_episodes_through(
 
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
+#[allow(dead_code)] // Retained for focused disease fixtures compiled separately from this target.
 fn first_protected_presence_exposure_minute(
     ctx: &ReducerContext,
     episodes: &[InfectionEpisode],
@@ -1543,6 +1546,7 @@ pub fn effective_attributes(
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // Retained for focused disease fixtures compiled separately from this target.
 fn outbreak_episodes_through(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1699,6 +1703,7 @@ fn persist_acquisition_episodes(
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // Retained for focused disease fixtures compiled separately from this target.
 fn merge_acquisition_proposals(
     mut proposals: Vec<InfectionEpisode>,
     additional: impl IntoIterator<Item = InfectionEpisode>,

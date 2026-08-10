@@ -97,7 +97,7 @@ pub(super) async fn render_party_personal(
     surgery_open: Option<&str>,
     social_open: bool,
 ) -> Html<String> {
-    let mut location = match resolve_location(&state, &kind, &id).await {
+    let mut location = match resolve_location(state, kind, id).await {
         LocationLookup::Found(location) => location,
         LocationLookup::NotFound => return Html("<h1>Location not found</h1>".to_string()),
         LocationLookup::Unavailable => {
@@ -106,7 +106,7 @@ pub(super) async fn render_party_personal(
     };
     location.active_building = building.valid_for(&location).map(str::to_owned);
     let Some((active_character, active_inventory)) =
-        get_active_character(&state, session.character_id_u64()).await
+        get_active_character(state, session.character_id_u64()).await
     else {
         return Html("<h1>Choose a character first</h1>".to_string());
     };
@@ -116,7 +116,7 @@ pub(super) async fn render_party_personal(
     if character_id != active_character.id {
         return Html("<h1>Party member not found</h1>".to_string());
     }
-    let party_members = get_active_party_members(&state, Some(&active_character)).await;
+    let party_members = get_active_party_members(state, Some(&active_character)).await;
     let attributes: Vec<CharacterAttributes> = state
         .db
         .query(&format!(
@@ -160,13 +160,13 @@ pub(super) async fn render_party_personal(
         .await
         .ok()
         .flatten();
-    let character_minute = query_single::<CharacterTime>(&state, "backend_character_times", character_id)
+    let character_minute = query_single::<CharacterTime>(state, "backend_character_times", character_id)
         .await
         .map_or(0, |time| time.minutes);
-    let capability = get_character_capability(&state, character_id).await;
-    let combat_profile = get_combat_training_profile(&state, character_id).await;
+    let capability = get_character_capability(state, character_id).await;
+    let combat_profile = get_combat_training_profile(state, character_id).await;
     let can_examine = false;
-    let stats = query_single::<CharacterStats>(&state, "backend_character_stats", character_id).await;
+    let stats = query_single::<CharacterStats>(state, "backend_character_stats", character_id).await;
     let case_site = if location.kind == LocationKind::CaseSite {
         state
             .db
@@ -242,21 +242,21 @@ pub(super) async fn render_party_personal(
             adventuresim_core::activity::ActivityLocation::IneligibleNamedLocation
         }
     };
-    let condition = get_strategic_condition(&state, character_id).await;
-    let morale_sources = get_morale_sources(&state, character_id).await;
-    let religion = query_single::<CharacterCondition>(&state, "backend_character_conditions", character_id)
+    let condition = get_strategic_condition(state, character_id).await;
+    let morale_sources = get_morale_sources(state, character_id).await;
+    let religion = query_single::<CharacterCondition>(state, "backend_character_conditions", character_id)
         .await
         .and_then(|condition| condition.religion_id);
     let prayer_religion_check = match religion.as_deref() {
         Some(religion_id) => {
-            party_religion_knowledge_check(&state, &party_members, religion_id).await
+            party_religion_knowledge_check(state, &party_members, religion_id).await
         }
         None => 0.0,
     };
     let reputation_location_id = settlement
         .as_ref()
         .map_or(location.id.as_str(), |settlement| settlement.id.as_str());
-    let reputation = query_local_reputation(&state, character_id, reputation_location_id).await;
+    let reputation = query_local_reputation(state, character_id, reputation_location_id).await;
     let fame = reputation
         .as_ref()
         .map_or(0.0, |value| value.fame as f32 / 100.0);
@@ -266,7 +266,7 @@ pub(super) async fn render_party_personal(
     // Authoritative personality is private. Ordinary pages render only
     // observer-specific beliefs through the dedicated social route.
     let personality: Option<CharacterPersonality> = None;
-    let medical = medical_presentation(&state, character_id, character_id).await;
+    let medical = medical_presentation(state, character_id, character_id).await;
     let injuries = state
         .db
         .query::<LimbInjury>(&format!(

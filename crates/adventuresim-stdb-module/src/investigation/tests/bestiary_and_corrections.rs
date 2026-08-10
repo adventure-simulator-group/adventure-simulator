@@ -571,14 +571,11 @@
         let dependent_ids = corrected_leads.iter().flat_map(|lead| {
             [&first_capability, &second_capability]
                 .into_iter()
-                .filter_map(|capability| {
-                    capability_progress_depends_on_exact_lead(
+                .filter(|&capability| capability_progress_depends_on_exact_lead(
                         capability,
                         lead,
                         Some(("canonical-case", "public-case")),
-                    )
-                    .then(|| capability.id.clone())
-                })
+                    )).map(|capability| capability.id.clone())
         });
         assert_eq!(
             unique_capability_ids(dependent_ids),

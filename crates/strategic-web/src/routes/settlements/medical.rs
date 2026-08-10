@@ -398,10 +398,9 @@ pub(super) async fn submit_repair(
     session: Session,
     Form(form): Form<RepairItemForm>,
 ) -> Redirect {
-    if let Some(service) = RepairService::parse(&shop) {
-        if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
-        {
-            if let Err(error) = state
+    if let Some(service) = RepairService::parse(&shop)
+        && let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
+            && let Err(error) = state
                 .db
                 .call(
                     "submit_item_for_repair",
@@ -416,8 +415,6 @@ pub(super) async fn submit_repair(
             {
                 tracing::warn!(%error, character_id = character.id, settlement_id = %id, shop = service.as_str(), "failed to submit item for repair");
             }
-        }
-    }
     Redirect::to(&format!("/settlements/{id}/{shop}"))
 }
 
@@ -426,10 +423,9 @@ pub(super) async fn submit_all_repairs(
     Path((id, shop)): Path<(String, String)>,
     session: Session,
 ) -> Redirect {
-    if let Some(service) = RepairService::parse(&shop) {
-        if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
-        {
-            if let Err(error) = state
+    if let Some(service) = RepairService::parse(&shop)
+        && let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
+            && let Err(error) = state
                 .db
                 .call(
                     "submit_all_repairable_items",
@@ -439,8 +435,6 @@ pub(super) async fn submit_all_repairs(
             {
                 tracing::warn!(%error, character_id = character.id, settlement_id = %id, shop = service.as_str(), "failed to submit repairable items");
             }
-        }
-    }
     Redirect::to(&format!("/settlements/{id}/{shop}"))
 }
 
@@ -451,8 +445,7 @@ pub(super) async fn retrieve_repair(
 ) -> Redirect {
     if RepairService::parse(&shop).is_some()
         && let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
-    {
-        if let Err(error) = state
+        && let Err(error) = state
             .db
             .call(
                 "retrieve_repaired_item",
@@ -462,7 +455,6 @@ pub(super) async fn retrieve_repair(
         {
             tracing::warn!(%error, character_id = character.id, settlement_id = %id, order_id, "failed to retrieve repaired item");
         }
-    }
     Redirect::to(&format!("/settlements/{id}/{shop}"))
 }
 
@@ -480,8 +472,7 @@ pub(super) async fn retrieve_repairs(
 ) -> Redirect {
     if let Some(service) = RepairService::parse(&shop)
         && let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
-    {
-        if let Err(error) = state
+        && let Err(error) = state
             .db
             .call(
                 "retrieve_repaired_items",
@@ -497,7 +488,6 @@ pub(super) async fn retrieve_repairs(
         {
             tracing::warn!(%error, character_id = character.id, settlement_id = %id, shop = service.as_str(), "failed to retrieve repaired items");
         }
-    }
     Redirect::to(&format!("/settlements/{id}/{shop}"))
 }
 
@@ -663,7 +653,7 @@ pub(super) async fn settlement_resident_place(
             RelationshipPresentation {
                 spouse_name: name(status.spouse_id),
                 courtship_partner_name: name(status.courtship_partner_id),
-                courtship_kind: status.courtship_kind.clone(),
+                courtship_kind: status.courtship_kind,
                 courtship_exposed: status.courtship_exposed,
                 wedding,
                 pregnancy_due_days: status.pregnancy_due_minute.map(|due| {

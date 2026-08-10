@@ -12,8 +12,8 @@ pub(super) async fn discard_inventory_items(
     session: Session,
     Form(form): Form<DiscardInventoryForm>,
 ) -> Redirect {
-    if session.character_id_u64() == Some(character_id) {
-        if let Ok(entries) = form.entries() {
+    if session.character_id_u64() == Some(character_id)
+        && let Ok(entries) = form.entries() {
             let (item_ids, quantities): (Vec<_>, Vec<_>) = entries
                 .into_iter()
                 .map(|entry| (entry.id, entry.quantity))
@@ -29,7 +29,6 @@ pub(super) async fn discard_inventory_items(
                 tracing::warn!("Inventory discard failed: {error}");
             }
         }
-    }
     Redirect::to(&building.append_to(&state, &kind, &id, format!(
         "/locations/{kind}/{id}/party/{character_id}/inventory"
     )).await)
@@ -42,8 +41,8 @@ pub(super) async fn finalize_party_offer(
     session: Session,
     Form(form): Form<PartyOfferForm>,
 ) -> Redirect {
-    if let Some((active, _)) = get_active_character(&state, session.character_id_u64()).await {
-        if let Ok(entries) = form.entries() {
+    if let Some((active, _)) = get_active_character(&state, session.character_id_u64()).await
+        && let Ok(entries) = form.entries() {
             let from_ids = entries.iter().map(|entry| entry.from).collect::<Vec<_>>();
             let to_ids = entries.iter().map(|entry| entry.to).collect::<Vec<_>>();
             let item_ids = entries
@@ -75,7 +74,6 @@ pub(super) async fn finalize_party_offer(
                     .await;
             }
         }
-    }
     Redirect::to(&building.append_to(&state, &kind, &id, format!(
         "/locations/{kind}/{id}/party/{character_id}/inventory"
     )).await)
@@ -145,8 +143,8 @@ pub(super) async fn finalize_merchant_offer(
     };
     let fallback = format!("/settlements/{id}/{service_id}");
     let mut trade_completed = false;
-    if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await {
-        if let (Ok(buys), Ok(sells)) = (form.buys(), form.sells()) {
+    if let Some((character, _)) = get_active_character(&state, session.character_id_u64()).await
+        && let (Ok(buys), Ok(sells)) = (form.buys(), form.sells()) {
             let (items, quantities): (Vec<_>, Vec<_>) = buys
                 .into_iter()
                 .map(|entry| (entry.id, entry.quantity))
@@ -185,7 +183,6 @@ pub(super) async fn finalize_merchant_offer(
                 }
             }
         }
-    }
     if trade_completed {
         redirect_to_local(&form.return_to, &fallback)
     } else {

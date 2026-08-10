@@ -691,7 +691,7 @@ fn format_number(value: u32) -> String {
         remainder => remainder,
     };
     let mut formatted = digits[..first_group].to_string();
-    for group in digits[first_group..].as_bytes().chunks(3) {
+    for group in digits.as_bytes()[first_group..].chunks(3) {
         formatted.push(',');
         formatted.push_str(std::str::from_utf8(group).expect("population digits are valid UTF-8"));
     }
@@ -925,7 +925,7 @@ mod tests {
             automatic_social_chat_enabled: false,
         };
         let markup = party_portrait_overlay(
-            &[member.clone()],
+            std::slice::from_ref(&member),
             Some(&member),
             "/locations/settlement/lubeck",
             None,

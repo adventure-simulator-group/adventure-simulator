@@ -375,7 +375,7 @@ just stop             # Stop all services
 just fmt              # Format all Rust workspace packages
 just check            # Check all Rust workspace packages
 just test             # Test native Rust packages and build the SpacetimeDB module
-just lint             # Run Clippy with warnings denied
+just lint             # Run Clippy for all workspace targets/features with warnings denied
 
 # Building
 just build-strategic  # Build the SpacetimeDB module

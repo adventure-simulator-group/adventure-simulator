@@ -1972,7 +1972,7 @@ struct PublicContractAssessment {
 fn public_opposition_count(wording: &str) -> Option<u32> {
     let normalized = wording
         .trim()
-        .trim_end_matches(|character| character == '.' || character == ',')
+        .trim_end_matches(['.', ','])
         .to_ascii_lowercase();
     let (estimate, value) = normalized
         .strip_prefix("perhaps ")
@@ -2111,7 +2111,7 @@ fn generated_method_skill_fit(profile: &AgentProfile, method: &str) -> u32 {
         "lay_ambush" => (skills.insight + skills.stealth) / 2.0,
         _ => 0.0,
     };
-    hours.max(0.0).min(100_000.0).round() as u32
+    hours.clamp(0.0, 100_000.0).round() as u32
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2812,7 +2812,7 @@ fn stable_public_npc_candidates(
             candidate.location_id != "inn",
             candidate.name.to_ascii_lowercase(),
             candidate.profession.to_ascii_lowercase(),
-            candidate.resident_character_id.clone(),
+            candidate.resident_character_id,
         )
     });
     candidates

@@ -966,11 +966,7 @@ async fn npc_social_view(
         ]);
     }
     let courtship_kind = courting_this_npc
-        .then(|| {
-            status
-                .as_ref()
-                .and_then(|status| status.courtship_kind.clone())
-        })
+        .then(|| status.as_ref().and_then(|status| status.courtship_kind))
         .flatten();
     let courtship_exposed = courting_this_npc
         && status

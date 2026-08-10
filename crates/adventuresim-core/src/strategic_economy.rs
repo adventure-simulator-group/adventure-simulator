@@ -28,7 +28,7 @@ pub fn merchant_buy_price(base_value: u32) -> u32 {
 pub fn inn_full_board_cost(requested_minutes: u64) -> Option<u64> {
     let minutes_per_day = crate::strategic_time::MINUTES_PER_DAY;
     let complete_days = requested_minutes / minutes_per_day;
-    let partial_day = u64::from(requested_minutes % minutes_per_day != 0);
+    let partial_day = u64::from(!requested_minutes.is_multiple_of(minutes_per_day));
     complete_days
         .checked_add(partial_day)?
         .checked_mul(u64::from(INN_FULL_BOARD_GOLD_PER_DAY))

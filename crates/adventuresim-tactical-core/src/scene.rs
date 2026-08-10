@@ -10,7 +10,7 @@ use bevy::{
 };
 use noiz::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::hash::{BuildHasher, Hasher};
+use std::hash::BuildHasher;
 
 /// Terrain generator shared by the authoritative server and deterministic
 /// presentation fixtures. Keeping the implementation here prevents animation
@@ -32,9 +32,7 @@ impl TerrainGenerator {
     }
 
     pub fn from_hash(hash: impl std::hash::Hash) -> Self {
-        let mut hasher = RandomState::default().build_hasher();
-        hash.hash(&mut hasher);
-        Self::new(hasher.finish() as u32)
+        Self::new(RandomState::default().hash_one(&hash) as u32)
     }
 
     pub fn generate(self, width: usize, height: usize, depth: usize) -> SceneTerrain {

@@ -1080,29 +1080,31 @@ pub fn forage_current_vicinity(
             yielded_quantities.push(found.quantity);
         }
     }
-    let infamy_gained = resolution
+    let infamy_gained = if resolution
         .as_ref()
         .and_then(|result| result.stealth_succeeded)
         .is_some_and(|success| !success)
-        .then_some(ILLEGAL_FORAGE_INFAMY)
-        .unwrap_or(0.0);
-    if infamy_gained > 0.0 {
-        if let Some(settlement_id) = ctx
+    {
+        ILLEGAL_FORAGE_INFAMY
+    } else {
+        0.0
+    };
+    if infamy_gained > 0.0
+        && let Some(settlement_id) = ctx
             .db
             .character()
             .id()
             .find(character_id)
             .and_then(|character| character.current_settlement_id)
-        {
-            crate::world_event::commit_noticed_illegal_foraging(
-                ctx,
-                character_id,
-                &settlement_id,
-                &request_id,
-                (infamy_gained * 100.0).round() as i32,
-                completed_at,
-            )?;
-        }
+    {
+        crate::world_event::commit_noticed_illegal_foraging(
+            ctx,
+            character_id,
+            &settlement_id,
+            &request_id,
+            (infamy_gained * 100.0).round() as i32,
+            completed_at,
+        )?;
     }
     let attempt = ForageAttemptAuthority {
         request_id: request_id.clone(),

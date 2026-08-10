@@ -19,3 +19,6 @@ clap = { workspace = true, features = ["env"] }
 # Logging
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[lints]
+workspace = true

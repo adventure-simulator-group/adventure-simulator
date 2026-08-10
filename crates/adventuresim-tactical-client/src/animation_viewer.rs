@@ -947,13 +947,13 @@ fn attack_step_scenario(
             // stress fixture. The replicated AttackStep must remain the one
             // selected on frame zero.
             local_direction: if (reverse_velocity || name.contains("high-speed"))
-                && scenario_frame >= START + 1
+                && scenario_frame > START
             {
                 -initial_direction
             } else {
                 initial_direction
             },
-            camera_yaw: if name.contains("yaw-only") && scenario_frame >= START + 1 {
+            camera_yaw: if name.contains("yaw-only") && scenario_frame > START {
                 std::f32::consts::FRAC_PI_2
             } else {
                 0.0

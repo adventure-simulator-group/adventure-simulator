@@ -653,7 +653,7 @@ fn draw_parchment_texture(pixmap: &mut Pixmap, scale: f64, origin: (f64, f64), p
                 stroke_pixmap_path(pixmap, &fiber, palette.paper_fiber, 0.55);
             }
 
-            if next_random(&mut random) % 5 == 0
+            if next_random(&mut random).is_multiple_of(5)
                 && let Some(fleck) = Rect::from_xywh(
                     (x + next_unit(&mut random) * 13.0) as f32,
                     (y + 3.0 + next_unit(&mut random) * 10.0) as f32,
@@ -1314,8 +1314,10 @@ mod tests {
         assert_eq!(first.data(), second.data());
         let textured = first
             .data()
-            .chunks_exact(4)
-            .filter(|pixel| *pixel != PAPER.land)
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|pixel| **pixel != PAPER.land)
             .count();
         assert!(textured > 10, "parchment texture did not render");
     }
@@ -1329,8 +1331,10 @@ mod tests {
         let plain = render(&plain, 256, TILE_GUTTER, 64.0, 0, 0, PAPER).unwrap();
         let changed = forest
             .data()
-            .chunks_exact(4)
-            .zip(plain.data().chunks_exact(4))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(plain.data().as_chunks::<4>().0.iter())
             .filter(|(forest, plain)| forest != plain)
             .count();
         assert!(

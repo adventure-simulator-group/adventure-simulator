@@ -308,7 +308,7 @@ fn discard_placeholder_settlement_data(ctx: &ReducerContext) -> Result<(), Strin
             ctx.db
                 .settlement_resident_presence()
                 .character_id()
-                .delete(&presence.character_id);
+                .delete(presence.character_id);
         }
         for npc in ctx
             .db

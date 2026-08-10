@@ -21,6 +21,7 @@ pub(crate) use authority::{
 };
 use authority::{ValidatedRangedImpact, validate_melee_intent_cheap, validate_ranged_intent};
 pub(crate) use condition::update_tactical_combat_state;
+#[cfg(test)]
 pub(crate) use consequence::apply_transient_attack_result;
 use consequence::{apply_melee_attack_result, record_party_ammunition_use};
 #[cfg(test)]

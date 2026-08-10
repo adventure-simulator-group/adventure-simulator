@@ -286,14 +286,15 @@ pub(crate) fn map_destination_detail(
     let camp_fatigue_percent = party.map_or(50, |party| party.camp_fatigue_percent);
     let travel_disabled = party.is_some_and(|party| party.walking_minutes_per_day == 0);
     let inspecting_nonroute = selected.is_none() && selected_settlement.is_some();
+    let configurable_party = party.filter(|_| can_configure_travel);
     html! {
         aside class=(if party.is_some() && can_configure_travel && !inspecting_nonroute { "right-sidebar travel-configuration-sidebar" } else { "right-sidebar" }) {
-            @if party.is_some() && can_configure_travel {
+            @if let Some(party) = configurable_party {
             (sidebar_section("Travel configuration", html! {
                 div class=(if selected.is_some() { "travel-planner-vertical" } else { "travel-planner-vertical no-destination" }) {
                     (travel_planner_bar(selected, camp_fatigue_percent))
                 }
-                (travel_preferences_form(party.expect("party checked above"), &format!("{map_path}/travel-configuration")))
+                (travel_preferences_form(party, &format!("{map_path}/travel-configuration")))
                 @if let Some(provisioning_path) = provisioning_path {
                     div class="travel-provisioning-control" data-provisioning-control {
                         div class="travel-provisioning-input" {
@@ -429,7 +430,7 @@ pub(crate) fn travel_planner_bar(
         &selected.map_or_else(String::new, |destination| {
             format_itinerary_segments(&destination.itinerary_segments)
         }),
-        &selected.map_or_else(String::new, |destination| format_terrain_spans(destination)),
+        &selected.map_or_else(String::new, format_terrain_spans),
     )
 }
 

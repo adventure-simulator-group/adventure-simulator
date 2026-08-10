@@ -25,13 +25,16 @@ use console_error_panic_hook;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
+#[allow(dead_code)] // This binary shares viewer/editor animation APIs that other bins exercise.
 mod animation;
 mod animation_graph_nodes;
+#[allow(dead_code)] // Viewer-only camera diagnostics are compiled into this binary.
 mod camera;
 #[cfg(feature = "debug")]
 mod debug;
 #[cfg(not(target_family = "wasm"))]
 mod diagnostics;
+#[allow(dead_code)] // Viewer-only input diagnostics are compiled into this binary.
 mod player;
 mod presentation;
 mod ui;
@@ -214,7 +217,6 @@ fn setup_client(mut commands: Commands, args: Res<Args>) {
     commands.spawn(AdventureSimulatorClient {
         player_id: args.id,
         server_url: args.server_addr.clone(),
-        ..default()
     });
 }
 

@@ -191,7 +191,7 @@ mod rest_form_tests {
             &[],
             &amounts,
             &[],
-            &[alcohol.clone()],
+            std::slice::from_ref(&alcohol),
             &[personality(1, Temperance::Temperate)],
             Some("party"),
         );

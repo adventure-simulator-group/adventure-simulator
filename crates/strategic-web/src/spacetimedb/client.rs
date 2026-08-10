@@ -84,14 +84,13 @@ fn convert_spacetime_value(value: &Value, algebraic_type: &AlgebraicType) -> Val
     }
 
     if let Some(elements) = product_elements(algebraic_type) {
-        if is_identity_product(elements) {
-            if let Some(identity) = value
+        if is_identity_product(elements)
+            && let Some(identity) = value
                 .as_array()
                 .and_then(|items| items.first())
                 .and_then(Value::as_str)
-            {
-                return Value::String(identity.to_string());
-            }
+        {
+            return Value::String(identity.to_string());
         }
 
         if let Value::Array(values) = value {

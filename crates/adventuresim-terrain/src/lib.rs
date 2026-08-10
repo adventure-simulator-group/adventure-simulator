@@ -506,7 +506,9 @@ impl TerrainPack {
             return Err(Error::Validation("chunk is corrupt or truncated".into()));
         }
         if decoded
-            .chunks_exact(CELL_BYTES)
+            .as_chunks::<CELL_BYTES>()
+            .0
+            .iter()
             .any(|bytes| bytes[2] > 5 || bytes[3] & !0b1111 != 0)
         {
             return Err(Error::Validation(
@@ -514,7 +516,9 @@ impl TerrainPack {
             ));
         }
         let cells: Arc<[Cell]> = decoded
-            .chunks_exact(CELL_BYTES)
+            .as_chunks::<CELL_BYTES>()
+            .0
+            .iter()
             .map(|bytes| Cell {
                 elevation_m: i16::from_le_bytes([bytes[0], bytes[1]]),
                 surface: match bytes[2] {

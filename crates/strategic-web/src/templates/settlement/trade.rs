@@ -1639,17 +1639,21 @@ fn equipment_control(
                         "{}: {}{}{}",
                         placement.id,
                         anchor_or_parent,
-                        (!protection.is_empty())
-                            .then(|| {
+                        if !protection.is_empty() {
+                            {
                                 format!(
                                     "; protects {protection} ({:.0}% coverage)",
                                     definition.coverage * 100.0
                                 )
-                            })
-                            .unwrap_or_default(),
-                        (!conflicts.is_empty())
-                            .then(|| format!("; conflict with {}", conflicts.join(", ")))
-                            .unwrap_or_default()
+                            }
+                        } else {
+                            Default::default()
+                        },
+                        if !conflicts.is_empty() {
+                            format!("; conflict with {}", conflicts.join(", "))
+                        } else {
+                            Default::default()
+                        }
                     )
                 })
                 .collect::<Vec<_>>()

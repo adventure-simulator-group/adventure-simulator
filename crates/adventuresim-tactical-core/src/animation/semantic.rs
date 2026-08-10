@@ -55,6 +55,7 @@ pub enum SemanticPose {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod contract_tests {
     use super::*;
 

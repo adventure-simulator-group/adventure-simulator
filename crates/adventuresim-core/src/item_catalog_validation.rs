@@ -343,12 +343,12 @@ fn validate_item(
                 &format!("{path}.presentation"),
                 errors,
             );
-            if let Some(icon) = presentation.get("icon").and_then(Value::as_str) {
-                if !valid_icon_slug(icon) {
-                    errors.push(format!(
-                        "{file}: {path}.presentation.icon: must be a safe lowercase icon slug"
-                    ));
-                }
+            if let Some(icon) = presentation.get("icon").and_then(Value::as_str)
+                && !valid_icon_slug(icon)
+            {
+                errors.push(format!(
+                    "{file}: {path}.presentation.icon: must be a safe lowercase icon slug"
+                ));
             }
         }
         None => errors.push(format!("{file}: {path}.presentation: required object")),
