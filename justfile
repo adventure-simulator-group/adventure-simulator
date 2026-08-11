@@ -306,17 +306,17 @@ tactical-play mode="animation" base_port="24920" graphics_preset="default" prese
 
 # Capture one deterministic tactical environment from fixed ground, overhead,
 # horizon, and collider-overlay cameras. Output must be a fresh directory when set.
-tactical-scene-capture fixture="dense-woodland" output="" settle_frames="12":
-    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture {{ quote(fixture) }} --settle-frames {{ quote(settle_frames) }} {{ if output != "" { "--output " + quote(output) } else { "" } }}
+tactical-scene-capture fixture="dense-woodland" output="" settle_frames="12" absolute_minute="":
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture {{ quote(fixture) }} --settle-frames {{ quote(settle_frames) }} {{ if output != "" { "--output " + quote(output) } else { "" } }} {{ if absolute_minute != "" { "--absolute-minute " + quote(absolute_minute) } else { "" } }}
 
 # Render one identical generated woodland at five world-data canopy values so
 # tree architecture can be compared without changing its seed or neighbours.
-tactical-tree-canopy-series output="target/tactical-scene-captures/tree-canopy-series" settle_frames="6":
-    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 0 --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-00000") }}
-    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 2500 --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-02500") }}
-    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 5000 --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-05000") }}
-    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 7500 --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-07500") }}
-    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 10000 --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-10000") }}
+tactical-tree-canopy-series output="target/tactical-scene-captures/tree-canopy-series" settle_frames="6" absolute_minute="340560":
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 0 --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-00000") }}
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 2500 --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-02500") }}
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 5000 --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-05000") }}
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 7500 --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-07500") }}
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 10000 --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-10000") }}
 
 # Capture every committed tactical scene fixture and write a browsable matrix.
 tactical-scene-matrix output="" settle_frames="12":

@@ -619,7 +619,9 @@ pub(in crate::presentation) fn procedural_oak_leaves(
 }
 
 pub(in crate::presentation) fn oak_leaf_outline() -> Vec<Vec2> {
-    let samples = 30;
+    // Eighteen intervals preserve the rounded transition into each lobe while
+    // avoiding the former 122-triangle leaf's redundant edge interpolation.
+    let samples = 18;
     let mut outline = Vec::with_capacity(samples * 2 + 2);
     for side in [-1.0_f32, 1.0] {
         let range: Box<dyn Iterator<Item = usize>> = if side < 0.0 {
@@ -653,15 +655,21 @@ pub(in crate::presentation) fn procedural_oak_leaf_mesh(leaves: &[TreeLeaf]) -> 
         let blade_base = leaf.center - leaf.up * leaf.length * 0.5;
         let petiole_half_width = 0.0025;
         let petiole_base = positions.len() as u32;
-        for position in [
-            leaf.petiole_start - leaf.right * petiole_half_width,
-            leaf.petiole_start + leaf.right * petiole_half_width,
-            blade_base + leaf.right * petiole_half_width,
-            blade_base - leaf.right * petiole_half_width,
+        for (position, uv) in [
+            (
+                leaf.petiole_start - leaf.right * petiole_half_width,
+                [0.0, 0.0],
+            ),
+            (
+                leaf.petiole_start + leaf.right * petiole_half_width,
+                [1.0, 0.0],
+            ),
+            (blade_base + leaf.right * petiole_half_width, [1.0, 0.03]),
+            (blade_base - leaf.right * petiole_half_width, [0.0, 0.03]),
         ] {
             positions.push(position.to_array());
             normals.push(normal.to_array());
-            uvs.push([0.5, 0.5]);
+            uvs.push(uv);
             colors.push([0.52, 0.65, 0.36, 1.0]);
         }
         indices.extend_from_slice(&[
@@ -679,53 +687,79 @@ pub(in crate::presentation) fn procedural_oak_leaf_mesh(leaves: &[TreeLeaf]) -> 
             leaf.shade * (0.58 + (1.0 - exposure) * 0.12),
             1.0,
         ];
-        let base = positions.len() as u32;
+        let left_base = positions.len() as u32;
         for sample in 0..longitudinal_samples {
             let left = outline[sample];
+            let t = sample as f32 / (longitudinal_samples - 1) as f32;
+            let twist = Quat::from_axis_angle(leaf.up, leaf.torsion * (t - 0.35));
+            let cross_right = (twist * leaf.right).normalize();
+            let cross_normal = cross_right.cross(leaf.up).normalize();
+            let centerline = blade_base + leaf.up * (t * leaf.length);
+            let midrib_ridge = (core::f32::consts::PI * t).sin() * leaf.width * 0.045;
+            let margin_cup = left.x.abs() * leaf.width * 0.07;
+            positions.push(
+                (centerline
+                    + cross_right * left.x * leaf.width
+                    + cross_normal * (midrib_ridge - margin_cup))
+                    .to_array(),
+            );
+            normals.push((cross_normal - cross_right * 0.22).normalize().to_array());
+            uvs.push([0.0, t]);
+            colors.push(leaf_color);
+        }
+
+        // A five-point midrib retains the visible fold/camber while the lobe
+        // outline receives the samples that actually affect silhouette.
+        const MIDRIB_T: [f32; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
+        let midrib_base = positions.len() as u32;
+        for t in MIDRIB_T {
+            let twist = Quat::from_axis_angle(leaf.up, leaf.torsion * (t - 0.35));
+            let cross_right = (twist * leaf.right).normalize();
+            let cross_normal = cross_right.cross(leaf.up).normalize();
+            let centerline = blade_base + leaf.up * (t * leaf.length);
+            let midrib_ridge = (core::f32::consts::PI * t).sin() * leaf.width * 0.045;
+            positions.push((centerline + cross_normal * midrib_ridge).to_array());
+            normals.push(cross_normal.to_array());
+            uvs.push([0.5, t]);
+            colors.push(leaf_color);
+        }
+
+        let right_base = positions.len() as u32;
+        for sample in 0..longitudinal_samples {
             let right = outline[outline.len() - 1 - sample];
             let t = sample as f32 / (longitudinal_samples - 1) as f32;
             let twist = Quat::from_axis_angle(leaf.up, leaf.torsion * (t - 0.35));
             let cross_right = (twist * leaf.right).normalize();
             let cross_normal = cross_right.cross(leaf.up).normalize();
             let centerline = blade_base + leaf.up * (t * leaf.length);
-            // A raised midrib and gently lowered margins give the blade a
-            // shallow V-shaped camber. The varying twist prevents repeated
-            // leaves from collapsing into flat, stacked fans.
-            let midrib_ridge = (core::f32::consts::PI * t).sin() * 0.0045;
-            for (column, point) in [(0_u32, left), (1, Vec2::new(0.0, left.y)), (2, right)] {
-                let margin_cup = point.x.abs() * 0.006;
-                let position = centerline
-                    + cross_right * point.x * leaf.width
-                    + cross_normal * (midrib_ridge - margin_cup);
-                let across = match column {
-                    0 => -0.22,
-                    2 => 0.22,
-                    _ => 0.0,
-                };
-                positions.push(position.to_array());
-                normals.push((cross_normal + cross_right * across).normalize().to_array());
-                uvs.push([column as f32 * 0.5, t]);
-                colors.push(leaf_color);
-            }
+            let midrib_ridge = (core::f32::consts::PI * t).sin() * leaf.width * 0.045;
+            let margin_cup = right.x.abs() * leaf.width * 0.07;
+            positions.push(
+                (centerline
+                    + cross_right * right.x * leaf.width
+                    + cross_normal * (midrib_ridge - margin_cup))
+                    .to_array(),
+            );
+            normals.push((cross_normal + cross_right * 0.22).normalize().to_array());
+            uvs.push([1.0, t]);
+            colors.push(leaf_color);
         }
-        for row in 0..longitudinal_samples as u32 - 1 {
-            let from = base + row * 3;
-            let to = from + 3;
-            indices.extend_from_slice(&[
-                from,
-                to,
-                to + 1,
-                from,
-                to + 1,
-                from + 1,
-                from + 1,
-                to + 1,
-                to + 2,
-                from + 1,
-                to + 2,
-                from + 2,
-            ]);
-        }
+        append_leaf_half_indices(
+            &mut indices,
+            left_base,
+            longitudinal_samples,
+            midrib_base,
+            MIDRIB_T.len(),
+            false,
+        );
+        append_leaf_half_indices(
+            &mut indices,
+            right_base,
+            longitudinal_samples,
+            midrib_base,
+            MIDRIB_T.len(),
+            true,
+        );
     }
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
@@ -739,6 +773,63 @@ pub(in crate::presentation) fn procedural_oak_leaf_mesh(leaves: &[TreeLeaf]) -> 
     mesh
 }
 
+pub(in crate::presentation) const OAK_LEAF_SECTOR_COUNT: usize = 8;
+
+/// Splits the crown along stable biological branch groups. Each sector can
+/// fade independently near the first impostor transition, avoiding a single
+/// whole-crown topology pop without creating an entity for every leaf.
+pub(in crate::presentation) fn procedural_oak_leaf_sector_mesh(
+    leaves: &[TreeLeaf],
+    sector: usize,
+) -> Mesh {
+    let sector_leaves = leaves
+        .iter()
+        .filter(|leaf| {
+            (usize::from(leaf.primary_group) * 2 + usize::from(leaf.secondary_group & 1))
+                % OAK_LEAF_SECTOR_COUNT
+                == sector
+        })
+        .copied()
+        .collect::<Vec<_>>();
+    procedural_oak_leaf_mesh(&sector_leaves)
+}
+
+fn append_leaf_half_indices(
+    indices: &mut Vec<u32>,
+    boundary_base: u32,
+    boundary_len: usize,
+    midrib_base: u32,
+    midrib_len: usize,
+    right_half: bool,
+) {
+    let mut boundary = 0;
+    let mut midrib = 0;
+    while boundary + 1 < boundary_len || midrib + 1 < midrib_len {
+        let next_boundary = (boundary + 1) as f32 / (boundary_len - 1) as f32;
+        let next_midrib = (midrib + 1) as f32 / (midrib_len - 1) as f32;
+        let boundary_vertex = boundary_base + boundary as u32;
+        let midrib_vertex = midrib_base + midrib as u32;
+        if boundary + 1 < boundary_len && (midrib + 1 == midrib_len || next_boundary <= next_midrib)
+        {
+            let next = boundary_vertex + 1;
+            if right_half {
+                indices.extend_from_slice(&[boundary_vertex, next, midrib_vertex]);
+            } else {
+                indices.extend_from_slice(&[boundary_vertex, midrib_vertex, next]);
+            }
+            boundary += 1;
+        } else {
+            let next = midrib_vertex + 1;
+            if right_half {
+                indices.extend_from_slice(&[boundary_vertex, next, midrib_vertex]);
+            } else {
+                indices.extend_from_slice(&[boundary_vertex, midrib_vertex, next]);
+            }
+            midrib += 1;
+        }
+    }
+}
+
 /// Models the compact, scaled winter bud at every current-year shoot tip.
 /// It is a separate production mesh so its warm color and overlapping scale
 /// silhouette remain legible instead of disappearing into the bark tube cap.
@@ -747,7 +838,7 @@ pub(in crate::presentation) fn procedural_oak_bud_mesh(branches: &[TreeBranchSeg
     let mut normals = Vec::new();
     let mut uvs = Vec::new();
     let mut indices = Vec::new();
-    const SIDES: u32 = 8;
+    const SIDES: u32 = 6;
     const BUD_LENGTH: f32 = 0.008;
     for branch in branches
         .iter()
@@ -756,13 +847,7 @@ pub(in crate::presentation) fn procedural_oak_bud_mesh(branches: &[TreeBranchSeg
         let direction = (branch.end - branch.start).normalize();
         let (frame_right, frame_forward) = branch_frame(direction);
         let base = positions.len() as u32;
-        let rings = [
-            (0.0_f32, 0.0018_f32),
-            (0.16, 0.0032),
-            (0.40, 0.0038),
-            (0.66, 0.0032),
-            (0.86, 0.0020),
-        ];
+        let rings = [(0.0_f32, 0.0018_f32), (0.38, 0.0038), (0.78, 0.0025)];
         for (ring_index, (along, radius)) in rings.into_iter().enumerate() {
             let center = branch.end + direction * (along * BUD_LENGTH);
             let phase_offset = if ring_index & 1 == 0 { 0.0 } else { 0.22 };
@@ -1055,7 +1140,11 @@ mod tests {
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .and_then(|attribute| attribute.as_float3())
             .expect("leaf mesh has float positions");
-        assert_eq!(positions.len(), leaves.len() * 97);
+        assert_eq!(positions.len(), leaves.len() * 47);
+        assert_eq!(
+            mesh.indices().expect("leaf mesh has indices").len() / 3,
+            leaves.len() * 46
+        );
         assert!(
             positions
                 .iter()
@@ -1067,13 +1156,39 @@ mod tests {
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .and_then(|attribute| attribute.as_float3())
             .expect("bud mesh has float positions");
-        assert_eq!(bud_positions.len(), 4_352 * 41);
+        assert_eq!(bud_positions.len(), 4_352 * 19);
+        assert_eq!(
+            buds.indices().expect("bud mesh has indices").len() / 3,
+            4_352 * 30
+        );
         assert!(
             bud_positions
                 .iter()
                 .flatten()
                 .all(|component| component.is_finite())
         );
+        let leaf_triangles = mesh.indices().expect("leaf mesh has indices").len() / 3;
+        let bud_triangles = buds.indices().expect("bud mesh has indices").len() / 3;
+        let branch_mesh = procedural_tree_branch_mesh(&branches, 3);
+        let branch_triangles = branch_mesh
+            .indices()
+            .expect("branch mesh has indices")
+            .len()
+            / 3;
+        assert!(
+            leaf_triangles + bud_triangles + branch_triangles <= 3_600_000,
+            "LOD0 exceeds its 3.6M triangle budget"
+        );
+        let sector_triangles = (0..OAK_LEAF_SECTOR_COUNT)
+            .map(|sector| {
+                procedural_oak_leaf_sector_mesh(&leaves, sector)
+                    .indices()
+                    .expect("sector has indices")
+                    .len()
+                    / 3
+            })
+            .sum::<usize>();
+        assert_eq!(sector_triangles, leaf_triangles);
     }
 
     #[test]

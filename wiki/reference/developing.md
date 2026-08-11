@@ -784,6 +784,7 @@ presentation plugin:
 ```powershell
 just tactical-scene-capture dense-woodland
 just tactical-scene-capture heavy-rain-high-wind target/tactical-scene-captures/rain-review
+just tactical-scene-capture sparse-woodland target/tactical-scene-captures/daylight-review 12 340560
 just tactical-tree-canopy-series target/tactical-scene-captures/oak-canopy-review
 ```
 
@@ -804,6 +805,11 @@ overhead foliage detail in the flat sentinel fixture, all five tree
 LODs, precipitation, three vista LODs, the 50 km vista contract, non-uniform
 rendered content, or the dedicated boundary-peak view fail. Explicit output directories must be
 fresh so a prior capture cannot satisfy a new run accidentally.
+The fourth optional recipe argument overrides `absolute_minute` for controlled
+lighting comparisons and is recorded in the manifest. The canopy-series recipe
+uses local noon by default so the five botanical plates remain inspectable even
+when their source fixture represents midnight; pass another absolute minute to
+exercise dawn, dusk, or night lighting explicitly.
 The canopy series holds the fixture seed, generated obstacles, cameras, and
 render settings constant while overriding only the captured
 `SceneEnvironment.canopy_bps` to 0, 2500, 5000, 7500, and 10000. Each manifest
