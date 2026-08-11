@@ -14,7 +14,10 @@ use bevy::{
 };
 use serde::Serialize;
 
-use crate::presentation::{TacticalPresentationPlugin, VistaTerrain, WeatherParticle};
+use crate::presentation::{
+    FoliageLayer, ProceduralRockVisual, TacticalPresentationPlugin, TerrainMaterialPresentation,
+    TreeLod, VistaTerrain, WeatherParticle,
+};
 
 const VIEW_WIDTH: u32 = 1280;
 const VIEW_HEIGHT: u32 = 720;
@@ -109,6 +112,8 @@ struct CaptureRecord {
 
 #[derive(Clone, Copy, Serialize)]
 struct RepairSummary {
+    upsampled_height_samples: u32,
+    microrelief_adjusted_samples: u32,
     adjusted_height_samples: u32,
     repaired_water_samples: u32,
     removed_corridor_obstacles: u32,
@@ -118,7 +123,10 @@ struct RepairSummary {
 struct TerrainSummary {
     width_metres: f32,
     depth_metres: f32,
+    source_spacing_metres: f32,
     spacing_metres: f32,
+    source_samples: usize,
+    generated_samples: usize,
     minimum_height_metres: f32,
     maximum_height_metres: f32,
 }
@@ -131,6 +139,15 @@ struct ObstacleSummary {
     presented_rocks: usize,
     collider_trees: usize,
     collider_rocks: usize,
+    procedural_rock_meshes: usize,
+    rock_meshes_inside_colliders: bool,
+    tree_lods_presented: Vec<u8>,
+}
+
+#[derive(Serialize)]
+struct FoliageSummary {
+    grass_clumps: usize,
+    understory_clumps: usize,
 }
 
 #[derive(Serialize)]
@@ -149,6 +166,13 @@ struct ValidationSummary {
     all_views_render_content: bool,
     all_obstacles_presented: bool,
     all_obstacles_collidable: bool,
+    procedural_rocks_fit_colliders: bool,
+    trees_have_three_lods: bool,
+    terrain_material_present: bool,
+    coarse_source_terrain_upsampled: bool,
+    microrelief_present: bool,
+    grass_present: bool,
+    understory_present_when_expected: bool,
     vista_has_three_lods: bool,
     vista_reaches_fifty_kilometres: bool,
     vista_has_no_colliders: bool,
@@ -170,6 +194,7 @@ struct CaptureManifest {
     repairs: RepairSummary,
     terrain: TerrainSummary,
     obstacles: ObstacleSummary,
+    foliage: FoliageSummary,
     vista: VistaSummary,
     weather_particle_count: usize,
     captures: Vec<CaptureRecord>,
@@ -323,19 +348,12 @@ fn setup_scene(
     let terrain_summary = TerrainSummary {
         width_metres: terrain.width(),
         depth_metres: terrain.depth(),
+        source_spacing_metres: input.playable.spacing_metres,
         spacing_metres: terrain.grid_scale(),
-        minimum_height_metres: input
-            .playable
-            .heights_metres
-            .iter()
-            .copied()
-            .fold(f32::INFINITY, f32::min),
-        maximum_height_metres: input
-            .playable
-            .heights_metres
-            .iter()
-            .copied()
-            .fold(f32::NEG_INFINITY, f32::max),
+        source_samples: input.playable.heights_metres.len(),
+        generated_samples: terrain.grid_width() * terrain.grid_depth(),
+        minimum_height_metres: terrain.minimum_height(),
+        maximum_height_metres: terrain.maximum_height(),
     };
     let (vista_diameter_metres, vista_peak_metres, peak_target) = vista_metrics(&input);
     let mut expected_trees = 0;
@@ -438,6 +456,8 @@ fn setup_scene(
         generation_version: input.generation_version,
         weather: input.weather,
         repairs: RepairSummary {
+            upsampled_height_samples: repairs.upsampled_height_samples,
+            microrelief_adjusted_samples: repairs.microrelief_adjusted_samples,
             adjusted_height_samples: repairs.adjusted_height_samples,
             repaired_water_samples: repairs.repaired_water_samples,
             removed_corridor_obstacles: repairs.removed_corridor_obstacles,
@@ -493,6 +513,11 @@ fn capture_views(
     mut camera: Single<(&mut Transform, &mut GlobalTransform, &mut Projection), With<Camera3d>>,
     mut overlays: Query<&mut Visibility, (With<CaptureOverlay>, Without<VistaTerrain>)>,
     obstacles: Query<(&SceneObstacle, Has<Mesh3d>, Has<Collider>)>,
+    rock_visuals: Query<&Mesh3d, With<ProceduralRockVisual>>,
+    tree_lods: Query<&TreeLod>,
+    foliage: Query<&FoliageLayer>,
+    terrain_materials: Query<(), With<TerrainMaterialPresentation>>,
+    meshes: Res<Assets<Mesh>>,
     mut vistas: ParamSet<(
         Query<(&VistaTerrain, Has<Collider>)>,
         Query<&mut Visibility, (With<VistaTerrain>, Without<CaptureOverlay>)>,
@@ -541,7 +566,15 @@ fn capture_views(
         }
         return;
     }
-    if state.settled < state.settle_frames {
+    // Custom terrain and foliage pipelines compile asynchronously. Give the
+    // warmup view a wider budget so the first review frame cannot race a new
+    // shader permutation while ordinary camera transitions stay quick.
+    let settle_target = if state.view == 0 {
+        state.settle_frames.saturating_mul(4)
+    } else {
+        state.settle_frames
+    };
+    if state.settled < settle_target {
         state.settled += 1;
         return;
     }
@@ -576,8 +609,19 @@ fn capture_views(
 
     let path = state.output.join(format!("{}.png", view.slug));
     let final_view = state.view + 1 == CAPTURE_VIEWS.len();
-    let mut final_data = final_view
-        .then(|| build_manifest(state, &obstacles, &vistas.p0(), particles.iter().count()));
+    let mut final_data = final_view.then(|| {
+        build_manifest(
+            state,
+            &obstacles,
+            &rock_visuals,
+            &tree_lods,
+            &foliage,
+            &terrain_materials,
+            &meshes,
+            &vistas.p0(),
+            particles.iter().count(),
+        )
+    });
     state.in_flight = true;
     commands.spawn(Screenshot::primary_window()).observe(
         move |captured: On<ScreenshotCaptured>,
@@ -647,6 +691,11 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
 fn build_manifest(
     state: &CaptureState,
     obstacles: &Query<(&SceneObstacle, Has<Mesh3d>, Has<Collider>)>,
+    rock_visuals: &Query<&Mesh3d, With<ProceduralRockVisual>>,
+    tree_lods: &Query<&TreeLod>,
+    foliage: &Query<&FoliageLayer>,
+    terrain_materials: &Query<(), With<TerrainMaterialPresentation>>,
+    meshes: &Assets<Mesh>,
     vistas: &Query<(&VistaTerrain, Has<Collider>)>,
     weather_particle_count: usize,
 ) -> (CaptureManifest, bool) {
@@ -666,6 +715,38 @@ fn build_manifest(
             }
         }
     }
+    let procedural_rock_meshes = rock_visuals.iter().count();
+    let rock_meshes_inside_colliders = procedural_rock_meshes == state.expected_rocks
+        && rock_visuals.iter().all(|mesh_handle| {
+            meshes.get(&mesh_handle.0).is_some_and(|mesh| {
+                mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+                    .is_some_and(|positions| {
+                        positions.as_float3().is_some_and(|positions| {
+                            positions.iter().all(|position| {
+                                Vec3::from_array(*position).length() <= ROCK_RADIUS_METRES + 0.001
+                            })
+                        })
+                    })
+            })
+        });
+    let tree_lods_presented = tree_lods
+        .iter()
+        .map(|lod| lod.0)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut grass_clumps = 0;
+    let mut understory_clumps = 0;
+    for layer in foliage {
+        match layer {
+            FoliageLayer::Grass => grass_clumps += 1,
+            FoliageLayer::Understory => understory_clumps += 1,
+        }
+    }
+    let foliage_summary = FoliageSummary {
+        grass_clumps,
+        understory_clumps,
+    };
     let mut presented_lods = BTreeSet::new();
     let mut vista_colliders = 0;
     let mut presented_chunks = 0;
@@ -681,6 +762,9 @@ fn build_manifest(
         presented_rocks,
         collider_trees,
         collider_rocks,
+        procedural_rock_meshes,
+        rock_meshes_inside_colliders,
+        tree_lods_presented: tree_lods_presented.clone(),
     };
     let vista_summary = VistaSummary {
         supplied_lods: state.vista_lods_supplied,
@@ -700,6 +784,10 @@ fn build_manifest(
         "narrow-peak-lod-boundary" => state.vista_peak_metres >= 850.0,
         _ => true,
     };
+    let expects_understory = matches!(
+        state.fixture.as_str(),
+        "dense-woodland" | "sparse-woodland" | "saturated-wetland"
+    );
     let mut validation = ValidationSummary {
         all_views_captured: state.captures.len() == CAPTURE_VIEWS.len() - 1,
         all_views_render_content: false,
@@ -707,6 +795,15 @@ fn build_manifest(
             && presented_rocks == state.expected_rocks,
         all_obstacles_collidable: collider_trees == state.expected_trees
             && collider_rocks == state.expected_rocks,
+        procedural_rocks_fit_colliders: rock_meshes_inside_colliders,
+        trees_have_three_lods: state.expected_trees == 0 || tree_lods_presented == vec![0, 1, 2],
+        terrain_material_present: terrain_materials.iter().count() == 1,
+        coarse_source_terrain_upsampled: state.terrain.source_spacing_metres <= 2.0
+            || (state.terrain.spacing_metres <= 2.0
+                && state.terrain.generated_samples > state.terrain.source_samples),
+        microrelief_present: state.repairs.microrelief_adjusted_samples > 0,
+        grass_present: grass_clumps > 0,
+        understory_present_when_expected: !expects_understory || understory_clumps > 0,
         vista_has_three_lods: vista_summary.presented_lods.len() >= 3,
         vista_reaches_fifty_kilometres: vista_summary.diameter_metres >= 50_000.0,
         vista_has_no_colliders: vista_colliders == 0,
@@ -730,6 +827,7 @@ fn build_manifest(
             repairs: state.repairs,
             terrain: state.terrain,
             obstacles: obstacle_summary,
+            foliage: foliage_summary,
             vista: vista_summary,
             weather_particle_count,
             captures: state.captures.clone(),
@@ -744,6 +842,13 @@ fn validation_passes(validation: &ValidationSummary) -> bool {
         && validation.all_views_render_content
         && validation.all_obstacles_presented
         && validation.all_obstacles_collidable
+        && validation.procedural_rocks_fit_colliders
+        && validation.trees_have_three_lods
+        && validation.terrain_material_present
+        && validation.coarse_source_terrain_upsampled
+        && validation.microrelief_present
+        && validation.grass_present
+        && validation.understory_present_when_expected
         && validation.vista_has_three_lods
         && validation.vista_reaches_fifty_kilometres
         && validation.vista_has_no_colliders

@@ -134,6 +134,17 @@ impl SceneTerrain {
         self.scale
     }
 
+    pub fn minimum_height(&self) -> f32 {
+        self.heightmap.iter().copied().fold(f32::INFINITY, f32::min)
+    }
+
+    pub fn maximum_height(&self) -> f32 {
+        self.heightmap
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max)
+    }
+
     pub fn height_at(&self, pos: Vec2) -> Option<f32> {
         self.surface_at(pos).map(|sample| sample.0)
     }

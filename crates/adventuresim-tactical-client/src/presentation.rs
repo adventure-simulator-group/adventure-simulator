@@ -8,17 +8,24 @@ use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::SceneVistaBundle;
 use bevy::{
     asset::RenderAssetUsages,
-    camera::Exposure,
+    camera::{Exposure, visibility::VisibilityRange},
     core_pipeline::tonemapping::Tonemapping,
     light::{
         Atmosphere, AtmosphereEnvironmentMapLight, NotShadowCaster, atmosphere::ScatteringMedium,
         light_consts::lux,
     },
-    mesh::{Indices, PrimitiveTopology},
-    pbr::{AtmosphereSettings, ScreenSpaceAmbientOcclusion},
+    mesh::{Indices, PrimitiveTopology, VertexAttributeValues},
+    pbr::{AtmosphereSettings, ExtendedMaterial, MaterialExtension, ScreenSpaceAmbientOcclusion},
     post_process::bloom::Bloom,
     prelude::*,
+    render::render_resource::{
+        AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError,
+    },
+    shader::ShaderRef,
 };
+
+const TERRAIN_SHADER: &str = "shaders/tactical_terrain.wgsl";
+const FOLIAGE_SHADER: &str = "shaders/tactical_foliage.wgsl";
 
 #[derive(Debug, Clone, Copy)]
 pub struct TacticalPresentationPlugin {
@@ -47,7 +54,11 @@ impl Default for TacticalPresentationPlugin {
 
 impl Plugin for TacticalPresentationPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(TacticalGraphicsSettings {
+        app.add_plugins((
+            MaterialPlugin::<TacticalTerrainMaterial>::default(),
+            MaterialPlugin::<TacticalFoliageMaterial>::default(),
+        ))
+        .insert_resource(TacticalGraphicsSettings {
             shadows_enabled: self.shadows_enabled,
             atmosphere_enabled: self.atmosphere_enabled,
             environment_light_enabled: self.environment_light_enabled,
@@ -78,6 +89,82 @@ struct TacticalGraphicsSettings {
 
 #[derive(Component)]
 struct ScenePresentationOf(Entity);
+
+#[derive(Component)]
+pub(crate) struct TerrainMaterialPresentation;
+
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+struct TacticalTerrainExtension {
+    #[uniform(100)]
+    base_color: Vec4,
+    #[uniform(100)]
+    cover: Vec4,
+    #[uniform(100)]
+    weather: Vec4,
+    #[uniform(100)]
+    variation: Vec4,
+}
+
+impl MaterialExtension for TacticalTerrainExtension {
+    fn fragment_shader() -> ShaderRef {
+        TERRAIN_SHADER.into()
+    }
+
+    fn deferred_fragment_shader() -> ShaderRef {
+        TERRAIN_SHADER.into()
+    }
+}
+
+type TacticalTerrainMaterial = ExtendedMaterial<StandardMaterial, TacticalTerrainExtension>;
+
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+struct TacticalFoliageMaterial {
+    #[uniform(0)]
+    wind: Vec4,
+}
+
+impl Material for TacticalFoliageMaterial {
+    fn vertex_shader() -> ShaderRef {
+        FOLIAGE_SHADER.into()
+    }
+
+    fn fragment_shader() -> ShaderRef {
+        FOLIAGE_SHADER.into()
+    }
+
+    fn enable_prepass() -> bool {
+        false
+    }
+
+    fn enable_shadows() -> bool {
+        false
+    }
+
+    fn specialize(
+        _pipeline: &bevy::pbr::MaterialPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &bevy::mesh::MeshVertexBufferLayoutRef,
+        _key: bevy::pbr::MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        descriptor.primitive.cull_mode = None;
+        Ok(())
+    }
+}
+
+#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FoliageLayer {
+    Grass,
+    Understory,
+}
+
+#[derive(Component)]
+struct FoliageOf(Entity);
+
+#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct TreeLod(pub(crate) u8);
+
+#[derive(Component)]
+pub(crate) struct ProceduralRockVisual;
 
 #[derive(Component)]
 pub(crate) struct TacticalSunlight;
@@ -159,33 +246,25 @@ fn on_game_scene_added(
     mut commands: Commands,
     query: Query<(&SceneId, &SceneTerrain, Option<&SceneEnvironment>)>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<TacticalTerrainMaterial>>,
 ) -> Result {
     let (id, terrain, environment) = query.get(event.entity)?;
     info!(entity = ?event.entity, "Spawning a scene {id:?}");
 
-    let floor_color = environment.map_or_else(
-        || match id.0.as_str() {
-            "hills" => Color::srgb_u8(96, 108, 56),
-            "desert" => Color::srgb_u8(221, 161, 94),
-            id => {
-                warn!("Unknown legacy scene: {id}");
-                Color::BLACK
-            }
-        },
-        scene_ground_color,
-    );
+    let legacy_environment;
+    let environment = if let Some(environment) = environment {
+        environment
+    } else {
+        legacy_environment = legacy_scene_environment(id);
+        &legacy_environment
+    };
 
     commands.spawn((
         Name::new(format!("{} terrain mesh", id.0)),
         ScenePresentationOf(event.entity),
+        TerrainMaterialPresentation,
         Mesh3d(meshes.add(terrain.mesh())),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: floor_color,
-            perceptual_roughness: 0.8,
-            metallic: 0.0,
-            ..default()
-        })),
+        MeshMaterial3d(materials.add(terrain_material(environment))),
     ));
     Ok(())
 }
@@ -193,23 +272,41 @@ fn on_game_scene_added(
 fn on_scene_environment_added(
     event: On<Add, SceneEnvironment>,
     environments: Query<&SceneEnvironment>,
-    presentations: Query<(&ScenePresentationOf, &MeshMaterial3d<StandardMaterial>)>,
+    presentations: Query<(
+        &ScenePresentationOf,
+        &MeshMaterial3d<TacticalTerrainMaterial>,
+    )>,
+    scenes: Query<(&SceneId, &SceneTerrain)>,
+    foliage: Query<&FoliageOf>,
     mut sunlight: Single<&mut DirectionalLight, With<TacticalSunlight>>,
     mut fog: Single<&mut DistanceFog, With<Camera3d>>,
     particles: Query<Entity, With<WeatherParticle>>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut terrain_materials: ResMut<Assets<TacticalTerrainMaterial>>,
+    mut foliage_materials: ResMut<Assets<TacticalFoliageMaterial>>,
 ) -> Result {
-    let color = scene_ground_color(environments.get(event.entity)?);
+    let environment = environments.get(event.entity)?;
     for (source, material) in &presentations {
         if source.0 == event.entity
-            && let Some(mut material) = materials.get_mut(&material.0)
+            && let Some(mut material) = terrain_materials.get_mut(&material.0)
         {
-            material.base_color = color;
+            *material = terrain_material(environment);
         }
     }
-    let environment = environments.get(event.entity)?;
+    if !foliage.iter().any(|source| source.0 == event.entity) {
+        let (scene_id, terrain) = scenes.get(event.entity)?;
+        spawn_ground_foliage(
+            &mut commands,
+            &mut meshes,
+            &mut foliage_materials,
+            event.entity,
+            scene_id,
+            terrain,
+            environment,
+        );
+    }
     sunlight.illuminance = scene_sunlight_illuminance(environment);
     **fog = scene_distance_fog(environment);
     for entity in &particles {
@@ -222,11 +319,14 @@ fn on_scene_environment_added(
 fn on_scene_obstacle_added(
     event: On<Add, SceneObstacle>,
     mut commands: Commands,
-    obstacles: Query<&SceneObstacle>,
+    obstacles: Query<(&SceneObstacle, &Transform)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut foliage_materials: ResMut<Assets<TacticalFoliageMaterial>>,
 ) -> Result {
-    match *obstacles.get(event.entity)? {
+    let (obstacle, transform) = obstacles.get(event.entity)?;
+    let seed = obstacle_seed(transform.translation);
+    match *obstacle {
         SceneObstacle::Tree => {
             let trunk_mesh = meshes.add(Cylinder::new(
                 TREE_TRUNK_RADIUS_METRES,
@@ -237,28 +337,75 @@ fn on_scene_obstacle_added(
                 perceptual_roughness: 0.95,
                 ..default()
             });
-            let crown_mesh = meshes.add(Sphere::new(1.55));
-            let crown_material = materials.add(StandardMaterial {
-                base_color: Color::srgb_u8(45, 82, 38),
-                perceptual_roughness: 0.9,
-                ..default()
-            });
+            let crown_material = foliage_materials.add(foliage_material(0.32));
+            let high_crown = meshes.add(tree_crown_mesh(seed, 2, 1.42));
+            let side_crown_a = meshes.add(tree_crown_mesh(seed ^ 0x41ac_921d, 2, 1.08));
+            let side_crown_b = meshes.add(tree_crown_mesh(seed ^ 0xc337_8ba9, 2, 1.14));
+            let low_crown = meshes.add(tree_crown_mesh(seed, 1, 1.58));
+            let billboard = meshes.add(foliage_clump_mesh(2.7, 3.4, Color::srgb_u8(40, 78, 34), 2));
+            let branch_mesh = meshes.add(Cylinder::new(0.12, 1.8));
             commands.entity(event.entity).insert((
                 Name::new("Presented tactical tree"),
                 Mesh3d(trunk_mesh),
-                MeshMaterial3d(trunk_material),
-                children![(
-                    Name::new("Tree crown"),
-                    Mesh3d(crown_mesh),
-                    MeshMaterial3d(crown_material),
-                    Transform::from_xyz(0.0, TREE_TRUNK_HEIGHT_METRES * 0.42, 0.0),
-                )],
+                MeshMaterial3d(trunk_material.clone()),
+                VisibilityRange::abrupt(0.0, 82.0),
+                children![
+                    (
+                        Name::new("Tree crown LOD 0"),
+                        TreeLod(0),
+                        NotShadowCaster,
+                        Mesh3d(high_crown),
+                        MeshMaterial3d(crown_material.clone()),
+                        VisibilityRange::abrupt(0.0, 34.0),
+                        Transform::from_xyz(0.0, TREE_TRUNK_HEIGHT_METRES * 0.42, 0.0),
+                    ),
+                    (
+                        Name::new("Tree crown LOD 1"),
+                        TreeLod(1),
+                        NotShadowCaster,
+                        Mesh3d(low_crown),
+                        MeshMaterial3d(crown_material.clone()),
+                        VisibilityRange::abrupt(30.0, 76.0),
+                        Transform::from_xyz(0.0, TREE_TRUNK_HEIGHT_METRES * 0.42, 0.0),
+                    ),
+                    tree_branch_bundle(0, seed, branch_mesh.clone(), trunk_material.clone(),),
+                    tree_branch_bundle(1, seed, branch_mesh.clone(), trunk_material.clone(),),
+                    tree_branch_bundle(2, seed, branch_mesh, trunk_material.clone()),
+                    (
+                        Name::new("Tree crown lobe A"),
+                        TreeLod(0),
+                        NotShadowCaster,
+                        Mesh3d(side_crown_a),
+                        MeshMaterial3d(crown_material.clone()),
+                        VisibilityRange::abrupt(0.0, 34.0),
+                        Transform::from_xyz(-0.62, TREE_TRUNK_HEIGHT_METRES * 0.34, 0.28),
+                    ),
+                    (
+                        Name::new("Tree crown lobe B"),
+                        TreeLod(0),
+                        NotShadowCaster,
+                        Mesh3d(side_crown_b),
+                        MeshMaterial3d(crown_material.clone()),
+                        VisibilityRange::abrupt(0.0, 34.0),
+                        Transform::from_xyz(0.58, TREE_TRUNK_HEIGHT_METRES * 0.37, -0.22),
+                    ),
+                    (
+                        Name::new("Tree billboard LOD 2"),
+                        TreeLod(2),
+                        NotShadowCaster,
+                        Mesh3d(billboard),
+                        MeshMaterial3d(crown_material),
+                        VisibilityRange::abrupt(70.0, 190.0),
+                        Transform::from_xyz(0.0, TREE_TRUNK_HEIGHT_METRES * 0.42, 0.0),
+                    ),
+                ],
             ));
         }
         SceneObstacle::Rock => {
             commands.entity(event.entity).insert((
                 Name::new("Presented tactical rock"),
-                Mesh3d(meshes.add(Sphere::new(ROCK_RADIUS_METRES))),
+                ProceduralRockVisual,
+                Mesh3d(meshes.add(procedural_rock_mesh(seed))),
                 MeshMaterial3d(materials.add(StandardMaterial {
                     base_color: Color::srgb_u8(104, 101, 94),
                     perceptual_roughness: 1.0,
@@ -268,6 +415,351 @@ fn on_scene_obstacle_added(
         }
     }
     Ok(())
+}
+
+fn terrain_material(environment: &SceneEnvironment) -> TacticalTerrainMaterial {
+    TacticalTerrainMaterial {
+        base: StandardMaterial {
+            base_color: Color::WHITE,
+            perceptual_roughness: 0.92,
+            metallic: 0.0,
+            ..default()
+        },
+        extension: TacticalTerrainExtension {
+            base_color: color_vec4(scene_ground_color(environment)),
+            cover: Vec4::new(
+                bps(environment.canopy_bps),
+                bps(environment.wetland_bps),
+                bps(environment.cultivation_bps),
+                bps(environment.water_bps),
+            ),
+            weather: Vec4::new(
+                bps(environment.weather.ground_moisture_bps),
+                bps(environment.weather.snow_cover_bps),
+                bps(environment.hilly_bps),
+                bps(environment.weather.wind_speed_bps),
+            ),
+            variation: Vec4::new(
+                digest_unit(&environment.scene_digest),
+                0.055,
+                0.032,
+                environment.generation_version as f32,
+            ),
+        },
+    }
+}
+
+fn legacy_scene_environment(id: &SceneId) -> SceneEnvironment {
+    let (canopy_bps, hilly_bps, cultivation_bps) = match id.0.as_str() {
+        "hills" => (1_200, 7_000, 0),
+        "desert" => (0, 1_500, 0),
+        value => {
+            warn!("Unknown legacy scene: {value}");
+            (0, 0, 0)
+        }
+    };
+    SceneEnvironment {
+        scene_digest: id.0.clone(),
+        generation_version: TACTICAL_SCENE_GENERATION_VERSION,
+        weather: WeatherSnapshot {
+            rules_version: WEATHER_RULES_VERSION,
+            interval_start_minute: 0,
+            cell_latitude: 0,
+            cell_longitude: 0,
+            temperature_deci_c: 100,
+            wind_speed_bps: 1_500,
+            precipitation: Precipitation::Clear,
+            intensity_bps: 0,
+            ground_moisture_bps: 0,
+            snow_cover_bps: 0,
+        },
+        canopy_bps,
+        wetland_bps: 0,
+        cultivation_bps,
+        water_bps: 0,
+        hilly_bps,
+    }
+}
+
+fn foliage_material(wind_scale: f32) -> TacticalFoliageMaterial {
+    TacticalFoliageMaterial {
+        wind: Vec4::new(0.74, 0.67, wind_scale, 1.35),
+    }
+}
+
+fn spawn_ground_foliage(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<TacticalFoliageMaterial>,
+    source: Entity,
+    scene_id: &SceneId,
+    terrain: &SceneTerrain,
+    environment: &SceneEnvironment,
+) {
+    let grass_color = if environment.weather.snow_cover_bps >= 5_000 {
+        Color::srgb_u8(155, 164, 137)
+    } else if environment.cultivation_bps >= 4_000 {
+        Color::srgb_u8(142, 133, 61)
+    } else {
+        Color::srgb_u8(82, 119, 45)
+    };
+    let grass_mesh = meshes.add(foliage_clump_mesh(0.46, 0.78, grass_color, 3));
+    let understory_mesh = meshes.add(if environment.weather.snow_cover_bps >= 5_000 {
+        foliage_clump_mesh(0.72, 0.92, Color::srgb_u8(130, 144, 119), 3)
+    } else if environment.wetland_bps >= 3_000 {
+        foliage_clump_mesh(0.42, 1.35, Color::srgb_u8(75, 112, 58), 4)
+    } else {
+        foliage_clump_mesh(0.9, 1.05, Color::srgb_u8(52, 91, 43), 3)
+    });
+    let grass_material = materials.add(foliage_material(
+        0.16 + bps(environment.weather.wind_speed_bps) * 0.36,
+    ));
+    let understory_material = materials.add(foliage_material(
+        0.1 + bps(environment.weather.wind_speed_bps) * 0.24,
+    ));
+    let base_seed = stable_text_seed(&environment.scene_digest) ^ stable_text_seed(&scene_id.0);
+    let canopy = bps(environment.canopy_bps);
+    let water = bps(environment.water_bps);
+    let wetland = bps(environment.wetland_bps);
+    let cultivation = bps(environment.cultivation_bps);
+    let snow = bps(environment.weather.snow_cover_bps);
+    let grass_chance = (0.58 - canopy * 0.34 - water * 0.8 + cultivation * 0.2).clamp(0.08, 0.72)
+        * (1.0 - snow * 0.55);
+    let understory_chance = (canopy * 0.16 + wetland * 0.22).clamp(0.025, 0.24);
+    let half_x = terrain.width() * 0.5;
+    let half_z = terrain.depth() * 0.5;
+    let spacing = 2.5;
+    let count_x = (terrain.width() / spacing).floor() as i32;
+    let count_z = (terrain.depth() / spacing).floor() as i32;
+    for z in 0..count_z {
+        for x in 0..count_x {
+            let cell = ((x as u32 as u64) << 32) | z as u32 as u64;
+            let hash = splitmix64(base_seed ^ cell);
+            let choose = unit_hash(hash);
+            let layer = if choose < understory_chance {
+                Some(FoliageLayer::Understory)
+            } else if choose < understory_chance + grass_chance {
+                Some(FoliageLayer::Grass)
+            } else {
+                None
+            };
+            let Some(layer) = layer else { continue };
+            let jitter_x = unit_hash(splitmix64(hash ^ 0x39bd_7f21)) - 0.5;
+            let jitter_z = unit_hash(splitmix64(hash ^ 0xe651_34aa)) - 0.5;
+            let world_x = -half_x + (x as f32 + 0.5 + jitter_x * 0.72) * spacing;
+            let world_z = -half_z + (z as f32 + 0.5 + jitter_z * 0.72) * spacing;
+            let Some(height) = terrain.height_at(Vec2::new(world_x, world_z)) else {
+                continue;
+            };
+            if terrain
+                .normal_at(Vec2::new(world_x, world_z))
+                .is_none_or(|normal| normal.y < 0.72)
+            {
+                continue;
+            }
+            let scale = 0.72 + unit_hash(splitmix64(hash ^ 0x8c0a_3c95)) * 0.58;
+            let (mesh, material) = match layer {
+                FoliageLayer::Grass => (grass_mesh.clone(), grass_material.clone()),
+                FoliageLayer::Understory => (understory_mesh.clone(), understory_material.clone()),
+            };
+            commands.spawn((
+                Name::new(match layer {
+                    FoliageLayer::Grass => "Tactical grass clump",
+                    FoliageLayer::Understory => "Tactical understory clump",
+                }),
+                FoliageOf(source),
+                layer,
+                NotShadowCaster,
+                Mesh3d(mesh),
+                MeshMaterial3d(material),
+                VisibilityRange::abrupt(
+                    0.0,
+                    if layer == FoliageLayer::Grass {
+                        58.0
+                    } else {
+                        92.0
+                    },
+                ),
+                Transform::from_xyz(world_x, height, world_z)
+                    .with_rotation(Quat::from_rotation_y(
+                        unit_hash(hash) * core::f32::consts::TAU,
+                    ))
+                    .with_scale(Vec3::splat(scale)),
+            ));
+        }
+    }
+}
+
+fn foliage_clump_mesh(width: f32, height: f32, color: Color, planes: usize) -> Mesh {
+    let mut positions = Vec::with_capacity(planes * 5);
+    let mut normals = Vec::with_capacity(planes * 5);
+    let mut uvs = Vec::with_capacity(planes * 5);
+    let mut colors = Vec::with_capacity(planes * 5);
+    let mut indices = Vec::with_capacity(planes * 9);
+    let linear = color.to_linear().to_f32_array();
+    for plane in 0..planes {
+        let angle = plane as f32 * core::f32::consts::PI / planes as f32;
+        let direction = Vec3::new(angle.cos(), 0.0, angle.sin()) * width * 0.5;
+        let shoulder = direction * 0.48;
+        let base = positions.len() as u32;
+        positions.extend_from_slice(&[
+            (-direction).to_array(),
+            direction.to_array(),
+            (-shoulder + Vec3::Y * height * 0.72).to_array(),
+            (shoulder + Vec3::Y * height * 0.72).to_array(),
+            (Vec3::Y * height).to_array(),
+        ]);
+        let normal = Vec3::Y.cross(direction).normalize_or_zero().to_array();
+        normals.extend_from_slice(&[normal; 5]);
+        uvs.extend_from_slice(&[
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [0.25, 0.72],
+            [0.75, 0.72],
+            [0.5, 1.0],
+        ]);
+        colors.extend_from_slice(&[linear; 5]);
+        indices.extend_from_slice(&[
+            base,
+            base + 1,
+            base + 3,
+            base,
+            base + 3,
+            base + 2,
+            base + 2,
+            base + 3,
+            base + 4,
+        ]);
+    }
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
+fn tree_crown_mesh(seed: u64, subdivisions: u32, radius: f32) -> Mesh {
+    let mut mesh = Sphere::new(radius)
+        .mesh()
+        .ico(subdivisions)
+        .expect("valid tree crown");
+    let color = if seed & 1 == 0 {
+        Color::srgb_u8(45, 86, 38)
+    } else {
+        Color::srgb_u8(54, 92, 40)
+    };
+    let linear = color.to_linear().to_f32_array();
+    if let Some(VertexAttributeValues::Float32x3(positions)) =
+        mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION)
+    {
+        for position in positions.iter_mut() {
+            let point = Vec3::from_array(*position);
+            let phase = point.x * 1.7 + point.y * 1.1 + point.z * 2.3 + unit_hash(seed) * 4.0;
+            let scale = 0.9 + phase.sin() * 0.08;
+            *position = Vec3::new(
+                point.x * scale * 0.92,
+                point.y * (1.08 + scale * 0.16),
+                point.z * scale * 0.92,
+            )
+            .to_array();
+        }
+        let count = positions.len();
+        let uvs = positions
+            .iter()
+            .map(|position| [0.5, (position[1] / radius * 0.5 + 0.5).clamp(0.0, 1.0)])
+            .collect::<Vec<_>>();
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vec![linear; count]);
+    }
+    mesh.remove_attribute(Mesh::ATTRIBUTE_NORMAL);
+    mesh.with_computed_area_weighted_normals()
+}
+
+fn tree_branch_bundle(
+    index: u64,
+    seed: u64,
+    mesh: Handle<Mesh>,
+    material: Handle<StandardMaterial>,
+) -> impl Bundle {
+    let phase =
+        unit_hash(splitmix64(seed ^ index.wrapping_mul(0x9e37_79b9))) * core::f32::consts::TAU;
+    let direction = Vec3::new(phase.cos() * 0.7, 0.72, phase.sin() * 0.7).normalize();
+    let center = Vec3::Y * 0.9 + direction * 0.62;
+    (
+        Name::new(format!("Tree primary branch {}", index + 1)),
+        TreeLod(0),
+        Mesh3d(mesh),
+        MeshMaterial3d(material),
+        VisibilityRange::abrupt(0.0, 34.0),
+        Transform::from_translation(center)
+            .with_rotation(Quat::from_rotation_arc(Vec3::Y, direction)),
+    )
+}
+
+fn procedural_rock_mesh(seed: u64) -> Mesh {
+    let mut mesh = Sphere::new(ROCK_RADIUS_METRES)
+        .mesh()
+        .ico(2)
+        .expect("valid procedural rock seed mesh");
+    if let Some(VertexAttributeValues::Float32x3(positions)) =
+        mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION)
+    {
+        for position in positions {
+            let point = Vec3::from_array(*position);
+            let direction = point.normalize_or_zero();
+            let phase = direction.x * 4.7
+                + direction.y * 6.1
+                + direction.z * 5.3
+                + unit_hash(seed) * core::f32::consts::TAU;
+            let radius = ROCK_RADIUS_METRES * (0.82 + 0.12 * phase.sin());
+            *position = Vec3::new(
+                direction.x * radius,
+                direction.y * radius * 0.78,
+                direction.z * radius,
+            )
+            .to_array();
+        }
+    }
+    mesh.remove_attribute(Mesh::ATTRIBUTE_NORMAL);
+    mesh.with_computed_area_weighted_normals()
+}
+
+fn obstacle_seed(position: Vec3) -> u64 {
+    splitmix64(u64::from(position.x.to_bits()) << 32 ^ u64::from(position.z.to_bits()))
+}
+
+fn stable_text_seed(value: &str) -> u64 {
+    value.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x100_0000_01b3)
+    })
+}
+
+fn digest_unit(value: &str) -> f32 {
+    unit_hash(stable_text_seed(value))
+}
+
+fn splitmix64(mut value: u64) -> u64 {
+    value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
+}
+
+fn unit_hash(value: u64) -> f32 {
+    (value >> 40) as f32 / ((1_u32 << 24) - 1) as f32
+}
+
+fn bps(value: u16) -> f32 {
+    f32::from(value) / 10_000.0
+}
+
+fn color_vec4(color: Color) -> Vec4 {
+    Vec4::from_array(color.to_linear().to_f32_array())
 }
 
 fn on_scene_vista_bundle(
@@ -601,6 +1093,32 @@ mod tests {
         };
         assert!(fog_end(&rain) < fog_end(&clear));
         assert!(fog_end(&snow) < fog_end(&clear));
+    }
+
+    #[test]
+    fn procedural_rocks_remain_inside_the_authoritative_sphere() {
+        for seed in [0, 1, 42, u64::MAX] {
+            let mesh = procedural_rock_mesh(seed);
+            let positions = mesh
+                .attribute(Mesh::ATTRIBUTE_POSITION)
+                .and_then(VertexAttributeValues::as_float3)
+                .unwrap();
+            assert!(positions.iter().all(|position| {
+                Vec3::from_array(*position).length() <= ROCK_RADIUS_METRES + 0.001
+            }));
+        }
+    }
+
+    #[test]
+    fn foliage_clumps_carry_root_to_tip_wind_weights() {
+        let mesh = foliage_clump_mesh(0.5, 0.8, Color::WHITE, 3);
+        let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0)
+        else {
+            panic!("foliage mesh must carry float2 UV wind weights");
+        };
+        assert!(uvs.iter().any(|uv| uv[1] == 0.0));
+        assert!(uvs.iter().any(|uv| uv[1] == 1.0));
+        assert!(mesh.attribute(Mesh::ATTRIBUTE_COLOR).is_some());
     }
 
     #[test]
