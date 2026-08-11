@@ -62,7 +62,7 @@ pub(in crate::presentation) fn present_pending_trees(
             cached.clone()
         } else {
             let branches = procedural_tree_skeleton(variant_seed, competition);
-            let leaves = procedural_oak_leaves(variant_seed, &branches);
+            let leaves = procedural_oak_leaves(variant_seed, &branches, competition);
             let bark_texture = images.add(procedural_oak_bark_image(variant_seed));
             let bark_material = materials.add(StandardMaterial {
                 base_color: Color::WHITE,
@@ -71,18 +71,24 @@ pub(in crate::presentation) fn present_pending_trees(
                 ..default()
             });
             let leaf_material = materials.add(StandardMaterial {
-                base_color: Color::srgb(0.4, 0.62, 0.17),
+                base_color: Color::srgb(0.56, 0.6, 0.32),
                 perceptual_roughness: 0.82,
                 reflectance: 0.18,
-                diffuse_transmission: 0.55,
+                diffuse_transmission: 0.65,
                 thickness: 0.001,
                 double_sided: true,
                 cull_mode: None,
                 ..default()
             });
+            let bud_material = materials.add(StandardMaterial {
+                base_color: Color::srgb(0.36, 0.27, 0.1),
+                perceptual_roughness: 0.92,
+                ..default()
+            });
             let branch_meshes =
                 [3, 2, 1, 0].map(|depth| meshes.add(procedural_tree_branch_mesh(&branches, depth)));
             let leaf_mesh = meshes.add(procedural_oak_leaf_mesh(&leaves));
+            let bud_mesh = meshes.add(procedural_oak_bud_mesh(&branches));
             let baked_lods = (1..5)
                 .map(|lod| bake_tree_lod(variant_seed, &branches, &leaves, lod))
                 .collect::<Vec<_>>();
@@ -92,11 +98,13 @@ pub(in crate::presentation) fn present_pending_trees(
             let cached = CachedTreePresentation {
                 branch_meshes,
                 leaf_mesh,
+                bud_mesh,
                 card_meshes: core::array::from_fn(|index| {
                     meshes.add(baked_lods[index].mesh.clone())
                 }),
                 bark_material,
                 leaf_material,
+                bud_material,
                 card_materials: core::array::from_fn(|index| {
                     let bake = &baked_lods[index];
                     let texture = images.add(bake.image.clone());
@@ -123,11 +131,12 @@ fn canopy_competition(canopy_bps: u16) -> f32 {
 pub(crate) fn oak_review_terminal_specimen(
     root: Vec3,
     canopy_bps: u16,
-) -> (Mesh, Mesh, Vec3, Vec3) {
+) -> (Mesh, Mesh, Mesh, Vec3, Vec3) {
     let seed = obstacle_seed(root);
     let variant_seed = splitmix64(0x6f61_6b00 ^ (seed & 3));
     let branches = procedural_tree_skeleton(variant_seed, canopy_competition(canopy_bps));
-    let leaves = procedural_oak_leaves(variant_seed, &branches);
+    let competition = canopy_competition(canopy_bps);
+    let leaves = procedural_oak_leaves(variant_seed, &branches, competition);
     let camera_direction = Vec3::new(1.0, 0.0, 1.0).normalize();
     let preferred_height = 2.5;
     let (shoot_id, shoot) = branches
@@ -156,8 +165,18 @@ pub(crate) fn oak_review_terminal_specimen(
             leaf
         })
         .collect::<Vec<_>>();
-    let focus =
-        specimen_leaves.iter().map(|leaf| leaf.center).sum::<Vec3>() / specimen_leaves.len() as f32;
+    // Frame the entire biological unit, not merely the leaf centroid: the
+    // parent junction and terminal bud are both required to judge shoot
+    // phyllotaxy. Blade length is included as a conservative bound because
+    // leaves can tilt substantially out of the shoot's local frame.
+    let mut minimum = specimen_shoot.start.min(specimen_shoot.end);
+    let mut maximum = specimen_shoot.start.max(specimen_shoot.end);
+    for leaf in &specimen_leaves {
+        let extent = Vec3::splat(leaf.length.max(leaf.width) * 0.6);
+        minimum = minimum.min(leaf.center - extent);
+        maximum = maximum.max(leaf.center + extent);
+    }
+    let focus = (minimum + maximum) * 0.5;
     let shoot_direction = (specimen_shoot.end - specimen_shoot.start).normalize();
     let mut review_direction = Vec3::Z;
     let mut review_score = f32::NEG_INFINITY;
@@ -185,6 +204,7 @@ pub(crate) fn oak_review_terminal_specimen(
     (
         procedural_tree_branch_mesh(&[specimen_shoot], 3),
         procedural_oak_leaf_mesh(&specimen_leaves),
+        procedural_oak_bud_mesh(&[specimen_shoot]),
         focus,
         review_direction,
     )
