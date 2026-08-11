@@ -789,10 +789,12 @@ just tactical-scene-capture heavy-rain-high-wind target/tactical-scene-captures/
 
 The native viewer writes fixed ground, overhead, horizon, and collider-overlay
 PNGs alongside the exact `input.json`, a browsable `index.html`, and a
-machine-readable `manifest.json`. It exits unsuccessfully and writes
-`failure.txt` when presentation/collider counts, precipitation, three vista
-LODs, the 50 km vista contract, non-uniform rendered content, or the dedicated
-boundary-peak view fail. Explicit output directories must be
+machine-readable `manifest.json`. It waits for custom material pipelines before
+capturing, then exits unsuccessfully and writes `failure.txt` when
+presentation/collider counts, collider-bounded procedural rocks, terrain
+material, coarse-input upsampling, microrelief, expected foliage, three tree
+LODs, precipitation, three vista LODs, the 50 km vista contract, non-uniform
+rendered content, or the dedicated boundary-peak view fail. Explicit output directories must be
 fresh so a prior capture cannot satisfy a new run accidentally.
 
 Capture the complete committed fixture catalog with

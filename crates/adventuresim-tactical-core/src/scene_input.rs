@@ -16,7 +16,7 @@ use thiserror::Error;
 use crate::scene::SceneTerrain;
 
 pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 1;
-pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 2;
+pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 3;
 pub const MAX_SCENE_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 pub const TREE_TRUNK_RADIUS_METRES: f32 = 0.35;
 pub const TREE_TRUNK_HEIGHT_METRES: f32 = 5.0;
@@ -157,6 +157,8 @@ pub struct GeneratedTacticalScene {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SceneRepairReport {
+    pub upsampled_height_samples: u32,
+    pub microrelief_adjusted_samples: u32,
     pub adjusted_height_samples: u32,
     pub repaired_water_samples: u32,
     pub removed_corridor_obstacles: u32,
@@ -263,23 +265,36 @@ impl TacticalSceneInput {
 
     pub fn generate(&self) -> Result<GeneratedTacticalScene, SceneInputError> {
         self.validate()?;
-        let mut heights = self.playable.heights_metres.clone();
-        let mut environment = self.playable.environment.clone();
+        let (grid_width, grid_depth, grid_spacing, mut heights, mut environment) =
+            upsample_playable_grid(&self.playable);
+        let upsampled_height_samples = heights
+            .len()
+            .saturating_sub(self.playable.heights_metres.len())
+            as u32;
+        let microrelief_adjusted_samples = add_authoritative_microrelief(
+            self.seed,
+            grid_width,
+            grid_depth,
+            grid_spacing,
+            &mut heights,
+            &environment,
+        );
         let mut repairs = repair_playable_terrain(
-            usize::from(self.playable.width),
-            usize::from(self.playable.depth),
-            self.playable.spacing_metres,
+            grid_width,
+            grid_depth,
+            grid_spacing,
             &mut heights,
             &mut environment,
         );
-        let terrain = SceneTerrain::from_heightmap(
-            self.playable.width.into(),
-            self.playable.depth.into(),
-            self.playable.spacing_metres,
-            heights,
-        )
-        .ok_or_else(|| SceneInputError::Validation("playable heightmap is invalid".into()))?;
-        let mut obstacles = environment
+        repairs.upsampled_height_samples = upsampled_height_samples;
+        repairs.microrelief_adjusted_samples = microrelief_adjusted_samples;
+        let terrain = SceneTerrain::from_heightmap(grid_width, grid_depth, grid_spacing, heights)
+            .ok_or_else(|| {
+            SceneInputError::Validation("playable heightmap is invalid".into())
+        })?;
+        let mut obstacles = self
+            .playable
+            .environment
             .iter()
             .enumerate()
             .filter_map(|(index, sample)| {
@@ -345,6 +360,131 @@ impl TacticalSceneInput {
     }
 }
 
+fn upsample_playable_grid(
+    source: &TerrainSampleGrid,
+) -> (usize, usize, f32, Vec<f32>, Vec<EnvironmentalSample>) {
+    const TARGET_SPACING_METRES: f32 = 2.0;
+    let source_width = usize::from(source.width);
+    let source_depth = usize::from(source.depth);
+    if source.spacing_metres <= TARGET_SPACING_METRES {
+        return (
+            source_width,
+            source_depth,
+            source.spacing_metres,
+            source.heights_metres.clone(),
+            source.environment.clone(),
+        );
+    }
+    let largest_source_side = (source_width - 1).max(source_depth - 1);
+    let maximum_subdivisions = ((MAX_PLAYABLE_SIDE - 1) / largest_source_side).max(1);
+    let subdivisions = (source.spacing_metres / TARGET_SPACING_METRES)
+        .ceil()
+        .max(1.0) as usize;
+    let subdivisions = subdivisions.min(maximum_subdivisions);
+    let cells_x = (source_width - 1) * subdivisions;
+    let cells_z = (source_depth - 1) * subdivisions;
+    let width = cells_x + 1;
+    let depth = cells_z + 1;
+    let spacing = source.spacing_metres / subdivisions as f32;
+    let mut heights = Vec::with_capacity(width * depth);
+    let mut environment = Vec::with_capacity(width * depth);
+    for z in 0..depth {
+        for x in 0..width {
+            let source_x = x as f32 / subdivisions as f32;
+            let source_z = z as f32 / subdivisions as f32;
+            let x0 = source_x.floor() as usize;
+            let z0 = source_z.floor() as usize;
+            let x1 = (x0 + 1).min(source_width - 1);
+            let z1 = (z0 + 1).min(source_depth - 1);
+            let tx = source_x - x0 as f32;
+            let tz = source_z - z0 as f32;
+            let north = lerp(
+                source.heights_metres[z0 * source_width + x0],
+                source.heights_metres[z0 * source_width + x1],
+                tx,
+            );
+            let south = lerp(
+                source.heights_metres[z1 * source_width + x0],
+                source.heights_metres[z1 * source_width + x1],
+                tx,
+            );
+            heights.push(lerp(north, south, tz));
+            let nearest_x = source_x.round() as usize;
+            let nearest_z = source_z.round() as usize;
+            environment.push(source.environment[nearest_z * source_width + nearest_x]);
+        }
+    }
+    (width, depth, spacing, heights, environment)
+}
+
+fn lerp(left: f32, right: f32, amount: f32) -> f32 {
+    left + (right - left) * amount
+}
+
+/// Adds sub-source-resolution detail before constructing the shared terrain.
+/// The result therefore feeds the rendered mesh, height queries, IK, and the
+/// authoritative server collider instead of becoming client-only displacement.
+fn add_authoritative_microrelief(
+    seed: u64,
+    width: usize,
+    depth: usize,
+    spacing: f32,
+    heights: &mut [f32],
+    environment: &[EnvironmentalSample],
+) -> u32 {
+    let mut adjusted = 0;
+    for z in 0..depth {
+        for x in 0..width {
+            let index = z * width + x;
+            let sample = environment[index];
+            if is_reserved_playability_cell(x, z, width, depth)
+                || sample.water_bps >= 5_000
+                || sample.crossing_bps >= 5_000
+                || matches!(
+                    sample.surface,
+                    TacticalSurface::Road | TacticalSurface::Water
+                )
+            {
+                continue;
+            }
+            let hilly = f32::from(sample.hilly_bps) / 10_000.0;
+            let wetland = f32::from(sample.wetland_bps) / 10_000.0;
+            let amplitude = (0.055 + hilly * 0.22) * (1.0 - wetland * 0.55);
+            let world_x = x as f32 * spacing;
+            let world_z = z as f32 * spacing;
+            let broad = value_noise(seed, world_x, world_z, 6.0);
+            let fine = value_noise(seed ^ 0x8f3f_73b5_cf1c_9ade, world_x, world_z, 2.25);
+            let offset = (broad * 0.72 + fine * 0.28) * amplitude;
+            if offset.abs() > f32::EPSILON {
+                heights[index] += offset;
+                adjusted += 1;
+            }
+        }
+    }
+    adjusted
+}
+
+fn value_noise(seed: u64, x: f32, z: f32, cell_size: f32) -> f32 {
+    let gx = x / cell_size;
+    let gz = z / cell_size;
+    let x0 = gx.floor() as i32;
+    let z0 = gz.floor() as i32;
+    let tx = smoothstep(gx - x0 as f32);
+    let tz = smoothstep(gz - z0 as f32);
+    let sample = |ix: i32, iz: i32| {
+        let coordinate = (ix as u32 as u64) << 32 | iz as u32 as u64;
+        let bits = splitmix64(seed ^ coordinate);
+        (bits >> 40) as f32 / ((1_u32 << 24) - 1) as f32 * 2.0 - 1.0
+    };
+    let north = sample(x0, z0) + (sample(x0 + 1, z0) - sample(x0, z0)) * tx;
+    let south = sample(x0, z0 + 1) + (sample(x0 + 1, z0 + 1) - sample(x0, z0 + 1)) * tx;
+    north + (south - north) * tz
+}
+
+fn smoothstep(value: f32) -> f32 {
+    value * value * (3.0 - 2.0 * value)
+}
+
 fn repair_playable_terrain(
     width: usize,
     depth: usize,
@@ -391,6 +531,8 @@ fn repair_playable_terrain(
         }
     }
     SceneRepairReport {
+        upsampled_height_samples: 0,
+        microrelief_adjusted_samples: 0,
         adjusted_height_samples: heights
             .iter()
             .zip(original_heights)
@@ -530,6 +672,52 @@ mod tests {
             first.terrain.height_at(bevy::math::Vec2::ZERO),
             second.terrain.height_at(bevy::math::Vec2::ZERO)
         );
+        assert_eq!(
+            first.repairs.microrelief_adjusted_samples,
+            second.repairs.microrelief_adjusted_samples
+        );
+    }
+
+    #[test]
+    fn microrelief_is_bounded_deterministic_and_preserves_the_combat_corridor() {
+        let width = 25;
+        let depth = 25;
+        let environment = vec![
+            EnvironmentalSample {
+                hilly_bps: 10_000,
+                ..Default::default()
+            };
+            width * depth
+        ];
+        let mut first = vec![0.0; width * depth];
+        let mut second = first.clone();
+        let first_count =
+            add_authoritative_microrelief(91, width, depth, 1.0, &mut first, &environment);
+        let second_count =
+            add_authoritative_microrelief(91, width, depth, 1.0, &mut second, &environment);
+        assert_eq!(first, second);
+        assert_eq!(first_count, second_count);
+        assert!(first_count > 0);
+        assert!(first.iter().all(|height| height.abs() <= 0.275 + 0.001));
+        assert!((0..width).all(|x| first[(depth / 2) * width + x] == 0.0));
+    }
+
+    #[test]
+    fn coarse_source_grid_is_upsampled_without_changing_extent() {
+        let source = TerrainSampleGrid {
+            width: 3,
+            depth: 2,
+            spacing_metres: 12.5,
+            heights_metres: vec![0.0, 1.0, 2.0, 2.0, 3.0, 4.0],
+            environment: vec![EnvironmentalSample::default(); 6],
+        };
+        let (width, depth, spacing, heights, environment) = upsample_playable_grid(&source);
+        assert!(spacing <= 2.0);
+        assert_eq!((width - 1) as f32 * spacing, 25.0);
+        assert_eq!((depth - 1) as f32 * spacing, 12.5);
+        assert_eq!(heights.len(), width * depth);
+        assert_eq!(environment.len(), width * depth);
+        assert!((heights[(depth - 1) * width + width - 1] - 4.0).abs() < 0.0001);
     }
 
     #[test]
@@ -592,7 +780,10 @@ mod tests {
         for name in names {
             let input = TacticalSceneInput::load(&root.join(format!("{name}.json"))).unwrap();
             assert_eq!(input.source, SceneSource::SyntheticFixture(name.into()));
-            assert_eq!(input.generate().unwrap().terrain.width(), 100.0);
+            let generated = input.generate().unwrap();
+            assert_eq!(generated.terrain.width(), 100.0);
+            assert!(generated.terrain.grid_scale() <= 2.0);
+            assert!(generated.repairs.upsampled_height_samples > 0);
             assert_eq!(input.vista.lods.len(), 3);
             let horizon = input.vista.lods.last().unwrap();
             assert_eq!(
@@ -620,6 +811,10 @@ mod tests {
     #[test]
     fn committed_obstacle_fixtures_exercise_sparse_trees_and_hilly_rocks() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tactical-scenes");
+        let flat = TacticalSceneInput::load(&root.join("flat-dry-grassland.json"))
+            .unwrap()
+            .generate()
+            .unwrap();
         let sparse = TacticalSceneInput::load(&root.join("sparse-woodland.json"))
             .unwrap()
             .generate()
@@ -628,6 +823,7 @@ mod tests {
             .unwrap()
             .generate()
             .unwrap();
+        assert!(flat.obstacles.is_empty());
         assert!(
             sparse
                 .obstacles

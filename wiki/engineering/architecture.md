@@ -283,13 +283,16 @@ versioned `TacticalSceneInput` document. It contains a deterministic seed,
 template key, imported-package or named-fixture provenance, geographic/time
 origin, complete strategic weather snapshot, dense playable samples, and
 progressively coarser presentation-only vista samples. The server validates the
-document before opening any listener, builds the collider and replicated
-playable mesh from the same row-major heights, and logs the SHA-256 scene
-digest and generation version. Gameplay-relevant generated trees and rocks are
+document before opening any listener, deterministically upsamples coarse source
+grids to at most two-metre spacing, adds bounded seeded microrelief, builds the
+collider and replicated playable mesh from those same row-major heights, and
+logs the SHA-256 scene digest and generation version. Gameplay-relevant generated trees and rocks are
 static server colliders with a compact replicated obstacle kind and transform;
-clients derive proxy meshes from the same shared dimensions, without receiving
-or simulating the collider. The immutable weather snapshot controls broad
-ground tint, precipitation particles, fog distance, wind drift, and sunlight.
+clients derive collider-bounded rock meshes and distance-LOD tree archetypes
+from the same shared dimensions, without receiving or simulating the collider.
+Non-colliding grass and understory use shared meshes with shader wind. The
+immutable environment and weather snapshots control the procedural ground
+material, precipitation particles, fog distance, wind drift, and sunlight.
 Large vista grids are deliberately not ordinary replicated ECS components. The
 server sends each accepted client one immutable, ordered `SceneVistaBundle`;
 the client builds seam-sharing LOD rings split into independently frustum-culled
