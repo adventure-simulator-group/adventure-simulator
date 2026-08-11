@@ -69,9 +69,10 @@ scatter. Texture asset identifiers are presentation details and never become
 server authority.
 
 Generated tree crowns stamp leaf-litter cover into this grid. Grass macro
-patches conservatively reject any footprint intersecting those cells, while a
-shared proof-of-concept mesh scatters dry leaves and twigs over the warmer
-forest-floor material. Open soil remains tall grass, wet ground selects reeds,
+patches conservatively reject any footprint intersecting those cells. Separate
+shared meshes scatter a dense dry-leaf carpet and a looser layer of longer
+twigs with independent deterministic placement over the warmer forest-floor
+material. Open soil remains tall grass, wet ground selects reeds,
 and sufficiently hilly samples select loose stone; these profiles are mutually
 exclusive at a location even when one profile renders several compatible
 details.
