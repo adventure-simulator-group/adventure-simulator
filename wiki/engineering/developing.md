@@ -745,11 +745,13 @@ debugging. It exposes more lifecycle details and therefore more footguns.
 For testing without the spawner:
 
 ```bash
-just tactical mission_id="test-123" scene_key="hills"
+just tactical mission_id="test-123"
 ```
 
-To exercise the versioned tactical scene boundary with bounded synthetic world
-data, pass the committed fixture (or set `TACTICAL_SCENE_INPUT`):
+Standalone tactical development defaults to the committed `dense-woodland`
+fixture. To exercise the versioned tactical scene boundary with a different
+bounded synthetic world input, pass another fixture (or set
+`TACTICAL_SCENE_INPUT`):
 
 ```powershell
 $env:TACTICAL_MISSION_ID = "test-123"
@@ -762,8 +764,9 @@ The server validates schema/generation versions, dimensions, sample counts,
 finite values, geographic and environmental bounds, weather consistency, and
 the 32 MiB file cap before opening its game listener. It deterministically
 repairs impassable deployment pads and the central encounter corridor, then
-logs the stable scene digest and repair counts. With no scene input, the old
-`hills`/`desert` noise generator remains a tactical development fallback.
+logs the stable scene digest and repair counts. If `--scene-input` is omitted,
+the server loads `assets/tactical-scenes/dense-woodland.json`; there is no
+separate synthetic terrain fallback.
 
 The committed catalog under `assets/tactical-scenes/` covers flat grassland,
 steep slopes, dense and sparse woodland, wetlands, cultivated roadside, snow,
@@ -864,7 +867,7 @@ development database, use three terminals from the repository root. First,
 create and seed the disposable mission profile (leave it running):
 
 ```bash
-just tactical-isolated presentation-demo 23200 mission:presentation-demo hills 0 1
+just tactical-isolated presentation-demo 23200 mission:presentation-demo woodland 0 1
 ```
 
 Then start the seeded mission server using the generated `.env.tactical`:

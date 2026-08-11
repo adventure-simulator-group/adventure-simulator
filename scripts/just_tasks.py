@@ -528,7 +528,7 @@ def win_dev() -> int:
             sync_tree(assets, stage / "assets", clear=False)
         server = subprocess.Popen([
             str(stage / "adventuresim-tactical-server.exe"), "--addr", "0.0.0.0:6000",
-            "--mission-id", "test-mission", "--scene-key", "hills", "--spacetimedb-url",
+            "--mission-id", "test-mission", "--scene-key", "woodland", "--spacetimedb-url",
             SPACETIME_URL, "--spacetimedb-module", SPACETIME_DATABASE,
             "--expected-party-members", "1", "--bots", "3", "--no-timeout",
         ], cwd=stage)

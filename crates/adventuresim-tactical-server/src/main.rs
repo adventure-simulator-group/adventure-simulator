@@ -40,7 +40,7 @@ use crate::{
 };
 
 const MISSION_TIMEOUT_SECS: f32 = 300.0;
-const TERRAIN_SIZE: usize = 100;
+const DEFAULT_SCENE_INPUT: &str = "assets/tactical-scenes/dense-woodland.json";
 
 #[derive(Parser, Debug, Clone, Resource)]
 #[command(name = "adventuresim-tactical-server")]
@@ -52,16 +52,12 @@ struct Args {
     mission_id: String,
     #[arg(long, env = "ADVENTURESIM_TACTICAL_CLAIM", hide_env_values = true)]
     tactical_claim: String,
-    #[arg(long)]
+    #[arg(long, default_value = "woodland")]
     scene_key: String,
-    /// Exact versioned scene input. When omitted, the legacy synthetic scene
-    /// remains available only for existing tactical development commands.
+    /// Exact versioned scene input. Defaults to the committed dense woodland
+    /// fixture for standalone tactical development.
     #[arg(long)]
     scene_input: Option<PathBuf>,
-    #[arg(long, default_value_t = TERRAIN_SIZE)]
-    scene_width: usize,
-    #[arg(long, default_value_t = TERRAIN_SIZE)]
-    scene_depth: usize,
     #[arg(long)]
     required_enemy_kills: u32,
     #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
@@ -78,19 +74,51 @@ struct Args {
     no_timeout: bool,
 }
 
+fn default_scene_input_path() -> PathBuf {
+    let working_directory_path = PathBuf::from(DEFAULT_SCENE_INPUT);
+    if working_directory_path.is_file() {
+        return working_directory_path;
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(DEFAULT_SCENE_INPUT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn standalone_default_is_the_dense_woodland_fixture() {
+        let input = TacticalSceneInput::load(&default_scene_input_path())
+            .expect("default tactical scene input should remain valid");
+
+        assert_eq!(input.scene_key, "woodland");
+        assert_eq!(
+            input.source,
+            SceneSource::SyntheticFixture("dense-woodland".into())
+        );
+    }
+}
+
 fn main() {
     let args = Args::parse();
-    let loaded_scene_input = match args.scene_input.as_deref().map(TacticalSceneInput::load) {
-        Some(Ok(input)) => Some(input),
-        Some(Err(error)) => {
+    let scene_input_path = args
+        .scene_input
+        .clone()
+        .unwrap_or_else(default_scene_input_path);
+    let loaded_scene_input = match TacticalSceneInput::load(&scene_input_path) {
+        Ok(input) => input,
+        Err(error) => {
             eprintln!("refusing invalid tactical scene input: {error}");
             std::process::exit(2);
         }
-        None => None,
     };
-    let scene_vista_bundle = loaded_scene_input.as_ref().map(|input| SceneVistaBundle {
-        scene_digest: input.digest().expect("loaded scene input was validated"),
-        lods: input.vista.lods.clone(),
+    let scene_vista_bundle = Some(SceneVistaBundle {
+        scene_digest: loaded_scene_input
+            .digest()
+            .expect("loaded scene input was validated"),
+        lods: loaded_scene_input.vista.lods.clone(),
     });
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(bevy::log::LogPlugin {
@@ -161,7 +189,7 @@ fn main() {
 }
 
 #[derive(Resource)]
-struct LoadedSceneInput(Option<TacticalSceneInput>);
+struct LoadedSceneInput(TacticalSceneInput);
 
 #[derive(Resource)]
 pub(crate) struct SceneVistaBundleResource(pub(crate) Option<SceneVistaBundle>);
@@ -205,61 +233,27 @@ fn on_server_started(
 ) -> Result {
     info!("Server opened on {:?}", **server_addr);
     info!("Creating a game scene for {}", args.scene_key);
-    let (scene_id, terrain, ground, environment, obstacles, obstacle_spacing) =
-        if let Some(input) = &scene_input.0 {
-            let generated = input.generate()?;
-            info!(
-                scene_digest = %generated.digest,
-                schema_version = input.schema_version,
-                generation_version = input.generation_version,
-                source = ?input.source,
-                obstacles = generated.obstacles.len(),
-                upsampled_height_samples = generated.repairs.upsampled_height_samples,
-                microrelief_adjusted_samples = generated.repairs.microrelief_adjusted_samples,
-                adjusted_height_samples = generated.repairs.adjusted_height_samples,
-                repaired_water_samples = generated.repairs.repaired_water_samples,
-                removed_corridor_obstacles = generated.repairs.removed_corridor_obstacles,
-                "Loaded deterministic tactical scene input"
-            );
-            (
-                input.scene_key.clone(),
-                generated.terrain,
-                generated.ground,
-                Some(input.environment_snapshot(generated.digest)),
-                generated.obstacles,
-                input.playable.spacing_metres,
-            )
-        } else {
-            warn!("No --scene-input supplied; using legacy synthetic development terrain");
-            let mut generator = TerrainGenerator::from_hash((&args.mission_id, &args.scene_key));
-            let (scene_height, gen_period) = match args.scene_key.as_str() {
-                "hills" => (30, 200.0),
-                "desert" => (2, 30.0),
-                id => {
-                    warn!("Unknown scene: {id}");
-                    (0, 1.0)
-                }
-            };
-            generator.period = gen_period;
-            let terrain = generator.generate(args.scene_width, scene_height, args.scene_depth);
-            let ground = SceneGround::uniform_for_terrain(
-                &terrain,
-                GroundSurface {
-                    substrate: GroundSubstrate::Soil,
-                    cover: GroundCover::TallGrass,
-                    cover_density_bps: 9_000,
-                    cover_height_cm: 82,
-                },
-            );
-            (
-                args.scene_key.clone(),
-                terrain,
-                ground,
-                None,
-                Vec::new(),
-                1.0,
-            )
-        };
+    let input = &scene_input.0;
+    let generated = input.generate()?;
+    info!(
+        scene_digest = %generated.digest,
+        schema_version = input.schema_version,
+        generation_version = input.generation_version,
+        source = ?input.source,
+        obstacles = generated.obstacles.len(),
+        upsampled_height_samples = generated.repairs.upsampled_height_samples,
+        microrelief_adjusted_samples = generated.repairs.microrelief_adjusted_samples,
+        adjusted_height_samples = generated.repairs.adjusted_height_samples,
+        repaired_water_samples = generated.repairs.repaired_water_samples,
+        removed_corridor_obstacles = generated.repairs.removed_corridor_obstacles,
+        "Loaded deterministic tactical scene input"
+    );
+    let scene_id = input.scene_key.clone();
+    let terrain = generated.terrain;
+    let ground = generated.ground;
+    let environment = input.environment_snapshot(generated.digest);
+    let obstacles = generated.obstacles;
+    let obstacle_spacing = input.playable.spacing_metres;
     for obstacle in obstacles {
         let (grid_x, grid_z, kind, collider, height_offset, label) = match obstacle {
             GeneratedObstacle::Tree { x, z } => (
@@ -303,21 +297,11 @@ fn on_server_started(
         terrain_collider,
         Transform::default(),
     ));
-    if let Some(environment) = environment {
-        scene.insert(environment);
-    }
-    let scene_width = scene_input
-        .0
-        .as_ref()
-        .map_or(args.scene_width as f32, |input| {
-            f32::from(input.playable.width.saturating_sub(1)) * input.playable.spacing_metres
-        });
-    let scene_depth = scene_input
-        .0
-        .as_ref()
-        .map_or(args.scene_depth as f32, |input| {
-            f32::from(input.playable.depth.saturating_sub(1)) * input.playable.spacing_metres
-        });
+    scene.insert(environment);
+    let scene_width =
+        f32::from(input.playable.width.saturating_sub(1)) * input.playable.spacing_metres;
+    let scene_depth =
+        f32::from(input.playable.depth.saturating_sub(1)) * input.playable.spacing_metres;
     commands.spawn((
         RigidBody::Static,
         CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
