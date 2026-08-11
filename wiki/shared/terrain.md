@@ -33,7 +33,10 @@ four-order branch skeleton and five smoothly cross-faded presentation levels:
 real tapered wood with individual veined leaf cards, leafed-twig impostors,
 small-branch impostors, crown-branch impostors, and finally one camera-facing
 whole-tree billboard. Each successive level collapses exactly one botanical
-order, retaining parallax longer than a direct crown-to-billboard swap. Grass,
+order. Every aggregate card derives its position and extent from the actual
+seeded descendant twigs, so crown mass, asymmetry, and gaps remain recognizable
+through the transitions while retaining parallax longer than a direct
+crown-to-billboard swap. Grass,
 shrubs, and reeds are deterministic shared-mesh foliage with no gameplay
 collider. Grass uses overlapping shared patches of forty-nine narrow crossed
 blades across the full playable view distance: covered ground reads as a

@@ -749,8 +749,8 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |tree| {
                 (
-                    tree + Vec3::new(6.2, -0.68, 6.2),
-                    tree + Vec3::new(0.0, 0.55, 0.0),
+                    tree + Vec3::new(8.2, -0.68, 8.2),
+                    tree + Vec3::new(0.0, 0.72, 0.0),
                     Vec3::Y,
                 )
             },
