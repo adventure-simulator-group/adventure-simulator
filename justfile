@@ -282,8 +282,8 @@ _spawner-stop:
 # Run a single tactical server (for testing). Defaults come from `.env.tactical`
 # (written by `tactical-isolated`) when present, otherwise from the canonical
 # stack - so a bare `just tactical` targets whichever is currently running.
-tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") scene_key=env_var_or_default("TACTICAL_SCENE_KEY", "hills") bots=env_var_or_default("TACTICAL_BOTS", "3") port=env_var_or_default("TACTICAL_PORT", tactical_port) url=env_var_or_default("TACTICAL_SPACETIMEDB_URL", spacetime_url) module=env_var_or_default("TACTICAL_SPACETIMEDB_MODULE", spacetime_module) enemy_combat_scale_bps=env_var_or_default("TACTICAL_ENEMY_COMBAT_SCALE_BPS", "10000") scene_input=env_var_or_default("TACTICAL_SCENE_INPUT", ""):
-    @if ("{{ scene_input }}") { cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --scene-input {{ quote(scene_input) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --expected-party-members 1 --required-enemy-kills {{ bots }} --enemy-combat-scale-bps {{ enemy_combat_scale_bps }} --no-timeout } else { cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --expected-party-members 1 --required-enemy-kills {{ bots }} --enemy-combat-scale-bps {{ enemy_combat_scale_bps }} --no-timeout }
+tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") scene_key=env_var_or_default("TACTICAL_SCENE_KEY", "woodland") bots=env_var_or_default("TACTICAL_BOTS", "3") port=env_var_or_default("TACTICAL_PORT", tactical_port) url=env_var_or_default("TACTICAL_SPACETIMEDB_URL", spacetime_url) module=env_var_or_default("TACTICAL_SPACETIMEDB_MODULE", spacetime_module) enemy_combat_scale_bps=env_var_or_default("TACTICAL_ENEMY_COMBAT_SCALE_BPS", "10000") scene_input=env_var_or_default("TACTICAL_SCENE_INPUT", "assets/tactical-scenes/dense-woodland.json"):
+    @cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --scene-input {{ quote(scene_input) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --expected-party-members 1 --required-enemy-kills {{ bots }} --enemy-combat-scale-bps {{ enemy_combat_scale_bps }} --no-timeout
 
 # Run a native tactical client (for testing `just tactical`). Defaults come
 # from `.env.tactical` when present, same as `tactical` above.
@@ -294,15 +294,15 @@ client id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_defau
 # No strategic layer, no WASM build - just the DB plus a mission. Writes
 # .env.tactical so a bare `just tactical` / `just client` (no arguments) in
 # other terminals targets it automatically.
-tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="hills" character_id="0" bots="3" scene_input="": preflight verify-db-client build-tactical
-    @{{ python_bin }} scripts/dev_stack.py run-profile --mode tactical {{ quote(profile) }} {{ quote(base_port) }} --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }} {{ if scene_input != "" { "--scene-input " + quote(scene_input) } else { "" } }}
+tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="woodland" character_id="0" bots="3" scene_input="assets/tactical-scenes/dense-woodland.json": preflight verify-db-client build-tactical
+    @{{ python_bin }} scripts/dev_stack.py run-profile --mode tactical {{ quote(profile) }} {{ quote(base_port) }} --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }} --scene-input {{ quote(scene_input) }}
 
 # Build and supervise a complete disposable native tactical test session.
 # animation disables combat, diagnostic runs scripted real-client input and
 # records every animation frame, combat uses normal enemies, and networking
 # omits the client while retaining the validated database/server fixture.
-tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto" scene_input="": preflight verify-db-client
-    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }} {{ if scene_input != "" { "--scene-input " + quote(scene_input) } else { "" } }}
+tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto" scene_input="assets/tactical-scenes/dense-woodland.json": preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }} --scene-input {{ quote(scene_input) }}
 
 # Capture one deterministic tactical environment from fixed ground, overhead,
 # horizon, and collider-overlay cameras. Output must be a fresh directory when set.

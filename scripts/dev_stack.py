@@ -1171,7 +1171,7 @@ def run_profile(
     mode: ProfileMode = ProfileMode.STRATEGIC,
     verify_http: bool = False,
     mission_id: str = "mission:test-mission",
-    scene_key: str = "hills",
+    scene_key: str = "woodland",
     character_id: int = 0,
     enemy_count: int = 3,
     scene_input: str | None = None,
@@ -2058,7 +2058,7 @@ def tactical_play(
             result = run_checked([
                 "spacetime", "call", "--server", server_url, database,
                 "seed_standalone_tactical_mission", bootstrap_token,
-                str(character_id), mission_id, "hills", str(enemy_count), tactical_claim,
+                str(character_id), mission_id, "woodland", str(enemy_count), tactical_claim,
             ])
             if result.returncode:
                 write_console(result.stdout)
@@ -2068,7 +2068,7 @@ def tactical_play(
                 database=database,
                 port=int(values["tactical_port"]),
                 mission_id=mission_id,
-                scene_key="hills",
+                scene_key="woodland",
                 character_id=character_id,
                 enemy_count=enemy_count,
                 tactical_claim=None,
@@ -2098,7 +2098,7 @@ def tactical_play(
             server_metadata = run_dir / "server.identity.json"
             server_command = [
                 str(server_executable), "--addr", f"0.0.0.0:{values['tactical_port']}",
-                "--mission-id", mission_id, "--scene-key", "hills",
+                "--mission-id", mission_id, "--scene-key", "woodland",
                 "--spacetimedb-url", server_url, "--spacetimedb-module", database,
                 "--expected-party-members", "1", "--required-enemy-kills", str(enemy_count),
                 "--enemy-combat-scale-bps", str(combat_scale), "--no-timeout",
@@ -2362,8 +2362,8 @@ def create_parser() -> argparse.ArgumentParser:
     runner = sub.add_parser("run-profile")
     runner.add_argument("--mode", choices=[m.value for m in ProfileMode], default=ProfileMode.STRATEGIC.value)
     runner.add_argument("--mission-id", default="mission:test-mission")
-    runner.add_argument("--scene-key", default="hills")
-    runner.add_argument("--scene-input")
+    runner.add_argument("--scene-key", default="woodland")
+    runner.add_argument("--scene-input", default="assets/tactical-scenes/dense-woodland.json")
     runner.add_argument("--character-id", type=int, default=0)
     runner.add_argument("--enemy-count", type=int, default=3)
     runner.add_argument("name")
@@ -2411,7 +2411,9 @@ def create_parser() -> argparse.ArgumentParser:
     tactical_play_parser.add_argument(
         "--render-backend", choices=("auto", "vulkan", "dx12"), default="auto"
     )
-    tactical_play_parser.add_argument("--scene-input")
+    tactical_play_parser.add_argument(
+        "--scene-input", default="assets/tactical-scenes/dense-woodland.json"
+    )
     sub.add_parser("tactical-status")
     sub.add_parser("tactical-client")
     return parser

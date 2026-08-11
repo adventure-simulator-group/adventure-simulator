@@ -323,6 +323,9 @@ at the request's authoritative case-site coordinates and character minute,
 materializes the validated document atomically, and passes only its path to the
 child. A tactical-only workflow may instead supply the identical format with
 `--scene-input`, so tactical processes never load the continental pack.
+Standalone tactical development defaults to the committed `dense-woodland`
+input when no path is supplied; the server has no alternate noise-terrain
+fallback.
 
 A running tactical client receives a private, server-generated 256-bit
 reconnect capability after enrollment. The client retains it in process across

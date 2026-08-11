@@ -240,7 +240,8 @@ class WorkflowTests(unittest.TestCase):
         ])
         self.assertEqual(args.mode, "tactical")
         self.assertEqual(args.mission_id, "mission:test-mission")
-        self.assertEqual(args.scene_key, "hills")
+        self.assertEqual(args.scene_key, "woodland")
+        self.assertEqual(args.scene_input, "assets/tactical-scenes/dense-woodland.json")
         self.assertEqual(args.character_id, 0)
         self.assertEqual(args.enemy_count, 3)
 
