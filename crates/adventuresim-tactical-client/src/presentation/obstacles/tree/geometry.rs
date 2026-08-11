@@ -843,6 +843,79 @@ pub(in crate::presentation) fn procedural_oak_leaf_card_mesh(leaves: &[TreeLeaf]
     mesh
 }
 
+/// A small cambered grid retains the source leaf's fold, cupping, torsion, and
+/// useful grazing-angle area while the rendered alpha texture owns its lobed
+/// silhouette. Nine vertices and eight triangles are the middle point between
+/// the 46-triangle source mesh and the flat two-triangle card.
+pub(in crate::presentation) fn procedural_oak_textured_leaf_mesh(leaves: &[TreeLeaf]) -> Mesh {
+    let mut positions = Vec::with_capacity(leaves.len() * 9);
+    let mut normals = Vec::with_capacity(leaves.len() * 9);
+    let mut uvs = Vec::with_capacity(leaves.len() * 9);
+    let mut colors = Vec::with_capacity(leaves.len() * 9);
+    let mut indices = Vec::with_capacity(leaves.len() * 24);
+    for leaf in leaves {
+        let (mut center, width, height) = oak_leaf_card_bounds(*leaf);
+        const COVERAGE_SCALE: f32 = 1.10;
+        let scaled_width = width * COVERAGE_SCALE;
+        let scaled_height = height * COVERAGE_SCALE;
+        center += leaf.up * (scaled_height - height) * 0.5;
+        let shade = (leaf.shade / 0.82).clamp(0.72, 1.18);
+        let base = positions.len() as u32;
+        for row in 0..3 {
+            let v = row as f32 * 0.5;
+            let twist = Quat::from_axis_angle(leaf.up, leaf.torsion * (v - 0.35));
+            let cross_right = (twist * leaf.right).normalize();
+            let cross_normal = cross_right.cross(leaf.up).normalize();
+            for column in 0..3 {
+                let u = column as f32 * 0.5;
+                let lateral = (u - 0.5) * scaled_width;
+                let midrib_ridge = (core::f32::consts::PI * v).sin() * leaf.width * 0.045;
+                let margin_cup = (u - 0.5).abs() * 2.0 * leaf.width * 0.07;
+                positions.push(
+                    (center
+                        + leaf.up * (v - 0.5) * scaled_height
+                        + cross_right * lateral
+                        + cross_normal * (midrib_ridge - margin_cup))
+                        .to_array(),
+                );
+                normals.push(
+                    (cross_normal + cross_right * (0.5 - u) * 0.42)
+                        .normalize()
+                        .to_array(),
+                );
+                uvs.push([u, v]);
+                colors.push([shade, shade, shade, 1.0]);
+            }
+        }
+        for row in 0..2_u32 {
+            for column in 0..2_u32 {
+                let lower_left = base + row * 3 + column;
+                let lower_right = lower_left + 1;
+                let upper_left = lower_left + 3;
+                let upper_right = upper_left + 1;
+                indices.extend_from_slice(&[
+                    lower_left,
+                    lower_right,
+                    upper_right,
+                    lower_left,
+                    upper_right,
+                    upper_left,
+                ]);
+            }
+        }
+    }
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
 pub(in crate::presentation) fn procedural_oak_leaf_card_group_mesh(
     leaves: &[TreeLeaf],
     primary_group: u8,
@@ -853,6 +926,18 @@ pub(in crate::presentation) fn procedural_oak_leaf_card_group_mesh(
         .copied()
         .collect::<Vec<_>>();
     procedural_oak_leaf_card_mesh(&group_leaves)
+}
+
+pub(in crate::presentation) fn procedural_oak_textured_leaf_group_mesh(
+    leaves: &[TreeLeaf],
+    primary_group: u8,
+) -> Mesh {
+    let group_leaves = leaves
+        .iter()
+        .filter(|leaf| leaf.primary_group == primary_group)
+        .copied()
+        .collect::<Vec<_>>();
+    procedural_oak_textured_leaf_mesh(&group_leaves)
 }
 
 fn append_leaf_half_indices(
@@ -1290,6 +1375,18 @@ mod tests {
         assert_eq!(
             mesh.indices().expect("leaf cards are indexed").len(),
             leaves.len() * 6
+        );
+    }
+
+    #[test]
+    fn textured_leaf_lod_uses_exactly_eight_triangles_per_leaf() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let leaves = procedural_oak_leaves(42, &branches, 0.0);
+        let mesh = procedural_oak_textured_leaf_mesh(&leaves);
+        assert_eq!(mesh.count_vertices(), leaves.len() * 9);
+        assert_eq!(
+            mesh.indices().expect("textured leaves are indexed").len(),
+            leaves.len() * 24
         );
     }
 

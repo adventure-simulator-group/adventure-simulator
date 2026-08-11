@@ -50,6 +50,7 @@ pub(in crate::presentation) fn present_pending_trees(
     mut tree_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut tree_cache: ResMut<TreePresentationCache>,
+    tree_lod_override: Res<TreeLodRenderOverride>,
 ) {
     let Some(environment) = environments.iter().next() else {
         return;
@@ -59,7 +60,9 @@ pub(in crate::presentation) fn present_pending_trees(
         let seed = obstacle_seed(transform.translation);
         let variant_seed = splitmix64(0x6f61_6b00 ^ (seed & 3));
         let competition_key = (competition * 4095.0).round() as u64;
-        let cache_key = variant_seed ^ competition_key.rotate_left(32);
+        let cache_key = variant_seed
+            ^ competition_key.rotate_left(32)
+            ^ u64::from(tree_lod_override.enable_experimental_textured_mesh).rotate_left(63);
         let cached = if let Some(cached) = tree_cache.variants.get(&cache_key) {
             cached.clone()
         } else {
@@ -113,6 +116,14 @@ pub(in crate::presentation) fn present_pending_trees(
                             &leaves,
                             usize::from(primary_group),
                         )),
+                        textured_leaf_mesh: tree_lod_override
+                            .enable_experimental_textured_mesh
+                            .then(|| {
+                                meshes.add(procedural_oak_textured_leaf_group_mesh(
+                                    &leaves,
+                                    primary_group,
+                                ))
+                            }),
                         leaf_card_mesh: meshes
                             .add(procedural_oak_leaf_card_group_mesh(&leaves, primary_group)),
                         bud_mesh: meshes
@@ -162,7 +173,7 @@ fn canopy_competition(canopy_bps: u16) -> f32 {
 pub(crate) fn oak_review_terminal_specimen(
     root: Vec3,
     canopy_bps: u16,
-) -> (Mesh, Mesh, Mesh, Vec3, Vec3) {
+) -> (Mesh, Mesh, Mesh, Mesh, Mesh, Vec3, Vec3) {
     let seed = obstacle_seed(root);
     let variant_seed = splitmix64(0x6f61_6b00 ^ (seed & 3));
     let branches = procedural_tree_skeleton(variant_seed, canopy_competition(canopy_bps));
@@ -235,6 +246,8 @@ pub(crate) fn oak_review_terminal_specimen(
     (
         procedural_tree_branch_mesh(&[specimen_shoot], 3),
         procedural_oak_leaf_mesh(&specimen_leaves),
+        procedural_oak_textured_leaf_mesh(&specimen_leaves),
+        procedural_oak_leaf_card_mesh(&specimen_leaves),
         procedural_oak_bud_mesh(&[specimen_shoot]),
         focus,
         review_direction,
