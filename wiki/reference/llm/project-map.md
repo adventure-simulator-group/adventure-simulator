@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1947)
+## Files (1959)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -26,6 +26,7 @@ development, or other wiki document before changing a subsystem.
 - `Cargo.toml` — Cargo package/workspace manifest.
 - `LICENSE` — Repository support file.
 - `MAP_DATA_LICENSE.md` — Project documentation.
+- `PRESENTATION_RESTRUCTURING.md` — Project documentation.
 - `README.md` — Component overview and usage notes.
 - `THIRD_PARTY_NOTICES.md` — Project documentation.
 - `assets/TownA.glb` — Binary game or UI asset.
@@ -1357,7 +1358,18 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/equipment.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/player.rs` — Rust source module for this component.
-- `crates/adventuresim-tactical-client/src/presentation.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-client/src/presentation/environment.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/foliage.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/mod.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/obstacles/mod.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/obstacles/rock.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/obstacles/tree/geometry.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/obstacles/tree/impostor.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/obstacles/tree/mod.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/procedural.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/terrain.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/vista.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/weather.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/ragdoll_viewer.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/ragdoll_viewer_main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs` — Rust source module for this component.
