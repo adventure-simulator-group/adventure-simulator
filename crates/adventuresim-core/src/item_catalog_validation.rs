@@ -579,7 +579,7 @@ fn validate_equipment(
         Some(physical) => {
             reject_unknown(
                 physical,
-                &["dimensions_m", "grip_to_tip_m", "grip_offset_m"],
+                &["dimensions_m", "grip_to_tip_m", "anchor_offset_m"],
                 file,
                 &format!("{path}.physical"),
                 errors,
@@ -605,7 +605,7 @@ fn validate_equipment(
                     "{file}: {path}.physical.grip_to_tip_m: expected a finite non-negative distance"
                 ));
             }
-            if physical.get("grip_offset_m").is_some_and(|offset| {
+            if physical.get("anchor_offset_m").is_some_and(|offset| {
                 offset.as_array().is_none_or(|values| {
                     values.len() != 3
                         || values
@@ -614,7 +614,7 @@ fn validate_equipment(
                 })
             }) {
                 errors.push(format!(
-                    "{file}: {path}.physical.grip_offset_m: expected three finite metres"
+                    "{file}: {path}.physical.anchor_offset_m: expected three finite metres"
                 ));
             }
         }
@@ -1596,7 +1596,7 @@ mod tests {
                     "physical": {
                         "dimensions_m": [0.3, 0.6, 0.1],
                         "grip_to_tip_m": 0.0,
-                        "grip_offset_m": [0.0, 0.0, 0.0]
+                        "anchor_offset_m": [0.0, 0.0, 0.0]
                     },
                     "placements": [
                         {
@@ -1646,7 +1646,7 @@ mod tests {
                     "physical": {
                         "dimensions_m": [0.3, 0.6, 0.1],
                         "grip_to_tip_m": 0.0,
-                        "grip_offset_m": [0.0, 0.0, 0.0]
+                        "anchor_offset_m": [0.0, 0.0, 0.0]
                     },
                     "placements": [{
                         "id": "worn",

@@ -428,7 +428,7 @@ mod tests {
             assert!(
                 equipment
                     .physical
-                    .grip_offset_m
+                    .anchor_offset_m
                     .iter()
                     .all(|offset| offset.is_finite()),
                 "{}",

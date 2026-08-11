@@ -59,9 +59,11 @@ pub struct EquipmentPhysical {
     /// Non-weapons author zero.
     #[serde(default)]
     pub grip_to_tip_m: f32,
-    /// Local grip relative to the ordinary box-centre origin.
+    /// Local attachment anchor relative to the ordinary box-centre origin.
+    /// Weapons attach this point to a hand socket; worn equipment attaches it
+    /// to the bone selected by its primary occupancy location.
     #[serde(default)]
-    pub grip_offset_m: [f32; 3],
+    pub anchor_offset_m: [f32; 3],
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

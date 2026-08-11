@@ -480,7 +480,7 @@ fn spawn_connected_player(
             item_cmd.insert(EquipmentPhysical {
                 dimensions_m: Vec3::from_array(physical.dimensions_m),
                 grip_to_tip_m: physical.grip_to_tip_m,
-                grip_offset_m: Vec3::from_array(physical.grip_offset_m),
+                anchor_offset_m: Vec3::from_array(physical.anchor_offset_m),
             });
         }
         item_cmd.insert(EquipmentTopology {

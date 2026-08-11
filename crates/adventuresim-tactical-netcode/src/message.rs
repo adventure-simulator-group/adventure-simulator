@@ -79,6 +79,7 @@ pub struct EquipmentActionRequest {
     pub hand: EquipmentHand,
     #[entities]
     pub expected_hand_item: Option<Entity>,
+    #[entities]
     pub action: EquipmentAction,
 }
 
@@ -157,6 +158,73 @@ mod debug_game_time_scale_tests {
             .relative_speed(),
             0.25
         );
+    }
+}
+
+#[cfg(test)]
+mod equipment_action_mapping_tests {
+    use super::{EquipmentAction, EquipmentActionRequest, EquipmentHand};
+    use adventuresim_tactical_core::prelude::EquipmentLocation;
+    use bevy::ecs::entity::{EntityHashMap, MapEntities};
+    use bevy::prelude::Entity;
+
+    #[test]
+    fn request_maps_entities_nested_inside_equipment_action() {
+        let actor = Entity::from_bits(1);
+        let hand_item = Entity::from_bits(2);
+        let destination = Entity::from_bits(3);
+        let mapped_actor = Entity::from_bits(11);
+        let mapped_hand_item = Entity::from_bits(12);
+        let mapped_destination = Entity::from_bits(13);
+        let mut mapper = EntityHashMap::default();
+        mapper.insert(actor, mapped_actor);
+        mapper.insert(hand_item, mapped_hand_item);
+        mapper.insert(destination, mapped_destination);
+
+        let mut request = EquipmentActionRequest {
+            actor,
+            sequence: 1,
+            expected_revision: 0,
+            hand: EquipmentHand::Left,
+            expected_hand_item: Some(hand_item),
+            action: EquipmentAction::Slot {
+                location: EquipmentLocation::LeftBelt,
+                depth: 0,
+                expected_destination: Some(destination),
+            },
+        };
+        request.map_entities(&mut mapper);
+
+        assert_eq!(request.actor, mapped_actor);
+        assert_eq!(request.expected_hand_item, Some(mapped_hand_item));
+        assert!(matches!(
+            request.action,
+            EquipmentAction::Slot {
+                expected_destination: Some(found),
+                ..
+            } if found == mapped_destination
+        ));
+    }
+
+    #[test]
+    fn request_maps_pickup_target_nested_inside_equipment_action() {
+        let item = Entity::from_bits(4);
+        let mapped_item = Entity::from_bits(14);
+        let mut request = EquipmentActionRequest {
+            actor: Entity::from_bits(1),
+            sequence: 1,
+            expected_revision: 0,
+            hand: EquipmentHand::Left,
+            expected_hand_item: None,
+            action: EquipmentAction::Pickup { item },
+        };
+
+        request.map_entities(&mut (item, mapped_item));
+
+        assert!(matches!(
+            request.action,
+            EquipmentAction::Pickup { item: found } if found == mapped_item
+        ));
     }
 }
 

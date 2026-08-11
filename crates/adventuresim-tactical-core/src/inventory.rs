@@ -101,12 +101,14 @@ pub struct ItemProperties {
 #[derive(Component, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq, MapEntities)]
 pub struct EquipmentTopology {
     pub placement_id: Option<String>,
+    #[entities]
     pub occupancies: Vec<EquipmentTopologyOccupancy>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, MapEntities)]
 pub struct EquipmentTopologyOccupancy {
     pub occupancy_id: String,
+    #[entities]
     pub anchor: TacticalEquipmentAnchor,
     pub channel: EquipmentChannel,
     pub order: u16,
@@ -159,7 +161,7 @@ pub enum TacticalEquipmentAnchor {
 pub struct EquipmentPhysical {
     pub dimensions_m: Vec3,
     pub grip_to_tip_m: f32,
-    pub grip_offset_m: Vec3,
+    pub anchor_offset_m: Vec3,
 }
 
 impl EquipmentPhysical {
@@ -168,7 +170,7 @@ impl EquipmentPhysical {
             && self.dimensions_m.cmpgt(Vec3::ZERO).all()
             && self.grip_to_tip_m.is_finite()
             && self.grip_to_tip_m >= 0.0
-            && self.grip_offset_m.is_finite()
+            && self.anchor_offset_m.is_finite()
     }
 }
 
@@ -700,5 +702,33 @@ mod tests {
             TacticalEquipmentAnchor::ItemAttachment { .. }
         ));
         assert_eq!(topology.occupancies[2].requirement_index, 1);
+    }
+
+    #[test]
+    fn topology_maps_nested_attachment_parent_entities() {
+        let parent = Entity::from_bits(41);
+        let mapped_parent = Entity::from_bits(141);
+        let mut topology = EquipmentTopology {
+            placement_id: Some("attached".into()),
+            occupancies: vec![EquipmentTopologyOccupancy {
+                occupancy_id: "item:41:left:0".into(),
+                anchor: TacticalEquipmentAnchor::ItemAttachment {
+                    parent,
+                    attachment_point_id: "left".into(),
+                },
+                channel: EquipmentChannel::Mount,
+                order: 0,
+                requirement_index: 0,
+                capacity_index: 0,
+            }],
+        };
+
+        topology.map_entities(&mut (parent, mapped_parent));
+
+        assert!(matches!(
+            topology.occupancies[0].anchor,
+            TacticalEquipmentAnchor::ItemAttachment { parent: found, .. }
+                if found == mapped_parent
+        ));
     }
 }

@@ -1558,6 +1558,16 @@ pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String>
     damaged_equipment.extend(
         equipped_wearable_ids(ctx, DAMAGED_CHARACTER_ID)
             .into_iter()
+            // Tactical carry provisioning also equips non-durable belts and
+            // sheaths. The strategic damage fixture may only damage items
+            // that actually own an authoritative condition row.
+            .filter(|inventory_item_id| {
+                ctx.db
+                    .item_condition()
+                    .inventory_item_id()
+                    .find(*inventory_item_id)
+                    .is_some()
+            })
             .enumerate()
             .map(|(index, id)| (Some(id), armor_damage[index % armor_damage.len()])),
     );

@@ -78,7 +78,7 @@ fn main() {
     let args = Args::parse();
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(bevy::log::LogPlugin {
-        filter: "tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
+        filter: "adventuresim_tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
         ..default()
     }))
     .add_plugins((

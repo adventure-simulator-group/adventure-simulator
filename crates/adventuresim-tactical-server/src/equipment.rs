@@ -70,9 +70,32 @@ fn queue_equipment_action(
     mut pending: ResMut<PendingEquipmentActions>,
 ) {
     let Some(controlled) = request.client_id.entity() else {
+        warn!(
+            client_id = ?request.client_id,
+            actor = ?request.actor,
+            sequence = request.sequence,
+            "Rejected tactical equipment action from a client without a controlled entity"
+        );
         return;
     };
-    if request.actor != controlled || !can_enqueue(&pending.0, controlled) {
+    if request.actor != controlled {
+        warn!(
+            ?controlled,
+            requested_actor = ?request.actor,
+            sequence = request.sequence,
+            action = ?request.action,
+            "Rejected tactical equipment action for an uncontrolled actor"
+        );
+        return;
+    }
+    if !can_enqueue(&pending.0, controlled) {
+        warn!(
+            actor = ?controlled,
+            sequence = request.sequence,
+            action = ?request.action,
+            max_pending = MAX_PENDING_PER_ACTOR,
+            "Rejected tactical equipment action because the actor queue is full"
+        );
         return;
     }
     pending.0.push_back((controlled, **request));
@@ -98,17 +121,67 @@ fn process_equipment_actions(
     let Some((controlled, request)) = pending.0.pop_front() else {
         return;
     };
-    if request.actor != controlled || players.get(controlled).is_err() {
+    if request.actor != controlled {
+        warn!(
+            ?controlled,
+            requested_actor = ?request.actor,
+            sequence = request.sequence,
+            action = ?request.action,
+            "Rejected queued tactical equipment action for an uncontrolled actor"
+        );
+        return;
+    }
+    if players.get(controlled).is_err() {
+        warn!(
+            actor = ?controlled,
+            sequence = request.sequence,
+            action = ?request.action,
+            "Rejected tactical equipment action because the controlled player is unavailable"
+        );
         return;
     }
     let Ok(mut state) = action_states.get_mut(controlled) else {
+        warn!(
+            actor = ?controlled,
+            sequence = request.sequence,
+            action = ?request.action,
+            "Rejected tactical equipment action because authoritative action state is unavailable"
+        );
         return;
     };
     let last = sequences.0.get(&controlled).copied().unwrap_or(0);
-    if !sequence_is_newer(request.sequence, last)
-        || request.expected_revision != state.revision
-        || hand_item(controlled, request.hand, &items) != request.expected_hand_item
-    {
+    if !sequence_is_newer(request.sequence, last) {
+        warn!(
+            actor = ?controlled,
+            sequence = request.sequence,
+            last_sequence = last,
+            action = ?request.action,
+            "Rejected stale or replayed tactical equipment action"
+        );
+        return;
+    }
+    if request.expected_revision != state.revision {
+        warn!(
+            actor = ?controlled,
+            sequence = request.sequence,
+            expected_revision = request.expected_revision,
+            authoritative_revision = state.revision,
+            action = ?request.action,
+            "Rejected tactical equipment action with a stale revision"
+        );
+        return;
+    }
+    let authoritative_hand_item = hand_item(controlled, request.hand, &items);
+    if authoritative_hand_item != request.expected_hand_item {
+        warn!(
+            actor = ?controlled,
+            sequence = request.sequence,
+            hand = ?request.hand,
+            expected_hand_item = ?request.expected_hand_item,
+            ?authoritative_hand_item,
+            action = ?request.action,
+            "Rejected tactical equipment action because the held item changed"
+        );
         return;
     }
 
@@ -118,11 +191,19 @@ fn process_equipment_actions(
             depth,
             expected_destination,
         } => {
-            if ordered_at_location(controlled, location, &items)
+            let authoritative_destination = ordered_at_location(controlled, location, &items)
                 .get(depth as usize)
-                .map(ReachableTarget::expected_entity)
-                != expected_destination
-            {
+                .map(ReachableTarget::expected_entity);
+            if authoritative_destination != expected_destination {
+                warn!(
+                    actor = ?controlled,
+                    sequence = request.sequence,
+                    ?location,
+                    depth,
+                    ?expected_destination,
+                    ?authoritative_destination,
+                    "Rejected tactical equipment slot action because the destination changed"
+                );
                 false
             } else {
                 transfer_slot(
@@ -166,6 +247,20 @@ fn process_equipment_actions(
     if accepted {
         sequences.0.insert(controlled, request.sequence);
         state.revision = state.revision.wrapping_add(1);
+        info!(
+            actor = ?controlled,
+            sequence = request.sequence,
+            revision = state.revision,
+            action = ?request.action,
+            "Committed tactical equipment action"
+        );
+    } else {
+        warn!(
+            actor = ?controlled,
+            sequence = request.sequence,
+            action = ?request.action,
+            "Rejected tactical equipment action during authoritative transfer validation"
+        );
     }
 }
 
@@ -791,7 +886,7 @@ fn drop_hand(
     }) else {
         return false;
     };
-    let collider = Collider::compound(vec![(-physical.grip_offset_m, Quat::IDENTITY, shape)]);
+    let collider = Collider::compound(vec![(-physical.anchor_offset_m, Quat::IDENTITY, shape)]);
     commands
         .entity(item)
         .remove::<ItemOf>()
@@ -808,7 +903,7 @@ fn drop_hand(
 }
 
 fn item_box_center(grip: Vec3, physical: &EquipmentPhysical) -> Vec3 {
-    grip - physical.grip_offset_m
+    grip - physical.anchor_offset_m
 }
 
 fn pickup(
@@ -823,43 +918,35 @@ fn pickup(
     if hand_item(actor, hand, items).is_some() {
         return false;
     }
-    let Ok((actor_transform, look)) = players.get(actor) else {
+    let Ok((actor_transform, _)) = players.get(actor) else {
         return false;
     };
-    let origin = actor_transform.translation + Vec3::Y * 0.6;
-    let direction =
-        Dir3::new(Quat::from_euler(EulerRot::YXZ, look.yaw, look.pitch, 0.0) * Vec3::NEG_Z)
-            .unwrap_or(Dir3::NEG_Z);
-    let item_filter = SpatialQueryFilter::from_mask(TACTICAL_ITEM_LAYER);
-    let mut item_hit: Option<RayHitData> = None;
-    spatial.ray_hits_callback(
-        origin,
-        direction,
-        PICKUP_RANGE_M,
-        true,
-        &item_filter,
-        |hit| {
-            if item_hit.as_ref().is_none_or(|current| {
-                hit.distance < current.distance
-                    || (hit.distance == current.distance
-                        && hit.entity.to_bits() < current.entity.to_bits())
-            }) {
-                item_hit = Some(hit);
-            }
-            true
-        },
-    );
-    let Some(item_hit) = item_hit else {
+    let Ok((_, _, _, _, _, physical, scene, item_transform)) = items.get(requested) else {
         return false;
     };
-    if item_hit.entity != requested {
+    let Some((physical, item_transform)) = physical
+        .filter(|physical| physical.is_valid())
+        .zip(item_transform)
+        .filter(|_| scene)
+    else {
+        return false;
+    };
+    let item_position = item_box_center(item_transform.translation, physical);
+    if item_position.distance_squared(actor_transform.translation) > PICKUP_RANGE_M * PICKUP_RANGE_M
+    {
         return false;
     }
+    let origin = actor_transform.translation + Vec3::Y * 0.6;
+    let sight = item_position - origin;
+    let distance = sight.length();
+    let Ok(direction) = Dir3::new(sight) else {
+        return false;
+    };
     // Terrain/support LOS is evaluated separately from item pointing; item
     // boxes therefore do not become combat/visibility blockers.
     let blocker_filter = SpatialQueryFilter::from_mask(TACTICAL_TERRAIN_LAYER);
     if spatial
-        .cast_ray(origin, direction, item_hit.distance, true, &blocker_filter)
+        .cast_ray(origin, direction, distance, true, &blocker_filter)
         .is_some()
     {
         return false;
@@ -1035,11 +1122,11 @@ mod tests {
     }
 
     #[test]
-    fn pickup_box_center_accounts_for_nonzero_grip_offset() {
+    fn pickup_box_center_accounts_for_nonzero_anchor_offset() {
         let physical = EquipmentPhysical {
             dimensions_m: Vec3::splat(0.2),
             grip_to_tip_m: 0.4,
-            grip_offset_m: Vec3::new(0.15, -0.05, 0.1),
+            anchor_offset_m: Vec3::new(0.15, -0.05, 0.1),
         };
         assert_eq!(
             item_box_center(Vec3::new(2.0, 1.0, -3.0), &physical),
