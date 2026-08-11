@@ -773,9 +773,7 @@ pub(in crate::presentation) fn procedural_oak_leaf_mesh(leaves: &[TreeLeaf]) -> 
     mesh
 }
 
-pub(in crate::presentation) const OAK_LEAF_SECTOR_COUNT: usize = 8;
-
-/// Splits the crown along stable biological branch groups. Each sector can
+/// Splits the crown along stable biological branch groups. Each cluster can
 /// fade independently near the first impostor transition, avoiding a single
 /// whole-crown topology pop without creating an entity for every leaf.
 pub(in crate::presentation) fn procedural_oak_leaf_sector_mesh(
@@ -784,11 +782,7 @@ pub(in crate::presentation) fn procedural_oak_leaf_sector_mesh(
 ) -> Mesh {
     let sector_leaves = leaves
         .iter()
-        .filter(|leaf| {
-            (usize::from(leaf.primary_group) * 2 + usize::from(leaf.secondary_group & 1))
-                % OAK_LEAF_SECTOR_COUNT
-                == sector
-        })
+        .filter(|leaf| usize::from(leaf.primary_group) == sector)
         .copied()
         .collect::<Vec<_>>();
     procedural_oak_leaf_mesh(&sector_leaves)
@@ -902,6 +896,18 @@ pub(in crate::presentation) fn procedural_oak_bud_mesh(branches: &[TreeBranchSeg
     mesh
 }
 
+pub(in crate::presentation) fn procedural_oak_bud_group_mesh(
+    branches: &[TreeBranchSegment],
+    primary_group: u8,
+) -> Mesh {
+    let group = branches
+        .iter()
+        .filter(|branch| branch.primary_group == primary_group)
+        .copied()
+        .collect::<Vec<_>>();
+    procedural_oak_bud_mesh(&group)
+}
+
 pub(in crate::presentation) fn procedural_tree_branch_mesh(
     branches: &[TreeBranchSegment],
     maximum_depth: u8,
@@ -942,6 +948,23 @@ pub(in crate::presentation) fn procedural_tree_branch_mesh(
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
     mesh.insert_indices(Indices::U32(indices));
     mesh
+}
+
+pub(in crate::presentation) fn procedural_tree_branch_group_mesh(
+    branches: &[TreeBranchSegment],
+    maximum_depth: u8,
+    primary_group: u8,
+) -> Mesh {
+    let group = branches
+        .iter()
+        .filter(|branch| {
+            branch.depth > 0
+                && branch.depth <= maximum_depth
+                && branch.primary_group == primary_group
+        })
+        .copied()
+        .collect::<Vec<_>>();
+    procedural_tree_branch_mesh(&group, maximum_depth)
 }
 
 fn append_branch_curve_tube(
@@ -1179,7 +1202,7 @@ mod tests {
             leaf_triangles + bud_triangles + branch_triangles <= 3_600_000,
             "LOD0 exceeds its 3.6M triangle budget"
         );
-        let sector_triangles = (0..OAK_LEAF_SECTOR_COUNT)
+        let sector_triangles = (0..usize::from(TREE_PRIMARY_GROUP_COUNT))
             .map(|sector| {
                 procedural_oak_leaf_sector_mesh(&leaves, sector)
                     .indices()

@@ -8,6 +8,7 @@ use std::{
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::SceneVistaBundle;
 use bevy::{
+    camera::visibility::VisibilityRange,
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     window::PresentMode,
@@ -16,7 +17,8 @@ use serde::Serialize;
 
 use crate::presentation::{
     FoliageLayer, ProceduralRockVisual, TacticalPresentationPlugin, TerrainMaterialPresentation,
-    TreeImpostorProvenance, TreeLod, VistaTerrain, WeatherParticle, oak_review_terminal_specimen,
+    TreeImpostorProvenance, TreeLod, TreeLodCluster, TreeLodRenderOverride, VistaTerrain,
+    WeatherParticle, oak_review_terminal_specimen,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -70,6 +72,7 @@ struct CaptureState {
     settled: u32,
     in_flight: bool,
     captures: Vec<CaptureRecord>,
+    recursive_lods_observed: BTreeSet<(u8, u8)>,
 }
 
 #[derive(Component)]
@@ -88,7 +91,7 @@ struct CaptureView {
     overlay: bool,
 }
 
-const CAPTURE_VIEWS: [CaptureView; 12] = [
+const CAPTURE_VIEWS: [CaptureView; 13] = [
     CaptureView {
         slug: "warmup",
         label: "Render-pipeline warmup",
@@ -102,6 +105,11 @@ const CAPTURE_VIEWS: [CaptureView; 12] = [
     CaptureView {
         slug: "tree-detail",
         label: "Whole-tree individual-leaf LOD view",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-recursive-lod",
+        label: "Mixed recursive tree LOD view",
         overlay: false,
     },
     CaptureView {
@@ -226,6 +234,13 @@ struct TreeBakeCardSummary {
 }
 
 #[derive(Serialize)]
+struct RecursiveTreeLodSummary {
+    primary_cluster_count: usize,
+    visible_group_lods: Vec<[u8; 2]>,
+    mixed_lods_observed: bool,
+}
+
+#[derive(Serialize)]
 struct VistaSummary {
     supplied_lods: usize,
     presented_lods: Vec<u8>,
@@ -245,6 +260,7 @@ struct ValidationSummary {
     procedural_rocks_fit_colliders: bool,
     trees_have_five_lods: bool,
     tree_detail_captured_when_expected: bool,
+    recursive_tree_lod_observed: bool,
     terrain_material_present: bool,
     coarse_source_terrain_upsampled: bool,
     microrelief_present: bool,
@@ -275,6 +291,7 @@ struct CaptureManifest {
     obstacles: ObstacleSummary,
     foliage: FoliageSummary,
     tree_impostor_bakes: Vec<TreeBakeSummary>,
+    recursive_tree_lod: RecursiveTreeLodSummary,
     vista: VistaSummary,
     weather_particle_count: usize,
     captures: Vec<CaptureRecord>,
@@ -715,6 +732,7 @@ fn setup_scene(
         settled: 0,
         in_flight: false,
         captures: Vec::new(),
+        recursive_lods_observed: BTreeSet::new(),
     });
 }
 
@@ -748,7 +766,16 @@ fn vista_metrics(input: &TacticalSceneInput) -> (f32, f32, Vec3) {
 fn capture_views(
     mut commands: Commands,
     mut state: Option<ResMut<CaptureState>>,
-    mut camera: Single<(&mut Transform, &mut GlobalTransform, &mut Projection), With<Camera3d>>,
+    mut tree_lod_override: ResMut<TreeLodRenderOverride>,
+    mut camera: Single<
+        (
+            Entity,
+            &mut Transform,
+            &mut GlobalTransform,
+            &mut Projection,
+        ),
+        With<Camera3d>,
+    >,
     mut overlays: Query<&mut Visibility, (With<CaptureOverlay>, Without<VistaTerrain>)>,
     mut tree_backdrops: Query<
         (&mut Visibility, &mut Transform),
@@ -762,11 +789,21 @@ fn capture_views(
     obstacles: Query<(&SceneObstacle, Has<Mesh3d>, Has<Collider>)>,
     rock_visuals: Query<&Mesh3d, With<ProceduralRockVisual>>,
     tree_lods: Query<&TreeLod>,
+    tree_lod_clusters: Query<
+        (
+            &TreeLod,
+            &TreeLodCluster,
+            &GlobalTransform,
+            &VisibilityRange,
+            &ViewVisibility,
+        ),
+        Without<Camera3d>,
+    >,
     tree_bakes: Query<&TreeImpostorProvenance>,
     foliage: Query<&FoliageLayer>,
     terrain_materials: Query<(), With<TerrainMaterialPresentation>>,
     meshes: Res<Assets<Mesh>>,
-    mut vistas: ParamSet<(
+    mut scene_visibility: ParamSet<(
         Query<(&VistaTerrain, Has<Collider>)>,
         Query<&mut Visibility, (With<VistaTerrain>, Without<CaptureOverlay>)>,
     )>,
@@ -780,6 +817,13 @@ fn capture_views(
     }
     let view = CAPTURE_VIEWS[state.view];
     if !state.view_started {
+        tree_lod_override.0 = match view.slug {
+            "tree-twig-lod" => Some(1),
+            "tree-small-branch-lod" => Some(2),
+            "tree-crown-lod" => Some(3),
+            "tree-billboard-lod" => Some(4),
+            _ => None,
+        };
         let specimen_view = view.slug == "tree-leaf-detail";
         let specimen_pipeline_warmup = view.slug == "warmup";
         if let Some(entity) = state.tree_focus_entity {
@@ -799,9 +843,9 @@ fn capture_views(
                 });
         }
         let (transform, target) = camera_for_view(view.slug, state);
-        *camera.0 = transform;
-        *camera.1 = GlobalTransform::from(transform);
-        if let Projection::Perspective(projection) = &mut *camera.2 {
+        *camera.1 = transform;
+        *camera.2 = GlobalTransform::from(transform);
+        if let Projection::Perspective(projection) = &mut *camera.3 {
             projection.fov = capture_view_fov(view.slug).to_radians();
         }
         for mut visibility in &mut overlays {
@@ -811,7 +855,7 @@ fn capture_views(
                 Visibility::Hidden
             };
         }
-        for mut visibility in &mut vistas.p1() {
+        for mut visibility in &mut scene_visibility.p1() {
             *visibility = if view.slug == "horizon" {
                 Visibility::Visible
             } else {
@@ -825,10 +869,10 @@ fn capture_views(
                 Visibility::Hidden
             };
             if *visibility == Visibility::Visible {
-                let away_from_camera = (target - camera.0.translation).normalize_or_zero();
+                let away_from_camera = (target - camera.1.translation).normalize_or_zero();
                 backdrop.translation = target + away_from_camera * 5.0;
                 backdrop.rotation = Transform::from_translation(backdrop.translation)
-                    .looking_at(camera.0.translation, Vec3::Y)
+                    .looking_at(camera.1.translation, Vec3::Y)
                     .rotation;
             }
         }
@@ -839,7 +883,7 @@ fn capture_views(
                 view: view.slug.to_owned(),
                 label: view.label.to_owned(),
                 screenshot: format!("{}.png", view.slug),
-                camera_translation: camera.0.translation.to_array(),
+                camera_translation: camera.1.translation.to_array(),
                 camera_target: target.to_array(),
                 foreground_pixel_bps: 0,
                 detail_pixel_bps: 0,
@@ -858,6 +902,20 @@ fn capture_views(
     if state.settled < settle_target {
         state.settled += 1;
         return;
+    }
+
+    if view.slug == "tree-recursive-lod" {
+        let camera_position = camera.1.translation;
+        state.recursive_lods_observed.extend(
+            tree_lod_clusters
+                .iter()
+                .filter(|(_, cluster, transform, range, visibility)| {
+                    let world_center = transform.transform_point(cluster.center);
+                    visibility.get()
+                        && range.is_visible_at_all(camera_position.distance(world_center))
+                })
+                .map(|(lod, cluster, _, _, _)| (cluster.primary_group, lod.0)),
+        );
     }
 
     // Bevy's asynchronous window readback can still contain the render world
@@ -900,7 +958,7 @@ fn capture_views(
             &foliage,
             &terrain_materials,
             &meshes,
-            &vistas.p0(),
+            &scene_visibility.p0(),
             particles.iter().count(),
         )
     });
@@ -962,6 +1020,16 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
             |tree| {
                 (
                     tree + Vec3::new(15.0, 7.0, 15.0),
+                    tree + Vec3::new(0.0, 4.5, 0.0),
+                    Vec3::Y,
+                )
+            },
+        ),
+        "tree-recursive-lod" => state.tree_focus.map_or(
+            (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
+            |tree| {
+                (
+                    tree + Vec3::new(33.0, 5.5, 33.0),
                     tree + Vec3::new(0.0, 4.5, 0.0),
                     Vec3::Y,
                 )
@@ -1052,6 +1120,27 @@ fn build_manifest(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
+    let visible_group_lods = state
+        .recursive_lods_observed
+        .iter()
+        .map(|&(group, lod)| [group, lod])
+        .collect::<Vec<_>>();
+    let recursive_tree_lod = RecursiveTreeLodSummary {
+        primary_cluster_count: state
+            .recursive_lods_observed
+            .iter()
+            .map(|(group, _)| group)
+            .collect::<BTreeSet<_>>()
+            .len(),
+        mixed_lods_observed: state
+            .recursive_lods_observed
+            .iter()
+            .map(|(_, lod)| lod)
+            .collect::<BTreeSet<_>>()
+            .len()
+            >= 2,
+        visible_group_lods,
+    };
     let mut grass_clumps = 0;
     let mut understory_clumps = 0;
     for layer in foliage {
@@ -1144,6 +1233,7 @@ fn build_manifest(
         tree_detail_captured_when_expected: state.expected_trees == 0
             || [
                 "tree-detail",
+                "tree-recursive-lod",
                 "tree-leaf-detail",
                 "tree-twig-lod",
                 "tree-small-branch-lod",
@@ -1152,6 +1242,9 @@ fn build_manifest(
             ]
             .into_iter()
             .all(|view| state.captures.iter().any(|capture| capture.view == view)),
+        recursive_tree_lod_observed: state.expected_trees == 0
+            || (recursive_tree_lod.primary_cluster_count >= 2
+                && recursive_tree_lod.mixed_lods_observed),
         terrain_material_present: terrain_materials.iter().count() == 1,
         coarse_source_terrain_upsampled: state.terrain.source_spacing_metres <= 2.0
             || (state.terrain.spacing_metres <= 2.0
@@ -1186,6 +1279,7 @@ fn build_manifest(
             obstacles: obstacle_summary,
             foliage: foliage_summary,
             tree_impostor_bakes,
+            recursive_tree_lod,
             vista: vista_summary,
             weather_particle_count,
             captures: state.captures.clone(),
@@ -1204,6 +1298,7 @@ fn validation_passes(validation: &ValidationSummary) -> bool {
         && validation.procedural_rocks_fit_colliders
         && validation.trees_have_five_lods
         && validation.tree_detail_captured_when_expected
+        && validation.recursive_tree_lod_observed
         && validation.terrain_material_present
         && validation.coarse_source_terrain_upsampled
         && validation.microrelief_present
@@ -1279,7 +1374,11 @@ fn foliage_detail_pixel_bps(data: Option<&[u8]>) -> u16 {
 fn minimum_foreground_bps(view: &str) -> u16 {
     match view {
         "horizon" => 50,
-        "tree-twig-lod" | "tree-small-branch-lod" | "tree-crown-lod" | "tree-billboard-lod" => 200,
+        "tree-twig-lod"
+        | "tree-small-branch-lod"
+        | "tree-crown-lod"
+        | "tree-billboard-lod"
+        | "tree-recursive-lod" => 200,
         _ => 1_000,
     }
 }
@@ -1288,6 +1387,7 @@ fn capture_view_fov(view: &str) -> f32 {
     match view {
         "horizon" => 15.0,
         "tree-detail" | "tree-silhouette" => 48.0,
+        "tree-recursive-lod" => 80.0,
         "tree-leaf-detail" => 30.0,
         "tree-twig-lod" => 30.0,
         "tree-small-branch-lod" => 19.0,
