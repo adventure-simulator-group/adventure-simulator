@@ -43,6 +43,7 @@ struct CaptureState {
     output: PathBuf,
     digest: String,
     seed: u64,
+    canopy_bps: u16,
     generation_version: u16,
     weather: WeatherSnapshot,
     repairs: RepairSummary,
@@ -76,7 +77,7 @@ struct CaptureView {
     overlay: bool,
 }
 
-const CAPTURE_VIEWS: [CaptureView; 10] = [
+const CAPTURE_VIEWS: [CaptureView; 11] = [
     CaptureView {
         slug: "warmup",
         label: "Render-pipeline warmup",
@@ -89,7 +90,12 @@ const CAPTURE_VIEWS: [CaptureView; 10] = [
     },
     CaptureView {
         slug: "tree-detail",
-        label: "Individual-leaf tree LOD view",
+        label: "Whole-tree individual-leaf LOD view",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-leaf-detail",
+        label: "Individual English oak leaf close-up",
         overlay: false,
     },
     CaptureView {
@@ -186,6 +192,7 @@ struct TreeBakeSummary {
     lod: u8,
     bake_version: u32,
     source_geometry_hash: String,
+    render_method: &'static str,
     atlas_size: [u32; 2],
     cards: Vec<TreeBakeCardSummary>,
 }
@@ -198,6 +205,8 @@ struct TreeBakeCardSummary {
     view_direction: [f32; 3],
     projected_bounds: [f32; 4],
     atlas_region: [u32; 4],
+    opaque_pixel_count: u32,
+    silhouette_centroid: [f32; 2],
 }
 
 #[derive(Serialize)]
@@ -241,6 +250,7 @@ struct CaptureManifest {
     source_input: String,
     scene_digest: String,
     seed: u64,
+    canopy_bps: u16,
     generation_version: u16,
     weather: WeatherSnapshot,
     repairs: RepairSummary,
@@ -259,6 +269,7 @@ pub(crate) fn run(
     scene_input: Option<PathBuf>,
     output: Option<PathBuf>,
     settle_frames: u32,
+    canopy_bps: Option<u16>,
 ) {
     let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let (fixture, input_path) = match (fixture, scene_input) {
@@ -284,7 +295,10 @@ pub(crate) fn run(
     let generated = input
         .generate()
         .unwrap_or_else(|error| panic!("failed to generate tactical scene: {error}"));
-    let environment = input.environment_snapshot(generated.digest.clone());
+    let mut environment = input.environment_snapshot(generated.digest.clone());
+    if let Some(canopy_bps) = canopy_bps {
+        environment.canopy_bps = canopy_bps;
+    }
     let output = output.map_or_else(
         || default_output(&repository_root, &fixture, &generated.digest),
         absolute_from_current,
@@ -520,6 +534,7 @@ fn setup_scene(
         focus_ground + STANDING_EYE_HEIGHT_METRES,
         obstacle_focus.z,
     );
+    let canopy_bps = environment.canopy_bps;
     commands.spawn((
         Name::new("Captured tactical terrain"),
         SceneId(input.scene_key.clone()),
@@ -540,6 +555,7 @@ fn setup_scene(
         output,
         digest,
         seed: input.seed,
+        canopy_bps,
         generation_version: input.generation_version,
         weather: input.weather,
         repairs: RepairSummary {
@@ -772,8 +788,18 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |tree| {
                 (
-                    tree + Vec3::new(6.0, 3.6, 6.0),
-                    tree + Vec3::new(0.0, 4.5, 0.0),
+                    tree + Vec3::new(22.0, 8.0, 22.0),
+                    tree + Vec3::new(0.0, 7.0, 0.0),
+                    Vec3::Y,
+                )
+            },
+        ),
+        "tree-leaf-detail" => state.tree_focus.map_or(
+            (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
+            |tree| {
+                (
+                    tree + Vec3::new(5.2, 3.6, 5.2),
+                    tree + Vec3::new(2.2, 3.2, 0.0),
                     Vec3::Y,
                 )
             },
@@ -872,6 +898,7 @@ fn build_manifest(
             lod: bake.lod,
             bake_version: bake.bake_version,
             source_geometry_hash: format!("{:016x}", bake.source_geometry_hash),
+            render_method: bake.render_method,
             atlas_size: [bake.atlas_width, bake.atlas_height],
             cards: bake
                 .records
@@ -883,6 +910,8 @@ fn build_manifest(
                     view_direction: record.view_direction.to_array(),
                     projected_bounds: record.projected_bounds.to_array(),
                     atlas_region: record.atlas_region.to_array(),
+                    opaque_pixel_count: record.opaque_pixel_count,
+                    silhouette_centroid: record.silhouette_centroid.to_array(),
                 })
                 .collect(),
         })
@@ -942,6 +971,7 @@ fn build_manifest(
         tree_detail_captured_when_expected: state.expected_trees == 0
             || [
                 "tree-detail",
+                "tree-leaf-detail",
                 "tree-twig-lod",
                 "tree-small-branch-lod",
                 "tree-crown-lod",
@@ -974,6 +1004,7 @@ fn build_manifest(
             source_input: state.input_path.display().to_string(),
             scene_digest: state.digest.clone(),
             seed: state.seed,
+            canopy_bps: state.canopy_bps,
             generation_version: state.generation_version,
             weather: state.weather,
             repairs: state.repairs,
@@ -1082,9 +1113,12 @@ fn minimum_foreground_bps(view: &str) -> u16 {
 fn capture_view_fov(view: &str) -> f32 {
     match view {
         "horizon" => 15.0,
-        "tree-detail" => 32.0,
-        "tree-twig-lod" | "tree-small-branch-lod" | "tree-crown-lod" => 24.0,
-        "tree-billboard-lod" => 16.0,
+        "tree-detail" => 50.0,
+        "tree-leaf-detail" => 24.0,
+        "tree-twig-lod" => 30.0,
+        "tree-small-branch-lod" => 19.0,
+        "tree-crown-lod" => 13.0,
+        "tree-billboard-lod" => 8.0,
         _ => 65.0,
     }
 }
@@ -1093,10 +1127,10 @@ fn tree_lod_camera(state: &CaptureState, distance: f32) -> (Vec3, Vec3, Vec3) {
     state.tree_focus.map_or(
         (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
         |tree| {
-            let diagonal = distance * core::f32::consts::FRAC_1_SQRT_2;
+            let diagonal = distance * 1.55 * core::f32::consts::FRAC_1_SQRT_2;
             (
-                tree + Vec3::new(diagonal, 0.55, diagonal),
-                tree + Vec3::new(0.0, 0.55, 0.0),
+                tree + Vec3::new(diagonal, 7.55, diagonal),
+                tree + Vec3::new(0.0, 7.0, 0.0),
                 Vec3::Y,
             )
         },
