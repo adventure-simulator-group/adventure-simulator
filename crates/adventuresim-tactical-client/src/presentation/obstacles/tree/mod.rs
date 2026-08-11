@@ -15,9 +15,11 @@ pub(in crate::presentation) struct TreePresentationCache {
 pub(in crate::presentation) struct CachedTreePresentation {
     pub(super) branch_meshes: [Handle<Mesh>; 4],
     pub(super) leaf_mesh: Handle<Mesh>,
+    pub(super) bud_mesh: Handle<Mesh>,
     pub(super) card_meshes: [Handle<Mesh>; 4],
     pub(super) bark_material: Handle<StandardMaterial>,
     pub(super) leaf_material: Handle<StandardMaterial>,
+    pub(super) bud_material: Handle<StandardMaterial>,
     pub(super) card_materials: [Handle<TacticalTreeImpostorMaterial>; 4],
     pub(super) provenance: [TreeImpostorProvenance; 4],
 }
@@ -82,6 +84,13 @@ pub(in crate::presentation) fn spawn_cached_tree(
             NotShadowCaster,
             Mesh3d(cached.leaf_mesh.clone()),
             MeshMaterial3d(cached.leaf_material.clone()),
+            tree_lod_visibility(0),
+        ));
+        parent.spawn((
+            Name::new("English oak scaled terminal buds"),
+            TreeLod(0),
+            Mesh3d(cached.bud_mesh.clone()),
+            MeshMaterial3d(cached.bud_material.clone()),
             tree_lod_visibility(0),
         ));
         for lod in 1..5 {
