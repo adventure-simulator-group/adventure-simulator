@@ -91,7 +91,7 @@ struct CaptureView {
     overlay: bool,
 }
 
-const CAPTURE_VIEWS: [CaptureView; 13] = [
+const CAPTURE_VIEWS: [CaptureView; 14] = [
     CaptureView {
         slug: "warmup",
         label: "Render-pipeline warmup",
@@ -110,6 +110,11 @@ const CAPTURE_VIEWS: [CaptureView; 13] = [
     CaptureView {
         slug: "tree-recursive-lod",
         label: "Mixed recursive tree LOD view",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "ground-cover",
+        label: "Tree-canopy leaf-litter and grass boundary",
         overlay: false,
     },
     CaptureView {
@@ -208,6 +213,7 @@ struct ObstacleSummary {
 struct FoliageSummary {
     grass_clumps: usize,
     understory_clumps: usize,
+    leaf_litter_patches: usize,
 }
 
 #[derive(Serialize)]
@@ -265,6 +271,7 @@ struct ValidationSummary {
     coarse_source_terrain_upsampled: bool,
     microrelief_present: bool,
     grass_present: bool,
+    leaf_litter_present_when_trees: bool,
     understory_present_when_expected: bool,
     vista_has_three_lods: bool,
     vista_reaches_fifty_kilometres: bool,
@@ -447,6 +454,7 @@ fn setup_scene(
     let GeneratedTacticalScene {
         digest,
         terrain,
+        ground,
         obstacles,
         repairs,
     } = generated;
@@ -683,6 +691,7 @@ fn setup_scene(
         Name::new("Captured tactical terrain"),
         SceneId(input.scene_key.clone()),
         environment,
+        ground,
         RigidBody::Static,
         CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
         terrain_collider,
@@ -1035,6 +1044,16 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
                 )
             },
         ),
+        "ground-cover" => state.tree_focus.map_or(
+            (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
+            |tree| {
+                (
+                    tree + Vec3::new(5.5, -0.4, 5.5),
+                    tree + Vec3::new(0.0, -2.25, 0.0),
+                    Vec3::Y,
+                )
+            },
+        ),
         "tree-leaf-detail" => state.tree_leaf_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |focus| {
@@ -1143,15 +1162,18 @@ fn build_manifest(
     };
     let mut grass_clumps = 0;
     let mut understory_clumps = 0;
+    let mut leaf_litter_patches = 0;
     for layer in foliage {
         match layer {
             FoliageLayer::Grass => grass_clumps += 1,
             FoliageLayer::Understory => understory_clumps += 1,
+            FoliageLayer::LeafLitter => leaf_litter_patches += 1,
         }
     }
     let foliage_summary = FoliageSummary {
         grass_clumps,
         understory_clumps,
+        leaf_litter_patches,
     };
     let tree_impostor_bakes = tree_bakes
         .iter()
@@ -1234,6 +1256,7 @@ fn build_manifest(
             || [
                 "tree-detail",
                 "tree-recursive-lod",
+                "ground-cover",
                 "tree-leaf-detail",
                 "tree-twig-lod",
                 "tree-small-branch-lod",
@@ -1251,6 +1274,7 @@ fn build_manifest(
                 && state.terrain.generated_samples > state.terrain.source_samples),
         microrelief_present: state.repairs.microrelief_adjusted_samples > 0,
         grass_present: grass_clumps > 0,
+        leaf_litter_present_when_trees: state.expected_trees == 0 || leaf_litter_patches > 0,
         understory_present_when_expected: !expects_understory || understory_clumps > 0,
         vista_has_three_lods: vista_summary.presented_lods.len() >= 3,
         vista_reaches_fifty_kilometres: vista_summary.diameter_metres >= 50_000.0,
@@ -1303,6 +1327,7 @@ fn validation_passes(validation: &ValidationSummary) -> bool {
         && validation.coarse_source_terrain_upsampled
         && validation.microrelief_present
         && validation.grass_present
+        && validation.leaf_litter_present_when_trees
         && validation.understory_present_when_expected
         && validation.vista_has_three_lods
         && validation.vista_reaches_fifty_kilometres

@@ -58,7 +58,25 @@ coverage yields taller trees whose first scaffold branches sit above the clear
 bole. This value is part of deterministic generation rather than a query over
 spawned neighbors, preserving parallel tree construction.
 
-Grass, shrubs, and reeds are deterministic shared-mesh foliage with no gameplay
+Playable terrain also carries a replicated, authoritative `SceneGround` grid
+aligned with its height samples. Each location has one semantic substrate, one
+mutually exclusive cover profile, bounded cover density, and cover height. The
+tactical server retains the CPU grid and exposes world-position queries; this
+is the future boundary for concealment, footsteps, tracks, and traversal, but
+those gameplay consumers are not implemented yet. The client uploads a packed
+copy as the terrain material map and uses the same values for deterministic
+scatter. Texture asset identifiers are presentation details and never become
+server authority.
+
+Generated tree crowns stamp leaf-litter cover into this grid. Grass macro
+patches conservatively reject any footprint intersecting those cells, while a
+shared proof-of-concept mesh scatters dry leaves and twigs over the warmer
+forest-floor material. Open soil remains tall grass, wet ground selects reeds,
+and sufficiently hilly samples select loose stone; these profiles are mutually
+exclusive at a location even when one profile renders several compatible
+details.
+
+Grass, shrubs, reeds, leaves, and twigs are deterministic shared-mesh foliage with no gameplay
 collider. Grass uses overlapping 3.2-metre shared macro patches containing 729 individually
 oriented ribbons: each nearby blade samples a cubic longitudinal curve with
 fifteen vertices, then cross-fades beyond 34 metres to a stable 144-blade
