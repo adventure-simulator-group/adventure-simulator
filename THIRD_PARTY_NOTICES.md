@@ -108,6 +108,16 @@ from Font Awesome Free 7.3.1 by Fonticons, Inc. They are licensed under
 
 - Sources: <https://fontawesome.com/icons/cross>, <https://fontawesome.com/icons/star-and-crescent>, and <https://fontawesome.com/icons/star-of-david>
 - License: <https://fontawesome.com/license/free>
+
+## cgbookcase Oak Leaf 03
+
+The oak-leaf opacity, front/back albedo, and front/back DirectX normal
+maps in `assets/textures/trees/` are the 1K metalness/roughness maps from
+[Oak Leaf 03](https://www.cgbookcase.com/textures/oak-leaf-03) by Dorian
+Zgraggen / cgbookcase. The source texture is dedicated to the public domain
+under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The files
+are redistributed without visual modification and use project-local names.
+
 ### HYDE 3.5
 
 Generated strategic map tiles and terrain packs include a cultivated-land

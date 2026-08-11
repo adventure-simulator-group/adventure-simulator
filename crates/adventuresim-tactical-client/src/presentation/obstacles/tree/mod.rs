@@ -18,8 +18,7 @@ pub(in crate::presentation) struct CachedTreePresentation {
     pub(super) clusters: Vec<CachedTreeClusterPresentation>,
     pub(super) whole_tree_card_mesh: Handle<Mesh>,
     pub(super) bark_material: Handle<StandardMaterial>,
-    pub(super) leaf_material: Handle<TacticalTreeLeafMaterial>,
-    pub(super) leaf_card_material: Handle<TacticalTreeLeafCardMaterial>,
+    pub(super) leaf_material: Handle<TacticalTreeLeafCardMaterial>,
     pub(super) bud_material: Handle<StandardMaterial>,
     pub(super) card_materials: [Handle<TacticalTreeImpostorMaterial>; 4],
     pub(super) provenance: [TreeImpostorProvenance; 4],
@@ -31,56 +30,55 @@ pub(in crate::presentation) struct CachedTreeClusterPresentation {
     pub(super) center: Vec3,
     pub(super) radius: f32,
     pub(super) branch_meshes: [Handle<Mesh>; 3],
-    pub(super) leaf_mesh: Handle<Mesh>,
-    pub(super) textured_leaf_mesh: Option<Handle<Mesh>>,
+    pub(super) cambered_leaf_mesh: Handle<Mesh>,
     pub(super) leaf_card_mesh: Handle<Mesh>,
     pub(super) bud_mesh: Handle<Mesh>,
     pub(super) card_meshes: [Handle<Mesh>; 3],
 }
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
-pub(crate) struct TacticalTreeLeafMaterial {
-    /// Wind direction XZ, strength, and speed.
-    #[uniform(0)]
-    pub(crate) parameters: Vec4,
-}
-
-impl Material for TacticalTreeLeafMaterial {
-    fn vertex_shader() -> ShaderRef {
-        TREE_LEAF_SHADER.into()
-    }
-
-    fn fragment_shader() -> ShaderRef {
-        TREE_LEAF_SHADER.into()
-    }
-
-    fn enable_prepass() -> bool {
-        false
-    }
-
-    fn enable_shadows() -> bool {
-        false
-    }
-
-    fn specialize(
-        _pipeline: &bevy::pbr::MaterialPipeline,
-        descriptor: &mut RenderPipelineDescriptor,
-        _layout: &bevy::mesh::MeshVertexBufferLayoutRef,
-        _key: bevy::pbr::MaterialPipelineKey<Self>,
-    ) -> Result<(), SpecializedMeshPipelineError> {
-        descriptor.primitive.cull_mode = None;
-        Ok(())
-    }
-}
-
-#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(crate) struct TacticalTreeLeafCardMaterial {
     #[texture(0)]
     #[sampler(1)]
-    pub(crate) rendered_leaf: Handle<Image>,
+    pub(crate) opacity: Handle<Image>,
+    #[texture(2)]
+    #[sampler(3)]
+    pub(crate) front_albedo: Handle<Image>,
+    #[texture(4)]
+    #[sampler(5)]
+    pub(crate) back_albedo: Handle<Image>,
+    #[texture(6)]
+    #[sampler(7)]
+    pub(crate) front_normal: Handle<Image>,
+    #[texture(8)]
+    #[sampler(9)]
+    pub(crate) back_normal: Handle<Image>,
     /// Wind direction XZ, strength, and speed.
-    #[uniform(2)]
+    #[uniform(10)]
     pub(crate) parameters: Vec4,
+    /// Opacity cutoff, tangent-space normal strength, reserved, reserved.
+    #[uniform(10)]
+    pub(crate) surface_parameters: Vec4,
+}
+
+pub(crate) fn oak_leaf_material(asset_server: &AssetServer) -> TacticalTreeLeafCardMaterial {
+    let linear_image = |path| {
+        asset_server
+            .load_builder()
+            .with_settings(|settings: &mut bevy::image::ImageLoaderSettings| {
+                settings.is_srgb = false
+            })
+            .load(path)
+    };
+    TacticalTreeLeafCardMaterial {
+        opacity: linear_image("textures/trees/oak_leaf_03_opacity.png"),
+        front_albedo: asset_server.load("textures/trees/oak_leaf_03_front_albedo.png"),
+        back_albedo: asset_server.load("textures/trees/oak_leaf_03_back_albedo.png"),
+        front_normal: linear_image("textures/trees/oak_leaf_03_front_normal_dx.png"),
+        back_normal: linear_image("textures/trees/oak_leaf_03_back_normal_dx.png"),
+        parameters: Vec4::new(0.74, 0.67, 0.035, 1.15),
+        surface_parameters: Vec4::new(0.28, 0.72, 0.0, 0.0),
+    }
 }
 
 impl Material for TacticalTreeLeafCardMaterial {
@@ -161,7 +159,6 @@ pub(crate) struct TreeLodCluster {
 
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum TreeLeafRepresentation {
-    Geometry,
     TexturedMesh,
     AlphaCard,
 }
@@ -169,23 +166,11 @@ pub(crate) enum TreeLeafRepresentation {
 #[derive(Component)]
 pub(in crate::presentation) struct TreeTrunkLod;
 
-#[derive(Resource, Clone, Copy)]
+#[derive(Resource, Clone, Copy, Default)]
 pub(crate) struct TreeLodRenderOverride {
     pub(crate) lod: Option<u8>,
     pub(crate) leaf: Option<TreeLeafRepresentation>,
     pub(crate) projected_scale: Option<f32>,
-    pub(crate) enable_experimental_textured_mesh: bool,
-}
-
-impl Default for TreeLodRenderOverride {
-    fn default() -> Self {
-        Self {
-            lod: None,
-            leaf: None,
-            projected_scale: None,
-            enable_experimental_textured_mesh: false,
-        }
-    }
 }
 
 pub(in crate::presentation) fn spawn_cached_tree(
@@ -210,38 +195,21 @@ pub(in crate::presentation) fn spawn_cached_tree(
             let cluster_aabb = tree_cluster_aabb(cluster.center, cluster.radius);
             parent.spawn((
                 Name::new(format!(
-                    "English oak scaffold {} individual leaves",
+                    "English oak scaffold {} cambered PBR leaves",
                     cluster.primary_group
                 )),
                 TreeLod(0),
                 cluster_marker,
                 cluster_aabb,
-                TreeLeafRepresentation::Geometry,
+                TreeLeafRepresentation::TexturedMesh,
                 NotShadowCaster,
-                Mesh3d(cluster.leaf_mesh.clone()),
+                Mesh3d(cluster.cambered_leaf_mesh.clone()),
                 MeshMaterial3d(cached.leaf_material.clone()),
-                tree_leaf_visibility(TreeLeafRepresentation::Geometry, 1.0, cluster.radius),
+                tree_leaf_visibility(TreeLeafRepresentation::TexturedMesh, 1.0, cluster.radius),
             ));
-            if let Some(mesh) = &cluster.textured_leaf_mesh {
-                parent.spawn((
-                    Name::new(format!(
-                        "English oak scaffold {} experimental textured cambered leaves",
-                        cluster.primary_group
-                    )),
-                    TreeLod(0),
-                    cluster_marker,
-                    cluster_aabb,
-                    TreeLeafRepresentation::TexturedMesh,
-                    NotShadowCaster,
-                    Mesh3d(mesh.clone()),
-                    MeshMaterial3d(cached.leaf_card_material.clone()),
-                    Visibility::Hidden,
-                    VisibilityRange::abrupt(0.0, f32::MAX),
-                ));
-            }
             parent.spawn((
                 Name::new(format!(
-                    "English oak scaffold {} rendered leaf cards",
+                    "English oak scaffold {} PBR leaf cards",
                     cluster.primary_group
                 )),
                 TreeLod(0),
@@ -250,7 +218,7 @@ pub(in crate::presentation) fn spawn_cached_tree(
                 TreeLeafRepresentation::AlphaCard,
                 NotShadowCaster,
                 Mesh3d(cluster.leaf_card_mesh.clone()),
-                MeshMaterial3d(cached.leaf_card_material.clone()),
+                MeshMaterial3d(cached.leaf_material.clone()),
                 tree_leaf_visibility(TreeLeafRepresentation::AlphaCard, 1.0, cluster.radius),
             ));
             parent.spawn((
@@ -366,12 +334,8 @@ pub(in crate::presentation) fn update_tree_projected_lod_ranges(
         if let Some(forced_lod) = lod_override.lod {
             let selected_leaf = match (leaf_representation, lod_override.leaf) {
                 (
-                    Some(TreeLeafRepresentation::Geometry),
-                    None | Some(TreeLeafRepresentation::Geometry),
-                ) => true,
-                (
                     Some(TreeLeafRepresentation::TexturedMesh),
-                    Some(TreeLeafRepresentation::TexturedMesh),
+                    None | Some(TreeLeafRepresentation::TexturedMesh),
                 ) => true,
                 (
                     Some(TreeLeafRepresentation::AlphaCard),
@@ -387,20 +351,13 @@ pub(in crate::presentation) fn update_tree_projected_lod_ranges(
             };
             *range = VisibilityRange::abrupt(0.0, f32::MAX);
         } else {
-            *visibility = if leaf_representation == Some(&TreeLeafRepresentation::TexturedMesh) {
-                Visibility::Hidden
-            } else {
-                Visibility::Inherited
-            };
+            *visibility = Visibility::Inherited;
             let radius = cluster.map_or(3.5, |cluster| {
                 debug_assert!(cluster.center.is_finite());
                 debug_assert!(cluster.primary_group < TREE_PRIMARY_GROUP_COUNT);
                 cluster.radius
             });
             *range = match leaf_representation {
-                Some(TreeLeafRepresentation::Geometry) => {
-                    tree_leaf_visibility(TreeLeafRepresentation::Geometry, focal_scale, radius)
-                }
                 Some(TreeLeafRepresentation::TexturedMesh) => {
                     tree_leaf_visibility(TreeLeafRepresentation::TexturedMesh, focal_scale, radius)
                 }
@@ -432,5 +389,4 @@ pub(in crate::presentation) fn update_tree_projected_lod_ranges(
 }
 
 const TREE_IMPOSTOR_SHADER: &str = "shaders/tactical_tree_impostor.wgsl";
-const TREE_LEAF_SHADER: &str = "shaders/tactical_tree_leaf.wgsl";
 const TREE_LEAF_CARD_SHADER: &str = "shaders/tactical_tree_leaf_card.wgsl";
