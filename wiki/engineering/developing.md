@@ -785,14 +785,16 @@ presentation plugin:
 ```powershell
 just tactical-scene-capture dense-woodland
 just tactical-scene-capture heavy-rain-high-wind target/tactical-scene-captures/rain-review
+just tactical-tree-canopy-series target/tactical-scene-captures/oak-canopy-review
 ```
 
 The native viewer writes standing-eye-height (1.65 m above the sampled local
 terrain), overhead, horizon, and collider-overlay PNGs alongside the exact
 `input.json`, a browsable `index.html`, and a
-machine-readable `manifest.json`. Five focused views target the nearest tree,
-when present, at the individual-leaf, leafed-twig, small-branch, crown-branch,
-and whole-tree-billboard distances. They fall back to the ordinary ground view
+machine-readable `manifest.json`. Six focused views target the nearest tree,
+when present: a complete individual-leaf tree, a terminal-leaf close-up, and
+matched-scale leafed-twig, small-branch, crown-branch, and whole-tree-billboard
+views. They fall back to the ordinary ground view
 for treeless fixtures. The viewer waits for custom material pipelines before
 capturing, then exits unsuccessfully and writes `failure.txt` when
 presentation/collider counts, collider-bounded procedural rocks, terrain
@@ -801,6 +803,12 @@ overhead foliage detail in the flat sentinel fixture, all five tree
 LODs, precipitation, three vista LODs, the 50 km vista contract, non-uniform
 rendered content, or the dedicated boundary-peak view fail. Explicit output directories must be
 fresh so a prior capture cannot satisfy a new run accidentally.
+The canopy series holds the fixture seed, generated obstacles, cameras, and
+render settings constant while overriding only the captured
+`SceneEnvironment.canopy_bps` to 0, 2500, 5000, 7500, and 10000. Each manifest
+records the effective value. This test-only override makes open-grown through
+forest-grown tree architecture directly comparable without introducing
+neighbour queries or spawn-order coupling into runtime generation.
 The matrix runner also treats engine `ERROR` output, including asynchronous
 custom-shader compilation failures, as a failed fixture even if the viewer was
 otherwise able to write screenshots and exit normally.

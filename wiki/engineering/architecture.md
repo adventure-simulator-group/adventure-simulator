@@ -290,7 +290,11 @@ logs the SHA-256 scene digest and generation version. Gameplay-relevant generate
 static server colliders with a compact replicated obstacle kind and transform;
 clients derive collider-bounded rock meshes and a seeded four-order tree
 skeleton from the same shared dimensions, without receiving or simulating the
-collider. Tree presentation cross-fades from branch tubes and individual leaf
+collider. The immutable world-data canopy coverage continuously controls tree
+architecture without inspecting neighboring entities: low coverage produces a
+short clear bole and broad open-grown crown, while dense canopy produces a
+taller clear bole and narrower competitive crown, so tree generation remains
+deterministic and parallel. Tree presentation cross-fades from branch tubes and individual leaf
 cards through twig, small-branch, and crown-branch impostors to a single
 camera-facing whole-tree billboard. Impostor bounds come from the actual
 descendant branch groups rather than an unrelated generic crown, preserving

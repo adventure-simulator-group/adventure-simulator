@@ -36,8 +36,14 @@ whole-tree billboard. Each successive level collapses exactly one botanical
 order. Every aggregate card derives its position and extent from the actual
 seeded descendant twigs, so crown mass, asymmetry, and gaps remain recognizable
 through the transitions while retaining parallax longer than a direct
-crown-to-billboard swap. Grass,
-shrubs, and reeds are deterministic shared-mesh foliage with no gameplay
+crown-to-billboard swap.
+The scene's world-data canopy coverage also shapes the source skeleton
+continuously: sparse coverage yields low, wide open-grown trees, while dense
+coverage yields taller trees whose first scaffold branches sit above the clear
+bole. This value is part of deterministic generation rather than a query over
+spawned neighbors, preserving parallel tree construction.
+
+Grass, shrubs, and reeds are deterministic shared-mesh foliage with no gameplay
 collider. Grass uses overlapping shared patches of forty-nine narrow crossed
 blades across the full playable view distance: covered ground reads as a
 continuous sward from normal camera angles while remaining legible from
