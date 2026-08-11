@@ -124,8 +124,10 @@ multi-parent placement reserves every required edge atomically. These
 changes exist only in the mission ECS snapshot and never replace the durable
 strategic equipment graph.
 
-The HUD renders each reachable layer outside-to-inside and then through child
-attachment points. Near layers use lighter labels, the chosen depth is
+The HUD and repeated-key traversal render each reachable branch deepest-first:
+an attached descendant or empty authored attachment capacity is addressed
+before its parent, while sibling points retain authored point/capacity order.
+Near layers use lighter labels, the chosen depth is
 highlighted, catalog Game Icons are drawn from a deterministic tactical sprite
 atlas, and contiguous mapped cells are connected into one visual span for
 multi-location equipment. Occupied destinations state that their item will be

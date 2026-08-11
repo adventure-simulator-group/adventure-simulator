@@ -255,6 +255,9 @@ pub enum ItemKind {
     },
     Weapon {
         slot: Slot,
+        /// Whether the weapon fits an authored sheath/holster or must remain
+        /// in a hand (or be dropped) when not otherwise carried.
+        carry: WeaponCarry,
         #[serde(default)]
         preferred_attack: MeleeAttackStyle,
         #[serde(default)]
@@ -272,6 +275,13 @@ pub enum ItemKind {
         skills: WeaponSkills,
     },
     Food,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WeaponCarry {
+    Sheathable,
+    HandOnly,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

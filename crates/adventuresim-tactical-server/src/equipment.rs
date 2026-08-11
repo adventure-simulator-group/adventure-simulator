@@ -247,13 +247,14 @@ fn append_reachable(
     if !visited.insert(entity) {
         return;
     }
-    output.push(ReachableTarget::Occupied(entity));
     let Ok((_, properties, _, _, _, _, _, _)) = items.get(entity) else {
+        output.push(ReachableTarget::Occupied(entity));
         return;
     };
     let Some(equipment) = item_catalog::definition(&properties.id)
         .and_then(|definition| definition.equipment.as_ref())
     else {
+        output.push(ReachableTarget::Occupied(entity));
         return;
     };
     let mut points: Vec<_> = equipment.attachment_points.iter().collect();
@@ -285,6 +286,7 @@ fn append_reachable(
             }
         }
     }
+    output.push(ReachableTarget::Occupied(entity));
 }
 
 fn has_children(entity: Entity, items: &Query<ItemView<'_>>) -> bool {
@@ -328,6 +330,9 @@ fn placement_topology(item_id: &str, location: EquipmentLocation) -> Option<Equi
                 .iter()
                 .any(|requirement| requirement.location == location)
     })?;
+    if !root_placement_allowed(item_id, placement) {
+        return None;
+    }
     Some(EquipmentTopology {
         placement_id: Some(placement.id.clone()),
         occupancies: placement
@@ -344,6 +349,20 @@ fn placement_topology(item_id: &str, location: EquipmentLocation) -> Option<Equi
             })
             .collect(),
     })
+}
+
+fn root_placement_allowed(item_id: &str, placement: &item_catalog::EquipmentPlacement) -> bool {
+    if item_catalog::weapon_carry(item_id) != Some(item_catalog::WeaponCarry::HandOnly) {
+        return true;
+    }
+    placement.parents.is_empty()
+        && placement.occupancy.len() == 1
+        && matches!(
+            placement.occupancy[0].location,
+            EquipmentLocation::LeftHand | EquipmentLocation::RightHand
+        )
+        && placement.occupancy[0].channel == EquipmentChannel::Held
+        && placement.occupancy[0].order == 0
 }
 
 #[derive(Clone)]
@@ -386,6 +405,9 @@ fn attachment_topology(
     actor: Entity,
     items: &Query<ItemView<'_>>,
 ) -> Option<EquipmentTopology> {
+    if !parent_placement_allowed(item_id) {
+        return None;
+    }
     let moving = item_catalog::definition(item_id)?.equipment.as_ref()?;
     let mut available = Vec::<AttachmentTarget>::new();
     let mut explicitly_selected = Vec::<(Entity, String, u16)>::new();
@@ -553,6 +575,10 @@ fn attachment_topology(
         }
     }
     None
+}
+
+fn parent_placement_allowed(item_id: &str) -> bool {
+    item_catalog::weapon_carry(item_id) != Some(item_catalog::WeaponCarry::HandOnly)
 }
 
 fn topology_conflicts(
@@ -889,6 +915,59 @@ mod tests {
     }
 
     #[test]
+    fn hand_only_weapons_fail_closed_for_parent_placement() {
+        for item_id in [
+            "halberd",
+            "hunting_spear",
+            "military_pike",
+            "spear",
+            "zweihander",
+        ] {
+            assert!(!parent_placement_allowed(item_id), "{item_id}");
+            let equipment = item_catalog::definition(item_id)
+                .unwrap()
+                .equipment
+                .as_ref()
+                .unwrap();
+            assert!(
+                equipment
+                    .placements
+                    .iter()
+                    .all(|placement| placement.parents.is_empty())
+            );
+        }
+        assert!(parent_placement_allowed("arming_sword"));
+    }
+
+    #[test]
+    fn hand_only_root_authority_accepts_only_one_held_hand() {
+        let authored = item_catalog::definition("halberd")
+            .unwrap()
+            .equipment
+            .as_ref()
+            .unwrap()
+            .placements[0]
+            .clone();
+        assert!(root_placement_allowed("halberd", &authored));
+        assert!(
+            placement_topology("halberd", authored.occupancy[0].location).is_some(),
+            "authored hand placement remains usable"
+        );
+
+        let mut wrong_location = authored.clone();
+        wrong_location.occupancy[0].location = EquipmentLocation::Chest;
+        assert!(!root_placement_allowed("halberd", &wrong_location));
+
+        let mut wrong_channel = authored.clone();
+        wrong_channel.occupancy[0].channel = EquipmentChannel::Accessory;
+        assert!(!root_placement_allowed("halberd", &wrong_channel));
+
+        let mut multiple = authored.clone();
+        multiple.occupancy.push(authored.occupancy[0]);
+        assert!(!root_placement_allowed("halberd", &multiple));
+    }
+
+    #[test]
     fn sequence_replay_and_old_half_range_are_rejected() {
         assert!(sequence_is_newer(2, 1));
         assert!(!sequence_is_newer(1, 1));
@@ -1012,10 +1091,10 @@ mod tests {
                 ordered_at_location(actor, EquipmentLocation::LeftBelt, &items)
             })
             .unwrap();
-        assert_eq!(reachable.first(), Some(&ReachableTarget::Occupied(belt)));
         assert!(
-            matches!(reachable.get(1), Some(ReachableTarget::EmptyAttachment { attachment_point_id, .. }) if attachment_point_id == "left")
+            matches!(reachable.first(), Some(ReachableTarget::EmptyAttachment { attachment_point_id, .. }) if attachment_point_id == "left")
         );
+        assert_eq!(reachable.last(), Some(&ReachableTarget::Occupied(belt)));
     }
 
     #[test]

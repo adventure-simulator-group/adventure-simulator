@@ -324,16 +324,20 @@ fn append_preview(
     if !visited.insert(entity) {
         return;
     }
-    output.push(PreviewTarget {
-        entity,
-        occupied: true,
-    });
     let Ok((_, _, _, properties)) = items.get(entity) else {
+        output.push(PreviewTarget {
+            entity,
+            occupied: true,
+        });
         return;
     };
     let Some(equipment) = item_catalog::definition(&properties.id)
         .and_then(|definition| definition.equipment.as_ref())
     else {
+        output.push(PreviewTarget {
+            entity,
+            occupied: true,
+        });
         return;
     };
     let mut points: Vec<_> = equipment.attachment_points.iter().collect();
@@ -364,6 +368,10 @@ fn append_preview(
             }
         }
     }
+    output.push(PreviewTarget {
+        entity,
+        occupied: true,
+    });
 }
 
 fn slot_label(location: EquipmentLocation) -> String {
@@ -419,16 +427,20 @@ fn hud_layers(
         if !visited.insert(entity) {
             return;
         }
-        output.push(PreviewTarget {
-            entity,
-            occupied: true,
-        });
         let Ok((_, _, _, properties, _)) = items.get(entity) else {
+            output.push(PreviewTarget {
+                entity,
+                occupied: true,
+            });
             return;
         };
         let Some(equipment) = item_catalog::definition(&properties.id)
             .and_then(|definition| definition.equipment.as_ref())
         else {
+            output.push(PreviewTarget {
+                entity,
+                occupied: true,
+            });
             return;
         };
         let mut points: Vec<_> = equipment.attachment_points.iter().collect();
@@ -456,6 +468,10 @@ fn hud_layers(
                 }
             }
         }
+        output.push(PreviewTarget {
+            entity,
+            occupied: true,
+        });
     }
     for (_, root) in roots {
         append(root, items, &mut visited, &mut output);
@@ -743,6 +759,7 @@ fn holding_side(slot: Option<&EquipSlot>) -> Option<HandSide> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::ecs::system::RunSystemOnce;
 
     #[test]
     fn movement_keys_are_not_slot_addresses() {
@@ -765,6 +782,70 @@ mod tests {
         let repeat = mapping.locations.len() as u16;
         assert_eq!(repeat as usize % mapping.locations.len(), 0);
         assert_eq!(repeat / mapping.locations.len() as u16, 1);
+    }
+
+    #[test]
+    fn preview_traversal_addresses_deepest_attachment_before_parent() {
+        let mut world = World::new();
+        let actor = world.spawn_empty().id();
+        let belt = world
+            .spawn((
+                ItemOf(actor),
+                ItemProperties {
+                    id: "leather_belt".into(),
+                    weight: 0.35,
+                },
+                EquipmentTopology {
+                    placement_id: Some("worn".into()),
+                    occupancies: vec![EquipmentTopologyOccupancy {
+                        occupancy_id: "belt".into(),
+                        anchor: TacticalEquipmentAnchor::CharacterLocation(
+                            EquipmentLocation::LeftBelt,
+                        ),
+                        channel: EquipmentChannel::Accessory,
+                        order: 0,
+                        requirement_index: 0,
+                        capacity_index: 0,
+                    }],
+                },
+            ))
+            .id();
+        let sheath = world
+            .spawn((
+                ItemOf(actor),
+                ItemProperties {
+                    id: "sword_sheath".into(),
+                    weight: 0.3,
+                },
+                EquipmentTopology {
+                    placement_id: Some("attached".into()),
+                    occupancies: vec![EquipmentTopologyOccupancy {
+                        occupancy_id: "sheath".into(),
+                        anchor: TacticalEquipmentAnchor::ItemAttachment {
+                            parent: belt,
+                            attachment_point_id: "left".into(),
+                        },
+                        channel: EquipmentChannel::Mount,
+                        order: 0,
+                        requirement_index: 0,
+                        capacity_index: 0,
+                    }],
+                },
+            ))
+            .id();
+        let preview = world
+            .run_system_once(
+                move |items: Query<(Entity, &ItemOf, &EquipmentTopology, &ItemProperties)>| {
+                    ordered_preview_at_location(actor, EquipmentLocation::LeftBelt, &items)
+                },
+            )
+            .unwrap();
+        assert_eq!(preview.first().map(|target| target.entity), Some(sheath));
+        assert!(
+            !preview.first().unwrap().occupied,
+            "deepest empty blade is first"
+        );
+        assert_eq!(preview.last().map(|target| target.entity), Some(belt));
     }
 
     #[test]

@@ -82,8 +82,9 @@ Every item requires `id`, `display_name`, `weight_kg`, `base_value`, `tags`,
 names. Kinds are `simple`, `currency`, `ingredient`, `medication`, `clothing`,
 `container`, `shield`, `armor`, `weapon`, and `food`.
 
-Kind payloads contain only compatible fields. Weapons require a slot, explicit
-damage types, mode flags, and an explicit finite, non-negative skill
+Kind payloads contain only compatible fields. Weapons require a slot, an
+explicit `carry` contract (`sheathable` or `hand_only`), explicit damage types,
+mode flags, and an explicit finite, non-negative skill
 distribution summing to one. Shields require their relevant slot/stat
 payload. Armor and clothing require an `equipment` object, and any other kind
 may author one. It contains stable-ID placement alternatives. A root placement
@@ -102,6 +103,15 @@ the stable seven-part body vocabulary. Never infer protection from physical
 equipment locations: a helmet may occupy head, face, and neck while protecting
 only `head`, and a boot sheath protects nothing. Items may expose ordered,
 capacity-limited `attachment_points` with optional accepted child tags.
+Sheathable weapons must expose the `sheathable_weapon` attachment tag and at
+least one placement with exactly one order-zero `containment` parent
+requirement; generated carry provisioning selects that compatible placement
+rather than an arbitrary parent alternative. Hand-only weapons must expose neither parent placements nor
+the sheathable tag, and every placement must be exactly one `held` occupancy at
+`left_hand` or `right_hand`. Polearms, zweihanders, bows, firearms, and every
+other authored hand-only weapon can only be held or dropped. Catalog validation
+rejects a contradictory carry contract, and strategic/tactical authority
+independently enforces the same held-root boundary.
 Repairable kinds require a `durability` capability with
 quality 1--5 and explicit physical/handling inputs.
 

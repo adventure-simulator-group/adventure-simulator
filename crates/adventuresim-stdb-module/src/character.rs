@@ -2583,6 +2583,9 @@ pub(crate) fn insert_character_with_origin(
             add_and_equip_item(ctx, character.id, item, slot)?;
         }
     }
+    if !newborn {
+        provision_generated_weapon_carry(ctx, character.id)?;
+    }
 
     if options.create_solo_party {
         crate::strategic::create_solo_party_for_character(ctx, character.id)?;
@@ -3002,6 +3005,26 @@ fn equip_equipment_internal(
                 definition.equipment_placements.len()
             )
         })?;
+    if definition.kind == crate::item::ItemKind::Weapon {
+        match adventuresim_core::item_catalog::weapon_carry(&inventory.item_id) {
+            Some(adventuresim_core::item_catalog::WeaponCarry::HandOnly)
+                if !hand_only_placement_is_held_root(placement) =>
+            {
+                return Err(format!(
+                    "Can't equip hand-only weapon {} anywhere except one held left/right hand root",
+                    inventory.item_id
+                ));
+            }
+            Some(adventuresim_core::item_catalog::WeaponCarry::Sheathable) => {}
+            _ if !placement.parents.is_empty() => {
+                return Err(format!(
+                    "Can't attach weapon {} without an authored sheathable carry contract",
+                    inventory.item_id
+                ));
+            }
+            _ => {}
+        }
+    }
     if enforce_law {
         crate::equipment_law::require_item_legal(ctx, character_id, inventory_item_id)?;
     }
@@ -3267,6 +3290,150 @@ fn equip_equipment_internal(
     Ok(())
 }
 
+fn hand_only_placement_is_held_root(placement: &crate::item::EquipmentPlacement) -> bool {
+    placement.parents.is_empty()
+        && placement.occupancy.len() == 1
+        && matches!(
+            placement.occupancy[0].location,
+            crate::item::EquipmentLocation::LeftHand | crate::item::EquipmentLocation::RightHand
+        )
+        && placement.occupancy[0].channel == crate::item::EquipmentChannel::Held
+        && placement.occupancy[0].order == 0
+}
+
+/// Adds the physical carry kit implied by a generated loadout. A suitable
+/// weapon already authored in a hand stays there; a suitable sidearm that was
+/// not initially equipped is placed inside the generated sheath.
+fn provision_generated_weapon_carry(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+    let sheathable: Vec<_> = ctx
+        .db
+        .inventory_item()
+        .character_id()
+        .filter(character_id)
+        .filter(|inventory| {
+            adventuresim_core::item_catalog::is_sheathable_weapon(&inventory.item_id)
+        })
+        .collect();
+    if sheathable.is_empty() {
+        return Ok(());
+    }
+    if sheathable.len() != 1 {
+        return Err(format!(
+            "Generated loadout has {} sheathable weapons but the authored belt kit carries exactly one",
+            sheathable.len()
+        ));
+    }
+
+    let belt = add_inventory_item(ctx, character_id, "leather_belt", 1)
+        .ok_or("Could not add generated leather belt")?;
+    let belt_placement = authored_placement_index(ctx, "leather_belt", "worn")?;
+    equip_equipment_internal(
+        ctx,
+        character_id,
+        belt,
+        belt_placement,
+        Vec::new(),
+        false,
+        false,
+    )?;
+
+    let sheath = add_inventory_item(ctx, character_id, "sword_sheath", 1)
+        .ok_or("Could not add generated sword sheath")?;
+    let sheath_placement = authored_placement_index(ctx, "sword_sheath", "attached")?;
+    equip_equipment_internal(
+        ctx,
+        character_id,
+        sheath,
+        sheath_placement,
+        vec![
+            EquipmentAttachmentTargetSelection {
+                requirement_index: 0,
+                parent_inventory_item_id: belt,
+                attachment_point_id: "left".into(),
+            },
+            EquipmentAttachmentTargetSelection {
+                requirement_index: 1,
+                parent_inventory_item_id: belt,
+                attachment_point_id: "right".into(),
+            },
+        ],
+        false,
+        false,
+    )?;
+
+    let weapon = &sheathable[0];
+    let initially_held = ctx
+        .db
+        .character_equipped_item()
+        .inventory_item_id()
+        .find(weapon.id)
+        .is_some();
+    if !initially_held {
+        let placement = sheath_compatible_parent_placement_index(ctx, &weapon.item_id)?;
+        equip_equipment_internal(
+            ctx,
+            character_id,
+            weapon.id,
+            placement,
+            vec![EquipmentAttachmentTargetSelection {
+                requirement_index: 0,
+                parent_inventory_item_id: sheath,
+                attachment_point_id: "blade".into(),
+            }],
+            false,
+            false,
+        )?;
+    }
+    Ok(())
+}
+
+fn authored_placement_index(
+    ctx: &ReducerContext,
+    item_id: &str,
+    placement_id: &str,
+) -> Result<u16, String> {
+    let definition = ctx
+        .db
+        .item()
+        .id()
+        .find(item_id.to_owned())
+        .ok_or_else(|| format!("Generated carry kit item {item_id} is missing"))?;
+    definition
+        .equipment_placements
+        .iter()
+        .position(|placement| placement.id == placement_id)
+        .and_then(|index| u16::try_from(index).ok())
+        .ok_or_else(|| format!("{item_id} lacks authored placement {placement_id}"))
+}
+
+fn sheath_compatible_parent_placement_index(
+    ctx: &ReducerContext,
+    item_id: &str,
+) -> Result<u16, String> {
+    let definition = ctx
+        .db
+        .item()
+        .id()
+        .find(item_id.to_owned())
+        .ok_or_else(|| format!("Generated sidearm {item_id} is missing"))?;
+    select_sheath_compatible_parent_placement(&definition.equipment_placements).ok_or_else(|| {
+        format!("Sheathable sidearm {item_id} lacks a single containment parent placement")
+    })
+}
+
+fn select_sheath_compatible_parent_placement(
+    placements: &[crate::item::EquipmentPlacement],
+) -> Option<u16> {
+    placements
+        .iter()
+        .position(|placement| {
+            placement.parents.len() == 1
+                && placement.parents[0].channel == crate::item::EquipmentChannel::Containment
+                && placement.parents[0].order == 0
+        })
+        .and_then(|index| u16::try_from(index).ok())
+}
+
 pub fn add_and_equip_item(
     ctx: &ReducerContext,
     character_id: u64,
@@ -3287,11 +3454,12 @@ mod starting_character_boundary_tests {
     use super::{
         CharacterCreationMode, NpcLifeFacts, attachment_point_matches_requirement,
         attachment_would_create_cycle, conflicting_root_requirements,
-        first_free_attachment_capacity, initial_membership_minutes,
+        first_free_attachment_capacity, hand_only_placement_is_held_root,
+        initial_membership_minutes, select_sheath_compatible_parent_placement,
     };
     use crate::item::{
         EquipmentAttachmentPoint, EquipmentChannel, EquipmentLocation,
-        EquipmentOccupancyRequirement, EquipmentParentRequirement,
+        EquipmentOccupancyRequirement, EquipmentParentRequirement, EquipmentPlacement,
     };
 
     #[test]
@@ -3484,6 +3652,39 @@ mod starting_character_boundary_tests {
     }
 
     #[test]
+    fn non_newborn_materialization_adds_one_authored_belt_sheath_kit() {
+        let source = include_str!("character.rs");
+        let insertion = source
+            .split("pub(crate) fn insert_character_with_origin")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn validate_full_character_components")
+            .next()
+            .unwrap();
+        assert!(insertion.contains(
+            "if !newborn {\n        provision_generated_weapon_carry(ctx, character.id)?;\n    }"
+        ));
+        let helper = source
+            .split("fn provision_generated_weapon_carry")
+            .nth(1)
+            .unwrap()
+            .split("pub fn add_and_equip_item")
+            .next()
+            .unwrap();
+        for evidence in [
+            "is_sheathable_weapon",
+            "leather_belt",
+            "sword_sheath",
+            "attachment_point_id: \"left\"",
+            "attachment_point_id: \"right\"",
+            "attachment_point_id: \"blade\"",
+            "if !initially_held",
+        ] {
+            assert!(helper.contains(evidence), "missing {evidence}");
+        }
+    }
+
+    #[test]
     fn creation_initializes_condition_before_capability_dependent_side_effects() {
         let source = include_str!("character.rs");
         let insertion = source
@@ -3591,6 +3792,89 @@ mod starting_character_boundary_tests {
             .unwrap();
         assert!(orphan_helper.contains("row.parent_inventory_item_id == Some(inventory_item_id)"));
         assert!(orphan_helper.contains("Detach or remove attached/contained items first"));
+        assert!(reducer.contains("WeaponCarry::HandOnly"));
+        assert!(
+            reducer.find("WeaponCarry::HandOnly").unwrap() < mutation,
+            "hand-only parent placement must fail before mutation"
+        );
+    }
+
+    #[test]
+    fn durable_hand_only_boundary_accepts_only_one_held_hand_root() {
+        let held = EquipmentOccupancyRequirement {
+            location: EquipmentLocation::LeftHand,
+            channel: EquipmentChannel::Held,
+            order: 0,
+        };
+        let mut placement = EquipmentPlacement {
+            id: "left_hand".into(),
+            occupancy: vec![held],
+            parents: Vec::new(),
+            protection: Vec::new(),
+        };
+        assert!(hand_only_placement_is_held_root(&placement));
+
+        placement.occupancy[0].location = EquipmentLocation::Chest;
+        assert!(!hand_only_placement_is_held_root(&placement));
+        placement.occupancy[0] = held;
+        placement.occupancy.push(held);
+        assert!(!hand_only_placement_is_held_root(&placement));
+        placement.occupancy.pop();
+        placement.parents.push(EquipmentParentRequirement {
+            channel: EquipmentChannel::Containment,
+            order: 0,
+        });
+        assert!(!hand_only_placement_is_held_root(&placement));
+    }
+
+    #[test]
+    fn generated_sheath_selection_skips_arbitrary_parent_placements() {
+        let parent_placement = |id: &str, parents| EquipmentPlacement {
+            id: id.into(),
+            occupancy: Vec::new(),
+            parents,
+            protection: Vec::new(),
+        };
+        let placements = vec![
+            parent_placement(
+                "mounted",
+                vec![EquipmentParentRequirement {
+                    channel: EquipmentChannel::Mount,
+                    order: 0,
+                }],
+            ),
+            parent_placement(
+                "two_parents",
+                vec![
+                    EquipmentParentRequirement {
+                        channel: EquipmentChannel::Containment,
+                        order: 0,
+                    },
+                    EquipmentParentRequirement {
+                        channel: EquipmentChannel::Containment,
+                        order: 0,
+                    },
+                ],
+            ),
+            parent_placement(
+                "wrong_order",
+                vec![EquipmentParentRequirement {
+                    channel: EquipmentChannel::Containment,
+                    order: 1,
+                }],
+            ),
+            parent_placement(
+                "sheathed",
+                vec![EquipmentParentRequirement {
+                    channel: EquipmentChannel::Containment,
+                    order: 0,
+                }],
+            ),
+        ];
+        assert_eq!(
+            select_sheath_compatible_parent_placement(&placements),
+            Some(3)
+        );
     }
 
     #[test]
