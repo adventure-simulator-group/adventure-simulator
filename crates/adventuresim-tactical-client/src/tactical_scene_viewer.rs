@@ -213,7 +213,8 @@ struct ObstacleSummary {
 struct FoliageSummary {
     grass_clumps: usize,
     understory_clumps: usize,
-    leaf_litter_patches: usize,
+    dry_leaf_patches: usize,
+    twig_patches: usize,
 }
 
 #[derive(Serialize)]
@@ -271,7 +272,7 @@ struct ValidationSummary {
     coarse_source_terrain_upsampled: bool,
     microrelief_present: bool,
     grass_present: bool,
-    leaf_litter_present_when_trees: bool,
+    forest_floor_scatter_present_when_trees: bool,
     understory_present_when_expected: bool,
     vista_has_three_lods: bool,
     vista_reaches_fifty_kilometres: bool,
@@ -1162,18 +1163,21 @@ fn build_manifest(
     };
     let mut grass_clumps = 0;
     let mut understory_clumps = 0;
-    let mut leaf_litter_patches = 0;
+    let mut dry_leaf_patches = 0;
+    let mut twig_patches = 0;
     for layer in foliage {
         match layer {
             FoliageLayer::Grass => grass_clumps += 1,
             FoliageLayer::Understory => understory_clumps += 1,
-            FoliageLayer::LeafLitter => leaf_litter_patches += 1,
+            FoliageLayer::DryLeaves => dry_leaf_patches += 1,
+            FoliageLayer::Twigs => twig_patches += 1,
         }
     }
     let foliage_summary = FoliageSummary {
         grass_clumps,
         understory_clumps,
-        leaf_litter_patches,
+        dry_leaf_patches,
+        twig_patches,
     };
     let tree_impostor_bakes = tree_bakes
         .iter()
@@ -1274,7 +1278,8 @@ fn build_manifest(
                 && state.terrain.generated_samples > state.terrain.source_samples),
         microrelief_present: state.repairs.microrelief_adjusted_samples > 0,
         grass_present: grass_clumps > 0,
-        leaf_litter_present_when_trees: state.expected_trees == 0 || leaf_litter_patches > 0,
+        forest_floor_scatter_present_when_trees: state.expected_trees == 0
+            || (dry_leaf_patches > 0 && twig_patches > 0),
         understory_present_when_expected: !expects_understory || understory_clumps > 0,
         vista_has_three_lods: vista_summary.presented_lods.len() >= 3,
         vista_reaches_fifty_kilometres: vista_summary.diameter_metres >= 50_000.0,
@@ -1327,7 +1332,7 @@ fn validation_passes(validation: &ValidationSummary) -> bool {
         && validation.coarse_source_terrain_upsampled
         && validation.microrelief_present
         && validation.grass_present
-        && validation.leaf_litter_present_when_trees
+        && validation.forest_floor_scatter_present_when_trees
         && validation.understory_present_when_expected
         && validation.vista_has_three_lods
         && validation.vista_reaches_fifty_kilometres
