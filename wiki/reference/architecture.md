@@ -289,8 +289,11 @@ logs the SHA-256 scene digest and generation version. Gameplay-relevant generate
 static server colliders with a compact replicated obstacle kind and transform;
 clients derive collider-bounded rock meshes and distance-LOD tree archetypes
 from the same shared dimensions, without receiving or simulating the collider.
-Non-colliding grass and understory use shared meshes with shader wind. The
-immutable environment and weather snapshots control the procedural ground
+Non-colliding grass and understory use shared meshes with continuous,
+hash-stable distance thinning, layered shader wind, and root-to-tip shading.
+The local player transform drives nearby blade bending on the client only; this
+cosmetic interaction is neither replicated nor included in collision or
+tactical authority. The immutable environment and weather snapshots control the procedural ground
 material, precipitation particles, fog distance, wind drift, and sunlight.
 Large vista grids are deliberately not ordinary replicated ECS components. The
 server sends each accepted client one immutable, ordered `SceneVistaBundle`;

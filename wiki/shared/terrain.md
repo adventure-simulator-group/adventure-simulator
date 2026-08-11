@@ -30,11 +30,17 @@ obstacles. Their compact kind and transform are replicated so clients render a
 matching proxy instead of an invisible collider. Clients present deformed
 low-poly rock meshes constrained inside those colliders and three-distance tree
 archetypes (branched crown, reduced crown, and crossed billboard). Grass,
-shrubs, and reeds are deterministic shared-mesh foliage with shader wind and no
-gameplay collider. Grass uses overlapping shared patches of forty-nine narrow
-crossed blades across the full
-playable view distance: covered ground reads as a continuous sward from normal
-camera angles while remaining legible from overhead. A procedural terrain material blends forest floor, dry
+shrubs, and reeds are deterministic shared-mesh foliage with no gameplay
+collider. Grass uses overlapping shared patches of forty-nine narrow crossed
+blades across the full playable view distance: covered ground reads as a
+continuous sward from normal camera angles while remaining legible from
+overhead. Stable per-blade thresholds continuously reduce distant density and
+compensate surviving blade width without visible LOD rings. Layered spatial
+wind bends tips more than roots, while the locally controlled player's position
+and velocity flatten and push nearby grass as a presentation-only effect.
+Root self-shadow, broad colour variation, a darker centre rib, and softened
+upward normals keep the dense field readable without making individual cards
+look heavily lit. A procedural terrain material blends forest floor, dry
 ground, mud, cultivation, stone, wetness, and snow while adding small-scale
 colour and normal variation. Tree sampling follows canopy
 coverage; rock sampling uses an independent deterministic roll scaled by hilly

@@ -6,7 +6,9 @@ use adventuresim_tactical_netcode::{
 };
 use bevy::prelude::*;
 
-use crate::{animation::spawn_fallback_t_pose, camera::CameraAimState};
+use crate::{
+    animation::spawn_fallback_t_pose, camera::CameraAimState, presentation::GrassInteractor,
+};
 
 const BODY_PART_HITBOXES: &[(BodyPart, Vec3, Vec3)] = &[
     (
@@ -137,6 +139,7 @@ fn on_new_player_added_hook(
         commands.entity(event.entity).insert((
             tactical_character_controller(),
             ClientPlayer,
+            GrassInteractor,
             actions!(Player[
                 (
                     Action::<input::Movement>::new(),
