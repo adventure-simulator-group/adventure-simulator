@@ -9,8 +9,8 @@ struct TacticalFoliageMaterial {
     wind: vec4<f32>,
     interaction: vec4<f32>,
     interaction_motion: vec4<f32>,
-    lod: vec4<f32>,
     shading: vec4<f32>,
+    shape: vec4<f32>,
 }
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(0)
@@ -32,31 +32,11 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         world_from_local,
         vec4<f32>(root_local, 1.0),
     ).xyz;
-    let distance_to_camera = distance(root_world, view.lod_view_world_position.xyz);
-    let lod_amount = smoothstep(foliage.lod.x, foliage.lod.y, distance_to_camera);
-    let density = mix(1.0, foliage.lod.z, lod_amount * foliage.lod.w);
-    var survival = 1.0;
-    if foliage.lod.w > 0.5 {
-        survival = 1.0 - smoothstep(density, density + 0.035, blade_threshold);
-    }
-    let width_compensation = mix(
-        1.0,
-        min(2.25, inverseSqrt(max(density, 0.01))),
-        foliage.lod.w,
-    );
-    let adjusted_xz = root_local.xz
-        + (position.xz - root_local.xz) * width_compensation * survival;
-    position = vec3<f32>(
-        adjusted_xz.x,
-        root_local.y + (position.y - root_local.y) * survival,
-        adjusted_xz.y,
-    );
-
-    var world_position = mesh_functions::mesh_position_local_to_world(
-        world_from_local,
-        vec4<f32>(position, 1.0),
-    );
-    let bend = clamp(vertex.uv.y, 0.0, 1.0) * survival;
+    // Density is represented by genuinely smaller LOD meshes. The previous
+    // distance threshold collapsed rejected blades here, after their vertex
+    // invocations had already begun, so it did not save vertex work.
+    let width_compensation = max(foliage.shape.w, 1.0);
+    let bend = clamp(vertex.uv.y, 0.0, 1.0);
     let wind_direction = normalize(foliage.wind.xy);
     let wind_cross = vec2<f32>(-wind_direction.y, wind_direction.x);
     let spatial_noise = sin(root_world.x * 0.071 + root_world.z * 0.113)
@@ -74,14 +54,8 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         wind_direction * primary_wave * gust
         + wind_cross * flutter * 0.18
     ) * foliage.wind.z;
-    let wind_bend = (natural_lean + wind_offset) * bend * bend;
-    world_position = vec4<f32>(
-        world_position.x + wind_bend.x,
-        world_position.y,
-        world_position.z + wind_bend.y,
-        world_position.w,
-    );
-
+    var interaction_offset = vec2<f32>(0.0, 0.0);
+    var interaction_droop = 0.0;
     if foliage.interaction.w > 0.0 && foliage.shading.w > 0.5 {
         let from_player = root_world.xz - foliage.interaction.xz;
         let player_distance = length(from_player);
@@ -95,24 +69,105 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         let player_push = (1.0 - smoothstep(0.18, foliage.interaction.w, player_distance))
             * foliage.interaction_motion.w;
         let motion_direction = normalize(velocity_xz + push_direction * 0.15);
-        let interaction_bend = (
+        interaction_offset = (
             push_direction * 0.62 + motion_direction * min(length(velocity_xz) * 0.035, 0.28)
-        ) * player_push * bend * bend;
+        ) * player_push;
+        interaction_droop = player_push * 0.34;
+    }
+
+    let original_world_normal = normalize(mesh_functions::mesh_normal_local_to_world(
+        vertex.normal,
+        vertex.instance_index,
+    ));
+    var world_position: vec4<f32>;
+    var shaped_world_normal = original_world_normal;
+    if foliage.shape.x > 0.5 {
+        // Each grass blade is a single longitudinal ribbon. Its sampled rows
+        // follow one cubic curve, rather than translating a rigid card.
+        let t = clamp(vertex.uv.y, 0.0, 1.0);
+        let one_minus_t = 1.0 - t;
+        let curve_profile = 3.0 * one_minus_t * one_minus_t * t * 0.06
+            + 3.0 * one_minus_t * t * t * 0.5
+            + t * t * t;
+        let curve_derivative = 3.0 * one_minus_t * one_minus_t * 0.06
+            + 6.0 * one_minus_t * t * (0.5 - 0.06)
+            + 3.0 * t * t * (1.0 - 0.5);
+        let authored_facing = normalize(original_world_normal.xz + vec2<f32>(0.0001, 0.0));
+        let authored_amount = 0.72 + 0.28
+            * sin(root_world.x * 2.17 - root_world.z * 1.39 + blade_threshold * 5.7);
+        let total_curve = authored_facing * foliage.shape.z * authored_amount
+            + natural_lean
+            + wind_offset
+            + interaction_offset;
+
+        let centre_local = vec3<f32>(root_local.x, position.y, root_local.z);
+        let centre_world = mesh_functions::mesh_position_local_to_world(
+            world_from_local,
+            vec4<f32>(centre_local, 1.0),
+        );
+        let curve_offset = total_curve * curve_profile;
+
+        // Rotate a ribbon toward the camera only as it becomes edge-on. This
+        // preserves each blade's authored facing while preventing it from
+        // disappearing to sub-pixel width at glancing angles.
+        let local_side = normalize(vec2<f32>(-vertex.normal.z, vertex.normal.x));
+        let transformed_side = (world_from_local
+            * vec4<f32>(local_side.x, 0.0, local_side.y, 0.0)).xz;
+        let side_scale = length(transformed_side);
+        let original_side = normalize(transformed_side + vec2<f32>(0.0001, 0.0));
+        let to_camera = normalize(view.lod_view_world_position.xz - root_world.xz
+            + vec2<f32>(0.0001, 0.0));
+        var camera_side = vec2<f32>(-to_camera.y, to_camera.x);
+        camera_side = select(camera_side, -camera_side, dot(camera_side, original_side) < 0.0);
+        let edge_on = 1.0 - smoothstep(0.08, 0.38, abs(dot(original_world_normal.xz, to_camera)));
+        let visible_side = normalize(mix(original_side, camera_side, edge_on * foliage.shape.y));
+        let half_width = length(position.xz - root_local.xz)
+            * side_scale
+            * width_compensation;
+        let signed_side = select(-1.0, 1.0, vertex.uv.x >= 0.5);
+        let side_offset = visible_side * half_width * signed_side;
         world_position = vec4<f32>(
-            world_position.x + interaction_bend.x,
-            world_position.y - player_push * 0.34 * bend * bend,
-            world_position.z + interaction_bend.y,
+            centre_world.x + curve_offset.x + side_offset.x,
+            centre_world.y - interaction_droop * t * t,
+            centre_world.z + curve_offset.y + side_offset.y,
+            centre_world.w,
+        );
+
+        let world_up = (world_from_local * vec4<f32>(0.0, 1.0, 0.0, 0.0)).xyz;
+        let tangent = vec3<f32>(
+            world_up.x + total_curve.x * curve_derivative,
+            world_up.y - interaction_droop * 2.0 * t,
+            world_up.z + total_curve.y * curve_derivative,
+        );
+        shaped_world_normal = normalize(cross(tangent, vec3<f32>(visible_side.x, 0.0, visible_side.y)));
+    } else {
+        let adjusted_xz = root_local.xz
+            + (position.xz - root_local.xz) * width_compensation;
+        position = vec3<f32>(
+            adjusted_xz.x,
+            position.y,
+            adjusted_xz.y,
+        );
+        world_position = mesh_functions::mesh_position_local_to_world(
+            world_from_local,
+            vec4<f32>(position, 1.0),
+        );
+        let card_bend = (natural_lean + wind_offset + interaction_offset) * bend * bend;
+        world_position = vec4<f32>(
+            world_position.x + card_bend.x,
+            world_position.y - interaction_droop * bend * bend,
+            world_position.z + card_bend.y,
             world_position.w,
         );
     }
 
     out.world_position = world_position;
     out.position = position_world_to_clip(out.world_position.xyz);
-    let world_normal = mesh_functions::mesh_normal_local_to_world(
-        vertex.normal,
-        vertex.instance_index,
-    );
-    out.world_normal = normalize(mix(world_normal, vec3<f32>(0.0, 1.0, 0.0), foliage.shading.z));
+    out.world_normal = normalize(mix(
+        shaped_world_normal,
+        vec3<f32>(0.0, 1.0, 0.0),
+        foliage.shading.z,
+    ));
     out.uv = vertex.uv;
 #ifdef VERTEX_UVS_B
     out.uv_b = vertex.uv_b;
