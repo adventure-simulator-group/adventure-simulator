@@ -122,6 +122,10 @@ pub struct TacticalSceneInput {
 pub struct SceneEnvironment {
     pub scene_digest: String,
     pub generation_version: u16,
+    pub latitude_microdegrees: i32,
+    pub longitude_microdegrees: i32,
+    pub absolute_minute: u64,
+    pub absolute_elevation_metres: i16,
     pub weather: WeatherSnapshot,
     pub canopy_bps: u16,
     pub wetland_bps: u16,
@@ -350,6 +354,10 @@ impl TacticalSceneInput {
         SceneEnvironment {
             scene_digest,
             generation_version: self.generation_version,
+            latitude_microdegrees: self.latitude_microdegrees,
+            longitude_microdegrees: self.longitude_microdegrees,
+            absolute_minute: self.absolute_minute,
+            absolute_elevation_metres: self.absolute_elevation_metres,
             weather: self.weather,
             canopy_bps: (sum[0] / count) as u16,
             wetland_bps: (sum[1] / count) as u16,

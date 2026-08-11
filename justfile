@@ -322,6 +322,10 @@ tactical-tree-canopy-series output="target/tactical-scene-captures/tree-canopy-s
 tactical-scene-matrix output="" settle_frames="12":
     @{{ python_bin }} scripts/capture_tactical_scenes.py {{ if output != "" { "--output " + quote(output) } else { "" } }} --settle-frames {{ quote(settle_frames) }}
 
+# Capture one deterministic atmosphere/celestial verification view.
+tactical-sky-capture view="sun" output="target/tactical-sky-captures/sun.png" settle_frames="24":
+    @cargo run -p adventuresim-tactical-client --bin tactical-sky-viewer -- --view {{ quote(view) }} --output {{ quote(output) }} --settle-frames {{ quote(settle_frames) }}
+
 # Launch the native-only graph editor after validating semantic packs and routes.
 animation-graph-editor asset_source="assets":
     @cargo run -p adventuresim-tactical-client --no-default-features --features animation-graph-editor --bin animation-graph-editor -- --asset-source {{ quote(asset_source) }}

@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1959)
+## Files (1968)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -62,7 +62,10 @@ development, or other wiki document before changing a subsystem.
 - `assets/animations/biped/unarmed/supine_transition.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/walk.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/walk_mirrored.glb` — Binary game or UI asset.
+- `assets/data/hipparcos-bright-stars.csv` — Repository support file.
 - `assets/shaders/tactical_foliage.wgsl` — Repository support file.
+- `assets/shaders/tactical_moon.wgsl` — Repository support file.
+- `assets/shaders/tactical_stars.wgsl` — Repository support file.
 - `assets/shaders/tactical_terrain.wgsl` — Repository support file.
 - `assets/shaders/tactical_tree_impostor.wgsl` — Repository support file.
 - `assets/tactical-equipment-icons.png` — Binary game or UI asset.
@@ -175,6 +178,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-core/src/book.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/capability.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/case.rs` — Rust source module for this component.
+- `crates/adventuresim-core/src/celestial.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/combat.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/composite.rs` — Rust source module for this component.
 - `crates/adventuresim-core/src/courtship.rs` — Rust source module for this component.
@@ -1367,6 +1371,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/presentation/obstacles/tree/impostor.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/obstacles/tree/mod.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/procedural.rs` — Rust source module.
+- `crates/adventuresim-tactical-client/src/presentation/sky/mod.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/terrain.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/vista.rs` — Rust source module.
 - `crates/adventuresim-tactical-client/src/presentation/weather.rs` — Rust source module.
@@ -1374,6 +1379,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/ragdoll_viewer_main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/tactical_scene_viewer_main.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-client/src/tactical_sky_viewer.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-client/src/tactical_sky_viewer_main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/ui.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-core/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-tactical-core/src/animation/evaluation.rs` — Rust source module.
@@ -1861,6 +1868,7 @@ development, or other wiki document before changing a subsystem.
 - `scripts/build_wasm.py` — Development or documentation automation script.
 - `scripts/capture_tactical_scenes.py` — Development or documentation automation script.
 - `scripts/dev_stack.py` — Development or documentation automation script.
+- `scripts/import_hipparcos_stars.py` — Development or documentation automation script.
 - `scripts/init_forest_cover.py` — Development or documentation automation script.
 - `scripts/init_jung_pnv.py` — Development or documentation automation script.
 - `scripts/init_owda.py` — Development or documentation automation script.
@@ -1967,6 +1975,7 @@ development, or other wiki document before changing a subsystem.
 - `wiki/strategic/trade.md` — Project documentation.
 - `wiki/strategic/travel.md` — Project documentation.
 - `wiki/tactical/combat.md` — Project documentation.
+- `wiki/tactical/sky.md` — Project documentation.
 - `wiki/tactical/stealth.md` — Project documentation.
 - `world-data-release.lock.json` — Repository support file.
 - `world-runtime-release.lock.json` — Repository support file.
