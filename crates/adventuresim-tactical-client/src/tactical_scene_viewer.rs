@@ -111,6 +111,7 @@ struct CaptureRecord {
     camera_translation: [f32; 3],
     camera_target: [f32; 3],
     foreground_pixel_bps: u16,
+    detail_pixel_bps: u16,
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -167,6 +168,7 @@ struct VistaSummary {
 struct ValidationSummary {
     all_views_captured: bool,
     all_views_render_content: bool,
+    foliage_detail_present: bool,
     all_obstacles_presented: bool,
     all_obstacles_collidable: bool,
     procedural_rocks_fit_colliders: bool,
@@ -593,6 +595,7 @@ fn capture_views(
                 camera_translation: camera.0.translation.to_array(),
                 camera_target: target.to_array(),
                 foreground_pixel_bps: 0,
+                detail_pixel_bps: 0,
             });
         }
         return;
@@ -659,9 +662,11 @@ fn capture_views(
               mut state: ResMut<CaptureState>,
               mut exit: MessageWriter<AppExit>| {
             let foreground_pixel_bps = foreground_pixel_bps(captured.image.data.as_deref());
+            let detail_pixel_bps = foliage_detail_pixel_bps(captured.image.data.as_deref());
             save_to_disk(&path)(captured);
             if let Some(record) = state.captures.last_mut() {
                 record.foreground_pixel_bps = foreground_pixel_bps;
+                record.detail_pixel_bps = detail_pixel_bps;
             }
             state.view += 1;
             state.view_started = false;
@@ -673,6 +678,16 @@ fn capture_views(
                     manifest.captures.iter().all(|capture| {
                         capture.foreground_pixel_bps >= minimum_foreground_bps(&capture.view)
                     });
+                // The flat fixture provides a stable image-space sentinel for
+                // the foliage material. Slopes, dark wetlands, and tree cover
+                // can legitimately hide the same fine overhead contrast.
+                manifest.validation.foliage_detail_present = manifest.fixture
+                    != "flat-dry-grassland"
+                    || manifest
+                        .captures
+                        .iter()
+                        .find(|capture| capture.view == "beauty-overhead")
+                        .is_some_and(|capture| capture.detail_pixel_bps >= 100);
                 if manifest.fixture == "narrow-peak-lod-boundary" {
                     manifest.validation.fixture_feature_expectation_met &= manifest
                         .captures
@@ -820,6 +835,7 @@ fn build_manifest(
     let mut validation = ValidationSummary {
         all_views_captured: state.captures.len() == CAPTURE_VIEWS.len() - 1,
         all_views_render_content: false,
+        foliage_detail_present: false,
         all_obstacles_presented: presented_trees == state.expected_trees
             && presented_rocks == state.expected_rocks,
         all_obstacles_collidable: collider_trees == state.expected_trees
@@ -869,6 +885,7 @@ fn build_manifest(
 fn validation_passes(validation: &ValidationSummary) -> bool {
     validation.all_views_captured
         && validation.all_views_render_content
+        && validation.foliage_detail_present
         && validation.all_obstacles_presented
         && validation.all_obstacles_collidable
         && validation.procedural_rocks_fit_colliders
@@ -907,6 +924,36 @@ fn foreground_pixel_bps(data: Option<&[u8]>) -> u16 {
         0
     } else {
         ((foreground * 10_000 / pixels).min(10_000)) as u16
+    }
+}
+
+fn foliage_detail_pixel_bps(data: Option<&[u8]>) -> u16 {
+    let Some(data) = data else {
+        return 0;
+    };
+    let row_bytes = VIEW_WIDTH as usize * 4;
+    if data.len() < row_bytes * VIEW_HEIGHT as usize {
+        return 0;
+    }
+    let first_row = VIEW_HEIGHT as usize / 3;
+    let mut compared = 0usize;
+    let mut detailed = 0usize;
+    for y in first_row..VIEW_HEIGHT as usize {
+        let row = &data[y * row_bytes..(y + 1) * row_bytes];
+        for pair in row.chunks_exact(4).zip(row[4..].chunks_exact(4)) {
+            compared += 1;
+            let difference = pair.0[..3]
+                .iter()
+                .zip(&pair.1[..3])
+                .map(|(left, right)| left.abs_diff(*right) as u16)
+                .sum::<u16>();
+            detailed += usize::from(difference >= 4);
+        }
+    }
+    if compared == 0 {
+        0
+    } else {
+        ((detailed * 10_000 / compared).min(10_000)) as u16
     }
 }
 

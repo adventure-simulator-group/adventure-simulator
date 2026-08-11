@@ -68,7 +68,11 @@ impl Plugin for TacticalPresentationPlugin {
             max_vista_lods: self.max_vista_lods,
         })
         .add_systems(Startup, setup_tactical_presentation)
-        .add_systems(Update, advance_weather_particles)
+        .init_resource::<GrassInteractionState>()
+        .add_systems(
+            Update,
+            (advance_weather_particles, update_grass_interaction),
+        )
         .add_observer(on_game_scene_added)
         .add_observer(on_scene_environment_added)
         .add_observer(on_scene_obstacle_added)
@@ -121,6 +125,14 @@ type TacticalTerrainMaterial = ExtendedMaterial<StandardMaterial, TacticalTerrai
 struct TacticalFoliageMaterial {
     #[uniform(0)]
     wind: Vec4,
+    #[uniform(0)]
+    interaction: Vec4,
+    #[uniform(0)]
+    interaction_motion: Vec4,
+    #[uniform(0)]
+    lod: Vec4,
+    #[uniform(0)]
+    shading: Vec4,
 }
 
 impl Material for TacticalFoliageMaterial {
@@ -155,6 +167,16 @@ impl Material for TacticalFoliageMaterial {
 pub(crate) enum FoliageLayer {
     Grass,
     Understory,
+}
+
+/// Marks the locally controlled character whose movement bends nearby grass.
+#[derive(Component)]
+pub(crate) struct GrassInteractor;
+
+#[derive(Resource, Default)]
+struct GrassInteractionState {
+    previous_position: Option<Vec3>,
+    smoothed_velocity: Vec3,
 }
 
 #[derive(Component)]
@@ -337,7 +359,7 @@ fn on_scene_obstacle_added(
                 perceptual_roughness: 0.95,
                 ..default()
             });
-            let crown_material = foliage_materials.add(foliage_material(0.32));
+            let crown_material = foliage_materials.add(foliage_material(0.32, false));
             let high_crown = meshes.add(tree_crown_mesh(seed, 2, 1.42));
             let side_crown_a = meshes.add(tree_crown_mesh(seed ^ 0x41ac_921d, 2, 1.08));
             let side_crown_b = meshes.add(tree_crown_mesh(seed ^ 0xc337_8ba9, 2, 1.14));
@@ -481,9 +503,61 @@ fn legacy_scene_environment(id: &SceneId) -> SceneEnvironment {
     }
 }
 
-fn foliage_material(wind_scale: f32) -> TacticalFoliageMaterial {
+fn foliage_material(wind_scale: f32, ground_foliage: bool) -> TacticalFoliageMaterial {
     TacticalFoliageMaterial {
         wind: Vec4::new(0.74, 0.67, wind_scale, 1.35),
+        interaction: Vec4::ZERO,
+        interaction_motion: Vec4::ZERO,
+        lod: if ground_foliage {
+            Vec4::new(24.0, 120.0, 0.18, 1.0)
+        } else {
+            Vec4::ZERO
+        },
+        // Root brightness, meadow colour variation, normal up-bias, and
+        // whether nearby player movement affects this material.
+        shading: if ground_foliage {
+            Vec4::new(0.42, 0.13, 0.76, 1.0)
+        } else {
+            Vec4::new(0.55, 0.08, 0.28, 0.0)
+        },
+    }
+}
+
+fn update_grass_interaction(
+    time: Res<Time>,
+    interactors: Query<&GlobalTransform, With<GrassInteractor>>,
+    mut state: ResMut<GrassInteractionState>,
+    mut materials: ResMut<Assets<TacticalFoliageMaterial>>,
+) {
+    let Some(position) = interactors.iter().next().map(GlobalTransform::translation) else {
+        state.previous_position = None;
+        state.smoothed_velocity = Vec3::ZERO;
+        for (_, material) in materials.iter_mut() {
+            material.interaction = Vec4::ZERO;
+            material.interaction_motion = Vec4::ZERO;
+        }
+        return;
+    };
+    let delta_seconds = time.delta_secs().max(1.0 / 240.0);
+    let velocity = state
+        .previous_position
+        .map(|previous| ((position - previous) / delta_seconds).clamp_length_max(8.0))
+        .unwrap_or_default();
+    let response = 1.0 - (-delta_seconds * 10.0).exp();
+    state.smoothed_velocity = state.smoothed_velocity.lerp(velocity, response);
+    state.previous_position = Some(position);
+    let speed = state.smoothed_velocity.length();
+    for (_, material) in materials.iter_mut() {
+        if material.shading.w <= 0.5 {
+            continue;
+        }
+        material.interaction = position.extend(1.35);
+        material.interaction_motion = Vec4::new(
+            state.smoothed_velocity.x,
+            state.smoothed_velocity.y,
+            state.smoothed_velocity.z,
+            (0.7 + speed * 0.11).clamp(0.7, 1.35),
+        );
     }
 }
 
@@ -513,9 +587,11 @@ fn spawn_ground_foliage(
     });
     let grass_material = materials.add(foliage_material(
         0.16 + bps(environment.weather.wind_speed_bps) * 0.36,
+        true,
     ));
     let understory_material = materials.add(foliage_material(
         0.1 + bps(environment.weather.wind_speed_bps) * 0.24,
+        true,
     ));
     let base_seed = stable_text_seed(&environment.scene_digest) ^ stable_text_seed(&scene_id.0);
     let canopy = bps(environment.canopy_bps);
@@ -626,11 +702,14 @@ fn foliage_patch_mesh(
     let mut positions = Vec::with_capacity(tufts.len() * planes * 5);
     let mut normals = Vec::with_capacity(tufts.len() * planes * 5);
     let mut uvs = Vec::with_capacity(tufts.len() * planes * 5);
+    let mut blade_roots = Vec::with_capacity(tufts.len() * planes * 5);
     let mut colors = Vec::with_capacity(tufts.len() * planes * 5);
     let mut indices = Vec::with_capacity(tufts.len() * planes * 9);
     let linear = color.to_linear().to_f32_array();
-    for &(offset_x, offset_z, tuft_scale) in tufts {
+    for (tuft_index, &(offset_x, offset_z, tuft_scale)) in tufts.iter().enumerate() {
         let centre = Vec3::new(offset_x, 0.0, offset_z);
+        let blade_threshold = unit_hash(splitmix64(tuft_index as u64 ^ 0x3d91_02ea_61b8_7c45));
+        let blade_color = [linear[0], linear[1], linear[2], blade_threshold];
         for plane in 0..planes {
             let angle = plane as f32 * core::f32::consts::PI / planes as f32;
             let direction = Vec3::new(angle.cos(), 0.0, angle.sin()) * width * tuft_scale * 0.5;
@@ -653,7 +732,8 @@ fn foliage_patch_mesh(
                 [0.75, 0.72],
                 [0.5, 1.0],
             ]);
-            colors.extend_from_slice(&[linear; 5]);
+            blade_roots.extend_from_slice(&[[offset_x, offset_z]; 5]);
+            colors.extend_from_slice(&[blade_color; 5]);
             indices.extend_from_slice(&[
                 base,
                 base + 1,
@@ -674,6 +754,7 @@ fn foliage_patch_mesh(
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_1, blade_roots);
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
     mesh.insert_indices(Indices::U32(indices));
     mesh
@@ -1165,6 +1246,59 @@ mod tests {
             .and_then(VertexAttributeValues::as_float3)
             .unwrap();
         assert_eq!(positions.len(), 49 * 2 * 5);
+        let Some(VertexAttributeValues::Float32x2(roots)) = mesh.attribute(Mesh::ATTRIBUTE_UV_1)
+        else {
+            panic!("grass mesh must carry stable blade roots");
+        };
+        assert_eq!(roots.len(), positions.len());
+        let Some(VertexAttributeValues::Float32x4(colors)) = mesh.attribute(Mesh::ATTRIBUTE_COLOR)
+        else {
+            panic!("grass mesh must carry stable blade thresholds");
+        };
+        assert!(colors.iter().all(|color| (0.0..1.0).contains(&color[3])));
+        assert!(colors.iter().any(|color| color[3] < 0.25));
+        assert!(colors.iter().any(|color| color[3] > 0.75));
+    }
+
+    #[test]
+    fn ground_foliage_enables_continuous_lod_and_interaction() {
+        let grass = foliage_material(0.3, true);
+        let crown = foliage_material(0.3, false);
+        assert_eq!(grass.lod, Vec4::new(24.0, 120.0, 0.18, 1.0));
+        assert_eq!(grass.shading.w, 1.0);
+        assert_eq!(crown.lod, Vec4::ZERO);
+        assert_eq!(crown.shading.w, 0.0);
+    }
+
+    #[test]
+    fn local_interactor_position_reaches_only_ground_foliage_materials() {
+        let mut app = App::new();
+        app.init_resource::<Time>();
+        app.init_resource::<Assets<TacticalFoliageMaterial>>();
+        app.init_resource::<GrassInteractionState>();
+        app.add_systems(Update, update_grass_interaction);
+        let (grass, crown) = {
+            let mut materials = app
+                .world_mut()
+                .resource_mut::<Assets<TacticalFoliageMaterial>>();
+            (
+                materials.add(foliage_material(0.3, true)),
+                materials.add(foliage_material(0.3, false)),
+            )
+        };
+        app.world_mut().spawn((
+            GrassInteractor,
+            GlobalTransform::from_translation(Vec3::new(3.0, 1.0, -2.0)),
+        ));
+
+        app.update();
+
+        let materials = app.world().resource::<Assets<TacticalFoliageMaterial>>();
+        assert_eq!(
+            materials.get(&grass).unwrap().interaction,
+            Vec4::new(3.0, 1.0, -2.0, 1.35)
+        );
+        assert_eq!(materials.get(&crown).unwrap().interaction, Vec4::ZERO);
     }
 
     #[test]
