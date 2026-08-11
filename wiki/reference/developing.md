@@ -747,6 +747,69 @@ For testing without the spawner:
 just tactical mission_id="test-123" scene_key="hills"
 ```
 
+To exercise the versioned tactical scene boundary with bounded synthetic world
+data, pass the committed fixture (or set `TACTICAL_SCENE_INPUT`):
+
+```powershell
+$env:TACTICAL_MISSION_ID = "test-123"
+$env:TACTICAL_SCENE_KEY = "grassland"
+$env:TACTICAL_SCENE_INPUT = "assets/tactical-scenes/flat-dry-grassland.json"
+just tactical
+```
+
+The server validates schema/generation versions, dimensions, sample counts,
+finite values, geographic and environmental bounds, weather consistency, and
+the 32 MiB file cap before opening its game listener. It deterministically
+repairs impassable deployment pads and the central encounter corridor, then
+logs the stable scene digest and repair counts. With no scene input, the old
+`hills`/`desert` noise generator remains a tactical development fallback.
+
+The committed catalog under `assets/tactical-scenes/` covers flat grassland,
+steep slopes, dense and sparse woodland, wetlands, cultivated roadside, snow,
+heavy rain and wind, distant valley ridges, a narrow LOD-boundary peak, and a
+scene requiring playability repair. Regenerate it with
+`cargo run -p adventuresim-tactical-core --bin generate-scene-fixtures`; add
+`-- --check` in verification. The isolated and supervised workflows accept a
+fixture path as their final argument:
+
+```powershell
+just tactical-isolated tactical-rain 23200 mission:tactical-rain hills 0 1 assets/tactical-scenes/heavy-rain-high-wind.json
+just tactical-play combat 24920 default off auto-vsync off window auto assets/tactical-scenes/dense-woodland.json
+```
+
+For deterministic visual review without a database, server, character, or
+desktop screenshot tool, capture one fixture through the real tactical scene
+presentation plugin:
+
+```powershell
+just tactical-scene-capture dense-woodland
+just tactical-scene-capture heavy-rain-high-wind target/tactical-scene-captures/rain-review
+```
+
+The native viewer writes fixed ground, overhead, horizon, and collider-overlay
+PNGs alongside the exact `input.json`, a browsable `index.html`, and a
+machine-readable `manifest.json`. It exits unsuccessfully and writes
+`failure.txt` when presentation/collider counts, precipitation, three vista
+LODs, the 50 km vista contract, non-uniform rendered content, or the dedicated
+boundary-peak view fail. Explicit output directories must be
+fresh so a prior capture cannot satisfy a new run accidentally.
+
+Capture the complete committed fixture catalog with
+`just tactical-scene-matrix`. Pass a fresh output directory as its first
+argument when a stable path is useful. Repeat `--fixture` directly against
+`scripts/capture_tactical_scenes.py` to build a focused A/B matrix. Semantic
+gates complement rather than replace inspecting the rendered PNGs for
+composition, visibility, scale, seams, and weather readability.
+
+Production requests snapshot exact case-site coordinates and character time in
+SpacetimeDB. The dispatcher loads the final routing terrain pack once, samples a
+one-metre playable grid and three peak-preserving vista LODs out to 50 km,
+computes authoritative weather, atomically writes the scene input under
+`target/tactical-scene-inputs/`, and launches the child with that file.
+Set `ADVENTURESIM_RUNTIME_ROOT` to an absolute writable directory when the
+platform's normal per-user runtime directory is unavailable (for example in a
+restricted automation sandbox); profile containment checks still apply.
+
 For a self-contained tactical database and request, prefer
 `just tactical-isolated`; it writes `.env.tactical` so a subsequent bare
 `just tactical` and `just client` target the same isolated instance.

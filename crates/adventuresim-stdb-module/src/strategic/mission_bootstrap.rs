@@ -623,6 +623,14 @@ pub fn seed_standalone_tactical_mission(
             scene_key,
             party_id,
             requested_by: character_id,
+            longitude_e7: case_site.longitude_e7,
+            latitude_e7: case_site.latitude_e7,
+            absolute_minute: ctx
+                .db
+                .character_time()
+                .character_id()
+                .find(character_id)
+                .map_or(adventuresim_core::strategic_time::WORLD_START_MINUTE, |time| time.minutes),
             expected_party_members,
             authorized_party_member_ids,
             required_enemy_kills,

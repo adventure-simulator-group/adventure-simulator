@@ -12,6 +12,15 @@ import scripts.dev_stack as dev_stack
 
 
 class ProfileTests(unittest.TestCase):
+    def test_runtime_root_accepts_only_an_absolute_override(self):
+        with mock.patch.dict(os.environ, {"ADVENTURESIM_RUNTIME_ROOT": "relative"}):
+            with self.assertRaises(ValueError):
+                dev_stack.runtime_root()
+        with tempfile.TemporaryDirectory() as state, mock.patch.dict(
+            os.environ, {"ADVENTURESIM_RUNTIME_ROOT": state}
+        ):
+            self.assertEqual(dev_stack.runtime_root(), Path(state))
+
     def test_profile_has_worktree_isolated_identifiers(self):
         with tempfile.TemporaryDirectory() as state:
             one = dev_stack.profile_values("renderer-demo", 23100, root=Path("/repo/one"), state_root=Path(state))

@@ -114,6 +114,7 @@ impl GraphicsPreset {
             environment_map_size: 64,
             bloom_enabled: !matches!(self, Self::NoBloom | Self::Minimal),
             ssao_enabled: !matches!(self, Self::NoSsao | Self::Minimal),
+            max_vista_lods: if matches!(self, Self::Minimal) { 1 } else { 3 },
         }
     }
 }

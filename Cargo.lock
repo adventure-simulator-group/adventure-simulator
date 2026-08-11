@@ -207,7 +207,9 @@ dependencies = [
  "postcard",
  "serde",
  "serde_json",
+ "sha2",
  "strum 0.28.0",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -242,9 +244,14 @@ dependencies = [
 name = "adventuresim-tactical-server-dispatcher"
 version = "0.1.0"
 dependencies = [
+ "adventuresim-core",
  "adventuresim-stdb-client",
+ "adventuresim-tactical-core",
+ "adventuresim-terrain",
  "clap",
+ "flate2",
  "rand 0.9.4",
+ "serde_json",
  "sha2",
  "tracing",
  "tracing-subscriber",
