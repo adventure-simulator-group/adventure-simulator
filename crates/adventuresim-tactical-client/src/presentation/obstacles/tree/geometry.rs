@@ -1,7 +1,7 @@
 use super::super::super::*;
 
 pub(in crate::presentation) const TREE_PRIMARY_GROUP_COUNT: u8 = 7;
-pub(in crate::presentation) const TREE_SECONDARY_GROUPS_PER_PRIMARY: u16 = 10;
+pub(in crate::presentation) const TREE_SECONDARY_GROUP_STRIDE: u16 = 12;
 
 #[derive(Clone, Copy, Debug)]
 pub(in crate::presentation) struct TreeBranchSegment {
@@ -27,7 +27,7 @@ pub(in crate::presentation) fn procedural_tree_skeleton(
     // Quercus robur is usually short-boled in the open.  The trunk loses
     // dominance inside a broad crown instead of continuing as a conifer-like
     // central spear.
-    let trunk_length = 4.95_f32.lerp(9.2, canopy_competition);
+    let trunk_length = 6.25_f32.lerp(9.2, canopy_competition);
     let trunk_points = (0..=6)
         .map(|index| {
             let t = index as f32 / 6.0;
@@ -63,31 +63,63 @@ pub(in crate::presentation) fn procedural_tree_skeleton(
         append_branch_curve(&mut branches, &points, 0.34, 0.045, 0, u8::MAX, u16::MAX);
     }
 
-    // Five unequal scaffold limbs fill a low, wide, irregular dome.  Each
-    // has a shallow sag and a recovered tip, a characteristic silhouette of
-    // a vigorous open-grown pedunculate oak.
+    // Seven crown sectors fill a low, wide, irregular dome. Four are heavy,
+    // load-bearing scaffold axes; the other three are subordinate crown-fill
+    // limbs. This avoids both a radial whorl and an implausibly symmetrical
+    // crown while retaining an even distribution of terminal foliage.
+    let mut dominant_scaffolds: Vec<Vec<Vec3>> = Vec::with_capacity(4);
     for primary_index in 0..u64::from(TREE_PRIMARY_GROUP_COUNT) {
+        let dominant = primary_index < 4;
+        let rank = if dominant {
+            primary_index as f32
+        } else {
+            (primary_index - 4) as f32
+        };
         let primary_seed = splitmix64(seed ^ primary_index.wrapping_mul(0x9e37_79b9));
         let phase = crown_phase
             + primary_index as f32 * 2.399_963_1
             + (unit_hash(primary_seed) - 0.5) * 0.42;
         let outward = Vec3::new(phase.cos(), 0.0, phase.sin());
         let tangent = Vec3::new(-phase.sin(), 0.0, phase.cos());
-        let isolated_attach = 0.3 + primary_index as f32 * 0.06;
-        let competitive_attach = 0.68 + primary_index as f32 * 0.05;
+        let (isolated_attach, competitive_attach) = if dominant {
+            (0.38 + rank * 0.203, 0.58 + rank * 0.132)
+        } else {
+            (0.35 + rank * 0.17, 0.48 + rank * 0.12)
+        };
         let attach = isolated_attach.lerp(competitive_attach.min(0.975), canopy_competition);
-        let start = sample_polyline(&trunk_points, attach);
+        let start = if dominant {
+            sample_polyline(&trunk_points, attach)
+        } else {
+            sample_polyline(&dominant_scaffolds[rank as usize], attach)
+        };
         // In the open, every principal axis contributes to the same broad,
         // ascending dome. Keeping separate vertical "leader" axes produces
         // a pollarded V silhouette instead of the decurrent habit of a mature
         // oak. Competition progressively shortens these lateral reaches and
         // raises their attachment points, leaving a tall clear bole.
-        let rank = primary_index as f32;
-        let isolated_reach = 5.9 - rank * 0.34 + unit_hash(primary_seed ^ 1) * 0.42;
-        let isolated_lift = 0.9 + rank * 0.35 + unit_hash(primary_seed ^ 2) * 0.24;
-        let isolated_sag = (0.9 - rank * 0.1).max(0.24);
-        let competitive_reach = 2.8 - rank * 0.12;
-        let competitive_lift = 2.0 + rank * 0.45;
+        let (isolated_reach, isolated_lift, isolated_sag) = if dominant {
+            let lift_profile = [0.8, 1.1, 0.95, 1.25][primary_index as usize];
+            let sag_profile = [0.75, 0.55, 0.65, 0.45][primary_index as usize];
+            (
+                5.4 - rank * 0.12 + unit_hash(primary_seed ^ 1) * 0.35,
+                lift_profile + unit_hash(primary_seed ^ 2) * 0.2,
+                sag_profile,
+            )
+        } else {
+            (
+                2.7 - rank * 0.1 + unit_hash(primary_seed ^ 1) * 0.3,
+                1.2 + rank * 0.2 + unit_hash(primary_seed ^ 2) * 0.18,
+                0.28,
+            )
+        };
+        let (competitive_reach, competitive_lift) = if dominant {
+            (2.75 - rank * 0.14, 2.35 + rank * 0.15)
+        } else {
+            // High attachment already lifts these crown-fill axes. Keeping
+            // their extension below the dominant scaffold tips rounds the
+            // competitive crown instead of growing a false central spear.
+            (2.1 - rank * 0.1, 2.15 + rank * 0.08)
+        };
         let reach = isolated_reach.lerp(competitive_reach, canopy_competition);
         let lift = isolated_lift.lerp(competitive_lift, canopy_competition);
         let sag = isolated_sag.lerp(0.32, canopy_competition);
@@ -102,27 +134,36 @@ pub(in crate::presentation) fn procedural_tree_skeleton(
                     + Vec3::Y * (-sag * (core::f32::consts::PI * t).sin() + lift * t.powf(1.85))
             })
             .collect::<Vec<_>>();
+        let (primary_start_radius, primary_end_radius) = if dominant {
+            (0.34 + unit_hash(primary_seed ^ 4) * 0.06, 0.042)
+        } else {
+            (0.2 + unit_hash(primary_seed ^ 4) * 0.045, 0.028)
+        };
         append_branch_curve(
             &mut branches,
             &primary_points,
-            0.3 + unit_hash(primary_seed ^ 4) * 0.07,
-            0.042,
+            primary_start_radius,
+            primary_end_radius,
             1,
             primary_index as u8,
             u16::MAX,
         );
+        if dominant {
+            dominant_scaffolds.push(primary_points.clone());
+        }
 
-        for secondary_index in 0..u64::from(TREE_SECONDARY_GROUPS_PER_PRIMARY) {
+        let secondary_count = if dominant { 12_u64 } else { 7_u64 };
+        for secondary_index in 0..secondary_count {
             let secondary_seed = splitmix64(primary_seed ^ (secondary_index + 0x51));
             // The last axis inherits the scaffold direction and carries
             // foliage over its end. The remaining axes alternate laterally,
             // avoiding the bare antler tips produced by stopping all child
             // branches well before their parent.
-            let is_terminal_axis = secondary_index == 9;
+            let is_terminal_axis = secondary_index + 1 == secondary_count;
             let attach = if is_terminal_axis {
                 0.96
             } else {
-                let normalized = secondary_index as f32 / 8.0;
+                let normalized = secondary_index as f32 / (secondary_count - 2) as f32;
                 0.22 + normalized.powf(0.7) * 0.68
             };
             let secondary_start = sample_polyline(&primary_points, attach);
@@ -133,12 +174,18 @@ pub(in crate::presentation) fn procedural_tree_skeleton(
             let radial = frame_right * branch_phase.cos() + frame_up * branch_phase.sin();
             let inherited_weight = if is_terminal_axis { 0.78 } else { 0.38 };
             let lateral_weight = if is_terminal_axis { 0.2 } else { 0.68 };
-            let secondary_direction = (inherited
+            let mut secondary_direction = (inherited
                 * (inherited_weight + unit_hash(secondary_seed) * 0.16)
                 + radial * (lateral_weight + unit_hash(secondary_seed ^ 1) * 0.2)
                 + outward * 0.2
                 + Vec3::Y * (0.18 + unit_hash(secondary_seed ^ 2) * 0.34))
                 .normalize();
+            let maximum_rise = 0.62_f32.lerp(0.72, canopy_competition);
+            if secondary_direction.y > maximum_rise {
+                let horizontal = secondary_direction.xz().normalize_or_zero();
+                secondary_direction =
+                    Vec3::new(horizontal.x, maximum_rise, horizontal.y).normalize();
+            }
             let secondary_length = (1.75 + unit_hash(secondary_seed ^ 3) * 0.95)
                 * 1.0_f32.lerp(0.76, canopy_competition);
             let secondary_bend = radial * (unit_hash(secondary_seed ^ 4) - 0.5) * 0.55;
@@ -151,13 +198,18 @@ pub(in crate::presentation) fn procedural_tree_skeleton(
                         + Vec3::Y * (0.2 * t.powf(1.7))
                 })
                 .collect::<Vec<_>>();
-            let secondary_group = (primary_index * u64::from(TREE_SECONDARY_GROUPS_PER_PRIMARY)
-                + secondary_index) as u16;
+            let secondary_group =
+                (primary_index * u64::from(TREE_SECONDARY_GROUP_STRIDE) + secondary_index) as u16;
+            let (secondary_start_radius, secondary_end_radius) = if dominant {
+                (0.072, 0.013)
+            } else {
+                (0.05, 0.01)
+            };
             append_branch_curve(
                 &mut branches,
                 &secondary_points,
-                0.072,
-                0.013,
+                secondary_start_radius,
+                secondary_end_radius,
                 2,
                 primary_index as u8,
                 secondary_group,
@@ -166,10 +218,11 @@ pub(in crate::presentation) fn procedural_tree_skeleton(
             // Short shoots are distributed around the secondary limb rather
             // than combed vertically.  Their terminal leaf rosettes overlap
             // into porous masses while leaving glimpses of the scaffold.
-            for shoot_index in 0..14_u64 {
+            let shoot_count = if dominant { 32_u64 } else { 20_u64 };
+            for shoot_index in 0..shoot_count {
                 let shoot_seed = splitmix64(secondary_seed ^ (shoot_index + 0xa3));
-                let normalized = shoot_index as f32 / 13.0;
-                let attach = 0.48 + normalized.powf(0.62) * 0.5;
+                let normalized = shoot_index as f32 / (shoot_count - 1) as f32;
+                let attach = 0.32 + normalized.powf(0.72) * 0.67;
                 let shoot_start = sample_polyline(&secondary_points, attach);
                 let inherited = polyline_tangent(&secondary_points, attach);
                 let (frame_right, frame_up) = branch_frame(inherited);
@@ -180,7 +233,7 @@ pub(in crate::presentation) fn procedural_tree_skeleton(
                     + radial * (0.5 + unit_hash(shoot_seed ^ 1) * 0.24)
                     + Vec3::Y * (0.06 + unit_hash(shoot_seed ^ 2) * 0.22))
                     .normalize();
-                let shoot_length = 0.5 + unit_hash(shoot_seed ^ 3) * 0.42;
+                let shoot_length = 0.38 + unit_hash(shoot_seed ^ 3) * 0.4;
                 let shoot_mid =
                     shoot_start + shoot_direction * shoot_length * 0.52 + radial * 0.035;
                 let shoot_end = shoot_start
@@ -453,15 +506,18 @@ pub(in crate::presentation) fn procedural_oak_leaves(
             tangent
         };
         let binormal = direction.cross(tangent).normalize();
-        for leaf_index in 0..24_u64 {
+        for leaf_index in 0..16_u64 {
             let leaf_seed =
                 splitmix64(seed ^ shoot_index as u64 ^ leaf_index.wrapping_mul(0x91e1_0da5));
             // Alternate leaves along each current-year shoot, then finish in
             // the tighter terminal flush characteristic of pedunculate oak.
-            let along = if leaf_index < 4 {
-                0.18 + leaf_index as f32 * 0.15
+            let along = if leaf_index < 3 {
+                0.22 + leaf_index as f32 * 0.21
             } else {
-                0.74 + (leaf_index - 4) as f32 / 19.0 * 0.24
+                (0.75
+                    + (leaf_index - 3) as f32 / 12.0 * 0.23
+                    + (unit_hash(leaf_seed ^ 12) - 0.5) * 0.008)
+                    .clamp(0.74, 0.985)
             };
             let alternate = if leaf_index & 1 == 0 { 1.0 } else { -1.0 };
             let spiral = leaf_index as f32 * 2.399_963_1 + (unit_hash(leaf_seed ^ 2) - 0.5) * 0.65;
@@ -498,7 +554,7 @@ pub(in crate::presentation) fn procedural_oak_leaves(
                 primary_group: shoot.primary_group,
                 secondary_group: shoot.secondary_group,
                 shoot_id: shoot_index as u16,
-                shade: if leaf_index < 4 {
+                shade: if leaf_index < 3 {
                     0.72 + unit_hash(leaf_seed ^ 7) * 0.18
                 } else {
                     0.9 + unit_hash(leaf_seed ^ 7) * 0.22
@@ -510,7 +566,7 @@ pub(in crate::presentation) fn procedural_oak_leaves(
 }
 
 pub(in crate::presentation) fn oak_leaf_outline() -> Vec<Vec2> {
-    let samples = 18;
+    let samples = 30;
     let mut outline = Vec::with_capacity(samples * 2 + 2);
     for side in [-1.0_f32, 1.0] {
         let range: Box<dyn Iterator<Item = usize>> = if side < 0.0 {
@@ -520,14 +576,12 @@ pub(in crate::presentation) fn oak_leaf_outline() -> Vec<Vec2> {
         };
         for index in range {
             let t = index as f32 / samples as f32;
-            // Floating-point sin(PI) can be a tiny negative value; clamp it
-            // before the fractional power so leaf tips never become NaN.
-            let blade = (core::f32::consts::PI * t).sin().max(0.0).powf(0.72);
-            let lobes = (t * core::f32::consts::PI * 5.0).sin().abs().powf(0.48);
-            let auricle = (-((t - 0.08) / 0.055).powi(2)).exp() * 0.34;
-            let taper = if t > 0.86 { (1.0 - t) / 0.14 } else { 1.0 };
-            let half_width = (0.18 + 0.82 * lobes + auricle) * blade * taper.max(0.0);
-            outline.push(Vec2::new(side * half_width * 0.5, t - 0.5));
+            let envelope = (core::f32::consts::PI * t).sin().max(0.0).powf(0.42);
+            let obovate = 0.72 + t * 0.28;
+            let lobe_wave = (t * core::f32::consts::TAU * 4.5).cos() * 0.5 + 0.5;
+            let auricle = (-((t - 0.065) / 0.045).powi(2)).exp() * 0.08;
+            let half_width = (envelope * obovate * (0.36 + lobe_wave * 0.14) + auricle).min(0.5);
+            outline.push(Vec2::new(side * half_width, t - 0.5));
         }
     }
     outline
@@ -568,7 +622,14 @@ pub(in crate::presentation) fn procedural_oak_leaf_mesh(leaves: &[TreeLeaf]) -> 
         positions.push(leaf.center.to_array());
         normals.push(normal.to_array());
         uvs.push([0.5, 0.5]);
-        colors.push([leaf.shade * 0.84, leaf.shade, leaf.shade * 0.72, 1.0]);
+        let exposure = (normal.y * 0.5 + 0.5).clamp(0.0, 1.0);
+        let leaf_color = [
+            leaf.shade * (0.72 + exposure * 0.12),
+            leaf.shade * (0.84 + exposure * 0.16),
+            leaf.shade * (0.58 + (1.0 - exposure) * 0.12),
+            1.0,
+        ];
+        colors.push(leaf_color);
         for point in &outline {
             let cup = normal * (point.x.abs() * 0.018 + (point.y * 3.0).sin() * 0.002);
             let position = leaf.center
@@ -578,7 +639,7 @@ pub(in crate::presentation) fn procedural_oak_leaf_mesh(leaves: &[TreeLeaf]) -> 
             positions.push(position.to_array());
             normals.push((normal + leaf.up * point.y * 0.14).normalize().to_array());
             uvs.push([point.x + 0.5, point.y + 0.5]);
-            colors.push([leaf.shade * 0.84, leaf.shade, leaf.shade * 0.72, 1.0]);
+            colors.push(leaf_color);
         }
         for index in 0..outline.len() as u32 {
             let next = (index + 1) % outline.len() as u32;
@@ -645,16 +706,29 @@ pub(in crate::presentation) fn append_branch_tube(
     };
     let right = direction.cross(reference).normalize();
     let forward = right.cross(direction).normalize();
-    let start_center = branch.start - direction * branch.start_radius * 0.18;
     let end_center_position =
         branch.end + direction * branch.end_radius * if branch.is_limb_tip { 0.0 } else { 0.32 };
+    let mut rings = Vec::with_capacity(3);
+    if branch.depth > 0 {
+        // The basal flare is deliberately short: it reads as a branch collar
+        // embedded in the parent axis rather than a bead threaded onto it.
+        rings.push((
+            branch.start - direction * branch.start_radius * 0.22,
+            branch.start_radius * 1.18,
+        ));
+        rings.push((
+            branch.start + direction * branch.start_radius * 0.5,
+            branch.start_radius * 0.94,
+        ));
+    } else {
+        rings.push((
+            branch.start - direction * branch.start_radius * 0.18,
+            branch.start_radius,
+        ));
+    }
+    rings.push((end_center_position, branch.end_radius));
     let base = positions.len() as u32;
-    for ring in 0..2 {
-        let (center, radius) = if ring == 0 {
-            (start_center, branch.start_radius)
-        } else {
-            (end_center_position, branch.end_radius)
-        };
+    for (ring, (center, radius)) in rings.iter().copied().enumerate() {
         for side in 0..sides {
             let phase = side as f32 * core::f32::consts::TAU / sides as f32;
             let normal = right * phase.cos() + forward * phase.sin();
@@ -663,17 +737,22 @@ pub(in crate::presentation) fn append_branch_tube(
             uvs.push([side as f32 / sides as f32, ring as f32]);
         }
     }
-    for side in 0..sides {
-        let next = (side + 1) % sides;
-        indices.extend_from_slice(&[
-            base + side,
-            base + sides + side,
-            base + sides + next,
-            base + side,
-            base + sides + next,
-            base + next,
-        ]);
+    for ring in 0..rings.len() as u32 - 1 {
+        let from = base + ring * sides;
+        let to = from + sides;
+        for side in 0..sides {
+            let next = (side + 1) % sides;
+            indices.extend_from_slice(&[
+                from + side,
+                to + side,
+                to + next,
+                from + side,
+                to + next,
+                from + next,
+            ]);
+        }
     }
+    let end_ring = base + (rings.len() as u32 - 1) * sides;
     if branch.is_limb_tip {
         // A pair of shrinking rings gives every terminal axis a rounded,
         // natural taper. Flat caps read as sawn-off limbs and become black
@@ -692,7 +771,7 @@ pub(in crate::presentation) fn append_branch_tube(
             }
         }
         for ring in 0..2_u32 {
-            let from = if ring == 0 { base + sides } else { shoulder };
+            let from = if ring == 0 { end_ring } else { shoulder };
             let to = shoulder + ring * sides;
             for side in 0..sides {
                 let next = (side + 1) % sides;
@@ -766,7 +845,7 @@ mod tests {
                     .count()
             })
             .collect::<Vec<_>>();
-        assert_eq!(counts, vec![22, 42, 210, 1_960]);
+        assert_eq!(counts, vec![22, 42, 207, 3_912]);
         assert!(branches.iter().all(|branch| {
             branch.start.is_finite()
                 && branch.end.is_finite()
@@ -783,7 +862,7 @@ mod tests {
     fn high_resolution_oak_has_finite_individual_leaf_geometry() {
         let branches = procedural_tree_skeleton(42, 0.0);
         let leaves = procedural_oak_leaves(42, &branches);
-        assert_eq!(leaves.len(), 23_520);
+        assert_eq!(leaves.len(), 31_296);
         assert!(leaves.iter().all(|leaf| {
             leaf.petiole_start.is_finite()
                 && leaf.center.is_finite()
@@ -798,7 +877,7 @@ mod tests {
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .and_then(|attribute| attribute.as_float3())
             .expect("leaf mesh has float positions");
-        assert_eq!(positions.len(), leaves.len() * 43);
+        assert_eq!(positions.len(), leaves.len() * 67);
         assert!(
             positions
                 .iter()
