@@ -9,6 +9,7 @@ pub mod body;
 pub mod book;
 pub mod capability;
 pub mod case;
+pub mod celestial;
 pub mod combat;
 pub mod composite;
 pub mod courtship;
@@ -84,6 +85,7 @@ pub mod prelude {
     pub use crate::bestiary::*;
     pub use crate::body::*;
     pub use crate::capability::*;
+    pub use crate::celestial::*;
     pub use crate::combat::*;
     pub use crate::composite::PlayerInfo;
     pub use crate::disease::*;

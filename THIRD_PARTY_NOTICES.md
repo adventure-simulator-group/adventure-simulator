@@ -1,5 +1,19 @@
 # Third-party notices
 
+## Hipparcos star catalogue
+
+The tactical sky includes a magnitude-limited derivative of the Hipparcos
+Main Catalogue produced by the European Space Agency Hipparcos mission. The
+source table is distributed by the Centre de Données astronomiques de
+Strasbourg as catalogue I/239. Fabelgeist retains only the HIP identifier,
+ICRS position, Johnson V magnitude, and B-V colour index for entries at or
+brighter than magnitude 6.5.
+
+- Source catalogue: <https://cdsarc.cds.unistra.fr/ftp/cats/I/239/>
+- Catalogue documentation: <https://cdsarc.cds.unistra.fr/ftp/cats/I/239/ReadMe>
+- Mission and catalogue overview: <https://www.cosmos.esa.int/web/hipparcos/catalogues>
+- Credit: ESA, 1997, *The Hipparcos and Tycho Catalogues*, ESA SP-1200
+
 ## Fantastic-disease folklore research
 
 The fantastic-disease content paraphrases historical dictionary, scholarly,
