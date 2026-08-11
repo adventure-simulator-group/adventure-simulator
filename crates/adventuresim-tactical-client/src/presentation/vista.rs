@@ -130,6 +130,10 @@ pub(super) fn vista_lod_color(lod: &VistaLod) -> Color {
     let environment = SceneEnvironment {
         scene_digest: String::new(),
         generation_version: TACTICAL_SCENE_GENERATION_VERSION,
+        latitude_microdegrees: 53_500_000,
+        longitude_microdegrees: 10_000_000,
+        absolute_minute: 12 * 60,
+        absolute_elevation_metres: 20,
         weather: WeatherSnapshot {
             rules_version: WEATHER_RULES_VERSION,
             interval_start_minute: 0,

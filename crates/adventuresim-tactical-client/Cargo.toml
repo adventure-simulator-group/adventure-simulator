@@ -84,3 +84,9 @@ name = "tactical-scene-viewer"
 path = "src/tactical_scene_viewer_main.rs"
 doc = false
 required-features = ["debug"]
+
+[[bin]]
+name = "tactical-sky-viewer"
+path = "src/tactical_sky_viewer_main.rs"
+doc = false
+required-features = ["debug"]

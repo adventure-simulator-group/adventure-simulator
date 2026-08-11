@@ -8,6 +8,7 @@ mod environment;
 mod foliage;
 mod obstacles;
 mod procedural;
+mod sky;
 mod terrain;
 mod vista;
 mod weather;
@@ -17,14 +18,13 @@ use foliage::*;
 use obstacles::tree::*;
 use obstacles::{on_scene_obstacle_added, present_pending_trees};
 use procedural::*;
+use sky::*;
 use terrain::*;
 use vista::*;
 use weather::*;
 
 // This facade is compiled independently by several binaries, so each binary
 // uses only the subset of the stable presentation interface that it needs.
-#[allow(unused_imports)]
-pub(crate) use environment::TacticalSunlight;
 #[allow(unused_imports)]
 pub(crate) use foliage::{FoliageLayer, GrassInteractor};
 #[allow(unused_imports)]
@@ -35,6 +35,8 @@ pub(crate) use obstacles::rock::ProceduralRockVisual;
 pub(crate) use obstacles::tree::TreeLod;
 #[allow(unused_imports)]
 pub(crate) use obstacles::tree::impostor::TreeImpostorProvenance;
+#[allow(unused_imports)]
+pub(crate) use sky::{TacticalMoon, TacticalMoonlight, TacticalStars, TacticalSunlight};
 #[allow(unused_imports)]
 pub(crate) use terrain::TerrainMaterialPresentation;
 #[allow(unused_imports)]
@@ -52,13 +54,13 @@ use bevy::{
         Atmosphere, AtmosphereEnvironmentMapLight, NotShadowCaster, atmosphere::ScatteringMedium,
         light_consts::lux,
     },
-    mesh::{Indices, PrimitiveTopology, VertexAttributeValues},
+    mesh::{Indices, MeshVertexAttribute, PrimitiveTopology, VertexAttributeValues},
     pbr::{AtmosphereSettings, ExtendedMaterial, MaterialExtension, ScreenSpaceAmbientOcclusion},
     post_process::bloom::Bloom,
     prelude::*,
     render::render_resource::{
         AsBindGroup, Extent3d, RenderPipelineDescriptor, SpecializedMeshPipelineError,
-        TextureDimension, TextureFormat,
+        TextureDimension, TextureFormat, VertexFormat,
     },
     shader::ShaderRef,
 };
@@ -67,6 +69,7 @@ use bevy::{
 pub struct TacticalPresentationPlugin {
     pub shadows_enabled: bool,
     pub atmosphere_enabled: bool,
+    pub celestial_enabled: bool,
     pub environment_light_enabled: bool,
     pub environment_map_size: u32,
     pub bloom_enabled: bool,
@@ -79,6 +82,7 @@ impl Default for TacticalPresentationPlugin {
         Self {
             shadows_enabled: true,
             atmosphere_enabled: true,
+            celestial_enabled: true,
             environment_light_enabled: true,
             environment_map_size: 64,
             bloom_enabled: true,
@@ -94,17 +98,23 @@ impl Plugin for TacticalPresentationPlugin {
             MaterialPlugin::<TacticalTerrainMaterial>::default(),
             MaterialPlugin::<TacticalFoliageMaterial>::default(),
             MaterialPlugin::<TacticalTreeImpostorMaterial>::default(),
+            MaterialPlugin::<TacticalMoonMaterial>::default(),
+            MaterialPlugin::<TacticalStarMaterial>::default(),
         ))
         .insert_resource(TacticalGraphicsSettings {
             shadows_enabled: self.shadows_enabled,
             atmosphere_enabled: self.atmosphere_enabled,
+            celestial_enabled: self.celestial_enabled,
             environment_light_enabled: self.environment_light_enabled,
             environment_map_size: self.environment_map_size,
             bloom_enabled: self.bloom_enabled,
             ssao_enabled: self.ssao_enabled,
             max_vista_lods: self.max_vista_lods,
         })
-        .add_systems(Startup, setup_tactical_presentation)
+        .add_systems(
+            Startup,
+            (setup_tactical_presentation, setup_tactical_sky).chain(),
+        )
         .init_resource::<GrassInteractionState>()
         .init_resource::<TreePresentationCache>()
         .add_systems(
@@ -113,10 +123,12 @@ impl Plugin for TacticalPresentationPlugin {
                 advance_weather_particles,
                 update_grass_interaction,
                 present_pending_trees,
+                keep_celestial_visuals_centered,
             ),
         )
         .add_observer(on_game_scene_added)
         .add_observer(environment::on_environment_added)
+        .add_observer(sky::on_environment_added)
         .add_observer(terrain::on_environment_added)
         .add_observer(foliage::on_environment_added)
         .add_observer(weather::on_environment_added)
@@ -129,6 +141,7 @@ impl Plugin for TacticalPresentationPlugin {
 struct TacticalGraphicsSettings {
     shadows_enabled: bool,
     atmosphere_enabled: bool,
+    celestial_enabled: bool,
     environment_light_enabled: bool,
     environment_map_size: u32,
     bloom_enabled: bool,
