@@ -1072,7 +1072,7 @@ pub(in crate::presentation) fn tree_impostor_material(
 /// by the two-triangle intermediate representation. This deliberately shares
 /// the deterministic triangle rasterizer with the branch/tree impostors so the
 /// card cannot drift into a separately painted species silhouette.
-pub(in crate::presentation) fn rendered_oak_leaf_card_image() -> Image {
+pub(crate) fn rendered_oak_leaf_card_image() -> Image {
     const SIZE: u32 = 192;
     let leaf = TreeLeaf {
         petiole_start: Vec3::new(0.0, -0.076, 0.0),
@@ -1227,8 +1227,8 @@ pub(in crate::presentation) fn tree_projected_lod_visibility(
     }
 }
 
-pub(in crate::presentation) fn tree_leaf_card_visibility(
-    alpha_card: bool,
+pub(in crate::presentation) fn tree_leaf_visibility(
+    representation: TreeLeafRepresentation,
     focal_scale: f32,
     cluster_radius: f32,
 ) -> VisibilityRange {
@@ -1237,10 +1237,11 @@ pub(in crate::presentation) fn tree_leaf_card_visibility(
         (10.0 * focal_scale * cluster_scale)..(13.0 * focal_scale * cluster_scale);
     let aggregate_transition =
         tree_projected_lod_visibility(0, focal_scale, cluster_radius).end_margin;
-    let (start_margin, end_margin) = if alpha_card {
-        (leaf_transition, aggregate_transition)
-    } else {
-        (0.0..0.0, leaf_transition)
+    let (start_margin, end_margin) = match representation {
+        TreeLeafRepresentation::Geometry | TreeLeafRepresentation::TexturedMesh => {
+            (0.0..0.0, leaf_transition.clone())
+        }
+        TreeLeafRepresentation::AlphaCard => (leaf_transition, aggregate_transition),
     };
     VisibilityRange {
         start_margin,
@@ -1296,8 +1297,11 @@ mod tests {
 
     #[test]
     fn tree_lod_crossfades_share_exact_transition_margins() {
-        let detailed_leaf = tree_leaf_card_visibility(false, 1.0, 3.5);
-        let alpha_leaf = tree_leaf_card_visibility(true, 1.0, 3.5);
+        let detailed_leaf = tree_leaf_visibility(TreeLeafRepresentation::Geometry, 1.0, 3.5);
+        let textured_leaf = tree_leaf_visibility(TreeLeafRepresentation::TexturedMesh, 1.0, 3.5);
+        let alpha_leaf = tree_leaf_visibility(TreeLeafRepresentation::AlphaCard, 1.0, 3.5);
+        assert_eq!(detailed_leaf.start_margin, textured_leaf.start_margin);
+        assert_eq!(detailed_leaf.end_margin, textured_leaf.end_margin);
         assert_eq!(detailed_leaf.end_margin, alpha_leaf.start_margin);
         assert_eq!(alpha_leaf.end_margin, tree_lod_visibility(1).start_margin);
         for lod in 0..4 {
