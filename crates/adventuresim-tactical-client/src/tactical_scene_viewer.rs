@@ -54,6 +54,7 @@ struct CaptureState {
     vista_peak_metres: f32,
     peak_target: Vec3,
     obstacle_focus: Vec3,
+    tree_focus: Option<Vec3>,
     ground_eye_position: Vec3,
     ground_eye_target: Vec3,
     settle_frames: u32,
@@ -75,7 +76,7 @@ struct CaptureView {
     overlay: bool,
 }
 
-const CAPTURE_VIEWS: [CaptureView; 5] = [
+const CAPTURE_VIEWS: [CaptureView; 10] = [
     CaptureView {
         slug: "warmup",
         label: "Render-pipeline warmup",
@@ -84,6 +85,31 @@ const CAPTURE_VIEWS: [CaptureView; 5] = [
     CaptureView {
         slug: "beauty-ground",
         label: "Ground-level beauty view",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-detail",
+        label: "Individual-leaf tree LOD view",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-twig-lod",
+        label: "Leafed-twig tree LOD view",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-small-branch-lod",
+        label: "Small-branch tree LOD view",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-crown-lod",
+        label: "Crown-branch tree LOD view",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-billboard-lod",
+        label: "Whole-tree billboard LOD view",
         overlay: false,
     },
     CaptureView {
@@ -172,7 +198,8 @@ struct ValidationSummary {
     all_obstacles_presented: bool,
     all_obstacles_collidable: bool,
     procedural_rocks_fit_colliders: bool,
-    trees_have_three_lods: bool,
+    trees_have_five_lods: bool,
+    tree_detail_captured_when_expected: bool,
     terrain_material_present: bool,
     coarse_source_terrain_upsampled: bool,
     microrelief_present: bool,
@@ -365,6 +392,7 @@ fn setup_scene(
     let mut expected_rocks = 0;
     let mut obstacle_position_sum = Vec3::ZERO;
     let mut obstacle_count = 0usize;
+    let mut tree_focus = None;
 
     for obstacle in obstacles {
         let (grid_x, grid_z, kind, collider, y_offset, overlay_shape, overlay_color) =
@@ -400,6 +428,13 @@ fn setup_scene(
         let x = f32::from(grid_x) * input.playable.spacing_metres - terrain.width() * 0.5;
         let z = f32::from(grid_z) * input.playable.spacing_metres - terrain.depth() * 0.5;
         let y = terrain.height_at(Vec2::new(x, z)).unwrap_or_default() + y_offset;
+        if matches!(kind, SceneObstacle::Tree)
+            && tree_focus.is_none_or(|focus: Vec3| {
+                Vec2::new(x, z).length_squared() < focus.xz().length_squared()
+            })
+        {
+            tree_focus = Some(Vec3::new(x, y, z));
+        }
         obstacle_position_sum += Vec3::new(x, y, z);
         obstacle_count += 1;
         commands.spawn((
@@ -501,6 +536,7 @@ fn setup_scene(
         vista_peak_metres,
         peak_target,
         obstacle_focus,
+        tree_focus,
         ground_eye_position,
         ground_eye_target,
         settle_frames,
@@ -709,6 +745,20 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
         "warmup" | "beauty-ground" | "collision-overlay" => {
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y)
         }
+        "tree-detail" => state.tree_focus.map_or(
+            (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
+            |tree| {
+                (
+                    tree + Vec3::new(6.2, -0.68, 6.2),
+                    tree + Vec3::new(0.0, 0.55, 0.0),
+                    Vec3::Y,
+                )
+            },
+        ),
+        "tree-twig-lod" => tree_lod_camera(state, 28.0),
+        "tree-small-branch-lod" => tree_lod_camera(state, 45.0),
+        "tree-crown-lod" => tree_lod_camera(state, 68.0),
+        "tree-billboard-lod" => tree_lod_camera(state, 110.0),
         "beauty-overhead" => (
             state.obstacle_focus + Vec3::new(0.0, half * 2.15, half * 0.16),
             state.obstacle_focus,
@@ -841,7 +891,18 @@ fn build_manifest(
         all_obstacles_collidable: collider_trees == state.expected_trees
             && collider_rocks == state.expected_rocks,
         procedural_rocks_fit_colliders: rock_meshes_inside_colliders,
-        trees_have_three_lods: state.expected_trees == 0 || tree_lods_presented == vec![0, 1, 2],
+        trees_have_five_lods: state.expected_trees == 0
+            || tree_lods_presented == vec![0, 1, 2, 3, 4],
+        tree_detail_captured_when_expected: state.expected_trees == 0
+            || [
+                "tree-detail",
+                "tree-twig-lod",
+                "tree-small-branch-lod",
+                "tree-crown-lod",
+                "tree-billboard-lod",
+            ]
+            .into_iter()
+            .all(|view| state.captures.iter().any(|capture| capture.view == view)),
         terrain_material_present: terrain_materials.iter().count() == 1,
         coarse_source_terrain_upsampled: state.terrain.source_spacing_metres <= 2.0
             || (state.terrain.spacing_metres <= 2.0
@@ -889,7 +950,8 @@ fn validation_passes(validation: &ValidationSummary) -> bool {
         && validation.all_obstacles_presented
         && validation.all_obstacles_collidable
         && validation.procedural_rocks_fit_colliders
-        && validation.trees_have_three_lods
+        && validation.trees_have_five_lods
+        && validation.tree_detail_captured_when_expected
         && validation.terrain_material_present
         && validation.coarse_source_terrain_upsampled
         && validation.microrelief_present
@@ -958,11 +1020,35 @@ fn foliage_detail_pixel_bps(data: Option<&[u8]>) -> u16 {
 }
 
 fn minimum_foreground_bps(view: &str) -> u16 {
-    if view == "horizon" { 50 } else { 1_000 }
+    match view {
+        "horizon" => 50,
+        "tree-twig-lod" | "tree-small-branch-lod" | "tree-crown-lod" | "tree-billboard-lod" => 200,
+        _ => 1_000,
+    }
 }
 
 fn capture_view_fov(view: &str) -> f32 {
-    if view == "horizon" { 15.0 } else { 65.0 }
+    match view {
+        "horizon" => 15.0,
+        "tree-detail" => 48.0,
+        "tree-twig-lod" | "tree-small-branch-lod" | "tree-crown-lod" => 24.0,
+        "tree-billboard-lod" => 16.0,
+        _ => 65.0,
+    }
+}
+
+fn tree_lod_camera(state: &CaptureState, distance: f32) -> (Vec3, Vec3, Vec3) {
+    state.tree_focus.map_or(
+        (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
+        |tree| {
+            let diagonal = distance * core::f32::consts::FRAC_1_SQRT_2;
+            (
+                tree + Vec3::new(diagonal, 0.55, diagonal),
+                tree + Vec3::new(0.0, 0.55, 0.0),
+                Vec3::Y,
+            )
+        },
+    )
 }
 
 fn finish_capture(

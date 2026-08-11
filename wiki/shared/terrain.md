@@ -28,8 +28,12 @@ data is presentation-only and is not tactical tick state or SpacetimeDB state.
 Generated tree trunks and rocks are server-authoritative static movement
 obstacles. Their compact kind and transform are replicated so clients render a
 matching proxy instead of an invisible collider. Clients present deformed
-low-poly rock meshes constrained inside those colliders and three-distance tree
-archetypes (branched crown, reduced crown, and crossed billboard). Grass,
+low-poly rock meshes constrained inside those colliders. Trees use a seeded
+four-order branch skeleton and five smoothly cross-faded presentation levels:
+real tapered wood with individual veined leaf cards, leafed-twig impostors,
+small-branch impostors, crown-branch impostors, and finally one camera-facing
+whole-tree billboard. Each successive level collapses exactly one botanical
+order, retaining parallax longer than a direct crown-to-billboard swap. Grass,
 shrubs, and reeds are deterministic shared-mesh foliage with no gameplay
 collider. Grass uses overlapping shared patches of forty-nine narrow crossed
 blades across the full playable view distance: covered ground reads as a

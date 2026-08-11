@@ -26,6 +26,7 @@ use bevy::{
 
 const TERRAIN_SHADER: &str = "shaders/tactical_terrain.wgsl";
 const FOLIAGE_SHADER: &str = "shaders/tactical_foliage.wgsl";
+const TREE_IMPOSTOR_SHADER: &str = "shaders/tactical_tree_impostor.wgsl";
 
 #[derive(Debug, Clone, Copy)]
 pub struct TacticalPresentationPlugin {
@@ -57,6 +58,7 @@ impl Plugin for TacticalPresentationPlugin {
         app.add_plugins((
             MaterialPlugin::<TacticalTerrainMaterial>::default(),
             MaterialPlugin::<TacticalFoliageMaterial>::default(),
+            MaterialPlugin::<TacticalTreeImpostorMaterial>::default(),
         ))
         .insert_resource(TacticalGraphicsSettings {
             shadows_enabled: self.shadows_enabled,
@@ -142,6 +144,48 @@ impl Material for TacticalFoliageMaterial {
 
     fn fragment_shader() -> ShaderRef {
         FOLIAGE_SHADER.into()
+    }
+
+    fn enable_prepass() -> bool {
+        false
+    }
+
+    fn enable_shadows() -> bool {
+        false
+    }
+
+    fn specialize(
+        _pipeline: &bevy::pbr::MaterialPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &bevy::mesh::MeshVertexBufferLayoutRef,
+        _key: bevy::pbr::MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        descriptor.primitive.cull_mode = None;
+        Ok(())
+    }
+}
+
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+struct TacticalTreeImpostorMaterial {
+    /// Representation level, deterministic seed, wind strength, wind speed.
+    #[uniform(0)]
+    parameters: Vec4,
+    /// Leaf highlight, leaf shadow, and bark colour packed as linear RGBA.
+    #[uniform(0)]
+    leaf_light: Vec4,
+    #[uniform(0)]
+    leaf_shadow: Vec4,
+    #[uniform(0)]
+    bark: Vec4,
+}
+
+impl Material for TacticalTreeImpostorMaterial {
+    fn vertex_shader() -> ShaderRef {
+        TREE_IMPOSTOR_SHADER.into()
+    }
+
+    fn fragment_shader() -> ShaderRef {
+        TREE_IMPOSTOR_SHADER.into()
     }
 
     fn enable_prepass() -> bool {
@@ -344,84 +388,54 @@ fn on_scene_obstacle_added(
     obstacles: Query<(&SceneObstacle, &Transform)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut foliage_materials: ResMut<Assets<TacticalFoliageMaterial>>,
+    mut tree_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
 ) -> Result {
     let (obstacle, transform) = obstacles.get(event.entity)?;
     let seed = obstacle_seed(transform.translation);
     match *obstacle {
         SceneObstacle::Tree => {
-            let trunk_mesh = meshes.add(Cylinder::new(
-                TREE_TRUNK_RADIUS_METRES,
-                TREE_TRUNK_HEIGHT_METRES,
-            ));
-            let trunk_material = materials.add(StandardMaterial {
-                base_color: Color::srgb_u8(91, 58, 34),
+            let branches = procedural_tree_skeleton(seed);
+            let bark_material = materials.add(StandardMaterial {
+                base_color: tree_bark_color(seed),
                 perceptual_roughness: 0.95,
                 ..default()
             });
-            let crown_material = foliage_materials.add(foliage_material(0.32, false));
-            let high_crown = meshes.add(tree_crown_mesh(seed, 2, 1.42));
-            let side_crown_a = meshes.add(tree_crown_mesh(seed ^ 0x41ac_921d, 2, 1.08));
-            let side_crown_b = meshes.add(tree_crown_mesh(seed ^ 0xc337_8ba9, 2, 1.14));
-            let low_crown = meshes.add(tree_crown_mesh(seed, 1, 1.58));
-            let billboard = meshes.add(foliage_clump_mesh(2.7, 3.4, Color::srgb_u8(40, 78, 34), 2));
-            let branch_mesh = meshes.add(Cylinder::new(0.12, 1.8));
+            let branch_meshes =
+                [3, 2, 1, 0].map(|depth| meshes.add(procedural_tree_branch_mesh(&branches, depth)));
+            let card_meshes = (0..5)
+                .map(|lod| meshes.add(procedural_tree_card_mesh(seed, &branches, lod)))
+                .collect::<Vec<_>>();
+            let card_materials = (0..5)
+                .map(|lod| tree_materials.add(tree_impostor_material(seed, lod)))
+                .collect::<Vec<_>>();
             commands.entity(event.entity).insert((
                 Name::new("Presented tactical tree"),
-                Mesh3d(trunk_mesh),
-                MeshMaterial3d(trunk_material.clone()),
-                VisibilityRange::abrupt(0.0, 82.0),
-                children![
-                    (
-                        Name::new("Tree crown LOD 0"),
-                        TreeLod(0),
-                        NotShadowCaster,
-                        Mesh3d(high_crown),
-                        MeshMaterial3d(crown_material.clone()),
-                        VisibilityRange::abrupt(0.0, 34.0),
-                        Transform::from_xyz(0.0, TREE_TRUNK_HEIGHT_METRES * 0.42, 0.0),
-                    ),
-                    (
-                        Name::new("Tree crown LOD 1"),
-                        TreeLod(1),
-                        NotShadowCaster,
-                        Mesh3d(low_crown),
-                        MeshMaterial3d(crown_material.clone()),
-                        VisibilityRange::abrupt(30.0, 76.0),
-                        Transform::from_xyz(0.0, TREE_TRUNK_HEIGHT_METRES * 0.42, 0.0),
-                    ),
-                    tree_branch_bundle(0, seed, branch_mesh.clone(), trunk_material.clone(),),
-                    tree_branch_bundle(1, seed, branch_mesh.clone(), trunk_material.clone(),),
-                    tree_branch_bundle(2, seed, branch_mesh, trunk_material.clone()),
-                    (
-                        Name::new("Tree crown lobe A"),
-                        TreeLod(0),
-                        NotShadowCaster,
-                        Mesh3d(side_crown_a),
-                        MeshMaterial3d(crown_material.clone()),
-                        VisibilityRange::abrupt(0.0, 34.0),
-                        Transform::from_xyz(-0.62, TREE_TRUNK_HEIGHT_METRES * 0.34, 0.28),
-                    ),
-                    (
-                        Name::new("Tree crown lobe B"),
-                        TreeLod(0),
-                        NotShadowCaster,
-                        Mesh3d(side_crown_b),
-                        MeshMaterial3d(crown_material.clone()),
-                        VisibilityRange::abrupt(0.0, 34.0),
-                        Transform::from_xyz(0.58, TREE_TRUNK_HEIGHT_METRES * 0.37, -0.22),
-                    ),
-                    (
-                        Name::new("Tree billboard LOD 2"),
-                        TreeLod(2),
-                        NotShadowCaster,
-                        Mesh3d(billboard),
-                        MeshMaterial3d(crown_material),
-                        VisibilityRange::abrupt(70.0, 190.0),
-                        Transform::from_xyz(0.0, TREE_TRUNK_HEIGHT_METRES * 0.42, 0.0),
-                    ),
-                ],
+                TreeLod(0),
+                Mesh3d(branch_meshes[0].clone()),
+                MeshMaterial3d(bark_material.clone()),
+                tree_lod_visibility(0),
             ));
+            commands.entity(event.entity).with_children(|parent| {
+                for lod in 0..5 {
+                    parent.spawn((
+                        Name::new(tree_lod_name(lod, true)),
+                        TreeLod(lod),
+                        NotShadowCaster,
+                        Mesh3d(card_meshes[lod as usize].clone()),
+                        MeshMaterial3d(card_materials[lod as usize].clone()),
+                        tree_lod_visibility(lod),
+                    ));
+                    if (1..=3).contains(&lod) {
+                        parent.spawn((
+                            Name::new(tree_lod_name(lod, false)),
+                            TreeLod(lod),
+                            Mesh3d(branch_meshes[lod as usize].clone()),
+                            MeshMaterial3d(bark_material.clone()),
+                            tree_lod_visibility(lod),
+                        ));
+                    }
+                }
+            });
         }
         SceneObstacle::Rock => {
             commands.entity(event.entity).insert((
@@ -760,61 +774,363 @@ fn foliage_patch_mesh(
     mesh
 }
 
-fn tree_crown_mesh(seed: u64, subdivisions: u32, radius: f32) -> Mesh {
-    let mut mesh = Sphere::new(radius)
-        .mesh()
-        .ico(subdivisions)
-        .expect("valid tree crown");
-    let color = if seed & 1 == 0 {
-        Color::srgb_u8(45, 86, 38)
-    } else {
-        Color::srgb_u8(54, 92, 40)
-    };
-    let linear = color.to_linear().to_f32_array();
-    if let Some(VertexAttributeValues::Float32x3(positions)) =
-        mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION)
-    {
-        for position in positions.iter_mut() {
-            let point = Vec3::from_array(*position);
-            let phase = point.x * 1.7 + point.y * 1.1 + point.z * 2.3 + unit_hash(seed) * 4.0;
-            let scale = 0.9 + phase.sin() * 0.08;
-            *position = Vec3::new(
-                point.x * scale * 0.92,
-                point.y * (1.08 + scale * 0.16),
-                point.z * scale * 0.92,
-            )
-            .to_array();
-        }
-        let count = positions.len();
-        let uvs = positions
-            .iter()
-            .map(|position| [0.5, (position[1] / radius * 0.5 + 0.5).clamp(0.0, 1.0)])
-            .collect::<Vec<_>>();
-        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vec![linear; count]);
-    }
-    mesh.remove_attribute(Mesh::ATTRIBUTE_NORMAL);
-    mesh.with_computed_area_weighted_normals()
+#[derive(Clone, Copy, Debug)]
+struct TreeBranchSegment {
+    start: Vec3,
+    end: Vec3,
+    start_radius: f32,
+    end_radius: f32,
+    depth: u8,
 }
 
-fn tree_branch_bundle(
-    index: u64,
-    seed: u64,
-    mesh: Handle<Mesh>,
-    material: Handle<StandardMaterial>,
-) -> impl Bundle {
-    let phase =
-        unit_hash(splitmix64(seed ^ index.wrapping_mul(0x9e37_79b9))) * core::f32::consts::TAU;
-    let direction = Vec3::new(phase.cos() * 0.7, 0.72, phase.sin() * 0.7).normalize();
-    let center = Vec3::Y * 0.9 + direction * 0.62;
-    (
-        Name::new(format!("Tree primary branch {}", index + 1)),
-        TreeLod(0),
-        Mesh3d(mesh),
-        MeshMaterial3d(material),
-        VisibilityRange::abrupt(0.0, 34.0),
-        Transform::from_translation(center)
-            .with_rotation(Quat::from_rotation_arc(Vec3::Y, direction)),
+fn procedural_tree_skeleton(seed: u64) -> Vec<TreeBranchSegment> {
+    let mut branches = vec![TreeBranchSegment {
+        start: Vec3::new(0.0, -TREE_TRUNK_HEIGHT_METRES * 0.5, 0.0),
+        end: Vec3::new(0.0, TREE_TRUNK_HEIGHT_METRES * 0.5 + 0.35, 0.0),
+        start_radius: TREE_TRUNK_RADIUS_METRES,
+        end_radius: 0.16,
+        depth: 0,
+    }];
+    let crown_bias = unit_hash(seed ^ 0x9182_64ac) - 0.5;
+    for primary_index in 0..7_u64 {
+        let primary_seed = splitmix64(seed ^ primary_index.wrapping_mul(0x9e37_79b9));
+        let phase =
+            primary_index as f32 * core::f32::consts::TAU / 7.0 + unit_hash(primary_seed) * 0.72;
+        let start = Vec3::new(
+            0.0,
+            -0.55 + primary_index as f32 * 0.39 + crown_bias * 0.18,
+            0.0,
+        );
+        let primary_direction = Vec3::new(
+            phase.cos() * (0.72 + unit_hash(primary_seed ^ 1) * 0.2),
+            0.56 + unit_hash(primary_seed ^ 2) * 0.34,
+            phase.sin() * (0.72 + unit_hash(primary_seed ^ 3) * 0.2),
+        )
+        .normalize();
+        let primary = TreeBranchSegment {
+            start,
+            end: start + primary_direction * (1.45 + unit_hash(primary_seed ^ 4) * 0.42),
+            start_radius: 0.15,
+            end_radius: 0.07,
+            depth: 1,
+        };
+        branches.push(primary);
+        for secondary_index in 0..3_u64 {
+            let secondary_seed = splitmix64(primary_seed ^ (secondary_index + 11));
+            let side = if secondary_index & 1 == 0 { 1.0 } else { -1.0 };
+            let yaw = phase + side * (0.48 + unit_hash(secondary_seed) * 0.54);
+            let secondary_start = primary
+                .start
+                .lerp(primary.end, 0.46 + secondary_index as f32 * 0.19);
+            let direction = (primary_direction * 0.42
+                + Vec3::new(yaw.cos(), 0.65, yaw.sin()) * 0.78)
+                .normalize();
+            let secondary = TreeBranchSegment {
+                start: secondary_start,
+                end: secondary_start + direction * (0.78 + unit_hash(secondary_seed ^ 1) * 0.34),
+                start_radius: 0.075,
+                end_radius: 0.032,
+                depth: 2,
+            };
+            branches.push(secondary);
+            for twig_index in 0..2_u64 {
+                let twig_seed = splitmix64(secondary_seed ^ (twig_index + 23));
+                let twig_yaw = yaw + (twig_index as f32 - 0.5) * 1.1;
+                let twig_start = secondary
+                    .start
+                    .lerp(secondary.end, 0.56 + twig_index as f32 * 0.3);
+                let twig_direction = (direction * 0.56
+                    + Vec3::new(twig_yaw.cos(), 0.76, twig_yaw.sin()) * 0.62)
+                    .normalize();
+                branches.push(TreeBranchSegment {
+                    start: twig_start,
+                    end: twig_start + twig_direction * (0.42 + unit_hash(twig_seed) * 0.22),
+                    start_radius: 0.035,
+                    end_radius: 0.012,
+                    depth: 3,
+                });
+            }
+        }
+    }
+    branches
+}
+
+fn procedural_tree_branch_mesh(branches: &[TreeBranchSegment], maximum_depth: u8) -> Mesh {
+    let mut positions = Vec::new();
+    let mut normals = Vec::new();
+    let mut uvs = Vec::new();
+    let mut indices = Vec::new();
+    for branch in branches
+        .iter()
+        .filter(|branch| branch.depth <= maximum_depth)
+    {
+        append_branch_tube(
+            *branch,
+            (8_u32.saturating_sub(u32::from(branch.depth))).max(4),
+            &mut positions,
+            &mut normals,
+            &mut uvs,
+            &mut indices,
+        );
+    }
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
+fn append_branch_tube(
+    branch: TreeBranchSegment,
+    sides: u32,
+    positions: &mut Vec<[f32; 3]>,
+    normals: &mut Vec<[f32; 3]>,
+    uvs: &mut Vec<[f32; 2]>,
+    indices: &mut Vec<u32>,
+) {
+    let direction = (branch.end - branch.start).normalize();
+    let reference = if direction.y.abs() < 0.9 {
+        Vec3::Y
+    } else {
+        Vec3::X
+    };
+    let right = direction.cross(reference).normalize();
+    let forward = right.cross(direction).normalize();
+    let base = positions.len() as u32;
+    for ring in 0..2 {
+        let (center, radius) = if ring == 0 {
+            (branch.start, branch.start_radius)
+        } else {
+            (branch.end, branch.end_radius)
+        };
+        for side in 0..sides {
+            let phase = side as f32 * core::f32::consts::TAU / sides as f32;
+            let normal = right * phase.cos() + forward * phase.sin();
+            positions.push((center + normal * radius).to_array());
+            normals.push(normal.to_array());
+            uvs.push([side as f32 / sides as f32, ring as f32]);
+        }
+    }
+    for side in 0..sides {
+        let next = (side + 1) % sides;
+        indices.extend_from_slice(&[
+            base + side,
+            base + sides + side,
+            base + sides + next,
+            base + side,
+            base + sides + next,
+            base + next,
+        ]);
+    }
+}
+
+fn procedural_tree_card_mesh(seed: u64, branches: &[TreeBranchSegment], lod: u8) -> Mesh {
+    let mut positions = Vec::new();
+    let mut normals = Vec::new();
+    let mut uvs = Vec::new();
+    let mut indices = Vec::new();
+    match lod {
+        0 => {
+            for (index, branch) in branches
+                .iter()
+                .filter(|branch| branch.depth == 3)
+                .enumerate()
+            {
+                let direction = (branch.end - branch.start).normalize();
+                for leaf in 0..7_u64 {
+                    let leaf_seed =
+                        splitmix64(seed ^ index as u64 ^ leaf.wrapping_mul(0x91e1_0da5));
+                    let phase =
+                        unit_hash(leaf_seed) * core::f32::consts::TAU + leaf as f32 * 2.399_963_1;
+                    let horizontal = Vec3::new(phase.cos(), 0.0, phase.sin());
+                    let right = (horizontal + Vec3::Y * 0.12 * phase.sin()).normalize();
+                    let up = (direction * 0.48 + Vec3::Y * 0.6 + horizontal * 0.18).normalize();
+                    let center = branch.end
+                        + horizontal * (0.08 + (leaf % 3) as f32 * 0.07)
+                        + up * ((leaf / 3) as f32 * 0.11 - 0.05);
+                    append_tree_card(
+                        center,
+                        right,
+                        up,
+                        0.26,
+                        0.48,
+                        &mut positions,
+                        &mut normals,
+                        &mut uvs,
+                        &mut indices,
+                    );
+                }
+            }
+        }
+        1 => {
+            for (index, branch) in branches
+                .iter()
+                .filter(|branch| branch.depth == 2)
+                .enumerate()
+            {
+                let phase = unit_hash(splitmix64(seed ^ index as u64)) * core::f32::consts::TAU;
+                append_tree_card(
+                    branch.end,
+                    Vec3::new(phase.cos(), 0.0, phase.sin()),
+                    Vec3::Y,
+                    0.78,
+                    1.15,
+                    &mut positions,
+                    &mut normals,
+                    &mut uvs,
+                    &mut indices,
+                );
+            }
+        }
+        2 => {
+            for (index, branch) in branches
+                .iter()
+                .filter(|branch| branch.depth == 1)
+                .enumerate()
+            {
+                let phase =
+                    unit_hash(splitmix64(seed ^ index as u64 ^ 0x4a17)) * core::f32::consts::TAU;
+                append_tree_card(
+                    branch.end + Vec3::Y * 0.22,
+                    Vec3::new(phase.cos(), 0.0, phase.sin()),
+                    Vec3::Y,
+                    1.45,
+                    2.05,
+                    &mut positions,
+                    &mut normals,
+                    &mut uvs,
+                    &mut indices,
+                );
+            }
+        }
+        3 => {
+            for (index, center) in [
+                Vec3::new(-0.78, 1.15, 0.18),
+                Vec3::new(0.72, 1.35, -0.16),
+                Vec3::new(0.0, 2.15, 0.08),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let phase =
+                    unit_hash(splitmix64(seed ^ index as u64 ^ 0x7c31)) * core::f32::consts::TAU;
+                append_tree_card(
+                    center,
+                    Vec3::new(phase.cos(), 0.0, phase.sin()),
+                    Vec3::Y,
+                    2.55,
+                    3.25,
+                    &mut positions,
+                    &mut normals,
+                    &mut uvs,
+                    &mut indices,
+                );
+            }
+        }
+        4 => append_tree_card(
+            Vec3::new(0.0, 0.72, 0.0),
+            Vec3::X,
+            Vec3::Y,
+            5.4,
+            6.45,
+            &mut positions,
+            &mut normals,
+            &mut uvs,
+            &mut indices,
+        ),
+        _ => unreachable!("tree LOD is bounded"),
+    }
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
+#[allow(clippy::too_many_arguments)]
+fn append_tree_card(
+    center: Vec3,
+    right: Vec3,
+    up: Vec3,
+    width: f32,
+    height: f32,
+    positions: &mut Vec<[f32; 3]>,
+    normals: &mut Vec<[f32; 3]>,
+    uvs: &mut Vec<[f32; 2]>,
+    indices: &mut Vec<u32>,
+) {
+    let right = right.normalize() * width * 0.5;
+    let up = up.normalize() * height * 0.5;
+    let normal = right.cross(up).normalize_or_zero();
+    let base = positions.len() as u32;
+    positions.extend_from_slice(&[
+        (center - right - up).to_array(),
+        (center + right - up).to_array(),
+        (center + right + up).to_array(),
+        (center - right + up).to_array(),
+    ]);
+    normals.extend_from_slice(&[normal.to_array(); 4]);
+    uvs.extend_from_slice(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]);
+    indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+}
+
+fn tree_impostor_material(seed: u64, lod: u8) -> TacticalTreeImpostorMaterial {
+    let hue = unit_hash(seed ^ 0x2f37_84c1) - 0.5;
+    TacticalTreeImpostorMaterial {
+        parameters: Vec4::new(lod as f32, unit_hash(seed), 0.08 + lod as f32 * 0.018, 1.0),
+        leaf_light: Color::srgb(0.19 + hue * 0.04, 0.43 + hue * 0.05, 0.12)
+            .to_linear()
+            .to_f32_array()
+            .into(),
+        leaf_shadow: Color::srgb(0.055, 0.18 + hue * 0.025, 0.045)
+            .to_linear()
+            .to_f32_array()
+            .into(),
+        bark: tree_bark_color(seed).to_linear().to_f32_array().into(),
+    }
+}
+
+fn tree_bark_color(seed: u64) -> Color {
+    let variation = unit_hash(seed ^ 0x6b11_2e09) - 0.5;
+    Color::srgb(0.38 + variation * 0.05, 0.23 + variation * 0.03, 0.12)
+}
+
+fn tree_lod_visibility(lod: u8) -> VisibilityRange {
+    let (start, end) = match lod {
+        0 => (0.0..0.0, 18.0..22.0),
+        1 => (18.0..22.0, 32.0..38.0),
+        2 => (32.0..38.0, 52.0..60.0),
+        3 => (52.0..60.0, 78.0..90.0),
+        4 => (78.0..90.0, 190.0..200.0),
+        _ => unreachable!("tree LOD is bounded"),
+    };
+    VisibilityRange {
+        start_margin: start,
+        end_margin: end,
+        use_aabb: false,
+    }
+}
+
+fn tree_lod_name(lod: u8, cards: bool) -> String {
+    let representation = match lod {
+        0 => "individual leaves",
+        1 => "leafed twigs",
+        2 => "small branches",
+        3 => "crown branches",
+        4 => "whole-tree billboard",
+        _ => unreachable!("tree LOD is bounded"),
+    };
+    format!(
+        "Tree LOD {lod} {representation} {}",
+        if cards { "cards" } else { "wood" }
     )
 }
 
@@ -1299,6 +1615,51 @@ mod tests {
             Vec4::new(3.0, 1.0, -2.0, 1.35)
         );
         assert_eq!(materials.get(&crown).unwrap().interaction, Vec4::ZERO);
+    }
+
+    #[test]
+    fn procedural_tree_has_a_deterministic_four_order_branch_hierarchy() {
+        let branches = procedural_tree_skeleton(42);
+        let counts = (0..=3)
+            .map(|depth| {
+                branches
+                    .iter()
+                    .filter(|branch| branch.depth == depth)
+                    .count()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(counts, vec![1, 7, 21, 42]);
+        assert!(branches.iter().all(|branch| branch.end.y > branch.start.y));
+        assert!(
+            branches.iter().all(|branch| {
+                branch.start_radius > branch.end_radius && branch.end_radius > 0.0
+            })
+        );
+    }
+
+    #[test]
+    fn tree_lods_collapse_one_botanical_order_at_a_time() {
+        let branches = procedural_tree_skeleton(42);
+        let expected_cards = [294, 21, 7, 3, 1];
+        for (lod, expected) in expected_cards.into_iter().enumerate() {
+            let mesh = procedural_tree_card_mesh(42, &branches, lod as u8);
+            assert_eq!(mesh.count_vertices(), expected * 4);
+        }
+        let branch_vertices = (0..=3)
+            .rev()
+            .map(|depth| procedural_tree_branch_mesh(&branches, depth).count_vertices())
+            .collect::<Vec<_>>();
+        assert!(branch_vertices.windows(2).all(|pair| pair[0] > pair[1]));
+    }
+
+    #[test]
+    fn tree_lod_crossfades_share_exact_transition_margins() {
+        for lod in 0..4 {
+            let current = tree_lod_visibility(lod);
+            let next = tree_lod_visibility(lod + 1);
+            assert_eq!(current.end_margin, next.start_margin);
+            assert!(!current.is_abrupt());
+        }
     }
 
     #[test]
