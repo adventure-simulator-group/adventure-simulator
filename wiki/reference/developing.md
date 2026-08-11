@@ -789,11 +789,14 @@ just tactical-scene-capture heavy-rain-high-wind target/tactical-scene-captures/
 The native viewer writes standing-eye-height (1.65 m above the sampled local
 terrain), overhead, horizon, and collider-overlay PNGs alongside the exact
 `input.json`, a browsable `index.html`, and a
-machine-readable `manifest.json`. It waits for custom material pipelines before
+machine-readable `manifest.json`. Five focused views target the nearest tree,
+when present, at the individual-leaf, leafed-twig, small-branch, crown-branch,
+and whole-tree-billboard distances. They fall back to the ordinary ground view
+for treeless fixtures. The viewer waits for custom material pipelines before
 capturing, then exits unsuccessfully and writes `failure.txt` when
 presentation/collider counts, collider-bounded procedural rocks, terrain
 material, coarse-input upsampling, microrelief, expected foliage, rendered
-overhead foliage detail in the flat sentinel fixture, three tree
+overhead foliage detail in the flat sentinel fixture, all five tree
 LODs, precipitation, three vista LODs, the 50 km vista contract, non-uniform
 rendered content, or the dedicated boundary-peak view fail. Explicit output directories must be
 fresh so a prior capture cannot satisfy a new run accidentally.
