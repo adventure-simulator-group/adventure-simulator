@@ -7,7 +7,7 @@ pub(super) fn scene_sunlight_illuminance(environment: &SceneEnvironment) -> f32 
         Precipitation::Rain => 0.62 - intensity * 0.27,
         Precipitation::Snow => 0.72 - intensity * 0.22,
     };
-    lux::DIRECT_SUNLIGHT * transmission.clamp(0.25, 1.0)
+    lux::RAW_SUNLIGHT * transmission.clamp(0.25, 1.0)
 }
 
 pub(super) fn scene_distance_fog(environment: &SceneEnvironment) -> DistanceFog {
@@ -32,25 +32,11 @@ pub(super) fn scene_distance_fog(environment: &SceneEnvironment) -> DistanceFog 
     }
 }
 
-#[derive(Component)]
-pub(crate) struct TacticalSunlight;
-
 pub(in crate::presentation) fn setup_tactical_presentation(
     mut commands: Commands,
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
     settings: Res<TacticalGraphicsSettings>,
 ) {
-    commands.spawn((
-        Name::new("Tactical sunlight"),
-        TacticalSunlight,
-        Transform::from_xyz(200.0, 1000.0, 100.0).looking_at(Vec3::ZERO, Vec3::Y),
-        DirectionalLight {
-            shadow_maps_enabled: settings.shadows_enabled,
-            illuminance: lux::DIRECT_SUNLIGHT,
-            ..default()
-        },
-    ));
-
     if settings.atmosphere_enabled {
         commands.spawn(Atmosphere::earth(
             scattering_mediums.add(ScatteringMedium::default()),
@@ -98,11 +84,9 @@ pub(in crate::presentation) fn setup_tactical_presentation(
 pub(super) fn on_environment_added(
     event: On<Add, SceneEnvironment>,
     environments: Query<&SceneEnvironment>,
-    mut sunlight: Single<&mut DirectionalLight, With<TacticalSunlight>>,
     mut fog: Single<&mut DistanceFog, With<Camera3d>>,
 ) -> Result {
     let environment = environments.get(event.entity)?;
-    sunlight.illuminance = scene_sunlight_illuminance(environment);
     **fog = scene_distance_fog(environment);
     Ok(())
 }
@@ -115,6 +99,10 @@ mod tests {
         SceneEnvironment {
             scene_digest: "fixture".into(),
             generation_version: TACTICAL_SCENE_GENERATION_VERSION,
+            latitude_microdegrees: 53_500_000,
+            longitude_microdegrees: 10_000_000,
+            absolute_minute: 12 * 60,
+            absolute_elevation_metres: 20,
             weather: WeatherSnapshot {
                 rules_version: WEATHER_RULES_VERSION,
                 interval_start_minute: 0,
@@ -141,7 +129,7 @@ mod tests {
         let rain = scene_sunlight_illuminance(&environment(Precipitation::Rain, 10_000));
         let snow = scene_sunlight_illuminance(&environment(Precipitation::Snow, 10_000));
         assert!(rain < snow && snow < clear);
-        assert!(rain >= lux::DIRECT_SUNLIGHT * 0.25);
+        assert!(rain >= lux::RAW_SUNLIGHT * 0.25);
     }
 
     #[test]

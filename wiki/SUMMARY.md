@@ -80,6 +80,7 @@
 
 - [Combat](tactical/combat.md)
 - [Stealth](tactical/stealth.md)
+- [Sky presentation](tactical/sky.md)
 
 # World data
 

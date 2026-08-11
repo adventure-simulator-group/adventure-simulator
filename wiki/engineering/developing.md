@@ -822,6 +822,22 @@ argument when a stable path is useful. Repeat `--fixture` directly against
 gates complement rather than replace inspecting the rendered PNGs for
 composition, visibility, scale, seams, and weather readability.
 
+The focused sky viewer captures the production atmosphere and celestial
+materials without loading terrain, foliage, or a tactical server. Its four
+canonical views exercise the Sun, twilight horizon, full Moon, and catalog
+stars independently:
+
+```powershell
+just tactical-sky-capture sun target/tactical-sky-captures/sun.png
+just tactical-sky-capture twilight target/tactical-sky-captures/twilight.png
+just tactical-sky-capture moon target/tactical-sky-captures/moon.png
+just tactical-sky-capture stars target/tactical-sky-captures/stars.png
+```
+
+Each capture primes one disposable GPU readback after its settle interval,
+then writes a 1600x900 PNG from the following stable frame. Inspect all four
+images when changing atmosphere, exposure, celestial transforms, or shaders.
+
 Production requests snapshot exact case-site coordinates and character time in
 SpacetimeDB. The dispatcher loads the final routing terrain pack once, samples a
 one-metre playable grid and three peak-preserving vista LODs out to 50 km,
