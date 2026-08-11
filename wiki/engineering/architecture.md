@@ -300,8 +300,18 @@ camera-facing whole-tree billboard. Impostor bounds come from the actual
 descendant branch groups rather than an unrelated generic crown, preserving
 the generated tree's silhouette across levels. Those visual levels do not
 change the server-owned trunk collider.
-Non-colliding grass and understory use shared meshes with continuous,
-hash-stable distance thinning, layered shader wind, and root-to-tip shading.
+Non-colliding grass and understory use automatically instanced shared meshes,
+layered shader wind, and root-to-tip shading. Grass cross-fades from an
+729-blade, fifteen-vertex macro patch to a stable 144-blade,
+seven-vertex subset at distance; rejected blades are absent from the far mesh
+rather than collapsed after vertex shading. The 3.2-metre patch spacing cuts
+grass render entities by roughly an order of magnitude while retaining the
+original internal blade spacing. Environment coverage selects stable blades
+inside that shared mesh instead of omitting whole macro patches. Beyond the geometric range, the
+terrain material retains only the band-limited aggregate colour and normal
+response of the sward. Bevy's standard mesh path supplies WebGPU-compatible
+GPU preprocessing, culling, and indirect batches when the adapter supports
+them, with its normal fallback on more limited browser devices.
 The local player transform drives nearby blade bending on the client only; this
 cosmetic interaction is neither replicated nor included in collision or
 tactical authority. The immutable environment and weather snapshots control the procedural ground

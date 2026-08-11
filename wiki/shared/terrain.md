@@ -44,13 +44,23 @@ bole. This value is part of deterministic generation rather than a query over
 spawned neighbors, preserving parallel tree construction.
 
 Grass, shrubs, and reeds are deterministic shared-mesh foliage with no gameplay
-collider. Grass uses overlapping shared patches of forty-nine narrow crossed
-blades across the full playable view distance: covered ground reads as a
-continuous sward from normal camera angles while remaining legible from
-overhead. Stable per-blade thresholds continuously reduce distant density and
-compensate surviving blade width without visible LOD rings. Layered spatial
-wind bends tips more than roots, while the locally controlled player's position
-and velocity flatten and push nearby grass as a presentation-only effect.
+collider. Grass uses overlapping 3.2-metre shared macro patches containing 729 individually
+oriented ribbons: each nearby blade samples a cubic longitudinal curve with
+fifteen vertices, then cross-fades beyond 34 metres to a stable 144-blade
+subset using seven vertices per ribbon. The retained blades widen by the square
+root of the density ratio, preserving aggregate coverage while eliminating
+the rejected blades before vertex shading. Internal blade spacing matches the
+former one-metre patch, so the larger footprint cuts grass render entities by
+roughly an order of magnitude without reducing near-field density. Canopy,
+water, cultivation, and snow select stable blades within the shared mesh rather
+than opening macro-patch-sized holes.
+Both representations evaluate the same authored lean, layered spatial wind,
+and player displacement curve, and an edge-on ribbon turns partially toward
+the view so it retains useful screen width without becoming a full billboard.
+The geometric sward ends by 132 metres; beyond it, band-limited terrain colour
+and normal variation carries the far-field grass response without sub-pixel
+blade geometry. The locally controlled player's position and velocity flatten
+and push nearby grass as a presentation-only effect.
 Root self-shadow, broad colour variation, a darker centre rib, and softened
 upward normals keep the dense field readable without making individual cards
 look heavily lit. A procedural terrain material blends forest floor, dry

@@ -1,6 +1,7 @@
 #import bevy_pbr::{
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::alpha_discard,
+    mesh_view_bindings::view,
 }
 #ifdef PREPASS_PIPELINE
 #import bevy_pbr::{
@@ -19,6 +20,7 @@ struct TacticalTerrainMaterial {
     cover: vec4<f32>,
     weather: vec4<f32>,
     variation: vec4<f32>,
+    far_sward: vec4<f32>,
 }
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(100)
@@ -67,10 +69,26 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     color = mix(color, stone, slope * (0.48 + hilly * 0.42));
     color = mix(color, vec3<f32>(0.09, 0.18, 0.22), water * 0.78);
     color *= 0.94 + detail * terrain.variation.y;
+
+    // Past the geometric LOD, represent the aggregate colour and normal
+    // response of a sward directly on the terrain. Frequencies stay low enough
+    // to remain stable when minified in a WebGPU browser canvas.
+    let camera_distance = distance(position.xz, view.lod_view_world_position.xz);
+    let sward_fade = smoothstep(terrain.far_sward.x, terrain.far_sward.y, camera_distance);
+    let sward_amount = sward_fade
+        * terrain.far_sward.z
+        * (1.0 - water)
+        * (1.0 - slope * 0.72);
+    let sward_pattern = sin(position.x * 0.43 + position.z * 0.19 + terrain.variation.x * 17.0)
+        * cos(position.z * 0.37 - position.x * 0.13 - terrain.variation.x * 11.0);
+    let sward_color = color * vec3<f32>(0.82, 1.035, 0.72)
+        * (0.97 + sward_pattern * 0.035);
+    color = mix(color, sward_color, sward_amount * 0.44);
+
     let snow_mask = snow * smoothstep(0.3, 0.86, normal.y) * (0.91 + detail * 0.09);
     color = mix(color, vec3<f32>(0.79, 0.84, 0.86), snow_mask);
 
-    let micro = terrain.variation.z * (1.0 - snow_mask);
+    let micro = (terrain.variation.z + sward_amount * 0.012) * (1.0 - snow_mask);
     pbr_input.N = normalize(pbr_input.N + vec3<f32>(
         cos(position.x * 2.11 + position.z * 0.47),
         0.0,
