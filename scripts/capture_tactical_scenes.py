@@ -8,6 +8,7 @@ import html
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -15,6 +16,7 @@ import time
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = REPOSITORY_ROOT / "assets" / "tactical-scenes"
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 def parse_args() -> argparse.Namespace:
@@ -111,8 +113,19 @@ def main() -> int:
                 str(args.settle_frames),
             ],
             cwd=REPOSITORY_ROOT,
+            capture_output=True,
+            text=True,
         )
-        if result.returncode:
+        if result.stdout:
+            print(result.stdout, end="")
+        if result.stderr:
+            print(result.stderr, end="", file=sys.stderr)
+        clean_log = ANSI_ESCAPE.sub("", f"{result.stdout}\n{result.stderr}")
+        runtime_error = any(
+            "ERROR" in line or line.lstrip().lower().startswith("error:")
+            for line in clean_log.splitlines()
+        )
+        if result.returncode or runtime_error:
             failures.append(fixture)
         write_index(output, fixtures)
     if failures:
