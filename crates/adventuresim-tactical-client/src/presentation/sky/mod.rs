@@ -104,8 +104,8 @@ pub(in crate::presentation) fn setup_tactical_sky(
         SunDisk::EARTH,
         Transform::from_xyz(200.0, 1000.0, 100.0).looking_at(Vec3::ZERO, Vec3::Y),
         DirectionalLight {
-            shadow_maps_enabled: settings.shadows_enabled,
-            illuminance: lux::RAW_SUNLIGHT,
+            shadow_maps_enabled: false,
+            illuminance: 0.0,
             ..default()
         },
     ));
@@ -182,8 +182,8 @@ pub(super) fn on_environment_added(
     let weather_transmission = sky_weather_transmission(environment);
 
     let (mut sun, mut sun_transform) = sunlight.into_inner();
-    sun.illuminance = scene_sunlight_illuminance(environment);
-    sun.shadow_maps_enabled = settings.shadows_enabled && sun_altitude > -2.0;
+    sun.illuminance = scene_sunlight_illuminance(environment, sun_altitude);
+    sun.shadow_maps_enabled = settings.shadows_enabled && sun_altitude > 0.0;
     *sun_transform = light_transform(sun_direction);
 
     let (mut moon_light, mut moon_transform) = moonlight.into_inner();

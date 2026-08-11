@@ -434,6 +434,7 @@ pub(crate) fn run(
     if let Some(absolute_minute) = absolute_minute {
         environment.absolute_minute = absolute_minute;
     }
+    let ambient_brightness = capture_ambient_brightness(&environment);
     let output = output.map_or_else(
         || default_output(&repository_root, &fixture, &generated.digest),
         absolute_from_current,
@@ -485,7 +486,7 @@ pub(crate) fn run(
     .insert_resource(ClearColor(Color::srgb_u8(158, 181, 195)))
     .insert_resource(GlobalAmbientLight {
         color: Color::WHITE,
-        brightness: 30_000.0,
+        brightness: ambient_brightness,
         ..default()
     })
     .insert_resource(SceneSetup(Some(setup)))
@@ -498,6 +499,56 @@ pub(crate) fn run(
     let exit = app.run();
     if exit != AppExit::Success {
         std::process::exit(1);
+    }
+}
+
+fn capture_ambient_brightness(environment: &SceneEnvironment) -> f32 {
+    let celestial = celestial_directions(
+        environment.absolute_minute,
+        environment.latitude_microdegrees,
+        environment.longitude_microdegrees,
+    );
+    let sun_altitude = celestial.sun[1].asin().to_degrees();
+    let moon_altitude = celestial.moon[1].asin().to_degrees();
+    capture_ambient_brightness_for_altitudes(
+        sun_altitude,
+        moon_altitude,
+        celestial.lunar_illumination,
+    )
+}
+
+fn capture_ambient_brightness_for_altitudes(
+    sun_altitude_degrees: f32,
+    moon_altitude_degrees: f32,
+    lunar_illumination: f32,
+) -> f32 {
+    let smoothstep = |edge0: f32, edge1: f32, value: f32| {
+        let t = ((value - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    };
+    let daylight = 30_000.0 * smoothstep(0.0, 8.0, sun_altitude_degrees);
+    let moonlight = 0.025 * lunar_illumination * smoothstep(-2.0, 4.0, moon_altitude_degrees);
+    daylight + moonlight
+}
+
+#[cfg(test)]
+mod capture_lighting_tests {
+    use super::*;
+
+    #[test]
+    fn capture_fill_light_respects_sun_and_moon_horizons() {
+        assert_eq!(
+            capture_ambient_brightness_for_altitudes(-25.0, -24.0, 1.0),
+            0.0
+        );
+        assert_eq!(
+            capture_ambient_brightness_for_altitudes(30.0, -25.0, 0.0),
+            30_000.0
+        );
+        assert_eq!(
+            capture_ambient_brightness_for_altitudes(-25.0, 30.0, 1.0),
+            0.025
+        );
     }
 }
 
