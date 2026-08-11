@@ -577,7 +577,7 @@ fn setup_scene(
             },
         ));
         let specimen_origin = tree + Vec3::Y * 15.0;
-        let (branch_mesh, leaf_mesh, local_focus, camera_direction) =
+        let (branch_mesh, leaf_mesh, bud_mesh, local_focus, camera_direction) =
             oak_review_terminal_specimen(tree, canopy_bps);
         let bark_material = materials.add(StandardMaterial {
             base_color: Color::srgb(0.42, 0.38, 0.31),
@@ -585,12 +585,17 @@ fn setup_scene(
             ..default()
         });
         let leaf_material = materials.add(StandardMaterial {
-            base_color: Color::srgb(0.4, 0.62, 0.17),
+            base_color: Color::srgb(0.56, 0.6, 0.32),
             perceptual_roughness: 0.82,
-            diffuse_transmission: 0.55,
+            diffuse_transmission: 0.65,
             thickness: 0.001,
             double_sided: true,
             cull_mode: None,
+            ..default()
+        });
+        let bud_material = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.36, 0.27, 0.1),
+            perceptual_roughness: 0.92,
             ..default()
         });
         tree_review_entities.push(
@@ -600,6 +605,18 @@ fn setup_scene(
                     TreeReviewSpecimen,
                     Mesh3d(meshes.add(branch_mesh)),
                     MeshMaterial3d(bark_material),
+                    Visibility::Hidden,
+                    Transform::from_translation(specimen_origin),
+                ))
+                .id(),
+        );
+        tree_review_entities.push(
+            commands
+                .spawn((
+                    Name::new("Isolated production oak terminal bud"),
+                    TreeReviewSpecimen,
+                    Mesh3d(meshes.add(bud_mesh)),
+                    MeshMaterial3d(bud_material),
                     Visibility::Hidden,
                     Transform::from_translation(specimen_origin),
                 ))
@@ -618,7 +635,7 @@ fn setup_scene(
                 .id(),
         );
         tree_leaf_focus = Some(specimen_origin + local_focus);
-        tree_leaf_camera = Some(specimen_origin + local_focus + camera_direction * 0.9);
+        tree_leaf_camera = Some(specimen_origin + local_focus + camera_direction * 0.68);
         tree_review_entities.push(
             commands
                 .spawn((
@@ -632,7 +649,7 @@ fn setup_scene(
                     })),
                     Visibility::Hidden,
                     Transform::from_translation(
-                        specimen_origin + local_focus + Vec3::new(-0.15, -0.22, 0.0),
+                        specimen_origin + local_focus + Vec3::new(-0.12, -0.13, 0.0),
                     ),
                 ))
                 .id(),
@@ -1262,7 +1279,7 @@ fn capture_view_fov(view: &str) -> f32 {
     match view {
         "horizon" => 15.0,
         "tree-detail" | "tree-silhouette" => 48.0,
-        "tree-leaf-detail" => 24.0,
+        "tree-leaf-detail" => 30.0,
         "tree-twig-lod" => 30.0,
         "tree-small-branch-lod" => 19.0,
         "tree-crown-lod" => 13.0,

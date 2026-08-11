@@ -1006,8 +1006,8 @@ mod tests {
     #[test]
     fn tree_lods_collapse_one_botanical_order_at_a_time() {
         let branches = procedural_tree_skeleton(42, 0.0);
-        let leaves = procedural_oak_leaves(42, &branches);
-        let expected_cards = [207, 14, 8, 8];
+        let leaves = procedural_oak_leaves(42, &branches, 0.0);
+        let expected_cards = [348, 14, 8, 8];
         for (index, expected) in expected_cards.into_iter().enumerate() {
             assert_eq!(
                 tree_bake_cards(42, &branches, &leaves, index as u8 + 1).len(),
