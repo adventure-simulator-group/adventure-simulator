@@ -32,6 +32,14 @@ pub struct ReconnectCapability {
     pub token: ReconnectToken,
 }
 
+/// One bounded, ordered scene asset delivered only to an enrolled client.
+/// Vista samples intentionally bypass ordinary ECS component replication.
+#[derive(Debug, Clone, Event, Serialize, Deserialize)]
+pub struct SceneVistaBundle {
+    pub scene_digest: String,
+    pub lods: Vec<VistaLod>,
+}
+
 #[derive(Debug, Clone, Copy, Default, Event, Serialize, Deserialize)]
 pub struct PlayerInputRequest {
     pub movement: Option<Vec2>,

@@ -10,7 +10,11 @@ path = "src/main.rs"
 [dependencies]
 # SpacetimeDB SDK
 adventuresim-stdb-client = { path = "../adventuresim-stdb-client" }
+adventuresim-core.workspace = true
+adventuresim-tactical-core.workspace = true
+adventuresim-terrain = { path = "../adventuresim-terrain" }
 rand.workspace = true
+serde_json.workspace = true
 sha2.workspace = true
 
 # CLI
@@ -22,3 +26,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+flate2.workspace = true

@@ -68,6 +68,33 @@ pub struct SceneTerrain {
 }
 
 impl SceneTerrain {
+    /// Builds terrain from an already-authoritative row-major height sample.
+    ///
+    /// The dimensions count grid vertices, while `SceneTerrain::new` counts
+    /// cells. This constructor is the scene-input boundary used by both the
+    /// server collider and the client's replicated playable mesh.
+    pub fn from_heightmap(
+        grid_width: usize,
+        grid_depth: usize,
+        scale: f32,
+        heightmap: Vec<f32>,
+    ) -> Option<Self> {
+        if grid_width < 2
+            || grid_depth < 2
+            || !scale.is_finite()
+            || scale <= 0.0
+            || heightmap.len() != grid_width.checked_mul(grid_depth)?
+            || heightmap.iter().any(|height| !height.is_finite())
+        {
+            return None;
+        }
+        Some(Self {
+            heightmap,
+            width: grid_width,
+            scale,
+        })
+    }
+
     pub fn new(width: usize, depth: usize, scale: f32, op: impl Fn(Vec2) -> f32) -> Self {
         // number of points = segments + 1
         let width = width + 1;
