@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1946)
+## Files (1947)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -63,6 +63,7 @@ development, or other wiki document before changing a subsystem.
 - `assets/animations/biped/unarmed/walk_mirrored.glb` — Binary game or UI asset.
 - `assets/shaders/tactical_foliage.wgsl` — Repository support file.
 - `assets/shaders/tactical_terrain.wgsl` — Repository support file.
+- `assets/shaders/tactical_tree_impostor.wgsl` — Repository support file.
 - `assets/tactical-equipment-icons.png` — Binary game or UI asset.
 - `assets/tactical-scenes/cultivated-roadside.json` — Repository support file.
 - `assets/tactical-scenes/dense-woodland.json` — Repository support file.
