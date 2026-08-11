@@ -28,6 +28,8 @@ pub(crate) use environment::TacticalSunlight;
 #[allow(unused_imports)]
 pub(crate) use foliage::{FoliageLayer, GrassInteractor};
 #[allow(unused_imports)]
+pub(crate) use obstacles::oak_review_terminal_specimen;
+#[allow(unused_imports)]
 pub(crate) use obstacles::rock::ProceduralRockVisual;
 #[allow(unused_imports)]
 pub(crate) use obstacles::tree::TreeLod;

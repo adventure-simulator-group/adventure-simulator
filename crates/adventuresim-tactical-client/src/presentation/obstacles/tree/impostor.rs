@@ -256,8 +256,14 @@ pub(in crate::presentation) fn tree_bake_cards(
     let mut cards = Vec::new();
     match lod {
         1 => {
-            for group in 0..u16::from(TREE_PRIMARY_GROUP_COUNT) * TREE_SECONDARY_GROUPS_PER_PRIMARY
-            {
+            let mut secondary_groups = branches
+                .iter()
+                .filter(|branch| branch.depth == 2)
+                .map(|branch| branch.secondary_group)
+                .collect::<Vec<_>>();
+            secondary_groups.sort_unstable();
+            secondary_groups.dedup();
+            for group in secondary_groups {
                 let axis = branches
                     .iter()
                     .find(|branch| {
@@ -607,9 +613,9 @@ fn raster_source_mesh(
                 let light = 0.62 + normal.dot(Vec3::new(0.35, 0.86, 0.25)).abs() * 0.34;
                 let color = match material {
                     TreeSourceMaterial::Bark => [
-                        (91.0 * light) as u8,
-                        (79.0 * light) as u8,
-                        (62.0 * light) as u8,
+                        (116.0 * light) as u8,
+                        (103.0 * light) as u8,
+                        (82.0 * light) as u8,
                         255,
                     ],
                     TreeSourceMaterial::Leaf => {
@@ -621,9 +627,9 @@ fn raster_source_mesh(
                                 .sum()
                         });
                         [
-                            (77.0 * tint.x * light).min(255.0) as u8,
-                            (133.0 * tint.y * light).min(255.0) as u8,
-                            (36.0 * tint.z * light).min(255.0) as u8,
+                            (105.0 * tint.x * light).min(255.0) as u8,
+                            (158.0 * tint.y * light).min(255.0) as u8,
+                            (52.0 * tint.z * light).min(255.0) as u8,
                             255,
                         ]
                     }
@@ -942,9 +948,9 @@ pub(in crate::presentation) fn procedural_oak_bark_image(seed: u64) -> Image {
                 * ((u * 5.0 - v * 11.0) * core::f32::consts::PI).sin();
             let value = (0.82 - fissure * 0.26 + plate * 0.025).clamp(0.42, 0.9);
             pixels.extend_from_slice(&[
-                (126.0 * value) as u8,
-                (116.0 * value) as u8,
-                (98.0 * value) as u8,
+                (145.0 * value) as u8,
+                (132.0 * value) as u8,
+                (110.0 * value) as u8,
                 255,
             ]);
         }
@@ -1001,7 +1007,7 @@ mod tests {
     fn tree_lods_collapse_one_botanical_order_at_a_time() {
         let branches = procedural_tree_skeleton(42, 0.0);
         let leaves = procedural_oak_leaves(42, &branches);
-        let expected_cards = [210, 14, 8, 8];
+        let expected_cards = [207, 14, 8, 8];
         for (index, expected) in expected_cards.into_iter().enumerate() {
             assert_eq!(
                 tree_bake_cards(42, &branches, &leaves, index as u8 + 1).len(),

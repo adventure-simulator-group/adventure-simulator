@@ -71,10 +71,10 @@ pub(in crate::presentation) fn present_pending_trees(
                 ..default()
             });
             let leaf_material = materials.add(StandardMaterial {
-                base_color: Color::srgb(0.3, 0.52, 0.14),
+                base_color: Color::srgb(0.4, 0.62, 0.17),
                 perceptual_roughness: 0.82,
                 reflectance: 0.18,
-                diffuse_transmission: 0.4,
+                diffuse_transmission: 0.55,
                 thickness: 0.001,
                 double_sided: true,
                 cull_mode: None,
@@ -115,6 +115,79 @@ pub(in crate::presentation) fn present_pending_trees(
 fn canopy_competition(canopy_bps: u16) -> f32 {
     let normalized = f32::from(canopy_bps) / 10_000.0;
     normalized * normalized * (3.0 - 2.0 * normalized)
+}
+
+// The presentation facade is compiled into several binaries, while only the
+// deterministic scene viewer consumes this review-specimen helper.
+#[allow(dead_code)]
+pub(crate) fn oak_review_terminal_specimen(
+    root: Vec3,
+    canopy_bps: u16,
+) -> (Mesh, Mesh, Vec3, Vec3) {
+    let seed = obstacle_seed(root);
+    let variant_seed = splitmix64(0x6f61_6b00 ^ (seed & 3));
+    let branches = procedural_tree_skeleton(variant_seed, canopy_competition(canopy_bps));
+    let leaves = procedural_oak_leaves(variant_seed, &branches);
+    let camera_direction = Vec3::new(1.0, 0.0, 1.0).normalize();
+    let preferred_height = 2.5;
+    let (shoot_id, shoot) = branches
+        .iter()
+        .filter(|branch| branch.depth == 3 && branch.is_limb_tip)
+        .enumerate()
+        .max_by(|(_, left), (_, right)| {
+            let score = |branch: &TreeBranchSegment| {
+                branch.end.dot(camera_direction) - (branch.end.y - preferred_height).abs() * 0.35
+            };
+            score(left).total_cmp(&score(right))
+        })
+        .map(|(index, branch)| (index as u16, *branch))
+        .expect("procedural oak has terminal shoots");
+    let offset = -shoot.start;
+    let mut specimen_shoot = shoot;
+    specimen_shoot.start += offset;
+    specimen_shoot.end += offset;
+    let specimen_leaves = leaves
+        .iter()
+        .filter(|leaf| leaf.shoot_id == shoot_id)
+        .copied()
+        .map(|mut leaf| {
+            leaf.petiole_start += offset;
+            leaf.center += offset;
+            leaf
+        })
+        .collect::<Vec<_>>();
+    let focus =
+        specimen_leaves.iter().map(|leaf| leaf.center).sum::<Vec3>() / specimen_leaves.len() as f32;
+    let shoot_direction = (specimen_shoot.end - specimen_shoot.start).normalize();
+    let mut review_direction = Vec3::Z;
+    let mut review_score = f32::NEG_INFINITY;
+    for elevation in [-0.2_f32, 0.1, 0.35] {
+        for azimuth_index in 0..24 {
+            let azimuth = azimuth_index as f32 * core::f32::consts::TAU / 24.0;
+            let candidate = Vec3::new(
+                azimuth.cos() * elevation.cos(),
+                elevation.sin(),
+                azimuth.sin() * elevation.cos(),
+            );
+            let face_area = specimen_leaves
+                .iter()
+                .map(|leaf| leaf.right.cross(leaf.up).normalize().dot(candidate).abs())
+                .sum::<f32>();
+            let axial_penalty =
+                shoot_direction.dot(candidate).abs() * specimen_leaves.len() as f32 * 0.55;
+            let score = face_area - axial_penalty;
+            if score > review_score {
+                review_score = score;
+                review_direction = candidate;
+            }
+        }
+    }
+    (
+        procedural_tree_branch_mesh(&[specimen_shoot], 3),
+        procedural_oak_leaf_mesh(&specimen_leaves),
+        focus,
+        review_direction,
+    )
 }
 
 #[cfg(test)]
