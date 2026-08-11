@@ -781,73 +781,136 @@ struct TreeBranchSegment {
     start_radius: f32,
     end_radius: f32,
     depth: u8,
+    primary_group: u8,
+    secondary_group: u16,
+    is_limb_tip: bool,
 }
 
 fn procedural_tree_skeleton(seed: u64) -> Vec<TreeBranchSegment> {
-    let mut branches = vec![TreeBranchSegment {
-        start: Vec3::new(0.0, -TREE_TRUNK_HEIGHT_METRES * 0.5, 0.0),
-        end: Vec3::new(0.0, TREE_TRUNK_HEIGHT_METRES * 0.5 + 0.35, 0.0),
-        start_radius: TREE_TRUNK_RADIUS_METRES,
-        end_radius: 0.16,
-        depth: 0,
-    }];
-    let crown_bias = unit_hash(seed ^ 0x9182_64ac) - 0.5;
-    for primary_index in 0..7_u64 {
+    let mut branches = Vec::new();
+    let crown_phase = unit_hash(seed ^ 0x9182_64ac) * core::f32::consts::TAU;
+    let trunk_bend = Vec3::new(crown_phase.cos(), 0.0, crown_phase.sin())
+        * (0.12 + unit_hash(seed ^ 0x51c7_329d) * 0.1);
+    let trunk_points = (0..=6)
+        .map(|index| {
+            let t = index as f32 / 6.0;
+            Vec3::new(0.0, -TREE_TRUNK_HEIGHT_METRES * 0.5, 0.0)
+                + Vec3::Y * (5.45 * t)
+                + trunk_bend * t.powf(1.45)
+        })
+        .collect::<Vec<_>>();
+    for index in 0..6 {
+        let t0 = index as f32 / 6.0;
+        let t1 = (index + 1) as f32 / 6.0;
+        branches.push(TreeBranchSegment {
+            start: trunk_points[index],
+            end: trunk_points[index + 1],
+            start_radius: TREE_TRUNK_RADIUS_METRES * (1.0 - t0 * 0.78),
+            end_radius: (TREE_TRUNK_RADIUS_METRES * (1.0 - t1 * 0.78)).max(0.045),
+            depth: 0,
+            primary_group: u8::MAX,
+            secondary_group: u16::MAX,
+            is_limb_tip: index == 5,
+        });
+    }
+
+    for primary_index in 0..10_u64 {
         let primary_seed = splitmix64(seed ^ primary_index.wrapping_mul(0x9e37_79b9));
-        let phase =
-            primary_index as f32 * core::f32::consts::TAU / 7.0 + unit_hash(primary_seed) * 0.72;
-        let start = Vec3::new(
-            0.0,
-            -0.55 + primary_index as f32 * 0.39 + crown_bias * 0.18,
-            0.0,
-        );
-        let primary_direction = Vec3::new(
-            phase.cos() * (0.72 + unit_hash(primary_seed ^ 1) * 0.2),
-            0.56 + unit_hash(primary_seed ^ 2) * 0.34,
-            phase.sin() * (0.72 + unit_hash(primary_seed ^ 3) * 0.2),
-        )
-        .normalize();
-        let primary = TreeBranchSegment {
-            start,
-            end: start + primary_direction * (1.45 + unit_hash(primary_seed ^ 4) * 0.42),
-            start_radius: 0.15,
-            end_radius: 0.07,
-            depth: 1,
-        };
-        branches.push(primary);
-        for secondary_index in 0..3_u64 {
+        let phase = crown_phase
+            + primary_index as f32 * 2.399_963_1
+            + (unit_hash(primary_seed) - 0.5) * 0.34;
+        let outward = Vec3::new(phase.cos(), 0.0, phase.sin());
+        let tangent = Vec3::new(-phase.sin(), 0.0, phase.cos());
+        let trunk_t = 0.43 + primary_index as f32 * 0.045;
+        let trunk_scaled = trunk_t * 6.0;
+        let trunk_segment = trunk_scaled.floor().min(5.0) as usize;
+        let start =
+            trunk_points[trunk_segment].lerp(trunk_points[trunk_segment + 1], trunk_scaled.fract());
+        let lower_crown = 1.0 - primary_index as f32 / 10.0;
+        let reach = 1.45 + lower_crown * 0.95 + unit_hash(primary_seed ^ 1) * 0.22;
+        let rise = 1.05 + (1.0 - lower_crown) * 0.8 + unit_hash(primary_seed ^ 2) * 0.25;
+        let curve = (unit_hash(primary_seed ^ 3) - 0.5) * 0.52;
+        let mut primary_points = [Vec3::ZERO; 4];
+        for (point_index, point) in primary_points.iter_mut().enumerate() {
+            let t = point_index as f32 / 3.0;
+            *point = start
+                + outward * reach * t
+                + Vec3::Y * (rise * t + 0.16 * (core::f32::consts::PI * t).sin())
+                + tangent * curve * (core::f32::consts::PI * t).sin();
+        }
+        for segment_index in 0..3 {
+            let t0 = segment_index as f32 / 3.0;
+            let t1 = (segment_index + 1) as f32 / 3.0;
+            branches.push(TreeBranchSegment {
+                start: primary_points[segment_index],
+                end: primary_points[segment_index + 1],
+                start_radius: 0.17 * (1.0 - t0 * 0.68),
+                end_radius: 0.17 * (1.0 - t1 * 0.68),
+                depth: 1,
+                primary_group: primary_index as u8,
+                secondary_group: u16::MAX,
+                is_limb_tip: segment_index == 2,
+            });
+        }
+
+        for secondary_index in 0..6_u64 {
             let secondary_seed = splitmix64(primary_seed ^ (secondary_index + 11));
+            let attach_t = 0.24 + secondary_index as f32 * 0.145;
+            let primary_scaled = attach_t * 3.0;
+            let segment = primary_scaled.floor().min(2.0) as usize;
+            let secondary_start =
+                primary_points[segment].lerp(primary_points[segment + 1], primary_scaled.fract());
             let side = if secondary_index & 1 == 0 { 1.0 } else { -1.0 };
-            let yaw = phase + side * (0.48 + unit_hash(secondary_seed) * 0.54);
-            let secondary_start = primary
-                .start
-                .lerp(primary.end, 0.46 + secondary_index as f32 * 0.19);
-            let direction = (primary_direction * 0.42
-                + Vec3::new(yaw.cos(), 0.65, yaw.sin()) * 0.78)
+            let yaw = phase
+                + (secondary_index as f32 - 2.5) * 0.36
+                + side * (0.24 + unit_hash(secondary_seed) * 0.26);
+            let secondary_outward = Vec3::new(yaw.cos(), 0.0, yaw.sin());
+            let inherited = (primary_points[3] - primary_points[2]).normalize();
+            let secondary_direction = (inherited * 0.42
+                + secondary_outward * 0.72
+                + Vec3::Y * (0.44 + unit_hash(secondary_seed ^ 1) * 0.2))
                 .normalize();
-            let secondary = TreeBranchSegment {
-                start: secondary_start,
-                end: secondary_start + direction * (0.78 + unit_hash(secondary_seed ^ 1) * 0.34),
-                start_radius: 0.075,
-                end_radius: 0.032,
-                depth: 2,
-            };
-            branches.push(secondary);
-            for twig_index in 0..2_u64 {
+            let secondary_length = 0.78 + unit_hash(secondary_seed ^ 2) * 0.3;
+            let bend = tangent * side * (0.08 + unit_hash(secondary_seed ^ 3) * 0.12);
+            let secondary_mid = secondary_start
+                + secondary_direction * secondary_length * 0.52
+                + bend
+                + Vec3::Y * 0.06;
+            let secondary_end = secondary_start
+                + secondary_direction * secondary_length
+                + bend * 0.35
+                + Vec3::Y * 0.12;
+            let secondary_points = [secondary_start, secondary_mid, secondary_end];
+            let secondary_group = (primary_index * 6 + secondary_index) as u16;
+            for segment_index in 0..2 {
+                branches.push(TreeBranchSegment {
+                    start: secondary_points[segment_index],
+                    end: secondary_points[segment_index + 1],
+                    start_radius: if segment_index == 0 { 0.06 } else { 0.038 },
+                    end_radius: if segment_index == 0 { 0.038 } else { 0.018 },
+                    depth: 2,
+                    primary_group: primary_index as u8,
+                    secondary_group,
+                    is_limb_tip: segment_index == 1,
+                });
+            }
+            for twig_index in 0..5_u64 {
                 let twig_seed = splitmix64(secondary_seed ^ (twig_index + 23));
-                let twig_yaw = yaw + (twig_index as f32 - 0.5) * 1.1;
-                let twig_start = secondary
-                    .start
-                    .lerp(secondary.end, 0.56 + twig_index as f32 * 0.3);
-                let twig_direction = (direction * 0.56
-                    + Vec3::new(twig_yaw.cos(), 0.76, twig_yaw.sin()) * 0.62)
+                let twig_start =
+                    secondary_points[1].lerp(secondary_points[2], 0.12 + twig_index as f32 * 0.21);
+                let twig_yaw = yaw + (twig_index as f32 - 2.0) * 0.46;
+                let twig_direction = (secondary_direction * 0.5
+                    + Vec3::new(twig_yaw.cos(), 0.52, twig_yaw.sin()) * 0.62)
                     .normalize();
                 branches.push(TreeBranchSegment {
                     start: twig_start,
-                    end: twig_start + twig_direction * (0.42 + unit_hash(twig_seed) * 0.22),
-                    start_radius: 0.035,
-                    end_radius: 0.012,
+                    end: twig_start + twig_direction * (0.48 + unit_hash(twig_seed) * 0.2),
+                    start_radius: 0.021,
+                    end_radius: 0.007,
                     depth: 3,
+                    primary_group: primary_index as u8,
+                    secondary_group,
+                    is_limb_tip: true,
                 });
             }
         }
@@ -900,12 +963,14 @@ fn append_branch_tube(
     };
     let right = direction.cross(reference).normalize();
     let forward = right.cross(direction).normalize();
+    let start_center = branch.start - direction * branch.start_radius * 0.28;
+    let end_center_position = branch.end + direction * branch.end_radius * 0.7;
     let base = positions.len() as u32;
     for ring in 0..2 {
         let (center, radius) = if ring == 0 {
-            (branch.start, branch.start_radius)
+            (start_center, branch.start_radius)
         } else {
-            (branch.end, branch.end_radius)
+            (end_center_position, branch.end_radius)
         };
         for side in 0..sides {
             let phase = side as f32 * core::f32::consts::TAU / sides as f32;
@@ -926,6 +991,48 @@ fn append_branch_tube(
             base + next,
         ]);
     }
+    let end_center = positions.len() as u32;
+    positions.push(end_center_position.to_array());
+    normals.push(direction.to_array());
+    uvs.push([0.5, 1.0]);
+    for side in 0..sides {
+        let next = (side + 1) % sides;
+        indices.extend_from_slice(&[end_center, base + sides + side, base + sides + next]);
+    }
+}
+
+#[derive(Clone, Copy)]
+struct TreeCrownBounds {
+    minimum: Vec3,
+    maximum: Vec3,
+}
+
+impl TreeCrownBounds {
+    fn center(self) -> Vec3 {
+        (self.minimum + self.maximum) * 0.5
+    }
+
+    fn horizontal_span(self) -> f32 {
+        (self.maximum.x - self.minimum.x).max(self.maximum.z - self.minimum.z)
+    }
+
+    fn vertical_span(self) -> f32 {
+        self.maximum.y - self.minimum.y
+    }
+}
+
+fn tree_crown_bounds(
+    branches: &[TreeBranchSegment],
+    mut includes: impl FnMut(&TreeBranchSegment) -> bool,
+) -> TreeCrownBounds {
+    let mut minimum = Vec3::splat(f32::INFINITY);
+    let mut maximum = Vec3::splat(f32::NEG_INFINITY);
+    for branch in branches.iter().filter(|branch| includes(branch)) {
+        minimum = minimum.min(branch.start).min(branch.end);
+        maximum = maximum.max(branch.start).max(branch.end);
+    }
+    debug_assert!(minimum.is_finite() && maximum.is_finite());
+    TreeCrownBounds { minimum, maximum }
 }
 
 fn procedural_tree_card_mesh(seed: u64, branches: &[TreeBranchSegment], lod: u8) -> Mesh {
@@ -937,27 +1044,42 @@ fn procedural_tree_card_mesh(seed: u64, branches: &[TreeBranchSegment], lod: u8)
         0 => {
             for (index, branch) in branches
                 .iter()
-                .filter(|branch| branch.depth == 3)
+                .filter(|branch| branch.depth == 3 && branch.is_limb_tip)
                 .enumerate()
             {
                 let direction = (branch.end - branch.start).normalize();
-                for leaf in 0..7_u64 {
+                let tangent = direction.cross(Vec3::Y).normalize_or_zero();
+                let tangent = if tangent.length_squared() < 0.5 {
+                    Vec3::X
+                } else {
+                    tangent
+                };
+                let binormal = direction.cross(tangent).normalize();
+                for leaf in 0..13_u64 {
                     let leaf_seed =
                         splitmix64(seed ^ index as u64 ^ leaf.wrapping_mul(0x91e1_0da5));
-                    let phase =
-                        unit_hash(leaf_seed) * core::f32::consts::TAU + leaf as f32 * 2.399_963_1;
-                    let horizontal = Vec3::new(phase.cos(), 0.0, phase.sin());
-                    let right = (horizontal + Vec3::Y * 0.12 * phase.sin()).normalize();
-                    let up = (direction * 0.48 + Vec3::Y * 0.6 + horizontal * 0.18).normalize();
-                    let center = branch.end
-                        + horizontal * (0.08 + (leaf % 3) as f32 * 0.07)
-                        + up * ((leaf / 3) as f32 * 0.11 - 0.05);
+                    let phase = unit_hash(leaf_seed) * 0.65 + leaf as f32 * 2.399_963_1;
+                    let radial = (tangent * phase.cos() + binormal * phase.sin()).normalize();
+                    let along = 0.1 + unit_hash(leaf_seed ^ 8) * 0.88;
+                    let leaf_axis = (radial * 0.78
+                        + direction * 0.22
+                        + Vec3::Y * (0.22 - unit_hash(leaf_seed ^ 4) * 0.44))
+                        .normalize();
+                    let right = direction.cross(leaf_axis).normalize_or_zero();
+                    let right = if right.length_squared() < 0.5 {
+                        tangent
+                    } else {
+                        right
+                    };
+                    let center = branch.start.lerp(branch.end, along.min(0.98))
+                        + radial * (0.055 + unit_hash(leaf_seed ^ 5) * 0.11)
+                        + Vec3::Y * ((unit_hash(leaf_seed ^ 9) - 0.5) * 0.16);
                     append_tree_card(
                         center,
                         right,
-                        up,
-                        0.26,
-                        0.48,
+                        leaf_axis,
+                        0.15 + unit_hash(leaf_seed ^ 6) * 0.055,
+                        0.24 + unit_hash(leaf_seed ^ 7) * 0.07,
                         &mut positions,
                         &mut normals,
                         &mut uvs,
@@ -967,81 +1089,101 @@ fn procedural_tree_card_mesh(seed: u64, branches: &[TreeBranchSegment], lod: u8)
             }
         }
         1 => {
-            for (index, branch) in branches
-                .iter()
-                .filter(|branch| branch.depth == 2)
-                .enumerate()
-            {
+            for group in 0..60_u16 {
+                let bounds = tree_crown_bounds(branches, |branch| {
+                    branch.depth == 3 && branch.secondary_group == group
+                });
+                let up = branches
+                    .iter()
+                    .find(|branch| {
+                        branch.depth == 2 && branch.secondary_group == group && branch.is_limb_tip
+                    })
+                    .map(|branch| (branch.end - branch.start).normalize())
+                    .unwrap_or(Vec3::Y);
+                let index = usize::from(group);
                 let phase = unit_hash(splitmix64(seed ^ index as u64)) * core::f32::consts::TAU;
-                append_tree_card(
-                    branch.end,
-                    Vec3::new(phase.cos(), 0.0, phase.sin()),
-                    Vec3::Y,
-                    0.78,
-                    1.15,
-                    &mut positions,
-                    &mut normals,
-                    &mut uvs,
-                    &mut indices,
-                );
+                for facing in 0..2 {
+                    let facing_phase = phase + facing as f32 * core::f32::consts::FRAC_PI_2;
+                    append_tree_card(
+                        bounds.center() + Vec3::Y * 0.05,
+                        Vec3::new(facing_phase.cos(), 0.0, facing_phase.sin()),
+                        up,
+                        (bounds.horizontal_span() + 0.45) * 1.05,
+                        (bounds.vertical_span() + 0.5) * 1.08,
+                        &mut positions,
+                        &mut normals,
+                        &mut uvs,
+                        &mut indices,
+                    );
+                }
             }
         }
         2 => {
-            for (index, branch) in branches
-                .iter()
-                .filter(|branch| branch.depth == 1)
-                .enumerate()
-            {
+            for group in 0..10_u8 {
+                let bounds = tree_crown_bounds(branches, |branch| {
+                    branch.depth == 3 && branch.primary_group == group
+                });
+                let index = usize::from(group);
                 let phase =
                     unit_hash(splitmix64(seed ^ index as u64 ^ 0x4a17)) * core::f32::consts::TAU;
-                append_tree_card(
-                    branch.end + Vec3::Y * 0.22,
-                    Vec3::new(phase.cos(), 0.0, phase.sin()),
-                    Vec3::Y,
-                    1.45,
-                    2.05,
-                    &mut positions,
-                    &mut normals,
-                    &mut uvs,
-                    &mut indices,
-                );
+                for facing in 0..2 {
+                    let facing_phase = phase + facing as f32 * core::f32::consts::FRAC_PI_2;
+                    append_tree_card(
+                        bounds.center(),
+                        Vec3::new(facing_phase.cos(), 0.0, facing_phase.sin()),
+                        Vec3::Y,
+                        (bounds.horizontal_span() + 0.9) * 1.28,
+                        (bounds.vertical_span() + 0.9) * 1.18,
+                        &mut positions,
+                        &mut normals,
+                        &mut uvs,
+                        &mut indices,
+                    );
+                }
             }
         }
         3 => {
-            for (index, center) in [
-                Vec3::new(-0.78, 1.15, 0.18),
-                Vec3::new(0.72, 1.35, -0.16),
-                Vec3::new(0.0, 2.15, 0.08),
-            ]
-            .into_iter()
-            .enumerate()
-            {
+            for index in 0..5 {
+                let first = index as u8;
+                let second = (index + 5) as u8;
+                let bounds = tree_crown_bounds(branches, |branch| {
+                    branch.depth == 3
+                        && (branch.primary_group == first || branch.primary_group == second)
+                });
                 let phase =
                     unit_hash(splitmix64(seed ^ index as u64 ^ 0x7c31)) * core::f32::consts::TAU;
-                append_tree_card(
-                    center,
-                    Vec3::new(phase.cos(), 0.0, phase.sin()),
-                    Vec3::Y,
-                    2.55,
-                    3.25,
-                    &mut positions,
-                    &mut normals,
-                    &mut uvs,
-                    &mut indices,
-                );
+                for facing in 0..2 {
+                    let facing_phase = phase + facing as f32 * core::f32::consts::FRAC_PI_2;
+                    append_tree_card(
+                        bounds.center() + Vec3::Y * 0.08,
+                        Vec3::new(facing_phase.cos(), 0.0, facing_phase.sin()),
+                        Vec3::Y,
+                        (bounds.horizontal_span() + 1.0) * 1.2,
+                        (bounds.vertical_span() + 1.0) * 1.15,
+                        &mut positions,
+                        &mut normals,
+                        &mut uvs,
+                        &mut indices,
+                    );
+                }
             }
         }
-        4 => append_tree_card(
-            Vec3::new(0.0, 0.72, 0.0),
-            Vec3::X,
-            Vec3::Y,
-            5.4,
-            6.45,
-            &mut positions,
-            &mut normals,
-            &mut uvs,
-            &mut indices,
-        ),
+        4 => {
+            let bounds = tree_crown_bounds(branches, |branch| branch.depth == 3);
+            let bottom = -TREE_TRUNK_HEIGHT_METRES * 0.5;
+            let top = bounds.maximum.y + 0.45;
+            append_tree_card(
+                Vec3::new(0.0, (bottom + top) * 0.5, 0.0),
+                Vec3::X,
+                Vec3::Y,
+                (bounds.horizontal_span() + 1.25) * 1.15,
+                top - bottom,
+                &mut positions,
+                &mut normals,
+                &mut uvs,
+                &mut indices,
+            );
+        }
         _ => unreachable!("tree LOD is bounded"),
     }
     let mut mesh = Mesh::new(
@@ -1086,11 +1228,11 @@ fn tree_impostor_material(seed: u64, lod: u8) -> TacticalTreeImpostorMaterial {
     let hue = unit_hash(seed ^ 0x2f37_84c1) - 0.5;
     TacticalTreeImpostorMaterial {
         parameters: Vec4::new(lod as f32, unit_hash(seed), 0.08 + lod as f32 * 0.018, 1.0),
-        leaf_light: Color::srgb(0.19 + hue * 0.04, 0.43 + hue * 0.05, 0.12)
+        leaf_light: Color::srgb(0.24 + hue * 0.05, 0.5 + hue * 0.06, 0.13)
             .to_linear()
             .to_f32_array()
             .into(),
-        leaf_shadow: Color::srgb(0.055, 0.18 + hue * 0.025, 0.045)
+        leaf_shadow: Color::srgb(0.05, 0.2 + hue * 0.03, 0.04)
             .to_linear()
             .to_f32_array()
             .into(),
@@ -1628,7 +1770,7 @@ mod tests {
                     .count()
             })
             .collect::<Vec<_>>();
-        assert_eq!(counts, vec![1, 7, 21, 42]);
+        assert_eq!(counts, vec![6, 30, 120, 300]);
         assert!(branches.iter().all(|branch| branch.end.y > branch.start.y));
         assert!(
             branches.iter().all(|branch| {
@@ -1640,7 +1782,7 @@ mod tests {
     #[test]
     fn tree_lods_collapse_one_botanical_order_at_a_time() {
         let branches = procedural_tree_skeleton(42);
-        let expected_cards = [294, 21, 7, 3, 1];
+        let expected_cards = [3_900, 120, 20, 10, 1];
         for (lod, expected) in expected_cards.into_iter().enumerate() {
             let mesh = procedural_tree_card_mesh(42, &branches, lod as u8);
             assert_eq!(mesh.count_vertices(), expected * 4);

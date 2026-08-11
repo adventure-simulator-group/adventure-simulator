@@ -292,8 +292,10 @@ clients derive collider-bounded rock meshes and a seeded four-order tree
 skeleton from the same shared dimensions, without receiving or simulating the
 collider. Tree presentation cross-fades from branch tubes and individual leaf
 cards through twig, small-branch, and crown-branch impostors to a single
-camera-facing whole-tree billboard. Those visual levels do not change the
-server-owned trunk collider.
+camera-facing whole-tree billboard. Impostor bounds come from the actual
+descendant branch groups rather than an unrelated generic crown, preserving
+the generated tree's silhouette across levels. Those visual levels do not
+change the server-owned trunk collider.
 Non-colliding grass and understory use shared meshes with continuous,
 hash-stable distance thinning, layered shader wind, and root-to-tip shading.
 The local player transform drives nearby blade bending on the client only; this
