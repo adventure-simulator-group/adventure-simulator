@@ -788,6 +788,73 @@ pub(in crate::presentation) fn procedural_oak_leaf_sector_mesh(
     procedural_oak_leaf_mesh(&sector_leaves)
 }
 
+pub(in crate::presentation) fn oak_leaf_card_bounds(leaf: TreeLeaf) -> (Vec3, f32, f32) {
+    let blade_tip = leaf.center + leaf.up * leaf.length * 0.5;
+    let bottom = leaf.petiole_start.dot(leaf.up);
+    let top = blade_tip.dot(leaf.up);
+    let height = (top - bottom).max(leaf.length) * 1.04;
+    let center = leaf.center + leaf.up * (((top + bottom) * 0.5) - leaf.center.dot(leaf.up));
+    (center, leaf.width * 1.08, height)
+}
+
+/// Replaces every cambered production leaf with one alpha-masked quad while
+/// retaining its biological attachment, orientation, scale, and wind UV.
+pub(in crate::presentation) fn procedural_oak_leaf_card_mesh(leaves: &[TreeLeaf]) -> Mesh {
+    let mut positions = Vec::with_capacity(leaves.len() * 4);
+    let mut normals = Vec::with_capacity(leaves.len() * 4);
+    let mut uvs = Vec::with_capacity(leaves.len() * 4);
+    let mut colors = Vec::with_capacity(leaves.len() * 4);
+    let mut indices = Vec::with_capacity(leaves.len() * 6);
+    for leaf in leaves {
+        let (mut center, width, height) = oak_leaf_card_bounds(*leaf);
+        // A single plane loses the accepted leaf's projected camber when seen
+        // obliquely. Enlarge about the fixed petiole (not the card centre) so
+        // the intermediate LOD preserves crown coverage without swimming at
+        // its biological attachment.
+        const COVERAGE_SCALE: f32 = 1.24;
+        let scaled_width = width * COVERAGE_SCALE;
+        let scaled_height = height * COVERAGE_SCALE;
+        center += leaf.up * (scaled_height - height) * 0.5;
+        let right = leaf.right * scaled_width * 0.5;
+        let up = leaf.up * scaled_height * 0.5;
+        let normal = leaf.right.cross(leaf.up).normalize();
+        let base = positions.len() as u32;
+        positions.extend_from_slice(&[
+            (center - right - up).to_array(),
+            (center + right - up).to_array(),
+            (center + right + up).to_array(),
+            (center - right + up).to_array(),
+        ]);
+        normals.extend_from_slice(&[normal.to_array(); 4]);
+        uvs.extend_from_slice(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]);
+        let shade = (leaf.shade / 0.82).clamp(0.72, 1.18);
+        colors.extend_from_slice(&[[shade, shade, shade, 1.0]; 4]);
+        indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
+pub(in crate::presentation) fn procedural_oak_leaf_card_group_mesh(
+    leaves: &[TreeLeaf],
+    primary_group: u8,
+) -> Mesh {
+    let group_leaves = leaves
+        .iter()
+        .filter(|leaf| leaf.primary_group == primary_group)
+        .copied()
+        .collect::<Vec<_>>();
+    procedural_oak_leaf_card_mesh(&group_leaves)
+}
+
 fn append_leaf_half_indices(
     indices: &mut Vec<u32>,
     boundary_base: u32,
@@ -1212,6 +1279,18 @@ mod tests {
             })
             .sum::<usize>();
         assert_eq!(sector_triangles, leaf_triangles);
+    }
+
+    #[test]
+    fn alpha_leaf_lod_uses_exactly_two_triangles_per_leaf() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let leaves = procedural_oak_leaves(42, &branches, 0.0);
+        let mesh = procedural_oak_leaf_card_mesh(&leaves);
+        assert_eq!(mesh.count_vertices(), leaves.len() * 4);
+        assert_eq!(
+            mesh.indices().expect("leaf cards are indexed").len(),
+            leaves.len() * 6
+        );
     }
 
     #[test]

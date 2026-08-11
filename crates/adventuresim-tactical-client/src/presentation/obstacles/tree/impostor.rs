@@ -655,6 +655,7 @@ pub(in crate::presentation) fn render_tree_card(
 enum TreeSourceMaterial {
     Bark,
     Leaf,
+    LeafAlbedo,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -735,7 +736,7 @@ fn raster_source_mesh(
                         (82.0 * light) as u8,
                         255,
                     ],
-                    TreeSourceMaterial::Leaf => {
+                    TreeSourceMaterial::Leaf | TreeSourceMaterial::LeafAlbedo => {
                         let tint = colors.map_or(Vec4::ONE, |colors| {
                             vertex_indices
                                 .iter()
@@ -743,12 +744,22 @@ fn raster_source_mesh(
                                 .map(|(index, weight)| Vec4::from_array(colors[*index]) * weight)
                                 .sum()
                         });
-                        [
-                            (105.0 * tint.x * light).min(255.0) as u8,
-                            (158.0 * tint.y * light).min(255.0) as u8,
-                            (52.0 * tint.z * light).min(255.0) as u8,
-                            255,
-                        ]
+                        if matches!(material, TreeSourceMaterial::LeafAlbedo) {
+                            let linear = tint.truncate() * Vec3::new(0.18, 0.30, 0.08);
+                            [
+                                linear_to_srgb_byte(linear.x),
+                                linear_to_srgb_byte(linear.y),
+                                linear_to_srgb_byte(linear.z),
+                                255,
+                            ]
+                        } else {
+                            [
+                                (105.0 * tint.x * light).min(255.0) as u8,
+                                (158.0 * tint.y * light).min(255.0) as u8,
+                                (52.0 * tint.z * light).min(255.0) as u8,
+                                255,
+                            ]
+                        }
                     }
                 };
                 write_tree_pixel(
@@ -767,6 +778,16 @@ fn raster_source_mesh(
             }
         }
     }
+}
+
+fn linear_to_srgb_byte(linear: f32) -> u8 {
+    let linear = linear.clamp(0.0, 1.0);
+    let srgb = if linear <= 0.003_130_8 {
+        linear * 12.92
+    } else {
+        1.055 * linear.powf(1.0 / 2.4) - 0.055
+    };
+    (srgb * 255.0).round() as u8
 }
 
 pub(in crate::presentation) fn project_to_tile(
@@ -1047,6 +1068,97 @@ pub(in crate::presentation) fn tree_impostor_material(
     }
 }
 
+/// Renders the accepted cambered production leaf into the alpha texture used
+/// by the two-triangle intermediate representation. This deliberately shares
+/// the deterministic triangle rasterizer with the branch/tree impostors so the
+/// card cannot drift into a separately painted species silhouette.
+pub(in crate::presentation) fn rendered_oak_leaf_card_image() -> Image {
+    const SIZE: u32 = 192;
+    let leaf = TreeLeaf {
+        petiole_start: Vec3::new(0.0, -0.076, 0.0),
+        center: Vec3::ZERO,
+        right: Vec3::X,
+        up: Vec3::Y,
+        length: 0.14,
+        width: 0.09,
+        primary_group: 0,
+        secondary_group: 0,
+        shoot_id: 0,
+        shade: 0.82,
+        torsion: 0.22,
+    };
+    let (center, width, height) = oak_leaf_card_bounds(leaf);
+    let card = TreeBakeCard {
+        center,
+        right: leaf.right,
+        up: leaf.up,
+        width,
+        height,
+        primary_mask: 0,
+        secondary_group: None,
+        source_group: 0,
+        primary_group: 0,
+        minimum_branch_depth: 0,
+    };
+    let mesh = procedural_oak_leaf_mesh(&[leaf]);
+    let mut pixels = vec![0_u8; (SIZE * SIZE * 4) as usize];
+    let mut depth = vec![f32::NEG_INFINITY; (SIZE * SIZE) as usize];
+    raster_source_mesh(
+        card,
+        &mesh,
+        TreeSourceMaterial::LeafAlbedo,
+        SIZE,
+        SIZE,
+        SIZE,
+        0,
+        0,
+        &mut pixels,
+        &mut depth,
+    );
+    dilate_leaf_alpha(&mut pixels, SIZE);
+    Image::new(
+        Extent3d {
+            width: SIZE,
+            height: SIZE,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        pixels,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    )
+}
+
+fn dilate_leaf_alpha(pixels: &mut [u8], size: u32) {
+    let source = pixels.to_vec();
+    for y in 1..size - 1 {
+        for x in 1..size - 1 {
+            let index = ((y * size + x) * 4) as usize;
+            if source[index + 3] != 0 {
+                continue;
+            }
+            let mut nearest = None;
+            for offset_y in -1_i32..=1 {
+                for offset_x in -1_i32..=1 {
+                    let neighbour_x = (x as i32 + offset_x) as u32;
+                    let neighbour_y = (y as i32 + offset_y) as u32;
+                    let neighbour = ((neighbour_y * size + neighbour_x) * 4) as usize;
+                    if source[neighbour + 3] != 0 {
+                        nearest = Some(neighbour);
+                        break;
+                    }
+                }
+                if nearest.is_some() {
+                    break;
+                }
+            }
+            if let Some(neighbour) = nearest {
+                pixels[index..index + 4].copy_from_slice(&source[neighbour..neighbour + 4]);
+            }
+        }
+    }
+}
+
 pub(in crate::presentation) fn procedural_oak_bark_image(seed: u64) -> Image {
     const WIDTH: u32 = 128;
     const HEIGHT: u32 = 128;
@@ -1115,6 +1227,28 @@ pub(in crate::presentation) fn tree_projected_lod_visibility(
     }
 }
 
+pub(in crate::presentation) fn tree_leaf_card_visibility(
+    alpha_card: bool,
+    focal_scale: f32,
+    cluster_radius: f32,
+) -> VisibilityRange {
+    let cluster_scale = (cluster_radius / 3.5).sqrt().clamp(0.65, 1.35);
+    let leaf_transition =
+        (10.0 * focal_scale * cluster_scale)..(13.0 * focal_scale * cluster_scale);
+    let aggregate_transition =
+        tree_projected_lod_visibility(0, focal_scale, cluster_radius).end_margin;
+    let (start_margin, end_margin) = if alpha_card {
+        (leaf_transition, aggregate_transition)
+    } else {
+        (0.0..0.0, leaf_transition)
+    };
+    VisibilityRange {
+        start_margin,
+        end_margin,
+        use_aabb: true,
+    }
+}
+
 pub(in crate::presentation) fn tree_trunk_visibility() -> VisibilityRange {
     VisibilityRange {
         start_margin: 0.0..0.0,
@@ -1162,6 +1296,10 @@ mod tests {
 
     #[test]
     fn tree_lod_crossfades_share_exact_transition_margins() {
+        let detailed_leaf = tree_leaf_card_visibility(false, 1.0, 3.5);
+        let alpha_leaf = tree_leaf_card_visibility(true, 1.0, 3.5);
+        assert_eq!(detailed_leaf.end_margin, alpha_leaf.start_margin);
+        assert_eq!(alpha_leaf.end_margin, tree_lod_visibility(1).start_margin);
         for lod in 0..4 {
             let current = tree_lod_visibility(lod);
             let next = tree_lod_visibility(lod + 1);
@@ -1182,5 +1320,16 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn rendered_leaf_card_has_a_bounded_alpha_silhouette() {
+        let image = rendered_oak_leaf_card_image();
+        let pixels = image.data.as_deref().expect("rendered leaf has CPU pixels");
+        let opaque = pixels.chunks_exact(4).filter(|pixel| pixel[3] > 0).count();
+        let total = pixels.len() / 4;
+        assert!(opaque > total / 8, "rendered leaf silhouette is missing");
+        assert!(opaque < total * 3 / 4, "alpha does not trim the leaf card");
+        assert!(pixels[..4].iter().all(|channel| *channel == 0));
     }
 }
