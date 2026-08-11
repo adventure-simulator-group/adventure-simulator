@@ -37,15 +37,15 @@ order. Every aggregate card derives its position and extent from the actual
 seeded descendant twigs, so crown mass, asymmetry, and gaps remain recognizable
 through the transitions while retaining parallax longer than a direct
 crown-to-billboard swap.
-The individual-leaf crown uses a 46-triangle lobed and cambered leaf (down from
-122 triangles) and a 30-triangle terminal bud (down from 72). Once that camber
-falls below useful screen size, each leaf cross-fades to a two-triangle alpha
-card before terminal shoots collapse into twig cards. The alpha image is not a
-separately painted approximation: the deterministic software triangle renderer
-bakes the accepted high-detail production leaf, including its lobed outline,
-short petiole, midrib fold, colour, and transparency. Both leaf stages retain
-the same biological attachment, two-sided shading, per-leaf shade variation,
-and vertex-shader wind phase. Seven stable
+The individual-leaf crown uses an 8-triangle cambered PBR card and a 30-triangle
+terminal bud. Once that camber falls below useful screen size, each leaf
+cross-fades to a two-triangle flat PBR
+card before terminal shoots collapse into twig cards. Both leaf stages use the
+same CC0 scanned-oak front/back albedo, DirectX normal maps, and opacity mask;
+the cambered card supplies close depth and foreshortening while the mask preserves one
+lobed silhouette throughout the transition. Both stages retain the same
+biological attachment, two-sided shading, per-leaf shade variation, and
+vertex-shader wind phase. Seven stable
 primary scaffold clusters each carry their own individual leaves, terminal
 buds, progressively simplified wood, leafed-twig cards, small-branch cards,
 and crown cards. Projected screen size is evaluated from the active camera's

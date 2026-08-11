@@ -17,9 +17,9 @@ use serde::Serialize;
 
 use crate::presentation::{
     FoliageLayer, ProceduralRockVisual, TacticalPresentationPlugin, TacticalTreeLeafCardMaterial,
-    TacticalTreeLeafMaterial, TerrainMaterialPresentation, TreeImpostorProvenance,
-    TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, VistaTerrain,
-    WeatherParticle, oak_leaf_card_review_image, oak_review_terminal_specimen,
+    TerrainMaterialPresentation, TreeImpostorProvenance, TreeLeafRepresentation, TreeLod,
+    TreeLodCluster, TreeLodRenderOverride, VistaTerrain, WeatherParticle, oak_leaf_material,
+    oak_review_terminal_specimen,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -115,7 +115,7 @@ impl LeafBenchmarkState {
             mode: 0,
             warmup_remaining: LEAF_BENCHMARK_WARMUP_FRAMES * 2,
             samples_ms: Vec::with_capacity(sample_frames as usize),
-            results: Vec::with_capacity(3),
+            results: Vec::with_capacity(2),
         }
     }
 }
@@ -143,17 +143,12 @@ struct LeafBenchmarkResult {
     mean_fps: f64,
 }
 
-const LEAF_BENCHMARK_MODES: [(TreeLeafRepresentation, &str, u8); 3] = [
-    (TreeLeafRepresentation::Geometry, "Detailed geometry", 46),
-    (
-        TreeLeafRepresentation::TexturedMesh,
-        "Textured cambered mesh",
-        8,
-    ),
+const LEAF_BENCHMARK_MODES: [(TreeLeafRepresentation, &str, u8); 2] = [
+    (TreeLeafRepresentation::TexturedMesh, "Cambered PBR card", 8),
     (TreeLeafRepresentation::AlphaCard, "Flat alpha card", 2),
 ];
 
-const CAPTURE_VIEWS: [CaptureView; 21] = [
+const CAPTURE_VIEWS: [CaptureView; 20] = [
     CaptureView {
         slug: "warmup",
         label: "Render-pipeline warmup",
@@ -185,13 +180,8 @@ const CAPTURE_VIEWS: [CaptureView; 21] = [
         overlay: false,
     },
     CaptureView {
-        slug: "tree-leaf-detail",
-        label: "Individual English oak leaf close-up",
-        overlay: false,
-    },
-    CaptureView {
         slug: "tree-textured-leaf-detail",
-        label: "Eight-triangle textured terminal-shoot close-up",
+        label: "Eight-triangle cambered PBR terminal-shoot close-up",
         overlay: false,
     },
     CaptureView {
@@ -211,17 +201,17 @@ const CAPTURE_VIEWS: [CaptureView; 21] = [
     },
     CaptureView {
         slug: "tree-leaf-transition-25",
-        label: "Leaf geometry-to-card transition 25% view",
+        label: "Cambered-to-flat leaf transition 25% view",
         overlay: false,
     },
     CaptureView {
         slug: "tree-leaf-transition-50",
-        label: "Leaf geometry-to-card transition 50% view",
+        label: "Cambered-to-flat leaf transition 50% view",
         overlay: false,
     },
     CaptureView {
         slug: "tree-leaf-transition-75",
-        label: "Leaf geometry-to-card transition 75% view",
+        label: "Cambered-to-flat leaf transition 75% view",
         overlay: false,
     },
     CaptureView {
@@ -545,14 +535,11 @@ fn prepare_fresh_output(output: &Path) {
 fn setup_scene(
     mut commands: Commands,
     mut setup: ResMut<SceneSetup>,
-    mut tree_lod_override: ResMut<TreeLodRenderOverride>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut leaf_materials: ResMut<Assets<TacticalTreeLeafMaterial>>,
     mut leaf_card_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
-    mut images: ResMut<Assets<Image>>,
+    asset_server: Res<AssetServer>,
 ) {
-    tree_lod_override.enable_experimental_textured_mesh = true;
     let setup = setup.0.take().expect("scene setup runs exactly once");
     let SceneSetupData {
         input,
@@ -726,7 +713,6 @@ fn setup_scene(
         let specimen_origin = tree + Vec3::Y * 15.0;
         let (
             branch_mesh,
-            leaf_mesh,
             textured_leaf_mesh,
             leaf_card_mesh,
             bud_mesh,
@@ -738,13 +724,7 @@ fn setup_scene(
             perceptual_roughness: 0.95,
             ..default()
         });
-        let leaf_material = leaf_materials.add(TacticalTreeLeafMaterial {
-            parameters: Vec4::new(0.74, 0.67, 0.035, 1.15),
-        });
-        let leaf_card_material = leaf_card_materials.add(TacticalTreeLeafCardMaterial {
-            rendered_leaf: images.add(oak_leaf_card_review_image()),
-            parameters: Vec4::new(0.74, 0.67, 0.035, 1.15),
-        });
+        let leaf_material = leaf_card_materials.add(oak_leaf_material(&asset_server));
         let bud_material = materials.add(StandardMaterial {
             base_color: Color::srgb(0.36, 0.27, 0.1),
             perceptual_roughness: 0.92,
@@ -774,25 +754,13 @@ fn setup_scene(
                 ))
                 .id(),
         );
-        let detailed_entity = commands
-            .spawn((
-                Name::new("Isolated detailed production oak terminal leaves"),
-                TreeReviewSpecimen,
-                TreeLeafRepresentation::Geometry,
-                Mesh3d(meshes.add(leaf_mesh)),
-                MeshMaterial3d(leaf_material),
-                Visibility::Hidden,
-                Transform::from_translation(specimen_origin),
-            ))
-            .id();
-        tree_review_leaf_entities.push((detailed_entity, TreeLeafRepresentation::Geometry));
         let textured_entity = commands
             .spawn((
                 Name::new("Isolated cambered textured oak terminal leaves"),
                 TreeReviewSpecimen,
                 TreeLeafRepresentation::TexturedMesh,
                 Mesh3d(meshes.add(textured_leaf_mesh)),
-                MeshMaterial3d(leaf_card_material.clone()),
+                MeshMaterial3d(leaf_material.clone()),
                 Visibility::Hidden,
                 Transform::from_translation(specimen_origin),
             ))
@@ -804,14 +772,16 @@ fn setup_scene(
                 TreeReviewSpecimen,
                 TreeLeafRepresentation::AlphaCard,
                 Mesh3d(meshes.add(leaf_card_mesh)),
-                MeshMaterial3d(leaf_card_material),
+                MeshMaterial3d(leaf_material),
                 Visibility::Hidden,
                 Transform::from_translation(specimen_origin),
             ))
             .id();
         tree_review_leaf_entities.push((card_entity, TreeLeafRepresentation::AlphaCard));
         tree_leaf_focus = Some(specimen_origin + local_focus);
-        tree_leaf_camera = Some(specimen_origin + local_focus + camera_direction * 0.68);
+        let review_rotation = Quat::from_rotation_y(tree_review_azimuth_degrees.to_radians());
+        tree_leaf_camera =
+            Some(specimen_origin + local_focus + review_rotation * camera_direction * 0.68);
         tree_review_entities.push(
             commands
                 .spawn((
@@ -1110,7 +1080,6 @@ fn capture_views(
             _ => None,
         };
         let specimen_representation = match view.slug {
-            "tree-leaf-detail" => Some(TreeLeafRepresentation::Geometry),
             "tree-textured-leaf-detail" => Some(TreeLeafRepresentation::TexturedMesh),
             "tree-leaf-card-detail" => Some(TreeLeafRepresentation::AlphaCard),
             _ => None,
@@ -1353,18 +1322,16 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
                 )
             },
         ),
-        "tree-leaf-detail" | "tree-textured-leaf-detail" | "tree-leaf-card-detail" => {
-            state.tree_leaf_focus.map_or(
-                (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
-                |focus| {
-                    (
-                        state.tree_leaf_camera.unwrap_or(focus + Vec3::Z),
-                        focus,
-                        Vec3::Y,
-                    )
-                },
-            )
-        }
+        "tree-textured-leaf-detail" | "tree-leaf-card-detail" => state.tree_leaf_focus.map_or(
+            (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
+            |focus| {
+                (
+                    state.tree_leaf_camera.unwrap_or(focus + Vec3::Z),
+                    focus,
+                    Vec3::Y,
+                )
+            },
+        ),
         "tree-twig-lod" => tree_lod_camera(state, 30.0),
         "tree-small-branch-lod" => tree_lod_camera(state, 48.0),
         "tree-crown-lod" => tree_lod_camera(state, 72.0),
@@ -1561,7 +1528,6 @@ fn build_manifest(
                 "tree-detail",
                 "tree-recursive-lod",
                 "ground-cover",
-                "tree-leaf-detail",
                 "tree-textured-leaf-detail",
                 "tree-leaf-card-detail",
                 "tree-textured-leaf-lod",
@@ -1731,7 +1697,7 @@ fn capture_view_fov(view: &str) -> f32 {
         | "tree-leaf-transition-50"
         | "tree-leaf-transition-75" => 48.0,
         "tree-recursive-lod" => 80.0,
-        "tree-leaf-detail" | "tree-textured-leaf-detail" | "tree-leaf-card-detail" => 30.0,
+        "tree-textured-leaf-detail" | "tree-leaf-card-detail" => 30.0,
         "tree-twig-lod" => 30.0,
         "tree-small-branch-lod" => 19.0,
         "tree-crown-lod" => 13.0,

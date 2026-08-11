@@ -794,24 +794,25 @@ just tactical-tree-leaf-benchmark target/tactical-scene-captures/tree-leaf-bench
 just tactical-tree-leaf-comparison target/tactical-scene-captures/tree-leaf-comparison
 ```
 
-The leaf benchmark forces the dense-woodland fixture through the detailed
-46-triangle leaf, an 8-triangle cambered textured mesh, and a 2-triangle alpha
-card at the same ground camera. It writes `leaf-benchmark.json` and a
+The leaf benchmark forces the dense-woodland fixture through the 8-triangle
+cambered PBR card and the 2-triangle flat PBR card at the same ground camera. It
+writes `leaf-benchmark.json` and a
 `comparison.md` table after per-mode warm-up. These are uncapped end-to-end
 frame durations rather than isolated GPU timestamps, so compare modes from the
 same run and machine.
 
-The leaf comparison recipe renders the source, cambered textured, and flat
-textured foliage from 0, 45, and 80 degree review azimuths under a locked
+The leaf comparison recipe renders the cambered and flat PBR foliage from 0,
+30, 60, and 80 degree review azimuths under a locked
 daylight minute. Use the oblique plates and each run's
 `tree-recursive-lod.png` to check depth retention and mixed-sector transitions,
 not only the front silhouette.
 
-The cambered mesh is deliberately comparison-only. Multi-angle review found
-no visible whole-crown improvement over the flat card, while the dense-forest
-benchmark found no frame-time advantage. The production client therefore
-allocates neither its meshes nor its entities and transitions directly from
-46-triangle leaves to the 2-triangle cards.
+The 8-triangle cambered card is the close leaf representation and preserves
+useful foreshortening and depth when individual leaves are visible. It
+transitions directly to the 2-triangle flat card as that camber falls below a
+useful screen size. Both production modes use the same aligned CC0 front/back
+albedo, normal maps, and opacity mask, so their transition changes geometry
+without introducing a material pop.
 
 The native viewer writes standing-eye-height (1.65 m above the sampled local
 terrain), overhead, horizon, and collider-overlay PNGs alongside the exact
