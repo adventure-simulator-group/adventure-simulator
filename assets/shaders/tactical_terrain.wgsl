@@ -1,0 +1,91 @@
+#import bevy_pbr::{
+    pbr_fragment::pbr_input_from_standard_material,
+    pbr_functions::alpha_discard,
+}
+#ifdef PREPASS_PIPELINE
+#import bevy_pbr::{
+    prepass_io::{VertexOutput, FragmentOutput},
+    pbr_deferred_functions::deferred_output,
+}
+#else
+#import bevy_pbr::{
+    forward_io::{VertexOutput, FragmentOutput},
+    pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
+}
+#endif
+
+struct TacticalTerrainMaterial {
+    base_color: vec4<f32>,
+    cover: vec4<f32>,
+    weather: vec4<f32>,
+    variation: vec4<f32>,
+}
+
+@group(#{MATERIAL_BIND_GROUP}) @binding(100)
+var<uniform> terrain: TacticalTerrainMaterial;
+
+fn detail_noise(position: vec3<f32>, normal: vec3<f32>) -> f32 {
+    let weights = abs(normal) / max(dot(abs(normal), vec3<f32>(1.0)), 0.001);
+    let seed = terrain.variation.x * 31.0;
+    let yz = sin(position.y * 1.17 + position.z * 1.89 + seed)
+        * cos(position.y * 2.41 - position.z * 0.73 - seed * 0.31);
+    let xz = sin(position.x * 1.33 - position.z * 1.71 + seed * 1.37)
+        * cos(position.x * 2.03 + position.z * 0.91 + seed * 0.53);
+    let xy = sin(position.x * 1.61 + position.y * 1.09 - seed * 0.71)
+        * cos(position.x * 0.67 - position.y * 2.23 + seed * 0.83);
+    let fine = dot(vec3<f32>(yz, xz, xy), weights);
+    let broad = sin(position.x * 0.17 + position.z * 0.11 + seed)
+        * cos(position.z * 0.19 - position.x * 0.07 - seed);
+    // Keep high-frequency triplanar detail subordinate to the band-limited
+    // macro variation so distant/overhead views do not resolve into moire.
+    return fine * 0.12 + broad * 0.88;
+}
+
+@fragment
+fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
+    var pbr_input = pbr_input_from_standard_material(in, is_front);
+    let position = in.world_position.xyz;
+    let normal = normalize(in.world_normal);
+    let detail = detail_noise(position, normal);
+    let canopy = terrain.cover.x;
+    let wetland = terrain.cover.y;
+    let cultivation = terrain.cover.z;
+    let water = terrain.cover.w;
+    let wetness = terrain.weather.x;
+    let snow = terrain.weather.y;
+    let hilly = terrain.weather.z;
+    let slope = smoothstep(0.16, 0.68, 1.0 - abs(normal.y));
+
+    var color = terrain.base_color.rgb;
+    let forest_floor = vec3<f32>(0.105, 0.175, 0.072) * (0.91 + detail * 0.09);
+    let mud = vec3<f32>(0.18, 0.16, 0.105) * (0.94 + detail * 0.06);
+    let tilled = vec3<f32>(0.33, 0.285, 0.105) * (0.92 + detail * 0.08);
+    let stone = vec3<f32>(0.31, 0.30, 0.275) * (0.9 + detail * 0.1);
+    color = mix(color, forest_floor, canopy * 0.74);
+    color = mix(color, mud, max(wetland, wetness) * 0.68);
+    color = mix(color, tilled, cultivation * 0.72);
+    color = mix(color, stone, slope * (0.48 + hilly * 0.42));
+    color = mix(color, vec3<f32>(0.09, 0.18, 0.22), water * 0.78);
+    color *= 0.94 + detail * terrain.variation.y;
+    let snow_mask = snow * smoothstep(0.3, 0.86, normal.y) * (0.91 + detail * 0.09);
+    color = mix(color, vec3<f32>(0.79, 0.84, 0.86), snow_mask);
+
+    let micro = terrain.variation.z * (1.0 - snow_mask);
+    pbr_input.N = normalize(pbr_input.N + vec3<f32>(
+        cos(position.x * 2.11 + position.z * 0.47),
+        0.0,
+        sin(position.z * 1.93 - position.x * 0.41),
+    ) * micro);
+    pbr_input.material.base_color = vec4<f32>(color, 1.0);
+    pbr_input.material.perceptual_roughness = clamp(0.9 + wetness * 0.07 - water * 0.19, 0.55, 1.0);
+    pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
+
+#ifdef PREPASS_PIPELINE
+    return deferred_output(in, pbr_input);
+#else
+    var out: FragmentOutput;
+    out.color = apply_pbr_lighting(pbr_input);
+    out.color = main_pass_post_lighting_processing(pbr_input, out.color);
+    return out;
+#endif
+}

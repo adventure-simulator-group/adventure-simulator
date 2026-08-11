@@ -214,6 +214,8 @@ fn on_server_started(
                 generation_version = input.generation_version,
                 source = ?input.source,
                 obstacles = generated.obstacles.len(),
+                upsampled_height_samples = generated.repairs.upsampled_height_samples,
+                microrelief_adjusted_samples = generated.repairs.microrelief_adjusted_samples,
                 adjusted_height_samples = generated.repairs.adjusted_height_samples,
                 repaired_water_samples = generated.repairs.repaired_water_samples,
                 removed_corridor_obstacles = generated.repairs.removed_corridor_obstacles,

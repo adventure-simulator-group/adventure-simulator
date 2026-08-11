@@ -18,13 +18,22 @@ exposure.
 
 The terrain profile affects strategic routing and can select tactical scene
 context. Tactical scene generation now has a shared versioned input boundary:
-production sampling and named synthetic fixtures provide the same dense
-playable heights, environmental coverage, immutable weather, and multi-LOD
-vista samples. The tactical server owns the playable collider; coarse vista
+production sampling and named synthetic fixtures provide the same playable
+heights, environmental coverage, immutable weather, and multi-LOD vista
+samples. Inputs coarser than two metres are deterministically bilinearly
+upsampled and receive bounded seeded microrelief before the tactical mesh and
+collider are built, so presentation, movement, and ground queries share one
+authoritative surface. The tactical server owns the playable collider; coarse vista
 data is presentation-only and is not tactical tick state or SpacetimeDB state.
 Generated tree trunks and rocks are server-authoritative static movement
 obstacles. Their compact kind and transform are replicated so clients render a
-matching proxy instead of an invisible collider. Tree sampling follows canopy
+matching proxy instead of an invisible collider. Clients present deformed
+low-poly rock meshes constrained inside those colliders and three-distance tree
+archetypes (branched crown, reduced crown, and crossed billboard). Grass,
+shrubs, and reeds are deterministic shared-mesh foliage with shader wind and no
+gameplay collider. A procedural terrain material blends forest floor, dry
+ground, mud, cultivation, stone, wetness, and snow while adding small-scale
+colour and normal variation. Tree sampling follows canopy
 coverage; rock sampling uses an independent deterministic roll scaled by hilly
 coverage, so the two features do not suppress one another. Weather affects ground
 wetness/snow tint, bounded rain or snow particles, wind drift, sunlight
