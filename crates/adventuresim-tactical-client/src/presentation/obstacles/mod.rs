@@ -79,25 +79,51 @@ pub(in crate::presentation) fn present_pending_trees(
                 perceptual_roughness: 0.92,
                 ..default()
             });
-            let branch_meshes =
-                [3, 2, 1, 0].map(|depth| meshes.add(procedural_tree_branch_mesh(&branches, depth)));
-            let leaf_meshes = core::array::from_fn(|sector| {
-                meshes.add(procedural_oak_leaf_sector_mesh(&leaves, sector))
-            });
-            let bud_mesh = meshes.add(procedural_oak_bud_mesh(&branches));
             let baked_lods = (1..5)
                 .map(|lod| bake_tree_lod(variant_seed, &branches, &leaves, lod))
                 .collect::<Vec<_>>();
             for bake in &baked_lods {
                 validate_tree_bake_provenance(&bake.provenance);
             }
+            let clusters = (0..TREE_PRIMARY_GROUP_COUNT)
+                .map(|primary_group| {
+                    let source = baked_lods[0]
+                        .clusters
+                        .iter()
+                        .find(|cluster| cluster.primary_group == primary_group)
+                        .expect("every generated primary scaffold has a baked cluster");
+                    CachedTreeClusterPresentation {
+                        primary_group,
+                        center: source.center,
+                        radius: source.radius,
+                        branch_meshes: [3, 2, 1].map(|depth| {
+                            meshes.add(procedural_tree_branch_group_mesh(
+                                &branches,
+                                depth,
+                                primary_group,
+                            ))
+                        }),
+                        leaf_mesh: meshes.add(procedural_oak_leaf_sector_mesh(
+                            &leaves,
+                            usize::from(primary_group),
+                        )),
+                        bud_mesh: meshes
+                            .add(procedural_oak_bud_group_mesh(&branches, primary_group)),
+                        card_meshes: core::array::from_fn(|index| {
+                            let cluster = baked_lods[index]
+                                .clusters
+                                .iter()
+                                .find(|cluster| cluster.primary_group == primary_group)
+                                .expect("every recursive LOD preserves primary scaffold identity");
+                            meshes.add(cluster.mesh.clone())
+                        }),
+                    }
+                })
+                .collect();
             let cached = CachedTreePresentation {
-                branch_meshes,
-                leaf_meshes,
-                bud_mesh,
-                card_meshes: core::array::from_fn(|index| {
-                    meshes.add(baked_lods[index].mesh.clone())
-                }),
+                trunk_mesh: meshes.add(procedural_tree_branch_mesh(&branches, 0)),
+                clusters,
+                whole_tree_card_mesh: meshes.add(baked_lods[3].mesh.clone()),
                 bark_material,
                 leaf_material,
                 bud_material,

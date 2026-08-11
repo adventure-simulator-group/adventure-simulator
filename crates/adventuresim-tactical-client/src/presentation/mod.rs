@@ -32,9 +32,9 @@ pub(crate) use obstacles::oak_review_terminal_specimen;
 #[allow(unused_imports)]
 pub(crate) use obstacles::rock::ProceduralRockVisual;
 #[allow(unused_imports)]
-pub(crate) use obstacles::tree::TreeLod;
-#[allow(unused_imports)]
 pub(crate) use obstacles::tree::impostor::TreeImpostorProvenance;
+#[allow(unused_imports)]
+pub(crate) use obstacles::tree::{TreeLod, TreeLodCluster, TreeLodRenderOverride};
 #[allow(unused_imports)]
 pub(crate) use sky::{TacticalMoon, TacticalMoonlight, TacticalStars, TacticalSunlight};
 #[allow(unused_imports)]
@@ -118,12 +118,13 @@ impl Plugin for TacticalPresentationPlugin {
         )
         .init_resource::<GrassInteractionState>()
         .init_resource::<TreePresentationCache>()
+        .init_resource::<TreeLodRenderOverride>()
         .add_systems(
             Update,
             (
                 advance_weather_particles,
                 update_grass_interaction,
-                present_pending_trees,
+                (present_pending_trees, update_tree_projected_lod_ranges).chain(),
                 keep_celestial_visuals_centered,
             ),
         )

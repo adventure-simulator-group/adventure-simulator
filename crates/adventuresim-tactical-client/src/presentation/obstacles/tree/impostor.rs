@@ -32,8 +32,16 @@ pub(crate) struct TreeImpostorBakeRecord {
 pub(in crate::presentation) struct TreeLodBake {
     pub(in crate::presentation) lod: u8,
     pub(in crate::presentation) mesh: Mesh,
+    pub(in crate::presentation) clusters: Vec<TreeLodClusterBake>,
     pub(in crate::presentation) image: Image,
     pub(in crate::presentation) provenance: TreeImpostorProvenance,
+}
+
+pub(in crate::presentation) struct TreeLodClusterBake {
+    pub(in crate::presentation) primary_group: u8,
+    pub(in crate::presentation) center: Vec3,
+    pub(in crate::presentation) radius: f32,
+    pub(in crate::presentation) mesh: Mesh,
 }
 
 pub(in crate::presentation) fn validate_tree_bake_provenance(provenance: &TreeImpostorProvenance) {
@@ -66,6 +74,7 @@ pub(in crate::presentation) struct TreeBakeCard {
     primary_mask: u8,
     secondary_group: Option<u16>,
     source_group: u16,
+    primary_group: u8,
     minimum_branch_depth: u8,
 }
 
@@ -122,6 +131,7 @@ pub(in crate::presentation) fn bake_tree_lod(
     let mut indices = Vec::new();
     let source_geometry_hash = tree_source_geometry_hash(branches, leaves);
     let mut records = Vec::with_capacity(cards.len());
+    let mut card_uvs = Vec::with_capacity(cards.len());
 
     for (index, card) in cards.iter().copied().enumerate() {
         let tile_x = index as u32 % columns;
@@ -152,6 +162,7 @@ pub(in crate::presentation) fn bake_tree_lod(
             (tile_x + 1) as f32 * tile_size as f32 / atlas_width as f32,
             (tile_y + 1) as f32 * tile_size as f32 / atlas_height as f32,
         );
+        card_uvs.push((uv_min, uv_max));
         if lod != 4 || index == 0 {
             let (mesh_uv_min, mesh_uv_max) = if lod == 4 {
                 (Vec2::ZERO, Vec2::ONE)
@@ -198,6 +209,21 @@ pub(in crate::presentation) fn bake_tree_lod(
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
     mesh.insert_indices(Indices::U32(indices));
+    let clusters = if lod < 4 {
+        (0..TREE_PRIMARY_GROUP_COUNT)
+            .filter_map(|primary_group| {
+                let (center, radius) = tree_primary_group_sphere(branches, leaves, primary_group)?;
+                Some(TreeLodClusterBake {
+                    primary_group,
+                    center,
+                    radius,
+                    mesh: tree_cluster_card_mesh(&cards, &card_uvs, primary_group),
+                })
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     let image = Image::new(
         Extent3d {
             width: atlas_width,
@@ -212,6 +238,7 @@ pub(in crate::presentation) fn bake_tree_lod(
     TreeLodBake {
         lod,
         mesh,
+        clusters,
         image,
         provenance: TreeImpostorProvenance {
             seed,
@@ -224,6 +251,91 @@ pub(in crate::presentation) fn bake_tree_lod(
             records,
         },
     }
+}
+
+fn tree_cluster_card_mesh(
+    cards: &[TreeBakeCard],
+    card_uvs: &[(Vec2, Vec2)],
+    primary_group: u8,
+) -> Mesh {
+    let mut positions = Vec::new();
+    let mut normals = Vec::new();
+    let mut uvs = Vec::new();
+    let mut indices = Vec::new();
+    for (card, (uv_min, uv_max)) in cards
+        .iter()
+        .zip(card_uvs)
+        .filter(|(card, _)| card.primary_group == primary_group)
+    {
+        append_tree_card_with_uv(
+            card.center,
+            card.right,
+            card.up,
+            card.width,
+            card.height,
+            *uv_min,
+            *uv_max,
+            &mut positions,
+            &mut normals,
+            &mut uvs,
+            &mut indices,
+        );
+    }
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
+fn tree_primary_group_sphere(
+    branches: &[TreeBranchSegment],
+    leaves: &[TreeLeaf],
+    primary_group: u8,
+) -> Option<(Vec3, f32)> {
+    let group_branches = branches
+        .iter()
+        .filter(|branch| branch.depth > 0 && branch.primary_group == primary_group)
+        .collect::<Vec<_>>();
+    let group_leaves = leaves
+        .iter()
+        .filter(|leaf| leaf.primary_group == primary_group)
+        .collect::<Vec<_>>();
+    if group_branches.is_empty() && group_leaves.is_empty() {
+        return None;
+    }
+    let mut minimum = Vec3::splat(f32::INFINITY);
+    let mut maximum = Vec3::splat(f32::NEG_INFINITY);
+    for branch in &group_branches {
+        let extent = Vec3::splat(branch.start_radius.max(branch.end_radius));
+        minimum = minimum.min(branch.start - extent).min(branch.end - extent);
+        maximum = maximum.max(branch.start + extent).max(branch.end + extent);
+    }
+    for leaf in &group_leaves {
+        let extent = Vec3::splat(leaf.length.max(leaf.width) * 0.65);
+        minimum = minimum.min(leaf.center - extent);
+        maximum = maximum.max(leaf.center + extent);
+    }
+    let center = (minimum + maximum) * 0.5;
+    let radius = group_branches
+        .iter()
+        .flat_map(|branch| {
+            [
+                branch.start.distance(center) + branch.start_radius,
+                branch.end.distance(center) + branch.end_radius,
+            ]
+        })
+        .chain(
+            group_leaves
+                .iter()
+                .map(|leaf| leaf.center.distance(center) + leaf.length.max(leaf.width) * 0.65),
+        )
+        .fold(0.0_f32, f32::max);
+    Some((center, radius.max(0.01)))
 }
 
 fn tree_tile_alpha_stats(
@@ -307,16 +419,8 @@ pub(in crate::presentation) fn tree_bake_cards(
             }
         }
         3 => {
-            let sector_count = TREE_PRIMARY_GROUP_COUNT.div_ceil(2);
-            for group in 0..sector_count {
+            for group in 0..TREE_PRIMARY_GROUP_COUNT {
                 let phase = crown_group_phase(seed, group);
-                let paired_group = group + sector_count;
-                let primary_mask = (1 << group)
-                    | if paired_group < TREE_PRIMARY_GROUP_COUNT {
-                        1 << paired_group
-                    } else {
-                        0
-                    };
                 for facing in 0..2 {
                     let angle = phase + facing as f32 * core::f32::consts::FRAC_PI_2;
                     let mut card = fit_tree_bake_card(
@@ -324,7 +428,7 @@ pub(in crate::presentation) fn tree_bake_cards(
                         leaves,
                         Vec3::new(angle.cos(), 0.0, angle.sin()),
                         Vec3::Y,
-                        primary_mask,
+                        1 << group,
                         None,
                         u16::from(group) * 2 + facing,
                         1,
@@ -355,6 +459,7 @@ pub(in crate::presentation) fn tree_bake_cards(
                     primary_mask: 0,
                     secondary_group: None,
                     source_group: view,
+                    primary_group: u8::MAX,
                     minimum_branch_depth: 0,
                 });
             }
@@ -379,6 +484,16 @@ pub(in crate::presentation) fn fit_tree_bake_card(
     source_group: u16,
     minimum_branch_depth: u8,
 ) -> TreeBakeCard {
+    let primary_group = secondary_group.map_or_else(
+        || {
+            if primary_mask.count_ones() == 1 {
+                primary_mask.trailing_zeros() as u8
+            } else {
+                u8::MAX
+            }
+        },
+        |group| (group / TREE_SECONDARY_GROUP_STRIDE) as u8,
+    );
     let up = up.normalize();
     let right = (right - up * right.dot(up)).normalize_or_zero();
     let right = if right.length_squared() < 0.25 {
@@ -395,6 +510,7 @@ pub(in crate::presentation) fn fit_tree_bake_card(
         primary_mask,
         secondary_group,
         source_group,
+        primary_group,
         minimum_branch_depth,
     };
     let mut min = Vec2::splat(f32::INFINITY);
@@ -440,6 +556,7 @@ pub(in crate::presentation) fn fit_tree_bake_card(
         primary_mask,
         secondary_group,
         source_group,
+        primary_group,
         minimum_branch_depth,
     }
 }
@@ -969,27 +1086,39 @@ pub(in crate::presentation) fn procedural_oak_bark_image(seed: u64) -> Image {
 }
 
 pub(in crate::presentation) fn tree_lod_visibility(lod: u8) -> VisibilityRange {
+    tree_projected_lod_visibility(lod, 1.0, 3.5)
+}
+
+pub(in crate::presentation) fn tree_projected_lod_visibility(
+    lod: u8,
+    focal_scale: f32,
+    cluster_radius: f32,
+) -> VisibilityRange {
+    let cluster_scale = (cluster_radius / 3.5).sqrt().clamp(0.65, 1.35);
+    let transition = |index: usize| {
+        let base = [22.0..26.0, 36.0..42.0, 56.0..64.0, 84.0..96.0][index].clone();
+        let spatial_scale = if index < 3 { cluster_scale } else { 1.0 };
+        (base.start * focal_scale * spatial_scale)..(base.end * focal_scale * spatial_scale)
+    };
     let (start, end) = match lod {
-        0 => (0.0..0.0, 22.0..26.0),
-        1 => (22.0..26.0, 36.0..42.0),
-        2 => (36.0..42.0, 56.0..64.0),
-        3 => (56.0..64.0, 84.0..96.0),
-        4 => (84.0..96.0, 190.0..200.0),
+        0 => (0.0..0.0, transition(0)),
+        1 => (transition(0), transition(1)),
+        2 => (transition(1), transition(2)),
+        3 => (transition(2), transition(3)),
+        4 => (transition(3), (190.0 * focal_scale)..(200.0 * focal_scale)),
         _ => unreachable!("tree LOD is bounded"),
     };
     VisibilityRange {
         start_margin: start,
         end_margin: end,
-        use_aabb: false,
+        use_aabb: true,
     }
 }
 
-pub(in crate::presentation) fn tree_leaf_sector_visibility(sector: usize) -> VisibilityRange {
-    debug_assert!(sector < OAK_LEAF_SECTOR_COUNT);
-    let offset = sector as f32 * 0.7;
+pub(in crate::presentation) fn tree_trunk_visibility() -> VisibilityRange {
     VisibilityRange {
         start_margin: 0.0..0.0,
-        end_margin: (21.0 + offset)..(25.0 + offset),
+        end_margin: 84.0..96.0,
         use_aabb: true,
     }
 }
@@ -1017,7 +1146,7 @@ mod tests {
     fn tree_lods_collapse_one_botanical_order_at_a_time() {
         let branches = procedural_tree_skeleton(42, 0.0);
         let leaves = procedural_oak_leaves(42, &branches, 0.0);
-        let expected_cards = [348, 14, 8, 8];
+        let expected_cards = [348, 14, 14, 8];
         for (index, expected) in expected_cards.into_iter().enumerate() {
             assert_eq!(
                 tree_bake_cards(42, &branches, &leaves, index as u8 + 1).len(),
@@ -1042,19 +1171,16 @@ mod tests {
     }
 
     #[test]
-    fn leaf_sectors_thin_continuously_inside_the_twig_crossfade() {
-        let twig = tree_lod_visibility(1);
-        let sectors = (0..OAK_LEAF_SECTOR_COUNT)
-            .map(tree_leaf_sector_visibility)
-            .collect::<Vec<_>>();
-        assert!(sectors.windows(2).all(|pair| {
-            pair[0].end_margin.start < pair[1].end_margin.start
-                && pair[0].end_margin.end < pair[1].end_margin.end
-        }));
-        assert!(sectors.iter().all(|sector| {
-            sector.end_margin.start < twig.start_margin.end
-                && sector.end_margin.end > twig.start_margin.start
-                && sector.use_aabb
-        }));
+    fn recursive_lod_preserves_shared_boundaries_at_every_projected_scale() {
+        for focal_scale in [0.55, 1.0, 2.4] {
+            for radius in [1.8, 3.5, 6.0] {
+                for lod in 0..4 {
+                    let current = tree_projected_lod_visibility(lod, focal_scale, radius);
+                    let next = tree_projected_lod_visibility(lod + 1, focal_scale, radius);
+                    assert_eq!(current.end_margin, next.start_margin);
+                    assert!(current.use_aabb && next.use_aabb);
+                }
+            }
+        }
     }
 }

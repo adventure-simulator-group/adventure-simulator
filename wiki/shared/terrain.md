@@ -38,11 +38,16 @@ seeded descendant twigs, so crown mass, asymmetry, and gaps remain recognizable
 through the transitions while retaining parallax longer than a direct
 crown-to-billboard swap.
 The individual-leaf crown uses a 46-triangle lobed and cambered leaf (down from
-122 triangles) and a 30-triangle terminal bud (down from 72). Eight stable
-branch-derived leaf sectors dither away across the first transition while the
-leafed-twig render fades in, avoiding a whole-crown topology pop. Generated
-variants reuse cached mesh and material handles, allowing Bevy's WebGPU renderer
-to instance repeated trees automatically. Leaf wind is evaluated in the vertex
+122 triangles) and a 30-triangle terminal bud (down from 72). Seven stable
+primary scaffold clusters each carry their own individual leaves, terminal
+buds, progressively simplified wood, leafed-twig cards, small-branch cards,
+and crown cards. Projected screen size is evaluated from the active camera's
+field of view and viewport height against each cluster's own bounds, so the far
+side of a nearby crown may collapse before the near side. Matched dither bands
+cross-fade adjacent representations without a whole-tree topology pop; only the
+final distant billboard is selected for the entire tree. Generated variants
+reuse cached mesh and material handles, allowing Bevy's WebGPU renderer to
+instance repeated trees automatically. Leaf wind is evaluated in the vertex
 shader with fixed petiole roots, spatially varied gusts, and high-frequency tip
 flutter; no per-frame CPU deformation or non-WebGPU feature is required. The
 open-grown reference LOD0 is capped by test at 3.6 million triangles, versus
