@@ -107,6 +107,7 @@ impl GraphicsPreset {
         presentation::TacticalPresentationPlugin {
             shadows_enabled: !matches!(self, Self::NoShadows | Self::Minimal),
             atmosphere_enabled: !matches!(self, Self::NoAtmosphere | Self::Minimal),
+            celestial_enabled: !matches!(self, Self::Minimal),
             environment_light_enabled: !matches!(
                 self,
                 Self::NoAtmosphere | Self::NoEnvironmentLight | Self::Minimal
