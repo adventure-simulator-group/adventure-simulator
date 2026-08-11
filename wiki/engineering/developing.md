@@ -787,8 +787,9 @@ just tactical-scene-capture dense-woodland
 just tactical-scene-capture heavy-rain-high-wind target/tactical-scene-captures/rain-review
 ```
 
-The native viewer writes fixed ground, overhead, horizon, and collider-overlay
-PNGs alongside the exact `input.json`, a browsable `index.html`, and a
+The native viewer writes standing-eye-height (1.65 m above the sampled local
+terrain), overhead, horizon, and collider-overlay PNGs alongside the exact
+`input.json`, a browsable `index.html`, and a
 machine-readable `manifest.json`. It waits for custom material pipelines before
 capturing, then exits unsuccessfully and writes `failure.txt` when
 presentation/collider counts, collider-bounded procedural rocks, terrain

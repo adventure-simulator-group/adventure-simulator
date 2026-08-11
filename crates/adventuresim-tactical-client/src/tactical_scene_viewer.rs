@@ -21,6 +21,7 @@ use crate::presentation::{
 
 const VIEW_WIDTH: u32 = 1280;
 const VIEW_HEIGHT: u32 = 720;
+const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
 
 #[derive(Resource)]
 struct SceneSetup(Option<SceneSetupData>);
@@ -53,6 +54,8 @@ struct CaptureState {
     vista_peak_metres: f32,
     peak_target: Vec3,
     obstacle_focus: Vec3,
+    ground_eye_position: Vec3,
+    ground_eye_target: Vec3,
     settle_frames: u32,
     view: usize,
     view_started: bool,
@@ -433,6 +436,32 @@ fn setup_scene(
         .height_at(Vec2::new(obstacle_focus.x, obstacle_focus.z))
         .unwrap_or_default()
         + 1.5;
+    let half = terrain.width().max(terrain.depth()) * 0.5;
+    let camera_margin = terrain.grid_scale().max(0.5);
+    let camera_x = (obstacle_focus.x - half * 0.62).clamp(
+        -terrain.width() * 0.5 + camera_margin,
+        terrain.width() * 0.5 - camera_margin,
+    );
+    let camera_z = (obstacle_focus.z + half * 0.62).clamp(
+        -terrain.depth() * 0.5 + camera_margin,
+        terrain.depth() * 0.5 - camera_margin,
+    );
+    let camera_ground = terrain
+        .height_at(Vec2::new(camera_x, camera_z))
+        .unwrap_or_default();
+    let focus_ground = terrain
+        .height_at(Vec2::new(obstacle_focus.x, obstacle_focus.z))
+        .unwrap_or_default();
+    let ground_eye_position = Vec3::new(
+        camera_x,
+        camera_ground + STANDING_EYE_HEIGHT_METRES,
+        camera_z,
+    );
+    let ground_eye_target = Vec3::new(
+        obstacle_focus.x,
+        focus_ground + STANDING_EYE_HEIGHT_METRES,
+        obstacle_focus.z,
+    );
     commands.spawn((
         Name::new("Captured tactical terrain"),
         SceneId(input.scene_key.clone()),
@@ -470,6 +499,8 @@ fn setup_scene(
         vista_peak_metres,
         peak_target,
         obstacle_focus,
+        ground_eye_position,
+        ground_eye_target,
         settle_frames,
         view: 0,
         view_started: false,
@@ -660,11 +691,9 @@ fn capture_views(
 fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
     let half = state.terrain.width_metres.max(state.terrain.depth_metres) * 0.5;
     let (position, target, up) = match slug {
-        "warmup" | "beauty-ground" | "collision-overlay" => (
-            state.obstacle_focus + Vec3::new(-half * 0.62, half * 0.32, half * 0.62),
-            state.obstacle_focus + Vec3::Y * 1.2,
-            Vec3::Y,
-        ),
+        "warmup" | "beauty-ground" | "collision-overlay" => {
+            (state.ground_eye_position, state.ground_eye_target, Vec3::Y)
+        }
         "beauty-overhead" => (
             state.obstacle_focus + Vec3::new(0.0, half * 2.15, half * 0.16),
             state.obstacle_focus,
