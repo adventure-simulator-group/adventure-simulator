@@ -525,13 +525,13 @@ fn spawn_ground_foliage(
     let snow = bps(environment.weather.snow_cover_bps);
     let grass_chance = (0.96 - canopy * 0.16 - water * 0.88 + cultivation * 0.04).clamp(0.06, 0.98)
         * (1.0 - snow * 0.36);
-    let understory_chance = (canopy * 0.16 + wetland * 0.22).clamp(0.025, 0.24);
+    let understory_chance = (canopy * 0.16 + wetland * 0.22).clamp(0.0, 0.24);
     let half_x = terrain.width() * 0.5;
     let half_z = terrain.depth() * 0.5;
-    // Each instance is a seven-tuft patch whose footprint overlaps its
+    // Each instance is a forty-nine-blade patch whose footprint overlaps its
     // neighbours. This keeps the entity count bounded while producing the
     // near-continuous oblique coverage expected from grassland.
-    let spacing = 1.25;
+    let spacing = 1.0;
     let count_x = (terrain.width() / spacing).floor() as i32;
     let count_z = (terrain.depth() / spacing).floor() as i32;
     for z in 0..count_z {
@@ -594,16 +594,22 @@ fn spawn_ground_foliage(
 }
 
 fn grass_patch_mesh(color: Color) -> Mesh {
-    const TUFTS: [(f32, f32, f32); 7] = [
-        (0.00, 0.00, 1.00),
-        (-0.46, -0.34, 0.88),
-        (0.44, -0.36, 0.76),
-        (-0.48, 0.32, 0.81),
-        (0.43, 0.38, 0.96),
-        (-0.02, -0.58, 0.70),
-        (0.03, 0.57, 0.84),
-    ];
-    foliage_patch_mesh(0.38, 0.9, color, 3, &TUFTS)
+    let blades = (0..49)
+        .map(|index| {
+            let row = index / 7;
+            let column = index % 7;
+            let hash = splitmix64(index as u64 ^ 0x8d12_6f4a_0bc3_7791);
+            let jitter_x = (unit_hash(hash) - 0.5) * 0.07;
+            let jitter_z = (unit_hash(splitmix64(hash)) - 0.5) * 0.07;
+            let scale = 0.68 + unit_hash(splitmix64(hash ^ 0x52a9_f131)) * 0.36;
+            (
+                (column as f32 - 3.0) * 0.18 + jitter_x,
+                (row as f32 - 3.0) * 0.18 + jitter_z,
+                scale,
+            )
+        })
+        .collect::<Vec<_>>();
+    foliage_patch_mesh(0.045, 0.82, color, 2, &blades)
 }
 
 fn foliage_clump_mesh(width: f32, height: f32, color: Color, planes: usize) -> Mesh {
@@ -1152,13 +1158,13 @@ mod tests {
     }
 
     #[test]
-    fn grass_patches_pack_seven_tufts_into_each_instance() {
+    fn grass_patches_pack_forty_nine_thin_blades_into_each_instance() {
         let mesh = grass_patch_mesh(Color::WHITE);
         let positions = mesh
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .and_then(VertexAttributeValues::as_float3)
             .unwrap();
-        assert_eq!(positions.len(), 7 * 3 * 5);
+        assert_eq!(positions.len(), 49 * 2 * 5);
     }
 
     #[test]
