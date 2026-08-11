@@ -5,7 +5,6 @@ use adventuresim_world_schema::{BestiaryCategory, BestiaryHours};
 
 const MAX_COMBAT_ROUNDS: usize = 256;
 const MAX_RANGED_ATTACKS_PER_PHASE: usize = 64;
-const BLOOD_LOSS_PER_HEALTH_DAMAGE: f32 = 0.5;
 const FORMATION_SPACING_METERS: f32 = 2.0;
 const COMBAT_ROUND_SECONDS: f32 = 1.0;
 const REFERENCE_MELEE_ATTACK_SECONDS: f32 = 1.0;
@@ -82,9 +81,7 @@ impl CombatBody {
 
     pub fn apply_damage(&mut self, part: BodyPart, damage: f32) -> f32 {
         let health = &mut self.health[body_part_index(part)];
-        let applied = damage.max(0.0).min(health.max(0.0));
-        *health = (*health - applied).max(0.0);
-        applied
+        apply_clamped_limb_damage(health, damage)
     }
 
     pub fn total_damage(&self) -> f32 {
@@ -228,6 +225,9 @@ pub struct CombatWeapon {
     pub slash: bool,
     pub pierce: bool,
     pub accuracy: f32,
+    pub swing_precision: f32,
+    pub stab_precision: f32,
+    pub preferred_melee_style: crate::equipment::MeleeAttackStyle,
     pub weight: f32,
     pub penetration: f32,
     pub melee_reach: f32,
@@ -328,6 +328,18 @@ impl PlayerEquipment for CombatEquipment {
     fn weapon_accuracy(&self) -> f32 {
         self.weapon.map_or(0.0, |weapon| weapon.accuracy)
     }
+    fn weapon_swing_precision(&self) -> f32 {
+        self.weapon.map_or(0.0, |weapon| weapon.swing_precision)
+    }
+    fn weapon_stab_precision(&self) -> f32 {
+        self.weapon.map_or(0.0, |weapon| weapon.stab_precision)
+    }
+    fn weapon_preferred_melee_style(&self) -> crate::equipment::MeleeAttackStyle {
+        self.weapon
+            .map_or(crate::equipment::MeleeAttackStyle::Swing, |weapon| {
+                weapon.preferred_melee_style
+            })
+    }
     fn weapon_weight(&self) -> f32 {
         self.weapon.map_or(0.0, |weapon| weapon.weight)
     }
@@ -422,27 +434,22 @@ impl Combatant {
         }
     }
 
-    fn precision_damage_multiplier_cap_against(&self, defender: &Self) -> f32 {
-        let fallback = [BestiaryCategory::Human];
-        let categories = if defender.bestiary_categories.is_empty() {
-            &fallback
-        } else {
-            defender.bestiary_categories.as_slice()
-        };
-        let check = categories
-            .iter()
-            .map(|category| {
-                crate::capability::bestiary_knowledge_check(
-                    self.skills.bestiary_hours.effective(*category),
-                    self.attributes.instinct,
-                    self.attributes.intelligence,
-                    self.essentials.focus_level,
-                    self.body.body_part_health(BodyPart::Head),
-                )
-            })
-            .sum::<f32>()
-            / categories.len() as f32;
-        2.0 + check.clamp(0.0, 5.0)
+    fn view_with_equipment<'a>(
+        &'a self,
+        equipment: &'a CombatEquipment,
+    ) -> PlayerInfo<
+        &'a CombatAttributes,
+        &'a CombatBody,
+        &'a CombatEssentials,
+        &'a CombatEquipment,
+        &'a CombatSkills,
+    > {
+        PlayerInfo::empty()
+            .with_attributes(&self.attributes)
+            .with_body(&self.body)
+            .with_essentials(&self.essentials)
+            .with_equipment(equipment)
+            .with_skills(&self.skills)
     }
 
     pub fn incapacitation(&self) -> f32 {
@@ -454,11 +461,14 @@ impl Combatant {
             &self.equipment,
             LimbWeights::all_equal(),
         );
-        let pain = pain_incapacitation(self.body.total_damage(), will);
-        let remaining_blood =
-            (self.starting_blood_fraction - self.blood_loss_fraction).clamp(0.0, 1.0);
-        let blood_loss = blood_loss_incapacitation(remaining_blood, 1.0);
-        self.starting_incapacitation + pain + blood_loss + self.imbalance
+        combat_incapacitation(
+            self.starting_incapacitation,
+            self.starting_blood_fraction,
+            self.blood_loss_fraction,
+            self.body.total_damage(),
+            will,
+            self.imbalance,
+        )
     }
 
     pub fn is_incapacitated(&self) -> bool {
@@ -474,7 +484,7 @@ impl Combatant {
             &self.equipment,
             LimbWeights::both_legs(),
         );
-        self.imbalance = (self.imbalance - 0.03 * balance.max(0.25)).max(0.0);
+        self.imbalance = recover_combat_imbalance(self.imbalance, balance, COMBAT_ROUND_SECONDS);
     }
 
     fn can_attack_ranged(&self) -> bool {
@@ -732,6 +742,21 @@ pub fn authored_threat_combatant(
         slash,
         pierce,
         accuracy: 0.8 + profile.precision_bonus,
+        swing_precision: if profile.ranged {
+            0.0
+        } else {
+            0.8 + profile.precision_bonus
+        },
+        stab_precision: if profile.ranged {
+            0.0
+        } else {
+            0.8 + profile.precision_bonus
+        },
+        preferred_melee_style: if pierce && !slash {
+            crate::equipment::MeleeAttackStyle::Stab
+        } else {
+            crate::equipment::MeleeAttackStyle::Swing
+        },
         weight: if profile.rig == RigTopology::Quadruped {
             1.0
         } else {
@@ -1579,23 +1604,17 @@ fn melee_exchange(
     response: DefenderResponse,
 ) -> AttackResult {
     let attacker_equipment = attacker.equipment.for_melee();
-    resolve_melee_attack_by_parts(
-        &attacker.skills,
-        &attacker.attributes,
-        &attacker.body,
-        &attacker.essentials,
-        &attacker_equipment,
+    let attacker_view = attacker.view_with_equipment(&attacker_equipment);
+    let defender_view = defender.view_with_equipment(&defender.equipment);
+    attacker_view.resolve_melee_attack(
         attacker.equipment.holding_side,
+        attacker_equipment.weapon_preferred_melee_style(),
+        &defender_view,
+        &defender.bestiary_categories,
+        response,
         precision,
-        attacker.precision_damage_multiplier_cap_against(defender),
         flanking,
         part,
-        response,
-        &defender.skills,
-        &defender.attributes,
-        &defender.body,
-        &defender.essentials,
-        &defender.equipment,
     )
 }
 
@@ -1608,22 +1627,15 @@ fn ranged_exchange(
     response: DefenderResponse,
 ) -> AttackResult {
     let attacker_equipment = attacker.equipment.for_ranged();
-    resolve_ranged_attack_by_parts(
-        &attacker.skills,
-        &attacker.attributes,
-        &attacker.body,
-        &attacker.essentials,
-        &attacker_equipment,
+    let attacker_view = attacker.view_with_equipment(&attacker_equipment);
+    let defender_view = defender.view_with_equipment(&defender.equipment);
+    attacker_view.resolve_ranged_attack(
+        &defender_view,
+        &defender.bestiary_categories,
+        response,
         precision,
-        attacker.precision_damage_multiplier_cap_against(defender),
         flanking,
         part,
-        response,
-        &defender.skills,
-        &defender.attributes,
-        &defender.body,
-        &defender.essentials,
-        &defender.equipment,
     )
 }
 
@@ -1803,6 +1815,9 @@ mod tests {
             slash: !ranged,
             pierce: ranged,
             accuracy: 1.5,
+            swing_precision: if ranged { 0.0 } else { 1.5 },
+            stab_precision: if ranged { 0.0 } else { 1.5 },
+            preferred_melee_style: crate::equipment::MeleeAttackStyle::Swing,
             weight: 1.5,
             penetration: 1.0,
             melee_reach: if ranged { 0.0 } else { 1.0 },
@@ -1914,10 +1929,14 @@ mod tests {
         attacker.skills.bestiary_hours.human = adventuresim_world_schema::BESTIARY_MASTERY_HOURS;
         let mut human = fighter(2, 1.0, false);
         human.bestiary_categories = vec![BestiaryCategory::Human];
-        let human_cap = attacker.precision_damage_multiplier_cap_against(&human);
+        let human_cap = attacker
+            .view_with_equipment(&attacker.equipment)
+            .precision_damage_multiplier_cap(&human.bestiary_categories);
 
         human.bestiary_categories = vec![BestiaryCategory::Human, BestiaryCategory::Draconid];
-        let combined_cap = attacker.precision_damage_multiplier_cap_against(&human);
+        let combined_cap = attacker
+            .view_with_equipment(&attacker.equipment)
+            .precision_damage_multiplier_cap(&human.bestiary_categories);
 
         assert!(human_cap > 2.0);
         assert!(combined_cap > 2.0);
@@ -1932,6 +1951,9 @@ mod tests {
         };
         weapon.melee = true;
         weapon.accuracy = 1.5;
+        weapon.swing_precision = 1.5;
+        weapon.stab_precision = 1.5;
+        weapon.preferred_melee_style = crate::equipment::MeleeAttackStyle::Swing;
         weapon.weight = 1.5;
         weapon.melee_reach = 1.0;
         weapon.attack_interval_seconds = 1.0;

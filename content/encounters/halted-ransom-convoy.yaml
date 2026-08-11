@@ -11,13 +11,13 @@
         "adaptation_note": "An original roadside synthesis of Malory's captivity, release, and conduct motifs: Volume I, Book IV, Chapter VII has Damas's sworn combat covenant release twenty prisoners, while Book IV, Chapter XII joins judgment, restoration, and terms of future conduct. Malory contains no exact ransom-convoy episode corresponding to this encounter."
       },
       "cast": [
-        { "id": "ransom_clerk", "name": "Ransom clerk", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } },
-        { "id": "veteran_custody_sergeant", "name": "Veteran custody sergeant", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } },
-        { "id": "captured_knight", "name": "Captured knight", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } }
+        { "id": "ransom_clerk", "name": "Ransom clerk", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } },
+        { "id": "veteran_custody_sergeant", "name": "Veteran custody sergeant", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } },
+        { "id": "captured_knight", "name": "Captured knight", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } }
       ],
       "opening": [
         { "speaker": "ransom_clerk", "text": "Our prison wagon halteth off the road where a washed culvert sprang the axle. This knight and his two retainers yielded in the field beneath the sealed surrender roll I hold here; it proveth lawful custody, though neither side's feud-right. I keep their names and ransom account at this writing board, and no parole or release passeth without my reading of seal and covenant.", "reviewed_shakespearean": true },
-        { "speaker": "veteran_custody_sergeant", "text": "The key ring hangeth at my belt; my guards keep the bonds and places I appoint whilst I direct wheel, crib, and axle. That open repair chest holdeth our separate forty-eight-groschen custody wage purse and a spare flanged mace, which I shall grant for sound aid. The captive's mail is plainly caved and many rings lie beaten flat, though he hath not told thee how they came so.", "reviewed_shakespearean": true },
+        { "speaker": "veteran_custody_sergeant", "text": "The key ring hangeth at my belt; my guards keep the bonds and places I appoint whilst I direct wheel, crib, and axle. That open repair chest holdeth our separate forty-eight-groschen custody wage purse and a spare flanged mace, which I shall grant for sound aid. The captive's mail is plainly caved and many rings lie beaten flat, though he hath not told you how they came so.", "reviewed_shakespearean": true },
         { "speaker": "captured_knight", "text": "One guard and my elder retainer wear Saint Leonard's badge as I do. Let the sealed roll speak of surrender; I shall not plead the quarrel whilst I remain bound.", "reviewed_shakespearean": true }
       ],
       "choices": [

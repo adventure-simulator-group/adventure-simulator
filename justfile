@@ -1,4 +1,4 @@
-# Adventure Simulator - local development
+# Fabelgeist - local development
 # Install just: cargo install just
 # List commands: just --list
 
@@ -70,18 +70,6 @@ web-isolated profile="renderer-demo" base_port="23100": preflight verify-db-clie
 # Start a disposable, worktree-safe strategic-only stack.
 web-isolated-strategic profile="renderer-demo" base_port="23100": preflight verify-db-client
     @{{ python_bin }} scripts/dev_stack.py run-profile --mode bare-strategic {{ quote(profile) }} {{ quote(base_port) }}
-
-# Start a disposable strategic stack for the one-click in-world autopsy demo.
-autopsy-demo base_port="23100": preflight verify-db-client
-    @{{ python_bin }} scripts/dev_stack.py run-profile --mode bare-strategic autopsy-demo {{ quote(base_port) }}
-
-# Start a disposable strategic stack for the one-click generated outbreak demo.
-outbreak-demo base_port="23100": preflight verify-db-client
-    @{{ python_bin }} scripts/dev_stack.py run-profile --mode bare-strategic outbreak-demo {{ quote(base_port) }}
-
-# Start an isolated strategic stack for the direct ordered-sigil puzzle demo.
-puzzle-demo base_port="23100": preflight verify-db-client
-    @{{ python_bin }} scripts/dev_stack.py run-profile --mode bare-strategic puzzle-demo {{ quote(base_port) }}
 
 # Run the dependency-light puzzle laboratory without building the game stack.
 puzzle-lab args="--help":
@@ -294,13 +282,13 @@ _spawner-stop:
 # Run a single tactical server (for testing). Defaults come from `.env.tactical`
 # (written by `tactical-isolated`) when present, otherwise from the canonical
 # stack - so a bare `just tactical` targets whichever is currently running.
-tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") scene_key=env_var_or_default("TACTICAL_SCENE_KEY", "hills") bots=env_var_or_default("TACTICAL_BOTS", "3") port=env_var_or_default("TACTICAL_PORT", tactical_port) url=env_var_or_default("TACTICAL_SPACETIMEDB_URL", spacetime_url) module=env_var_or_default("TACTICAL_SPACETIMEDB_MODULE", spacetime_module):
-    @cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --required-enemy-kills {{ bots }} --enemy-combat-scale-bps 10000 --no-timeout
+tactical mission_id=env_var_or_default("TACTICAL_MISSION_ID", "test-mission") scene_key=env_var_or_default("TACTICAL_SCENE_KEY", "hills") bots=env_var_or_default("TACTICAL_BOTS", "3") port=env_var_or_default("TACTICAL_PORT", tactical_port) url=env_var_or_default("TACTICAL_SPACETIMEDB_URL", spacetime_url) module=env_var_or_default("TACTICAL_SPACETIMEDB_MODULE", spacetime_module) enemy_combat_scale_bps=env_var_or_default("TACTICAL_ENEMY_COMBAT_SCALE_BPS", "10000"):
+    @cargo run --package adventuresim-tactical-server --features "debug" -- --addr "0.0.0.0:{{ port }}" --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --spacetimedb-url {{ url }} --spacetimedb-module {{ module }} --expected-party-members 1 --required-enemy-kills {{ bots }} --enemy-combat-scale-bps {{ enemy_combat_scale_bps }} --no-timeout
 
 # Run a native tactical client (for testing `just tactical`). Defaults come
 # from `.env.tactical` when present, same as `tactical` above.
 client id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_default("TACTICAL_PORT", tactical_port) features="":
-    @cargo run --package adventuresim-tactical-client --features "debug,{{ features }}" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}"
+    @cargo run --package adventuresim-tactical-client --bin adventuresim-tactical-client --features "debug,{{ features }}" -- --id {{ quote(id) }} --server-addr "127.0.0.1:{{ port }}"
 
 # Start an isolated SpacetimeDB seeded with a standalone tactical mission.
 # No strategic layer, no WASM build - just the DB plus a mission. Writes
@@ -308,6 +296,40 @@ client id=env_var_or_default("TACTICAL_CHARACTER_ID", "0") port=env_var_or_defau
 # other terminals targets it automatically.
 tactical-isolated profile="tactical-dev" base_port="23200" mission_id="mission:test-mission" scene_key="hills" character_id="0" bots="3": preflight verify-db-client build-tactical
     @{{ python_bin }} scripts/dev_stack.py run-profile --mode tactical {{ quote(profile) }} {{ quote(base_port) }} --mission-id {{ quote(mission_id) }} --scene-key {{ quote(scene_key) }} --character-id {{ quote(character_id) }} --enemy-count {{ quote(bots) }}
+
+# Build and supervise a complete disposable native tactical test session.
+# animation disables combat, diagnostic runs scripted real-client input and
+# records every animation frame, combat uses normal enemies, and networking
+# omits the client while retaining the validated database/server fixture.
+tactical-play mode="animation" base_port="24920" graphics_preset="default" presentation_trace="auto" present_mode="auto-vsync" window_capture="auto" capture_source="window" render_backend="auto": preflight verify-db-client
+    @{{ python_bin }} scripts/dev_stack.py tactical-play {{ quote(mode) }} {{ quote(base_port) }} --graphics-preset {{ quote(graphics_preset) }} --presentation-trace {{ quote(presentation_trace) }} --present-mode {{ quote(present_mode) }} --window-capture {{ quote(window_capture) }} --capture-source {{ quote(capture_source) }} --render-backend {{ quote(render_backend) }}
+
+# Launch the native-only graph editor after validating semantic packs and routes.
+animation-graph-editor asset_source="assets":
+    @cargo run -p adventuresim-tactical-client --no-default-features --features animation-graph-editor --bin animation-graph-editor -- --asset-source {{ quote(asset_source) }}
+
+# Capture a deterministic semantic-route preview with the gameplay viewer.
+animation-graph-preview scenario="steady-walk-2.0" output="target/animation-captures/graph-preview":
+    @cargo run -p adventuresim-tactical-client --bin animation-viewer -- --scenario {{ quote(scenario) }} --output {{ quote(output) }}
+
+# Launch the focused native Cascadeur-humanoid ragdoll fixture with a complete
+# Avian solver. This does not change the live client's query-only physics path.
+ragdoll-viewer asset_source="assets":
+    @cargo run -p adventuresim-tactical-client --features animation-graph-physics --bin ragdoll-viewer -- --asset-root {{ quote(asset_source) }}
+
+# Capture animated, active-motor, and passive ragdoll review frames plus
+# manifest.json/failure.txt validation gates, then exit.
+ragdoll-capture output="target/animation-captures/ragdoll-review" asset_source="assets":
+    @cargo run -p adventuresim-tactical-client --features animation-graph-physics --bin ragdoll-viewer -- --asset-root {{ quote(asset_source) }} --output {{ quote(output) }}
+
+# Report whether the supervised tactical database, claim, authority, listener,
+# and recorded child identities are healthy.
+tactical-status:
+    @{{ python_bin }} scripts/dev_stack.py tactical-status
+
+# Relaunch only the native client after validating the supervised server.
+tactical-client:
+    @{{ python_bin }} scripts/dev_stack.py tactical-client
 
 # Generate self-signed WebTransport certificates
 certs sans="127.0.0.1,localhost":
@@ -394,7 +416,7 @@ fmt:
     @cargo fmt --all
 
 lint:
-    @cargo clippy --workspace -- -D warnings
+    @cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 clean:
     @cargo clean

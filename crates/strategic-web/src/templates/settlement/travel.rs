@@ -286,14 +286,15 @@ pub(crate) fn map_destination_detail(
     let camp_fatigue_percent = party.map_or(50, |party| party.camp_fatigue_percent);
     let travel_disabled = party.is_some_and(|party| party.walking_minutes_per_day == 0);
     let inspecting_nonroute = selected.is_none() && selected_settlement.is_some();
+    let configurable_party = party.filter(|_| can_configure_travel);
     html! {
         aside class=(if party.is_some() && can_configure_travel && !inspecting_nonroute { "right-sidebar travel-configuration-sidebar" } else { "right-sidebar" }) {
-            @if party.is_some() && can_configure_travel {
+            @if let Some(party) = configurable_party {
             (sidebar_section("Travel configuration", html! {
                 div class=(if selected.is_some() { "travel-planner-vertical" } else { "travel-planner-vertical no-destination" }) {
                     (travel_planner_bar(selected, camp_fatigue_percent))
                 }
-                (travel_preferences_form(party.expect("party checked above"), &format!("{map_path}/travel-configuration")))
+                (travel_preferences_form(party, &format!("{map_path}/travel-configuration")))
                 @if let Some(provisioning_path) = provisioning_path {
                     div class="travel-provisioning-control" data-provisioning-control {
                         div class="travel-provisioning-input" {
@@ -429,7 +430,7 @@ pub(crate) fn travel_planner_bar(
         &selected.map_or_else(String::new, |destination| {
             format_itinerary_segments(&destination.itinerary_segments)
         }),
-        &selected.map_or_else(String::new, |destination| format_terrain_spans(destination)),
+        &selected.map_or_else(String::new, format_terrain_spans),
     )
 }
 
@@ -802,14 +803,6 @@ fn camp_forage_href(has_active_character: bool) -> Option<&'static str> {
     has_active_character.then_some("/camp?forage=true")
 }
 
-fn developer_road_encounter_label(id: &str) -> String {
-    let words = id.trim_end_matches("_v1").replace('_', " ");
-    let mut chars = words.chars();
-    chars.next().map_or(words.clone(), |first| {
-        first.to_uppercase().collect::<String>() + chars.as_str()
-    })
-}
-
 pub fn camp_page(
     party: &Party,
     journey: Option<&PartyJourney>,
@@ -864,19 +857,6 @@ pub fn camp_page(
                     }
                 }))
             }
-            section class="sidebar-section" data-developer-only aria-label="Road encounter demo" {
-                h3 class="sidebar-header" { "Road encounter demo" }
-                label for="developer-road-encounter-catalog" { "Compiled encounter" }
-                select id="developer-road-encounter-catalog" data-developer-road-encounter-catalog {
-                    @for definition in adventuresim_core::road_encounter_catalog::definitions() {
-                        option value=(&definition.id) { (developer_road_encounter_label(&definition.id)) }
-                    }
-                }
-                button type="button" class="btn btn-small btn-block"
-                    data-developer-road-encounter-demo {
-                    "Load encounter"
-                }
-            }
             }
             @if encounter.is_none_or(|encounter| encounter.status != "awaiting_choice") {
                 section class="rest-service-menu camp-rest-menu" aria-label="Camp rest" {
@@ -894,6 +874,18 @@ pub fn camp_page(
         }
         main class="center-content settlement-main settlement-overview" {
             (party_portrait_overlay(party_members, active_character, "/camp", None, false))
+            @if active_character.is_some() {
+                nav class="settlement-npc-strip counterparty-strip camp-counterparty-strip" aria-label="Camp counterparties" {
+                    a class="npc-portrait fireplace-portrait" href="/camp/fireplace"
+                        aria-label="Cook at fireplace" title="Cook at fireplace" {
+                        span class="npc-portrait-image fireplace-portrait-image" aria-hidden="true" {
+                            (decorative_game_icon("campfire"))
+                        }
+                        span class="npc-portrait-name" { "Campfire" }
+                        span class="btn btn-secondary btn-small" aria-hidden="true" { "Cook" }
+                    }
+                }
+            }
             (visual_stage("camp", "Camp", "A resting place beside the party's onward route"))
             @if let Some((finding, preparation)) = tactical_insight {
                 section class="strategic-notice" data-tactical-insight aria-label="Tactical insight" {
@@ -997,19 +989,41 @@ fn generic_road_encounter(challenge: &BackendRoadChallenge) -> Markup {
                   div class="npc-portrait counterparty-portrait" data-character-id=(character.character_id) {
                     span class="npc-portrait-image" aria-hidden="true" { "?" }
                     span class="npc-portrait-name" { (&character.name) }
-                    @if character.can_talk {
+                    @if character.contact_decision == adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Request {
                       form action="/camp/counterparty/contact" method="post" {
                         input type="hidden" name="target_id" value=(character.character_id);
                         input type="hidden" name="contact_ref" value=(&challenge.id);
                         input type="hidden" name="expected_revision" value=(character.contact_revision);
                         input type="hidden" name="action_id" value=(format!("road-contact:{}:{}:{}", challenge.id, character.contact_revision, character.character_id));
-                        button type="submit" class="btn btn-secondary btn-small" { "Talk" }
+                        button type="submit" class="btn btn-secondary btn-small" { "Request" }
+                      }
+                    } @else {
+                      button type="button" class="btn btn-secondary btn-small" disabled {
+                        (match character.contact_decision {
+                            adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Refused => "Refused",
+                            _ => "Unavailable",
+                        })
                       }
                     }
-                    @if character.can_bandage {
+                    @if character.treatment_limb_slug.is_some() && matches!(character.treatment_decision,
+                        adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Request
+                        | adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::EmergencyTreatment) {
                       form action="/camp/counterparty/bandage" method="post" {
                         input type="hidden" name="patient_id" value=(character.character_id);
-                        button type="submit" class="btn btn-secondary btn-small" { "Bandage" }
+                        input type="hidden" name="limb_slug" value=(character.treatment_limb_slug.as_deref().unwrap_or_default());
+                        input type="hidden" name="action_id" value=(crate::templates::fresh_request_token("treatment"));
+                        input type="hidden" name="context_ref" value=(&challenge.id);
+                        input type="hidden" name="expected_membership_revision" value=(character.membership_revision);
+                        button type="submit" class="btn btn-secondary btn-small" {
+                          (if character.treatment_decision == adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::EmergencyTreatment { "Emergency treatment" } else { "Request treatment" })
+                        }
+                      }
+                    } @else {
+                      button type="button" class="btn btn-secondary btn-small" disabled {
+                        (match character.treatment_decision {
+                            adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Refused => "Refused",
+                            _ => "Unavailable",
+                        })
                       }
                     }
                   }
@@ -1089,7 +1103,7 @@ fn strategic_encounter_panel(
                                 input type="hidden" name="contact_ref" value=(&encounter.encounter_id);
                                 input type="hidden" name="expected_revision" value=(encounter.revision);
                                 input type="hidden" name="action_id" value=(format!("contact:{}:{}:{}", encounter.encounter_id, encounter.revision, character.id));
-                                button type="submit" class="btn btn-secondary btn-small" { "Talk" }
+                                button type="submit" class="btn btn-secondary btn-small" { "Request" }
                             }
                         }
                     }
@@ -1439,22 +1453,21 @@ mod tests {
     }
 
     #[test]
-    fn road_encounter_demo_selector_is_generic_and_camp_only() {
+    fn selected_character_road_encounter_loader_is_removed() {
         let source = include_str!("travel.rs");
         let camp = source
             .split("pub fn camp_page")
             .nth(1)
             .and_then(|tail| tail.split("fn camp_continue_control").next())
             .unwrap();
-        assert!(camp.contains("data-developer-road-encounter-catalog"));
-        assert!(camp.contains("road_encounter_catalog::definitions()"));
-        assert!(camp.contains("data-developer-road-encounter-demo"));
+        assert!(!camp.contains("data-developer-road-encounter-catalog"));
+        assert!(!camp.contains("data-developer-road-encounter-demo"));
 
         let shared_layout = include_str!("../layout.rs");
         assert!(!shared_layout.contains("data-developer-road-encounter-demo"));
         assert!(!shared_layout.contains("wounded_knight_linden_v1"));
         let script = include_str!("../../../static/developer-quest-editor.js");
-        assert!(script.contains("data-developer-road-encounter-catalog"));
+        assert!(!script.contains("data-developer-road-encounter-catalog"));
         assert!(!script.contains("wounded_knight_linden_v1"));
         assert!(!script.contains("button.dataset.catalogId"));
     }

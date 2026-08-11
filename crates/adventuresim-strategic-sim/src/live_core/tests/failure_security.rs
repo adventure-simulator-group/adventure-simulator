@@ -15,6 +15,11 @@ fn generated_runner_subscribes_only_to_public_projection_inventory() {
         ".backend_case_site_pins()",
         ".party_journey()",
         ".party_journey_itinerary()",
+        ".inventory_object()",
+        ".inventory_containment()",
+        ".inventory_item_amount()",
+        ".party_item_amount()",
+        ".container_liquid()",
     ] {
         assert!(
             production.contains(required),
@@ -198,13 +203,15 @@ fn failure_artifact_version_nine_serializes_safe_operation_context() {
 }
 
 fn quest_coverage_report() -> CoreLoopReport {
-    let mut metrics = CoreLoopMetrics::default();
-    metrics.quests_attempted = 2;
-    metrics.direct_contracts_attempted = 1;
-    metrics.direct_contracts_completed = 1;
-    metrics.generated_case_intakes = 1;
-    metrics.generated_discovery_actions_fruitful = 1;
-    metrics.generated_quests_discovered = 1;
+    let metrics = CoreLoopMetrics {
+        quests_attempted: 2,
+        direct_contracts_attempted: 1,
+        direct_contracts_completed: 1,
+        generated_case_intakes: 1,
+        generated_discovery_actions_fruitful: 1,
+        generated_quests_discovered: 1,
+        ..CoreLoopMetrics::default()
+    };
     CoreLoopReport {
         format_version: crate::FORMAT_VERSION,
         backend_kind: "spacetimedb".into(),
@@ -412,7 +419,9 @@ fn generated_action_trace_uses_subject_and_public_attempt_evidence() {
     assert!(source.contains(
         "actor_time={actor_time};party_time_min={party_time_min};party_time_max={party_time_max}"
     ));
-    assert!(advance.contains("\"case={};subject={};action={};method={};summary={};outcome={}\""));
+    assert!(advance.contains("outcome_class={outcome_class}"));
+    assert!(advance.contains("requested_min_minutes={}"));
+    assert!(advance.contains("actual_minutes={actual_minutes}"));
     assert!(!advance.contains("\"case={};title={};action={};method={};summary={};outcome={}\""));
     assert!(advance.contains("self.call(result)?"));
     assert!(!advance.contains("victim_cohort_state_changed_failure"));
@@ -505,6 +514,10 @@ fn projected_night_wait_hints_are_strictly_bounded() {
     assert_eq!(
         projected_investigation_wait_minutes("night_window", 840),
         Some(840)
+    );
+    assert_eq!(
+        projected_investigation_wait_minutes("contact_schedule_window", 420),
+        Some(420)
     );
     assert_eq!(
         projected_investigation_wait_minutes("travel_required", 840),

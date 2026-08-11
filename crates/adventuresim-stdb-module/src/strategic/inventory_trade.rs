@@ -1,3 +1,5 @@
+use crate::inventory_container::inventory_object as _;
+
 /// Transfer a stack of items between two members of the same party.
 #[reducer]
 pub fn transfer_party_item(
@@ -30,6 +32,21 @@ pub fn transfer_party_item(
     }
     if crate::character::inventory_item_is_equipped(ctx, from_character_id, inventory_item_id) {
         return Err("Unequip an item before transferring it".into());
+    }
+
+    let container_object =
+        crate::inventory_container::object_for_row(ctx, "personal", source_item.id)?;
+    if let Some(object) = container_object {
+        if !physical_object_row_is_atomic(true, quantity, source_item.quantity) {
+            return Err("A physical object must move as one exact inventory row".into());
+        }
+        crate::inventory_container::detach_if_nested(ctx, object.id)?;
+        crate::inventory_container::rehome_subtree(
+            ctx, object.id, "personal", &to_character_id.to_string(),
+        )?;
+        crate::capability::refresh_character_capability(ctx, from_character_id)?;
+        crate::capability::refresh_character_capability(ctx, to_character_id)?;
+        return Ok(());
     }
 
     let measured = crate::inventory_amount::personal_amount(ctx, source_item.id).is_some();
@@ -140,7 +157,7 @@ fn objective_item_value(ctx: &ReducerContext, item_id: &str) -> Result<u64, Stri
     ctx.db
         .item()
         .id()
-        .find(&item_id.to_string())
+        .find(item_id.to_string())
         .and_then(|item| item.base_value)
         .map(u64::from)
         .ok_or_else(|| format!("Item {item_id} has no objective value"))
@@ -201,6 +218,22 @@ fn party_inventory_value(
             .checked_mul(u64::from(quantity))
             .ok_or_else(|| "Inventory value overflow".into())
     }
+}
+
+fn personal_subtree_value(ctx: &ReducerContext, root_object_id: u64) -> Result<u64, String> {
+    crate::inventory_container::subtree_object_ids(ctx, root_object_id)?.into_iter().try_fold(0u64, |total, id| {
+        let object = ctx.db.inventory_object().id().find(id).ok_or("Inventory subtree object is missing")?;
+        let row = ctx.db.inventory_item().id().find(object.inventory_row_id).ok_or("Inventory subtree row is missing")?;
+        total.checked_add(personal_inventory_value(ctx, &row, row.quantity)?).ok_or("Inventory subtree value overflow".into())
+    })
+}
+
+fn party_subtree_value(ctx: &ReducerContext, root_object_id: u64) -> Result<u64, String> {
+    crate::inventory_container::subtree_object_ids(ctx, root_object_id)?.into_iter().try_fold(0u64, |total, id| {
+        let object = ctx.db.inventory_object().id().find(id).ok_or("Inventory subtree object is missing")?;
+        let row = ctx.db.party_inventory_item().id().find(object.inventory_row_id).ok_or("Party inventory subtree row is missing")?;
+        total.checked_add(party_inventory_value(ctx, &row, row.quantity)?).ok_or("Inventory subtree value overflow".into())
+    })
 }
 
 fn item_is_durable(ctx: &ReducerContext, item_id: &str) -> bool {
@@ -264,6 +297,80 @@ mod durable_custody_tests {
                 "{start} must preserve condition custody for repairable clothing"
             );
         }
+    }
+}
+
+fn physical_object_row_is_atomic(has_object: bool, quantity: u32, row_quantity: u32) -> bool {
+    !has_object || (quantity == 1 && row_quantity == 1)
+}
+
+#[cfg(test)]
+mod physical_object_custody_tests {
+    use super::physical_object_row_is_atomic;
+
+    fn section<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+        source
+            .split(start)
+            .nth(1)
+            .unwrap()
+            .split(end)
+            .next()
+            .unwrap()
+    }
+
+    #[test]
+    fn empty_root_objects_keep_identity_across_every_trade_path() {
+        assert!(physical_object_row_is_atomic(false, 1, 20));
+        assert!(physical_object_row_is_atomic(true, 1, 1));
+        assert!(!physical_object_row_is_atomic(true, 1, 2));
+        assert!(!physical_object_row_is_atomic(true, 2, 2));
+
+        let source = crate::strategic::STRATEGIC_SOURCE;
+        for (start, end) in [
+            (
+                "#[reducer]\npub fn transfer_party_item",
+                "fn objective_item_value",
+            ),
+            (
+                "#[reducer]\npub fn deposit_party_inventory_item",
+                "pub(crate) fn consume_personal_gold",
+            ),
+            (
+                "#[reducer]\npub fn withdraw_party_inventory_item",
+                "#[reducer]\npub fn liquidate_party_inventory",
+            ),
+        ] {
+            let transfer = section(source, start, end);
+            assert!(transfer.contains("if let Some(object)"));
+            assert!(transfer.contains("rehome_subtree"));
+            assert!(!transfer.contains("object.filter(|_| container_subtree)"));
+        }
+
+        for (start, end) in [
+            (
+                "#[reducer]\npub fn liquidate_party_inventory",
+                "#[reducer]\npub fn discard_inventory_items",
+            ),
+            (
+                "#[reducer]\npub fn discard_inventory_items",
+                "#[reducer]\npub fn finalize_party_offer",
+            ),
+        ] {
+            let destruction = section(source, start, end);
+            assert!(destruction.contains("if let Some(object) = object"));
+            assert!(destruction.contains("delete_subtree"));
+            assert!(!destruction.contains("object.filter(|_| subtree)"));
+            assert!(!destruction.contains("object.filter(|object|"));
+        }
+
+        let storefront = section(
+            source,
+            "fn finalize_storefront_trade_impl(ctx: &ReducerContext",
+            "#[reducer]",
+        );
+        assert!(storefront.contains("physical_object_row_is_atomic(container_object.is_some()"));
+        assert!(storefront.contains("if let Some(object) = object"));
+        assert!(storefront.contains("delete_subtree"));
     }
 }
 
@@ -360,7 +467,7 @@ pub(crate) fn add_to_party_inventory_checked(
             .db
             .party_authority()
             .id()
-            .find(&party_id.to_string())
+            .find(party_id.to_string())
             .and_then(|party| ctx.db.character_time().character_id().find(party.leader_id))
             .map_or(0, |time| time.minutes);
         for _ in 0..quantity {
@@ -466,7 +573,7 @@ fn credit_party_reserve(ctx: &ReducerContext, party_id: &str, value: u64) -> Res
         .db
         .party_inventory_state()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
     {
         state.reserve_value = state
             .reserve_value
@@ -656,7 +763,7 @@ pub(crate) fn complete_bound_mission_success(
         .db
         .mission_authority()
         .id()
-        .find(&mission_id.to_string())
+        .find(mission_id.to_string())
         .ok_or("Mission authority not found")?;
     mission.parsed_state()?;
     if mission.status == MissionAttemptStatus::Committed {
@@ -722,21 +829,51 @@ pub(crate) fn complete_bound_mission_success(
     mission.committed_capture_custody_version = selected.capture_custody_version;
     mission.parsed_state()?;
     ctx.db.mission_authority().id().update(mission);
-    for mut capability in ctx
-        .db
-        .mission_approach_capability()
-        .hostile_group_id()
-        .filter(&selected.hostile_group_id)
-        .filter(|capability| capability.case_site_id == selected.case_site_id)
-        .collect::<Vec<_>>()
-    {
-        capability.active = false;
-        ctx.db.mission_approach_capability().id().update(capability);
-    }
-    if committed {
-        finish_incident_for_hostile_group(ctx, &selected.hostile_group_id)?;
-    }
     Ok(committed)
+}
+
+pub(crate) fn mission_approach_capability_is_pending(
+    ctx: &ReducerContext,
+    capability: &MissionApproachCapability,
+    party_id: &str,
+) -> Result<bool, String> {
+    let Some(case) = ctx.db.case_authority().id().find(&capability.case_id) else {
+        return Ok(false);
+    };
+    if case.generated_case_id.is_empty() || case.resolution_status != CaseResolutionStatus::Open {
+        return Ok(false);
+    }
+    let expression: adventuresim_core::case::ObjectiveExpression =
+        serde_json::from_str(&case.objective_expression_json)
+            .map_err(|_| "Case objective authority is invalid")?;
+    let facts = ctx
+        .db
+        .case_outcome_fact()
+        .case_id()
+        .filter(&case.id)
+        .map(|row| {
+            serde_json::from_str::<adventuresim_core::case::OutcomeFact>(&row.fact_json)
+                .map_err(|_| "Stored outcome fact is invalid".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let core_case_id =
+        adventuresim_core::case::CaseId::new(case.id.clone()).map_err(|_| "Case ID is invalid")?;
+    let evaluation = expression.evaluate(&core_case_id, party_id, &facts);
+    let Some(path) = expression.alternatives.get(usize::from(capability.path_index)) else {
+        return Ok(false);
+    };
+    let Some(objective_index) = path
+        .objectives
+        .iter()
+        .position(|objective| objective.id.as_str() == capability.objective_id)
+    else {
+        return Ok(false);
+    };
+    Ok(evaluation
+        .alternatives
+        .get(usize::from(capability.path_index))
+        .and_then(|path| path.get(objective_index))
+        .is_some_and(|progress| progress.state == adventuresim_core::case::EvaluationState::Pending))
 }
 
 pub(crate) fn fail_bound_mission_attempt(
@@ -747,7 +884,7 @@ pub(crate) fn fail_bound_mission_attempt(
         .db
         .mission_authority()
         .id()
-        .find(&mission_id.to_string())
+        .find(mission_id.to_string())
     else {
         return Ok(());
     };
@@ -776,6 +913,264 @@ struct HostileBattleCommit<'a> {
     capture_subject_id: Option<&'a str>,
     dropped_items: Vec<(String, u32)>,
     include_random_gold: bool,
+}
+
+pub(crate) struct HostileResolutionCommit<'a> {
+    pub receipt_id: &'a str,
+    pub party_id: &'a str,
+    pub mission_id: Option<&'a str>,
+    pub hostile_group_id: &'a str,
+    pub observer_character_id: u64,
+    pub case_id: &'a str,
+    pub case_site_id: &'a CaseSiteId,
+    pub resolution: HostileResolutionKind,
+    pub capture_subject_id: Option<&'a str>,
+}
+
+/// Commit the exact persistent hostile outcome without assuming a battle.
+/// Callers remain responsible for any tactical-only artifacts.
+pub(crate) fn commit_hostile_resolution_authority(
+    ctx: &ReducerContext,
+    commit: HostileResolutionCommit<'_>,
+) -> Result<bool, String> {
+    let HostileResolutionCommit {
+        receipt_id,
+        party_id,
+        mission_id,
+        hostile_group_id,
+        observer_character_id,
+        case_id,
+        case_site_id,
+        resolution,
+        capture_subject_id,
+    } = commit;
+    validate_hostile_resolution_contract(None, None, resolution, capture_subject_id, false)
+        .map_err(str::to_string)?;
+    if let Some(existing) = ctx
+        .db
+        .hostile_resolution_receipt()
+        .id()
+        .find(receipt_id.to_string())
+    {
+        return if existing.party_id == party_id
+            && existing.mission_id.as_deref() == mission_id
+            && existing.hostile_group_id == hostile_group_id
+            && existing.observer_character_id == observer_character_id
+            && existing.case_id == case_id
+            && existing.case_site_id == *case_site_id
+            && existing.resolution == resolution
+            && existing.capture_subject_id.as_deref() == capture_subject_id
+        {
+            Ok(false)
+        } else {
+            Err("Conflicting hostile resolution retry".into())
+        };
+    }
+    let mut group = ctx
+        .db
+        .hostile_group_authority()
+        .id()
+        .find(hostile_group_id.to_string())
+        .ok_or("Hostile group not found")?;
+    if group.disposition != HostileGroupDisposition::Active {
+        return Err("Hostile group is already resolved".into());
+    }
+    if resolution == HostileResolutionKind::Surrendered
+        && !adventuresim_core::strategic_action::hostile_surrender_is_authored(parse_threat(
+            &group.enemy_type,
+        )?) {
+            return Err("Hostile group has no authored surrender policy".into());
+        }
+    let site = ctx
+        .db
+        .case_site_authority()
+        .id_key()
+        .find(&case_site_id.value)
+        .filter(|site| site.id == *case_site_id && site.case_id == case_id)
+        .ok_or("Hostile resolution case-site authority is stale")?;
+    if group.case_site_id != *case_site_id {
+        return Err("Hostile resolution does not match the hostile-group site".into());
+    }
+    if let Some(mission_id) = mission_id {
+        let mission = ctx
+            .db
+            .mission_authority()
+            .id()
+            .find(mission_id.to_string())
+            .ok_or("Mission authority not found")?;
+        if mission.party_id != party_id
+            || mission.hostile_group_id.as_deref() != Some(hostile_group_id)
+            || mission.observer_character_id != observer_character_id
+            || mission.case_id != case_id
+            || mission.case_site_id.as_ref() != Some(case_site_id)
+            || mission.status != MissionAttemptStatus::Bound
+        {
+            return Err("Hostile resolution does not match bound mission authority".into());
+        }
+        let exact_candidate = ctx
+            .db
+            .mission_outcome_candidate()
+            .mission_id()
+            .filter(&mission.id)
+            .filter_map(|candidate| {
+                mission_candidate_is_current(ctx, &mission, &candidate)
+                    .ok()
+                    .filter(|current| *current)
+                    .map(|_| candidate)
+            })
+            .any(|candidate| {
+                candidate.hostile_group_id == hostile_group_id
+                    && candidate.resolution == resolution
+                    && candidate.capture_subject_id.as_deref() == capture_subject_id
+            });
+        if !exact_candidate {
+            return Err("Hostile resolution is not an exact current mission candidate".into());
+        }
+    }
+    if mission_id.is_none() {
+        if !matches!(
+            resolution,
+            HostileResolutionKind::DrivenOff | HostileResolutionKind::Surrendered
+        ) {
+            return Err("Pre-combat hostile resolution is unavailable for this outcome".into());
+        }
+        let party = ctx
+            .db
+            .party_authority()
+            .id()
+            .find(party_id.to_string())
+            .filter(|party| party.leader_id == observer_character_id)
+            .ok_or("Hostile resolution observer is not the party leader")?;
+        if party.current_case_site_id.as_ref() != Some(case_site_id) {
+            return Err("Party is no longer present at the hostile-group site".into());
+        }
+        let exact_capability = ctx
+            .db
+            .mission_approach_capability()
+            .observer_character_id()
+            .filter(observer_character_id)
+            .any(|capability| {
+                capability.active
+                    && capability.case_id == case_id
+                    && capability.resolution == resolution
+                    && capability.case_site_id == *case_site_id
+                    && capability.hostile_group_id == hostile_group_id
+                    && mission_approach_capability_is_pending(ctx, &capability, party_id)
+                        .unwrap_or(false)
+            });
+        let exact_approach = exact_capability
+            || generated_hostile_resolution_available(
+                ctx,
+                observer_character_id,
+                party_id,
+                &site,
+                &group,
+                resolution,
+            );
+        if !exact_approach {
+            return Err("Hostile group has no exact current contextual resolution approach".into());
+        }
+    }
+    group.disposition = match resolution {
+        HostileResolutionKind::Defeated => HostileGroupDisposition::Defeated,
+        HostileResolutionKind::DrivenOff => HostileGroupDisposition::DrivenOff,
+        HostileResolutionKind::Surrendered => HostileGroupDisposition::Surrendered,
+        HostileResolutionKind::Captured => HostileGroupDisposition::Captured,
+        HostileResolutionKind::CaptureTargetKilled => unreachable!(),
+    };
+    ctx.db.hostile_group_authority().id().update(group.clone());
+    crate::world_actor::deactivate_context_roster(ctx, &group.id);
+    match resolution {
+        HostileResolutionKind::Defeated => {
+            ingest_hostile_group_defeat_fact(ctx, receipt_id, party_id, &group, group.enemy_count)?
+        }
+        HostileResolutionKind::DrivenOff => {
+            ingest_case_outcome_fact(
+                ctx,
+                &format!("{receipt_id}:drive-off"),
+                &site.case_id,
+                party_id,
+                adventuresim_core::case::OutcomeFactKind::HostilesDrivenOff {
+                    hostile_group_id: group.id.clone(),
+                },
+            )?;
+        }
+        HostileResolutionKind::Surrendered => {
+            ingest_case_outcome_fact(
+                ctx,
+                &format!("{receipt_id}:surrender"),
+                &site.case_id,
+                party_id,
+                adventuresim_core::case::OutcomeFactKind::HostilesSurrendered {
+                    hostile_group_id: group.id.clone(),
+                },
+            )?;
+        }
+        HostileResolutionKind::Captured => {
+            let subject_id =
+                capture_subject_id.ok_or("Capture result has no mission-bound subject")?;
+            let current = ctx
+                .db
+                .case_custody()
+                .object_id()
+                .find(subject_id.to_string())
+                .ok_or("Captured subject has no custody authority")?;
+            let site = ctx
+                .db
+                .case_site_authority()
+                .id_key()
+                .find(&group.case_site_id.value)
+                .ok_or("Hostile group case site not found")?;
+            if current.case_id != site.case_id
+                || current.holder_kind != CustodyHolderKind::Site
+                || current.holder_id != group.case_site_id.value
+            {
+                return Err("Capture subject is not bound to this mission site and case".into());
+            }
+            transition_case_custody(
+                ctx,
+                &format!("{receipt_id}:capture"),
+                &current.case_id,
+                party_id,
+                CustodyObjectKind::Subject,
+                subject_id,
+                CustodyHolderKind::Party,
+                party_id,
+                current.version.saturating_add(1),
+                Some(adventuresim_core::case::OutcomeFactKind::SubjectCaptured {
+                    subject_id: adventuresim_core::case::SubjectId::new(subject_id)
+                        .map_err(|_| "Capture subject ID is invalid")?,
+                }),
+            )?;
+        }
+        HostileResolutionKind::CaptureTargetKilled => unreachable!(),
+    }
+    for mut capability in ctx
+        .db
+        .mission_approach_capability()
+        .hostile_group_id()
+        .filter(&hostile_group_id.to_string())
+        .filter(|capability| capability.case_site_id == group.case_site_id)
+        .collect::<Vec<_>>()
+    {
+        capability.active = false;
+        ctx.db.mission_approach_capability().id().update(capability);
+    }
+    finish_incident_for_hostile_group(ctx, hostile_group_id)?;
+    ctx.db
+        .hostile_resolution_receipt()
+        .insert(HostileResolutionReceipt {
+            id: receipt_id.to_string(),
+            party_id: party_id.to_string(),
+            mission_id: mission_id.map(str::to_string),
+            hostile_group_id: hostile_group_id.to_string(),
+            observer_character_id,
+            case_id: case_id.to_string(),
+            case_site_id: case_site_id.clone(),
+            resolution,
+            capture_subject_id: capture_subject_id.map(str::to_string),
+        });
+    Ok(true)
 }
 
 fn commit_hostile_battle_resolution(
@@ -813,7 +1208,7 @@ fn commit_hostile_battle_resolution(
         .db
         .outcome_source_authority()
         .id()
-        .find(&outcome_source_id.to_string())
+        .find(outcome_source_id.to_string())
     {
         return if existing.battle_id == battle_id
             && existing.party_id == party_id
@@ -831,7 +1226,7 @@ fn commit_hostile_battle_resolution(
             ctx.db
                 .hostile_group_authority()
                 .id()
-                .find(&id.to_string())
+                .find(id.to_string())
                 .ok_or_else(|| "Hostile group not found".to_string())
         })
         .transpose()?;
@@ -840,7 +1235,7 @@ fn commit_hostile_battle_resolution(
             .db
             .mission_authority()
             .id()
-            .find(&mission_id.to_string())
+            .find(mission_id.to_string())
             .ok_or("Mission authority not found")?;
         if mission.party_id != party_id || mission.hostile_group_id.as_deref() != hostile_group_id {
             return Err("Battle attribution does not match mission authority".into());
@@ -886,7 +1281,7 @@ fn commit_hostile_battle_resolution(
             .db
             .mission_authority()
             .id()
-            .find(&mission_id.to_string())
+            .find(mission_id.to_string())
             .ok_or("Mission authority not found")?;
         if let Some(ref site_id) = mission.case_site_id {
             let site = ctx
@@ -917,7 +1312,7 @@ fn commit_hostile_battle_resolution(
             ctx.db
                 .mission_authority()
                 .id()
-                .find(&id.to_string())
+                .find(id.to_string())
                 .map(|mission| {
                     let normalized = mission
                         .normalized_combat_power
@@ -978,80 +1373,42 @@ fn commit_hostile_battle_resolution(
             quantity,
         });
     }
-    if let Some(mut group) = group {
-        group.disposition = match resolution {
-            HostileResolutionKind::Defeated => HostileGroupDisposition::Defeated,
-            HostileResolutionKind::DrivenOff => HostileGroupDisposition::DrivenOff,
-            HostileResolutionKind::Captured => HostileGroupDisposition::Captured,
-            HostileResolutionKind::CaptureTargetKilled => unreachable!(),
+    if let Some(group) = group {
+        let site = ctx
+            .db
+            .case_site_authority()
+            .id_key()
+            .find(&group.case_site_id.value)
+            .ok_or("Hostile group case site not found")?;
+        let observer_character_id = if let Some(mission_id) = mission_id {
+            ctx.db
+                .mission_authority()
+                .id()
+                .find(mission_id.to_string())
+                .ok_or("Mission authority not found")?
+                .observer_character_id
+        } else {
+            ctx.db
+                .party_authority()
+                .id()
+                .find(party_id.to_string())
+                .ok_or("Party authority not found")?
+                .leader_id
         };
-        ctx.db.hostile_group_authority().id().update(group.clone());
-        crate::world_actor::deactivate_context_roster(ctx, &group.id);
-        match resolution {
-            HostileResolutionKind::Defeated => ingest_hostile_group_defeat_fact(
-                ctx,
-                outcome_source_id,
+        commit_hostile_resolution_authority(
+            ctx,
+            HostileResolutionCommit {
+                receipt_id: outcome_source_id,
                 party_id,
-                &group,
-                group.enemy_count,
-            )?,
-            HostileResolutionKind::DrivenOff => {
-                let site = ctx
-                    .db
-                    .case_site_authority()
-                    .id_key()
-                    .find(&group.case_site_id.value)
-                    .ok_or("Hostile group case site not found")?;
-                ingest_case_outcome_fact(
-                    ctx,
-                    &format!("{outcome_source_id}:drive-off"),
-                    &site.case_id,
-                    party_id,
-                    adventuresim_core::case::OutcomeFactKind::HostilesDrivenOff {
-                        hostile_group_id: group.id.clone(),
-                    },
-                )?;
-            }
-            HostileResolutionKind::Captured => {
-                let subject_id =
-                    capture_subject_id.ok_or("Capture result has no mission-bound subject")?;
-                let current = ctx
-                    .db
-                    .case_custody()
-                    .object_id()
-                    .find(&subject_id.to_string())
-                    .ok_or("Captured subject has no custody authority")?;
-                if current.case_id
-                    != ctx
-                        .db
-                        .case_site_authority()
-                        .id_key()
-                        .find(&group.case_site_id.value)
-                        .ok_or("Hostile group case site not found")?
-                        .case_id
-                    || current.holder_kind != CustodyHolderKind::Site
-                    || current.holder_id != group.case_site_id.value
-                {
-                    return Err("Capture subject is not bound to this mission site and case".into());
-                }
-                transition_case_custody(
-                    ctx,
-                    &format!("{outcome_source_id}:capture"),
-                    &current.case_id,
-                    party_id,
-                    CustodyObjectKind::Subject,
-                    subject_id,
-                    CustodyHolderKind::Party,
-                    party_id,
-                    current.version.saturating_add(1),
-                    Some(adventuresim_core::case::OutcomeFactKind::SubjectCaptured {
-                        subject_id: adventuresim_core::case::SubjectId::new(subject_id)
-                            .map_err(|_| "Capture subject ID is invalid")?,
-                    }),
-                )?;
-            }
-            HostileResolutionKind::CaptureTargetKilled => unreachable!(),
-        }
+                mission_id,
+                hostile_group_id: &group.id,
+                observer_character_id,
+                case_id: &site.case_id,
+                case_site_id: &site.id,
+                resolution,
+                capture_subject_id,
+            },
+        )?;
     }
     Ok(true)
 }
@@ -1204,6 +1561,25 @@ pub fn deposit_party_inventory_item(
     }
     if crate::character::inventory_item_is_equipped(ctx, character_id, inventory_item_id) {
         return Err("Unequip an item before depositing it".into());
+    }
+    if let Some(object) =
+        crate::inventory_container::object_for_row(ctx, "personal", inventory.id)?
+    {
+        if !physical_object_row_is_atomic(true, quantity, inventory.quantity) {
+            return Err("A physical object must be deposited as one exact inventory row".into());
+        }
+        let has_subtree = crate::inventory_container::object_is_nonempty(ctx, object.id)
+            || crate::inventory_container::object_is_nested(ctx, object.id);
+        let value = if has_subtree {
+            personal_subtree_value(ctx, object.id)?
+        } else {
+            personal_inventory_value(ctx, &inventory, quantity)?
+        };
+        crate::inventory_container::detach_if_nested(ctx, object.id)?;
+        crate::inventory_container::rehome_subtree(ctx, object.id, "party", &party_id)?;
+        credit_party_stake(ctx, &party_id, character_id, value)?;
+        crate::capability::refresh_character_capability(ctx, character_id)?;
+        return Ok(());
     }
     let medication = item_is_medication(ctx, &inventory.item_id);
     if medication && (quantity != 1 || inventory.quantity != 1) {
@@ -1454,7 +1830,21 @@ pub fn withdraw_party_inventory_item(
     if quantity == 0 || inventory.party_id != party_id || inventory.quantity < quantity {
         return Err("Invalid party inventory withdrawal".into());
     }
-    let cost = party_inventory_value(ctx, &inventory, quantity)?;
+    let container_object =
+        crate::inventory_container::object_for_row(ctx, "party", inventory.id)?;
+    let container_subtree = container_object.as_ref().is_some_and(|object|
+        crate::inventory_container::object_is_nonempty(ctx, object.id)
+            || crate::inventory_container::object_is_nested(ctx, object.id));
+    if !physical_object_row_is_atomic(
+        container_object.is_some(),
+        quantity,
+        inventory.quantity,
+    ) {
+        return Err("A physical object must be withdrawn as one exact inventory row".into());
+    }
+    let cost = if let Some(object) = container_object.as_ref().filter(|_| container_subtree) {
+        party_subtree_value(ctx, object.id)?
+    } else { party_inventory_value(ctx, &inventory, quantity)? };
     let mut stake = ctx
         .db
         .party_stake()
@@ -1469,6 +1859,12 @@ pub fn withdraw_party_inventory_item(
     if let Some(ref mut stake) = stake {
         stake.value = stake.value.saturating_sub(cost);
         ctx.db.party_stake().id().update(stake.clone());
+    }
+    if let Some(object) = container_object {
+        crate::inventory_container::detach_if_nested(ctx, object.id)?;
+        crate::inventory_container::rehome_subtree(ctx, object.id, "personal", &character_id.to_string())?;
+        crate::capability::refresh_character_capability(ctx, character_id)?;
+        return Ok(());
     }
     let durable = item_is_durable(ctx, &inventory.item_id);
     let medication = item_is_medication(ctx, &inventory.item_id);
@@ -1591,15 +1987,29 @@ pub fn liquidate_party_inventory(
         {
             return Err("Invalid party asset liquidation".into());
         }
-        let line_value = party_inventory_value(ctx, &entry, quantity)?;
+        let object = crate::inventory_container::object_for_row(ctx, "party", entry.id)?;
+        let subtree = object.as_ref().is_some_and(|object|
+            crate::inventory_container::object_is_nonempty(ctx, object.id)
+                || crate::inventory_container::object_is_nested(ctx, object.id));
+        if !physical_object_row_is_atomic(object.is_some(), quantity, entry.quantity) {
+            return Err("A physical object must be liquidated as one exact inventory row".into());
+        }
+        let line_value = if let Some(object) = object.as_ref().filter(|_| subtree) {
+            party_subtree_value(ctx, object.id)?
+        } else { party_inventory_value(ctx, &entry, quantity)? };
         proceeds = proceeds
             .checked_add(line_value)
             .ok_or("Party asset liquidation total overflow")?;
-        staged.push((entry, quantity));
+        staged.push((entry, quantity, object));
     }
     let proceeds =
         u32::try_from(proceeds).map_err(|_| "Party asset liquidation exceeds currency limits")?;
-    for (mut entry, quantity) in staged {
+    for (mut entry, quantity, object) in staged {
+        if let Some(object) = object {
+            crate::inventory_container::detach_if_nested(ctx, object.id)?;
+            crate::inventory_container::delete_subtree(ctx, object.id)?;
+            continue;
+        }
         let is_food = crate::food::party_lot(ctx, entry.id).is_some();
         if is_food {
             crate::food::remove_party_lot_quantity(ctx, entry.id, quantity, entry.quantity)?;
@@ -1656,10 +2066,19 @@ pub fn discard_inventory_items(
         if crate::character::inventory_item_is_equipped(ctx, character_id, inventory_item_id) {
             return Err("Unequip an item before discarding it".into());
         }
-        staged.push((item, quantity));
+        let object = crate::inventory_container::object_for_row(ctx, "personal", item.id)?;
+        if !physical_object_row_is_atomic(object.is_some(), quantity, item.quantity) {
+            return Err("A physical object must be discarded as one exact inventory row".into());
+        }
+        staged.push((item, quantity, object));
     }
 
-    for (mut item, quantity) in staged {
+    for (mut item, quantity, object) in staged {
+        if let Some(object) = object {
+            crate::inventory_container::detach_if_nested(ctx, object.id)?;
+            crate::inventory_container::delete_subtree(ctx, object.id)?;
+            continue;
+        }
         if item.quantity == quantity {
             ctx.db
                 .inventory_item_amount()
@@ -1884,13 +2303,13 @@ fn validate_personal_storefront_purchase(
         .db
         .settlement()
         .id()
-        .find(&settlement_id.to_string())
+        .find(settlement_id.to_string())
         .ok_or("Settlement not found")?;
     let item = ctx
         .db
         .item()
         .id()
-        .find(&item_id.to_string())
+        .find(item_id.to_string())
         .ok_or("Merchant item not found")?;
     if matches!(
         item.kind,
@@ -2155,6 +2574,12 @@ fn finalize_storefront_trade_impl(ctx: &ReducerContext, execution: StorefrontTra
     }
     let mut proceeds = 0_u64;
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
+        let container_object = crate::inventory_container::object_for_row(
+            ctx, if party_scope { "party" } else { "personal" }, *inventory_id,
+        )?;
+        let container_subtree = container_object.as_ref().is_some_and(|object|
+            crate::inventory_container::object_is_nonempty(ctx, object.id)
+                || crate::inventory_container::object_is_nested(ctx, object.id));
         let (item_id, available, food_value) = if party_scope {
             let inventory = ctx
                 .db
@@ -2193,12 +2618,22 @@ fn finalize_storefront_trade_impl(ctx: &ReducerContext, execution: StorefrontTra
         {
             return Err("Invalid merchant sale".into());
         }
+        if !physical_object_row_is_atomic(container_object.is_some(), *quantity, available) {
+            return Err("A physical object must be sold as one exact inventory row".into());
+        }
         if !party_scope
             && crate::character::inventory_item_is_equipped(ctx, character_id, *inventory_id)
         {
             return Err("Unequip an item before selling it".into());
         }
-        let line = if let Some(value) = food_value {
+        let line = if let Some(object) = container_object.as_ref().filter(|_| container_subtree) {
+            let intrinsic = if party_scope { party_subtree_value(ctx, object.id)? } else { personal_subtree_value(ctx, object.id)? };
+            let quoted = adventuresim_core::strategic_economy::language_adjusted_sell_price(
+                adventuresim_core::strategic_economy::merchant_sell_price(u32::try_from(intrinsic).map_err(|_| "Container subtree quote overflow")?),
+                shared_language,
+            );
+            u64::from(adventuresim_core::local_problem::adjust_price(quoted, -problem_effects.sell_penalty_bps))
+        } else if let Some(value) = food_value {
             if *quantity != available || !value.is_finite() || value < 0.0 {
                 return Err("Food batches must be sold as complete valid lots".into());
             }
@@ -2262,6 +2697,14 @@ fn finalize_storefront_trade_impl(ctx: &ReducerContext, execution: StorefrontTra
         return Err("Not enough coin".into());
     }
     for (inventory_id, quantity) in sell_inventory_ids.iter().zip(&sell_quantities) {
+        let object = crate::inventory_container::object_for_row(
+            ctx, if party_scope { "party" } else { "personal" }, *inventory_id,
+        )?;
+        if let Some(object) = object {
+            crate::inventory_container::detach_if_nested(ctx, object.id)?;
+            crate::inventory_container::delete_subtree(ctx, object.id)?;
+            continue;
+        }
         if party_scope {
             let mut inventory = ctx
                 .db
@@ -2459,6 +2902,11 @@ pub fn remove_party_member(
     if actor_character_id != member_character_id && party.leader_id != actor_character_id {
         return Err("Only the party leader may remove another member".into());
     }
+    crate::food::require_members_clear_current_camp_fireplace(
+        ctx,
+        &party_id,
+        &[member_character_id],
+    )?;
     if actor_character_id == party.leader_id && character.temporary {
         settle_temporary_member_stake(ctx, &party_id, member_character_id)?;
     }
@@ -2534,6 +2982,18 @@ pub fn disband_party(ctx: &ReducerContext, leader_id: u64, party_id: String) -> 
     if party.leader_id != leader_id {
         return Err("Only the party leader can disband the party".into());
     }
+    let fireplace_member_ids = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(&party_id)
+        .map(|member| member.character_id)
+        .collect::<Vec<_>>();
+    crate::food::require_members_clear_current_camp_fireplace(
+        ctx,
+        &party_id,
+        &fireplace_member_ids,
+    )?;
     if party
         .active_contract_id
         .as_ref()

@@ -1,7 +1,7 @@
 # Bestiary icon attribution
 
 These fourteen monochrome PNG masks are project-native assets generated for
-Adventure Simulator with OpenAI's image-generation tooling. They depict the
+Fabelgeist with OpenAI's image-generation tooling. They depict the
 Bestiary meta-skill and its thirteen creature-category skills.
 
 The source images were generated as white, vector-style silhouettes on a flat

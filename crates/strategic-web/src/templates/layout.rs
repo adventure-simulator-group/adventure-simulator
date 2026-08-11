@@ -21,7 +21,7 @@ pub fn entry_layout(title: &str, content: Markup) -> Markup {
 pub fn mission_layout(title: &str, content: Markup, logged_in_as: Option<&str>) -> Markup {
     let header = html! {
         header class="top-bar entry-top-bar" {
-            div class="top-bar-left" { h1 class="logo" { "Adventure Simulator" } }
+            div class="top-bar-left" { h1 class="logo" { "Fabelgeist" } }
             div class="entry-message" { "Tactical mission" }
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
@@ -75,7 +75,7 @@ pub fn strategic_notice_page(
 fn entry_top_bar_with_session(logged_in_as: Option<&str>) -> Markup {
     html! {
         header class="top-bar entry-top-bar" {
-            div class="top-bar-left" { h1 class="logo" { "Adventure Simulator" } }
+            div class="top-bar-left" { h1 class="logo" { "Fabelgeist" } }
             div class="entry-message" { "The road ahead" }
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as { span class="player-name" { strong { (name) } } }
@@ -162,7 +162,7 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
-                title { (title) " - Adventure Simulator" }
+                title { (title) " - Fabelgeist" }
 
                 link rel="stylesheet" href="/static/css/base.css?v=environment-14";
                 // Shared CSS
@@ -188,22 +188,22 @@ fn page_shell(title: &str, header: Markup, content: Markup, scripts: ScriptProfi
                     script src="/static/character-switcher.js?v=multi-character-switcher-1" defer {}
                     script src="/static/journal-tab.js?v=journal-tab-1" defer {}
                     script src="/static/numeric-editor.js?v=shared-numeric-editor-2" defer {}
-                    script src="/static/inventory-browser.js?v=coin-currencies-3-alcohol-targets-1-food-lots-4-infinite-catalog-item-yaml-editor-1" defer {}
+                    script src="/static/inventory-browser.js?v=inventory-containers-1" defer {}
                     script src="/static/party-trade.js?v=provision-party-food-1-slot-controls-1" defer {}
-                    script src="/static/cooking.js?v=trade-pot-1" defer {}
+                    script src="/static/cooking.js?v=fireplace-station-1" defer {}
                     script src="/static/herbalism.js?v=bounded-craft-1" defer {}
                     script src="/static/equipment-toggle.js?v=location-keyboard-slots-5" defer {}
                     script src="/static/party-notifications.js?v=standing-leadership-votes-5" defer {}
                 script src="/static/party-recruitment.js?v=party-recruitment-live-3" defer {}
                 script src="/static/physiology-dialog.js?v=visual-notebook-2" defer {}
                     script src="/static/service-quests.js?v=apprentice-system-1" defer {}
-                    script src="/static/dialogue-client.js?v=contextual-social-topics-1-errantry-retry-1" defer {}
+                    script src="/static/dialogue-client.js?v=fireplace-counterparty-1" defer {}
                     script src="/static/physical-evidence.js?v=deterministic-inspection-1" defer {}
-                    script src="/static/developer-quest-editor.js?v=road-encounter-demo-1" defer {}
+                    script src="/static/developer-quest-editor.js?v=scenario-gallery-1" defer {}
                     script src="/static/chat-resize.js?v=counterparty-portraits-1" defer {}
                     script src="/static/local-chat.js?v=local-chat-location-authority-1" defer {}
                     script src="/static/strategic-condition.js?v=strategic-condition-4" defer {}
-                    script src="/static/building-state.js?v=exact-place-facades-1" defer {}
+                    script src="/static/building-state.js?v=fireplace-context-2" defer {}
                     script src="/static/travel-planner.js?v=travel-rails-1" defer {}
                     script src="/static/strategic-map.js?v=population-culling-3" defer {}
                     script src="/static/rest-duration.js?v=wake-time-4" defer {}
@@ -236,7 +236,7 @@ fn entry_top_bar() -> Markup {
     html! {
         header class="top-bar entry-top-bar" {
             div class="top-bar-left" {
-                h1 class="logo" { "Adventure Simulator" }
+                h1 class="logo" { "Fabelgeist" }
             }
             div class="entry-message" { "Choose an adventurer to begin" }
             div class="top-bar-right" {}
@@ -364,47 +364,8 @@ fn settlement_top_bar(
 
             div class="top-bar-right" {
                 @if let Some(name) = logged_in_as {
-                    button type="button" class="btn btn-small developer-puzzle-demo-button"
-                        data-developer-puzzle-demo data-puzzle-kind="ordered-sigils" data-developer-only
-                        aria-label="Load the ordered sigil puzzle demo"
-                        title="Create an accepted errantry quest and open its puzzle immediately" {
-                        "Sigil puzzle"
-                    }
-                    button type="button" class="btn btn-small developer-puzzle-demo-button"
-                        data-developer-puzzle-demo data-puzzle-kind="truthful-witnesses" data-developer-only
-                        aria-label="Load the truthful witnesses puzzle demo"
-                        title="Create an accepted errantry quest and open its puzzle immediately" {
-                        "Witness puzzle"
-                    }
-                    button type="button" class="btn btn-small developer-puzzle-demo-button"
-                        data-developer-puzzle-demo data-puzzle-kind="rune-transformation" data-developer-only
-                        aria-label="Load the rune transformation puzzle demo"
-                        title="Create an accepted errantry quest and open its puzzle immediately" {
-                        "Rune puzzle"
-                    }
-                    button type="button" class="btn btn-small developer-puzzle-demo-button"
-                        data-developer-puzzle-demo data-puzzle-kind="logic-grid" data-developer-only
-                        aria-label="Load the logic-grid puzzle demo"
-                        title="Create an accepted errantry quest and open its puzzle immediately" {
-                        "Logic-grid puzzle"
-                    }
-                    button type="button" class="btn btn-small developer-puzzle-demo-button"
-                        data-developer-puzzle-demo data-puzzle-kind="resource-allocation" data-developer-only
-                        aria-label="Load the resource-allocation puzzle demo"
-                        title="Create an accepted errantry quest and open its puzzle immediately" {
-                        "Provision puzzle"
-                    }
-                    button type="button" class="btn btn-small developer-outbreak-demo-button"
-                        data-developer-outbreak-demo data-developer-only
-                        aria-label="Load the outbreak demo"
-                        title="Create a real outbreak and discover it through an ordinary rumor" {
-                        "Outbreak demo"
-                    }
-                    button type="button" class="btn btn-small developer-autopsy-demo-button"
-                        data-developer-autopsy-demo data-developer-only
-                        aria-label="Load the autopsy demo"
-                        title="Prepare this character and load autoresolve-derived demo bodies" {
-                        "Autopsy demo"
+                    a href="/developer/scenarios" class="btn btn-small" data-developer-only data-hard-navigation {
+                        "Scenario inspector"
                     }
                     button type="button" class="developer-quest-button" data-developer-quest-open
                         data-developer-only aria-label="Spawn a developer quest"
@@ -655,7 +616,7 @@ fn camp_flame_effect() -> Markup {
 fn building_tint(settlement: &str, service: &str, material: &str) -> String {
     let hash = settlement
         .bytes()
-        .chain([b':'])
+        .chain(*b":")
         .chain(service.bytes())
         .fold(0xcbf29ce484222325_u64, |hash, byte| {
             (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
@@ -675,7 +636,7 @@ fn building_tint(settlement: &str, service: &str, material: &str) -> String {
         "religion" => 11,
         _ => (hash % 12) as usize,
     };
-    let settlement_shift = ((hash >> 24) % 9) as u64;
+    let settlement_shift = (hash >> 24) % 9;
     let hue = if material == "stone" {
         [46, 198, 218, 205, 224, 252, 282, 164, 128, 68, 36, 214][service_slot] + settlement_shift
     } else {
@@ -821,6 +782,16 @@ mod tests {
     };
     use crate::spacetimedb::SettlementCategory;
     use maud::html;
+
+    #[test]
+    fn shell_and_entry_header_use_the_official_fabelgeist_name() {
+        let shell = page_shell("Chat", html! {}, html! {}, ScriptProfile::Strategic).into_string();
+        assert!(shell.contains("<title>Chat - Fabelgeist</title>"));
+
+        let entry = entry_layout("Create", html! {}).into_string();
+        assert!(entry.contains("<h1 class=\"logo\">Fabelgeist</h1>"));
+        assert!(!entry.contains("Adventure Simulator"));
+    }
 
     #[test]
     fn strategic_shell_cache_busts_exact_location_chat_authority() {
@@ -1121,8 +1092,9 @@ mod tests {
         assert!(building.contains("searchParams.get(\"building\")"));
         assert!(building.contains("searchParams.set(\"building\", building)"));
         assert!(building.contains("pathname.includes(\"/party\")"));
-        assert!(building.contains("partyInspection && buildings.has(requested)"));
-        assert!(building.contains("!buildings.has(requested) || !partyInspection"));
+        assert!(building.contains("buildingContextPath && buildings.has(requested)"));
+        assert!(building.contains("/locations\\/settlement\\/[^/]+\\/fireplace"));
+        assert!(building.contains("!buildings.has(requested) || !buildingContextPath"));
         assert!(building.contains("tab.dataset.buildingId === building"));
     }
 
@@ -1178,21 +1150,12 @@ mod tests {
         );
         assert!(markup.contains("aria-label=\"Enable developer mode\""));
         assert!(markup.contains("aria-pressed=\"false\""));
-        assert!(markup.contains("data-developer-outbreak-demo data-developer-only"));
-        assert!(markup.contains("data-developer-autopsy-demo data-developer-only"));
-        assert_eq!(markup.matches("data-developer-puzzle-demo").count(), 5);
-        for puzzle_kind in [
-            "ordered-sigils",
-            "truthful-witnesses",
-            "rune-transformation",
-            "logic-grid",
-            "resource-allocation",
-        ] {
-            assert!(
-                markup.contains(&format!("data-puzzle-kind=\"{puzzle_kind}\"")),
-                "developer header omits the {puzzle_kind} puzzle demo"
-            );
-        }
+        assert!(!markup.contains("data-developer-outbreak-demo"));
+        assert!(!markup.contains("data-developer-autopsy-demo"));
+        assert!(!markup.contains("data-developer-puzzle-demo"));
+        assert!(markup.contains("href=\"/developer/scenarios\""));
+        assert!(markup.contains("href=\"/developer/scenarios\" class=\"btn btn-small\" data-developer-only data-hard-navigation"));
+        assert!(!markup.contains("data-puzzle-kind="));
         let layout_css = include_str!("../../static/css/layout.css");
         assert!(
             layout_css.contains(

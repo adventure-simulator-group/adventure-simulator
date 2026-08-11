@@ -328,7 +328,7 @@ fn grant_generated_witness_referral(
                 "initial_rumor".to_owned(),
                 receipt.id.clone(),
                 String::new(),
-                receipt.source_resident_character_id.clone(),
+                receipt.source_resident_character_id,
                 0,
                 String::new(),
             )
@@ -367,7 +367,7 @@ fn grant_generated_witness_referral(
                 "testimony".to_owned(),
                 source_receipt_id.to_owned(),
                 source_witness.id.0.clone(),
-                source_witness.resident_character_id.clone(),
+                source_witness.resident_character_id,
                 u32::try_from(testimony_index)
                     .map_err(|_| "Testimony referral index is too large")?,
                 source_draft.proposition_id.clone(),
@@ -384,7 +384,7 @@ fn grant_generated_witness_referral(
         owner_character_id: character_id,
         canonical_case_id: generated.canonical_case_id.clone(),
         public_case_id: generated.public_case_id.clone(),
-        witness_resident_character_id: witness.resident_character_id.clone(),
+        witness_resident_character_id: witness.resident_character_id,
         expected_settlement_id: expected_settlement_id.into(),
         expected_location_id: witness.expected_location.clone(),
         grant_kind,
@@ -628,6 +628,32 @@ pub fn receive_local_problem_rumor(
     action_id: String,
 ) -> Result<(), String> {
     require_actor(ctx, character_id)?;
+    receive_local_problem_rumor_impl(ctx, character_id, receipt_id, action_id)
+}
+
+/// Capability-gated bootstrap entrypoint for development scenario characters.
+/// Bootstrap intentionally runs before the strategic gateway registers, so it
+/// cannot call the public reducer even though it materializes the same durable
+/// observer state.
+pub(crate) fn receive_local_problem_rumor_for_development_bootstrap(
+    ctx: &ReducerContext,
+    character_id: u64,
+    receipt_id: String,
+    action_id: String,
+) -> Result<(), String> {
+    if !crate::strategic::development_capability_enabled() {
+        return Err("Development scenarios are disabled in this module build".into());
+    }
+    crate::character::require_living_character(ctx, character_id)?;
+    receive_local_problem_rumor_impl(ctx, character_id, receipt_id, action_id)
+}
+
+fn receive_local_problem_rumor_impl(
+    ctx: &ReducerContext,
+    character_id: u64,
+    receipt_id: String,
+    action_id: String,
+) -> Result<(), String> {
     bounded(&receipt_id)?;
     let payload = canonical_payload(&[&receipt_id])?;
     if idempotent(ctx, &action_id, character_id, "receive_rumor", &payload)? {
@@ -670,9 +696,7 @@ pub fn receive_local_problem_rumor(
                 && witness.expected_location == receipt.expected_location_id
         })
         .ok_or("Generated rumor referral has no authoritative witness")?;
-    let referral_location_label = Some(referred_witness)
-        .map(adventuresim_core::quest_generation::referral_display_location)
-        .map(str::to_owned)
+    let referral_location_label = Some(str::to_owned(adventuresim_core::quest_generation::referral_display_location(referred_witness)))
         .filter(|label| !label.is_empty())
         .ok_or("Generated rumor referral has no player-visible tab label")?;
     grant_generated_witness_referral(
@@ -988,17 +1012,16 @@ pub(crate) fn persist_generated_testimony(
     if validated_authority.manifest != *generated {
         return Err("Generated testimony manifest does not match private authority".into());
     }
-    if let Some(texts) = presentation_texts {
-        if texts.len() != witness.testimony.len()
+    if let Some(texts) = presentation_texts
+        && (texts.len() != witness.testimony.len()
             || texts.iter().any(|text| {
                 text.is_empty()
                     || text.chars().count() > 1_024
                     || text.chars().any(char::is_control)
-            })
+            }))
         {
             return Err("Generated testimony presentation text is invalid".into());
         }
-    }
     for draft in &projection_plan {
         let site = draft
             .site_id
@@ -1525,11 +1548,9 @@ pub fn discover_investigation_lead(
 }
 
 fn same_place(ctx: &ReducerContext, left: &crate::Character, right: &crate::Character) -> bool {
-    let left_site = character_case_site_id(ctx, left.id);
-    let right_site = character_case_site_id(ctx, right.id);
     (left.current_settlement_id.is_some()
         && left.current_settlement_id == right.current_settlement_id)
-        || (left_site.is_some() && left_site == right_site)
+        || crate::world_actor::characters_are_contextually_present(ctx, left.id, right.id)
 }
 
 #[reducer]

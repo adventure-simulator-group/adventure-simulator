@@ -77,9 +77,95 @@ impl LiveRunner {
             .sum()
     }
 
-    fn public_stack_weight_kg(&self, item_id: &str, quantity: u32) -> f32 {
-        self.item_definition(item_id)
-            .map_or(0.0, |item| item.weight.max(0.0) * quantity as f32)
+    fn public_object_root_matches(&self, object_id: u64, kind: &str, owner: &str) -> bool {
+        let mut cursor = object_id;
+        let mut visited = HashSet::new();
+        for _ in 0..=adventuresim_core::inventory_containers::MAX_CONTAINER_DEPTH {
+            if !visited.insert(cursor) {
+                return false;
+            }
+            let Some(object) = self
+                .connection
+                .db
+                .inventory_object()
+                .iter()
+                .find(|object| object.id == cursor)
+            else {
+                return false;
+            };
+            if object.location_kind != kind || object.location_owner != owner {
+                return false;
+            }
+            let parent = self
+                .connection
+                .db
+                .inventory_containment()
+                .iter()
+                .find(|edge| edge.child_object_id == cursor)
+                .map(|edge| edge.parent_object_id);
+            let Some(parent) = parent else {
+                return true;
+            };
+            cursor = parent;
+        }
+        false
+    }
+
+    fn public_row_is_carried(&self, kind: &str, owner: &str, row_id: u64) -> bool {
+        let objects = self
+            .connection
+            .db
+            .inventory_object()
+            .iter()
+            .filter(|object| object.location_kind == kind && object.inventory_row_id == row_id)
+            .collect::<Vec<_>>();
+        match objects.as_slice() {
+            [] => true,
+            [object] => self.public_object_root_matches(object.id, kind, owner),
+            _ => false,
+        }
+    }
+
+    fn public_measured_stack_weight_kg(
+        &self,
+        kind: &str,
+        row_id: u64,
+        item_id: &str,
+        quantity: u32,
+    ) -> f32 {
+        let remaining = match kind {
+            "personal" => self
+                .connection
+                .db
+                .inventory_item_amount()
+                .iter()
+                .find(|amount| amount.inventory_item_id == row_id)
+                .map(|amount| amount.remaining_milliunits),
+            "party" => self
+                .connection
+                .db
+                .party_item_amount()
+                .iter()
+                .find(|amount| amount.party_inventory_item_id == row_id)
+                .map(|amount| amount.remaining_milliunits),
+            _ => None,
+        };
+        self.item_definition(item_id).map_or(0.0, |item| {
+            item.weight.max(0.0) * public_effective_inventory_quantity(quantity, remaining)
+        })
+    }
+
+    fn public_contained_water_ml(&self, kind: &str, owner: &str) -> f32 {
+        self.connection
+            .db
+            .container_liquid()
+            .iter()
+            .filter(|liquid| liquid.liquid_item_id == "water")
+            .filter(|liquid| {
+                self.public_object_root_matches(liquid.container_object_id, kind, owner)
+            })
+            .map(|liquid| liquid.water_ml as f32)
+            .sum()
     }
 
     fn public_personal_load_kg(&self, character_id: u64) -> f32 {
@@ -95,7 +181,14 @@ impl LiveRunner {
             .db
             .inventory_item()
             .iter()
-            .filter(|row| row.character_id == character_id)
+            .filter(|row| {
+                row.character_id == character_id
+                    && self.public_row_is_carried(
+                        "personal",
+                        &character_id.to_string(),
+                        row.id,
+                    )
+            })
             .map(|row| {
                 self.connection
                     .db
@@ -103,7 +196,14 @@ impl LiveRunner {
                     .iter()
                     .find(|lot| lot.inventory_item_id == Some(row.id))
                     .map_or_else(
-                        || self.public_stack_weight_kg(&row.item_id, row.quantity),
+                        || {
+                            self.public_measured_stack_weight_kg(
+                                "personal",
+                                row.id,
+                                &row.item_id,
+                                row.quantity,
+                            )
+                        },
                         |lot| lot.mass_kg.max(0.0),
                     )
             })
@@ -112,7 +212,9 @@ impl LiveRunner {
         // plus carried water. A character's own body mass is combat data, not
         // cargo, and including it creates a false overweight feedback loop
         // when a staggered condition temporarily halves carrying capacity.
-        water_weight + inventory_weight
+        water_weight
+            + inventory_weight
+            + self.public_contained_water_ml("personal", &character_id.to_string()) / 1_000.0
     }
 
     fn public_character_capacity_kg(&self, character_id: u64) -> f32 {
@@ -164,7 +266,10 @@ impl LiveRunner {
             .db
             .party_inventory_item()
             .iter()
-            .filter(|row| row.party_id == party_id)
+            .filter(|row| {
+                row.party_id == party_id
+                    && self.public_row_is_carried("party", party_id, row.id)
+            })
             .map(|row| {
                 self.connection
                     .db
@@ -172,7 +277,14 @@ impl LiveRunner {
                     .iter()
                     .find(|lot| lot.party_inventory_item_id == Some(row.id))
                     .map_or_else(
-                        || self.public_stack_weight_kg(&row.item_id, row.quantity),
+                        || {
+                            self.public_measured_stack_weight_kg(
+                                "party",
+                                row.id,
+                                &row.item_id,
+                                row.quantity,
+                            )
+                        },
                         |lot| lot.mass_kg.max(0.0),
                     )
             })
@@ -181,7 +293,9 @@ impl LiveRunner {
             .iter()
             .map(|id| self.public_character_capacity_kg(*id))
             .sum::<f32>();
-        let load = personal_load + pooled_load;
+        let load = personal_load
+            + pooled_load
+            + self.public_contained_water_ml("party", party_id) / 1_000.0;
         (
             load,
             capacity,
@@ -394,7 +508,15 @@ impl LiveRunner {
                     .settlement_resident_presence()
                     .iter()
                     .find(|presence| presence.character_id == npc.character_id)
-                    .map(|presence| (npc.character_id, presence.start_minute, presence.end_minute))
+                    .map(|presence| {
+                        (
+                            npc.character_id,
+                            presence.start_minute,
+                            presence.end_minute,
+                            presence.context_suppressed,
+                            presence.health_suppressed,
+                        )
+                    })
             })
             .collect::<Vec<_>>();
         visible_unique_default_provider(&providers, minute)
@@ -509,6 +631,22 @@ impl LiveRunner {
         Ok(true)
     }
 
+    fn tent_provider_unavailable_bivouac(
+        &mut self,
+        event_agent: u32,
+    ) -> DepartureReadiness {
+        self.metrics.tent_provider_unavailable_bivouac_departures = self
+            .metrics
+            .tent_provider_unavailable_bivouac_departures
+            .saturating_add(1);
+        self.event(
+            event_agent,
+            CoreLoopEventKind::QuestDecision,
+            "survival_readiness=tent_provider_unavailable_bivouac;shelter=bivouac;provenance=provider_unavailable",
+        );
+        DepartureReadiness::Ready
+    }
+
     fn ensure_party_tent(
         &mut self,
         party_id: &str,
@@ -566,16 +704,7 @@ impl LiveRunner {
                         self.public_general_storefront_exists(character_id, settlement_id)
                     });
             if !public_provider_exists {
-                self.metrics.tent_provider_unavailable_bivouac_departures = self
-                    .metrics
-                    .tent_provider_unavailable_bivouac_departures
-                    .saturating_add(1);
-                self.event(
-                    event_agent,
-                    CoreLoopEventKind::QuestDecision,
-                    "survival_readiness=tent_provider_unavailable_bivouac;shelter=bivouac",
-                );
-                return Ok(DepartureReadiness::Ready);
+                return Ok(self.tent_provider_unavailable_bivouac(event_agent));
             }
             return Ok(DepartureReadiness::Deferred("party_tent_quote_unavailable"));
         };
@@ -595,7 +724,12 @@ impl LiveRunner {
                 true,
                 cb,
             ));
-        self.call(result)?;
+        if let Err(error) = result {
+            if merchant_provider_unavailable_failure(&error) {
+                return Ok(self.tent_provider_unavailable_bivouac(event_agent));
+            }
+            return self.call(Err(error)).map(|_| DepartureReadiness::Ready);
+        }
         let after_party_coin = self
             .connection
             .db
@@ -710,7 +844,18 @@ impl LiveRunner {
                     false,
                     cb,
                 ));
-            self.call(result)?;
+            if let Err(error) = result {
+                if merchant_provider_unavailable_failure(&error) {
+                    self.metrics.ammunition_shortage_suppressions = self
+                        .metrics
+                        .ammunition_shortage_suppressions
+                        .saturating_add(1);
+                    return Ok(DepartureReadiness::Deferred(
+                        "ammunition_provider_projection_unavailable",
+                    ));
+                }
+                return self.call(Err(error)).map(|_| DepartureReadiness::Ready);
+            }
             let after_quantity =
                 self.personal_item_quantity(character_id, RANGED_AMMUNITION_ITEM_ID);
             if after_quantity < RANGED_AMMUNITION_FLOOR {
@@ -796,7 +941,7 @@ impl LiveRunner {
                 .copied()
                 .collect::<HashSet<_>>()
                 .len();
-            layers.extend(std::iter::repeat((item.padding, item.coverage)).take(protected_regions));
+            layers.extend(std::iter::repeat_n((item.padding, item.coverage), protected_regions));
         }
         Some(adventuresim_core::survival::insulation_from_layers(layers))
     }
@@ -955,6 +1100,10 @@ impl LiveRunner {
             };
             let mut candidate_projection_unavailable = false;
             let mut candidate_complete_projection = false;
+            let mut complete_candidate_count = 0_u32;
+            let mut thermally_safe_complete_candidate_count = 0_u32;
+            let mut candidate_fatigue_unsafe = false;
+            let mut candidate_site_mismatch = false;
             let mut selected_case_site_plan = None;
             let Some(selected_action) = select_generated_travel_action(
                 profile,
@@ -977,6 +1126,21 @@ impl LiveRunner {
                             let plan_safe = (|| {
                                 let candidate_start =
                                     starting_minute.saturating_add(candidate_wait);
+                                // A delayed candidate is only authority to wait in a real
+                                // settlement, never authority to depart. Evaluate its weather
+                                // window from a recovered public baseline; the actual bounded
+                                // rest and same-turn revalidation must still succeed first.
+                                let candidate_itinerary_members = itinerary_members
+                                    .iter()
+                                    .map(|member| adventuresim_core::strategic_time::ItineraryMember {
+                                        calories_used: if candidate_wait == 0 {
+                                            member.calories_used
+                                        } else {
+                                            0.0
+                                        },
+                                        ..*member
+                                    })
+                                    .collect::<Vec<_>>();
                                 if !adventuresim_core::strategic_time::is_walking_time(
                                     candidate_start,
                                     candidate_walking_minutes,
@@ -992,7 +1156,7 @@ impl LiveRunner {
                                         candidate_walking_minutes,
                                         candidate_travel_at_night,
                                         camp_policy,
-                                        &itinerary_members,
+                                        &candidate_itinerary_members,
                                     )
                                 else {
                                     candidate_projection_unavailable = true;
@@ -1008,7 +1172,7 @@ impl LiveRunner {
                                     candidate_projection_unavailable = true;
                                     return false;
                                 }
-                                let candidate_return_members = itinerary_members
+                                let candidate_return_members = candidate_itinerary_members
                                     .iter()
                                     .enumerate()
                                     .map(|(member_index, member)| {
@@ -1045,15 +1209,18 @@ impl LiveRunner {
                                     return false;
                                 }
                                 if action.required_case_site_id != pin.case_site_id {
+                                    candidate_site_mismatch = true;
                                     return false;
                                 }
                                 let mut projection_available = true;
                                 let mut minimum_insulation_bps = u16::MAX;
+                                let mut candidate_thermal_safe = true;
+                                let mut candidate_fatigue_safe = true;
                                 let action_survivable = member_ids
                                     .iter()
-                                    .zip(&itinerary_members)
+                                    .zip(&candidate_itinerary_members)
                                     .enumerate()
-                                    .all(|(member_index, (character_id, member))| {
+                                    .fold(true, |all_safe, (member_index, (character_id, member))| {
                                         let condition = self
                                             .connection
                                             .db
@@ -1072,12 +1239,15 @@ impl LiveRunner {
                                         };
                                         minimum_insulation_bps =
                                             minimum_insulation_bps.min(insulation_bps);
-                                        let starting_state =
+                                        let starting_state = if candidate_wait == 0 {
                                             adventuresim_core::survival::SurvivalState {
                                                 wetness_bps: condition.wetness_bps,
                                                 thermal_strain: condition.thermal_strain,
                                                 frostbite_progress_minutes: 0,
-                                            };
+                                            }
+                                        } else {
+                                            adventuresim_core::survival::SurvivalState::default()
+                                        };
                                         let Some(thermal_safe) = projected_round_trip_thermal_safe(
                                             candidate_start,
                                             &candidate_outbound,
@@ -1103,7 +1273,7 @@ impl LiveRunner {
                                                 outbound_calories,
                                                 member.fatigue_capacity,
                                             );
-                                        projected_itinerary_survivable(
+                                        let fatigue_safe = projected_itinerary_survivable(
                                             nonfatigue_incapacitation,
                                             &candidate_outbound,
                                             member_index,
@@ -1120,16 +1290,19 @@ impl LiveRunner {
                                             && projected_itinerary_survivable(
                                                 nonfatigue_incapacitation,
                                                 &candidate_return,
-                                                member_index,
-                                                member.fatigue_capacity,
-                                            )
-                                            && thermal_safe
+                                            member_index,
+                                            member.fatigue_capacity,
+                                            );
+                                        candidate_thermal_safe &= thermal_safe;
+                                        candidate_fatigue_safe &= fatigue_safe;
+                                        candidate_fatigue_unsafe |= !fatigue_safe;
+                                        all_safe && fatigue_safe && thermal_safe
                                     });
                                 if allow_case_site_recovery
                                     && projection_available
                                     && !action_survivable
                                 {
-                                    let arrival_members = itinerary_members
+                                    let arrival_members = candidate_itinerary_members
                                         .iter()
                                         .enumerate()
                                         .map(|(member_index, member)| {
@@ -1279,6 +1452,14 @@ impl LiveRunner {
                                 }
                                 candidate_projection_unavailable |= !projection_available;
                                 candidate_complete_projection |= projection_available;
+                                if projection_available {
+                                    complete_candidate_count = complete_candidate_count.saturating_add(1);
+                                    if candidate_thermal_safe {
+                                        thermally_safe_complete_candidate_count =
+                                            thermally_safe_complete_candidate_count.saturating_add(1);
+                                    }
+                                    candidate_fatigue_unsafe |= !candidate_fatigue_safe;
+                                }
                                 if projection_available && action_survivable {
                                     accepted_plan = Some(SelectedCaseSitePlan {
                                         walking_minutes_per_day: candidate_walking_minutes,
@@ -1305,10 +1486,65 @@ impl LiveRunner {
                     }
                 },
             ) else {
-                return DepartureReadiness::Deferred(joint_case_site_plan_failure_reason(
-                    candidate_complete_projection,
+                let reason = joint_case_site_plan_failure_reason(
+                    complete_candidate_count,
+                    thermally_safe_complete_candidate_count,
                     candidate_projection_unavailable,
-                ));
+                    candidate_fatigue_unsafe,
+                    candidate_site_mismatch,
+                );
+                let recovery_minutes =
+                    adventuresim_core::strategic_time::common_fatigue_clear_minutes(
+                        &itinerary_members,
+                    );
+                let settlement_economy = party.current_settlement_id.as_deref().and_then(|id| {
+                    self.connection
+                        .db
+                        .settlement()
+                        .iter()
+                        .find(|settlement| settlement.id == id)
+                        .map(|settlement| settlement.economy.clone())
+                });
+                let public_clothing_storefront = settlement_economy.as_ref().is_some_and(|economy| {
+                    public_storefront_available(
+                        economy,
+                        adventuresim_core::settlement_economy::Storefront::Clothing,
+                    )
+                });
+                let public_armor_storefront = settlement_economy.as_ref().is_some_and(|economy| {
+                    public_storefront_available(
+                        economy,
+                        adventuresim_core::settlement_economy::Storefront::Armor,
+                    )
+                });
+                let observed_minimum_insulation_bps = member_ids
+                    .iter()
+                    .filter_map(|character_id| self.public_equipped_insulation_bps(*character_id))
+                    .min()
+                    .unwrap_or(0);
+                self.event(
+                    leader_agent,
+                    CoreLoopEventKind::QuestSuppressed,
+                    format!(
+                        "case={};reason={reason};movement_minutes={movement_minutes};candidate_actions={};complete_projection={candidate_complete_projection};complete_candidate_count={complete_candidate_count};thermally_safe_complete_candidate_count={thermally_safe_complete_candidate_count};projection_unavailable={candidate_projection_unavailable};fatigue_unsafe={candidate_fatigue_unsafe};site_mismatch={candidate_site_mismatch};fatigue_clear_minutes={recovery_minutes};minimum_insulation_bps={};maximum_insulation_bps={};public_clothing_storefront={public_clothing_storefront};public_armor_storefront={public_armor_storefront};safe_window_horizon_minutes={MAX_CASE_SITE_SAFE_WINDOW_SEARCH_MINUTES}",
+                        bounded_event_field(&pin.case_id),
+                        projected_actions.len().min(32),
+                        observed_minimum_insulation_bps,
+                        adventuresim_core::survival::MAX_CLOTHING_INSULATION_BPS,
+                    ),
+                );
+                if reason == "route_fatigue_recovery_required"
+                    && (60..=1_440).contains(&recovery_minutes)
+                {
+                    return DepartureReadiness::WaitForSafeDeparture {
+                        reason,
+                        wait_minutes: recovery_minutes,
+                        walking_minutes_per_day: party.walking_minutes_per_day,
+                        travel_at_night: party.travel_at_night,
+                        case_site_recovery_minutes: 0,
+                    };
+                }
+                return DepartureReadiness::Deferred(reason);
             };
             if selected_action.required_case_site_id != pin.case_site_id {
                 return DepartureReadiness::Deferred("route_weather_projection_unavailable");
@@ -1337,8 +1573,14 @@ impl LiveRunner {
                     case_site_recovery_minutes: selected_plan.case_site_recovery_minutes,
                 }
             } else {
+                let wait_minutes = selected_plan.departure_wait_minutes.min(1_440);
                 DepartureReadiness::WaitForSafeDeparture {
-                    wait_minutes: selected_plan.departure_wait_minutes,
+                    reason: if selected_plan.departure_wait_minutes > 1_440 {
+                        "wait_toward_safe_public_route_window"
+                    } else {
+                        "safe_public_route_window"
+                    },
+                    wait_minutes,
                     walking_minutes_per_day: selected_plan.walking_minutes_per_day,
                     travel_at_night: selected_plan.travel_at_night,
                     case_site_recovery_minutes: selected_plan.case_site_recovery_minutes,
@@ -1611,6 +1853,7 @@ impl LiveRunner {
             );
             if let Some(wait_minutes) = wait_minutes {
                 return DepartureReadiness::WaitForSafeDeparture {
+                    reason: "safe_public_route_window",
                     wait_minutes,
                     walking_minutes_per_day: planned_walking_minutes,
                     travel_at_night: planned_travel_at_night,
@@ -2209,7 +2452,7 @@ impl LiveRunner {
         let result = reducer_call!(self, operation, |cb| self
             .connection
             .reducers
-            .rest_at_camp_then(character_id, minutes, shelter.clone(), cb));
+            .rest_at_camp_then(character_id, minutes, shelter, cb));
         match self.call(result) {
             Ok(()) => {
                 if matches!(shelter, FieldShelter::Tent) {

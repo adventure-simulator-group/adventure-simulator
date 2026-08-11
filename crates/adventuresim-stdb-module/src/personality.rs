@@ -710,28 +710,28 @@ pub fn random_personality(
     for axis in axes.into_iter().take(count) {
         match axis {
             0 => {
-                result.nerve = if random() % 2 == 0 {
+                result.nerve = if random().is_multiple_of(2) {
                     Nerve::Brave
                 } else {
                     Nerve::Fearful
                 }
             }
             1 => {
-                result.drive = if random() % 2 == 0 {
+                result.drive = if random().is_multiple_of(2) {
                     Drive::Ambitious
                 } else {
                     Drive::Content
                 }
             }
             2 => {
-                result.outlook = if random() % 2 == 0 {
+                result.outlook = if random().is_multiple_of(2) {
                     Outlook::Sanguine
                 } else {
                     Outlook::Brooding
                 }
             }
             3 => {
-                result.sociability = if random() % 2 == 0 {
+                result.sociability = if random().is_multiple_of(2) {
                     Sociability::Gregarious
                 } else {
                     Sociability::Solitary
@@ -745,56 +745,56 @@ pub fn random_personality(
                 }
             }
             5 => {
-                result.self_regard = if random() % 2 == 0 {
+                result.self_regard = if random().is_multiple_of(2) {
                     SelfRegard::Proud
                 } else {
                     SelfRegard::Humble
                 }
             }
             6 => {
-                result.conviction = if random() % 2 == 0 {
+                result.conviction = if random().is_multiple_of(2) {
                     Conviction::Zealous
                 } else {
                     Conviction::Irreverent
                 }
             }
             7 => {
-                result.hygiene = if random() % 2 == 0 {
+                result.hygiene = if random().is_multiple_of(2) {
                     Hygiene::Slovenly
                 } else {
                     Hygiene::Cleanly
                 }
             }
             8 => {
-                result.temperance = if random() % 2 == 0 {
+                result.temperance = if random().is_multiple_of(2) {
                     Temperance::Temperate
                 } else {
                     Temperance::Drunkard
                 }
             }
             9 => {
-                result.mirth = if random() % 2 == 0 {
+                result.mirth = if random().is_multiple_of(2) {
                     Mirth::Merry
                 } else {
                     Mirth::Grave
                 }
             }
             10 => {
-                result.courtship = if random() % 2 == 0 {
+                result.courtship = if random().is_multiple_of(2) {
                     Courtship::Amorous
                 } else {
                     Courtship::Proper
                 }
             }
             11 => {
-                result.transparency = if random() % 2 == 0 {
+                result.transparency = if random().is_multiple_of(2) {
                     Transparency::Open
                 } else {
                     Transparency::Guarded
                 }
             }
             _ => {
-                result.self_knowledge = if random() % 2 == 0 {
+                result.self_knowledge = if random().is_multiple_of(2) {
                     SelfKnowledge::Introspective
                 } else {
                     SelfKnowledge::SelfDeceiving
@@ -802,7 +802,7 @@ pub fn random_personality(
             }
         }
     }
-    result.sex = if random() % 2 == 0 {
+    result.sex = if random().is_multiple_of(2) {
         Sex::Female
     } else {
         Sex::Male
@@ -898,17 +898,7 @@ pub fn initialize_personality(ctx: &ReducerContext, character_id: u64, npc: bool
 
 pub fn assign_random_personality(ctx: &ReducerContext, character_id: u64) {
     let row = random_personality(character_id, || ctx.random());
-    if ctx
-        .db
-        .character_personality()
-        .character_id()
-        .find(character_id)
-        .is_some()
-    {
-        reset_personality_from_visible(ctx, row);
-    } else {
-        reset_personality_from_visible(ctx, row);
-    }
+    reset_personality_from_visible(ctx, row);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

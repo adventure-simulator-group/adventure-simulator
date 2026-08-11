@@ -26,6 +26,17 @@ pub struct ConnectedPlayer {
     pub enemy_combat_scale_bps: u32,
     pub countermeasure_multiplier_bps: u32,
     pub party_has_surprise: bool,
+    pub body_weight_kg: f32,
+    pub current_blood_ml: f32,
+    pub maximum_blood_ml: f32,
+    pub strategic_incapacitation: f32,
+    pub strategic_pain: f32,
+    pub strategic_blood_loss: f32,
+    pub strategic_fear: f32,
+    pub strategic_fatigue: f32,
+    pub strategic_hunger: f32,
+    pub strategic_thirst: f32,
+    pub strategic_thermal: f32,
 }
 
 impl __sdk::InModule for ConnectedPlayer {
@@ -47,6 +58,17 @@ pub struct ConnectedPlayerCols {
     pub enemy_combat_scale_bps: __sdk::__query_builder::Col<ConnectedPlayer, u32>,
     pub countermeasure_multiplier_bps: __sdk::__query_builder::Col<ConnectedPlayer, u32>,
     pub party_has_surprise: __sdk::__query_builder::Col<ConnectedPlayer, bool>,
+    pub body_weight_kg: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub current_blood_ml: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub maximum_blood_ml: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_incapacitation: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_pain: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_blood_loss: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_fear: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_fatigue: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_hunger: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_thirst: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
+    pub strategic_thermal: __sdk::__query_builder::Col<ConnectedPlayer, f32>,
 }
 
 impl __sdk::__query_builder::HasCols for ConnectedPlayer {
@@ -70,6 +92,23 @@ impl __sdk::__query_builder::HasCols for ConnectedPlayer {
                 "countermeasure_multiplier_bps",
             ),
             party_has_surprise: __sdk::__query_builder::Col::new(table_name, "party_has_surprise"),
+            body_weight_kg: __sdk::__query_builder::Col::new(table_name, "body_weight_kg"),
+            current_blood_ml: __sdk::__query_builder::Col::new(table_name, "current_blood_ml"),
+            maximum_blood_ml: __sdk::__query_builder::Col::new(table_name, "maximum_blood_ml"),
+            strategic_incapacitation: __sdk::__query_builder::Col::new(
+                table_name,
+                "strategic_incapacitation",
+            ),
+            strategic_pain: __sdk::__query_builder::Col::new(table_name, "strategic_pain"),
+            strategic_blood_loss: __sdk::__query_builder::Col::new(
+                table_name,
+                "strategic_blood_loss",
+            ),
+            strategic_fear: __sdk::__query_builder::Col::new(table_name, "strategic_fear"),
+            strategic_fatigue: __sdk::__query_builder::Col::new(table_name, "strategic_fatigue"),
+            strategic_hunger: __sdk::__query_builder::Col::new(table_name, "strategic_hunger"),
+            strategic_thirst: __sdk::__query_builder::Col::new(table_name, "strategic_thirst"),
+            strategic_thermal: __sdk::__query_builder::Col::new(table_name, "strategic_thermal"),
         }
     }
 }

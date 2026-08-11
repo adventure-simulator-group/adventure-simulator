@@ -121,6 +121,9 @@ pub enum ObjectiveRequirement {
     DriveOff {
         hostile_group_id: String,
     },
+    Surrender {
+        hostile_group_id: String,
+    },
     Capture {
         subject_id: SubjectId,
     },
@@ -203,6 +206,9 @@ pub enum OutcomeFactKind {
         count: u32,
     },
     HostilesDrivenOff {
+        hostile_group_id: String,
+    },
+    HostilesSurrendered {
         hostile_group_id: String,
     },
     SubjectCaptured {
@@ -422,6 +428,14 @@ fn match_fact(requirement: &ObjectiveRequirement, fact: &OutcomeFactKind) -> Opt
                 hostile_group_id: a,
             },
             F::HostilesDrivenOff {
+                hostile_group_id: b,
+            },
+        ) if a == b => true,
+        (
+            R::Surrender {
+                hostile_group_id: a,
+            },
+            F::HostilesSurrendered {
                 hostile_group_id: b,
             },
         ) if a == b => true,

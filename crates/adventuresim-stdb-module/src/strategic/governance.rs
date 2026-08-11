@@ -429,7 +429,7 @@ pub(crate) fn normalize_and_elect_party_leader(
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party not found")?;
     let living = living_party_member_ids(ctx, party_id);
     if living.is_empty() {
@@ -758,7 +758,7 @@ pub(crate) fn attach_seeded_party_member(
         ctx,
         member_id,
         crate::investigation::character_case_site_id(ctx, leader_id),
-    );
+    )?;
     crate::social::reset_familiarity_after_join(ctx, member_id);
     ctx.db.party_member().insert(PartyMember {
         id: 0,
@@ -1551,7 +1551,7 @@ pub fn accept_party_join_request(
                 ctx,
                 member.character_id,
                 party.current_case_site_id.clone().map(|id| id.value),
-            );
+            )?;
             crate::social::reset_familiarity_after_join(ctx, member.character_id);
         }
     }

@@ -12,6 +12,88 @@ field changes real-time behavior; tactical enemy state remains transient.
 ## Attacking
 When the player clicks the [Attack button](../client/controls.md#direct-controls), initiating an attack animation, we run a shapecast in front of the player character. If there is an intersection between the attacker's hitreg and some other actor's hitbox, we calculate [input precision](../client/controls.md#direct-controls). Then comes the skill check algorithm.
 
+Client melee requests and server-controlled melee AI feed one internal server
+attack-intent path. Each melee weapon declares a preferred slash or stab and
+separate swing and stab precision terms; the selected animation family selects
+the matching combat term. Unarmed fists are a stab-preferring melee fallback.
+Client-reported input precision is preserved: reproducing
+full animation and secondary physics on the headless server is not an intended
+authority boundary, while character and equipment statistics still bound the
+combat calculation.
+
+Client windup start and completion are variants of one mapped ordered melee
+action protocol, so completion cannot overtake start on a separate event
+stream. An observed windup expires one second after it becomes ready, bounding
+delayed or replayed completions.
+
+The variants carry only valid data: `Start` has no completion sentinels, melee
+`Complete` always carries a target, body part, and reported precision, while
+ranged completion is either `CompleteMiss` or `CompleteHit`. Finite precision
+is converted to a trusted boundary type and timing to duration-backed authority
+types before combat mutation.
+
+### Current offensive AI
+
+Each AI melee combatant has an explicit Party or Enemy allegiance and chooses
+the nearest opposing combatant, breaking exact distance ties by stable Bevy
+entity identity. It faces that target, walks directly toward it using the
+normal character-controller input, stops once the target is within the shared
+body-and-arms plus equipped-weapon interaction range, and attacks after a
+server-owned windup followed by a cooldown.
+Its provisional deterministic attack aims at the chest with full input
+precision. Targeted AI windups notify only their intended defender; because
+the existing client windup message does not yet identify a target, that legacy
+path offers a defensive reaction only to the nearest opposing AI instead of
+every frontal AI.
+
+Before resolution, the headless server rejects self or friendly attacks,
+missing allegiance or combat state, incapacitated participants, non-finite
+precision, invalid weapon state, attacks beyond shared interaction range plus a
+small 0.25-meter network-motion allowance, requests outside a fresh
+server-observed windup/cooldown, and blocked authoritative physics line of
+sight. Cheap state, timing, and range checks run before the physics cast. Finite
+client-reported precision remains trusted rather than reconstructed.
+
+Accepted contacts clamp damage against the targeted limb's remaining health
+and accumulate blood loss and imbalance. Incapacitation is the shared
+autoresolve sum of projected strategic starting condition, pain, blood loss,
+and temporary imbalance. Tactical enrollment carries authoritative body weight,
+blood volume, and strategic condition inputs; pain and blood are recomputed in
+combat instead of double-counted. Balance skill recovers imbalance continuously.
+An actor over the threshold stops moving, attacking, defending, and being
+selected by offensive AI; an imbalance-only incapacitation can recover and
+return the actor to combat. Limb and live combat-state replication provide
+basic client feedback, but all of this remains transient server memory.
+Every consumer derives readiness from the one numeric incapacitation value;
+there is no parallel boolean or server marker for AI and authority to observe
+differently.
+
+An enemy's first transition into incapacitation counts as its defeat, even if
+temporary imbalance later lets it recover. The server immediately ends the
+mission as `Defeated` after all required enemies have been defeated, or as
+`Failed` after all loaded Party combatants are incapacitated. Simultaneous
+defeat is a failure. Strategic authority binds the expected living Party size;
+the decision waits until every expected adventurer has loaded at least once,
+no player is still loading, and all required enemies are loaded. After that
+enrollment begins, an empty Party has a ten-second reconnection grace before the
+mission fails as abandoned, even if everyone disconnects before the seal. A
+timeout-disabled development server where nobody ever joins stays available.
+Terminal submission freezes the decided result and retries synchronous failures
+at one-second intervals before reevaluating combat, commits only after successful
+submission, and does not depend on the optional mission timeout; a configured
+timeout is only a bounded failure fallback.
+
+This remains an iteration harness without terrain/obstacle pathfinding, but
+offensive AI can pursue and attack with melee or ranged equipment. Accepted
+attacks accumulate clamped Party injury, blood, and ammunition consequences.
+The tactical consequence receipt introduced in stacked branch 4 also supplies
+durable equipment-wear provenance: presentation never infers contact from
+animations. Instead, the server records bounded contact stress against the
+actual attacker weapon, parry shield, or contacted armor inventory item. The
+frozen receipt is strictly bounded and validated by strategic authority before
+injuries, blood, capability, filth, ammunition, equipment wear, and defeat
+morale commit transactionally; invalid receipts remain retryable.
+
 ### Skill check algorithm
 Broadly speaking, the flow goes like this:
 1. Calculate accuracy based on:
@@ -21,7 +103,7 @@ Broadly speaking, the flow goes like this:
 	2. Multiply by weapon term (small knife: 2.0, long hammer: 0.5)
 	3. Multiply final value by [input precision](../client/controls.md)
 
-The weapon term also provides the strategic recruitment **weapon precision** scale. The current discrete recommendations are 0.5 for clubs and hammers, 1.0 for axes, 1.5 for ordinary swords and spears, and 2.0 for purpose-built precise weapons such as rapiers or bodkin ammunition. Damage type is not a recruitment role: slash, pierce, and blunt weapons are compared through this single precision scale instead.
+For melee weapons, the weapon term is selected from separate **swing precision** and **stab precision** values. Edges and impact faces generally have swing precision at or below 0.5, while points can be substantially more exact. The catalog's war hammer is the unusual high-swing-precision example because its compact four-sided beak concentrates a swung attack on a small target. Ranged weapons retain their single accuracy term. Damage type is not a recruitment role.
 2. calculate `dodge_defense`:
 	1. Calculate `armor_dodge_term` from their armor.
 		1. This isn't actually the weight of the armor; it's based on articulations on joints.
@@ -86,8 +168,26 @@ projectile does not unbalance its attacker. Current projectile energy defaults
 to 40 joules per kilogram of ranged weapon, giving the one-kilogram short bow a
 40-joule baseline until ammunition carries its own mass and velocity.
 
+The tactical implementation sends firing start and completion on one ordered
+stream. The server derives the attacker from the connection and validates
+opposing sides, incapacitation, a held ranged weapon, arrow availability,
+weapon range, line of sight, windup, and cooldown. A validated shot consumes one
+transient `arrow`, including a client-reported miss; Party use is carried in the
+bounded terminal consequence receipt. Finite hit precision is intentionally
+trusted from the client and remains bounded by the shared combat calculation.
+Server-controlled offensive AI uses the same ranged windup, completion,
+validation, and ammo-consumption path. It faces the nearest viable target,
+maintains a bounded standoff distance while arrows remain, and returns to its
+melee pursuit/attack cadence when it cannot make a ranged attack.
+
 ## Incapacitation
 A character's incapacitation represents the sum of all disabling effects on them and corresponds to the state of their animation. When above half, they are "staggered" and each additional 1% of incapacitation causes a 2% penalty to movement and attribute checks, and when above 100% they are completely incapacitated (which also causes knockdown). Most negative effects that a character has can affect their incapacitation, past a certain threshold. Your incapacitation is displayed as a wheel in the center of the screen. If it is at 0%, the wheel is invisible, and as it increases it starts from 12 o'clock and extends as an arc clockwise. Each factor that contributes to incapacitation has a different color to differentiate them.
+
+The tactical client draws this wheel with EGUI around the center reticle. It
+preserves the strategic fear, fatigue, hunger, thirst, and temperature source
+breakdown captured at mission enrollment, then combines those segments with
+live recomputed pain and blood loss plus transient white imbalance. The arc
+clamps at one revolution, and the reticle remains visible inside it.
 
 The strategic character panel uses the same colors for its segmented incapacitation meter, source meters, and source icons. Hunger and thirst share centered meters with their physiological reserves: reserve fills right, while incapacitation fills left after crossing zero. Exact percentages remain available on hover and to assistive technology, while the default view emphasizes the relative contribution of each source.
 
@@ -120,14 +220,32 @@ fn balance_damage(attacker, defender, attack_directness):
 ```
 ### Exhaustion (grey)
 Exhaustion represents how out of breath your character is. Most actions will not actually exhaust faster than it recuperates, but climbing, sprinting, and fighting with heavy weapons, shield, and armor can.
+In tactical combat it is transient, server-authoritative grey incapacitation.
+The movement contribution is based on server-authoritative locomotion intent,
+not measured physics velocity: full jogging contributes exactly zero, walking
+or partial input recovers exhaustion, and sprinting adds it. External impulses
+therefore cannot create breath exhaustion, while poison, climbing, combat, and
+other future sources remain free to add independent rates. Tactical breath
+changes use a 5x response scale so exertion and recovery resolve quickly enough
+to matter during a fight without changing any movement-speed thresholds. Wheel
+segments below 0.5% are hidden as subpixel display noise without changing state.
 ```rs
-const BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND = 0.002
-# someone with 2 endurance (poorly fed Napoleonic soldier) can march 1.2m/s all day. Therefore a simple linear ratio between velocity and breath must be about:
 const BREATH_PER_METERS_PER_SECOND = 0.0034
+const TACTICAL_BREATH_RESPONSE_SCALE = 5.0
+
+# Sustainable jog speed is 1.8m/s at endurance 1, 2.0m/s at endurance 2,
+# and the elite-marathon average of 5.83m/s at endurance 5. Between those
+# anchors, most of the extraordinary performance is reserved for high endurance.
+fn sustainable_jog_speed(endurance):
+	if endurance <= 1:
+		t = clamp(endurance, 0, 1)
+		return lerp(1.4, 1.8, t * t * (3 - 2 * t))
+	t = (clamp(endurance, 1, 5) - 1) / 4
+	return 1.8 + 4.03 * pow(t, 2.166)
  
 fn update_stamina(player):
-	player.breath_damage += dt * character.velocity * BREATH_PER_METERS_PER_SECOND
-	player.breath_damage -= dt * character.endurance * BREATH_RECOVERY_PER_ENDURANCE_PER_SECOND 
+	breath_delta = (character.velocity - sustainable_jog_speed(character.endurance)) * BREATH_PER_METERS_PER_SECOND
+	player.breath_damage += dt * breath_delta * TACTICAL_BREATH_RESPONSE_SCALE
 ```
 ### Pain (pink)
 [Injuries](../shared/health.md) are a source of constant pain. Pain is divided by will.

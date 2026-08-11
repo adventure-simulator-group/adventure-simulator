@@ -6,12 +6,13 @@ fn outbreak(seed: u64) -> GeneratedCase {
 fn outbreak_catalog_covers_sources_and_all_initial_diseases() {
     use crate::disease::DiseaseId;
 
-    let cases = (0..10).map(outbreak).collect::<Vec<_>>();
+    let cases = (0..12).map(outbreak).collect::<Vec<_>>();
     let diseases = cases
         .iter()
         .map(|case| case.outbreak.as_ref().unwrap().disease)
         .collect::<Vec<_>>();
     for disease in [
+        DiseaseId::Dysentery,
         DiseaseId::Influenza,
         DiseaseId::Mahrdruck,
         DiseaseId::ShroudFever,
@@ -19,6 +20,22 @@ fn outbreak_catalog_covers_sources_and_all_initial_diseases() {
         DiseaseId::Kobeldunst,
     ] {
         assert!(diseases.contains(&disease));
+    }
+    let water = outbreak(0);
+    assert!(matches!(
+        water.outbreak.as_ref().unwrap().source,
+        OutbreakSource::Sanitation {
+            practice: OutbreakSanitationPractice::ContaminatedWell
+        }
+    ));
+    for site in cases.iter().flat_map(|case| &case.sites) {
+        assert!(
+            crate::quest_catalog::catalog()
+                .site(site.kind.as_str())
+                .is_some(),
+            "generated outbreak site {} is absent from the startup catalog",
+            site.kind.as_str()
+        );
     }
     assert!(cases.iter().any(|case| matches!(
         case.outbreak.as_ref().unwrap().source,

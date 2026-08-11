@@ -10,10 +10,13 @@
     const tabs = [...nav.querySelectorAll("[data-building-id]")];
     const buildings = new Set(tabs.map((tab) => tab.dataset.buildingId).filter(Boolean));
     const serverActive = nav.querySelector(".nav-tab.active")?.dataset.buildingId;
-    const partyInspection = current.pathname.startsWith("/locations/") && current.pathname.includes("/party");
-    const building = partyInspection && buildings.has(requested)
+    const buildingContextPath = current.pathname.startsWith("/locations/") && (
+      current.pathname.includes("/party")
+      || /^\/locations\/settlement\/[^/]+\/fireplace\/?$/.test(current.pathname)
+    );
+    const building = buildingContextPath && buildings.has(requested)
       ? requested : (buildings.has(serverActive) ? serverActive : (buildings.has("map") ? "map" : tabs[0]?.dataset.buildingId));
-    if (requested && (!buildings.has(requested) || !partyInspection)) {
+    if (requested && (!buildings.has(requested) || !buildingContextPath)) {
       current.searchParams.delete("building");
       history.replaceState(history.state, "", current);
     }

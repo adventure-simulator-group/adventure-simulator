@@ -457,3 +457,18 @@ fn quest_fixture_lane_plan_is_exact_and_order_independent() {
     assert!(bootstrap.contains("Some(FixtureQuestLane::Generated) => None"));
     assert!(bootstrap.contains("None => runner.choose_quest(&party, &profile)"));
 }
+#[test]
+fn simulation_duration_is_relative_to_the_post_bootstrap_world_clock() {
+    let absolute_start = 8_000_000;
+    assert_eq!(simulation_elapsed_minutes(absolute_start, absolute_start), 0);
+    assert_eq!(simulation_elapsed_minutes(absolute_start, absolute_start + 1_440), 1_440);
+    assert_eq!(simulation_elapsed_minutes(absolute_start, absolute_start - 1), 0);
+
+    let bootstrap = LIVE_CORE_SOURCE
+        .split("let simulation_start_minutes")
+        .nth(1)
+        .expect("absolute-clock baseline capture");
+    assert!(bootstrap.contains("simulation_elapsed_minutes("));
+    assert!(bootstrap.contains("recovery_started_at"));
+    assert!(bootstrap.contains("missing simulation-start final character clock"));
+}

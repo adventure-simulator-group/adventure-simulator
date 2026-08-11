@@ -182,7 +182,27 @@ pub(super) async fn camp(
         }
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     }
-    if let Some(path) = direct_demo_challenge_redirect(&challenges, character.id) {
+    let road_challenges = match state
+        .db
+        .query::<BackendRoadChallenge>(&format!(
+            "SELECT * FROM backend_road_challenges WHERE owner_character_id = {}",
+            character.id
+        ))
+        .await
+    {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                character_id = character.id,
+                "camp road challenge state unavailable"
+            );
+            Vec::new()
+        }
+    };
+    if let Some(path) =
+        direct_demo_challenge_redirect(&challenges, &road_challenges, character.id)
+    {
         return Redirect::to(&path).into_response();
     }
     let itinerary = state
@@ -336,24 +356,6 @@ pub(super) async fn camp(
             })
             .flatten()
     });
-    let road_challenges = match state
-        .db
-        .query::<BackendRoadChallenge>(&format!(
-            "SELECT * FROM backend_road_challenges WHERE owner_character_id = {}",
-            character.id
-        ))
-        .await
-    {
-        Ok(rows) => rows,
-        Err(error) => {
-            tracing::warn!(
-                %error,
-                character_id = character.id,
-                "camp road challenge state unavailable"
-            );
-            Vec::new()
-        }
-    };
     let active_road_trial = road_challenges
         .iter()
         .find(|challenge| challenge.active && challenge.open);
@@ -464,8 +466,14 @@ pub(super) async fn resolve_errantry_road_challenge(
 
 fn direct_demo_challenge_redirect(
     challenges: &[BackendChallenge],
+    road_challenges: &[BackendRoadChallenge],
     character_id: u64,
 ) -> Option<String> {
+    if road_challenges.iter().any(|challenge| {
+        challenge.owner_character_id == character_id && challenge.active && challenge.open
+    }) {
+        return None;
+    }
     let mut playable = challenges.iter().filter(|challenge| {
         challenge.owner_character_id == character_id
             && challenge.active
@@ -501,7 +509,9 @@ pub(super) fn camp_continue_block_reason(
 #[cfg(test)]
 mod direct_demo_redirect_tests {
     use super::direct_demo_challenge_redirect;
-    use crate::spacetimedb::{BackendChallenge, ChallengePresenterCatalogId};
+    use crate::spacetimedb::{
+        BackendChallenge, BackendRoadChallenge, ChallengePresenterCatalogId,
+    };
 
     fn challenge(id: &str, active: bool, open: bool, solved: bool) -> BackendChallenge {
         BackendChallenge {
@@ -523,32 +533,59 @@ mod direct_demo_redirect_tests {
         }
     }
 
+    fn road_challenge(active: bool, open: bool) -> BackendRoadChallenge {
+        BackendRoadChallenge {
+            id: "road:demo:7".into(),
+            owner_character_id: 7,
+            absolute_minute: 0,
+            presentation_json: "{}".into(),
+            revision: 0,
+            open,
+            active,
+            result_transcript: None,
+            quest_reward_addendum: None,
+        }
+    }
+
     #[test]
     fn camp_forwards_only_one_unsolved_active_direct_demo() {
         let demo = challenge("challenge:ordered-sigils:demo:7:0", true, true, false);
         assert_eq!(
-            direct_demo_challenge_redirect(std::slice::from_ref(&demo), 7).as_deref(),
+            direct_demo_challenge_redirect(std::slice::from_ref(&demo), &[], 7).as_deref(),
             Some(
                 "/quests/case:errantry-puzzle:demo:7:0/challenges/challenge:ordered-sigils:demo:7:0"
             )
         );
 
         let production = challenge("challenge:ordered-sigils:order:7:0", true, true, false);
-        assert_eq!(direct_demo_challenge_redirect(&[production], 7), None);
+        assert_eq!(direct_demo_challenge_redirect(&[production], &[], 7), None);
 
         let solved = challenge("challenge:ordered-sigils:demo:7:0", true, false, true);
-        assert_eq!(direct_demo_challenge_redirect(&[solved], 7), None);
+        assert_eq!(direct_demo_challenge_redirect(&[solved], &[], 7), None);
 
         let another = challenge("challenge:ordered-sigils:demo:7:1", true, true, false);
-        assert_eq!(direct_demo_challenge_redirect(&[demo, another], 7), None);
+        assert_eq!(direct_demo_challenge_redirect(&[demo, another], &[], 7), None);
 
         let witnesses = challenge("challenge:truthful-witnesses:demo:7:2", true, true, false);
         assert_eq!(
-            direct_demo_challenge_redirect(&[witnesses], 7).as_deref(),
+            direct_demo_challenge_redirect(&[witnesses], &[], 7).as_deref(),
             Some(
                 "/quests/case:errantry-puzzle:demo:7:0/challenges/challenge:truthful-witnesses:demo:7:2"
             )
         );
+    }
+
+    #[test]
+    fn active_road_challenge_precedes_placeholder_direct_demo() {
+        let demo = challenge("challenge:ordered-sigils:demo:7:0", true, true, false);
+        let active_road = road_challenge(true, true);
+        assert_eq!(
+            direct_demo_challenge_redirect(std::slice::from_ref(&demo), &[active_road], 7),
+            None
+        );
+
+        let resolved_road = road_challenge(false, false);
+        assert!(direct_demo_challenge_redirect(&[demo], &[resolved_road], 7).is_some());
     }
 }
 
@@ -570,8 +607,10 @@ mod road_challenge_route_tests {
         assert!(template.contains("presentation.opening"));
         assert!(template.contains("presentation.cast"));
         assert!(template.contains("Roadside characters"));
-        assert!(template.contains(">Talk<") || template.contains("{ \"Talk\" }"));
-        assert!(template.contains(">Bandage<") || template.contains("{ \"Bandage\" }"));
+        assert!(template.contains("Request"));
+        assert!(template.contains("Refused"));
+        assert!(template.contains("Unavailable"));
+        assert!(template.contains("Emergency treatment"));
         assert!(!template.contains("challenge.actor_character_id"));
         assert!(!template.contains("EncounterDefinition"));
         assert!(!template.contains("WoundedOrderCourierV1"));
@@ -652,6 +691,10 @@ pub(super) async fn contact_camp_counterparty(
 #[derive(Debug, Deserialize)]
 pub(super) struct CounterpartyBandageForm {
     patient_id: u64,
+    limb_slug: String,
+    action_id: String,
+    context_ref: String,
+    expected_membership_revision: u32,
 }
 
 pub(super) async fn bandage_camp_counterparty(
@@ -669,10 +712,13 @@ pub(super) async fn bandage_camp_counterparty(
             &[
                 json!(actor_id),
                 json!(form.patient_id),
-                json!("left-arm"),
+                json!(form.limb_slug),
                 json!("bandage"),
                 crate::spacetimedb::sats_option(None::<u64>),
                 json!(false),
+                json!(form.action_id),
+                crate::spacetimedb::sats_option(Some(form.context_ref)),
+                crate::spacetimedb::sats_option(Some(form.expected_membership_revision)),
             ],
         )
         .await

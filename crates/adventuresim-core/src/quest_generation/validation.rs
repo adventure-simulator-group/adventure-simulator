@@ -444,7 +444,8 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
             if social.is_some_and(|action| fatal_patients.contains(&action.target_id)) {
                 errors.push("outbreak social route must target a surviving witness".into());
             }
-            let source_is_compatible = match (&outbreak.source, outbreak.transmission_route) {
+            let source_is_compatible = matches!(
+                (&outbreak.source, outbreak.transmission_route),
                 (
                     OutbreakSource::Sanitation {
                         practice: OutbreakSanitationPractice::UnwashedSharedBedding,
@@ -476,9 +477,8 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                 | (
                     OutbreakSource::Environmental { .. },
                     crate::disease::TransmissionVector::Environmental,
-                ) => true,
-                _ => false,
-            };
+                )
+            );
             if !source_is_compatible {
                 errors.push("outbreak source is incompatible with its transmission route".into());
             }
@@ -497,6 +497,14 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
                     },
                     OutbreakRemediation::Behavior {
                         action: OutbreakBehaviorAction::SeparateSleepers,
+                    },
+                ) => true,
+                (
+                    OutbreakSource::Sanitation {
+                        practice: OutbreakSanitationPractice::ContaminatedWell,
+                    },
+                    OutbreakRemediation::Sanitation {
+                        action: OutbreakSanitationAction::CloseWell,
                     },
                 ) => true,
                 (
@@ -1014,7 +1022,8 @@ pub fn validate(case: &GeneratedCase) -> Result<(), Vec<String>> {
             ObjectiveRequirement::Defeat {
                 hostile_group_id, ..
             }
-            | ObjectiveRequirement::DriveOff { hostile_group_id } => case
+            | ObjectiveRequirement::DriveOff { hostile_group_id }
+            | ObjectiveRequirement::Surrender { hostile_group_id } => case
                 .hostile_groups
                 .iter()
                 .any(|(id, _, _, _)| id == hostile_group_id),

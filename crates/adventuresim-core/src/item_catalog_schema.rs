@@ -14,6 +14,8 @@ pub struct ItemDefinition {
     pub id: String,
     pub display_name: String,
     pub weight_kg: f32,
+    /// Exterior displacement used when this object is placed in a container.
+    pub exterior_volume_ml: u32,
     pub base_value: u32,
     #[serde(default)]
     pub tags: Vec<String>,
@@ -236,6 +238,12 @@ pub enum ItemKind {
     },
     Weapon {
         slot: Slot,
+        #[serde(default)]
+        preferred_attack: MeleeAttackStyle,
+        #[serde(default)]
+        swing_precision: f32,
+        #[serde(default)]
+        stab_precision: f32,
         accuracy: f32,
         reach_m: f32,
         penetration: f32,
@@ -273,6 +281,14 @@ pub enum DamageType {
     Blunt,
     Slash,
     Pierce,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MeleeAttackStyle {
+    #[default]
+    Swing,
+    Stab,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]

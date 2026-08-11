@@ -59,6 +59,41 @@ fn bounded_progress_history_is_exact_contiguous_and_nontransferable() {
         contiguous_failed_attempts("cap-a", 7, "reacquire_tracks", 3, success_break),
         0
     );
+    let mut interrupted = failed_attempt("a2", "cap-a", 7, "reacquire_tracks", 2, false);
+    interrupted.private_resolution_json = serde_json::json!({
+        "status": "interrupted",
+        "requested_minutes": 120,
+        "completion_effects_applied": false,
+    })
+    .to_string();
+    assert_eq!(
+        contiguous_failed_attempts(
+            "cap-a",
+            7,
+            "reacquire_tracks",
+            3,
+            [
+                failed_attempt("a0", "cap-a", 7, "reacquire_tracks", 0, false),
+                failed_attempt("a1", "cap-a", 7, "reacquire_tracks", 1, false),
+                interrupted,
+            ],
+        ),
+        0,
+        "an interrupted terminal receipt breaks rather than advances bounded progress"
+    );
+    let mut malformed = failed_attempt("a2", "cap-a", 7, "reacquire_tracks", 2, false);
+    malformed.private_resolution_json = "{}".into();
+    assert_eq!(
+        contiguous_failed_attempts(
+            "cap-a",
+            7,
+            "reacquire_tracks",
+            3,
+            [malformed],
+        ),
+        0,
+        "malformed private receipts fail closed"
+    );
 }
 
 #[test]
@@ -326,13 +361,13 @@ fn explicit_secondary_referral_and_context_are_exact() {
         owner_character_id: 7,
         canonical_case_id: generated.canonical_case_id.clone(),
         public_case_id: generated.public_case_id.clone(),
-        witness_resident_character_id: secondary.resident_character_id.clone(),
+        witness_resident_character_id: secondary.resident_character_id,
         expected_settlement_id: "riverdale".into(),
         expected_location_id: secondary.expected_location.clone(),
         grant_kind: "testimony".into(),
         source_receipt_id: "testimony-receipt".into(),
         source_witness_id: primary.id.0.clone(),
-        source_witness_resident_character_id: primary.resident_character_id.clone(),
+        source_witness_resident_character_id: primary.resident_character_id,
         source_testimony_index: 0,
         source_proposition_id: primary.testimony[0].proposition_id.clone(),
         catalog_revision: generated.catalog_revision.clone(),
@@ -430,7 +465,7 @@ fn explicit_secondary_referral_and_context_are_exact() {
         source_witness_resident_character_id: 9_007_199_254_740_991,
         source_testimony_index: 0,
         source_proposition_id: String::new(),
-        witness_resident_character_id: primary.resident_character_id.clone(),
+        witness_resident_character_id: primary.resident_character_id,
         expected_location_id: primary.expected_location.clone(),
         ..referral.clone()
     };

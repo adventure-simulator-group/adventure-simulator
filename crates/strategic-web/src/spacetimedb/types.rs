@@ -474,6 +474,31 @@ pub enum AlgebraicType {
 // Domain types matching strategic-db schema
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendDevelopmentScenario {
+    pub slug: String,
+    pub revision: u16,
+    pub category: String,
+    pub label: String,
+    pub description: String,
+    pub primary_character_id: u64,
+    pub entry_route: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendDevelopmentQuest {
+    pub scenario_slug: String,
+    pub quest_kind: String,
+    pub subject_id: String,
+    pub canonical_case_id: String,
+    pub title: String,
+    pub status: String,
+    pub incident_count: u16,
+    pub public_awareness_bps: u16,
+    pub supports_incident_action: bool,
+    pub player_safe_summary: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Character {
     pub id: u64,
     pub name: String,
@@ -726,6 +751,7 @@ pub struct BackendCharacterResidenceStatus {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // Complete backend projection shape; not every field is rendered yet.
 pub struct BackendCharacterRelationshipStatus {
     pub character_id: u64,
     pub spouse_id: Option<u64>,
@@ -757,6 +783,7 @@ pub struct BackendFamilyChild {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // Reserved backend projection for the courtship discovery UI.
 pub struct BackendCourtshipDiscoveryStatus {
     pub observer_character_id: u64,
     pub first_character_id: u64,
@@ -1077,8 +1104,45 @@ pub struct StrategicEncounter {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CharacterContextKind {
     HostileGroup,
+    CaseSite,
     StrategicEncounter,
     RoadEncounter,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum BackendContextualDecision {
+    Request,
+    Refused,
+    Unavailable,
+    EmergencyTreatment,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendHostileNegotiation {
+    pub owner_character_id: u64,
+    pub case_site_id: String,
+    pub spokesman_id: u64,
+    pub context_ref: String,
+    pub expected_revision: u32,
+    pub decision: BackendContextualDecision,
+    pub latest_response: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum HostileSurrenderMode {
+    Demand,
+    Offer,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackendHostileSurrender {
+    pub owner_character_id: u64,
+    pub case_site_id: String,
+    pub spokesman_id: u64,
+    pub context_ref: String,
+    pub expected_revision: u32,
+    pub mode: HostileSurrenderMode,
+    pub latest_response: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -1099,7 +1163,10 @@ pub struct BackendContextCharacter {
     pub ordinal: u16,
     pub alive: bool,
     pub revision: u32,
-    pub treatment_consent: bool,
+    pub membership_revision: u32,
+    pub contact_decision: BackendContextualDecision,
+    pub treatment_decision: BackendContextualDecision,
+    pub treatment_limb_slug: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1392,6 +1459,35 @@ pub struct InventoryItemAmount {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryObject {
+    pub id: u64,
+    pub item_id: String,
+    pub location_kind: String,
+    pub location_owner: String,
+    pub inventory_row_id: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryContainment {
+    pub child_object_id: u64,
+    pub parent_object_id: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContainerLiquid {
+    pub container_object_id: u64,
+    pub liquid_item_id: String,
+    pub water_ml: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendTinctureStatus {
+    pub container_object_id: u64,
+    pub ready_at_world_minute: u64,
+    pub matured: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartyItemAmount {
     pub party_inventory_item_id: u64,
     pub remaining_milliunits: u32,
@@ -1400,10 +1496,13 @@ pub struct PartyItemAmount {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum FoodPreparation {
     Raw,
+    Cut,
+    Ground,
     Preserved,
     PanFried,
     Stewed,
     Roasted,
+    DriedSmoked,
     Baked,
 }
 
@@ -1412,6 +1511,7 @@ pub struct FoodLot {
     pub id: u64,
     pub inventory_item_id: Option<u64>,
     pub party_inventory_item_id: Option<u64>,
+    pub material_revision: u64,
     pub display_name: String,
     pub preparation: FoodPreparation,
     pub ingredient_item_ids: Vec<String>,
@@ -1426,6 +1526,57 @@ pub struct FoodLot {
     pub nutrition_kcal: f32,
     pub total_value: f32,
     pub created_at_minute: u64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum IngredientPreparationAction {
+    Cut,
+    Grind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendIngredientPreparationPlan {
+    pub actor_character_id: u64,
+    pub inventory_scope: String,
+    pub inventory_item_id: u64,
+    pub food_lot_id: u64,
+    pub material_object_id: u64,
+    pub request_id: String,
+    pub expected_revision: u64,
+    pub attempt_generation: u64,
+    pub action: IngredientPreparationAction,
+    pub duration_minutes: u32,
+    pub next_display_name: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CookingMethod {
+    PanFry,
+    Stew,
+    Roast,
+    Bake,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendFireplaceStation {
+    pub key: String,
+    pub character_id: u64,
+    pub fireplace_fixture_id: String,
+    pub instrument_item_id: Option<String>,
+    #[serde(default)]
+    pub instrument_object_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendFireplaceDish {
+    pub station_key: String,
+    pub character_id: u64,
+    pub fireplace_fixture_id: String,
+    pub contributor_name: String,
+    pub method: CookingMethod,
+    pub started_at_minute: u64,
+    pub target_minutes: u32,
+    pub display_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1452,6 +1603,7 @@ impl CharacterEquipmentGraph {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // Backend equipment rows retain authority fields used by other consumers.
 pub struct CharacterEquippedItem {
     pub inventory_item_id: u64,
     pub character_id: u64,
@@ -1472,6 +1624,7 @@ pub struct EquipmentAttachmentTarget {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // Full selection identity is preserved even when only labels are rendered.
 pub struct EquipmentAttachmentTargetSelection {
     pub requirement_index: u16,
     pub parent_inventory_item_id: u64,
@@ -1479,6 +1632,7 @@ pub struct EquipmentAttachmentTargetSelection {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // Complete backend occupancy shape; views use only placement fields.
 pub struct EquipmentOccupancy {
     pub id: String,
     pub character_id: u64,
@@ -1505,6 +1659,8 @@ pub struct ItemDefinition {
     pub id: String,
     pub weight: f32,
     #[serde(default)]
+    pub exterior_volume_ml: u32,
+    #[serde(default)]
     pub slot: ItemSlot,
     pub kind: ItemKind,
     #[serde(default)]
@@ -1517,6 +1673,12 @@ pub struct ItemDefinition {
     pub repairable: bool,
     #[serde(default)]
     pub accuracy: f32,
+    #[serde(default)]
+    pub swing_precision: f32,
+    #[serde(default)]
+    pub stab_precision: f32,
+    #[serde(default)]
+    pub prefers_stab: bool,
     #[serde(default)]
     pub reach: f32,
     #[serde(default)]
@@ -1555,6 +1717,8 @@ pub struct ItemDefinition {
     pub nutrition_kcal: f32,
     #[serde(default)]
     pub water_capacity_ml: u32,
+    #[serde(default)]
+    pub container_capacity_ml: u32,
     #[serde(default)]
     pub alcohol_serving_ml: u32,
     #[serde(default)]
@@ -1716,6 +1880,7 @@ impl Default for ItemDefinition {
         Self {
             id: String::new(),
             weight: 0.0,
+            exterior_volume_ml: 0,
             slot: ItemSlot::None,
             kind: ItemKind::Simple,
             equipment_placements: Vec::new(),
@@ -1723,6 +1888,9 @@ impl Default for ItemDefinition {
             attachment_points: Vec::new(),
             repairable: false,
             accuracy: 0.0,
+            swing_precision: 0.0,
+            stab_precision: 0.0,
+            prefers_stab: false,
             reach: 0.0,
             block: 0.0,
             coverage: 0.0,
@@ -1742,6 +1910,7 @@ impl Default for ItemDefinition {
             base_value: None,
             nutrition_kcal: 0.0,
             water_capacity_ml: 0,
+            container_capacity_ml: 0,
             alcohol_serving_ml: 0,
             alcohol_abv_basis_points: 0,
             alcohol_net_hydration_ml: 0,
@@ -1951,7 +2120,7 @@ pub struct OrganizationMembership {
     pub id: u64,
     pub character_id: u64,
     pub organization_id: String,
-    pub rank_id: String,
+    pub role_id: String,
     pub joined_minute: u64,
     pub dues_paid_through_minute: u64,
     pub status: String,
@@ -2062,6 +2231,12 @@ pub struct BackendForageReceipt {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendForageAttemptState {
+    pub character_id: u64,
+    pub next_generation: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorldClock {
     pub id: u64,
     pub official_minutes: u64,
@@ -2136,6 +2311,7 @@ pub struct CharacterCondition {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)] // Reserved projection for environmental exposure presentation.
 pub struct CharacterExposure {
     pub character_id: u64,
     pub wetness_bps: u16,

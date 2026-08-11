@@ -203,7 +203,7 @@ fn generated_observer_id(
     ctx.db
         .quest_generation_authority()
         .case_id()
-        .find(&case_id.to_string())
+        .find(case_id.to_string())
         .and_then(|authority| validate_quest_generation_authority(&authority).ok())
         .map(|validated| {
             adventuresim_core::quest_generation::observer_scoped_id(&validated.context, kind, name)
@@ -215,7 +215,7 @@ fn set_action_active(ctx: &ReducerContext, action_id: &str, active: bool) -> Res
         .db
         .investigation_action_capability()
         .id()
-        .find(&action_id.to_string())
+        .find(action_id.to_string())
         .ok_or("Investigation route capability is missing")?;
     capability.active = active;
     ctx.db
@@ -494,7 +494,7 @@ fn capability_has_live_support_reducer(
             ctx.db
                 .investigation_action_capability()
                 .id()
-                .find(&id.to_owned())
+                .find(id.to_owned())
         },
         |id| {
             ctx.db
@@ -608,6 +608,11 @@ fn capability_has_live_pattern_support_reducer(
         capability.owner_character_id,
         &observer_case_id,
         &evidence_id,
+        ctx.db
+            .character_time()
+            .character_id()
+            .find(capability.owner_character_id)
+            .map_or(0, |time| time.minutes),
         ctx.db
             .investigation_evidence_knowledge()
             .owner_character_id()
@@ -941,7 +946,7 @@ fn disclose_generated_initial_site_knowledge(
             .db
             .case_site_authority()
             .id_key()
-            .find(&site_id.to_owned())
+            .find(site_id.to_owned())
             .ok_or("Initially known generated case site is missing")?;
         disclose_exact_case_site(
             ctx,
@@ -967,7 +972,7 @@ fn issue_rumor_action_graph(
         .db
         .quest_generation_authority()
         .case_id()
-        .find(&case_id.to_string())
+        .find(case_id.to_string())
     {
         let validated = validate_quest_generation_authority(&authority)?;
         let manifest = validated.manifest;
@@ -995,7 +1000,7 @@ fn issue_rumor_action_graph(
             let row = InvestigationPatternTargetAuthority {
                 cohort_id: target.cohort_id.clone(),
                 case_id: case_id.to_string(),
-                resident_character_id: target.resident_character_id.clone(),
+                resident_character_id: target.resident_character_id,
                 demographic: format!("{:?}", target.demographic).to_ascii_lowercase(),
                 age_band: target.age_band.clone(),
                 sex: target.sex.clone(),
@@ -1133,7 +1138,7 @@ fn issue_rumor_action_graph(
             .db
             .settlement()
             .id()
-            .find(&settlement_id.to_string())
+            .find(settlement_id.to_string())
             .ok_or("Rumor settlement no longer exists")?;
         ctx.db
             .investigation_area_authority()

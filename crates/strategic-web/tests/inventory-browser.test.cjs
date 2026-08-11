@@ -42,6 +42,19 @@ test("destination refresh is exposed for generated row insertion", () => {
   assert.equal(typeof syncPanelWidth, "function");
 });
 
+test("container browsing preserves counterpart state and accessible fallbacks", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
+  assert.match(source, /data-container-open/);
+  assert.match(source, /data-container-close/);
+  assert.match(source, /_containerPanelStack/);
+  assert.match(source, /snapshot\.active\?\.focus/);
+  assert.match(source, /inventory-container-move/);
+  assert.match(source, /application\/x-adventuresim-inventory-object/);
+  assert.match(source, /Container capacity exceeded|container-capacity/);
+  assert.match(source, /inventory-container-move-actions/);
+  assert.match(source, /ensureRowActionRail/);
+});
+
 test("currency rows use one aggregate parent and dedicated denomination components", () => {
   const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
   assert.match(source, /groupCurrencyRows\(browser\)/);
@@ -157,4 +170,56 @@ test("food lots use a disclosure parent without becoming fungible", () => {
   assert.match(source, /data-food-lot=\\?"true/);
   assert.match(source, /food-component-row/);
   assert.match(source, /Show food lots/);
+});
+
+test("containers hydrate authoritative trees and wire accessible mutations", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
+  assert.match(source, /\/api\/inventory\/containers/);
+  assert.match(source, /data-container-parent-object-id/);
+  assert.match(source, /inventory-container-move/);
+  assert.match(source, /data-container-close/);
+  assert.match(source, /data-container-remove/);
+  assert.match(source, /data-container-pour/);
+  assert.match(source, /data-container-drain/);
+  assert.match(source, /application\/x-adventuresim-inventory-object/);
+});
+
+test("container hydration is race-safe and empty-stack opening is read-only", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
+  assert.match(source, /containerHydrationGenerations = new WeakMap/);
+  assert.match(source, /generation !== containerHydrationGenerations\.get\(root\)/);
+  assert.doesNotMatch(source, /\/api\/inventory\/containers\/open/);
+  assert.match(source, /parentLegacy/);
+  assert.match(source, /parent_scope/);
+  assert.match(source, /data-container-toggle/);
+  assert.match(source, /\/api\/inventory\/containers\/remove/);
+  assert.match(source, /authoritativeContainerSnapshot\.presentations/);
+  assert.match(source, /inventory-container-snapshot-row/);
+  assert.match(source, /inventoryCounterpart/);
+  assert.match(source, /previousId/);
+  assert.match(source, /data-container-move-into/);
+});
+
+test("nested container panels preserve live nodes and row drops do not bubble", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
+  assert.match(source, /rows: panelRows/);
+  assert.match(source, /replaceChildren\(\.\.\.snapshot\.rows\)/);
+  assert.doesNotMatch(source, /tbodyHtml/);
+  assert.match(source, /event\.stopPropagation\(\)/);
+  assert.match(source, /row\.closest\("\[data-open-container-object-id\]"\)/);
+  assert.match(source, /delete clone\.dataset\.containerDragBound/);
+  assert.match(source, /delete clone\.dataset\.containerDropBound/);
+  assert.match(source, /bindContainerRowDragDrop/);
+  assert.match(source, /_containerDropBound/);
+  assert.match(source, /event\.target\.closest\?\.\("tr"\)\?\.querySelector\?\.\("\[data-container-open\]"\)/);
+  assert.match(source, /detail: \{ child, parent: destination\.dataset\.containerOpen \}/);
+  assert.match(source, /event\.stopImmediatePropagation\(\)/);
+  const filter = source.indexOf(".filter((source) => !counterpart.contains(source))");
+  const detach = source.indexOf("tbody?.replaceChildren()", filter);
+  assert.ok(filter >= 0 && detach > filter, "counterpart rows must be excluded before detaching live nodes");
+});
+
+test("container decoration requires an owned or authoritative object row", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../static/inventory-browser.js"), "utf8");
+  assert.match(source, /!row\.dataset\.containerObjectId && !rowInventoryKey\(row\)/);
 });

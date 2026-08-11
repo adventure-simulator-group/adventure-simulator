@@ -432,6 +432,67 @@ fn surrender_preview_refresh_is_revisioned_receipted_and_retry_safe() {
 }
 
 #[test]
+fn final_encounter_resolution_establishes_only_the_exact_incomplete_journey_stop() {
+    let camp_source = include_str!("../journey_camp.rs");
+    let helper = camp_source
+        .split("fn establish_resolved_encounter_journey_camp")
+        .nth(1)
+        .and_then(|tail| tail.split("/// Award conserved terrain exposure").next())
+        .expect("resolved encounter camp helper");
+    for gate in [
+        "encounter.status != \"resolved\"",
+        "let Some(party)",
+        "let Some(mut journey)",
+        "party.id == encounter.party_id",
+        "journey.party_id == encounter.party_id",
+        "party.current_settlement_id.is_none()",
+        "party.current_case_site_id.is_none()",
+        "party.camp_destination.as_ref() == Some(&journey.destination)",
+        "journey_plan_version_is_canonical(journey.plan_version)",
+        "journey.completed_minutes < journey.total_minutes",
+        "encounter.journey_movement_minute == journey.completed_minutes",
+        "camp_stop_minutes",
+        ".contains(&journey.completed_minutes)",
+    ] {
+        assert!(helper.contains(gate), "missing resolved-stop gate {gate}");
+    }
+    assert_eq!(
+        helper
+            .matches("journey.camp_stop_minutes.push(journey.completed_minutes)")
+            .count(),
+        1
+    );
+    assert!(helper.contains("bind_errantry_trials_to_current_camp"));
+
+    let encounters = include_str!("../encounters.rs");
+    let reducer = encounters
+        .split("pub fn resolve_strategic_encounter")
+        .nth(1)
+        .expect("encounter resolution reducer");
+    let preview = reducer
+        .split("if current != encounter.loss_preview")
+        .nth(1)
+        .and_then(|tail| tail.split("commit_encounter_surrender").next())
+        .expect("surrender preview refresh branch");
+    assert!(!preview.contains("establish_resolved_encounter_journey_camp"));
+    let stale_identity = reducer
+        .find("encounter.encounter_id != encounter_id")
+        .expect("stale encounter identity gate");
+    let stale_revision = reducer
+        .find("encounter.revision != expected_revision")
+        .expect("stale encounter revision gate");
+    let final_status = reducer
+        .find("encounter.status = \"resolved\"")
+        .expect("final encounter state");
+    let establish = reducer
+        .find("establish_resolved_encounter_journey_camp(ctx, &encounter)?")
+        .expect("resolved journey stop establishment");
+    assert!(stale_identity < establish);
+    assert!(stale_revision < establish);
+    assert!(final_status < establish);
+}
+
+#[test]
 fn random_and_authored_encounters_share_the_only_constructor_literal() {
     let encounters = include_str!("../encounters.rs");
     assert_eq!(encounters.matches("StrategicEncounter {").count(), 1);

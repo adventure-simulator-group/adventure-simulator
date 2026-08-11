@@ -39,19 +39,22 @@ use adventuresim_stdb_client::{
     backend_dialogue_topic_options_table::BackendDialogueTopicOptionsTableAccess,
     backend_dialogue_witness_claims_table::BackendDialogueWitnessClaimsTableAccess,
     backend_local_chat_messages_table::BackendLocalChatMessagesTableAccess,
+    backend_organization_memberships_table::BackendOrganizationMembershipsTableAccess,
     battle_loot_item_table::BattleLootItemTableAccess,
     battle_participant_table::BattleParticipantTableAccess,
     battle_result_table::BattleResultTableAccess,
     character_equipped_item_table::CharacterEquippedItemTableAccess,
     character_filth_table::CharacterFilthTableAccess,
     character_settlement_reputation_table::CharacterSettlementReputationTableAccess,
+    container_liquid_table::ContainerLiquidTableAccess,
     equipment_occupancy_table::EquipmentOccupancyTableAccess, food_lot_table::FoodLotTableAccess,
+    inventory_containment_table::InventoryContainmentTableAccess,
     inventory_item_amount_table::InventoryItemAmountTableAccess,
     inventory_item_table::InventoryItemTableAccess,
+    inventory_object_table::InventoryObjectTableAccess,
     inventory_quantity_target_table::InventoryQuantityTargetTableAccess,
     item_condition_table::ItemConditionTableAccess, limb_injury_table::LimbInjuryTableAccess,
     morale_event_table::MoraleEventTableAccess,
-    organization_membership_table::OrganizationMembershipTableAccess,
     organization_presentation_table::OrganizationPresentationTableAccess,
     party_action_request_table::PartyActionRequestTableAccess,
     party_inventory_item_table::PartyInventoryItemTableAccess,
@@ -109,7 +112,7 @@ pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "limb_injury",
     "retained_projectile",
     "backend_character_training_schedules",
-    "organization_membership",
+    "backend_organization_memberships",
     "organization_presentation",
     "party",
     "party_journey",
@@ -124,6 +127,9 @@ pub const STRATEGIC_CACHE_SUBSCRIPTIONS: &[&str] = &[
     "settlement_description",
     "inventory_item",
     "inventory_item_amount",
+    "inventory_object",
+    "inventory_containment",
+    "container_liquid",
     "food_lot",
     "item_condition",
     "repair_order",
@@ -293,7 +299,7 @@ impl LiveState {
                 .db
                 .backend_character_training_schedules()
         );
-        invalidate_on_changes!(state.0._connection.db.organization_membership());
+        invalidate_on_view_changes!(state.0._connection.db.backend_organization_memberships());
         invalidate_on_changes!(state.0._connection.db.organization_presentation());
         invalidate_on_view_changes!(state.0._connection.db.party());
         invalidate_on_view_changes!(state.0._connection.db.party_journey());
@@ -308,6 +314,9 @@ impl LiveState {
         invalidate_on_changes!(state.0._connection.db.settlement_description());
         invalidate_on_changes!(state.0._connection.db.inventory_item());
         invalidate_on_changes!(state.0._connection.db.inventory_item_amount());
+        invalidate_on_changes!(state.0._connection.db.inventory_object());
+        invalidate_on_changes!(state.0._connection.db.inventory_containment());
+        invalidate_on_changes!(state.0._connection.db.container_liquid());
         invalidate_on_changes!(state.0._connection.db.food_lot());
         invalidate_on_changes!(state.0._connection.db.item_condition());
         invalidate_on_changes!(state.0._connection.db.repair_order());
@@ -411,12 +420,15 @@ impl LiveState {
             .add_query(|query| query.from.backend_character_strategic_conditions())
             .add_query(|query| query.from.backend_character_times())
             .add_query(|query| query.from.backend_character_training_schedules())
-            .add_query(|query| query.from.organization_membership())
+            .add_query(|query| query.from.backend_organization_memberships())
             .add_query(|query| query.from.organization_presentation())
             .add_query(|query| query.from.party_journey())
             .add_query(|query| query.from.party_journey_itinerary())
             .add_query(|query| query.from.inventory_item())
             .add_query(|query| query.from.inventory_item_amount())
+            .add_query(|query| query.from.inventory_object())
+            .add_query(|query| query.from.inventory_containment())
+            .add_query(|query| query.from.container_liquid())
             .add_query(|query| query.from.food_lot())
             .add_query(|query| query.from.inventory_quantity_target())
             .add_query(|query| query.from.item_condition())

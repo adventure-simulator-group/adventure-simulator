@@ -6,6 +6,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::character_context_kind_type::CharacterContextKind;
 use super::character_context_role_type::CharacterContextRole;
+use super::contextual_decision_state_type::ContextualDecisionState;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,8 +19,11 @@ pub struct CharacterContextMembership {
     pub role: CharacterContextRole,
     pub ordinal: u16,
     pub active: bool,
+    pub entered_at: u64,
+    pub left_at: Option<u64>,
     pub revision: u32,
-    pub treatment_consent: bool,
+    pub contact_decision: ContextualDecisionState,
+    pub treatment_decision: ContextualDecisionState,
 }
 
 impl __sdk::InModule for CharacterContextMembership {
@@ -38,8 +42,13 @@ pub struct CharacterContextMembershipCols {
     pub role: __sdk::__query_builder::Col<CharacterContextMembership, CharacterContextRole>,
     pub ordinal: __sdk::__query_builder::Col<CharacterContextMembership, u16>,
     pub active: __sdk::__query_builder::Col<CharacterContextMembership, bool>,
+    pub entered_at: __sdk::__query_builder::Col<CharacterContextMembership, u64>,
+    pub left_at: __sdk::__query_builder::Col<CharacterContextMembership, Option<u64>>,
     pub revision: __sdk::__query_builder::Col<CharacterContextMembership, u32>,
-    pub treatment_consent: __sdk::__query_builder::Col<CharacterContextMembership, bool>,
+    pub contact_decision:
+        __sdk::__query_builder::Col<CharacterContextMembership, ContextualDecisionState>,
+    pub treatment_decision:
+        __sdk::__query_builder::Col<CharacterContextMembership, ContextualDecisionState>,
 }
 
 impl __sdk::__query_builder::HasCols for CharacterContextMembership {
@@ -54,8 +63,11 @@ impl __sdk::__query_builder::HasCols for CharacterContextMembership {
             role: __sdk::__query_builder::Col::new(table_name, "role"),
             ordinal: __sdk::__query_builder::Col::new(table_name, "ordinal"),
             active: __sdk::__query_builder::Col::new(table_name, "active"),
+            entered_at: __sdk::__query_builder::Col::new(table_name, "entered_at"),
+            left_at: __sdk::__query_builder::Col::new(table_name, "left_at"),
             revision: __sdk::__query_builder::Col::new(table_name, "revision"),
-            treatment_consent: __sdk::__query_builder::Col::new(table_name, "treatment_consent"),
+            contact_decision: __sdk::__query_builder::Col::new(table_name, "contact_decision"),
+            treatment_decision: __sdk::__query_builder::Col::new(table_name, "treatment_decision"),
         }
     }
 }

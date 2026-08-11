@@ -15,7 +15,7 @@ use crate::capability::StrategicEquipment;
 use crate::character::character;
 use crate::condition::{character_condition as _, character_strategic_condition as _};
 use crate::disease::character_illness_status as _;
-use crate::investigation::{case_site_authority as _, character_case_site_occupancy as _};
+use crate::investigation::case_site_authority as _;
 use crate::organization::organization_membership as _;
 use crate::personality::{
     Sociability as CharacterSociability, Transparency as CharacterTransparency,
@@ -176,11 +176,8 @@ fn activity_execution_location(
             origin_settlement_id: Some(settlement_id),
         });
     }
-    if let Some(occupancy) = ctx
-        .db
-        .character_case_site_occupancy()
-        .character_id()
-        .find(character_id)
+    if let Some(occupancy) =
+        crate::investigation::current_character_case_site_occupancy(ctx, character_id)
     {
         let site = ctx
             .db
@@ -803,7 +800,6 @@ pub fn synchronize_party_for_activity(ctx: &ReducerContext, leader_id: u64) -> R
     if member_ids.is_empty() || !member_ids.contains(&leader_id) {
         return Err("Party has no living leader for activity synchronization".into());
     }
-    let leader_case_site = crate::investigation::character_case_site_id(ctx, leader_id);
     for member_id in &member_ids {
         let member = ctx
             .db
@@ -811,10 +807,14 @@ pub fn synchronize_party_for_activity(ctx: &ReducerContext, leader_id: u64) -> R
             .id()
             .find(*member_id)
             .ok_or("Party member not found")?;
+        let together_at_settlement = leader.current_settlement_id.is_some()
+            && member.current_settlement_id == leader.current_settlement_id
+            && member.current_settlement_id == party.current_settlement_id;
         if member.party_id.as_deref() != Some(party_id.as_str())
-            || member.current_settlement_id != leader.current_settlement_id
-            || member.current_settlement_id != party.current_settlement_id
-            || crate::investigation::character_case_site_id(ctx, *member_id) != leader_case_site
+            || !(together_at_settlement
+                || crate::world_actor::characters_are_contextually_present(
+                    ctx, leader_id, *member_id,
+                ))
         {
             return Err("Party members must be co-located before activity synchronization".into());
         }
@@ -1064,13 +1064,9 @@ fn validate_organization_schedule(
             .ok_or("Professional practice time requires an organization")?;
         let row =
             crate::organization::require_activity_membership(ctx, character_id, organization_id)?;
-        let definition = adventuresim_core::organization::organization(organization_id)
-            .ok_or("Unknown organization")?;
-        let rank = definition
-            .rank(&row.rank_id)
-            .ok_or("Membership references an unknown organization rank")?;
-        if !rank.practice_allowed {
-            return Err("This organization rank does not permit independent practice".into());
+        let role = crate::organization::membership_role(ctx, &row)?;
+        if !role.practice_allowed {
+            return Err("This organization role does not permit independent practice".into());
         }
     }
     Ok(())
@@ -1106,10 +1102,9 @@ fn effective_organization_schedule(
                     organization_id,
                 )
                 .ok()?;
-                let definition = adventuresim_core::organization::organization(organization_id)?;
-                definition.rank(&membership.rank_id)
+                crate::organization::membership_role(ctx, &membership).ok()
             })
-            .is_some_and(|rank| rank.practice_allowed);
+            .is_some_and(|role| role.practice_allowed);
         if !eligible {
             effective.profession_practice_minutes = 0;
         }
@@ -1245,31 +1240,30 @@ fn apply_training(
         schedule.prayer_minutes,
         &attributes,
     );
-    if let Some(character) = ctx.db.character().id().find(character_id) {
-        if let Some(settlement_id) = character.current_settlement_id {
-            if let Some(settlement) = ctx.db.settlement().id().find(&settlement_id) {
-                // Ordinary life supplies bounded ambient exposure during the
-                // waking two-thirds of actual elapsed settlement time.
-                let exposure = elapsed as f32 / 60.0 * (2.0 / 3.0);
-                for (language, coefficient) in [
-                    (
-                        OralLanguage::EastCentral,
-                        settlement.languages.east_central_bp,
-                    ),
-                    (
-                        OralLanguage::WestCentral,
-                        settlement.languages.west_central_bp,
-                    ),
-                    (OralLanguage::Low, settlement.languages.low_bp),
-                ] {
-                    excess += adventuresim_core::skill::apply_language_training(
-                        skills.oral_languages.direct_mut(language),
-                        exposure * f32::from(coefficient) / 10_000.0,
-                        attributes.instinct,
-                    )
-                    .excess_effective_hours;
-                }
-            }
+    if let Some(character) = ctx.db.character().id().find(character_id)
+        && let Some(settlement_id) = character.current_settlement_id
+        && let Some(settlement) = ctx.db.settlement().id().find(&settlement_id)
+    {
+        // Ordinary life supplies bounded ambient exposure during the
+        // waking two-thirds of actual elapsed settlement time.
+        let exposure = elapsed as f32 / 60.0 * (2.0 / 3.0);
+        for (language, coefficient) in [
+            (
+                OralLanguage::EastCentral,
+                settlement.languages.east_central_bp,
+            ),
+            (
+                OralLanguage::WestCentral,
+                settlement.languages.west_central_bp,
+            ),
+            (OralLanguage::Low, settlement.languages.low_bp),
+        ] {
+            excess += adventuresim_core::skill::apply_language_training(
+                skills.oral_languages.direct_mut(language),
+                exposure * f32::from(coefficient) / 10_000.0,
+                attributes.instinct,
+            )
+            .excess_effective_hours;
         }
     }
     for (minutes, organization_id) in [
@@ -1930,7 +1924,8 @@ pub fn perform_immediate_activity(
     if location.policy == ActivityLocation::IneligibleNamedLocation {
         return Err("Immediate activities are unavailable at this location".into());
     }
-    if !(60..=MINUTES_PER_DAY).contains(&requested_minutes) || requested_minutes % 60 != 0 {
+    if !(60..=MINUTES_PER_DAY).contains(&requested_minutes) || !requested_minutes.is_multiple_of(60)
+    {
         return Err("Activity duration must use whole hours from one to 24 hours".into());
     }
     ensure_character_time(ctx, character_id)?;
@@ -2076,17 +2071,15 @@ fn apply_organization_outcomes(
             .ok_or("Eligible organization membership disappeared during the interval")?;
         let definition = adventuresim_core::organization::organization(organization_id)
             .ok_or("Unknown organization")?;
-        let rank = definition
-            .rank(&row.rank_id)
-            .ok_or("Membership references an unknown organization rank")?;
+        let role = crate::organization::membership_role(ctx, &row)?;
         let old = row.practice_minutes_accrued;
         row.practice_minutes_accrued = old.saturating_add(
             elapsed.saturating_mul(u64::from(schedule.profession_practice_minutes)),
         );
         let interval =
-            u64::from(rank.practice_reward_interval_minutes).saturating_mul(ACTIVITY_MINUTE_SCALE);
+            u64::from(role.practice_reward_interval_minutes).saturating_mul(ACTIVITY_MINUTE_SCALE);
         if interval == 0 {
-            return Err("Eligible organization rank has no practice reward cadence".into());
+            return Err("Eligible organization role has no practice reward cadence".into());
         }
         let reward = row.practice_minutes_accrued / interval - old / interval;
         match definition.activity.reward {
@@ -2371,12 +2364,16 @@ fn require_character_residence_rest(ctx: &ReducerContext, character_id: u64) -> 
         .current_settlement_id
         .as_deref()
         .ok_or("Settlement rest requires the character to be at a settlement")?;
-    let residence =
-        crate::residence::active_residence_for_occupant(ctx, character_id, settlement_id)
+    let (residence, presence) =
+        crate::residence::active_residence_presence(ctx, character_id, settlement_id)
             .ok_or("You do not have a residence")?;
     debug_assert!(
         residence.status == crate::residence::ResidenceHoldingStatus::Active
             && residence.settlement_id == settlement_id
+            && matches!(
+                presence.place(),
+                adventuresim_core::strategic_place::StrategicPlaceId::Residence { .. }
+            )
     );
     Ok(())
 }

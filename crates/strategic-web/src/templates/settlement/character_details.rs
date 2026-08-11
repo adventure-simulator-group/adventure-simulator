@@ -1,5 +1,5 @@
 use adventuresim_core::{
-    organization::{OrganizationDefinition, OrganizationRank, organization},
+    organization::{OrganizationDefinition, OrganizationRoleDefinition, organization},
     strategic_schedule::CombatTrainingProfile,
 };
 use adventuresim_world_schema::OfficialReligion;
@@ -15,8 +15,8 @@ use super::{
     },
     chrome::{party_portrait_overlay, visual_stage},
     context::LocationView,
-    social::{player_chat_area, settlement_chat_area},
-    trade::{cooking_activity_dialog, religious_demand_rail},
+    social::player_chat_area,
+    trade::religious_demand_rail,
 };
 use crate::medical::MedicalPresentation;
 use crate::spacetimedb::{
@@ -251,29 +251,19 @@ pub fn party_personal_page(
     injuries: &[LimbInjury],
     projectiles: &[RetainedProjectile],
     filth: &[crate::spacetimedb::CharacterFilth],
-    cooking: bool,
-    herbalism: bool,
-    inventory: &[InventoryItem],
-    inventory_amounts: &[InventoryItemAmount],
-    food_lots: &[FoodLot],
-    item_definitions: &[ItemDefinition],
+    _inventory: &[InventoryItem],
+    _inventory_amounts: &[InventoryItemAmount],
+    _food_lots: &[FoodLot],
+    _item_definitions: &[ItemDefinition],
     character_action_dialog: Option<Markup>,
     surgery_open: Option<&str>,
     social_open: bool,
     foraging_dialog: Option<Markup>,
 ) -> Markup {
-    let cooking_href = location.preserve_building(format!(
-        "{}/party/{}?cook=true",
-        location.base_path(),
-        active_character.id
-    ));
-    let cooking_open = cooking;
-    let herbalism_href = location.preserve_building(format!(
-        "{}/party/{}?herbalism=true",
-        location.base_path(),
-        active_character.id
-    ));
-    let herbalism_open = herbalism;
+    // Cooking is informational on the skill sheet. The environmental
+    // fireplace portrait is the sole entry point to cooking.
+    let cooking_href: Option<String> = None;
+    let cooking_open = false;
     let surgery_path_template = location.preserve_building(format!(
         "{}/party/{}/surgery/__limb__",
         location.base_path(),
@@ -306,32 +296,13 @@ pub fn party_personal_page(
         Some(active_character.id),
         false,
     );
-    let center_after = settlement_chat_area(&active_character.name, Some(active_character));
+    let center_after = character_action_dialog
+        .unwrap_or_else(|| player_chat_area(location, active_character, active_character));
     let foraging_open = foraging_dialog.is_some();
     let after = html! {
         (physiology_dialog(medical, "physiology-chart-dialog", &active_character.name))
-        @if cooking_open {
-            (cooking_activity_dialog(
-                location,
-                active_character,
-                inventory,
-                inventory_amounts,
-                food_lots,
-                item_definitions,
-            ))
-        } @else if herbalism_open {
-            (super::trade::herbalism_activity_dialog(
-                location,
-                active_character,
-                skills,
-                attributes,
-                inventory,
-                item_definitions,
-            ))
-        } @else if let Some(dialog) = foraging_dialog {
+        @if let Some(dialog) = foraging_dialog {
             (dialog)
-        } @else {
-            @if let Some(dialog) = character_action_dialog { (dialog) }
         }
     };
     let content = character_sheet_markup(CharacterSheetView {
@@ -365,10 +336,8 @@ pub fn party_personal_page(
         professes_religion: religion_id.is_some(),
         prayer_religion_check,
         skill_actions: CharacterSheetActions {
-            cooking_href: Some(&cooking_href),
+            cooking_href: cooking_href.as_deref(),
             cooking_open,
-            herbalism_href: Some(&herbalism_href),
-            herbalism_open,
             foraging_href: Some(&foraging_href),
             foraging_open,
         },
@@ -429,7 +398,8 @@ pub fn party_stats_page(
         Some(selected.id),
         false,
     );
-    let center_after = player_chat_area(selected, active_character);
+    let center_after = character_action_dialog
+        .unwrap_or_else(|| player_chat_area(location, selected, active_character));
     let right_after = html! {
         @if selected.id != active_character.id {
                 @if active_character.party_id == selected.party_id {
@@ -459,10 +429,7 @@ pub fn party_stats_page(
                 }
             }
     };
-    let after = html! {
-        @if let Some(dialog) = character_action_dialog { (dialog) }
-        (physiology_dialog(medical, "physiology-chart-dialog", &selected.name))
-    };
+    let after = html! { (physiology_dialog(medical, "physiology-chart-dialog", &selected.name)) };
     let content = character_sheet_markup(CharacterSheetView {
         character: selected,
         capability,
@@ -602,8 +569,8 @@ fn organization_identity_display(
                 && membership.organization_id == presentation.organization_id
         })?;
         let definition = organization(&membership.organization_id)?;
-        let rank = definition.rank(&membership.rank_id)?;
-        Some((definition, rank))
+        let role = definition.role(&membership.role_id)?;
+        Some((definition, role))
     });
     let class = if selected.is_some() {
         "identity-control organization-identity-control is-readonly"
@@ -612,11 +579,11 @@ fn organization_identity_display(
     };
     html! {
         div class=(class) {
-            @if let Some((definition, rank)) = selected {
+            @if let Some((definition, role)) = selected {
                 (organization_crest(definition))
                 (organization_identity_copy(
                     definition.name.as_str(),
-                    &profession_name(definition, rank),
+                    &profession_name(definition, role),
                 ))
             } @else {
                 (empty_organization_crest())
@@ -668,11 +635,11 @@ fn organization_identity_picker(
         .iter()
         .filter_map(|membership| {
             let definition = organization(&membership.organization_id)?;
-            let rank = definition.rank(&membership.rank_id)?;
+            let role = definition.role(&membership.role_id)?;
             (membership.status == "active"
                 && minute <= membership.dues_paid_through_minute
                 && definition.recognition.includes(settlement_id))
-            .then_some((membership, definition, rank))
+            .then_some((membership, definition, role))
         })
         .collect::<Vec<_>>();
     let selected = presentation.and_then(|presentation| {
@@ -694,9 +661,9 @@ fn organization_identity_picker(
     html! {
         details class="organization-identity-picker" {
             summary class=(summary_class) {
-                @if let Some((_, definition, rank)) = selected {
+                @if let Some((_, definition, role)) = selected {
                     (organization_crest(definition))
-                    (organization_identity_copy(definition.name.as_str(), &profession_name(definition, rank)))
+                    (organization_identity_copy(definition.name.as_str(), &profession_name(definition, role)))
                 } @else {
                     (empty_organization_crest())
                     (organization_identity_copy("No organization", "No Profession"))
@@ -711,13 +678,13 @@ fn organization_identity_picker(
                         (organization_identity_copy("No organization", "No Profession"))
                     }
                 }
-                @for (_, definition, rank) in choices {
+                @for (_, definition, role) in choices {
                     @let is_selected = selected.is_some_and(|(_, selected_definition, _)| selected_definition.id == definition.id);
                     form method="post" action=(format!("{base}/organization-presentation/{}", definition.id)) {
                         button type="submit" class=(if is_selected { "organization-picker-option is-selected" } else { "organization-picker-option" })
                             role="menuitem" {
                             (organization_crest(definition))
-                            (organization_identity_copy(definition.name.as_str(), &profession_name(definition, rank)))
+                            (organization_identity_copy(definition.name.as_str(), &profession_name(definition, role)))
                         }
                     }
                 }
@@ -735,7 +702,10 @@ fn organization_identity_copy(organization_name: &str, profession: &str) -> Mark
     }
 }
 
-fn profession_name(definition: &OrganizationDefinition, rank: &OrganizationRank) -> String {
+fn profession_name(
+    definition: &OrganizationDefinition,
+    role: &OrganizationRoleDefinition,
+) -> String {
     let profession = match definition.service_id.as_deref() {
         Some("merchants") => Some("Merchant"),
         Some("weapons") => Some("Weaponsmith"),
@@ -748,9 +718,9 @@ fn profession_name(definition: &OrganizationDefinition, rank: &OrganizationRank)
         _ => None,
     };
     profession.map_or_else(
-        || rank.name.clone(),
-        |profession| match rank.id.as_str() {
-            "apprentice" | "journeyman" | "master" => format!("{} {profession}", rank.name),
+        || role.name.clone(),
+        |profession| match role.id.as_str() {
+            "apprentice" | "journeyman" | "master" => format!("{} {profession}", role.name),
             _ => profession.to_string(),
         },
     )
@@ -1111,8 +1081,8 @@ mod tests {
     #[test]
     fn service_memberships_name_the_profession() {
         let definition = organization("weaponsmith_guild").expect("weapons guild");
-        let rank = definition.ranks.first().expect("weapons guild rank");
-        assert_eq!(profession_name(definition, rank), "Apprentice Weaponsmith");
+        let role = definition.roles.first().expect("weapons guild role");
+        assert_eq!(profession_name(definition, role), "Apprentice Weaponsmith");
     }
 
     #[test]
@@ -1123,8 +1093,8 @@ mod tests {
             ("surgeons_guild", "Apprentice Surgeon", "scalpel"),
         ] {
             let definition = organization(id).unwrap();
-            let rank = definition.ranks.first().unwrap();
-            assert_eq!(profession_name(definition, rank), profession);
+            let role = definition.roles.first().unwrap();
+            assert_eq!(profession_name(definition, role), profession);
             assert_eq!(organization_charge(definition), charge);
         }
     }

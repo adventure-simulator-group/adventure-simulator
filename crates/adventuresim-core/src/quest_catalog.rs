@@ -93,6 +93,8 @@ pub struct Monster {
     pub primary_category: BestiaryCategory,
     pub secondary_categories: Vec<BestiaryCategory>,
     pub combat: MonsterCombat,
+    #[serde(default)]
+    pub negotiation: MonsterNegotiation,
     pub investigation: MonsterInvestigation,
 }
 
@@ -100,6 +102,15 @@ impl Monster {
     pub fn categories(&self) -> impl Iterator<Item = BestiaryCategory> + '_ {
         std::iter::once(self.primary_category).chain(self.secondary_categories.iter().copied())
     }
+}
+
+/// Narrow pre-combat conversation capability. Absence means the threat is not
+/// a speaking negotiation target; it does not infer sapience from rig or name.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MonsterNegotiation {
+    pub sapient: bool,
+    pub negotiable: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -502,13 +513,13 @@ impl Catalog {
         }
         for relation in relations.values() {
             for candidate in &relation.candidates {
-                if let Some(bridge) = &candidate.required_bridge {
-                    if !bridges.contains(bridge) {
-                        return Err(format!(
-                            "relation {} references missing bridge {bridge}",
-                            relation.id
-                        ));
-                    }
+                if let Some(bridge) = &candidate.required_bridge
+                    && !bridges.contains(bridge)
+                {
+                    return Err(format!(
+                        "relation {} references missing bridge {bridge}",
+                        relation.id
+                    ));
                 }
             }
         }

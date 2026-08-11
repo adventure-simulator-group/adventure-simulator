@@ -34,6 +34,14 @@
   }
 
   function mount(root = document) {
+    root.querySelectorAll(".fireplace-rest-menu input[type='range']").forEach((input) => {
+      if (input.dataset.fireplaceRestMounted) return;
+      input.dataset.fireplaceRestMounted = "true";
+      const output = input.form?.querySelector(`output[for="${input.id}"]`);
+      const updateOutput = () => { if (output) output.textContent = input.value; };
+      input.addEventListener("input", updateOutput);
+      updateOutput();
+    });
     root.querySelectorAll("[data-cooking-activity]").forEach((form) => {
       if (form.dataset.cookingMounted) return;
       form.dataset.cookingMounted = "true";
@@ -56,7 +64,7 @@
         amounts.value = values.map((value) => value.quantity).join(",");
         if (empty) empty.hidden = values.length > 0;
 
-        let reason = "Transfer at least one ingredient to the pot";
+        let reason = "Select at least one loose food portion for spit roasting";
         if (method && values.length) {
           const mass = values.reduce(
             (sum, value) => sum + value.mass * value.quantity / value.available,
@@ -107,7 +115,7 @@
           if (method.value === "pan-fry" && culinaryFatMass < mass * panFatRatio) {
             notes.push("staged culinary fat is below 2% of ingredient mass: quality drops one tier");
           }
-          if (method.value === "stew") notes.push("eaten now; leftovers are discarded");
+          if (method.value === "stew") notes.push("stew remains in the fireplace until retrieved");
           if (method.value === "stew") notes.push(`${formatNumber(stewWaterMl / 1000)} kg water included in flavor mass`);
           reason = notes.join(" · ");
         }

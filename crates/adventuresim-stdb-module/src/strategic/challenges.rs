@@ -1,3 +1,5 @@
+use crate::condition::character_strategic_condition__view as _;
+
 pub const ERRANTRY_ISSUER_ORGANIZATION_ID: &str = "order_saint_george";
 pub const ERRANTRY_FINALE_THREAT_ID: &str = "armed_retainer";
 pub const COURIER_REST_DELAY_MINUTES: u64 = 60;
@@ -615,23 +617,49 @@ pub fn backend_road_challenges(ctx: &ViewContext) -> Vec<BackendRoadChallenge> {
                         .filter(&challenge.id)
                         .find(|row| row.active && usize::from(row.ordinal) == ordinal)?;
                     let character = ctx.db.character().id().find(membership.character_id)?;
-                    let has_unbandaged_cut = ctx
-                        .db
-                        .limb_injury()
-                        .character_id()
-                        .filter(character.id)
-                        .any(|injury| injury.cut_damage > 0.0 && !injury.bandaged);
+                    let treatment_limb = crate::surgery::LimbRegion::ALL.into_iter().find(|limb| {
+                        ctx.db
+                            .limb_injury()
+                            .character_id()
+                            .filter(character.id)
+                            .find(|injury| injury.limb == *limb)
+                            .is_some_and(|injury| injury.cut_damage > 0.0 && !injury.bandaged)
+                    });
+                    let presentation_decision = |decision| match decision {
+                        crate::world_actor::ContextualDecisionState::Allowed => adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Request,
+                        crate::world_actor::ContextualDecisionState::Refused => adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Refused,
+                        crate::world_actor::ContextualDecisionState::Unavailable => adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Unavailable,
+                    };
+                    let available = active && challenge.open && character.alive;
                     Some(adventuresim_core::road_encounter_catalog::PresentationCastMember {
                         character_id: character.id,
                         name: character.name,
                         role: *role,
-                        can_talk: active && challenge.open && character.alive,
-                        can_bandage: active
-                            && challenge.open
-                            && character.alive
-                            && membership.treatment_consent
-                            && has_unbandaged_cut,
+                        contact_decision: if available {
+                            presentation_decision(membership.contact_decision)
+                        } else {
+                            adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Unavailable
+                        },
+                        treatment_decision: if available && treatment_limb.is_some() {
+                            let incapacitated = ctx.db.character_strategic_condition()
+                                .character_id().find(character.id)
+                                .is_some_and(|condition| condition.incapacitation >= 1.0 || condition.status == "incapacitated");
+                            let emergency = treatment_limb.is_some_and(|limb| ctx.db.limb_injury()
+                                .character_id().filter(character.id)
+                                .find(|injury| injury.limb == limb)
+                                .is_some_and(|injury| adventuresim_core::strategic_action::emergency_bandage_is_necessary(
+                                    incapacitated, "bandage", injury.cut_damage, injury.bandaged)));
+                            if membership.treatment_decision == crate::world_actor::ContextualDecisionState::Unavailable && emergency {
+                                adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::EmergencyTreatment
+                            } else {
+                                presentation_decision(membership.treatment_decision)
+                            }
+                        } else {
+                            adventuresim_core::road_encounter_catalog::InteractionPresentationDecision::Unavailable
+                        },
                         contact_revision,
+                        membership_revision: membership.revision,
+                        treatment_limb_slug: treatment_limb.map(|limb| limb.slug().to_owned()),
                     })
                 })
                 .collect();
@@ -648,7 +676,7 @@ pub fn backend_road_challenges(ctx: &ViewContext) -> Vec<BackendRoadChallenge> {
                     } else if choice.requires_treatment() {
                         ordinary_treatment_complete
                     } else {
-                        choice.requirements.iter().all(|requirement| available(requirement))
+                        choice.requirements.iter().all(&available)
                     },
                 }).collect() } else { Vec::new() },
                 response: selected.into_iter().flat_map(|choice| choice.response.iter()).filter_map(line).collect(),
@@ -757,7 +785,7 @@ fn party_at_bound_trial_camp(
             .is_some_and(|encounter| encounter.status == "awaiting_choice")
 }
 
-fn party_at_bound_road_challenge_view(
+pub(crate) fn party_at_bound_road_challenge_view(
     ctx: &ViewContext,
     party: &Party,
     challenge: &RoadChallengeAuthority,
@@ -821,6 +849,23 @@ pub(crate) fn party_at_bound_road_challenge(
             .is_some_and(|encounter| encounter.status == "awaiting_choice")
 }
 
+fn narrative_encounter_occurrence_id(
+    party_id: &str,
+    seed: u64,
+    origin_slug: &str,
+    journey: &PartyJourney,
+    selection: &adventuresim_core::encounter::NarrativeSelection,
+) -> String {
+    format!(
+        "narrative:{party_id}:{seed:016x}:{origin_slug}:{}:{}:{}:{}:{}",
+        journey.departure_minute,
+        selection.boundary_minute,
+        journey.completed_minutes,
+        journey.completed_elapsed_minutes,
+        selection.roll_index
+    )
+}
+
 pub(crate) fn materialize_chance_narrative_encounter(
     ctx: &ReducerContext,
     party_id: &str,
@@ -832,7 +877,7 @@ pub(crate) fn materialize_chance_narrative_encounter(
         .db
         .party_journey_authority()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Narrative encounter requires a durable journey")?;
     let definition = adventuresim_core::road_encounter_catalog::encounter(&selection.catalog_id)
         .ok_or("Narrative encounter selection has an unknown catalog ID")?;
@@ -840,7 +885,7 @@ pub(crate) fn materialize_chance_narrative_encounter(
         .db
         .party_journey_route_authority()
         .party_id()
-        .find(&party_id.to_string());
+        .find(party_id.to_string());
     let position = route
         .as_ref()
         .and_then(|route| route_position_at_minute(route, journey.completed_minutes))
@@ -849,7 +894,7 @@ pub(crate) fn materialize_chance_narrative_encounter(
         .db
         .party_journey_encounter_authority()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Narrative encounter requires durable encounter entropy")?
         .seed;
     let origin_slug = match origin {
@@ -858,13 +903,12 @@ pub(crate) fn materialize_chance_narrative_encounter(
         NarrativeEncounterOrigin::Errantry => "errantry",
         NarrativeEncounterOrigin::DeveloperDemo => "developer-demo",
     };
-    let id = format!(
-        "narrative:{party_id}:{seed:016x}:{origin_slug}:{}:{}:{}:{}:{}",
-        journey.departure_minute,
-        selection.boundary_minute,
-        journey.completed_minutes,
-        journey.completed_elapsed_minutes,
-        selection.roll_index
+    let id = narrative_encounter_occurrence_id(
+        party_id,
+        seed,
+        origin_slug,
+        &journey,
+        selection,
     );
     if let Some(existing) = ctx.db.road_challenge_authority().id().find(&id) {
         let private = ctx
@@ -971,8 +1015,8 @@ fn materialize_narrative_combat(
         .ok_or("Narrative combat requires durable encounter entropy")?;
     let roll_index = narrative_combat_roll(encounter_authority.seed, &challenge.id);
     let encounter_id = opaque_strategic_encounter_id(encounter_authority.seed, roll_index);
-    if let Some(existing) = ctx.db.strategic_encounter().party_id().find(&party.id) {
-        if existing.status == "awaiting_choice" {
+    if let Some(existing) = ctx.db.strategic_encounter().party_id().find(&party.id)
+        && existing.status == "awaiting_choice" {
             if existing.encounter_id == encounter_id
                 && ctx
                     .db
@@ -988,7 +1032,6 @@ fn materialize_narrative_combat(
             }
             return Err("Resolve the pending strategic encounter before starting another".into());
         }
-    }
     let core_archetype = match archetype {
         adventuresim_core::road_encounter_catalog::RoadCombatArchetype::Bandits => {
             EncounterArchetype::Bandits
@@ -1205,7 +1248,7 @@ pub(crate) fn bind_errantry_trials_to_current_camp(
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party not found")?;
     if party.camp_destination.is_none() {
         return Ok(());
@@ -1214,7 +1257,7 @@ pub(crate) fn bind_errantry_trials_to_current_camp(
         .db
         .party_journey_authority()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Camp has no journey authority")?;
     let JourneyEndpoint::CaseSite(destination) = &journey.destination else {
         return Ok(());
@@ -1826,6 +1869,7 @@ pub fn resolve_errantry_road_challenge(
     Ok(())
 }
 
+#[cfg(any())]
 fn puzzle_demo_enabled() -> bool {
     COMPILED_DEV_BOOTSTRAP_TOKEN.is_some_and(|token| {
         adventuresim_core::simulation_security::simulation_bootstrap_authorized(
@@ -1917,44 +1961,39 @@ fn order_errantry_issuer(
     })
 }
 
-/// Creates or reuses an accepted, immediately playable errantry quest.
-#[reducer]
-pub fn load_puzzle_demo(
+/// Bootstrap-only catalog materializer. Each scenario begins from its own
+/// ordinary errantry camp, so no selected character is mutated by the UI.
+fn materialize_development_road_encounter(
     ctx: &ReducerContext,
     character_id: u64,
-    puzzle_kind: ErrantryPuzzleKind,
-) -> Result<(), String> {
-    require_strategic_character_authority(ctx, character_id)?;
-    if !puzzle_demo_enabled() {
-        return Err("Puzzle demo loading is disabled in this module build".into());
-    }
-    materialize_order_errantry(
-        ctx,
-        character_id,
-        None,
-        ErrantryLaunch::DirectDemoCamp(puzzle_kind),
-    )
-    .map(|_| ())
-}
-
-/// Developer-only catalog harness for iterating on any compiled road encounter.
-/// It uses the ordinary persisted occurrence and reducer path, but binds the
-/// requested definition to the party's current journey camp immediately.
-#[reducer]
-pub fn load_road_encounter_demo(
-    ctx: &ReducerContext,
-    character_id: u64,
-    catalog_id: String,
-) -> Result<(), String> {
-    require_strategic_character_authority(ctx, character_id)?;
-    if !puzzle_demo_enabled() {
-        return Err("Road encounter demo loading is disabled in this module build".into());
-    }
+    catalog_id: &str,
+) -> Result<String, String> {
     if catalog_id.is_empty() || catalog_id.len() > 96 {
         return Err("Road encounter catalog ID is invalid".into());
     }
-    let definition = adventuresim_core::road_encounter_catalog::encounter(&catalog_id)
+    let definition = adventuresim_core::road_encounter_catalog::encounter(catalog_id)
         .ok_or("Unknown road encounter catalog ID")?;
+    // Reuse the ordinary quest/camp materializer to establish durable journey
+    // authority. Its generated puzzle remains a separate, harmless subject.
+    if ctx
+        .db
+        .party_journey_authority()
+        .iter()
+        .all(|journey| {
+            ctx.db
+                .party_authority()
+                .id()
+                .find(&journey.party_id)
+                .is_none_or(|party| party.leader_id != character_id)
+        })
+    {
+        materialize_order_errantry(
+            ctx,
+            character_id,
+            None,
+            ErrantryLaunch::DirectDemoCamp(ErrantryPuzzleKind::OrderedSigils),
+        )?;
+    }
     let character = crate::character::require_living_character(ctx, character_id)?;
     let party_id = character.party_id.ok_or("Must be in a party")?;
     let party = ctx
@@ -1984,28 +2023,54 @@ pub fn load_road_encounter_demo(
     {
         return Err("Road encounter demo requires a reached journey camp".into());
     }
-    let ordinal = ctx
-        .db
-        .road_challenge_authority()
-        .party_id()
-        .filter(&party_id)
-        .filter(|challenge| challenge.catalog_id == definition.id)
-        .count() as u64;
     let catalog_hash = catalog_id
         .bytes()
         .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
             (hash ^ u64::from(byte)).wrapping_mul(0x1000_0000_01b3)
         });
+    let selection = adventuresim_core::encounter::NarrativeSelection {
+        boundary_minute: journey.completed_elapsed_minutes,
+        roll_index: 0xd000_0000_0000_0000 ^ catalog_hash,
+        catalog_id: catalog_id.into(),
+    };
+    let seed = ctx
+        .db
+        .party_journey_encounter_authority()
+        .party_id()
+        .find(&party_id)
+        .ok_or("Road encounter demo requires durable encounter entropy")?
+        .seed;
+    let occurrence_id = narrative_encounter_occurrence_id(
+        &party_id,
+        seed,
+        "developer-demo",
+        &journey,
+        &selection,
+    );
+    if let Some(existing) = ctx.db.road_challenge_authority().id().find(&occurrence_id) {
+        let private = ctx
+            .db
+            .narrative_encounter_private_authority()
+            .occurrence_id()
+            .find(&occurrence_id)
+            .ok_or("Development road occurrence lacks private authority")?;
+        if existing.party_id == party_id
+            && existing.catalog_id == definition.id
+            && existing.catalog_revision == definition.version
+            && existing.catalog_digest == adventuresim_core::road_encounter_catalog::digest()
+            && private.origin == NarrativeEncounterOrigin::DeveloperDemo
+        {
+            return Ok(occurrence_id);
+        }
+        return Err("Development road occurrence identity conflicts".into());
+    }
     materialize_chance_narrative_encounter(
         ctx,
         &party_id,
-        &adventuresim_core::encounter::NarrativeSelection {
-            boundary_minute: journey.completed_elapsed_minutes,
-            roll_index: 0xd000_0000_0000_0000 ^ catalog_hash ^ ordinal.rotate_left(17),
-            catalog_id,
-        },
+        &selection,
         NarrativeEncounterOrigin::DeveloperDemo,
-    )
+    )?;
+    Ok(occurrence_id)
 }
 
 /// Narrow production issuance seam: the client identifies only its live
@@ -2444,7 +2509,7 @@ fn materialize_order_errantry(
                 .find(member_id)
                 .ok_or("Party member not found")?;
             member.current_settlement_id = None;
-            crate::investigation::set_character_case_site(ctx, member_id, None);
+            crate::investigation::set_character_case_site(ctx, member_id, None)?;
             ctx.db.character().id().update(member);
         }
         bind_errantry_trials_to_current_camp(ctx, &party_id)?;
@@ -2552,7 +2617,7 @@ mod challenge_source_boundary_tests {
         let reuse = loader.find("active_puzzle_demo").unwrap();
         let fresh_ordinal = loader.find("let ordinal =").unwrap();
         assert!(reuse < fresh_ordinal);
-        assert!(loader.contains("return Ok(())"));
+        assert!(loader.contains("return Ok(MaterializedErrantry"));
         assert!(loader.contains("ordinal.rotate_left(23)"));
         let reuse_lookup = source
             .split("fn active_puzzle_demo")
@@ -2573,18 +2638,18 @@ mod challenge_source_boundary_tests {
     fn road_encounter_demo_is_dev_authorized_catalog_driven_and_camp_bound() {
         let source = include_str!("challenges.rs");
         let loader = source
-            .split("pub fn load_road_encounter_demo")
+            .split("fn materialize_development_road_encounter")
             .nth(1)
             .and_then(|tail| tail.split("pub fn accept_order_errantry").next())
             .unwrap();
-        assert!(loader.contains("require_strategic_character_authority"));
-        assert!(loader.contains("puzzle_demo_enabled"));
-        assert!(loader.contains("road_encounter_catalog::encounter(&catalog_id)"));
+        assert!(loader.contains("road_encounter_catalog::encounter(catalog_id)"));
         assert!(loader.contains("party.leader_id != character_id"));
         assert!(loader.contains("camp_stop_minutes.contains"));
         assert!(loader.contains("materialize_chance_narrative_encounter"));
         assert!(loader.contains("NarrativeEncounterOrigin::DeveloperDemo"));
-        assert!(!loader.contains("provenance"));
+        assert!(loader.contains("narrative_encounter_occurrence_id"));
+        assert!(!loader.contains(".count()"));
+        assert!(!loader.contains("ordinal.rotate_left"));
     }
 
     #[test]

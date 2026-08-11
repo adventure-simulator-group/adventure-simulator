@@ -32,6 +32,23 @@ pub struct CaseSiteRecoveryNotice {
     pub withdrawal_href: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct HostileNegotiationPresentation {
+    pub spokesman: Character,
+    pub context_ref: String,
+    pub expected_revision: u32,
+    pub latest_response: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct HostileSurrenderPresentation {
+    pub spokesman: Character,
+    pub context_ref: String,
+    pub expected_revision: u32,
+    pub mode: crate::spacetimedb::HostileSurrenderMode,
+    pub latest_response: Option<String>,
+}
+
 pub fn quest_location_map_page(
     presentation: &CaseSitePagePresentation,
     site: &BackendCaseSitePin,
@@ -85,6 +102,8 @@ pub fn quest_location_map_page(
             resolved,
             autoresolve_report,
             None,
+            None,
+            None,
             false,
             recovery_notice,
             true,
@@ -123,6 +142,8 @@ fn quest_location_center(
     can_fight: bool,
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
+    hostile_negotiation: Option<&HostileNegotiationPresentation>,
+    hostile_surrender: Option<&HostileSurrenderPresentation>,
     travel_planner: Option<Markup>,
     show_combat_actions: bool,
     recovery_notice: Option<&CaseSiteRecoveryNotice>,
@@ -247,6 +268,58 @@ fn quest_location_center(
                     }
                 }
             }
+            @if let Some(negotiation) = hostile_negotiation.filter(|_| !resolved) {
+                section class="settlement-chat-area hostile-conversation-dock"
+                    aria-label="Hostile pre-combat conversation" {
+                    h3 { "Parley with " (&negotiation.spokesman.name) }
+                    @if let Some(response) = negotiation.latest_response.as_deref() {
+                        p class="chat-message" { (response) }
+                    } @else {
+                        p class="text-muted" {
+                            "Ask the hostile spokesman to withdraw before battle. A refusal leaves every combat approach available."
+                        }
+                    }
+                    form method="post"
+                        action=(format!("/locations/case-site/{}/hostile/withdrawal", site.case_site_id)) {
+                        input type="hidden" name="spokesman_id" value=(negotiation.spokesman.id);
+                        input type="hidden" name="context_ref" value=(&negotiation.context_ref);
+                        input type="hidden" name="expected_revision" value=(negotiation.expected_revision);
+                        input type="hidden" name="action_id" value=(crate::templates::fresh_request_token("hostile-parley"));
+                        button type="submit" class="btn btn-secondary" { "Ask them to withdraw" }
+                    }
+                }
+            }
+            @if let Some(surrender) = hostile_surrender.filter(|_| !resolved) {
+                section class="settlement-chat-area hostile-surrender-dock"
+                    aria-label="Hostile surrender" {
+                    h3 { "Hostile surrender terms from " (&surrender.spokesman.name) }
+                    @if let Some(response) = surrender.latest_response.as_deref() {
+                        p class="chat-message" { (response) }
+                    }
+                    @if surrender.mode == crate::spacetimedb::HostileSurrenderMode::Offer {
+                        p { "The hostile group offers to surrender as a whole." }
+                        @for (accept, label) in [(true, "Accept surrender"), (false, "Refuse surrender")] {
+                            form method="post" action=(format!("/locations/case-site/{}/hostile/surrender/offer", site.case_site_id)) {
+                                input type="hidden" name="spokesman_id" value=(surrender.spokesman.id);
+                                input type="hidden" name="context_ref" value=(&surrender.context_ref);
+                                input type="hidden" name="expected_revision" value=(surrender.expected_revision);
+                                input type="hidden" name="accept" value=(accept);
+                                input type="hidden" name="action_id" value=(crate::templates::fresh_request_token("hostile-surrender-offer"));
+                                button type="submit" class="btn btn-secondary" { (label) }
+                            }
+                        }
+                    } @else {
+                        p class="text-muted" { "Demand that the whole hostile group yield before combat." }
+                        form method="post" action=(format!("/locations/case-site/{}/hostile/surrender/demand", site.case_site_id)) {
+                            input type="hidden" name="spokesman_id" value=(surrender.spokesman.id);
+                            input type="hidden" name="context_ref" value=(&surrender.context_ref);
+                            input type="hidden" name="expected_revision" value=(surrender.expected_revision);
+                            input type="hidden" name="action_id" value=(crate::templates::fresh_request_token("hostile-surrender-demand"));
+                            button type="submit" class="btn btn-secondary" { "Demand surrender" }
+                        }
+                    }
+                }
+            }
             @if let Some(travel_planner) = travel_planner { (travel_planner) }
             (settlement_chat_area_with_info(&presentation.title, active_character, &autoresolve_messages))
         }
@@ -273,6 +346,61 @@ fn autoresolve_info_messages(report: Option<&AutoresolveReport>) -> Vec<String> 
     messages
 }
 
+#[derive(Clone, Debug)]
+pub struct QuestCounterparty {
+    pub character: Character,
+    pub contact_ref: String,
+    pub revision: u32,
+    pub membership_revision: u32,
+    pub contact_decision: crate::spacetimedb::BackendContextualDecision,
+    pub treatment_decision: crate::spacetimedb::BackendContextualDecision,
+    pub treatment_limb_slug: Option<String>,
+}
+
+fn quest_counterparty_strip(case_site_id: &str, counterparties: &[QuestCounterparty]) -> Markup {
+    html! {
+        nav class="settlement-npc-strip counterparty-strip" aria-label="Counterparty" {
+            @for counterparty in counterparties {
+                div class="npc-portrait counterparty-portrait" {
+                    span class="npc-portrait-image" aria-hidden="true" { "?" }
+                    span class="npc-portrait-name" { (&counterparty.character.name) }
+                    @if counterparty.contact_decision == crate::spacetimedb::BackendContextualDecision::Request {
+                      form method="post" action=(format!("/locations/case-site/{case_site_id}/counterparty/contact")) {
+                        input type="hidden" name="target_id" value=(counterparty.character.id);
+                        input type="hidden" name="contact_ref" value=(&counterparty.contact_ref);
+                        input type="hidden" name="expected_revision" value=(counterparty.revision);
+                        input type="hidden" name="action_id" value=(format!("quest-contact:{case_site_id}:{}:{}", counterparty.revision, counterparty.character.id));
+                        button type="submit" class="btn btn-secondary btn-small" { "Request" }
+                      }
+                    } @else {
+                      button type="button" class="btn btn-secondary btn-small" disabled {
+                        (if counterparty.contact_decision == crate::spacetimedb::BackendContextualDecision::Refused { "Refused" } else { "Unavailable" })
+                      }
+                    }
+                    @if counterparty.character.alive && counterparty.treatment_limb_slug.is_some() && matches!(counterparty.treatment_decision,
+                        crate::spacetimedb::BackendContextualDecision::Request
+                        | crate::spacetimedb::BackendContextualDecision::EmergencyTreatment) {
+                        form method="post" action=(format!("/locations/case-site/{case_site_id}/counterparty/bandage")) {
+                            input type="hidden" name="patient_id" value=(counterparty.character.id);
+                            input type="hidden" name="limb_slug" value=(counterparty.treatment_limb_slug.as_deref().unwrap_or_default());
+                            input type="hidden" name="action_id" value=(crate::templates::fresh_request_token("treatment"));
+                            input type="hidden" name="context_ref" value=(&counterparty.contact_ref);
+                            input type="hidden" name="expected_membership_revision" value=(counterparty.membership_revision);
+                            button type="submit" class="btn btn-secondary btn-small" {
+                              (if counterparty.treatment_decision == crate::spacetimedb::BackendContextualDecision::EmergencyTreatment { "Emergency treatment" } else { "Request treatment" })
+                            }
+                        }
+                    } @else {
+                      button type="button" class="btn btn-secondary btn-small" disabled {
+                        (if counterparty.treatment_decision == crate::spacetimedb::BackendContextualDecision::Refused { "Refused" } else { "Unavailable" })
+                      }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Enemy encounter and, once resolved, its loot at an off-road quest location.
 pub fn quest_location_enemy_page(
     presentation: &CaseSitePagePresentation,
@@ -280,9 +408,9 @@ pub fn quest_location_enemy_page(
     onsite_actions: &[BackendInvestigationAction],
     active_character: Option<&Character>,
     party_members: &[Character],
-    counterparties: &[Character],
-    counterparty_contact_ref: Option<&str>,
-    counterparty_contact_revision: u32,
+    counterparties: &[QuestCounterparty],
+    hostile_negotiation: Option<&HostileNegotiationPresentation>,
+    hostile_surrender: Option<&HostileSurrenderPresentation>,
     can_fight: bool,
     resolved: bool,
     autoresolve_report: Option<&AutoresolveReport>,
@@ -305,27 +433,7 @@ pub fn quest_location_enemy_page(
         aside class="left-sidebar" {
             @if !resolved && !counterparties.is_empty() {
                 (sidebar_section("Counterparty", html! {
-                    nav class="settlement-npc-strip counterparty-strip" aria-label="Counterparty" {
-                        @for counterparty in counterparties {
-                            div class="npc-portrait counterparty-portrait" {
-                                span class="npc-portrait-image" aria-hidden="true" { "?" }
-                                span class="npc-portrait-name" { (&counterparty.name) }
-                                form method="post" action=(format!("/locations/case-site/{}/counterparty/contact", site.case_site_id)) {
-                                    input type="hidden" name="target_id" value=(counterparty.id);
-                                    input type="hidden" name="contact_ref" value=(counterparty_contact_ref.unwrap_or(&site.case_site_id));
-                                    input type="hidden" name="expected_revision" value=(counterparty_contact_revision);
-                                    input type="hidden" name="action_id" value=(format!("quest-contact:{}:{}:{}", site.case_site_id, counterparty_contact_revision, counterparty.id));
-                                    button type="submit" class="btn btn-secondary btn-small" { "Talk" }
-                                }
-                                @if counterparty.alive {
-                                    form method="post" action=(format!("/locations/case-site/{}/counterparty/bandage", site.case_site_id)) {
-                                        input type="hidden" name="patient_id" value=(counterparty.id);
-                                        button type="submit" class="btn btn-secondary btn-small" { "Bandage" }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    (quest_counterparty_strip(&site.case_site_id, counterparties))
                 }))
             }
             @if !resolved {
@@ -384,6 +492,8 @@ pub fn quest_location_enemy_page(
             can_fight,
             resolved,
             autoresolve_report,
+            hostile_negotiation,
+            hostile_surrender,
             None,
             true,
             recovery_notice,
@@ -420,7 +530,7 @@ pub fn quest_location_enemy_page(
                                 @let display_name = food_lot.map_or_else(|| item_display_name(&entry.item_id), |lot| lot.display_name.clone());
                                 @let value = definition.and_then(|item| item.base_value).unwrap_or(0);
                                 @let target = inventory_target(targets, &entry.item_id);
-                                tr class="trade-inventory-row" data-target=(target) {
+                                tr class="trade-inventory-row" data-target=(target) data-party-inventory-id=(entry.id) {
                                     td class="inventory-item-type" { (item_type_icon(&entry.item_id)) }
                                     td class="inventory-item-name" { (super::settlement::item_name_with_food_lot(&entry.item_id, &display_name, definition, food_lot)) }
                                     td class="inventory-count" { (entry.quantity) }
@@ -467,7 +577,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn case_site_counterparties_use_shared_contact_and_treatment_actions() {
+    fn case_site_counterparties_use_per_row_contact_and_treatment_actions() {
         let template = include_str!("quest.rs")
             .split("#[cfg(test)]")
             .next()
@@ -476,8 +586,103 @@ mod tests {
         assert!(template.contains("/counterparty/contact"));
         assert!(template.contains("/counterparty/bandage"));
         assert!(routes.contains("\"treat_limb\""));
+        let projection = routes
+            .split("let context_memberships: Vec<BackendContextCharacter>")
+            .nth(1)
+            .and_then(|tail| tail.split("let can_fight").next())
+            .expect("case-site counterparty projection");
+        assert!(!projection.contains(".first()"));
+        assert!(projection.contains("contact_ref: membership.contact_ref"));
+        assert!(projection.contains("revision: membership.revision"));
         assert!(!template.contains("examine_outbreak_patient"));
         assert!(!template.contains("outbreak_patient_examination"));
+    }
+
+    #[test]
+    fn each_counterparty_renders_only_its_own_contextual_claims() {
+        let character = |id, name: &str| Character {
+            id,
+            name: name.into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: None,
+            current_case_site_id: Some("case-site:known".into()),
+            party_id: None,
+            age_years: 30,
+            alive: true,
+            temporary: false,
+            social_notification_count: 0,
+            automatic_social_chat_enabled: false,
+        };
+        let rows = [
+            QuestCounterparty {
+                character: character(41, "Alice"),
+                contact_ref: "claim-a".into(),
+                revision: 3,
+                membership_revision: 2,
+                contact_decision: crate::spacetimedb::BackendContextualDecision::Request,
+                treatment_decision: crate::spacetimedb::BackendContextualDecision::Unavailable,
+                treatment_limb_slug: None,
+            },
+            QuestCounterparty {
+                character: character(42, "Bert"),
+                contact_ref: "claim-b".into(),
+                revision: 7,
+                membership_revision: 4,
+                contact_decision: crate::spacetimedb::BackendContextualDecision::Refused,
+                treatment_decision: crate::spacetimedb::BackendContextualDecision::Request,
+                treatment_limb_slug: Some("right-leg".into()),
+            },
+            QuestCounterparty {
+                character: character(43, "Charlie"),
+                contact_ref: "claim-c".into(),
+                revision: 9,
+                membership_revision: 6,
+                contact_decision: crate::spacetimedb::BackendContextualDecision::Unavailable,
+                treatment_decision:
+                    crate::spacetimedb::BackendContextualDecision::EmergencyTreatment,
+                treatment_limb_slug: Some("chest".into()),
+            },
+        ];
+        let markup = quest_counterparty_strip("case-site:known", &rows).into_string();
+        let cards = markup
+            .split("<div class=\"npc-portrait counterparty-portrait\">")
+            .skip(1)
+            .map(|card| {
+                card.split_once("</div>")
+                    .expect("complete counterparty card")
+                    .0
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(cards.len(), 3);
+        assert!(cards[0].contains("Alice"));
+        assert!(cards[0].contains("value=\"41\""));
+        assert!(cards[0].contains("value=\"claim-a\""));
+        assert!(!cards[0].contains("value=\"claim-b\""));
+        assert!(!cards[0].contains("value=\"claim-c\""));
+        assert!(cards[0].contains("value=\"3\""));
+        assert!(cards[0].contains("Request"));
+        assert!(cards[0].contains("Unavailable"));
+        assert!(cards[1].contains("Bert"));
+        assert!(cards[1].contains("value=\"42\""));
+        assert!(cards[1].contains("value=\"claim-b\""));
+        assert!(!cards[1].contains("value=\"claim-a\""));
+        assert!(!cards[1].contains("value=\"claim-c\""));
+        assert!(!cards[1].contains("/counterparty/contact"));
+        assert!(cards[1].contains("/counterparty/bandage"));
+        assert!(cards[1].contains("Refused"));
+        assert!(cards[1].contains("Request treatment"));
+        assert!(cards[1].contains("value=\"right-leg\""));
+        assert!(cards[1].contains("value=\"4\""));
+        assert!(cards[1].contains("name=\"action_id\" value=\"treatment-"));
+        assert!(cards[2].contains("Charlie"));
+        assert!(cards[2].contains("value=\"claim-c\""));
+        assert!(!cards[2].contains("value=\"claim-a\""));
+        assert!(!cards[2].contains("value=\"claim-b\""));
+        assert!(cards[2].contains("Unavailable"));
+        assert!(cards[2].contains("Emergency treatment"));
+        assert!(cards[2].contains("value=\"chest\""));
     }
 
     #[test]
@@ -565,6 +770,33 @@ mod tests {
             can_travel_to_required_site: false,
             unavailable_reason: String::new(),
         };
+        let negotiation = HostileNegotiationPresentation {
+            spokesman: Character {
+                id: 81,
+                name: "Bandit spokesman".into(),
+                xp: 0,
+                level: 1,
+                gold: 0,
+                current_settlement_id: None,
+                current_case_site_id: Some(site.case_site_id.clone()),
+                party_id: None,
+                age_years: 30,
+                alive: true,
+                temporary: true,
+                social_notification_count: 0,
+                automatic_social_chat_enabled: false,
+            },
+            context_ref: "exact_case_context".into(),
+            expected_revision: 4,
+            latest_response: Some("The spokesman refuses for now.".into()),
+        };
+        let surrender = HostileSurrenderPresentation {
+            spokesman: negotiation.spokesman.clone(),
+            context_ref: "exact_case_context".into(),
+            expected_revision: 4,
+            mode: crate::spacetimedb::HostileSurrenderMode::Demand,
+            latest_response: None,
+        };
         let markup = quest_location_center(
             &presentation,
             &site,
@@ -574,6 +806,8 @@ mod tests {
             true,
             false,
             None,
+            Some(&negotiation),
+            Some(&surrender),
             None,
             true,
             None,
@@ -585,6 +819,16 @@ mod tests {
         assert!(markup.contains("action=\"/quests/actions\""));
         assert!(markup.contains("Inspect the camp"));
         assert!(markup.contains("/quests/site:known/autoresolve"));
+        assert!(markup.contains("Hostile pre-combat conversation"));
+        assert!(markup.contains("/locations/case-site/site:known/hostile/withdrawal"));
+        assert!(markup.contains("name=\"spokesman_id\" value=\"81\""));
+        assert!(markup.contains("name=\"context_ref\" value=\"exact_case_context\""));
+        assert!(markup.contains("name=\"expected_revision\" value=\"4\""));
+        assert!(markup.contains("name=\"action_id\" value=\"hostile-parley-"));
+        assert!(markup.contains("The spokesman refuses for now."));
+        assert!(markup.contains("Hostile surrender terms from Bandit spokesman"));
+        assert!(markup.contains("Demand surrender"));
+        assert!(!markup.contains("Surrender with"));
         assert!(!markup.contains("/missions/enter"));
     }
 
@@ -624,6 +868,8 @@ mod tests {
             &[],
             false,
             false,
+            None,
+            None,
             None,
             None,
             true,
@@ -676,6 +922,8 @@ mod tests {
             &[],
             false,
             true,
+            None,
+            None,
             None,
             None,
             true,
@@ -737,6 +985,8 @@ mod tests {
             false,
             None,
             None,
+            None,
+            None,
             false,
             Some(&notice),
             false,
@@ -764,6 +1014,8 @@ mod tests {
             &[],
             false,
             false,
+            None,
+            None,
             None,
             None,
             false,

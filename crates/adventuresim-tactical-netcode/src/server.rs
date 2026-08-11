@@ -17,7 +17,10 @@ impl Plugin for AdventureSimulatorServerPlugin {
 }
 
 #[derive(Component, Debug, Clone)]
-#[require(Name::from("Server"), AeronetRepliconServer)]
+// Aeronet parents each connection entity to the server. Party players reuse their
+// connection entity, so the server must be a transform root for their world-space
+// transforms to remain valid.
+#[require(Name::from("Server"), AeronetRepliconServer, Transform)]
 pub struct AdventureSimulatorServer {
     pub addr: SocketAddr,
 }
@@ -48,4 +51,21 @@ fn websocket_config(addr: SocketAddr) -> ServerConfig {
     ServerConfig::builder()
         .with_bind_address(addr)
         .with_no_encryption()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn server_is_an_identity_transform_root() {
+        let mut world = World::new();
+        let server = world.spawn(AdventureSimulatorServer::default()).id();
+
+        assert_eq!(world.get::<Transform>(server), Some(&Transform::IDENTITY));
+        assert_eq!(
+            world.get::<GlobalTransform>(server),
+            Some(&GlobalTransform::IDENTITY)
+        );
+    }
 }

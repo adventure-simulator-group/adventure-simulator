@@ -12,6 +12,7 @@ pub struct FoodLot {
     pub id: u64,
     pub inventory_item_id: Option<u64>,
     pub party_inventory_item_id: Option<u64>,
+    pub material_revision: u64,
     pub display_name: String,
     pub preparation: FoodPreparation,
     pub ingredient_item_ids: Vec<String>,
@@ -39,6 +40,7 @@ pub struct FoodLotCols {
     pub id: __sdk::__query_builder::Col<FoodLot, u64>,
     pub inventory_item_id: __sdk::__query_builder::Col<FoodLot, Option<u64>>,
     pub party_inventory_item_id: __sdk::__query_builder::Col<FoodLot, Option<u64>>,
+    pub material_revision: __sdk::__query_builder::Col<FoodLot, u64>,
     pub display_name: __sdk::__query_builder::Col<FoodLot, String>,
     pub preparation: __sdk::__query_builder::Col<FoodLot, FoodPreparation>,
     pub ingredient_item_ids: __sdk::__query_builder::Col<FoodLot, Vec<String>>,
@@ -65,6 +67,7 @@ impl __sdk::__query_builder::HasCols for FoodLot {
                 table_name,
                 "party_inventory_item_id",
             ),
+            material_revision: __sdk::__query_builder::Col::new(table_name, "material_revision"),
             display_name: __sdk::__query_builder::Col::new(table_name, "display_name"),
             preparation: __sdk::__query_builder::Col::new(table_name, "preparation"),
             ingredient_item_ids: __sdk::__query_builder::Col::new(
@@ -94,6 +97,7 @@ impl __sdk::__query_builder::HasCols for FoodLot {
 /// Provides typed access to indexed columns for query building.
 pub struct FoodLotIxCols {
     pub id: __sdk::__query_builder::IxCol<FoodLot, u64>,
+    pub material_revision: __sdk::__query_builder::IxCol<FoodLot, u64>,
 }
 
 impl __sdk::__query_builder::HasIxCols for FoodLot {
@@ -101,6 +105,7 @@ impl __sdk::__query_builder::HasIxCols for FoodLot {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         FoodLotIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            material_revision: __sdk::__query_builder::IxCol::new(table_name, "material_revision"),
         }
     }
 }

@@ -1,6 +1,6 @@
 # Networking
 
-Adventure Simulator deliberately avoids a continuously simulated MMO
+Fabelgeist deliberately avoids a continuously simulated MMO
 overworld. Most players interact with persistent places and people through
 ordinary strategic web pages, while a temporary private server is created only
 for real-time play.

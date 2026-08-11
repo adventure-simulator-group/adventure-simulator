@@ -136,7 +136,7 @@
     }
     window.strategicCommitPage({
       replacement,
-      title: `${replacement.dataset.pageTitle} - Adventure Simulator`,
+      title: `${replacement.dataset.pageTitle} - Fabelgeist`,
       finalUrl: canonical,
       historyMode: response.headers.get("X-Strategic-Redirected") === "true" ? "push" : "replace",
       restore: response.headers.get("X-Strategic-Redirected") === "true" ? null : restore,

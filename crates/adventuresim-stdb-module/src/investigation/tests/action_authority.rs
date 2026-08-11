@@ -299,30 +299,42 @@ fn pattern_route_support_requires_exact_observer_clue_knowledge() {
         7,
         "case",
         "pattern-clue",
+        50_000,
         [learned.clone()],
     ));
     assert!(!observer_pattern_route_has_live_corroborated_clue(
         7,
         "case",
         "pattern-clue",
+        49_999,
+        [learned.clone()],
+    ));
+    assert!(!observer_pattern_route_has_live_corroborated_clue(
+        7,
+        "case",
+        "pattern-clue",
+        50_000,
         Vec::<InvestigationEvidenceKnowledge>::new(),
     ));
     assert!(!observer_pattern_route_has_live_corroborated_clue(
         8,
         "case",
         "pattern-clue",
+        50_000,
         [learned.clone()],
     ));
     assert!(!observer_pattern_route_has_live_corroborated_clue(
         7,
         "other-case",
         "pattern-clue",
+        50_000,
         [learned.clone()],
     ));
     assert!(!observer_pattern_route_has_live_corroborated_clue(
         7,
         "case",
         "other-clue",
+        50_000,
         [learned],
     ));
 
@@ -921,4 +933,61 @@ fn case_summary_subject_comes_only_from_immutable_journal_history() {
     assert!(projection.contains("for lead in leads"));
     assert!(projection.contains("case.2 = case.2.max(lead.recorded_at)"));
     assert!(!projection.contains("case.1 = lead.summary"));
+}
+
+#[test]
+fn exact_site_actions_replan_typed_effects_without_replacing_replay_or_private_receipts() {
+    let reducer = INVESTIGATION_SOURCE
+        .split("pub(crate) fn perform_investigation_action_authorized")
+        .nth(1)
+        .expect("action reducer");
+    let replay = reducer.find("investigation_action_attempt().id().find").unwrap();
+    let living_actor = reducer.find("require_living_character").unwrap();
+    let rights = reducer.find("decide_investigation_rights").unwrap();
+    let plan = reducer.find("site_bound_investigation_plan").unwrap();
+    let revalidate = reducer
+        .find("// This is the final mutation-boundary validation")
+        .unwrap();
+    let commit = reducer.find("validate_commit").unwrap();
+    let interval = reducer.find("advance_investigation_time").unwrap();
+    let receipt = reducer.find("private_resolution_json").unwrap();
+    assert!(replay < living_actor && replay < rights);
+    assert!(rights < plan && plan < revalidate && revalidate < commit);
+    assert!(!reducer.contains("party.leader_id != actor_id"));
+    assert!(reducer.contains("rights.kind()"));
+    assert!(commit < interval && interval < receipt);
+    assert!(reducer.contains("InvestigationPlanEffect::AttemptPartyInterval"));
+    assert!(reducer.contains("InvestigationPlanEffect::CommitResolution"));
+    assert!(reducer.contains("interval_completed &="));
+    let clipped = reducer
+        .split("if !interval_completed")
+        .nth(1)
+        .and_then(|tail| tail.split("if !permits_resolution").next())
+        .unwrap();
+    assert!(clipped.contains("private_interrupted_action_resolution_json"));
+    assert!(clipped.contains("investigation_action_attempt()"));
+
+    let adapter = INVESTIGATION_SOURCE
+        .split("fn site_bound_investigation_plan")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("pub(crate) fn perform_investigation_action_authorized")
+                .next()
+        })
+        .unwrap();
+    assert!(adapter.contains("capability.target_kind != \"site\""));
+    assert!(adapter.contains("InvestigationActionKind::InspectSite"));
+    assert!(adapter.contains("investigation-plan-snapshot-v2"));
+    assert!(adapter.contains("resolution_input"));
+    assert!(adapter.contains("rights.evidence()"));
+    assert!(adapter.contains("question_digest"));
+
+    let knowledge = INVESTIGATION_SOURCE
+        .split("fn observer_pattern_route_has_live_corroborated_clue")
+        .nth(1)
+        .expect("knowledge authority");
+    assert!(knowledge.contains("knowledge.owner_character_id == owner_character_id"));
+    assert!(knowledge.contains("adapt_evidence_knowledge"));
+    assert!(knowledge.contains("observer_personal_minute"));
+    assert!(!knowledge.contains("u64::MAX"));
 }

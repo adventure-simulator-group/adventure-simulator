@@ -22,6 +22,7 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, ta
 use crate::character::{character, character__view, character_limbs, character_stats};
 use crate::condition::character_strategic_condition__view;
 use crate::condition::{character_condition, character_morale_source__view, morale_event};
+use crate::relationship::{KinshipKind, active_courtship_between_view, character_kinship__view};
 use crate::settlement_population::settlement_resident_profile__view;
 use crate::strategic::{
     dialogue_event__view, dialogue_session__view, strategic_gateway_authority__view,
@@ -220,6 +221,9 @@ pub struct BackendSettlementResidentRelationship {
     pub affinity_band: AffinityBand,
     pub familiarity_band: FamiliarityBand,
     pub morale_band: MoraleBand,
+    /// Whether this resident uses singular familiar address for the observer,
+    /// because the pair is intimate or the resident socially outranks them.
+    pub uses_familiar_address: bool,
 }
 
 /// Private authority for social actions scoped to one live dialogue encounter.
@@ -358,10 +362,7 @@ pub fn backend_settlement_resident_relationships(
                 .map_or(affinity.anchor_minute, |time| time.minutes);
             let shared_minutes = canonical_pair(affinity.subject_id, affinity.actor_id)
                 .and_then(|(low, high)| {
-                    ctx.db
-                        .character_familiarity()
-                        .id()
-                        .find(&pair_id(low, high))
+                    ctx.db.character_familiarity().id().find(pair_id(low, high))
                 })
                 .map_or(0, |row| row.shared_minutes);
             let morale = ctx
@@ -370,6 +371,27 @@ pub fn backend_settlement_resident_relationships(
                 .character_id()
                 .find(profile.character_id)
                 .map_or(0.0, |row| row.morale + row.morale_bonus);
+            let immediate_kin = ctx
+                .db
+                .character_kinship()
+                .subject_id()
+                .filter(affinity.subject_id)
+                .any(|edge| {
+                    edge.related_id == affinity.actor_id
+                        && matches!(
+                            edge.kind,
+                            KinshipKind::Parent
+                                | KinshipKind::Child
+                                | KinshipKind::Sibling
+                                | KinshipKind::Spouse
+                        )
+                });
+            let active_courtship =
+                active_courtship_between_view(ctx, affinity.subject_id, affinity.actor_id);
+            let resident_precedence =
+                crate::social_roles::character_social_precedence_view(ctx, affinity.subject_id);
+            let observer_precedence =
+                crate::social_roles::character_social_precedence_view(ctx, affinity.actor_id);
             Some(BackendSettlementResidentRelationship {
                 observer_character_id: affinity.actor_id,
                 resident_character_id: affinity.subject_id,
@@ -379,6 +401,10 @@ pub fn backend_settlement_resident_relationships(
                 )),
                 familiarity_band: familiarity_band(shared_minutes),
                 morale_band: morale_band(morale),
+                uses_familiar_address: immediate_kin
+                    || active_courtship
+                    || shared_minutes >= 40 * 60
+                    || resident_precedence > observer_precedence,
             })
         })
         .collect()
@@ -518,7 +544,7 @@ fn chat_replayed(
         .db
         .social_chat_receipt()
         .id()
-        .find(&chat_receipt_id(actor_id, action_id))
+        .find(chat_receipt_id(actor_id, action_id))
     else {
         return Ok(false);
     };
@@ -699,12 +725,7 @@ pub fn spend_time_with_settlement_resident(
     );
     let affinity = current_affinity(ctx, resident_character_id, actor_id);
     let familiarity = canonical_pair(actor_id, resident_character_id)
-        .and_then(|(low, high)| {
-            ctx.db
-                .character_familiarity()
-                .id()
-                .find(&pair_id(low, high))
-        })
+        .and_then(|(low, high)| ctx.db.character_familiarity().id().find(pair_id(low, high)))
         .map_or(0.0, |row| row.shared_minutes as f32 / 60.0);
     let language =
         crate::character::shared_language_coefficient(ctx, actor_id, resident_character_id);
@@ -817,12 +838,7 @@ pub fn chat_with_party_member(
     let target_disposition = character_chat_disposition(&target_personality);
     let affinity = current_affinity(ctx, target_id, actor_id);
     let familiarity = canonical_pair(actor_id, target_id)
-        .and_then(|(low, high)| {
-            ctx.db
-                .character_familiarity()
-                .id()
-                .find(&pair_id(low, high))
-        })
+        .and_then(|(low, high)| ctx.db.character_familiarity().id().find(pair_id(low, high)))
         .map_or(0.0, |row| row.shared_minutes as f32 / 60.0);
     let language = crate::character::shared_language_coefficient(ctx, actor_id, target_id);
     let charm_check = adventuresim_world_schema::language_scaled_effect(
@@ -991,7 +1007,7 @@ pub(crate) fn passively_assess_dialogue_witness(
         .db
         .dialogue_witness_capability()
         .id()
-        .find(&format!("{session_id}:{observer_character_id}"))
+        .find(format!("{session_id}:{observer_character_id}"))
         .ok_or("Dialogue has no witness social capability")?;
     let claims = crate::strategic::referred_testimony_claims(
         ctx,
@@ -1104,13 +1120,13 @@ fn require_witness_social_action(
         .db
         .dialogue_witness_capability()
         .id()
-        .find(&format!("{session_id}:{observer_character_id}"))
+        .find(format!("{session_id}:{observer_character_id}"))
         .ok_or("Dialogue has no witness social capability")?;
     let claim = ctx
         .db
         .dialogue_witness_claim()
         .challenge_token()
-        .find(&challenge_token.to_owned())
+        .find(challenge_token.to_owned())
         .ok_or("Witness claim challenge is unavailable")?;
     if claim.session_id != session_id
         || claim.observer_character_id != observer_character_id
@@ -1243,12 +1259,7 @@ pub fn approach_dialogue_witness(
         .ok_or("Witness NPC not found")?;
     let familiarity_minutes =
         canonical_pair(observer_character_id, capability.resident_character_id)
-            .and_then(|(low, high)| {
-                ctx.db
-                    .character_familiarity()
-                    .id()
-                    .find(&pair_id(low, high))
-            })
+            .and_then(|(low, high)| ctx.db.character_familiarity().id().find(pair_id(low, high)))
             .map_or(0, |value| value.shared_minutes);
     let familiarity_bps =
         ((familiarity_minutes.saturating_mul(10_000) / (100 * 60)).min(10_000)) as u16;
@@ -1542,7 +1553,7 @@ fn source_addressed(ctx: &ReducerContext, actor_id: u64, target_id: u64, source_
     ctx.db
         .social_address()
         .id()
-        .find(&social_address_id(actor_id, target_id, source_id))
+        .find(social_address_id(actor_id, target_id, source_id))
         .is_some()
 }
 
@@ -1637,7 +1648,7 @@ pub fn current_affinity(ctx: &ReducerContext, subject_id: u64, actor_id: u64) ->
     ctx.db
         .character_affinity()
         .id()
-        .find(&affinity_id(subject_id, actor_id))
+        .find(affinity_id(subject_id, actor_id))
         .map_or(0.0, |row| {
             settle_affinity(row.anchor, now.saturating_sub(row.anchor_minute))
         })
@@ -2407,13 +2418,7 @@ fn sensitivity(ctx: &ReducerContext, target_id: u64, topic: SocialTopic) -> f32 
                 0.35
             }
         }
-        SocialTopic::Injury => {
-            if p.self_regard == crate::personality::SelfRegard::Proud {
-                0.8
-            } else {
-                0.4
-            }
-        }
+        SocialTopic::Injury if p.self_regard == crate::personality::SelfRegard::Proud => 0.8,
         _ => 0.4,
     }
 }
@@ -2712,9 +2717,9 @@ fn validate_social_pair(
         return Err("Social actions require the same party".into());
     }
     if !is_self
-        && (actor.current_settlement_id != target.current_settlement_id
-            || crate::investigation::character_case_site_id(ctx, actor.id)
-                != crate::investigation::character_case_site_id(ctx, target.id))
+        && !(actor.current_settlement_id.is_some()
+            && actor.current_settlement_id == target.current_settlement_id
+            || crate::world_actor::characters_are_contextually_present(ctx, actor.id, target.id))
     {
         return Err("Characters must be co-located".into());
     }
@@ -2827,7 +2832,7 @@ fn perform_social_action_authoritative(
     }
 
     let familiarity = canonical_pair(actor_id, target_id)
-        .and_then(|(l, h)| ctx.db.character_familiarity().id().find(&pair_id(l, h)))
+        .and_then(|(l, h)| ctx.db.character_familiarity().id().find(pair_id(l, h)))
         .map_or(0.0, |v| v.shared_minutes as f32 / 60.0);
     let affinity = if is_self {
         0.0
@@ -2879,7 +2884,7 @@ fn perform_social_action_authoritative(
         ctx.db
             .social_belief()
             .id()
-            .find(&format!("{actor_id}:{target_id}:{}", axis.slug()))
+            .find(format!("{actor_id}:{target_id}:{}", axis.slug()))
             .and_then(|belief| {
                 (belief.axis.core() == axis
                     && axis.legal_values().contains(&belief.perceived_value))
@@ -3908,6 +3913,13 @@ mod contract_tests {
             .and_then(|tail| tail.split("fn witness_social_action_replayed").next())
             .expect("settlement NPC relationship projection");
         assert!(projection.contains("now.saturating_sub(affinity.anchor_minute)"));
+        assert!(projection.contains("KinshipKind::Parent"));
+        assert!(projection.contains("KinshipKind::Child"));
+        assert!(projection.contains("KinshipKind::Sibling"));
+        assert!(projection.contains("KinshipKind::Spouse"));
+        assert!(projection.contains("active_courtship_between_view"));
+        assert!(projection.contains("shared_minutes >= 40 * 60"));
+        assert!(projection.contains("resident_precedence > observer_precedence"));
         assert!(!projection.contains("settlement_resident_relationship"));
     }
 

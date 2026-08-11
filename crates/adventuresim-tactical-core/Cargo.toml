@@ -1,6 +1,6 @@
 [package]
 name = "adventuresim-tactical-core"
-description = "Adventure Simulator: Tactical layer core library"
+description = "Fabelgeist: Tactical layer core library"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
@@ -19,6 +19,11 @@ bevy_enhanced_input.workspace = true
 avian3d.workspace = true
 bevy_ahoy.workspace = true
 strum = { version = "0.28", features = ["derive"] }
+noiz.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+postcard.workspace = true
+serde_json.workspace = true

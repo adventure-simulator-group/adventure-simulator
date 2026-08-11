@@ -19,6 +19,12 @@ accepts this only from the registered gateway, requires terrain routing schema
 stale digests or mismatched coordinates/context. A browser never supplies a
 trusted cultivated boolean.
 
+For an isolated browser demonstration, select **Herbalism and Foraging Demo**
+from the normal development scenario roster. Its character and solo party are
+durably seeded together at Foraging Demo Woods, an empirically sampled
+uncultivated deep-woods cell in the final terrain pack, so the integrated Terrain
+skill action opens a real foraging form without one-off spawn controls.
+
 ## Resolution
 
 The dialog exposes exactly five stable source categories, in order: High Game,
@@ -45,13 +51,17 @@ spent during that interval. Medicinal rarity is unchanged.
 Sources are canonicalized before resolution. One search budget is divided
 first among selected categories and then among the locally available resources
 inside each category. Adding more plant resources therefore cannot manufacture
-more search time. The reducer chooses and privately
-persists unpredictable entropy; once that seed is chosen, replay from the
-private authority is deterministic. A completed search may find nothing.
+more search time. The reducer chooses and privately persists unpredictable
+entropy. Each search has an immutable, request-keyed private receipt and a
+per-character attempt generation, so an exact retry is inert while a request
+collision or stale generation is rejected without consulting mutable character
+or ecology state. A completed search may find nothing.
 
-Food uses validated individual food-lot creation, retaining catalog mass,
-calories, value, and contamination. Herbalist ingredients use validated
-fungible stacks. Yields are never truncated for carrying capacity; ordinary
+Every concrete food or herbal ingredient yield uses validated individual
+food-lot creation, retaining catalog mass, calories, value, contamination,
+stable physical-object identity, and material revision. Private harvest
+provenance binds each output row, object, and lot to its request and exact
+canonical place. Yields are never truncated for carrying capacity; ordinary
 encumbrance consequences apply afterward.
 
 Actual elapsed time is clipped once at the existing injury/disease boundary.
@@ -84,6 +94,7 @@ time, it still makes exactly one exposure check using the actual elapsed
 duration and applies the same local Infamy consequence on failure.
 
 The reducer accepts stable category IDs rather than item IDs and retains those
-selected source IDs in one private replay authority row per character. The
-gateway-only projection omits seed, coordinates, context, DC, roll, and direct
-reputation authority, and exposes only the exact opaque request's player-safe result.
+selected source IDs in its immutable private receipt. The gateway-only
+projection omits seed, coordinates, context, terrain, DC, roll, material
+identities/revisions, and direct reputation authority, and exposes only the
+exact opaque request's player-safe result.

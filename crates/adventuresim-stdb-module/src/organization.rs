@@ -1,4 +1,4 @@
-//! Authoritative organization membership, rank, dues, and presentation state.
+//! Authoritative organization dues, accrual, and presentation state.
 
 use adventuresim_core::organization::{
     OrganizationDefinition, Privilege, Requirement, organization,
@@ -6,18 +6,19 @@ use adventuresim_core::organization::{
 use adventuresim_core::skill::Skill;
 use adventuresim_core::strategic_time::MINUTES_PER_DAY;
 use adventuresim_world_schema::{BestiaryCategory, OfficialReligion};
-use spacetimedb::{ReducerContext, Table, reducer, table};
+use spacetimedb::{ReducerContext, Table, ViewContext, reducer, table, view};
 
 use crate::{
     CharacterSkills, character::character, character_skills, character_time,
-    condition::character_condition,
+    condition::character_condition, social_roles::character_organization_role__view,
+    strategic::strategic_gateway_authority__view,
 };
 
 pub const MEMBERSHIP_ACTIVE: &str = "active";
 pub const MEMBERSHIP_SUSPENDED: &str = "suspended";
 
 #[derive(Clone, Debug)]
-#[table(accessor = organization_membership, public)]
+#[table(accessor = organization_membership)]
 pub struct OrganizationMembership {
     #[primary_key]
     #[auto_inc]
@@ -25,7 +26,6 @@ pub struct OrganizationMembership {
     #[index(btree)]
     pub character_id: u64,
     pub organization_id: String,
-    pub rank_id: String,
     pub joined_minute: u64,
     pub dues_paid_through_minute: u64,
     pub status: String,
@@ -51,6 +51,76 @@ pub fn membership(
         .character_id()
         .filter(character_id)
         .find(|row| row.organization_id == organization_id)
+}
+
+/// Gateway projection of operational membership joined to its one canonical
+/// profession-bearing role. The stored membership row deliberately carries no
+/// second role/rank authority.
+#[derive(Clone, Debug, spacetimedb::SpacetimeType)]
+pub struct BackendOrganizationMembership {
+    pub id: u64,
+    pub character_id: u64,
+    pub organization_id: String,
+    pub role_id: String,
+    pub joined_minute: u64,
+    pub dues_paid_through_minute: u64,
+    pub status: String,
+    pub apprenticeship_minutes_accrued: u64,
+    pub practice_minutes_accrued: u64,
+}
+
+#[view(accessor = backend_organization_memberships, public)]
+pub fn backend_organization_memberships(ctx: &ViewContext) -> Vec<BackendOrganizationMembership> {
+    let gateway = ctx
+        .db
+        .strategic_gateway_authority()
+        .id()
+        .find(0)
+        .is_some_and(|authority| authority.identity == ctx.sender());
+    if !gateway {
+        return Vec::new();
+    }
+    ctx.db
+        .organization_membership()
+        .character_id()
+        .filter(0u64..)
+        .filter_map(|row| {
+            let assignment_id = crate::social_roles::character_assignment_id(
+                row.character_id,
+                &row.organization_id,
+            );
+            let assignment = ctx
+                .db
+                .character_organization_role()
+                .id()
+                .find(&assignment_id)?;
+            Some(BackendOrganizationMembership {
+                id: row.id,
+                character_id: row.character_id,
+                organization_id: row.organization_id,
+                role_id: assignment.role_id,
+                joined_minute: row.joined_minute,
+                dues_paid_through_minute: row.dues_paid_through_minute,
+                status: row.status,
+                apprenticeship_minutes_accrued: row.apprenticeship_minutes_accrued,
+                practice_minutes_accrued: row.practice_minutes_accrued,
+            })
+        })
+        .collect()
+}
+
+pub fn membership_role(
+    ctx: &ReducerContext,
+    row: &OrganizationMembership,
+) -> Result<&'static adventuresim_core::organization::OrganizationRoleDefinition, String> {
+    let assignment = crate::social_roles::assigned_organization_role(
+        ctx,
+        row.character_id,
+        &row.organization_id,
+    )?;
+    organization(&row.organization_id)
+        .and_then(|definition| definition.role(&assignment.role_id))
+        .ok_or_else(|| "Organization membership references an unknown canonical role".into())
 }
 
 fn current_minute(ctx: &ReducerContext, character_id: u64) -> Result<u64, String> {
@@ -198,6 +268,7 @@ pub fn join_organization(
     ctx: &ReducerContext,
     character_id: u64,
     organization_id: String,
+    entry_role_id: String,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     crate::time::initialize_character_time(ctx, character_id)?;
@@ -212,7 +283,17 @@ pub fn join_organization(
         return Ok(());
     }
     requirements_met(ctx, character_id, &definition.admission.requirements)?;
-    requirements_met(ctx, character_id, &definition.ranks[0].requirements)?;
+    if !definition
+        .entry_role_ids
+        .iter()
+        .any(|role| role == &entry_role_id)
+    {
+        return Err("Requested role is not available through admission".into());
+    }
+    let entry_role = definition
+        .role(&entry_role_id)
+        .ok_or("Organization entry role is missing")?;
+    requirements_met(ctx, character_id, &entry_role.requirements)?;
     if definition.admission.joining_fee > 0 {
         crate::item::consume_personal_currency(
             ctx,
@@ -229,14 +310,19 @@ pub fn join_organization(
         .insert(OrganizationMembership {
             id: 0,
             character_id,
-            organization_id,
-            rank_id: definition.ranks[0].id.clone(),
+            organization_id: organization_id.clone(),
             joined_minute: minute,
             dues_paid_through_minute: paid_through,
             status: MEMBERSHIP_ACTIVE.into(),
             apprenticeship_minutes_accrued: 0,
             practice_minutes_accrued: 0,
         });
+    crate::social_roles::ensure_character_organization_role(
+        ctx,
+        character_id,
+        &organization_id,
+        &entry_role_id,
+    )?;
     Ok(())
 }
 
@@ -245,16 +331,21 @@ pub fn promote_organization_membership(
     ctx: &ReducerContext,
     character_id: u64,
     organization_id: String,
+    to_role_id: String,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, character_id)?;
     let definition = require_local_chapter(ctx, character_id, &organization_id)?;
-    let mut row = active_membership(ctx, character_id, &organization_id)?;
+    active_membership(ctx, character_id, &organization_id)?;
+    let assignment =
+        crate::social_roles::assigned_organization_role(ctx, character_id, &organization_id)?;
+    if !definition.can_transition(&assignment.role_id, &to_role_id) {
+        return Err("Requested role is not a direct authored transition".into());
+    }
     let next = definition
-        .next_rank(&row.rank_id)
-        .ok_or("Character already holds the organization's highest rank")?;
+        .role(&to_role_id)
+        .ok_or("Promotion role is missing")?;
     requirements_met(ctx, character_id, &next.requirements)?;
-    row.rank_id = next.id.clone();
-    ctx.db.organization_membership().id().update(row);
+    crate::social_roles::update_character_role(ctx, character_id, &organization_id, &to_role_id)?;
     Ok(())
 }
 
@@ -449,15 +540,16 @@ pub fn presented_privilege(
 fn current_membership_grants(
     definition: &OrganizationDefinition,
     membership: &OrganizationMembership,
+    role: &adventuresim_core::organization::OrganizationRoleDefinition,
     minute: u64,
     privilege: Privilege,
 ) -> bool {
     membership_is_current(membership, minute)
-        && definition.has_privilege_at_rank(&membership.rank_id, privilege)
+        && definition.has_privilege_at_role(&role.id, privilege)
 }
 
 /// Global presented privileges deliberately ignore current settlement and
-/// local recognition. Presentation, active dues-current membership, and rank
+/// local recognition. Presentation, active dues-current membership, and role
 /// remain authoritative.
 pub fn global_presented_privilege(
     ctx: &ReducerContext,
@@ -482,7 +574,9 @@ pub fn global_presented_privilege(
     else {
         return false;
     };
-    current_membership_grants(definition, &membership, minute, privilege)
+    membership_role(ctx, &membership).is_ok_and(|role| {
+        current_membership_grants(definition, &membership, role, minute, privilege)
+    })
 }
 
 pub fn require_activity_membership(
@@ -514,12 +608,11 @@ pub fn increment_activity_accrual(
 mod tests {
     use super::*;
 
-    fn membership_at(rank_id: &str, status: &str, paid_through: u64) -> OrganizationMembership {
+    fn membership_at(status: &str, paid_through: u64) -> OrganizationMembership {
         OrganizationMembership {
             id: 1,
             character_id: 7,
             organization_id: "lodge_hart_king".into(),
-            rank_id: rank_id.into(),
             joined_minute: 0,
             dues_paid_through_minute: paid_through,
             status: status.into(),
@@ -529,39 +622,46 @@ mod tests {
     }
 
     #[test]
-    fn global_license_requires_current_membership_and_right_rank() {
+    fn global_license_requires_current_membership_and_right_role() {
         let definition = organization("lodge_hart_king").unwrap();
-        let warden = membership_at("warden", MEMBERSHIP_ACTIVE, 100);
+        let warden = membership_at(MEMBERSHIP_ACTIVE, 100);
+        let warden_role = definition.role("warden").unwrap();
         assert!(current_membership_grants(
             definition,
             &warden,
+            warden_role,
             100,
             Privilege::ForagePlants
         ));
         assert!(!current_membership_grants(
             definition,
             &warden,
+            warden_role,
             100,
             Privilege::ForageHighGame
         ));
-        let master = membership_at("master", MEMBERSHIP_ACTIVE, 100);
+        let master = membership_at(MEMBERSHIP_ACTIVE, 100);
+        let master_role = definition.role("master").unwrap();
         assert!(current_membership_grants(
             definition,
             &master,
+            master_role,
             100,
             Privilege::ForageHighGame
         ));
-        let lapsed = membership_at("master", MEMBERSHIP_ACTIVE, 99);
+        let lapsed = membership_at(MEMBERSHIP_ACTIVE, 99);
         assert!(!current_membership_grants(
             definition,
             &lapsed,
+            master_role,
             100,
             Privilege::ForageHighGame
         ));
-        let suspended = membership_at("master", MEMBERSHIP_SUSPENDED, 100);
+        let suspended = membership_at(MEMBERSHIP_SUSPENDED, 100);
         assert!(!current_membership_grants(
             definition,
             &suspended,
+            master_role,
             100,
             Privilege::ForageHighGame
         ));

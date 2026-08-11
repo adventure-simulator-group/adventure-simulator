@@ -242,7 +242,7 @@ fn transition_case_custody(
         .db
         .case_custody()
         .source_id()
-        .find(&source_id.to_string())
+        .find(source_id.to_string())
     {
         return if existing.case_id == case_id
             && existing.object_id == object_id
@@ -284,7 +284,7 @@ fn transition_case_custody(
         .db
         .case_custody()
         .object_id()
-        .find(&object_id.to_string())
+        .find(object_id.to_string())
     {
         records.insert(
             custody_object(current.object_kind, &current.object_id)?,
@@ -411,7 +411,7 @@ fn party_strategic_minute(ctx: &ReducerContext, party_id: &str) -> Result<u64, S
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party not found")?;
     Ok(ctx
         .db
@@ -425,7 +425,7 @@ fn open_case_expression(
     ctx: &ReducerContext,
     case_id: &str,
 ) -> Result<Option<adventuresim_core::case::ObjectiveExpression>, String> {
-    let Some(case) = ctx.db.case_authority().id().find(&case_id.to_string()) else {
+    let Some(case) = ctx.db.case_authority().id().find(case_id.to_string()) else {
         return Ok(None);
     };
     if case.resolution_status != CaseResolutionStatus::Open {
@@ -448,7 +448,7 @@ fn ensure_objective_continuity_guards(
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party not found")?;
     let now = party_strategic_minute(ctx, party_id)?;
     use adventuresim_core::case::ObjectiveRequirement as R;
@@ -478,7 +478,7 @@ fn ensure_objective_continuity_guards(
                         .db
                         .case_custody()
                         .object_id()
-                        .find(&subject_id.as_str().to_string());
+                        .find(subject_id.as_str().to_string());
                     let valid = custody.as_ref().is_some_and(|row| {
                         row.case_id == case_id
                             && row.holder_kind == CustodyHolderKind::Party
@@ -540,7 +540,7 @@ pub(crate) fn reconcile_party_objective_continuity(
     ctx: &ReducerContext,
     party_id: &str,
 ) -> Result<(), String> {
-    let Some(party) = ctx.db.party_authority().id().find(&party_id.to_string()) else {
+    let Some(party) = ctx.db.party_authority().id().find(party_id.to_string()) else {
         return Ok(());
     };
     let now = party_strategic_minute(ctx, party_id)?;
@@ -677,7 +677,7 @@ fn commit_case_site_arrival_objectives(
             .db
             .case_custody()
             .object_id()
-            .find(&subject_id.as_str().to_string())
+            .find(subject_id.as_str().to_string())
             .ok_or("Escorted subject has no custody authority")?;
         if current.case_id != site.case_id
             || current.holder_kind != CustodyHolderKind::Party
@@ -760,7 +760,7 @@ fn emit_terminal_custody_impossibility(
             .db
             .case_authority()
             .id()
-            .find(&case_id.to_string())
+            .find(case_id.to_string())
             .is_none_or(|case| case.resolution_status != CaseResolutionStatus::Open)
         {
             break;
@@ -937,7 +937,7 @@ pub(crate) fn ingest_case_outcome_fact(
         .db
         .case_authority()
         .id()
-        .find(&case_id.to_string())
+        .find(case_id.to_string())
         .ok_or("Case not found")?;
     let generated_provenance = validated_case_outcome_provenance(ctx, &case)?;
     if let Some(validated) = generated_provenance.as_ref()
@@ -977,7 +977,7 @@ pub(crate) fn ingest_case_outcome_fact(
         .db
         .case_outcome_fact()
         .source_id()
-        .find(&source_id.to_string())
+        .find(source_id.to_string())
     {
         return if existing.case_id == case.id
             && existing.party_id == party_id
@@ -1129,7 +1129,7 @@ fn execute_case_finale(
         .db
         .case_finale_execution()
         .finale_id()
-        .find(&finale_id.to_string())
+        .find(finale_id.to_string())
     {
         return if existing.source_id == source_id && existing.party_id == party_id {
             Ok(())
@@ -1141,7 +1141,7 @@ fn execute_case_finale(
         .db
         .case_finale_authority()
         .id()
-        .find(&finale_id.to_string())
+        .find(finale_id.to_string())
         .ok_or("Finale not found")?;
     if finale.status != FinaleStatus::Selected {
         return Err("Finale is not selected".into());
@@ -1153,21 +1153,13 @@ fn execute_case_finale(
         .find(&finale.case_id)
         .ok_or("Finale case not found")?;
     let now = crate::time::refresh_clock(ctx)?;
-    if finale.kind == FinaleKind::ResolveLocalProblem
+    let resolved_local_problem_id = if finale.kind == FinaleKind::ResolveLocalProblem
         && case.resolution_status == CaseResolutionStatus::Resolved
-        && let Some(problem_id) = case.local_problem_id.as_ref()
     {
-        crate::local_problem::apply_outcome(
-            ctx,
-            problem_id,
-            &crate::local_problem::LocalProblemOutcomeInput {
-                source_outcome_id: source_id.to_string(),
-                at_minute: now,
-                mitigation_bps: 10_000,
-                resolve: true,
-            },
-        )?;
-    }
+        case.local_problem_id.as_deref()
+    } else {
+        None
+    };
     if case.resolution_status == CaseResolutionStatus::Resolved {
         let quest_authority = ctx
             .db
@@ -1185,14 +1177,30 @@ fn execute_case_finale(
                     })
             });
         if let Some(authority) = quest_authority {
-            crate::reputation::award_case_resolution(
+            crate::world_event::commit_generated_case_resolution(
                 ctx,
+                &finale.id,
+                source_id,
                 &case.id,
                 &authority.public_case_id,
                 party_id,
                 &authority.settlement_id,
+                resolved_local_problem_id,
                 500,
                 now,
+            )?;
+        } else if let Some(problem_id) = resolved_local_problem_id {
+            // Preserve the legacy local-problem outcome for malformed or old
+            // private authority that has no generated reputation jurisdiction.
+            crate::local_problem::apply_outcome(
+                ctx,
+                problem_id,
+                &crate::local_problem::LocalProblemOutcomeInput {
+                    source_outcome_id: source_id.to_string(),
+                    at_minute: now,
+                    mitigation_bps: 10_000,
+                    resolve: true,
+                },
             )?;
         }
     }
@@ -1225,6 +1233,9 @@ fn hostile_resolution_for_objective(
         R::DriveOff {
             hostile_group_id: id,
         } if id == hostile_group_id => Some((HostileResolutionKind::DrivenOff, 30)),
+        R::Surrender {
+            hostile_group_id: id,
+        } if id == hostile_group_id => Some((HostileResolutionKind::Surrendered, 20)),
         _ => None,
     }
 }
@@ -1282,6 +1293,28 @@ pub(crate) fn generated_case_site_combat_eligible<'a>(
     facts: &[adventuresim_core::case::OutcomeFact],
     party_id: &str,
 ) -> Option<&'a HostileGroupAuthority> {
+    generated_case_site_hostile_resolution_eligible(
+        generated,
+        case,
+        case_site,
+        hostile_groups,
+        finales,
+        facts,
+        party_id,
+        None,
+    )
+}
+
+pub(crate) fn generated_case_site_hostile_resolution_eligible<'a>(
+    generated: &adventuresim_core::quest_generation::GeneratedCase,
+    case: &CaseAuthority,
+    case_site: &CaseSiteAuthority,
+    hostile_groups: &'a [HostileGroupAuthority],
+    finales: &[CaseFinaleAuthority],
+    facts: &[adventuresim_core::case::OutcomeFact],
+    party_id: &str,
+    required_resolution: Option<HostileResolutionKind>,
+) -> Option<&'a HostileGroupAuthority> {
     if case.provenance_kind != "generated"
         || case.generated_case_id != case.id
         || case.id != generated.canonical_case_id
@@ -1290,13 +1323,11 @@ pub(crate) fn generated_case_site_combat_eligible<'a>(
     {
         return None;
     }
-    let Some(generated_site) = generated
+    let generated_site = generated
         .sites
         .iter()
         .find(|site| site.id.0 == case_site.id.value)
-    else {
-        return None;
-    };
+        ?;
     if generated_site.safe_label != case_site.name {
         return None;
     }
@@ -1346,7 +1377,9 @@ pub(crate) fn generated_case_site_combat_eligible<'a>(
                                 &objective.requirement,
                                 hostile_group_id,
                             )
-                            .is_some()
+                            .is_some_and(|(resolution, _)| {
+                                required_resolution.is_none_or(|required| required == resolution)
+                            })
                     });
             hostile_pending
                 && finales.iter().any(|finale| {
@@ -1372,7 +1405,7 @@ pub(crate) fn ensure_bound_mission_authority(
         .db
         .mission_authority()
         .id()
-        .find(&mission_id.to_string())
+        .find(mission_id.to_string())
     {
         return if existing.party_id == party_id
             && existing.observer_character_id == observer_character_id
@@ -1429,7 +1462,7 @@ pub(crate) fn ensure_bound_mission_authority(
                 .db
                 .hostile_group_authority()
                 .id()
-                .find(&hostile_group_id.to_string())
+                .find(hostile_group_id.to_string())
                 .into_iter()
                 .collect();
             let finales: Vec<_> = ctx
@@ -1474,7 +1507,7 @@ pub(crate) fn ensure_bound_mission_authority(
                 .db
                 .party_authority()
                 .id()
-                .find(&party_id.to_string())
+                .find(party_id.to_string())
                 .ok_or("Party not found")?;
             if party.active_contract_id.as_deref() != Some(&accepted_contract.id) {
                 return Err("This quest requires an accepted active contract".into());
@@ -1528,6 +1561,18 @@ pub(crate) fn ensure_bound_mission_authority(
                         _ => continue,
                     }
                 };
+            if resolution == HostileResolutionKind::Surrendered {
+                let authored = ctx
+                    .db
+                    .hostile_group_authority()
+                    .id()
+                    .find(&hostile_group_id)
+                    .and_then(|group| parse_threat(&group.enemy_type).ok())
+                    .is_some_and(adventuresim_core::strategic_action::hostile_surrender_is_authored);
+                if !authored {
+                    continue;
+                }
+            }
             let path_index =
                 u16::try_from(path_index).map_err(|_| "Case has too many objective paths")?;
             let id = mission_approach_capability_id(
@@ -1584,7 +1629,11 @@ pub(crate) fn ensure_bound_mission_authority(
         }
     }
     capabilities.sort_by(|left, right| left.id.cmp(&right.id));
-    if capabilities.is_empty() {
+    let tactical_capabilities = capabilities
+        .into_iter()
+        .filter(|capability| capability.resolution != HostileResolutionKind::Surrendered)
+        .collect::<Vec<_>>();
+    if tactical_capabilities.is_empty() {
         return Err("Case site has no unresolved observer-authorized combat approach".into());
     }
     let hostile_group = ctx
@@ -1627,7 +1676,7 @@ pub(crate) fn ensure_bound_mission_authority(
         drop_quantity: hostile_group.drop_quantity,
     };
     ctx.db.mission_authority().insert(authority.clone());
-    for (index, capability) in capabilities.into_iter().enumerate() {
+    for (index, capability) in tactical_capabilities.into_iter().enumerate() {
         ctx.db
             .mission_outcome_candidate()
             .insert(mission_candidate_from_capability(

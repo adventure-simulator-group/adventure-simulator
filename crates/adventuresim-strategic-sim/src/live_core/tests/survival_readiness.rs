@@ -52,8 +52,47 @@ fn safe_departure_wait_is_bounded_to_one_day() {
 
     let source = LIVE_CORE_SOURCE;
     assert!(source.contains("minutes_until_next_walking_start"));
-    assert!(source.contains("rest_at_settlement_hours_then(character_id, wait_minutes"));
+    assert!(source.contains("rest_at_settlement_hours_then(member_id, member_wait"));
+    assert!(source.contains("let actual_party_floor = self"));
+    assert!(source.contains("reason=safe_departure_wait_incomplete"));
     assert!(source.contains("CoreLoopEventKind::SafeDepartureWait"));
+}
+
+#[test]
+fn safe_departure_wait_stops_when_member_rest_relocates_the_party() {
+    let source = include_str!("../settlement.rs");
+    let wait = source
+        .split("pub(super) fn wait_for_safe_departure_at_settlement")
+        .nth(1)
+        .and_then(|tail| tail.split("pub(super) fn configure_safe_departure_itinerary").next())
+        .expect("safe-departure wait implementation");
+    let rest = wait
+        .find("rest_at_settlement_hours_then(member_id, member_wait")
+        .expect("per-member public rest");
+    let reducer_result = wait[rest..]
+        .find("self.call(result)?")
+        .map(|offset| rest + offset)
+        .expect("completed rest reducer");
+    let relocation_observation = wait[reducer_result..]
+        .find("party_is_still_at_original_settlement")
+        .map(|offset| reducer_result + offset)
+        .expect("post-rest public location observation");
+    let next_member = wait[relocation_observation..]
+        .find("modes.push")
+        .map(|offset| relocation_observation + offset)
+        .expect("next member wait step");
+    let clock_diagnosis = wait
+        .find("let actual_party_floor")
+        .expect("clock-frontier diagnosis");
+
+    assert!(reducer_result < relocation_observation);
+    assert!(relocation_observation < next_member);
+    assert!(relocation_observation < clock_diagnosis);
+    assert!(wait.contains("CoreLoopEventKind::SafeDepartureWaitRelocated"));
+    assert!(wait.contains("reason=safe_departure_wait_relocated"));
+    assert!(wait.contains("bounded_event_field(&original_settlement_id)"));
+    assert!(wait.contains("return Ok(false)"));
+    assert!(!wait.contains("strategic_incident"));
 }
 
 #[test]
@@ -67,6 +106,81 @@ fn next_window_wait_respects_authoritative_settlement_rest_minimum() {
         Some(1_440)
     );
     assert_eq!(representable_safe_departure_wait_minutes(1_441), None);
+}
+
+#[test]
+fn generated_route_forecast_can_stage_a_week_ahead_but_public_waits_remain_daily() {
+    assert_eq!(forecast_safe_departure_wait_minutes(1), Some(60));
+    assert_eq!(forecast_safe_departure_wait_minutes(7_200), Some(7_200));
+    assert_eq!(forecast_safe_departure_wait_minutes(10_080), Some(10_080));
+    assert_eq!(forecast_safe_departure_wait_minutes(10_081), None);
+}
+
+#[test]
+fn generated_route_search_finds_a_warmer_hour_inside_a_daily_walking_window() {
+    let starting_minute = 600;
+    let walking_minutes = 600;
+    let daily_start = adventuresim_core::strategic_time::minutes_until_next_walking_start(
+        starting_minute,
+        walking_minutes,
+        false,
+    )
+    .unwrap()
+    .max(60);
+    let waits = generated_safe_departure_waits(starting_minute, walking_minutes, false);
+    let warmer_hour = waits
+        .iter()
+        .copied()
+        .find(|wait| *wait > daily_start && *wait <= daily_start.saturating_add(180))
+        .expect("hourly sample inside the first legal walking window");
+    let mut evaluated_daily_start = false;
+    let selected = select_generated_case_site_plan(
+        walking_minutes,
+        260,
+        67,
+        false,
+        starting_minute,
+        |candidate_walking_minutes, travel_at_night, wait| {
+            if candidate_walking_minutes == walking_minutes
+                && !travel_at_night
+                && wait == daily_start
+            {
+                evaluated_daily_start = true;
+            }
+            (candidate_walking_minutes == walking_minutes
+                && !travel_at_night
+                && wait == warmer_hour)
+                .then_some(wait)
+        },
+    );
+    assert!(evaluated_daily_start, "the daily start was evaluated and unsafe");
+    assert_eq!(selected, Some(warmer_hour));
+}
+
+#[test]
+fn delayed_route_recovery_is_real_bounded_and_revalidated_before_departure() {
+    let survival = include_str!("../survival.rs");
+    let departure = survival
+        .split("pub(super) fn validate_case_site_thermal_readiness")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("pub(super) fn field_recovery_rest_thermal_safe")
+                .next()
+        })
+        .expect("case-site departure planner");
+    assert!(departure.contains("if candidate_wait == 0"));
+    assert!(departure.contains("SurvivalState::default()"));
+    assert!(departure.contains("calories_used: if candidate_wait == 0"));
+    let generated = include_str!("../generated_cases.rs");
+    let wait_follow_through = generated
+        .split("self.wait_for_safe_departure_at_settlement(")
+        .nth(1)
+        .and_then(|tail| tail.split("DepartureReadiness::Deferred(reason)").next())
+        .expect("bounded public settlement wait follow-through");
+    assert!(wait_follow_through.contains("self.ensure_medically_safe(agent)?"));
+    assert!(wait_follow_through.contains("self.validate_party_departure_readiness(party_id)"));
+    assert!(wait_follow_through.contains("validate_case_site_thermal_readiness"));
+    assert!(!generated.contains("generated_route_thermal_backoff"));
 }
 
 #[test]
@@ -130,12 +244,16 @@ fn combined_case_site_search_reports_no_plan_when_every_joint_candidate_is_unsaf
         None
     );
     assert_eq!(
-        joint_case_site_plan_failure_reason(true, false),
-        "route_action_plan_intrinsic"
+        joint_case_site_plan_failure_reason(3, 0, false, true, false),
+        "route_thermal_unsafe_all_public_windows"
     );
     assert_eq!(
-        joint_case_site_plan_failure_reason(false, true),
+        joint_case_site_plan_failure_reason(0, 0, true, false, false),
         "route_weather_projection_unavailable"
+    );
+    assert_eq!(
+        joint_case_site_plan_failure_reason(3, 1, false, true, false),
+        "route_fatigue_recovery_required"
     );
 }
 
@@ -212,7 +330,7 @@ fn successful_planned_case_site_recovery_continues_before_yielding_the_turn() {
 }
 
 #[test]
-fn one_generated_action_attempt_takes_its_reserved_return_before_another_attempt() {
+fn generated_on_site_action_continues_only_with_same_site_full_return_reserve() {
     let generated = include_str!("../generated_cases.rs");
     let attempted_action = generated
         .split("perform_investigation_action_then(")
@@ -227,20 +345,37 @@ fn one_generated_action_attempt_takes_its_reserved_return_before_another_attempt
     let action_event = attempted_action
         .find("CoreLoopEventKind::GeneratedInvestigationAction")
         .expect("public action progress event");
-    let return_safety = attempted_action
+    let settlement_continue = attempted_action
+        .find("if at_settlement {")
+        .expect("settlement action continuation branch");
+    let occupied_site = attempted_action
+        .find("let occupied_site_id")
+        .expect("off-settlement occupancy boundary");
+    let off_settlement_return = &attempted_action[occupied_site..];
+    let return_safety = off_settlement_return
         .find("generated_action_return_thermal_decision(party_id, &return_pin, 0)")
         .expect("authoritative reserved-return safety recheck");
-    let return_reducer = attempted_action
+    let return_reducer = off_settlement_return
         .find("evacuate_generated_party_to_origin(")
         .expect("reserved return execution");
-    let progress_exit = attempted_action
+    let progress_exit = off_settlement_return
         .rfind("return Ok(true)")
         .expect("public-progress exit after reserved return");
-    assert!(action_event < return_safety && return_safety < return_reducer);
+    assert!(action_event < settlement_continue && settlement_continue < occupied_site);
+    assert!(return_safety < return_reducer);
     assert!(return_reducer < progress_exit);
-    assert!(!attempted_action.contains("generated_actor_ready_after_time"));
-    assert!(!attempted_action.contains("continue;"));
-    assert!(attempted_action.contains("plan=one_attempt_then_reserved_return"));
+    assert!(attempted_action[settlement_continue..occupied_site].contains("continue;"));
+    assert!(!off_settlement_return.contains("generated_actor_ready_after_time"));
+    let continuation = off_settlement_return
+        .find("plan=continue_same_site")
+        .expect("conditional same-site continuation");
+    let next_reserve = off_settlement_return[..continuation]
+        .rfind("next_action.duration_max_minutes")
+        .expect("next action and return reserve");
+    assert!(off_settlement_return[..continuation].contains("row.required_case_site_id == occupied_site_id"));
+    assert!(next_reserve < continuation);
+    assert!(off_settlement_return[continuation..].contains("continue;"));
+    assert!(off_settlement_return.contains("plan=one_attempt_then_reserved_return"));
     let evacuation = generated
         .split("fn evacuate_generated_party_to_origin")
         .nth(1)
@@ -248,6 +383,53 @@ fn one_generated_action_attempt_takes_its_reserved_return_before_another_attempt
         .expect("reserved-return helper");
     assert!(evacuation.contains("generated_case_site_recoveries"));
     assert!(evacuation.contains("stored_case != case_id"));
+}
+
+#[test]
+fn continued_on_site_loop_cannot_select_a_cross_site_action() {
+    let generated = include_str!("../generated_cases.rs");
+    let action_frontier = generated
+        .split("sort_generated_actions(profile, &mut actions);")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split(
+                "if let Some(action) = actions.iter().find(|row| row.can_travel_to_required_site)",
+            )
+            .next()
+        })
+        .expect("generated action selection frontier");
+    let off_settlement = action_frontier
+        .find("if !at_settlement {")
+        .expect("off-settlement action-selection boundary");
+    let occupied_site = action_frontier
+        .find("let Some(occupied_site_id)")
+        .expect("occupied site identity");
+    let exact_site_filter = action_frontier
+        .find("actions.retain(|action| action.required_case_site_id == occupied_site_id)")
+        .expect("exact occupied-site action filter");
+    let ready_selection = action_frontier
+        .find("let ready_action_index")
+        .expect("thermally ready action selection");
+    let available_selection = action_frontier
+        .find("if let Some(action) = actions.iter().find(|row| row.available)")
+        .expect("available action selection");
+
+    assert!(off_settlement < occupied_site);
+    assert!(occupied_site < exact_site_filter);
+    assert!(exact_site_filter < ready_selection);
+    assert!(ready_selection < available_selection);
+
+    let sorted_frontier = generated
+        .find("sort_generated_actions(profile, &mut actions);")
+        .expect("sorted generated action frontier");
+    let full_available_selection = generated
+        .find("if let Some(action) = actions.iter().find(|row| row.available)")
+        .expect("full available action selection");
+    let travel_selection = generated
+        .find("if let Some(action) = actions.iter().find(|row| row.can_travel_to_required_site)")
+        .expect("settlement-side travel selection");
+    assert!(sorted_frontier < full_available_selection);
+    assert!(full_available_selection < travel_selection);
 }
 
 #[test]
@@ -447,7 +629,9 @@ fn route_plan_persists_the_same_selected_schedule_used_for_both_legs() {
     assert!(route.contains("selected_case_site_plan = Some(selected_plan)"));
     assert!(route.contains("selected_plan.outbound.total_elapsed_minutes"));
     assert!(route.contains("selected_plan.returned.total_elapsed_minutes"));
-    assert!(route.contains("wait_minutes: selected_plan.departure_wait_minutes"));
+    assert!(route.contains("selected_plan.departure_wait_minutes.min(1_440)"));
+    assert!(route.contains("wait_toward_safe_public_route_window"));
+    assert!(route.contains("wait_minutes,"));
     assert!(route.contains("travel_at_night: selected_plan.travel_at_night"));
     assert!(route.contains("DepartureReadiness::ReadyWithItinerary"));
     let generated = include_str!("../generated_cases.rs");
@@ -578,8 +762,48 @@ fn public_encumbrance_counts_carried_mass_but_not_body_mass() {
         .expect("public personal-load projection");
     assert!(load.contains("carried_water_ml"));
     assert!(load.contains("inventory_weight"));
-    assert!(load.contains("water_weight + inventory_weight"));
+    assert!(load.contains("public_contained_water_ml"));
+    assert!(load.contains("public_measured_stack_weight_kg"));
+    assert!(load.contains("public_row_is_carried"));
     assert!(!load.contains("body_weight_kg"));
+}
+
+#[test]
+fn public_supply_and_load_accounting_include_nested_measured_objects() {
+    let source = LIVE_CORE_SOURCE;
+    for public_surface in [
+        ".inventory_object()",
+        ".inventory_containment()",
+        ".inventory_item_amount()",
+        ".party_item_amount()",
+        ".container_liquid()",
+    ] {
+        assert!(source.contains(public_surface), "{public_surface}");
+    }
+    let supplies = source
+        .split("fn expedition_supplies")
+        .nth(1)
+        .and_then(|tail| tail.split("fn emit_expedition_diagnostics").next())
+        .expect("public expedition supply observation");
+    assert!(supplies.contains("public_row_is_carried"));
+    assert!(supplies.contains("contained_water_ml"));
+}
+
+#[test]
+fn measured_inventory_amount_replaces_stack_quantity_at_canonical_scale() {
+    use adventuresim_core::inventory_measurement::FULL_AMOUNT_MILLIUNITS;
+
+    assert_eq!(public_effective_inventory_quantity(3, None), 3.0);
+    assert_eq!(
+        public_effective_inventory_quantity(3, Some(FULL_AMOUNT_MILLIUNITS)),
+        1.0,
+        "a measured row is one measured object, not quantity times its amount"
+    );
+    assert_eq!(
+        public_effective_inventory_quantity(7, Some(FULL_AMOUNT_MILLIUNITS / 2)),
+        0.5,
+        "half of a measured object remains half regardless of the legacy stack quantity"
+    );
 }
 
 #[test]
@@ -627,8 +851,8 @@ fn readiness_buys_shared_tent_and_personal_ammunition_through_ordinary_trade() {
     assert!(tent.contains("true,"), "tent purchase must use party scope");
     assert!(tent.contains("public_general_storefront_exists"));
     assert!(tent.contains("tent_provider_unavailable_bivouac"));
-    assert!(tent.contains("shelter=bivouac"));
-    assert!(tent.contains("return Ok(DepartureReadiness::Ready)"));
+    assert!(source.contains("shelter=bivouac"));
+    assert!(tent.contains("tent_provider_unavailable_bivouac(event_agent)"));
 
     let ammo = source
         .split("fn ensure_ranged_ammunition")
@@ -642,6 +866,71 @@ fn readiness_buys_shared_tent_and_personal_ammunition_through_ordinary_trade() {
     assert!(ammo.contains("false,"), "arrows must remain personal");
     assert!(ammo.contains("ammo_before"));
     assert!(ammo.contains("ammo_after"));
+}
+
+#[test]
+fn exact_merchant_provider_races_reuse_public_unavailable_policy_without_purchase_metrics() {
+    for operation in MERCHANT_PROVIDER_RACE_OPERATIONS {
+        assert!(merchant_provider_unavailable_failure(&format!(
+            "{operation} failed: Merchant service provider is not available"
+        )));
+    }
+    for error in [
+        "purchase_from_herbalist failed: Merchant service provider is not available",
+        "finalize_storefront_trade failed: Merchant service provider is not available",
+        "purchase_party_tent failed: Merchant service provider is not available now",
+        "purchase_party_tent failed: Merchant service provider is unavailable",
+    ] {
+        assert!(!merchant_provider_unavailable_failure(error), "{error}");
+    }
+
+    let source = LIVE_CORE_SOURCE;
+    let tent = source
+        .split("fn ensure_party_tent")
+        .nth(1)
+        .and_then(|tail| tail.split("fn ensure_ranged_ammunition").next())
+        .unwrap();
+    assert!(tent.contains("merchant_provider_unavailable_failure(&error)"));
+    assert!(tent.find("merchant_provider_unavailable_failure(&error)").unwrap()
+        < tent.find("party_tents_purchased").unwrap());
+
+    let ammo = source
+        .split("fn ensure_ranged_ammunition")
+        .nth(1)
+        .and_then(|tail| tail.split("fn validate_party_departure_readiness").next())
+        .unwrap();
+    assert!(ammo.contains("ammunition_provider_projection_unavailable"));
+    assert!(ammo.find("merchant_provider_unavailable_failure(&error)").unwrap()
+        < ammo.find("ammunition_purchases").unwrap());
+
+    let provisions = source
+        .split("fn provision_case_site_journey")
+        .nth(1)
+        .and_then(|tail| tail.split("pub(super) fn public_active_camp_observation").next())
+        .unwrap();
+    assert!(provisions.contains("journey_payer_provider_projection_unavailable"));
+    assert!(provisions.find("merchant_provider_unavailable_failure(&error)").unwrap()
+        < provisions.find("journey_provision_purchases").unwrap());
+
+    let first_aid = source
+        .split("fn acquire_first_aid_material")
+        .nth(1)
+        .and_then(|tail| tail.split("fn apply_visible_first_aid").next())
+        .unwrap();
+    assert!(first_aid.contains("merchant_provider_unavailable_failure(&error)"));
+    assert!(first_aid.contains("return Ok(false)"));
+
+    let upgrade = source.split("fn try_upgrade").nth(1).unwrap();
+    assert!(upgrade.contains("merchant_provider_unavailable_failure(&error)"));
+    assert!(upgrade.find("merchant_provider_unavailable_failure(&error)").unwrap()
+        < upgrade.find("equipment_purchases += 1").unwrap());
+
+    let herbalist = source
+        .split("debug_assert_eq!(choice, MedicalChoice::BuyAndRest)")
+        .nth(1)
+        .and_then(|tail| tail.split("administer_preparation_then").next())
+        .unwrap();
+    assert!(!herbalist.contains("merchant_provider_unavailable_failure"));
 }
 
 #[test]
@@ -749,14 +1038,24 @@ fn equipment_storefront_requires_service_and_matching_stock_category() {
 #[test]
 fn staggered_default_providers_remain_ambiguous_before_hours_filtering() {
     assert_eq!(
-        visible_unique_default_provider(&[(7, 0, 720), (8, 720, 1_440)], 300),
+        visible_unique_default_provider(
+            &[(7, 0, 720, false, false), (8, 720, 1_440, false, false)],
+            300
+        ),
         None
     );
     assert_eq!(
-        visible_unique_default_provider(&[(7, 0, 720)], 300),
+        visible_unique_default_provider(&[(7, 0, 720, false, false)], 300),
         Some(7)
     );
-    assert_eq!(visible_unique_default_provider(&[(7, 0, 720)], 900), None);
+    assert_eq!(
+        visible_unique_default_provider(&[(7, 0, 720, false, false)], 900),
+        None
+    );
+    assert_eq!(
+        visible_unique_default_provider(&[(7, 0, 720, true, false)], 300),
+        None
+    );
 }
 
 #[test]
@@ -865,8 +1164,16 @@ fn public_route_thermal_forecast_is_bounded_and_gates_both_case_paths() {
         source
             .matches("validate_case_site_thermal_readiness(")
             .count(),
-        3,
-        "one helper plus generated and direct case-site gates"
+        4,
+        "one helper plus generated initial/follow-up and direct case-site gates"
+    );
+    let generated = include_str!("../generated_cases.rs");
+    assert_eq!(
+        generated
+            .matches("validate_case_site_thermal_readiness(")
+            .count(),
+        2,
+        "generated routes gate before waiting and again before same-turn follow-through"
     );
     for branch in [
         "pub(super) fn advance_generated_case",

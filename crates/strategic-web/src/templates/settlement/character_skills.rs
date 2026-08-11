@@ -806,11 +806,11 @@ impl ActivityPreviewRates {
             {
                 continue;
             }
-            let Some(rank) = definition.rank(&row.rank_id) else {
+            let Some(role) = definition.role(&row.role_id) else {
                 continue;
             };
             let practice_threshold =
-                u64::from(rank.practice_reward_interval_minutes) * MINUTES_PER_DAY;
+                u64::from(role.practice_reward_interval_minutes) * MINUTES_PER_DAY;
             let practice_reward = match definition.activity.reward {
                 adventuresim_core::organization::ActivityReward::Gold => "gold",
                 adventuresim_core::organization::ActivityReward::Fame => "fame",
@@ -841,9 +841,9 @@ impl ActivityPreviewRates {
                     practice_weight: 1,
                     practice_reward,
                     tier_label: definition
-                        .rank(&row.rank_id)
-                        .map_or_else(|| row.rank_id.clone(), |rank| rank.name.clone()),
-                    practice_allowed: rank.practice_allowed,
+                        .role(&row.role_id)
+                        .map_or_else(|| row.role_id.clone(), |role| role.name.clone()),
+                    practice_allowed: role.practice_allowed,
                     reputation_multiplier: self.reputation_multiplier,
                 },
             );
@@ -938,8 +938,6 @@ fn character_aptitude(attributes: &CharacterAttributes, skill: Skill) -> f32 {
 pub(crate) struct CharacterSheetActions<'a> {
     pub(super) cooking_href: Option<&'a str>,
     pub(super) cooking_open: bool,
-    pub(super) herbalism_href: Option<&'a str>,
-    pub(super) herbalism_open: bool,
     pub(super) foraging_href: Option<&'a str>,
     pub(super) foraging_open: bool,
 }
@@ -1149,7 +1147,7 @@ fn skills_table(
                         ))
                     }
                     (party_skill_row(skills, "Cooking", "cooking", Skill::Cooking, intelligence, head_health, schedule.is_some(), actions.cooking_href.map(|href| SkillAction::Get { href, label: "Open cooking menu", open: actions.cooking_open })))
-                    (party_skill_row(skills, "Herbalism", "caduceus", Skill::Herbalism, intelligence, head_health, schedule.is_some(), actions.herbalism_href.map(|href| SkillAction::Get { href, label: "Open herbalism menu", open: actions.herbalism_open })))
+                    (party_skill_row(skills, "Herbalism", "caduceus", Skill::Herbalism, intelligence, head_health, schedule.is_some(), None))
                     (religion_skill_rows(skills, intelligence, head_health, schedule, training_religion))
                     (bestiary_skill_rows(skills, intelligence, head_health, schedule.is_some()))
                     (language_skill_rows(skills, instinct, intelligence, schedule.is_some()))
@@ -2428,9 +2426,9 @@ fn schedule_organization_selection(
             th scope="row" { (label) }
             td colspan="8" {
                 select name=(name) data-organization-schedule-select aria-label=(label) {
-                    @for (organization_id, rank_name) in choices {
+                    @for (organization_id, role_name) in choices {
                         option value=(organization_id) selected[organization_id == selected_id] {
-                            (profession_label(organization_id)) " — " (rank_name)
+                            (profession_label(organization_id)) " — " (role_name)
                         }
                     }
                 }
@@ -2461,7 +2459,7 @@ fn schedule_allocation_cell(name: &str, minutes: u16, editable: bool) -> Markup 
 
 fn schedule_icon(label: &str, icon: &str, actionable: bool, activity: &str) -> Markup {
     let unavailable_reason = (!actionable)
-        .then(|| match activity {
+        .then_some(match activity {
             "carousing_minutes" => Some(adventuresim_core::activity::CAROUSING_UNAVAILABLE_REASON),
             "thievery_minutes" => Some(adventuresim_core::activity::THIEVERY_UNAVAILABLE_REASON),
             "raiding_minutes" => Some(adventuresim_core::activity::RAIDING_UNAVAILABLE_REASON),
@@ -3433,11 +3431,11 @@ mod tests {
             .reading
             .expect("German primer is readable and useful");
         assert!((reading.rate - 0.5).abs() < f32::EPSILON);
-        assert!(
-            reading
-                .description
-                .contains("Vocabularius ex quo (German–Latin)")
-        );
+        let selected_title = adventuresim_core::item_catalog::definition("primer_german_latin")
+            .expect("German primer remains authored")
+            .display_name
+            .as_str();
+        assert!(reading.description.contains(selected_title));
         assert!(reading.description.contains("50%"));
     }
 
@@ -3480,7 +3478,7 @@ mod tests {
         assert!(!apprenticeship.contains("Knife:"));
         assert!(!apprenticeship.contains("Tailoring:"));
 
-        for (organization_id, rank_id, expected_skill) in [
+        for (organization_id, role_id, expected_skill) in [
             ("herbalists_fellowship", "learner", "Herbalism"),
             ("physicians_college", "student", "Physiology"),
             ("surgeons_guild", "apprentice", "Surgery"),
@@ -3489,7 +3487,7 @@ mod tests {
                 id: 1,
                 character_id: 1,
                 organization_id: organization_id.into(),
-                rank_id: rank_id.into(),
+                role_id: role_id.into(),
                 joined_minute: 0,
                 dues_paid_through_minute: 1,
                 status: "active".into(),

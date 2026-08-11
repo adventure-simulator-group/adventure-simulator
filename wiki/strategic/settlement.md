@@ -199,8 +199,9 @@ A living active character with Physiology 2 or better sees the selected
 character's Physiology surface as a passive, durable notebook derived from
 actual shared-presence spans. It shows quantized Humour readings, recognizable
 symptoms, known interventions, localization appropriate to historical skill,
-and explicit gaps, but never diagnoses or recommends. The active character's
-Cooking skill icon continues to open cooking.
+and explicit gaps, but never diagnoses or recommends. Cooking remains an
+informational skill row; actual cooking begins from the Fireplace counterparty
+shown at settlement buildings and journey camps.
 
 Herbalists sell concrete prepared interventions into personal inventory.
 The active character self-administers a preparation from personal inventory by

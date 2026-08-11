@@ -276,6 +276,14 @@ pub(super) async fn party_member(
         .query("SELECT * FROM food_lot")
         .await
         .unwrap_or_default();
+    let preparation_plans: Vec<BackendIngredientPreparationPlan> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM backend_ingredient_preparation_plans WHERE actor_character_id = {}",
+            active_character.id
+        ))
+        .await
+        .unwrap_or_default();
     let selected_targets = personal_inventory_targets(&state, selected.id).await;
     let active_targets = personal_inventory_targets(&state, active_character.id).await;
     let encumbrance_rows =
@@ -303,6 +311,7 @@ pub(super) async fn party_member(
                 &active_inventory,
                 &items,
                 &food_lots,
+                &preparation_plans,
                 &party_members,
                 active_equip.first(),
                 active_encumbrance,
@@ -378,6 +387,14 @@ pub(super) async fn party_pool_inventory(
         .query("SELECT * FROM food_lot")
         .await
         .unwrap_or_default();
+    let preparation_plans: Vec<BackendIngredientPreparationPlan> = state
+        .db
+        .query(&format!(
+            "SELECT * FROM backend_ingredient_preparation_plans WHERE actor_character_id = {}",
+            character.id
+        ))
+        .await
+        .unwrap_or_default();
     let items: Vec<ItemDefinition> = state
         .db
         .query("SELECT * FROM item")
@@ -403,6 +420,7 @@ pub(super) async fn party_pool_inventory(
             stake,
             &items,
             &food_lots,
+            &preparation_plans,
             &members,
             equip.first(),
             &personal_targets,

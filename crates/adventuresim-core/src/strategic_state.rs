@@ -100,6 +100,7 @@ pub struct MissionBinding {
 pub enum HostileResolution {
     Defeated,
     DrivenOff,
+    Surrendered,
     Captured {
         subject_id: String,
         custody_version: CustodyVersion,
@@ -146,6 +147,7 @@ pub enum FlatMissionStatus {
 pub enum FlatResolution {
     Defeated,
     DrivenOff,
+    Surrendered,
     Captured,
     CaptureTargetKilled,
 }
@@ -194,6 +196,12 @@ impl MissionAttemptState {
                 Ok(Self::Committed {
                     binding,
                     resolution: HostileResolution::DrivenOff,
+                })
+            }
+            (FlatMissionStatus::Committed, Some(FlatResolution::Surrendered), None, None) => {
+                Ok(Self::Committed {
+                    binding,
+                    resolution: HostileResolution::Surrendered,
                 })
             }
             (

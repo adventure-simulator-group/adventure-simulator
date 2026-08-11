@@ -41,6 +41,13 @@ mod rest_form_tests {
         assert!(field_shelter_argument(&request).is_err());
     }
 
+    #[test]
+    fn fireplace_convenience_rest_accepts_exact_minutes() {
+        assert_eq!(travel_rest_minutes(&form("37", "minutes", None)), Ok(37));
+        assert!(travel_rest_minutes(&form("0", "minutes", None)).is_err());
+        assert!(travel_rest_minutes(&form("1.5", "minutes", None)).is_err());
+    }
+
     fn member(id: u64) -> Character {
         Character {
             id,
@@ -184,7 +191,7 @@ mod rest_form_tests {
             &[],
             &amounts,
             &[],
-            &[alcohol.clone()],
+            std::slice::from_ref(&alcohol),
             &[personality(1, Temperance::Temperate)],
             Some("party"),
         );

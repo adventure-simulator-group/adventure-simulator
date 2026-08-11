@@ -11,13 +11,13 @@
         "adaptation_note": "An original synthesis of sharp-tongued companions, prudent household officers, contested passages, vows, and tests of courage common in chivalric romance; it does not reproduce a particular episode or direct abuse toward bodily identity."
       },
       "cast": [
-        { "id": "sharp_tongued_damsel", "name": "Sharp-tongued damsel", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } },
-        { "id": "dwarf_steward", "name": "Dwarf steward", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } }
+        { "id": "sharp_tongued_damsel", "name": "Sharp-tongued damsel", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } },
+        { "id": "dwarf_steward", "name": "Dwarf steward", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } }
       ],
       "opening": [
         {
           "speaker": "sharp_tongued_damsel",
-          "text": "I bear Saint Michael's candles under vow unto the chapel beyond this washed hollow, and that holy errand licenseth me to demand the private shortcut. I shall not humble my rank upon the longer public lower path merely because my steward counseleth caution. Thou lookest better dressed for status than proved in judgment or courage. Twenty groschen await one who returneth with sound proof, and twelve more shall reward one who can marshal this household without confusion.",
+          "text": "I bear Saint Michael's candles under vow unto the chapel beyond this washed hollow, and that holy errand licenseth me to demand the private shortcut. I shall not humble my rank upon the longer public lower path merely because my steward counseleth caution. You look better dressed for status than proved in judgment or courage. Twenty groschen await one who returneth with sound proof, and twelve more shall reward one who can marshal this household without confusion.",
           "reviewed_shakespearean": true
         },
         {

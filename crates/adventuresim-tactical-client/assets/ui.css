@@ -72,6 +72,28 @@ text,span {
   z-index: -100;
 }
 
+#aim-blocked {
+  position: absolute;
+  top: 54px;
+  left: -54px;
+  width: 180px;
+  color: var(--error);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+  text-shadow: #000 2px 2px;
+}
+
+#terminal-outcome {
+  position: absolute;
+  top: 28%;
+  width: 100%;
+  font-size: 64px;
+  font-weight: 800;
+  text-align: center;
+  text-shadow: #000 3px 3px;
+}
+
 #stats {
   flex-direction: column;
   position: absolute;
@@ -134,6 +156,13 @@ text,span {
 #controls {
   position: absolute;
   bottom: 0px;
+  width: 100%;
+  text-align: center;
+}
+
+#weapon-guard {
+  position: absolute;
+  bottom: 48px;
   width: 100%;
   text-align: center;
 }

@@ -16,6 +16,7 @@ pub struct StrategicIncident {
     pub id_key: String,
     pub id: IncidentId,
     pub source_id: IncidentSourceId,
+    pub action_token: String,
     pub party_id: String,
     pub settlement_id: String,
     pub instigator_id: u64,
@@ -37,6 +38,7 @@ pub struct StrategicIncidentCols {
     pub id_key: __sdk::__query_builder::Col<StrategicIncident, String>,
     pub id: __sdk::__query_builder::Col<StrategicIncident, IncidentId>,
     pub source_id: __sdk::__query_builder::Col<StrategicIncident, IncidentSourceId>,
+    pub action_token: __sdk::__query_builder::Col<StrategicIncident, String>,
     pub party_id: __sdk::__query_builder::Col<StrategicIncident, String>,
     pub settlement_id: __sdk::__query_builder::Col<StrategicIncident, String>,
     pub instigator_id: __sdk::__query_builder::Col<StrategicIncident, u64>,
@@ -54,6 +56,7 @@ impl __sdk::__query_builder::HasCols for StrategicIncident {
             id_key: __sdk::__query_builder::Col::new(table_name, "id_key"),
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             source_id: __sdk::__query_builder::Col::new(table_name, "source_id"),
+            action_token: __sdk::__query_builder::Col::new(table_name, "action_token"),
             party_id: __sdk::__query_builder::Col::new(table_name, "party_id"),
             settlement_id: __sdk::__query_builder::Col::new(table_name, "settlement_id"),
             instigator_id: __sdk::__query_builder::Col::new(table_name, "instigator_id"),
@@ -70,6 +73,7 @@ impl __sdk::__query_builder::HasCols for StrategicIncident {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct StrategicIncidentIxCols {
+    pub action_token: __sdk::__query_builder::IxCol<StrategicIncident, String>,
     pub case_site_id: __sdk::__query_builder::IxCol<StrategicIncident, CaseSiteId>,
     pub hostile_group_id: __sdk::__query_builder::IxCol<StrategicIncident, String>,
     pub id_key: __sdk::__query_builder::IxCol<StrategicIncident, String>,
@@ -81,6 +85,7 @@ impl __sdk::__query_builder::HasIxCols for StrategicIncident {
     type IxCols = StrategicIncidentIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         StrategicIncidentIxCols {
+            action_token: __sdk::__query_builder::IxCol::new(table_name, "action_token"),
             case_site_id: __sdk::__query_builder::IxCol::new(table_name, "case_site_id"),
             hostile_group_id: __sdk::__query_builder::IxCol::new(table_name, "hostile_group_id"),
             id_key: __sdk::__query_builder::IxCol::new(table_name, "id_key"),

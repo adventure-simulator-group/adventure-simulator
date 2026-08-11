@@ -736,7 +736,7 @@ impl PresenceSpan {
     }
 
     pub fn contains(&self, minute: u64) -> bool {
-        minute >= self.started_at && self.ended_at.map_or(true, |end| minute <= end)
+        minute >= self.started_at && self.ended_at.is_none_or(|end| minute <= end)
     }
 }
 

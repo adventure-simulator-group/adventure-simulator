@@ -1,0 +1,162 @@
+[
+    {
+        "organization_id":  "merchant_guild",
+        "from_role_id":  "apprentice",
+        "to_role_id":  "journeyman"
+    },
+    {
+        "organization_id":  "merchant_guild",
+        "from_role_id":  "journeyman",
+        "to_role_id":  "master"
+    },
+    {
+        "organization_id":  "weaponsmith_guild",
+        "from_role_id":  "apprentice",
+        "to_role_id":  "journeyman"
+    },
+    {
+        "organization_id":  "weaponsmith_guild",
+        "from_role_id":  "journeyman",
+        "to_role_id":  "master"
+    },
+    {
+        "organization_id":  "armourers_guild",
+        "from_role_id":  "apprentice",
+        "to_role_id":  "journeyman"
+    },
+    {
+        "organization_id":  "armourers_guild",
+        "from_role_id":  "journeyman",
+        "to_role_id":  "master"
+    },
+    {
+        "organization_id":  "tailors_guild",
+        "from_role_id":  "apprentice",
+        "to_role_id":  "journeyman"
+    },
+    {
+        "organization_id":  "tailors_guild",
+        "from_role_id":  "journeyman",
+        "to_role_id":  "master"
+    },
+    {
+        "organization_id":  "herbalists_fellowship",
+        "from_role_id":  "learner",
+        "to_role_id":  "herbalist"
+    },
+    {
+        "organization_id":  "herbalists_fellowship",
+        "from_role_id":  "herbalist",
+        "to_role_id":  "elder_herbalist"
+    },
+    {
+        "organization_id":  "physicians_college",
+        "from_role_id":  "student",
+        "to_role_id":  "physician"
+    },
+    {
+        "organization_id":  "physicians_college",
+        "from_role_id":  "physician",
+        "to_role_id":  "master_physician"
+    },
+    {
+        "organization_id":  "surgeons_guild",
+        "from_role_id":  "apprentice",
+        "to_role_id":  "surgeon"
+    },
+    {
+        "organization_id":  "surgeons_guild",
+        "from_role_id":  "surgeon",
+        "to_role_id":  "master_surgeon"
+    },
+    {
+        "organization_id":  "cooks_guild",
+        "from_role_id":  "apprentice",
+        "to_role_id":  "journeyman"
+    },
+    {
+        "organization_id":  "cooks_guild",
+        "from_role_id":  "journeyman",
+        "to_role_id":  "master"
+    },
+    {
+        "organization_id":  "roman_catholic_learned_chapter",
+        "from_role_id":  "novice",
+        "to_role_id":  "cleric"
+    },
+    {
+        "organization_id":  "roman_catholic_learned_chapter",
+        "from_role_id":  "cleric",
+        "to_role_id":  "doctor"
+    },
+    {
+        "organization_id":  "reformed_learned_chapter",
+        "from_role_id":  "hearer",
+        "to_role_id":  "reader"
+    },
+    {
+        "organization_id":  "reformed_learned_chapter",
+        "from_role_id":  "reader",
+        "to_role_id":  "teacher"
+    },
+    {
+        "organization_id":  "orthodox_learned_brotherhood",
+        "from_role_id":  "novice",
+        "to_role_id":  "reader"
+    },
+    {
+        "organization_id":  "orthodox_learned_brotherhood",
+        "from_role_id":  "reader",
+        "to_role_id":  "teacher"
+    },
+    {
+        "organization_id":  "lutheran_learned_visitation",
+        "from_role_id":  "hearer",
+        "to_role_id":  "reader"
+    },
+    {
+        "organization_id":  "lutheran_learned_visitation",
+        "from_role_id":  "reader",
+        "to_role_id":  "visitor"
+    },
+    {
+        "organization_id":  "hunt_pale_lantern",
+        "from_role_id":  "watcher",
+        "to_role_id":  "hunter"
+    },
+    {
+        "organization_id":  "hunt_pale_lantern",
+        "from_role_id":  "hunter",
+        "to_role_id":  "huntmaster"
+    },
+    {
+        "organization_id":  "order_saint_george",
+        "from_role_id":  "sergeant",
+        "to_role_id":  "knight"
+    },
+    {
+        "organization_id":  "order_saint_george",
+        "from_role_id":  "knight",
+        "to_role_id":  "commander"
+    },
+    {
+        "organization_id":  "lodge_hart_king",
+        "from_role_id":  "under_warden",
+        "to_role_id":  "warden"
+    },
+    {
+        "organization_id":  "lodge_hart_king",
+        "from_role_id":  "warden",
+        "to_role_id":  "master"
+    },
+    {
+        "organization_id":  "test_catholic_polearm_cooks",
+        "from_role_id":  "spoon_bearer",
+        "to_role_id":  "keeper_of_the_long_spoon"
+    },
+    {
+        "organization_id":  "test_catholic_polearm_cooks",
+        "from_role_id":  "spoon_bearer",
+        "to_role_id":  "keeper_of_the_silver_spoon"
+    }
+]

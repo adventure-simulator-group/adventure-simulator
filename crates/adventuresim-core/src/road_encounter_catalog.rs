@@ -67,8 +67,8 @@ pub struct Speaker {
 pub enum SpeakerBacking {
     Character {
         role: CharacterCastRole,
-        #[serde(default)]
-        treatment_consent: bool,
+        contact_decision: AuthoredInteractionDecision,
+        treatment_decision: AuthoredInteractionDecision,
     },
     NarrativeOnly {
         reason: String,
@@ -77,6 +77,14 @@ pub enum SpeakerBacking {
         issue: String,
         reason: String,
     },
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthoredInteractionDecision {
+    Allowed,
+    Refused,
+    Unavailable,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -177,7 +185,7 @@ pub enum EncounterTransition {
     StartCombat {
         archetype: RoadCombatArchetype,
         count: u16,
-        outcomes: CombatOutcomeSet,
+        outcomes: Box<CombatOutcomeSet>,
     },
     TravelDelay {
         minutes: u16,
@@ -262,9 +270,20 @@ pub struct PresentationCastMember {
     pub character_id: u64,
     pub name: String,
     pub role: CharacterCastRole,
-    pub can_talk: bool,
-    pub can_bandage: bool,
+    pub contact_decision: InteractionPresentationDecision,
+    pub treatment_decision: InteractionPresentationDecision,
     pub contact_revision: u32,
+    pub membership_revision: u32,
+    pub treatment_limb_slug: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum InteractionPresentationDecision {
+    Request,
+    Refused,
+    Unavailable,
+    EmergencyTreatment,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -516,13 +535,15 @@ pub fn validate_definitions(definitions: &[EncounterDefinition]) -> Result<(), S
                                 &speaker.backing,
                                 SpeakerBacking::Character {
                                     role: CharacterCastRole::Patient,
-                                    treatment_consent: true,
+                                    treatment_decision: AuthoredInteractionDecision::Allowed
+                                        | AuthoredInteractionDecision::Unavailable,
+                                    ..
                                 }
                             )
                         })
                     {
                         return Err(format!(
-                            "{}:{} treatment requires a consenting Patient",
+                            "{}:{} treatment requires a non-refusing Patient",
                             definition.id, choice.id
                         ));
                     }
@@ -1127,7 +1148,7 @@ mod tests {
     }
 
     #[test]
-    fn treatment_verbs_are_typed_and_bound_to_consenting_patients() {
+    fn treatment_verbs_are_typed_and_bound_to_non_refusing_patients() {
         let treatment_routes = definitions()
             .iter()
             .flat_map(|definition| {
@@ -1144,7 +1165,9 @@ mod tests {
                 &speaker.backing,
                 SpeakerBacking::Character {
                     role: CharacterCastRole::Patient,
-                    treatment_consent: true,
+                    contact_decision: _,
+                    treatment_decision: AuthoredInteractionDecision::Allowed
+                        | AuthoredInteractionDecision::Unavailable,
                 }
             )));
         }
@@ -1155,7 +1178,8 @@ mod tests {
         let mut supernatural = encounter("enchanted_fog_lost_forester_v1").unwrap().clone();
         supernatural.cast[0].backing = SpeakerBacking::Character {
             role: CharacterCastRole::Counterparty,
-            treatment_consent: false,
+            contact_decision: AuthoredInteractionDecision::Allowed,
+            treatment_decision: AuthoredInteractionDecision::Unavailable,
         };
         assert!(
             validate_definitions(&[supernatural])

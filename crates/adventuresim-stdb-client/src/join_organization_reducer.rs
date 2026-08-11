@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct JoinOrganizationArgs {
     pub character_id: u64,
     pub organization_id: String,
+    pub entry_role_id: String,
 }
 
 impl From<JoinOrganizationArgs> for super::Reducer {
@@ -16,6 +17,7 @@ impl From<JoinOrganizationArgs> for super::Reducer {
         Self::JoinOrganization {
             character_id: args.character_id,
             organization_id: args.organization_id,
+            entry_role_id: args.entry_role_id,
         }
     }
 }
@@ -35,8 +37,13 @@ pub trait join_organization {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`join_organization:join_organization_then`] to run a callback after the reducer completes.
-    fn join_organization(&self, character_id: u64, organization_id: String) -> __sdk::Result<()> {
-        self.join_organization_then(character_id, organization_id, |_, _| {})
+    fn join_organization(
+        &self,
+        character_id: u64,
+        organization_id: String,
+        entry_role_id: String,
+    ) -> __sdk::Result<()> {
+        self.join_organization_then(character_id, organization_id, entry_role_id, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `join_organization` to run as soon as possible,
@@ -49,6 +56,7 @@ pub trait join_organization {
         &self,
         character_id: u64,
         organization_id: String,
+        entry_role_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -63,6 +71,7 @@ impl join_organization for super::RemoteReducers {
         &self,
         character_id: u64,
         organization_id: String,
+        entry_role_id: String,
 
         callback: impl FnOnce(
             &super::ReducerEventContext,
@@ -74,6 +83,7 @@ impl join_organization for super::RemoteReducers {
             JoinOrganizationArgs {
                 character_id,
                 organization_id,
+                entry_role_id,
             },
             callback,
         )

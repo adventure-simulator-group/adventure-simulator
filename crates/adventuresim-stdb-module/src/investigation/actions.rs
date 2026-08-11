@@ -271,12 +271,19 @@ fn persist_action_result_lead(
             } => Some(&evidence_id.0),
             _ => None,
         }) {
+            let source_id = crate::outbreak::source_material_knowledge_provenance(
+                ctx,
+                &capability.generated_case_id,
+                &capability.target_id,
+            )
+            ?
+            .unwrap_or_else(|| attempt_id.to_owned());
             record_evidence_knowledge(
                 ctx,
                 capability.owner_character_id,
                 &capability.case_id,
                 evidence_id,
-                attempt_id,
+                &source_id,
             )?;
         }
     }
@@ -299,7 +306,7 @@ fn validate_tracking_action_origin(
             ctx.db
                 .investigation_action_capability()
                 .id()
-                .find(&id.to_owned())
+                .find(id.to_owned())
         },
         |id| {
             ctx.db
@@ -464,6 +471,7 @@ fn validate_generated_pattern_condition(
         capability.owner_character_id,
         &observer_case_id,
         &evidence_id,
+        started_at,
         ctx.db
             .investigation_evidence_knowledge()
             .owner_character_id()
@@ -520,7 +528,7 @@ fn validate_generated_pattern_condition(
                 .ok_or("Victim cohort target is unavailable")?;
             let expected = adventuresim_core::quest_generation::GeneratedPatternTarget {
                 cohort_id: target.cohort_id.clone(),
-                resident_character_id: target.resident_character_id.clone(),
+                resident_character_id: target.resident_character_id,
                 demographic: *demographic,
                 age_band: target.age_band.clone(),
                 sex: target.sex.clone(),
@@ -535,7 +543,7 @@ fn validate_generated_pattern_condition(
                     .ok_or("Victim cohort NPC no longer has a visible demographic")?
             } else {
                 adventuresim_core::quest_generation::WitnessCandidate {
-                    resident_character_id: npc.character_id.clone(),
+                    resident_character_id: npc.character_id,
                     display_name: npc.name.clone(),
                     demographic: crate::strategic::generated_npc_demographic(&npc),
                     age_band: format!("{:?}", npc.age_band).to_ascii_lowercase(),
@@ -584,7 +592,7 @@ fn validate_live_action_prerequisites(
             ctx.db
                 .investigation_action_capability()
                 .id()
-                .find(&id.to_owned())
+                .find(id.to_owned())
         },
         |id| {
             ctx.db
@@ -605,7 +613,7 @@ fn validate_live_action_prerequisites(
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party not found")?;
     if party.camp_destination.is_some()
         || party.camp_remaining_minutes > 0
@@ -613,7 +621,7 @@ fn validate_live_action_prerequisites(
             .db
             .party_journey_authority()
             .party_id()
-            .find(&party_id.to_string())
+            .find(party_id.to_string())
             .is_some()
     {
         return Err("Investigation cannot begin during a journey or camp".into());
@@ -700,7 +708,7 @@ fn case_objective_contains_custody_target(
         .db
         .case_authority()
         .id()
-        .find(&case_id.to_string())
+        .find(case_id.to_string())
         .ok_or("Investigation case no longer exists")?;
     let expression: adventuresim_core::case::ObjectiveExpression =
         serde_json::from_str(&case.objective_expression_json)
@@ -734,7 +742,7 @@ fn validate_pickup_custody(
         .db
         .case_custody()
         .object_id()
-        .find(&object_id.to_string())
+        .find(object_id.to_string())
         .ok_or("Capability target has no custody authority")?;
     if current.case_id != capability.case_id
         || current.object_kind != object_kind
@@ -748,7 +756,7 @@ fn validate_pickup_custody(
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party not found")?;
     if party.current_case_site_id.as_deref() != Some(current.holder_id.as_str()) {
         return Err("Party is not at the custody site".into());
@@ -782,7 +790,7 @@ fn reissue_stale_custody_capability(
         .db
         .case_custody()
         .object_id()
-        .find(&object_id.to_string())
+        .find(object_id.to_string())
         .ok_or("Capability target has no custody authority")?;
     let next = current.version.saturating_add(1);
     if expected == next {
@@ -980,6 +988,75 @@ fn capability_uses_bounded_progress(
     provenance_kind == "generated" && generated_progress_kind(kind)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AttemptHistoryKind {
+    CompletedFailure,
+    Break,
+}
+
+fn failed_attempt_history_kind(private_resolution_json: &str) -> AttemptHistoryKind {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct InterruptedReceipt {
+        status: String,
+        requested_minutes: u64,
+        completion_effects_applied: bool,
+    }
+
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(private_resolution_json) else {
+        return AttemptHistoryKind::Break;
+    };
+    if value.get("status").is_some() {
+        let Ok(receipt) = serde_json::from_value::<InterruptedReceipt>(value) else {
+            return AttemptHistoryKind::Break;
+        };
+        let _is_terminal_interruption = receipt.status == "interrupted"
+            && !receipt.completion_effects_applied
+            && receipt.requested_minutes > 0;
+        return AttemptHistoryKind::Break;
+    }
+    if let Ok(resolution) = serde_json::from_value::<action::Resolution>(value.clone())
+        && !resolution.success
+        && value.as_object().is_some_and(|object| {
+            object.len() == 7
+                && [
+                    "result",
+                    "success",
+                    "cost",
+                    "resulting_uncertainty_bps",
+                    "risk_bps",
+                    "risk_triggered",
+                    "effective_skill_bps",
+                ]
+                .into_iter()
+                .all(|key| object.contains_key(key))
+        })
+    {
+        return AttemptHistoryKind::CompletedFailure;
+    }
+    if let Some(resolution) = value
+        .get("resolution")
+        .cloned()
+        .and_then(|value| serde_json::from_value::<action::Resolution>(value).ok())
+        && !resolution.success
+        && value.as_object().is_some_and(|object| {
+            object.len() == 5
+                && [
+                    "resolution",
+                    "attempt_number",
+                    "persistent_progress_bps",
+                    "success_threshold_bps",
+                    "guaranteed_by_attempt",
+                ]
+                .into_iter()
+                .all(|key| object.contains_key(key))
+        })
+    {
+        return AttemptHistoryKind::CompletedFailure;
+    }
+    AttemptHistoryKind::Break
+}
+
 fn contiguous_failed_attempts(
     capability_id: &str,
     owner_character_id: u64,
@@ -993,19 +1070,25 @@ fn contiguous_failed_attempts(
             attempt.capability_id == capability_id
                 && attempt.owner_character_id == owner_character_id
                 && attempt.method == method
-                && !attempt.success
                 && attempt.expected_version < current_version
         })
-        .map(|attempt| (attempt.expected_version, attempt))
+        .map(|attempt| {
+            let kind = if attempt.success {
+                AttemptHistoryKind::Break
+            } else {
+                failed_attempt_history_kind(&attempt.private_resolution_json)
+            };
+            (attempt.expected_version, kind)
+        })
         .collect::<BTreeMap<_, _>>();
     let mut cursor = current_version;
     let mut failures = 0;
     while cursor > 0 {
         cursor -= 1;
-        if attempts.get(&cursor).is_none() {
-            break;
+        match attempts.get(&cursor) {
+            Some(AttemptHistoryKind::CompletedFailure) => failures += 1,
+            Some(AttemptHistoryKind::Break) | None => break,
         }
-        failures += 1;
     }
     failures
 }
@@ -1165,6 +1248,188 @@ fn reset_unsupported_capability_progress(
     Ok(())
 }
 
+fn site_bound_investigation_plan(
+    ctx: &ReducerContext,
+    actor_id: u64,
+    party_leader_id: u64,
+    rights: &adventuresim_core::rights::PrivateRightsDecision<
+        action::InvestigationRightsEvidence,
+    >,
+    rights_question: &action::InvestigationRightsQuestion,
+    capability: &InvestigationActionCapability,
+    attempt_id: &str,
+    started_at: u64,
+    members: &[u64],
+    resolution: action::Resolution,
+    resolution_input: action::ResolutionInput,
+) -> Result<Option<action::InvestigationPlanningOutcome>, String> {
+    use adventuresim_core::{
+        physical_object::CustodyCharacterId,
+        strategic_action::{
+            ActionCoordinates, ActionDefinitionId, ActionRequestId, ActionTarget,
+            AuthoritativeSnapshot, AuthorityBinding, PlanProvenance, RequestedDuration,
+            ScheduledInterruption, SnapshotDigest, SnapshotRevision, TimeBoundaries,
+        },
+    };
+    use sha2::Digest as _;
+
+    // This representative vertical deliberately covers exact site actions.
+    // Area and route actions retain their existing domain path until they have
+    // an equally canonical strategic-place representation.
+    if capability.target_kind != "site"
+        || resolution_input.kind != action::InvestigationActionKind::InspectSite
+    {
+        return Ok(None);
+    }
+    let Some((site, _, _)) = exact_action_case_site_for_observer(ctx, capability) else {
+        return Ok(None);
+    };
+    let place = site
+        .id
+        .to_place()
+        .ok_or("Investigation site identity is malformed")?;
+    let actor = CustodyCharacterId::try_new(actor_id)
+        .map_err(|_| "Investigation actor identity is malformed")?;
+    let coordinates = ActionCoordinates::try_new(
+        actor,
+        ActionTarget::Place(place.clone()),
+        place.clone(),
+        None,
+        Vec::new(),
+    )
+    .map_err(|_| "Investigation action coordinates are inconsistent")?;
+    let requested = u64::from(resolution.cost.minutes);
+    let safe = members.iter().try_fold(requested, |safe, member_id| {
+        crate::time::preview_travel_time(ctx, *member_id, requested).map(|value| safe.min(value))
+    })?;
+
+    let mut hasher = sha2::Sha256::new();
+    let mut frame = |bytes: &[u8]| {
+        hasher.update((bytes.len() as u64).to_le_bytes());
+        hasher.update(bytes);
+    };
+    frame(b"investigation-plan-snapshot-v2");
+    frame(place.to_string().as_bytes());
+    frame(capability.id.as_bytes());
+    frame(capability.provenance_kind.as_bytes());
+    frame(capability.generated_case_id.as_bytes());
+    frame(capability.case_id.as_bytes());
+    frame(capability.method.as_bytes());
+    frame(capability.target_kind.as_bytes());
+    frame(capability.target_id.as_bytes());
+    frame(capability.target_terrain.as_bytes());
+    frame(&capability.version.to_le_bytes());
+    frame(&capability.seed.to_le_bytes());
+    frame(&capability.evidence_age_origin_minute.to_le_bytes());
+    frame(&capability.uncertainty_bps.to_le_bytes());
+    frame(capability.required_action_id.as_bytes());
+    frame(capability.alternate_route_action_id.as_bytes());
+    frame(&[u8::from(capability.active)]);
+    frame(&actor_id.to_le_bytes());
+    frame(&party_leader_id.to_le_bytes());
+    frame(&started_at.to_le_bytes());
+    frame(&requested.to_le_bytes());
+    frame(&safe.to_le_bytes());
+    frame(
+        &serde_json::to_vec(&resolution_input)
+            .map_err(|_| "Investigation planning input could not be bound")?,
+    );
+    frame(&rights.provenance().evidence_revision.0.to_le_bytes());
+    frame(&rights.provenance().question_digest);
+    frame(
+        &serde_json::to_vec(&resolution)
+            .map_err(|_| "Investigation resolution could not be bound")?,
+    );
+    frame(&[match rights.kind() {
+        adventuresim_core::rights::RightsDecisionKind::Allowed => 1,
+        adventuresim_core::rights::RightsDecisionKind::Denied => 0,
+    }]);
+    frame(
+        &rights
+            .evidence()
+            .iter()
+            .map(|evidence| match evidence {
+                action::InvestigationRightsEvidence::PartyLeader => 1,
+                action::InvestigationRightsEvidence::LeaderApproval => 2,
+            })
+            .collect::<Vec<_>>(),
+    );
+    for member_id in members {
+        frame(&member_id.to_le_bytes());
+    }
+    let input_digest: [u8; 32] = hasher.finalize().into();
+    let mut binding_hasher = sha2::Sha256::new();
+    binding_hasher.update(b"investigation-plan-binding-v1\0");
+    binding_hasher.update(input_digest);
+    binding_hasher.update(attempt_id.as_bytes());
+    let authority_binding: [u8; 32] = binding_hasher.finalize().into();
+
+    if !matches!(
+        rights_question.jurisdiction(),
+        adventuresim_core::rights::RightsJurisdiction::Place(bound) if bound == &place
+    ) || rights.provenance().question_digest
+        != action::investigation_rights_question_digest(rights_question)
+    {
+        return Err("Investigation rights question is inconsistent".into());
+    }
+
+    let interruption = (safe < requested).then_some(ScheduledInterruption {
+        at_minute: started_at.saturating_add(safe),
+        cause: action::InvestigationPlanInterruption::ParticipantBoundary,
+    });
+    let member_ids = members
+        .iter()
+        .map(|id| {
+            CustodyCharacterId::try_new(*id)
+                .map_err(|_| "Investigation party identity is malformed".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(action::build_investigation_plan(
+        action::InvestigationPlanAuthority {
+            coordinates,
+            provenance: PlanProvenance {
+                request_id: ActionRequestId::try_new(attempt_id)
+                    .map_err(|_| "Investigation request identity is malformed")?,
+                action_id: ActionDefinitionId::try_new(format!(
+                    "investigation:{}",
+                    capability.method
+                ))
+                .map_err(|_| "Investigation definition identity is malformed")?,
+                input_digest: SnapshotDigest(input_digest),
+                authority_binding: AuthorityBinding(authority_binding),
+            },
+            snapshot: AuthoritativeSnapshot {
+                revision: SnapshotRevision(u64::from(capability.version)),
+                digest: SnapshotDigest(input_digest),
+            },
+            current_minute: started_at,
+            duration: RequestedDuration::try_new(requested)
+                .map_err(|_| "Investigation duration must be positive")?,
+            boundaries: TimeBoundaries {
+                terminal_minute: None,
+                interruption,
+            },
+            rights: rights.clone(),
+            capability_current: capability.active,
+            live_prerequisites: true,
+            generated_condition: true,
+            member_ids,
+            resolution,
+        },
+    )))
+}
+
+fn private_interrupted_action_resolution_json(
+    requested_minutes: u64,
+) -> Result<String, String> {
+    serde_json::to_string(&serde_json::json!({
+        "status": "interrupted",
+        "requested_minutes": requested_minutes,
+        "completion_effects_applied": false,
+    }))
+    .map_err(|_| "Interrupted investigation receipt could not be recorded".into())
+}
+
 pub(crate) fn perform_investigation_action_authorized(
     ctx: &ReducerContext,
     actor_id: u64,
@@ -1174,17 +1439,6 @@ pub(crate) fn perform_investigation_action_authorized(
     leader_approved: bool,
 ) -> Result<(), String> {
     require_strategic_character_authority(ctx, actor_id)?;
-    let actor = crate::character::require_living_character(ctx, actor_id)?;
-    let party_id = actor.party_id.clone().ok_or("Must be in a party")?;
-    let party = ctx
-        .db
-        .party_authority()
-        .id()
-        .find(&party_id)
-        .ok_or("Party not found")?;
-    if party.leader_id != actor_id && !leader_approved {
-        return Err("Party leader approval is required".into());
-    }
     let attempt_id = inv::compound_id(&[
         "attempt",
         &action_id,
@@ -1202,12 +1456,44 @@ pub(crate) fn perform_investigation_action_authorized(
             Err("Investigation attempt id conflicts with an earlier action".into())
         };
     }
-    let mut capability = ctx
+    let actor = crate::character::require_living_character(ctx, actor_id)?;
+    let party_id = actor.party_id.clone().ok_or("Must be in a party")?;
+    let party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id)
+        .ok_or("Party not found")?;
+    let capability_row = ctx
         .db
         .investigation_action_capability()
         .id()
-        .find(&action_id)
-        .ok_or("Investigation action is unavailable")?;
+        .find(&action_id);
+    let rights_place = capability_row
+        .as_ref()
+        .filter(|capability| {
+            capability.owner_character_id == actor_id
+                && capability.target_kind == "site"
+                && capability.method == "inspect_site"
+        })
+        .and_then(|capability| exact_action_case_site_for_observer(ctx, capability))
+        .and_then(|(site, _, _)| site.id.to_place());
+    let rights_question = action::investigation_rights_question(
+        adventuresim_core::physical_object::CustodyCharacterId::try_new(actor_id)
+            .map_err(|_| "Investigation actor identity is malformed")?,
+        rights_place,
+    )
+    .map_err(|_| "Investigation rights question is inconsistent")?;
+    let rights = action::decide_investigation_rights(
+        &rights_question,
+        party.leader_id == actor_id,
+        leader_approved,
+        expected_version,
+    );
+    if rights.kind() != adventuresim_core::rights::RightsDecisionKind::Allowed {
+        return Err("Party leader approval is required".into());
+    }
+    let mut capability = capability_row.ok_or("Investigation action is unavailable")?;
     if capability.owner_character_id != actor_id
         || !capability.active
         || capability.method != method
@@ -1263,21 +1549,154 @@ pub(crate) fn perform_investigation_action_authorized(
     let resolution = bounded_progress
         .map(|progress| progress.resolution)
         .unwrap_or_else(|| action::resolve(resolution_input));
+    let planned_site_action = site_bound_investigation_plan(
+        ctx,
+        actor_id,
+        party.leader_id,
+        &rights,
+        &rights_question,
+        &capability,
+        &attempt_id,
+        started_at,
+        &members,
+        resolution,
+        resolution_input,
+    )?;
     // This is the final mutation-boundary validation. Browser previews and
     // party votes are UX; only this transaction authorizes the shared time.
     validate_live_action_prerequisites(ctx, &actor, &party_id, &capability, kind)?;
     validate_generated_pattern_condition(ctx, &capability, kind, started_at)?;
+    let planned_site_action = match planned_site_action {
+        Some(adventuresim_core::strategic_action::PlanningOutcome::Ready(planned)) => {
+            let replanned = site_bound_investigation_plan(
+                ctx,
+                actor_id,
+                party.leader_id,
+                &rights,
+                &rights_question,
+                &capability,
+                &attempt_id,
+                started_at,
+                &members,
+                resolution,
+                resolution_input,
+            )?
+            .ok_or("Investigation site authority changed before commit")?;
+            let current_snapshot = match &replanned {
+                adventuresim_core::strategic_action::PlanningOutcome::Ready(plan) => {
+                    plan.snapshot()
+                }
+                adventuresim_core::strategic_action::PlanningOutcome::Rejected(_) => {
+                    return Err("Investigation prerequisites changed before commit".into());
+                }
+            };
+            let provenance = planned.provenance();
+            adventuresim_core::strategic_action::validate_commit(
+                &planned,
+                &replanned,
+                current_snapshot,
+                &adventuresim_core::strategic_action::CommitAttempt {
+                    request_id: provenance.request_id.clone(),
+                    action_id: provenance.action_id.clone(),
+                    authority_binding: provenance.authority_binding,
+                },
+                None,
+            )
+            .map_err(|_| "Investigation authority changed before commit")?;
+            Some(planned)
+        }
+        Some(adventuresim_core::strategic_action::PlanningOutcome::Rejected(_)) => {
+            return Err("Investigation action is unavailable".into());
+        }
+        None => None,
+    };
+
+    let (effect_members, effect_minutes, permits_resolution) = if let Some(plan) =
+        &planned_site_action
+    {
+        let mut interval = None;
+        let mut commit = None;
+        for effect in plan.effects() {
+            match effect {
+                adventuresim_core::strategic_action::ActionEffect::Domain(
+                    action::InvestigationPlanEffect::AttemptPartyInterval {
+                        member_ids,
+                        requested_minutes,
+                    },
+                ) => interval = Some((member_ids, *requested_minutes)),
+                adventuresim_core::strategic_action::ActionEffect::Domain(
+                    action::InvestigationPlanEffect::CommitResolution(value),
+                ) => commit = Some(*value),
+                _ => return Err("Investigation planner emitted an unsupported effect".into()),
+            }
+        }
+        let (member_ids, requested_minutes) =
+            interval.ok_or("Investigation planner omitted the party interval")?;
+        let effect_members = member_ids.iter().map(|id| id.get()).collect::<Vec<_>>();
+        if effect_members != members
+            || requested_minutes != u64::from(resolution.cost.minutes)
+            || commit.is_some_and(|value| value != resolution)
+        {
+            return Err("Investigation planner effects do not match domain authority".into());
+        }
+        (effect_members, requested_minutes, commit.is_some())
+    } else {
+        (
+            members.clone(),
+            u64::from(resolution.cost.minutes),
+            true,
+        )
+    };
     let mut interval_completed = true;
-    for member_id in &members {
+    for member_id in &effect_members {
         interval_completed &=
-            advance_investigation_time(ctx, *member_id, u64::from(resolution.cost.minutes))?;
+            advance_investigation_time(ctx, *member_id, effect_minutes)?;
     }
     if !interval_completed {
         // Time, exposure, and death are already authoritative writes. Never
         // roll them back merely because the planned action interval clipped.
         let _ = crate::strategic::normalize_and_elect_party_leader(ctx, &party_id);
         let _ = crate::strategic::reconcile_party_objective_continuity(ctx, &party_id);
+        let completed_at = effect_members
+            .iter()
+            .filter_map(|member_id| {
+                ctx.db
+                    .character_time()
+                    .character_id()
+                    .find(*member_id)
+                    .map(|time| time.minutes)
+            })
+            .max()
+            .unwrap_or(started_at);
+        ctx.db
+            .investigation_action_attempt()
+            .insert(InvestigationActionAttempt {
+                id: attempt_id.clone(),
+                capability_id: action_id.clone(),
+                owner_character_id: actor_id,
+                expected_version,
+                method: method.clone(),
+                started_at,
+                completed_at,
+                duration_minutes: completed_at
+                    .saturating_sub(started_at)
+                    .min(u64::from(u32::MAX)) as u32,
+                success: false,
+                resulting_uncertainty_bps: capability.uncertainty_bps,
+                private_resolution_json: private_interrupted_action_resolution_json(
+                    effect_minutes,
+                )?,
+            });
+        capability.version = capability.version.saturating_add(1);
+        capability.seed = ctx.random::<u64>();
+        ctx.db
+            .investigation_action_capability()
+            .id()
+            .update(capability);
         return Ok(());
+    }
+    if !permits_resolution {
+        return Err("Investigation interval crossed a planned participant boundary".into());
     }
     crate::strategic::normalize_and_elect_party_leader(ctx, &party_id)?;
     crate::strategic::reconcile_party_objective_continuity(ctx, &party_id)?;

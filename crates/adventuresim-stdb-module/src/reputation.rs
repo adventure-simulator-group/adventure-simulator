@@ -86,16 +86,12 @@ pub struct CaseReputationParticipant {
     pub captured_at_minute: u64,
 }
 
-pub fn award_case_resolution(
+pub(crate) fn case_resolution_participant_ids(
     ctx: &ReducerContext,
-    canonical_case_id: &str,
     public_case_id: &str,
     party_id: &str,
-    settlement_id: &str,
-    fame: i32,
-    minute: u64,
-) -> Result<(), String> {
-    let mut character_ids = ctx
+) -> Vec<u64> {
+    let battle_character_ids = ctx
         .db
         .backend_case_battle_authority()
         .iter()
@@ -109,43 +105,42 @@ pub fn award_case_resolution(
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    character_ids.sort_unstable();
-    character_ids.dedup();
-    if character_ids.is_empty() {
-        character_ids = crate::strategic::living_party_member_ids(ctx, party_id);
-    }
-    for character_id in character_ids {
-        let snapshot_id = format!("{canonical_case_id}:{character_id}");
-        if ctx
-            .db
+    let living_fallback = if battle_character_ids.is_empty() {
+        crate::strategic::living_party_member_ids(ctx, party_id)
+    } else {
+        Default::default()
+    };
+    adventuresim_core::world_event::canonical_case_resolution_participants(
+        battle_character_ids,
+        living_fallback,
+    )
+}
+
+pub(crate) fn snapshot_case_resolution_participant(
+    ctx: &ReducerContext,
+    canonical_case_id: &str,
+    character_id: u64,
+    party_id: &str,
+    minute: u64,
+) {
+    let snapshot_id = format!("{canonical_case_id}:{character_id}");
+    if ctx
+        .db
+        .case_reputation_participant()
+        .id()
+        .find(&snapshot_id)
+        .is_none()
+    {
+        ctx.db
             .case_reputation_participant()
-            .id()
-            .find(&snapshot_id)
-            .is_none()
-        {
-            ctx.db
-                .case_reputation_participant()
-                .insert(CaseReputationParticipant {
-                    id: snapshot_id,
-                    case_id: canonical_case_id.to_owned(),
-                    character_id,
-                    party_id: party_id.to_owned(),
-                    captured_at_minute: minute,
-                });
-        }
-        record_event(
-            ctx,
-            format!("case-resolution:{canonical_case_id}:{character_id}"),
-            character_id,
-            settlement_id,
-            "case_resolution",
-            canonical_case_id,
-            fame,
-            0,
-            minute,
-        )?;
+            .insert(CaseReputationParticipant {
+                id: snapshot_id,
+                case_id: canonical_case_id.to_owned(),
+                character_id,
+                party_id: party_id.to_owned(),
+                captured_at_minute: minute,
+            });
     }
-    Ok(())
 }
 
 pub fn record_discovered_offense(
@@ -274,7 +269,7 @@ pub fn record_event(
         .db
         .settlement()
         .id()
-        .find(&origin_settlement_id.to_owned())
+        .find(origin_settlement_id.to_owned())
         .is_none()
     {
         return Err("Reputation origin settlement not found".into());
@@ -417,12 +412,11 @@ mod tests {
     fn case_battles_use_public_identity_but_events_keep_canonical_identity() {
         let source = include_str!("reputation.rs");
         let award = source
-            .split("pub fn award_case_resolution")
+            .split("pub(crate) fn case_resolution_participant_ids")
             .nth(1)
             .and_then(|tail| tail.split("pub fn record_discovered_offense").next())
-            .expect("case reputation award");
+            .expect("case reputation participant authority");
         assert!(award.contains("battle.public_case_id == public_case_id"));
-        assert!(award.contains("case-resolution:{canonical_case_id}:{character_id}"));
         assert!(award.contains("case_id: canonical_case_id.to_owned()"));
     }
 

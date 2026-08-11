@@ -15,7 +15,6 @@ use crate::social::{
     PhysiologyPresenceSpan, physiology_presence_span, physiology_presence_span__view,
 };
 use crate::time::character_time__view;
-use crate::world_actor::character_context_membership;
 use crate::{
     character_attributes, character_skills, character_time,
     item::{inventory_item, item},
@@ -481,7 +480,7 @@ fn derive_chart_reading(
             .iter()
             .filter(|value| {
                 value.administered_at <= minute
-                    && value.stopped_at.map_or(true, |stopped| minute <= stopped)
+                    && value.stopped_at.is_none_or(|stopped| minute <= stopped)
             })
             .map(|value| {
                 if band >= 3 {
@@ -932,6 +931,7 @@ fn try_party_physiology_check_at(
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // Retained for focused disease fixtures compiled separately from this target.
 pub(crate) fn protected_exposure_at(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1360,6 +1360,7 @@ pub fn plan_party_disease_interval(
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // Retained for focused disease fixtures compiled separately from this target.
 fn party_contact_episodes_through(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1484,6 +1485,7 @@ fn party_contact_episodes_through(
 
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
+#[allow(dead_code)] // Retained for focused disease fixtures compiled separately from this target.
 fn first_protected_presence_exposure_minute(
     ctx: &ReducerContext,
     episodes: &[InfectionEpisode],
@@ -1544,6 +1546,7 @@ pub fn effective_attributes(
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // Retained for focused disease fixtures compiled separately from this target.
 fn outbreak_episodes_through(
     ctx: &ReducerContext,
     character_id: u64,
@@ -1700,6 +1703,7 @@ fn persist_acquisition_episodes(
 }
 
 #[cfg(test)]
+#[allow(dead_code)] // Retained for focused disease fixtures compiled separately from this target.
 fn merge_acquisition_proposals(
     mut proposals: Vec<InfectionEpisode>,
     additional: impl IntoIterator<Item = InfectionEpisode>,
@@ -1999,13 +2003,13 @@ pub fn clip_elapsed_for_disease_in_plan(
 
 /// Side-effect-free party preflight. Acquisition and notice delivery happen
 /// only in the subsequent committed interval.
-fn preview_elapsed_for_disease_planned(
+fn preview_disease_boundary_planned(
     ctx: &ReducerContext,
     character_id: u64,
     requested: u64,
     allow_healing: bool,
     plan: Option<&PartyDiseaseIntervalPlan>,
-) -> Result<u64, String> {
+) -> Result<(u64, bool), String> {
     let owned_plan;
     let plan = if let Some(plan) = plan {
         plan
@@ -2027,15 +2031,30 @@ fn preview_elapsed_for_disease_planned(
         .map_or(3.0, |a| a.immunity);
     let mut episodes = character_episodes(ctx, character_id)?;
     episodes.extend(plan.proposals_for(character_id, now, now.saturating_add(requested)));
-    Ok(first_private_terminal(
+    let terminal = first_private_terminal(
         ctx,
         character_id,
         &episodes,
         now,
         now.saturating_add(requested),
         immunity,
-    )?
-    .map_or(requested, |(minute, _)| minute.saturating_sub(now)))
+    )?;
+    Ok((
+        terminal.map_or(requested, |(minute, _)| minute.saturating_sub(now)),
+        terminal.is_some(),
+    ))
+}
+
+/// Side-effect-free terminal preview. The boolean is necessary because a
+/// terminal crossing exactly at the requested endpoint has the same elapsed
+/// duration as ordinary completion but must still suppress completion effects.
+pub fn preview_disease_terminal_boundary(
+    ctx: &ReducerContext,
+    character_id: u64,
+    requested: u64,
+    allow_healing: bool,
+) -> Result<(u64, bool), String> {
+    preview_disease_boundary_planned(ctx, character_id, requested, allow_healing, None)
 }
 
 pub fn preview_elapsed_for_disease(
@@ -2044,7 +2063,8 @@ pub fn preview_elapsed_for_disease(
     requested: u64,
     allow_healing: bool,
 ) -> Result<u64, String> {
-    preview_elapsed_for_disease_planned(ctx, character_id, requested, allow_healing, None)
+    preview_disease_boundary_planned(ctx, character_id, requested, allow_healing, None)
+        .map(|preview| preview.0)
 }
 
 pub fn preview_elapsed_for_disease_in_plan(
@@ -2054,7 +2074,8 @@ pub fn preview_elapsed_for_disease_in_plan(
     allow_healing: bool,
     plan: &PartyDiseaseIntervalPlan,
 ) -> Result<u64, String> {
-    preview_elapsed_for_disease_planned(ctx, character_id, requested, allow_healing, Some(plan))
+    preview_disease_boundary_planned(ctx, character_id, requested, allow_healing, Some(plan))
+        .map(|preview| preview.0)
 }
 
 pub fn finish_disease_interval(
@@ -2142,48 +2163,27 @@ fn private_variation(
     Ok((sensitivity.clamp(-2_500, 2_500), adverse))
 }
 
-fn require_intervention_relationship(
+pub(crate) fn require_intervention_relationship(
     ctx: &ReducerContext,
     actor_id: u64,
     patient_id: u64,
 ) -> Result<(), String> {
     crate::strategic::require_strategic_character_authority(ctx, actor_id)?;
-    let actor = crate::require_living_character(ctx, actor_id)?;
-    let patient = crate::require_living_character(ctx, patient_id)?;
+    crate::require_living_character(ctx, actor_id)?;
+    crate::require_living_character(ctx, patient_id)?;
     if actor_id == patient_id {
         return Ok(());
     }
-    let actor_site = crate::investigation::character_case_site_id(ctx, actor.id);
-    let patient_site = crate::investigation::character_case_site_id(ctx, patient.id);
-    let ordinary_relationship = physiology::intervention_relationship_allowed(
-        actor.id,
-        patient.id,
-        actor.party_id.as_deref(),
-        patient.party_id.as_deref(),
-        actor.current_settlement_id.as_deref(),
-        patient.current_settlement_id.as_deref(),
-        actor_site.as_deref(),
-        patient_site.as_deref(),
-    );
-    let contextual_relationship =
-        crate::world_actor::contextual_interaction_is_authorized(ctx, actor_id, patient_id, true);
-    let has_active_patient_context = ctx
-        .db
-        .character_context_membership()
-        .character_id()
-        .filter(patient_id)
-        .any(|membership| {
-            membership.active
-                && membership.role == crate::world_actor::CharacterContextRole::Patient
-        });
-    if (has_active_patient_context && !contextual_relationship)
-        || (!has_active_patient_context && !ordinary_relationship && !contextual_relationship)
+    match crate::world_actor::contextual_nonemergency_treatment_decision(ctx, actor_id, patient_id)
     {
-        return Err(
-            "An intervention actor and patient must share an authorized treatment context".into(),
-        );
+        adventuresim_core::strategic_action::ContextualActionDecision::Allowed(_) => Ok(()),
+        adventuresim_core::strategic_action::ContextualActionDecision::Refused => {
+            Err("The patient refused this intervention".into())
+        }
+        adventuresim_core::strategic_action::ContextualActionDecision::Unavailable => Err(
+            "An intervention actor and patient must share an available treatment context".into(),
+        ),
     }
-    Ok(())
 }
 
 fn commit_terminal_at_boundary(
@@ -2297,6 +2297,53 @@ fn administer_preparation_inner(
     ctx.db.inventory_item().id().delete(inventory_item_id);
     commit_terminal_at_boundary(ctx, patient_id, now)?;
     Ok(())
+}
+
+/// Applies a pinned generic intervention component without consuming a legacy
+/// medication item. Shared carriers (notably food lots) call this with the
+/// exact proportional amount they consumed.
+pub(crate) fn administer_intervention_component(
+    ctx: &ReducerContext,
+    patient_id: u64,
+    preparation_id: &str,
+    profile_version: u16,
+    amount_milliunits: u32,
+) -> Result<(), String> {
+    if amount_milliunits == 0 {
+        return Ok(());
+    }
+    let profile = physiology::intervention_profile(preparation_id, profile_version)
+        .ok_or("Unknown medicinal component profile version")?;
+    if profile.route != physiology::InterventionRoute::Oral {
+        return Err("Only oral medicinal components can be consumed with food".into());
+    }
+    let now = ctx
+        .db
+        .character_time()
+        .character_id()
+        .find(patient_id)
+        .ok_or("Patient time not found")?
+        .minutes;
+    let key = physiology_key(ctx)?;
+    let (sensitivity_bps, adverse_bps) = private_variation(ctx, patient_id, now, preparation_id)?;
+    ctx.db
+        .physiology_administration()
+        .insert(PhysiologyAdministration {
+            id: 0,
+            patient_id,
+            preparation_id: preparation_id.into(),
+            profile_version,
+            route: "oral".into(),
+            amount_milliunits,
+            region: None,
+            administered_at: now,
+            stopped_at: None,
+            sensitivity_bps,
+            adverse_bps,
+            ruleset_version: physiology::PHYSIOLOGY_RULESET_VERSION,
+            phenotype_key_version: key.version,
+        });
+    commit_terminal_at_boundary(ctx, patient_id, now)
 }
 
 #[reducer]
@@ -2970,5 +3017,45 @@ mod fantastic_differential_tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn disease_terminal_preview_is_side_effect_free() {
+        let source = include_str!("disease.rs");
+        let preview = source
+            .split("fn preview_disease_boundary_planned")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub fn preview_disease_terminal_boundary")
+                    .next()
+            })
+            .expect("disease terminal preview");
+        for forbidden in [
+            "persist_acquisition_episodes",
+            "persist_",
+            "blood_exposure_attempts_through",
+            "cursor",
+            "notice(",
+            ".insert(",
+            ".update(",
+            ".delete(",
+        ] {
+            assert!(!preview.contains(forbidden), "preview contains {forbidden}");
+        }
+    }
+
+    #[test]
+    fn medicinal_interventions_use_nonemergency_treatment_decisions() {
+        let source = include_str!("disease.rs");
+        let relationship = source
+            .split("pub(crate) fn require_intervention_relationship")
+            .nth(1)
+            .and_then(|tail| tail.split("fn commit_terminal_at_boundary").next())
+            .expect("intervention relationship");
+        assert!(relationship.contains("contextual_nonemergency_treatment_decision"));
+        assert!(relationship.contains("ContextualActionDecision::Refused"));
+        assert!(relationship.contains("ContextualActionDecision::Unavailable"));
+        assert!(!relationship.contains("incapacitat"));
+        assert!(!relationship.contains("party_id =="));
     }
 }

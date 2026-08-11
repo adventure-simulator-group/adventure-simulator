@@ -16,9 +16,11 @@ pub use bevy_replicon;
 pub mod prelude {
     pub use crate::AdventureSimulatorNetPlugins;
     #[cfg(feature = "client")]
-    pub use crate::client::AdventureSimulatorClient;
+    pub use crate::client::{AdventureSimulatorClient, PlayerInputOverride};
     pub use crate::message::{
-        AttackRequest, AttackStartedRequest, DefendRequest, JoinRequest, PlayerInputRequest,
+        DebugGameTimeScaleRequest, DefendRequest, JoinRequest, JumpCommand, MeleeActionRequest,
+        PlayerInputRequest, PostureActionRequest, PostureCommand, RangedActionRequest,
+        TacticalOutcome, TacticalOutcomeResponse,
     };
     #[cfg(feature = "server")]
     pub use crate::server::AdventureSimulatorServer;

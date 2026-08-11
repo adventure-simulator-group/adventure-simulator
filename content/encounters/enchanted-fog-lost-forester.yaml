@@ -12,13 +12,13 @@
       },
       "cast": [
         { "id": "white_mere_lady", "name": "Lady of the White Mere", "nature": "supernatural", "backing": { "kind": "blocked", "issue": "#375", "reason": "Supernatural personhood and physiology are not yet modeled." } },
-        { "id": "forest_reeve", "name": "Forest reeve", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } },
+        { "id": "forest_reeve", "name": "Forest reeve", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } },
         { "id": "forest_charges", "name": "Foresters in the reeve's charge", "nature": "mortal", "backing": { "kind": "narrative_only", "reason": "An anonymous collective with no individually addressed speaker." } }
       ],
       "opening": [
         { "speaker": "white_mere_lady", "text": "Within my veil, each borrowed voice rings true.", "reviewed_shakespearean": true, "reviewed_iambic_pentameter": true },
         { "speaker": "white_mere_lady", "text": "Forsake the common road and follow me.", "reviewed_shakespearean": true, "reviewed_iambic_pentameter": true },
-        { "speaker": "white_mere_lady", "text": "Now bind thy will, nor heed the voices near.", "reviewed_shakespearean": true, "reviewed_iambic_pentameter": true },
+        { "speaker": "white_mere_lady", "text": "Bind fast your wills; heed not the voices near.", "reviewed_shakespearean": true, "reviewed_iambic_pentameter": true },
         { "speaker": "forest_reeve", "text": "Good travelers, this white fog maketh familiar voices call beyond our marked line. I am forest reeve unto these charges; I know the drainage, iron road-stakes, and local ways. Two mailed waylayers shadow us from the clear edge and keep near the drainage cut, awaiting any soul the voices draw apart. My pack beareth the charges' sealed forty-eight-groschen wage purse beside a spare self bow and eight arrows from our hunt stores. Help me bring every soul unto the clear edge, and that spare gear shall reward sound aid.", "reviewed_shakespearean": true }
       ],
       "choices": [

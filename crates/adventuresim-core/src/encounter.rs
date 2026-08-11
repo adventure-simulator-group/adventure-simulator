@@ -169,13 +169,8 @@ pub fn sustainable_speed_m_per_minute(
     terrain: EncounterTerrain,
 ) -> u32 {
     let fatigue = 10_000_u32.saturating_sub(u32::from(fatigue_percent) * 50);
-    let encumbrance = if encumbrance_remaining_basis_points < MIN_ENCUMBRANCE_SPEED_BASIS_POINTS {
-        MIN_ENCUMBRANCE_SPEED_BASIS_POINTS
-    } else if encumbrance_remaining_basis_points > 10_000 {
-        10_000
-    } else {
-        encumbrance_remaining_basis_points
-    };
+    let encumbrance =
+        encumbrance_remaining_basis_points.clamp(MIN_ENCUMBRANCE_SPEED_BASIS_POINTS, 10_000);
     let logistics = 10_000_u32
         .saturating_sub(
             u32::from(party_size.saturating_sub(1)) * PARTY_MEMBER_LOGISTICS_PENALTY_BASIS_POINTS,

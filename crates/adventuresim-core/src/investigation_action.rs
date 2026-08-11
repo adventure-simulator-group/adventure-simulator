@@ -6,6 +6,23 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::{
+    physical_object::CustodyCharacterId,
+    rights::{
+        DecisionProvenance, DomainJurisdiction, DomainRightsOperation, DomainRightsResource,
+        DomainRightsSubject, PrivateRightsDecision, RightsDecisionKind, RightsJurisdiction,
+        RightsOperation, RightsQuestion, RightsQuestionError, RightsResource, RightsRevision,
+        RightsSubject,
+    },
+    strategic_action::{
+        ActionCoordinates, ActionEffect, ActionRequirement, AuthoritativeSnapshot,
+        CalculatedAction, DomainCapability, DomainEffect, DomainInterruption, DomainRequirement,
+        DomainTarget, PlanInput, PlanProvenance, PlanningOutcome, PublicPreview, PublicRejection,
+        RequestedDuration, RequirementCheck, TimeBoundaries, build_plan,
+    },
+    strategic_place::StrategicPlaceId,
+};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InvestigationActionKind {
@@ -159,6 +176,381 @@ pub struct Resolution {
     pub risk_bps: u16,
     pub risk_triggered: bool,
     pub effective_skill_bps: u16,
+}
+
+#[cfg(test)]
+mod planning_adapter_tests {
+    use super::*;
+    use crate::strategic_action::{
+        ActionDefinitionId, ActionRequestId, ActionTarget, AuthorityBinding, PlanProvenance,
+        ScheduledInterruption, SnapshotDigest, SnapshotRevision,
+    };
+
+    fn authority(boundary: Option<u64>) -> InvestigationPlanAuthority {
+        let actor = CustodyCharacterId::try_new(7).unwrap();
+        let place = StrategicPlaceId::case_site("case:site:mill").unwrap();
+        let question = investigation_rights_question(actor, Some(place.clone())).unwrap();
+        let rights = decide_investigation_rights(&question, true, false, 3);
+        InvestigationPlanAuthority {
+            coordinates: ActionCoordinates::try_new(
+                actor,
+                ActionTarget::Place(place.clone()),
+                place,
+                None,
+                vec![],
+            )
+            .unwrap(),
+            provenance: PlanProvenance {
+                request_id: ActionRequestId::try_new("attempt:7").unwrap(),
+                action_id: ActionDefinitionId::try_new("investigation:inspect_site").unwrap(),
+                input_digest: SnapshotDigest([2; 32]),
+                authority_binding: AuthorityBinding([3; 32]),
+            },
+            snapshot: AuthoritativeSnapshot {
+                revision: SnapshotRevision(3),
+                digest: SnapshotDigest([2; 32]),
+            },
+            current_minute: 100,
+            duration: RequestedDuration::try_new(45).unwrap(),
+            boundaries: TimeBoundaries {
+                terminal_minute: None,
+                interruption: boundary.map(|at_minute| ScheduledInterruption {
+                    at_minute,
+                    cause: InvestigationPlanInterruption::ParticipantBoundary,
+                }),
+            },
+            rights,
+            capability_current: true,
+            live_prerequisites: true,
+            generated_condition: true,
+            member_ids: vec![actor, CustodyCharacterId::try_new(8).unwrap()],
+            resolution: Resolution {
+                result: ActionResultKind::EvidenceFound,
+                success: true,
+                cost: StrategicCost {
+                    minutes: 45,
+                    fatigue: 80,
+                    food_units: 0,
+                    water_units: 1,
+                },
+                resulting_uncertainty_bps: 1_000,
+                risk_bps: 0,
+                risk_triggered: false,
+                effective_skill_bps: 7_000,
+            },
+        }
+    }
+
+    #[test]
+    fn participant_boundary_preserves_full_domain_interval_but_suppresses_commit() {
+        let PlanningOutcome::Ready(plan) = build_investigation_plan(authority(Some(120))) else {
+            panic!("authorized plan should be ready");
+        };
+        assert_eq!(plan.time().elapsed_minutes, 20);
+        assert_eq!(plan.effects().len(), 1);
+        assert!(matches!(
+            &plan.effects()[0],
+            ActionEffect::Domain(InvestigationPlanEffect::AttemptPartyInterval {
+                requested_minutes: 45,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn private_leader_approval_is_required_without_becoming_preview_data() {
+        let mut input = authority(None);
+        let question = investigation_rights_question(
+            CustodyCharacterId::try_new(7).unwrap(),
+            Some(StrategicPlaceId::case_site("case:site:mill").unwrap()),
+        )
+        .unwrap();
+        input.rights = decide_investigation_rights(&question, false, false, 3);
+        let PlanningOutcome::Rejected(rejection) = build_investigation_plan(input) else {
+            panic!("unauthorized plan should be rejected");
+        };
+        assert_eq!(rejection.sanitized(), PublicRejection::Unavailable);
+    }
+
+    #[test]
+    fn rights_digest_binds_exact_place_and_resource() {
+        let actor = CustodyCharacterId::try_new(7).unwrap();
+        let first = investigation_rights_question(
+            actor,
+            Some(StrategicPlaceId::case_site("site:first").unwrap()),
+        )
+        .unwrap();
+        let second = investigation_rights_question(
+            actor,
+            Some(StrategicPlaceId::case_site("site:second").unwrap()),
+        )
+        .unwrap();
+        let other_resource = RightsQuestion::try_new(
+            RightsSubject::Character(actor),
+            RightsResource::Domain(InvestigationRightsResource::CaseAction),
+            RightsOperation::Domain(InvestigationRightsOperation::Perform),
+            RightsJurisdiction::Place(StrategicPlaceId::case_site("site:first").unwrap()),
+        )
+        .unwrap();
+        assert_ne!(
+            investigation_rights_question_digest(&first),
+            investigation_rights_question_digest(&second)
+        );
+        assert_ne!(
+            investigation_rights_question_digest(&first),
+            investigation_rights_question_digest(&other_resource)
+        );
+        assert_ne!(
+            decide_investigation_rights(&first, true, false, 3)
+                .provenance()
+                .question_digest,
+            decide_investigation_rights(&second, true, false, 3)
+                .provenance()
+                .question_digest
+        );
+    }
+}
+
+/// Closed planner vocabulary for a generated investigation attempt.
+///
+/// Capability ids, private targets, seeds, and consequence authority stay in
+/// reducer-owned provenance rather than becoming a serializable target.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InvestigationPlanTarget {
+    GeneratedRoute,
+}
+impl DomainTarget for InvestigationPlanTarget {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InvestigationPlanRequirement {
+    CapabilityCurrent,
+    PartyAuthorized,
+    LivePrerequisites,
+    GeneratedCondition,
+}
+impl DomainRequirement for InvestigationPlanRequirement {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InvestigationPlanCapability {
+    RouteResolution,
+}
+impl DomainCapability for InvestigationPlanCapability {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InvestigationPlanInterruption {
+    ParticipantBoundary,
+}
+impl DomainInterruption for InvestigationPlanInterruption {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InvestigationPlanEffect {
+    /// The domain reducer owns the existing per-member interval algorithm.
+    AttemptPartyInterval {
+        member_ids: Vec<CustodyCharacterId>,
+        requested_minutes: u64,
+    },
+    CommitResolution(Resolution),
+}
+impl DomainEffect for InvestigationPlanEffect {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InvestigationPublicPreview {
+    pub cost: StrategicCost,
+}
+impl PublicPreview for InvestigationPublicPreview {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InvestigationRightsSubject {}
+impl DomainRightsSubject for InvestigationRightsSubject {}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InvestigationRightsResource {
+    PartyAction,
+    CaseAction,
+}
+impl DomainRightsResource for InvestigationRightsResource {}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InvestigationRightsOperation {
+    Perform,
+}
+impl DomainRightsOperation for InvestigationRightsOperation {}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InvestigationRightsJurisdiction {}
+impl DomainJurisdiction for InvestigationRightsJurisdiction {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InvestigationRightsEvidence {
+    PartyLeader,
+    LeaderApproval,
+}
+
+pub type InvestigationRightsQuestion = RightsQuestion<
+    InvestigationRightsSubject,
+    InvestigationRightsResource,
+    InvestigationRightsOperation,
+    InvestigationRightsJurisdiction,
+>;
+
+pub fn investigation_rights_question(
+    actor: CustodyCharacterId,
+    place: Option<StrategicPlaceId>,
+) -> Result<InvestigationRightsQuestion, RightsQuestionError> {
+    RightsQuestion::try_new(
+        RightsSubject::Character(actor),
+        RightsResource::Domain(InvestigationRightsResource::PartyAction),
+        RightsOperation::Domain(InvestigationRightsOperation::Perform),
+        place.map_or(RightsJurisdiction::Global, RightsJurisdiction::Place),
+    )
+}
+
+pub fn investigation_rights_question_digest(question: &InvestigationRightsQuestion) -> [u8; 32] {
+    use sha2::Digest as _;
+
+    let mut hasher = sha2::Sha256::new();
+    let mut frame = |bytes: &[u8]| {
+        hasher.update((bytes.len() as u64).to_le_bytes());
+        hasher.update(bytes);
+    };
+    frame(b"investigation-rights-question-v1");
+    match question.subject() {
+        RightsSubject::Character(actor) => {
+            frame(b"character");
+            frame(&actor.get().to_le_bytes());
+        }
+        RightsSubject::Party(_) | RightsSubject::Domain(_) => frame(b"invalid-subject"),
+    }
+    match question.resource() {
+        RightsResource::Domain(InvestigationRightsResource::PartyAction) => frame(b"party-action"),
+        RightsResource::Domain(InvestigationRightsResource::CaseAction) => frame(b"case-action"),
+        RightsResource::Object(_) | RightsResource::Place(_) | RightsResource::Fixture(_) => {
+            frame(b"invalid-resource")
+        }
+    }
+    match question.operation() {
+        RightsOperation::Domain(InvestigationRightsOperation::Perform) => frame(b"perform"),
+        _ => frame(b"invalid-operation"),
+    }
+    match question.jurisdiction() {
+        RightsJurisdiction::Global => frame(b"global"),
+        RightsJurisdiction::Place(place) => {
+            frame(b"place");
+            frame(place.to_string().as_bytes());
+        }
+        RightsJurisdiction::Domain(_) => frame(b"invalid-jurisdiction"),
+    }
+    hasher.finalize().into()
+}
+
+pub fn decide_investigation_rights(
+    question: &InvestigationRightsQuestion,
+    is_party_leader: bool,
+    leader_approved: bool,
+    capability_revision: u32,
+) -> PrivateRightsDecision<InvestigationRightsEvidence> {
+    let provenance = DecisionProvenance {
+        evidence_revision: RightsRevision(u64::from(capability_revision)),
+        question_digest: investigation_rights_question_digest(question),
+    };
+    if is_party_leader {
+        PrivateRightsDecision::allowed(
+            vec![InvestigationRightsEvidence::PartyLeader],
+            None,
+            provenance,
+        )
+    } else if leader_approved {
+        PrivateRightsDecision::allowed(
+            vec![InvestigationRightsEvidence::LeaderApproval],
+            None,
+            provenance,
+        )
+    } else {
+        PrivateRightsDecision::denied(Vec::new(), provenance)
+    }
+}
+
+pub struct InvestigationPlanAuthority {
+    pub coordinates: ActionCoordinates<InvestigationPlanTarget>,
+    pub provenance: PlanProvenance,
+    pub snapshot: AuthoritativeSnapshot,
+    pub current_minute: u64,
+    pub duration: RequestedDuration,
+    pub boundaries: TimeBoundaries<InvestigationPlanInterruption>,
+    pub rights: PrivateRightsDecision<InvestigationRightsEvidence>,
+    pub capability_current: bool,
+    pub live_prerequisites: bool,
+    pub generated_condition: bool,
+    pub member_ids: Vec<CustodyCharacterId>,
+    pub resolution: Resolution,
+}
+
+pub type InvestigationPlanningOutcome = PlanningOutcome<
+    InvestigationPlanTarget,
+    InvestigationPlanRequirement,
+    InvestigationPlanCapability,
+    InvestigationPlanInterruption,
+    InvestigationPlanEffect,
+    InvestigationPublicPreview,
+>;
+
+pub fn build_investigation_plan(
+    authority: InvestigationPlanAuthority,
+) -> InvestigationPlanningOutcome {
+    let requirements = [
+        (
+            InvestigationPlanRequirement::CapabilityCurrent,
+            authority.capability_current,
+        ),
+        (
+            InvestigationPlanRequirement::PartyAuthorized,
+            authority.rights.kind() == RightsDecisionKind::Allowed,
+        ),
+        (
+            InvestigationPlanRequirement::LivePrerequisites,
+            authority.live_prerequisites,
+        ),
+        (
+            InvestigationPlanRequirement::GeneratedCondition,
+            authority.generated_condition,
+        ),
+    ]
+    .into_iter()
+    .map(|(requirement, satisfied)| RequirementCheck {
+        requirement: ActionRequirement::Domain(requirement),
+        satisfied,
+    })
+    .collect();
+    let resolution = authority.resolution;
+    let members = authority.member_ids;
+    build_plan(
+        PlanInput {
+            coordinates: authority.coordinates,
+            provenance: authority.provenance,
+            snapshot: authority.snapshot,
+            current_minute: authority.current_minute,
+            duration: authority.duration,
+            boundaries: authority.boundaries,
+            requirements,
+            sanitized_rejection: PublicRejection::Unavailable,
+        },
+        move |_, time| {
+            let mut effects = vec![ActionEffect::Domain(
+                InvestigationPlanEffect::AttemptPartyInterval {
+                    member_ids: members,
+                    requested_minutes: u64::from(resolution.cost.minutes),
+                },
+            )];
+            if time.permits_completion_effects() {
+                effects.push(ActionEffect::Domain(
+                    InvestigationPlanEffect::CommitResolution(resolution),
+                ));
+            }
+            CalculatedAction {
+                effects,
+                public_preview: InvestigationPublicPreview {
+                    cost: resolution.cost,
+                },
+            }
+        },
+    )
 }
 
 /// A valid generated investigation route always resolves by this attempt when

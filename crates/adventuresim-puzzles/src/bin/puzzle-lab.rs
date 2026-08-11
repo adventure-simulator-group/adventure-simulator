@@ -14,7 +14,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 #[derive(Parser)]
 #[command(
     name = "puzzle-lab",
-    about = "Generate, play, and measure Adventure Simulator puzzles"
+    about = "Generate, play, and measure Fabelgeist puzzles"
 )]
 struct Cli {
     #[command(subcommand)]

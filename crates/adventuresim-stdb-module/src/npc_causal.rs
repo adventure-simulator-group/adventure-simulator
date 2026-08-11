@@ -121,7 +121,7 @@ fn phase_already_decided(
     ctx.db
         .npc_policy_decision_receipt()
         .id()
-        .find(&receipt_id(character_id, day, phase))
+        .find(receipt_id(character_id, day, phase))
         .is_some()
 }
 

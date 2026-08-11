@@ -336,13 +336,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             println!("{}", String::from_utf8(json)?);
         }
-        if require_quest_coverage {
-            if let Err(error) = validate_quest_coverage(&report) {
-                if let Some(path) = acceptance_failure_output.as_deref() {
-                    write_quest_coverage_failure(&report, path, &error)?;
-                }
-                return Err(error.into());
+        if require_quest_coverage && let Err(error) = validate_quest_coverage(&report) {
+            if let Some(path) = acceptance_failure_output.as_deref() {
+                write_quest_coverage_failure(&report, path, &error)?;
             }
+            return Err(error.into());
         }
         eprintln!(
             "authoritative core loop: {} completed / {} owner-scoped quest intakes or direct-contract attempts (direct {}/{}, generated {}/{}), {} quest defeats, {} encounters ({} encounter defeats, {} wipes), {} camps, {} upgrades",

@@ -45,7 +45,9 @@ use crate::{
     },
     item::{InventoryItem, inventory_item, item},
     local_problem::{
-        local_problem_receipt, local_problem_rumor_delivery, public_threat_disclosure,
+        local_problem_authority, local_problem_authority__view, local_problem_receipt,
+        local_problem_rumor_delivery, local_problem_symptom__view,
+        public_threat_disclosure,
     },
     npc_adventurer::npc_adventuring_party_authority,
     organization::organization_presentation,
@@ -144,7 +146,11 @@ fn autoresolve_drop(enemy_type: &str) -> Result<Option<&'static str>, String> {
     Ok(parse_threat(enemy_type)?.profile().combat.loot_item_id)
 }
 
-fn consume_autoresolve_ammunition(ctx: &ReducerContext, character_id: u64, mut quantity: u32) {
+pub(crate) fn consume_autoresolve_ammunition(
+    ctx: &ReducerContext,
+    character_id: u64,
+    mut quantity: u32,
+) {
     let stacks: Vec<_> = ctx
         .db
         .inventory_item()

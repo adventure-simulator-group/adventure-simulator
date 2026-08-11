@@ -225,7 +225,11 @@ pub fn backend_contracts(ctx: &ViewContext) -> Vec<BackendContract> {
                         .case_site_id_key()
                         .find(&site.id.value)
                         .filter(|group| {
-                            group.case_site_id_key == group.case_site_id.value
+                            crate::investigation::canonical_case_site_place(
+                                &group.case_site_id_key,
+                            )
+                            .zip(group.case_site_id.to_place())
+                            .is_some_and(|(key_place, typed_place)| key_place == typed_place)
                                 && group.case_site_id == site.id
                         })
                 })
@@ -423,6 +427,10 @@ pub struct StrategicIncident {
     pub id: IncidentId,
     #[unique]
     pub source_id: IncidentSourceId,
+    /// Random, unlinkable capability used by the trusted gateway to invoke
+    /// public incident actions without disclosing the source-derived ID.
+    #[unique]
+    pub action_token: String,
     #[index(btree)]
     pub party_id: String,
     pub settlement_id: String,
@@ -808,7 +816,7 @@ pub struct PartyJourneyRoute {
     pub return_route: Option<JourneyRouteLeg>,
 }
 
-fn strategic_view_is_gateway(ctx: &ViewContext) -> bool {
+pub(crate) fn strategic_view_is_gateway(ctx: &ViewContext) -> bool {
     ctx.db
         .strategic_gateway_authority()
         .id()
@@ -1200,7 +1208,7 @@ impl MissionAuthority {
             status: match self.status { MissionAttemptStatus::Bound => Status::Bound, MissionAttemptStatus::Committed => Status::Committed, MissionAttemptStatus::Failed => Status::Failed, MissionAttemptStatus::Cancelled => Status::Cancelled },
             case_site_id: self.case_site_id.as_ref().map(|id| id.value.clone()),
             hostile_group_id: self.hostile_group_id.clone(),
-            resolution: self.committed_resolution.map(|resolution| match resolution { HostileResolutionKind::Defeated => Resolution::Defeated, HostileResolutionKind::DrivenOff => Resolution::DrivenOff, HostileResolutionKind::Captured => Resolution::Captured, HostileResolutionKind::CaptureTargetKilled => Resolution::CaptureTargetKilled }),
+            resolution: self.committed_resolution.map(|resolution| match resolution { HostileResolutionKind::Defeated => Resolution::Defeated, HostileResolutionKind::DrivenOff => Resolution::DrivenOff, HostileResolutionKind::Surrendered => Resolution::Surrendered, HostileResolutionKind::Captured => Resolution::Captured, HostileResolutionKind::CaptureTargetKilled => Resolution::CaptureTargetKilled }),
             subject_id: self.committed_capture_subject_id.clone(),
             custody_version: self.committed_capture_custody_version,
         }).map_err(|error| error.to_string())
@@ -1221,6 +1229,7 @@ pub enum MissionAttemptStatus {
 pub enum HostileResolutionKind {
     Defeated,
     DrivenOff,
+    Surrendered,
     Captured,
     CaptureTargetKilled,
 }
@@ -1273,6 +1282,7 @@ pub enum HostileGroupDisposition {
     Active,
     Defeated,
     DrivenOff,
+    Surrendered,
     Captured,
 }
 
@@ -1343,7 +1353,9 @@ fn materialize_hostile_group(
     if let Some(existing) = ctx.db.hostile_group_authority().id().find(&group.id) {
         return if existing.case_site_id == group.case_site_id
             && existing.case_site_id_key == group.case_site_id_key
-            && existing.case_site_id_key == existing.case_site_id.value
+            && crate::investigation::canonical_case_site_place(&existing.case_site_id_key)
+                .zip(existing.case_site_id.to_place())
+                .is_some_and(|(key_place, typed_place)| key_place == typed_place)
             && existing.enemy_type == group.enemy_type
             && existing.base_enemy_count == group.base_enemy_count
             && existing.base_difficulty == group.base_difficulty
@@ -1429,6 +1441,24 @@ pub struct OutcomeSourceAuthority {
     pub hostile_group_id: Option<String>,
     pub resolution: HostileResolutionKind,
     pub party_id: String,
+}
+
+/// Battle-independent exact receipt for the authoritative hostile-group
+/// transition. Tactical victory and pre-combat withdrawal both call the same
+/// seam; only the tactical caller creates battle, morale, corpse, or loot rows.
+#[derive(Clone, Debug)]
+#[table(accessor = hostile_resolution_receipt)]
+pub struct HostileResolutionReceipt {
+    #[primary_key]
+    pub id: String,
+    pub party_id: String,
+    pub mission_id: Option<String>,
+    pub hostile_group_id: String,
+    pub observer_character_id: u64,
+    pub case_id: String,
+    pub case_site_id: CaseSiteId,
+    pub resolution: HostileResolutionKind,
+    pub capture_subject_id: Option<String>,
 }
 
 #[derive(SpacetimeType, serde::Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]

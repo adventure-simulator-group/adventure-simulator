@@ -24,16 +24,34 @@ pub fn start_dialogue(
     let settlement_id = character
         .current_settlement_id
         .ok_or("Dialogue requires a settlement")?;
-    require_navigable_npc_location(ctx, &settlement_id, &location_id)?;
+    // The route value selects a candidate only; server-side settlement
+    // navigability must resolve it before it becomes exact actor context.
+    let exact_place = require_navigable_npc_place(ctx, &settlement_id, &location_id)?;
     let npc_character_id = npc_actor_id
         .parse::<u64>()
         .map_err(|_| "Dialogue NPC identity is invalid")?;
-    crate::relationship::enforce_temporal_scope(
+    let minute = crate::relationship::enforce_temporal_scope(
         ctx,
         character_id,
         Some(npc_character_id),
         crate::relationship::TemporalScope::PairwiseSoft,
     )?;
+    let actor_settlement_presence =
+        adventuresim_core::strategic_presence::StrategicPresence::settlement_membership(
+            character_id,
+            settlement_id.clone(),
+            adventuresim_core::strategic_presence::PresenceFrontier {
+                observer_character_id: character_id,
+                personal_minute: minute,
+            },
+        )
+        .map_err(|_| "Dialogue settlement identity is invalid")?;
+    let actor_presence =
+        adventuresim_core::strategic_presence::StrategicPresence::validated_venue_selection(
+            &actor_settlement_presence,
+            exact_place,
+        )
+        .map_err(|_| "Dialogue location is not in the actor's settlement")?;
     let npc = crate::settlement_population::resolve_settlement_resident(ctx, npc_character_id)
         .ok_or("Dialogue actor is not a persistent settlement NPC")?;
     if npc.home_settlement_id != settlement_id {
@@ -51,16 +69,17 @@ pub fn start_dialogue(
         .character_id()
         .find(npc_character_id)
         .ok_or("Dialogue actor has no authoritative presence")?;
-    let minute = ctx
-        .db
-        .character_time()
-        .character_id()
-        .find(character_id)
-        .map_or(720, |time| time.minutes);
-    if presence.settlement_id != settlement_id
-        || presence.location_id != location_id
-        || !crate::settlement_population::npc_is_present(ctx, &presence, minute)
-    {
+    let npc_presence = crate::settlement_population::npc_strategic_presence_at(
+        ctx,
+        &presence,
+        character_id,
+        minute,
+    )
+    .ok_or("Dialogue actor is not present at this time")?;
+    if !adventuresim_core::strategic_presence::are_co_present(
+        &actor_presence,
+        npc_presence.presence(),
+    ) {
         return Err("Dialogue actor is not present at this time".into());
     }
     if conversation_id != npc.conversation_id {
@@ -129,8 +148,18 @@ pub fn start_dialogue(
         .settlement_id()
         .filter(&settlement_id)
         .filter(|candidate| {
-            candidate.location_id == location_id
-                && crate::settlement_population::npc_is_present(ctx, candidate, minute)
+            crate::settlement_population::npc_strategic_presence_at(
+                ctx,
+                candidate,
+                character_id,
+                minute,
+            )
+                .is_some_and(|candidate_presence| {
+                    adventuresim_core::strategic_presence::are_co_present(
+                        &actor_presence,
+                        candidate_presence.presence(),
+                    )
+                })
         })
         .filter_map(|presence| {
             crate::settlement_population::resolve_settlement_resident(ctx, presence.character_id)
@@ -215,6 +244,7 @@ pub fn start_dialogue(
                     &session,
                     character_id,
                     &turn.speaker,
+                    Some(&turn.addressee),
                     &turn.fragments,
                 )?)
                 .map_err(|_| "Could not encode dialogue greeting")?,
@@ -272,7 +302,7 @@ pub fn start_dialogue(
         let (fragments_json, source_refs_json) = match &authority {
             ReferralDeliveryAuthority::PublicThreat => (
                 delivery.fragments_json.clone(),
-                serde_json::to_string(&[delivery.receipt_id.clone()])
+                serde_json::to_string(std::slice::from_ref(&delivery.receipt_id))
                     .map_err(|_| "Could not encode public referral source")?,
             ),
             ReferralDeliveryAuthority::LocalProblem(_) => render_quest_referral_variant(

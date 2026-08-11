@@ -2,6 +2,7 @@ use std::num::NonZeroU32;
 
 use adventuresim_core::{
     body::{BodyPart, BodySide},
+    equipment::MeleeAttackStyle,
     prelude::PlayerEquipment,
 };
 use bevy::{
@@ -67,10 +68,18 @@ pub enum ArmorSide {
 pub struct WeaponItem {
     pub skill_weights: [f32; 9],
     pub accuracy: f32,
+    pub swing_precision: f32,
+    pub stab_precision: f32,
+    pub prefers_stab: bool,
     pub penetration: f32,
     pub reach: f32,
     pub balance: f32,
     pub precise: bool,
+    pub melee: bool,
+    pub ranged: bool,
+    pub blunt: bool,
+    pub slash: bool,
+    pub pierce: bool,
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -196,12 +205,23 @@ impl InventoryView<'_, '_, '_> {
         self.q_item.iter_many(items)
     }
 
+    /// Returns whether this actor owns a non-empty stack of the requested
+    /// tactical item without scanning other actors' inventories.
+    pub fn has_item_id(&self, item_id: &str) -> bool {
+        self.iter()
+            .any(|item| item.properties.id == item_id && item.quantity.0.get() > 0)
+    }
+
     fn equipped_weapon(&self) -> Option<ItemQueryItem<'_, '_>> {
         self.q_inventory
             .get(self.entity)
             .ok()
             .and_then(|inventory| inventory.holding_weapon)
             .and_then(|weapon| self.q_item.get(weapon).ok())
+    }
+
+    pub fn has_equipped_weapon(&self) -> bool {
+        self.equipped_weapon().is_some()
     }
 
     fn equipped_shield(&self) -> Option<ItemQueryItem<'_, '_>> {
@@ -253,7 +273,7 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .equipped_weapon()
             .and_then(|item| item.weapon)
             .map(|weapon| weapon.skill_weights)
-            .unwrap_or([0.0; 9]);
+            .unwrap_or([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         adventuresim_core::equipment::WeaponSkillDistribution {
             polearm: w[0],
             axe: w[1],
@@ -273,21 +293,78 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .unwrap_or_default()
     }
 
-    fn weapon_holding_side(&self) -> Option<BodySide> {
+    fn weapon_swing_precision(&self) -> f32 {
         self.equipped_weapon()
-            .and_then(|item| item.slot)
-            .and_then(|slot| match slot {
-                EquipSlot::HoldingLeft => Some(BodySide::Left),
-                EquipSlot::HoldingRight => Some(BodySide::Right),
-                _ => None,
-            })
+            .and_then(|item| item.weapon)
+            .map(|weapon| weapon.swing_precision)
+            .unwrap_or(0.2)
+    }
+
+    fn weapon_stab_precision(&self) -> f32 {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .map(|weapon| weapon.stab_precision)
+            .unwrap_or(0.5)
+    }
+
+    fn weapon_preferred_melee_style(&self) -> MeleeAttackStyle {
+        if self
+            .equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_none_or(|weapon| weapon.prefers_stab)
+        {
+            MeleeAttackStyle::Stab
+        } else {
+            MeleeAttackStyle::Swing
+        }
+    }
+
+    fn weapon_is_melee(&self) -> bool {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_none_or(|weapon| weapon.melee)
+    }
+
+    fn weapon_is_ranged(&self) -> bool {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_some_and(|weapon| weapon.ranged)
+    }
+
+    fn weapon_does_blunt(&self) -> bool {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_none_or(|weapon| weapon.blunt)
+    }
+
+    fn weapon_does_slash(&self) -> bool {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_some_and(|weapon| weapon.slash)
+    }
+
+    fn weapon_does_pierce(&self) -> bool {
+        self.equipped_weapon()
+            .and_then(|item| item.weapon)
+            .is_some_and(|weapon| weapon.pierce)
+    }
+
+    fn weapon_holding_side(&self) -> Option<BodySide> {
+        let Some(item) = self.equipped_weapon() else {
+            return Some(BodySide::Right);
+        };
+        item.slot.and_then(|slot| match slot {
+            EquipSlot::HoldingLeft => Some(BodySide::Left),
+            EquipSlot::HoldingRight => Some(BodySide::Right),
+            _ => None,
+        })
     }
 
     fn weapon_reach(&self) -> f32 {
         self.equipped_weapon()
             .and_then(|item| item.weapon)
             .map(|weapon| weapon.reach)
-            .unwrap_or_default()
+            .unwrap_or(crate::combat::HANDS_REACH)
     }
 
     fn weapon_is_precise(&self) -> bool {
@@ -317,6 +394,16 @@ impl PlayerEquipment for InventoryView<'_, '_, '_> {
             .and_then(|item| item.shield)
             .map(|shield| shield.block)
             .unwrap_or_default()
+    }
+
+    fn shield_holding_side(&self) -> Option<BodySide> {
+        self.equipped_shield()
+            .and_then(|item| item.slot)
+            .and_then(|slot| match slot {
+                EquipSlot::HoldingLeft => Some(BodySide::Left),
+                EquipSlot::HoldingRight => Some(BodySide::Right),
+                _ => None,
+            })
     }
 
     fn weapon_weight(&self) -> f32 {

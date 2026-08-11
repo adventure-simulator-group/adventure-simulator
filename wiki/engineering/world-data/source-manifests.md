@@ -49,7 +49,7 @@ against a malicious or noncanonical client.
 - **Copernicus DEM:** retain the prescribed Copernicus/WorldDEM production
   credit and European Commission/ESA no-liability notice.
 - **HYDE 3.5:** retain HYDE attribution, the CC BY 3.0 licence link, and an
-  indication that Adventure Simulator interpolates and classifies the source.
+  indication that Fabelgeist interpolates and classifies the source.
 - **Copernicus forest and EU-Hydro:** credit the European Union/Copernicus,
   identify project modifications, and do not imply endorsement.
 - **Jung PNV, SoilGrids, and EGDI:** retain CC BY 4.0 attribution and identify

@@ -1,13 +1,14 @@
 use adventuresim_tactical_core::{
     inventory::{ItemQuery, ItemQueryItem},
-    player::{Player, PlayerId},
+    player::{CharacterId, Player},
     prelude::*,
 };
 use adventuresim_tactical_netcode::{
     aeronet::io::connection::{LocalAddr, PeerAddr},
     bevy_replicon::prelude::{ClientState, ClientStats},
+    client::WeaponGuardInputState,
     client::normalize_server_url,
-    message::SuccessfulAttackResponse,
+    message::{SuccessfulAttackResponse, TacticalOutcome, TacticalOutcomeResponse},
     prelude::*,
 };
 use bevy::{
@@ -15,10 +16,21 @@ use bevy::{
     ecs::schedule::common_conditions::any_with_component,
     prelude::*,
 };
+use bevy_egui::{
+    EguiContexts, EguiPlugin, EguiPrimaryContextPass,
+    egui::{self, Color32, Pos2, Stroke},
+};
 use bevy_flair::prelude::*;
 
+#[cfg(feature = "debug")]
+use crate::animation::TerrainIkEnabled;
+#[cfg(feature = "debug")]
+use crate::camera::{CameraDebugEnabled, CameraRigDebugState};
+#[cfg(feature = "debug")]
+use crate::debug::DebugGameSpeed;
 use crate::{
     Args,
+    camera::CameraAimState,
     player::{AttackState, ClientPlayer},
 };
 
@@ -26,8 +38,12 @@ pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(FlairPlugin)
+        app.add_plugins((FlairPlugin, EguiPlugin::default()))
             .add_systems(Startup, setup_ui)
+            .add_systems(
+                EguiPrimaryContextPass,
+                draw_incapacitation_wheel.run_if(any_with_component::<ClientPlayer>),
+            )
             .add_systems(
                 Update,
                 (
@@ -35,14 +51,107 @@ impl Plugin for UiPlugin {
                     update_connection_ui,
                     update_skills_ui.run_if(any_with_component::<ClientPlayer>),
                     update_limbs_ui.run_if(any_with_component::<ClientPlayer>),
+                    update_combat_state_ui.run_if(any_with_component::<ClientPlayer>),
                     update_items_ui.run_if(any_with_component::<ClientPlayer>),
                     update_attack_timer_ui.run_if(any_with_component::<ClientPlayer>),
+                    update_weapon_guard_ui,
+                    update_camera_ui,
+                    #[cfg(feature = "debug")]
+                    update_terrain_ik_debug_ui,
+                    #[cfg(feature = "debug")]
+                    update_game_speed_debug_ui,
                 ),
             )
             .add_observer(on_new_player_added_hook)
             .add_observer(on_successful_attack_display)
+            .add_observer(on_tactical_outcome_display)
             .add_systems(Update, update_attack_result_ui);
     }
+}
+
+const INCAPACITATION_WHEEL_RADIUS: f32 = 26.0;
+const INCAPACITATION_WHEEL_WIDTH: f32 = 8.0;
+const INCAPACITATION_WHEEL_RESOLUTION: f32 = 96.0;
+const MIN_VISIBLE_INCAPACITATION_SEGMENT: f32 = 0.005;
+
+fn incapacitation_wheel_segments(sources: TacticalIncapacitationSources) -> [(f32, Color32); 9] {
+    [
+        (sources.pain, Color32::from_rgb(0xd9, 0x73, 0xa2)),
+        (sources.blood_loss, Color32::from_rgb(0xc8, 0x47, 0x47)),
+        (sources.fear, Color32::from_rgb(0x4f, 0x83, 0xcc)),
+        (sources.fatigue, Color32::from_rgb(0x20, 0x20, 0x20)),
+        (sources.hunger, Color32::from_rgb(0xb5, 0x7a, 0x35)),
+        (sources.thirst, Color32::from_rgb(0x3f, 0x9f, 0xa8)),
+        (sources.thermal, Color32::from_rgb(0x7d, 0x8e, 0xe8)),
+        (sources.exhaustion, Color32::from_rgb(0x80, 0x80, 0x80)),
+        (sources.imbalance, Color32::WHITE),
+    ]
+}
+
+fn visible_incapacitation_wheel_amount(raw_amount: f32, remaining: f32) -> Option<f32> {
+    let amount = raw_amount.max(0.0).min(remaining);
+    (amount >= MIN_VISIBLE_INCAPACITATION_SEGMENT).then_some(amount)
+}
+
+fn draw_incapacitation_wheel(
+    mut contexts: EguiContexts,
+    player: Single<(Entity, &TacticalCombatState, &Limbs), With<ClientPlayer>>,
+    viewer: TacticalPlayerViewer,
+) -> Result {
+    let (entity, state, limbs) = player.into_inner();
+    let view = viewer.get(entity)?;
+    let will = view.skill_check(Skill::Will, LimbWeights::all_equal());
+    let sources = state.incapacitation_sources(limbs.total_damage(), will);
+    if state.incapacitation <= 0.0 {
+        return Ok(());
+    }
+
+    let context = contexts.ctx_mut()?;
+    let painter = context.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("incapacitation-wheel"),
+    ));
+    let center = context.content_rect().center();
+
+    if state.is_incapacitated() {
+        painter.circle_stroke(
+            center,
+            INCAPACITATION_WHEEL_RADIUS,
+            Stroke::new(
+                INCAPACITATION_WHEEL_WIDTH + 6.0,
+                Color32::from_rgba_unmultiplied(0xc8, 0x47, 0x47, 70),
+            ),
+        );
+    }
+
+    let mut cursor = -std::f32::consts::FRAC_PI_2;
+    let mut remaining = 1.0_f32;
+    for (raw_amount, color) in incapacitation_wheel_segments(sources) {
+        let Some(amount) = visible_incapacitation_wheel_amount(raw_amount, remaining) else {
+            continue;
+        };
+        let end = cursor + amount * std::f32::consts::TAU;
+        let steps = (amount * INCAPACITATION_WHEEL_RESOLUTION).ceil().max(2.0) as usize;
+        let points = (0..=steps)
+            .map(|step| {
+                let angle = cursor + (end - cursor) * step as f32 / steps as f32;
+                Pos2::new(
+                    center.x + INCAPACITATION_WHEEL_RADIUS * angle.cos(),
+                    center.y + INCAPACITATION_WHEEL_RADIUS * angle.sin(),
+                )
+            })
+            .collect();
+        painter.add(egui::Shape::line(
+            points,
+            Stroke::new(INCAPACITATION_WHEEL_WIDTH, color),
+        ));
+        cursor = end;
+        remaining -= amount;
+        if remaining <= 0.0 {
+            break;
+        }
+    }
+    Ok(())
 }
 
 #[derive(Component)]
@@ -88,6 +197,33 @@ struct HeadSpan;
 struct AttackTimerSpan;
 
 #[derive(Component)]
+struct CombatStateSpan;
+
+#[derive(Component)]
+struct WeaponGuardSpan;
+
+#[derive(Component)]
+struct RaisedReticle;
+
+#[derive(Component)]
+struct AimBlockedSpan;
+
+#[cfg(feature = "debug")]
+#[derive(Component)]
+struct CameraDebugSpan;
+
+#[cfg(feature = "debug")]
+#[derive(Component)]
+struct TerrainIkDebugSpan;
+
+#[cfg(feature = "debug")]
+#[derive(Component)]
+struct GameSpeedDebugSpan;
+
+#[derive(Component)]
+struct TacticalOutcomeBanner;
+
+#[derive(Component)]
 struct AttackResultText {
     timer: Timer,
 }
@@ -112,9 +248,27 @@ struct PlayerSpan(Vec<Entity>);
 fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
         Node::default(),
-        NodeStyleSheet::new(asset_server.load("ui.css")),
+        Styled::new(asset_server.load("ui.css")),
         children![
-            (Name::new("crosshair"), Node::default()),
+            (
+                Name::new("terminal-outcome"),
+                TacticalOutcomeBanner,
+                Visibility::Hidden,
+                ClassList::new("primary"),
+                Text::default(),
+            ),
+            (
+                Name::new("crosshair"),
+                RaisedReticle,
+                Visibility::Hidden,
+                Node::default(),
+                children![(
+                    Name::new("aim-blocked"),
+                    AimBlockedSpan,
+                    Visibility::Hidden,
+                    Text::new("MUZZLE BLOCKED"),
+                )],
+            ),
             (
                 Name::new("attack-info"),
                 Node::default(),
@@ -130,14 +284,23 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 ]
             ),
             (
+                Name::new("weapon-guard"),
+                Text::new("Guard: "),
+                children![(WeaponGuardSpan, TextSpan::new("Lowered"))],
+            ),
+            (
                 Name::new("controls"),
-                Text::new(""),
+                Text::new(
+                    "WASD to move | Space to jump | Release Ctrl: prone/get up | Prone: Space + A/D to roll | Mouse to look around | F9 to toggle camera\n",
+                ),
+                #[cfg(feature = "debug")]
                 children![
-                    TextSpan::new("WASD to move | Space to jump | Mouse to look around\n"),
-                    #[cfg(feature = "debug")]
                     TextSpan::new(
                         "DEBUG: F2 to toggle body | F3 to toggle hitbox | F4 to toggle hitscan"
-                    )
+                    ),
+                    (GameSpeedDebugSpan, TextSpan::new(" | F7 game speed: 1x")),
+                    (TerrainIkDebugSpan, TextSpan::new(" | F8 terrain IK: ON")),
+                    (CameraDebugSpan, TextSpan::new(" | F6 camera rig: OFF"))
                 ],
             ),
             (
@@ -153,6 +316,11 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                         Name::new("fps"),
                         Text::new("FPS: "),
                         children![(FpsSpan, TextSpan::default())]
+                    ),
+                    (
+                        Name::new("combat-state"),
+                        Text::new("Combat: "),
+                        children![(CombatStateSpan, TextSpan::default())]
                     ),
                 ]
             ),
@@ -318,15 +486,146 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     ));
 }
 
+fn update_weapon_guard_ui(
+    guard: Res<WeaponGuardInputState>,
+    players: Query<Entity, With<ControlledPlayer>>,
+    viewer: TacticalPlayerViewer,
+    mut spans: Query<&mut TextSpan, With<WeaponGuardSpan>>,
+) {
+    let ranged = players
+        .iter()
+        .next()
+        .and_then(|entity| viewer.get(entity).ok())
+        .is_some_and(|player| player.weapon_is_ranged());
+    for mut span in &mut spans {
+        **span = match guard.desired {
+            WeaponGuardState::Lowered => "Lowered".to_owned(),
+            WeaponGuardState::Raised if ranged => "Aiming".to_owned(),
+            WeaponGuardState::Raised => "Blocking".to_owned(),
+        };
+    }
+}
+
+fn update_camera_ui(
+    aim: Res<CameraAimState>,
+    mut reticle: Single<&mut Visibility, (With<RaisedReticle>, Without<AimBlockedSpan>)>,
+    mut blocked: Single<&mut Visibility, (With<AimBlockedSpan>, Without<RaisedReticle>)>,
+    #[cfg(feature = "debug")] enabled: Res<CameraDebugEnabled>,
+    #[cfg(feature = "debug")] debug: Res<CameraRigDebugState>,
+    #[cfg(feature = "debug")] mut debug_span: Single<&mut TextSpan, With<CameraDebugSpan>>,
+) {
+    **reticle = if aim.active {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+    **blocked = if aim.active && aim.blocked {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+    #[cfg(feature = "debug")]
+    {
+        debug_span.0 = if enabled.0 && debug.active {
+            format!(
+                " | F6 camera: {:.0}% | boom {:.2}/{:.2}m v{:.2} | focus v{:.2} | screen ({:.2},{:.2})/({:.2},{:.2}) | hard:{} soft:{}",
+                debug.raised_blend * 100.0,
+                debug.limited_distance,
+                debug.desired_distance,
+                debug.boom_velocity,
+                debug.focus_velocity.length(),
+                debug.screen_error.x,
+                debug.screen_error.y,
+                debug.sweet_spot.x,
+                debug.sweet_spot.y,
+                debug.collision_entity.is_some(),
+                debug.soft_occluder.is_some(),
+            )
+        } else {
+            " | F6 camera rig: OFF".to_owned()
+        };
+    }
+}
+
+#[cfg(feature = "debug")]
+fn update_terrain_ik_debug_ui(
+    enabled: Res<TerrainIkEnabled>,
+    mut span: Single<&mut TextSpan, With<TerrainIkDebugSpan>>,
+) {
+    if enabled.is_changed() {
+        span.0 = if enabled.0 {
+            " | F8 terrain IK: ON".to_owned()
+        } else {
+            " | F8 terrain IK: OFF".to_owned()
+        };
+    }
+}
+
+#[cfg(feature = "debug")]
+fn update_game_speed_debug_ui(
+    speed: Res<DebugGameSpeed>,
+    mut span: Single<&mut TextSpan, With<GameSpeedDebugSpan>>,
+) {
+    if speed.is_changed() {
+        span.0 = if speed.quarter_speed {
+            " | F7 game speed: 1/4x".to_owned()
+        } else {
+            " | F7 game speed: 1x".to_owned()
+        };
+    }
+}
+
+fn combat_state_label(state: &TacticalCombatState) -> String {
+    if state.is_incapacitated() {
+        format!(
+            "INCAPACITATED | Blood loss {:.0}% | Exhaustion {:.0}% | Imbalance {:.0}%",
+            state.blood_loss_fraction * 100.0,
+            state.exhaustion * 100.0,
+            state.imbalance * 100.0
+        )
+    } else {
+        format!(
+            "Active | Blood loss {:.0}% | Exhaustion {:.0}% | Imbalance {:.0}%",
+            state.blood_loss_fraction * 100.0,
+            state.exhaustion * 100.0,
+            state.imbalance * 100.0
+        )
+    }
+}
+
+fn update_combat_state_ui(
+    player: Single<&TacticalCombatState, With<ClientPlayer>>,
+    mut span: Single<&mut TextSpan, With<CombatStateSpan>>,
+) {
+    span.0 = combat_state_label(&player);
+}
+
+fn tactical_outcome_label(outcome: TacticalOutcome) -> (&'static str, &'static str) {
+    match outcome {
+        TacticalOutcome::Victory => ("VICTORY", "success"),
+        TacticalOutcome::Defeat => ("DEFEAT", "error"),
+    }
+}
+
+fn on_tactical_outcome_display(
+    event: On<TacticalOutcomeResponse>,
+    mut banner: Single<(&mut Text, &mut Visibility, &mut ClassList), With<TacticalOutcomeBanner>>,
+) {
+    let (label, class) = tactical_outcome_label(event.outcome);
+    banner.0.0 = label.to_owned();
+    *banner.1 = Visibility::Visible;
+    *banner.2 = ClassList::new(class);
+}
+
 fn update_stats_ui(
     diagnostics: Res<DiagnosticsStore>,
-    player: Single<(Ref<Transform>, &PlayerId), With<ClientPlayer>>,
+    player: Single<(Ref<Transform>, &CharacterId), With<ClientPlayer>>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<PositionSpan>>,
         Single<&mut TextSpan, With<FpsSpan>>,
     )>,
 ) {
-    let (transform, &PlayerId(_player_id)) = player.into_inner();
+    let (transform, &CharacterId(_player_id)) = player.into_inner();
 
     if transform.is_changed() {
         let translation = transform.translation;
@@ -335,7 +634,6 @@ fn update_stats_ui(
             translation.x, translation.y, translation.z
         );
     }
-
     if let Some(fps) = diagnostics
         .get(&FrameTimeDiagnosticsPlugin::FPS)
         .and_then(|fps| fps.smoothed())
@@ -345,7 +643,7 @@ fn update_stats_ui(
 }
 
 fn update_skills_ui(
-    player: Single<(&Skills, &PlayerId), (With<ClientPlayer>, Changed<Skills>)>,
+    player: Single<(&Skills, &CharacterId), (With<ClientPlayer>, Changed<Skills>)>,
     mut spans: Query<(&mut TextSpan, &SkillSpan)>,
 ) {
     let (skills, _player_id) = player.into_inner();
@@ -390,7 +688,7 @@ fn update_skills_ui(
 }
 
 fn update_limbs_ui(
-    player: Single<(&Limbs, &PlayerId), (With<ClientPlayer>, Changed<Limbs>)>,
+    player: Single<(&Limbs, &CharacterId), (With<ClientPlayer>, Changed<Limbs>)>,
     mut spans: ParamSet<(
         Single<&mut TextSpan, With<HeadSpan>>,
         Single<&mut TextSpan, With<ChestSpan>>,
@@ -534,7 +832,7 @@ fn update_attack_timer_ui(
 fn on_successful_attack_display(
     event: On<SuccessfulAttackResponse>,
     mut cmd: Commands,
-    q_player: Query<(&Player, &PlayerId)>,
+    q_player: Query<(&Player, &CharacterId)>,
     mut span: Single<(Entity, &mut AttackResultText, &mut Text)>,
 ) {
     let Some((player, id)) = event.hit.first().and_then(|e| q_player.get(*e).ok()) else {
@@ -604,7 +902,7 @@ fn update_attack_result_ui(
 fn on_new_player_added_hook(
     event: On<Add, Player>,
     mut commands: Commands,
-    query: Query<(&PlayerId, &Player)>,
+    query: Query<(&CharacterId, &Player)>,
     args: Res<Args>,
     players_list: Single<Entity, With<PlayersList>>,
 ) -> Result {
@@ -635,4 +933,69 @@ fn on_new_player_added_hook(
     ));
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn combat_label_surfaces_live_and_incapacitated_state() {
+        let active = TacticalCombatState {
+            blood_loss_fraction: 0.25,
+            imbalance: 0.5,
+            ..default()
+        };
+        assert_eq!(
+            combat_state_label(&active),
+            "Active | Blood loss 25% | Exhaustion 0% | Imbalance 50%"
+        );
+        let incapacitated = TacticalCombatState {
+            incapacitation: 1.0,
+            ..active
+        };
+        assert!(combat_state_label(&incapacitated).starts_with("INCAPACITATED"));
+    }
+
+    #[test]
+    fn terminal_outcome_labels_are_unambiguous() {
+        assert_eq!(
+            tactical_outcome_label(TacticalOutcome::Victory),
+            ("VICTORY", "success")
+        );
+        assert_eq!(
+            tactical_outcome_label(TacticalOutcome::Defeat),
+            ("DEFEAT", "error")
+        );
+    }
+
+    #[test]
+    fn incapacitation_wheel_uses_strategic_order_then_white_imbalance() {
+        let segments = incapacitation_wheel_segments(TacticalIncapacitationSources {
+            pain: 0.1,
+            blood_loss: 0.2,
+            fear: 0.3,
+            fatigue: 0.4,
+            hunger: 0.5,
+            thirst: 0.6,
+            thermal: 0.7,
+            exhaustion: 0.8,
+            imbalance: 0.9,
+        });
+
+        assert_eq!(
+            segments.map(|(amount, _)| amount),
+            [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+        );
+        assert_eq!(segments[0].1, Color32::from_rgb(0xd9, 0x73, 0xa2));
+        assert_eq!(segments[1].1, Color32::from_rgb(0xc8, 0x47, 0x47));
+        assert_eq!(segments[7].1, Color32::from_rgb(0x80, 0x80, 0x80));
+        assert_eq!(segments[8].1, Color32::WHITE);
+    }
+
+    #[test]
+    fn incapacitation_wheel_hides_subpixel_segments_without_changing_state() {
+        assert_eq!(visible_incapacitation_wheel_amount(0.0049, 1.0), None);
+        assert_eq!(visible_incapacitation_wheel_amount(0.005, 1.0), Some(0.005));
+    }
 }

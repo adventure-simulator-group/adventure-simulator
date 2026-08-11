@@ -11,8 +11,8 @@
         "adaptation_note": "An original synthesis of false guides, jealous retainers, contested roads, sworn claims, and payroll treachery common in chivalric romance; it does not reproduce a particular episode."
       },
       "cast": [
-        { "id": "escort_captain", "name": "Escort captain", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } },
-        { "id": "merchant_factor", "name": "Merchant factor", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } }
+        { "id": "escort_captain", "name": "Escort captain", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } },
+        { "id": "merchant_factor", "name": "Merchant factor", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } }
       ],
       "opening": [
         {

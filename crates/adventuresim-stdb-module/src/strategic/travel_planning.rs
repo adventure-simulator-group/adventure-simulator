@@ -88,7 +88,7 @@ fn validate_journey_route_payload(
         return Err("Terrain route has an invalid package digest".into());
     }
     if route.weather_rules_version != adventuresim_core::weather::WEATHER_RULES_VERSION
-        || route.weather_interval_start % adventuresim_core::weather::WEATHER_INTERVAL_MINUTES != 0
+        || !route.weather_interval_start.is_multiple_of(adventuresim_core::weather::WEATHER_INTERVAL_MINUTES)
         || route.intensity_bps > 10_000
         || route.ground_moisture_bps > 10_000
         || route.snow_cover_bps > 10_000

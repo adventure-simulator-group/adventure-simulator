@@ -19,7 +19,6 @@ use crate::{
         character, character__view, character_attributes, character_limbs, character_skills,
     },
     condition::character_condition,
-    investigation::character_case_site_occupancy,
     item::inventory_item,
     outbreak::outbreak_patient_authority,
     settlement_population::{SettlementResidentProfile, settlement_resident_profile},
@@ -249,7 +248,7 @@ fn require_corpse_access(
         .db
         .strategic_corpse()
         .id()
-        .find(&corpse_id.to_owned())
+        .find(corpse_id.to_owned())
         .ok_or("Corpse not found")?;
     if ctx
         .db
@@ -279,11 +278,7 @@ fn require_corpse_access(
         corpse.buried,
         corpse.exhumed,
     );
-    let actor_site = ctx
-        .db
-        .character_case_site_occupancy()
-        .character_id()
-        .find(actor_id)
+    let actor_site = crate::investigation::current_character_case_site_occupancy(ctx, actor_id)
         .map(|row| row.case_site_id.value);
     let together = match location {
         CorpseLocation::Scene => actor_site.as_deref() == Some(corpse.case_site_id.as_str()),
@@ -730,7 +725,7 @@ pub(crate) fn persist_pathology_snapshot(
         .db
         .corpse_pathology()
         .corpse_id()
-        .find(&corpse_id.to_owned())
+        .find(corpse_id.to_owned())
         .is_some()
     {
         return Ok(());
@@ -1608,7 +1603,7 @@ pub(crate) fn grant_permission_from_dialogue(
         .db
         .strategic_corpse()
         .id()
-        .find(&corpse_id.to_owned())
+        .find(corpse_id.to_owned())
         .ok_or("Corpse not found")?;
     if corpse.discovering_party_id != party_id {
         return Err("Party has not discovered this corpse".into());
@@ -1650,7 +1645,7 @@ pub(crate) fn grant_permission_from_dialogue(
         .db
         .character_familiarity()
         .id()
-        .find(&format!("{low_id}:{high_id}"))
+        .find(format!("{low_id}:{high_id}"))
         .map_or(0, |row| row.shared_minutes);
     let familiarity_bps =
         ((familiarity_minutes.saturating_mul(10_000) / (100 * 60)).min(10_000)) as u16;
@@ -1904,7 +1899,7 @@ pub(crate) fn permission_topics_for_npc(
                             .db
                             .corpse_permission_attempt()
                             .id()
-                            .find(&format!(
+                            .find(format!(
                                 "{}:{}:{}:{}:{}",
                                 corpse.id,
                                 party_id,

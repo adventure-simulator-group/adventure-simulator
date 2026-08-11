@@ -1,8 +1,6 @@
 use adventuresim_core::{
     equipment::{EncumbranceSummary, INPUT_ADDRESS_MAPPINGS, InputAddressMapping},
-    herbalism::{CraftOutcome, PreparationMethod},
     item_catalog_schema::EquipmentLocation as CoreEquipmentLocation,
-    skill::Skill,
 };
 use maud::{Markup, html};
 
@@ -19,10 +17,11 @@ use super::{
     },
 };
 use crate::spacetimedb::{
-    Character, CharacterAttributes, CharacterCondition, CharacterEquipmentGraph, CharacterLimbs,
-    CharacterSkills, CharacterStats, EquipmentBodyPart, EquipmentChannel, EquipmentLocation,
-    FoodLot, InventoryItem, InventoryItemAmount, InventoryQuantityTarget, ItemDefinition,
-    PartyInventoryItem, Settlement,
+    BackendFireplaceDish, BackendFireplaceStation, BackendIngredientPreparationPlan, Character,
+    CharacterCondition, CharacterEquipmentGraph, CharacterLimbs, CharacterStats, CookingMethod,
+    EquipmentBodyPart, EquipmentChannel, EquipmentLocation, FoodLot, IngredientPreparationAction,
+    InventoryItem, InventoryItemAmount, InventoryQuantityTarget, ItemDefinition,
+    PartyInventoryItem, PartyItemAmount, Settlement,
 };
 use crate::templates::inventory_browser::{InventoryBrowser, InventoryColumnSet};
 use crate::templates::{
@@ -245,7 +244,7 @@ pub fn party_inventory_page(
         main class="center-content settlement-main party-member-stage" {
             (party_portrait_overlay(party_members, Some(active_character), &location.base_path(), Some(selected.id), false))
             (visual_stage("character", &selected.name, "Party member and trading companion"))
-            (player_chat_area(selected, active_character))
+            (player_chat_area(location, selected, active_character))
             form id="party-offer" class="party-offer" action=(format!("{}/party/{}/inventory/offer", location.base_path(), selected.id)) method="post" hidden
                 role="dialog" aria-modal="true" aria-label="Confirm party item offer" tabindex="-1" {
                 span class="party-offer-summary" { "Review and send the staged item offer." }
@@ -267,6 +266,7 @@ pub fn party_discard_page(
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
     food_lots: &[FoodLot],
+    preparation_plans: &[BackendIngredientPreparationPlan],
     party_members: &[Character],
     equip: Option<&CharacterEquipmentGraph>,
     encumbrance: EncumbranceSummary,
@@ -293,306 +293,226 @@ pub fn party_discard_page(
             }
         }
         aside class="right-sidebar" {
-            (discard_inventory_rail(active_character, inventory, items, food_lots, equip, encumbrance))
+            (discard_inventory_rail(active_character, inventory, items, food_lots, preparation_plans, &format!("{}/party/{}/inventory", location.base_path(), active_character.id), equip, encumbrance))
         }
     };
     location.render_layout("Inventory", content, Some(&active_character.name))
 }
 
-pub(super) fn cooking_activity_dialog(
-    location: &LocationView,
-    active_character: &Character,
-    inventory: &[InventoryItem],
-    inventory_amounts: &[InventoryItemAmount],
+#[allow(clippy::too_many_arguments)]
+pub fn fireplace_page(
+    title: &str,
+    back_href: &str,
+    action_base: &str,
+    rest_action: &str,
+    _active_character: &Character,
+    inventory_scope: &str,
+    personal_inventory: &[InventoryItem],
+    party_inventory: &[PartyInventoryItem],
+    personal_amounts: &[InventoryItemAmount],
+    party_amounts: &[PartyItemAmount],
     food_lots: &[FoodLot],
-    item_definitions: &[ItemDefinition],
+    definitions: &[ItemDefinition],
+    station: Option<&BackendFireplaceStation>,
+    dish: Option<&BackendFireplaceDish>,
+    vessel_stations: &[BackendFireplaceStation],
+    vessel_dishes: &[BackendFireplaceDish],
+    character_minute: u64,
+    layout: impl FnOnce(Markup) -> Markup,
 ) -> Markup {
-    let close_href = location.preserve_building(format!(
-        "{}/party/{}",
-        location.base_path(),
-        active_character.id
-    ));
-    let cook_action = location.preserve_building(format!(
-        "{}/party/{}/cook",
-        location.base_path(),
-        active_character.id
-    ));
-    let owns = |item_id: &str| {
-        inventory
-            .iter()
-            .any(|row| row.item_id == item_id && row.qty > 0)
+    let instrument = station.and_then(|row| row.instrument_item_id.as_deref());
+    let method = "roast";
+    let elapsed = dish.map_or(0, |row| {
+        character_minute.saturating_sub(row.started_at_minute)
+    });
+    let remaining = dish.map_or(1, |row| {
+        u64::from(row.target_minutes).saturating_sub(elapsed).max(1)
+    });
+    let status = dish.map(|row| {
+        if elapsed < u64::from(row.target_minutes) {
+            "Undercooked"
+        } else if elapsed == u64::from(row.target_minutes) {
+            "Ready"
+        } else {
+            match row.method {
+                CookingMethod::Stew => "Ready (holding safely)",
+                CookingMethod::Roast => "Drying / smoking",
+                CookingMethod::PanFry | CookingMethod::Bake => "Burning",
+            }
+        }
+    });
+    let scope_href = |scope: &str| {
+        format!(
+            "{action_base}{}inventory_scope={scope}",
+            if action_base.contains('?') { "&" } else { "?" }
+        )
     };
-    let pan = owns("cooking_pan");
-    let pot = owns("cooking_pot");
-    let oven = owns("portable_oven");
-    let ingredients = inventory
-        .iter()
-        .filter(|item| {
-            food_lots
-                .iter()
-                .any(|lot| lot.inventory_item_id == Some(item.id))
-        })
-        .collect::<Vec<_>>();
-    html! {
-        div class="character-action-overlay" data-character-action-dialog data-initial-focus="[data-cooking-method]:checked" {
-            a class="character-action-backdrop" href=(&close_href) aria-label="Close cooking dialog" {}
-            section class="character-action-dialog cooking-dialog" role="dialog" aria-modal="true" aria-labelledby="cooking-dialog-title" tabindex="-1" {
-            header class="character-action-dialog-header" {
-                h2 id="cooking-dialog-title" { "Cooking" }
-                a class="character-action-dialog-close" href=(&close_href) aria-label="Close cooking dialog" { "×" }
-            }
-            div class="cooking-activity" data-cooking-activity
-                data-pan-fat-ratio=(adventuresim_core::food::PAN_FRY_MIN_FAT_MASS_RATIO) {
-            aside class="cooking-pot" aria-label="Cooking pot" {
-                (sidebar_section("Pot", html! {
-                    p class="text-muted small-copy cooking-pot-empty" data-cooking-pot-empty {
-                        "Transfer ingredients here to prepare a meal."
-                    }
-                    (trade_inventory_table("cooking-pot-left", InventoryColumnSet::Basic, true, false, false, html! {}))
-                }))
-            }
-            main class="cooking-stage" {
-                section class="cooking-workspace" aria-label="Cooking workspace" {
-                    div class="cooking-method-list" aria-label="Cooking instrument" {
-                        (cooking_method("pan-fry", "Pan-fry", "meal", pan, "A pan is required", false))
-                        (cooking_method("stew", "Stew", "water-bottle", pot, "A pot and water are required", false))
-                        (cooking_method("roast", "Roast / skewer", "campfire", true, "", true))
-                        (cooking_method("bake", "Bake", "bread", oven, "A portable oven is required", false))
-                    }
-                    div class="cooking-hearth-scene" role="img"
-                        aria-label="A cooking vessel warming over a stone hearth" {
-                        span class="cooking-hearth-icon" aria-hidden="true" {}
-                    }
-                }
-                form id="cooking-submit-form" class="cooking-submit-form" method="post"
-                    action=(&cook_action) {
-                    input type="hidden" name="inventory_item_ids" value="" data-cooking-ids;
-                    input type="hidden" name="amounts_milliunits" value="" data-cooking-amounts;
-                    div class="party-offer cooking-actions" {
-                        p class="small-copy text-muted cooking-preview" data-cooking-preview {
-                            "Choose a method and stage ingredients for a preview."
+    let content = html! {
+        div class="fireplace-layout" data-cooking-activity[dish.is_none()] data-pan-fat-ratio=(adventuresim_core::food::PAN_FRY_MIN_FAT_MASS_RATIO) {
+        aside class="left-sidebar fireplace-station-sidebar" {
+            (sidebar_section("Fireplace", html! {
+                p { strong { "Loose cooking: " } (instrument.map(item_display_name).unwrap_or_else(|| "Roasting spit".into())) }
+                @if let Some(row) = dish {
+                    p data-fireplace-status { strong { (status.unwrap_or("Cooking")) } " · " (elapsed) "/" (row.target_minutes) " min" }
+                    p class="small-copy text-muted" { "Added by " (&row.contributor_name) " at character minute " (row.started_at_minute) ". Hidden food-safety state is intentionally not shown." }
+                    form action=(format!("{action_base}/retrieve")) method="post" {
+                        label { "Retrieve to "
+                            select name="inventory_scope" {
+                                option value="personal" selected[inventory_scope == "personal"] { "Personal inventory" }
+                                option value="party" selected[inventory_scope == "party"] { "Party inventory" }
+                            }
                         }
-                        a class="btn btn-secondary party-offer-cancel" href=(&close_href) { "Cancel" }
-                        button type="submit" class="btn btn-primary" disabled title="Select at least one ingredient" data-cook-submit { "Cook" }
+                        button class="btn btn-primary btn-block" type="submit" { "Retrieve dish" }
                     }
+                } @else {
+                    p class="small-copy text-muted" { "One loose spit-roasted dish may cook alongside any number of placed vessels. Each vessel uses only its own contents." }
                 }
-            }
-            aside class="cooking-ingredients" aria-label="Ingredient inventory" {
-                @let title = format!("{}'s inventory", active_character.name);
-                (sidebar_section(&title, html! {
-                    @if ingredients.is_empty() {
-                        (empty_state("No food carried.", None, None))
-                    } @else {
-                        (trade_inventory_table("cooking-inventory-right", InventoryColumnSet::Basic, true, false, false, html! {
-                            @for item in ingredients {
-                                @let definition = item_definitions.iter().find(|definition| definition.id == item.item_id);
-                                @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
-                                @let display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
-                                @let unit_mass = food_lot.map_or_else(|| definition.map_or(0.0, |definition| definition.weight), |lot| lot.mass_kg / item.qty.max(1) as f32);
-                                @let value = food_lot.map_or_else(|| item_value(definition), |lot| weight_display(lot.total_value));
-                                @let amount = inventory_amounts.iter()
-                                    .find(|state| state.inventory_item_id == item.id)
-                                    .map_or(0, |state| state.remaining_milliunits);
-                                @let display_amount = amount as f32 / 1_000_000.0;
-                                tr class="trade-inventory-row trade-row-player" data-cooking-source=(item.id) data-item-key=(&item.item_id) {
-                                    td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
-                                    td class="inventory-item-name" {
-                                        (item_name_with_food_lot(&item.item_id, &display_name, definition, food_lot))
-                                        span class="inventory-row-actions" {
-                                            @if food_lot.is_some() {
-                                                @let safety = adventuresim_core::food::definition(&item.item_id).map_or(5, |food| food.cooking_minutes);
-                                                button type="button" class="trade-transfer trade-transfer-left"
-                                                    data-cooking-stage=(item.id) data-cooking-name=(&display_name)
-                                                    data-count=(amount) data-mass=(format!("{unit_mass:.4}")) data-safety=(safety)
-                                                    data-culinary-fat=(adventuresim_core::food::definition(&item.item_id).is_some_and(|food| food.culinary_fat))
-                                                    data-salty=(food_lot.map_or(0.0, |lot| lot.salty_kg))
-                                                    data-spicy=(food_lot.map_or(0.0, |lot| lot.spicy_kg))
-                                                    data-sweet=(food_lot.map_or(0.0, |lot| lot.sweet_kg))
-                                                    data-sour=(food_lot.map_or(0.0, |lot| lot.sour_kg))
-                                                    data-savory=(food_lot.map_or(0.0, |lot| lot.savory_kg))
-                                                    data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one"
-                                                    data-label-one=(format!("Add 0.25 {display_name} to the pot"))
-                                                    data-label-target=(format!("Add {display_name} to the pot"))
-                                                    data-label-all=(format!("Add all {display_name} to the pot"))
-                                                    aria-label=(format!("Add 0.25 {display_name} to the pot"))
-                                                    title=(format!("Add 0.25 {display_name} to the pot")) { (transfer_glyph(1)) }
-                                            } @else {
-                                                (disabled_transfer_button("left", "Only food ingredients can be added to the pot"))
-                                            }
-                                        }
-                                    }
-                                    td class="inventory-count" { (weight_display(display_amount)) }
-                                    td class="inventory-weight" { (weight_display(unit_mass)) }
-                                    td class="inventory-gold" { (value) }
+            }))
+            @if !vessel_stations.is_empty() {
+                (sidebar_section("Vessels over the fire", html! {
+                    div data-inventory-browser="fireplace-vessels-left" data-optional-columns="" {
+                    @for vessel in vessel_stations {
+                        @let object_id = vessel.instrument_object_id.unwrap_or_default();
+                        @let vessel_dish = vessel_dishes.iter().find(|dish| dish.station_key == vessel.key);
+                        @let vessel_item_id = vessel.instrument_item_id.as_deref().unwrap_or("container");
+                        @let vessel_definition = definitions.iter().find(|item| item.id == vessel_item_id);
+                        section class="fireplace-vessel" data-fireplace-container=(object_id) {
+                            p { strong { (item_name_with_display(vessel_item_id, &item_display_name(vessel_item_id), vessel_definition)) } }
+                            button type="button" class="btn btn-secondary btn-small"
+                                data-container-open=(object_id) aria-label=(format!("Open {}", item_display_name(vessel_item_id))) { "Open" }
+                            @if let Some(cooking) = vessel_dish {
+                                p class="small-copy" { (cooking.display_name.as_str()) " is cooking." }
+                                form action=(format!("{action_base}/retrieve")) method="post" {
+                                    input type="hidden" name="inventory_scope" value=(format!("container:{object_id}"));
+                                    button class="btn btn-primary btn-small" type="submit" { "Retrieve into vessel" }
+                                }
+                            } @else {
+                                form action=(format!("{action_base}/container/start")) method="post" {
+                                    input type="hidden" name="container_object_id" value=(object_id);
+                                    button class="btn btn-primary btn-small" type="submit" { "Start cooking contents" }
+                                }
+                                form action=(format!("{action_base}/container/remove")) method="post" {
+                                    input type="hidden" name="container_object_id" value=(object_id);
+                                    button class="btn btn-secondary btn-small" type="submit" { "Remove from fire" }
                                 }
                             }
-                        }))
+                        }
+                    }
                     }
                 }))
             }
-            }
+            @if let Some(row) = dish {
+                section class="rest-service-menu fireplace-rest-menu" aria-label="Rest until food is ready" {
+                    div class="rest-service-heading" { strong { "Rest while cooking" } }
+                    p class="small-copy" { "Target: " (row.target_minutes) " minutes · Remaining: " (u64::from(row.target_minutes).saturating_sub(elapsed)) " minutes" }
+                    @if elapsed >= u64::from(row.target_minutes) {
+                        p class="strategic-warning" role="status" {
+                            @match row.method {
+                                CookingMethod::Stew => { "The dish is ready and will hold safely in its wet pot." }
+                                CookingMethod::Roast => { "The dish is ready. More time will dry and smoke it, reducing nutrition." }
+                                CookingMethod::PanFry | CookingMethod::Bake => { "The dish is ready. More time will burn it." }
+                            }
+                        }
+                    }
+                    form action=(rest_action) method="post" {
+                        input type="hidden" name="unit" value="minutes";
+                        input type="hidden" name="shelter" value="bivouac";
+                        label for="fireplace-rest-minutes" { "Minutes" }
+                        input id="fireplace-rest-minutes" type="range" name="duration" min="1" max=(row.target_minutes.saturating_mul(2).max(1)) value=(remaining);
+                        output for="fireplace-rest-minutes" { (remaining) }
+                        button type="submit" class="btn btn-primary btn-block" { "Rest" }
+                    }
+                }
             }
         }
-    }
-}
-
-pub(super) fn herbalism_activity_dialog(
-    location: &LocationView,
-    active_character: &Character,
-    skills: Option<&CharacterSkills>,
-    attributes: Option<&CharacterAttributes>,
-    inventory: &[InventoryItem],
-    item_definitions: &[ItemDefinition],
-) -> Markup {
-    let close_href = location.preserve_building(format!(
-        "{}/party/{}",
-        location.base_path(),
-        active_character.id
-    ));
-    let action = location.preserve_building(format!(
-        "{}/party/{}/herbalism",
-        location.base_path(),
-        active_character.id
-    ));
-    let capability = Skill::Herbalism.capped_rank_for_aptitude(
-        skills.map_or(0.0, |row| row.herbalism_hours),
-        attributes.map_or(0.0, |row| row.intelligence),
-    );
-    let ingredients = inventory
-        .iter()
-        .filter(|row| adventuresim_core::herbalism::normalize_ingredient(&row.item_id).is_some())
-        .collect::<Vec<_>>();
-    let encoded_preview = |item_id: &str, method: PreparationMethod| {
-        adventuresim_core::herbalism::preview(item_id, method, capability).map(|preview| {
-            let (output, degraded) = match preview.outcome {
-                CraftOutcome::Medication(id) => (item_display_name(id), false),
-                CraftOutcome::DegradedWaste(id) => (item_display_name(id), true),
-            };
-            let requirement = preview.required_consumable.map_or_else(
-                || "No additional consumable".to_string(),
-                |required| {
-                    format!(
-                        "{} × {}",
-                        item_display_name(required.item_id),
-                        required.units
-                    )
-                },
-            );
-            format!(
-                "{}|{}|{}|{}|{}|{}|{}",
-                output,
-                preview.duration_minutes,
-                preview.input_units,
-                requirement,
-                preview.expected_effect,
-                preview.risk,
-                degraded
-            )
-        })
+        main class="center-content settlement-main fireplace-stage" {
+            a class="btn btn-secondary btn-small" href=(back_href) { "Back" }
+            (visual_stage("campfire", title, "A working fireplace and its cooking station"))
+            @if dish.is_none() {
+                section class="cooking-activity" {
+                    input type="radio" name="method-preview" value=(method) checked hidden data-cooking-method;
+                    form id="cooking-submit-form" method="post" action=(format!("{action_base}/ingredients")) {
+                        input type="hidden" name="inventory_scope" value=(inventory_scope);
+                        input type="hidden" name="inventory_item_ids" value="" data-cooking-ids;
+                        input type="hidden" name="amounts_milliunits" value="" data-cooking-amounts;
+                        p class="strategic-warning" { "Loose food selected here is immediately consolidated into one spit-roasted meal. Each placed vessel cooks its contained food into a separate meal." }
+                        p class="small-copy text-muted cooking-preview" data-cooking-preview { "Stage at least one measured food portion." }
+                        button type="submit" class="btn btn-primary" disabled data-cook-submit { "Start spit roast" }
+                    }
+                    div data-cooking-pot-empty hidden {}
+                    div data-inventory-browser="cooking-pot-left" hidden { table { tbody {} } }
+                }
+            }
+        }
+        aside class="right-sidebar fireplace-inventory-sidebar" {
+            (sidebar_section("Inventory", html! {
+                nav class="tab-list" aria-label="Ingredient inventory source" {
+                    a class=(if inventory_scope == "personal" { "active" } else { "" }) href=(scope_href("personal")) aria-current=(if inventory_scope == "personal" { "page" } else { "false" }) { "Personal" }
+                    a class=(if inventory_scope == "party" { "active" } else { "" }) href=(scope_href("party")) aria-current=(if inventory_scope == "party" { "page" } else { "false" }) { "Party" }
+                }
+                @if dish.is_none() {
+                    div data-inventory-browser="cooking-inventory-right" {
+                        table class="trade-inventory-table" { tbody {
+                            @if inventory_scope == "personal" {
+                                @for item in personal_inventory.iter().filter(|row| row.qty > 0) {
+                                    (fireplace_inventory_row(action_base, inventory_scope, item.id, &item.item_id, item.qty, personal_amounts.iter().find(|a| a.inventory_item_id == item.id).map(|a| a.remaining_milliunits), food_lots.iter().find(|l| l.inventory_item_id == Some(item.id)), definitions, instrument))
+                                }
+                            } @else {
+                                @for item in party_inventory.iter().filter(|row| row.quantity > 0) {
+                                    (fireplace_inventory_row(action_base, inventory_scope, item.id, &item.item_id, item.quantity, party_amounts.iter().find(|a| a.party_inventory_item_id == item.id).map(|a| a.remaining_milliunits), food_lots.iter().find(|l| l.party_inventory_item_id == Some(item.id)), definitions, instrument))
+                                }
+                            }
+                        } }
+                    }
+                }
+            }))
+        }
+        }
     };
-    html! {
-        div class="character-action-overlay" data-character-action-dialog data-initial-focus="[name=inventory_item_id]" {
-            a class="character-action-backdrop" href=(&close_href) aria-label="Close herbalism dialog" {}
-            section class="character-action-dialog herbalism-dialog" role="dialog" aria-modal="true"
-                aria-labelledby="herbalism-dialog-title" tabindex="-1" data-herbalism-activity {
-                header class="character-action-dialog-header" {
-                    h2 id="herbalism-dialog-title" { "Herbalism" }
-                    a class="character-action-dialog-close" href=(&close_href)
-                        aria-label="Close herbalism dialog" { "×" }
-                }
-                form method="post" action=(&action) data-herbalism-form {
-                    section aria-labelledby="herbal-ingredient-title" {
-                        h3 id="herbal-ingredient-title" { "Medicinal ingredient" }
-                        @if ingredients.is_empty() {
-                            (empty_state("No medicinal ingredients carried.", None, None))
-                        } @else {
-                            table class="trade-inventory-table herbalism-exchange-list" {
-                                tbody {
-                                    @for row in &ingredients {
-                                        @let definition = item_definitions.iter().find(|item| item.id == row.item_id);
-                                        @let grade = adventuresim_core::herbalism::normalize_ingredient(&row.item_id)
-                                            .map_or("Ordinary", |(_, grade)| grade.label());
-                                        tr class="trade-inventory-row trade-row-player" {
-                                            td class="inventory-item-type" { (item_type_icon(&row.item_id)) }
-                                            td class="inventory-item-name" {
-                                                label {
-                                                    input type="radio" name="inventory_item_id" value=(row.id)
-                                                        data-herbal-ingredient
-                                                        data-item-id=(&row.item_id)
-                                                        data-dry-grind=[encoded_preview(&row.item_id, PreparationMethod::DryGrind)]
-                                                        data-infuse-decoct=[encoded_preview(&row.item_id, PreparationMethod::InfuseDecoct)]
-                                                        data-tincture=[encoded_preview(&row.item_id, PreparationMethod::Tincture)];
-                                                    (item_display_name(&row.item_id))
-                                                    span class="inventory-item-quality" {
-                                                        " · " (grade)
-                                                    }
-                                                }
-                                            }
-                                            td class="inventory-count" { (row.qty) }
-                                            td class="inventory-weight" { (definition.map_or(0.0, |item| item.weight)) " kg" }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    fieldset class="herbalism-methods" {
-                        legend { "Preparation method" }
-                        @for method in PreparationMethod::ALL {
-                            @let description_id = format!("herbal-method-{}-description", method.slug());
-                            label class="btn btn-secondary"
-                                tabindex="0"
-                                aria-describedby=(&description_id)
-                                aria-disabled="true"
-                                data-method-label=(method.label())
-                                data-method-description=(method.description())
-                                data-strategic-tooltip=(method.description()) {
-                                input type="radio" name="method" value=(method.slug())
-                                    data-herbal-method;
-                                (method.label())
-                                span id=(&description_id) class="sr-only"
-                                    data-herbal-method-status {
-                                    (method.description())
-                                }
-                            }
-                        }
-                    }
-                    p class="small-copy herbalism-preview" data-herbal-preview role="status" aria-live="polite" {
-                        "Select one ingredient and one method."
-                    }
-                    div class="party-offer herbalism-actions" {
-                        a class="btn btn-secondary party-offer-cancel" href=(&close_href) { "Cancel" }
-                        button type="submit" class="btn btn-primary" disabled data-herbal-submit {
-                            "Prepare"
-                        }
+    layout(content)
+}
+
+fn fireplace_inventory_row(
+    action_base: &str,
+    scope: &str,
+    id: u64,
+    item_id: &str,
+    quantity: u32,
+    measured: Option<u32>,
+    lot: Option<&FoodLot>,
+    definitions: &[ItemDefinition],
+    _installed: Option<&str>,
+) -> Markup {
+    let definition = definitions.iter().find(|d| d.id == item_id);
+    let is_tool = matches!(item_id, "cooking_pan" | "cooking_pot" | "portable_oven");
+    let display = lot.map_or_else(|| item_display_name(item_id), |l| l.display_name.clone());
+    let amount = measured.unwrap_or(quantity.saturating_mul(1_000_000));
+    html! { tr class="trade-inventory-row trade-row-player" data-cooking-source=[lot.map(|_| id)] data-personal-inventory-id=[(scope == "personal").then_some(id)] data-party-inventory-id=[(scope == "party").then_some(id)] {
+        td class="inventory-item-type" { (item_type_icon(item_id)) }
+        td class="inventory-item-name" { (item_name_with_display(item_id, &display, definition))
+            span class="inventory-row-actions" {
+                @if lot.is_some() && adventuresim_core::food::is_cookable_ingredient(item_id) {
+                    button type="button" class="trade-transfer trade-transfer-left"
+                        data-cooking-stage=(id) data-cooking-name=(&display) data-count=(amount)
+                        data-mass=(format!("{:.4}", lot.map_or(0.0, |l| l.mass_kg))) data-safety=(adventuresim_core::food::definition(item_id).map_or(5, |f| f.cooking_minutes))
+                        data-culinary-fat=(adventuresim_core::food::definition(item_id).is_some_and(|f| f.culinary_fat))
+                        data-salty=(lot.map_or(0.0, |l| l.salty_kg)) data-spicy=(lot.map_or(0.0, |l| l.spicy_kg))
+                        data-sweet=(lot.map_or(0.0, |l| l.sweet_kg)) data-sour=(lot.map_or(0.0, |l| l.sour_kg)) data-savory=(lot.map_or(0.0, |l| l.savory_kg))
+                        data-dynamic-transfer data-default-transfer-mode="one" data-transfer-mode="one"
+                        data-label-one=(format!("Add 0.25 {display}")) data-label-target=(format!("Add {display}")) data-label-all=(format!("Add all {display}"))
+                        aria-label=(format!("Add 0.25 {display}")) title=(format!("Add 0.25 {display}")) { (transfer_glyph(1)) }
+                } @else if is_tool {
+                    form action=(format!("{action_base}/container/place")) method="post" {
+                        input type="hidden" name="inventory_scope" value=(scope);
+                        input type="hidden" name="inventory_item_id" value=(id);
+                        button type="submit" class="btn btn-primary btn-small" { "Place over fire" }
                     }
                 }
             }
         }
-    }
-}
-
-fn cooking_method(
-    value: &str,
-    label: &str,
-    icon: &str,
-    available: bool,
-    reason: &str,
-    selected: bool,
-) -> Markup {
-    html! {
-        label class=(if available { "cooking-method" } else { "cooking-method disabled" })
-            title=(if available { label } else { reason }) {
-            input type="radio" name="method" value=(value) form="cooking-submit-form"
-                checked[selected] disabled[!available]
-                data-cooking-method data-unavailable-reason=[(!available).then_some(reason)];
-            span class="cooking-method-icon"
-                style=(format!("--cooking-method-icon: url('/static/icons/game/{icon}.svg')"))
-                aria-hidden="true" {}
-            span class="sr-only" { (label) }
-            @if !available { span class="sr-only" { (reason) } }
-        }
-    }
+        td class="inventory-count" { (format!("{:.2}", amount as f32 / 1_000_000.0)) }
+        td class="inventory-weight" { (definition.map_or(0.0, |d| d.weight)) }
+    } }
 }
 
 pub(super) fn filth_status_bar(
@@ -830,7 +750,7 @@ fn party_trade_inventory_rail(
                             @let display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
                             @let target = target_quantity(recipient_targets, &item.item_id);
                             @let item_name = item_display_name(&item.item_id);
-                                tr class=(if direction == "left" { "trade-inventory-row trade-row-player" } else { "trade-inventory-row trade-row-merchant" }) data-item-key=(&item.item_id) {
+                                tr class=(if direction == "left" { "trade-inventory-row trade-row-player" } else { "trade-inventory-row trade-row-merchant" }) data-item-key=(&item.item_id) data-personal-inventory-id=(item.id) {
                                     td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                     td class="inventory-item-name" {
                                         (item_name_with_food_lot(&item.item_id, &display_name, definition, food_lot))
@@ -860,6 +780,8 @@ fn discard_inventory_rail(
     inventory: &[InventoryItem],
     items: &[crate::spacetimedb::ItemDefinition],
     food_lots: &[FoodLot],
+    preparation_plans: &[BackendIngredientPreparationPlan],
+    return_to: &str,
     equip: Option<&CharacterEquipmentGraph>,
     encumbrance: EncumbranceSummary,
 ) -> Markup {
@@ -867,6 +789,9 @@ fn discard_inventory_rail(
     html! {
         (sidebar_section(&title, html! {
             (encumbrance_inventory_rail(html! {
+                @for plan in preparation_plans.iter().filter(|plan| plan.actor_character_id == character.id && plan.inventory_scope == "personal") {
+                    (ingredient_preparation_submission_form(plan, return_to))
+                }
                 @if inventory.is_empty() {
                     p class="text-muted small-copy" { "No items carried." }
                 } @else {
@@ -877,11 +802,19 @@ fn discard_inventory_rail(
                             @let food_lot = food_lots.iter().find(|lot| lot.inventory_item_id == Some(item.id));
                             @let display_name = food_lot.map_or_else(|| item_display_name(&item.item_id), |lot| lot.display_name.clone());
                             @let item_name = item_display_name(&item.item_id);
-                            tr class="trade-inventory-row trade-row-player" data-discard-source=(item.id) data-item-key=(&item.item_id) {
+                            @let cut_plan = preparation_plans.iter().find(|plan| plan.actor_character_id == character.id && plan.inventory_scope == "personal" && plan.inventory_item_id == item.id && plan.action == IngredientPreparationAction::Cut);
+                            @let grind_plan = preparation_plans.iter().find(|plan| plan.actor_character_id == character.id && plan.inventory_scope == "personal" && plan.inventory_item_id == item.id && plan.action == IngredientPreparationAction::Grind);
+                            tr class="trade-inventory-row trade-row-player" data-discard-source=(item.id) data-personal-inventory-id=(item.id) data-item-key=(&item.item_id) {
                                 td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                 td class="inventory-item-name" {
                                     (item_name_with_food_lot(&item.item_id, &display_name, definition, food_lot))
                                     span class="inventory-row-actions" {
+                                        @if let Some(plan) = cut_plan {
+                                            button type="submit" form=(ingredient_preparation_form_id(plan)) class="btn btn-secondary btn-small" aria-label=(format!("Cut {item_name}")) data-strategic-tooltip=(format!("Cut · {} min · precise edged weapon", plan.duration_minutes)) { "Cut" }
+                                        }
+                                        @if let Some(plan) = grind_plan {
+                                            button type="submit" form=(ingredient_preparation_form_id(plan)) class="btn btn-secondary btn-small" aria-label=(format!("Grind {item_name}")) data-strategic-tooltip=(format!("Grind · {} min", plan.duration_minutes)) { "Grind" }
+                                        }
                                         @if is_equipped {
                                             (disabled_transfer_button("left", "Equipped items cannot be discarded"))
                                         } @else {
@@ -906,6 +839,41 @@ fn discard_inventory_rail(
                 }
             }, html! {}, encumbrance))
         }))
+    }
+}
+
+fn ingredient_preparation_form_id(plan: &BackendIngredientPreparationPlan) -> String {
+    let action = match plan.action {
+        IngredientPreparationAction::Cut => "cut",
+        IngredientPreparationAction::Grind => "grind",
+    };
+    format!(
+        "ingredient-preparation-{}-{}-{}-{action}",
+        plan.actor_character_id, plan.inventory_scope, plan.inventory_item_id
+    )
+}
+
+fn ingredient_preparation_submission_form(
+    plan: &BackendIngredientPreparationPlan,
+    return_to: &str,
+) -> Markup {
+    let action = match plan.action {
+        IngredientPreparationAction::Cut => "cut",
+        IngredientPreparationAction::Grind => "grind",
+    };
+    html! {
+        form id=(ingredient_preparation_form_id(plan)) method="post" action="/api/inventory/prepare"
+            class="inventory-edge-action" hidden {
+            input type="hidden" name="inventory_item_id" value=(plan.inventory_item_id);
+            input type="hidden" name="inventory_scope" value=(&plan.inventory_scope);
+            input type="hidden" name="food_lot_id" value=(plan.food_lot_id);
+            input type="hidden" name="material_object_id" value=(plan.material_object_id);
+            input type="hidden" name="request_id" value=(&plan.request_id);
+            input type="hidden" name="expected_revision" value=(plan.expected_revision);
+            input type="hidden" name="attempt_generation" value=(plan.attempt_generation);
+            input type="hidden" name="preparation_action" value=(action);
+            input type="hidden" name="return_to" value=(return_to);
+        }
     }
 }
 
@@ -1031,7 +999,7 @@ pub fn live_merchant_shop_page(
                         @let is_equipped = equip.is_some_and(|equip| equip.contains(item.id));
                         @let sell_price = adventuresim_core::local_problem::adjust_price(adventuresim_core::strategic_economy::language_adjusted_sell_price(merchant_inventory_sell_price(definition, food_lot), trade_language), -problem_sell_penalty_bps);
                         @let target = target_quantity(personal_targets, &item.item_id);
-                        tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-merchant-equipped=(is_equipped) data-inventory-quantity=(item.qty) data-target=(target) {
+                        tr class="trade-inventory-row trade-row-player" data-merchant-item=(&item.item_id) data-personal-inventory-id=(item.id) data-merchant-equipped=(is_equipped) data-inventory-quantity=(item.qty) data-target=(target) {
                         @let condition = conditions.iter().find(|condition| condition.inventory_item_id == item.id);
                         @let repair_skill = smith_skill;
                         @let durable_item = definition.is_some_and(|definition| definition.repairable);
@@ -1132,6 +1100,7 @@ pub fn party_pool_page(
     stake: u64,
     items: &[crate::spacetimedb::ItemDefinition],
     food_lots: &[FoodLot],
+    preparation_plans: &[BackendIngredientPreparationPlan],
     party_members: &[Character],
     equip: Option<&CharacterEquipmentGraph>,
     personal_targets: &[InventoryQuantityTarget],
@@ -1143,6 +1112,9 @@ pub fn party_pool_page(
         aside class="left-sidebar" {
             (sidebar_section("Party inventory", html! {
                 (encumbrance_inventory_rail(html! {
+                    @for plan in preparation_plans.iter().filter(|plan| plan.actor_character_id == character.id && plan.inventory_scope == "party") {
+                        (ingredient_preparation_submission_form(plan, &format!("{}/party-inventory", location.base_path())))
+                    }
                     div class="party-stake-summary" tabindex="0"
                         data-strategic-tooltip="Withdrawals use your stake; personal coin covers an indivisible item's shortfall."
                         aria-label=(format!("Your available stake: {stake} coin. Withdrawals use your stake; personal coin covers an indivisible item's shortfall.")) {
@@ -1158,11 +1130,20 @@ pub fn party_pool_page(
                             @let target = target_quantity(personal_targets, &item.item_id);
                             @let current = inventory.iter().find(|personal| personal.item_id == item.item_id).map_or(0, |personal| personal.qty);
                             @let item_name = item_display_name(&item.item_id);
-                            tr class="trade-inventory-row" {
+                            @let cut_plan = preparation_plans.iter().find(|plan| plan.actor_character_id == character.id && plan.inventory_scope == "party" && plan.inventory_item_id == item.id && plan.action == IngredientPreparationAction::Cut);
+                            @let grind_plan = preparation_plans.iter().find(|plan| plan.actor_character_id == character.id && plan.inventory_scope == "party" && plan.inventory_item_id == item.id && plan.action == IngredientPreparationAction::Grind);
+                            tr class="trade-inventory-row" data-party-inventory-id=(item.id) {
                                 td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                 td class="inventory-item-name" {
                                     (item_name_with_food_lot(&item.item_id, &food_display_name, definition, food_lot))
-                                span class="inventory-row-actions" { button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode="one" data-count=(item.quantity) data-current=(current) data-target=(target) data-label-one=(format!("Withdraw one {item_name}")) data-label-target=(format!("Withdraw {item_name} to target")) data-label-all=(format!("Withdraw all {item_name}")) title=(if value > stake { format!("Withdraw one {item_name}; {} personal coin required", value - stake) } else { format!("Withdraw one {item_name} using your stake") }) aria-label=(format!("Withdraw one {item_name}")) { (transfer_glyph(1)) } }
+                                span class="inventory-row-actions" {
+                                    @for (plan, action, label) in [(cut_plan, "cut", "Cut"), (grind_plan, "grind", "Grind")] {
+                                        @if let Some(plan) = plan {
+                                            button type="submit" form=(ingredient_preparation_form_id(plan)) class="btn btn-secondary btn-small" aria-label=(format!("{label} {item_name}")) data-preparation-action=(action) data-strategic-tooltip=(format!("{label} · {} min", plan.duration_minutes)) { (label) }
+                                        }
+                                    }
+                                    button type="button" class="trade-transfer trade-transfer-right" data-dynamic-transfer data-default-transfer-mode="one" data-pool-stage=(item.id) data-pool-direction="withdraw" data-transfer-mode="one" data-count=(item.quantity) data-current=(current) data-target=(target) data-label-one=(format!("Withdraw one {item_name}")) data-label-target=(format!("Withdraw {item_name} to target")) data-label-all=(format!("Withdraw all {item_name}")) title=(if value > stake { format!("Withdraw one {item_name}; {} personal coin required", value - stake) } else { format!("Withdraw one {item_name} using your stake") }) aria-label=(format!("Withdraw one {item_name}")) { (transfer_glyph(1)) }
+                                }
                                 }
                                 td class="inventory-count" { (quantity_target_control(item.quantity, target_quantity(party_targets, &item.item_id), &item.item_id, true)) }
                                 td class="inventory-weight" { (item_weight(definition)) }
@@ -1190,7 +1171,7 @@ pub fn party_pool_page(
                             @let target = target_quantity(party_targets, &item.item_id);
                             @let current = pooled.iter().find(|pooled| pooled.item_id == item.item_id).map_or(0, |pooled| pooled.quantity);
                             @let item_name = item_display_name(&item.item_id);
-                            tr class="trade-inventory-row" {
+                            tr class="trade-inventory-row" data-personal-inventory-id=(item.id) {
                                 td class="inventory-item-type" { (item_type_icon(&item.item_id)) }
                                 td class="inventory-item-name" {
                                     (item_name_with_food_lot(&item.item_id, &food_display_name, definition, food_lot))
@@ -1658,17 +1639,21 @@ fn equipment_control(
                         "{}: {}{}{}",
                         placement.id,
                         anchor_or_parent,
-                        (!protection.is_empty())
-                            .then(|| {
+                        if !protection.is_empty() {
+                            {
                                 format!(
                                     "; protects {protection} ({:.0}% coverage)",
                                     definition.coverage * 100.0
                                 )
-                            })
-                            .unwrap_or_default(),
-                        (!conflicts.is_empty())
-                            .then(|| format!("; conflict with {}", conflicts.join(", ")))
-                            .unwrap_or_default()
+                            }
+                        } else {
+                            Default::default()
+                        },
+                        if !conflicts.is_empty() {
+                            format!("; conflict with {}", conflicts.join(", "))
+                        } else {
+                            Default::default()
+                        }
                     )
                 })
                 .collect::<Vec<_>>()
@@ -2117,10 +2102,16 @@ fn item_name_with_display_quality(
         span class=(quality.map_or_else(|| "inventory-item-label".to_string(), |quality| format!("inventory-item-label item-quality-{quality}"))) title=[label]
             data-item-name=(item_id)
             data-item-kind=[definition.map(|item| format!("{:?}", item.kind).to_ascii_lowercase())]
+            data-item-melee=[definition.map(|item| item.melee)]
+            data-item-ranged=[definition.map(|item| item.ranged)]
             data-item-group=[alcohol_group]
             data-group-name=[alcohol_group.map(|_| "Alcohol")]
             data-food-lot=[adventuresim_core::food::definition(item_id).map(|_| "true")]
+            data-container-capacity-ml=[definition.and_then(|item| (item.container_capacity_ml > 0).then_some(item.container_capacity_ml))]
+            data-exterior-volume-ml=[definition.map(|item| item.exterior_volume_ml)]
             data-stat-accuracy=[definition.map(|item| weight_display(item.accuracy))]
+            data-stat-swing-precision=[definition.map(|item| weight_display(item.swing_precision))]
+            data-stat-stab-precision=[definition.map(|item| weight_display(item.stab_precision))]
             data-stat-reach=[definition.map(|item| weight_display(item.reach))]
             data-stat-penetration=[definition.map(|item| weight_display(item.penetration))]
             data-stat-damage=[damage_types]
@@ -2470,6 +2461,21 @@ mod tests {
     use adventuresim_core::equipment::EncumbranceSummary;
 
     #[test]
+    fn fireplace_container_rows_expose_shared_browser_metadata_and_open_controls() {
+        let source = include_str!("trade.rs");
+        let fireplace = source
+            .split("pub fn fireplace_page")
+            .nth(1)
+            .unwrap()
+            .split("pub(super) fn filth_status_bar")
+            .next()
+            .unwrap();
+        assert!(fireplace.contains("data-inventory-browser=\"fireplace-vessels-left\""));
+        assert!(fireplace.contains("data-container-open=(object_id)"));
+        assert!(fireplace.contains("item_name_with_display(item_id, &display, definition)"));
+    }
+
+    #[test]
     fn inferred_general_blacksmith_exposes_limited_weapon_and_armor_stock() {
         let industries = adventuresim_world_schema::InferredIndustryProfile::new(vec![
             adventuresim_world_schema::IndustryEvidence::Fallback(
@@ -2515,6 +2521,7 @@ mod tests {
             id: 1,
             inventory_item_id: Some(9),
             party_inventory_item_id: None,
+            material_revision: 1,
             display_name: "Roasted venison".into(),
             preparation: FoodPreparation::Stewed,
             ingredient_item_ids: vec!["raw_venison".into()],
@@ -2860,8 +2867,10 @@ mod tests {
         assert!(rendered.contains(">Coin<"));
         assert!(rendered.contains("data-item-edit-url=\"https://github.com/"));
         assert!(rendered.contains("content/items/catalog.yaml#L"));
-        assert!(rendered.contains("data-currency-name=\"Lübeck mark\""));
-        assert!(!rendered.contains(">Lübeck mark<"));
+        let historical_name = adventuresim_core::strategic_currency::currency_name("lubeck_mark")
+            .expect("Lübeck mark remains an authored currency");
+        assert!(rendered.contains(&format!("data-currency-name=\"{historical_name}\"")));
+        assert!(!rendered.contains(&format!(">{historical_name}<")));
     }
 
     #[test]
@@ -3535,5 +3544,116 @@ mod tests {
         assert!(equipment_target_is_self_or_descendant(&equip, 10, 10));
         assert!(equipment_target_is_self_or_descendant(&equip, 10, 30));
         assert!(!equipment_target_is_self_or_descendant(&equip, 30, 10));
+    }
+
+    #[test]
+    fn ingredient_preparation_is_an_accessible_inner_edge_action_not_a_skill_modal() {
+        let source = include_str!("trade.rs");
+        assert!(source.contains("/api/inventory/prepare"));
+        assert!(source.contains("name=\"preparation_action\""));
+        assert!(source.contains("name=\"material_object_id\""));
+        assert!(source.contains("name=\"request_id\""));
+        assert!(source.contains("name=\"expected_revision\""));
+        assert!(source.contains("name=\"attempt_generation\""));
+        assert!(source.contains("name=\"return_to\""));
+        assert!(source.contains("plan.inventory_scope == \"personal\""));
+        assert!(source.contains("plan.inventory_scope == \"party\""));
+        assert!(source.contains("party_pool_page"));
+        assert!(!source.contains("name=\"action\" value=\"cut\""));
+        assert!(source.contains("aria-label=(format!(\"Cut {item_name}\"))"));
+        assert!(source.contains("plan.duration_minutes"));
+        let removed_menu_marker = ["data-herbalism", "-activity"].concat();
+        assert!(!source.contains(&removed_menu_marker));
+    }
+
+    #[test]
+    fn ingredient_preparation_forms_are_detached_from_tables_with_complete_payloads() {
+        let character = Character {
+            id: 7,
+            name: "Cook".into(),
+            xp: 0,
+            level: 1,
+            gold: 0,
+            current_settlement_id: Some("test".into()),
+            current_case_site_id: None,
+            party_id: Some("party".into()),
+            age_years: 20,
+            alive: true,
+            temporary: false,
+            social_notification_count: 0,
+            automatic_social_chat_enabled: false,
+        };
+        let inventory = [InventoryItem {
+            id: 11,
+            character_id: character.id,
+            item_id: "poppy".into(),
+            qty: 1,
+        }];
+        let plan = BackendIngredientPreparationPlan {
+            actor_character_id: character.id,
+            inventory_scope: "personal".into(),
+            inventory_item_id: 11,
+            food_lot_id: 13,
+            material_object_id: 17,
+            request_id: "request-token".into(),
+            expected_revision: 19,
+            attempt_generation: 23,
+            action: IngredientPreparationAction::Cut,
+            duration_minutes: 5,
+            next_display_name: "Cut poppy".into(),
+        };
+        let form_id = ingredient_preparation_form_id(&plan);
+        let rendered = discard_inventory_rail(
+            &character,
+            &inventory,
+            &[],
+            &[],
+            std::slice::from_ref(&plan),
+            "/locations/settlement/test/party/7/inventory",
+            None,
+            EncumbranceSummary::default(),
+        )
+        .into_string();
+
+        let form_start = rendered
+            .find(&format!("<form id=\"{form_id}\""))
+            .expect("detached preparation form");
+        let form_end = form_start
+            + rendered[form_start..]
+                .find("</form>")
+                .expect("closed preparation form");
+        let table_start = rendered.find("<table").expect("inventory table");
+        assert!(
+            form_end < table_start,
+            "preparation form must precede the table"
+        );
+        let form = &rendered[form_start..form_end];
+        for field in [
+            "inventory_item_id",
+            "inventory_scope",
+            "food_lot_id",
+            "material_object_id",
+            "request_id",
+            "expected_revision",
+            "attempt_generation",
+            "preparation_action",
+            "return_to",
+        ] {
+            assert!(
+                form.contains(&format!("name=\"{field}\"")),
+                "missing {field}"
+            );
+        }
+        assert!(form.contains("value=\"/locations/settlement/test/party/7/inventory\""));
+        assert!(rendered.contains(&format!("type=\"submit\" form=\"{form_id}\"")));
+        let tbody = rendered
+            .split("<tbody>")
+            .nth(1)
+            .and_then(|tail| tail.split("</tbody>").next())
+            .expect("inventory tbody");
+        assert!(
+            !tbody.contains("<form"),
+            "forms inside tables are parser-unsafe"
+        );
     }
 }

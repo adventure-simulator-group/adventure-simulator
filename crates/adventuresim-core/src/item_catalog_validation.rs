@@ -245,6 +245,7 @@ fn validate_item(
             "id",
             "display_name",
             "weight_kg",
+            "exterior_volume_ml",
             "base_value",
             "tags",
             "presentation",
@@ -258,6 +259,9 @@ fn validate_item(
             "flexibility",
             "range_of_motion",
             "accuracy",
+            "preferred_attack",
+            "swing_precision",
+            "stab_precision",
             "reach_m",
             "penetration",
             "balance",
@@ -309,6 +313,15 @@ fn validate_item(
         None => errors.push(format!("{file}: {path}.tags: required array")),
     }
     finite_in(item, "weight_kg", 0.0, 10_000.0, file, &path, errors);
+    if !item
+        .get("exterior_volume_ml")
+        .and_then(Value::as_u64)
+        .is_some_and(|volume| (1..=1_000_000).contains(&volume))
+    {
+        errors.push(format!(
+            "{file}: {path}.exterior_volume_ml: expected 1..1000000"
+        ));
+    }
     if item.get("base_value").and_then(Value::as_u64).is_none() {
         errors.push(format!(
             "{file}: {path}.base_value: required non-negative integer"
@@ -330,12 +343,12 @@ fn validate_item(
                 &format!("{path}.presentation"),
                 errors,
             );
-            if let Some(icon) = presentation.get("icon").and_then(Value::as_str) {
-                if !valid_icon_slug(icon) {
-                    errors.push(format!(
-                        "{file}: {path}.presentation.icon: must be a safe lowercase icon slug"
-                    ));
-                }
+            if let Some(icon) = presentation.get("icon").and_then(Value::as_str)
+                && !valid_icon_slug(icon)
+            {
+                errors.push(format!(
+                    "{file}: {path}.presentation.icon: must be a safe lowercase icon slug"
+                ));
             }
         }
         None => errors.push(format!("{file}: {path}.presentation: required object")),
@@ -373,6 +386,9 @@ fn validate_item(
     } else {
         for field in [
             "accuracy",
+            "preferred_attack",
+            "swing_precision",
+            "stab_precision",
             "reach_m",
             "penetration",
             "balance",
@@ -796,6 +812,28 @@ fn validate_weapon(item: &Map<String, Value>, file: &str, path: &str, errors: &m
     }
     let melee = item.get("melee").and_then(Value::as_bool).unwrap_or(false);
     let ranged = item.get("ranged").and_then(Value::as_bool).unwrap_or(false);
+    if melee {
+        for field in ["swing_precision", "stab_precision"] {
+            finite_in(item, field, 0.0, 10_000.0, file, path, errors);
+            if item
+                .get(field)
+                .and_then(Value::as_f64)
+                .is_none_or(|value| value <= 0.0)
+            {
+                errors.push(format!(
+                    "{file}: {path}.{field}: melee weapons require an explicit positive value"
+                ));
+            }
+        }
+        if !matches!(
+            item.get("preferred_attack").and_then(Value::as_str),
+            Some("swing" | "stab")
+        ) {
+            errors.push(format!(
+                "{file}: {path}.preferred_attack: expected swing or stab"
+            ));
+        }
+    }
     if !melee && !ranged {
         errors.push(format!(
             "{file}: {path}: weapon must be melee and/or ranged"
@@ -1231,6 +1269,7 @@ mod tests {
             "id": id,
             "display_name": "Test",
             "weight_kg": 1.0,
+            "exterior_volume_ml": 1250,
             "base_value": 1,
             "tags": [],
             "presentation": {"icon": "help"},

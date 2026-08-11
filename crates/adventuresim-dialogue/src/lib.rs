@@ -53,11 +53,24 @@ pub enum ParticipantKind {
 pub struct Topic {
     pub id: String,
     pub label: String,
+    /// Presentation grouping. Discovery remains controlled by the authoritative
+    /// known-topic rows; this metadata never makes a topic visible by itself.
+    #[serde(default)]
+    pub category: TopicCategory,
     #[serde(default)]
     pub initially_known: bool,
     #[serde(default)]
     pub conditions: Condition,
     pub responses: Vec<Response>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TopicCategory {
+    Quest,
+    #[default]
+    Lore,
+    About,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -77,7 +90,36 @@ pub struct Response {
 #[serde(deny_unknown_fields)]
 pub struct Turn {
     pub speaker: String,
+    pub addressee: Addressee,
     pub fragments: Vec<Fragment>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Addressee {
+    /// The concrete participant who caused this response, constrained to the
+    /// authored role. This remains singular even when the role permits a party.
+    Participant {
+        role: String,
+    },
+    Role {
+        role: String,
+    },
+    Group {
+        role: String,
+    },
+}
+
+impl Addressee {
+    pub fn role(&self) -> &str {
+        match self {
+            Self::Participant { role } | Self::Role { role } | Self::Group { role } => role,
+        }
+    }
+
+    pub fn is_group(&self) -> bool {
+        matches!(self, Self::Group { .. })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -134,8 +176,22 @@ pub enum RuntimeSlot {
     OrganizationName,
     OrganizationAdmissionTerms,
     OrganizationDuesTerms,
-    OrganizationRankStanding,
+    OrganizationRoleStanding,
     OrganizationRepresentativeName,
+    /// Pairwise, server-resolved address fragments. These are bound for the
+    /// actual speaker and addressee(s) of each persisted turn.
+    AddresseeTitle,
+    SecondPersonSubject,
+    SecondPersonObject,
+    SecondPersonPossessive,
+    SecondPersonPossessivePronoun,
+    SecondPersonReflexive,
+    SecondPersonBe,
+    SecondPersonHave,
+    SecondPersonDo,
+    SecondPersonWill,
+    SecondPersonMay,
+    SecondPersonShould,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -164,7 +220,7 @@ impl RuntimeBindings {
                     let testimony = self
                         .testimony
                         .as_ref()
-                        .ok_or_else(|| DialogueError::MissingRuntimeSlot(RuntimeSlot::Testimony))?;
+                        .ok_or(DialogueError::MissingRuntimeSlot(RuntimeSlot::Testimony))?;
                     for (line_index, line) in testimony.iter().enumerate() {
                         if line.spoken_text.chars().count() > 512
                             || line.claim_text.is_empty()
@@ -265,13 +321,14 @@ impl RuntimeBindings {
             } else {
                 1
             };
-            source_refs.extend(std::iter::repeat(source.clone()).take(count));
+            source_refs.extend(std::iter::repeat_n(source.clone(), count));
         }
         if source_refs.len() != fragments.len() {
             return Err(DialogueError::SourceAlignment);
         }
         Ok(ResolvedTurn {
             speaker: turn.speaker.clone(),
+            addressee: turn.addressee.clone(),
             fragments,
             source_refs,
         })
@@ -315,17 +372,33 @@ pub struct Choice {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Effect {
-    LearnTopic { topic: String },
-    AcceptContract { contract: String },
-    ReportContract { contract: String },
-    BeginApprenticeship { profession: String },
+    LearnTopic {
+        topic: String,
+    },
+    AcceptContract {
+        contract: String,
+    },
+    ReportContract {
+        contract: String,
+    },
+    BeginApprenticeship {
+        profession: String,
+    },
     JoinOrganization,
     PayOrganizationDues,
-    RequestOrganizationPromotion,
+    RequestOrganizationPromotion {
+        #[serde(default)]
+        to_role_id: Option<String>,
+    },
     PresentOrganization,
-    SetFlag { flag: String, value: bool },
+    SetFlag {
+        flag: String,
+        value: bool,
+    },
     ReceiveReferredTestimony,
-    InvestigationAction { action: InvestigationAction },
+    InvestigationAction {
+        action: InvestigationAction,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -385,6 +458,7 @@ impl ResolvedFragment {
 #[serde(deny_unknown_fields)]
 pub struct ResolvedTurn {
     pub speaker: String,
+    pub addressee: Addressee,
     pub fragments: Vec<ResolvedFragment>,
     pub source_refs: Vec<Option<SourceRef>>,
 }
@@ -532,6 +606,9 @@ fn validate_turn_semantics(
 ) -> usize {
     if !roles.contains_key(&turn.speaker) {
         errors.push(DialogueError::UnknownRole(turn.speaker.clone()));
+    }
+    if !roles.contains_key(turn.addressee.role()) {
+        errors.push(DialogueError::UnknownRole(turn.addressee.role().to_owned()));
     }
     if turn.fragments.is_empty() {
         errors.push(DialogueError::EmptyContent(response_id.into()));
@@ -826,6 +903,14 @@ pub fn source_for_topic(conversation_id: &str, topic_id: &str) -> Option<&'stati
     None
 }
 
+pub fn category_for_topic(conversation_id: &str, topic_id: &str) -> Option<TopicCategory> {
+    find_conversation(conversation_id)?
+        .topics
+        .iter()
+        .find(|topic| topic.id == topic_id)
+        .map(|topic| topic.category)
+}
+
 pub fn source_for_choice(
     conversation_id: &str,
     topic_id: &str,
@@ -946,6 +1031,30 @@ pub fn github_edit_url_for_location(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn topic_categories_are_typed_and_default_to_lore() {
+        assert_eq!(
+            category_for_topic("service-professions", "quest"),
+            Some(TopicCategory::Quest)
+        );
+        assert_eq!(
+            category_for_topic("service-professions", "profession"),
+            Some(TopicCategory::Lore)
+        );
+        assert_eq!(category_for_topic("service-professions", "hidden"), None);
+        for (conversation, topic) in [
+            ("service-professions", "referred-testimony"),
+            ("service-professions", "return-recovered-property"),
+            ("service-professions", "expose-false-account"),
+            ("organization-representative", "referred-testimony"),
+        ] {
+            assert_eq!(
+                category_for_topic(conversation, topic),
+                Some(TopicCategory::Quest)
+            );
+        }
+    }
     #[test]
     fn compiled_catalog_is_valid_and_has_source_spans() {
         validate(catalog()).unwrap();
@@ -988,32 +1097,18 @@ mod tests {
         assert_eq!(select_response(topic, &f).unwrap().id, "morning");
     }
     #[test]
-    fn participant_estate_is_a_typed_scalar_fact() {
-        let key = FactKey::ParticipantEstate {
+    fn participant_organization_role_is_a_typed_multi_membership_fact() {
+        let key = FactKey::ParticipantRole {
             role: "speaker".into(),
+            profession: "citizen".into(),
         };
         assert_eq!(key.participant_roles().collect::<Vec<_>>(), ["speaker"]);
         let mut facts = FactContext::default();
-        facts
-            .facts
-            .insert(key.clone(), FactValue::Text("noble".into()));
+        facts.facts.insert(key.clone(), FactValue::Bool(true));
         assert!(facts.matches(&Condition::Fact {
             key,
-            equals: FactValue::Text("noble".into()),
+            equals: FactValue::Bool(true),
         }));
-        let key = FactKey::ParticipantEstate {
-            role: "speaker".into(),
-        };
-        for estate in ["serf", "freeman", "burgher", "noble"] {
-            assert!(key.authoring_value_is_valid(&FactValue::Text(estate.into())));
-        }
-        assert!(!key.authoring_value_is_valid(&FactValue::Text("priest".into())));
-        assert!(!key.authoring_value_is_valid(&FactValue::Bool(true)));
-        let compiler = include_str!("../build.rs");
-        assert!(compiler.contains("participant_estate requires a role with max=1"));
-        assert!(compiler.contains("definition.max == 1"));
-        assert!(compiler.contains("participant_estate requires a valid textual estate"));
-        assert!(compiler.contains("key.authoring_value_is_valid(equals)"));
     }
     #[test]
     fn conversation_start_selects_contextual_authored_greeting() {
@@ -1177,7 +1272,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(effects.contains(&&Effect::JoinOrganization));
         assert!(effects.contains(&&Effect::PayOrganizationDues));
-        assert!(effects.contains(&&Effect::RequestOrganizationPromotion));
+        assert!(effects.contains(&&Effect::RequestOrganizationPromotion { to_role_id: None }));
         assert!(effects.contains(&&Effect::PresentOrganization));
         let encoded = serde_json::to_string(&effects).unwrap();
         assert!(!encoded.contains("organization_id"));
@@ -1199,8 +1294,8 @@ mod tests {
             ),
             (
                 "promotion",
-                vec!["organization_rank_standing"],
-                Effect::RequestOrganizationPromotion,
+                vec!["organization_role_standing"],
+                Effect::RequestOrganizationPromotion { to_role_id: None },
             ),
         ] {
             let response = &conversation
@@ -1336,8 +1431,20 @@ mod tests {
             "organization_name",
             "organization_admission_terms",
             "organization_dues_terms",
-            "organization_rank_standing",
+            "organization_role_standing",
             "organization_representative_name",
+            "addressee_title",
+            "second_person_subject",
+            "second_person_object",
+            "second_person_possessive",
+            "second_person_possessive_pronoun",
+            "second_person_reflexive",
+            "second_person_be",
+            "second_person_have",
+            "second_person_do",
+            "second_person_will",
+            "second_person_may",
+            "second_person_should",
         ] {
             assert!(build.contains(&format!("| \"{slot}\"")));
         }
@@ -1349,6 +1456,18 @@ mod tests {
         assert_eq!(c.roles["customers"].max, 4);
         let r = &c.topics[0].responses[0];
         assert!(r.turns.iter().any(|t| t.speaker == "assistant"));
+        let directed = r
+            .turns
+            .iter()
+            .find(|turn| turn.speaker == "shopkeep" && turn.addressee.role() == "assistant")
+            .expect("three-party dialogue directs a singular line to the assistant");
+        assert!(!directed.addressee.is_group());
+        assert!(directed.fragments.iter().any(|fragment| matches!(
+            fragment,
+            Fragment::Runtime {
+                slot: RuntimeSlot::SecondPersonSubject
+            }
+        )));
         assert_eq!(r.prompt.as_ref().unwrap().mode, PromptMode::Single);
     }
     #[test]
@@ -1402,7 +1521,7 @@ mod tests {
         );
 
         let malformed: CatalogDocument = serde_json::from_str(
-            r#"{"conversations":[{"id":"start","roles":{"player":{"kind":"player"},"npc":{"kind":"npc"}},"on_start":[{"id":"bad","priority":0,"turns":[{"speaker":"missing","fragments":[{"kind":"text","value":"Hello"}]}],"effects":[],"prompt":null}],"topics":[]}]}"#,
+            r#"{"conversations":[{"id":"start","roles":{"player":{"kind":"player"},"npc":{"kind":"npc"}},"on_start":[{"id":"bad","priority":0,"turns":[{"speaker":"missing","addressee":{"kind":"participant","role":"player"},"fragments":[{"kind":"text","value":"Hello"}]}],"effects":[],"prompt":null}],"topics":[]}]}"#,
         )
         .unwrap();
         assert!(
@@ -1429,7 +1548,7 @@ mod tests {
 
     #[test]
     fn shared_prompt_schema_closes_mode_and_resolution_with_a_real_default() {
-        let prefix = r#"{"conversations":[{"id":"prompt","roles":{"player":{"kind":"player"},"npc":{"kind":"npc"}},"on_start":[],"topics":[{"id":"topic","label":"Topic","responses":[{"id":"response","priority":0,"turns":[{"speaker":"npc","fragments":[{"kind":"text","value":"Choose."}]}],"effects":[],"prompt":{"id":"choice","respondent":"player","mode":"single","#;
+        let prefix = r#"{"conversations":[{"id":"prompt","roles":{"player":{"kind":"player"},"npc":{"kind":"npc"}},"on_start":[],"topics":[{"id":"topic","label":"Topic","responses":[{"id":"response","priority":0,"turns":[{"speaker":"npc","addressee":{"kind":"participant","role":"player"},"fragments":[{"kind":"text","value":"Choose."}]}],"effects":[],"prompt":{"id":"choice","respondent":"player","mode":"single","#;
         let suffix = r#""min_choices":1,"max_choices":1,"choices":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}}]}]}]}"#;
         let omitted = format!("{prefix}{suffix}");
         let parsed: authoring_schema::AuthoringDocument = serde_json::from_str(&omitted).unwrap();
@@ -1486,13 +1605,16 @@ mod tests {
             .find(|response| response.prompt.is_some())
             .unwrap();
         let speaker = response.turns[0].speaker.clone();
+        let addressee = response.turns[0].addressee.clone();
         let choice = &mut response.prompt.as_mut().unwrap().choices[0];
         choice.result_turns.push(Turn {
             speaker: speaker.clone(),
+            addressee: addressee.clone(),
             fragments: Vec::new(),
         });
         choice.result_turns.push(Turn {
             speaker,
+            addressee,
             fragments: vec![Fragment::Topic {
                 topic: "missing-inline-topic".into(),
                 label: "missing".into(),
@@ -1537,6 +1659,67 @@ mod tests {
             }
         );
         assert!(RuntimeBindings::default().resolve(&authored).is_err());
+    }
+
+    #[test]
+    fn address_fragments_render_titles_pronouns_and_agreeing_verbs() {
+        let authored = vec![
+            Fragment::Runtime {
+                slot: RuntimeSlot::AddresseeTitle,
+            },
+            Fragment::Text { value: ", ".into() },
+            Fragment::Runtime {
+                slot: RuntimeSlot::SecondPersonSubject,
+            },
+            Fragment::Text { value: " ".into() },
+            Fragment::Runtime {
+                slot: RuntimeSlot::SecondPersonBe,
+            },
+            Fragment::Text {
+                value: " welcome; this book is ".into(),
+            },
+            Fragment::Runtime {
+                slot: RuntimeSlot::SecondPersonPossessivePronoun,
+            },
+            Fragment::Text { value: ".".into() },
+        ];
+        let mut familiar = RuntimeBindings::default();
+        familiar.bind(RuntimeSlot::AddresseeTitle, "Father");
+        familiar.bind(RuntimeSlot::SecondPersonSubject, "thou");
+        familiar.bind(RuntimeSlot::SecondPersonBe, "art");
+        familiar.bind(RuntimeSlot::SecondPersonPossessivePronoun, "thine");
+        let familiar_text = familiar
+            .resolve(&authored)
+            .unwrap()
+            .into_iter()
+            .map(|fragment| match fragment {
+                ResolvedFragment::Text { value } => value,
+                _ => String::new(),
+            })
+            .collect::<String>();
+        assert_eq!(
+            familiar_text,
+            "Father, thou art welcome; this book is thine."
+        );
+
+        let mut formal_plural = RuntimeBindings::default();
+        formal_plural.bind(RuntimeSlot::AddresseeTitle, "gentlefolk");
+        formal_plural.bind(RuntimeSlot::SecondPersonSubject, "you");
+        formal_plural.bind(RuntimeSlot::SecondPersonBe, "are");
+        formal_plural.bind(RuntimeSlot::SecondPersonPossessivePronoun, "yours");
+        let plural_text = formal_plural
+            .resolve(&authored)
+            .unwrap()
+            .into_iter()
+            .map(|fragment| match fragment {
+                ResolvedFragment::Text { value } => value,
+                _ => String::new(),
+            })
+            .collect::<String>();
+        assert_eq!(
+            plural_text,
+            "gentlefolk, you are welcome; this book is yours."
+        );
     }
 
     #[test]
@@ -1603,6 +1786,9 @@ mod tests {
         };
         let turn = Turn {
             speaker: "npc".into(),
+            addressee: Addressee::Role {
+                role: "player".into(),
+            },
             fragments: authored,
         };
         let resolved_turn = bindings

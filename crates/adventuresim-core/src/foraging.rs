@@ -6,6 +6,21 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::{
+    physical_object::CustodyCharacterId,
+    rights::{
+        DecisionProvenance, DomainJurisdiction, DomainRightsOperation, DomainRightsResource,
+        DomainRightsSubject, PrivateRightsDecision, RightsDecisionKind, RightsJurisdiction,
+        RightsOperation, RightsQuestion, RightsResource, RightsRevision, RightsSubject,
+    },
+    strategic_action::{
+        ActionCoordinates, ActionEffect, ActionRequirement, AuthoritativeSnapshot,
+        CalculatedAction, DomainCapability, DomainEffect, DomainInterruption, DomainRequirement,
+        DomainTarget, PlanInput, PlanProvenance, PlanningOutcome, PublicPreview, PublicRejection,
+        RequestedDuration, RequirementCheck, TimeBoundaries, build_plan,
+    },
+};
+
 pub const MIN_FORAGE_MINUTES: u64 = 60;
 pub const MAX_FORAGE_MINUTES: u64 = 24 * 60;
 pub const ILLEGAL_FORAGE_INFAMY: f32 = 1.0;
@@ -307,7 +322,7 @@ pub struct ForageResolution {
 }
 
 pub fn validate_duration(minutes: u64) -> Result<(), &'static str> {
-    if (MIN_FORAGE_MINUTES..=MAX_FORAGE_MINUTES).contains(&minutes) && minutes % 60 == 0 {
+    if (MIN_FORAGE_MINUTES..=MAX_FORAGE_MINUTES).contains(&minutes) && minutes.is_multiple_of(60) {
         Ok(())
     } else {
         Err("Foraging duration must use whole hours from one to 24 hours")
@@ -499,6 +514,309 @@ pub fn training_hours(mixture: LocalTerrainMixture, elapsed_minutes: u64) -> [f3
         hours * f32::from(mixture.hills) / 1_000.0,
         hours * f32::from(mixture.wetlands) / 1_000.0,
     ]
+}
+
+/// Closed action vocabulary for the shared planner adapter. The vicinity is
+/// named by `ActionCoordinates::place`; no parallel string location is
+/// authoritative.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ForagePlanTarget {
+    CurrentVicinity,
+}
+impl DomainTarget for ForagePlanTarget {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ForagePlanRequirement {
+    ExactPresence,
+    EncounterClear,
+    EnvironmentCurrent,
+    CapabilityCurrent,
+    SourcesAvailable,
+    LegalityClassified,
+}
+impl DomainRequirement for ForagePlanRequirement {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ForagePlanCapability {
+    Terrain,
+    Stealth,
+}
+impl DomainCapability for ForagePlanCapability {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ForagePlanInterruption {
+    CharacterBoundary,
+}
+impl DomainInterruption for ForagePlanInterruption {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ForageLegality {
+    Legal,
+    IllegalAttempt,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ForagePlanEffect {
+    AttemptSearch {
+        actor: CustodyCharacterId,
+        requested_minutes: u64,
+    },
+    CommitResolution {
+        resolution: ForageResolution,
+        permits_yield: bool,
+    },
+}
+impl DomainEffect for ForagePlanEffect {}
+
+/// Intentionally contains no environment, habitat availability, license
+/// evidence, random seed, roll, DC, or prospective yield.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForagePublicPreview {
+    pub source_ids: Vec<String>,
+    pub requested_minutes: u64,
+}
+impl PublicPreview for ForagePublicPreview {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ForageRightsSubject {}
+impl DomainRightsSubject for ForageRightsSubject {}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ForageRightsResource {
+    Source(ForageSource),
+}
+impl DomainRightsResource for ForageRightsResource {}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ForageRightsOperation {
+    Harvest,
+}
+impl DomainRightsOperation for ForageRightsOperation {}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ForageRightsJurisdiction {}
+impl DomainJurisdiction for ForageRightsJurisdiction {}
+
+pub type ForageRightsQuestion = RightsQuestion<
+    ForageRightsSubject,
+    ForageRightsResource,
+    ForageRightsOperation,
+    ForageRightsJurisdiction,
+>;
+
+/// Licenses are global organizational privileges. Local place law remains a
+/// separate part of the action's legality classification.
+pub fn forage_license_question(
+    actor: CustodyCharacterId,
+    source: ForageSource,
+) -> Result<ForageRightsQuestion, crate::rights::RightsQuestionError> {
+    RightsQuestion::try_new(
+        RightsSubject::Character(actor),
+        RightsResource::Domain(ForageRightsResource::Source(source)),
+        RightsOperation::Domain(ForageRightsOperation::Harvest),
+        RightsJurisdiction::Global,
+    )
+}
+
+pub fn decide_forage_license(
+    question: &ForageRightsQuestion,
+    privilege_presented: bool,
+    evidence_revision: u64,
+) -> PrivateRightsDecision<()> {
+    let question_digest = forage_license_question_digest(question);
+    let provenance = DecisionProvenance {
+        evidence_revision: RightsRevision(evidence_revision),
+        question_digest,
+    };
+    if privilege_presented {
+        PrivateRightsDecision::allowed(Vec::new(), None, provenance)
+    } else {
+        PrivateRightsDecision::denied(Vec::new(), provenance)
+    }
+}
+
+fn forage_license_question_digest(question: &ForageRightsQuestion) -> [u8; 32] {
+    let mut hash = Sha256::new();
+    hash.update(b"forage-license-rights-v1");
+    if let RightsSubject::Character(actor) = question.subject() {
+        hash.update(actor.get().to_le_bytes());
+    }
+    if let RightsResource::Domain(ForageRightsResource::Source(source)) = question.resource() {
+        hash.update(source.id().as_bytes());
+    }
+    hash.finalize().into()
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForageLicenseDecision {
+    actor: CustodyCharacterId,
+    source: ForageSource,
+    decision: PrivateRightsDecision<()>,
+}
+
+impl ForageLicenseDecision {
+    pub fn try_new(
+        question: &ForageRightsQuestion,
+        decision: PrivateRightsDecision<()>,
+    ) -> Result<Self, &'static str> {
+        let RightsSubject::Character(actor) = question.subject() else {
+            return Err("foraging license subject must be a character");
+        };
+        let RightsResource::Domain(ForageRightsResource::Source(source)) = question.resource()
+        else {
+            return Err("foraging license resource must be a source");
+        };
+        if !matches!(
+            question.operation(),
+            RightsOperation::Domain(ForageRightsOperation::Harvest)
+        ) || !matches!(question.jurisdiction(), RightsJurisdiction::Global)
+            || decision.provenance().question_digest != forage_license_question_digest(question)
+        {
+            return Err("foraging license decision does not bind its question");
+        }
+        Ok(Self {
+            actor: *actor,
+            source: *source,
+            decision,
+        })
+    }
+}
+
+pub struct ForagePlanAuthority {
+    pub coordinates: ActionCoordinates<ForagePlanTarget>,
+    pub provenance: PlanProvenance,
+    pub snapshot: AuthoritativeSnapshot,
+    pub current_minute: u64,
+    pub duration: RequestedDuration,
+    pub terminal_minute: Option<u64>,
+    pub exact_presence: bool,
+    pub encounter_clear: bool,
+    pub environment_current: bool,
+    pub capability_current: bool,
+    pub sources_available: bool,
+    pub license_decisions: Vec<ForageLicenseDecision>,
+    /// Settlement and cultivation restrictions are authoritative local law,
+    /// independent of globally presented organization privileges.
+    pub local_restriction: bool,
+    pub legality: ForageLegality,
+    pub source_ids: Vec<String>,
+    /// The adapter resolves this for the planner's exact elapsed interval.
+    /// It is `None` only when no time elapses.
+    pub resolution: Option<ForageResolution>,
+}
+
+pub type ForagePlanningOutcome = PlanningOutcome<
+    ForagePlanTarget,
+    ForagePlanRequirement,
+    ForagePlanCapability,
+    ForagePlanInterruption,
+    ForagePlanEffect,
+    ForagePublicPreview,
+>;
+
+pub fn build_forage_plan(authority: ForagePlanAuthority) -> ForagePlanningOutcome {
+    let sources_are_canonical = !authority.source_ids.is_empty()
+        && authority
+            .source_ids
+            .windows(2)
+            .all(|pair| pair[0] < pair[1]);
+    let actor = authority.coordinates.actor();
+    let decisions_match_sources = authority.license_decisions.len() == authority.source_ids.len()
+        && authority
+            .license_decisions
+            .iter()
+            .zip(&authority.source_ids)
+            .all(|(binding, source_id)| {
+                binding.actor == actor
+                    && binding.source.id() == source_id
+                    && matches!(
+                        binding.decision.kind(),
+                        RightsDecisionKind::Allowed | RightsDecisionKind::Denied
+                    )
+            });
+    let any_denied = authority
+        .license_decisions
+        .iter()
+        .any(|binding| binding.decision.kind() == RightsDecisionKind::Denied);
+    let expected_legality = if authority.local_restriction || any_denied {
+        ForageLegality::IllegalAttempt
+    } else {
+        ForageLegality::Legal
+    };
+    let legality_classified =
+        sources_are_canonical && decisions_match_sources && authority.legality == expected_legality;
+    let requirements = [
+        (
+            ForagePlanRequirement::ExactPresence,
+            authority.exact_presence,
+        ),
+        (
+            ForagePlanRequirement::EncounterClear,
+            authority.encounter_clear,
+        ),
+        (
+            ForagePlanRequirement::EnvironmentCurrent,
+            authority.environment_current,
+        ),
+        (
+            ForagePlanRequirement::CapabilityCurrent,
+            authority.capability_current,
+        ),
+        (
+            ForagePlanRequirement::SourcesAvailable,
+            authority.sources_available,
+        ),
+        (
+            ForagePlanRequirement::LegalityClassified,
+            legality_classified,
+        ),
+    ]
+    .into_iter()
+    .map(|(requirement, satisfied)| RequirementCheck {
+        requirement: ActionRequirement::Domain(requirement),
+        satisfied,
+    })
+    .collect();
+    let requested_minutes = authority.duration.minutes();
+    let source_ids = authority.source_ids;
+    let resolution = authority.resolution;
+    build_plan(
+        PlanInput {
+            coordinates: authority.coordinates,
+            provenance: authority.provenance,
+            snapshot: authority.snapshot,
+            current_minute: authority.current_minute,
+            duration: authority.duration,
+            boundaries: TimeBoundaries {
+                terminal_minute: authority.terminal_minute,
+                interruption: None,
+            },
+            requirements,
+            sanitized_rejection: PublicRejection::Unavailable,
+        },
+        move |_, time| {
+            let mut effects = vec![ActionEffect::Domain(ForagePlanEffect::AttemptSearch {
+                actor,
+                requested_minutes,
+            })];
+            if time.elapsed_minutes > 0
+                && let Some(mut resolution) = resolution
+            {
+                let permits_yield = time.permits_completion_effects();
+                if !permits_yield {
+                    resolution.yields.clear();
+                }
+                effects.push(ActionEffect::Domain(ForagePlanEffect::CommitResolution {
+                    resolution,
+                    permits_yield,
+                }));
+            }
+            CalculatedAction {
+                effects,
+                public_preview: ForagePublicPreview {
+                    source_ids,
+                    requested_minutes,
+                },
+            }
+        },
+    )
 }
 
 #[cfg(test)]
@@ -726,5 +1044,191 @@ mod tests {
             stealth_dc_millirank(environment, 60),
             Some(SETTLEMENT_STEALTH_DC_MILLIRANK)
         );
+    }
+
+    #[test]
+    fn planner_emits_no_partial_yield_and_preserves_partial_exposure() {
+        use crate::{
+            physical_object::CustodyCharacterId,
+            strategic_action::{
+                ActionCoordinates, ActionDefinitionId, ActionRequestId, ActionTarget,
+                AuthoritativeSnapshot, AuthorityBinding, PlanProvenance, PlanningOutcome,
+                RequestedDuration, SnapshotDigest, SnapshotRevision,
+            },
+            strategic_place::StrategicPlaceId,
+        };
+
+        let build = |terminal_minute, resolution: Option<ForageResolution>| {
+            let actor = CustodyCharacterId::try_new(7).unwrap();
+            let place = StrategicPlaceId::settlement("lubeck").unwrap();
+            let question = forage_license_question(actor, ForageSource::Plants).unwrap();
+            build_forage_plan(ForagePlanAuthority {
+                coordinates: ActionCoordinates::try_new(
+                    actor,
+                    ActionTarget::Place(place.clone()),
+                    place,
+                    None,
+                    Vec::new(),
+                )
+                .unwrap(),
+                provenance: PlanProvenance {
+                    request_id: ActionRequestId::try_new("request").unwrap(),
+                    action_id: ActionDefinitionId::try_new("forage:current-vicinity").unwrap(),
+                    input_digest: SnapshotDigest([1; 32]),
+                    authority_binding: AuthorityBinding([1; 32]),
+                },
+                snapshot: AuthoritativeSnapshot {
+                    revision: SnapshotRevision(0),
+                    digest: SnapshotDigest([1; 32]),
+                },
+                current_minute: 100,
+                duration: RequestedDuration::try_new(60).unwrap(),
+                terminal_minute,
+                exact_presence: true,
+                encounter_clear: true,
+                environment_current: true,
+                capability_current: true,
+                sources_available: true,
+                license_decisions: vec![
+                    ForageLicenseDecision::try_new(
+                        &question,
+                        decide_forage_license(&question, false, 100),
+                    )
+                    .unwrap(),
+                ],
+                local_restriction: false,
+                legality: ForageLegality::IllegalAttempt,
+                source_ids: vec!["plants".into()],
+                resolution,
+            })
+        };
+        let result = ForageResolution {
+            yields: vec![ForageYield {
+                item_id: "sage",
+                quantity: 2,
+            }],
+            stealth_dc_millirank: Some(1_750),
+            stealth_succeeded: Some(false),
+        };
+
+        let PlanningOutcome::Ready(zero) = build(Some(100), None) else {
+            panic!("zero-time plan rejected")
+        };
+        assert_eq!(zero.effects().len(), 1);
+
+        let PlanningOutcome::Ready(partial) = build(Some(130), Some(result.clone())) else {
+            panic!("partial plan rejected")
+        };
+        assert!(partial.effects().iter().any(|effect| matches!(
+            effect,
+            ActionEffect::Domain(ForagePlanEffect::CommitResolution {
+                resolution,
+                permits_yield: false,
+            }) if resolution.yields.is_empty() && resolution.stealth_succeeded == Some(false)
+        )));
+
+        let PlanningOutcome::Ready(complete) = build(None, Some(result)) else {
+            panic!("complete plan rejected")
+        };
+        assert!(complete.effects().iter().any(|effect| matches!(
+            effect,
+            ActionEffect::Domain(ForagePlanEffect::CommitResolution {
+                resolution,
+                permits_yield: true,
+            }) if resolution.yields.len() == 1
+        )));
+    }
+
+    #[test]
+    fn forage_license_questions_use_global_jurisdiction() {
+        let actor = CustodyCharacterId::try_new(3).unwrap();
+        let question = forage_license_question(actor, ForageSource::HighGame).unwrap();
+        assert!(matches!(
+            question.jurisdiction(),
+            RightsJurisdiction::Global
+        ));
+        assert_eq!(
+            decide_forage_license(&question, true, 9).kind(),
+            RightsDecisionKind::Allowed
+        );
+        assert_eq!(
+            decide_forage_license(&question, false, 9).kind(),
+            RightsDecisionKind::Denied
+        );
+    }
+
+    #[test]
+    fn planner_rejects_missing_or_mismatched_source_rights() {
+        use crate::strategic_action::{
+            ActionCoordinates, ActionDefinitionId, ActionRequestId, ActionTarget,
+            AuthoritativeSnapshot, AuthorityBinding, PlanProvenance, PlanningOutcome,
+            RequestedDuration, SnapshotDigest, SnapshotRevision,
+        };
+        use crate::strategic_place::StrategicPlaceId;
+
+        let actor = CustodyCharacterId::try_new(9).unwrap();
+        let place = StrategicPlaceId::settlement("lubeck").unwrap();
+        let authority = |source_ids, license_decisions, legality| ForagePlanAuthority {
+            coordinates: ActionCoordinates::try_new(
+                actor,
+                ActionTarget::Place(place.clone()),
+                place.clone(),
+                None,
+                Vec::new(),
+            )
+            .unwrap(),
+            provenance: PlanProvenance {
+                request_id: ActionRequestId::try_new("rights-test").unwrap(),
+                action_id: ActionDefinitionId::try_new("forage:current-vicinity").unwrap(),
+                input_digest: SnapshotDigest([3; 32]),
+                authority_binding: AuthorityBinding([3; 32]),
+            },
+            snapshot: AuthoritativeSnapshot {
+                revision: SnapshotRevision(1),
+                digest: SnapshotDigest([3; 32]),
+            },
+            current_minute: 0,
+            duration: RequestedDuration::try_new(60).unwrap(),
+            terminal_minute: None,
+            exact_presence: true,
+            encounter_clear: true,
+            environment_current: true,
+            capability_current: true,
+            sources_available: true,
+            license_decisions,
+            local_restriction: false,
+            legality,
+            source_ids,
+            resolution: Some(ForageResolution {
+                yields: Vec::new(),
+                stealth_dc_millirank: None,
+                stealth_succeeded: None,
+            }),
+        };
+        assert!(matches!(
+            build_forage_plan(authority(
+                vec!["plants".into()],
+                Vec::new(),
+                ForageLegality::Legal,
+            )),
+            PlanningOutcome::Rejected(_)
+        ));
+
+        let fish = forage_license_question(actor, ForageSource::Fish).unwrap();
+        let fish_decision = decide_forage_license(&fish, true, 0);
+        let plants = forage_license_question(actor, ForageSource::Plants).unwrap();
+        assert!(ForageLicenseDecision::try_new(&plants, fish_decision.clone()).is_err());
+        assert!(matches!(
+            build_forage_plan(authority(
+                vec!["plants".into()],
+                vec![ForageLicenseDecision::try_new(&fish, fish_decision).unwrap()],
+                ForageLegality::Legal,
+            )),
+            PlanningOutcome::Rejected(_)
+        ));
+        assert!(matches!(
+            build_forage_plan(authority(Vec::new(), Vec::new(), ForageLegality::Legal)),
+            PlanningOutcome::Rejected(_)
+        ));
     }
 }

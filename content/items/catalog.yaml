@@ -2,111 +2,105 @@
   "schema_version": 1,
   "items": [
     {
+      "id": "glass_bottle",
+      "display_name": "Glass bottle",
+      "weight_kg": 0.2,
+      "exterior_volume_ml": 250,
+      "base_value": 2,
+      "tags": ["simple", "liquid_container", "tincture_vessel"],
+      "presentation": {"icon": "help"},
+      "kind": "simple",
+      "capabilities": {"container": {"capacity_ml": 250}}
+    },
+    {
+      "id": "glass_jar",
+      "display_name": "Glass jar",
+      "weight_kg": 0.4,
+      "exterior_volume_ml": 625,
+      "base_value": 3,
+      "tags": ["simple", "liquid_container", "tincture_vessel"],
+      "presentation": {"icon": "help"},
+      "kind": "simple",
+      "capabilities": {"container": {"capacity_ml": 500}}
+    },
+    {
+      "id": "mortar_and_pestle",
+      "display_name": "Mortar and pestle",
+      "weight_kg": 1.5,
+      "exterior_volume_ml": 1875,
+      "base_value": 5,
+      "tags": ["simple", "grinding_tool"],
+      "presentation": {"icon": "help"},
+      "kind": "simple"
+    },
+    {
       "id": "tincture_spirit",
       "display_name": "Tincture spirit",
       "weight_kg": 0.12,
+
+      "exterior_volume_ml": 150,
       "base_value": 4,
       "tags": ["ingredient", "alcohol", "alcoholic_solvent", "tincture_solvent"],
       "presentation": {"icon": "beer-stein"},
       "kind": "ingredient"
     },
     {
-      "id": "willow_bark_poor", "display_name": "Poor willow bark", "weight_kg": 0.08,
-      "base_value": 1, "tags": ["ingredient", "medicinal_herb", "grade_poor"],
-      "presentation": {"icon": "help"}, "kind": "ingredient"
-    },
-    {
-      "id": "willow_bark_fine", "display_name": "Fine willow bark", "weight_kg": 0.08,
-      "base_value": 4, "tags": ["ingredient", "medicinal_herb", "grade_fine"],
-      "presentation": {"icon": "help"}, "kind": "ingredient"
-    },
-    {
-      "id": "comfrey_poor", "display_name": "Poor comfrey", "weight_kg": 0.08,
-      "base_value": 1, "tags": ["ingredient", "medicinal_herb", "grade_poor"],
-      "presentation": {"icon": "help"}, "kind": "ingredient"
-    },
-    {
-      "id": "comfrey_fine", "display_name": "Fine comfrey", "weight_kg": 0.08,
-      "base_value": 4, "tags": ["ingredient", "medicinal_herb", "grade_fine"],
-      "presentation": {"icon": "help"}, "kind": "ingredient"
-    },
-    {
-      "id": "poppy_poor", "display_name": "Poor poppy", "weight_kg": 0.05,
-      "base_value": 1, "tags": ["ingredient", "medicinal_herb", "grade_poor"],
-      "presentation": {"icon": "help"}, "kind": "ingredient"
-    },
-    {
-      "id": "poppy_fine", "display_name": "Fine poppy", "weight_kg": 0.05,
-      "base_value": 4, "tags": ["ingredient", "medicinal_herb", "grade_fine"],
-      "presentation": {"icon": "help"}, "kind": "ingredient"
-    },
-    {
-      "id": "sage_poor", "display_name": "Poor sage", "weight_kg": 0.05,
-      "base_value": 1, "tags": ["ingredient", "medicinal_herb", "grade_poor"],
-      "presentation": {"icon": "help"}, "kind": "ingredient"
-    },
-    {
-      "id": "sage_fine", "display_name": "Fine sage", "weight_kg": 0.05,
-      "base_value": 4, "tags": ["ingredient", "medicinal_herb", "grade_fine"],
-      "presentation": {"icon": "help"}, "kind": "ingredient"
-    },
-    {
-      "id": "spent_herb_waste", "display_name": "Spent herb waste", "weight_kg": 0.05,
+      "id": "spent_herb_waste", "display_name": "Spent herb waste", "weight_kg": 0.05, "exterior_volume_ml": 63,
       "base_value": 0, "tags": ["herbal_waste"],
       "presentation": {"icon": "help"}, "kind": "simple"
     },
     {
-      "id": "weak_willow_decoction", "display_name": "Weak willow decoction", "weight_kg": 0.25,
+      "id": "weak_willow_decoction", "display_name": "Weak willow decoction", "weight_kg": 0.25, "exterior_volume_ml": 313,
       "base_value": 3, "tags": ["medication", "herbal_preparation", "potency_weak"],
       "presentation": {"icon": "help"}, "kind": "medication"
     },
     {
-      "id": "strong_willow_decoction", "display_name": "Strong willow decoction", "weight_kg": 0.25,
+      "id": "strong_willow_decoction", "display_name": "Strong willow decoction", "weight_kg": 0.25, "exterior_volume_ml": 313,
       "base_value": 9, "tags": ["medication", "herbal_preparation", "potency_strong"],
       "presentation": {"icon": "help"}, "kind": "medication"
     },
     {
-      "id": "weak_comfrey_poultice", "display_name": "Weak comfrey poultice", "weight_kg": 0.18,
+      "id": "weak_comfrey_poultice", "display_name": "Weak comfrey poultice", "weight_kg": 0.18, "exterior_volume_ml": 225,
       "base_value": 3, "tags": ["medication", "herbal_preparation", "potency_weak"],
       "presentation": {"icon": "help"}, "kind": "medication"
     },
     {
-      "id": "comfrey_poultice", "display_name": "Comfrey poultice", "weight_kg": 0.18,
+      "id": "comfrey_poultice", "display_name": "Comfrey poultice", "weight_kg": 0.18, "exterior_volume_ml": 225,
       "base_value": 6, "tags": ["medication", "herbal_preparation", "potency_ordinary"],
       "presentation": {"icon": "help"}, "kind": "medication"
     },
     {
-      "id": "fine_comfrey_poultice", "display_name": "Fine comfrey poultice", "weight_kg": 0.18,
+      "id": "fine_comfrey_poultice", "display_name": "Fine comfrey poultice", "weight_kg": 0.18, "exterior_volume_ml": 225,
       "base_value": 9, "tags": ["medication", "herbal_preparation", "potency_strong"],
       "presentation": {"icon": "help"}, "kind": "medication"
     },
     {
-      "id": "weak_poppy_tincture", "display_name": "Weak poppy tincture", "weight_kg": 0.12,
+      "id": "weak_poppy_tincture", "display_name": "Weak poppy tincture", "weight_kg": 0.12, "exterior_volume_ml": 150,
       "base_value": 4, "tags": ["medication", "herbal_preparation", "potency_weak"],
       "presentation": {"icon": "help"}, "kind": "medication"
     },
     {
-      "id": "poppy_tincture", "display_name": "Poppy tincture", "weight_kg": 0.12,
+      "id": "poppy_tincture", "display_name": "Poppy tincture", "weight_kg": 0.12, "exterior_volume_ml": 150,
       "base_value": 8, "tags": ["medication", "herbal_preparation", "potency_ordinary"],
       "presentation": {"icon": "help"}, "kind": "medication"
     },
     {
-      "id": "strong_poppy_tincture", "display_name": "Strong poppy tincture", "weight_kg": 0.12,
+      "id": "strong_poppy_tincture", "display_name": "Strong poppy tincture", "weight_kg": 0.12, "exterior_volume_ml": 150,
       "base_value": 12, "tags": ["medication", "herbal_preparation", "potency_strong"],
       "presentation": {"icon": "help"}, "kind": "medication"
     },
     {
-      "id": "weak_sage_infusion", "display_name": "Weak sage infusion", "weight_kg": 0.25,
+      "id": "weak_sage_infusion", "display_name": "Weak sage infusion", "weight_kg": 0.25, "exterior_volume_ml": 313,
       "base_value": 3, "tags": ["medication", "herbal_preparation", "potency_weak"],
       "presentation": {"icon": "help"}, "kind": "medication"
     },
     {
-      "id": "sage_infusion", "display_name": "Sage infusion", "weight_kg": 0.25,
+      "id": "sage_infusion", "display_name": "Sage infusion", "weight_kg": 0.25, "exterior_volume_ml": 313,
       "base_value": 6, "tags": ["medication", "herbal_preparation", "potency_ordinary"],
       "presentation": {"icon": "help"}, "kind": "medication"
     },
     {
-      "id": "fine_sage_infusion", "display_name": "Fine sage infusion", "weight_kg": 0.25,
+      "id": "fine_sage_infusion", "display_name": "Fine sage infusion", "weight_kg": 0.25, "exterior_volume_ml": 313,
       "base_value": 9, "tags": ["medication", "herbal_preparation", "potency_strong"],
       "presentation": {"icon": "help"}, "kind": "medication"
     },
@@ -114,6 +108,8 @@
       "id": "apple",
       "display_name": "Apple",
       "weight_kg": 0.18,
+
+      "exterior_volume_ml": 225,
       "base_value": 1,
       "tags": [
         "food"
@@ -145,6 +141,8 @@
       "id": "aqua_vitae",
       "display_name": "Aqua vitae",
       "weight_kg": 0.11,
+
+      "exterior_volume_ml": 138,
       "base_value": 4,
       "tags": [
         "simple",
@@ -169,6 +167,8 @@
       "id": "arming_cap",
       "display_name": "Arming cap",
       "weight_kg": 0.35,
+
+      "exterior_volume_ml": 438,
       "base_value": 2,
       "tags": [
         "armor"
@@ -206,6 +206,8 @@
       "id": "arming_doublet",
       "display_name": "Arming doublet",
       "weight_kg": 2.5,
+
+      "exterior_volume_ml": 3125,
       "base_value": 12,
       "tags": [
         "armor"
@@ -241,8 +243,13 @@
     },
     {
       "id": "arming_sword",
+      "preferred_attack": "swing",
+      "swing_precision": 0.45,
+      "stab_precision": 1.0,
       "display_name": "Arming sword",
       "weight_kg": 1.3,
+
+      "exterior_volume_ml": 1625,
       "base_value": 28,
       "tags": [
         "weapon"
@@ -283,6 +290,8 @@
       "id": "arrow",
       "display_name": "Arrow",
       "weight_kg": 0.05,
+
+      "exterior_volume_ml": 63,
       "base_value": 1,
       "tags": [
         "simple",
@@ -297,6 +306,8 @@
       "id": "bandage",
       "display_name": "Bandage",
       "weight_kg": 0.05,
+
+      "exterior_volume_ml": 63,
       "base_value": 1,
       "tags": [
         "simple",
@@ -311,6 +322,8 @@
       "id": "barbute",
       "display_name": "Barbute",
       "weight_kg": 2.5,
+
+      "exterior_volume_ml": 3125,
       "base_value": 35,
       "tags": [
         "armor"
@@ -350,8 +363,13 @@
     },
     {
       "id": "baselard",
+      "preferred_attack": "stab",
+      "swing_precision": 0.35,
+      "stab_precision": 1.1,
       "display_name": "Baselard",
       "weight_kg": 0.4,
+
+      "exterior_volume_ml": 500,
       "base_value": 6,
       "tags": [
         "weapon"
@@ -391,8 +409,13 @@
     },
     {
       "id": "bauernwehr",
+      "preferred_attack": "swing",
+      "swing_precision": 0.45,
+      "stab_precision": 0.6,
       "display_name": "Bauernwehr",
       "weight_kg": 0.7,
+
+      "exterior_volume_ml": 875,
       "base_value": 8,
       "tags": [
         "weapon"
@@ -434,6 +457,8 @@
       "id": "brandenburg_groschen",
       "display_name": "Brandenburg groschen",
       "weight_kg": 0.01,
+
+      "exterior_volume_ml": 13,
       "base_value": 1,
       "tags": [
         "currency"
@@ -447,6 +472,8 @@
       "id": "breastplate",
       "display_name": "Breastplate",
       "weight_kg": 3.5,
+
+      "exterior_volume_ml": 4375,
       "base_value": 70,
       "tags": [
         "armor"
@@ -484,6 +511,8 @@
       "id": "brigandine",
       "display_name": "Brigandine",
       "weight_kg": 5.5,
+
+      "exterior_volume_ml": 6875,
       "base_value": 50,
       "tags": [
         "armor"
@@ -521,6 +550,8 @@
       "id": "buckler",
       "display_name": "Buckler",
       "weight_kg": 1,
+
+      "exterior_volume_ml": 1250,
       "base_value": 5,
       "tags": [
         "shield"
@@ -548,6 +579,8 @@
       "id": "burgonet",
       "display_name": "Burgonet",
       "weight_kg": 2.3,
+
+      "exterior_volume_ml": 2875,
       "base_value": 55,
       "tags": [
         "armor"
@@ -588,6 +621,8 @@
       "id": "butter",
       "display_name": "Butter",
       "weight_kg": 0.05,
+
+      "exterior_volume_ml": 63,
       "base_value": 2,
       "tags": [
         "food",
@@ -620,6 +655,8 @@
       "id": "charcoal",
       "display_name": "Charcoal",
       "weight_kg": 0.15,
+
+      "exterior_volume_ml": 188,
       "base_value": 1,
       "tags": [
         "ingredient"
@@ -633,6 +670,8 @@
       "id": "close_helmet",
       "display_name": "Close helmet",
       "weight_kg": 3,
+
+      "exterior_volume_ml": 3750,
       "base_value": 75,
       "tags": [
         "armor"
@@ -672,8 +711,13 @@
     },
     {
       "id": "club",
+      "preferred_attack": "swing",
+      "swing_precision": 0.25,
+      "stab_precision": 0.05,
       "display_name": "Club",
       "weight_kg": 1.2,
+
+      "exterior_volume_ml": 1500,
       "base_value": 1,
       "tags": [
         "weapon"
@@ -713,17 +757,22 @@
       "id": "comfrey",
       "display_name": "Comfrey",
       "weight_kg": 0.08,
+
+      "exterior_volume_ml": 100,
       "base_value": 2,
-      "tags": ["ingredient", "medicinal_herb", "grade_ordinary"],
+      "tags": ["ingredient", "food", "medicinal_herb"],
       "presentation": {
         "icon": "help"
       },
-      "kind": "ingredient"
+      "kind": "ingredient",
+      "capabilities": {"food": {"class": "herb", "nutrition_kcal": 0, "growth_per_hour": 0.01, "cooking_minutes": 8, "flavors_kg": {"salty": 0, "spicy": 0, "sweet": 0, "sour": 0, "savory": 0}, "culinary_fat": false, "quality": 3, "value_per_unit": 2}}
     },
     {
       "id": "cooked_meal",
       "display_name": "Cooked meal",
       "weight_kg": 0.65,
+
+      "exterior_volume_ml": 813,
       "base_value": 1,
       "tags": [
         "food"
@@ -755,6 +804,8 @@
       "id": "cooking_pan",
       "display_name": "Cooking pan",
       "weight_kg": 1.2,
+
+      "exterior_volume_ml": 3000,
       "base_value": 6,
       "tags": [
         "simple",
@@ -763,12 +814,19 @@
       "presentation": {
         "icon": "help"
       },
-      "kind": "simple"
+      "kind": "simple",
+      "capabilities": {
+        "container": {
+          "capacity_ml": 2500
+        }
+      }
     },
     {
       "id": "cooking_pot",
       "display_name": "Cooking pot",
       "weight_kg": 2.2,
+
+      "exterior_volume_ml": 9000,
       "base_value": 8,
       "tags": [
         "simple",
@@ -777,12 +835,19 @@
       "presentation": {
         "icon": "help"
       },
-      "kind": "simple"
+      "kind": "simple",
+      "capabilities": {
+        "container": {
+          "capacity_ml": 8000
+        }
+      }
     },
     {
       "id": "cooling_willow_draught",
       "display_name": "Cooling willow draught",
       "weight_kg": 0.25,
+
+      "exterior_volume_ml": 313,
       "base_value": 6,
       "tags": [
         "medication"
@@ -796,6 +861,8 @@
       "id": "cuirass",
       "display_name": "Cuirass",
       "weight_kg": 6,
+
+      "exterior_volume_ml": 7500,
       "base_value": 110,
       "tags": [
         "armor"
@@ -833,6 +900,8 @@
       "id": "danish_mark",
       "display_name": "Danish mark",
       "weight_kg": 0.01,
+
+      "exterior_volume_ml": 13,
       "base_value": 1,
       "tags": [
         "currency"
@@ -846,6 +915,8 @@
       "id": "dried_mint",
       "display_name": "Dried mint",
       "weight_kg": 0.05,
+
+      "exterior_volume_ml": 63,
       "base_value": 2,
       "tags": [
         "ingredient"
@@ -859,6 +930,8 @@
       "id": "fauld",
       "display_name": "Fauld",
       "weight_kg": 1.6,
+
+      "exterior_volume_ml": 2000,
       "base_value": 40,
       "tags": [
         "armor"
@@ -894,8 +967,13 @@
     },
     {
       "id": "flanged_mace",
+      "preferred_attack": "swing",
+      "swing_precision": 0.3,
+      "stab_precision": 0.05,
       "display_name": "Flanged mace",
       "weight_kg": 1.2,
+
+      "exterior_volume_ml": 1500,
       "base_value": 10,
       "tags": [
         "weapon"
@@ -935,6 +1013,8 @@
       "id": "garlic",
       "display_name": "Garlic",
       "weight_kg": 0.1,
+
+      "exterior_volume_ml": 125,
       "base_value": 1,
       "tags": [
         "ingredient",
@@ -968,6 +1048,8 @@
       "id": "greave",
       "display_name": "Greave",
       "weight_kg": 1.4,
+
+      "exterior_volume_ml": 1750,
       "base_value": 45,
       "tags": [
         "armor"
@@ -1010,8 +1092,13 @@
     },
     {
       "id": "halberd",
+      "preferred_attack": "swing",
+      "swing_precision": 0.5,
+      "stab_precision": 0.8,
       "display_name": "Halberd",
       "weight_kg": 2.4,
+
+      "exterior_volume_ml": 3000,
       "base_value": 24,
       "tags": [
         "weapon"
@@ -1055,6 +1142,8 @@
       "id": "hamburg_mark",
       "display_name": "Hamburg mark",
       "weight_kg": 0.01,
+
+      "exterior_volume_ml": 13,
       "base_value": 1,
       "tags": [
         "currency"
@@ -1066,8 +1155,13 @@
     },
     {
       "id": "hand_axe",
+      "preferred_attack": "swing",
+      "swing_precision": 0.4,
+      "stab_precision": 0.05,
       "display_name": "Hand axe",
       "weight_kg": 0.9,
+
+      "exterior_volume_ml": 1125,
       "base_value": 4,
       "tags": [
         "weapon"
@@ -1108,6 +1202,8 @@
       "id": "hazelnuts",
       "display_name": "Hazelnuts",
       "weight_kg": 0.1,
+
+      "exterior_volume_ml": 125,
       "base_value": 1,
       "tags": [
         "food"
@@ -1139,6 +1235,8 @@
       "id": "heater_shield",
       "display_name": "Heater shield",
       "weight_kg": 3.5,
+
+      "exterior_volume_ml": 4375,
       "base_value": 12,
       "tags": [
         "shield"
@@ -1166,6 +1264,8 @@
       "id": "heavy_crossbow",
       "display_name": "Heavy crossbow",
       "weight_kg": 3.5,
+
+      "exterior_volume_ml": 4375,
       "base_value": 50,
       "tags": [
         "weapon"
@@ -1205,6 +1305,8 @@
       "id": "honey",
       "display_name": "Honey",
       "weight_kg": 0.05,
+
+      "exterior_volume_ml": 63,
       "base_value": 2,
       "tags": [
         "ingredient",
@@ -1238,6 +1340,8 @@
       "id": "honey_wound_dressing",
       "display_name": "Honey wound dressing",
       "weight_kg": 0.25,
+
+      "exterior_volume_ml": 313,
       "base_value": 6,
       "tags": [
         "medication"
@@ -1251,6 +1355,8 @@
       "id": "hooked_arquebus",
       "display_name": "Hooked arquebus",
       "weight_kg": 7,
+
+      "exterior_volume_ml": 8750,
       "base_value": 80,
       "tags": [
         "weapon"
@@ -1290,6 +1396,8 @@
       "id": "horseradish",
       "display_name": "Horseradish",
       "weight_kg": 0.03,
+
+      "exterior_volume_ml": 38,
       "base_value": 1,
       "tags": [
         "food",
@@ -1320,8 +1428,13 @@
     },
     {
       "id": "hunting_spear",
+      "preferred_attack": "stab",
+      "swing_precision": 0.15,
+      "stab_precision": 1.2,
       "display_name": "Hunting spear",
       "weight_kg": 1.5,
+
+      "exterior_volume_ml": 1875,
       "base_value": 6,
       "tags": [
         "weapon"
@@ -1361,6 +1474,8 @@
       "id": "jack_of_plates",
       "display_name": "Jack of plates",
       "weight_kg": 5,
+
+      "exterior_volume_ml": 6250,
       "base_value": 35,
       "tags": [
         "armor"
@@ -1396,8 +1511,13 @@
     },
     {
       "id": "katzbalger",
+      "preferred_attack": "swing",
+      "swing_precision": 0.45,
+      "stab_precision": 0.6,
       "display_name": "Katzbalger",
       "weight_kg": 1.1,
+
+      "exterior_volume_ml": 1375,
       "base_value": 18,
       "tags": [
         "weapon"
@@ -1439,6 +1559,8 @@
       "id": "kettle_hat",
       "display_name": "Kettle hat",
       "weight_kg": 1.8,
+
+      "exterior_volume_ml": 2250,
       "base_value": 20,
       "tags": [
         "armor"
@@ -1474,8 +1596,13 @@
     },
     {
       "id": "kriegsmesser",
+      "preferred_attack": "swing",
+      "swing_precision": 0.5,
+      "stab_precision": 0.55,
       "display_name": "Kriegsmesser",
       "weight_kg": 1.6,
+
+      "exterior_volume_ml": 2000,
       "base_value": 35,
       "tags": [
         "weapon"
@@ -1516,6 +1643,8 @@
       "id": "lard",
       "display_name": "Lard",
       "weight_kg": 0.05,
+
+      "exterior_volume_ml": 63,
       "base_value": 1,
       "tags": [
         "food",
@@ -1548,6 +1677,8 @@
       "id": "light_crossbow",
       "display_name": "Light crossbow",
       "weight_kg": 2.2,
+
+      "exterior_volume_ml": 2750,
       "base_value": 28,
       "tags": [
         "weapon"
@@ -1587,6 +1718,8 @@
       "id": "linen_tunic",
       "display_name": "Linen tunic",
       "weight_kg": 0.6,
+
+      "exterior_volume_ml": 750,
       "base_value": 15,
       "tags": [
         "clothing"
@@ -1630,6 +1763,8 @@
       "id": "longbow",
       "display_name": "Longbow",
       "weight_kg": 1,
+
+      "exterior_volume_ml": 1250,
       "base_value": 18,
       "tags": [
         "weapon"
@@ -1667,8 +1802,13 @@
     },
     {
       "id": "longsword",
+      "preferred_attack": "swing",
+      "swing_precision": 0.45,
+      "stab_precision": 1.0,
       "display_name": "Longsword",
       "weight_kg": 1.5,
+
+      "exterior_volume_ml": 1875,
       "base_value": 40,
       "tags": [
         "weapon"
@@ -1707,8 +1847,10 @@
     },
     {
       "id": "lubeck_mark",
-      "display_name": "Lübeck mark",
+      "display_name": "LÃƒÂ¼beck mark",
       "weight_kg": 0.01,
+
+      "exterior_volume_ml": 13,
       "base_value": 1,
       "tags": [
         "currency"
@@ -1722,6 +1864,8 @@
       "id": "mail_chausses",
       "display_name": "Mail chausses",
       "weight_kg": 3.5,
+
+      "exterior_volume_ml": 4375,
       "base_value": 45,
       "tags": [
         "armor"
@@ -1766,6 +1910,8 @@
       "id": "mail_coif",
       "display_name": "Mail coif",
       "weight_kg": 1.5,
+
+      "exterior_volume_ml": 1875,
       "base_value": 18,
       "tags": [
         "armor"
@@ -1806,6 +1952,8 @@
       "id": "mail_shirt",
       "display_name": "Mail shirt",
       "weight_kg": 6,
+
+      "exterior_volume_ml": 7500,
       "base_value": 55,
       "tags": [
         "armor"
@@ -1843,6 +1991,8 @@
       "id": "mail_skirt",
       "display_name": "Mail skirt",
       "weight_kg": 2.5,
+
+      "exterior_volume_ml": 3125,
       "base_value": 30,
       "tags": [
         "armor"
@@ -1880,6 +2030,8 @@
       "id": "mail_sleeve",
       "display_name": "Mail sleeve",
       "weight_kg": 1.8,
+
+      "exterior_volume_ml": 2250,
       "base_value": 28,
       "tags": [
         "armor"
@@ -1924,6 +2076,8 @@
       "id": "matchlock_arquebus",
       "display_name": "Matchlock arquebus",
       "weight_kg": 4.5,
+
+      "exterior_volume_ml": 5625,
       "base_value": 55,
       "tags": [
         "weapon"
@@ -1961,8 +2115,13 @@
     },
     {
       "id": "messer",
+      "preferred_attack": "swing",
+      "swing_precision": 0.5,
+      "stab_precision": 0.5,
       "display_name": "Messer",
       "weight_kg": 1.2,
+
+      "exterior_volume_ml": 1500,
       "base_value": 20,
       "tags": [
         "weapon"
@@ -2001,8 +2160,13 @@
     },
     {
       "id": "military_pike",
+      "preferred_attack": "stab",
+      "swing_precision": 0.05,
+      "stab_precision": 1.1,
       "display_name": "Military pike",
       "weight_kg": 4,
+
+      "exterior_volume_ml": 5000,
       "base_value": 9,
       "tags": [
         "weapon"
@@ -2040,8 +2204,13 @@
     },
     {
       "id": "misericorde",
+      "preferred_attack": "stab",
+      "swing_precision": 0.05,
+      "stab_precision": 1.5,
       "display_name": "Misericorde",
       "weight_kg": 0.35,
+
+      "exterior_volume_ml": 438,
       "base_value": 14,
       "tags": [
         "weapon"
@@ -2082,6 +2251,8 @@
       "id": "mustard",
       "display_name": "Mustard",
       "weight_kg": 0.02,
+
+      "exterior_volume_ml": 25,
       "base_value": 1,
       "tags": [
         "food",
@@ -2114,6 +2285,8 @@
       "id": "oat_grain",
       "display_name": "Oat grain",
       "weight_kg": 0.25,
+
+      "exterior_volume_ml": 313,
       "base_value": 1,
       "tags": [
         "food",
@@ -2146,6 +2319,8 @@
       "id": "oatmeal",
       "display_name": "Oatmeal",
       "weight_kg": 0.25,
+
+      "exterior_volume_ml": 313,
       "base_value": 1,
       "tags": [
         "ingredient"
@@ -2159,6 +2334,8 @@
       "id": "oral_rehydration_draught",
       "display_name": "Oral rehydration draught",
       "weight_kg": 0.25,
+
+      "exterior_volume_ml": 313,
       "base_value": 6,
       "tags": [
         "medication"
@@ -2172,6 +2349,8 @@
       "id": "padded_chausses",
       "display_name": "Padded chausses",
       "weight_kg": 1.2,
+
+      "exterior_volume_ml": 1500,
       "base_value": 8,
       "tags": [
         "armor"
@@ -2216,6 +2395,8 @@
       "id": "padded_skirt",
       "display_name": "Padded skirt",
       "weight_kg": 0.8,
+
+      "exterior_volume_ml": 1000,
       "base_value": 5,
       "tags": [
         "armor"
@@ -2253,6 +2434,8 @@
       "id": "pavise",
       "display_name": "Pavise",
       "weight_kg": 8,
+
+      "exterior_volume_ml": 10000,
       "base_value": 20,
       "tags": [
         "shield"
@@ -2280,17 +2463,22 @@
       "id": "poppy",
       "display_name": "Poppy",
       "weight_kg": 0.05,
+
+      "exterior_volume_ml": 63,
       "base_value": 4,
-      "tags": ["ingredient", "medicinal_herb", "grade_ordinary"],
+      "tags": ["ingredient", "food", "medicinal_herb"],
       "presentation": {
         "icon": "help"
       },
-      "kind": "ingredient"
+      "kind": "ingredient",
+      "capabilities": {"food": {"class": "herb", "nutrition_kcal": 0, "growth_per_hour": 0.01, "cooking_minutes": 6, "flavors_kg": {"salty": 0, "spicy": 0, "sweet": 0, "sour": 0, "savory": 0}, "culinary_fat": false, "quality": 3, "value_per_unit": 4}}
     },
     {
       "id": "portable_oven",
       "display_name": "Portable oven",
       "weight_kg": 8,
+
+      "exterior_volume_ml": 15000,
       "base_value": 25,
       "tags": [
         "simple",
@@ -2299,12 +2487,19 @@
       "presentation": {
         "icon": "help"
       },
-      "kind": "simple"
+      "kind": "simple",
+      "capabilities": {
+        "container": {
+          "capacity_ml": 12000
+        }
+      }
     },
     {
       "id": "quilted_sleeve",
       "display_name": "Quilted sleeve",
       "weight_kg": 0.6,
+
+      "exterior_volume_ml": 750,
       "base_value": 5,
       "tags": [
         "armor"
@@ -2347,8 +2542,13 @@
     },
     {
       "id": "rapier",
+      "preferred_attack": "stab",
+      "swing_precision": 0.1,
+      "stab_precision": 1.5,
       "display_name": "Rapier",
       "weight_kg": 1.1,
+
+      "exterior_volume_ml": 1375,
       "base_value": 45,
       "tags": [
         "weapon"
@@ -2388,6 +2588,8 @@
       "id": "raw_beast_meat",
       "display_name": "Raw beast meat",
       "weight_kg": 0.5,
+
+      "exterior_volume_ml": 625,
       "base_value": 1,
       "tags": [
         "food",
@@ -2420,6 +2622,8 @@
       "id": "raw_fish",
       "display_name": "Raw fish",
       "weight_kg": 0.45,
+
+      "exterior_volume_ml": 563,
       "base_value": 2,
       "tags": [
         "food",
@@ -2452,6 +2656,8 @@
       "id": "raw_fowl",
       "display_name": "Raw fowl",
       "weight_kg": 0.5,
+
+      "exterior_volume_ml": 625,
       "base_value": 2,
       "tags": [
         "food",
@@ -2484,6 +2690,8 @@
       "id": "raw_venison",
       "display_name": "Raw venison",
       "weight_kg": 0.5,
+
+      "exterior_volume_ml": 625,
       "base_value": 2,
       "tags": [
         "food",
@@ -2516,6 +2724,8 @@
       "id": "rhenish_gulden",
       "display_name": "Rhenish gulden",
       "weight_kg": 0.01,
+
+      "exterior_volume_ml": 13,
       "base_value": 1,
       "tags": [
         "currency"
@@ -2527,8 +2737,13 @@
     },
     {
       "id": "rondel_dagger",
+      "preferred_attack": "stab",
+      "swing_precision": 0.05,
+      "stab_precision": 1.4,
       "display_name": "Rondel dagger",
       "weight_kg": 0.45,
+
+      "exterior_volume_ml": 563,
       "base_value": 12,
       "tags": [
         "weapon"
@@ -2569,6 +2784,8 @@
       "id": "root_vegetables",
       "display_name": "Root vegetables",
       "weight_kg": 0.35,
+
+      "exterior_volume_ml": 438,
       "base_value": 1,
       "tags": [
         "food"
@@ -2600,6 +2817,8 @@
       "id": "rosewater",
       "display_name": "Rosewater",
       "weight_kg": 0.2,
+
+      "exterior_volume_ml": 250,
       "base_value": 3,
       "tags": [
         "ingredient"
@@ -2613,6 +2832,8 @@
       "id": "round_shield",
       "display_name": "Round shield",
       "weight_kg": 3,
+
+      "exterior_volume_ml": 3750,
       "base_value": 10,
       "tags": [
         "shield"
@@ -2640,6 +2861,8 @@
       "id": "rye_bread",
       "display_name": "Rye bread",
       "weight_kg": 0.5,
+
+      "exterior_volume_ml": 625,
       "base_value": 2,
       "tags": [
         "food",
@@ -2672,13 +2895,14 @@
       "id": "sage",
       "display_name": "Sage",
       "weight_kg": 0.05,
+
+      "exterior_volume_ml": 63,
       "base_value": 2,
       "tags": [
         "ingredient",
         "food",
         "stock_herbs",
-        "medicinal_herb",
-        "grade_ordinary"
+        "medicinal_herb"
       ],
       "presentation": {
         "icon": "help"
@@ -2707,6 +2931,8 @@
       "id": "sallet",
       "display_name": "Sallet",
       "weight_kg": 2.6,
+
+      "exterior_volume_ml": 3250,
       "base_value": 40,
       "tags": [
         "armor"
@@ -2747,6 +2973,8 @@
       "id": "salt",
       "display_name": "Salt",
       "weight_kg": 0.01,
+
+      "exterior_volume_ml": 13,
       "base_value": 1,
       "tags": [
         "food",
@@ -2779,6 +3007,8 @@
       "id": "saxon_thaler",
       "display_name": "Saxon thaler",
       "weight_kg": 0.01,
+
+      "exterior_volume_ml": 13,
       "base_value": 1,
       "tags": [
         "currency"
@@ -2792,6 +3022,8 @@
       "id": "seaweed",
       "display_name": "Seaweed",
       "weight_kg": 0.25,
+
+      "exterior_volume_ml": 313,
       "base_value": 1,
       "tags": [
         "food"
@@ -2823,6 +3055,8 @@
       "id": "self_bow",
       "display_name": "Self bow",
       "weight_kg": 0.8,
+
+      "exterior_volume_ml": 1000,
       "base_value": 8,
       "tags": [
         "weapon"
@@ -2862,6 +3096,8 @@
       "id": "small_beer",
       "display_name": "Small beer",
       "weight_kg": 0.52,
+
+      "exterior_volume_ml": 650,
       "base_value": 1,
       "tags": [
         "simple",
@@ -2886,6 +3122,8 @@
       "id": "soft_soap",
       "display_name": "Soft soap",
       "weight_kg": 0.25,
+
+      "exterior_volume_ml": 313,
       "base_value": 3,
       "tags": [
         "simple",
@@ -2901,6 +3139,8 @@
       "id": "sour_cherries",
       "display_name": "Sour cherries",
       "weight_kg": 0.2,
+
+      "exterior_volume_ml": 250,
       "base_value": 1,
       "tags": [
         "food"
@@ -2932,6 +3172,8 @@
       "id": "splint",
       "display_name": "Splint",
       "weight_kg": 0.8,
+
+      "exterior_volume_ml": 1000,
       "base_value": 4,
       "tags": [
         "simple",
@@ -2946,6 +3188,8 @@
       "id": "surgery_kit",
       "display_name": "Surgery kit",
       "weight_kg": 2.5,
+
+      "exterior_volume_ml": 3125,
       "base_value": 60,
       "tags": [
         "simple",
@@ -2960,6 +3204,8 @@
       "id": "table_wine",
       "display_name": "Table wine",
       "weight_kg": 0.26,
+
+      "exterior_volume_ml": 325,
       "base_value": 2,
       "tags": [
         "simple",
@@ -2984,6 +3230,8 @@
       "id": "targe",
       "display_name": "Targe",
       "weight_kg": 2.5,
+
+      "exterior_volume_ml": 3125,
       "base_value": 8,
       "tags": [
         "shield"
@@ -3011,6 +3259,8 @@
       "id": "tassets",
       "display_name": "Tassets",
       "weight_kg": 2,
+
+      "exterior_volume_ml": 2500,
       "base_value": 55,
       "tags": [
         "armor"
@@ -3048,6 +3298,8 @@
       "id": "torch",
       "display_name": "Torch",
       "weight_kg": 0.5,
+
+      "exterior_volume_ml": 625,
       "base_value": 5,
       "tags": [
         "simple"
@@ -3061,6 +3313,8 @@
       "id": "travel_ration",
       "display_name": "Travel ration",
       "weight_kg": 0.65,
+
+      "exterior_volume_ml": 813,
       "base_value": 3,
       "tags": [
         "food",
@@ -3092,8 +3346,13 @@
     },
     {
       "id": "utility_knife",
+      "preferred_attack": "stab",
+      "swing_precision": 0.3,
+      "stab_precision": 0.6,
       "display_name": "Utility knife",
       "weight_kg": 0.2,
+
+      "exterior_volume_ml": 250,
       "base_value": 2,
       "tags": [
         "weapon"
@@ -3151,6 +3410,8 @@
       "id": "vambrace",
       "display_name": "Vambrace",
       "weight_kg": 0.9,
+
+      "exterior_volume_ml": 1125,
       "base_value": 35,
       "tags": [
         "armor"
@@ -3195,6 +3456,8 @@
       "id": "vinegar",
       "display_name": "Vinegar",
       "weight_kg": 0.03,
+
+      "exterior_volume_ml": 38,
       "base_value": 2,
       "tags": [
         "ingredient",
@@ -3228,6 +3491,8 @@
       "id": "visored_sallet",
       "display_name": "Visored sallet",
       "weight_kg": 3,
+
+      "exterior_volume_ml": 3750,
       "base_value": 50,
       "tags": [
         "armor"
@@ -3267,8 +3532,13 @@
     },
     {
       "id": "walking_staff",
+      "preferred_attack": "swing",
+      "swing_precision": 0.2,
+      "stab_precision": 0.1,
       "display_name": "Walking staff",
       "weight_kg": 1.5,
+
+      "exterior_volume_ml": 1875,
       "base_value": 1,
       "tags": [
         "weapon"
@@ -3306,8 +3576,13 @@
     },
     {
       "id": "war_hammer",
-      "display_name": "War hammer",
+      "preferred_attack": "swing",
+      "swing_precision": 0.9,
+      "stab_precision": 0.15,
+      "display_name": "Beaked war hammer",
       "weight_kg": 1.4,
+
+      "exterior_volume_ml": 1750,
       "base_value": 14,
       "tags": [
         "weapon"
@@ -3348,6 +3623,8 @@
       "id": "watercress",
       "display_name": "Watercress",
       "weight_kg": 0.2,
+
+      "exterior_volume_ml": 250,
       "base_value": 1,
       "tags": [
         "food"
@@ -3379,6 +3656,8 @@
       "id": "waterskin",
       "display_name": "Waterskin",
       "weight_kg": 0.5,
+
+      "exterior_volume_ml": 4500,
       "base_value": 2,
       "tags": [
         "container",
@@ -3400,6 +3679,8 @@
       "id": "wild_berries",
       "display_name": "Wild berries",
       "weight_kg": 0.25,
+
+      "exterior_volume_ml": 313,
       "base_value": 1,
       "tags": [
         "food"
@@ -3431,6 +3712,8 @@
       "id": "wild_mushrooms",
       "display_name": "Wild mushrooms",
       "weight_kg": 0.25,
+
+      "exterior_volume_ml": 313,
       "base_value": 1,
       "tags": [
         "food",
@@ -3463,17 +3746,25 @@
       "id": "willow_bark",
       "display_name": "Willow bark",
       "weight_kg": 0.1,
+
+      "exterior_volume_ml": 125,
       "base_value": 2,
-      "tags": ["ingredient", "medicinal_herb", "grade_ordinary"],
+      "tags": ["ingredient", "food", "medicinal_herb"],
       "presentation": {
         "icon": "help"
       },
-      "kind": "ingredient"
+      "kind": "ingredient",
+      "capabilities": {"food": {"class": "herb", "nutrition_kcal": 0, "growth_per_hour": 0.006, "cooking_minutes": 20, "flavors_kg": {"salty": 0, "spicy": 0, "sweet": 0, "sour": 0, "savory": 0}, "culinary_fat": false, "quality": 3, "value_per_unit": 2}}
     },
     {
       "id": "falchion",
+      "preferred_attack": "swing",
+      "swing_precision": 0.5,
+      "stab_precision": 0.2,
       "display_name": "Falchion",
       "weight_kg": 1.4,
+
+      "exterior_volume_ml": 1750,
       "base_value": 24,
       "tags": ["weapon"],
       "presentation": {"icon": "broadsword"},
@@ -3493,8 +3784,13 @@
     },
     {
       "id": "knife",
+      "preferred_attack": "stab",
+      "swing_precision": 0.3,
+      "stab_precision": 0.7,
       "display_name": "Knife",
       "weight_kg": 0.25,
+
+      "exterior_volume_ml": 313,
       "base_value": 3,
       "tags": ["weapon"],
       "presentation": {"icon": "plain-dagger"},
@@ -3514,8 +3810,13 @@
     },
     {
       "id": "spear",
+      "preferred_attack": "stab",
+      "swing_precision": 0.15,
+      "stab_precision": 1.0,
       "display_name": "Spear",
       "weight_kg": 1.8,
+
+      "exterior_volume_ml": 2250,
       "base_value": 10,
       "tags": ["weapon"],
       "presentation": {"icon": "spears"},
@@ -3535,8 +3836,13 @@
     },
     {
       "id": "zweihander",
+      "preferred_attack": "swing",
+      "swing_precision": 0.5,
+      "stab_precision": 0.7,
       "display_name": "Zweihander",
       "weight_kg": 2.8,
+
+      "exterior_volume_ml": 3500,
       "base_value": 60,
       "tags": [
         "weapon"
@@ -3574,122 +3880,122 @@
       }
     },
     {
-      "id": "primer_german_latin", "display_name": "Vocabularius ex quo (German–Latin)",
-      "weight_kg": 0.35, "base_value": 18, "tags": ["book"],
+      "id": "primer_german_latin", "display_name": "Vocabularius ex quo (GermanÃ¢â‚¬â€œLatin)",
+      "weight_kg": 0.35, "exterior_volume_ml": 438, "base_value": 18, "tags": ["book"],
       "presentation": {"icon": "open-book"}, "kind": "simple",
       "capabilities": {"book": {"medium": "German", "target": {"kind": "written", "language": "Latin"}, "quality": 1}}
     },
     {
-      "id": "primer_latin_german", "display_name": "Vocabularius ex quo (Latin–German)",
-      "weight_kg": 0.35, "base_value": 18, "tags": ["book"],
+      "id": "primer_latin_german", "display_name": "Vocabularius ex quo (LatinÃ¢â‚¬â€œGerman)",
+      "weight_kg": 0.35, "exterior_volume_ml": 438, "base_value": 18, "tags": ["book"],
       "presentation": {"icon": "open-book"}, "kind": "simple",
       "capabilities": {"book": {"medium": "Latin", "target": {"kind": "written", "language": "German"}, "quality": 1}}
     },
     {
-      "id": "primer_low_german", "display_name": "Teuthonista (Low German–German)",
-      "weight_kg": 0.35, "base_value": 16, "tags": ["book"],
+      "id": "primer_low_german", "display_name": "Teuthonista (Low GermanÃ¢â‚¬â€œGerman)",
+      "weight_kg": 0.35, "exterior_volume_ml": 438, "base_value": 16, "tags": ["book"],
       "presentation": {"icon": "open-book"}, "kind": "simple",
       "capabilities": {"book": {"medium": "Low", "target": {"kind": "written", "language": "German"}, "quality": 1}}
     },
     {
-      "id": "primer_german_low", "display_name": "Teuthonista (German–Low German)",
-      "weight_kg": 0.35, "base_value": 16, "tags": ["book"],
+      "id": "primer_german_low", "display_name": "Teuthonista (GermanÃ¢â‚¬â€œLow German)",
+      "weight_kg": 0.35, "exterior_volume_ml": 438, "base_value": 16, "tags": ["book"],
       "presentation": {"icon": "open-book"}, "kind": "simple",
       "capabilities": {"book": {"medium": "German", "target": {"kind": "written", "language": "Low"}, "quality": 1}}
     },
     {
       "id": "latin_rhetoric_advanced", "display_name": "De oratore",
-      "weight_kg": 0.55, "base_value": 75, "tags": ["book"],
+      "weight_kg": 0.55, "exterior_volume_ml": 688, "base_value": 75, "tags": ["book"],
       "presentation": {"icon": "open-book"}, "kind": "simple",
       "capabilities": {"book": {"medium": "Latin", "target": {"kind": "written", "language": "Latin"}, "quality": 5}}
     },
     {
       "id": "catholic_summa_advanced", "display_name": "Summa Theologiae",
-      "weight_kg": 0.8, "base_value": 90, "tags": ["book"],
+      "weight_kg": 0.8, "exterior_volume_ml": 1000, "base_value": 90, "tags": ["book"],
       "presentation": {"icon": "holy-symbol"}, "kind": "simple",
       "capabilities": {"book": {"medium": "Latin", "target": {"kind": "religion", "religion": "RomanCatholic"}, "quality": 5}}
     },
     {
       "id": "bestiary_beasts_advanced", "display_name": "Physiologus",
-      "weight_kg": 0.7, "base_value": 70, "tags": ["book"],
+      "weight_kg": 0.7, "exterior_volume_ml": 875, "base_value": 70, "tags": ["book"],
       "presentation": {"icon": "open-book"}, "kind": "simple",
       "capabilities": {"book": {"medium": "Latin", "target": {"kind": "bestiary", "category": "beast"}, "quality": 5}}
     },
     {
       "id": "human_anatomy", "display_name": "De humani corporis fabrica",
-      "weight_kg": 0.65, "base_value": 55, "tags": ["book"],
+      "weight_kg": 0.65, "exterior_volume_ml": 813, "base_value": 55, "tags": ["book"],
       "presentation": {"icon": "caduceus"}, "kind": "simple",
       "capabilities": {"book": {"medium": "Latin", "target": {"kind": "skill", "skill": "physiology"}, "quality": 4}}
     },
     {
-      "id": "german_herbal", "display_name": "New Kreütter Buch",
-      "weight_kg": 0.6, "base_value": 45, "tags": ["book"],
+      "id": "german_herbal", "display_name": "New KreÃƒÂ¼tter Buch",
+      "weight_kg": 0.6, "exterior_volume_ml": 750, "base_value": 45, "tags": ["book"],
       "presentation": {"icon": "caduceus"}, "kind": "simple",
       "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "herbalism"}, "quality": 4}}
     },
     {
       "id": "forest_wayfinding", "display_name": "Gejaidbuch (woodcraft)",
-      "weight_kg": 0.3, "base_value": 22, "tags": ["book"],
+      "weight_kg": 0.3, "exterior_volume_ml": 375, "base_value": 22, "tags": ["book"],
       "presentation": {"icon": "treasure-map"}, "kind": "simple",
       "capabilities": {"book": {"medium": "German", "target": {"kind": "terrain", "terrain": "forest"}, "quality": 2}}
     },
     {
       "id": "field_surgery_manual", "display_name": "Feldbuch der Wundarznei",
-      "weight_kg": 0.4, "base_value": 32, "tags": ["book"],
+      "weight_kg": 0.4, "exterior_volume_ml": 500, "base_value": 32, "tags": ["book"],
       "presentation": {"icon": "scalpel"}, "kind": "simple",
       "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "surgery"}, "quality": 2}}
     },
     {
-      "id": "kitchen_book", "display_name": "Küchenmeisterei",
-      "weight_kg": 0.35, "base_value": 24, "tags": ["book"],
+      "id": "kitchen_book", "display_name": "KÃƒÂ¼chenmeisterei",
+      "weight_kg": 0.35, "exterior_volume_ml": 438, "base_value": 24, "tags": ["book"],
       "presentation": {"icon": "meal"}, "kind": "simple",
       "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "cooking"}, "quality": 2}}
     },
     {
-      "id": "tailors_pattern_book", "display_name": "Hausbuch der Mendelschen Zwölfbrüderstiftung",
-      "weight_kg": 0.4, "base_value": 30, "tags": ["book"],
+      "id": "tailors_pattern_book", "display_name": "Hausbuch der Mendelschen ZwÃƒÂ¶lfbrÃƒÂ¼derstiftung",
+      "weight_kg": 0.4, "exterior_volume_ml": 500, "base_value": 30, "tags": ["book"],
       "presentation": {"icon": "clothes"}, "kind": "simple",
       "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "tailoring"}, "quality": 2}}
     },
     {
-      "id": "smiths_handbook", "display_name": "Probierbüchlein",
-      "weight_kg": 0.45, "base_value": 34, "tags": ["book"],
+      "id": "smiths_handbook", "display_name": "ProbierbÃƒÂ¼chlein",
+      "weight_kg": 0.45, "exterior_volume_ml": 563, "base_value": 34, "tags": ["book"],
       "presentation": {"icon": "anvil"}, "kind": "simple",
       "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "smithing"}, "quality": 2}}
     },
     {
       "id": "captains_discourses", "display_name": "De re militari",
-      "weight_kg": 0.4, "base_value": 38, "tags": ["book"],
+      "weight_kg": 0.4, "exterior_volume_ml": 500, "base_value": 38, "tags": ["book"],
       "presentation": {"icon": "crown"}, "kind": "simple",
       "capabilities": {"book": {"medium": "Latin", "target": {"kind": "skill", "skill": "command"}, "quality": 2}}
     },
     {
       "id": "courtly_conversation", "display_name": "De civilitate morum puerilium",
-      "weight_kg": 0.3, "base_value": 28, "tags": ["book"],
+      "weight_kg": 0.3, "exterior_volume_ml": 375, "base_value": 28, "tags": ["book"],
       "presentation": {"icon": "rose"}, "kind": "simple",
       "capabilities": {"book": {"medium": "Latin", "target": {"kind": "skill", "skill": "charm"}, "quality": 2}}
     },
     {
       "id": "fechtbuch_sword", "display_name": "Fechtbuch von 1467",
-      "weight_kg": 0.45, "base_value": 40, "tags": ["book"],
+      "weight_kg": 0.45, "exterior_volume_ml": 563, "base_value": 40, "tags": ["book"],
       "presentation": {"icon": "sword-brandish"}, "kind": "simple",
       "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "sword"}, "quality": 1}}
     },
     {
       "id": "hunting_with_bows", "display_name": "Gejaidbuch (bow hunting)",
-      "weight_kg": 0.35, "base_value": 30, "tags": ["book"],
+      "weight_kg": 0.35, "exterior_volume_ml": 438, "base_value": 30, "tags": ["book"],
       "presentation": {"icon": "bow-arrow"}, "kind": "simple",
       "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "bow"}, "quality": 1}}
     },
     {
       "id": "manual_of_defence", "display_name": "Gladiatoria",
-      "weight_kg": 0.4, "base_value": 35, "tags": ["book"],
+      "weight_kg": 0.4, "exterior_volume_ml": 500, "base_value": 35, "tags": ["book"],
       "presentation": {"icon": "shield"}, "kind": "simple",
       "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "block"}, "quality": 1}}
     },
     {
       "id": "hunters_concealment", "display_name": "Liber Vagatorum",
-      "weight_kg": 0.3, "base_value": 27, "tags": ["book"],
+      "weight_kg": 0.3, "exterior_volume_ml": 375, "base_value": 27, "tags": ["book"],
       "presentation": {"icon": "hood"}, "kind": "simple",
       "capabilities": {"book": {"medium": "German", "target": {"kind": "skill", "skill": "stealth"}, "quality": 1}}
     },
@@ -3697,6 +4003,8 @@
       "id": "leather_belt",
       "display_name": "Leather belt",
       "weight_kg": 0.35,
+
+      "exterior_volume_ml": 438,
       "base_value": 4,
       "tags": ["clothing"],
       "presentation": {"icon": "belt-armor"},
@@ -3723,6 +4031,8 @@
       "id": "sword_sheath",
       "display_name": "Sword sheath",
       "weight_kg": 0.3,
+
+      "exterior_volume_ml": 375,
       "base_value": 5,
       "tags": ["container"],
       "presentation": {"icon": "sword-hilt"},
@@ -3745,6 +4055,8 @@
       "id": "leather_satchel",
       "display_name": "Leather satchel",
       "weight_kg": 0.7,
+
+      "exterior_volume_ml": 875,
       "base_value": 8,
       "tags": ["container"],
       "presentation": {"icon": "knapsack"},
@@ -3778,6 +4090,8 @@
       "id": "forearm_holster",
       "display_name": "Forearm holster",
       "weight_kg": 0.25,
+
+      "exterior_volume_ml": 313,
       "base_value": 5,
       "tags": ["container"],
       "presentation": {"icon": "bracer"},
@@ -3796,6 +4110,8 @@
       "id": "boot_sheath",
       "display_name": "Boot sheath",
       "weight_kg": 0.2,
+
+      "exterior_volume_ml": 250,
       "base_value": 4,
       "tags": ["container"],
       "presentation": {"icon": "greaves"},
@@ -3814,6 +4130,8 @@
       "id": "field_tent",
       "display_name": "Field tent",
       "weight_kg": 8.0,
+
+      "exterior_volume_ml": 10000,
       "base_value": 32,
       "tags": ["general_goods", "field_shelter"],
       "presentation": {"icon": "camping-tent"},
@@ -3823,6 +4141,8 @@
       "id": "captured_black_knight_dispatch",
       "display_name": "Captured Black Knight dispatch",
       "weight_kg": 0.02,
+
+      "exterior_volume_ml": 25,
       "base_value": 0,
       "tags": ["quest_token", "military_intelligence", "countermeasure"],
       "presentation": {"icon": "treasure-map"},
@@ -3832,6 +4152,8 @@
       "id": "order_courier_oath_token",
       "display_name": "Order courier's oath token",
       "weight_kg": 0.05,
+
+      "exterior_volume_ml": 63,
       "base_value": 0,
       "tags": ["quest_token", "order_of_saint_george", "countermeasure"],
       "presentation": {"icon": "gothic-cross"},
@@ -3841,6 +4163,8 @@
       "id": "blessed_sword_knot",
       "display_name": "Blessed sword-knot",
       "weight_kg": 0.03,
+
+      "exterior_volume_ml": 38,
       "base_value": 0,
       "tags": ["quest_token", "blessed", "countermeasure"],
       "presentation": {"icon": "holy-symbol"},

@@ -405,7 +405,44 @@ fn corrected_exact_site_knowledge_is_not_live_action_support() {
     assert!(legacy_site_lookup.contains("observer_character_id: u64"));
     assert!(legacy_site_lookup.contains("case_site_id: &str"));
     assert!(legacy_site_lookup.contains("Option<(CaseSiteAuthority, InvestigationLead)>"));
+    assert!(legacy_site_lookup.contains("canonical_case_site_place(case_site_id)"));
+    assert!(legacy_site_lookup.contains("site.id.to_place()? != requested_place"));
     assert!(!legacy_site_lookup.contains("InvestigationActionCapability"));
+}
+
+#[test]
+fn case_site_transport_and_presence_adapters_fail_closed() {
+    assert!(CaseSiteId::try_new("case:valid").is_ok());
+    assert!(CaseSiteId::try_new("malformed case site").is_err());
+
+    let source = INVESTIGATION_SOURCE;
+    let occupancy = source
+        .split("pub(crate) fn case_site_presence_for_observer")
+        .nth(1)
+        .and_then(|tail| tail.split("pub(crate) fn case_context_presence_for_observer").next())
+        .expect("observer-safe case occupancy adapter");
+    assert!(occupancy.contains("exact_case_site_for_observer_at"));
+    assert!(occupancy.contains("character_case_site_occupancy_at"));
+    assert!(occupancy.contains("character_alive_at"));
+    let context = source
+        .split("pub(crate) fn case_context_presence_for_observer")
+        .nth(1)
+        .and_then(|tail| tail.split("pub(crate) fn disclose_exact_case_site").next())
+        .expect("observer-safe case context adapter");
+    assert!(context.contains("context_membership_valid_at"));
+    assert!(context.contains("expected_membership_id"));
+    assert!(context.contains("expected_revision"));
+    assert!(context.contains("membership.revision"));
+    assert!(context.contains("exact_case_site_for_observer_at"));
+
+    let transition = source
+        .split("pub(crate) fn set_character_case_site")
+        .nth(1)
+        .and_then(|tail| tail.split("pub struct InvestigationSharingReceipt").next())
+        .expect("case-site transition authority");
+    assert!(transition.contains("-> Result<(), String>"));
+    assert!(transition.contains("CaseSiteId::try_new"));
+    assert!(transition.contains("current.left_at = Some(minute)"));
 }
 
 #[test]
@@ -634,6 +671,86 @@ fn nighttime_projection_wait_is_exact_and_bounded() {
     assert!(projected_gate.contains("GeneratedPatternCondition::NightWindow"));
     assert!(projected_gate.contains("observer_pattern_route_has_live_corroborated_clue"));
     assert!(!projected_gate.contains("canonical_events"));
+}
+
+#[test]
+fn locate_contact_projection_mirrors_public_scheduled_presence() {
+    let presence = crate::SettlementResidentPresence {
+        character_id: 9,
+        settlement_id: "lubeck".into(),
+        location_id: "market".into(),
+        start_minute: 480,
+        end_minute: 1_020,
+        is_default: false,
+        context_suppressed: false,
+        health_suppressed: false,
+    };
+    assert_eq!(public_contact_schedule_wait_minutes(&presence, 600), Some(0));
+    assert_eq!(public_contact_schedule_wait_minutes(&presence, 1_020), Some(900));
+
+    let mut suppressed = presence.clone();
+    suppressed.health_suppressed = true;
+    assert_eq!(public_contact_schedule_wait_minutes(&suppressed, 600), None);
+
+    let source = INVESTIGATION_SOURCE;
+    let projection = source
+        .split("fn projected_contact_presence_availability")
+        .nth(1)
+        .and_then(|tail| tail.split("fn night_window_wait_minutes").next())
+        .expect("public contact presence projection");
+    assert!(projection.contains("InvestigationActionKind::LocateContact"));
+    assert!(projection.contains("settlement_resident_presence()"));
+    assert!(projection.contains("contact_schedule_window"));
+    assert!(projection.contains("contact_not_present"));
+
+    let reducer = source
+        .split("fn validate_action_position")
+        .nth(1)
+        .and_then(|tail| tail.split("fn validate_generated_pattern_condition").next())
+        .expect("reducer contact presence validation");
+    assert!(reducer.contains("InvestigationActionKind::LocateContact"));
+    assert!(reducer.contains("npc_is_present"));
+}
+
+#[test]
+fn locate_contact_stale_target_beats_off_hours_schedule_wait() {
+    use adventuresim_core::quest_generation::{WitnessCandidate, WitnessDemographic};
+
+    let candidate = |location: &str, presence_version: u64| WitnessCandidate {
+        resident_character_id: 9,
+        display_name: "Ada".into(),
+        demographic: WitnessDemographic::Laborer,
+        age_band: "adult".into(),
+        sex: "female".into(),
+        profession: "weaver".into(),
+        visible_description: String::new(),
+        expected_location: location.into(),
+        expected_location_label: location.into(),
+        presence_version,
+        allowed_circumstances: Default::default(),
+    };
+    let expected = candidate("market", 7);
+    assert!(!referred_contact_target_matches(
+        &expected,
+        &candidate("inn", 7),
+        "lubeck",
+        "lubeck",
+    ));
+    assert!(!referred_contact_target_matches(
+        &expected,
+        &candidate("market", 8),
+        "lubeck",
+        "lubeck",
+    ));
+
+    let projection = INVESTIGATION_SOURCE
+        .split("fn projected_contact_presence_availability")
+        .nth(1)
+        .and_then(|tail| tail.split("fn night_window_wait_minutes").next())
+        .expect("locate-contact projection");
+    let validates_target = projection.find("referred_contact_is_current_view").unwrap();
+    let computes_wait = projection.find("public_contact_schedule_wait_minutes").unwrap();
+    assert!(validates_target < computes_wait);
 }
 
 #[test]

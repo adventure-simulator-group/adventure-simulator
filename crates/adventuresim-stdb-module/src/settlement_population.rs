@@ -4,11 +4,14 @@ use crate::{
     personality::{Presentation, character_personality, character_personality__view},
     relationship::{NpcPolicy, npc_policy},
     strategic::{settlement, strategic_gateway_authority__view},
-    time::world_clock,
 };
 use adventuresim_core::settlement_population::{
     self as population, AgeBand, GenerationInput, LocationContext, PresenceBridge, Profession,
     Schedule,
+};
+use adventuresim_core::strategic_place::{SettlementVenueKind, StrategicPlaceId};
+use adventuresim_core::strategic_presence::{
+    DailyPresenceWindow, PresenceFrontier, ScheduledStrategicPresence, StrategicPresence,
 };
 use serde::{Deserialize, Serialize};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, table, view};
@@ -408,22 +411,24 @@ fn insert_resident_with_seed(
                 | crate::strategic::SettlementCategory::City
                 | crate::strategic::SettlementCategory::Capital
         );
-        crate::social_estate::ensure_character_social_roles(
+        crate::social_roles::ensure_character_social_roles(
             ctx,
             character_id,
             settlement_id,
             urban,
         )?;
-        if existing.profession == "cleric" {
-            if let Some(organization_id) =
-                crate::social_estate::religious_organization_for(&settlement.religion_id)
-            {
-                crate::social_estate::ensure_character_professional_role(
-                    ctx,
-                    character_id,
-                    organization_id,
-                )?;
-            }
+        if existing.profession == "cleric"
+            && let Some(organization_id) =
+                crate::social_roles::religious_organization_for(&settlement.religion_id)
+        {
+            crate::social_roles::ensure_character_professional_role(
+                ctx,
+                character_id,
+                organization_id,
+                adventuresim_core::organization::organization(organization_id)
+                    .and_then(|definition| definition.entry_role_ids.first())
+                    .ok_or("Religious organization has no entry role")?,
+            )?;
         }
         return Ok(());
     }
@@ -454,7 +459,7 @@ fn insert_resident_with_seed(
     } else {
         supplied_role
     };
-    let female = population::stable_hash(&format!("{seed}:sex")) % 2 == 0;
+    let female = population::stable_hash(&format!("{seed}:sex")).is_multiple_of(2);
     let age_band = age(profile.age);
     let household = format!(
         "the {} {}",
@@ -498,7 +503,7 @@ fn insert_resident_with_seed(
             build: profile.build.clone(),
             hair: profile.hair.clone(),
             facial_hair: if !female
-                && population::stable_hash(&seed) % 3 == 0
+                && population::stable_hash(&seed).is_multiple_of(3)
                 && !matches!(age_band, NpcAgeBand::Child)
             {
                 "a neatly kept beard".into()
@@ -539,7 +544,7 @@ fn insert_resident_with_seed(
         .db
         .settlement()
         .id()
-        .find(&settlement_id.to_owned())
+        .find(settlement_id.to_owned())
         .ok_or("Settlement population references an unknown settlement")?;
     let urban = matches!(
         settlement.category,
@@ -547,22 +552,24 @@ fn insert_resident_with_seed(
             | crate::strategic::SettlementCategory::City
             | crate::strategic::SettlementCategory::Capital
     );
-    crate::social_estate::ensure_character_social_roles(
+    crate::social_roles::ensure_character_social_roles(
         ctx,
         resident.character_id,
         settlement_id,
         urban,
     )?;
-    if resident.profession == "cleric" {
-        if let Some(organization_id) =
-            crate::social_estate::religious_organization_for(&settlement.religion_id)
-        {
-            crate::social_estate::ensure_character_professional_role(
-                ctx,
-                resident.character_id,
-                organization_id,
-            )?;
-        }
+    if resident.profession == "cleric"
+        && let Some(organization_id) =
+            crate::social_roles::religious_organization_for(&settlement.religion_id)
+    {
+        crate::social_roles::ensure_character_professional_role(
+            ctx,
+            resident.character_id,
+            organization_id,
+            adventuresim_core::organization::organization(organization_id)
+                .and_then(|definition| definition.entry_role_ids.first())
+                .ok_or("Religious organization has no entry role")?,
+        )?;
     }
     let (start_minute, end_minute) = match profile.schedule {
         Schedule::Day => (360, 1200),
@@ -599,7 +606,7 @@ pub fn ensure_settlement_population(
     ctx: &ReducerContext,
     settlement_id: &str,
 ) -> Result<(), String> {
-    crate::social_estate::ensure_settlement_social_organizations(ctx, settlement_id)?;
+    crate::social_roles::ensure_settlement_social_organizations(ctx, settlement_id)?;
     for (service, location, profession, role) in SERVICES {
         insert_resident(
             ctx,
@@ -658,7 +665,7 @@ pub fn ensure_settlement_population(
         .db
         .settlement()
         .id()
-        .find(&settlement_id.to_string())
+        .find(settlement_id.to_string())
         .is_some_and(|settlement| {
             matches!(
                 settlement.category,
@@ -688,7 +695,7 @@ pub fn ensure_settlement_population(
             .db
             .settlement()
             .id()
-            .find(&settlement_id.to_owned())
+            .find(settlement_id.to_owned())
             .ok_or("Organization chapter references an unknown settlement")?;
         let physical_location = adventuresim_core::organization::chapter_effective_location_id(
             organization,
@@ -741,36 +748,70 @@ pub fn npc_is_present(
     npc_presence_remaining_minutes_at(ctx, presence, minute).is_some()
 }
 
-/// Authoritative availability projection shared by every service, dialogue,
-/// investigation, and social consumer. This catches episode completion even
-/// when the patient has been idle since outbreak materialization.
+/// Canonical exact place behind an authoritative settlement NPC location.
+/// The `overview` route is the presentation alias for the public square.
+pub fn canonical_npc_place(settlement_id: &str, location_id: &str) -> Option<StrategicPlaceId> {
+    let venue = if matches!(location_id, "overview" | "public-square") {
+        Some(SettlementVenueKind::PublicSquare)
+    } else {
+        SettlementVenueKind::from_id(location_id)
+    };
+    if let Some(kind) = venue {
+        return StrategicPlaceId::settlement_venue(settlement_id, kind).ok();
+    }
+    let (organization, chapter) =
+        adventuresim_core::organization::organization_chapter_at(settlement_id, location_id)?;
+    StrategicPlaceId::chapter_venue(settlement_id, &organization.id, &chapter.location_id).ok()
+}
+
+/// Typed scheduled presence at the actor-relative personal minute. Historical
+/// outbreak state is reconstructed without mutating or reading future state.
+pub fn npc_strategic_presence_at(
+    ctx: &ReducerContext,
+    presence: &SettlementResidentPresence,
+    observer_character_id: u64,
+    minute: u64,
+) -> Option<ScheduledStrategicPresence> {
+    let suppression =
+        crate::outbreak::patient_presence_suppression_at(ctx, presence.character_id, minute)?;
+    let alive = crate::relationship::character_alive_at(ctx, presence.character_id, minute);
+    StrategicPresence::scheduled_resident(
+        presence.character_id,
+        canonical_npc_place(&presence.settlement_id, &presence.location_id)?,
+        PresenceFrontier {
+            observer_character_id,
+            personal_minute: minute,
+        },
+        DailyPresenceWindow {
+            start_minute: presence.start_minute,
+            end_minute: presence.end_minute,
+        },
+        alive,
+        suppression.context_suppressed,
+        suppression.health_suppressed,
+    )
+    .ok()
+}
+
+/// Compatibility projection for consumers that only need schedule duration.
+/// It deliberately does not fabricate a typed observer frontier.
 pub fn npc_presence_remaining_minutes_at(
     ctx: &ReducerContext,
     presence: &SettlementResidentPresence,
     minute: u64,
 ) -> Option<u64> {
-    let frontier = ctx
-        .db
-        .world_clock()
-        .id()
-        .find(0)
-        .map_or(minute, |clock| clock.official_minutes.max(minute));
-    crate::outbreak::refresh_patient_context_after_time_write(ctx, presence.character_id, frontier);
-    let effective_presence = ctx
-        .db
-        .settlement_resident_presence()
-        .character_id()
-        .find(presence.character_id)
-        .unwrap_or_else(|| presence.clone());
-    let alive = ctx
-        .db
-        .character()
-        .id()
-        .find(presence.character_id)
-        .is_some_and(|character| character.alive);
-    alive
-        .then(|| npc_presence_remaining_minutes(&effective_presence, minute))
-        .flatten()
+    let suppression =
+        crate::outbreak::patient_presence_suppression_at(ctx, presence.character_id, minute)?;
+    DailyPresenceWindow {
+        start_minute: presence.start_minute,
+        end_minute: presence.end_minute,
+    }
+    .remaining_minutes(
+        minute,
+        suppression.context_suppressed,
+        suppression.health_suppressed,
+    )
+    .ok()
 }
 
 /// Remaining contiguous minutes in the NPC's current daily presence window.
@@ -779,28 +820,34 @@ pub fn npc_presence_remaining_minutes(
     presence: &SettlementResidentPresence,
     minute: u64,
 ) -> Option<u64> {
-    if presence.context_suppressed || presence.health_suppressed {
-        return None;
+    DailyPresenceWindow {
+        start_minute: presence.start_minute,
+        end_minute: presence.end_minute,
     }
-    let minute = minute % 1_440;
-    let start = u64::from(presence.start_minute);
-    let end = u64::from(presence.end_minute);
-    if start == end {
-        return None;
-    }
-    if start < end {
-        (start <= minute && minute < end).then_some(end - minute)
-    } else if minute >= start {
-        Some((1_440 - minute) + end)
-    } else {
-        (minute < end).then_some(end - minute)
-    }
+    .remaining_minutes(
+        minute,
+        presence.context_suppressed,
+        presence.health_suppressed,
+    )
+    .ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn canonical_npc_places_use_physical_venue_identity() {
+        let overview = canonical_npc_place("lubeck", "overview").unwrap();
+        let square = canonical_npc_place("lubeck", "public-square").unwrap();
+        let inn = canonical_npc_place("lubeck", "inn").unwrap();
+
+        assert_eq!(overview, square);
+        assert_ne!(overview, inn);
+        assert!(canonical_npc_place("lubeck", "unknown-route-value").is_none());
+    }
+
+    #[allow(dead_code)] // Shared fixture retained for tests compiled outside the module target.
     fn settlement_resident_profile() -> SettlementResidentProfile {
         SettlementResidentProfile {
             character_id: 42,
@@ -954,15 +1001,29 @@ mod tests {
     }
 
     #[test]
-    fn authoritative_presence_refreshes_idle_outbreak_health_before_service_use() {
+    fn authoritative_presence_reconstructs_historical_outbreak_state_without_mutation() {
         let source = include_str!("settlement_population.rs");
+        let typed_projection = source
+            .split("pub fn npc_strategic_presence_at")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub fn npc_presence_remaining_minutes_at")
+                    .next()
+            })
+            .expect("typed historical presence projection");
+        assert!(typed_projection.contains("patient_presence_suppression_at"));
+        assert!(typed_projection.contains("character_alive_at"));
+        assert!(!typed_projection.contains("world_clock"));
+        assert!(!typed_projection.contains("refresh_patient_context_after_time_write"));
+        assert!(!typed_projection.contains("character.alive"));
+
         let projection = source
             .split("pub fn npc_presence_remaining_minutes_at")
             .nth(1)
             .and_then(|tail| tail.split("pub fn npc_presence_remaining_minutes").next())
             .expect("authoritative presence projection");
-        assert!(projection.contains("world_clock"));
-        assert!(projection.contains("refresh_patient_context_after_time_write"));
-        assert!(projection.contains("character.alive"));
+        assert!(projection.contains("patient_presence_suppression_at"));
+        assert!(!projection.contains("PresenceFrontier"));
+        assert!(!projection.contains("refresh_patient_context_after_time_write"));
     }
 }

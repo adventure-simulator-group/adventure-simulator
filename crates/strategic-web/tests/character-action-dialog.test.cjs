@@ -64,13 +64,15 @@ test("automatic social preference submits immediately when the checkbox changes"
   assert.equal(submitAutomaticChatToggle({ matches: () => false }), false);
 });
 
-test("character actions use one dialog and raised-button contract", () => {
+test("modal character actions retain the raised-button contract while social uses the dock", () => {
   assert.match(template, /data-character-action-dialog/);
   assert.match(template, /aria-haspopup="dialog" aria-expanded=\(open\)/);
   assert.match(template, /character-menu-button limb-surgery-button/);
   assert.match(template, /role="dialog" aria-modal="true" aria-labelledby="surgery-dialog-title"/);
-  assert.match(template, /role="dialog" aria-modal="true" aria-labelledby="social-dialog-title"/);
-  assert.match(template, /role="dialog" aria-modal="true" aria-labelledby="cooking-dialog-title"/);
+  assert.match(template, /data-social-conversation/);
+  assert.doesNotMatch(socialTemplate, /aria-labelledby="social-dialog-title"/);
+  assert.doesNotMatch(template, /cooking-dialog-title/);
+  assert.match(template, /aria-label="Cook at fireplace"/);
   assert.match(styles, /\.character-menu-button[\s\S]*background: var\(--tactile-background\)/);
   assert.match(styles, /\.character-menu-button[\s\S]*box-shadow: var\(--tactile-shadow\)/);
   assert.match(styles, /\.character-menu-button:focus-visible[\s\S]*outline: 2px solid var\(--accent-light\)/);
@@ -82,7 +84,7 @@ test("character actions use one dialog and raised-button contract", () => {
   assert.match(styles, /\.social-dialog \{ width: min\(40rem, 100%\); \}/);
 });
 
-test("social and surgery inject overlays into the ordinary character renderers", () => {
+test("social replaces the ordinary chat dock while surgery remains an overlay", () => {
   assert.match(routes, /render_party_personal\([\s\S]*Some\(dialog\)/);
   assert.match(routes, /render_party_stats\([\s\S]*Some\(dialog\)/);
   const socialStart = socialTemplate.indexOf("pub fn party_social_dialog");
@@ -92,6 +94,11 @@ test("social and surgery inject overlays into the ordinary character renderers",
   const surgeryEnd = healthTemplate.indexOf("pub(super) fn strategic_condition_rail", surgeryStart);
   const surgeryDialog = healthTemplate.slice(surgeryStart, surgeryEnd);
   assert.doesNotMatch(socialDialog, /left-sidebar|right-sidebar|render_layout/);
+  assert.match(socialDialog, /role="tablist"/);
+  assert.match(socialDialog, /Recent Tidings/);
+  assert.match(socialDialog, /class="settlement-chat-messages"/);
+  assert.match(socialDialog, /data-local-chat-kind="player"/);
+  assert.match(socialDialog, /data-strategic-tooltip=\(belief_tooltip\(belief\)\)/);
   assert.doesNotMatch(surgeryDialog, /left-sidebar|right-sidebar|render_layout/);
   assert.match(socialDialog, /preserve_building/);
   assert.match(surgeryDialog, /preserve_building/);

@@ -11,7 +11,7 @@
         "adaptation_note": "An original synthesis of hazardous noble hunts, proud wagers, imperiled attendants, and mountain trials common in chivalric romance; it does not reproduce a particular episode."
       },
       "cast": [
-        { "id": "young_lord", "name": "Young lord", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty" } }
+        { "id": "young_lord", "name": "Young lord", "nature": "mortal", "backing": { "kind": "character", "role": "counterparty", "contact_decision": "allowed", "treatment_decision": "unavailable" } }
       ],
       "opening": [
         {

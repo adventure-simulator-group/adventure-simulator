@@ -6,6 +6,116 @@ struct IncidentSpec<'a> {
     difficulty: i32,
 }
 
+/// Minimal trusted-gateway action surface for a pending local arrest. The
+/// private incident kind/source, charge identities, offense kinds, severities,
+/// and hostile-group authority never cross this boundary.
+#[derive(Clone, Debug, PartialEq, Eq, SpacetimeType)]
+pub struct BackendAuthorityArrestAction {
+    pub action_token: String,
+    pub party_id: String,
+    pub case_site_id: String,
+    pub origin_settlement_id: String,
+    pub instigator_id: u64,
+    pub fine: u64,
+    pub affordable: bool,
+}
+
+#[view(accessor = backend_authority_arrest_actions, public)]
+pub fn backend_authority_arrest_actions(
+    ctx: &ViewContext,
+) -> Vec<BackendAuthorityArrestAction> {
+    use crate::{
+        character::character__view as _,
+        item::{inventory_item__view as _, item__view as _},
+        reputation::{authority_arrest_charge__view as _, discovered_offense__view as _},
+    };
+
+    if !strategic_view_is_gateway(ctx) {
+        return Vec::new();
+    }
+    let mut actions = Vec::new();
+    for party in ctx.db.party_authority().gateway_bucket().filter(0u8) {
+        for incident in ctx
+            .db
+            .strategic_incident()
+            .party_id()
+            .filter(&party.id)
+            .filter(|incident| {
+                incident.kind == IncidentKind::AuthorityArrest
+                    && incident.status == IncidentStatus::Pending
+            })
+        {
+            if party.current_case_site_id.as_ref() != Some(&incident.case_site_id)
+                || !ctx
+                    .db
+                    .party_member()
+                    .party_id()
+                    .filter(&incident.party_id)
+                    .any(|member| member.character_id == incident.instigator_id)
+            {
+                continue;
+            }
+            let Some(character) = ctx.db.character().id().find(incident.instigator_id) else {
+                continue;
+            };
+            if !character.alive || character.party_id.as_deref() != Some(&incident.party_id) {
+                continue;
+            }
+            let charges = ctx
+                .db
+                .authority_arrest_charge()
+                .incident_id()
+                .filter(&incident.id.value)
+                .filter(|charge| {
+                    charge.character_id == incident.instigator_id
+                        && charge.settlement_id == incident.settlement_id
+                })
+                .filter_map(|charge| ctx.db.discovered_offense().id().find(&charge.offense_id))
+                .filter(|offense| {
+                    offense.character_id == incident.instigator_id
+                        && offense.settlement_id == incident.settlement_id
+                        && !offense.settled
+                })
+                .map(|offense| (offense.severity, offense.settled))
+                .collect::<Vec<_>>();
+            let Some(fine) =
+                adventuresim_core::reputation::authority_fine_for_charges(&charges)
+            else {
+                continue;
+            };
+            let funds = ctx
+                .db
+                .inventory_item()
+                .character_id()
+                .filter(incident.instigator_id)
+                .filter(|stack| {
+                    ctx.db.item().id().find(&stack.item_id).is_some_and(|item| {
+                        item.kind == crate::item::ItemKind::Currency
+                    })
+                })
+                .map(|stack| u64::from(stack.quantity))
+                .sum::<u64>();
+            actions.push(BackendAuthorityArrestAction {
+                action_token: incident.action_token,
+                party_id: incident.party_id,
+                case_site_id: incident.case_site_id.value,
+                origin_settlement_id: incident.settlement_id,
+                instigator_id: incident.instigator_id,
+                fine,
+                affordable: funds >= fine,
+            });
+        }
+    }
+    actions.sort_by(|left, right| {
+        (&left.party_id, &left.case_site_id, &left.action_token).cmp(&(
+            &right.party_id,
+            &right.case_site_id,
+            &right.action_token,
+        ))
+    });
+    actions
+}
+
 fn create_strategic_incident(
     ctx: &ReducerContext,
     party_id: &str,
@@ -16,7 +126,7 @@ fn create_strategic_incident(
     spec: IncidentSpec<'_>,
 ) -> Result<Option<IncidentId>, String> {
     parse_threat(spec.enemy_type)?;
-    let Some(mut party) = ctx.db.party_authority().id().find(&party_id.to_string()) else {
+    let Some(mut party) = ctx.db.party_authority().id().find(party_id.to_string()) else {
         return Ok(None);
     };
     let at_expected_location = current_case_site_id.map_or_else(
@@ -104,6 +214,7 @@ fn create_strategic_incident(
         id_key: incident_id.value.clone(),
         id: incident_id.clone(),
         source_id,
+        action_token: format!("{:016x}{:016x}", ctx.random::<u64>(), ctx.random::<u64>()),
         party_id: party_id.into(),
         settlement_id: settlement.id.clone(),
         instigator_id,
@@ -121,7 +232,7 @@ fn create_strategic_incident(
                 ctx,
                 member.id,
                 Some(case_site_id.clone()),
-            );
+            )?;
             ctx.db.character().id().update(member);
         }
     }
@@ -396,20 +507,46 @@ pub(crate) fn maybe_trigger_activity_incident(
 pub fn surrender_to_authority(
     ctx: &ReducerContext,
     character_id: u64,
-    incident_id: String,
+    action_token: String,
 ) -> Result<(), String> {
     require_strategic_character_authority(ctx, character_id)?;
     let incident = ctx
         .db
         .strategic_incident()
-        .id_key()
-        .find(&incident_id)
+        .action_token()
+        .find(&action_token)
         .ok_or("Authority incident not found")?;
     if incident.status != IncidentStatus::Pending
         || incident.kind != IncidentKind::AuthorityArrest
         || incident.instigator_id != character_id
     {
         return Err("This character cannot surrender for that incident".into());
+    }
+    let character = ctx
+        .db
+        .character()
+        .id()
+        .find(character_id)
+        .ok_or("Character not found")?;
+    let party_id = character
+        .party_id
+        .as_deref()
+        .ok_or("Character is not in the incident party")?;
+    let membership_matches = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(party_id)
+        .any(|membership| membership.character_id == character_id);
+    let party_site_matches = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(party_id.to_owned())
+        .and_then(|party| party.current_case_site_id)
+        .is_some_and(|site| site == incident.case_site_id);
+    if incident.party_id != party_id || !membership_matches || !party_site_matches {
+        return Err("Character is not at the incident site with its owning party".into());
     }
     let offenses = crate::reputation::unsettled_arrest_charges(
         ctx,

@@ -1,11 +1,12 @@
 use axum::{
-    Form, Router,
-    extract::{Query, State},
+    Router,
+    extract::{DefaultBodyLimit, Query, RawForm, State},
+    http::StatusCode,
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
 };
 use maud::{Markup, html};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
@@ -18,18 +19,24 @@ use super::{AppState, local_return_url, persisted_route_position};
 use crate::{
     session::Session,
     spacetimedb::{
-        BackendCaseSitePin, BackendForageReceipt, Character, CharacterTime, OrganizationMembership,
-        OrganizationPresentation, Party, PartyJourney, PartyJourneyRoute, Settlement,
-        sql_string_literal,
+        BackendCaseSitePin, BackendForageAttemptState, BackendForageReceipt, Character,
+        CharacterTime, OrganizationMembership, OrganizationPresentation, Party, PartyJourney,
+        PartyJourneyRoute, Settlement, sql_string_literal,
     },
 };
 
 static NEXT_FORAGE_REQUEST: AtomicU64 = AtomicU64::new(1);
+const FORAGE_FORM_MAX_BYTES: usize = 1_024;
+const FORAGE_FORM_MAX_PAIRS: usize = 8;
+const FORAGE_FORM_MAX_SOURCES: usize = 5;
+const FORAGE_FORM_MAX_SOURCE_LEN: usize = 32;
+const FORAGE_FORM_MAX_RETURN_TO_LEN: usize = 512;
 
 pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/forage", get(menu))
-        .route("/forage", post(perform))
+    Router::new().route("/forage", get(menu)).route(
+        "/forage",
+        post(perform).layer(DefaultBodyLimit::max(FORAGE_FORM_MAX_BYTES)),
+    )
 }
 
 #[derive(Default, Deserialize)]
@@ -37,12 +44,56 @@ struct ForageQuery {
     return_to: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, PartialEq, Eq)]
 struct ForageForm {
-    #[serde(default)]
     source: Vec<String>,
     hours: u8,
     return_to: String,
+}
+
+fn parse_forage_form(body: &[u8]) -> Result<ForageForm, ()> {
+    if body.len() > FORAGE_FORM_MAX_BYTES {
+        return Err(());
+    }
+    let mut source = Vec::new();
+    let mut hours = None;
+    let mut return_to = None;
+    for (pair_index, (key, value)) in form_urlencoded::parse(body).enumerate() {
+        if pair_index >= FORAGE_FORM_MAX_PAIRS {
+            return Err(());
+        }
+        match key.as_ref() {
+            // Repeated checkbox names are the canonical browser encoding for
+            // zero, one, or many selected sources. Preserve duplicates so the
+            // authoritative reducer can reject that malformed contract.
+            "source" => {
+                if source.len() >= FORAGE_FORM_MAX_SOURCES
+                    || value.len() > FORAGE_FORM_MAX_SOURCE_LEN
+                {
+                    return Err(());
+                }
+                source.push(value.into_owned());
+            }
+            "hours" => {
+                if hours.is_some() {
+                    return Err(());
+                }
+                hours = Some(value.parse().map_err(|_| ())?);
+            }
+            "return_to" => {
+                if return_to.is_some() || value.len() > FORAGE_FORM_MAX_RETURN_TO_LEN {
+                    return Err(());
+                }
+                return_to = Some(value.into_owned());
+            }
+            _ => {}
+        }
+    }
+    Ok(ForageForm {
+        source,
+        hours: hours.ok_or(())?,
+        return_to: return_to.ok_or(())?,
+    })
 }
 
 struct Vicinity {
@@ -51,6 +102,23 @@ struct Vicinity {
     latitude: f64,
     longitude: f64,
     settlement: bool,
+}
+
+#[derive(Serialize)]
+struct WireForageEnvironmentAttestation<'a> {
+    package_digest: &'a str,
+    // SpacetimeDB codegen splits the numeric suffix in these wire names.
+    latitude_e_7: i32,
+    longitude_e_7: i32,
+    context_kind: &'a str,
+    context_id: &'a str,
+    plains: u16,
+    forest: u16,
+    hills: u16,
+    wetlands: u16,
+    river_or_wet_ground: bool,
+    sea_or_coast: bool,
+    cultivated: bool,
 }
 
 fn source_privilege(
@@ -82,7 +150,7 @@ async fn advisory_privileges(
     let memberships = state
         .db
         .query::<OrganizationMembership>(&format!(
-            "SELECT * FROM organization_membership WHERE character_id = {character_id}"
+            "SELECT * FROM backend_organization_memberships WHERE character_id = {character_id}"
         ))
         .await
         .unwrap_or_default();
@@ -130,7 +198,7 @@ fn advisory_privileges_for(
         adventuresim_core::organization::Privilege::ForagePlants,
     ]
     .into_iter()
-    .filter(|privilege| definition.has_privilege_at_rank(&membership.rank_id, *privilege))
+    .filter(|privilege| definition.has_privilege_at_role(&membership.role_id, *privilege))
     .collect()
 }
 
@@ -282,6 +350,10 @@ fn forage_receipt_query(character_id: u64, request_id: &str) -> String {
     )
 }
 
+fn forage_attempt_state_query(character_id: u64) -> String {
+    format!("SELECT * FROM backend_forage_attempt_states WHERE character_id = {character_id}")
+}
+
 fn valid_forage_request_id(request_id: &str) -> bool {
     request_id.len() == 64 && request_id.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
@@ -407,20 +479,21 @@ async fn environment(
         settlement: location.settlement,
         license_violation: false,
     };
-    let attestation = json!({
-        "package_digest": terrain.digest(),
-        "latitude_e7": (location.latitude * 10_000_000.0).round() as i32,
-        "longitude_e7": (location.longitude * 10_000_000.0).round() as i32,
-        "context_kind": location.kind,
-        "context_id": location.id,
-        "plains": mixture.plains,
-        "forest": mixture.forest,
-        "hills": mixture.hills,
-        "wetlands": mixture.wetlands,
-        "river_or_wet_ground": environment.river_or_wet_ground,
-        "sea_or_coast": environment.sea_or_coast,
-        "cultivated": environment.cultivated,
-    });
+    let attestation = serde_json::to_value(WireForageEnvironmentAttestation {
+        package_digest: terrain.digest(),
+        latitude_e_7: (location.latitude * 10_000_000.0).round() as i32,
+        longitude_e_7: (location.longitude * 10_000_000.0).round() as i32,
+        context_kind: &location.kind,
+        context_id: &location.id,
+        plains: mixture.plains,
+        forest: mixture.forest,
+        hills: mixture.hills,
+        wetlands: mixture.wetlands,
+        river_or_wet_ground: environment.river_or_wet_ground,
+        sea_or_coast: environment.sea_or_coast,
+        cultivated: environment.cultivated,
+    })
+    .map_err(|error| error.to_string())?;
     Ok((environment, attestation))
 }
 
@@ -558,8 +631,11 @@ fn integrated_forage_href(character: &Character, return_to: &str) -> String {
 async fn perform(
     State(state): State<AppState>,
     session: Session,
-    Form(form): Form<ForageForm>,
+    RawForm(body): RawForm,
 ) -> Response {
+    let Ok(form) = parse_forage_form(&body) else {
+        return StatusCode::UNPROCESSABLE_ENTITY.into_response();
+    };
     let return_to = local_return_url(&form.return_to).unwrap_or("/");
     let Some(character_id) = session.character_id_u64() else {
         return Redirect::to("/characters").into_response();
@@ -569,6 +645,15 @@ async fn perform(
         let (environment, attestation) = environment(&state, &character).await?;
         let minutes = u64::from(form.hours) * 60;
         let request_id = forage_request_id(character_id);
+        let attempt_generation = state
+            .db
+            .query_one::<BackendForageAttemptState>(&forage_attempt_state_query(character_id))
+            .await
+            .map_err(|error| error.to_string())?
+            .map_or(0, |row| row.next_generation);
+        // The browser submits only selected categories and duration. This
+        // session-scoped endpoint hydrates the opaque request, generation, and
+        // private terrain attestation before entering the plan gateway.
         state
             .db
             .call(
@@ -578,6 +663,7 @@ async fn perform(
                     json!(&request_id),
                     json!(&form.source),
                     json!(minutes),
+                    json!(attempt_generation),
                     attestation,
                 ],
             )
@@ -623,6 +709,53 @@ mod tests {
     }
 
     #[test]
+    fn browser_checkbox_form_accepts_one_or_many_sources_without_javascript() {
+        assert_eq!(
+            parse_forage_form(b"return_to=%2Fcamp&source=plants&hours=1"),
+            Ok(ForageForm {
+                source: vec!["plants".into()],
+                hours: 1,
+                return_to: "/camp".into(),
+            })
+        );
+        assert_eq!(
+            parse_forage_form(b"return_to=%2Fcamp&source=high_game&source=plants&hours=24"),
+            Ok(ForageForm {
+                source: vec!["high_game".into(), "plants".into()],
+                hours: 24,
+                return_to: "/camp".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn browser_checkbox_form_preserves_none_and_duplicates_for_authoritative_validation() {
+        assert_eq!(
+            parse_forage_form(b"return_to=%2Fcamp&hours=1"),
+            Ok(ForageForm {
+                source: Vec::new(),
+                hours: 1,
+                return_to: "/camp".into(),
+            })
+        );
+        assert_eq!(
+            parse_forage_form(b"return_to=%2Fcamp&source=plants&source=plants&hours=1")
+                .unwrap()
+                .source,
+            ["plants", "plants"]
+        );
+    }
+
+    #[test]
+    fn browser_checkbox_form_rejects_ambiguous_scalar_fields() {
+        assert!(
+            parse_forage_form(b"return_to=%2Fcamp&return_to=%2Fother&source=plants&hours=1")
+                .is_err()
+        );
+        assert!(parse_forage_form(b"return_to=%2Fcamp&source=plants&hours=1&hours=2").is_err());
+    }
+
+    #[test]
     fn source_markup_is_ordered_accessible_and_keeps_poaching_enabled() {
         let markup = source_rows(mixed_environment(), &BTreeSet::new()).into_string();
         let positions = ["High Game", "Low Game", "Fish", "Harmful Beasts", "Plants"]
@@ -646,12 +779,12 @@ mod tests {
         assert!(markup.contains("Unavailable here"));
     }
 
-    fn ranger_membership(rank_id: &str, status: &str, paid_through: u64) -> OrganizationMembership {
+    fn ranger_membership(role_id: &str, status: &str, paid_through: u64) -> OrganizationMembership {
         OrganizationMembership {
             id: 1,
             character_id: 7,
             organization_id: "lodge_hart_king".into(),
-            rank_id: rank_id.into(),
+            role_id: role_id.into(),
             joined_minute: 0,
             dues_paid_through_minute: paid_through,
             status: status.into(),
@@ -661,10 +794,14 @@ mod tests {
     }
 
     #[test]
-    fn advisory_licenses_require_matching_current_presentation_and_rank() {
+    fn advisory_licenses_require_matching_current_presentation_and_role() {
         use adventuresim_core::organization::Privilege;
         let warden = ranger_membership("warden", "active", 100);
-        let common = advisory_privileges_for(Some("lodge_hart_king"), &[warden.clone()], Some(100));
+        let common = advisory_privileges_for(
+            Some("lodge_hart_king"),
+            std::slice::from_ref(&warden),
+            Some(100),
+        );
         assert!(common.contains(&Privilege::ForageLowGame));
         assert!(common.contains(&Privilege::ForageFish));
         assert!(common.contains(&Privilege::ForagePlants));
@@ -675,10 +812,14 @@ mod tests {
             advisory_privileges_for(Some("lodge_hart_king"), &[master], Some(100))
                 .contains(&Privilege::ForageHighGame)
         );
-        assert!(advisory_privileges_for(None, &[warden.clone()], Some(100)).is_empty());
+        assert!(advisory_privileges_for(None, std::slice::from_ref(&warden), Some(100)).is_empty());
         assert!(
-            advisory_privileges_for(Some("hunt_pale_lantern"), &[warden.clone()], Some(100))
-                .is_empty()
+            advisory_privileges_for(
+                Some("hunt_pale_lantern"),
+                std::slice::from_ref(&warden),
+                Some(100)
+            )
+            .is_empty()
         );
         let lapsed = ranger_membership("master", "active", 99);
         assert!(advisory_privileges_for(Some("lodge_hart_king"), &[lapsed], Some(100)).is_empty());
@@ -686,6 +827,75 @@ mod tests {
         assert!(
             advisory_privileges_for(Some("lodge_hart_king"), &[suspended], Some(100)).is_empty()
         );
+    }
+
+    #[test]
+    fn browser_checkbox_form_is_explicitly_bounded_before_authentication() {
+        assert!(parse_forage_form(&vec![b'x'; FORAGE_FORM_MAX_BYTES + 1]).is_err());
+
+        let too_many_pairs = format!(
+            "return_to=%2Fcamp&hours=1{}",
+            "&ignored=x".repeat(FORAGE_FORM_MAX_PAIRS - 1)
+        );
+        assert!(parse_forage_form(too_many_pairs.as_bytes()).is_err());
+
+        let too_many_sources = format!(
+            "return_to=%2Fcamp&hours=1{}",
+            "&source=plants".repeat(FORAGE_FORM_MAX_SOURCES + 1)
+        );
+        assert!(parse_forage_form(too_many_sources.as_bytes()).is_err());
+
+        let long_source = "x".repeat(FORAGE_FORM_MAX_SOURCE_LEN + 1);
+        assert!(
+            parse_forage_form(format!("return_to=%2Fcamp&hours=1&source={long_source}").as_bytes())
+                .is_err()
+        );
+
+        let long_return = "x".repeat(FORAGE_FORM_MAX_RETURN_TO_LEN + 1);
+        assert!(
+            parse_forage_form(format!("return_to=%2F{long_return}&hours=1").as_bytes()).is_err()
+        );
+    }
+
+    #[test]
+    fn forage_attestation_uses_generated_spacetime_wire_field_names() {
+        let encoded = serde_json::to_value(WireForageEnvironmentAttestation {
+            package_digest: "digest",
+            latitude_e_7: 517_500_000,
+            longitude_e_7: 97_500_000,
+            context_kind: "settlement",
+            context_id: "dev-scenario-foraging",
+            plains: 0,
+            forest: 1_000,
+            hills: 0,
+            wetlands: 0,
+            river_or_wet_ground: false,
+            sea_or_coast: false,
+            cultivated: false,
+        })
+        .unwrap();
+        assert_eq!(
+            encoded,
+            json!({
+                "package_digest": "digest",
+                "latitude_e_7": 517_500_000,
+                "longitude_e_7": 97_500_000,
+                "context_kind": "settlement",
+                "context_id": "dev-scenario-foraging",
+                "plains": 0,
+                "forest": 1_000,
+                "hills": 0,
+                "wetlands": 0,
+                "river_or_wet_ground": false,
+                "sea_or_coast": false,
+                "cultivated": false,
+            })
+        );
+        let generated = include_str!(
+            "../../../adventuresim-stdb-client/src/forage_environment_attestation_type.rs"
+        );
+        assert!(generated.contains("pub latitude_e_7: i32"));
+        assert!(generated.contains("pub longitude_e_7: i32"));
     }
 
     #[test]

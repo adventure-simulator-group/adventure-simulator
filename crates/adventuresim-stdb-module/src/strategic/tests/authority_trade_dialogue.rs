@@ -142,6 +142,11 @@ fn authority_enforcement_is_charge_scoped_and_resistance_is_retry_stable() {
     assert!(surrender.contains("unsettled_arrest_charges"));
     assert!(surrender.contains("authority_fine"));
     assert!(surrender.contains("settle_offenses(ctx, offenses)"));
+    assert!(surrender.contains(".action_token()"));
+    assert!(surrender.contains("incident.party_id != party_id"));
+    assert!(surrender.contains("membership.character_id == character_id"));
+    assert!(surrender.contains("party.current_case_site_id"));
+    assert!(surrender.contains("site == incident.case_site_id"));
     assert!(!surrender.contains("local_reputation"));
 
     let completion = source
@@ -162,10 +167,17 @@ fn case_reputation_separates_canonical_and_public_battle_identity() {
         .next()
         .and_then(|tail| tail.split("fn hostile_resolution_for_objective").next())
         .expect("case finale");
-    assert!(finale.contains("crate::reputation::award_case_resolution"));
+    assert!(finale.contains("crate::world_event::commit_generated_case_resolution"));
     assert!(finale.contains("&case.id"));
     assert!(finale.contains("&authority.public_case_id"));
     assert!(finale.contains("&authority.settlement_id"));
+    let unified = finale
+        .find("crate::world_event::commit_generated_case_resolution")
+        .expect("unified consequence boundary");
+    let execution = finale
+        .find("case_finale_execution().insert")
+        .expect("finale execution receipt");
+    assert!(unified < execution);
 }
 
 #[test]
@@ -316,14 +328,32 @@ fn case_contract_and_tactical_authority_are_separated() {
     assert!(!accept.contains("case_authority().delete"));
     assert!(!accept.contains("gold_reward.max"));
 
+    let resolution = source
+        .split("pub(crate) fn commit_hostile_resolution_authority")
+        .nth(1)
+        .and_then(|tail| tail.split("fn commit_hostile_battle_resolution").next())
+        .expect("shared hostile resolution commit");
+    assert!(resolution.contains("ingest_hostile_group_defeat_fact"));
+    assert!(resolution.contains("HostilesDrivenOff"));
+    assert!(resolution.contains("existing.case_id == case_id"));
+    assert!(resolution.contains("existing.case_site_id == *case_site_id"));
+    assert!(resolution.contains("existing.capture_subject_id.as_deref() == capture_subject_id"));
+    assert!(resolution.contains("mission_approach_capability_is_pending"));
+    assert!(resolution.contains("generated_hostile_resolution_available"));
+    assert!(!resolution.contains("BattleResult"));
+    assert!(!resolution.contains("battle_loot_item"));
+    assert!(!resolution.contains("record_morale_event"));
+
     let battle = source
-        .split("pub(crate) fn commit_hostile_battle_resolution")
+        .split("fn commit_hostile_battle_resolution")
         .nth(1)
         .and_then(|tail| tail.split("#[reducer]").next())
         .expect("battle commit");
-    assert!(battle.contains("ingest_hostile_group_defeat_fact"));
+    assert!(battle.contains("commit_hostile_resolution_authority"));
+    assert!(battle.contains("BattleResult"));
+    assert!(battle.contains("battle_loot_item"));
+    assert!(battle.contains("record_morale_event"));
     assert!(!battle.contains("report_contract("));
-    assert!(!battle.contains("credit_party_currency("));
 }
 
 #[test]
@@ -651,4 +681,66 @@ fn physical_proof_and_participant_projection_fail_closed() {
         "joined player must receive view rows"
     );
     assert!(!viewers.contains(&33), "outsider must receive no view rows");
+}
+
+#[test]
+fn authority_arrest_action_projection_is_gateway_only_exact_and_redacted() {
+    let source = STRATEGIC_SOURCE;
+    let projection = source
+        .split("pub fn backend_authority_arrest_actions")
+        .nth(1)
+        .and_then(|tail| tail.split("#[spacetimedb::reducer]").next())
+        .expect("authority arrest action projection");
+    let gate = projection.find("strategic_view_is_gateway(ctx)").unwrap();
+    let private_read = projection.find("strategic_incident__view").unwrap();
+    assert!(gate < private_read);
+    for exact_filter in [
+        "StrategicIncidentKind::AuthorityArrest",
+        "StrategicIncidentStatus::Pending",
+        "party.current_case_site_id.as_deref()",
+        "incident.case_site_id.as_str()",
+        "member.character_id == incident.instigator_id",
+        "character.alive",
+        "character.party_id.as_deref() == Some(party.id.as_str())",
+        "authority_fine_for_charges",
+        "affordable: funds >= fine",
+    ] {
+        assert!(projection.contains(exact_filter), "missing exact filter: {exact_filter}");
+    }
+    assert!(!projection.contains("strategic_incident__view(ctx).iter()"));
+
+    let row = source
+        .split("pub struct BackendAuthorityArrestAction")
+        .nth(1)
+        .and_then(|tail| tail.split("}").next())
+        .expect("public authority action row");
+    for field in [
+        "action_token",
+        "party_id",
+        "case_site_id",
+        "origin_settlement_id",
+        "instigator_id",
+        "fine",
+        "affordable",
+    ] {
+        assert!(row.contains(field), "missing public field: {field}");
+    }
+    for private_field in ["incident_id", "source_id", "hostile", "offense", "severity", "created_minute"] {
+        assert!(!row.contains(private_field), "private field leaked: {private_field}");
+    }
+    assert!(projection.contains("action_token: incident.action_token"));
+    assert!(!projection.contains("action_token: incident.id"));
+
+    let creation = source
+        .split("ctx.db.strategic_incident().insert(StrategicIncident")
+        .nth(1)
+        .and_then(|tail| tail.split("});").next())
+        .expect("incident creation");
+    let token_assignment = creation
+        .lines()
+        .find(|line| line.contains("action_token:"))
+        .expect("opaque action token assignment");
+    assert!(token_assignment.contains("ctx.random::<u64>()"));
+    assert!(!token_assignment.contains("source_id"));
+    assert!(!token_assignment.contains("incident_id"));
 }

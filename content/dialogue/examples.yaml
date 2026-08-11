@@ -11,10 +11,10 @@
         "responses": [
           { "id": "morning", "priority": 10,
             "conditions": { "op": "fact", "key": { "kind": "time_period" }, "equals": "morning" },
-            "turns": [{ "speaker": "npc_butcher", "fragments": [{ "kind": "text", "value": "Good morning, fellow butcher." }] }],
+            "turns": [{ "speaker": "npc_butcher", "addressee": { "kind": "role", "role": "player_butcher" }, "fragments": [{ "kind": "text", "value": "Good morrow, fellow butcher." }] }],
             "effects": [], "prompt": null },
           { "id": "default", "priority": 0,
-            "turns": [{ "speaker": "npc_butcher", "fragments": [{ "kind": "text", "value": "Good day." }] }],
+            "turns": [{ "speaker": "npc_butcher", "addressee": { "kind": "role", "role": "player_butcher" }, "fragments": [{ "kind": "text", "value": "God give a good day." }] }],
             "effects": [], "prompt": null }
         ]
       }]
@@ -27,12 +27,13 @@
         "assistant": { "kind": "npc" }
       },
       "topics": [{
-        "id": "special-order", "label": "Special order", "initially_known": true,
+        "id": "special-order", "label": "Special order", "category": "quest", "initially_known": true,
         "responses": [{
           "id": "take-order", "priority": 0,
           "turns": [
-            { "speaker": "shopkeep", "fragments": [{ "kind": "text", "value": "My assistant can prepare that order." }] },
-            { "speaker": "assistant", "fragments": [{ "kind": "text", "value": "Which size shall I make?" }] }
+            { "speaker": "shopkeep", "addressee": { "kind": "group", "role": "customers" }, "fragments": [{ "kind": "text", "value": "Mine assistant can prepare that order." }] },
+            { "speaker": "shopkeep", "addressee": { "kind": "role", "role": "assistant" }, "fragments": [{ "kind": "runtime", "slot": "addressee_title" }, { "kind": "text", "value": ", " }, { "kind": "runtime", "slot": "second_person_subject" }, { "kind": "text", "value": " must prepare it with care." }] },
+            { "speaker": "assistant", "addressee": { "kind": "group", "role": "customers" }, "fragments": [{ "kind": "text", "value": "Of what size shall I make it?" }] }
           ],
           "effects": [],
           "prompt": { "id": "choose-size", "respondent": "customers", "mode": "single", "resolution": "majority",

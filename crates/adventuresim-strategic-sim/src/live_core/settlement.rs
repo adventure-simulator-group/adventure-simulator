@@ -37,7 +37,12 @@ impl LiveRunner {
                 false,
                 cb,
             ));
-        self.call(result)?;
+        if let Err(error) = result {
+            if merchant_provider_unavailable_failure(&error) {
+                return Ok(false);
+            }
+            return self.call(Err(error)).map(|_| false);
+        }
         let purchased = self.personal_item_quantity(actor_id, item_id) > quantity_before;
         if purchased {
             self.event(
@@ -120,11 +125,10 @@ impl LiveRunner {
                 .iter()
                 .find(|candidate| self.personal_item_quantity(candidate.0, item_id) > 0)
                 .map(|candidate| candidate.0);
-            if actor.is_none() {
-                if let (Some(candidate), Some(settlement_id)) =
+            if actor.is_none()
+                && let (Some(candidate), Some(settlement_id)) =
                     (candidates.first(), settlement_id.as_deref())
-                {
-                    if self.acquire_first_aid_material(
+                    && self.acquire_first_aid_material(
                         candidate.0,
                         &party_id,
                         settlement_id,
@@ -133,8 +137,6 @@ impl LiveRunner {
                     )? {
                         actor = Some(candidate.0);
                     }
-                }
-            }
             let Some(actor_id) = actor else {
                 self.event(
                     agent,
@@ -164,6 +166,13 @@ impl LiveRunner {
                     procedure.to_owned(),
                     None,
                     false,
+                    format!(
+                        "sim-first-aid-{actor_id}-{patient_id}-{}-{}",
+                        self.sequence.saturating_add(1),
+                        injury.cut_damage.to_bits(),
+                    ),
+                    None,
+                    None,
                     cb,
                 ));
             self.call(result)?;
@@ -253,7 +262,7 @@ impl LiveRunner {
                 let spendable = purse
                     .saturating_add(party_stake.min(party_treasury))
                     .saturating_sub(medical_reserve);
-                (spendable >= sponsor_quote).then(|| SettlementRestSponsor {
+                (spendable >= sponsor_quote).then_some(SettlementRestSponsor {
                     payer_id: payer.id,
                     payer_agent_id,
                     purse,
@@ -889,14 +898,13 @@ impl LiveRunner {
             });
             let required_rest_cost = medicated_rest_venue
                 .or(natural_rest_venue)
-                .map(|at_inn| {
+                .and_then(|at_inn| {
                     if at_inn {
                         adventuresim_core::strategic_economy::inn_full_board_cost(1_440)
                     } else {
                         Some(0)
                     }
-                })
-                .flatten();
+                });
             let observable_care_total =
                 observable_quote
                     .zip(medicated_rest_venue)
@@ -1419,27 +1427,36 @@ impl LiveRunner {
 
     pub(super) fn settlement_activity_day(&mut self, leader_agent: u32) -> Result<(), String> {
         let leader = self.character_ids[leader_agent as usize];
+        let starting_party = self.party_for(leader)?;
+        let party_id = starting_party.id.clone();
+        let original_settlement_id = starting_party
+            .current_settlement_id
+            .ok_or("simulation party is not at a settlement")?;
+        self.observed_activity_site_origins
+            .retain(|(observed_party_id, _), _| observed_party_id != &party_id);
         for agent in self.party_agents(leader)? {
-            if !self.ensure_medically_safe(agent)? {
+            if !self.party_is_still_at_original_settlement(&party_id, &original_settlement_id)? {
+                return Ok(());
+            }
+            let medically_safe = self.ensure_medically_safe(agent)?;
+            if !self.party_is_still_at_original_settlement(&party_id, &original_settlement_id)? {
+                return Ok(());
+            }
+            if !medically_safe {
                 continue;
             }
             self.maintain_equipment(agent)?;
+            if !self.party_is_still_at_original_settlement(&party_id, &original_settlement_id)? {
+                return Ok(());
+            }
             let character_id = self.character_ids[agent as usize];
             let before = self.activity_observation(character_id)?;
             let profile = self.profiles[agent as usize].clone();
-            let settlement_id = self
-                .connection
-                .db
-                .backend_characters()
-                .iter()
-                .find(|row| row.id == character_id)
-                .and_then(|row| row.current_settlement_id)
-                .ok_or("simulation character is not at a settlement")?;
             let inn_cost = adventuresim_core::strategic_economy::inn_full_board_cost(1_440);
             let committed_reserve = visible_activity_committed_reserve(
                 before.personal_gold_coin,
                 u64::from(profile.cash_reserve_target),
-                self.observable_medical_reserve(character_id, &settlement_id),
+                self.observable_medical_reserve(character_id, &original_settlement_id),
                 inn_cost,
             );
             let temple_food_covers_day = temple_food_covers_one_day(before.visible_food_kcal);
@@ -1490,6 +1507,9 @@ impl LiveRunner {
                 );
                 return self.call(Err(error));
             }
+            if !self.party_is_still_at_original_settlement(&party_id, &original_settlement_id)? {
+                return Ok(());
+            }
             let after = self.activity_observation(character_id)?;
             self.event(
                 agent,
@@ -1507,8 +1527,31 @@ impl LiveRunner {
             );
             self.metrics.activity_days += 1;
             self.ensure_medically_safe(agent)?;
+            if !self.party_is_still_at_original_settlement(&party_id, &original_settlement_id)? {
+                return Ok(());
+            }
         }
         Ok(())
+    }
+
+    fn party_is_still_at_original_settlement(
+        &mut self,
+        party_id: &str,
+        original_settlement_id: &str,
+    ) -> Result<bool, String> {
+        let party = self.party_by_id(party_id)?;
+        if party.current_settlement_id.as_deref() == Some(original_settlement_id) {
+            return Ok(true);
+        }
+        self.observed_activity_site_origins
+            .retain(|(observed_party_id, _), _| observed_party_id != party_id);
+        if let Some(case_site_id) = party.current_case_site_id {
+            self.observed_activity_site_origins.insert(
+                (party_id.to_owned(), case_site_id.value),
+                original_settlement_id.to_owned(),
+            );
+        }
+        Ok(false)
     }
 
     pub(super) fn wait_for_safe_departure_at_settlement(
@@ -1516,46 +1559,105 @@ impl LiveRunner {
         character_id: u64,
         agent: u32,
         case_id: &str,
+        reason: &str,
         wait_minutes: u64,
         walking_minutes_per_day: u16,
         travel_at_night: bool,
     ) -> Result<bool, String> {
-        if !(60..=1_440).contains(&wait_minutes)
-            || self
-                .party_for(character_id)?
-                .current_settlement_id
-                .is_none()
-        {
+        if !(60..=1_440).contains(&wait_minutes) {
             return Ok(false);
         }
-        let Ok(Some(venue)) = self.settlement_activity_venue(character_id, 0) else {
-            self.event(
-                agent,
-                CoreLoopEventKind::QuestSuppressed,
-                format!(
-                    "case={};reason=safe_departure_wait_unavailable;wait_minutes={wait_minutes}",
-                    bounded_event_field(case_id),
-                ),
-            );
+        let starting_party = self.party_for(character_id)?;
+        let party_id = starting_party.id.clone();
+        let Some(original_settlement_id) = starting_party.current_settlement_id else {
             return Ok(false);
         };
+        let members = self.living_party_member_ids(&party_id);
+        let party_frontier = members
+            .iter()
+            .filter_map(|member_id| {
+                self.connection
+                    .db
+                    .backend_character_times()
+                    .iter()
+                    .find(|row| row.character_id == *member_id)
+                    .map(|row| row.minutes)
+            })
+            .max()
+            .ok_or("safe-departure party has no public clock")?;
+        let target_minute = party_frontier.saturating_add(wait_minutes);
         self.configure_safe_departure_itinerary(
             character_id,
             walking_minutes_per_day,
             travel_at_night,
         )?;
-        let result = reducer_call!(self, "wait_for_safe_departure", |cb| self
-            .connection
-            .reducers
-            .rest_at_settlement_hours_then(character_id, wait_minutes, venue.at_inn(), cb));
-        self.call(result)?;
+        let mut modes = Vec::new();
+        for member_id in members {
+            let member_minute = self
+                .connection
+                .db
+                .backend_character_times()
+                .iter()
+                .find(|row| row.character_id == member_id)
+                .map_or(party_frontier, |row| row.minutes);
+            let member_wait = target_minute.saturating_sub(member_minute);
+            if !(60..=1_440).contains(&member_wait) {
+                continue;
+            }
+            let Ok(Some(venue)) = self.settlement_activity_venue(member_id, 0) else {
+                continue;
+            };
+            let result = reducer_call!(self, "wait_for_safe_departure", |cb| self
+                .connection
+                .reducers
+                .rest_at_settlement_hours_then(member_id, member_wait, venue.at_inn(), cb));
+            self.call(result)?;
+            if !self.party_is_still_at_original_settlement(&party_id, &original_settlement_id)? {
+                self.event(
+                    agent,
+                    CoreLoopEventKind::SafeDepartureWaitRelocated,
+                    format!(
+                        "case={};reason=safe_departure_wait_relocated;origin_settlement={};rested_member={member_id}",
+                        bounded_event_field(case_id),
+                        bounded_event_field(&original_settlement_id),
+                    ),
+                );
+                return Ok(false);
+            }
+            modes.push(venue.label());
+        }
+        let actual_party_floor = self
+            .living_party_member_ids(&party_id)
+            .into_iter()
+            .filter_map(|member_id| {
+                self.connection
+                    .db
+                    .backend_character_times()
+                    .iter()
+                    .find(|row| row.character_id == member_id)
+                    .map(|row| row.minutes)
+            })
+            .min()
+            .unwrap_or(0);
+        if actual_party_floor < target_minute {
+            self.event(
+                agent,
+                CoreLoopEventKind::QuestSuppressed,
+                format!(
+                    "case={};reason=safe_departure_wait_incomplete;requested_party_frontier={target_minute};actual_party_floor={actual_party_floor}",
+                    bounded_event_field(case_id),
+                ),
+            );
+            return Ok(false);
+        }
         self.event(
             agent,
             CoreLoopEventKind::SafeDepartureWait,
             format!(
-                "case={};reason=complete_round_trip_walking_window;wait_minutes={wait_minutes};walking_minutes_per_day={walking_minutes_per_day};mode={}",
+                "case={};reason={};wait_minutes={wait_minutes};walking_minutes_per_day={walking_minutes_per_day};mode={}",
                 bounded_event_field(case_id),
-                venue.label(),
+                bounded_event_field(reason),
+                bounded_event_field(&modes.join(",")),
             ),
         );
         Ok(true)

@@ -7,9 +7,13 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ForageAttemptAuthority {
+    pub request_id: String,
     pub character_id: u64,
     pub gateway_bucket: u8,
-    pub request_id: String,
+    pub attempt_generation: u64,
+    pub authority_input_digest: String,
+    pub environment_digest: String,
+    pub canonical_place: String,
     pub resolution_seed: u64,
     pub started_at: u64,
     pub completed_at: u64,
@@ -25,9 +29,21 @@ pub struct ForageAttemptAuthority {
     pub infamy_gained: f32,
     pub context_kind: String,
     pub context_id: String,
+    pub terrain_package_digest: String,
     pub latitude_e_7: i32,
     pub longitude_e_7: i32,
+    pub plains: u16,
+    pub forest: u16,
+    pub hills: u16,
+    pub wetlands: u16,
+    pub river_or_wet_ground: bool,
+    pub sea_or_coast: bool,
     pub cultivated: bool,
+    pub license_violation: bool,
+    pub output_inventory_item_ids: Vec<u64>,
+    pub output_object_ids: Vec<u64>,
+    pub output_food_lot_ids: Vec<u64>,
+    pub output_material_revisions: Vec<u64>,
 }
 
 impl __sdk::InModule for ForageAttemptAuthority {
@@ -38,9 +54,13 @@ impl __sdk::InModule for ForageAttemptAuthority {
 ///
 /// Provides typed access to columns for query building.
 pub struct ForageAttemptAuthorityCols {
+    pub request_id: __sdk::__query_builder::Col<ForageAttemptAuthority, String>,
     pub character_id: __sdk::__query_builder::Col<ForageAttemptAuthority, u64>,
     pub gateway_bucket: __sdk::__query_builder::Col<ForageAttemptAuthority, u8>,
-    pub request_id: __sdk::__query_builder::Col<ForageAttemptAuthority, String>,
+    pub attempt_generation: __sdk::__query_builder::Col<ForageAttemptAuthority, u64>,
+    pub authority_input_digest: __sdk::__query_builder::Col<ForageAttemptAuthority, String>,
+    pub environment_digest: __sdk::__query_builder::Col<ForageAttemptAuthority, String>,
+    pub canonical_place: __sdk::__query_builder::Col<ForageAttemptAuthority, String>,
     pub resolution_seed: __sdk::__query_builder::Col<ForageAttemptAuthority, u64>,
     pub started_at: __sdk::__query_builder::Col<ForageAttemptAuthority, u64>,
     pub completed_at: __sdk::__query_builder::Col<ForageAttemptAuthority, u64>,
@@ -56,18 +76,37 @@ pub struct ForageAttemptAuthorityCols {
     pub infamy_gained: __sdk::__query_builder::Col<ForageAttemptAuthority, f32>,
     pub context_kind: __sdk::__query_builder::Col<ForageAttemptAuthority, String>,
     pub context_id: __sdk::__query_builder::Col<ForageAttemptAuthority, String>,
+    pub terrain_package_digest: __sdk::__query_builder::Col<ForageAttemptAuthority, String>,
     pub latitude_e_7: __sdk::__query_builder::Col<ForageAttemptAuthority, i32>,
     pub longitude_e_7: __sdk::__query_builder::Col<ForageAttemptAuthority, i32>,
+    pub plains: __sdk::__query_builder::Col<ForageAttemptAuthority, u16>,
+    pub forest: __sdk::__query_builder::Col<ForageAttemptAuthority, u16>,
+    pub hills: __sdk::__query_builder::Col<ForageAttemptAuthority, u16>,
+    pub wetlands: __sdk::__query_builder::Col<ForageAttemptAuthority, u16>,
+    pub river_or_wet_ground: __sdk::__query_builder::Col<ForageAttemptAuthority, bool>,
+    pub sea_or_coast: __sdk::__query_builder::Col<ForageAttemptAuthority, bool>,
     pub cultivated: __sdk::__query_builder::Col<ForageAttemptAuthority, bool>,
+    pub license_violation: __sdk::__query_builder::Col<ForageAttemptAuthority, bool>,
+    pub output_inventory_item_ids: __sdk::__query_builder::Col<ForageAttemptAuthority, Vec<u64>>,
+    pub output_object_ids: __sdk::__query_builder::Col<ForageAttemptAuthority, Vec<u64>>,
+    pub output_food_lot_ids: __sdk::__query_builder::Col<ForageAttemptAuthority, Vec<u64>>,
+    pub output_material_revisions: __sdk::__query_builder::Col<ForageAttemptAuthority, Vec<u64>>,
 }
 
 impl __sdk::__query_builder::HasCols for ForageAttemptAuthority {
     type Cols = ForageAttemptAuthorityCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         ForageAttemptAuthorityCols {
+            request_id: __sdk::__query_builder::Col::new(table_name, "request_id"),
             character_id: __sdk::__query_builder::Col::new(table_name, "character_id"),
             gateway_bucket: __sdk::__query_builder::Col::new(table_name, "gateway_bucket"),
-            request_id: __sdk::__query_builder::Col::new(table_name, "request_id"),
+            attempt_generation: __sdk::__query_builder::Col::new(table_name, "attempt_generation"),
+            authority_input_digest: __sdk::__query_builder::Col::new(
+                table_name,
+                "authority_input_digest",
+            ),
+            environment_digest: __sdk::__query_builder::Col::new(table_name, "environment_digest"),
+            canonical_place: __sdk::__query_builder::Col::new(table_name, "canonical_place"),
             resolution_seed: __sdk::__query_builder::Col::new(table_name, "resolution_seed"),
             started_at: __sdk::__query_builder::Col::new(table_name, "started_at"),
             completed_at: __sdk::__query_builder::Col::new(table_name, "completed_at"),
@@ -86,9 +125,36 @@ impl __sdk::__query_builder::HasCols for ForageAttemptAuthority {
             infamy_gained: __sdk::__query_builder::Col::new(table_name, "infamy_gained"),
             context_kind: __sdk::__query_builder::Col::new(table_name, "context_kind"),
             context_id: __sdk::__query_builder::Col::new(table_name, "context_id"),
+            terrain_package_digest: __sdk::__query_builder::Col::new(
+                table_name,
+                "terrain_package_digest",
+            ),
             latitude_e_7: __sdk::__query_builder::Col::new(table_name, "latitude_e_7"),
             longitude_e_7: __sdk::__query_builder::Col::new(table_name, "longitude_e_7"),
+            plains: __sdk::__query_builder::Col::new(table_name, "plains"),
+            forest: __sdk::__query_builder::Col::new(table_name, "forest"),
+            hills: __sdk::__query_builder::Col::new(table_name, "hills"),
+            wetlands: __sdk::__query_builder::Col::new(table_name, "wetlands"),
+            river_or_wet_ground: __sdk::__query_builder::Col::new(
+                table_name,
+                "river_or_wet_ground",
+            ),
+            sea_or_coast: __sdk::__query_builder::Col::new(table_name, "sea_or_coast"),
             cultivated: __sdk::__query_builder::Col::new(table_name, "cultivated"),
+            license_violation: __sdk::__query_builder::Col::new(table_name, "license_violation"),
+            output_inventory_item_ids: __sdk::__query_builder::Col::new(
+                table_name,
+                "output_inventory_item_ids",
+            ),
+            output_object_ids: __sdk::__query_builder::Col::new(table_name, "output_object_ids"),
+            output_food_lot_ids: __sdk::__query_builder::Col::new(
+                table_name,
+                "output_food_lot_ids",
+            ),
+            output_material_revisions: __sdk::__query_builder::Col::new(
+                table_name,
+                "output_material_revisions",
+            ),
         }
     }
 }
@@ -99,6 +165,7 @@ impl __sdk::__query_builder::HasCols for ForageAttemptAuthority {
 pub struct ForageAttemptAuthorityIxCols {
     pub character_id: __sdk::__query_builder::IxCol<ForageAttemptAuthority, u64>,
     pub gateway_bucket: __sdk::__query_builder::IxCol<ForageAttemptAuthority, u8>,
+    pub request_id: __sdk::__query_builder::IxCol<ForageAttemptAuthority, String>,
 }
 
 impl __sdk::__query_builder::HasIxCols for ForageAttemptAuthority {
@@ -107,6 +174,7 @@ impl __sdk::__query_builder::HasIxCols for ForageAttemptAuthority {
         ForageAttemptAuthorityIxCols {
             character_id: __sdk::__query_builder::IxCol::new(table_name, "character_id"),
             gateway_bucket: __sdk::__query_builder::IxCol::new(table_name, "gateway_bucket"),
+            request_id: __sdk::__query_builder::IxCol::new(table_name, "request_id"),
         }
     }
 }

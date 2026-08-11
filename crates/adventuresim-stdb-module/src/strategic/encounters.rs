@@ -204,11 +204,25 @@ pub(crate) fn advance_party_journey_delay(
         .db
         .party_journey_authority()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Travel delay requires a durable journey")?;
-    journey.completed_elapsed_minutes = journey.completed_elapsed_minutes.saturating_add(minutes);
+    (journey.completed_elapsed_minutes, journey.total_elapsed_minutes) =
+        journey_elapsed_after_delay(
+            journey.completed_elapsed_minutes,
+            journey.total_elapsed_minutes,
+            minutes,
+        );
     ctx.db.party_journey_authority().party_id().update(journey);
-    Ok(())
+    // Narrative and combat delays consume real time without movement. Rebuild
+    // the remaining itinerary from that later frontier so future camp windows
+    // and the total elapsed forecast remain canonical.
+    refresh_party_journey_forecast(ctx, party_id)
+}
+
+fn journey_elapsed_after_delay(completed: u64, total: u64, delay: u64) -> (u64, u64) {
+    let remaining = total.saturating_sub(completed);
+    let completed = completed.saturating_add(delay);
+    (completed, completed.saturating_add(remaining))
 }
 
 pub(crate) fn build_strategic_encounter(
@@ -358,7 +372,7 @@ fn maybe_interrupt_travel(
         .db
         .party_journey_authority()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
     else {
         return Ok((requested_minutes, None, None, 1));
     };
@@ -375,27 +389,27 @@ fn maybe_interrupt_travel(
         .db
         .party_journey_encounter_authority()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Journey encounter authority is missing")?;
     let route = ctx
         .db
         .party_journey_route_authority()
         .party_id()
-        .find(&party_id.to_string());
+        .find(party_id.to_string());
     let active_contract_archetype =
         quest_influence_case_site_id(&journey.destination).and_then(|destination_case_site_id| {
             let contract = ctx
                 .db
                 .party_authority()
                 .id()
-                .find(&party_id.to_string())
+                .find(party_id.to_string())
                 .and_then(|party| party.active_contract_id)
                 .and_then(|contract_id| ctx.db.contract_authority().id().find(&contract_id))?;
             let destination_site = ctx
                 .db
                 .case_site_authority()
                 .id_key()
-                .find(&destination_case_site_id.to_string())?;
+                .find(destination_case_site_id.to_string())?;
             if destination_site.case_id != contract.case_id {
                 return None;
             }
@@ -579,7 +593,7 @@ fn commit_encounter_scan(
         .db
         .party_journey_encounter_authority()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Journey encounter authority is missing")?;
     authority.next_roll = next_roll;
     let seed = authority.seed;
@@ -684,7 +698,7 @@ fn commit_encounter_scan(
         .db
         .strategic_encounter()
         .party_id()
-        .find(&party_id.to_string());
+        .find(party_id.to_string());
     if let Some(previous) = previous.as_ref()
         && previous.encounter_id != encounter.encounter_id
     {
@@ -850,7 +864,7 @@ fn reconcile_party_pool_ledger(ctx: &ReducerContext, party_id: &str) -> Result<(
         .db
         .party_inventory_state()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .map_or(0, |state| state.reserve_value);
     let total_claims = stakes.iter().fold(prior_reserve, |total, stake| {
         total.saturating_add(stake.value)
@@ -871,7 +885,7 @@ fn reconcile_party_pool_ledger(ctx: &ReducerContext, party_id: &str) -> Result<(
         .db
         .party_inventory_state()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
     {
         state.reserve_value = reserve_value;
         ctx.db.party_inventory_state().party_id().update(state);
@@ -953,15 +967,14 @@ fn commit_autoresolve_outcome(
         if let Some(id) = exchange.defender_contact_item_id {
             crate::repair::apply_impact(ctx, id, exchange.contact_stress);
         }
-        if exchange.armor_contact && exchange.contact_stress > 0.0 {
-            if let Some(id) = crate::character::outermost_wearable_for_body_part(
+        if exchange.armor_contact && exchange.contact_stress > 0.0
+            && let Some(id) = crate::character::outermost_wearable_for_body_part(
                 ctx,
                 exchange.defender_id,
                 exchange.body_part,
             ) {
                 crate::repair::apply_impact(ctx, id, exchange.contact_stress);
             }
-        }
     }
     for member in &outcome.allies {
         consume_autoresolve_ammunition(ctx, member.id, member.ammunition_used);
@@ -1256,6 +1269,7 @@ pub fn resolve_strategic_encounter(
         .strategic_encounter()
         .party_id()
         .update(encounter.clone());
+    establish_resolved_encounter_journey_camp(ctx, &encounter)?;
     crate::world_actor::deactivate_context_roster(ctx, &encounter.encounter_id);
     ctx.db
         .strategic_encounter_resolution_receipt()
@@ -1392,7 +1406,7 @@ fn revalidate_party_after_departure_sync(
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party changed during departure synchronization")?;
     let party_matches = party.leader_id == leader_id
         && party.camp_destination.is_none()

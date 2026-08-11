@@ -1,18 +1,32 @@
 use adventuresim_tactical_core::prelude::*;
+use adventuresim_tactical_netcode::{
+    bevy_replicon::prelude::ClientTriggerExt, prelude::DebugGameTimeScaleRequest,
+};
 use bevy::{color::palettes::tailwind, prelude::*};
 
-use crate::player::{ClientPlayer, HitPerformed, LimbHitbox};
+use crate::{
+    animation::TerrainIkEnabled,
+    camera::{CameraAimState, CameraDebugEnabled, CameraRigConfig, CameraRigDebugState},
+    player::{ClientPlayer, HitPerformed, LimbHitbox},
+};
 
 pub struct DebugPlugin;
 
 impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DebugVisualsConfig>()
-            .register_required_components_with::<Collider, _>(|| DebugRender::none())
+            .init_resource::<DebugGameSpeed>()
+            .register_required_components_with::<Collider, _>(DebugRender::none)
             .add_systems(Update, toggle_debug_visuals)
             .add_systems(Update, draw_debug_rays)
+            .add_systems(Update, draw_camera_rig)
             .add_observer(on_hit_performed);
     }
+}
+
+#[derive(Resource, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct DebugGameSpeed {
+    pub(crate) quarter_speed: bool,
 }
 
 #[derive(Resource)]
@@ -41,9 +55,23 @@ struct DebugRay {
 fn toggle_debug_visuals(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut config: ResMut<DebugVisualsConfig>,
+    mut terrain_ik: ResMut<TerrainIkEnabled>,
+    mut game_speed: ResMut<DebugGameSpeed>,
+    mut virtual_time: ResMut<Time<Virtual>>,
     q_colliders: Query<(Entity, Option<&LimbHitbox>), (With<Collider>, Without<ClientPlayer>)>,
     mut cmd: Commands,
 ) {
+    if keyboard.just_pressed(KeyCode::F7) {
+        game_speed.quarter_speed = !game_speed.quarter_speed;
+        let request = DebugGameTimeScaleRequest {
+            quarter_speed: game_speed.quarter_speed,
+        };
+        let relative_speed = request.relative_speed();
+        virtual_time.set_relative_speed(relative_speed);
+        cmd.client_trigger(request);
+        info!(relative_speed, "Debug game speed toggled");
+    }
+
     if keyboard.just_pressed(KeyCode::F2) {
         config.physics_colliders = !config.physics_colliders;
         for (entity, hitbox) in &q_colliders {
@@ -73,6 +101,11 @@ fn toggle_debug_visuals(
 
     if keyboard.just_pressed(KeyCode::F4) {
         config.raycast = !config.raycast;
+    }
+
+    if keyboard.just_pressed(KeyCode::F8) {
+        terrain_ik.0 = !terrain_ik.0;
+        info!(enabled = terrain_ik.0, "Terrain leg IK toggled");
     }
 }
 
@@ -135,10 +168,95 @@ fn draw_debug_rays(
         }
 
         let alpha = EaseFunction::QuadraticOut.sample_unchecked(ray.timer.fraction_remaining());
-        if let Some(asset) = gizmo_assets.get_mut(&ray.handle) {
+        if let Some(mut asset) = gizmo_assets.get_mut(&ray.handle) {
             for color in &mut asset.list_colors {
                 color.set_alpha(alpha);
             }
         }
+    }
+}
+
+fn draw_camera_rig(
+    enabled: Res<CameraDebugEnabled>,
+    rig: Res<CameraRigDebugState>,
+    aim: Res<CameraAimState>,
+    config: Res<CameraRigConfig>,
+    mut gizmos: Gizmos,
+) {
+    if !enabled.0 || !rig.active {
+        return;
+    }
+    gizmos.line(rig.subject, rig.focus, tailwind::LIME_400);
+    gizmos.line(rig.focus, rig.shoulder, tailwind::SKY_300);
+    gizmos.line(rig.shoulder, rig.desired_endpoint, tailwind::AMBER_300);
+    gizmos.line(rig.shoulder, rig.final_endpoint, tailwind::CYAN_300);
+    if rig.collision_entity.is_some() {
+        gizmos.line(
+            rig.final_endpoint,
+            rig.final_endpoint + rig.collision_normal * 0.6,
+            tailwind::RED_400,
+        );
+    }
+    if rig.soft_occluder.is_some() {
+        gizmos.line(
+            rig.soft_occluder_point - Vec3::Y * 0.25,
+            rig.soft_occluder_point + Vec3::Y * 0.25,
+            tailwind::ORANGE_400,
+        );
+    }
+    let radius = Vec3::splat(config.collision_radius);
+    gizmos.line(
+        rig.final_endpoint - Vec3::X * radius.x,
+        rig.final_endpoint + Vec3::X * radius.x,
+        tailwind::CYAN_200,
+    );
+    gizmos.line(
+        rig.final_endpoint - Vec3::Y * radius.y,
+        rig.final_endpoint + Vec3::Y * radius.y,
+        tailwind::CYAN_200,
+    );
+    if aim.active {
+        gizmos.line(aim.camera_origin, aim.camera_target, tailwind::PURPLE_300);
+        gizmos.line(
+            aim.muzzle_origin,
+            aim.actual_target,
+            if aim.blocked {
+                tailwind::RED_500
+            } else {
+                tailwind::GREEN_400
+            },
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn f8_toggles_terrain_ik() {
+        let mut app = App::new();
+        app.init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<DebugVisualsConfig>()
+            .init_resource::<DebugGameSpeed>()
+            .init_resource::<TerrainIkEnabled>()
+            .init_resource::<Time<Virtual>>()
+            .add_systems(Update, toggle_debug_visuals);
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::F8);
+        app.update();
+        assert!(!app.world().resource::<TerrainIkEnabled>().0);
+
+        {
+            let mut keyboard = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keyboard.release(KeyCode::F8);
+            keyboard.clear_just_pressed(KeyCode::F8);
+            keyboard.clear_just_released(KeyCode::F8);
+            keyboard.press(KeyCode::F8);
+        }
+        app.update();
+        assert!(app.world().resource::<TerrainIkEnabled>().0);
     }
 }

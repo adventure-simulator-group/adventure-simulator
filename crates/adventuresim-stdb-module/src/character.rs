@@ -31,7 +31,7 @@ use crate::{
     repair::{item_condition, repair_order},
     settlement_population::settlement_resident_presence,
     strategic::{
-        inventory_quantity_target, party_authority, party_member, settlement,
+        inventory_quantity_target, party_authority, party_member, settlement, strategic_encounter,
         strategic_gateway_authority__view,
     },
     surgery::{limb_injury, retained_projectile},
@@ -67,6 +67,9 @@ pub struct Character {
     /// future death system, but parties already use this to govern succession.
     #[default(true)]
     pub alive: bool,
+    /// Explicit ordinary care preference for another member of this
+    /// Character's current party. Context-specific refusals take precedence.
+    pub party_treatment_decision: crate::world_actor::ContextualDecisionState,
 }
 
 /// Full Character rows are private because a globally exclusive NPC may have
@@ -356,6 +359,7 @@ pub fn transition_character_to_dead_at(
     strategic_minute: u64,
 ) -> Result<CharacterDeath, String> {
     if let Some(death) = ctx.db.character_death().character_id().find(character_id) {
+        crate::food::cleanup_fireplace_custody_for_death(ctx, character_id)?;
         return Ok(death);
     }
     let mut character = ctx
@@ -380,6 +384,7 @@ pub fn transition_character_to_dead_at(
         source_id,
         strategic_minute,
     });
+    crate::food::cleanup_fireplace_custody_for_death(ctx, character_id)?;
     crate::corpse::persist_character_death_corpse(
         ctx,
         character_id,
@@ -863,7 +868,7 @@ pub fn create_temporary_character(ctx: &ReducerContext, server: Identity) -> Res
 
     let name = petname::Petnames::default()
         .generate(&mut ctx.rng(), 1, " ")
-        .ok_or_else(|| format!("Can't generate a name for a temporary character"))?;
+        .ok_or_else(|| "Can't generate a name for a temporary character".to_string())?;
     let name = format!("bot-{name}");
 
     let mut id = ctx.random();
@@ -1159,7 +1164,7 @@ fn delete_character_data(
     {
         ctx.db.organization_membership().id().delete(row.id);
     }
-    crate::social_estate::delete_character_social_roles(ctx, character.id);
+    crate::social_roles::delete_character_social_roles(ctx, character.id);
     if ctx
         .db
         .organization_presentation()
@@ -1639,9 +1644,12 @@ pub(crate) fn seed_religion_scholar_character(ctx: &ReducerContext) -> Result<()
 }
 
 /// Seed an isolated, selectable character for exercising every bounded
-/// Herbalism method and public grade in the strategic UI.
+/// Herbalism method, public grade, and terrain-backed foraging flow in the
+/// strategic UI.
 pub(crate) fn seed_herbalism_demo_character(ctx: &ReducerContext) -> Result<(), String> {
     const HERBALISM_DEMO_CHARACTER_ID: u64 = 9_999_999_999_999_986;
+    const HERBALISM_DEMO_SETTLEMENT_ID: &str = "dev-scenario-foraging";
+    crate::strategic::ensure_foraging_demo_settlement(ctx)?;
     if ctx
         .db
         .character()
@@ -1651,10 +1659,61 @@ pub(crate) fn seed_herbalism_demo_character(ctx: &ReducerContext) -> Result<(), 
     {
         insert_new_character(
             ctx,
-            "Herbalism Demo".to_string(),
+            "Herbalism and Foraging Demo".to_string(),
             HERBALISM_DEMO_CHARACTER_ID,
             false,
         )?;
+    }
+    // Pin this durable visual fixture and its solo party to an empirically
+    // sampled final-pack woodland cell so the integrated Forage action is
+    // always demonstrable after a normal seed.
+    let mut character = ctx
+        .db
+        .character()
+        .id()
+        .find(HERBALISM_DEMO_CHARACTER_ID)
+        .ok_or_else(|| "Herbalism and foraging demo character is missing".to_string())?;
+    character.name = "Herbalism and Foraging Demo".into();
+    let party_id = character
+        .party_id
+        .clone()
+        .ok_or_else(|| "Herbalism and foraging demo has no solo party".to_string())?;
+    let mut party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&party_id)
+        .ok_or_else(|| "Herbalism and foraging demo party is missing".to_string())?;
+    let members = ctx
+        .db
+        .party_member()
+        .party_id()
+        .filter(&party_id)
+        .collect::<Vec<_>>();
+    if !party.is_solo
+        || party.leader_id != HERBALISM_DEMO_CHARACTER_ID
+        || members.len() != 1
+        || members[0].character_id != HERBALISM_DEMO_CHARACTER_ID
+    {
+        return Err("Herbalism and foraging demo no longer has its isolated solo party".into());
+    }
+    crate::investigation::set_character_case_site(ctx, HERBALISM_DEMO_CHARACTER_ID, None)?;
+    character.current_settlement_id = Some(HERBALISM_DEMO_SETTLEMENT_ID.into());
+    ctx.db.character().id().update(character);
+    party.current_settlement_id = Some(HERBALISM_DEMO_SETTLEMENT_ID.into());
+    party.current_case_site_id = None;
+    party.camp_destination = None;
+    party.camp_remaining_minutes = 0;
+    ctx.db.party_authority().id().update(party);
+    crate::strategic::finish_party_journey(ctx, &party_id);
+    if ctx
+        .db
+        .strategic_encounter()
+        .party_id()
+        .find(&party_id)
+        .is_some()
+    {
+        ctx.db.strategic_encounter().party_id().delete(&party_id);
     }
     let mut skills = ctx
         .db
@@ -1666,13 +1725,15 @@ pub(crate) fn seed_herbalism_demo_character(ctx: &ReducerContext) -> Result<(), 
     skills.physiology_hours = 4_000.0;
     ctx.db.character_skills().character_id().update(skills);
     for (item_id, quantity) in [
-        ("willow_bark_poor", 2),
         ("willow_bark", 2),
-        ("willow_bark_fine", 2),
-        ("comfrey_fine", 2),
+        ("comfrey", 2),
         ("poppy", 2),
         ("tincture_spirit", 4),
-        ("sage_poor", 2),
+        ("sage", 2),
+        ("glass_bottle", 2),
+        ("glass_jar", 1),
+        ("mortar_and_pestle", 1),
+        ("knife", 1),
     ] {
         if ctx
             .db
@@ -1683,7 +1744,7 @@ pub(crate) fn seed_herbalism_demo_character(ctx: &ReducerContext) -> Result<(), 
             .is_none()
         {
             add_inventory_item(ctx, HERBALISM_DEMO_CHARACTER_ID, item_id, quantity)
-                .ok_or_else(|| format!("Failed to add {item_id} to Herbalism Demo"))?;
+                .ok_or_else(|| format!("Failed to add {item_id} to Herbalism and Foraging Demo"))?;
         }
     }
     crate::capability::refresh_character_capability(ctx, HERBALISM_DEMO_CHARACTER_ID)?;
@@ -1989,7 +2050,7 @@ pub(crate) fn set_character_languages_for_settlement(
         .db
         .settlement()
         .id()
-        .find(&settlement_id.to_string())
+        .find(settlement_id.to_string())
         .ok_or_else(|| format!("Unknown settlement {settlement_id}"))?;
     let mut skills = ctx
         .db
@@ -2004,7 +2065,7 @@ pub(crate) fn set_character_languages_for_settlement(
     );
     skills.oral_languages = oral;
     // Relocating a character can replace their authored vernacular identity
-    // during bootstrap, but literacy comes from estate and institutional
+    // during bootstrap, but literacy comes from organization roles and institutional
     // training and must not be erased by a change of settlement.
     ctx.db.character_skills().character_id().update(skills);
     Ok(())
@@ -2132,6 +2193,7 @@ pub(crate) fn insert_character_with_origin(
             |spec| spec.age_years,
         ),
         alive: true,
+        party_treatment_decision: crate::world_actor::ContextualDecisionState::Allowed,
     });
     let initial_minute = options.initial_time_minute.unwrap_or(0);
     let birth_minute =
@@ -2150,7 +2212,7 @@ pub(crate) fn insert_character_with_origin(
                 | crate::strategic::SettlementCategory::City
                 | crate::strategic::SettlementCategory::Capital
         );
-        crate::social_estate::ensure_character_social_roles(
+        crate::social_roles::ensure_character_social_roles(
             ctx,
             character.id,
             &start_settlement.id,
@@ -2187,20 +2249,9 @@ pub(crate) fn insert_character_with_origin(
         .insert(character_attributes.clone());
     let (oral_languages, mut written_languages) =
         adventuresim_world_schema::initial_character_languages(start_settlement.languages, id, npc);
-    let creation_literacy = npc_life.and_then(|facts| facts.literacy).or_else(|| {
-        (!temporary
-            && crate::social_estate::character_estate(ctx, id)
-                .is_ok_and(|estate| estate == adventuresim_core::organization::Estate::Noble))
-        .then(|| {
-            if start_settlement.languages.dominant_german()
-                == adventuresim_world_schema::OralLanguage::Low
-            {
-                adventuresim_world_schema::WrittenLanguage::Low
-            } else {
-                adventuresim_world_schema::WrittenLanguage::German
-            }
-        })
-    });
+    let creation_literacy = npc_life
+        .and_then(|facts| facts.literacy)
+        .or(crate::social_roles::character_creation_literacy(ctx, id)?);
     let life_skills = (starting.is_none() && (!temporary || npc)).then(|| {
         let profile = adventuresim_core::strategic_schedule::ActivityTrainingProfile {
             combat: adventuresim_core::strategic_schedule::CombatTrainingProfile {
@@ -2404,9 +2455,9 @@ pub(crate) fn insert_character_with_origin(
         stomach_health: 1.0,
     });
     crate::condition::initialize_character_condition(ctx, character.id)?;
-    if starting.is_some() {
+    if let Some(starting) = starting {
         let mut personality = crate::personality::CharacterPersonality::neutral(id);
-        for personality_trait in &starting.expect("checked above").personality.traits {
+        for personality_trait in &starting.personality.traits {
             use crate::personality::{
                 Conscience, Conviction, Courtship, Drive, Hygiene, Mirth, Nerve, Outlook,
                 SelfKnowledge, SelfRegard, Sociability, Temperance, Transparency,
@@ -2457,16 +2508,16 @@ pub(crate) fn insert_character_with_origin(
                 }
             }
         }
-        personality.sex = match starting.expect("checked above").personality.sex {
+        personality.sex = match starting.personality.sex {
             StartingSex::Female => crate::personality::Sex::Female,
             StartingSex::Male => crate::personality::Sex::Male,
         };
-        personality.presentation = match starting.expect("checked above").personality.presentation {
+        personality.presentation = match starting.personality.presentation {
             StartingPresentation::Man => crate::personality::Presentation::Man,
             StartingPresentation::Ambiguous => crate::personality::Presentation::Ambiguous,
             StartingPresentation::Woman => crate::personality::Presentation::Woman,
         };
-        personality.inclination = match starting.expect("checked above").personality.inclination {
+        personality.inclination = match starting.personality.inclination {
             StartingInclination::Men => crate::personality::Inclination::Men,
             StartingInclination::Either => crate::personality::Inclination::Either,
             StartingInclination::Women => crate::personality::Inclination::Women,
@@ -2540,8 +2591,8 @@ pub(crate) fn insert_character_with_origin(
         let definition =
             adventuresim_core::organization::organization(&starting_organization.organization_id)
                 .ok_or("Starting organization is not in the catalog")?;
-        if definition.rank(&starting_organization.rank_id).is_none() {
-            return Err("Starting rank is not in the organization catalog".into());
+        if definition.role(&starting_organization.role_id).is_none() {
+            return Err("Starting role is not in the organization catalog".into());
         }
         let now = ctx
             .db
@@ -2560,7 +2611,6 @@ pub(crate) fn insert_character_with_origin(
                 id: 0,
                 character_id: character.id,
                 organization_id: starting_organization.organization_id.clone(),
-                rank_id: starting_organization.rank_id.clone(),
                 joined_minute,
                 dues_paid_through_minute: paid_through,
                 status: crate::organization::MEMBERSHIP_ACTIVE.into(),
@@ -2573,10 +2623,11 @@ pub(crate) fn insert_character_with_origin(
                 character_id: character.id,
                 organization_id: starting_organization.organization_id.clone(),
             });
-        crate::social_estate::ensure_character_professional_role(
+        crate::social_roles::ensure_character_professional_role(
             ctx,
             character.id,
             &starting_organization.organization_id,
+            &starting_organization.role_id,
         )?;
     }
     crate::capability::refresh_character_capability(ctx, character.id)?;
@@ -2954,6 +3005,7 @@ fn equip_equipment_internal(
     if enforce_law {
         crate::equipment_law::require_item_legal(ctx, character_id, inventory_item_id)?;
     }
+    crate::inventory_container::detach_row_for_action(ctx, "personal", inventory_item_id)?;
     let root_occupancies = placement
         .occupancy
         .iter()
@@ -3251,6 +3303,58 @@ mod starting_character_boundary_tests {
                 9_000,
                 9_000 + 30 * adventuresim_core::strategic_time::MINUTES_PER_DAY
             )
+        );
+    }
+
+    #[test]
+    fn herbalism_foraging_demo_resets_mutually_exclusive_presence() {
+        let source = include_str!("character.rs");
+        let fixture = source
+            .split("pub(crate) fn seed_herbalism_demo_character")
+            .nth(1)
+            .unwrap()
+            .split("pub(crate) fn seed_bestiary_scholar_character")
+            .next()
+            .unwrap();
+        for required in [
+            "if !party.is_solo",
+            "party.leader_id != HERBALISM_DEMO_CHARACTER_ID",
+            "members.len() != 1",
+            "members[0].character_id != HERBALISM_DEMO_CHARACTER_ID",
+            "set_character_case_site(ctx, HERBALISM_DEMO_CHARACTER_ID, None)",
+            "ensure_foraging_demo_settlement(ctx)",
+            "character.current_settlement_id = Some(HERBALISM_DEMO_SETTLEMENT_ID.into())",
+            "party.current_settlement_id = Some(HERBALISM_DEMO_SETTLEMENT_ID.into())",
+            "party.current_case_site_id = None",
+            "party.camp_destination = None",
+            "party.camp_remaining_minutes = 0",
+            "finish_party_journey(ctx, &party_id)",
+            "strategic_encounter().party_id().delete(&party_id)",
+        ] {
+            assert!(fixture.contains(required), "missing reset step: {required}");
+        }
+        let validation = fixture.find("if !party.is_solo").unwrap();
+        let first_reset = fixture
+            .find("set_character_case_site(ctx, HERBALISM_DEMO_CHARACTER_ID, None)")
+            .unwrap();
+        assert!(
+            validation < first_reset,
+            "party ownership must be validated first"
+        );
+        let scenarios = include_str!("strategic/development_scenarios.rs");
+        let settlement = scenarios
+            .split("pub(crate) fn ensure_foraging_demo_settlement")
+            .nth(1)
+            .unwrap()
+            .split("fn ensure_scenario_character_at")
+            .next()
+            .unwrap();
+        assert!(settlement.contains("const ID: &str = \"dev-scenario-foraging\""));
+        assert!(settlement.contains("settlement.coord_x = 9.75"));
+        assert!(settlement.contains("settlement.coord_y = 51.75"));
+        assert!(
+            settlement.find("settlement.coord_y = 51.75").unwrap()
+                < settlement.find("ensure_settlement_activity").unwrap()
         );
     }
 

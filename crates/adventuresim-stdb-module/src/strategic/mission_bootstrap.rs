@@ -155,7 +155,7 @@ pub fn autoresolve_mission(
         .db
         .hostile_group_authority()
         .id()
-        .find(&hostile_group_id.to_string())
+        .find(hostile_group_id.to_string())
         .ok_or("Hostile group not found")?;
     if hostile_group.disposition != HostileGroupDisposition::Active {
         return Err("Hostile group is already resolved".into());
@@ -323,7 +323,6 @@ pub fn cancel_mission_request(
 pub fn bootstrap_development_world(
     ctx: &ReducerContext,
     bootstrap_token: String,
-    include_visual_demos: bool,
 ) -> Result<(), String> {
     if !adventuresim_core::simulation_security::simulation_bootstrap_authorized(
         COMPILED_DEV_BOOTSTRAP_TOKEN,
@@ -331,52 +330,15 @@ pub fn bootstrap_development_world(
     ) {
         return Err("Development bootstrap is disabled or unauthorized".into());
     }
-    seed_world(ctx, include_visual_demos)?;
+    seed_world(ctx, true)?;
     crate::disease::seed_sick_character(ctx)?;
-    if include_visual_demos {
-        crate::character::seed_damaged_character(ctx)?;
-        crate::character::seed_religion_scholar_character(ctx)?;
-        crate::character::seed_bestiary_scholar_character(ctx)?;
-        crate::character::seed_herbalism_demo_character(ctx)?;
-        crate::social::seed_social_demo(ctx)?;
-    }
+    crate::character::seed_damaged_character(ctx)?;
+    crate::character::seed_religion_scholar_character(ctx)?;
+    crate::character::seed_bestiary_scholar_character(ctx)?;
+    crate::social::seed_social_demo(ctx)?;
+    crate::character::seed_herbalism_demo_character(ctx)?;
+    materialize_development_scenario_gallery(ctx)?;
     Ok(())
-}
-
-/// Load the one-shot autopsy visual fixture for the currently selected
-/// character. The reducer is callable only from module binaries compiled for
-/// the isolated development bootstrap; ordinary builds contain no enabling
-/// capability.
-#[reducer]
-pub fn load_autopsy_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
-    require_strategic_character_authority(ctx, character_id)?;
-    let enabled = COMPILED_DEV_BOOTSTRAP_TOKEN.is_some_and(|token| {
-        adventuresim_core::simulation_security::simulation_bootstrap_authorized(
-            COMPILED_DEV_BOOTSTRAP_TOKEN,
-            token,
-        )
-    });
-    if !enabled {
-        return Err("Autopsy demo loading is disabled in this module build".into());
-    }
-    crate::corpse::seed_autopsy_demo(ctx, character_id)
-}
-
-/// Load one deterministic, fully materialized outbreak without bypassing the
-/// ordinary rumor and journal discovery path.
-#[reducer]
-pub fn load_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
-    require_strategic_character_authority(ctx, character_id)?;
-    let enabled = COMPILED_DEV_BOOTSTRAP_TOKEN.is_some_and(|token| {
-        adventuresim_core::simulation_security::simulation_bootstrap_authorized(
-            COMPILED_DEV_BOOTSTRAP_TOKEN,
-            token,
-        )
-    });
-    if !enabled {
-        return Err("Outbreak demo loading is disabled in this module build".into());
-    }
-    seed_outbreak_demo(ctx, character_id)
 }
 
 /// Seed a standalone tactical mission: a solo party occupying a typed case
@@ -555,7 +517,7 @@ pub fn seed_standalone_tactical_mission(
         ctx,
         character_id,
         Some(case_site.id.value.clone()),
-    );
+    )?;
     let capability_id = format!("mission-approach:standalone:{mission_id}");
     if ctx
         .db
@@ -642,6 +604,17 @@ pub fn seed_standalone_tactical_mission(
                 capture_custody_version: None,
             });
     }
+    let authorized_party_member_ids = crate::strategic::living_party_member_ids(ctx, &party_id);
+    let expected_party_members = u32::try_from(authorized_party_member_ids.len())
+        .map_err(|_| "Party is too large for tactical enrollment")?;
+    if expected_party_members == 0 {
+        return Err("A tactical mission requires at least one living party member".into());
+    }
+    if expected_party_members as usize
+        > adventuresim_core::mission::MAX_TACTICAL_RECEIPT_PARTICIPANTS
+    {
+        return Err("Party exceeds the tactical receipt participant limit".into());
+    }
     ctx.db
         .tactical_server_request_authority()
         .insert(crate::tactical::TacticalServerRequest {
@@ -650,6 +623,8 @@ pub fn seed_standalone_tactical_mission(
             scene_key,
             party_id,
             requested_by: character_id,
+            expected_party_members,
+            authorized_party_member_ids,
             required_enemy_kills,
             enemy_difficulty: mission.enemy_difficulty,
             enemy_combat_scale_bps: mission.enemy_combat_scale_bps,
@@ -671,7 +646,7 @@ pub(crate) fn seed_world(
     ctx: &ReducerContext,
     include_errantry_demo_chapter: bool,
 ) -> Result<(), String> {
-    const DEMO_SOURCES: &str = "- **Adventure Simulator renderer demo:** Hand-authored geographic fixture for exercising map and terrain-routing UI.";
+    const DEMO_SOURCES: &str = "- **Fabelgeist renderer demo:** Hand-authored geographic fixture for exercising map and terrain-routing UI.";
 
     for (id, latitude, longitude) in [
         (RIVERDALE_RENDERER_DEMO_NODE, 53.50, 10.00),
@@ -771,7 +746,7 @@ pub(crate) fn seed_world(
     }
 
     for (id, name, x, y, source_node_id, pop, scene, religious_status) in settlements {
-        if ctx.db.settlement().id().find(&id.to_string()).is_none() {
+        if ctx.db.settlement().id().find(id.to_string()).is_none() {
             let languages = match id {
                 "oakenshire" => adventuresim_world_schema::SettlementLanguageProfile {
                     east_central_bp: 1_500,
@@ -874,7 +849,7 @@ pub(crate) fn seed_world(
                 religion_id: religious_status.church().religion_id().into(),
                 currency_id: crate::item::settlement_currency_id(id).into(),
                 source_node_id,
-                sources: "- **Adventure Simulator demo data:** Hand-authored settlement and deterministic placeholder environment; no external world-data source was imported.".into(),
+                sources: "- **Fabelgeist demo data:** Hand-authored settlement and deterministic placeholder environment; no external world-data source was imported.".into(),
             });
         }
     }
@@ -1061,7 +1036,7 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
                     .filter(|presence| crate::settlement_population::npc_is_present(ctx, presence, now))
                     .map(|presence| (npc, presence))
             })
-            .min_by_key(|(npc, _)| (!npc.service_id.is_empty(), npc.character_id.clone()))
+            .min_by_key(|(npc, _)| (!npc.service_id.is_empty(), npc.character_id))
         else {
             break;
         };
@@ -1105,7 +1080,7 @@ fn ensure_npc_recruiting_parties(ctx: &ReducerContext, settlement_id: &str) -> R
         ctx.db.party_authority().id().update(party);
 
         let mut requirements = RecruitmentRequirements::default();
-        if ctx.random::<u64>() % 2 == 0 {
+        if ctx.random::<u64>().is_multiple_of(2) {
             requirements.melee = true;
         } else {
             requirements.ranged = true;
@@ -1235,7 +1210,7 @@ fn generated_witness_candidates(
         })
         .collect::<Vec<_>>();
     candidates = retain_navigable_witnesses(candidates, &visible_tabs);
-    candidates.sort_by(|left, right| left.resident_character_id.cmp(&right.resident_character_id));
+    candidates.sort_by_key(|left| left.resident_character_id);
     candidates
 }
 
@@ -1276,7 +1251,7 @@ fn developer_witness_candidates(
         })
         .collect::<Vec<_>>();
     candidates = retain_navigable_witnesses(candidates, &visible_tabs);
-    candidates.sort_by(|left, right| left.resident_character_id.cmp(&right.resident_character_id));
+    candidates.sort_by_key(|left| left.resident_character_id);
     candidates
 }
 
@@ -1357,7 +1332,7 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
         .db
         .settlement()
         .id()
-        .find(&settlement_id.to_string())
+        .find(settlement_id.to_string())
         .ok_or("Settlement not found")?;
     let ordinal = ctx
         .db
@@ -1404,12 +1379,14 @@ fn generate_quest_for_settlement(ctx: &ReducerContext, settlement_id: &str) -> R
     qg::validate(&generated)
         .map_err(|errors| format!("Generated quest manifest is invalid: {}", errors.join("; ")))?;
 
-    materialize_generated_quest(ctx, &settlement, &context, &generated, None)
+    materialize_generated_quest(ctx, &settlement, &context, &generated, None, None)
 }
 
-fn materialize_preferred_outbreak(
+fn materialize_preferred_generated_fixture(
     ctx: &ReducerContext,
     character_id: u64,
+    family: adventuresim_core::quest_generation::TemplateFamily,
+    seed_salt: u64,
 ) -> Result<String, String> {
     use adventuresim_core::quest_generation as qg;
 
@@ -1426,9 +1403,9 @@ fn materialize_preferred_outbreak(
         .ok_or("Current settlement not found")?;
 
     let now_minute = crate::time::refresh_clock(ctx)?.max(4_000);
-    let entropy = character_id ^ 0x4f55_5442_5245_414b;
-    let context = qg::GenerationContext {
-        seed: entropy.rotate_left(11),
+    let entropy = character_id ^ seed_salt;
+    let initial_context = qg::GenerationContext {
+        seed: preferred_fixture_seed(entropy, family),
         observer_entropy_hi: entropy.rotate_left(23),
         observer_entropy_lo: entropy.rotate_right(17),
         settlement_id: settlement_id.clone(),
@@ -1436,14 +1413,25 @@ fn materialize_preferred_outbreak(
         scope: adventuresim_core::local_problem::Scope::Settlement {
             settlement_id: settlement_id.clone(),
         },
-        ordinal: u16::MAX,
+        ordinal: (seed_salt as u16).max(1),
         now_minute,
         incident_weather: adventuresim_core::weather::Precipitation::Clear,
-        requested_family: Some(qg::TemplateFamily::Outbreak),
+        requested_family: Some(family),
         witness_candidates: generated_witness_candidates(ctx, &settlement_id),
     };
-    let generated = qg::generate(&context)
-        .map_err(|error| format!("Outbreak demo generation failed: {error:?}"))?;
+    let (context, generated) = (0..64_u64)
+        .find_map(|offset| {
+            let mut candidate = initial_context.clone();
+            candidate.seed = candidate.seed.wrapping_add(offset);
+            let generated = qg::generate(&candidate).ok()?;
+            let suitable = family != qg::TemplateFamily::RecurringDepredation
+                || generated.hostile_groups.iter().any(|(_, _, threat, _)| {
+                    *threat == adventuresim_core::bestiary::ThreatId::Bandit
+                        || *threat == adventuresim_core::bestiary::ThreatId::Smuggler
+                });
+            suitable.then_some((candidate, generated))
+        })
+        .ok_or("Development quest fixture exhausted negotiable generated threats")?;
     let witness = generated
         .witnesses
         .first()
@@ -1463,9 +1451,17 @@ fn materialize_preferred_outbreak(
         .is_none()
     {
         qg::validate(&generated).map_err(|errors| {
-            format!("Outbreak demo manifest is invalid: {}", errors.join("; "))
+            format!("Development quest fixture manifest is invalid: {}", errors.join("; "))
         })?;
-        materialize_generated_quest(ctx, &settlement, &context, &generated, None)?;
+        let fixture_site_distance_m = preferred_fixture_site_distance_m(family);
+        materialize_generated_quest(
+            ctx,
+            &settlement,
+            &context,
+            &generated,
+            None,
+            fixture_site_distance_m,
+        )?;
     }
     crate::local_problem::prefer_next_rumor(
         ctx,
@@ -1473,7 +1469,30 @@ fn materialize_preferred_outbreak(
         &settlement_id,
         &generated.problem_id,
     );
-    Ok(generated.canonical_case_id)
+    let problem = ctx
+        .db
+        .local_problem_authority()
+        .id()
+        .find(&generated.problem_id)
+        .ok_or("Development quest fixture did not materialize its exact local problem")?;
+    if problem.opaque_case_ref != generated.canonical_case_id
+        || problem.scope_key != format!("settlement:{settlement_id}")
+    {
+        return Err("Development quest fixture local-problem binding is inconsistent".into());
+    }
+    Ok(generated.problem_id)
+}
+
+fn preferred_fixture_seed(
+    entropy: u64,
+    family: adventuresim_core::quest_generation::TemplateFamily,
+) -> u64 {
+    let seed = entropy.rotate_left(11);
+    if family == adventuresim_core::quest_generation::TemplateFamily::Outbreak {
+        seed - seed % 6
+    } else {
+        seed
+    }
 }
 
 fn ordinary_generated_site_distance_m(seed: u64, index: usize) -> u64 {
@@ -1535,7 +1554,7 @@ fn materialize_simulation_acceptance_outbreak(
                 errors.join("; ")
             )
         })?;
-        materialize_generated_quest(ctx, &settlement, &context, &generated, None)?;
+        materialize_generated_quest(ctx, &settlement, &context, &generated, None, None)?;
         crate::local_problem::prefer_next_rumor(
             ctx,
             character_id,
@@ -1547,7 +1566,7 @@ fn materialize_simulation_acceptance_outbreak(
     Err("No ordinary generated outbreak met the bounded acceptance route constraint".into())
 }
 
-fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), String> {
+fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<String, String> {
     let mut skills = ctx
         .db
         .character_skills()
@@ -1586,8 +1605,30 @@ fn seed_outbreak_demo(ctx: &ReducerContext, character_id: u64) -> Result<(), Str
     {
         crate::add_inventory_item(ctx, character_id, "surgery_kit", 1);
     }
+    if !ctx
+        .db
+        .inventory_item()
+        .character_id()
+        .filter(character_id)
+        .any(|row| row.item_id == "cooking_pot")
+    {
+        crate::add_inventory_item(ctx, character_id, "cooking_pot", 1);
+    }
+    let cooking_pot = ctx
+        .db
+        .inventory_item()
+        .character_id()
+        .filter(character_id)
+        .find(|row| row.item_id == "cooking_pot")
+        .ok_or("Outbreak demo cooking pot was not materialized")?;
+    crate::inventory_container::ensure_object(ctx, character_id, "personal", cooking_pot.id, false)?;
 
-    materialize_preferred_outbreak(ctx, character_id).map(|_| ())
+    materialize_preferred_generated_fixture(
+        ctx,
+        character_id,
+        adventuresim_core::quest_generation::TemplateFamily::Outbreak,
+        0x4f55_5442_5245_414b,
+    )
 }
 
 pub(crate) struct SimulationQuestFixtureSeed {
@@ -1858,6 +1899,7 @@ fn materialize_generated_quest(
     context: &adventuresim_core::quest_generation::GenerationContext,
     generated: &adventuresim_core::quest_generation::GeneratedCase,
     context_snapshot_override: Option<&str>,
+    fixture_site_distance_m: Option<u64>,
 ) -> Result<(), String> {
     let settlement_id = context.settlement_id.as_str();
     let seed = context.seed;
@@ -1923,7 +1965,8 @@ fn materialize_generated_quest(
     let geographic = settlement.source_node_id.is_some();
     let mut site_rows = BTreeMap::new();
     for (index, site) in generated.sites.iter().enumerate() {
-        let distance_m = ordinary_generated_site_distance_m(seed, index);
+        let distance_m = fixture_site_distance_m
+            .unwrap_or_else(|| ordinary_generated_site_distance_m(seed, index));
         let angle_seed = seed.rotate_left((index as u32).saturating_mul(11));
         let angle = (angle_seed as f64 / u64::MAX as f64) * std::f64::consts::TAU;
         let distance_km = distance_m as f64 / 1_000.0;
@@ -2076,7 +2119,7 @@ fn materialize_generated_quest(
         priority: 1,
         status: FinaleStatus::Available,
     });
-    crate::local_problem::materialize_generated_problem(ctx, &generated, settlement_id)?;
+    crate::local_problem::materialize_generated_problem(ctx, generated, settlement_id)?;
     crate::outbreak::materialize_generated_outbreak(
         ctx,
         generated,
@@ -2120,6 +2163,7 @@ pub fn spawn_developer_quest(
     definition_json: String,
     allow_implausible: bool,
 ) -> Result<(), String> {
+    require_development_gateway(ctx)?;
     use adventuresim_core::{developer_quest as dq, quest_generation as qg};
     require_strategic_character_authority(ctx, character_id)?;
     let definition = dq::parse_definition_json(&definition_json).map_err(|diagnostics| {
@@ -2190,12 +2234,51 @@ pub fn spawn_developer_quest(
         &base,
         &generated,
         Some(&context_snapshot_json),
+        None,
     )
+}
+
+fn preferred_fixture_site_distance_m(
+    family: adventuresim_core::quest_generation::TemplateFamily,
+) -> Option<u64> {
+    (family == adventuresim_core::quest_generation::TemplateFamily::RecurringDepredation)
+        .then_some(1_000)
 }
 
 #[cfg(test)]
 mod developer_quest_source_tests {
     use super::*;
+
+    #[test]
+    fn outbreak_demo_seed_selects_the_waterborne_fixture() {
+        let entropy = 9_999_999_999_999_959u64 ^ 0x4f55_5442_5245_414b;
+        let seed = preferred_fixture_seed(
+            entropy,
+            adventuresim_core::quest_generation::TemplateFamily::Outbreak,
+        );
+        assert_eq!(seed % 6, 0);
+        assert_eq!(
+            preferred_fixture_seed(
+                entropy,
+                adventuresim_core::quest_generation::TemplateFamily::RecurringDepredation,
+            ),
+            entropy.rotate_left(11)
+        );
+    }
+
+    #[test]
+    fn only_the_recurring_threat_gallery_fixture_gets_the_nearby_site_override() {
+        use adventuresim_core::quest_generation::TemplateFamily;
+        assert_eq!(
+            preferred_fixture_site_distance_m(TemplateFamily::RecurringDepredation),
+            Some(1_000)
+        );
+        assert_eq!(
+            preferred_fixture_site_distance_m(TemplateFamily::Outbreak),
+            None
+        );
+        assert!(ordinary_generated_site_distance_m(0, 0) >= 4_000);
+    }
 
     #[test]
     fn fresh_development_world_seeds_an_exact_order_errantry_issuer() {
@@ -2257,28 +2340,38 @@ mod developer_quest_source_tests {
             .split("pub fn bootstrap_development_world")
             .nth(1)
             .unwrap()
-            .split("/// Load the one-shot autopsy")
+            .split("pub fn seed_standalone_tactical_mission")
             .next()
             .unwrap();
         assert!(
             bootstrap
-                .find("seed_world(ctx, include_visual_demos)")
+                .find("seed_world(ctx, true)")
                 .unwrap()
                 < bootstrap.find("seed_social_demo(ctx)").unwrap()
+        );
+        assert!(
+            bootstrap.find("seed_social_demo(ctx)").unwrap()
+                < bootstrap
+                    .find("seed_herbalism_demo_character(ctx)")
+                    .unwrap()
+        );
+        assert!(
+            bootstrap
+                .find("seed_herbalism_demo_character(ctx)")
+                .unwrap()
+                < bootstrap
+                    .find("materialize_development_scenario_gallery(ctx)")
+                    .unwrap()
         );
         assert!(
             include_str!("../simulation.rs").contains("crate::strategic::seed_world(ctx, false)")
         );
 
         let challenges = include_str!("challenges.rs");
-        let demo = challenges
-            .split("pub fn load_puzzle_demo")
-            .nth(1)
-            .unwrap()
-            .split("/// Narrow production issuance")
-            .next()
-            .unwrap();
-        assert!(demo.contains("ErrantryLaunch::DirectDemoCamp"));
+        let gallery = include_str!("development_scenarios.rs");
+        assert!(!challenges.contains("pub fn load_puzzle_demo"));
+        assert!(gallery.contains("ErrantryLaunch::DirectDemoCamp(kind)"));
+        assert!(gallery.contains("ErrantryPuzzleKind::ResourceAllocation"));
         let materializer = challenges
             .split("fn materialize_order_errantry")
             .nth(1)

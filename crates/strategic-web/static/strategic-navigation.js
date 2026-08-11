@@ -88,7 +88,7 @@
     if (!current) return false;
     if (!alreadyUnmounted) document.dispatchEvent(new CustomEvent("strategic-page-unmounting"));
     current.replaceWith(replacement);
-    document.title = title || `${replacement.dataset.pageTitle} - Adventure Simulator`;
+    document.title = title || `${replacement.dataset.pageTitle} - Fabelgeist`;
     if (historyMode === "push") history.pushState({ strategicScroll: [0, 0] }, "", finalUrl);
     else if (historyMode === "replace") history.replaceState({ strategicScroll: [0, 0] }, "", finalUrl);
     document.dispatchEvent(new CustomEvent("strategic-page-mounted"));

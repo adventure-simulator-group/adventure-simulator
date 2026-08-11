@@ -9,6 +9,8 @@ use adventuresim_core::courtship::{
     RefreshableMorale, refresh_bounded_leisure_morale, residence_leisure_bonus_milli,
     residence_period_charge,
 };
+use adventuresim_core::strategic_place::StrategicPlaceId;
+use adventuresim_core::strategic_presence::{PresenceFrontier, StrategicPresence, are_co_present};
 use spacetimedb::{ReducerContext, SpacetimeType, Table, ViewContext, reducer, table, view};
 
 use crate::character::character;
@@ -360,10 +362,16 @@ pub fn backend_character_residence_statuses(
                 // Billing is the owner's private economic state. Household
                 // occupants need the home and comfort facts, not timestamps
                 // that may have been advanced beyond their personal date.
-                last_billed_minute: owns_holding
-                    .then_some(holding.last_billed_minute)
-                    .unwrap_or(0),
-                next_due_minute: owns_holding.then_some(holding.next_due_minute).unwrap_or(0),
+                last_billed_minute: if owns_holding {
+                    holding.last_billed_minute
+                } else {
+                    0
+                },
+                next_due_minute: if owns_holding {
+                    holding.next_due_minute
+                } else {
+                    0
+                },
             })
         })
         .collect()
@@ -467,7 +475,7 @@ fn offer(
     ctx.db
         .settlement_residence_offer()
         .id()
-        .find(&offer_id(settlement_id, tier))
+        .find(offer_id(settlement_id, tier))
         .ok_or_else(|| "Residence offer not found".to_string())
 }
 
@@ -507,13 +515,40 @@ pub fn active_residence_for_occupant(
     character_id: u64,
     settlement_id: &str,
 ) -> Option<ResidenceHolding> {
+    active_residence_presence(ctx, character_id, settlement_id).map(|(holding, _)| holding)
+}
+
+/// Private typed projection of residence access. Exact presence comes from
+/// chronological occupancy; ownership without occupancy is insufficient.
+pub(crate) fn active_residence_presence(
+    ctx: &ReducerContext,
+    character_id: u64,
+    settlement_id: &str,
+) -> Option<(ResidenceHolding, StrategicPresence)> {
     let minute = residence_now(ctx, character_id).ok()?;
-    let holding_id = occupant_holding_id_at(ctx, character_id, minute)?;
-    ctx.db
+    let (holding_id, admitted_minute) = occupant_holding_at(ctx, character_id, minute)?;
+    let holding = ctx
+        .db
         .residence_holding()
         .id()
         .find(&holding_id)
-        .filter(|row| holding_active_at(ctx, &row.id, minute) && row.settlement_id == settlement_id)
+        .filter(|row| {
+            holding_active_at(ctx, &row.id, minute) && row.settlement_id == settlement_id
+        })?;
+    let place = StrategicPlaceId::residence(&holding.settlement_id, &holding.id).ok()?;
+    let presence = StrategicPresence::residence_occupancy(
+        character_id,
+        place,
+        holding.owner_character_id,
+        admitted_minute,
+        PresenceFrontier {
+            observer_character_id: character_id,
+            personal_minute: minute,
+        },
+        true,
+    )
+    .ok()?;
+    Some((holding, presence))
 }
 
 /// Whether a holding was usable at an effective personal minute. Current
@@ -562,6 +597,14 @@ pub(crate) fn occupant_holding_id_at(
     character_id: u64,
     minute: u64,
 ) -> Option<String> {
+    occupant_holding_at(ctx, character_id, minute).map(|(holding_id, _)| holding_id)
+}
+
+fn occupant_holding_at(
+    ctx: &ReducerContext,
+    character_id: u64,
+    minute: u64,
+) -> Option<(String, u64)> {
     let mut transitions = ctx
         .db
         .residence_transition()
@@ -585,14 +628,17 @@ pub(crate) fn occupant_holding_id_at(
     });
     transitions
         .into_iter()
-        .fold(None, |holding_id, transition| match transition.kind {
-            ResidenceTransitionKind::OccupantAdmitted => Some(transition.holding_id),
+        .fold(None, |occupancy, transition| match transition.kind {
+            ResidenceTransitionKind::OccupantAdmitted => {
+                Some((transition.holding_id, transition.minute))
+            }
             ResidenceTransitionKind::OccupantRemoved
-                if holding_id.as_deref() == Some(transition.holding_id.as_str()) =>
+                if occupancy.as_ref().map(|(id, _)| id.as_str())
+                    == Some(transition.holding_id.as_str()) =>
             {
                 None
             }
-            _ => holding_id,
+            _ => occupancy,
         })
 }
 
@@ -820,8 +866,34 @@ fn validate_public_admission(
         Some(occupant_id),
         crate::relationship::TemporalScope::PairwiseSoft,
     )?;
-    if owner.current_settlement_id.as_deref() != Some(&holding.settlement_id)
-        || occupant.current_settlement_id.as_deref() != Some(&holding.settlement_id)
+    let frontier = PresenceFrontier {
+        observer_character_id: holding.owner_character_id,
+        personal_minute: actor_minute,
+    };
+    let owner_presence = owner
+        .current_settlement_id
+        .as_deref()
+        .and_then(|settlement_id| {
+            StrategicPresence::settlement_membership(owner.id, settlement_id, frontier).ok()
+        });
+    let occupant_presence = occupant
+        .current_settlement_id
+        .as_deref()
+        .and_then(|settlement_id| {
+            StrategicPresence::settlement_membership(occupant.id, settlement_id, frontier).ok()
+        });
+    let expected_place = StrategicPlaceId::settlement(&holding.settlement_id)
+        .map_err(|_| "Residence settlement identity is invalid")?;
+    if !owner_presence
+        .as_ref()
+        .is_some_and(|presence| presence.place() == &expected_place)
+        || !occupant_presence
+            .as_ref()
+            .is_some_and(|presence| presence.place() == &expected_place)
+        || !owner_presence
+            .as_ref()
+            .zip(occupant_presence.as_ref())
+            .is_some_and(|(owner, occupant)| are_co_present(owner, occupant))
     {
         return Err("Residence admission requires both characters to be co-located".into());
     }

@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use super::AppState;
 use crate::session::{Session, clear_character_cookie, redirect_with_session_cookie};
-use crate::spacetimedb::{Character, CharacterStrategicCondition};
+use crate::spacetimedb::{BackendDevelopmentScenario, Character, CharacterStrategicCondition};
 use crate::templates::character::{
     character_candidates_bootstrap_page, character_candidates_page, character_switcher_options,
     characters_list_page,
@@ -101,9 +101,68 @@ async fn redirect_to_candidates() -> Response {
 }
 
 async fn list_characters(State(state): State<AppState>, session: Session) -> Response {
+    let issued = if session.owner_key().is_none() {
+        match state.session_codec.issue() {
+            Ok(issued) => Some(issued),
+            Err(error) => {
+                tracing::error!(%error, "failed to issue development roster browser session");
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "The development scenario roster could not create a browser session.",
+                )
+                    .into_response();
+            }
+        }
+    } else {
+        None
+    };
+    let owner_key = session
+        .owner_key()
+        .or_else(|| issued.as_ref().map(|issued| issued.owner_key.as_str()));
+    if let Some(owner_key) = owner_key {
+        let scenarios = development_scenarios(&state).await;
+        let missing = scenarios.iter().any(|scenario| {
+            !session
+                .character_ids()
+                .contains(&scenario.primary_character_id)
+        });
+        if missing {
+            match state
+                .db
+                .call("adopt_development_scenarios", &[json!(owner_key)])
+                .await
+            {
+                Ok(()) => {
+                    let token = issued.as_ref().map(|issued| issued.token.as_str());
+                    return redirect_with_session_cookie(
+                        &state.session_codec,
+                        token,
+                        "/characters",
+                    );
+                }
+                Err(error) => {
+                    tracing::error!(%error, "failed to grant development scenario access");
+                    return (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "The development scenario roster is unavailable.",
+                    )
+                        .into_response();
+                }
+            }
+        }
+    }
     let characters = remembered_characters(&state, &session).await;
-    Html(characters_list_page(&characters, session.character_id_u64()).into_string())
+    let scenarios = development_scenarios(&state).await;
+    Html(characters_list_page(&characters, &scenarios, session.character_id_u64()).into_string())
         .into_response()
+}
+
+async fn development_scenarios(state: &AppState) -> Vec<BackendDevelopmentScenario> {
+    state
+        .db
+        .query("SELECT * FROM backend_development_scenarios")
+        .await
+        .unwrap_or_default()
 }
 
 async fn character_menu(State(state): State<AppState>, session: Session) -> Response {
@@ -258,6 +317,7 @@ async fn select_character(
     State(state): State<AppState>,
     Path(id): Path<u64>,
     session: Session,
+    Form(selection): Form<SelectCharacterForm>,
 ) -> Response {
     let Some(owner_key) = session.owner_key() else {
         return (
@@ -273,7 +333,15 @@ async fn select_character(
                 .call("select_browser_character", &[json!(owner_key), json!(id)])
                 .await
             {
-                Ok(()) => redirect_with_session_cookie(&state.session_codec, None, "/"),
+                Ok(()) => redirect_with_session_cookie(
+                    &state.session_codec,
+                    None,
+                    selection
+                        .next
+                        .as_deref()
+                        .filter(|next| safe_entry_route(next))
+                        .unwrap_or("/"),
+                ),
                 Err(error) => {
                     tracing::error!(character_id = id, %error, "failed to select granted character");
                     (
@@ -294,6 +362,15 @@ async fn select_character(
         )
             .into_response(),
     }
+}
+
+#[derive(Default, Deserialize)]
+struct SelectCharacterForm {
+    next: Option<String>,
+}
+
+fn safe_entry_route(route: &str) -> bool {
+    route.starts_with('/') && !route.starts_with("//") && !route.contains(['\r', '\n'])
 }
 
 async fn switch_character(State(state): State<AppState>, session: Session) -> Response {

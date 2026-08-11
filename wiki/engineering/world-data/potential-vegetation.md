@@ -53,7 +53,7 @@ as a deterministic tie-break. Fallback Jung wetland/marine classes cannot emit
 water cover: wetlands require wet soil plus freshwater/tidal convergence, while
 transitional water requires tidal evidence.
 
-Attribution/modification notice: Adventure Simulator downloads Jung's published
+Attribution/modification notice: Fabelgeist downloads Jung's published
 v1.1 rasters unchanged, then projects settlement cells, area-aggregates posterior
 means, quantizes values, and applies documented categorical/inference fallbacks.
 

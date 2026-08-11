@@ -180,6 +180,14 @@ pub(crate) async fn character_is_alive_as_observed(
     Ok(character.alive)
 }
 
+pub(crate) fn new_id() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_micros() as u64
+}
+
 #[cfg(test)]
 mod tests {
     use super::prefer_complete_cache;
@@ -211,10 +219,7 @@ mod tests {
                 .id,
             7
         );
-        assert_eq!(
-            prefer_complete_cache(Some(None), Some(character(8))).is_none(),
-            true
-        );
+        assert!(prefer_complete_cache(Some(None), Some(character(8))).is_none());
         assert_eq!(
             prefer_complete_cache(None, Some(character(8))).unwrap().id,
             8
@@ -285,12 +290,4 @@ mod tests {
         assert!(!loader.contains("character_as_observed"));
         assert!(!loader.contains("character_not_ahead_of_observer"));
     }
-}
-
-pub(crate) fn new_id() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_micros() as u64
 }

@@ -59,7 +59,7 @@ REQUIRED_FILES = {
     "noaa-owda-v1-derived": frozenset({"settlement-profiles-1544.json"}),
 }
 NOTICE_TEMPLATES = {
-    "viabundus-v2": "Viabundus v2 — CC BY-SA 4.0. Credit Viabundus and the University of Göttingen; retain the CC BY-SA 4.0 link and identify Adventure Simulator modifications. https://creativecommons.org/licenses/by-sa/4.0/\n",
+    "viabundus-v2": "Viabundus v2 — CC BY-SA 4.0. Credit Viabundus and the University of Göttingen; retain the CC BY-SA 4.0 link and identify Fabelgeist modifications. https://creativecommons.org/licenses/by-sa/4.0/\n",
     "hyde-3-5-c9": "HYDE 3.5 c9 — CC BY 3.0. Credit Klein Goldewijk et al./HYDE, retain https://creativecommons.org/licenses/by/3.0/, and identify interpolation/classification modifications.\n",
     "copernicus-dem-glo30": "Copernicus DEM GLO-30 — retain the prescribed Copernicus/WorldDEM production credit and European Commission/ESA no-liability notice; do not imply endorsement.\n",
     "clms-forest-2018": "Copernicus Forest 2018 — credit the European Union/Copernicus Land Monitoring Service, identify clipping/classification modifications, and do not imply endorsement.\n",

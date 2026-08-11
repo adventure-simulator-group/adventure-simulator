@@ -11,7 +11,7 @@ fn party_travel_leg_minutes(
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party not found")?;
     if party.walking_minutes_per_day == 0 {
         return Err("The party is configured not to travel".into());
@@ -31,7 +31,7 @@ fn party_next_walking_minutes(
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party not found")?;
     let now = living_party_member_ids(ctx, party_id)
         .into_iter()
@@ -325,7 +325,7 @@ fn record_party_journey_camp(
         .db
         .party_journey_authority()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
     else {
         return Ok(());
     };
@@ -344,12 +344,61 @@ fn record_party_journey_camp(
     Ok(())
 }
 
+pub(crate) fn journey_plan_version_is_canonical(plan_version: u8) -> bool {
+    matches!(plan_version, 1 | 2)
+}
+
+/// One predicate shared by every authoritative consumer that treats a party
+/// and journey row as an exact reached camp.
+pub(crate) fn party_journey_is_current_camp(party: &Party, journey: &PartyJourney) -> bool {
+    party.current_settlement_id.is_none()
+        && party.current_case_site_id.is_none()
+        && party.camp_destination.as_ref() == Some(&journey.destination)
+        && journey_plan_version_is_canonical(journey.plan_version)
+        && journey.completed_minutes < journey.total_minutes
+        && journey
+            .camp_stop_minutes
+            .contains(&journey.completed_minutes)
+}
+
+/// Canonical identity for the party's currently reached journey camp.
+///
+/// The identity names the camp only. This adapter proves that the named camp
+/// is the party's coherent current off-settlement location before returning
+/// it to presence and fixture consumers.
+pub(crate) fn current_journey_camp_place(
+    ctx: &ReducerContext,
+    party_id: &str,
+) -> Result<adventuresim_core::strategic_place::StrategicPlaceId, String> {
+    let party = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(party_id.to_string())
+        .ok_or("Party not found")?;
+    let journey = ctx
+        .db
+        .party_journey_authority()
+        .party_id()
+        .find(party_id.to_string())
+        .ok_or("Journey camp not found")?;
+    if !party_journey_is_current_camp(&party, &journey) {
+        return Err("This is not the party's current journey camp".into());
+    }
+    adventuresim_core::strategic_place::StrategicPlaceId::journey_camp(
+        party_id,
+        journey.departure_minute,
+        journey.completed_minutes,
+    )
+    .map_err(|_| "Journey camp has an invalid canonical identity".into())
+}
+
 fn record_party_journey_interruption(ctx: &ReducerContext, party_id: &str, movement_minutes: u64) {
     if let Some(mut journey) = ctx
         .db
         .party_journey_authority()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
     {
         journey.completed_minutes = journey
             .completed_minutes
@@ -360,6 +409,53 @@ fn record_party_journey_interruption(ctx: &ReducerContext, party_id: &str, movem
             .saturating_add(movement_minutes);
         ctx.db.party_journey_authority().party_id().update(journey);
     }
+}
+
+/// Promote the exact movement boundary of a finally resolved interruption to
+/// a reached journey stop. Until resolution the encounter, rather than camp
+/// activity or onward movement, owns this location.
+fn establish_resolved_encounter_journey_camp(
+    ctx: &ReducerContext,
+    encounter: &StrategicEncounter,
+) -> Result<(), String> {
+    if encounter.status != "resolved" {
+        return Ok(());
+    }
+    let Some(party) = ctx
+        .db
+        .party_authority()
+        .id()
+        .find(&encounter.party_id)
+    else {
+        return Ok(());
+    };
+    let Some(mut journey) = ctx
+        .db
+        .party_journey_authority()
+        .party_id()
+        .find(&encounter.party_id)
+    else {
+        return Ok(());
+    };
+    let exact_incomplete_stop = party.id == encounter.party_id
+        && journey.party_id == encounter.party_id
+        && party.current_settlement_id.is_none()
+        && party.current_case_site_id.is_none()
+        && party.camp_destination.as_ref() == Some(&journey.destination)
+        && journey_plan_version_is_canonical(journey.plan_version)
+        && journey.completed_minutes < journey.total_minutes
+        && encounter.journey_movement_minute == journey.completed_minutes;
+    if !exact_incomplete_stop
+        || journey
+            .camp_stop_minutes
+            .contains(&journey.completed_minutes)
+    {
+        return Ok(());
+    }
+    journey.camp_stop_minutes.push(journey.completed_minutes);
+    ctx.db.party_journey_authority().party_id().update(journey);
+    bind_errantry_trials_to_current_camp(ctx, &encounter.party_id)?;
+    Ok(())
 }
 
 /// Award conserved terrain exposure for the exact movement interval about to
@@ -379,7 +475,7 @@ fn train_party_terrain_movement(
         .db
         .party_journey_authority()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
     else {
         return Ok(excess_by_character);
     };
@@ -387,7 +483,7 @@ fn train_party_terrain_movement(
         .db
         .party_journey_route_authority()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
     else {
         return Ok(excess_by_character);
     };
@@ -618,7 +714,7 @@ pub(crate) fn refresh_party_journey_forecast(
         .db
         .party_journey_authority()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
     else {
         return Ok(());
     };
@@ -644,7 +740,7 @@ pub(crate) fn refresh_party_journey_forecast(
         .db
         .party_authority()
         .id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .ok_or("Party not found")?;
     let start = journey
         .departure_minute
@@ -688,7 +784,7 @@ pub(crate) fn refresh_party_journey_forecast(
         .db
         .party_journey_itinerary()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .unwrap_or(PartyJourneyItinerary {
             party_id: party_id.to_string(),
             actual_camp_intervals: Vec::new(),
@@ -699,7 +795,7 @@ pub(crate) fn refresh_party_journey_forecast(
         .db
         .party_journey_itinerary()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .is_some()
     {
         ctx.db.party_journey_itinerary().party_id().update(typed);
@@ -722,7 +818,7 @@ pub(crate) fn record_party_camp_rest(
         .db
         .party_journey_authority()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
     else {
         return Ok(());
     };
@@ -732,7 +828,7 @@ pub(crate) fn record_party_camp_rest(
         .db
         .party_journey_itinerary()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .unwrap_or(PartyJourneyItinerary {
             party_id: party_id.to_string(),
             actual_camp_intervals: Vec::new(),
@@ -742,7 +838,7 @@ pub(crate) fn record_party_camp_rest(
         .db
         .party_journey_itinerary()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .is_some();
     if let Some(last) = typed.actual_camp_intervals.last_mut()
         && last.movement_minute == journey.completed_minutes
@@ -775,7 +871,7 @@ pub(crate) fn record_party_camp_rest(
     Ok(())
 }
 
-fn finish_party_journey(ctx: &ReducerContext, party_id: &str) {
+pub(crate) fn finish_party_journey(ctx: &ReducerContext, party_id: &str) {
     let party_id = party_id.to_string();
     if ctx
         .db
@@ -889,7 +985,7 @@ fn unresolved_encounter(ctx: &ReducerContext, party_id: &str) -> Option<Strategi
     ctx.db
         .strategic_encounter()
         .party_id()
-        .find(&party_id.to_string())
+        .find(party_id.to_string())
         .filter(|encounter| encounter.status == "awaiting_choice")
 }
 
@@ -897,7 +993,7 @@ pub(crate) fn require_no_unresolved_encounter(
     ctx: &ReducerContext,
     party_id: &str,
 ) -> Result<(), String> {
-    let party = ctx.db.party_authority().id().find(&party_id.to_string());
+    let party = ctx.db.party_authority().id().find(party_id.to_string());
     let narrative_pending = party.as_ref().is_some_and(|party| {
         ctx.db.road_challenge_authority().party_id().filter(&party_id.to_string())
             .any(|occurrence| occurrence.open && party_at_bound_road_challenge(ctx, party, &occurrence))
