@@ -37,6 +37,8 @@ pub(in crate::presentation) struct TacticalTerrainExtension {
     weather: Vec4,
     #[uniform(100)]
     variation: Vec4,
+    #[uniform(100)]
+    far_sward: Vec4,
 }
 
 impl MaterialExtension for TacticalTerrainExtension {
@@ -109,6 +111,18 @@ pub(in crate::presentation) fn terrain_material(
                 0.055,
                 0.032,
                 environment.generation_version as f32,
+            ),
+            // Beyond the geometric grass range, retain a band-limited sward
+            // response in the terrain material instead of paying for blades
+            // that project to less than a pixel. x/y are the fade interval;
+            // z is environment-dependent coverage and w is reserved.
+            far_sward: Vec4::new(
+                104.0,
+                132.0,
+                (1.0 - bps(environment.water_bps) * 0.9
+                    - bps(environment.weather.snow_cover_bps) * 0.8)
+                    .clamp(0.0, 1.0),
+                0.0,
             ),
         },
     }
