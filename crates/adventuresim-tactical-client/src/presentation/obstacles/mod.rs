@@ -45,6 +45,7 @@ pub(in crate::presentation) fn present_pending_trees(
     environments: Query<&SceneEnvironment>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut leaf_materials: ResMut<Assets<TacticalTreeLeafMaterial>>,
     mut tree_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut tree_cache: ResMut<TreePresentationCache>,
@@ -70,15 +71,8 @@ pub(in crate::presentation) fn present_pending_trees(
                 perceptual_roughness: 0.95,
                 ..default()
             });
-            let leaf_material = materials.add(StandardMaterial {
-                base_color: Color::srgb(0.56, 0.6, 0.32),
-                perceptual_roughness: 0.82,
-                reflectance: 0.18,
-                diffuse_transmission: 0.65,
-                thickness: 0.001,
-                double_sided: true,
-                cull_mode: None,
-                ..default()
+            let leaf_material = leaf_materials.add(TacticalTreeLeafMaterial {
+                parameters: Vec4::new(0.74, 0.67, 0.035, 1.15),
             });
             let bud_material = materials.add(StandardMaterial {
                 base_color: Color::srgb(0.36, 0.27, 0.1),
@@ -87,7 +81,9 @@ pub(in crate::presentation) fn present_pending_trees(
             });
             let branch_meshes =
                 [3, 2, 1, 0].map(|depth| meshes.add(procedural_tree_branch_mesh(&branches, depth)));
-            let leaf_mesh = meshes.add(procedural_oak_leaf_mesh(&leaves));
+            let leaf_meshes = core::array::from_fn(|sector| {
+                meshes.add(procedural_oak_leaf_sector_mesh(&leaves, sector))
+            });
             let bud_mesh = meshes.add(procedural_oak_bud_mesh(&branches));
             let baked_lods = (1..5)
                 .map(|lod| bake_tree_lod(variant_seed, &branches, &leaves, lod))
@@ -97,7 +93,7 @@ pub(in crate::presentation) fn present_pending_trees(
             }
             let cached = CachedTreePresentation {
                 branch_meshes,
-                leaf_mesh,
+                leaf_meshes,
                 bud_mesh,
                 card_meshes: core::array::from_fn(|index| {
                     meshes.add(baked_lods[index].mesh.clone())

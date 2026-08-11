@@ -14,14 +14,49 @@ pub(in crate::presentation) struct TreePresentationCache {
 #[derive(Clone)]
 pub(in crate::presentation) struct CachedTreePresentation {
     pub(super) branch_meshes: [Handle<Mesh>; 4],
-    pub(super) leaf_mesh: Handle<Mesh>,
+    pub(super) leaf_meshes: [Handle<Mesh>; OAK_LEAF_SECTOR_COUNT],
     pub(super) bud_mesh: Handle<Mesh>,
     pub(super) card_meshes: [Handle<Mesh>; 4],
     pub(super) bark_material: Handle<StandardMaterial>,
-    pub(super) leaf_material: Handle<StandardMaterial>,
+    pub(super) leaf_material: Handle<TacticalTreeLeafMaterial>,
     pub(super) bud_material: Handle<StandardMaterial>,
     pub(super) card_materials: [Handle<TacticalTreeImpostorMaterial>; 4],
     pub(super) provenance: [TreeImpostorProvenance; 4],
+}
+
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+pub(in crate::presentation) struct TacticalTreeLeafMaterial {
+    /// Wind direction XZ, strength, and speed.
+    #[uniform(0)]
+    pub(super) parameters: Vec4,
+}
+
+impl Material for TacticalTreeLeafMaterial {
+    fn vertex_shader() -> ShaderRef {
+        TREE_LEAF_SHADER.into()
+    }
+
+    fn fragment_shader() -> ShaderRef {
+        TREE_LEAF_SHADER.into()
+    }
+
+    fn enable_prepass() -> bool {
+        false
+    }
+
+    fn enable_shadows() -> bool {
+        false
+    }
+
+    fn specialize(
+        _pipeline: &bevy::pbr::MaterialPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &bevy::mesh::MeshVertexBufferLayoutRef,
+        _key: bevy::pbr::MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        descriptor.primitive.cull_mode = None;
+        Ok(())
+    }
 }
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
@@ -78,14 +113,16 @@ pub(in crate::presentation) fn spawn_cached_tree(
         tree_lod_visibility(0),
     ));
     commands.entity(entity).with_children(|parent| {
-        parent.spawn((
-            Name::new("English oak individual lobed leaves"),
-            TreeLod(0),
-            NotShadowCaster,
-            Mesh3d(cached.leaf_mesh.clone()),
-            MeshMaterial3d(cached.leaf_material.clone()),
-            tree_lod_visibility(0),
-        ));
+        for (sector, mesh) in cached.leaf_meshes.iter().enumerate() {
+            parent.spawn((
+                Name::new(format!("English oak individual leaves sector {sector}")),
+                TreeLod(0),
+                NotShadowCaster,
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(cached.leaf_material.clone()),
+                tree_leaf_sector_visibility(sector),
+            ));
+        }
         parent.spawn((
             Name::new("English oak scaled terminal buds"),
             TreeLod(0),
@@ -117,3 +154,4 @@ pub(in crate::presentation) fn spawn_cached_tree(
 }
 
 const TREE_IMPOSTOR_SHADER: &str = "shaders/tactical_tree_impostor.wgsl";
+const TREE_LEAF_SHADER: &str = "shaders/tactical_tree_leaf.wgsl";

@@ -984,6 +984,16 @@ pub(in crate::presentation) fn tree_lod_visibility(lod: u8) -> VisibilityRange {
     }
 }
 
+pub(in crate::presentation) fn tree_leaf_sector_visibility(sector: usize) -> VisibilityRange {
+    debug_assert!(sector < OAK_LEAF_SECTOR_COUNT);
+    let offset = sector as f32 * 0.7;
+    VisibilityRange {
+        start_margin: 0.0..0.0,
+        end_margin: (21.0 + offset)..(25.0 + offset),
+        use_aabb: true,
+    }
+}
+
 pub(in crate::presentation) fn tree_lod_name(lod: u8, cards: bool) -> String {
     let representation = match lod {
         0 => "individual leaves",
@@ -1029,5 +1039,22 @@ mod tests {
             assert_eq!(current.end_margin, next.start_margin);
             assert!(!current.is_abrupt());
         }
+    }
+
+    #[test]
+    fn leaf_sectors_thin_continuously_inside_the_twig_crossfade() {
+        let twig = tree_lod_visibility(1);
+        let sectors = (0..OAK_LEAF_SECTOR_COUNT)
+            .map(tree_leaf_sector_visibility)
+            .collect::<Vec<_>>();
+        assert!(sectors.windows(2).all(|pair| {
+            pair[0].end_margin.start < pair[1].end_margin.start
+                && pair[0].end_margin.end < pair[1].end_margin.end
+        }));
+        assert!(sectors.iter().all(|sector| {
+            sector.end_margin.start < twig.start_margin.end
+                && sector.end_margin.end > twig.start_margin.start
+                && sector.use_aabb
+        }));
     }
 }
