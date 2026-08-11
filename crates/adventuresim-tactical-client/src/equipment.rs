@@ -696,13 +696,16 @@ fn spawn_item_placeholders(
 
 fn update_item_placeholders(
     mut commands: Commands,
-    items: Query<(
-        &Transform,
-        Option<&ItemOf>,
-        Option<&EquipSlot>,
-        &EquipmentTopology,
-        Has<TacticalSceneItem>,
-    )>,
+    items: Query<
+        (
+            &Transform,
+            Option<&ItemOf>,
+            Option<&EquipSlot>,
+            &EquipmentTopology,
+            Has<TacticalSceneItem>,
+        ),
+        Without<ItemPlaceholder>,
+    >,
     owners: Query<&GlobalTransform, With<Player>>,
     mut placeholders: Query<(Entity, &ItemPlaceholder, &mut Transform)>,
 ) {

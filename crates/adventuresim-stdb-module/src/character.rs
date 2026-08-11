@@ -1822,7 +1822,21 @@ fn set_demo_item_damage(
         .item_condition()
         .inventory_item_id()
         .find(inventory_item_id)
-        .ok_or_else(|| format!("Damaged demo item {inventory_item_id} has no condition row"))?;
+        .unwrap_or_else(|| {
+            // Some starter equipment is inserted directly during character
+            // construction. Repair the demo-only seed invariant before
+            // applying its deliberately visible damage profile.
+            ctx.db
+                .item_condition()
+                .insert(crate::repair::ItemCondition {
+                    inventory_item_id,
+                    tier_1: 0.0,
+                    tier_2: 0.0,
+                    tier_3: 0.0,
+                    tier_4: 0.0,
+                    tier_5: 0.0,
+                })
+        });
     [
         condition.tier_1,
         condition.tier_2,

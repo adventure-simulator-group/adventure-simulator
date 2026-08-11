@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1927)
+## Files (1944)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -62,6 +62,17 @@ development, or other wiki document before changing a subsystem.
 - `assets/animations/biped/unarmed/walk.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/walk_mirrored.glb` — Binary game or UI asset.
 - `assets/tactical-equipment-icons.png` — Binary game or UI asset.
+- `assets/tactical-scenes/cultivated-roadside.json` — Repository support file.
+- `assets/tactical-scenes/dense-woodland.json` — Repository support file.
+- `assets/tactical-scenes/flat-dry-grassland.json` — Repository support file.
+- `assets/tactical-scenes/heavy-rain-high-wind.json` — Repository support file.
+- `assets/tactical-scenes/narrow-peak-lod-boundary.json` — Repository support file.
+- `assets/tactical-scenes/playability-repair-required.json` — Repository support file.
+- `assets/tactical-scenes/saturated-wetland.json` — Repository support file.
+- `assets/tactical-scenes/snow-covered-ground.json` — Repository support file.
+- `assets/tactical-scenes/sparse-woodland.json` — Repository support file.
+- `assets/tactical-scenes/steep-open-hillside.json` — Repository support file.
+- `assets/tactical-scenes/valley-distant-ridge.json` — Repository support file.
 - `assets/world-data/ieg-religion-1544.csv` — Repository support file.
 - `assets_src/base.blend` — Repository support file.
 - `assets_src/base.blend1` — Repository support file.
@@ -1346,6 +1357,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/presentation.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/ragdoll_viewer.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/ragdoll_viewer_main.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-client/src/tactical_scene_viewer.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-client/src/tactical_scene_viewer_main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/ui.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-core/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-tactical-core/src/animation/evaluation.rs` — Rust source module.
@@ -1355,12 +1368,14 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-core/src/animation/semantic.rs` — Rust source module.
 - `crates/adventuresim-tactical-core/src/animation/state.rs` — Rust source module.
 - `crates/adventuresim-tactical-core/src/animation/tests.rs` — Rust source module.
+- `crates/adventuresim-tactical-core/src/bin/generate-scene-fixtures.rs` — Rust source module.
 - `crates/adventuresim-tactical-core/src/combat.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-core/src/inventory.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-core/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-core/src/physics.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-core/src/player.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-core/src/scene.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-core/src/scene_input.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-netcode/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-tactical-netcode/src/client.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-netcode/src/lib.rs` — Rust source module for this component.
@@ -1369,6 +1384,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-netcode/src/server.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server-dispatcher/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-tactical-server-dispatcher/src/main.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-server-dispatcher/src/scene_input.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/Cargo.toml` — Cargo package/workspace manifest.
 - `crates/adventuresim-tactical-server/src/bot.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/bot/defense.rs` — Rust source module.
@@ -1828,6 +1844,7 @@ development, or other wiki document before changing a subsystem.
 - `rust-toolchain.toml` — Tooling or build configuration.
 - `scripts/build_locomotion_cycles.py` — Development or documentation automation script.
 - `scripts/build_wasm.py` — Development or documentation automation script.
+- `scripts/capture_tactical_scenes.py` — Development or documentation automation script.
 - `scripts/dev_stack.py` — Development or documentation automation script.
 - `scripts/init_forest_cover.py` — Development or documentation automation script.
 - `scripts/init_jung_pnv.py` — Development or documentation automation script.
