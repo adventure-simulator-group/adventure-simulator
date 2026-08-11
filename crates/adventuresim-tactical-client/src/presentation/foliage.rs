@@ -80,9 +80,9 @@ pub(super) fn spawn_ground_foliage(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<TacticalFoliageMaterial>,
-    source: Entity,
     scene_id: &SceneId,
     terrain: &SceneTerrain,
+    ground: &SceneGround,
     environment: &SceneEnvironment,
 ) {
     let canopy = bps(environment.canopy_bps);
@@ -133,6 +133,8 @@ pub(super) fn spawn_ground_foliage(
         0.1 + bps(environment.weather.wind_speed_bps) * 0.24,
         true,
     ));
+    let litter_mesh = meshes.add(ground_litter_patch_mesh());
+    let litter_material = materials.add(foliage_material(0.015, false));
     let base_seed = stable_text_seed(&environment.scene_digest) ^ stable_text_seed(&scene_id.0);
     let half_x = terrain.width() * 0.5;
     let half_z = terrain.depth() * 0.5;
@@ -151,12 +153,15 @@ pub(super) fn spawn_ground_foliage(
             let jitter_z = unit_hash(splitmix64(hash ^ 0xe651_34aa)) - 0.5;
             let world_x = -half_x + (x as f32 + 0.5 + jitter_x * 0.24) * GRASS_PATCH_SPACING;
             let world_z = -half_z + (z as f32 + 0.5 + jitter_z * 0.24) * GRASS_PATCH_SPACING;
+            let ground_position = Vec2::new(world_x, world_z);
+            if !ground_allows_grass_patch(ground, ground_position) {
+                continue;
+            }
             let Some(transform) = foliage_transform(terrain, world_x, world_z, hash) else {
                 continue;
             };
             commands.spawn((
                 Name::new("Tactical grass near ribbons"),
-                FoliageOf(source),
                 FoliageLayer::Grass,
                 NotShadowCaster,
                 Mesh3d(grass_near_mesh.clone()),
@@ -166,7 +171,6 @@ pub(super) fn spawn_ground_foliage(
             ));
             commands.spawn((
                 Name::new("Tactical grass far ribbons"),
-                FoliageOf(source),
                 NotShadowCaster,
                 Mesh3d(grass_far_mesh.clone()),
                 MeshMaterial3d(grass_far_material.clone()),
@@ -190,12 +194,17 @@ pub(super) fn spawn_ground_foliage(
             let jitter_z = unit_hash(splitmix64(hash ^ 0xe651_34aa)) - 0.5;
             let world_x = -half_x + (x as f32 + 0.5 + jitter_x * 0.72) * understory_spacing;
             let world_z = -half_z + (z as f32 + 0.5 + jitter_z * 0.72) * understory_spacing;
+            if ground
+                .ground_at(Vec2::new(world_x, world_z))
+                .is_none_or(|sample| sample.cover == GroundCover::LeafLitter)
+            {
+                continue;
+            }
             let Some(transform) = foliage_transform(terrain, world_x, world_z, hash) else {
                 continue;
             };
             commands.spawn((
                 Name::new("Tactical understory clump"),
-                FoliageOf(source),
                 FoliageLayer::Understory,
                 NotShadowCaster,
                 Mesh3d(understory_mesh.clone()),
@@ -205,6 +214,48 @@ pub(super) fn spawn_ground_foliage(
             ));
         }
     }
+
+    for (index, sample) in ground.samples().iter().enumerate() {
+        if sample.cover != GroundCover::LeafLitter {
+            continue;
+        }
+        let hash = splitmix64(base_seed ^ index as u64 ^ 0x2b6f_5dd9_81aa_9135);
+        if unit_hash(hash) >= bps(sample.cover_density_bps) * 0.58 {
+            continue;
+        }
+        let grid_x = index % ground.grid_width();
+        let grid_z = index / ground.grid_width();
+        let jitter = ground.grid_scale() * 0.28;
+        let world_x = grid_x as f32 * ground.grid_scale() - ground.width() * 0.5
+            + (unit_hash(splitmix64(hash ^ 0x672a_1f04)) - 0.5) * jitter;
+        let world_z = grid_z as f32 * ground.grid_scale() - ground.depth() * 0.5
+            + (unit_hash(splitmix64(hash ^ 0xeeb0_31cd)) - 0.5) * jitter;
+        let Some(mut transform) = foliage_transform(terrain, world_x, world_z, hash) else {
+            continue;
+        };
+        transform.translation.y += 0.018;
+        transform.scale *= 0.72;
+        commands.spawn((
+            Name::new("Tactical dry leaves and twigs"),
+            FoliageLayer::LeafLitter,
+            NotShadowCaster,
+            Mesh3d(litter_mesh.clone()),
+            MeshMaterial3d(litter_material.clone()),
+            VisibilityRange::abrupt(0.0, 72.0),
+            transform,
+        ));
+    }
+}
+
+fn ground_allows_grass_patch(ground: &SceneGround, centre: Vec2) -> bool {
+    ground
+        .ground_at(centre)
+        .is_some_and(|sample| sample.cover == GroundCover::TallGrass)
+        && !ground.cover_intersects_square(
+            centre,
+            GRASS_PATCH_SPACING * 0.58,
+            GroundCover::LeafLitter,
+        )
 }
 
 fn foliage_transform(
@@ -229,30 +280,33 @@ fn foliage_transform(
     )
 }
 
-pub(super) fn on_environment_added(
-    event: On<Add, SceneEnvironment>,
-    environments: Query<&SceneEnvironment>,
-    scenes: Query<(&SceneId, &SceneTerrain)>,
-    foliage: Query<&FoliageOf>,
+pub(super) fn present_ground_scatter(
+    scenes: Query<
+        (
+            Entity,
+            &SceneId,
+            &SceneTerrain,
+            &SceneGround,
+            &SceneEnvironment,
+        ),
+        Without<GroundScatterPresented>,
+    >,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut foliage_materials: ResMut<Assets<TacticalFoliageMaterial>>,
-) -> Result {
-    if foliage.iter().any(|source| source.0 == event.entity) {
-        return Ok(());
+) {
+    for (entity, scene_id, terrain, ground, environment) in &scenes {
+        spawn_ground_foliage(
+            &mut commands,
+            &mut meshes,
+            &mut foliage_materials,
+            scene_id,
+            terrain,
+            ground,
+            environment,
+        );
+        commands.entity(entity).insert(GroundScatterPresented);
     }
-    let environment = environments.get(event.entity)?;
-    let (scene_id, terrain) = scenes.get(event.entity)?;
-    spawn_ground_foliage(
-        &mut commands,
-        &mut meshes,
-        &mut foliage_materials,
-        event.entity,
-        scene_id,
-        terrain,
-        environment,
-    );
-    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -412,6 +466,92 @@ pub(super) fn foliage_clump_mesh(width: f32, height: f32, color: Color, planes: 
     foliage_patch_mesh(width, height, color, planes, &[(0.0, 0.0, 1.0)])
 }
 
+/// Shared proof-of-concept forest-floor patch. Flat ochre leaf diamonds and
+/// narrow brown twig quads keep the mesh deliberately cheap while making the
+/// exclusive leaf-litter profile visually unmistakable.
+fn ground_litter_patch_mesh() -> Mesh {
+    let mut data = GroundLitterMeshData::default();
+    let leaf_colors = [
+        Color::srgb_u8(151, 82, 30),
+        Color::srgb_u8(184, 116, 38),
+        Color::srgb_u8(116, 67, 30),
+        Color::srgb_u8(201, 145, 54),
+    ];
+    for leaf in 0..10_u64 {
+        let hash = splitmix64(leaf ^ 0x5ec4_57d2_bf90_1c37);
+        let centre = Vec2::new(unit_hash(hash) - 0.5, unit_hash(splitmix64(hash ^ 1)) - 0.5) * 0.82;
+        let angle = unit_hash(splitmix64(hash ^ 2)) * core::f32::consts::TAU;
+        let long =
+            Vec2::new(angle.cos(), angle.sin()) * (0.08 + unit_hash(splitmix64(hash ^ 3)) * 0.045);
+        let side = Vec2::new(-long.y, long.x) * 0.42;
+        data.append_quad(
+            centre,
+            long,
+            side,
+            0.004 + leaf as f32 * 0.0004,
+            leaf_colors[leaf as usize % leaf_colors.len()],
+        );
+    }
+    for twig in 0..5_u64 {
+        let hash = splitmix64(twig ^ 0xa773_9fe2_410c_862d);
+        let centre = Vec2::new(unit_hash(hash) - 0.5, unit_hash(splitmix64(hash ^ 1)) - 0.5) * 0.76;
+        let angle = unit_hash(splitmix64(hash ^ 2)) * core::f32::consts::TAU;
+        let long =
+            Vec2::new(angle.cos(), angle.sin()) * (0.16 + unit_hash(splitmix64(hash ^ 3)) * 0.08);
+        let side = Vec2::new(-long.y, long.x) * 0.065;
+        data.append_quad(
+            centre,
+            long,
+            side,
+            0.012 + twig as f32 * 0.0006,
+            Color::srgb_u8(79, 47, 24),
+        );
+    }
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, data.positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_1, data.roots);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, data.colors);
+    mesh.insert_indices(Indices::U32(data.indices));
+    mesh
+}
+
+#[derive(Default)]
+struct GroundLitterMeshData {
+    positions: Vec<[f32; 3]>,
+    normals: Vec<[f32; 3]>,
+    uvs: Vec<[f32; 2]>,
+    roots: Vec<[f32; 2]>,
+    colors: Vec<[f32; 4]>,
+    indices: Vec<u32>,
+}
+
+impl GroundLitterMeshData {
+    fn append_quad(&mut self, centre: Vec2, long: Vec2, side: Vec2, height: f32, color: Color) {
+        let base = self.positions.len() as u32;
+        for point in [
+            centre - long - side,
+            centre + long - side,
+            centre + long + side,
+            centre - long + side,
+        ] {
+            self.positions.push([point.x, height, point.y]);
+            self.normals.push(Vec3::Y.to_array());
+            self.roots.push(centre.to_array());
+        }
+        self.uvs
+            .extend_from_slice(&[[0.0, 0.85], [1.0, 0.85], [1.0, 1.0], [0.0, 1.0]]);
+        let color = color.to_linear().to_f32_array();
+        self.colors.extend_from_slice(&[color; 4]);
+        self.indices
+            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+}
+
 pub(super) fn foliage_patch_mesh(
     width: f32,
     height: f32,
@@ -526,7 +666,11 @@ impl Material for TacticalFoliageMaterial {
 pub(crate) enum FoliageLayer {
     Grass,
     Understory,
+    LeafLitter,
 }
+
+#[derive(Component)]
+pub(in crate::presentation) struct GroundScatterPresented;
 
 /// Marks the locally controlled character whose movement bends nearby grass.
 #[derive(Component)]
@@ -537,9 +681,6 @@ pub(in crate::presentation) struct GrassInteractionState {
     previous_position: Option<Vec3>,
     smoothed_velocity: Vec3,
 }
-
-#[derive(Component)]
-pub(in crate::presentation) struct FoliageOf(pub(in crate::presentation) Entity);
 
 const FOLIAGE_SHADER: &str = "shaders/tactical_foliage.wgsl";
 
@@ -656,5 +797,26 @@ mod tests {
             Vec4::new(3.0, 1.0, -2.0, 1.35)
         );
         assert_eq!(materials.get(&crown).unwrap().interaction, Vec4::ZERO);
+    }
+
+    #[test]
+    fn leaf_litter_conservatively_excludes_overlapping_grass_patches() {
+        let mut samples = vec![GroundSurface::default(); 81];
+        samples[40].cover = GroundCover::LeafLitter;
+        let ground = SceneGround::from_samples(9, 9, 1.0, samples).unwrap();
+        assert!(!ground_allows_grass_patch(&ground, Vec2::ZERO));
+        assert!(ground_allows_grass_patch(&ground, Vec2::new(-4.0, -4.0)));
+    }
+
+    #[test]
+    fn proof_litter_mesh_contains_separate_leaf_and_twig_quads() {
+        let mesh = ground_litter_patch_mesh();
+        let positions = mesh
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .and_then(VertexAttributeValues::as_float3)
+            .unwrap();
+        assert_eq!(positions.len(), (10 + 5) * 4);
+        assert!(mesh.attribute(Mesh::ATTRIBUTE_COLOR).is_some());
+        assert!(mesh.attribute(Mesh::ATTRIBUTE_UV_1).is_some());
     }
 }

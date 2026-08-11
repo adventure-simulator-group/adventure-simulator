@@ -39,6 +39,9 @@ pub(in crate::presentation) struct TacticalTerrainExtension {
     variation: Vec4,
     #[uniform(100)]
     far_sward: Vec4,
+    #[texture(101)]
+    #[sampler(102)]
+    ground_map: Handle<Image>,
 }
 
 impl MaterialExtension for TacticalTerrainExtension {
@@ -57,11 +60,17 @@ pub(in crate::presentation) type TacticalTerrainMaterial =
 pub(in crate::presentation) fn on_game_scene_added(
     event: On<Add, SceneId>,
     mut commands: Commands,
-    query: Query<(&SceneId, &SceneTerrain, Option<&SceneEnvironment>)>,
+    query: Query<(
+        &SceneId,
+        &SceneTerrain,
+        Option<&SceneEnvironment>,
+        Option<&SceneGround>,
+    )>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TacticalTerrainMaterial>>,
+    mut images: ResMut<Assets<Image>>,
 ) -> Result {
-    let (id, terrain, environment) = query.get(event.entity)?;
+    let (id, terrain, environment, ground) = query.get(event.entity)?;
     info!(entity = ?event.entity, "Spawning a scene {id:?}");
 
     let legacy_environment;
@@ -77,13 +86,15 @@ pub(in crate::presentation) fn on_game_scene_added(
         ScenePresentationOf(event.entity),
         TerrainMaterialPresentation,
         Mesh3d(meshes.add(terrain.mesh())),
-        MeshMaterial3d(materials.add(terrain_material(environment))),
+        MeshMaterial3d(materials.add(terrain_material(environment, ground, &mut images))),
     ));
     Ok(())
 }
 
 pub(in crate::presentation) fn terrain_material(
     environment: &SceneEnvironment,
+    ground: Option<&SceneGround>,
+    images: &mut Assets<Image>,
 ) -> TacticalTerrainMaterial {
     TacticalTerrainMaterial {
         base: StandardMaterial {
@@ -124,8 +135,62 @@ pub(in crate::presentation) fn terrain_material(
                     .clamp(0.0, 1.0),
                 0.0,
             ),
+            ground_map: images.add(ground_map_image(ground)),
         },
     }
+}
+
+fn ground_map_image(ground: Option<&SceneGround>) -> Image {
+    let (width, height, pixels) = ground.map_or_else(
+        || (1, 1, vec![0, 0, 0, 0]),
+        |ground| {
+            let pixels = ground
+                .samples()
+                .iter()
+                .flat_map(|sample| {
+                    let cover = match sample.cover {
+                        GroundCover::Bare => 0,
+                        GroundCover::TallGrass => 1,
+                        GroundCover::LeafLitter => 2,
+                        GroundCover::LooseStone => 3,
+                        GroundCover::Reeds => 4,
+                    };
+                    let substrate = match sample.substrate {
+                        GroundSubstrate::Soil => 0,
+                        GroundSubstrate::Stone => 1,
+                        GroundSubstrate::Gravel => 2,
+                        GroundSubstrate::Mud => 3,
+                        GroundSubstrate::Road => 4,
+                        GroundSubstrate::Water => 5,
+                    };
+                    [
+                        cover,
+                        substrate,
+                        (u32::from(sample.cover_density_bps) * 255 / 10_000) as u8,
+                        sample.cover_height_cm.min(255) as u8,
+                    ]
+                })
+                .collect();
+            (
+                ground.grid_width() as u32,
+                ground.grid_depth() as u32,
+                pixels,
+            )
+        },
+    );
+    let mut image = Image::new(
+        Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        pixels,
+        TextureFormat::Rgba8Unorm,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    image.sampler = ImageSampler::nearest();
+    image
 }
 
 pub(in crate::presentation) fn legacy_scene_environment(id: &SceneId) -> SceneEnvironment {
@@ -171,14 +236,40 @@ pub(super) fn on_environment_added(
         &ScenePresentationOf,
         &MeshMaterial3d<TacticalTerrainMaterial>,
     )>,
+    ground: Query<&SceneGround>,
     mut terrain_materials: ResMut<Assets<TacticalTerrainMaterial>>,
+    mut images: ResMut<Assets<Image>>,
 ) -> Result {
+    let environment = environments.get(event.entity)?;
+    let ground = ground.get(event.entity).ok();
+    for (source, material) in &presentations {
+        if source.0 == event.entity
+            && let Some(mut material) = terrain_materials.get_mut(&material.0)
+        {
+            *material = terrain_material(environment, ground, &mut images);
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn on_ground_added(
+    event: On<Add, SceneGround>,
+    grounds: Query<&SceneGround>,
+    environments: Query<&SceneEnvironment>,
+    presentations: Query<(
+        &ScenePresentationOf,
+        &MeshMaterial3d<TacticalTerrainMaterial>,
+    )>,
+    mut terrain_materials: ResMut<Assets<TacticalTerrainMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+) -> Result {
+    let ground = grounds.get(event.entity)?;
     let environment = environments.get(event.entity)?;
     for (source, material) in &presentations {
         if source.0 == event.entity
             && let Some(mut material) = terrain_materials.get_mut(&material.0)
         {
-            *material = terrain_material(environment);
+            *material = terrain_material(environment, Some(ground), &mut images);
         }
     }
     Ok(())
