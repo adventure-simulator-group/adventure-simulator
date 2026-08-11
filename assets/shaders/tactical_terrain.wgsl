@@ -25,6 +25,10 @@ struct TacticalTerrainMaterial {
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(100)
 var<uniform> terrain: TacticalTerrainMaterial;
+@group(#{MATERIAL_BIND_GROUP}) @binding(101)
+var ground_map: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(102)
+var ground_map_sampler: sampler;
 
 fn detail_noise(position: vec3<f32>, normal: vec3<f32>) -> f32 {
     let weights = abs(normal) / max(dot(abs(normal), vec3<f32>(1.0)), 0.001);
@@ -57,16 +61,22 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let snow = terrain.weather.y;
     let hilly = terrain.weather.z;
     let slope = smoothstep(0.16, 0.68, 1.0 - abs(normal.y));
+    let ground_sample = textureSample(ground_map, ground_map_sampler, in.uv);
+    let cover_kind = round(ground_sample.r * 255.0);
+    let tall_grass = 1.0 - step(0.5, abs(cover_kind - 1.0));
+    let leaf_litter = 1.0 - step(0.5, abs(cover_kind - 2.0));
 
     var color = terrain.base_color.rgb;
     let forest_floor = vec3<f32>(0.105, 0.175, 0.072) * (0.91 + detail * 0.09);
     let mud = vec3<f32>(0.18, 0.16, 0.105) * (0.94 + detail * 0.06);
     let tilled = vec3<f32>(0.33, 0.285, 0.105) * (0.92 + detail * 0.08);
     let stone = vec3<f32>(0.31, 0.30, 0.275) * (0.9 + detail * 0.1);
+    let leaf_floor = vec3<f32>(0.255, 0.16, 0.065) * (0.9 + detail * 0.1);
     color = mix(color, forest_floor, canopy * 0.74);
     color = mix(color, mud, max(wetland, wetness) * 0.68);
     color = mix(color, tilled, cultivation * 0.72);
     color = mix(color, stone, slope * (0.48 + hilly * 0.42));
+    color = mix(color, leaf_floor, leaf_litter * 0.88);
     color = mix(color, vec3<f32>(0.09, 0.18, 0.22), water * 0.78);
     color *= 0.94 + detail * terrain.variation.y;
 
@@ -77,6 +87,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let sward_fade = smoothstep(terrain.far_sward.x, terrain.far_sward.y, camera_distance);
     let sward_amount = sward_fade
         * terrain.far_sward.z
+        * tall_grass
         * (1.0 - water)
         * (1.0 - slope * 0.72);
     let sward_pattern = sin(position.x * 0.43 + position.z * 0.19 + terrain.variation.x * 17.0)

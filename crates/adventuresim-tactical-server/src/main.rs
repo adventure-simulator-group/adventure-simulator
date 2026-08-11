@@ -205,7 +205,7 @@ fn on_server_started(
 ) -> Result {
     info!("Server opened on {:?}", **server_addr);
     info!("Creating a game scene for {}", args.scene_key);
-    let (scene_id, terrain, environment, obstacles, obstacle_spacing) =
+    let (scene_id, terrain, ground, environment, obstacles, obstacle_spacing) =
         if let Some(input) = &scene_input.0 {
             let generated = input.generate()?;
             info!(
@@ -224,6 +224,7 @@ fn on_server_started(
             (
                 input.scene_key.clone(),
                 generated.terrain,
+                generated.ground,
                 Some(input.environment_snapshot(generated.digest)),
                 generated.obstacles,
                 input.playable.spacing_metres,
@@ -240,9 +241,20 @@ fn on_server_started(
                 }
             };
             generator.period = gen_period;
+            let terrain = generator.generate(args.scene_width, scene_height, args.scene_depth);
+            let ground = SceneGround::uniform_for_terrain(
+                &terrain,
+                GroundSurface {
+                    substrate: GroundSubstrate::Soil,
+                    cover: GroundCover::TallGrass,
+                    cover_density_bps: 9_000,
+                    cover_height_cm: 82,
+                },
+            );
             (
                 args.scene_key.clone(),
-                generator.generate(args.scene_width, scene_height, args.scene_depth),
+                terrain,
+                ground,
                 None,
                 Vec::new(),
                 1.0,
@@ -285,6 +297,7 @@ fn on_server_started(
         Replicated,
         SceneId(scene_id),
         terrain,
+        ground,
         RigidBody::Static,
         CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
         terrain_collider,

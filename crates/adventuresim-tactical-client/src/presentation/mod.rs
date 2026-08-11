@@ -50,6 +50,7 @@ use bevy::{
     asset::RenderAssetUsages,
     camera::{Exposure, visibility::VisibilityRange},
     core_pipeline::tonemapping::Tonemapping,
+    image::ImageSampler,
     light::{
         Atmosphere, AtmosphereEnvironmentMapLight, NotShadowCaster, atmosphere::ScatteringMedium,
         light_consts::lux,
@@ -124,6 +125,7 @@ impl Plugin for TacticalPresentationPlugin {
             (
                 advance_weather_particles,
                 update_grass_interaction,
+                present_ground_scatter,
                 (present_pending_trees, update_tree_projected_lod_ranges).chain(),
                 keep_celestial_visuals_centered,
             ),
@@ -132,7 +134,7 @@ impl Plugin for TacticalPresentationPlugin {
         .add_observer(environment::on_environment_added)
         .add_observer(sky::on_environment_added)
         .add_observer(terrain::on_environment_added)
-        .add_observer(foliage::on_environment_added)
+        .add_observer(terrain::on_ground_added)
         .add_observer(weather::on_environment_added)
         .add_observer(on_scene_obstacle_added)
         .add_observer(on_scene_vista_bundle);
