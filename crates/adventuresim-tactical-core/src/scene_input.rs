@@ -13,13 +13,15 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use crate::scene::SceneTerrain;
+use crate::scene::{GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneTerrain};
 
 pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 1;
-pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 3;
+pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 4;
 pub const MAX_SCENE_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 pub const TREE_TRUNK_RADIUS_METRES: f32 = 0.35;
 pub const TREE_TRUNK_HEIGHT_METRES: f32 = 5.0;
+/// Conservative ground footprint of the generated English-oak crown.
+pub const TREE_CANOPY_GROUND_RADIUS_METRES: f32 = 5.75;
 pub const ROCK_RADIUS_METRES: f32 = 0.75;
 const MAX_PLAYABLE_SIDE: usize = 601;
 const MAX_VISTA_LEVELS: usize = 8;
@@ -155,6 +157,7 @@ pub enum GeneratedObstacle {
 pub struct GeneratedTacticalScene {
     pub digest: String,
     pub terrain: SceneTerrain,
+    pub ground: SceneGround,
     pub obstacles: Vec<GeneratedObstacle>,
     pub repairs: SceneRepairReport,
 }
@@ -329,9 +332,19 @@ impl TacticalSceneInput {
             )
         });
         repairs.removed_corridor_obstacles = (before - obstacles.len()) as u32;
+        let ground = build_scene_ground(
+            grid_width,
+            grid_depth,
+            grid_spacing,
+            &environment,
+            &terrain,
+            &obstacles,
+            self.playable.spacing_metres,
+        )?;
         Ok(GeneratedTacticalScene {
             digest: self.digest()?,
             terrain,
+            ground,
             obstacles,
             repairs,
         })
@@ -365,6 +378,102 @@ impl TacticalSceneInput {
             water_bps: (sum[3] / count) as u16,
             hilly_bps: (sum[4] / count) as u16,
         }
+    }
+}
+
+fn build_scene_ground(
+    width: usize,
+    depth: usize,
+    spacing: f32,
+    environment: &[EnvironmentalSample],
+    terrain: &SceneTerrain,
+    obstacles: &[GeneratedObstacle],
+    obstacle_spacing: f32,
+) -> Result<SceneGround, SceneInputError> {
+    let mut samples = environment
+        .iter()
+        .copied()
+        .map(base_ground_surface)
+        .collect::<Vec<_>>();
+    let half_width = terrain.width() * 0.5;
+    let half_depth = terrain.depth() * 0.5;
+    let canopy_radius_squared = TREE_CANOPY_GROUND_RADIUS_METRES.powi(2);
+    for obstacle in obstacles {
+        let GeneratedObstacle::Tree { x, z } = *obstacle else {
+            continue;
+        };
+        let tree = bevy::math::Vec2::new(
+            f32::from(x) * obstacle_spacing - half_width,
+            f32::from(z) * obstacle_spacing - half_depth,
+        );
+        for sample_z in 0..depth {
+            for sample_x in 0..width {
+                let position = bevy::math::Vec2::new(
+                    sample_x as f32 * spacing - half_width,
+                    sample_z as f32 * spacing - half_depth,
+                );
+                if position.distance_squared(tree) > canopy_radius_squared {
+                    continue;
+                }
+                let sample = &mut samples[sample_z * width + sample_x];
+                if !matches!(
+                    sample.substrate,
+                    GroundSubstrate::Water | GroundSubstrate::Road
+                ) {
+                    sample.cover = GroundCover::LeafLitter;
+                    sample.cover_density_bps = 9_200;
+                    sample.cover_height_cm = 6;
+                }
+            }
+        }
+    }
+    SceneGround::from_samples(width, depth, spacing, samples).ok_or_else(|| {
+        SceneInputError::Validation("generated ground-surface grid is invalid".into())
+    })
+}
+
+fn base_ground_surface(sample: EnvironmentalSample) -> GroundSurface {
+    if sample.crossing_bps >= 5_000 || matches!(sample.surface, TacticalSurface::Road) {
+        return GroundSurface {
+            substrate: GroundSubstrate::Road,
+            cover: GroundCover::Bare,
+            cover_density_bps: 0,
+            cover_height_cm: 0,
+        };
+    }
+    if sample.water_bps >= 5_000 || matches!(sample.surface, TacticalSurface::Water) {
+        return GroundSurface {
+            substrate: GroundSubstrate::Water,
+            cover: GroundCover::Bare,
+            cover_density_bps: 0,
+            cover_height_cm: 0,
+        };
+    }
+    if sample.wetland_bps >= 5_000 || matches!(sample.surface, TacticalSurface::Wetland) {
+        return GroundSurface {
+            substrate: GroundSubstrate::Mud,
+            cover: GroundCover::Reeds,
+            cover_density_bps: sample.wetland_bps.max(5_000),
+            cover_height_cm: 110,
+        };
+    }
+    if sample.hilly_bps >= 6_500 {
+        return GroundSurface {
+            substrate: if sample.hilly_bps >= 8_500 {
+                GroundSubstrate::Stone
+            } else {
+                GroundSubstrate::Gravel
+            },
+            cover: GroundCover::LooseStone,
+            cover_density_bps: (sample.hilly_bps / 2).clamp(3_250, 5_000),
+            cover_height_cm: 4,
+        };
+    }
+    GroundSurface {
+        substrate: GroundSubstrate::Soil,
+        cover: GroundCover::TallGrass,
+        cover_density_bps: 9_600u16.saturating_sub(sample.canopy_bps / 5),
+        cover_height_cm: 82,
     }
 }
 
@@ -823,10 +932,9 @@ mod tests {
             .unwrap()
             .generate()
             .unwrap();
-        let sparse = TacticalSceneInput::load(&root.join("sparse-woodland.json"))
-            .unwrap()
-            .generate()
-            .unwrap();
+        let sparse_input = TacticalSceneInput::load(&root.join("sparse-woodland.json")).unwrap();
+        let sparse_spacing = sparse_input.playable.spacing_metres;
+        let sparse = sparse_input.generate().unwrap();
         let hillside = TacticalSceneInput::load(&root.join("steep-open-hillside.json"))
             .unwrap()
             .generate()
@@ -844,6 +952,24 @@ mod tests {
                 .iter()
                 .any(|obstacle| matches!(obstacle, GeneratedObstacle::Rock { .. }))
         );
+        assert!(
+            flat.ground.cover_count(GroundCover::TallGrass)
+                > flat.ground.cover_count(GroundCover::LeafLitter)
+        );
+        for obstacle in &sparse.obstacles {
+            let GeneratedObstacle::Tree { x, z } = *obstacle else {
+                continue;
+            };
+            let position = bevy::math::Vec2::new(
+                f32::from(x) * sparse_spacing - sparse.terrain.width() * 0.5,
+                f32::from(z) * sparse_spacing - sparse.terrain.depth() * 0.5,
+            );
+            assert_eq!(
+                sparse.ground.ground_at(position).unwrap().cover,
+                GroundCover::LeafLitter
+            );
+        }
+        assert!(sparse.ground.cover_count(GroundCover::LeafLitter) > 0);
     }
 
     #[test]
