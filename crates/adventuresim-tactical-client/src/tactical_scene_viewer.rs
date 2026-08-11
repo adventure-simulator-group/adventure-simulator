@@ -16,7 +16,7 @@ use serde::Serialize;
 
 use crate::presentation::{
     FoliageLayer, ProceduralRockVisual, TacticalPresentationPlugin, TerrainMaterialPresentation,
-    TreeLod, VistaTerrain, WeatherParticle,
+    TreeImpostorProvenance, TreeLod, VistaTerrain, WeatherParticle,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -181,6 +181,26 @@ struct FoliageSummary {
 }
 
 #[derive(Serialize)]
+struct TreeBakeSummary {
+    seed: u64,
+    lod: u8,
+    bake_version: u32,
+    source_geometry_hash: String,
+    atlas_size: [u32; 2],
+    cards: Vec<TreeBakeCardSummary>,
+}
+
+#[derive(Serialize)]
+struct TreeBakeCardSummary {
+    source_group: u16,
+    source_leaf_count: u16,
+    source_branch_count: u16,
+    view_direction: [f32; 3],
+    projected_bounds: [f32; 4],
+    atlas_region: [u32; 4],
+}
+
+#[derive(Serialize)]
 struct VistaSummary {
     supplied_lods: usize,
     presented_lods: Vec<u8>,
@@ -227,6 +247,7 @@ struct CaptureManifest {
     terrain: TerrainSummary,
     obstacles: ObstacleSummary,
     foliage: FoliageSummary,
+    tree_impostor_bakes: Vec<TreeBakeSummary>,
     vista: VistaSummary,
     weather_particle_count: usize,
     captures: Vec<CaptureRecord>,
@@ -584,6 +605,7 @@ fn capture_views(
     obstacles: Query<(&SceneObstacle, Has<Mesh3d>, Has<Collider>)>,
     rock_visuals: Query<&Mesh3d, With<ProceduralRockVisual>>,
     tree_lods: Query<&TreeLod>,
+    tree_bakes: Query<&TreeImpostorProvenance>,
     foliage: Query<&FoliageLayer>,
     terrain_materials: Query<(), With<TerrainMaterialPresentation>>,
     meshes: Res<Assets<Mesh>>,
@@ -685,6 +707,7 @@ fn capture_views(
             &obstacles,
             &rock_visuals,
             &tree_lods,
+            &tree_bakes,
             &foliage,
             &terrain_materials,
             &meshes,
@@ -749,16 +772,16 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |tree| {
                 (
-                    tree + Vec3::new(8.2, -0.68, 8.2),
-                    tree + Vec3::new(0.0, 0.72, 0.0),
+                    tree + Vec3::new(6.0, 3.6, 6.0),
+                    tree + Vec3::new(0.0, 4.5, 0.0),
                     Vec3::Y,
                 )
             },
         ),
-        "tree-twig-lod" => tree_lod_camera(state, 28.0),
-        "tree-small-branch-lod" => tree_lod_camera(state, 45.0),
-        "tree-crown-lod" => tree_lod_camera(state, 68.0),
-        "tree-billboard-lod" => tree_lod_camera(state, 110.0),
+        "tree-twig-lod" => tree_lod_camera(state, 30.0),
+        "tree-small-branch-lod" => tree_lod_camera(state, 48.0),
+        "tree-crown-lod" => tree_lod_camera(state, 72.0),
+        "tree-billboard-lod" => tree_lod_camera(state, 118.0),
         "beauty-overhead" => (
             state.obstacle_focus + Vec3::new(0.0, half * 2.15, half * 0.16),
             state.obstacle_focus,
@@ -787,6 +810,7 @@ fn build_manifest(
     obstacles: &Query<(&SceneObstacle, Has<Mesh3d>, Has<Collider>)>,
     rock_visuals: &Query<&Mesh3d, With<ProceduralRockVisual>>,
     tree_lods: &Query<&TreeLod>,
+    tree_bakes: &Query<&TreeImpostorProvenance>,
     foliage: &Query<&FoliageLayer>,
     terrain_materials: &Query<(), With<TerrainMaterialPresentation>>,
     meshes: &Assets<Mesh>,
@@ -841,6 +865,28 @@ fn build_manifest(
         grass_clumps,
         understory_clumps,
     };
+    let tree_impostor_bakes = tree_bakes
+        .iter()
+        .map(|bake| TreeBakeSummary {
+            seed: bake.seed,
+            lod: bake.lod,
+            bake_version: bake.bake_version,
+            source_geometry_hash: format!("{:016x}", bake.source_geometry_hash),
+            atlas_size: [bake.atlas_width, bake.atlas_height],
+            cards: bake
+                .records
+                .iter()
+                .map(|record| TreeBakeCardSummary {
+                    source_group: record.source_group,
+                    source_leaf_count: record.source_leaf_count,
+                    source_branch_count: record.source_branch_count,
+                    view_direction: record.view_direction.to_array(),
+                    projected_bounds: record.projected_bounds.to_array(),
+                    atlas_region: record.atlas_region.to_array(),
+                })
+                .collect(),
+        })
+        .collect();
     let mut presented_lods = BTreeSet::new();
     let mut vista_colliders = 0;
     let mut presented_chunks = 0;
@@ -934,6 +980,7 @@ fn build_manifest(
             terrain: state.terrain,
             obstacles: obstacle_summary,
             foliage: foliage_summary,
+            tree_impostor_bakes,
             vista: vista_summary,
             weather_particle_count,
             captures: state.captures.clone(),
@@ -973,7 +1020,7 @@ fn foreground_pixel_bps(data: Option<&[u8]>) -> u16 {
     };
     let mut pixels = 0usize;
     let mut foreground = 0usize;
-    for pixel in data.chunks_exact(4) {
+    for pixel in data.as_chunks::<4>().0 {
         pixels += 1;
         let difference = pixel[..3]
             .iter()
@@ -982,11 +1029,11 @@ fn foreground_pixel_bps(data: Option<&[u8]>) -> u16 {
             .sum::<u16>();
         foreground += usize::from(difference >= 12);
     }
-    if pixels == 0 {
-        0
-    } else {
-        ((foreground * 10_000 / pixels).min(10_000)) as u16
-    }
+    foreground
+        .checked_mul(10_000)
+        .and_then(|value| value.checked_div(pixels))
+        .unwrap_or(0)
+        .min(10_000) as u16
 }
 
 fn foliage_detail_pixel_bps(data: Option<&[u8]>) -> u16 {
@@ -1002,7 +1049,12 @@ fn foliage_detail_pixel_bps(data: Option<&[u8]>) -> u16 {
     let mut detailed = 0usize;
     for y in first_row..VIEW_HEIGHT as usize {
         let row = &data[y * row_bytes..(y + 1) * row_bytes];
-        for pair in row.chunks_exact(4).zip(row[4..].chunks_exact(4)) {
+        for pair in row
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(row[4..].as_chunks::<4>().0)
+        {
             compared += 1;
             let difference = pair.0[..3]
                 .iter()
@@ -1012,11 +1064,11 @@ fn foliage_detail_pixel_bps(data: Option<&[u8]>) -> u16 {
             detailed += usize::from(difference >= 4);
         }
     }
-    if compared == 0 {
-        0
-    } else {
-        ((detailed * 10_000 / compared).min(10_000)) as u16
-    }
+    detailed
+        .checked_mul(10_000)
+        .and_then(|value| value.checked_div(compared))
+        .unwrap_or(0)
+        .min(10_000) as u16
 }
 
 fn minimum_foreground_bps(view: &str) -> u16 {
@@ -1030,7 +1082,7 @@ fn minimum_foreground_bps(view: &str) -> u16 {
 fn capture_view_fov(view: &str) -> f32 {
     match view {
         "horizon" => 15.0,
-        "tree-detail" => 48.0,
+        "tree-detail" => 32.0,
         "tree-twig-lod" | "tree-small-branch-lod" | "tree-crown-lod" => 24.0,
         "tree-billboard-lod" => 16.0,
         _ => 65.0,
