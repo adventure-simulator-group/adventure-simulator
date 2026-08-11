@@ -44,6 +44,7 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .replicate::<ItemOf>()
             .replicate::<SceneId>()
             .replicate::<SceneTerrain>()
+            .replicate::<SceneGround>()
             .replicate::<SceneEnvironment>()
             .replicate::<SceneObstacle>()
             .add_client_event::<JoinRequest>(Channel::Ordered)
