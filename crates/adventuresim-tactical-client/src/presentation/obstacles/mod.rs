@@ -46,6 +46,7 @@ pub(in crate::presentation) fn present_pending_trees(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut leaf_materials: ResMut<Assets<TacticalTreeLeafMaterial>>,
+    mut leaf_card_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
     mut tree_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut tree_cache: ResMut<TreePresentationCache>,
@@ -72,6 +73,11 @@ pub(in crate::presentation) fn present_pending_trees(
                 ..default()
             });
             let leaf_material = leaf_materials.add(TacticalTreeLeafMaterial {
+                parameters: Vec4::new(0.74, 0.67, 0.035, 1.15),
+            });
+            let rendered_leaf = images.add(rendered_oak_leaf_card_image());
+            let leaf_card_material = leaf_card_materials.add(TacticalTreeLeafCardMaterial {
+                rendered_leaf,
                 parameters: Vec4::new(0.74, 0.67, 0.035, 1.15),
             });
             let bud_material = materials.add(StandardMaterial {
@@ -107,6 +113,8 @@ pub(in crate::presentation) fn present_pending_trees(
                             &leaves,
                             usize::from(primary_group),
                         )),
+                        leaf_card_mesh: meshes
+                            .add(procedural_oak_leaf_card_group_mesh(&leaves, primary_group)),
                         bud_mesh: meshes
                             .add(procedural_oak_bud_group_mesh(&branches, primary_group)),
                         card_meshes: core::array::from_fn(|index| {
@@ -126,6 +134,7 @@ pub(in crate::presentation) fn present_pending_trees(
                 whole_tree_card_mesh: meshes.add(baked_lods[3].mesh.clone()),
                 bark_material,
                 leaf_material,
+                leaf_card_material,
                 bud_material,
                 card_materials: core::array::from_fn(|index| {
                     let bake = &baked_lods[index];

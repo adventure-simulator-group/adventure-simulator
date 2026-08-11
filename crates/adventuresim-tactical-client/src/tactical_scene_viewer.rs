@@ -91,7 +91,7 @@ struct CaptureView {
     overlay: bool,
 }
 
-const CAPTURE_VIEWS: [CaptureView; 14] = [
+const CAPTURE_VIEWS: [CaptureView; 18] = [
     CaptureView {
         slug: "warmup",
         label: "Render-pipeline warmup",
@@ -125,6 +125,26 @@ const CAPTURE_VIEWS: [CaptureView; 14] = [
     CaptureView {
         slug: "tree-leaf-detail",
         label: "Individual English oak leaf close-up",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-leaf-card-lod",
+        label: "Rendered two-triangle leaf LOD view",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-leaf-transition-25",
+        label: "Leaf geometry-to-card transition 25% view",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-leaf-transition-50",
+        label: "Leaf geometry-to-card transition 50% view",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-leaf-transition-75",
+        label: "Leaf geometry-to-card transition 75% view",
         overlay: false,
     },
     CaptureView {
@@ -827,11 +847,19 @@ fn capture_views(
     }
     let view = CAPTURE_VIEWS[state.view];
     if !state.view_started {
-        tree_lod_override.0 = match view.slug {
+        tree_lod_override.lod = match view.slug {
+            "tree-leaf-card-lod" => Some(0),
             "tree-twig-lod" => Some(1),
             "tree-small-branch-lod" => Some(2),
             "tree-crown-lod" => Some(3),
             "tree-billboard-lod" => Some(4),
+            _ => None,
+        };
+        tree_lod_override.force_leaf_cards = view.slug == "tree-leaf-card-lod";
+        tree_lod_override.projected_scale = match view.slug {
+            "tree-leaf-transition-25" => Some(0.60),
+            "tree-leaf-transition-50" => Some(0.50),
+            "tree-leaf-transition-75" => Some(0.40),
             _ => None,
         };
         let specimen_view = view.slug == "tree-leaf-detail";
@@ -1025,7 +1053,12 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
         "warmup" | "beauty-ground" | "collision-overlay" => {
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y)
         }
-        "tree-detail" | "tree-silhouette" => state.tree_focus.map_or(
+        "tree-detail"
+        | "tree-silhouette"
+        | "tree-leaf-card-lod"
+        | "tree-leaf-transition-25"
+        | "tree-leaf-transition-50"
+        | "tree-leaf-transition-75" => state.tree_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |tree| {
                 (
@@ -1262,6 +1295,10 @@ fn build_manifest(
                 "tree-recursive-lod",
                 "ground-cover",
                 "tree-leaf-detail",
+                "tree-leaf-card-lod",
+                "tree-leaf-transition-25",
+                "tree-leaf-transition-50",
+                "tree-leaf-transition-75",
                 "tree-twig-lod",
                 "tree-small-branch-lod",
                 "tree-crown-lod",
@@ -1416,7 +1453,12 @@ fn minimum_foreground_bps(view: &str) -> u16 {
 fn capture_view_fov(view: &str) -> f32 {
     match view {
         "horizon" => 15.0,
-        "tree-detail" | "tree-silhouette" => 48.0,
+        "tree-detail"
+        | "tree-silhouette"
+        | "tree-leaf-card-lod"
+        | "tree-leaf-transition-25"
+        | "tree-leaf-transition-50"
+        | "tree-leaf-transition-75" => 48.0,
         "tree-recursive-lod" => 80.0,
         "tree-leaf-detail" => 30.0,
         "tree-twig-lod" => 30.0,
