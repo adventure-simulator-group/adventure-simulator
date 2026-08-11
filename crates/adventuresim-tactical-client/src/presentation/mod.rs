@@ -35,16 +35,9 @@ pub(crate) use obstacles::rock::ProceduralRockVisual;
 pub(crate) use obstacles::tree::impostor::TreeImpostorProvenance;
 #[allow(unused_imports)]
 pub(crate) use obstacles::tree::{
-    TacticalTreeLeafCardMaterial, TacticalTreeLeafMaterial, TreeLeafRepresentation, TreeLod,
-    TreeLodCluster, TreeLodRenderOverride,
+    TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
+    TreeLodRenderOverride, oak_leaf_material,
 };
-
-// Only the native scene viewer requests the comparison image; the shared
-// presentation facade is also compiled into gameplay-only binaries.
-#[allow(dead_code)]
-pub(crate) fn oak_leaf_card_review_image() -> Image {
-    obstacles::tree::impostor::rendered_oak_leaf_card_image()
-}
 #[allow(unused_imports)]
 pub(crate) use sky::{TacticalMoon, TacticalMoonlight, TacticalStars, TacticalSunlight};
 #[allow(unused_imports)]
@@ -108,7 +101,6 @@ impl Plugin for TacticalPresentationPlugin {
         app.add_plugins((
             MaterialPlugin::<TacticalTerrainMaterial>::default(),
             MaterialPlugin::<TacticalFoliageMaterial>::default(),
-            MaterialPlugin::<TacticalTreeLeafMaterial>::default(),
             MaterialPlugin::<TacticalTreeLeafCardMaterial>::default(),
             MaterialPlugin::<TacticalTreeImpostorMaterial>::default(),
             MaterialPlugin::<TacticalMoonMaterial>::default(),
