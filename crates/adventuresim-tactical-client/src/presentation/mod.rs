@@ -14,8 +14,8 @@ mod weather;
 
 use environment::*;
 use foliage::*;
-use obstacles::on_scene_obstacle_added;
 use obstacles::tree::*;
+use obstacles::{on_scene_obstacle_added, present_pending_trees};
 use procedural::*;
 use terrain::*;
 use vista::*;
@@ -107,7 +107,11 @@ impl Plugin for TacticalPresentationPlugin {
         .init_resource::<TreePresentationCache>()
         .add_systems(
             Update,
-            (advance_weather_particles, update_grass_interaction),
+            (
+                advance_weather_particles,
+                update_grass_interaction,
+                present_pending_trees,
+            ),
         )
         .add_observer(on_game_scene_added)
         .add_observer(environment::on_environment_added)

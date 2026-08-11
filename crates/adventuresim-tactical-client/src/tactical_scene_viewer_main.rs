@@ -32,6 +32,10 @@ struct Args {
     /// Render frames allowed to settle between fixed camera views.
     #[arg(long, default_value_t = 12)]
     settle_frames: u32,
+
+    /// Test-only world canopy override in basis points (0..=10000).
+    #[arg(long, value_parser = clap::value_parser!(u16).range(0..=10_000))]
+    canopy_bps: Option<u16>,
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -49,6 +53,7 @@ fn main() {
         args.scene_input,
         args.output,
         args.settle_frames,
+        args.canopy_bps,
     );
 }
 
