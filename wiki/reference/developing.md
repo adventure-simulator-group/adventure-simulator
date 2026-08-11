@@ -791,9 +791,9 @@ just tactical-tree-canopy-series target/tactical-scene-captures/oak-canopy-revie
 The native viewer writes standing-eye-height (1.65 m above the sampled local
 terrain), overhead, horizon, and collider-overlay PNGs alongside the exact
 `input.json`, a browsable `index.html`, and a
-machine-readable `manifest.json`. Eight focused views target the nearest tree,
+machine-readable `manifest.json`. Nine focused views target the nearest tree,
 when present: a complete individual-leaf tree, a canopy-ground view proving the
-leaf-litter/grass boundary, a neutral silhouette plate, an
+leaf-litter/grass boundary, a mixed recursive-LOD view, a neutral silhouette plate, an
 isolated terminal-shoot close-up with a 10 cm scale marker, and matched-scale
 leafed-twig, small-branch, crown-branch, and whole-tree-billboard views. The
 terminal plate uses the exact production branch and leaf geometry for that
@@ -801,7 +801,7 @@ seed rather than a separately authored review prop. They fall back to the ordina
 for treeless fixtures. The viewer waits for custom material pipelines before
 capturing, then exits unsuccessfully and writes `failure.txt` when
 presentation/collider counts, collider-bounded procedural rocks, authoritative
-leaf litter for generated trees, terrain
+separate dry-leaf and twig scatter for generated trees, terrain
 material, coarse-input upsampling, microrelief, expected foliage, rendered
 overhead foliage detail in the flat sentinel fixture, all five tree
 LODs, precipitation, three vista LODs, the 50 km vista contract, non-uniform

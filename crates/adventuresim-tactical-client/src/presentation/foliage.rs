@@ -4,6 +4,10 @@ const GRASS_PATCH_GRID_SIDE: usize = 27;
 const GRASS_PATCH_SPACING: f32 = 3.2;
 const GRASS_BLADE_SPACING: f32 = 0.135;
 const GRASS_FAR_GRID_COORDINATES: [usize; 12] = [0, 2, 5, 7, 9, 12, 14, 17, 19, 21, 24, 26];
+const DRY_LEAF_PASSES_PER_SAMPLE: u64 = 3;
+const TWIG_PASSES_PER_SAMPLE: u64 = 2;
+const DRY_LEAF_MESH_VARIANTS: u64 = 4;
+const TWIG_MESH_VARIANTS: u64 = 3;
 
 pub(super) fn foliage_material(wind_scale: f32, ground_foliage: bool) -> TacticalFoliageMaterial {
     TacticalFoliageMaterial {
@@ -133,8 +137,14 @@ pub(super) fn spawn_ground_foliage(
         0.1 + bps(environment.weather.wind_speed_bps) * 0.24,
         true,
     ));
-    let litter_mesh = meshes.add(ground_litter_patch_mesh());
-    let litter_material = materials.add(foliage_material(0.015, false));
+    let dry_leaf_meshes = (0..DRY_LEAF_MESH_VARIANTS)
+        .map(|variant| meshes.add(dry_leaf_patch_mesh(variant)))
+        .collect::<Vec<_>>();
+    let twig_meshes = (0..TWIG_MESH_VARIANTS)
+        .map(|variant| meshes.add(twig_patch_mesh(variant)))
+        .collect::<Vec<_>>();
+    let dry_leaf_material = materials.add(foliage_material(0.008, false));
+    let twig_material = materials.add(foliage_material(0.004, false));
     let base_seed = stable_text_seed(&environment.scene_digest) ^ stable_text_seed(&scene_id.0);
     let half_x = terrain.width() * 0.5;
     let half_z = terrain.depth() * 0.5;
@@ -219,32 +229,96 @@ pub(super) fn spawn_ground_foliage(
         if sample.cover != GroundCover::LeafLitter {
             continue;
         }
-        let hash = splitmix64(base_seed ^ index as u64 ^ 0x2b6f_5dd9_81aa_9135);
-        if unit_hash(hash) >= bps(sample.cover_density_bps) * 0.58 {
-            continue;
-        }
         let grid_x = index % ground.grid_width();
         let grid_z = index / ground.grid_width();
-        let jitter = ground.grid_scale() * 0.28;
-        let world_x = grid_x as f32 * ground.grid_scale() - ground.width() * 0.5
-            + (unit_hash(splitmix64(hash ^ 0x672a_1f04)) - 0.5) * jitter;
-        let world_z = grid_z as f32 * ground.grid_scale() - ground.depth() * 0.5
-            + (unit_hash(splitmix64(hash ^ 0xeeb0_31cd)) - 0.5) * jitter;
-        let Some(mut transform) = foliage_transform(terrain, world_x, world_z, hash) else {
-            continue;
-        };
-        transform.translation.y += 0.018;
-        transform.scale *= 0.72;
-        commands.spawn((
-            Name::new("Tactical dry leaves and twigs"),
-            FoliageLayer::LeafLitter,
-            NotShadowCaster,
-            Mesh3d(litter_mesh.clone()),
-            MeshMaterial3d(litter_material.clone()),
-            VisibilityRange::abrupt(0.0, 72.0),
-            transform,
-        ));
+        let cell_origin = Vec2::new(
+            grid_x as f32 * ground.grid_scale() - ground.width() * 0.5,
+            grid_z as f32 * ground.grid_scale() - ground.depth() * 0.5,
+        );
+        let density = bps(sample.cover_density_bps);
+        for pass in 0..DRY_LEAF_PASSES_PER_SAMPLE {
+            let hash =
+                splitmix64(base_seed ^ index as u64 ^ pass.rotate_left(19) ^ 0x2b6f_5dd9_81aa_9135);
+            if unit_hash(hash) >= density * 0.92 {
+                continue;
+            }
+            spawn_forest_floor_patch(
+                commands,
+                terrain,
+                ground,
+                cell_origin,
+                hash,
+                "Tactical dry-leaf patch",
+                FoliageLayer::DryLeaves,
+                &dry_leaf_meshes[(hash % dry_leaf_meshes.len() as u64) as usize],
+                &dry_leaf_material,
+                0.8,
+                0.012,
+            );
+        }
+        for pass in 0..TWIG_PASSES_PER_SAMPLE {
+            let hash =
+                splitmix64(base_seed ^ index as u64 ^ pass.rotate_left(23) ^ 0xc41b_b83e_3a70_f965);
+            if unit_hash(hash) >= density * 0.62 {
+                continue;
+            }
+            spawn_forest_floor_patch(
+                commands,
+                terrain,
+                ground,
+                cell_origin,
+                hash,
+                "Tactical twig patch",
+                FoliageLayer::Twigs,
+                &twig_meshes[(hash % twig_meshes.len() as u64) as usize],
+                &twig_material,
+                0.72,
+                0.02,
+            );
+        }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_forest_floor_patch(
+    commands: &mut Commands,
+    terrain: &SceneTerrain,
+    ground: &SceneGround,
+    cell_origin: Vec2,
+    hash: u64,
+    name: &'static str,
+    layer: FoliageLayer,
+    mesh: &Handle<Mesh>,
+    material: &Handle<TacticalFoliageMaterial>,
+    scale: f32,
+    height_offset: f32,
+) {
+    let jitter = ground.grid_scale() * 0.78;
+    let position = cell_origin
+        + Vec2::new(
+            unit_hash(splitmix64(hash ^ 0x672a_1f04)) - 0.5,
+            unit_hash(splitmix64(hash ^ 0xeeb0_31cd)) - 0.5,
+        ) * jitter;
+    if ground
+        .ground_at(position)
+        .is_none_or(|sample| sample.cover != GroundCover::LeafLitter)
+    {
+        return;
+    }
+    let Some(mut transform) = foliage_transform(terrain, position.x, position.y, hash) else {
+        return;
+    };
+    transform.translation.y += height_offset;
+    transform.scale *= scale;
+    commands.spawn((
+        Name::new(name),
+        layer,
+        NotShadowCaster,
+        Mesh3d(mesh.clone()),
+        MeshMaterial3d(material.clone()),
+        VisibilityRange::abrupt(0.0, 72.0),
+        transform,
+    ));
 }
 
 fn ground_allows_grass_patch(ground: &SceneGround, centre: Vec2) -> bool {
@@ -466,58 +540,76 @@ pub(super) fn foliage_clump_mesh(width: f32, height: f32, color: Color, planes: 
     foliage_patch_mesh(width, height, color, planes, &[(0.0, 0.0, 1.0)])
 }
 
-/// Shared proof-of-concept forest-floor patch. Flat ochre leaf diamonds and
-/// narrow brown twig quads keep the mesh deliberately cheap while making the
-/// exclusive leaf-litter profile visually unmistakable.
-fn ground_litter_patch_mesh() -> Mesh {
+/// Dense dry-leaf carpet with enough colour, size, and orientation variation
+/// to avoid reading as a repeated decal when its shared mesh is instanced.
+fn dry_leaf_patch_mesh(variant: u64) -> Mesh {
     let mut data = GroundLitterMeshData::default();
     let leaf_colors = [
         Color::srgb_u8(151, 82, 30),
         Color::srgb_u8(184, 116, 38),
         Color::srgb_u8(116, 67, 30),
         Color::srgb_u8(201, 145, 54),
+        Color::srgb_u8(128, 91, 42),
     ];
-    for leaf in 0..10_u64 {
-        let hash = splitmix64(leaf ^ 0x5ec4_57d2_bf90_1c37);
-        let centre = Vec2::new(unit_hash(hash) - 0.5, unit_hash(splitmix64(hash ^ 1)) - 0.5) * 0.82;
+    for leaf in 0..24_u64 {
+        let hash = splitmix64(leaf ^ variant.rotate_left(29) ^ 0x5ec4_57d2_bf90_1c37);
+        let centre = Vec2::new(unit_hash(hash) - 0.5, unit_hash(splitmix64(hash ^ 1)) - 0.5) * 1.08;
         let angle = unit_hash(splitmix64(hash ^ 2)) * core::f32::consts::TAU;
         let long =
-            Vec2::new(angle.cos(), angle.sin()) * (0.08 + unit_hash(splitmix64(hash ^ 3)) * 0.045);
-        let side = Vec2::new(-long.y, long.x) * 0.42;
-        data.append_quad(
+            Vec2::new(angle.cos(), angle.sin()) * (0.065 + unit_hash(splitmix64(hash ^ 3)) * 0.045);
+        let side = Vec2::new(-long.y, long.x) * (0.34 + unit_hash(splitmix64(hash ^ 4)) * 0.16);
+        data.append_diamond(
             centre,
             long,
             side,
-            0.004 + leaf as f32 * 0.0004,
+            0.003 + (leaf % 7) as f32 * 0.00045,
             leaf_colors[leaf as usize % leaf_colors.len()],
         );
     }
-    for twig in 0..5_u64 {
-        let hash = splitmix64(twig ^ 0xa773_9fe2_410c_862d);
-        let centre = Vec2::new(unit_hash(hash) - 0.5, unit_hash(splitmix64(hash ^ 1)) - 0.5) * 0.76;
+    data.into_mesh()
+}
+
+/// Independent twig mesh. Longer, thinner pieces and a lower spawn density
+/// let twigs form irregular accents over the denser dry-leaf carpet.
+fn twig_patch_mesh(variant: u64) -> Mesh {
+    let mut data = GroundLitterMeshData::default();
+    let twig_colors = [
+        Color::srgb_u8(79, 47, 24),
+        Color::srgb_u8(102, 62, 29),
+        Color::srgb_u8(62, 40, 25),
+    ];
+    for twig in 0..9_u64 {
+        let hash = splitmix64(twig ^ variant.rotate_left(31) ^ 0xa773_9fe2_410c_862d);
+        let centre = Vec2::new(unit_hash(hash) - 0.5, unit_hash(splitmix64(hash ^ 1)) - 0.5) * 1.02;
         let angle = unit_hash(splitmix64(hash ^ 2)) * core::f32::consts::TAU;
         let long =
-            Vec2::new(angle.cos(), angle.sin()) * (0.16 + unit_hash(splitmix64(hash ^ 3)) * 0.08);
-        let side = Vec2::new(-long.y, long.x) * 0.065;
+            Vec2::new(angle.cos(), angle.sin()) * (0.14 + unit_hash(splitmix64(hash ^ 3)) * 0.13);
+        let side = Vec2::new(-long.y, long.x) * (0.045 + unit_hash(splitmix64(hash ^ 4)) * 0.025);
         data.append_quad(
             centre,
             long,
             side,
-            0.012 + twig as f32 * 0.0006,
-            Color::srgb_u8(79, 47, 24),
+            0.008 + (twig % 5) as f32 * 0.0008,
+            twig_colors[twig as usize % twig_colors.len()],
         );
     }
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::RENDER_WORLD,
-    );
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, data.positions);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_1, data.roots);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, data.colors);
-    mesh.insert_indices(Indices::U32(data.indices));
-    mesh
+    data.into_mesh()
+}
+
+impl GroundLitterMeshData {
+    fn into_mesh(self) -> Mesh {
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::RENDER_WORLD,
+        );
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.positions);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_1, self.roots);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, self.colors);
+        mesh.insert_indices(Indices::U32(self.indices));
+        mesh
+    }
 }
 
 #[derive(Default)]
@@ -545,6 +637,21 @@ impl GroundLitterMeshData {
         }
         self.uvs
             .extend_from_slice(&[[0.0, 0.85], [1.0, 0.85], [1.0, 1.0], [0.0, 1.0]]);
+        let color = color.to_linear().to_f32_array();
+        self.colors.extend_from_slice(&[color; 4]);
+        self.indices
+            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+
+    fn append_diamond(&mut self, centre: Vec2, long: Vec2, side: Vec2, height: f32, color: Color) {
+        let base = self.positions.len() as u32;
+        for point in [centre - long, centre + side, centre + long, centre - side] {
+            self.positions.push([point.x, height, point.y]);
+            self.normals.push(Vec3::Y.to_array());
+            self.roots.push(centre.to_array());
+        }
+        self.uvs
+            .extend_from_slice(&[[0.5, 0.85], [1.0, 0.925], [0.5, 1.0], [0.0, 0.925]]);
         let color = color.to_linear().to_f32_array();
         self.colors.extend_from_slice(&[color; 4]);
         self.indices
@@ -666,7 +773,8 @@ impl Material for TacticalFoliageMaterial {
 pub(crate) enum FoliageLayer {
     Grass,
     Understory,
-    LeafLitter,
+    DryLeaves,
+    Twigs,
 }
 
 #[derive(Component)]
@@ -809,14 +917,27 @@ mod tests {
     }
 
     #[test]
-    fn proof_litter_mesh_contains_separate_leaf_and_twig_quads() {
-        let mesh = ground_litter_patch_mesh();
-        let positions = mesh
+    fn proof_litter_uses_separate_dense_leaf_and_twig_meshes() {
+        let leaves = dry_leaf_patch_mesh(0);
+        let alternate_leaves = dry_leaf_patch_mesh(1);
+        let twigs = twig_patch_mesh(0);
+        let leaf_positions = leaves
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .and_then(VertexAttributeValues::as_float3)
             .unwrap();
-        assert_eq!(positions.len(), (10 + 5) * 4);
-        assert!(mesh.attribute(Mesh::ATTRIBUTE_COLOR).is_some());
-        assert!(mesh.attribute(Mesh::ATTRIBUTE_UV_1).is_some());
+        let twig_positions = twigs
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .and_then(VertexAttributeValues::as_float3)
+            .unwrap();
+        assert_eq!(leaf_positions.len(), 24 * 4);
+        assert_eq!(twig_positions.len(), 9 * 4);
+        assert_ne!(
+            leaves.attribute(Mesh::ATTRIBUTE_POSITION),
+            alternate_leaves.attribute(Mesh::ATTRIBUTE_POSITION)
+        );
+        for mesh in [&leaves, &twigs] {
+            assert!(mesh.attribute(Mesh::ATTRIBUTE_COLOR).is_some());
+            assert!(mesh.attribute(Mesh::ATTRIBUTE_UV_1).is_some());
+        }
     }
 }
