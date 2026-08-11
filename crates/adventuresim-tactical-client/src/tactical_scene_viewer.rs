@@ -43,6 +43,7 @@ struct CaptureState {
     output: PathBuf,
     digest: String,
     seed: u64,
+    absolute_minute: u64,
     canopy_bps: u16,
     generation_version: u16,
     weather: WeatherSnapshot,
@@ -265,6 +266,7 @@ struct CaptureManifest {
     source_input: String,
     scene_digest: String,
     seed: u64,
+    absolute_minute: u64,
     canopy_bps: u16,
     generation_version: u16,
     weather: WeatherSnapshot,
@@ -285,6 +287,7 @@ pub(crate) fn run(
     output: Option<PathBuf>,
     settle_frames: u32,
     canopy_bps: Option<u16>,
+    absolute_minute: Option<u64>,
 ) {
     let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let (fixture, input_path) = match (fixture, scene_input) {
@@ -313,6 +316,9 @@ pub(crate) fn run(
     let mut environment = input.environment_snapshot(generated.digest.clone());
     if let Some(canopy_bps) = canopy_bps {
         environment.canopy_bps = canopy_bps;
+    }
+    if let Some(absolute_minute) = absolute_minute {
+        environment.absolute_minute = absolute_minute;
     }
     let output = output.map_or_else(
         || default_output(&repository_root, &fixture, &generated.digest),
@@ -556,6 +562,7 @@ fn setup_scene(
         obstacle_focus.z,
     );
     let canopy_bps = environment.canopy_bps;
+    let absolute_minute = environment.absolute_minute;
     let mut tree_leaf_focus = None;
     let mut tree_leaf_camera = None;
     let mut tree_review_entities = Vec::new();
@@ -675,6 +682,7 @@ fn setup_scene(
         output,
         digest,
         seed: input.seed,
+        absolute_minute,
         canopy_bps,
         generation_version: input.generation_version,
         weather: input.weather,
@@ -1169,6 +1177,7 @@ fn build_manifest(
             source_input: state.input_path.display().to_string(),
             scene_digest: state.digest.clone(),
             seed: state.seed,
+            absolute_minute: state.absolute_minute,
             canopy_bps: state.canopy_bps,
             generation_version: state.generation_version,
             weather: state.weather,

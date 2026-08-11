@@ -36,6 +36,10 @@ struct Args {
     /// Test-only world canopy override in basis points (0..=10000).
     #[arg(long, value_parser = clap::value_parser!(u16).range(0..=10_000))]
     canopy_bps: Option<u16>,
+
+    /// Test-only celestial time override, in absolute world minutes.
+    #[arg(long)]
+    absolute_minute: Option<u64>,
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -54,6 +58,7 @@ fn main() {
         args.output,
         args.settle_frames,
         args.canopy_bps,
+        args.absolute_minute,
     );
 }
 
