@@ -16,7 +16,7 @@ use serde::Serialize;
 
 use crate::presentation::{
     FoliageLayer, ProceduralRockVisual, TacticalPresentationPlugin, TerrainMaterialPresentation,
-    TreeImpostorProvenance, TreeLod, VistaTerrain, WeatherParticle,
+    TreeImpostorProvenance, TreeLod, VistaTerrain, WeatherParticle, oak_review_terminal_specimen,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -56,6 +56,10 @@ struct CaptureState {
     peak_target: Vec3,
     obstacle_focus: Vec3,
     tree_focus: Option<Vec3>,
+    tree_leaf_focus: Option<Vec3>,
+    tree_leaf_camera: Option<Vec3>,
+    tree_focus_entity: Option<Entity>,
+    tree_review_entities: Vec<Entity>,
     ground_eye_position: Vec3,
     ground_eye_target: Vec3,
     settle_frames: u32,
@@ -70,6 +74,12 @@ struct CaptureState {
 #[derive(Component)]
 struct CaptureOverlay;
 
+#[derive(Component)]
+struct TreeReviewBackdrop;
+
+#[derive(Component)]
+struct TreeReviewSpecimen;
+
 #[derive(Clone, Copy)]
 struct CaptureView {
     slug: &'static str,
@@ -77,7 +87,7 @@ struct CaptureView {
     overlay: bool,
 }
 
-const CAPTURE_VIEWS: [CaptureView; 11] = [
+const CAPTURE_VIEWS: [CaptureView; 12] = [
     CaptureView {
         slug: "warmup",
         label: "Render-pipeline warmup",
@@ -91,6 +101,11 @@ const CAPTURE_VIEWS: [CaptureView; 11] = [
     CaptureView {
         slug: "tree-detail",
         label: "Whole-tree individual-leaf LOD view",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-silhouette",
+        label: "Neutral English oak silhouette plate",
         overlay: false,
     },
     CaptureView {
@@ -428,6 +443,7 @@ fn setup_scene(
     let mut obstacle_position_sum = Vec3::ZERO;
     let mut obstacle_count = 0usize;
     let mut tree_focus = None;
+    let mut tree_focus_entity = None;
 
     for obstacle in obstacles {
         let (grid_x, grid_z, kind, collider, y_offset, overlay_shape, overlay_color) =
@@ -463,23 +479,28 @@ fn setup_scene(
         let x = f32::from(grid_x) * input.playable.spacing_metres - terrain.width() * 0.5;
         let z = f32::from(grid_z) * input.playable.spacing_metres - terrain.depth() * 0.5;
         let y = terrain.height_at(Vec2::new(x, z)).unwrap_or_default() + y_offset;
-        if matches!(kind, SceneObstacle::Tree)
+        let focuses_tree = matches!(kind, SceneObstacle::Tree)
             && tree_focus.is_none_or(|focus: Vec3| {
                 Vec2::new(x, z).length_squared() < focus.xz().length_squared()
-            })
-        {
+            });
+        if focuses_tree {
             tree_focus = Some(Vec3::new(x, y, z));
         }
         obstacle_position_sum += Vec3::new(x, y, z);
         obstacle_count += 1;
-        commands.spawn((
-            Name::new("Captured tactical obstacle"),
-            kind,
-            RigidBody::Static,
-            CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
-            collider,
-            Transform::from_xyz(x, y, z),
-        ));
+        let obstacle_entity = commands
+            .spawn((
+                Name::new("Captured tactical obstacle"),
+                kind,
+                RigidBody::Static,
+                CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
+                collider,
+                Transform::from_xyz(x, y, z),
+            ))
+            .id();
+        if focuses_tree {
+            tree_focus_entity = Some(obstacle_entity);
+        }
         commands.spawn((
             Name::new("Capture collider overlay"),
             CaptureOverlay,
@@ -535,6 +556,88 @@ fn setup_scene(
         obstacle_focus.z,
     );
     let canopy_bps = environment.canopy_bps;
+    let mut tree_leaf_focus = None;
+    let mut tree_leaf_camera = None;
+    let mut tree_review_entities = Vec::new();
+    if let Some(tree) = tree_focus {
+        commands.spawn((
+            Name::new("Neutral tree review backdrop"),
+            TreeReviewBackdrop,
+            Mesh3d(meshes.add(Cuboid::new(40.0, 26.0, 0.1))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgb(0.78, 0.82, 0.84),
+                unlit: true,
+                ..default()
+            })),
+            Visibility::Hidden,
+            Transform {
+                translation: tree + Vec3::new(-8.0, 3.0, -8.0),
+                rotation: Quat::from_rotation_y(core::f32::consts::FRAC_PI_4),
+                ..default()
+            },
+        ));
+        let specimen_origin = tree + Vec3::Y * 15.0;
+        let (branch_mesh, leaf_mesh, local_focus, camera_direction) =
+            oak_review_terminal_specimen(tree, canopy_bps);
+        let bark_material = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.42, 0.38, 0.31),
+            perceptual_roughness: 0.95,
+            ..default()
+        });
+        let leaf_material = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.4, 0.62, 0.17),
+            perceptual_roughness: 0.82,
+            diffuse_transmission: 0.55,
+            thickness: 0.001,
+            double_sided: true,
+            cull_mode: None,
+            ..default()
+        });
+        tree_review_entities.push(
+            commands
+                .spawn((
+                    Name::new("Isolated production oak terminal shoot"),
+                    TreeReviewSpecimen,
+                    Mesh3d(meshes.add(branch_mesh)),
+                    MeshMaterial3d(bark_material),
+                    Visibility::Hidden,
+                    Transform::from_translation(specimen_origin),
+                ))
+                .id(),
+        );
+        tree_review_entities.push(
+            commands
+                .spawn((
+                    Name::new("Isolated production oak terminal leaves"),
+                    TreeReviewSpecimen,
+                    Mesh3d(meshes.add(leaf_mesh)),
+                    MeshMaterial3d(leaf_material),
+                    Visibility::Hidden,
+                    Transform::from_translation(specimen_origin),
+                ))
+                .id(),
+        );
+        tree_leaf_focus = Some(specimen_origin + local_focus);
+        tree_leaf_camera = Some(specimen_origin + local_focus + camera_direction * 0.9);
+        tree_review_entities.push(
+            commands
+                .spawn((
+                    Name::new("Ten centimetre tree review scale bar"),
+                    TreeReviewSpecimen,
+                    Mesh3d(meshes.add(Cuboid::new(0.1, 0.012, 0.012))),
+                    MeshMaterial3d(materials.add(StandardMaterial {
+                        base_color: Color::srgb(0.12, 0.12, 0.12),
+                        unlit: true,
+                        ..default()
+                    })),
+                    Visibility::Hidden,
+                    Transform::from_translation(
+                        specimen_origin + local_focus + Vec3::new(-0.15, -0.22, 0.0),
+                    ),
+                ))
+                .id(),
+        );
+    }
     commands.spawn((
         Name::new("Captured tactical terrain"),
         SceneId(input.scene_key.clone()),
@@ -574,6 +677,10 @@ fn setup_scene(
         peak_target,
         obstacle_focus,
         tree_focus,
+        tree_leaf_focus,
+        tree_leaf_camera,
+        tree_focus_entity,
+        tree_review_entities,
         ground_eye_position,
         ground_eye_target,
         settle_frames,
@@ -618,6 +725,15 @@ fn capture_views(
     mut state: Option<ResMut<CaptureState>>,
     mut camera: Single<(&mut Transform, &mut GlobalTransform, &mut Projection), With<Camera3d>>,
     mut overlays: Query<&mut Visibility, (With<CaptureOverlay>, Without<VistaTerrain>)>,
+    mut tree_backdrops: Query<
+        (&mut Visibility, &mut Transform),
+        (
+            With<TreeReviewBackdrop>,
+            Without<Camera3d>,
+            Without<CaptureOverlay>,
+            Without<VistaTerrain>,
+        ),
+    >,
     obstacles: Query<(&SceneObstacle, Has<Mesh3d>, Has<Collider>)>,
     rock_visuals: Query<&Mesh3d, With<ProceduralRockVisual>>,
     tree_lods: Query<&TreeLod>,
@@ -639,6 +755,24 @@ fn capture_views(
     }
     let view = CAPTURE_VIEWS[state.view];
     if !state.view_started {
+        let specimen_view = view.slug == "tree-leaf-detail";
+        let specimen_pipeline_warmup = view.slug == "warmup";
+        if let Some(entity) = state.tree_focus_entity {
+            commands.entity(entity).insert(if specimen_view {
+                Visibility::Hidden
+            } else {
+                Visibility::Visible
+            });
+        }
+        for &entity in &state.tree_review_entities {
+            commands
+                .entity(entity)
+                .insert(if specimen_view || specimen_pipeline_warmup {
+                    Visibility::Visible
+                } else {
+                    Visibility::Hidden
+                });
+        }
         let (transform, target) = camera_for_view(view.slug, state);
         *camera.0 = transform;
         *camera.1 = GlobalTransform::from(transform);
@@ -658,6 +792,20 @@ fn capture_views(
             } else {
                 Visibility::Hidden
             };
+        }
+        for (mut visibility, mut backdrop) in &mut tree_backdrops {
+            *visibility = if matches!(view.slug, "tree-silhouette" | "tree-leaf-detail") {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            };
+            if *visibility == Visibility::Visible {
+                let away_from_camera = (target - camera.0.translation).normalize_or_zero();
+                backdrop.translation = target + away_from_camera * 5.0;
+                backdrop.rotation = Transform::from_translation(backdrop.translation)
+                    .looking_at(camera.0.translation, Vec3::Y)
+                    .rotation;
+            }
         }
         state.view_started = true;
         state.settled = 0;
@@ -784,22 +932,22 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
         "warmup" | "beauty-ground" | "collision-overlay" => {
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y)
         }
-        "tree-detail" => state.tree_focus.map_or(
+        "tree-detail" | "tree-silhouette" => state.tree_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |tree| {
                 (
-                    tree + Vec3::new(22.0, 8.0, 22.0),
-                    tree + Vec3::new(0.0, 7.0, 0.0),
+                    tree + Vec3::new(15.0, 7.0, 15.0),
+                    tree + Vec3::new(0.0, 4.5, 0.0),
                     Vec3::Y,
                 )
             },
         ),
-        "tree-leaf-detail" => state.tree_focus.map_or(
+        "tree-leaf-detail" => state.tree_leaf_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
-            |tree| {
+            |focus| {
                 (
-                    tree + Vec3::new(5.2, 3.6, 5.2),
-                    tree + Vec3::new(2.2, 3.2, 0.0),
+                    state.tree_leaf_camera.unwrap_or(focus + Vec3::Z),
+                    focus,
                     Vec3::Y,
                 )
             },
@@ -1113,7 +1261,7 @@ fn minimum_foreground_bps(view: &str) -> u16 {
 fn capture_view_fov(view: &str) -> f32 {
     match view {
         "horizon" => 15.0,
-        "tree-detail" => 50.0,
+        "tree-detail" | "tree-silhouette" => 48.0,
         "tree-leaf-detail" => 24.0,
         "tree-twig-lod" => 30.0,
         "tree-small-branch-lod" => 19.0,
