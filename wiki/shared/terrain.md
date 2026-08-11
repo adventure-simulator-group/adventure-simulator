@@ -31,7 +31,9 @@ matching proxy instead of an invisible collider. Clients present deformed
 low-poly rock meshes constrained inside those colliders and three-distance tree
 archetypes (branched crown, reduced crown, and crossed billboard). Grass,
 shrubs, and reeds are deterministic shared-mesh foliage with shader wind and no
-gameplay collider. A procedural terrain material blends forest floor, dry
+gameplay collider. Grass uses overlapping multi-tuft patches across the full
+playable view distance: covered ground reads as a continuous sward from normal
+camera angles while remaining legible from overhead. A procedural terrain material blends forest floor, dry
 ground, mud, cultivation, stone, wetness, and snow while adding small-scale
 colour and normal variation. Tree sampling follows canopy
 coverage; rock sampling uses an independent deterministic roll scaled by hilly

@@ -503,7 +503,7 @@ fn spawn_ground_foliage(
     } else {
         Color::srgb_u8(82, 119, 45)
     };
-    let grass_mesh = meshes.add(foliage_clump_mesh(0.46, 0.78, grass_color, 3));
+    let grass_mesh = meshes.add(grass_patch_mesh(grass_color));
     let understory_mesh = meshes.add(if environment.weather.snow_cover_bps >= 5_000 {
         foliage_clump_mesh(0.72, 0.92, Color::srgb_u8(130, 144, 119), 3)
     } else if environment.wetland_bps >= 3_000 {
@@ -523,12 +523,15 @@ fn spawn_ground_foliage(
     let wetland = bps(environment.wetland_bps);
     let cultivation = bps(environment.cultivation_bps);
     let snow = bps(environment.weather.snow_cover_bps);
-    let grass_chance = (0.58 - canopy * 0.34 - water * 0.8 + cultivation * 0.2).clamp(0.08, 0.72)
-        * (1.0 - snow * 0.55);
+    let grass_chance = (0.96 - canopy * 0.16 - water * 0.88 + cultivation * 0.04).clamp(0.06, 0.98)
+        * (1.0 - snow * 0.36);
     let understory_chance = (canopy * 0.16 + wetland * 0.22).clamp(0.025, 0.24);
     let half_x = terrain.width() * 0.5;
     let half_z = terrain.depth() * 0.5;
-    let spacing = 2.5;
+    // Each instance is a seven-tuft patch whose footprint overlaps its
+    // neighbours. This keeps the entity count bounded while producing the
+    // near-continuous oblique coverage expected from grassland.
+    let spacing = 1.25;
     let count_x = (terrain.width() / spacing).floor() as i32;
     let count_z = (terrain.depth() / spacing).floor() as i32;
     for z in 0..count_z {
@@ -575,7 +578,7 @@ fn spawn_ground_foliage(
                 VisibilityRange::abrupt(
                     0.0,
                     if layer == FoliageLayer::Grass {
-                        58.0
+                        130.0
                     } else {
                         92.0
                     },
@@ -590,46 +593,73 @@ fn spawn_ground_foliage(
     }
 }
 
+fn grass_patch_mesh(color: Color) -> Mesh {
+    const TUFTS: [(f32, f32, f32); 7] = [
+        (0.00, 0.00, 1.00),
+        (-0.46, -0.34, 0.88),
+        (0.44, -0.36, 0.76),
+        (-0.48, 0.32, 0.81),
+        (0.43, 0.38, 0.96),
+        (-0.02, -0.58, 0.70),
+        (0.03, 0.57, 0.84),
+    ];
+    foliage_patch_mesh(0.38, 0.9, color, 3, &TUFTS)
+}
+
 fn foliage_clump_mesh(width: f32, height: f32, color: Color, planes: usize) -> Mesh {
-    let mut positions = Vec::with_capacity(planes * 5);
-    let mut normals = Vec::with_capacity(planes * 5);
-    let mut uvs = Vec::with_capacity(planes * 5);
-    let mut colors = Vec::with_capacity(planes * 5);
-    let mut indices = Vec::with_capacity(planes * 9);
+    foliage_patch_mesh(width, height, color, planes, &[(0.0, 0.0, 1.0)])
+}
+
+fn foliage_patch_mesh(
+    width: f32,
+    height: f32,
+    color: Color,
+    planes: usize,
+    tufts: &[(f32, f32, f32)],
+) -> Mesh {
+    let mut positions = Vec::with_capacity(tufts.len() * planes * 5);
+    let mut normals = Vec::with_capacity(tufts.len() * planes * 5);
+    let mut uvs = Vec::with_capacity(tufts.len() * planes * 5);
+    let mut colors = Vec::with_capacity(tufts.len() * planes * 5);
+    let mut indices = Vec::with_capacity(tufts.len() * planes * 9);
     let linear = color.to_linear().to_f32_array();
-    for plane in 0..planes {
-        let angle = plane as f32 * core::f32::consts::PI / planes as f32;
-        let direction = Vec3::new(angle.cos(), 0.0, angle.sin()) * width * 0.5;
-        let shoulder = direction * 0.48;
-        let base = positions.len() as u32;
-        positions.extend_from_slice(&[
-            (-direction).to_array(),
-            direction.to_array(),
-            (-shoulder + Vec3::Y * height * 0.72).to_array(),
-            (shoulder + Vec3::Y * height * 0.72).to_array(),
-            (Vec3::Y * height).to_array(),
-        ]);
-        let normal = Vec3::Y.cross(direction).normalize_or_zero().to_array();
-        normals.extend_from_slice(&[normal; 5]);
-        uvs.extend_from_slice(&[
-            [0.0, 0.0],
-            [1.0, 0.0],
-            [0.25, 0.72],
-            [0.75, 0.72],
-            [0.5, 1.0],
-        ]);
-        colors.extend_from_slice(&[linear; 5]);
-        indices.extend_from_slice(&[
-            base,
-            base + 1,
-            base + 3,
-            base,
-            base + 3,
-            base + 2,
-            base + 2,
-            base + 3,
-            base + 4,
-        ]);
+    for &(offset_x, offset_z, tuft_scale) in tufts {
+        let centre = Vec3::new(offset_x, 0.0, offset_z);
+        for plane in 0..planes {
+            let angle = plane as f32 * core::f32::consts::PI / planes as f32;
+            let direction = Vec3::new(angle.cos(), 0.0, angle.sin()) * width * tuft_scale * 0.5;
+            let shoulder = direction * 0.48;
+            let tip = Vec3::Y * height * tuft_scale;
+            let base = positions.len() as u32;
+            positions.extend_from_slice(&[
+                (centre - direction).to_array(),
+                (centre + direction).to_array(),
+                (centre - shoulder + tip * 0.72).to_array(),
+                (centre + shoulder + tip * 0.72).to_array(),
+                (centre + tip).to_array(),
+            ]);
+            let normal = Vec3::Y.cross(direction).normalize_or_zero().to_array();
+            normals.extend_from_slice(&[normal; 5]);
+            uvs.extend_from_slice(&[
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [0.25, 0.72],
+                [0.75, 0.72],
+                [0.5, 1.0],
+            ]);
+            colors.extend_from_slice(&[linear; 5]);
+            indices.extend_from_slice(&[
+                base,
+                base + 1,
+                base + 3,
+                base,
+                base + 3,
+                base + 2,
+                base + 2,
+                base + 3,
+                base + 4,
+            ]);
+        }
     }
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
@@ -1119,6 +1149,16 @@ mod tests {
         assert!(uvs.iter().any(|uv| uv[1] == 0.0));
         assert!(uvs.iter().any(|uv| uv[1] == 1.0));
         assert!(mesh.attribute(Mesh::ATTRIBUTE_COLOR).is_some());
+    }
+
+    #[test]
+    fn grass_patches_pack_seven_tufts_into_each_instance() {
+        let mesh = grass_patch_mesh(Color::WHITE);
+        let positions = mesh
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .and_then(VertexAttributeValues::as_float3)
+            .unwrap();
+        assert_eq!(positions.len(), 7 * 3 * 5);
     }
 
     #[test]
