@@ -29,7 +29,7 @@ use weather::*;
 // This facade is compiled independently by several binaries, so each binary
 // uses only the subset of the stable presentation interface that it needs.
 #[allow(unused_imports)]
-pub(crate) use environment::scene_ambient_light;
+pub(crate) use environment::{scene_ambient_light, scene_ibl_visibility_floor};
 #[allow(unused_imports)]
 pub(crate) use foliage::{GrassInteractor, GroundScatterLayer};
 #[allow(unused_imports)]
@@ -43,6 +43,7 @@ pub(crate) use obstacles::tree::{
     TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
     TreeLodRenderOverride, oak_bark_material, oak_leaf_material,
 };
+pub(crate) use sky::AtmosphereIblAmbientHandoff;
 #[allow(unused_imports)]
 pub(crate) use sky::{TacticalMoon, TacticalMoonlight, TacticalStars, TacticalSunlight};
 #[allow(unused_imports)]
@@ -60,8 +61,8 @@ use bevy::{
     core_pipeline::tonemapping::Tonemapping,
     image::ImageSampler,
     light::{
-        Atmosphere, AtmosphereEnvironmentMapLight, NotShadowCaster, atmosphere::ScatteringMedium,
-        light_consts::lux,
+        Atmosphere, AtmosphereEnvironmentMapLight, EnvironmentMapLight, NotShadowCaster,
+        atmosphere::ScatteringMedium, light_consts::lux,
     },
     mesh::{Indices, MeshVertexAttribute, PrimitiveTopology, VertexAttributeValues},
     pbr::{AtmosphereSettings, ExtendedMaterial, MaterialExtension, ScreenSpaceAmbientOcclusion},
@@ -138,6 +139,7 @@ impl Plugin for TacticalPresentationPlugin {
         .init_resource::<GroundFoliagePresentationCache>()
         .init_resource::<TreePresentationCache>()
         .init_resource::<TreeLodRenderOverride>()
+        .init_resource::<AtmosphereIblAmbientHandoff>()
         .add_systems(
             Update,
             (
@@ -148,6 +150,7 @@ impl Plugin for TacticalPresentationPlugin {
                 present_ground_scatter,
                 (present_pending_trees, update_tree_projected_lod_ranges).chain(),
                 keep_celestial_visuals_centered,
+                update_global_ambient_policy,
             ),
         )
         .add_observer(on_game_scene_added)

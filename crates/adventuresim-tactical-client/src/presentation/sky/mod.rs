@@ -233,6 +233,77 @@ pub(super) fn on_environment_added(
     Ok(())
 }
 
+const ENVIRONMENT_MAP_ALLOCATION_GRACE_FRAMES: u8 = 4;
+
+#[derive(Resource, Debug, Default)]
+pub(crate) struct AtmosphereIblAmbientHandoff {
+    allocated_frames: u8,
+    pub(crate) active: bool,
+}
+
+pub(super) fn update_global_ambient_policy(
+    settings: Res<TacticalGraphicsSettings>,
+    environments: Query<&SceneEnvironment>,
+    camera_environment: Single<Option<&EnvironmentMapLight>, With<Camera3d>>,
+    mut handoff: ResMut<AtmosphereIblAmbientHandoff>,
+    mut ambient: ResMut<GlobalAmbientLight>,
+) {
+    let Some(environment) = environments.iter().next() else {
+        return;
+    };
+    let celestial = celestial_directions(
+        environment.absolute_minute,
+        environment.latitude_microdegrees,
+        environment.longitude_microdegrees,
+    );
+    let sun_altitude = celestial.sun[1].asin().to_degrees();
+    let moon_altitude = celestial.moon[1].asin().to_degrees();
+    // EnvironmentMapLight is inserted with placeholder images before render-world
+    // filtering is observable from the main world. Hold the full fallback for a
+    // short bounded grace after allocation; deterministic captures additionally
+    // require consecutive stable readbacks before accepting evidence.
+    let allocated = settings.atmosphere_enabled
+        && settings.environment_light_enabled
+        && camera_environment.is_some();
+    handoff.allocated_frames = if allocated {
+        handoff.allocated_frames.saturating_add(1)
+    } else {
+        0
+    };
+    handoff.active = handoff.allocated_frames >= ENVIRONMENT_MAP_ALLOCATION_GRACE_FRAMES;
+    let (color, brightness) = if handoff.active {
+        scene_ibl_visibility_floor(sun_altitude, moon_altitude, celestial.lunar_illumination)
+    } else {
+        scene_ambient_light(sun_altitude, moon_altitude, celestial.lunar_illumination)
+    };
+    ambient.color = Color::srgb(color.x, color.y, color.z);
+    ambient.brightness = brightness;
+}
+
+#[cfg(test)]
+mod ambient_handoff_tests {
+    use super::*;
+
+    #[test]
+    fn allocation_grace_is_bounded_and_resets() {
+        let mut handoff = AtmosphereIblAmbientHandoff::default();
+        for frame in 1..ENVIRONMENT_MAP_ALLOCATION_GRACE_FRAMES {
+            handoff.allocated_frames = handoff.allocated_frames.saturating_add(1);
+            handoff.active = handoff.allocated_frames >= ENVIRONMENT_MAP_ALLOCATION_GRACE_FRAMES;
+            assert!(
+                !handoff.active,
+                "frame {frame} must retain fallback ambient"
+            );
+        }
+        handoff.allocated_frames = handoff.allocated_frames.saturating_add(1);
+        handoff.active = handoff.allocated_frames >= ENVIRONMENT_MAP_ALLOCATION_GRACE_FRAMES;
+        assert!(handoff.active);
+        handoff.allocated_frames = 0;
+        handoff.active = false;
+        assert!(!handoff.active);
+    }
+}
+
 fn selected_solar_illuminance(
     atmosphere_enabled: bool,
     environment: &SceneEnvironment,

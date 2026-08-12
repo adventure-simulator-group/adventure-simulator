@@ -52,17 +52,27 @@ class CaptureTacticalScenesTests(unittest.TestCase):
                 "resolution": MODULE.EXPECTED_RESOLUTION,
                 "source_identity": "source-id",
                 "revision": "head",
+                "celestial": {
+                    "sun_altitude_degrees": 8.0,
+                    "moon_altitude_degrees": -20.0,
+                    "lunar_illumination": 0.2,
+                },
                 "presentation_features": {
                     "requested": MODULE.EXPECTED_PRESENTATION_REQUEST,
                     "observed": {
                         "settings": MODULE.EXPECTED_PRESENTATION_REQUEST,
                         "camera_environment_map": True,
                         "camera_environment_map_size": [64, 64],
+                        "camera_environment_map_allocated": True,
+                        "camera_environment_map_intensity": 1.0,
                         "camera_bloom": True,
                         "camera_ssao": True,
                         "camera_exposure_ev100": 14.7,
                         "camera_tonemapping": "AcesFitted",
-                        "ambient_brightness": 1.0,
+                        "ambient_color": [1.0, 1.0, 1.0, 1.0],
+                        "ambient_brightness": 10500.0,
+                        "expected_ambient_brightness": 10500.0,
+                        "ambient_policy": "atmosphere_ibl_plus_bounded_multibounce",
                     },
                     "requested_matches_observed": True,
                 },
@@ -92,6 +102,30 @@ class CaptureTacticalScenesTests(unittest.TestCase):
                         manifest_path, "steep-open-hillside", MODULE.NAMED_TIMES["grazing"],
                         ("rock-detail",), "source-id", "head",
                     )
+
+            for wrong_ambient in (0.0, 0.6):
+                broken = json.loads(json.dumps(manifest))
+                broken["presentation_features"]["observed"]["ambient_brightness"] = wrong_ambient
+                manifest_path.write_text(json.dumps(broken), encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    MODULE.validated_child_manifest(
+                        manifest_path, "steep-open-hillside", MODULE.NAMED_TIMES["grazing"],
+                        ("rock-detail",), "source-id", "head",
+                    )
+
+            night = json.loads(json.dumps(manifest))
+            night["celestial"] = {
+                "sun_altitude_degrees": -25.0,
+                "moon_altitude_degrees": -20.0,
+                "lunar_illumination": 0.0,
+            }
+            night["presentation_features"]["observed"]["ambient_brightness"] = 10500.0
+            manifest_path.write_text(json.dumps(night), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                MODULE.validated_child_manifest(
+                    manifest_path, "steep-open-hillside", MODULE.NAMED_TIMES["grazing"],
+                    ("rock-detail",), "source-id", "head",
+                )
 
     def test_png_gate_rejects_extra_or_truncated_images(self):
         with tempfile.TemporaryDirectory() as temporary:

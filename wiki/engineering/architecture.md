@@ -386,6 +386,14 @@ curve because it has no planetary occlusion. Exposure transitions continuously
 from nautical twilight to the moon-conditioned night target between -12 and
 -18 degrees solar altitude; the physical 0.533-degree solar disc, ACES
 tonemapping, natural bloom, and bounded lookup-table atmosphere stay unchanged.
+The filtered 64-pixel atmosphere environment map is the full preset's canonical
+indirect PBR source. `GlobalAmbientLight` provides the complete altitude-aware
+fallback until that map is allocated and a bounded four-frame handoff grace
+elapses, or whenever a preset disables it; afterward
+only the authored moonless/moonlit visibility floor and a bounded 10,500-cd/m2
+unresolved multi-bounce term remain. Bevy therefore no longer adds the full
+30,000-cd/m2 isotropic daylight approximation on top of directional atmosphere
+IBL, while shaded bark and foliage retain readable outdoor bounce light.
 Large vista grids are deliberately not ordinary replicated ECS components. The
 server sends each accepted client one immutable, ordered `SceneVistaBundle`;
 the client builds seam-sharing LOD rings split into independently frustum-culled
