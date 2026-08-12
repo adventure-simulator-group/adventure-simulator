@@ -353,11 +353,15 @@ response of the sward. Bevy's standard mesh path supplies WebGPU-compatible
 GPU preprocessing, culling, and indirect batches when the adapter supports
 them, with its normal fallback on more limited browser devices.
 Forest-floor scatter retains its authoritative leaf-litter placement, patch
-count, and shared-mesh instancing. Detailed litter now ends at 35 metres: the
+count, and shared-mesh instancing. The four leaf meshes, three twig meshes,
+and their two materials are cached across scene loads rather than rebuilt per
+presentation. Detailed leaves now end at 35 metres, while subpixel twigs end
+at 24 metres: the
 current visibility architecture cannot substitute a cheaper mesh without an
 extra entity/draw, and rendering alpha-tested cambered plates to 72 metres was
-not worth that overdraw. Each 24-leaf shared patch
-  uses deterministic nine-vertex cambered, gently tilted, curled oak plates;
+not worth that overdraw. Each 24-leaf shared patch uses deterministic
+nine-vertex cambered, gently tilted, curled oak plates arranged into four
+loose, shallow layers plus scattered singles;
   every plate is seated by its lowest vertex slightly below the local patch
   plane and has a bounded lift so it cannot become an upright card. The reused
   oak maps are desaturated and multiplied by seeded tan/brown vertex pigment
@@ -365,8 +369,9 @@ not worth that overdraw. Each 24-leaf shared patch
 leaf plates with the production oak opacity, front/back albedo, normal maps,
 and a dedicated dry PBR response with zero canopy AO, low transmission, higher
 roughness, and lower thickness; fallen-leaf wind is disabled. Each nine-twig shared
-patch uses tapered three-to-five-sided segments with at most two deterministic
-short forks. Litter entities remain `NotShadowCaster`, and the geometry change
+patch uses bowed four-ring, five-to-six-sided segments with buried contact
+points, near-zero tapered tips, and at most two deterministic short forks.
+Litter entities remain `NotShadowCaster`, and the geometry change
 adds no entity, material slot, draw call, gameplay collider, or placement rule.
 The local player transform drives nearby blade bending on the client only; this
 cosmetic interaction is neither replicated nor included in collision or
