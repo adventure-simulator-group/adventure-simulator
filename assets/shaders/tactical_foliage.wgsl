@@ -82,6 +82,8 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         blade_threshold * 1.73 + spatial_noise * 0.31
             + root_world.x * 0.013 - root_world.z * 0.017
     );
+    let age_signal = fract(blade_threshold * 2.37 + 0.13);
+    let mature_age = smoothstep(0.68, 0.94, age_signal);
     // A dense near field needs a broad juvenile-to-mature height mix or it
     // becomes an opaque vertical curtain despite varied roots.
     let juvenile_vigor = 0.28 + 0.78 * blade_variation * blade_variation;
@@ -91,7 +93,9 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     // authoritative dirt/grass boundary, surviving blades also grow shorter
     // rather than ending in a same-height density wall.
     let edge_growth = mix(0.58, 1.0, smoothstep(0.08, 0.9, ground_coverage));
-    let blade_vigor = mix(juvenile_vigor, mature_vigor, meadow_zone) * edge_growth;
+    let blade_vigor = mix(juvenile_vigor, mature_vigor, meadow_zone)
+        * edge_growth
+        * mix(1.0, 0.94, mature_age);
     let wave_position = dot(root_world.xz, wind_direction) * 0.22;
     let wind_time = globals.time * foliage.wind.w;
     let gust = 0.68 + 0.32 * sin(wind_time * 0.29 + spatial_noise * 3.7);
@@ -105,7 +109,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         fract(blade_threshold * 2.11 + 0.63) - 0.5,
     ) + vec2<f32>(0.0001, 0.0));
     let lean_amount = (0.025 + 0.030 * lean_variation) * foliage.shading.w;
-    let natural_lean = lean_direction * lean_amount;
+    let natural_lean = lean_direction * (lean_amount + 0.012 * mature_age);
     let wind_offset = (
         wind_direction * primary_wave * gust
         + wind_cross * flutter * 0.18
@@ -250,8 +254,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     );
     let centre_distance = abs(in.uv.x - 0.5) * 2.0;
     let centre_rib = mix(0.84, 1.0, smoothstep(0.12, 0.72, centre_distance));
-    let meadow_variation = 1.0 + foliage.shading.y
-        * sin(in.world_position.x * 0.083 + sin(in.world_position.z * 0.057) * 2.3);
+    let meadow_wave = sin(in.world_position.x * 0.083
+        + sin(in.world_position.z * 0.057) * 2.3);
+    let meadow_variation = 1.0 + 0.13 * meadow_wave;
     var base_normal = select(-in.world_normal, in.world_normal, is_front);
     // The vertex stage deliberately bends both sides of a blade normal toward
     // the sky. Flipping the entire vector for the back face would point that
