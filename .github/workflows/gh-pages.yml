@@ -50,11 +50,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -82,32 +82,34 @@ jobs:
             python3 scripts/format_wiki_markdown.py --check --changed-from "$base_sha"
           fi
       - name: Setup mdBook
-        uses: peaceiris/actions-mdbook@v2
+        uses: jaxxstorm/action-install-gh-release@v3.0.0
         with:
-          mdbook-version: "0.4.52"
+          repo: rust-lang/mdBook
+          tag: v0.4.52
+          cache: enable
       - name: Setup mdBook table of contents
-        uses: jaxxstorm/action-install-gh-release@v1.10.0
+        uses: jaxxstorm/action-install-gh-release@v3.0.0
         with:
           repo: badboy/mdbook-toc
           tag: 0.14.2
-          cache: true
+          cache: enable
           chmod: 0755
       - name: Setup mdBook Link Check
-        uses: jaxxstorm/action-install-gh-release@v1.10.0
+        uses: jaxxstorm/action-install-gh-release@v3.0.0
         with:
           repo: Michael-F-Bryan/mdbook-linkcheck
           tag: v0.7.7
-          cache: true
+          cache: enable
           chmod: 0755
       - name: Setup Pages
         id: pages
         if: github.event_name != 'pull_request'
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
       - name: Build with mdBook
         run: mdbook build
       - name: Upload artifact
         if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: ./book/html
 
@@ -121,4 +123,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
