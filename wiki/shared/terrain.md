@@ -75,6 +75,12 @@ copy as the terrain material map and uses the same values for deterministic
 scatter. Texture asset identifiers are presentation details and never become
 server authority.
 
+For rendering, the client deterministically expands that coarse categorical
+map and displaces its lookup boundary with two scales of smooth noise. The
+shader still selects exactly one cover material at every fragment—there is no
+colour-gradient blend—but boundaries such as forest floor against grass no
+longer expose square source-grid cells.
+
 Generated tree crowns stamp leaf-litter cover into this grid. Grass macro
 patches conservatively reject any footprint intersecting those cells. Separate
 shared meshes scatter a dense dry-leaf carpet and a looser layer of longer
