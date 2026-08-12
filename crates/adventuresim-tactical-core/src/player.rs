@@ -10,7 +10,7 @@ pub type ControlledPlayer = Actions<Player>;
 
 /// Component for a player entity, for both client-controlled
 /// active player and other players.
-#[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq, Eq)]
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq, Eq)]
 #[require(
     CharacterId,
     Limbs,
@@ -22,6 +22,18 @@ pub type ControlledPlayer = Actions<Player>;
 #[component(immutable)]
 pub struct Player {
     pub name: String,
+}
+
+pub fn default_tactical_character_id() -> u64 {
+    adventuresim_core::starting_character::default_character("tactical").id
+}
+
+impl Default for Player {
+    fn default() -> Self {
+        Self {
+            name: adventuresim_core::starting_character::DEFAULT_CHARACTER_NAME.into(),
+        }
+    }
 }
 
 /// Strategic character identity projected into the transient tactical world.
@@ -274,7 +286,7 @@ impl PlayerBody for Limbs {
 }
 
 /// Physical and mental skills of a [`Player`].
-#[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq)]
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
 #[component(immutable)]
 pub struct Skills {
     pub polearm_hours: f32,
@@ -313,6 +325,61 @@ pub struct Skills {
     pub balance_hours: f32,
     pub tailoring_hours: f32,
     pub smithing_hours: f32,
+}
+
+impl Default for Skills {
+    fn default() -> Self {
+        let default = adventuresim_core::starting_character::default_character("tactical");
+        let skills = default.skills;
+        Self {
+            polearm_hours: skills.polearm,
+            axe_hours: skills.axe,
+            bludgeon_hours: skills.bludgeon,
+            sword_hours: skills.sword,
+            knife_hours: skills.knife,
+            dodge_hours: skills.dodge,
+            block_hours: skills.block,
+            bow_hours: skills.bow,
+            crossbow_hours: skills.crossbow,
+            firearm_hours: skills.firearm,
+            throw_hours: skills.throw,
+            will_hours: skills.will,
+            insight_hours: skills.insight,
+            charm_hours: skills.charm,
+            command_hours: skills.command,
+            deception_hours: skills.deception,
+            physiology_hours: skills.physiology,
+            religion_hours: [
+                skills.religion.roman_catholic,
+                skills.religion.lutheran,
+                skills.religion.reformed,
+                skills.religion.anglican,
+                skills.religion.eastern_orthodox,
+                skills.religion.islamic,
+                skills.religion.judaism,
+            ]
+            .into_iter()
+            .sum(),
+            bestiary_beast_hours: skills.bestiary.beast,
+            bestiary_undead_hours: skills.bestiary.undead,
+            bestiary_human_hours: skills.bestiary.human,
+            bestiary_werekin_hours: skills.bestiary.werekin,
+            bestiary_elf_hours: skills.bestiary.elf,
+            bestiary_dwarf_hours: skills.bestiary.dwarf,
+            bestiary_fey_hours: skills.bestiary.fey,
+            bestiary_spirit_hours: skills.bestiary.spirit,
+            bestiary_greenskin_hours: skills.bestiary.greenskin,
+            bestiary_insectoid_hours: skills.bestiary.insectoid,
+            bestiary_draconid_hours: skills.bestiary.draconid,
+            bestiary_construct_hours: skills.bestiary.construct,
+            bestiary_wildmen_hours: skills.bestiary.wildmen,
+            surgery_hours: skills.surgery,
+            stealth_hours: skills.stealth,
+            balance_hours: skills.balance,
+            tailoring_hours: skills.tailoring,
+            smithing_hours: skills.smithing,
+        }
+    }
 }
 
 impl Skills {
@@ -379,7 +446,7 @@ impl PlayerSkills for Skills {
 }
 
 /// Genetic attributes of a [`Player`].
-#[derive(Component, Serialize, Deserialize, Default, Debug, Reflect, Clone, PartialEq)]
+#[derive(Component, Serialize, Deserialize, Debug, Reflect, Clone, PartialEq)]
 #[component(immutable)]
 pub struct Attributes {
     pub endurance: f32,
@@ -397,6 +464,30 @@ pub struct Attributes {
     pub right_arm_agility: f32,
     pub left_leg_agility: f32,
     pub right_leg_agility: f32,
+}
+
+impl Default for Attributes {
+    fn default() -> Self {
+        let default = adventuresim_core::starting_character::default_character("tactical");
+        let attributes = default.attributes;
+        Self {
+            endurance: attributes.endurance,
+            immunity: attributes.immunity,
+            gut: attributes.gut,
+            intelligence: attributes.intelligence,
+            instinct: attributes.instinct,
+            eyesight: attributes.eyesight,
+            hearing: attributes.hearing,
+            left_arm_strength: attributes.strength,
+            right_arm_strength: attributes.strength,
+            left_leg_strength: attributes.strength,
+            right_leg_strength: attributes.strength,
+            left_arm_agility: attributes.agility,
+            right_arm_agility: attributes.agility,
+            left_leg_agility: attributes.agility,
+            right_leg_agility: attributes.agility,
+        }
+    }
 }
 
 impl PlayerAttributes for Attributes {
@@ -461,6 +552,27 @@ impl TacticalPlayerViewer<'_, '_> {
 #[cfg(test)]
 mod tactical_combat_state_tests {
     use super::*;
+
+    #[test]
+    fn component_defaults_project_john_fabelgeist() {
+        let player = Player::default();
+        let attributes = Attributes::default();
+        let skills = Skills::default();
+        assert_eq!(player.name, "John Fabelgeist");
+        assert_eq!(attributes.endurance, 4.0);
+        assert_eq!(attributes.left_arm_strength, 4.0);
+        assert_eq!(attributes.right_leg_agility, 4.0);
+        assert_eq!(attributes.intelligence, 3.0);
+        assert_eq!(attributes.instinct, 3.0);
+        assert_eq!(
+            Skill::Insight.capped_training_rank(skills.insight_hours, &attributes),
+            3.0
+        );
+        assert_eq!(
+            Skill::Command.capped_training_rank(skills.command_hours, &attributes),
+            3.0
+        );
+    }
 
     #[test]
     fn wheel_sources_preserve_strategic_breakdown_and_recompute_live_values() {

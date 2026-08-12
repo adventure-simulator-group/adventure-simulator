@@ -53,7 +53,7 @@ pub mod prelude {
     pub use crate::player::{
         Attributes, BestiaryCategories, CharacterId, ControlledPlayer, Limbs, Player, Skills,
         Stats, TacticalCombatState, TacticalIncapacitationSources, TacticalPlayerView,
-        TacticalPlayerViewer,
+        TacticalPlayerViewer, default_tactical_character_id,
     };
     pub use crate::scene::{SceneId, SceneTerrain, TerrainGenerator};
     pub use adventuresim_core::item_catalog;

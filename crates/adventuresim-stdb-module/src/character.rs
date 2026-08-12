@@ -1379,6 +1379,65 @@ pub fn create_starting_character(
     Ok(())
 }
 
+/// Idempotently grant the canonical fallback character to a new browser
+/// owner. The owner key namespaces identity only; John has the same authored
+/// build in every session and in tactical fixtures.
+#[reducer]
+pub fn create_default_character(ctx: &ReducerContext, owner_key: String) -> Result<(), String> {
+    crate::strategic::require_strategic_gateway(ctx)?;
+    let spec = adventuresim_core::starting_character::default_character(&owner_key);
+    let version = adventuresim_core::starting_character::DEFAULT_CHARACTER_VERSION;
+    let request_key = format!("default:{version}:{owner_key}");
+    if let Some(claim) = ctx
+        .db
+        .starting_character_claim()
+        .request_key()
+        .find(&request_key)
+    {
+        let existing = ctx
+            .db
+            .character()
+            .id()
+            .find(claim.character_id)
+            .ok_or("default-character claim exists without its character")?;
+        if claim.owner_key != owner_key {
+            return Err("default character belongs to a different browser owner".into());
+        }
+        if existing.id == spec.id && existing.name == spec.name {
+            crate::browser_session::grant_browser_character_internal(
+                ctx,
+                &owner_key,
+                existing.id,
+                &request_key,
+            )?;
+            return Ok(());
+        }
+        return Err("default-character claim does not match the canonical build".into());
+    }
+    if ctx.db.character().id().find(spec.id).is_some() {
+        return Err("default character ID collides with unrelated data".into());
+    }
+    insert_starting_character(ctx, &spec)?;
+    ctx.db
+        .starting_character_claim()
+        .insert(StartingCharacterClaim {
+            request_key: request_key.clone(),
+            character_id: spec.id,
+            owner_key: owner_key.clone(),
+            generator_version: version,
+            seed: owner_key.clone(),
+            age_tier: StartingAgeTierCoordinate::Adult,
+            slot: 0,
+        });
+    crate::browser_session::grant_browser_character_internal(
+        ctx,
+        &owner_key,
+        spec.id,
+        &request_key,
+    )?;
+    Ok(())
+}
+
 /// Seed an injured character for local UI development and visual verification.
 pub(crate) fn seed_damaged_character(ctx: &ReducerContext) -> Result<(), String> {
     const DAMAGED_CHARACTER_ID: u64 = 9_999_999_999_999_999;
@@ -2022,7 +2081,7 @@ pub(crate) fn insert_persistent_field_character(
     )
 }
 
-fn insert_starting_character(
+pub(crate) fn insert_starting_character(
     ctx: &ReducerContext,
     spec: &StartingCharacterSpec,
 ) -> Result<(), String> {
@@ -2557,6 +2616,29 @@ pub(crate) fn insert_character_with_origin(
     if let Some(spec) = starting {
         for item in &spec.inventory {
             if let Some(slot) = item.equipped {
+                if matches!(slot, StartingSlot::LeftFoot | StartingSlot::RightFoot) {
+                    let inventory_item_id = add_inventory_item(ctx, character.id, &item.item_id, 1)
+                        .ok_or_else(|| format!("Could not add starting item {}", item.item_id))?;
+                    let placement_id = match slot {
+                        StartingSlot::LeftFoot => "left",
+                        StartingSlot::RightFoot => "right",
+                        _ => unreachable!(),
+                    };
+                    let placement = authored_placement_index(ctx, &item.item_id, placement_id)?;
+                    equip_equipment_internal(
+                        ctx,
+                        character.id,
+                        inventory_item_id,
+                        placement,
+                        Vec::new(),
+                        false,
+                        false,
+                    )?;
+                    if item.quantity > 1 {
+                        add_inventory_item(ctx, character.id, &item.item_id, item.quantity - 1);
+                    }
+                    continue;
+                }
                 let destination = match slot {
                     StartingSlot::LeftHand => ItemSlot::LeftHolding,
                     StartingSlot::RightHand => ItemSlot::RightHolding,
@@ -2564,6 +2646,7 @@ pub(crate) fn insert_character_with_origin(
                     StartingSlot::RightArm => ItemSlot::RightArm,
                     StartingSlot::LeftLeg => ItemSlot::LeftLeg,
                     StartingSlot::RightLeg => ItemSlot::RightLeg,
+                    StartingSlot::LeftFoot | StartingSlot::RightFoot => unreachable!(),
                     StartingSlot::Head => ItemSlot::Head,
                     StartingSlot::Chest => ItemSlot::Chest,
                     StartingSlot::Stomach => ItemSlot::Stomach,
@@ -3327,9 +3410,9 @@ fn provision_generated_weapon_carry(ctx: &ReducerContext, character_id: u64) -> 
     if sheathable.is_empty() {
         return Ok(());
     }
-    if sheathable.len() != 1 {
+    if sheathable.len() > 2 {
         return Err(format!(
-            "Generated loadout has {} sheathable weapons but the authored belt kit carries exactly one",
+            "Generated loadout has {} sheathable weapons but the authored belt kit carries at most two",
             sheathable.len()
         ));
     }
@@ -3347,54 +3430,91 @@ fn provision_generated_weapon_carry(ctx: &ReducerContext, character_id: u64) -> 
         false,
     )?;
 
-    let sheath = add_inventory_item(ctx, character_id, "sword_sheath", 1)
-        .ok_or("Could not add generated sword sheath")?;
-    let sheath_placement = authored_placement_index(ctx, "sword_sheath", "attached")?;
-    equip_equipment_internal(
-        ctx,
-        character_id,
-        sheath,
-        sheath_placement,
-        vec![
-            EquipmentAttachmentTargetSelection {
-                requirement_index: 0,
-                parent_inventory_item_id: belt,
-                attachment_point_id: "left".into(),
-            },
-            EquipmentAttachmentTargetSelection {
-                requirement_index: 1,
-                parent_inventory_item_id: belt,
-                attachment_point_id: "right".into(),
-            },
-        ],
-        false,
-        false,
-    )?;
-
-    let weapon = &sheathable[0];
-    let initially_held = ctx
-        .db
-        .character_equipped_item()
-        .inventory_item_id()
-        .find(weapon.id)
-        .is_some();
-    if !initially_held {
-        let placement = sheath_compatible_parent_placement_index(ctx, &weapon.item_id)?;
+    if sheathable.len() == 1 {
+        let sheath = add_inventory_item(ctx, character_id, "sword_sheath", 1)
+            .ok_or("Could not add generated sword sheath")?;
+        let sheath_placement = authored_placement_index(ctx, "sword_sheath", "attached")?;
         equip_equipment_internal(
             ctx,
             character_id,
-            weapon.id,
-            placement,
+            sheath,
+            sheath_placement,
+            vec![
+                EquipmentAttachmentTargetSelection {
+                    requirement_index: 0,
+                    parent_inventory_item_id: belt,
+                    attachment_point_id: "left".into(),
+                },
+                EquipmentAttachmentTargetSelection {
+                    requirement_index: 1,
+                    parent_inventory_item_id: belt,
+                    attachment_point_id: "right".into(),
+                },
+            ],
+            false,
+            false,
+        )?;
+        place_unheld_weapon_in_sheath(ctx, character_id, &sheathable[0], sheath)?;
+        return Ok(());
+    }
+
+    for (weapon_id, hip) in [("longsword", "right"), ("rondel_dagger", "left")] {
+        let weapon = sheathable
+            .iter()
+            .find(|item| item.item_id == weapon_id)
+            .ok_or_else(|| {
+                "The two-weapon default carry kit requires a longsword and rondel dagger".to_owned()
+            })?;
+        let scabbard = add_inventory_item(ctx, character_id, "scabbard", 1)
+            .ok_or("Could not add default scabbard")?;
+        let scabbard_placement = authored_placement_index(ctx, "scabbard", hip)?;
+        equip_equipment_internal(
+            ctx,
+            character_id,
+            scabbard,
+            scabbard_placement,
             vec![EquipmentAttachmentTargetSelection {
                 requirement_index: 0,
-                parent_inventory_item_id: sheath,
-                attachment_point_id: "blade".into(),
+                parent_inventory_item_id: belt,
+                attachment_point_id: hip.into(),
             }],
             false,
             false,
         )?;
+        place_unheld_weapon_in_sheath(ctx, character_id, weapon, scabbard)?;
     }
     Ok(())
+}
+
+fn place_unheld_weapon_in_sheath(
+    ctx: &ReducerContext,
+    character_id: u64,
+    weapon: &crate::item::InventoryItem,
+    sheath: u64,
+) -> Result<(), String> {
+    if ctx
+        .db
+        .character_equipped_item()
+        .inventory_item_id()
+        .find(weapon.id)
+        .is_some()
+    {
+        return Ok(());
+    }
+    let placement = sheath_compatible_parent_placement_index(ctx, &weapon.item_id)?;
+    equip_equipment_internal(
+        ctx,
+        character_id,
+        weapon.id,
+        placement,
+        vec![EquipmentAttachmentTargetSelection {
+            requirement_index: 0,
+            parent_inventory_item_id: sheath,
+            attachment_point_id: "blade".into(),
+        }],
+        false,
+        false,
+    )
 }
 
 fn authored_placement_index(

@@ -386,12 +386,9 @@ pub fn seed_standalone_tactical_mission(
     adventuresim_core::mission::MissionId::new(mission_id.clone()).map_err(str::to_string)?;
 
     if ctx.db.character().id().find(character_id).is_none() {
-        crate::character::insert_new_character(
-            ctx,
-            format!("Tactical Test {character_id}"),
-            character_id,
-            false,
-        )?;
+        let default =
+            adventuresim_core::starting_character::default_character_with_id(character_id);
+        crate::character::insert_starting_character(ctx, &default)?;
     }
     let party_id = create_solo_party_for_character(ctx, character_id)?;
 
