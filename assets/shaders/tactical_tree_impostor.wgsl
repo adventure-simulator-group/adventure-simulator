@@ -95,9 +95,17 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         discard;
     }
     let light_direction = normalize(tree.lighting.xyz);
-    let normal_light = dot(normalize(in.world_normal), light_direction);
-    let daylight = 0.78 + 0.22 * clamp(normal_light * 0.5 + 0.5, 0.0, 1.0);
-    let direct_irradiance = daylight * tree.lighting.w;
+    // The atlas already contains the source tree's small-scale normal and
+    // occlusion variation. Apply only a broad hemispherical cosine here;
+    // never add the old 78% direct-light floor on top of the baked response.
+    let normal_light = clamp(
+        dot(normalize(in.world_normal), light_direction) * 0.5 + 0.5,
+        0.0,
+        1.0,
+    );
     let ambient_irradiance = tree.ambient.rgb * tree.ambient.w;
+    let direct_irradiance = normal_light
+        * tree.lighting.w
+        * (1.0 - tree.ambient.w);
     return vec4<f32>(baked.rgb * (ambient_irradiance + vec3<f32>(direct_irradiance)), baked.a);
 }

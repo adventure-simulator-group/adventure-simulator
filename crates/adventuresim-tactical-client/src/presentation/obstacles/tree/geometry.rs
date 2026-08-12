@@ -814,13 +814,24 @@ fn procedural_hazel_leaves(
             let phase = side * (0.82 + unit_hash(leaf_seed ^ 2) * 0.28) + leaf_index as f32 * 0.32;
             let radial = (frame_right * phase.cos() + frame_up * phase.sin()).normalize();
             let leaf_up = (radial * 0.72 + direction * 0.48 + Vec3::Y * 0.16).normalize();
-            let normal = direction.cross(radial).normalize_or_zero();
-            let normal = if normal.length_squared() > 0.25 {
-                normal
+            let azimuth_normal = direction.cross(radial).normalize_or_zero();
+            let azimuth_normal = if azimuth_normal.length_squared() > 0.25 {
+                azimuth_normal
             } else {
                 frame_up
             };
-            let right = leaf_up.cross(normal).normalize();
+            // Hazel blades are generally held obliquely upward rather than as
+            // vertical fins around an upright shoot. Bias the generated plane
+            // normal toward the sky while retaining azimuthal variation, then
+            // project it perpendicular to the blade's midrib. This lets the
+            // ordinary PBR response to the sun light the shrub naturally.
+            let posture_normal = (Vec3::Y * 0.82 + azimuth_normal * 0.38).normalize();
+            let right = leaf_up.cross(posture_normal).normalize_or_zero();
+            let right = if right.length_squared() > 0.25 {
+                right
+            } else {
+                leaf_up.cross(frame_right).normalize()
+            };
             let petiole_start = shoot.start.lerp(shoot.end, along.clamp(0.04, 0.96));
             let petiole_length = 0.012 + unit_hash(leaf_seed ^ 3) * 0.011;
             let length = 0.082 + unit_hash(leaf_seed ^ 4) * 0.038;

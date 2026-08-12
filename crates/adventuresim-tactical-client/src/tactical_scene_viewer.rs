@@ -20,7 +20,7 @@ use crate::presentation::{
     FoliageLayer, ProceduralRockVisual, TacticalPresentationPlugin, TacticalTreeLeafCardMaterial,
     TerrainMaterialPresentation, TreeImpostorProvenance, TreeLeafRepresentation, TreeLod,
     TreeLodCluster, TreeLodRenderOverride, VistaTerrain, WeatherParticle, oak_leaf_material,
-    oak_review_terminal_specimen,
+    oak_review_terminal_specimen, scene_ambient_light,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -534,7 +534,7 @@ pub(crate) fn run(
     if let Some(absolute_minute) = absolute_minute {
         environment.absolute_minute = absolute_minute;
     }
-    let ambient_brightness = capture_ambient_brightness(&environment);
+    let (ambient_color, ambient_brightness) = capture_ambient_light(&environment);
     let output = output.map_or_else(
         || default_output(&repository_root, &fixture, &generated.digest),
         absolute_from_current,
@@ -579,7 +579,9 @@ pub(crate) fn run(
             }),
     )
     .add_plugins(TacticalPresentationPlugin {
-        atmosphere_enabled: false,
+        // Use the same sun-driven atmosphere as gameplay. A fixed clear color
+        // made night captures display stars against a pale daytime-blue sky.
+        atmosphere_enabled: true,
         environment_light_enabled: false,
         bloom_enabled: false,
         ssao_enabled: false,
@@ -587,7 +589,7 @@ pub(crate) fn run(
     })
     .insert_resource(ClearColor(Color::srgb_u8(158, 181, 195)))
     .insert_resource(GlobalAmbientLight {
-        color: Color::WHITE,
+        color: Color::srgb(ambient_color.x, ambient_color.y, ambient_color.z),
         brightness: ambient_brightness,
         ..default()
     })
@@ -606,7 +608,7 @@ pub(crate) fn run(
     }
 }
 
-fn capture_ambient_brightness(environment: &SceneEnvironment) -> f32 {
+fn capture_ambient_light(environment: &SceneEnvironment) -> (Vec3, f32) {
     let celestial = celestial_directions(
         environment.absolute_minute,
         environment.latitude_microdegrees,
@@ -614,27 +616,7 @@ fn capture_ambient_brightness(environment: &SceneEnvironment) -> f32 {
     );
     let sun_altitude = celestial.sun[1].asin().to_degrees();
     let moon_altitude = celestial.moon[1].asin().to_degrees();
-    capture_ambient_brightness_for_altitudes(
-        sun_altitude,
-        moon_altitude,
-        celestial.lunar_illumination,
-    )
-}
-
-fn capture_ambient_brightness_for_altitudes(
-    sun_altitude_degrees: f32,
-    moon_altitude_degrees: f32,
-    lunar_illumination: f32,
-) -> f32 {
-    let smoothstep = |edge0: f32, edge1: f32, value: f32| {
-        let t = ((value - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
-        t * t * (3.0 - 2.0 * t)
-    };
-    let daylight = 30_000.0 * smoothstep(0.0, 8.0, sun_altitude_degrees);
-    let moonlight = 0.025 * lunar_illumination * smoothstep(-2.0, 4.0, moon_altitude_degrees);
-    // Keep deterministic captures on the same dark ambient floor as gameplay
-    // so night plates do not validate against a black, unrepresentative world.
-    0.04 + daylight + moonlight
+    scene_ambient_light(sun_altitude, moon_altitude, celestial.lunar_illumination)
 }
 
 #[cfg(test)]
@@ -643,18 +625,9 @@ mod capture_lighting_tests {
 
     #[test]
     fn capture_fill_light_respects_sun_and_moon_horizons() {
-        assert_eq!(
-            capture_ambient_brightness_for_altitudes(-25.0, -24.0, 1.0),
-            0.04
-        );
-        assert_eq!(
-            capture_ambient_brightness_for_altitudes(30.0, -25.0, 0.0),
-            30_000.04
-        );
-        assert_eq!(
-            capture_ambient_brightness_for_altitudes(-25.0, 30.0, 1.0),
-            0.065
-        );
+        assert_eq!(scene_ambient_light(-25.0, -24.0, 1.0).1, 0.6);
+        assert_eq!(scene_ambient_light(30.0, -25.0, 0.0).1, 30_000.0);
+        assert_eq!(scene_ambient_light(-25.0, 30.0, 1.0).1, 0.85);
     }
 }
 

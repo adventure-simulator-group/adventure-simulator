@@ -9,7 +9,7 @@
   },
   "latitude_microdegrees": 53500000,
   "longitude_microdegrees": 10000000,
-  "absolute_minute": 339840,
+  "absolute_minute": 340440,
   "absolute_elevation_metres": 42,
   "playable": {
     "width": 9,
@@ -32102,7 +32102,7 @@
   },
   "weather": {
     "rules_version": 2,
-    "interval_start_minute": 339840,
+    "interval_start_minute": 340440,
     "cell_latitude": 214,
     "cell_longitude": 40,
     "temperature_deci_c": 75,

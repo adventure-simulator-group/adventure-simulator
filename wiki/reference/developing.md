@@ -776,7 +776,9 @@ separate synthetic terrain fallback.
 The committed catalog under `assets/tactical-scenes/` covers flat grassland,
 steep slopes, dense and sparse woodland, wetlands, cultivated roadside, snow,
 heavy rain and wind, distant valley ridges, a narrow LOD-boundary peak, and a
-scene requiring playability repair. Regenerate it with
+scene requiring playability repair. Their shared test clock and weather
+interval start at 10:00 on the canonical fixture day so default interactive
+runs use mid-morning light. Regenerate the catalog with
 `cargo run -p adventuresim-tactical-core --bin generate-scene-fixtures`; add
 `-- --check` in verification. The isolated and supervised workflows accept a
 fixture path as their final argument:

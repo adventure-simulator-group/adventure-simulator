@@ -897,6 +897,7 @@ mod tests {
         for name in names {
             let input = TacticalSceneInput::load(&root.join(format!("{name}.json"))).unwrap();
             assert_eq!(input.source, SceneSource::SyntheticFixture(name.into()));
+            assert_eq!(input.absolute_minute % 1_440, 10 * 60);
             let generated = input.generate().unwrap();
             assert_eq!(generated.terrain.width(), 100.0);
             assert!(generated.terrain.grid_scale() <= 2.0);

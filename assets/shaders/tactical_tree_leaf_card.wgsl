@@ -213,7 +213,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     pbr_input.material.perceptual_roughness = 0.86;
     pbr_input.material.metallic = 0.0;
     pbr_input.material.reflectance = vec3<f32>(0.22);
-    pbr_input.material.diffuse_transmission = 0.32;
+    pbr_input.material.diffuse_transmission = leaf_card.surface_parameters.w;
     pbr_input.material.thickness = 0.001;
     pbr_input.world_normal = base_normal;
     pbr_input.N = normal;

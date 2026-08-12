@@ -26,7 +26,7 @@ pub(super) fn foliage_material(wind_scale: f32, ground_foliage: bool) -> Tactica
         // Root brightness, meadow colour variation, normal up-bias, and
         // whether nearby player movement affects this material.
         shading: if ground_foliage {
-            Vec4::new(0.42, 0.13, 0.76, 1.0)
+            Vec4::new(0.52, 0.13, 0.76, 1.0)
         } else {
             Vec4::new(0.55, 0.08, 0.28, 0.0)
         },
@@ -34,8 +34,6 @@ pub(super) fn foliage_material(wind_scale: f32, ground_foliage: bool) -> Tactica
         // reserved future shaping control. Understory cards retain the older
         // crossed-plane deformation path.
         shape: Vec4::ZERO,
-        celestial: Vec3::new(0.35, 0.86, 0.25).normalize().extend(1.0),
-        ambient: Vec4::new(1.0, 1.0, 1.0, 0.28),
     }
 }
 
@@ -93,7 +91,6 @@ pub(super) fn update_grass_interaction(
 
 pub(super) fn update_celestial_material_lighting(
     environments: Query<&SceneEnvironment>,
-    mut foliage_materials: ResMut<Assets<TacticalFoliageMaterial>>,
     mut impostor_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
 ) {
     let Some(environment) = environments.iter().next() else {
@@ -119,10 +116,6 @@ pub(super) fn update_celestial_material_lighting(
     } else {
         Vec3::new(0.25, 0.92, 0.3).normalize()
     };
-    for (_, material) in foliage_materials.iter_mut() {
-        material.celestial = direction.extend(light_factor);
-        material.ambient = ambient_color.extend(ambient_response);
-    }
     for (_, material) in impostor_materials.iter_mut() {
         material.lighting = direction.extend(light_factor);
         material.ambient = ambient_color.extend(ambient_response);
@@ -780,10 +773,6 @@ pub(in crate::presentation) struct TacticalFoliageMaterial {
     shading: Vec4,
     #[uniform(0)]
     shape: Vec4,
-    #[uniform(0)]
-    celestial: Vec4,
-    #[uniform(0)]
-    ambient: Vec4,
 }
 
 impl Material for TacticalFoliageMaterial {
@@ -899,7 +888,6 @@ mod tests {
         let crown = foliage_material(0.3, false);
         assert_eq!(grass.shading.w, 1.0);
         assert_eq!(crown.shading.w, 0.0);
-        assert_eq!(grass.celestial.w, 1.0);
         assert_eq!(grass.shape, Vec4::ZERO);
         assert_eq!(
             grass_material(0.3, GrassMeshLod::Near, 1.0).shape,
