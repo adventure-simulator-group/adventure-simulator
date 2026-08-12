@@ -47,15 +47,28 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     let wind_cross = vec2<f32>(-wind_direction.y, wind_direction.x);
     let spatial_noise = sin(root_world.x * 0.071 + root_world.z * 0.113)
         * sin(root_world.x * 0.037 - root_world.z * 0.053);
+    // World-space vigor breaks the repeated shared-mesh silhouette without
+    // adding blades or per-instance materials. The range matches ordinary
+    // mixed-age meadow growth rather than scaling whole macro patches.
+    let blade_variation = fract(
+        blade_threshold * 1.73 + spatial_noise * 0.31
+            + root_world.x * 0.013 - root_world.z * 0.017
+    );
+    let blade_vigor = 0.82 + 0.22 * blade_variation;
     let wave_position = dot(root_world.xz, wind_direction) * 0.22;
     let wind_time = globals.time * foliage.wind.w;
     let gust = 0.68 + 0.32 * sin(wind_time * 0.29 + spatial_noise * 3.7);
     let primary_wave = sin(wind_time + wave_position + spatial_noise * 1.9);
     let flutter = sin(wind_time * 2.73 - wave_position * 1.61 + spatial_noise * 5.3);
-    let natural_lean = vec2<f32>(
-        sin(root_world.x * 1.73 + root_world.z * 0.61),
-        cos(root_world.z * 1.41 - root_world.x * 0.47),
-    ) * 0.055 * foliage.shading.w;
+    // Algebraically decorrelate lean magnitude from the shared vigor signal;
+    // this keeps per-blade variety without another trigonometric evaluation.
+    let lean_variation = fract(blade_variation * 1.618 + blade_threshold * 0.73);
+    let lean_direction = normalize(vec2<f32>(
+        fract(blade_threshold * 1.37 + 0.17) - 0.5,
+        fract(blade_threshold * 2.11 + 0.63) - 0.5,
+    ) + vec2<f32>(0.0001, 0.0));
+    let lean_amount = (0.025 + 0.030 * lean_variation) * foliage.shading.w;
+    let natural_lean = lean_direction * lean_amount;
     let wind_offset = (
         wind_direction * primary_wave * gust
         + wind_cross * flutter * 0.18
@@ -99,14 +112,13 @@ fn vertex(vertex: Vertex) -> VertexOutput {
             + 6.0 * one_minus_t * t * (0.5 - 0.06)
             + 3.0 * t * t * (1.0 - 0.5);
         let authored_facing = normalize(original_world_normal.xz + vec2<f32>(0.0001, 0.0));
-        let authored_amount = 0.72 + 0.28
-            * sin(root_world.x * 2.17 - root_world.z * 1.39 + blade_threshold * 5.7);
+        let authored_amount = 0.65 + 0.30 * fract(blade_threshold * 1.91 + blade_variation * 0.47);
         let total_curve = authored_facing * foliage.shape.z * authored_amount
             + natural_lean
             + wind_offset
             + interaction_offset;
 
-        let centre_local = vec3<f32>(root_local.x, position.y, root_local.z);
+        let centre_local = vec3<f32>(root_local.x, position.y * blade_vigor, root_local.z);
         let centre_world = mesh_functions::mesh_position_local_to_world(
             world_from_local,
             vec4<f32>(centre_local, 1.0),
@@ -141,9 +153,9 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
         let world_up = (world_from_local * vec4<f32>(0.0, 1.0, 0.0, 0.0)).xyz;
         let tangent = vec3<f32>(
-            world_up.x + total_curve.x * curve_derivative,
-            world_up.y - interaction_droop * 2.0 * t,
-            world_up.z + total_curve.y * curve_derivative,
+            world_up.x * blade_vigor + total_curve.x * curve_derivative,
+            world_up.y * blade_vigor - interaction_droop * 2.0 * t,
+            world_up.z * blade_vigor + total_curve.y * curve_derivative,
         );
         shaped_world_normal = normalize(cross(tangent, vec3<f32>(visible_side.x, 0.0, visible_side.y)));
     } else {

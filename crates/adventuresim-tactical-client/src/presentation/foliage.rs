@@ -3,6 +3,9 @@ use super::*;
 const GRASS_PATCH_GRID_SIDE: usize = 27;
 const GRASS_PATCH_SPACING: f32 = 3.2;
 const GRASS_BLADE_SPACING: f32 = 0.135;
+// Keep neighbouring near-flat macro patches inside the blade footprint even
+// when their deterministic centre jitter diverges in opposite directions.
+const GRASS_PATCH_JITTER_FRACTION: f32 = 0.04;
 const GRASS_FAR_GRID_COORDINATES: [usize; 12] = [0, 2, 5, 7, 9, 12, 14, 17, 19, 21, 24, 26];
 const DRY_LEAF_PASSES_PER_SAMPLE: u64 = 3;
 const TWIG_PASSES_PER_SAMPLE: u64 = 2;
@@ -199,8 +202,10 @@ pub(super) fn spawn_ground_foliage(
     // Grass uses a macro patch whose internal blade spacing matches the old
     // one-metre patch. A roughly ten-times larger footprint therefore retains
     // density while cutting extraction, visibility, and instance entities by
-    // an order of magnitude. Aligning each patch to the sampled terrain normal
-    // keeps the larger shared plane seated on slopes.
+    // an order of magnitude. Macro patches stay unit-scale and nearly gridded:
+    // randomly shrinking/rotating the square footprint opened visible seams.
+    // Aligning each patch to the sampled terrain normal keeps the shared plane
+    // seated on slopes while its blades retain deterministic local variation.
     let count_x = (terrain.width() / GRASS_PATCH_SPACING).ceil() as i32;
     let count_z = (terrain.depth() / GRASS_PATCH_SPACING).ceil() as i32;
     for z in 0..count_z {
@@ -209,13 +214,20 @@ pub(super) fn spawn_ground_foliage(
             let hash = splitmix64(base_seed ^ cell);
             let jitter_x = unit_hash(splitmix64(hash ^ 0x39bd_7f21)) - 0.5;
             let jitter_z = unit_hash(splitmix64(hash ^ 0xe651_34aa)) - 0.5;
-            let world_x = -half_x + (x as f32 + 0.5 + jitter_x * 0.24) * GRASS_PATCH_SPACING;
-            let world_z = -half_z + (z as f32 + 0.5 + jitter_z * 0.24) * GRASS_PATCH_SPACING;
-            let ground_position = Vec2::new(world_x, world_z);
-            if !ground_allows_grass_patch(ground, ground_position) {
-                continue;
-            }
-            let Some(transform) = foliage_transform(terrain, world_x, world_z, hash) else {
+            let eligibility_world_x =
+                -half_x + (x as f32 + 0.5 + jitter_x * 0.24) * GRASS_PATCH_SPACING;
+            let eligibility_world_z =
+                -half_z + (z as f32 + 0.5 + jitter_z * 0.24) * GRASS_PATCH_SPACING;
+            let world_x = -half_x
+                + (x as f32 + 0.5 + jitter_x * GRASS_PATCH_JITTER_FRACTION) * GRASS_PATCH_SPACING;
+            let world_z = -half_z
+                + (z as f32 + 0.5 + jitter_z * GRASS_PATCH_JITTER_FRACTION) * GRASS_PATCH_SPACING;
+            let Some(transform) = grass_patch_placement(
+                terrain,
+                ground,
+                Vec2::new(eligibility_world_x, eligibility_world_z),
+                Vec2::new(world_x, world_z),
+            ) else {
                 continue;
             };
             commands.spawn((
@@ -516,6 +528,37 @@ fn foliage_transform(
     )
 }
 
+fn grass_patch_transform(terrain: &SceneTerrain, world_x: f32, world_z: f32) -> Option<Transform> {
+    let sample = Vec2::new(world_x, world_z);
+    let height = terrain.height_at(sample)?;
+    let normal = terrain.normal_at(sample)?;
+    if normal.y < 0.72 {
+        return None;
+    }
+    Some(
+        Transform::from_xyz(world_x, height, world_z)
+            .with_rotation(Quat::from_rotation_arc(Vec3::Y, normal)),
+    )
+}
+
+fn grass_patch_placement(
+    terrain: &SceneTerrain,
+    ground: &SceneGround,
+    legacy_predicate_centre: Vec2,
+    render_centre: Vec2,
+) -> Option<Transform> {
+    // The legacy centre remains a one-way count-invariance guard: a formerly
+    // rejected patch stays rejected. The actual rendered centre must also be
+    // legal, so reducing jitter cannot move grass into leaf litter or outside
+    // a usable terrain anchor.
+    if !ground_allows_grass_patch(ground, legacy_predicate_centre)
+        || !ground_allows_grass_patch(ground, render_centre)
+    {
+        return None;
+    }
+    grass_patch_transform(terrain, render_centre.x, render_centre.y)
+}
+
 pub(super) fn present_ground_scatter(
     scenes: Query<
         (
@@ -652,18 +695,51 @@ pub(super) fn grass_patch_mesh(color: Color, lod: GrassMeshLod, grass_density: f
             let row = index / grid_side;
             let column = index % grid_side;
             let hash = splitmix64(index as u64 ^ 0x8d12_6f4a_0bc3_7791);
-            let jitter_x = (unit_hash(hash) - 0.5) * blade_spacing * 0.39;
-            let jitter_z = (unit_hash(splitmix64(hash)) - 0.5) * blade_spacing * 0.39;
-            let scale = 0.68 + unit_hash(splitmix64(hash ^ 0x52a9_f131)) * 0.36;
-            (
-                (column as f32 - centre) * blade_spacing + jitter_x,
-                (row as f32 - centre) * blade_spacing + jitter_z,
-                scale,
-                index as u64,
-            )
+            let clump_x = ((row as f32 * 0.47 + column as f32 * 0.19).sin()) * blade_spacing * 0.24;
+            let clump_z = ((column as f32 * 0.41 - row as f32 * 0.23).sin()) * blade_spacing * 0.24;
+            let jitter_x = (unit_hash(hash) - 0.5) * blade_spacing * 0.46;
+            let jitter_z = (unit_hash(splitmix64(hash)) - 0.5) * blade_spacing * 0.46;
+            let clump_vigor = 0.5 + 0.5 * (row as f32 * 0.31 + column as f32 * 0.17 + 0.8).sin();
+            let height_scale =
+                (0.50 + unit_hash(splitmix64(hash ^ 0x52a9_f131)) * 0.62 + clump_vigor * 0.20)
+                    .clamp(0.50, 1.30);
+            let width_scale = 0.62 + unit_hash(splitmix64(hash ^ 0x91e2_57a4)) * 0.76;
+            let base_x = (column as f32 - centre) * blade_spacing;
+            let base_z = (row as f32 - centre) * blade_spacing;
+            let mut offset_x = base_x + jitter_x + clump_x;
+            let mut offset_z = base_z + jitter_z + clump_z;
+            // Boundary rows may wander outward but never inward. This retains
+            // organic clumping inside the patch while mitigating gaps along
+            // near-flat and ordinary sloped shared edges.
+            if column == 0 {
+                offset_x = offset_x.min(base_x);
+            } else if column + 1 == grid_side {
+                offset_x = offset_x.max(base_x);
+            }
+            if row == 0 {
+                offset_z = offset_z.min(base_z);
+            } else if row + 1 == grid_side {
+                offset_z = offset_z.max(base_z);
+            }
+            GrassBlade {
+                offset_x,
+                offset_z,
+                height_scale,
+                width_scale,
+                seed: index as u64,
+            }
         })
         .collect::<Vec<_>>();
     grass_ribbon_patch_mesh(0.045, 0.82, color, lod, &blades)
+}
+
+#[derive(Clone, Copy)]
+struct GrassBlade {
+    offset_x: f32,
+    offset_z: f32,
+    height_scale: f32,
+    width_scale: f32,
+    seed: u64,
 }
 
 fn grass_ribbon_patch_mesh(
@@ -671,7 +747,7 @@ fn grass_ribbon_patch_mesh(
     height: f32,
     color: Color,
     lod: GrassMeshLod,
-    blades: &[(f32, f32, f32, u64)],
+    blades: &[GrassBlade],
 ) -> Mesh {
     let rows = lod.row_heights();
     let vertices_per_blade = rows.len() * 2 + 1;
@@ -684,27 +760,42 @@ fn grass_ribbon_patch_mesh(
     let mut indices = Vec::with_capacity(blades.len() * triangles_per_blade * 3);
     let linear = color.to_linear().to_f32_array();
 
-    for &(offset_x, offset_z, blade_scale, blade_seed) in blades {
+    for &GrassBlade {
+        offset_x,
+        offset_z,
+        height_scale,
+        width_scale,
+        seed: blade_seed,
+    } in blades
+    {
         let root = Vec3::new(offset_x, 0.0, offset_z);
         let hash = splitmix64(blade_seed ^ 0x6c8e_9cf5_701a_d30b);
         let angle = unit_hash(hash) * core::f32::consts::TAU;
-        let half_width = Vec3::new(angle.cos(), 0.0, angle.sin()) * width * blade_scale * 0.5;
+        let half_width = Vec3::new(angle.cos(), 0.0, angle.sin()) * width * width_scale * 0.5;
         let normal = Vec3::Y.cross(half_width).normalize_or_zero().to_array();
         let blade_threshold = unit_hash(splitmix64(hash ^ 0x3d91_02ea_61b8_7c45));
-        let blade_color = [linear[0], linear[1], linear[2], blade_threshold];
+        let pigment = unit_hash(splitmix64(hash ^ 0x76b3_144d));
+        let warmth = unit_hash(splitmix64(hash ^ 0xa52d_98c7));
+        let brightness = 0.82 + pigment * 0.30;
+        let blade_color = [
+            (linear[0] * brightness * (0.94 + warmth * 0.12)).clamp(0.0, 1.0),
+            (linear[1] * brightness * (1.04 - warmth * 0.08)).clamp(0.0, 1.0),
+            (linear[2] * brightness * (0.88 + warmth * 0.10)).clamp(0.0, 1.0),
+            blade_threshold,
+        ];
         let base = positions.len() as u32;
 
         for &height_fraction in rows {
             let taper = (1.0 - height_fraction).powf(0.72);
             let side = half_width * taper;
-            let centre = root + Vec3::Y * height * blade_scale * height_fraction;
+            let centre = root + Vec3::Y * height * height_scale * height_fraction;
             positions.extend_from_slice(&[(centre - side).to_array(), (centre + side).to_array()]);
             normals.extend_from_slice(&[normal; 2]);
             uvs.extend_from_slice(&[[0.0, height_fraction], [1.0, height_fraction]]);
             blade_roots.extend_from_slice(&[[offset_x, offset_z]; 2]);
             colors.extend_from_slice(&[blade_color; 2]);
         }
-        positions.push((root + Vec3::Y * height * blade_scale).to_array());
+        positions.push((root + Vec3::Y * height * height_scale).to_array());
         normals.push(normal);
         uvs.push([0.5, 1.0]);
         blade_roots.push([offset_x, offset_z]);
@@ -921,6 +1012,7 @@ const FOLIAGE_SHADER: &str = "shaders/tactical_foliage.wgsl";
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     #[test]
     fn grass_patches_use_a_stable_reduced_far_subset() {
@@ -963,6 +1055,139 @@ mod tests {
         assert!(colors.iter().all(|color| (0.0..1.0).contains(&color[3])));
         assert!(colors.iter().any(|color| color[3] < 0.25));
         assert!(colors.iter().any(|color| color[3] > 0.75));
+
+        let blade_heights = near_positions
+            .chunks_exact(15)
+            .map(|blade| {
+                blade
+                    .iter()
+                    .map(|position| position[1])
+                    .fold(0.0_f32, f32::max)
+            })
+            .collect::<Vec<_>>();
+        let minimum_height = blade_heights.iter().copied().fold(f32::INFINITY, f32::min);
+        let maximum_height = blade_heights
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            minimum_height < 0.52,
+            "short blades should break the curtain silhouette"
+        );
+        assert!(
+            maximum_height > 0.95,
+            "mature blades should remain visibly taller"
+        );
+        assert!(maximum_height - minimum_height > 0.45);
+
+        let blade_widths = near_positions
+            .chunks_exact(15)
+            .map(|blade| Vec3::from_array(blade[0]).distance(Vec3::from_array(blade[1])))
+            .collect::<Vec<_>>();
+        let minimum_width = blade_widths.iter().copied().fold(f32::INFINITY, f32::min);
+        let maximum_width = blade_widths
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(maximum_width / minimum_width > 2.0);
+
+        let distinct_pigments = colors
+            .iter()
+            .map(|color| [color[0].to_bits(), color[1].to_bits(), color[2].to_bits()])
+            .collect::<BTreeSet<_>>();
+        assert!(distinct_pigments.len() > 100);
+    }
+
+    #[test]
+    fn unit_scale_macro_patch_footprints_overlap_at_worst_case_near_flat_jitter() {
+        let near = grass_patch_mesh(Color::WHITE, GrassMeshLod::Near, 1.0);
+        let Some(VertexAttributeValues::Float32x2(roots)) = near.attribute(Mesh::ATTRIBUTE_UV_1)
+        else {
+            panic!("grass mesh must carry roots");
+        };
+        let min_x = roots
+            .iter()
+            .map(|root| root[0])
+            .fold(f32::INFINITY, f32::min);
+        let max_x = roots
+            .iter()
+            .map(|root| root[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let min_z = roots
+            .iter()
+            .map(|root| root[1])
+            .fold(f32::INFINITY, f32::min);
+        let max_z = roots
+            .iter()
+            .map(|root| root[1])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let worst_adjacent_centre_distance =
+            GRASS_PATCH_SPACING * (1.0 + GRASS_PATCH_JITTER_FRACTION);
+        assert!(max_x - min_x > worst_adjacent_centre_distance);
+        assert!(max_z - min_z > worst_adjacent_centre_distance);
+
+        let terrain = SceneTerrain::from_heightmap(2, 2, 1.0, vec![0.0; 4]).unwrap();
+        let transform = grass_patch_transform(&terrain, 0.0, 0.0).unwrap();
+        assert_eq!(transform.scale, Vec3::ONE);
+        assert_eq!(transform.rotation, Quat::IDENTITY);
+    }
+
+    #[test]
+    fn render_centre_cannot_cross_from_grass_into_adjacent_leaf_litter() {
+        let width = 81;
+        let depth = 41;
+        let mut samples = vec![GroundSurface::default(); width * depth];
+        // x=1.9 m: outside the legacy footprint centred at -0.32 m, but
+        // inside the actual footprint centred at 0.0 m.
+        let leaf_x = 59;
+        let leaf_z = 20;
+        samples[leaf_z * width + leaf_x].cover = GroundCover::LeafLitter;
+        let ground = SceneGround::from_samples(width, depth, 0.1, samples).unwrap();
+        let terrain = SceneTerrain::from_heightmap(9, 9, 1.0, vec![0.0; 81]).unwrap();
+        let legacy = Vec2::new(-0.32, 0.0);
+        let rendered = Vec2::ZERO;
+        assert!(ground_allows_grass_patch(&ground, legacy));
+        assert!(!ground_allows_grass_patch(&ground, rendered));
+        assert!(grass_patch_placement(&terrain, &ground, legacy, rendered).is_none());
+    }
+
+    #[test]
+    fn invalid_render_anchor_is_skipped_without_legacy_fallback() {
+        let terrain = SceneTerrain::from_heightmap(2, 2, 1.0, vec![0.0; 4]).unwrap();
+        let ground =
+            SceneGround::from_samples(81, 81, 0.1, vec![GroundSurface::default(); 81 * 81])
+                .unwrap();
+        assert!(grass_patch_transform(&terrain, 0.0, 0.0).is_some());
+        assert!(
+            grass_patch_placement(&terrain, &ground, Vec2::ZERO, Vec2::new(2.0, 0.0)).is_none()
+        );
+    }
+
+    #[test]
+    fn representative_slope_keeps_adjacent_boundary_rows_overlapping() {
+        let heights = (0..3)
+            .flat_map(|_| (0..9).map(|x| x as f32 * 0.25))
+            .collect::<Vec<_>>();
+        let terrain = SceneTerrain::from_heightmap(9, 3, 1.0, heights).unwrap();
+        let left = grass_patch_transform(&terrain, -1.6, 0.0).unwrap();
+        let right = grass_patch_transform(&terrain, 1.6, 0.0).unwrap();
+        let near = grass_patch_mesh(Color::WHITE, GrassMeshLod::Near, 1.0);
+        let Some(VertexAttributeValues::Float32x2(roots)) = near.attribute(Mesh::ATTRIBUTE_UV_1)
+        else {
+            panic!("grass mesh must carry roots");
+        };
+        let min_x = roots
+            .iter()
+            .map(|root| root[0])
+            .fold(f32::INFINITY, f32::min);
+        let max_x = roots
+            .iter()
+            .map(|root| root[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let direction = (right.translation - left.translation).normalize();
+        let left_edge = left.transform_point(Vec3::new(max_x, 0.0, 0.0));
+        let right_edge = right.transform_point(Vec3::new(min_x, 0.0, 0.0));
+        assert!((right_edge - left_edge).dot(direction) <= 0.0);
     }
 
     #[test]
