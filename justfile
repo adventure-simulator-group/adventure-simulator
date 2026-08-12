@@ -306,8 +306,8 @@ tactical-play mode="animation" base_port="24920" graphics_preset="default" prese
 
 # Capture one deterministic tactical environment from fixed ground, overhead,
 # horizon, and collider-overlay cameras. Output must be a fresh directory when set.
-tactical-scene-capture fixture="dense-woodland" output="" settle_frames="12" absolute_minute="":
-    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture {{ quote(fixture) }} --settle-frames {{ quote(settle_frames) }} {{ if output != "" { "--output " + quote(output) } else { "" } }} {{ if absolute_minute != "" { "--absolute-minute " + quote(absolute_minute) } else { "" } }}
+tactical-scene-capture fixture="dense-woodland" output="" settle_frames="12" absolute_minute="" profile="semantic":
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture {{ quote(fixture) }} --settle-frames {{ quote(settle_frames) }} --profile {{ quote(profile) }} {{ if output != "" { "--output " + quote(output) } else { "" } }} {{ if absolute_minute != "" { "--absolute-minute " + quote(absolute_minute) } else { "" } }}
 
 # Compare cambered and flat PBR leaves in the same uncapped dense-forest scene.
 # Output must be a fresh directory.
@@ -340,9 +340,17 @@ tactical-tree-canopy-series output="target/tactical-scene-captures/tree-canopy-s
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 7500 --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-07500") }}
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --canopy-bps 10000 --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --output {{ quote(output + "/canopy-10000") }}
 
-# Capture every committed tactical scene fixture and write a browsable matrix.
+# Capture the compact, environment-only fixture/time matrix and gated sky plates.
 tactical-scene-matrix output="" settle_frames="12":
     @{{ python_bin }} scripts/capture_tactical_scenes.py {{ if output != "" { "--output " + quote(output) } else { "" } }} --settle-frames {{ quote(settle_frames) }}
+
+# Preferred explicit name for iterative environment-art review.
+tactical-environment-review output="" settle_frames="12":
+    @{{ python_bin }} scripts/capture_tactical_scenes.py {{ if output != "" { "--output " + quote(output) } else { "" } }} --settle-frames {{ quote(settle_frames) }}
+
+# Validate review-ledger semantic invariants after JSON-schema validation.
+tactical-environment-review-ledger ledger="assets/tactical-scenes/environment-review-ledger.template.json":
+    @{{ python_bin }} scripts/validate_environment_review_ledger.py {{ quote(ledger) }}
 
 # Capture one deterministic atmosphere/celestial verification view.
 tactical-sky-capture view="sun" output="target/tactical-sky-captures/sun.png" settle_frames="24":
