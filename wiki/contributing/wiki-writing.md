@@ -30,6 +30,11 @@ reign. Thus, against Google's advice, we will make liberal use of relative
 links, since mdBook strongly encourages them. Also, unlike Google, we use
 `<!-- toc -->` rather than `[TOC]`.
 
+Run `just wiki-format path/to/page.md` before committing a wiki page. The
+formatter wraps ordinary prose at 80 columns without canonicalizing authored
+Markdown where our conventions differ from Prettier's. Run `just wiki-check`
+to verify navigation, tooling, links, and the rendered book.
+
 ## Audience and voice
 
 We write this wiki for current and prospective players and contributors.[^5]
