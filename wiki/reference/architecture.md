@@ -394,6 +394,13 @@ OpenGL-normal, and packed AO/roughness/metal channels share a
 physical scale across rock recipes. It adds no emissive response, collider
 detail, entity, draw call, displacement, or authoritative silhouette change.
 
+Near-field upward-facing tactical ground similarly uses one CC0, two-metre
+dirt scan for aligned diffuse, OpenGL-normal, and AO/roughness response. The
+world-space top projection is blended beneath authoritative cover and weather
+colour, declines on steep faces, and fades from 42 to 96 metres before its
+detail becomes subpixel. It never displaces the authoritative heightfield and
+adds three bounded texture reads only within the presentation shader.
+
 The Surface Nets implementation is deliberately private to the tactical client
 and is the first bounded volumetric-meshing primitive, not a cave system. Future
 overhang, cliff, or cave patches must replicate a compact deterministic field

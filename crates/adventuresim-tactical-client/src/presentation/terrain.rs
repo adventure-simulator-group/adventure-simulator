@@ -42,6 +42,15 @@ pub(in crate::presentation) struct TacticalTerrainExtension {
     #[texture(101)]
     #[sampler(102)]
     ground_map: Handle<Image>,
+    #[texture(103)]
+    #[sampler(104)]
+    dirt_diffuse: Handle<Image>,
+    #[texture(105)]
+    #[sampler(106)]
+    dirt_normal_gl: Handle<Image>,
+    #[texture(107)]
+    #[sampler(108)]
+    dirt_arm: Handle<Image>,
 }
 
 impl MaterialExtension for TacticalTerrainExtension {
@@ -69,6 +78,7 @@ pub(in crate::presentation) fn on_game_scene_added(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TacticalTerrainMaterial>>,
     mut images: ResMut<Assets<Image>>,
+    asset_server: Res<AssetServer>,
 ) -> Result {
     let (id, terrain, environment, ground) = query.get(event.entity)?;
     info!(entity = ?event.entity, "Spawning a scene {id:?}");
@@ -86,7 +96,12 @@ pub(in crate::presentation) fn on_game_scene_added(
         ScenePresentationOf(event.entity),
         TerrainMaterialPresentation,
         Mesh3d(meshes.add(terrain.mesh())),
-        MeshMaterial3d(materials.add(terrain_material(environment, ground, &mut images))),
+        MeshMaterial3d(materials.add(terrain_material(
+            environment,
+            ground,
+            &mut images,
+            &asset_server,
+        ))),
     ));
     Ok(())
 }
@@ -95,7 +110,24 @@ pub(in crate::presentation) fn terrain_material(
     environment: &SceneEnvironment,
     ground: Option<&SceneGround>,
     images: &mut Assets<Image>,
+    asset_server: &AssetServer,
 ) -> TacticalTerrainMaterial {
+    let image = |path, is_srgb| {
+        asset_server
+            .load_builder()
+            .with_settings(move |settings: &mut bevy::image::ImageLoaderSettings| {
+                use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
+                settings.is_srgb = is_srgb;
+                settings.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+                    address_mode_u: ImageAddressMode::Repeat,
+                    address_mode_v: ImageAddressMode::Repeat,
+                    address_mode_w: ImageAddressMode::Repeat,
+                    anisotropy_clamp: 8,
+                    ..ImageSamplerDescriptor::linear()
+                });
+            })
+            .load(path)
+    };
     TacticalTerrainMaterial {
         base: StandardMaterial {
             base_color: Color::WHITE,
@@ -139,6 +171,9 @@ pub(in crate::presentation) fn terrain_material(
                 ground,
                 stable_text_seed(&environment.scene_digest),
             )),
+            dirt_diffuse: image("textures/ground/dirt_diff_1k.jpg", true),
+            dirt_normal_gl: image("textures/ground/dirt_nor_gl_1k.jpg", false),
+            dirt_arm: image("textures/ground/dirt_arm_1k.jpg", false),
         },
     }
 }
@@ -364,6 +399,7 @@ pub(super) fn on_environment_added(
     ground: Query<&SceneGround>,
     mut terrain_materials: ResMut<Assets<TacticalTerrainMaterial>>,
     mut images: ResMut<Assets<Image>>,
+    asset_server: Res<AssetServer>,
 ) -> Result {
     let environment = environments.get(event.entity)?;
     let ground = ground.get(event.entity).ok();
@@ -371,7 +407,7 @@ pub(super) fn on_environment_added(
         if source.0 == event.entity
             && let Some(mut material) = terrain_materials.get_mut(&material.0)
         {
-            *material = terrain_material(environment, ground, &mut images);
+            *material = terrain_material(environment, ground, &mut images, &asset_server);
         }
     }
     Ok(())
@@ -387,6 +423,7 @@ pub(super) fn on_ground_added(
     )>,
     mut terrain_materials: ResMut<Assets<TacticalTerrainMaterial>>,
     mut images: ResMut<Assets<Image>>,
+    asset_server: Res<AssetServer>,
 ) -> Result {
     let ground = grounds.get(event.entity)?;
     let environment = environments.get(event.entity)?;
@@ -394,7 +431,7 @@ pub(super) fn on_ground_added(
         if source.0 == event.entity
             && let Some(mut material) = terrain_materials.get_mut(&material.0)
         {
-            *material = terrain_material(environment, Some(ground), &mut images);
+            *material = terrain_material(environment, Some(ground), &mut images, &asset_server);
         }
     }
     Ok(())
