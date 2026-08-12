@@ -1,13 +1,18 @@
 use super::*;
 
-pub(super) fn scene_sunlight_illuminance(environment: &SceneEnvironment) -> f32 {
+pub(super) fn scene_sunlight_illuminance(
+    environment: &SceneEnvironment,
+    sun_altitude_degrees: f32,
+) -> f32 {
     let intensity = f32::from(environment.weather.intensity_bps) / 10_000.0;
     let transmission = match environment.weather.precipitation {
         Precipitation::Clear => 1.0,
         Precipitation::Rain => 0.62 - intensity * 0.27,
         Precipitation::Snow => 0.72 - intensity * 0.22,
     };
-    lux::RAW_SUNLIGHT * transmission.clamp(0.25, 1.0)
+    let altitude = (sun_altitude_degrees / 8.0).clamp(0.0, 1.0);
+    let altitude_transmission = altitude * altitude * (3.0 - 2.0 * altitude);
+    lux::RAW_SUNLIGHT * transmission.clamp(0.25, 1.0) * altitude_transmission
 }
 
 pub(super) fn scene_distance_fog(environment: &SceneEnvironment) -> DistanceFog {
@@ -124,12 +129,26 @@ mod tests {
     }
 
     #[test]
-    fn precipitation_dims_but_never_extinguishes_sunlight() {
-        let clear = scene_sunlight_illuminance(&environment(Precipitation::Clear, 0));
-        let rain = scene_sunlight_illuminance(&environment(Precipitation::Rain, 10_000));
-        let snow = scene_sunlight_illuminance(&environment(Precipitation::Snow, 10_000));
+    fn daylight_precipitation_dims_but_never_extinguishes_sunlight() {
+        let clear = scene_sunlight_illuminance(&environment(Precipitation::Clear, 0), 30.0);
+        let rain = scene_sunlight_illuminance(&environment(Precipitation::Rain, 10_000), 30.0);
+        let snow = scene_sunlight_illuminance(&environment(Precipitation::Snow, 10_000), 30.0);
         assert!(rain < snow && snow < clear);
         assert!(rain >= lux::RAW_SUNLIGHT * 0.25);
+    }
+
+    #[test]
+    fn direct_sunlight_never_shines_upward_from_below_the_horizon() {
+        let clear = environment(Precipitation::Clear, 0);
+        assert_eq!(scene_sunlight_illuminance(&clear, -45.0), 0.0);
+        assert_eq!(scene_sunlight_illuminance(&clear, -0.01), 0.0);
+        assert_eq!(scene_sunlight_illuminance(&clear, 0.0), 0.0);
+
+        let low = scene_sunlight_illuminance(&clear, 2.0);
+        let risen = scene_sunlight_illuminance(&clear, 6.0);
+        let daylight = scene_sunlight_illuminance(&clear, 8.0);
+        assert!(0.0 < low && low < risen && risen < daylight);
+        assert_eq!(daylight, lux::RAW_SUNLIGHT);
     }
 
     #[test]

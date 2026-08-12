@@ -16,7 +16,10 @@ move from daylight through twilight to moonlight without auto-exposure pumping.
 The Sun is Bevy's angular `SunDisk` paired with the scene's directional light.
 A shared analytical ephemeris resolves its direction from time, season,
 latitude, and longitude. It intentionally favours stable, inexpensive outdoor
-lighting over high-precision astronomical coordinates.
+lighting over high-precision astronomical coordinates. Direct illuminance
+fades in over the first eight degrees above the horizon and is zero whenever
+the Sun is below it, so the directional light can never shine upward through
+terrain or illuminate the back side of PBR materials at night.
 
 The Moon uses the strategic layer's canonical lunar phase and illumination.
 Its shader draws the phase terminator across a constant-angular-size sphere,
@@ -56,4 +59,7 @@ These deterministic native views run the production presentation plugin. The
 Moon view uses a narrow verification field of view so the first-quarter
 terminator remains inspectable; gameplay retains the physically scaled disc.
 Together the views cover horizon colour, exposure, lunar phase, and
-resolution-independent star rendering.
+resolution-independent star rendering. Native scene captures disable the
+atmosphere environment map for determinism, so their substitute ambient fill
+tracks the same Sun and Moon altitudes instead of remaining at its daylight
+brightness overnight and washing out every side of PBR materials.
