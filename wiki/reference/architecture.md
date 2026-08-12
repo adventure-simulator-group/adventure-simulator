@@ -360,8 +360,11 @@ then introduces short juvenile pockets and irregular occupancy before the
 18--26 metre cross-fade. The authoritative grass-side mask uses a broader
 nonlinear feather, and surviving boundary blades shorten with coverage, so
 dirt and leaf-litter transitions do not terminate as a same-height wall. This
-composition changes no mesh topology, entity, material, texture fetch, or draw
-count. Beyond the geometric range, the
+composition also derives a stable age cohort from the existing per-blade LOD
+threshold: a bounded minority of mature blades develops a desaturated straw
+tip while juvenile cohorts remain green. Near and far LODs therefore preserve
+the same age identity without another vertex attribute, texture read,
+transcendental evaluation, mesh, entity, material, or draw. Beyond the geometric range, the
 terrain material retains only the band-limited aggregate colour and normal
 response of the sward. Bevy's standard mesh path supplies WebGPU-compatible
 GPU preprocessing, culling, and indirect batches when the adapter supports

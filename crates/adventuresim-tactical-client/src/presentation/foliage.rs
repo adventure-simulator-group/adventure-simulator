@@ -59,9 +59,15 @@ fn grass_material(
     wind_scale: f32,
     lod: GrassMeshLod,
     grass_density: f32,
+    grass_dryness: f32,
     ground_mask: Handle<Image>,
     ground: &SceneGround,
 ) -> TacticalFoliageMaterial {
+    let mut material = foliage_material(wind_scale, true);
+    // Grass uses this otherwise generic meadow-variation lane as a replicated
+    // environmental dryness factor. Woodland shade and wet cover retain green
+    // growth; exposed low-moisture swards develop coherent senescent cohorts.
+    material.shading.y = grass_dryness;
     TacticalFoliageMaterial {
         // Only the near mesh is four times denser. The far mesh retains the
         // established 144-blade topology and projected coverage rather than
@@ -69,7 +75,7 @@ fn grass_material(
         shape: Vec4::new(1.0, 0.88, 0.09, lod.width_compensation(grass_density)),
         ground_mask_transform: Vec4::new(1.0 / ground.width(), 1.0 / ground.depth(), 0.5, 0.5),
         ground_mask: Some(ground_mask),
-        ..foliage_material(wind_scale, true)
+        ..material
     }
 }
 
@@ -172,12 +178,25 @@ pub(super) fn spawn_ground_foliage(
     // legible individual shrubs and traversable openings instead of a wall of
     // overlapping coppice stems.
     let understory_chance = (canopy * 0.52 + wetland * 0.3).clamp(0.0, 0.52);
+    let grass_dryness = (1.0
+        - bps(environment.weather.ground_moisture_bps) * 0.7
+        - canopy * 1.2
+        - wetland * 0.8
+        - water * 0.8)
+        .clamp(0.0, 1.0);
     let grass_color = if environment.weather.snow_cover_bps >= 5_000 {
         Color::srgb_u8(155, 164, 137)
     } else if environment.cultivation_bps >= 4_000 {
         Color::srgb_u8(142, 133, 61)
     } else {
-        Color::srgb_u8(82, 119, 45)
+        // Blend pigment in sRGB authoring space from hydrated chlorophyll to
+        // a dry olive sward. Fine-grained cohort variation remains in the
+        // shader, but the biome-wide baseline now honors replicated moisture
+        // and shade instead of rendering dry grassland as woodland green.
+        let hydrated = Vec3::new(82.0, 119.0, 45.0);
+        let senescent = Vec3::new(150.0, 126.0, 52.0);
+        let pigment = hydrated.lerp(senescent, grass_dryness * 0.78);
+        Color::srgb_u8(pigment.x as u8, pigment.y as u8, pigment.z as u8)
     };
     let grass_near_mesh = meshes.add(grass_patch_mesh(
         grass_color,
@@ -205,6 +224,7 @@ pub(super) fn spawn_ground_foliage(
         grass_wind_scale,
         GrassMeshLod::Near,
         grass_density,
+        grass_dryness,
         grass_mask.clone(),
         ground,
     ));
@@ -212,6 +232,7 @@ pub(super) fn spawn_ground_foliage(
         grass_wind_scale,
         GrassMeshLod::Far,
         grass_density,
+        grass_dryness,
         grass_mask,
         ground,
     ));
@@ -888,6 +909,9 @@ fn grass_ribbon_patch_mesh(
         let blade_threshold = unit_hash(splitmix64(hash ^ 0x3d91_02ea_61b8_7c45));
         let pigment = unit_hash(splitmix64(hash ^ 0x76b3_144d));
         let warmth = unit_hash(splitmix64(hash ^ 0xa52d_98c7));
+        let age = unit_hash(splitmix64(hash ^ 0x1b47_c95a_622d_41e3));
+        let mature_age = ((age - 0.68) / (0.94 - 0.68)).clamp(0.0, 1.0);
+        let mature_age = mature_age * mature_age * (3.0 - 2.0 * mature_age);
         let brightness = 0.82 + pigment * 0.30;
         let blade_color = [
             (linear[0] * brightness * (0.94 + warmth * 0.12)).clamp(0.0, 1.0),
@@ -895,6 +919,8 @@ fn grass_ribbon_patch_mesh(
             (linear[2] * brightness * (0.88 + warmth * 0.10)).clamp(0.0, 1.0),
             blade_threshold,
         ];
+        let luminance = blade_color[0] * 0.2126 + blade_color[1] * 0.7152 + blade_color[2] * 0.0722;
+        let straw_color = [luminance * 1.12, luminance * 0.88, luminance * 0.42];
         let base = positions.len() as u32;
 
         for &height_fraction in rows {
@@ -905,13 +931,26 @@ fn grass_ribbon_patch_mesh(
             normals.extend_from_slice(&[normal; 2]);
             uvs.extend_from_slice(&[[0.0, height_fraction], [1.0, height_fraction]]);
             blade_roots.extend_from_slice(&[[offset_x, offset_z]; 2]);
-            colors.extend_from_slice(&[blade_color; 2]);
+            let tip = ((height_fraction - 0.48) / (0.96 - 0.48)).clamp(0.0, 1.0);
+            let tip = tip * tip * (3.0 - 2.0 * tip) * mature_age * 0.72;
+            let row_color = [
+                blade_color[0] + (straw_color[0] - blade_color[0]) * tip,
+                blade_color[1] + (straw_color[1] - blade_color[1]) * tip,
+                blade_color[2] + (straw_color[2] - blade_color[2]) * tip,
+                blade_threshold,
+            ];
+            colors.extend_from_slice(&[row_color; 2]);
         }
         positions.push((root + Vec3::Y * height * height_scale).to_array());
         normals.push(normal);
         uvs.push([0.5, 1.0]);
         blade_roots.push([offset_x, offset_z]);
-        colors.push(blade_color);
+        colors.push([
+            blade_color[0] + (straw_color[0] - blade_color[0]) * mature_age * 0.72,
+            blade_color[1] + (straw_color[1] - blade_color[1]) * mature_age * 0.72,
+            blade_color[2] + (straw_color[2] - blade_color[2]) * mature_age * 0.72,
+            blade_threshold,
+        ]);
 
         for row in 0..rows.len() - 1 {
             let lower = base + (row * 2) as u32;
@@ -1368,6 +1407,16 @@ mod tests {
                 far_color[0][3],
                 "near and far LODs must apply the same ground-mask threshold"
             );
+            assert_eq!(
+                colors[matching_near_blade * 15],
+                far_color[0],
+                "near and far LOD roots must retain the same base pigment and age"
+            );
+            assert_eq!(
+                colors[matching_near_blade * 15 + 14],
+                far_color[6],
+                "near and far LOD tips must retain the same senescent pigment"
+            );
         }
 
         let blade_heights = near_positions
@@ -1522,6 +1571,9 @@ mod tests {
         assert_eq!(shader.matches("textureSampleLevel(").count(), 1);
         assert!(shader.contains("let effective_coverage = ground_coverage * clump_coverage"));
         assert!(shader.contains("let edge_growth = mix(0.58, 1.0"));
+        assert!(!shader.contains("let tip_age"));
+        assert!(shader.contains("* mix(1.0, 0.94, mature_age)"));
+        assert!(shader.contains("lean_amount + 0.012 * mature_age"));
 
         let near = grass_patch_mesh(Color::WHITE, GrassMeshLod::Near, 1.0);
         let far = grass_patch_mesh(Color::WHITE, GrassMeshLod::Far, 1.0);
