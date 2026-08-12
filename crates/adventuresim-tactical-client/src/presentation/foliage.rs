@@ -29,6 +29,9 @@ pub(in crate::presentation) struct HazelPresentationCache {
 #[derive(Resource, Default)]
 pub(in crate::presentation) struct GroundFoliagePresentationCache {
     forest_floor_leaves: Option<Handle<TacticalTreeLeafCardMaterial>>,
+    dry_leaf_meshes: Option<Vec<Handle<Mesh>>>,
+    twig_meshes: Option<Vec<Handle<Mesh>>>,
+    twig_material: Option<Handle<TacticalFoliageMaterial>>,
 }
 
 pub(super) fn foliage_material(wind_scale: f32, ground_foliage: bool) -> TacticalFoliageMaterial {
@@ -212,17 +215,30 @@ pub(super) fn spawn_ground_foliage(
         grass_mask,
         ground,
     ));
-    let dry_leaf_meshes = (0..DRY_LEAF_MESH_VARIANTS)
-        .map(|variant| meshes.add(dry_leaf_patch_mesh(variant)))
-        .collect::<Vec<_>>();
-    let twig_meshes = (0..TWIG_MESH_VARIANTS)
-        .map(|variant| meshes.add(twig_patch_mesh(variant)))
-        .collect::<Vec<_>>();
+    let dry_leaf_meshes = ground_foliage_cache
+        .dry_leaf_meshes
+        .get_or_insert_with(|| {
+            (0..DRY_LEAF_MESH_VARIANTS)
+                .map(|variant| meshes.add(dry_leaf_patch_mesh(variant)))
+                .collect::<Vec<_>>()
+        })
+        .clone();
+    let twig_meshes = ground_foliage_cache
+        .twig_meshes
+        .get_or_insert_with(|| {
+            (0..TWIG_MESH_VARIANTS)
+                .map(|variant| meshes.add(twig_patch_mesh(variant)))
+                .collect::<Vec<_>>()
+        })
+        .clone();
     let dry_leaf_material = ground_foliage_cache
         .forest_floor_leaves
         .get_or_insert_with(|| leaf_materials.add(forest_floor_leaf_material(asset_server)))
         .clone();
-    let twig_material = materials.add(foliage_material(0.004, false));
+    let twig_material = ground_foliage_cache
+        .twig_material
+        .get_or_insert_with(|| materials.add(foliage_material(0.0, false)))
+        .clone();
     let base_seed = stable_text_seed(&environment.scene_digest) ^ stable_text_seed(&scene_id.0);
     let half_x = terrain.width() * 0.5;
     let half_z = terrain.depth() * 0.5;
@@ -365,7 +381,7 @@ pub(super) fn spawn_ground_foliage(
                 &dry_leaf_meshes[(hash % dry_leaf_meshes.len() as u64) as usize],
                 &dry_leaf_material,
                 0.8,
-                0.012,
+                0.001,
             );
         }
         for pass in 0..TWIG_PASSES_PER_SAMPLE {
@@ -385,7 +401,8 @@ pub(super) fn spawn_ground_foliage(
                 &twig_meshes[(hash % twig_meshes.len() as u64) as usize],
                 &twig_material,
                 0.72,
-                0.02,
+                0.006,
+                VisibilityRange::abrupt(0.0, 24.0),
             );
         }
     }
@@ -507,6 +524,7 @@ fn spawn_forest_floor_patch(
     material: &Handle<TacticalFoliageMaterial>,
     scale: f32,
     height_offset: f32,
+    visibility_range: VisibilityRange,
 ) {
     let Some(transform) =
         forest_floor_patch_transform(terrain, ground, cell_origin, hash, scale, height_offset)
@@ -519,7 +537,7 @@ fn spawn_forest_floor_patch(
         NotShadowCaster,
         Mesh3d(mesh.clone()),
         MeshMaterial3d(material.clone()),
-        VisibilityRange::abrupt(0.0, 35.0),
+        visibility_range,
         transform,
     ));
 }
@@ -923,15 +941,30 @@ fn grass_ribbon_patch_mesh(
 fn dry_leaf_patch_mesh(variant: u64) -> Mesh {
     let mut data = GroundLitterMeshData::default();
     let leaf_colors = [
-        Color::srgb_u8(174, 132, 78),
-        Color::srgb_u8(151, 111, 68),
-        Color::srgb_u8(190, 153, 96),
-        Color::srgb_u8(128, 96, 66),
-        Color::srgb_u8(165, 140, 99),
+        Color::srgb_u8(190, 132, 61),
+        Color::srgb_u8(139, 82, 43),
+        Color::srgb_u8(202, 164, 81),
+        Color::srgb_u8(104, 72, 48),
+        Color::srgb_u8(157, 126, 74),
     ];
+    let cluster_count = 4;
+    let clusters = (0..cluster_count)
+        .map(|cluster| {
+            let hash = splitmix64(variant.rotate_left(17) ^ cluster as u64 ^ 0x5a9d_31c4);
+            Vec2::new(unit_hash(hash) - 0.5, unit_hash(splitmix64(hash ^ 1)) - 0.5) * 0.68
+        })
+        .collect::<Vec<_>>();
     for leaf in 0..24_u64 {
         let hash = splitmix64(leaf ^ variant.rotate_left(29) ^ 0x5ec4_57d2_bf90_1c37);
-        let centre = Vec2::new(unit_hash(hash) - 0.5, unit_hash(splitmix64(hash ^ 1)) - 0.5) * 1.08;
+        let cluster_angle = unit_hash(splitmix64(hash ^ 0x43)) * core::f32::consts::TAU;
+        let centre = if leaf < 20 {
+            let cluster = clusters[leaf as usize % clusters.len()];
+            let radial = 0.04 + unit_hash(splitmix64(hash ^ 0x42)) * 0.14;
+            cluster + Vec2::new(cluster_angle.cos(), cluster_angle.sin()) * radial
+        } else {
+            Vec2::new(cluster_angle.cos(), cluster_angle.sin())
+                * (0.36 + unit_hash(splitmix64(hash ^ 0x42)) * 0.16)
+        };
         let angle = unit_hash(splitmix64(hash ^ 2)) * core::f32::consts::TAU;
         let long =
             Vec2::new(angle.cos(), angle.sin()) * (0.065 + unit_hash(splitmix64(hash ^ 3)) * 0.045);
@@ -940,7 +973,11 @@ fn dry_leaf_patch_mesh(variant: u64) -> Mesh {
             centre,
             long,
             side,
-            0.003 + (leaf % 7) as f32 * 0.00045,
+            if leaf < 20 {
+                [0.0, 0.0025, 0.005][(leaf as usize / 4) % 3]
+            } else {
+                0.0
+            },
             hash,
             leaf_colors[leaf as usize % leaf_colors.len()],
         );
@@ -962,44 +999,50 @@ fn twig_patch_mesh(variant: u64) -> Mesh {
         let centre = Vec2::new(unit_hash(hash) - 0.5, unit_hash(splitmix64(hash ^ 1)) - 0.5) * 1.02;
         let angle = unit_hash(splitmix64(hash ^ 2)) * core::f32::consts::TAU;
         let long =
-            Vec2::new(angle.cos(), angle.sin()) * (0.14 + unit_hash(splitmix64(hash ^ 3)) * 0.13);
-        let start = Vec3::new(centre.x - long.x, 0.008, centre.y - long.y);
-        let end = Vec3::new(
-            centre.x + long.x,
-            0.011 + unit_hash(splitmix64(hash ^ 4)) * 0.018,
-            centre.y + long.y,
+            Vec2::new(angle.cos(), angle.sin()) * (0.075 + unit_hash(splitmix64(hash ^ 3)) * 0.07);
+        let lateral = Vec2::new(-long.y, long.x).normalize_or_zero();
+        let start = Vec3::new(centre.x - long.x, -0.004, centre.y - long.y);
+        let bend = (unit_hash(splitmix64(hash ^ 4)) - 0.5) * 0.055;
+        let middle = Vec3::new(
+            centre.x + lateral.x * bend,
+            0.002 + unit_hash(splitmix64(hash ^ 0x44)) * 0.004,
+            centre.y + lateral.y * bend,
         );
-        let sides = 3 + (hash % 3) as u32;
+        let end = Vec3::new(centre.x + long.x, -0.006, centre.y + long.y);
+        let sides = 5 + (hash % 2) as u32;
         let radius = 0.006 + unit_hash(splitmix64(hash ^ 5)) * 0.005;
         let color = twig_colors[twig as usize % twig_colors.len()];
-        data.append_tapered_twig(
+        data.append_bent_twig(
             start,
+            middle,
             end,
             radius,
-            radius * 0.42,
+            radius * 0.58,
+            radius * 0.08,
             sides,
-            true,
             true,
             centre,
             color,
         );
         if twig < 2 && unit_hash(splitmix64(hash ^ 6)) > 0.46 {
-            let attach = start.lerp(end, 0.58);
-            let direction = (end - start).normalize();
+            let attach = middle.lerp(end, 0.22);
+            let direction = (end - middle).normalize();
             let lateral = Vec3::new(-direction.z, 0.12, direction.x).normalize();
             let fork_end = attach
                 + (direction * 0.38 + lateral * if hash & 1 == 0 { 0.62 } else { -0.62 })
                     .normalize()
                     * long.length()
                     * 0.72;
-            data.append_tapered_twig(
+            let fork_middle = attach.lerp(fork_end, 0.52) + Vec3::Y * 0.002;
+            data.append_bent_twig(
                 attach,
+                fork_middle,
                 fork_end,
                 radius * 0.55,
-                radius * 0.18,
+                radius * 0.3,
+                radius * 0.05,
                 sides,
                 false,
-                true,
                 centre,
                 color,
             );
@@ -1009,6 +1052,94 @@ fn twig_patch_mesh(variant: u64) -> Mesh {
 }
 
 impl GroundLitterMeshData {
+    #[allow(clippy::too_many_arguments)]
+    fn append_bent_twig(
+        &mut self,
+        start: Vec3,
+        middle: Vec3,
+        end: Vec3,
+        start_radius: f32,
+        middle_radius: f32,
+        end_radius: f32,
+        sides: u32,
+        cap_start: bool,
+        root: Vec2,
+        color: Color,
+    ) {
+        let base = self.positions.len() as u32;
+        let direction = (end - start).normalize();
+        let reference = if direction.y.abs() < 0.9 {
+            Vec3::Y
+        } else {
+            Vec3::X
+        };
+        let right = direction.cross(reference).normalize();
+        let forward = right.cross(direction).normalize();
+        let linear_color = color.to_linear().to_f32_array();
+        let near_tip = middle.lerp(end, 0.86);
+        let late_tip = middle.lerp(end, 0.97);
+        for (ring, (centre, radius)) in [
+            (start, start_radius),
+            (middle, middle_radius),
+            (near_tip, middle_radius.lerp(end_radius, 0.72)),
+            (late_tip, end_radius),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            for side_index in 0..sides {
+                let phase = side_index as f32 * core::f32::consts::TAU / sides as f32;
+                let normal = right * phase.cos() + forward * phase.sin();
+                self.positions.push((centre + normal * radius).to_array());
+                self.normals.push(normal.to_array());
+                self.uvs
+                    .push([side_index as f32 / sides as f32, ring as f32 / 3.0]);
+                self.roots.push(root.to_array());
+                self.colors.push(linear_color);
+            }
+        }
+        for ring in 0..3_u32 {
+            let from = base + ring * sides;
+            let to = from + sides;
+            for side_index in 0..sides {
+                let next = (side_index + 1) % sides;
+                self.indices.extend_from_slice(&[
+                    from + side_index,
+                    to + side_index,
+                    to + next,
+                    from + side_index,
+                    to + next,
+                    from + next,
+                ]);
+            }
+        }
+        if cap_start {
+            let cap = self.positions.len() as u32;
+            self.positions.push(start.to_array());
+            self.normals.push((-direction).to_array());
+            self.uvs.push([0.5, 0.0]);
+            self.roots.push(root.to_array());
+            self.colors.push(linear_color);
+            for side_index in 0..sides {
+                let next = (side_index + 1) % sides;
+                self.indices
+                    .extend_from_slice(&[cap, base + side_index, base + next]);
+            }
+        }
+        let apex = self.positions.len() as u32;
+        self.positions.push(end.to_array());
+        self.normals.push(direction.to_array());
+        self.uvs.push([0.5, 1.0]);
+        self.roots.push(root.to_array());
+        self.colors.push(linear_color);
+        let tip_ring = base + sides * 3;
+        for side_index in 0..sides {
+            let next = (side_index + 1) % sides;
+            self.indices
+                .extend_from_slice(&[tip_ring + side_index, apex, tip_ring + next]);
+        }
+    }
+
     fn into_mesh(self) -> Mesh {
         let mut mesh = Mesh::new(
             PrimitiveTopology::TriangleList,
@@ -1050,8 +1181,8 @@ impl GroundLitterMeshData {
         // patch ground plane so every instance visibly makes contact.
         let long_slope = (unit_hash(splitmix64(seed ^ 0x11)) - 0.5) * 0.12;
         let side_slope = (unit_hash(splitmix64(seed ^ 0x12)) - 0.5) * 0.08;
-        let camber = 0.0035 + unit_hash(splitmix64(seed ^ 0x13)) * 0.0065;
-        let curl = (unit_hash(splitmix64(seed ^ 0x14)) - 0.5) * 0.004;
+        let camber = 0.003 + unit_hash(splitmix64(seed ^ 0x13)) * 0.008;
+        let curl = (unit_hash(splitmix64(seed ^ 0x14)) - 0.5) * 0.007;
         let burial = 0.0007 + height.min(0.006) * 0.15 + unit_hash(splitmix64(seed ^ 0x15)) * 0.001;
         let long3 = Vec3::new(long.x, long_slope * long.length(), long.y);
         let side3 = Vec3::new(side.x, side_slope * side.length(), side.y);
@@ -1077,7 +1208,7 @@ impl GroundLitterMeshData {
             .map(|point| point.y)
             .fold(f32::INFINITY, f32::min);
         for point in &mut leaf_positions {
-            point.y -= minimum_y + burial;
+            point.y += height - minimum_y - burial;
         }
         let mut leaf_normals = vec![Vec3::ZERO; 9];
         for outline_index in 0..8_usize {
@@ -1102,79 +1233,6 @@ impl GroundLitterMeshData {
             .extend(outline.map(|(u, v)| [0.5 + u * 0.5, 0.5 + v * 0.5]));
         let color = color.to_linear().to_f32_array();
         self.colors.extend_from_slice(&[color; 9]);
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn append_tapered_twig(
-        &mut self,
-        start: Vec3,
-        end: Vec3,
-        start_radius: f32,
-        end_radius: f32,
-        sides: u32,
-        cap_start: bool,
-        cap_end: bool,
-        root: Vec2,
-        color: Color,
-    ) {
-        let base = self.positions.len() as u32;
-        let direction = (end - start).normalize();
-        let reference = if direction.y.abs() < 0.9 {
-            Vec3::Y
-        } else {
-            Vec3::X
-        };
-        let right = direction.cross(reference).normalize();
-        let forward = right.cross(direction).normalize();
-        let linear_color = color.to_linear().to_f32_array();
-        for (ring, (centre, radius)) in [(start, start_radius), (end, end_radius)]
-            .into_iter()
-            .enumerate()
-        {
-            for side_index in 0..sides {
-                let phase = side_index as f32 * core::f32::consts::TAU / sides as f32;
-                let normal = right * phase.cos() + forward * phase.sin();
-                self.positions.push((centre + normal * radius).to_array());
-                self.normals.push(normal.to_array());
-                self.uvs
-                    .push([side_index as f32 / sides as f32, ring as f32]);
-                self.roots.push(root.to_array());
-                self.colors.push(linear_color);
-            }
-        }
-        for side_index in 0..sides {
-            let next = (side_index + 1) % sides;
-            self.indices.extend_from_slice(&[
-                base + side_index,
-                base + sides + side_index,
-                base + sides + next,
-                base + side_index,
-                base + sides + next,
-                base + next,
-            ]);
-        }
-        for (at_start, centre, normal) in [(true, start, -direction), (false, end, direction)] {
-            if (at_start && !cap_start) || (!at_start && !cap_end) {
-                continue;
-            }
-            let cap = self.positions.len() as u32;
-            self.positions.push(centre.to_array());
-            self.normals.push(normal.to_array());
-            self.uvs.push([0.5, if at_start { 0.0 } else { 1.0 }]);
-            self.roots.push(root.to_array());
-            self.colors.push(linear_color);
-            let ring = if at_start { base } else { base + sides };
-            for side_index in 0..sides {
-                let next = (side_index + 1) % sides;
-                if at_start {
-                    self.indices
-                        .extend_from_slice(&[cap, ring + next, ring + side_index]);
-                } else {
-                    self.indices
-                        .extend_from_slice(&[cap, ring + side_index, ring + next]);
-                }
-            }
-        }
     }
 }
 
@@ -1566,8 +1624,8 @@ mod tests {
             .unwrap();
         assert_eq!(leaf_positions.len(), 24 * 9);
         assert_eq!(leaves.indices().unwrap().len() / 3, 24 * 8);
-        assert!((72..=130).contains(&twig_positions.len()));
-        assert!((108..=210).contains(&(twigs.indices().unwrap().len() / 3)));
+        assert!((190..=300).contains(&twig_positions.len()));
+        assert!((360..=520).contains(&(twigs.indices().unwrap().len() / 3)));
         assert_eq!(
             leaves.attribute(Mesh::ATTRIBUTE_POSITION),
             repeated_leaves.attribute(Mesh::ATTRIBUTE_POSITION)
@@ -1599,6 +1657,7 @@ mod tests {
                 .iter()
                 .any(|normal| Vec3::from_array(*normal).distance(Vec3::Y) > 0.03)
         );
+        let mut contacting_leaves = 0;
         let leaf_spans = leaf_positions
             .chunks_exact(9)
             .map(|leaf| {
@@ -1610,11 +1669,15 @@ mod tests {
                     .iter()
                     .map(|point| point[1])
                     .fold(f32::NEG_INFINITY, f32::max);
-                assert!(minimum <= -0.0006, "leaf must contact/bury: {minimum}");
+                contacting_leaves += usize::from(minimum <= -0.0006);
                 assert!(maximum <= 0.025, "leaf lift must stay bounded: {maximum}");
                 maximum - minimum
             })
             .collect::<Vec<_>>();
+        assert!(
+            contacting_leaves >= 8,
+            "each loose pile needs seated base leaves"
+        );
         assert!(leaf_spans.iter().all(|span| *span > 0.003));
         assert!(
             leaf_spans
@@ -1705,7 +1768,7 @@ mod tests {
             panic!("fallen-leaf pigments must use Float32x4 storage");
         };
         assert!(colors.iter().all(|color| {
-            color[0] > color[1] && color[1] > color[2] && color[0] - color[2] < 0.5
+            color[0] > color[1] && color[1] > color[2] && color[0] - color[2] < 0.58
         }));
         let pigments = colors
             .chunks_exact(9)
@@ -1723,12 +1786,12 @@ mod tests {
             let mut expected_boundaries = 0;
             for twig in 0..9_u64 {
                 let hash = splitmix64(twig ^ variant.rotate_left(31) ^ 0xa773_9fe2_410c_862d);
-                let sides = 3 + (hash % 3) as usize;
-                expected_vertices += sides * 2 + 2;
-                expected_triangles += sides * 4;
+                let sides = 5 + (hash % 2) as usize;
+                expected_vertices += sides * 4 + 2;
+                expected_triangles += sides * 8;
                 if twig < 2 && unit_hash(splitmix64(hash ^ 6)) > 0.46 {
-                    expected_vertices += sides * 2 + 1;
-                    expected_triangles += sides * 3;
+                    expected_vertices += sides * 4 + 1;
+                    expected_triangles += sides * 7;
                     expected_boundaries += sides;
                 }
             }
