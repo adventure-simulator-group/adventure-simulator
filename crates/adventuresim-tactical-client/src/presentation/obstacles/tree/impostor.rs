@@ -636,7 +636,7 @@ pub(in crate::presentation) fn render_tree_card(
         .filter(|leaf| card.includes_leaf(leaf))
         .copied()
         .collect::<Vec<_>>();
-    let leaf_mesh = procedural_oak_leaf_mesh(&source_leaves);
+    let leaf_mesh = procedural_oak_textured_leaf_mesh(&source_leaves);
     raster_source_mesh(
         card,
         &leaf_mesh,
@@ -1115,6 +1115,27 @@ pub(in crate::presentation) fn tree_projected_lod_visibility(
     }
 }
 
+pub(in crate::presentation) fn tree_leaf_visibility(
+    representation: TreeLeafRepresentation,
+    focal_scale: f32,
+    cluster_radius: f32,
+) -> VisibilityRange {
+    let cluster_scale = (cluster_radius / 3.5).sqrt().clamp(0.65, 1.35);
+    let leaf_transition =
+        (10.0 * focal_scale * cluster_scale)..(13.0 * focal_scale * cluster_scale);
+    let aggregate_transition =
+        tree_projected_lod_visibility(0, focal_scale, cluster_radius).end_margin;
+    let (start_margin, end_margin) = match representation {
+        TreeLeafRepresentation::TexturedMesh => (0.0..0.0, leaf_transition.clone()),
+        TreeLeafRepresentation::AlphaCard => (leaf_transition, aggregate_transition),
+    };
+    VisibilityRange {
+        start_margin,
+        end_margin,
+        use_aabb: true,
+    }
+}
+
 pub(in crate::presentation) fn tree_trunk_visibility() -> VisibilityRange {
     VisibilityRange {
         start_margin: 0.0..0.0,
@@ -1162,6 +1183,10 @@ mod tests {
 
     #[test]
     fn tree_lod_crossfades_share_exact_transition_margins() {
+        let cambered_leaf = tree_leaf_visibility(TreeLeafRepresentation::TexturedMesh, 1.0, 3.5);
+        let alpha_leaf = tree_leaf_visibility(TreeLeafRepresentation::AlphaCard, 1.0, 3.5);
+        assert_eq!(cambered_leaf.end_margin, alpha_leaf.start_margin);
+        assert_eq!(alpha_leaf.end_margin, tree_lod_visibility(1).start_margin);
         for lod in 0..4 {
             let current = tree_lod_visibility(lod);
             let next = tree_lod_visibility(lod + 1);

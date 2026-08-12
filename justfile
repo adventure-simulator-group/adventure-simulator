@@ -309,6 +309,19 @@ tactical-play mode="animation" base_port="24920" graphics_preset="default" prese
 tactical-scene-capture fixture="dense-woodland" output="" settle_frames="12" absolute_minute="":
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture {{ quote(fixture) }} --settle-frames {{ quote(settle_frames) }} {{ if output != "" { "--output " + quote(output) } else { "" } }} {{ if absolute_minute != "" { "--absolute-minute " + quote(absolute_minute) } else { "" } }}
 
+# Compare cambered and flat PBR leaves in the same uncapped dense-forest scene.
+# Output must be a fresh directory.
+tactical-tree-leaf-benchmark output="target/tactical-scene-captures/tree-leaf-benchmark" frames="180":
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture dense-woodland --leaf-benchmark-frames {{ quote(frames) }} --output {{ quote(output) }}
+
+# Capture both leaf representations from face-on through grazing review
+# azimuths under identical controlled daylight.
+tactical-tree-leaf-comparison output="target/tactical-scene-captures/tree-leaf-comparison" settle_frames="8" absolute_minute="340560":
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --tree-review-azimuth-degrees 0 --output {{ quote(output + "/angle-000") }}
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --tree-review-azimuth-degrees 30 --output {{ quote(output + "/angle-030") }}
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --tree-review-azimuth-degrees 60 --output {{ quote(output + "/angle-060") }}
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --tree-review-azimuth-degrees 80 --output {{ quote(output + "/angle-080") }}
+
 # Render one identical generated woodland at five world-data canopy values so
 # tree architecture can be compared without changing its seed or neighbours.
 tactical-tree-canopy-series output="target/tactical-scene-captures/tree-canopy-series" settle_frames="6" absolute_minute="340560":

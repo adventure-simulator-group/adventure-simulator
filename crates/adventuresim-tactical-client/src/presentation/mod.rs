@@ -34,7 +34,10 @@ pub(crate) use obstacles::rock::ProceduralRockVisual;
 #[allow(unused_imports)]
 pub(crate) use obstacles::tree::impostor::TreeImpostorProvenance;
 #[allow(unused_imports)]
-pub(crate) use obstacles::tree::{TreeLod, TreeLodCluster, TreeLodRenderOverride};
+pub(crate) use obstacles::tree::{
+    TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
+    TreeLodRenderOverride, oak_leaf_material,
+};
 #[allow(unused_imports)]
 pub(crate) use sky::{TacticalMoon, TacticalMoonlight, TacticalStars, TacticalSunlight};
 #[allow(unused_imports)]
@@ -98,7 +101,7 @@ impl Plugin for TacticalPresentationPlugin {
         app.add_plugins((
             MaterialPlugin::<TacticalTerrainMaterial>::default(),
             MaterialPlugin::<TacticalFoliageMaterial>::default(),
-            MaterialPlugin::<TacticalTreeLeafMaterial>::default(),
+            MaterialPlugin::<TacticalTreeLeafCardMaterial>::default(),
             MaterialPlugin::<TacticalTreeImpostorMaterial>::default(),
             MaterialPlugin::<TacticalMoonMaterial>::default(),
             MaterialPlugin::<TacticalStarMaterial>::default(),
