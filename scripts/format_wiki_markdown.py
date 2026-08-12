@@ -52,7 +52,10 @@ def _restore_inline_atoms(text: str, atoms: list[str]) -> str:
 
 
 def _wrap_paragraph(lines: list[str], width: int) -> list[str]:
-    if all(len(line) <= width or INLINE_ATOM.search(line) for line in lines):
+    if all(
+        len(line) <= width or len(INLINE_ATOM.sub("x", line)) <= width
+        for line in lines
+    ):
         return lines
     if any(line.endswith("  ") for line in lines):
         return lines
