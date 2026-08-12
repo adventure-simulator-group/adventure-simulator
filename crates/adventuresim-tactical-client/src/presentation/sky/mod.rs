@@ -191,7 +191,8 @@ pub(super) fn on_environment_added(
     let weather_transmission = sky_weather_transmission(environment);
 
     let (mut sun, mut sun_transform) = sunlight.into_inner();
-    sun.illuminance = scene_sunlight_illuminance(environment, sun_altitude);
+    sun.illuminance =
+        selected_solar_illuminance(settings.atmosphere_enabled, environment, sun_altitude);
     sun.shadow_maps_enabled = settings.shadows_enabled && sun_altitude > 0.0;
     *sun_transform = light_transform(sun_direction);
 
@@ -230,6 +231,20 @@ pub(super) fn on_environment_added(
         material.settings.x = star_visibility(sun_altitude) * weather_transmission;
     }
     Ok(())
+}
+
+fn selected_solar_illuminance(
+    atmosphere_enabled: bool,
+    environment: &SceneEnvironment,
+    sun_altitude_degrees: f32,
+) -> f32 {
+    if atmosphere_enabled {
+        scene_atmosphere_solar_illuminance(environment)
+    } else {
+        // The non-atmospheric fallback has no planetary transmittance or
+        // horizon occlusion, so it must retain the explicit altitude clamp.
+        scene_sunlight_illuminance(environment, sun_altitude_degrees)
+    }
 }
 
 pub(in crate::presentation) fn keep_celestial_visuals_centered(
@@ -301,13 +316,21 @@ pub(super) fn scene_exposure_ev100(
         8.0 + (sun_altitude_degrees + 6.0) * 0.5
     } else if sun_altitude_degrees >= -12.0 {
         4.0 + (sun_altitude_degrees + 12.0) * (4.0 / 6.0)
+    } else if sun_altitude_degrees >= -18.0 {
+        let night_target = night_exposure_ev100(moon_altitude_degrees, lunar_illumination);
+        let transition = smoothstep(12.0, 18.0, -sun_altitude_degrees);
+        4.0 + (night_target - 4.0) * transition
     } else {
         // Preserve genuinely dark, obstacle-obscuring moonless nights. A risen
         // moon lowers EV100 as the eye adapts to reveal the 0.25-lux surface
         // response; a below-horizon moon does neither. The former positive
         // sign darkened the camera as lunar illumination increased.
-        -0.5 - 0.75 * lunar_illumination * smoothstep(-2.0, 8.0, moon_altitude_degrees)
+        night_exposure_ev100(moon_altitude_degrees, lunar_illumination)
     }
+}
+
+fn night_exposure_ev100(moon_altitude_degrees: f32, lunar_illumination: f32) -> f32 {
+    -0.5 - 0.75 * lunar_illumination * smoothstep(-2.0, 8.0, moon_altitude_degrees)
 }
 
 fn star_visibility(sun_altitude_degrees: f32) -> f32 {
@@ -451,6 +474,58 @@ mod tests {
         assert!(moonlit < moonless);
         assert_eq!(moon_below_horizon, moonless);
         assert!((-1.3..=-1.2).contains(&moonlit));
+        for knot in [-12.0, -18.0] {
+            let below = scene_exposure_ev100(knot - 0.001, 30.0, 0.8);
+            let above = scene_exposure_ev100(knot + 0.001, 30.0, 0.8);
+            assert!(
+                (below - above).abs() < 0.01,
+                "exposure discontinuity at {knot}"
+            );
+        }
+    }
+
+    #[test]
+    fn sun_disc_preserves_physical_angular_diameter() {
+        assert!((SunDisk::EARTH.angular_size.to_degrees() - 0.533).abs() < 0.001);
+        assert_eq!(SunDisk::EARTH.intensity, 1.0);
+    }
+
+    #[test]
+    fn atmosphere_and_fallback_select_safe_solar_sources() {
+        let environment = SceneEnvironment {
+            scene_digest: "sky-test".into(),
+            generation_version: TACTICAL_SCENE_GENERATION_VERSION,
+            latitude_microdegrees: 0,
+            longitude_microdegrees: 0,
+            absolute_minute: 0,
+            absolute_elevation_metres: 0,
+            weather: WeatherSnapshot {
+                rules_version: WEATHER_RULES_VERSION,
+                interval_start_minute: 0,
+                cell_latitude: 0,
+                cell_longitude: 0,
+                temperature_deci_c: 100,
+                wind_speed_bps: 0,
+                precipitation: Precipitation::Clear,
+                intensity_bps: 0,
+                ground_moisture_bps: 0,
+                snow_cover_bps: 0,
+            },
+            canopy_bps: 0,
+            wetland_bps: 0,
+            cultivation_bps: 0,
+            water_bps: 0,
+            hilly_bps: 0,
+        };
+        assert_eq!(selected_solar_illuminance(false, &environment, -6.0), 0.0);
+        assert_eq!(
+            selected_solar_illuminance(true, &environment, -6.0),
+            lux::RAW_SUNLIGHT
+        );
+        assert_eq!(
+            selected_solar_illuminance(false, &environment, 8.0),
+            selected_solar_illuminance(true, &environment, 8.0)
+        );
     }
 
     #[test]

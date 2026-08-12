@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass
 import html
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -265,7 +266,7 @@ def validated_sky_manifest(path: Path, expected_view: str, expected_identity: st
     if not path.is_file():
         raise ValueError("sky child did not produce manifest")
     manifest = json.loads(path.read_text(encoding="utf-8"))
-    for field, expected in {"pipeline": "tactical_sky_native_capture_v2", "view": expected_view,
+    for field, expected in {"pipeline": "tactical_sky_native_capture_v3", "view": expected_view,
                             "resolution": [1600, 900], "source_identity": expected_identity}.items():
         if manifest.get(field) != expected:
             raise ValueError(f"sky {field} differs")
@@ -273,6 +274,29 @@ def validated_sky_manifest(path: Path, expected_view: str, expected_identity: st
         raise ValueError("sky revision or canonical minute differs")
     if not manifest.get("validation", {}).get("passed") or path.parent.joinpath(f"{expected_view}.failure.txt").exists():
         raise ValueError("sky semantic validation failed")
+    metrics = {
+        field: manifest.get(field)
+        for field in (
+            "upper_sky_mean_luma", "upper_sky_luma_variance",
+            "horizon_sky_mean_luma", "horizon_sky_red_blue_delta",
+            "exposure_ev100", "solar_source_illuminance_lux",
+        )
+    }
+    if any(not isinstance(value, (int, float)) or not math.isfinite(value)
+           for value in metrics.values()):
+        raise ValueError("sky v3 metrics are missing or non-finite")
+    if not (-2.0 <= metrics["exposure_ev100"] <= 15.1
+            and metrics["solar_source_illuminance_lux"] > 0
+            and manifest.get("atmosphere_enabled") is True
+            and manifest.get("environment_map_size") == 64):
+        raise ValueError("sky production lighting evidence differs")
+    if expected_view == "twilight" and not (
+        metrics["upper_sky_mean_luma"] >= 6.0
+        and metrics["upper_sky_luma_variance"] >= 4.0
+        and metrics["horizon_sky_mean_luma"] >= metrics["upper_sky_mean_luma"] + 3.0
+        and metrics["horizon_sky_red_blue_delta"] >= 3.0
+    ):
+        raise ValueError("twilight sky gradient evidence failed")
     png = path.parent / f"{expected_view}.png"
     if not png.is_file() or png.stat().st_size <= 64:
         raise ValueError("sky PNG missing or truncated")
