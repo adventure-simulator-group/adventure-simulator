@@ -149,6 +149,16 @@ dedicates the asset to the public domain under
 redistributed without visual modification under their upstream names. Their
 SHA-256 checksums are recorded in `assets/textures/rocks/README.md`.
 
+## Poly Haven Dirt
+
+The 1K diffuse, OpenGL normal, and AO/roughness/metal maps in
+`assets/textures/ground/` are the JPEG channels from
+[Dirt](https://polyhaven.com/a/dirt) by Charlotte Baglioni / Poly Haven. Poly
+Haven documents the scan as two metres wide and dedicates it to the public
+domain under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+The files are redistributed without visual modification; checksums are in the
+adjacent README.
+
 ### HYDE 3.5
 
 Generated strategic map tiles and terrain packs include a cultivated-land
