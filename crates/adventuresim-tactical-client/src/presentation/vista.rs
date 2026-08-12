@@ -11,9 +11,18 @@ pub(super) fn on_scene_vista_bundle(
     for entity in &existing {
         commands.entity(entity).despawn();
     }
+    let visible_lods = bundle
+        .lods
+        .iter()
+        .take(settings.max_vista_lods)
+        .collect::<Vec<_>>();
     let mut inner_half_extent = 55.0;
-    for lod in bundle.lods.iter().take(settings.max_vista_lods) {
-        let meshes_for_lod = vista_lod_meshes(lod, inner_half_extent);
+    for (index, lod) in visible_lods.iter().copied().enumerate() {
+        let meshes_for_lod = vista_lod_meshes_with_morph(
+            lod,
+            inner_half_extent,
+            visible_lods.get(index + 1).copied(),
+        );
         if meshes_for_lod.is_empty() {
             warn!(level = lod.level, "Rejected malformed tactical vista LOD");
             continue;
@@ -34,7 +43,7 @@ pub(super) fn on_scene_vista_bundle(
                 MeshMaterial3d(material.clone()),
                 Transform::from_xyz(
                     lod.origin_east_metres as f32,
-                    -0.06 * (f32::from(lod.level) + 1.0),
+                    0.0,
                     lod.origin_north_metres as f32,
                 ),
             ));
@@ -44,6 +53,14 @@ pub(super) fn on_scene_vista_bundle(
 }
 
 pub(super) fn vista_lod_meshes(lod: &VistaLod, inner_half_extent: f32) -> Vec<Mesh> {
+    vista_lod_meshes_with_morph(lod, inner_half_extent, None)
+}
+
+fn vista_lod_meshes_with_morph(
+    lod: &VistaLod,
+    inner_half_extent: f32,
+    coarser_lod: Option<&VistaLod>,
+) -> Vec<Mesh> {
     let width = usize::from(lod.width);
     let depth = usize::from(lod.depth);
     if width < 2
@@ -76,9 +93,16 @@ pub(super) fn vista_lod_meshes(lod: &VistaLod, inner_half_extent: f32) -> Vec<Me
                         continue;
                     }
                     let vertex = |vx: usize, vz: usize| {
+                        let world = Vec2::new(
+                            (vx as f32 - center_x) * lod.spacing_metres
+                                + lod.origin_east_metres as f32,
+                            (vz as f32 - center_z) * lod.spacing_metres
+                                + lod.origin_north_metres as f32,
+                        );
+                        let height = presented_height(lod, vx, vz, world, coarser_lod);
                         [
                             (vx as f32 - center_x) * lod.spacing_metres,
-                            lod.heights_metres[vz * width + vx],
+                            height,
                             (vz as f32 - center_z) * lod.spacing_metres,
                         ]
                     };
@@ -112,6 +136,59 @@ pub(super) fn vista_lod_meshes(lod: &VistaLod, inner_half_extent: f32) -> Vec<Me
         }
     }
     meshes
+}
+
+fn presented_height(
+    lod: &VistaLod,
+    x: usize,
+    z: usize,
+    world: Vec2,
+    coarser_lod: Option<&VistaLod>,
+) -> f32 {
+    let own = lod.heights_metres[z * usize::from(lod.width) + x];
+    let Some(coarser) = coarser_lod else {
+        return own;
+    };
+    let center = Vec2::new(
+        lod.origin_east_metres as f32,
+        lod.origin_north_metres as f32,
+    );
+    let half_extent = f32::from(lod.width.saturating_sub(1)) * lod.spacing_metres * 0.5;
+    let radius = (world - center).abs().max_element();
+    let weight =
+        ((radius - (half_extent - lod.spacing_metres)) / lod.spacing_metres).clamp(0.0, 1.0);
+    if weight <= 0.0 {
+        return own;
+    }
+    sample_vista_height(coarser, world)
+        .map(|height| own.lerp(height, weight))
+        .unwrap_or(own)
+}
+
+fn sample_vista_height(lod: &VistaLod, world: Vec2) -> Option<f32> {
+    let width = usize::from(lod.width);
+    let depth = usize::from(lod.depth);
+    let local = world
+        - Vec2::new(
+            lod.origin_east_metres as f32,
+            lod.origin_north_metres as f32,
+        );
+    let coordinate =
+        local / lod.spacing_metres + Vec2::new((width - 1) as f32 * 0.5, (depth - 1) as f32 * 0.5);
+    if coordinate.x < 0.0
+        || coordinate.y < 0.0
+        || coordinate.x > (width - 1) as f32
+        || coordinate.y > (depth - 1) as f32
+    {
+        return None;
+    }
+    let lower = coordinate.floor().as_uvec2();
+    let upper = (lower + UVec2::ONE).min(UVec2::new(width as u32 - 1, depth as u32 - 1));
+    let fraction = coordinate.fract();
+    let at = |x: u32, z: u32| lod.heights_metres[z as usize * width + x as usize];
+    let near = at(lower.x, lower.y).lerp(at(upper.x, lower.y), fraction.x);
+    let far = at(lower.x, upper.y).lerp(at(upper.x, upper.y), fraction.x);
+    Some(near.lerp(far, fraction.y))
 }
 
 pub(super) fn vista_lod_color(lod: &VistaLod) -> Color {
@@ -190,5 +267,42 @@ mod tests {
             }
             inner = f32::from(lod.width - 1) * lod.spacing_metres * 0.5;
         }
+    }
+
+    #[test]
+    fn finer_ring_morphs_onto_the_coarse_surface_at_its_outer_boundary() {
+        let sample = EnvironmentalSample::default();
+        let finer = VistaLod {
+            level: 0,
+            spacing_metres: 10.0,
+            width: 5,
+            depth: 5,
+            origin_east_metres: 0.0,
+            origin_north_metres: 0.0,
+            heights_metres: vec![12.0; 25],
+            environment: vec![sample; 25],
+        };
+        let coarse = VistaLod {
+            level: 1,
+            spacing_metres: 20.0,
+            width: 5,
+            depth: 5,
+            origin_east_metres: 0.0,
+            origin_north_metres: 0.0,
+            heights_metres: vec![38.0; 25],
+            environment: vec![sample; 25],
+        };
+        assert_eq!(
+            presented_height(&finer, 4, 2, Vec2::new(20.0, 0.0), Some(&coarse)),
+            38.0
+        );
+        assert_eq!(
+            presented_height(&finer, 2, 2, Vec2::ZERO, Some(&coarse)),
+            12.0
+        );
+        assert_eq!(
+            presented_height(&finer, 3, 2, Vec2::new(15.0, 0.0), Some(&coarse)),
+            25.0
+        );
     }
 }

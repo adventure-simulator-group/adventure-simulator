@@ -363,7 +363,10 @@ material, precipitation particles, fog distance, wind drift, and sunlight.
 Large vista grids are deliberately not ordinary replicated ECS components. The
 server sends each accepted client one immutable, ordered `SceneVistaBundle`;
 the client builds seam-sharing LOD rings split into independently frustum-culled
-mesh chunks without inner-area overdraw, colliders, or shadows. Synthetic
+mesh chunks without inner-area overdraw, colliders, or shadows. Each finer
+ring geomorphs its outermost sample row onto the next coarser height surface,
+with a one-fine-cell inward blend; this removes cracks and T-junction wedges
+without adding skirts, overlap, or gameplay geometry. Synthetic
 review fixtures normalize each vista LOD to the playable terrain's origin
 height, preventing coarse one-sided rings from becoming an invisible ceiling
 above the player. Production-composition review cameras keep these vistas
