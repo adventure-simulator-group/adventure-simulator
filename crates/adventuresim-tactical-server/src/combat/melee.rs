@@ -11,6 +11,7 @@ pub(super) fn resolve_melee_attack(
     mut q_authorities: Query<&mut MeleeAttackAuthority>,
     q_bestiary_categories: Query<&BestiaryCategories>,
     q_pending: Query<&PendingDefenderResponse>,
+    q_scene_items: Query<Entity, With<TacticalSceneItem>>,
     time: Res<Time<()>>,
 ) {
     let attack_style = event.strike_family.melee_style();
@@ -80,6 +81,7 @@ pub(super) fn resolve_melee_attack(
     };
     let line_of_sight = authoritative_line_of_sight(
         &spatial,
+        &q_scene_items,
         validated.attacker(),
         validated.target(),
         validated.attacker_position(),

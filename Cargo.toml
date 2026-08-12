@@ -59,6 +59,7 @@ bevy_ahoy = { version = "0.2.0", default-features = false, features = ["serializ
 bevy_enhanced_input = { version = "0.26.0", default-features = false }
 bevy_flair = "0.8.0"
 bevy_egui = { version = "0.40.1", default-features = false, features = ["bevy_ui", "default_fonts"] }
+bevy_mod_outline = { version = "0.13", default-features = false, features = ["flood"] }
 noiz = "0.5.0"
 bevy_animation_graph = { git = "https://github.com/adventure-simulator-group/bevy_animation_graph", rev = "dbd9801ce08a5794a7ebc8fe35470cbe5bbe5a88", default-features = false }
 bevy_animation_graph_editor = { git = "https://github.com/adventure-simulator-group/bevy_animation_graph", rev = "dbd9801ce08a5794a7ebc8fe35470cbe5bbe5a88", default-features = false }

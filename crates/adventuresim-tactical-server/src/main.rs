@@ -2,6 +2,7 @@
 
 mod bot;
 mod combat;
+mod equipment;
 mod mission;
 mod player_projection;
 mod stdb;
@@ -31,8 +32,9 @@ use crate::{
         process_terminal_submission_results,
     },
     player_projection::{
-        PlayerProjectionSet, on_client_disconnected, on_join_request, on_player_input,
-        restore_authoritative_movement_intent, spawn_connected_players, update_skeleton_locomotion,
+        PlayerProjectionSet, expire_disconnected_players, on_client_disconnected, on_join_request,
+        on_player_input, restore_authoritative_movement_intent, spawn_connected_players,
+        update_skeleton_locomotion,
     },
     stdb::{SpacetimeDb, SpacetimeDbReady},
 };
@@ -76,7 +78,7 @@ fn main() {
     let args = Args::parse();
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(bevy::log::LogPlugin {
-        filter: "tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
+        filter: "adventuresim_tactical_server=info,bevy_app=warn,bevy_ecs=warn".to_string(),
         ..default()
     }))
     .add_plugins((
@@ -90,6 +92,7 @@ fn main() {
     .add_plugins((
         stdb::SpacetimeDbPlugin,
         combat::CombatPlugin,
+        equipment::TacticalEquipmentPlugin,
         bot::BotPlugin,
     ))
     .insert_resource(MissionState::new(
@@ -110,6 +113,7 @@ fn main() {
                 .after(spawn_connected_players)
                 .after(process_terminal_submission_results),
             process_terminal_submission_results.after(stdb::update_spacetimedb),
+            expire_disconnected_players,
             fail_stalled_terminal_submission
                 .after(process_terminal_submission_results)
                 .before(check_terminal_combat_outcome),
@@ -193,6 +197,7 @@ fn on_server_started(
         SceneId(args.scene_key.clone()),
         terrain,
         RigidBody::Static,
+        CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
         terrain_collider,
         Transform::default(),
     ));
@@ -200,6 +205,7 @@ fn on_server_started(
     let scene_depth = args.scene_depth as f32;
     commands.spawn((
         RigidBody::Static,
+        CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
         Transform::default(),
         children![
             (

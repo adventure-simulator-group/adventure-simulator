@@ -277,6 +277,21 @@ The current tactical stack uses Bevy Replicon over Aeronet WebSockets:
    compatible private strategic outcome, and commits durable consequences
    idempotently.
 
+A running tactical client receives a private, server-generated 256-bit
+reconnect capability after enrollment. The client retains it in process across
+WebSocket reconnects on both native and wasm, and presents it with the character
+identity. The server binds it to that transient character/session, consumes and
+rotates it on every successful rebind, and rejects missing, wrong, or replayed
+capabilities; character IDs alone never authorize a rebind. Capabilities are
+targeted server events, not replicated components, and expire with the
+server-owned grace record. Rebinding moves the replicated root and inventory
+relationships/caches to the new connection without writing tactical state to
+SpacetimeDB. The server synchronously claims the grace record before queuing
+rebind commands, so duplicate same-frame proofs cannot both succeed; a record
+at or past its deadline cannot be claimed, and a claimed record cannot expire
+under the deferred rebind. Explicit terminal resolution and grace expiry retain
+their normal strategic teardown behavior.
+
 The SpacetimeDB SDK connection is asynchronous: constructing it does not mean
 the server identity has arrived. The child pumps that connection until the
 identity is available, then installs reducer subscriptions and opens the
@@ -440,3 +455,15 @@ suppression. Leaving a case context restores only the former; ordinary disease
 recovery or death authority controls the latter. All NPC availability
 consumers share the same authoritative projection and never advertise a dead
 or still-ill provider from a stale schedule row.
+
+Tactical equipment switching follows the same persistence boundary. Mission
+bootstrap maps durable equipment rows to replicated tactical entities, then
+all hand, body-slot, attachment, drop, and pickup changes mutate only that ECS
+snapshot. Durable inventory IDs remain server-only, the terminal tactical
+receipt contains no final equipment topology, and teardown restores strategic
+custody/equipment unchanged. Reconnection to the same live tactical server has
+a bounded 30-second, server-owned grace period. The replacement connection
+entity receives the existing combat/controller components and every tactical
+item relationship, so topology and scene state survive without durable writes.
+Grace expiry performs the ordinary strategic leave and discards the abandoned
+tactical projection. Starting a new mission projects the durable graph again.

@@ -43,6 +43,17 @@ pub fn definition(id: &str) -> Option<&'static ItemDefinition> {
         .map(|index| &catalog()[index])
 }
 
+pub fn weapon_carry(id: &str) -> Option<WeaponCarry> {
+    match &definition(id)?.kind {
+        ItemKind::Weapon { carry, .. } => Some(*carry),
+        _ => None,
+    }
+}
+
+pub fn is_sheathable_weapon(id: &str) -> bool {
+    weapon_carry(id) == Some(WeaponCarry::Sheathable)
+}
+
 pub fn source_for_item(id: &str) -> Option<&'static ItemSourceRef> {
     let sources = SOURCE_MAP.get_or_init(|| {
         let mut sources: Vec<ItemSourceRef> = serde_json::from_str(ITEM_CATALOG_SOURCE_MAP_JSON)
@@ -188,6 +199,52 @@ mod tests {
     }
 
     #[test]
+    fn authored_weapon_carry_contract_matches_parent_placements() {
+        for item in catalog() {
+            let ItemKind::Weapon { carry, .. } = &item.kind else {
+                continue;
+            };
+            let equipment = item
+                .equipment
+                .as_ref()
+                .unwrap_or_else(|| panic!("{} lacks equipment", item.id));
+            let has_sheath_placement = equipment.placements.iter().any(|placement| {
+                placement.parents.len() == 1
+                    && placement.parents[0].channel == EquipmentChannel::Containment
+            });
+            let all_hand_held_roots = equipment.placements.iter().all(|placement| {
+                placement.parents.is_empty()
+                    && placement.occupancy.len() == 1
+                    && matches!(
+                        placement.occupancy[0].location,
+                        EquipmentLocation::LeftHand | EquipmentLocation::RightHand
+                    )
+                    && placement.occupancy[0].channel == EquipmentChannel::Held
+                    && placement.occupancy[0].order == 0
+            });
+            let tagged = equipment
+                .attachment_tags
+                .iter()
+                .any(|tag| tag == "sheathable_weapon");
+            match *carry {
+                WeaponCarry::Sheathable => {
+                    assert!(has_sheath_placement && tagged, "{}", item.id)
+                }
+                WeaponCarry::HandOnly => assert!(all_hand_held_roots && !tagged, "{}", item.id),
+            }
+        }
+        for item_id in [
+            "halberd",
+            "hunting_spear",
+            "military_pike",
+            "spear",
+            "zweihander",
+        ] {
+            assert_eq!(weapon_carry(item_id), Some(WeaponCarry::HandOnly));
+        }
+    }
+
+    #[test]
     fn armor_and_clothing_definitions_have_explicit_equipment_projections() {
         for item in catalog()
             .iter()
@@ -240,14 +297,18 @@ mod tests {
             sheath
                 .attachment_points
                 .iter()
-                .any(|point| point.accepts_tags.contains(&"weapon".to_owned()))
+                .any(|point| point.accepts_tags.contains(&"sheathable_weapon".to_owned()))
         );
         let knife = definition("utility_knife")
             .unwrap()
             .equipment
             .as_ref()
             .unwrap();
-        assert!(knife.attachment_tags.contains(&"weapon".to_owned()));
+        assert!(
+            knife
+                .attachment_tags
+                .contains(&"sheathable_weapon".to_owned())
+        );
         let attached_knife = knife
             .placements
             .iter()
@@ -275,7 +336,11 @@ mod tests {
             .find(|point| point.id == "blade")
             .expect("sheath contains weapon");
         assert_eq!(sheath_blade.channel, EquipmentChannel::Containment);
-        assert!(sheath_blade.accepts_tags.contains(&"weapon".to_owned()));
+        assert!(
+            sheath_blade
+                .accepts_tags
+                .contains(&"sheathable_weapon".to_owned())
+        );
 
         let bag = definition("leather_satchel")
             .unwrap()
@@ -337,6 +402,37 @@ mod tests {
                     .placements
                     .iter()
                     .all(|placement| placement.protection.is_empty())
+            );
+        }
+    }
+
+    #[test]
+    fn every_equipment_item_has_finite_positive_tactical_geometry() {
+        let equipment: Vec<_> = catalog()
+            .iter()
+            .filter_map(|item| item.equipment.as_ref().map(|equipment| (item, equipment)))
+            .collect();
+        assert_eq!(equipment.len(), 64);
+        for (item, equipment) in equipment {
+            assert!(
+                equipment
+                    .physical
+                    .dimensions_m
+                    .iter()
+                    .all(|dimension| dimension.is_finite() && *dimension > 0.0),
+                "{}",
+                item.id
+            );
+            assert!(equipment.physical.grip_to_tip_m.is_finite());
+            assert!(equipment.physical.grip_to_tip_m >= 0.0);
+            assert!(
+                equipment
+                    .physical
+                    .anchor_offset_m
+                    .iter()
+                    .all(|offset| offset.is_finite()),
+                "{}",
+                item.id
             );
         }
     }

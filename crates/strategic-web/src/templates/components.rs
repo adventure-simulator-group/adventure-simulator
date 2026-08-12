@@ -576,6 +576,20 @@ mod icon_tests {
     }
 
     #[test]
+    fn every_catalog_item_icon_has_a_vendored_game_icon() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("static/icons/game");
+        for item in adventuresim_core::item_catalog::catalog() {
+            let path = root.join(format!("{}.svg", item.presentation.icon));
+            assert!(
+                path.is_file(),
+                "missing strategic Game Icon {} for {}",
+                item.presentation.icon,
+                item.id
+            );
+        }
+    }
+
+    #[test]
     fn icon_markup_is_local_accessible_and_header_is_compact() {
         let icon = item_type_icon("arming_sword").into_string();
         assert!(icon.contains("/static/icons/game/broadsword.svg"));

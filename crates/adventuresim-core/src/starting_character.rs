@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::organization::{Requirement, StartingProfession, catalog};
 use crate::skill::Skill;
 
-pub const GENERATOR_VERSION: u16 = 4;
+pub const GENERATOR_VERSION: u16 = 5;
 pub const YOUNG_ROSTER_SIZE: u8 = 5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1561,6 +1561,43 @@ mod tests {
                 assert_eq!(profile.combat.weapons, expected);
             }
         }
+    }
+
+    #[test]
+    fn generated_loadouts_fit_the_single_authored_sheath_kit() {
+        for tier in StartingAgeTier::ALL {
+            for candidate in roster(GENERATOR_VERSION, SEED, tier).unwrap() {
+                let sheathable = candidate
+                    .inventory
+                    .iter()
+                    .filter(|item| crate::item_catalog::is_sheathable_weapon(&item.item_id))
+                    .count();
+                assert!(
+                    sheathable <= 1,
+                    "{} has {sheathable} sheathable weapons",
+                    candidate.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn professional_sidearms_distinguish_held_from_initially_sheathed() {
+        let witch_hunter =
+            professional_loadout(StartingProfession::WitchHunter, StartingAgeTier::Adult);
+        let sidearm = witch_hunter
+            .iter()
+            .find(|item| crate::item_catalog::is_sheathable_weapon(&item.item_id))
+            .expect("witch hunter sidearm");
+        assert_eq!(sidearm.item_id, "bauernwehr");
+        assert_eq!(sidearm.equipped, None);
+
+        let knight = professional_loadout(StartingProfession::Knight, StartingAgeTier::Adult);
+        let sword = knight
+            .iter()
+            .find(|item| crate::item_catalog::is_sheathable_weapon(&item.item_id))
+            .expect("knight sword");
+        assert_eq!(sword.equipped, Some(StartingSlot::RightHand));
     }
 
     #[test]

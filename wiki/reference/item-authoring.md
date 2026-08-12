@@ -42,6 +42,13 @@ Changing or removing an ID requires recreating/reseeding the disposable
 development database. `display_name` and `presentation.icon` are presentation
 metadata and may change without changing identity.
 
+`presentation.icon` is also the shared item-icon contract. The strategic UI
+loads that Game Icons slug from its vendored SVG set, while the tactical client
+looks up the same slug in its deterministic sprite atlas. Do not add a
+renderer-specific item-to-icon mapping; strategic asset-coverage and tactical
+atlas-coverage tests must fail when an authored equipment icon is unavailable
+to either renderer.
+
 The `adventuresim-core` build script reads item files in normalized, sorted
 path order, validates them, sorts definitions by stable ID, computes a SHA-256
 revision over normalized paths and source bytes, and embeds the compiled JSON.
@@ -82,8 +89,9 @@ Every item requires `id`, `display_name`, `weight_kg`, `base_value`, `tags`,
 names. Kinds are `simple`, `currency`, `ingredient`, `medication`, `clothing`,
 `container`, `shield`, `armor`, `weapon`, and `food`.
 
-Kind payloads contain only compatible fields. Weapons require a slot, explicit
-damage types, mode flags, and an explicit finite, non-negative skill
+Kind payloads contain only compatible fields. Weapons require a slot, an
+explicit `carry` contract (`sheathable` or `hand_only`), explicit damage types,
+mode flags, and an explicit finite, non-negative skill
 distribution summing to one. Shields require their relevant slot/stat
 payload. Armor and clothing require an `equipment` object, and any other kind
 may author one. It contains stable-ID placement alternatives. A root placement
@@ -102,6 +110,15 @@ the stable seven-part body vocabulary. Never infer protection from physical
 equipment locations: a helmet may occupy head, face, and neck while protecting
 only `head`, and a boot sheath protects nothing. Items may expose ordered,
 capacity-limited `attachment_points` with optional accepted child tags.
+Sheathable weapons must expose the `sheathable_weapon` attachment tag and at
+least one placement with exactly one order-zero `containment` parent
+requirement; generated carry provisioning selects that compatible placement
+rather than an arbitrary parent alternative. Hand-only weapons must expose neither parent placements nor
+the sheathable tag, and every placement must be exactly one `held` occupancy at
+`left_hand` or `right_hand`. Polearms, zweihanders, bows, firearms, and every
+other authored hand-only weapon can only be held or dropped. Catalog validation
+rejects a contradictory carry contract, and strategic/tactical authority
+independently enforces the same held-root boundary.
 Repairable kinds require a `durability` capability with
 quality 1--5 and explicit physical/handling inputs.
 
@@ -148,6 +165,30 @@ There are no inferred quality, durability, damage types, weapon skills, or
 unit conversions. Optional capability sections are absent when inapplicable;
 fields within a present section are required unless documented otherwise.
 Recipes are outside this catalog.
+
+### Tactical placeholder dimensions
+
+Every item with an `equipment` section authors `equipment.physical`. Its
+`dimensions_m` is a finite, strictly positive `[width, length, thickness]`
+box in local X/Y/Z. `anchor_offset_m` gives the attachment anchor relative to
+the ordinary box-centre origin, and `grip_to_tip_m` records gameplay reach from
+a weapon's hand anchor without stretching the box. Weapon tips point along
+local +Y. The tactical client constrains a held weapon's authored anchor root
+to `weapon.L` or `weapon.R`; inspection of the current rig shows those sockets
+already use the required direction, so the documented socket correction is
+the identity transform.
+
+The same dimensions produce the visible placeholder mesh and dropped-item
+collider. Do not infer them from `exterior_volume_ml`, which is container
+displacement rather than a useful exterior shape.
+
+For worn equipment, the placement's first body occupancy selects a semantic
+humanoid bone and `anchor_offset_m` positions the box centre relative to that
+bone. Sided placement alternatives therefore share one mirrored local shape.
+For attachment-only placements, the client follows the authored parent chain
+until it reaches a body occupancy and uses that body's bone. Keep dimensions
+and offsets representative of the specific object; do not copy a generic
+weapon box into armor, clothing, shields, or attachment hardware.
 
 ## Workflow
 

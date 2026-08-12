@@ -67,6 +67,11 @@ The normalized equipment graph supports body → belt → sheath → weapon,
 body → belt → bag → contents, and body → forearm/boot sheath → weapon.
 The catalog sword sheath uses two belt mount requirements, exercising
 multi-point attachment against the belt's ordered mount points.
+Generated non-newborn characters whose loadout contains a sheathable weapon
+receive a worn belt and attached sheath. An initially held weapon stays held;
+an unequipped sidearm begins inside the sheath. Hand-only loadouts receive no
+irrelevant carry kit. This materialization is deterministic and versioned with
+the starting-character generator.
 Attachment points have an authored channel, traversal order, capacity, and
 optional accepted child tags. Removing or moving an item with children is
 rejected in player-facing reducers, so no operation can orphan descendants.

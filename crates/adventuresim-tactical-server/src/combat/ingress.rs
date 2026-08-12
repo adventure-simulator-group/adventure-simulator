@@ -289,6 +289,7 @@ fn duration_ticks(duration: CombatDuration) -> u64 {
 
 pub(super) fn authoritative_line_of_sight(
     spatial: &SpatialQuery,
+    scene_items: &Query<Entity, With<TacticalSceneItem>>,
     attacker: Entity,
     target: Entity,
     origin: Vec3,
@@ -299,7 +300,8 @@ pub(super) fn authoritative_line_of_sight(
     let Ok(direction) = Dir3::new(offset) else {
         return false;
     };
-    let filter = SpatialQueryFilter::from_excluded_entities([attacker]);
+    let excluded: Vec<_> = scene_items.iter().chain([attacker]).collect();
+    let filter = SpatialQueryFilter::from_excluded_entities(excluded);
     spatial
         .cast_ray(origin, direction, distance, true, &filter)
         .is_some_and(|hit| hit.entity == target)
