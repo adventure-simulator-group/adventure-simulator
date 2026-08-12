@@ -114,6 +114,15 @@ transmission, and distance fog. Coarse vista samples preserve local peaks and
 render as seam-sharing rings of independently culled mesh chunks out to 50 km;
 coarser rings leave the playable and finer-ring interiors open rather than
 overdrawing them.
+
+Near-tree PBR leaf cards participate in the horizon-aware directional shadow
+map, producing both cast shadows and leaf-on-leaf self shadow. Their vertex data
+also carries a deterministic canopy-visibility term that darkens protected
+interior foliage without relying on native screen-space ambient occlusion,
+which is unavailable on WebGPU. The same alpha cutoff and CPU-synchronized wind
+phase are used by forward, depth/prepass, and shadow passes so moving leaf
+silhouettes remain aligned. Aggregate distant tree LODs do not cast individual
+leaf shadows.
 Hazard mechanics remain future work; [#212](https://github.com/adventure-simulator-group/fabelgeist/issues/212)
 tracks that handoff and committed-result contract.
 The world map is a grid where each square has a height and an enum for the terrain type. Each of these affect both the speed of travel and the difficulty of climb/swim check to avoid injury. We should not try and create our own, we should be able to find both height and biome data from some open GIS dataset. At minimum, it should be easy to find modern data for these, but there may also be a historical dataset that we can use.
