@@ -95,7 +95,8 @@ Strategic systems share a closed, versioned vocabulary for place and fixture
 identity. A coarse settlement identity is not an exact venue, and constructing
 an inn, chapter, residence, case-site, camp, source, or fireplace identity does
 not establish existence, presence, visibility, knowledge, ownership, or
-permission. See [Strategic place and fixture identities](strategic-places.md).
+permission. See
+[Strategic place and fixture identities](world-data/strategic-places.md).
 
 Consequences shared by multiple strategic domains may pass through a closed,
 versioned world-event envelope. The envelope records the directed actor and

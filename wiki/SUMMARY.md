@@ -4,7 +4,7 @@
 
 # World
 
-[Scenario](scenario.md)
+- [Scenario](scenario.md)
 
 ---
 
