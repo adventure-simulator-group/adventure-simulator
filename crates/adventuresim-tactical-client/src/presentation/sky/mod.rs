@@ -31,6 +31,10 @@ pub(crate) struct TacticalStars;
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(in crate::presentation) struct TacticalMoonMaterial {
+    /// NASA LRO equirectangular colour mosaic, sampled as sRGB base reflectance.
+    #[texture(2)]
+    #[sampler(3)]
+    albedo: Handle<Image>,
     /// Direction toward the Sun and overall weather transmission.
     #[uniform(0)]
     light: Vec4,
@@ -49,7 +53,9 @@ impl Material for TacticalMoonMaterial {
     }
 
     fn alpha_mode(&self) -> AlphaMode {
-        AlphaMode::Blend
+        // The Moon is a closed sphere. Opaque depth prevents stars from
+        // bleeding through its earthlit or unlit hemisphere.
+        AlphaMode::Opaque
     }
 }
 
@@ -94,6 +100,7 @@ impl Material for TacticalStarMaterial {
 pub(in crate::presentation) fn setup_tactical_sky(
     mut commands: Commands,
     settings: Res<TacticalGraphicsSettings>,
+    asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut moon_materials: ResMut<Assets<TacticalMoonMaterial>>,
     mut star_materials: ResMut<Assets<TacticalStarMaterial>>,
@@ -131,8 +138,9 @@ pub(in crate::presentation) fn setup_tactical_sky(
         Name::new("Tactical Moon disc"),
         TacticalMoon,
         NotShadowCaster,
-        Mesh3d(meshes.add(Sphere::new(1.0))),
+        Mesh3d(meshes.add(Sphere::new(1.0).mesh().uv(96, 48))),
         MeshMaterial3d(moon_materials.add(TacticalMoonMaterial {
+            albedo: asset_server.load("textures/moon/lroc_color_2k.jpg"),
             light: Vec4::Y,
             appearance: Vec4::new(0.025, 8.0, 0.0, 0.0),
         })),
@@ -242,6 +250,25 @@ pub(in crate::presentation) fn keep_celestial_visuals_centered(
     );
     moon_transform.translation =
         camera.translation() + to_bevy_direction(celestial.moon) * MOON_DISTANCE_METRES;
+    moon_transform.rotation = moon_near_side_rotation(to_bevy_direction(celestial.moon));
+}
+
+/// Keeps the map's zero-longitude near side pointed at the observer while
+/// retaining a stable celestial north. This is the bounded synchronous-rotation
+/// model appropriate at the Moon's sub-pixel libration scale here.
+fn moon_near_side_rotation(direction_to_moon: Vec3) -> Quat {
+    let local_x_world = -direction_to_moon.normalize();
+    let mut local_z_world = Vec3::Y - local_x_world * Vec3::Y.dot(local_x_world);
+    if local_z_world.length_squared() < 1.0e-4 {
+        local_z_world = Vec3::Z - local_x_world * Vec3::Z.dot(local_x_world);
+    }
+    local_z_world = local_z_world.normalize();
+    let local_y_world = local_z_world.cross(local_x_world).normalize();
+    Quat::from_mat3(&Mat3::from_cols(
+        local_x_world,
+        local_y_world,
+        local_z_world,
+    ))
 }
 
 fn light_transform(direction_to_light: Vec3) -> Transform {
@@ -423,5 +450,26 @@ mod tests {
         assert!(moonlit > moonless);
         assert_eq!(moon_below_horizon, moonless);
         assert!((-0.75..=0.75).contains(&moonlit));
+    }
+
+    #[test]
+    fn moon_rotation_keeps_zero_longitude_facing_the_observer() {
+        for direction in [
+            Vec3::new(0.7, 0.4, -0.2).normalize(),
+            Vec3::new(-0.3, 0.9, 0.1).normalize(),
+            Vec3::Y,
+        ] {
+            let rotation = moon_near_side_rotation(direction);
+            assert!((rotation * Vec3::X + direction).length() < 1.0e-5);
+            assert!((rotation * Vec3::Z).dot(direction).abs() < 1.0e-5);
+        }
+    }
+
+    #[test]
+    fn moon_disc_preserves_physical_angular_diameter() {
+        let radius = MOON_DISTANCE_METRES * MOON_ANGULAR_RADIUS_RADIANS.tan();
+        let reconstructed = (radius / MOON_DISTANCE_METRES).atan();
+        assert!((reconstructed - MOON_ANGULAR_RADIUS_RADIANS).abs() < f32::EPSILON);
+        assert!((MOON_ANGULAR_RADIUS_RADIANS.to_degrees() * 2.0 - 0.5).abs() < 1.0e-5);
     }
 }

@@ -1,6 +1,7 @@
 #import bevy_pbr::{
     forward_io::{Vertex, VertexOutput},
     mesh_functions,
+    mesh_view_bindings::view,
     view_transformations::position_world_to_clip,
 }
 
@@ -9,6 +10,11 @@ var<uniform> moon_light: vec4<f32>;
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(1)
 var<uniform> moon_appearance: vec4<f32>;
+
+@group(#{MATERIAL_BIND_GROUP}) @binding(2)
+var moon_albedo: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(3)
+var moon_albedo_sampler: sampler;
 
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
@@ -36,15 +42,18 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let direct = max(dot(normal, normalize(moon_light.xyz)), 0.0);
     let terminator = smoothstep(0.0, 0.035, direct);
     let earthshine = moon_appearance.x;
-    let maria = 0.9
-        + 0.08 * sin(in.uv.x * 41.0 + sin(in.uv.y * 17.0) * 2.1)
-        + 0.04 * sin(in.uv.y * 73.0 - in.uv.x * 11.0);
-    let limb = pow(clamp(abs(dot(normal, normalize(-in.world_position.xyz))), 0.0, 1.0), 0.12);
+    // The source is an sRGB base-colour map. Bevy decodes it to linear here;
+    // normalizing by representative lunar reflectance preserves the existing
+    // shared disc-radiance scale without adding an asset-specific light.
+    let lunar_reflectance = textureSample(moon_albedo, moon_albedo_sampler, in.uv).rgb;
+    let relative_albedo = lunar_reflectance / vec3<f32>(0.18);
+    let to_viewer = normalize(view.world_position - in.world_position.xyz);
+    let emission_cosine = clamp(dot(normal, to_viewer), 0.0, 1.0);
+    // A restrained Lommel-Seeliger response avoids the plastic Lambert-sphere
+    // limb while remaining finite on the terminator.
+    let lunar_scattering = direct / max(direct + emission_cosine, 0.025);
     let radiance = moon_appearance.y
         * moon_light.w
-        * maria
-        * limb
-        * mix(earthshine, 1.0, terminator);
-    let lunar_color = vec3<f32>(1.0, 0.94, 0.80);
-    return vec4<f32>(lunar_color * radiance, clamp(earthshine + terminator, 0.0, 1.0));
+        * mix(earthshine, max(lunar_scattering * 2.0, earthshine), terminator);
+    return vec4<f32>(relative_albedo * radiance, 1.0);
 }
