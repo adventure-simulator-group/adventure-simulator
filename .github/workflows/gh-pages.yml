@@ -82,20 +82,20 @@ jobs:
             python3 scripts/format_wiki_markdown.py --check --changed-from "$base_sha"
           fi
       - name: Setup mdBook
-        uses: jaxxstorm/action-install-gh-release@v3
+        uses: jaxxstorm/action-install-gh-release@v3.0.0
         with:
           repo: rust-lang/mdBook
           tag: v0.4.52
           cache: enable
       - name: Setup mdBook table of contents
-        uses: jaxxstorm/action-install-gh-release@v3
+        uses: jaxxstorm/action-install-gh-release@v3.0.0
         with:
           repo: badboy/mdbook-toc
           tag: 0.14.2
           cache: enable
           chmod: 0755
       - name: Setup mdBook Link Check
-        uses: jaxxstorm/action-install-gh-release@v3
+        uses: jaxxstorm/action-install-gh-release@v3.0.0
         with:
           repo: Michael-F-Bryan/mdbook-linkcheck
           tag: v0.7.7
