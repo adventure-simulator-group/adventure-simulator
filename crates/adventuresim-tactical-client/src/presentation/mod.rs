@@ -16,7 +16,7 @@ mod weather;
 
 use environment::*;
 use foliage::*;
-use obstacles::rock::{procedural_rock_mesh, rock_color};
+use obstacles::rock::{TacticalRockMaterial, procedural_rock_mesh, rock_color};
 use obstacles::tree::*;
 use obstacles::{on_scene_obstacle_added, present_pending_trees};
 use procedural::*;
@@ -105,6 +105,7 @@ impl Plugin for TacticalPresentationPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
             MaterialPlugin::<TacticalTerrainMaterial>::default(),
+            MaterialPlugin::<TacticalRockMaterial>::default(),
             MaterialPlugin::<TacticalFoliageMaterial>::default(),
             MaterialPlugin::<TacticalTreeLeafCardMaterial>::default(),
             MaterialPlugin::<TacticalTreeImpostorMaterial>::default(),
