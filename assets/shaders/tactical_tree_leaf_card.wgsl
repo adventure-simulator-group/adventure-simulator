@@ -48,6 +48,7 @@ var back_normal_sampler: sampler;
 struct TacticalTreeLeafCardMaterial {
     parameters: vec4<f32>,
     surface_parameters: vec4<f32>,
+    physical_parameters: vec4<f32>,
 }
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(10)
@@ -202,19 +203,24 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let interior = mix(0.72, 1.0, smoothstep(0.05, 0.72, 1.0 - in.uv.y));
     let transmitted_tint = select(vec3<f32>(1.0), vec3<f32>(1.14, 1.08, 0.82), !is_front);
     let canopy_visibility = mix(1.0, in.color.a, leaf_card.surface_parameters.z);
+    let dry_leaf = leaf_card.physical_parameters.z > 0.5;
+    let texture_luminance = dot(albedo, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let dry_texture = mix(vec3<f32>(texture_luminance), albedo, 0.18);
+    let dry_pigment = dry_texture * mix(vec3<f32>(1.0), in.color.rgb, 0.72);
+    let surface_albedo = select(albedo * vec3<f32>(in.color.r), dry_pigment, dry_leaf);
 
     var pbr_input = pbr_input_from_vertex_output(in, is_front, true);
     pbr_input.material.flags = STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT
         | STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT;
     pbr_input.material.base_color = vec4<f32>(
-        albedo * vec3<f32>(in.color.r) * spatial_hue * interior * transmitted_tint,
+        surface_albedo * spatial_hue * interior * transmitted_tint,
         opacity,
     );
-    pbr_input.material.perceptual_roughness = 0.86;
+    pbr_input.material.perceptual_roughness = leaf_card.physical_parameters.x;
     pbr_input.material.metallic = 0.0;
     pbr_input.material.reflectance = vec3<f32>(0.22);
     pbr_input.material.diffuse_transmission = leaf_card.surface_parameters.w;
-    pbr_input.material.thickness = 0.001;
+    pbr_input.material.thickness = leaf_card.physical_parameters.y;
     pbr_input.world_normal = base_normal;
     pbr_input.N = normal;
     pbr_input.diffuse_occlusion = vec3<f32>(canopy_visibility);

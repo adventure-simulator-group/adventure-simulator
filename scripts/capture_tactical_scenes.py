@@ -32,8 +32,8 @@ SKY_VIEWS = ("sun", "twilight", "moon", "stars")
 SKY_MINUTES = {"sun": 172 * 1440 + 12 * 60, "twilight": 80 * 1440 + 18 * 60,
                "moon": 53_155, "stars": 637_860}
 EXPECTED_PIPELINE = "tactical_scene_native_capture_v4"
-EXPECTED_PROFILE_VERSION = 3
-EXPECTED_CAMERA_VERSION = 2
+EXPECTED_PROFILE_VERSION = 4
+EXPECTED_CAMERA_VERSION = 3
 EXPECTED_RESOLUTION = [1280, 720]
 EXPECTED_PRESENTATION_REQUEST = {
     "shadows": True,
@@ -76,6 +76,7 @@ CURATED_ENVIRONMENTS = (
             "tree-branch-junction",
             "terrain-grazing-detail",
             "grass-seam-detail",
+            "forest-floor-debris-detail",
             "horizon",
         ),
     ),
@@ -236,6 +237,16 @@ def validated_child_manifest(
         raise ValueError("child lighting readiness failed")
     if not all(capture.get("lighting_ready") for capture in manifest.get("captures", [])):
         raise ValueError("one or more requested views lacked stable lighting readbacks")
+    if "forest-floor-debris-detail" in expected_views:
+        debris = next(
+            capture for capture in manifest["captures"]
+            if capture["view"] == "forest-floor-debris-detail"
+        )
+        if not all(
+            isinstance(debris.get(field), (int, float)) and 0 <= debris[field] <= .275
+            for field in ("debris_leaf_distance_metres", "debris_twig_distance_metres")
+        ):
+            raise ValueError("debris view lacks an in-frame rendered leaf/twig pair")
     validated_png_set(path.parent, expected_views)
     if expected_minute == NAMED_TIMES["moonlit"]:
         celestial = manifest.get("celestial", {})
