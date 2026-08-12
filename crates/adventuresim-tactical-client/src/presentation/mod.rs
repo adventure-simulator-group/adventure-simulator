@@ -128,6 +128,7 @@ impl Plugin for TacticalPresentationPlugin {
             (
                 advance_weather_particles,
                 update_grass_interaction,
+                update_tree_leaf_wind,
                 present_ground_scatter,
                 (present_pending_trees, update_tree_projected_lod_ranges).chain(),
                 keep_celestial_visuals_centered,

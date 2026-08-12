@@ -620,6 +620,13 @@ pub(in crate::presentation) fn oak_leaf_card_bounds(leaf: TreeLeaf) -> (Vec3, f3
     (center, leaf.width * 1.08, height)
 }
 
+fn leaf_shadow_selector(leaf: TreeLeaf) -> f32 {
+    let shoot_key = u64::from(leaf.primary_group)
+        | (u64::from(leaf.secondary_group) << 8)
+        | (u64::from(leaf.shoot_id) << 24);
+    unit_hash(splitmix64(shoot_key ^ 0x5a17_8c3d_2149_b6e0))
+}
+
 /// Replaces every cambered production leaf with one alpha-masked quad while
 /// retaining its biological attachment, orientation, scale, and wind UV.
 pub(in crate::presentation) fn procedural_oak_leaf_card_mesh(leaves: &[TreeLeaf]) -> Mesh {
@@ -653,7 +660,9 @@ pub(in crate::presentation) fn procedural_oak_leaf_card_mesh(leaves: &[TreeLeaf]
         // biological attachment and the blade tip at the distal end.
         uvs.extend_from_slice(&[[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]);
         let shade = (leaf.shade / 0.82).clamp(0.72, 1.18);
-        colors.extend_from_slice(&[[shade, shade, shade, 1.0]; 4]);
+        let ambient_visibility = ((leaf.shade - 0.52) / 0.44).clamp(0.32, 1.0);
+        let shadow_selector = leaf_shadow_selector(*leaf);
+        colors.extend_from_slice(&[[shade, shade, shadow_selector, ambient_visibility]; 4]);
         indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
     let mut mesh = Mesh::new(
@@ -684,6 +693,8 @@ pub(in crate::presentation) fn procedural_oak_textured_leaf_mesh(leaves: &[TreeL
         let scaled_height = height * COVERAGE_SCALE;
         center += leaf.up * (scaled_height - height) * 0.5;
         let shade = (leaf.shade / 0.82).clamp(0.72, 1.18);
+        let ambient_visibility = ((leaf.shade - 0.52) / 0.44).clamp(0.32, 1.0);
+        let shadow_selector = leaf_shadow_selector(*leaf);
         let base = positions.len() as u32;
         let curl_sign = if leaf.torsion.is_sign_negative() {
             -1.0
@@ -721,7 +732,7 @@ pub(in crate::presentation) fn procedural_oak_textured_leaf_mesh(leaves: &[TreeL
                         .to_array(),
                 );
                 uvs.push([u, 1.0 - v]);
-                colors.push([shade, shade, shade, 1.0]);
+                colors.push([shade, shade, shadow_selector, ambient_visibility]);
             }
         }
         for row in 0..2_u32 {
@@ -1188,6 +1199,28 @@ mod tests {
         assert_eq!(
             mesh.indices().expect("textured leaves are indexed").len(),
             leaves.len() * 24
+        );
+    }
+
+    #[test]
+    fn leaf_shadow_transmission_is_stable_per_shoot_and_well_distributed() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let leaves = procedural_oak_leaves(42, &branches, 0.0);
+        let mut shoots = std::collections::BTreeMap::new();
+        for leaf in leaves {
+            let key = (leaf.primary_group, leaf.secondary_group, leaf.shoot_id);
+            let selector = leaf_shadow_selector(leaf);
+            let previous = shoots.entry(key).or_insert(selector);
+            assert_eq!(
+                *previous, selector,
+                "one shoot must not fragment its shadow"
+            );
+        }
+        let transmitting = shoots.values().filter(|selector| **selector < 0.42).count();
+        let fraction = transmitting as f32 / shoots.len() as f32;
+        assert!(
+            (0.37..=0.47).contains(&fraction),
+            "expected roughly 42% transmitting shoots, got {fraction:.3}"
         );
     }
 

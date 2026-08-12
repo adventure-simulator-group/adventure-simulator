@@ -791,6 +791,7 @@ just tactical-scene-capture heavy-rain-high-wind target/tactical-scene-captures/
 just tactical-scene-capture sparse-woodland target/tactical-scene-captures/daylight-review 12 340560
 just tactical-tree-canopy-series target/tactical-scene-captures/oak-canopy-review
 just tactical-tree-leaf-benchmark target/tactical-scene-captures/tree-leaf-benchmark 180
+just tactical-tree-lighting-benchmark target/tactical-scene-captures/tree-lighting-benchmark 180
 just tactical-tree-leaf-comparison target/tactical-scene-captures/tree-leaf-comparison
 ```
 
@@ -800,6 +801,13 @@ writes `leaf-benchmark.json` and a
 `comparison.md` table after per-mode warm-up. These are uncapped end-to-end
 frame durations rather than isolated GPU timestamps, so compare modes from the
 same run and machine.
+
+The tree-lighting benchmark holds the dense forest, daylight, camera, wind, and
+forced LOD0 cambered leaves constant while measuring baseline, canopy ambient
+occlusion, directional leaf self shadows, and both effects together. It writes
+`tree-lighting-benchmark.json` and `tree-lighting-comparison.md`. The AO mode is
+a WebGPU-safe canopy-visibility term rather than native screen-space AO, which
+Bevy does not currently expose on WebGPU.
 
 The leaf comparison recipe renders the cambered and flat PBR foliage from 0,
 30, 60, and 80 degree review azimuths under a locked
@@ -817,11 +825,13 @@ without introducing a material pop.
 The native viewer writes standing-eye-height (1.65 m above the sampled local
 terrain), overhead, horizon, and collider-overlay PNGs alongside the exact
 `input.json`, a browsable `index.html`, and a
-machine-readable `manifest.json`. Nine focused views target the nearest tree,
+machine-readable `manifest.json`. Focused views target the nearest tree,
 when present: a complete individual-leaf tree, a canopy-ground view proving the
 leaf-litter/grass boundary, a mixed recursive-LOD view, a neutral silhouette plate, an
 isolated terminal-shoot close-up with a 10 cm scale marker, and matched-scale
 leafed-twig, small-branch, crown-branch, and whole-tree-billboard views. The
+tree sequence also includes locked baseline, canopy-AO-only,
+self-shadow-only, and combined lighting plates. The
 terminal plate uses the exact production branch and leaf geometry for that
 seed rather than a separately authored review prop. They fall back to the ordinary ground view
 for treeless fixtures. The viewer waits for custom material pipelines before
