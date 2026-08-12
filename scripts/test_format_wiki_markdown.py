@@ -33,6 +33,16 @@ class FormatWikiMarkdownTests(unittest.TestCase):
             rendered,
         )
 
+    def test_wraps_long_prose_around_short_link(self) -> None:
+        source = (
+            "Read [this](https://example.com) because the surrounding prose is "
+            "deliberately much too long for this narrow test width.\n"
+        )
+        rendered = format_markdown(source, width=48)
+        self.assertEqual(source.split(), rendered.split())
+        self.assertGreater(len(rendered.splitlines()), 1)
+        self.assertTrue(all(len(line) <= 48 for line in rendered.splitlines()))
+
     def test_preserves_intentionally_wrapped_prose(self) -> None:
         source = "This paragraph is already wrapped\nwithin the requested width.\n"
         self.assertEqual(source, format_markdown(source, width=40))
