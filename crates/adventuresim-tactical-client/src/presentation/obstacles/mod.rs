@@ -13,6 +13,7 @@ pub(in crate::presentation) fn on_scene_obstacle_added(
     obstacles: Query<&SceneObstacle>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut rock_materials: ResMut<Assets<TacticalRockMaterial>>,
+    asset_server: Res<AssetServer>,
 ) -> Result {
     let obstacle = obstacles.get(event.entity)?;
     match *obstacle {
@@ -26,7 +27,7 @@ pub(in crate::presentation) fn on_scene_obstacle_added(
                 Name::new("Presented tactical rock"),
                 ProceduralRockVisual,
                 Mesh3d(meshes.add(procedural_rock_mesh(recipe))),
-                MeshMaterial3d(rock_materials.add(rock_material(recipe))),
+                MeshMaterial3d(rock_materials.add(rock_material(recipe, &asset_server))),
             ));
         }
     }
