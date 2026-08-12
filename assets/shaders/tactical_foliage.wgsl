@@ -11,6 +11,8 @@ struct TacticalFoliageMaterial {
     interaction_motion: vec4<f32>,
     shading: vec4<f32>,
     shape: vec4<f32>,
+    celestial: vec4<f32>,
+    ambient: vec4<f32>,
 }
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(0)
@@ -197,8 +199,13 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let centre_rib = mix(0.84, 1.0, smoothstep(0.12, 0.72, centre_distance));
     let meadow_variation = 1.0 + foliage.shading.y
         * sin(in.world_position.x * 0.083 + sin(in.world_position.z * 0.057) * 2.3);
-    let light_direction = normalize(vec3<f32>(0.35, 0.86, 0.25));
-    let soft_light = 0.72 + 0.28 * max(dot(normalize(in.world_normal), light_direction), 0.0);
-    let color = in.color.rgb * root_self_shadow * centre_rib * meadow_variation * soft_light;
+    let light_direction = normalize(foliage.celestial.xyz);
+    let directional = 0.72 + 0.28 * max(dot(normalize(in.world_normal), light_direction), 0.0);
+    // Grass ribbons cannot use StandardMaterial's tangent-space PBR path, so
+    // approximate the same direct Lambert + ambient irradiance decomposition.
+    let direct_irradiance = directional * foliage.celestial.w;
+    let ambient_irradiance = foliage.ambient.rgb * foliage.ambient.w;
+    let irradiance = ambient_irradiance + vec3<f32>(direct_irradiance);
+    let color = in.color.rgb * root_self_shadow * centre_rib * meadow_variation * irradiance;
     return vec4<f32>(color, 1.0);
 }

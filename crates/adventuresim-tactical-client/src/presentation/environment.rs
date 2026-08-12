@@ -37,6 +37,44 @@ pub(super) fn scene_distance_fog(environment: &SceneEnvironment) -> DistanceFog 
     }
 }
 
+pub(super) fn scene_night_factor(
+    sun_altitude_degrees: f32,
+    moon_altitude_degrees: f32,
+    lunar_illumination: f32,
+) -> f32 {
+    let daylight = smoothstep(-8.0, 2.0, sun_altitude_degrees);
+    let moon = lunar_illumination * smoothstep(-2.0, 8.0, moon_altitude_degrees);
+    (daylight + moon * 0.12).clamp(0.0, 1.0)
+}
+
+pub(super) fn scene_ambient_response(
+    sun_altitude_degrees: f32,
+    moon_altitude_degrees: f32,
+    lunar_illumination: f32,
+) -> f32 {
+    let daylight = smoothstep(-8.0, 4.0, sun_altitude_degrees);
+    let moon = lunar_illumination * smoothstep(-2.0, 8.0, moon_altitude_degrees);
+    (0.05 + daylight * 0.23 + moon * 0.04).clamp(0.05, 0.28)
+}
+
+pub(super) fn scene_ambient_light(
+    sun_altitude_degrees: f32,
+    moon_altitude_degrees: f32,
+    lunar_illumination: f32,
+) -> (Vec3, f32) {
+    let daylight = smoothstep(-8.0, 4.0, sun_altitude_degrees);
+    let moon = lunar_illumination * smoothstep(-2.0, 8.0, moon_altitude_degrees);
+    let night_color = Vec3::new(0.36, 0.48, 0.72);
+    let color = night_color.lerp(Vec3::ONE, daylight);
+    let brightness = 0.6 + daylight * 79.4 + moon * 0.25;
+    (color, brightness)
+}
+
+fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
+    let t = ((value - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
 pub(in crate::presentation) fn setup_tactical_presentation(
     mut commands: Commands,
     mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
@@ -162,5 +200,25 @@ mod tests {
         };
         assert!(fog_end(&rain) < fog_end(&clear));
         assert!(fog_end(&snow) < fog_end(&clear));
+    }
+
+    #[test]
+    fn night_material_response_is_dim_and_moon_sensitive() {
+        let moonless = scene_night_factor(-25.0, 30.0, 0.0);
+        let moonlit = scene_night_factor(-25.0, 30.0, 1.0);
+        let daylight = scene_night_factor(30.0, -20.0, 0.0);
+        assert_eq!(moonless, 0.0);
+        assert!(moonless < moonlit && moonlit < 0.2);
+        assert_eq!(daylight, 1.0);
+        let (night_color, moonless_ambient) = scene_ambient_light(-25.0, 30.0, 0.0);
+        let (_, moonlit_ambient) = scene_ambient_light(-25.0, 30.0, 1.0);
+        let (day_color, daylight_ambient) = scene_ambient_light(30.0, -20.0, 0.0);
+        assert_eq!(night_color, Vec3::new(0.36, 0.48, 0.72));
+        assert!((moonless_ambient - 0.6).abs() < f32::EPSILON);
+        assert!(moonlit_ambient > moonless_ambient && moonlit_ambient <= 0.85);
+        assert_eq!(day_color, Vec3::ONE);
+        assert!((daylight_ambient - 80.0).abs() < f32::EPSILON);
+        assert!((scene_ambient_response(-25.0, -20.0, 0.0) - 0.05).abs() < f32::EPSILON);
+        assert!((scene_ambient_response(30.0, -20.0, 0.0) - 0.28).abs() < f32::EPSILON);
     }
 }

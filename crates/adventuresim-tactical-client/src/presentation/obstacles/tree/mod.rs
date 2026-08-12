@@ -155,6 +155,12 @@ pub(in crate::presentation) struct TacticalTreeImpostorMaterial {
     /// Representation level, deterministic seed, wind strength, wind speed.
     #[uniform(2)]
     parameters: Vec4,
+    /// Direction toward the dominant celestial light and day/night strength.
+    #[uniform(2)]
+    pub(in crate::presentation) lighting: Vec4,
+    /// Ambient irradiance colour and normalized strength.
+    #[uniform(2)]
+    pub(in crate::presentation) ambient: Vec4,
 }
 
 impl Material for TacticalTreeImpostorMaterial {

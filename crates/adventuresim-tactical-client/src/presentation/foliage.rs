@@ -34,6 +34,8 @@ pub(super) fn foliage_material(wind_scale: f32, ground_foliage: bool) -> Tactica
         // reserved future shaping control. Understory cards retain the older
         // crossed-plane deformation path.
         shape: Vec4::ZERO,
+        celestial: Vec3::new(0.35, 0.86, 0.25).normalize().extend(1.0),
+        ambient: Vec4::new(1.0, 1.0, 1.0, 0.28),
     }
 }
 
@@ -86,6 +88,44 @@ pub(super) fn update_grass_interaction(
             state.smoothed_velocity.z,
             (0.7 + speed * 0.11).clamp(0.7, 1.35),
         );
+    }
+}
+
+pub(super) fn update_celestial_material_lighting(
+    environments: Query<&SceneEnvironment>,
+    mut foliage_materials: ResMut<Assets<TacticalFoliageMaterial>>,
+    mut impostor_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
+) {
+    let Some(environment) = environments.iter().next() else {
+        return;
+    };
+    let celestial = celestial_directions(
+        environment.absolute_minute,
+        environment.latitude_microdegrees,
+        environment.longitude_microdegrees,
+    );
+    let sun_altitude = celestial.sun[1].asin().to_degrees();
+    let moon_altitude = celestial.moon[1].asin().to_degrees();
+    let light_factor =
+        scene_night_factor(sun_altitude, moon_altitude, celestial.lunar_illumination);
+    let (ambient_color, _) =
+        scene_ambient_light(sun_altitude, moon_altitude, celestial.lunar_illumination);
+    let ambient_response =
+        scene_ambient_response(sun_altitude, moon_altitude, celestial.lunar_illumination);
+    let direction = if sun_altitude > -6.0 {
+        to_bevy_direction(celestial.sun)
+    } else if moon_altitude > -2.0 {
+        to_bevy_direction(celestial.moon)
+    } else {
+        Vec3::new(0.25, 0.92, 0.3).normalize()
+    };
+    for (_, material) in foliage_materials.iter_mut() {
+        material.celestial = direction.extend(light_factor);
+        material.ambient = ambient_color.extend(ambient_response);
+    }
+    for (_, material) in impostor_materials.iter_mut() {
+        material.lighting = direction.extend(light_factor);
+        material.ambient = ambient_color.extend(ambient_response);
     }
 }
 
@@ -740,6 +780,10 @@ pub(in crate::presentation) struct TacticalFoliageMaterial {
     shading: Vec4,
     #[uniform(0)]
     shape: Vec4,
+    #[uniform(0)]
+    celestial: Vec4,
+    #[uniform(0)]
+    ambient: Vec4,
 }
 
 impl Material for TacticalFoliageMaterial {
@@ -855,6 +899,7 @@ mod tests {
         let crown = foliage_material(0.3, false);
         assert_eq!(grass.shading.w, 1.0);
         assert_eq!(crown.shading.w, 0.0);
+        assert_eq!(grass.celestial.w, 1.0);
         assert_eq!(grass.shape, Vec4::ZERO);
         assert_eq!(
             grass_material(0.3, GrassMeshLod::Near, 1.0).shape,

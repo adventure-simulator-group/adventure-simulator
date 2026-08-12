@@ -1044,6 +1044,8 @@ pub(in crate::presentation) fn tree_impostor_material(
     TacticalTreeImpostorMaterial {
         baked_color,
         parameters: Vec4::new(lod as f32, unit_hash(seed), 0.08 + lod as f32 * 0.018, 1.0),
+        lighting: Vec3::new(0.35, 0.86, 0.25).normalize().extend(1.0),
+        ambient: Vec4::new(1.0, 1.0, 1.0, 0.28),
     }
 }
 

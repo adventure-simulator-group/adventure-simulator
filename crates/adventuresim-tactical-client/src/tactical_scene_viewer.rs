@@ -632,7 +632,9 @@ fn capture_ambient_brightness_for_altitudes(
     };
     let daylight = 30_000.0 * smoothstep(0.0, 8.0, sun_altitude_degrees);
     let moonlight = 0.025 * lunar_illumination * smoothstep(-2.0, 4.0, moon_altitude_degrees);
-    daylight + moonlight
+    // Keep deterministic captures on the same dark ambient floor as gameplay
+    // so night plates do not validate against a black, unrepresentative world.
+    0.04 + daylight + moonlight
 }
 
 #[cfg(test)]
@@ -643,15 +645,15 @@ mod capture_lighting_tests {
     fn capture_fill_light_respects_sun_and_moon_horizons() {
         assert_eq!(
             capture_ambient_brightness_for_altitudes(-25.0, -24.0, 1.0),
-            0.0
+            0.04
         );
         assert_eq!(
             capture_ambient_brightness_for_altitudes(30.0, -25.0, 0.0),
-            30_000.0
+            30_000.04
         );
         assert_eq!(
             capture_ambient_brightness_for_altitudes(-25.0, 30.0, 1.0),
-            0.025
+            0.065
         );
     }
 }

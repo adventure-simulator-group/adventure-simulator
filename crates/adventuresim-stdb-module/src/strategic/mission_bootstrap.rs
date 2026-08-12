@@ -702,7 +702,7 @@ pub(crate) fn seed_world(
             53.50,
             Some(RIVERDALE_RENDERER_DEMO_NODE),
             3,
-            "hills",
+            "woodland",
             SettlementReligiousStatus::Established {
                 religion: OfficialReligion::RomanCatholic,
             },
