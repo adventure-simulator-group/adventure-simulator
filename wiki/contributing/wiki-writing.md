@@ -9,27 +9,7 @@
 This page outlines the writing guidelines for the *Fabelgeist* Wiki. Read it
 before contributing to the wiki!
 
-## Conventions
-
-By default, we follow
-[Wikipedia's Manual of Style](https://en.wikipedia.org/wiki/Wikipedia:Manual_of_Style)
-for prose and
-[Google's Markdown style guide](https://google.github.io/styleguide/docguide/style.html)
-for source-formatting conventions. Where this page contradicts those sources,
-this page takes precedence.
-
-In particular, unlike Wikipedia, the *Fabelgeist* Wiki uses contractions,
-instructional and opinionated prose, rhetorical questions, and inline external
-links. Other rules specific to Wikipedia, MediaWiki, or Gitiles do not apply
-either; at the time of writing, this repository uses
-[mdBook](https://rust-lang.github.io/mdBook/) for Markdown publishing, so
-[mdBook's Markdown conventions](https://rust-lang.github.io/mdBook/format/markdown.html)
-reign. Thus, against Google's advice, we will make liberal use of relative
-links, since mdBook strongly encourages them. Also, unlike Google, we cannot
-yet make use of `[TOC]`.
-<!-- TODO(mdbook-toc):
-We will eventually adopt mdbook-toc.
--->
+<!-- toc -->
 
 ## Audience and voice
 
@@ -150,6 +130,35 @@ writing.
 Move the full “renew and fulfill the promises of the ’90s” principle to
 design/principles.md. Retain here only its consequence for wiki prose.
 -->
+
+## Conventions
+
+By default, we follow
+[Wikipedia's Manual of Style](https://en.wikipedia.org/wiki/Wikipedia:Manual_of_Style)
+for prose and
+[Google's Markdown style guide](https://google.github.io/styleguide/docguide/style.html)
+for source-formatting conventions. Where this page contradicts those sources,
+this page takes precedence.
+
+In particular, unlike Wikipedia, the *Fabelgeist* Wiki uses contractions,
+instructional and opinionated prose, rhetorical questions, and inline external
+links. Other rules specific to Wikipedia, MediaWiki, or Gitiles do not apply
+either; at the time of writing, this repository uses
+[mdBook](https://rust-lang.github.io/mdBook/) for Markdown publishing, so
+[mdBook's Markdown conventions](https://rust-lang.github.io/mdBook/format/markdown.html)
+reign. Thus, against Google's advice, we will make liberal use of relative
+links, since mdBook strongly encourages them. Also, unlike Google, we use
+`<!-- toc -->` rather than `[TOC]`.
+
+The repository provides tools to enforce some of our source-formatting
+conventions. If you are working from a local checkout, run
+`just wiki-format path/to/page.md` on the
+[command line](https://en.wikipedia.org/wiki/Command-line_interface) to wrap
+its prose at 80 columns, per Google's recommendation, and `just wiki-check` to
+test the tooling, verify generated navigation and documentation (e.g.
+`SUMMARY.md`), check links, and ensure the book builds. To-do: automate this for
+Your Coworker in our
+[CI](https://en.wikipedia.org/wiki/Continuous_integration).
 
 ## See also
 

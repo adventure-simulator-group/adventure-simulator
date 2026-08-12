@@ -67,6 +67,19 @@ Before finishing a change that affects the map, verify it is current:
 python scripts/update_project_map.py --check
 ```
 
+## Wiki maintenance
+
+`wiki/SUMMARY.md` is generated from the human-authored `wiki/navigation.toml`.
+Do not edit `SUMMARY.md` directly. When adding, removing, or moving a wiki page,
+update the manifest and run:
+
+```powershell
+python scripts/update_wiki_summary.py
+```
+
+Before finishing a wiki change, format changed prose with
+`just wiki-format path/to/page.md` and run `just wiki-check`.
+
 ## Completion policy
 
 - Continue working until the requested outcome is implemented and relevant verification has run.

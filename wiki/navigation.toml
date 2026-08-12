@@ -1,0 +1,412 @@
+format_version = 1
+excluded = []
+
+[[item]]
+kind = "page"
+title = "Introduction"
+path = "../README.md"
+bullet = false
+
+[[item]]
+kind = "part"
+title = "World"
+
+[[item]]
+kind = "page"
+title = "Scenario"
+path = "scenario.md"
+
+[[item]]
+kind = "separator"
+
+[[item]]
+kind = "part"
+title = "Contributing"
+
+[[item]]
+kind = "page"
+title = "Wiki writing"
+path = "contributing/wiki-writing.md"
+
+[[item]]
+kind = "page"
+title = "Development workflow"
+path = "engineering/developing.md"
+
+[[item]]
+kind = "page"
+title = "Item definition authoring"
+path = "contributing/item-authoring.md"
+
+[[item]]
+kind = "page"
+title = "Project map maintenance"
+path = "engineering/project-map-maintenance.md"
+
+[[item]]
+kind = "part"
+title = "Engineering"
+
+[[item]]
+kind = "page"
+title = "Implementation"
+path = "engineering/implementation.md"
+
+[[item]]
+kind = "page"
+title = "Networking"
+path = "engineering/networking.md"
+
+[[item]]
+kind = "page"
+title = "Architecture reference"
+path = "engineering/architecture.md"
+
+[[item]]
+kind = "page"
+title = "Strategic read cache"
+path = "engineering/strategic-read-cache.md"
+
+[[item]]
+kind = "page"
+title = "Strategic NPC simulation"
+path = "engineering/strategic-simulation.md"
+
+[[item]]
+kind = "page"
+title = "Puzzle laboratory"
+path = "engineering/puzzle-lab.md"
+
+[[item]]
+kind = "part"
+title = "Generated reference"
+
+[[item]]
+kind = "page"
+title = "Project map"
+path = "generated/project-map.md"
+
+[[item]]
+kind = "part"
+title = "Client"
+
+[[item]]
+kind = "page"
+title = "Controls"
+path = "client/controls.md"
+
+[[item]]
+kind = "page"
+title = "Models"
+path = "client/models.md"
+
+[[item]]
+kind = "page"
+title = "Slots"
+path = "client/slots.md"
+
+[[item]]
+kind = "page"
+title = "WIP: Animation"
+path = "client/animation.md"
+
+[[item]]
+kind = "part"
+title = "Shared"
+
+[[item]]
+kind = "page"
+title = "Encumbrance"
+path = "shared/encumbrance.md"
+
+[[item]]
+kind = "page"
+title = "Energy"
+path = "shared/energy.md"
+
+[[item]]
+kind = "page"
+title = "Health"
+path = "shared/health.md"
+
+[[item]]
+kind = "page"
+title = "Magic"
+path = "shared/magic.md"
+
+[[item]]
+kind = "page"
+title = "Morale"
+path = "shared/morale.md"
+
+[[item]]
+kind = "page"
+title = "Stats"
+path = "shared/stats.md"
+
+[[item]]
+kind = "page"
+title = "StrataMap"
+path = "shared/strata-map.md"
+
+[[item]]
+kind = "page"
+title = "Inventory"
+path = "shared/inventory.md"
+
+[[item]]
+kind = "page"
+title = "WIP: Terrain"
+path = "shared/terrain.md"
+
+[[item]]
+kind = "page"
+title = "Bestiary authority"
+path = "shared/bestiary.md"
+
+[[item]]
+kind = "page"
+title = "Historical equipment catalog"
+path = "shared/equipment.md"
+
+[[item]]
+kind = "page"
+title = "Food and cooking"
+path = "shared/food-and-cooking.md"
+
+[[item]]
+kind = "page"
+title = "Herbalism"
+path = "shared/herbalism.md"
+
+[[item]]
+kind = "page"
+title = "Measured inventory architecture"
+path = "shared/measured-inventory.md"
+
+[[item]]
+kind = "page"
+title = "Physiology system"
+path = "shared/physiology.md"
+
+[[item]]
+kind = "page"
+title = "Fantastic diseases"
+path = "shared/fantastic-diseases.md"
+
+[[item]]
+kind = "part"
+title = "Strategic"
+
+[[item]]
+kind = "page"
+title = "Character"
+path = "strategic/character.md"
+
+[[item]]
+kind = "page"
+title = "Quests"
+path = "strategic/quests.md"
+
+[[item]]
+kind = "page"
+title = "Time"
+path = "strategic/time.md"
+
+[[item]]
+kind = "page"
+title = "Travel"
+path = "strategic/travel.md"
+
+[[item]]
+kind = "page"
+title = "Foraging"
+path = "strategic/foraging.md"
+
+[[item]]
+kind = "page"
+title = "Settlement"
+path = "strategic/settlement.md"
+
+[[item]]
+kind = "page"
+title = "Residences"
+path = "strategic/residences.md"
+
+[[item]]
+kind = "page"
+title = "Reputation"
+path = "strategic/reputation.md"
+
+[[item]]
+kind = "page"
+title = "Trade"
+path = "strategic/trade.md"
+
+[[item]]
+kind = "page"
+title = "Dialogue architecture"
+path = "strategic/dialogue.md"
+
+[[item]]
+kind = "page"
+title = "Organizations"
+path = "strategic/organizations.md"
+
+[[item]]
+kind = "page"
+title = "Quest generation and investigation"
+path = "strategic/quest-generation-and-investigation.md"
+
+[[item]]
+kind = "page"
+title = "Autopsies"
+path = "strategic/autopsies.md"
+
+[[item]]
+kind = "page"
+title = "Outbreak investigations"
+path = "strategic/outbreaks.md"
+
+[[item]]
+kind = "page"
+title = "Quest authority"
+path = "strategic/quest-authority.md"
+
+[[item]]
+kind = "page"
+title = "Errantry and modular challenges"
+path = "strategic/errantry-and-challenges.md"
+
+[[item]]
+kind = "page"
+title = "Romance road encounters"
+path = "strategic/romance-road-encounters.md"
+
+[[item]]
+kind = "part"
+title = "Tactical"
+
+[[item]]
+kind = "page"
+title = "Combat"
+path = "tactical/combat.md"
+
+[[item]]
+kind = "page"
+title = "Stealth"
+path = "tactical/stealth.md"
+
+[[item]]
+kind = "part"
+title = "World data"
+
+[[item]]
+kind = "page"
+title = "World-data input bundles"
+path = "engineering/world-data/world-data-bundles.md"
+
+[[item]]
+kind = "page"
+title = "Source manifests"
+path = "engineering/world-data/source-manifests.md"
+
+[[item]]
+kind = "page"
+title = "Canonical spatial grid"
+path = "engineering/world-data/spatial-grid.md"
+
+[[item]]
+kind = "page"
+title = "Strategic place and fixture identities"
+path = "engineering/world-data/strategic-places.md"
+
+[[item]]
+kind = "page"
+title = "Strategic presences and observer knowledge"
+path = "engineering/world-data/observer-knowledge.md"
+
+[[item]]
+kind = "page"
+title = "Strategic rights"
+path = "engineering/world-data/strategic-rights.md"
+
+[[item]]
+kind = "page"
+title = "Strategic action planning"
+path = "engineering/world-data/strategic-action-planning.md"
+
+[[item]]
+kind = "page"
+title = "Physical materials"
+path = "engineering/world-data/physical-materials.md"
+
+[[item]]
+kind = "page"
+title = "Physical objects and custody"
+path = "engineering/world-data/physical-objects-and-custody.md"
+
+[[item]]
+kind = "page"
+title = "Viabundus"
+path = "engineering/world-data/viabundus.md"
+
+[[item]]
+kind = "page"
+title = "Strategic route terrain"
+path = "engineering/world-data/route-terrain.md"
+
+[[item]]
+kind = "page"
+title = "Elevation"
+path = "engineering/world-data/elevation.md"
+
+[[item]]
+kind = "page"
+title = "Surface water and road crossings"
+path = "engineering/world-data/hydrology.md"
+
+[[item]]
+kind = "page"
+title = "Historical land use"
+path = "engineering/world-data/historical-land-use.md"
+
+[[item]]
+kind = "page"
+title = "Historical drought and wetness"
+path = "engineering/world-data/drought.md"
+
+[[item]]
+kind = "page"
+title = "Forest cover"
+path = "engineering/world-data/forest-cover.md"
+
+[[item]]
+kind = "page"
+title = "Potential natural vegetation"
+path = "engineering/world-data/potential-vegetation.md"
+
+[[item]]
+kind = "page"
+title = "Tree species"
+path = "engineering/world-data/tree-species.md"
+
+[[item]]
+kind = "page"
+title = "Soil"
+path = "engineering/world-data/soil.md"
+
+[[item]]
+kind = "page"
+title = "Surface geology"
+path = "engineering/world-data/geology.md"
+
+[[item]]
+kind = "page"
+title = "Official religion in 1544"
+path = "engineering/world-data/religion.md"
+
+[[item]]
+kind = "page"
+title = "Strategic industries and commodities"
+path = "engineering/world-data/industries.md"
