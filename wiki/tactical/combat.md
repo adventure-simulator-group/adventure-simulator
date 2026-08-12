@@ -238,7 +238,7 @@ segments below 0.5% are hidden as subpixel display noise without changing state.
 const BREATH_PER_METERS_PER_SECOND = 0.0034
 const TACTICAL_BREATH_RESPONSE_SCALE = 5.0
 
-# Sustainable jog speed is 1.8m/s at endurance 1, 2.0m/s at endurance 2,
+# Sustainable jog speed is 1.8m/s at endurance 1, 2.1m/s at endurance 2,
 # and the elite-marathon average of 5.83m/s at endurance 5. Between those
 # anchors, most of the extraordinary performance is reserved for high endurance.
 fn sustainable_jog_speed(endurance):
@@ -246,7 +246,7 @@ fn sustainable_jog_speed(endurance):
 		t = clamp(endurance, 0, 1)
 		return lerp(1.4, 1.8, t * t * (3 - 2 * t))
 	t = (clamp(endurance, 1, 5) - 1) / 4
-	return 1.8 + 4.03 * pow(t, 2.166)
+	return 1.8 + 4.03 * pow(t, 1.873873)
  
 fn update_stamina(player):
 	breath_delta = (character.velocity - sustainable_jog_speed(character.endurance)) * BREATH_PER_METERS_PER_SECOND

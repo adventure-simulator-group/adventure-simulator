@@ -126,6 +126,12 @@ impl SprintInputState {
         }
         self.shift_down = shift_down;
     }
+
+    fn cancel_latch_when_idle(&mut self, moving: bool) {
+        if !moving && !self.shift_down {
+            self.active = false;
+        }
+    }
 }
 
 /// Optional input supplied by native diagnostic tooling. The request still
@@ -165,6 +171,7 @@ fn update_direct_control_input(
         .unwrap_or_default();
     let gamepad_moving = gamepad_direction.length_squared() > 0.01;
     let moving = keyboard_moving || gamepad_moving;
+    controls.sprint.cancel_latch_when_idle(moving);
     let left_trigger_value = gamepads
         .iter()
         .filter_map(|gamepad| gamepad.get(GamepadButton::LeftTrigger2))
@@ -553,6 +560,28 @@ mod tests {
     }
 
     #[test]
+    fn latched_sprint_cancels_when_movement_input_stops() {
+        let mut sprint = SprintInputState::default();
+        sprint.update(true, 0.0);
+        sprint.update(true, 0.1);
+        sprint.update(false, 0.0);
+        assert!(sprint.active);
+
+        sprint.cancel_latch_when_idle(true);
+        assert!(sprint.active);
+        sprint.cancel_latch_when_idle(false);
+        assert!(!sprint.active);
+    }
+
+    #[test]
+    fn held_sprint_can_begin_moving_after_an_idle_frame() {
+        let mut sprint = SprintInputState::default();
+        sprint.update(true, 0.0);
+        sprint.cancel_latch_when_idle(false);
+        assert!(sprint.active);
+    }
+
+    #[test]
     fn shift_release_at_exact_hold_threshold_remains_toggled() {
         let mut sprint = SprintInputState::default();
         sprint.update(true, 0.0);
@@ -586,6 +615,31 @@ mod tests {
             world.resource::<DirectControlState>().pace,
             MovementPace::Walk
         );
+    }
+
+    #[test]
+    fn stopping_movement_cancels_sprint_but_preserves_caps_jog() {
+        let (mut world, mut schedule) = input_fixture();
+        {
+            let mut controls = world.resource_mut::<DirectControlState>();
+            controls.caps_jog = true;
+            controls.sprint.active = true;
+        }
+
+        schedule.run(&mut world);
+        {
+            let controls = world.resource::<DirectControlState>();
+            assert!(!controls.sprint.active);
+            assert_eq!(controls.pace, MovementPace::Walk);
+        }
+
+        world
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::KeyW);
+        schedule.run(&mut world);
+        let controls = world.resource::<DirectControlState>();
+        assert!(!controls.sprint.active);
+        assert_eq!(controls.pace, MovementPace::Jog);
     }
 
     #[test]

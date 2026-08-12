@@ -37,7 +37,7 @@ const REFERENCE_LEG_STRENGTH: f32 = 3.0;
 const REFERENCE_BURDEN_KG: f32 = 70.0;
 const MINIMUM_JOG_SPEED_METRES_PER_SECOND: f32 = 1.8;
 const ELITE_MARATHON_SPEED_METRES_PER_SECOND: f32 = 5.83;
-const JOG_ENDURANCE_CURVE_EXPONENT: f32 = 2.166;
+const JOG_ENDURANCE_CURVE_EXPONENT: f32 = 1.873_873;
 const REFERENCE_SPRINT_SPEED_METRES_PER_SECOND: f32 = 8.0;
 const ELITE_SPRINT_SPEED_METRES_PER_SECOND: f32 = 12.4;
 
@@ -447,9 +447,9 @@ mod tests {
         for (endurance, expected_speed) in [
             (0.0, TACTICAL_WALK_SPEED_METRES_PER_SECOND),
             (1.0, 1.8),
-            (2.0, 2.0),
-            (3.0, 2.70),
-            (4.0, 3.96),
+            (2.0, 2.10),
+            (3.0, 2.90),
+            (4.0, 4.15),
             (5.0, ELITE_MARATHON_SPEED_METRES_PER_SECOND),
         ] {
             assert!(
