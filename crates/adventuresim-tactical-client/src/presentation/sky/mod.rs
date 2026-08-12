@@ -303,9 +303,10 @@ pub(super) fn scene_exposure_ev100(
         4.0 + (sun_altitude_degrees + 12.0) * (4.0 / 6.0)
     } else {
         // Preserve genuinely dark, obstacle-obscuring moonless nights. A risen
-        // moon raises both scene illuminance and the adapted exposure target;
-        // a below-horizon moon does neither.
-        -0.5 + lunar_illumination * smoothstep(-2.0, 8.0, moon_altitude_degrees)
+        // moon lowers EV100 as the eye adapts to reveal the 0.25-lux surface
+        // response; a below-horizon moon does neither. The former positive
+        // sign darkened the camera as lunar illumination increased.
+        -0.5 - 0.75 * lunar_illumination * smoothstep(-2.0, 8.0, moon_altitude_degrees)
     }
 }
 
@@ -447,9 +448,9 @@ mod tests {
         let moonless = scene_exposure_ev100(-20.0, 30.0, 0.0);
         let moonlit = scene_exposure_ev100(-20.0, 30.0, 1.0);
         let moon_below_horizon = scene_exposure_ev100(-20.0, -20.0, 1.0);
-        assert!(moonlit > moonless);
+        assert!(moonlit < moonless);
         assert_eq!(moon_below_horizon, moonless);
-        assert!((-0.75..=0.75).contains(&moonlit));
+        assert!((-1.3..=-1.2).contains(&moonlit));
     }
 
     #[test]

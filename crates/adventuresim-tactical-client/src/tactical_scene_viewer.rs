@@ -845,7 +845,7 @@ fn observed_presentation_features(
         // Production exposure is driven by the scene's solar/lunar state and
         // may be between authored targets while the ECS observer settles.
         && observed.camera_exposure_ev100.is_finite()
-        && (-1.0..=15.0).contains(&observed.camera_exposure_ev100)
+        && (-1.35..=15.0).contains(&observed.camera_exposure_ev100)
         && observed.camera_tonemapping.contains("AcesFitted")
         && observed.ambient_brightness.is_finite()
         && observed.ambient_brightness > 0.0;
