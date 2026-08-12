@@ -11,7 +11,17 @@ mod tactical_scene_viewer;
 use std::path::PathBuf;
 
 #[cfg(not(target_family = "wasm"))]
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+
+#[cfg(not(target_family = "wasm"))]
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+enum CaptureProfile {
+    /// Existing exhaustive semantic presentation suite (23 recorded views).
+    #[default]
+    Semantic,
+    /// Compact environment-art review suite; intended for matrix review.
+    EnvironmentReview,
+}
 
 #[cfg(not(target_family = "wasm"))]
 #[derive(Debug, Parser)]
@@ -52,6 +62,14 @@ struct Args {
     /// Azimuth around the review tree for locked leaf-LOD comparison views.
     #[arg(long, default_value_t = 45.0)]
     tree_review_azimuth_degrees: f32,
+
+    /// Named capture profile. The default preserves the exhaustive semantic suite.
+    #[arg(long, value_enum, default_value_t)]
+    profile: CaptureProfile,
+
+    /// Capture only these named views (repeatable). Unknown or unavailable views fail closed.
+    #[arg(long = "view")]
+    views: Vec<String>,
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -74,6 +92,11 @@ fn main() {
         args.leaf_benchmark_frames,
         args.tree_lighting_benchmark_frames,
         args.tree_review_azimuth_degrees,
+        match args.profile {
+            CaptureProfile::Semantic => "semantic",
+            CaptureProfile::EnvironmentReview => "environment-review",
+        },
+        args.views,
     );
 }
 

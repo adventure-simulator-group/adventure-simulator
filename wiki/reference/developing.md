@@ -796,6 +796,7 @@ presentation plugin:
 just tactical-scene-capture dense-woodland
 just tactical-scene-capture heavy-rain-high-wind target/tactical-scene-captures/rain-review
 just tactical-scene-capture sparse-woodland target/tactical-scene-captures/daylight-review 12 340560
+just tactical-environment-review target/tactical-scene-captures/environment-review
 just tactical-tree-canopy-series target/tactical-scene-captures/oak-canopy-review
 just tactical-tree-leaf-benchmark target/tactical-scene-captures/tree-leaf-benchmark 180
 just tactical-tree-lighting-benchmark target/tactical-scene-captures/tree-lighting-benchmark 180
@@ -829,6 +830,13 @@ useful screen size. Both production modes use the same aligned CC0 front/back
 albedo, normal maps, and opacity mask, so their transition changes geometry
 without introducing a material pop.
 
+The default `semantic` profile preserves the native viewer's exhaustive 23
+recorded views. The selectable `environment-review` profile is a compact suite
+with dedicated, deterministically targeted tree-root, branch-junction, rock,
+terrain-grazing, and grass-seam close-ups. Pass repeatable `--view` arguments
+directly to `tactical-scene-viewer` for an exact ordered subset; unknown,
+duplicate, missing-target, missing-image, or extra-image requests fail closed.
+
 The native viewer writes standing-eye-height (1.65 m above the sampled local
 terrain), overhead, horizon, and collider-overlay PNGs alongside the exact
 `input.json`, a browsable `index.html`, and a
@@ -861,16 +869,42 @@ render settings constant while overriding only the captured
 records the effective value. This test-only override makes open-grown through
 forest-grown tree architecture directly comparable without introducing
 neighbour queries or spawn-order coupling into runtime generation.
+The manifest also records resolution, settle-frame budget, profile and camera
+versions, exact requested views, camera transform/target/up/FOV, review azimuth,
+effective world minute, renderer/executable/revision provenance when available,
+presentation feature flags, and its capture-clock strategy. The harness advances
+Bevy's virtual clock to a fixed two-second wind phase and pauses it before
+settling and GPU readbacks, so readback latency does not change foliage pose.
+Branch-junction and terrain-grazing diagnostics temporarily suppress production
+leaves and grass respectively, retaining production subject geometry/material
+and recording the suppression in the capture record.
+
 The matrix runner also treats engine `ERROR` output, including asynchronous
 custom-shader compilation failures, as a failed fixture even if the viewer was
 otherwise able to write screenshots and exit normally.
 
-Capture the complete committed fixture catalog with
-`just tactical-scene-matrix`. Pass a fresh output directory as its first
-argument when a stable path is useful. Repeat `--fixture` directly against
-`scripts/capture_tactical_scenes.py` to build a focused A/B matrix. Semantic
-gates complement rather than replace inspecting the rendered PNGs for
-composition, visibility, scale, seams, and weather readability.
+Capture the curated environment-only matrix with
+`just tactical-environment-review` (`tactical-scene-matrix` is retained as an
+alias). It crosses sparse woodland, a rocky open hillside, and dry grassland
+with morning, grazing, and moonlit named times: nine child runs and four sky
+plates rather than an all-fixture/all-view explosion. Pass a fresh output
+directory as its first argument when a stable path is useful. Repeat
+`--fixture` or `--time` directly against `scripts/capture_tactical_scenes.py`
+for a smaller A/B matrix. The runner writes an aggregate `manifest.json`, HTML
+gallery, and `failure.txt` if any child process, exact-view manifest, semantic
+gate, shader log, or Sun/twilight/Moon/stars evidence fails. Weather, water,
+clouds, caves, and characters are explicitly outside this review profile.
+Semantic gates complement rather than replace rendered-image inspection.
+The aggregate verifies fixture, named minute, pipeline/profile/camera versions,
+resolution, exact nonempty PNG sets, celestial conditions, and one consistent
+source identity. Identity includes Git HEAD, dirty state, and a SHA-256 of the
+relevant presentation Rust, shaders, textures, fixtures, and lockfiles.
+`--skip-build` works only when it matches a prior successful build stamp, which
+prevents stale binaries being mislabeled while allowing identified dirty runs.
+
+Use [the environment review rubric](environment-visual-review.md) and copy the
+checked-in ledger template for severity, cost/benefit triage, independent
+reassessment, and stopping criteria.
 
 The focused sky viewer captures the production atmosphere and celestial
 materials without loading terrain, foliage, or a tactical server. Its four

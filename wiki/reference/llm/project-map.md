@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1984)
+## Files (1990)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -72,6 +72,8 @@ development, or other wiki document before changing a subsystem.
 - `assets/tactical-equipment-icons.png` — Binary game or UI asset.
 - `assets/tactical-scenes/cultivated-roadside.json` — Repository support file.
 - `assets/tactical-scenes/dense-woodland.json` — Repository support file.
+- `assets/tactical-scenes/environment-review-ledger.schema.json` — Repository support file.
+- `assets/tactical-scenes/environment-review-ledger.template.json` — Repository support file.
 - `assets/tactical-scenes/flat-dry-grassland.json` — Repository support file.
 - `assets/tactical-scenes/heavy-rain-high-wind.json` — Repository support file.
 - `assets/tactical-scenes/narrow-peak-lod-boundary.json` — Repository support file.
@@ -1908,11 +1910,14 @@ development, or other wiki document before changing a subsystem.
 - `scripts/test_world_runtime_release.py` — Development or documentation automation script.
 - `scripts/test_world_source_init.py` — Development or documentation automation script.
 - `scripts/tests/test_build_locomotion_cycles.py` — Development or documentation automation script.
+- `scripts/tests/test_capture_tactical_scenes.py` — Development or documentation automation script.
 - `scripts/tests/test_dev_stack.py` — Development or documentation automation script.
 - `scripts/tests/test_just_tasks.py` — Development or documentation automation script.
 - `scripts/tests/test_prepare_animation_motion.py` — Development or documentation automation script.
 - `scripts/tests/test_prepare_rig_base.py` — Development or documentation automation script.
+- `scripts/tests/test_validate_environment_review_ledger.py` — Development or documentation automation script.
 - `scripts/update_project_map.py` — Development or documentation automation script.
+- `scripts/validate_environment_review_ledger.py` — Development or documentation automation script.
 - `scripts/validate_organization_world.py` — Development or documentation automation script.
 - `scripts/world_data_bundle.py` — Development or documentation automation script.
 - `scripts/world_runtime_release.py` — Development or documentation automation script.
@@ -1933,6 +1938,7 @@ development, or other wiki document before changing a subsystem.
 - `wiki/reference/dialogue.md` — Project documentation.
 - `wiki/reference/drought.md` — Project documentation.
 - `wiki/reference/elevation.md` — Project documentation.
+- `wiki/reference/environment-visual-review.md` — Project documentation.
 - `wiki/reference/equipment.md` — Project documentation.
 - `wiki/reference/errantry-and-challenges.md` — Project documentation.
 - `wiki/reference/fantastic-diseases.md` — Project documentation.

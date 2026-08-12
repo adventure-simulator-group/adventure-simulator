@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adventuresim.org/schemas/environment-review-ledger-v1.json",
+  "title": "Fabelgeist tactical environment review ledger",
+  "type": "object",
+  "required": ["schema_version", "capture_manifest", "scope", "items", "stop_decision"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "capture_manifest": {"type": "string", "minLength": 1},
+    "scope": {
+      "type": "object",
+      "required": ["environment_only", "excluded"],
+      "properties": {
+        "environment_only": {"const": true},
+        "excluded": {
+          "type": "array",
+          "minItems": 5,
+          "uniqueItems": true,
+          "items": {"enum": ["characters", "volumetric-clouds", "caves", "weather", "water"]},
+          "allOf": [{"contains": {"const": "characters"}}, {"contains": {"const": "volumetric-clouds"}}, {"contains": {"const": "caves"}}, {"contains": {"const": "weather"}}, {"contains": {"const": "water"}}]
+        }
+      },
+      "additionalProperties": false
+    },
+    "items": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/item"}},
+    "stop_decision": {
+      "type": "object",
+      "required": ["ready_to_stop", "reason"],
+      "properties": {"ready_to_stop": {"type": "boolean"}, "reason": {"type": "string", "minLength": 1}},
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "score": {"oneOf": [{"type": "integer", "minimum": 0, "maximum": 5}, {"const": "UNASSESSABLE"}]},
+    "candidate": {
+      "type": "object",
+      "required": ["solution", "physically_based_rationale", "implementation_complexity", "performance_cost", "expected_severity_reduction", "confidence", "benefit", "cost", "benefit_cost_ratio", "dependencies"],
+      "properties": {
+        "solution": {"type": "string", "minLength": 1},
+        "physically_based_rationale": {"type": "string", "minLength": 1},
+        "implementation_complexity": {"type": "integer", "minimum": 0, "maximum": 5},
+        "performance_cost": {"type": "integer", "minimum": 0, "maximum": 5},
+        "expected_severity_reduction": {"type": "integer", "minimum": 0, "maximum": 5},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "benefit": {"type": "number", "minimum": 0},
+        "cost": {"type": "number", "minimum": 1},
+        "benefit_cost_ratio": {"type": "number", "minimum": 0},
+        "dependencies": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      },
+      "additionalProperties": false
+    },
+    "item": {
+      "type": "object",
+      "required": ["id", "area", "critique", "evidence", "severity_before", "severity_after", "coverage_gap", "candidates", "triage", "acceptance"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+        "area": {"enum": ["terrain", "environment-lighting", "trees", "forest-floor", "rocks", "grass-foliage", "sun-moon-stars"]},
+        "critique": {"type": "string", "minLength": 1},
+        "evidence": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "severity_before": {"$ref": "#/$defs/score"},
+        "severity_after": {"$ref": "#/$defs/score"},
+        "coverage_gap": {"type": ["string", "null"]},
+        "candidates": {"type": "array", "items": {"$ref": "#/$defs/candidate"}},
+        "triage": {"enum": ["queued", "implemented", "reassess", "closed-resolved", "closed-not-worthwhile", "needs-user-input", "coverage-blocked"]},
+        "acceptance": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
