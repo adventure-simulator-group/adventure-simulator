@@ -47,9 +47,23 @@ class CaptureTacticalScenesTests(unittest.TestCase):
                 "resolution": MODULE.EXPECTED_RESOLUTION,
                 "source_identity": "source-id",
                 "revision": "head",
+                "presentation_features": {
+                    "requested": MODULE.EXPECTED_PRESENTATION_REQUEST,
+                    "observed": {
+                        "settings": MODULE.EXPECTED_PRESENTATION_REQUEST,
+                        "camera_environment_map": True,
+                        "camera_environment_map_size": [64, 64],
+                        "camera_bloom": True,
+                        "camera_ssao": True,
+                        "camera_exposure_ev100": 14.7,
+                        "camera_tonemapping": "AcesFitted",
+                        "ambient_brightness": 1.0,
+                    },
+                    "requested_matches_observed": True,
+                },
                 "requested_views": ["rock-detail"],
-                "captures": [{"view": "rock-detail"}],
-                "validation": {"passed": True},
+                "captures": [{"view": "rock-detail", "lighting_ready": True}],
+                "validation": {"passed": True, "lighting_readiness": True},
             }
             (root / "rock-detail.png").write_bytes(b"x" * 65)
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -63,7 +77,8 @@ class CaptureTacticalScenesTests(unittest.TestCase):
             for field, wrong in (("captures", []), ("fixture", "wrong"),
                                  ("absolute_minute", 0), ("source_identity", "stale"),
                                  ("revision", "wrong"), ("camera_version", 99),
-                                 ("resolution", [1, 1])):
+                                 ("resolution", [1, 1]),
+                                 ("presentation_features", {"ssao": False})):
                 broken = dict(manifest)
                 broken[field] = wrong
                 manifest_path.write_text(json.dumps(broken), encoding="utf-8")

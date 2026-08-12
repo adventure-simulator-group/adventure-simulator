@@ -15,6 +15,16 @@ twilight, Moon, and stars. Each child manifest must pass semantic and exact-view
 gates, the aggregate `manifest.json` must have `passed: true`, and neither the
 aggregate nor any child may contain `failure.txt`. A missing, unreadable,
 misframed, or irrelevant plate is a coverage gap, not evidence of good quality.
+Review evidence is lit by the production-default presentation configuration,
+including atmosphere environment-map light, bloom, SSAO, shadows, and the same
+vista setting. Child and aggregate gates reject configuration drift. The only
+intentional presentation difference is the named diagnostic occluder
+suppression below; reviewers must not accept evidence produced with per-asset
+brightness compensation or a reduced capture-only lighting path.
+Manifests prove this from observed graphics settings, camera post-processing
+components, exposure/tonemapping, environment-map size, and ambient state.
+Every requested plate also needs two consecutive settled readbacks with bounded
+luminance change; a lighting-readiness failure makes the plate UNASSESSABLE.
 Branch-junction diagnostics suppress only production leaf render entities, and
 terrain-grazing diagnostics suppress only production grass render entities;
 their manifests record and gate those suppressions so production subject
