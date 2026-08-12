@@ -1,5 +1,10 @@
 # Combat
 
+Standalone tactical missions and fixtures use the canonical John Fabelgeist
+build whenever no persisted strategic character is supplied. This includes
+the shared attributes and combat training as well as his durable starting
+loadout; live tactical state remains transient.
+
 Strategic autoresolve uses shared bestiary combat profiles. Skeleton bone is a
 full-coverage innate protection layer with substantial resistance and no
 padding, making blunt attacks substantially more effective than cutting attacks

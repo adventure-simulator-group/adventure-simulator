@@ -1,5 +1,22 @@
 # Character
 
+## Default character
+
+Callers that require a character without specifying one use one canonical
+build: **John Fabelgeist**. New browser sessions receive their own durable John
+with an owner-scoped ID, while tactical fixtures project the same gameplay
+values without persisting tactical state.
+
+John is a 20-year-old man. Strength, Agility, and Endurance are 4;
+Intelligence, Gut, Immunity, and Instinct are 3; eyesight and hearing use the
+neutral value 3. All personality trait axes are neutral. His age-scaled
+training gives him substantial practice across every combat skill, some
+practice in every other skill, and effective Insight and Command ranks of 3.0.
+
+His durable equipment is a longsword in a right-hip scabbard, a rondel dagger
+in a left-hip scabbard, a morion, breastplate, paired vambraces, paired leather
+boots, a torch, three bandages, and the ordinary 100-unit starting purse.
+
 Literacy is not universal. A character whose authoritative organization role
 authors a creation-literacy entitlement spends part of the simulated
 student-age phase learning that written language through the normal

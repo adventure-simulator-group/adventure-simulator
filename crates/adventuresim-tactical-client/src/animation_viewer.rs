@@ -172,6 +172,7 @@ pub(crate) fn run(
     let initial_terrain_ik = scenario.is_some_and(|name| {
         scenario_metadata(name).kind == ScenarioKind::Terrain || name.contains("terrain")
     });
+    let default_character_id = default_tactical_character_id();
 
     let workspace_asset_source =
         AssetSourceBuilder::platform_default(&asset_root.to_string_lossy(), None);
@@ -211,7 +212,7 @@ pub(crate) fn run(
             TacticalCameraPlugin,
             TacticalPresentationPlugin::default(),
         ))
-        .insert_resource(LocalCharacterId(0))
+        .insert_resource(LocalCharacterId(default_character_id))
         .insert_resource(CameraMode { third_person: true })
         .insert_resource(WeaponGuardInputState::default())
         .insert_resource(Time::<Fixed>::from_hz(SAMPLE_HZ as f64))
@@ -1580,6 +1581,7 @@ fn raised_guard_reversal_scenario_with_lead(
 }
 
 fn setup_viewer(mut commands: Commands) {
+    let default_player = Player::default();
     let mut generator = TerrainGenerator::new(0xA11C_E5E1);
     generator.period = 200.0;
     let terrain = generator.generate(100, 30, 100);
@@ -1593,12 +1595,10 @@ fn setup_viewer(mut commands: Commands) {
     ));
 
     commands.spawn((
-        Name::new("Animation review subject"),
+        Name::new(default_player.name),
         CaptureSubject,
-        Player {
-            name: "Animation review".into(),
-        },
-        CharacterId(0),
+        Player::default(),
+        CharacterId(default_tactical_character_id()),
         CharacterLook::default(),
         SkeletonState::default(),
         Transform::from_xyz(0.0, spawn_height, 0.0),

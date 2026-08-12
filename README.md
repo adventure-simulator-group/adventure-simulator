@@ -61,6 +61,16 @@ persisted or replayed. Native speech is treated as upbringing identity;
 written literacy is earned inside the simulated student or institutional
 curriculum under the ordinary Intelligence learning rate and cap.
 
+When no character is selected, the game provisions the shared default test
+character, **John Fabelgeist**. John is a 20-year-old man with neutral
+personality axes, Strength, Agility, and Endurance 4; Intelligence, Gut,
+Immunity, and Instinct 3; broad age-scaled training with heavy combat practice
+and rank-3 Insight and Command; and the standard adventuring supplies. His
+loadout is a longsword in a right-hip scabbard, a rondel dagger in a left-hip
+scabbard, morion, breastplate, paired vambraces, and leather boots. The same
+canonical build backs new strategic browser sessions, standalone tactical
+missions, combat fixtures, and animation fixtures.
+
 [^6]: Even at 4x speed, which most computers can barely handle simulating, you're still spending most of your time watching your characters travel or rest.
 
 ## Setting

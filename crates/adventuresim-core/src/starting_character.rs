@@ -8,6 +8,9 @@ use crate::skill::Skill;
 
 pub const GENERATOR_VERSION: u16 = 5;
 pub const YOUNG_ROSTER_SIZE: u8 = 5;
+pub const DEFAULT_CHARACTER_VERSION: u16 = 1;
+pub const DEFAULT_CHARACTER_NAME: &str = "John Fabelgeist";
+pub const DEFAULT_CHARACTER_AGE_YEARS: u16 = 20;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -56,6 +59,8 @@ pub enum StartingSlot {
     RightArm,
     LeftLeg,
     RightLeg,
+    LeftFoot,
+    RightFoot,
     Head,
     Chest,
     Stomach,
@@ -338,6 +343,136 @@ fn item(id: &str, quantity: u32, equipped: Option<StartingSlot>) -> StartingItem
         quantity,
         equipped,
     }
+}
+
+/// Canonical fallback used whenever a strategic or tactical caller needs a
+/// complete character but did not select one explicitly.
+///
+/// `identity_seed` only namespaces the durable character ID. Every gameplay
+/// value is intentionally identical across callers.
+pub fn default_character(identity_seed: &str) -> StartingCharacterSpec {
+    let rank_hours = |skill: Skill, rank: f32| skill.hours_for_rank(rank);
+    let age_training_scale = f32::from(DEFAULT_CHARACTER_AGE_YEARS.saturating_sub(6)) / 14.0;
+    let general = |skill: Skill| rank_hours(skill, 1.25) * age_training_scale;
+    let combat = |skill: Skill| rank_hours(skill, 3.5) * age_training_scale;
+
+    let skills = StartingSkills {
+        written: adventuresim_world_schema::WrittenLanguageHours {
+            german: 400.0 * age_training_scale,
+            low: 160.0 * age_training_scale,
+            latin: 80.0 * age_training_scale,
+            hebrew: 20.0 * age_training_scale,
+            yiddish: 20.0 * age_training_scale,
+            elven: 20.0 * age_training_scale,
+            dwarfish: 20.0 * age_training_scale,
+        },
+        polearm: combat(Skill::Polearm),
+        axe: combat(Skill::Axe),
+        bludgeon: combat(Skill::Bludgeon),
+        sword: combat(Skill::Sword),
+        knife: combat(Skill::Knife),
+        dodge: combat(Skill::Dodge),
+        block: combat(Skill::Block),
+        bow: combat(Skill::Bow),
+        crossbow: combat(Skill::Crossbow),
+        firearm: combat(Skill::Firearm),
+        throw: combat(Skill::Throw),
+        will: general(Skill::Will),
+        insight: rank_hours(Skill::Insight, 3.0) * age_training_scale,
+        charm: general(Skill::Charm),
+        command: rank_hours(Skill::Command, 3.0) * age_training_scale,
+        deception: general(Skill::Deception),
+        physiology: general(Skill::Physiology),
+        bestiary: BestiaryHours {
+            beast: general(Skill::Bestiary),
+            undead: general(Skill::Bestiary),
+            human: general(Skill::Bestiary),
+            werekin: general(Skill::Bestiary),
+            elf: general(Skill::Bestiary),
+            dwarf: general(Skill::Bestiary),
+            fey: general(Skill::Bestiary),
+            spirit: general(Skill::Bestiary),
+            greenskin: general(Skill::Bestiary),
+            insectoid: general(Skill::Bestiary),
+            draconid: general(Skill::Bestiary),
+            construct: general(Skill::Bestiary),
+            wildmen: general(Skill::Bestiary),
+        },
+        surgery: general(Skill::Surgery),
+        stealth: general(Skill::Stealth),
+        balance: combat(Skill::Balance),
+        cooking: general(Skill::Cooking),
+        herbalism: general(Skill::Herbalism),
+        religion: ReligionHours {
+            roman_catholic: general(Skill::Religion),
+            lutheran: general(Skill::Religion),
+            reformed: general(Skill::Religion),
+            anglican: general(Skill::Religion),
+            eastern_orthodox: general(Skill::Religion),
+            islamic: general(Skill::Religion),
+            judaism: general(Skill::Religion),
+        },
+        terrain_plains: general(Skill::TerrainPlains),
+        terrain_forest: general(Skill::TerrainForest),
+        terrain_hills: general(Skill::TerrainHills),
+        terrain_wetlands: general(Skill::TerrainWetlands),
+        terrain_urban: general(Skill::TerrainUrban),
+        terrain_snow: general(Skill::TerrainSnow),
+        tailoring: general(Skill::Tailoring),
+        smithing: general(Skill::Smithing),
+    };
+
+    StartingCharacterSpec {
+        id: (hash("default-character-id", identity_seed, 0) & 0x0fff_ffff_ffff_ffff)
+            | 0xd000_0000_0000_0000,
+        name: DEFAULT_CHARACTER_NAME.into(),
+        age_years: DEFAULT_CHARACTER_AGE_YEARS,
+        background: "Combat-trained adventurer".into(),
+        personality: StartingPersonality {
+            traits: Vec::new(),
+            sex: StartingSex::Male,
+            presentation: StartingPresentation::Man,
+            inclination: StartingInclination::Women,
+        },
+        attributes: StartingAttributes {
+            endurance: 4.0,
+            immunity: 3.0,
+            gut: 3.0,
+            intelligence: 3.0,
+            instinct: 3.0,
+            eyesight: 3.0,
+            hearing: 3.0,
+            strength: 4.0,
+            agility: 4.0,
+        },
+        skills,
+        currency: 100,
+        settlement_selector: hash("default-character-settlement", identity_seed, 0),
+        inventory: vec![
+            item("longsword", 1, None),
+            item("rondel_dagger", 1, None),
+            item("morion", 1, Some(StartingSlot::Head)),
+            item("breastplate", 1, Some(StartingSlot::Chest)),
+            item("vambrace", 1, Some(StartingSlot::LeftArm)),
+            item("vambrace", 1, Some(StartingSlot::RightArm)),
+            item("leather_boot", 1, Some(StartingSlot::LeftFoot)),
+            item("leather_boot", 1, Some(StartingSlot::RightFoot)),
+            item("torch", 1, None),
+            item("bandage", 3, None),
+        ],
+        age_tier: StartingAgeTier::Adult,
+        profession: None,
+        organization: None,
+        religion_id: None,
+    }
+}
+
+/// Canonical default with an externally reserved durable ID, used by isolated
+/// tactical mission setup where the launcher already coordinates that ID.
+pub fn default_character_with_id(id: u64) -> StartingCharacterSpec {
+    let mut character = default_character(&format!("reserved:{id}"));
+    character.id = id;
+    character
 }
 
 /// Generate one of five deliberately differentiated but viable candidates.
@@ -1265,6 +1400,56 @@ pub fn roster(
 mod tests {
     use super::*;
     const SEED: &str = "00112233445566778899aabbccddeeff";
+
+    #[test]
+    fn canonical_default_character_matches_the_shared_test_build() {
+        let john = default_character("owner-a");
+        assert_eq!(john.name, "John Fabelgeist");
+        assert_eq!(john.age_years, 20);
+        assert_eq!(john.personality.sex, StartingSex::Male);
+        assert!(john.personality.traits.is_empty());
+        assert_eq!(john.attributes.strength, 4.0);
+        assert_eq!(john.attributes.agility, 4.0);
+        assert_eq!(john.attributes.endurance, 4.0);
+        assert_eq!(john.attributes.intelligence, 3.0);
+        assert_eq!(john.attributes.gut, 3.0);
+        assert_eq!(john.attributes.immunity, 3.0);
+        assert_eq!(john.attributes.instinct, 3.0);
+        assert_eq!(
+            Skill::Insight.capped_training_rank(john.skills.insight, &john.attributes),
+            3.0
+        );
+        assert_eq!(
+            Skill::Command.capped_training_rank(john.skills.command, &john.attributes),
+            3.0
+        );
+        assert!(
+            john.skills
+                .as_skill_hours()
+                .values()
+                .into_iter()
+                .all(|hours| hours > 0.0)
+        );
+        for (item_id, slot) in [
+            ("longsword", None),
+            ("rondel_dagger", None),
+            ("morion", Some(StartingSlot::Head)),
+            ("breastplate", Some(StartingSlot::Chest)),
+            ("vambrace", Some(StartingSlot::LeftArm)),
+            ("vambrace", Some(StartingSlot::RightArm)),
+            ("leather_boot", Some(StartingSlot::LeftFoot)),
+            ("leather_boot", Some(StartingSlot::RightFoot)),
+        ] {
+            assert!(
+                john.inventory
+                    .iter()
+                    .any(|item| item.item_id == item_id && item.equipped == slot),
+                "missing {item_id:?} in {slot:?}"
+            );
+        }
+        assert_ne!(john.id, default_character("owner-b").id);
+    }
+
     #[test]
     fn fixture_is_stable() {
         let c = generate(GENERATOR_VERSION, SEED, StartingAgeTier::Young, 0).unwrap();
