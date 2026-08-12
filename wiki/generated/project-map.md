@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1928)
+## Files (1937)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -19,6 +19,8 @@ development, or other wiki document before changing a subsystem.
 - `.gitattributes` — Repository support file.
 - `.github/workflows/gh-pages.yml` — Repository support file.
 - `.gitignore` — Repository support file.
+- `.prettierignore` — Repository support file.
+- `.prettierrc.json` — Repository support file.
 - `AGENTS.md` — Project documentation.
 - `CNAME` — Repository support file.
 - `Caddyfile.dev` — Repository support file.
@@ -1825,12 +1827,15 @@ development, or other wiki document before changing a subsystem.
 - `flake.lock` — Nix environment configuration or lockfile.
 - `flake.nix` — Nix environment configuration or lockfile.
 - `justfile` — Repository support file.
+- `package-lock.json` — Repository support file.
+- `package.json` — Repository support file.
 - `research/legacy/meta.md` — Project documentation.
 - `research/legacy/roadmap.md` — Project documentation.
 - `rust-toolchain.toml` — Tooling or build configuration.
 - `scripts/build_locomotion_cycles.py` — Development or documentation automation script.
 - `scripts/build_wasm.py` — Development or documentation automation script.
 - `scripts/dev_stack.py` — Development or documentation automation script.
+- `scripts/format_wiki_markdown.py` — Development or documentation automation script.
 - `scripts/init_forest_cover.py` — Development or documentation automation script.
 - `scripts/init_jung_pnv.py` — Development or documentation automation script.
 - `scripts/init_owda.py` — Development or documentation automation script.
@@ -1843,6 +1848,7 @@ development, or other wiki document before changing a subsystem.
 - `scripts/prepare_animation_motion.py` — Development or documentation automation script.
 - `scripts/prepare_rig_base.py` — Development or documentation automation script.
 - `scripts/quest_web_eval.mjs` — Repository support file.
+- `scripts/test_format_wiki_markdown.py` — Development or documentation automation script.
 - `scripts/test_init_forest_cover.py` — Development or documentation automation script.
 - `scripts/test_init_jung_pnv.py` — Development or documentation automation script.
 - `scripts/test_init_owda.py` — Development or documentation automation script.
@@ -1850,6 +1856,7 @@ development, or other wiki document before changing a subsystem.
 - `scripts/test_init_viabundus.py` — Development or documentation automation script.
 - `scripts/test_init_world_data.py` — Development or documentation automation script.
 - `scripts/test_init_world_runtime.py` — Development or documentation automation script.
+- `scripts/test_update_wiki_summary.py` — Development or documentation automation script.
 - `scripts/test_world_data_bundle.py` — Development or documentation automation script.
 - `scripts/test_world_runtime_release.py` — Development or documentation automation script.
 - `scripts/test_world_source_init.py` — Development or documentation automation script.
@@ -1859,6 +1866,7 @@ development, or other wiki document before changing a subsystem.
 - `scripts/tests/test_prepare_animation_motion.py` — Development or documentation automation script.
 - `scripts/tests/test_prepare_rig_base.py` — Development or documentation automation script.
 - `scripts/update_project_map.py` — Development or documentation automation script.
+- `scripts/update_wiki_summary.py` — Development or documentation automation script.
 - `scripts/validate_organization_world.py` — Development or documentation automation script.
 - `scripts/world_data_bundle.py` — Development or documentation automation script.
 - `scripts/world_runtime_release.py` — Development or documentation automation script.
@@ -1901,6 +1909,7 @@ development, or other wiki document before changing a subsystem.
 - `wiki/engineering/world-data/tree-species.md` — Project documentation.
 - `wiki/engineering/world-data/viabundus.md` — Project documentation.
 - `wiki/engineering/world-data/world-data-bundles.md` — Project documentation.
+- `wiki/navigation.toml` — Tooling or build configuration.
 - `wiki/scenario.md` — Project documentation.
 - `wiki/shared/bestiary.md` — Project documentation.
 - `wiki/shared/encumbrance.md` — Project documentation.

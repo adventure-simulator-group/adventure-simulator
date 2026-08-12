@@ -5,6 +5,10 @@ src = "wiki"
 [build]
 create-missing = false
 
+[preprocessor.toc]
+command = "mdbook-toc"
+renderer = ["html"]
+
 [output.html]
 mathjax-support = true
 admonitions = true

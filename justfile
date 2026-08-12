@@ -342,6 +342,22 @@ win-dev:
     @{{ python_bin }} scripts/just_tasks.py win-dev
 
 # Workspace utilities
+wiki-format path:
+    @{{ python_bin }} scripts/format_wiki_markdown.py {{ quote(path) }}
+
+wiki-summary:
+    @{{ python_bin }} scripts/update_wiki_summary.py
+
+wiki-check:
+    @npm run check:wiki-tooling-format
+    @{{ python_bin }} -B -m unittest scripts.test_format_wiki_markdown scripts.test_update_wiki_summary -v
+    @{{ python_bin }} scripts/update_wiki_summary.py --check
+    @{{ python_bin }} scripts/update_project_map.py --check
+    @mdbook build
+
+wiki-serve:
+    @mdbook serve
+
 check:
     @cargo check --workspace
 

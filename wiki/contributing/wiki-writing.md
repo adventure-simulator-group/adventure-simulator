@@ -9,6 +9,8 @@
 This page outlines the writing guidelines for the *Fabelgeist* Wiki. Read it
 before contributing to the wiki!
 
+<!-- toc -->
+
 ## Conventions
 
 By default, we follow
@@ -25,11 +27,13 @@ either; at the time of writing, this repository uses
 [mdBook](https://rust-lang.github.io/mdBook/) for Markdown publishing, so
 [mdBook's Markdown conventions](https://rust-lang.github.io/mdBook/format/markdown.html)
 reign. Thus, against Google's advice, we will make liberal use of relative
-links, since mdBook strongly encourages them. Also, unlike Google, we cannot
-yet make use of `[TOC]`.
-<!-- TODO(mdbook-toc):
-We will eventually adopt mdbook-toc.
--->
+links, since mdBook strongly encourages them. Also, unlike Google, we use
+`<!-- toc -->` rather than `[TOC]`.
+
+Run `just wiki-format path/to/page.md` before committing a wiki page. The
+formatter wraps ordinary prose at 80 columns without canonicalizing authored
+Markdown where our conventions differ from Prettier's. Run `just wiki-check`
+to verify navigation, tooling, links, and the rendered book.
 
 ## Audience and voice
 
