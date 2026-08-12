@@ -210,6 +210,14 @@ fn oak_root_segment_count(roots: &[OakRootSpec]) -> usize {
     roots.len() * 2 + roots.iter().filter(|root| root.fork.is_some()).count()
 }
 
+fn curve_radius_at(start_radius: f32, end_radius: f32, t: f32) -> f32 {
+    start_radius.lerp(end_radius, t.clamp(0.0, 1.0).powf(0.64))
+}
+
+fn child_base_radius(authored: f32, parent_radius: f32) -> f32 {
+    authored.min(parent_radius * 0.8)
+}
+
 fn oak_root_points(trunk_base: Vec3, root: OakRootSpec) -> [Vec3; 3] {
     let outward = Vec3::new(root.angle.cos(), 0.0, root.angle.sin());
     let tangent = Vec3::new(-root.angle.sin(), 0.0, root.angle.cos());
@@ -302,7 +310,7 @@ fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranch
     // load-bearing scaffold axes; the other three are subordinate crown-fill
     // limbs. This avoids both a radial whorl and an implausibly symmetrical
     // crown while retaining an even distribution of terminal foliage.
-    let mut dominant_scaffolds: Vec<Vec<Vec3>> = Vec::with_capacity(4);
+    let mut dominant_scaffolds: Vec<(Vec<Vec3>, f32, f32)> = Vec::with_capacity(4);
     for primary_index in 0..u64::from(TREE_PRIMARY_GROUP_COUNT) {
         let dominant = primary_index < 4;
         let rank = if dominant {
@@ -326,7 +334,7 @@ fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranch
         let start = if dominant {
             sample_polyline(&trunk_points, attach)
         } else {
-            sample_polyline(&dominant_scaffolds[rank as usize], attach)
+            sample_polyline(&dominant_scaffolds[rank as usize].0, attach)
         };
         // In the open, every principal axis contributes to the same broad,
         // ascending dome. Keeping separate vertical "leader" axes produces
@@ -385,7 +393,7 @@ fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranch
                                 * (core::f32::consts::PI * t).sin())
             })
             .collect::<Vec<_>>();
-        let (primary_start_radius, primary_end_radius) = if dominant {
+        let (authored_primary_start_radius, primary_end_radius) = if dominant {
             (
                 0.36 - rank * 0.043 + unit_hash(primary_seed ^ 4) * 0.035,
                 0.028,
@@ -393,6 +401,17 @@ fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranch
         } else {
             (0.17 + unit_hash(primary_seed ^ 4) * 0.035, 0.02)
         };
+        let parent_radius = if dominant {
+            curve_radius_at(
+                0.72_f32.lerp(0.56, canopy_competition),
+                0.045_f32.lerp(0.035, canopy_competition),
+                attach,
+            )
+        } else {
+            let parent = &dominant_scaffolds[rank as usize];
+            curve_radius_at(parent.1, parent.2, attach)
+        };
+        let primary_start_radius = child_base_radius(authored_primary_start_radius, parent_radius);
         append_branch_curve(
             &mut branches,
             &primary_points,
@@ -403,7 +422,11 @@ fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranch
             u16::MAX,
         );
         if dominant {
-            dominant_scaffolds.push(primary_points.clone());
+            dominant_scaffolds.push((
+                primary_points.clone(),
+                primary_start_radius,
+                primary_end_radius,
+            ));
         }
 
         let secondary_count = if dominant { 20_u64 } else { 12_u64 };
@@ -454,11 +477,15 @@ fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranch
                 .collect::<Vec<_>>();
             let secondary_group =
                 (primary_index * u64::from(TREE_SECONDARY_GROUP_STRIDE) + secondary_index) as u16;
-            let (secondary_start_radius, secondary_end_radius) = if dominant {
+            let (authored_secondary_start_radius, secondary_end_radius) = if dominant {
                 (0.072, 0.013)
             } else {
                 (0.05, 0.01)
             };
+            let secondary_start_radius = child_base_radius(
+                authored_secondary_start_radius,
+                curve_radius_at(primary_start_radius, primary_end_radius, attach),
+            );
             append_branch_curve(
                 &mut branches,
                 &secondary_points,
@@ -507,7 +534,10 @@ fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranch
                 append_branch_curve(
                     &mut branches,
                     &[shoot_start, shoot_mid, shoot_end],
-                    0.012,
+                    child_base_radius(
+                        0.012,
+                        curve_radius_at(secondary_start_radius, secondary_end_radius, attach),
+                    ),
                     0.0032,
                     3,
                     primary_index as u8,
@@ -567,10 +597,14 @@ fn procedural_hazel_skeleton(
                 start + direction * length + Vec3::Y * 0.16,
             ];
             let secondary_group = (stem_index * 16 + branch_index) as u16;
+            let branch_start_radius = child_base_radius(
+                0.014,
+                curve_radius_at(0.035 + unit_hash(stem_seed ^ 3) * 0.018, 0.008, attach),
+            );
             append_branch_curve(
                 &mut branches,
                 &branch_points,
-                0.014,
+                branch_start_radius,
                 0.0036,
                 2,
                 stem_index as u8,
@@ -595,7 +629,7 @@ fn procedural_hazel_skeleton(
                         shoot_start + shoot_direction * shoot_length * 0.52,
                         shoot_start + shoot_direction * shoot_length,
                     ],
-                    0.005,
+                    child_base_radius(0.005, curve_radius_at(branch_start_radius, 0.0036, along)),
                     0.0015,
                     3,
                     stem_index as u8,

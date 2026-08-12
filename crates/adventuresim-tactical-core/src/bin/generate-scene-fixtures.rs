@@ -178,7 +178,11 @@ fn build_fixture(fixture: Fixture) -> TacticalSceneInput {
         absolute_minute: fixture.weather.interval_start_minute,
         absolute_elevation_metres: 42,
         playable: grid(9, 9, 12.5, fixture.terrain, fixture.environment),
-        vista: vista(fixture.vista, fixture.environment),
+        vista: vista(
+            fixture.vista,
+            fixture.environment,
+            (fixture.terrain)(0.0, 0.0),
+        ),
         weather: fixture.weather,
     }
 }
@@ -212,7 +216,11 @@ fn grid(
     }
 }
 
-fn vista(kind: VistaKind, environment: fn(f32, f32) -> EnvironmentalSample) -> VistaSample {
+fn vista(
+    kind: VistaKind,
+    environment: fn(f32, f32) -> EnvironmentalSample,
+    playable_center_height: f32,
+) -> VistaSample {
     let specs = [(0, 250.0, 9), (1, 500.0, 21), (2, 1_000.0, 51)];
     VistaSample {
         lods: specs
@@ -223,7 +231,11 @@ fn vista(kind: VistaKind, environment: fn(f32, f32) -> EnvironmentalSample) -> V
                     VistaKind::ValleyRidge => distant_valley_ridge,
                     VistaKind::BoundaryPeak => distant_boundary_peak,
                 };
-                let sample = grid(side, side, spacing, terrain, environment);
+                let mut sample = grid(side, side, spacing, terrain, environment);
+                let vista_center_height = terrain(0.0, 0.0);
+                for height in &mut sample.heights_metres {
+                    *height += playable_center_height - vista_center_height;
+                }
                 VistaLod {
                     level,
                     spacing_metres: sample.spacing_metres,
@@ -329,7 +341,7 @@ fn distant_valley_ridge(x: f32, z: f32) -> f32 {
 }
 fn distant_boundary_peak(x: f32, z: f32) -> f32 {
     let distance = ((x - 5_000.0).powi(2) + z.powi(2)).sqrt();
-    (900.0 - distance * 0.16).max(distant_rolling(x, z))
+    (900.0 - distance * 0.18).max(distant_rolling(x, z) - distant_rolling(0.0, 0.0))
 }
 
 const fn clear() -> WeatherSnapshot {

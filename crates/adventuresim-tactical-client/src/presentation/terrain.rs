@@ -186,7 +186,7 @@ fn ground_mask_noise(seed: u64, point: Vec2) -> f32 {
     bottom.lerp(top, curve.y)
 }
 
-fn organic_ground_pixels(ground: &SceneGround, seed: u64) -> (u32, u32, Vec<u8>) {
+pub(super) fn organic_ground_pixels(ground: &SceneGround, seed: u64) -> (u32, u32, Vec<u8>) {
     let source_width = ground.grid_width();
     let source_depth = ground.grid_depth();
     let width = (source_width - 1) * GROUND_PRESENTATION_SAMPLES_PER_CELL + 1;
@@ -217,6 +217,82 @@ fn organic_ground_pixels(ground: &SceneGround, seed: u64) -> (u32, u32, Vec<u8>)
         }
     }
     (width as u32, depth as u32, pixels)
+}
+
+pub(super) fn grass_cover_mask_image(ground: &SceneGround, seed: u64) -> Image {
+    let (width, height, ground_pixels) = organic_ground_pixels(ground, seed);
+    let mut mask = vec![0_u8; width as usize * height as usize];
+    let radius = GROUND_PRESENTATION_SAMPLES_PER_CELL * 3;
+    let width_usize = width as usize;
+    let height_usize = height as usize;
+    let mut distance = vec![radius + 1; width_usize * height_usize];
+    for z in 0..height_usize {
+        for x in 0..width_usize {
+            let index = z * width_usize + x;
+            let cover = ground_pixels[index * 4];
+            if cover != GroundCover::TallGrass as u8
+                || x == 0
+                || z == 0
+                || x + 1 == width_usize
+                || z + 1 == height_usize
+            {
+                distance[index] = 0;
+            }
+        }
+    }
+    // Two separable chamfer passes compute the Chebyshev distance to the
+    // nearest non-grass pixel in linear time. The former bounded square scan
+    // performed over one hundred million comparisons on a typical scene.
+    for z in 0..height_usize {
+        for x in 0..width_usize {
+            let index = z * width_usize + x;
+            for (dx, dz) in [(-1_isize, 0_isize), (0, -1), (-1, -1), (1, -1)] {
+                let nx = x as isize + dx;
+                let nz = z as isize + dz;
+                if nx >= 0 && nz >= 0 && nx < width as isize && nz < height as isize {
+                    distance[index] = distance[index]
+                        .min(distance[nz as usize * width_usize + nx as usize].saturating_add(1));
+                }
+            }
+        }
+    }
+    for z in (0..height_usize).rev() {
+        for x in (0..width_usize).rev() {
+            let index = z * width_usize + x;
+            for (dx, dz) in [(1_isize, 0_isize), (0, 1), (1, 1), (-1, 1)] {
+                let nx = x as isize + dx;
+                let nz = z as isize + dz;
+                if nx >= 0 && nz >= 0 && nx < width as isize && nz < height as isize {
+                    distance[index] = distance[index]
+                        .min(distance[nz as usize * width_usize + nx as usize].saturating_add(1));
+                }
+            }
+        }
+    }
+    for z in 0..height as usize {
+        for x in 0..width as usize {
+            let pixel = (z * width as usize + x) * 4;
+            if ground_pixels[pixel] != GroundCover::TallGrass as u8 {
+                continue;
+            }
+            let density = ground_pixels[pixel + 2];
+            let feather = (distance[z * width_usize + x] as f32 / radius as f32).clamp(0.0, 1.0);
+            mask[z * width as usize + x] = (f32::from(density) * feather) as u8;
+        }
+    }
+    let mut image = Image::new(
+        Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        mask,
+        TextureFormat::R8Unorm,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    image.sampler = ImageSampler::linear();
+    image
 }
 
 fn ground_map_image(ground: Option<&SceneGround>, seed: u64) -> Image {
@@ -380,6 +456,36 @@ mod tests {
         assert!(
             first_leaf_litter_x.len() >= 5,
             "organic boundary should cross rows at varied positions: {first_leaf_litter_x:?}"
+        );
+    }
+
+    #[test]
+    fn grass_cover_mask_is_deterministic_and_feathers_authoritative_edges() {
+        let grass = GroundSurface {
+            cover: GroundCover::TallGrass,
+            cover_density_bps: 10_000,
+            cover_height_cm: 82,
+            ..default()
+        };
+        let mut samples = vec![grass; 17 * 17];
+        for z in 7..10 {
+            for x in 7..10 {
+                samples[z * 17 + x].cover = GroundCover::LeafLitter;
+            }
+        }
+        let ground = SceneGround::from_samples(17, 17, 2.0, samples).unwrap();
+        let image = grass_cover_mask_image(&ground, 91);
+        let repeated = grass_cover_mask_image(&ground, 91);
+        let values = image.data.as_deref().unwrap();
+        assert_eq!(image.data, repeated.data);
+        assert!(values.contains(&0), "non-grass must reject every blade");
+        assert!(
+            values.iter().copied().max().unwrap_or_default() > 200,
+            "deep grass must retain most blades"
+        );
+        assert!(
+            values.iter().any(|value| (1..255).contains(value)),
+            "grass-side boundary must be progressively sparse"
         );
     }
 }

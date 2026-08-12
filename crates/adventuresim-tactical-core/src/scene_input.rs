@@ -982,6 +982,20 @@ mod tests {
             assert!(generated.terrain.grid_scale() <= 2.0);
             assert!(generated.repairs.upsampled_height_samples > 0);
             assert_eq!(input.vista.lods.len(), 3);
+            let playable_center =
+                input.playable.heights_metres[usize::from(input.playable.depth / 2)
+                    * usize::from(input.playable.width)
+                    + usize::from(input.playable.width / 2)];
+            for lod in &input.vista.lods {
+                let vista_center = lod.heights_metres[usize::from(lod.depth / 2)
+                    * usize::from(lod.width)
+                    + usize::from(lod.width / 2)];
+                assert!(
+                    (vista_center - playable_center).abs() < 0.001,
+                    "{name} vista LOD {} must share the playable height datum",
+                    lod.level
+                );
+            }
             let horizon = input.vista.lods.last().unwrap();
             assert_eq!(
                 f32::from(horizon.width - 1) * horizon.spacing_metres,

@@ -308,15 +308,27 @@ bounded five-to-ten-root visual flare from the same tree seed. Unequal angular
 gaps, reach, radius, and burial break up radial repetition; two or three broader
 buttresses follow the main scaffold-load azimuths, and at most two roots add a
 short lateral fork. This presentation detail remains capped at 22 segments and
-does not expand the server's cylindrical trunk collider.
+does not expand the server's cylindrical trunk collider. Oak and hazel branch
+recipes also cap each child base at 80% of its local parent-axis radius. The
+existing bounded basal ring therefore cannot become wider than its trunk or
+parent limb.
 Non-colliding grass and understory use automatically instanced shared meshes,
-layered shader wind, and root-to-tip shading. Grass cross-fades from an
-729-blade, fifteen-vertex macro patch to a stable 144-blade,
+layered shader wind, and root-to-tip shading. Grass cross-fades from a
+2,916-blade, fifteen-vertex near-field macro patch to a stable 144-blade,
 seven-vertex subset at distance; rejected blades are absent from the far mesh
 rather than collapsed after vertex shading. The 3.2-metre patch spacing cuts
 grass render entities by roughly an order of magnitude while retaining the
-original internal blade spacing. Environment coverage selects stable blades
-inside that shared mesh instead of omitting whole macro patches. Macro patches
+original macro-patch footprint at four times the authored blade density near
+the player and camera. The distant mesh retains the earlier density because
+individual blades are subpixel there. The 4x near mesh cross-fades to the
+original far topology over 18--26 metres rather than paying four times the
+vertex cost throughout the former 34--44 metre high-detail radius. A
+deterministic scalar mask derived from
+the same authoritative ground-cover contour as the terrain rejects blades on
+dirt and leaf litter and progressively thins the grass-side boundary. Boundary
+macro patches remain present, while patches fully inside non-grass cover are
+omitted. Near and far LODs use the same stable per-blade thresholds, so the
+organic edge does not change at the cross-fade. Macro patches
 remain unit-scale and nearly gridded, with boundary blade rows constrained to
 wander outward to mitigate square seams on near-flat and ordinary sloped
 terrain. This is a continuity mitigation rather than a guarantee across sharp
@@ -350,7 +362,11 @@ material, precipitation particles, fog distance, wind drift, and sunlight.
 Large vista grids are deliberately not ordinary replicated ECS components. The
 server sends each accepted client one immutable, ordered `SceneVistaBundle`;
 the client builds seam-sharing LOD rings split into independently frustum-culled
-mesh chunks without inner-area overdraw, colliders, or shadows. The dispatcher samples the final continental terrain pack
+mesh chunks without inner-area overdraw, colliders, or shadows. Synthetic
+review fixtures normalize each vista LOD to the playable terrain's origin
+height, preventing coarse one-sided rings from becoming an invisible ceiling
+above the player. Production-composition review cameras keep these vistas
+visible rather than reserving them for an isolated horizon plate. The dispatcher samples the final continental terrain pack
 at the request's authoritative case-site coordinates and character minute,
 materializes the validated document atomically, and passes only its path to the
 child. A tactical-only workflow may instead supply the identical format with
