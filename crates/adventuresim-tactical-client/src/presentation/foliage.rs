@@ -9,6 +9,15 @@ const TWIG_PASSES_PER_SAMPLE: u64 = 2;
 const DRY_LEAF_MESH_VARIANTS: u64 = 4;
 const TWIG_MESH_VARIANTS: u64 = 3;
 
+#[derive(Resource, Default)]
+pub(in crate::presentation) struct HazelPresentationCache {
+    branches: Option<Handle<Mesh>>,
+    cambered_leaves: Option<Handle<Mesh>>,
+    leaf_cards: Option<Handle<Mesh>>,
+    bark: Option<Handle<StandardMaterial>>,
+    leaves: Option<Handle<TacticalTreeLeafCardMaterial>>,
+}
+
 pub(super) fn foliage_material(wind_scale: f32, ground_foliage: bool) -> TacticalFoliageMaterial {
     TacticalFoliageMaterial {
         wind: Vec4::new(0.74, 0.67, wind_scale, 1.35),
@@ -25,6 +34,8 @@ pub(super) fn foliage_material(wind_scale: f32, ground_foliage: bool) -> Tactica
         // reserved future shaping control. Understory cards retain the older
         // crossed-plane deformation path.
         shape: Vec4::ZERO,
+        celestial: Vec3::new(0.35, 0.86, 0.25).normalize().extend(1.0),
+        ambient: Vec4::new(1.0, 1.0, 1.0, 0.28),
     }
 }
 
@@ -80,10 +91,52 @@ pub(super) fn update_grass_interaction(
     }
 }
 
+pub(super) fn update_celestial_material_lighting(
+    environments: Query<&SceneEnvironment>,
+    mut foliage_materials: ResMut<Assets<TacticalFoliageMaterial>>,
+    mut impostor_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
+) {
+    let Some(environment) = environments.iter().next() else {
+        return;
+    };
+    let celestial = celestial_directions(
+        environment.absolute_minute,
+        environment.latitude_microdegrees,
+        environment.longitude_microdegrees,
+    );
+    let sun_altitude = celestial.sun[1].asin().to_degrees();
+    let moon_altitude = celestial.moon[1].asin().to_degrees();
+    let light_factor =
+        scene_night_factor(sun_altitude, moon_altitude, celestial.lunar_illumination);
+    let (ambient_color, _) =
+        scene_ambient_light(sun_altitude, moon_altitude, celestial.lunar_illumination);
+    let ambient_response =
+        scene_ambient_response(sun_altitude, moon_altitude, celestial.lunar_illumination);
+    let direction = if sun_altitude > -6.0 {
+        to_bevy_direction(celestial.sun)
+    } else if moon_altitude > -2.0 {
+        to_bevy_direction(celestial.moon)
+    } else {
+        Vec3::new(0.25, 0.92, 0.3).normalize()
+    };
+    for (_, material) in foliage_materials.iter_mut() {
+        material.celestial = direction.extend(light_factor);
+        material.ambient = ambient_color.extend(ambient_response);
+    }
+    for (_, material) in impostor_materials.iter_mut() {
+        material.lighting = direction.extend(light_factor);
+        material.ambient = ambient_color.extend(ambient_response);
+    }
+}
+
 pub(super) fn spawn_ground_foliage(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<TacticalFoliageMaterial>,
+    standard_materials: &mut Assets<StandardMaterial>,
+    leaf_materials: &mut Assets<TacticalTreeLeafCardMaterial>,
+    hazel_cache: &mut HazelPresentationCache,
+    asset_server: &AssetServer,
     scene_id: &SceneId,
     terrain: &SceneTerrain,
     ground: &SceneGround,
@@ -97,7 +150,11 @@ pub(super) fn spawn_ground_foliage(
     let grass_density = (0.96 - canopy * 0.16 - water * 0.88 + cultivation * 0.04)
         .clamp(0.06, 0.98)
         * (1.0 - snow * 0.36);
-    let understory_chance = (canopy * 0.16 + wetland * 0.22).clamp(0.0, 0.24);
+    // A mature shared hazel occupies far more space than the former crossed
+    // card placeholder. Scatter on a wider lattice so woodland contains
+    // legible individual shrubs and traversable openings instead of a wall of
+    // overlapping coppice stems.
+    let understory_chance = (canopy * 0.52 + wetland * 0.3).clamp(0.0, 0.52);
     let grass_color = if environment.weather.snow_cover_bps >= 5_000 {
         Color::srgb_u8(155, 164, 137)
     } else if environment.cultivation_bps >= 4_000 {
@@ -115,13 +172,13 @@ pub(super) fn spawn_ground_foliage(
         GrassMeshLod::Far,
         grass_density,
     ));
-    let understory_mesh = meshes.add(if environment.weather.snow_cover_bps >= 5_000 {
-        foliage_clump_mesh(0.72, 0.92, Color::srgb_u8(130, 144, 119), 3)
-    } else if environment.wetland_bps >= 3_000 {
-        foliage_clump_mesh(0.42, 1.35, Color::srgb_u8(75, 112, 58), 4)
-    } else {
-        foliage_clump_mesh(0.9, 1.05, Color::srgb_u8(52, 91, 43), 3)
-    });
+    ensure_hazel_presentation(
+        meshes,
+        standard_materials,
+        leaf_materials,
+        hazel_cache,
+        asset_server,
+    );
     let grass_wind_scale = 0.16 + bps(environment.weather.wind_speed_bps) * 0.36;
     let grass_near_material = materials.add(grass_material(
         grass_wind_scale,
@@ -132,10 +189,6 @@ pub(super) fn spawn_ground_foliage(
         grass_wind_scale,
         GrassMeshLod::Far,
         grass_density,
-    ));
-    let understory_material = materials.add(foliage_material(
-        0.1 + bps(environment.weather.wind_speed_bps) * 0.24,
-        true,
     ));
     let dry_leaf_meshes = (0..DRY_LEAF_MESH_VARIANTS)
         .map(|variant| meshes.add(dry_leaf_patch_mesh(variant)))
@@ -190,7 +243,7 @@ pub(super) fn spawn_ground_foliage(
         }
     }
 
-    let understory_spacing = 1.0;
+    let understory_spacing = 3.2;
     let understory_count_x = (terrain.width() / understory_spacing).floor() as i32;
     let understory_count_z = (terrain.depth() / understory_spacing).floor() as i32;
     for z in 0..understory_count_z {
@@ -214,12 +267,37 @@ pub(super) fn spawn_ground_foliage(
                 continue;
             };
             commands.spawn((
-                Name::new("Tactical understory clump"),
+                Name::new("Shared common hazel shrub wood"),
                 FoliageLayer::Understory,
-                NotShadowCaster,
-                Mesh3d(understory_mesh.clone()),
-                MeshMaterial3d(understory_material.clone()),
+                Mesh3d(hazel_cache.branches.as_ref().unwrap().clone()),
+                MeshMaterial3d(hazel_cache.bark.as_ref().unwrap().clone()),
                 VisibilityRange::abrupt(0.0, 92.0),
+                transform,
+            ));
+            commands.spawn((
+                Name::new("Shared common hazel cambered leaves"),
+                FoliageLayer::Understory,
+                TreeLeafRepresentation::TexturedMesh,
+                Mesh3d(hazel_cache.cambered_leaves.as_ref().unwrap().clone()),
+                MeshMaterial3d(hazel_cache.leaves.as_ref().unwrap().clone()),
+                VisibilityRange {
+                    start_margin: 0.0..0.0,
+                    end_margin: 26.0..34.0,
+                    use_aabb: true,
+                },
+                transform,
+            ));
+            commands.spawn((
+                Name::new("Shared common hazel alpha-card leaves"),
+                FoliageLayer::Understory,
+                TreeLeafRepresentation::AlphaCard,
+                Mesh3d(hazel_cache.leaf_cards.as_ref().unwrap().clone()),
+                MeshMaterial3d(hazel_cache.leaves.as_ref().unwrap().clone()),
+                VisibilityRange {
+                    start_margin: 26.0..34.0,
+                    end_margin: 84.0..96.0,
+                    use_aabb: true,
+                },
                 transform,
             ));
         }
@@ -368,12 +446,20 @@ pub(super) fn present_ground_scatter(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut foliage_materials: ResMut<Assets<TacticalFoliageMaterial>>,
+    mut standard_materials: ResMut<Assets<StandardMaterial>>,
+    mut leaf_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
+    mut hazel_cache: ResMut<HazelPresentationCache>,
+    asset_server: Res<AssetServer>,
 ) {
     for (entity, scene_id, terrain, ground, environment) in &scenes {
         spawn_ground_foliage(
             &mut commands,
             &mut meshes,
             &mut foliage_materials,
+            &mut standard_materials,
+            &mut leaf_materials,
+            &mut hazel_cache,
+            &asset_server,
             scene_id,
             terrain,
             ground,
@@ -381,6 +467,33 @@ pub(super) fn present_ground_scatter(
         );
         commands.entity(entity).insert(GroundScatterPresented);
     }
+}
+
+fn ensure_hazel_presentation(
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    leaf_materials: &mut Assets<TacticalTreeLeafCardMaterial>,
+    cache: &mut HazelPresentationCache,
+    asset_server: &AssetServer,
+) {
+    if cache.branches.is_some() {
+        return;
+    }
+    // One deterministic specimen is shared by every scattered shrub. Instance
+    // transforms still vary placement, rotation, and scale without generating
+    // unique botanical geometry per occurrence.
+    let seed = 0xc0a1_5a2e_11_u64;
+    let branches = procedural_woody_plant_skeleton(seed, 0.0, COMMON_HAZEL_PARAMETERS);
+    let leaves = procedural_woody_plant_leaves(seed, &branches, 0.0, COMMON_HAZEL_PARAMETERS);
+    cache.branches = Some(meshes.add(procedural_tree_branch_mesh(&branches, 3)));
+    cache.cambered_leaves = Some(meshes.add(procedural_woody_cambered_leaf_mesh(&leaves)));
+    cache.leaf_cards = Some(meshes.add(procedural_woody_leaf_card_mesh(&leaves)));
+    cache.bark = Some(materials.add(StandardMaterial {
+        base_color: Color::srgb_u8(118, 104, 78),
+        perceptual_roughness: 0.96,
+        ..default()
+    }));
+    cache.leaves = Some(leaf_materials.add(hazel_leaf_material(asset_server)));
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -536,10 +649,6 @@ fn grass_ribbon_patch_mesh(
     mesh
 }
 
-pub(super) fn foliage_clump_mesh(width: f32, height: f32, color: Color, planes: usize) -> Mesh {
-    foliage_patch_mesh(width, height, color, planes, &[(0.0, 0.0, 1.0)])
-}
-
 /// Dense dry-leaf carpet with enough colour, size, and orientation variation
 /// to avoid reading as a repeated decal when its shared mesh is instanced.
 fn dry_leaf_patch_mesh(variant: u64) -> Mesh {
@@ -659,74 +768,6 @@ impl GroundLitterMeshData {
     }
 }
 
-pub(super) fn foliage_patch_mesh(
-    width: f32,
-    height: f32,
-    color: Color,
-    planes: usize,
-    tufts: &[(f32, f32, f32)],
-) -> Mesh {
-    let mut positions = Vec::with_capacity(tufts.len() * planes * 5);
-    let mut normals = Vec::with_capacity(tufts.len() * planes * 5);
-    let mut uvs = Vec::with_capacity(tufts.len() * planes * 5);
-    let mut blade_roots = Vec::with_capacity(tufts.len() * planes * 5);
-    let mut colors = Vec::with_capacity(tufts.len() * planes * 5);
-    let mut indices = Vec::with_capacity(tufts.len() * planes * 9);
-    let linear = color.to_linear().to_f32_array();
-    for (tuft_index, &(offset_x, offset_z, tuft_scale)) in tufts.iter().enumerate() {
-        let centre = Vec3::new(offset_x, 0.0, offset_z);
-        let blade_threshold = unit_hash(splitmix64(tuft_index as u64 ^ 0x3d91_02ea_61b8_7c45));
-        let blade_color = [linear[0], linear[1], linear[2], blade_threshold];
-        for plane in 0..planes {
-            let angle = plane as f32 * core::f32::consts::PI / planes as f32;
-            let direction = Vec3::new(angle.cos(), 0.0, angle.sin()) * width * tuft_scale * 0.5;
-            let shoulder = direction * 0.48;
-            let tip = Vec3::Y * height * tuft_scale;
-            let base = positions.len() as u32;
-            positions.extend_from_slice(&[
-                (centre - direction).to_array(),
-                (centre + direction).to_array(),
-                (centre - shoulder + tip * 0.72).to_array(),
-                (centre + shoulder + tip * 0.72).to_array(),
-                (centre + tip).to_array(),
-            ]);
-            let normal = Vec3::Y.cross(direction).normalize_or_zero().to_array();
-            normals.extend_from_slice(&[normal; 5]);
-            uvs.extend_from_slice(&[
-                [0.0, 0.0],
-                [1.0, 0.0],
-                [0.25, 0.72],
-                [0.75, 0.72],
-                [0.5, 1.0],
-            ]);
-            blade_roots.extend_from_slice(&[[offset_x, offset_z]; 5]);
-            colors.extend_from_slice(&[blade_color; 5]);
-            indices.extend_from_slice(&[
-                base,
-                base + 1,
-                base + 3,
-                base,
-                base + 3,
-                base + 2,
-                base + 2,
-                base + 3,
-                base + 4,
-            ]);
-        }
-    }
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::RENDER_WORLD,
-    );
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_1, blade_roots);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
-    mesh.insert_indices(Indices::U32(indices));
-    mesh
-}
-
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(in crate::presentation) struct TacticalFoliageMaterial {
     #[uniform(0)]
@@ -739,6 +780,10 @@ pub(in crate::presentation) struct TacticalFoliageMaterial {
     shading: Vec4,
     #[uniform(0)]
     shape: Vec4,
+    #[uniform(0)]
+    celestial: Vec4,
+    #[uniform(0)]
+    ambient: Vec4,
 }
 
 impl Material for TacticalFoliageMaterial {
@@ -795,18 +840,6 @@ const FOLIAGE_SHADER: &str = "shaders/tactical_foliage.wgsl";
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn foliage_clumps_carry_root_to_tip_wind_weights() {
-        let mesh = foliage_clump_mesh(0.5, 0.8, Color::WHITE, 3);
-        let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0)
-        else {
-            panic!("foliage mesh must carry float2 UV wind weights");
-        };
-        assert!(uvs.iter().any(|uv| uv[1] == 0.0));
-        assert!(uvs.iter().any(|uv| uv[1] == 1.0));
-        assert!(mesh.attribute(Mesh::ATTRIBUTE_COLOR).is_some());
-    }
 
     #[test]
     fn grass_patches_use_a_stable_reduced_far_subset() {
@@ -866,6 +899,7 @@ mod tests {
         let crown = foliage_material(0.3, false);
         assert_eq!(grass.shading.w, 1.0);
         assert_eq!(crown.shading.w, 0.0);
+        assert_eq!(grass.celestial.w, 1.0);
         assert_eq!(grass.shape, Vec4::ZERO);
         assert_eq!(
             grass_material(0.3, GrassMeshLod::Near, 1.0).shape,

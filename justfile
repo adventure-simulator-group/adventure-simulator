@@ -314,6 +314,11 @@ tactical-scene-capture fixture="dense-woodland" output="" settle_frames="12" abs
 tactical-tree-leaf-benchmark output="target/tactical-scene-captures/tree-leaf-benchmark" frames="180":
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture dense-woodland --leaf-benchmark-frames {{ quote(frames) }} --output {{ quote(output) }}
 
+# Compare WebGPU-safe canopy AO and directional leaf self shadows in the same
+# uncapped dense-forest LOD0 scene. Output must be a fresh directory.
+tactical-tree-lighting-benchmark output="target/tactical-scene-captures/tree-lighting-benchmark" frames="180":
+    @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture dense-woodland --absolute-minute 340560 --tree-lighting-benchmark-frames {{ quote(frames) }} --output {{ quote(output) }}
+
 # Capture both leaf representations from face-on through grazing review
 # azimuths under identical controlled daylight.
 tactical-tree-leaf-comparison output="target/tactical-scene-captures/tree-leaf-comparison" settle_frames="8" absolute_minute="340560":
@@ -321,6 +326,10 @@ tactical-tree-leaf-comparison output="target/tactical-scene-captures/tree-leaf-c
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --tree-review-azimuth-degrees 30 --output {{ quote(output + "/angle-030") }}
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --tree-review-azimuth-degrees 60 --output {{ quote(output + "/angle-060") }}
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --tree-review-azimuth-degrees 80 --output {{ quote(output + "/angle-080") }}
+
+# Regenerate every aligned common-hazel PBR channel from one canonical plate.
+build-hazel-leaf-textures:
+    powershell -ExecutionPolicy Bypass -File scripts/build_hazel_leaf_textures.ps1
 
 # Render one identical generated woodland at five world-data canopy values so
 # tree architecture can be compared without changing its seed or neighbours.

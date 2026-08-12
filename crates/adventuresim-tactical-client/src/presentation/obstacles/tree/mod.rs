@@ -53,15 +53,31 @@ pub(crate) struct TacticalTreeLeafCardMaterial {
     #[texture(8)]
     #[sampler(9)]
     pub(crate) back_normal: Handle<Image>,
-    /// Wind direction XZ, strength, and speed.
+    /// Wind direction XZ, strength, and CPU-synchronized phase time.
     #[uniform(10)]
     pub(crate) parameters: Vec4,
-    /// Opacity cutoff, tangent-space normal strength, reserved, reserved.
+    /// Opacity cutoff, tangent-space normal strength, canopy AO strength, reserved.
     #[uniform(10)]
     pub(crate) surface_parameters: Vec4,
 }
 
 pub(crate) fn oak_leaf_material(asset_server: &AssetServer) -> TacticalTreeLeafCardMaterial {
+    leaf_material(asset_server, "trees/oak_leaf_03", 0.28, 0.72, 0.62)
+}
+
+pub(in crate::presentation) fn hazel_leaf_material(
+    asset_server: &AssetServer,
+) -> TacticalTreeLeafCardMaterial {
+    leaf_material(asset_server, "shrubs/common_hazel_leaf", 0.32, 0.68, 0.54)
+}
+
+fn leaf_material(
+    asset_server: &AssetServer,
+    stem: &str,
+    alpha_cutoff: f32,
+    normal_strength: f32,
+    canopy_ao: f32,
+) -> TacticalTreeLeafCardMaterial {
     let linear_image = |path| {
         asset_server
             .load_builder()
@@ -71,13 +87,23 @@ pub(crate) fn oak_leaf_material(asset_server: &AssetServer) -> TacticalTreeLeafC
             .load(path)
     };
     TacticalTreeLeafCardMaterial {
-        opacity: linear_image("textures/trees/oak_leaf_03_opacity.png"),
-        front_albedo: asset_server.load("textures/trees/oak_leaf_03_front_albedo.png"),
-        back_albedo: asset_server.load("textures/trees/oak_leaf_03_back_albedo.png"),
-        front_normal: linear_image("textures/trees/oak_leaf_03_front_normal_dx.png"),
-        back_normal: linear_image("textures/trees/oak_leaf_03_back_normal_dx.png"),
-        parameters: Vec4::new(0.74, 0.67, 0.035, 1.15),
-        surface_parameters: Vec4::new(0.28, 0.72, 0.0, 0.0),
+        opacity: linear_image(format!("textures/{stem}_opacity.png")),
+        front_albedo: asset_server.load(format!("textures/{stem}_front_albedo.png")),
+        back_albedo: asset_server.load(format!("textures/{stem}_back_albedo.png")),
+        front_normal: linear_image(format!("textures/{stem}_front_normal_dx.png")),
+        back_normal: linear_image(format!("textures/{stem}_back_normal_dx.png")),
+        parameters: Vec4::new(0.74, 0.67, 0.035, 0.0),
+        surface_parameters: Vec4::new(alpha_cutoff, normal_strength, canopy_ao, 0.0),
+    }
+}
+
+pub(in crate::presentation) fn update_tree_leaf_wind(
+    time: Res<Time>,
+    mut materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
+) {
+    let phase_time = time.elapsed_secs() * 1.15;
+    for (_, material) in materials.iter_mut() {
+        material.parameters.w = phase_time;
     }
 }
 
@@ -90,12 +116,24 @@ impl Material for TacticalTreeLeafCardMaterial {
         TREE_LEAF_CARD_SHADER.into()
     }
 
+    fn alpha_mode(&self) -> AlphaMode {
+        AlphaMode::Mask(self.surface_parameters.x)
+    }
+
     fn enable_prepass() -> bool {
-        false
+        true
     }
 
     fn enable_shadows() -> bool {
-        false
+        true
+    }
+
+    fn prepass_vertex_shader() -> ShaderRef {
+        TREE_LEAF_CARD_SHADER.into()
+    }
+
+    fn prepass_fragment_shader() -> ShaderRef {
+        TREE_LEAF_CARD_SHADER.into()
     }
 
     fn specialize(
@@ -117,6 +155,12 @@ pub(in crate::presentation) struct TacticalTreeImpostorMaterial {
     /// Representation level, deterministic seed, wind strength, wind speed.
     #[uniform(2)]
     parameters: Vec4,
+    /// Direction toward the dominant celestial light and day/night strength.
+    #[uniform(2)]
+    pub(in crate::presentation) lighting: Vec4,
+    /// Ambient irradiance colour and normalized strength.
+    #[uniform(2)]
+    pub(in crate::presentation) ambient: Vec4,
 }
 
 impl Material for TacticalTreeImpostorMaterial {
@@ -202,7 +246,6 @@ pub(in crate::presentation) fn spawn_cached_tree(
                 cluster_marker,
                 cluster_aabb,
                 TreeLeafRepresentation::TexturedMesh,
-                NotShadowCaster,
                 Mesh3d(cluster.cambered_leaf_mesh.clone()),
                 MeshMaterial3d(cached.leaf_material.clone()),
                 tree_leaf_visibility(TreeLeafRepresentation::TexturedMesh, 1.0, cluster.radius),
@@ -216,7 +259,6 @@ pub(in crate::presentation) fn spawn_cached_tree(
                 cluster_marker,
                 cluster_aabb,
                 TreeLeafRepresentation::AlphaCard,
-                NotShadowCaster,
                 Mesh3d(cluster.leaf_card_mesh.clone()),
                 MeshMaterial3d(cached.leaf_material.clone()),
                 tree_leaf_visibility(TreeLeafRepresentation::AlphaCard, 1.0, cluster.radius),

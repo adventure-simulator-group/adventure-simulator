@@ -75,6 +75,12 @@ copy as the terrain material map and uses the same values for deterministic
 scatter. Texture asset identifiers are presentation details and never become
 server authority.
 
+For rendering, the client deterministically expands that coarse categorical
+map and displaces its lookup boundary with two scales of smooth noise. The
+shader still selects exactly one cover material at every fragment—there is no
+colour-gradient blend—but boundaries such as forest floor against grass no
+longer expose square source-grid cells.
+
 Generated tree crowns stamp leaf-litter cover into this grid. Grass macro
 patches conservatively reject any footprint intersecting those cells. Separate
 shared meshes scatter a dense dry-leaf carpet and a looser layer of longer
@@ -102,6 +108,14 @@ The geometric sward ends by 132 metres; beyond it, band-limited terrain colour
 and normal variation carries the far-field grass response without sub-pixel
 blade geometry. The locally controlled player's position and velocity flatten
 and push nearby grass as a presentation-only effect.
+
+Ordinary temperate understory shrubs use one shared procedural common-hazel
+(`Corylus avellana`) specimen rather than a unique mesh per scatter point. Its
+multi-stem architecture and alternate broad leaves come from the same
+parameterized woody-plant generator used for the English oak, with shrub-scale
+height, crown, stem-count, shoot, and leaf parameters. Cambered near leaves and
+flat alpha-card far leaves share one aligned albedo/opacity/normal material and
+the existing tree-leaf wind shader.
 Root self-shadow, broad colour variation, a darker centre rib, and softened
 upward normals keep the dense field readable without making individual cards
 look heavily lit. A procedural terrain material blends forest floor, dry
@@ -114,6 +128,15 @@ transmission, and distance fog. Coarse vista samples preserve local peaks and
 render as seam-sharing rings of independently culled mesh chunks out to 50 km;
 coarser rings leave the playable and finer-ring interiors open rather than
 overdrawing them.
+
+Near-tree PBR leaf cards participate in the horizon-aware directional shadow
+map, producing both cast shadows and leaf-on-leaf self shadow. Their vertex data
+also carries a deterministic canopy-visibility term that darkens protected
+interior foliage without relying on native screen-space ambient occlusion,
+which is unavailable on WebGPU. The same alpha cutoff and CPU-synchronized wind
+phase are used by forward, depth/prepass, and shadow passes so moving leaf
+silhouettes remain aligned. Aggregate distant tree LODs do not cast individual
+leaf shadows.
 Hazard mechanics remain future work; [#212](https://github.com/adventure-simulator-group/fabelgeist/issues/212)
 tracks that handoff and committed-result contract.
 The world map is a grid where each square has a height and an enum for the terrain type. Each of these affect both the speed of travel and the difficulty of climb/swim check to avoid injury. We should not try and create our own, we should be able to find both height and biome data from some open GIS dataset. At minimum, it should be easy to find modern data for these, but there may also be a historical dataset that we can use.

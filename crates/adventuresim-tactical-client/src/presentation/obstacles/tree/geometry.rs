@@ -3,6 +3,39 @@ use super::super::super::*;
 pub(in crate::presentation) const TREE_PRIMARY_GROUP_COUNT: u8 = 7;
 pub(in crate::presentation) const TREE_SECONDARY_GROUP_STRIDE: u16 = 20;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::presentation) enum WoodyPlantForm {
+    MatureOak,
+    CommonHazel,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(in crate::presentation) struct WoodyPlantParameters {
+    pub(in crate::presentation) form: WoodyPlantForm,
+    pub(in crate::presentation) height_metres: f32,
+    pub(in crate::presentation) crown_radius_metres: f32,
+    pub(in crate::presentation) basal_stems: u8,
+    pub(in crate::presentation) leaves_per_shoot: u8,
+}
+
+pub(in crate::presentation) const ENGLISH_OAK_PARAMETERS: WoodyPlantParameters =
+    WoodyPlantParameters {
+        form: WoodyPlantForm::MatureOak,
+        height_metres: 13.0,
+        crown_radius_metres: 6.0,
+        basal_stems: 1,
+        leaves_per_shoot: 16,
+    };
+
+pub(in crate::presentation) const COMMON_HAZEL_PARAMETERS: WoodyPlantParameters =
+    WoodyPlantParameters {
+        form: WoodyPlantForm::CommonHazel,
+        height_metres: 2.65,
+        crown_radius_metres: 1.55,
+        basal_stems: 9,
+        leaves_per_shoot: 10,
+    };
+
 #[derive(Clone, Copy, Debug)]
 pub(in crate::presentation) struct TreeBranchSegment {
     pub(in crate::presentation) start: Vec3,
@@ -19,6 +52,21 @@ pub(in crate::presentation) fn procedural_tree_skeleton(
     seed: u64,
     canopy_competition: f32,
 ) -> Vec<TreeBranchSegment> {
+    procedural_woody_plant_skeleton(seed, canopy_competition, ENGLISH_OAK_PARAMETERS)
+}
+
+pub(in crate::presentation) fn procedural_woody_plant_skeleton(
+    seed: u64,
+    canopy_competition: f32,
+    parameters: WoodyPlantParameters,
+) -> Vec<TreeBranchSegment> {
+    match parameters.form {
+        WoodyPlantForm::MatureOak => procedural_oak_skeleton(seed, canopy_competition),
+        WoodyPlantForm::CommonHazel => procedural_hazel_skeleton(seed, parameters),
+    }
+}
+
+fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranchSegment> {
     let mut branches = Vec::new();
     let canopy_competition = canopy_competition.clamp(0.0, 1.0);
     let crown_phase = unit_hash(seed ^ 0x9182_64ac) * core::f32::consts::TAU;
@@ -281,6 +329,122 @@ pub(in crate::presentation) fn procedural_tree_skeleton(
                     secondary_group,
                 );
             }
+        }
+    }
+    branches
+}
+
+fn procedural_hazel_skeleton(
+    seed: u64,
+    parameters: WoodyPlantParameters,
+) -> Vec<TreeBranchSegment> {
+    let mut branches = Vec::new();
+    let stem_count = u64::from(parameters.basal_stems.max(3));
+    for stem_index in 0..stem_count {
+        let stem_seed = splitmix64(seed ^ 0xc0a1_0000 ^ stem_index);
+        let phase = stem_index as f32 * 2.399_963_1 + unit_hash(stem_seed) * 0.55;
+        let outward = Vec3::new(phase.cos(), 0.0, phase.sin());
+        let tangent = Vec3::new(-phase.sin(), 0.0, phase.cos());
+        let height = parameters.height_metres * (0.76 + unit_hash(stem_seed ^ 1) * 0.24);
+        let lean = parameters.crown_radius_metres * (0.34 + unit_hash(stem_seed ^ 2) * 0.32);
+        let stem_points = (0..=6)
+            .map(|point_index| {
+                let t = point_index as f32 / 6.0;
+                Vec3::Y * height * t
+                    + outward * lean * t.powf(1.35)
+                    + tangent * 0.11 * (core::f32::consts::PI * t).sin()
+            })
+            .collect::<Vec<_>>();
+        append_branch_curve(
+            &mut branches,
+            &stem_points,
+            0.035 + unit_hash(stem_seed ^ 3) * 0.018,
+            0.008,
+            0,
+            stem_index as u8,
+            u16::MAX,
+        );
+        for branch_index in 0..10_u64 {
+            let branch_seed = splitmix64(stem_seed ^ 0x51a7 ^ branch_index);
+            let attach = 0.2 + branch_index as f32 / 10.0 * 0.76;
+            let start = sample_polyline(&stem_points, attach);
+            let inherited = polyline_tangent(&stem_points, attach);
+            let spiral = phase + branch_index as f32 * 2.399_963_1;
+            let radial = Vec3::new(spiral.cos(), 0.0, spiral.sin());
+            let direction =
+                (inherited * 0.26 + radial * 0.88 + Vec3::Y * (0.3 - attach * 0.17)).normalize();
+            let length = parameters.crown_radius_metres
+                * (0.42 + unit_hash(branch_seed) * 0.34)
+                * (1.0 - attach * 0.22);
+            let branch_points = [
+                start,
+                start + direction * length * 0.5 + Vec3::Y * 0.08,
+                start + direction * length + Vec3::Y * 0.16,
+            ];
+            let secondary_group = (stem_index * 16 + branch_index) as u16;
+            append_branch_curve(
+                &mut branches,
+                &branch_points,
+                0.014,
+                0.0036,
+                2,
+                stem_index as u8,
+                secondary_group,
+            );
+            for shoot_index in 0..5_u64 {
+                let shoot_seed = splitmix64(branch_seed ^ 0xa3 ^ shoot_index);
+                let along = 0.18 + shoot_index as f32 * 0.19;
+                let shoot_start = sample_polyline(&branch_points, along);
+                let (right, up) = branch_frame(direction);
+                let shoot_phase = shoot_index as f32 * 2.399_963_1 + unit_hash(shoot_seed);
+                let shoot_direction = (direction * 0.34
+                    + right * shoot_phase.cos() * 0.62
+                    + up * shoot_phase.sin() * 0.42
+                    + Vec3::Y * 0.22)
+                    .normalize();
+                let shoot_length = 0.18 + unit_hash(shoot_seed ^ 1) * 0.14;
+                append_branch_curve(
+                    &mut branches,
+                    &[
+                        shoot_start,
+                        shoot_start + shoot_direction * shoot_length * 0.52,
+                        shoot_start + shoot_direction * shoot_length,
+                    ],
+                    0.005,
+                    0.0015,
+                    3,
+                    stem_index as u8,
+                    secondary_group,
+                );
+            }
+        }
+        // The stem itself ends in a short leafy flush. Without this terminal
+        // continuation the shared shrub reads as a bundle of pruned rods and
+        // develops an artificial flat top.
+        let stem_tip = *stem_points.last().unwrap();
+        let stem_direction = polyline_tangent(&stem_points, 1.0);
+        let (stem_right, stem_up) = branch_frame(stem_direction);
+        for tip_index in 0..5_u64 {
+            let tip_seed = splitmix64(stem_seed ^ 0x7e21 ^ tip_index);
+            let phase = tip_index as f32 * 2.399_963_1 + unit_hash(tip_seed) * 0.4;
+            let direction = (stem_direction * 0.5
+                + stem_right * phase.cos() * 0.58
+                + stem_up * phase.sin() * 0.42)
+                .normalize();
+            let length = 0.16 + unit_hash(tip_seed ^ 1) * 0.12;
+            append_branch_curve(
+                &mut branches,
+                &[
+                    stem_tip,
+                    stem_tip + direction * length * 0.5,
+                    stem_tip + direction * length,
+                ],
+                0.0045,
+                0.0014,
+                3,
+                stem_index as u8,
+                (stem_index * 16 + 15) as u16,
+            );
         }
     }
     branches
@@ -611,6 +775,75 @@ pub(in crate::presentation) fn procedural_oak_leaves(
     leaves
 }
 
+pub(in crate::presentation) fn procedural_woody_plant_leaves(
+    seed: u64,
+    branches: &[TreeBranchSegment],
+    canopy_competition: f32,
+    parameters: WoodyPlantParameters,
+) -> Vec<TreeLeaf> {
+    match parameters.form {
+        WoodyPlantForm::MatureOak => procedural_oak_leaves(seed, branches, canopy_competition),
+        WoodyPlantForm::CommonHazel => procedural_hazel_leaves(seed, branches, parameters),
+    }
+}
+
+fn procedural_hazel_leaves(
+    seed: u64,
+    branches: &[TreeBranchSegment],
+    parameters: WoodyPlantParameters,
+) -> Vec<TreeLeaf> {
+    let mut leaves = Vec::new();
+    let leaves_per_shoot = u64::from(parameters.leaves_per_shoot.max(4));
+    for (shoot_index, shoot) in branches
+        .iter()
+        .filter(|branch| branch.depth == 3 && branch.is_limb_tip)
+        .enumerate()
+    {
+        let direction = (shoot.end - shoot.start).normalize();
+        let (frame_right, frame_up) = branch_frame(direction);
+        for leaf_index in 0..leaves_per_shoot {
+            let leaf_seed =
+                splitmix64(seed ^ shoot_index as u64 ^ leaf_index.wrapping_mul(0x91e1_0da5));
+            // Common hazel leaves are alternate and loosely distichous. The
+            // golden-angle perturbation prevents a flat bilateral comb while
+            // retaining opposite-side succession along each current shoot.
+            let along = 0.08
+                + leaf_index as f32 / (leaves_per_shoot - 1) as f32 * 0.84
+                + (unit_hash(leaf_seed ^ 1) - 0.5) * 0.025;
+            let side = if leaf_index & 1 == 0 { 1.0 } else { -1.0 };
+            let phase = side * (0.82 + unit_hash(leaf_seed ^ 2) * 0.28) + leaf_index as f32 * 0.32;
+            let radial = (frame_right * phase.cos() + frame_up * phase.sin()).normalize();
+            let leaf_up = (radial * 0.72 + direction * 0.48 + Vec3::Y * 0.16).normalize();
+            let normal = direction.cross(radial).normalize_or_zero();
+            let normal = if normal.length_squared() > 0.25 {
+                normal
+            } else {
+                frame_up
+            };
+            let right = leaf_up.cross(normal).normalize();
+            let petiole_start = shoot.start.lerp(shoot.end, along.clamp(0.04, 0.96));
+            let petiole_length = 0.012 + unit_hash(leaf_seed ^ 3) * 0.011;
+            let length = 0.082 + unit_hash(leaf_seed ^ 4) * 0.038;
+            let width = length * (0.72 + unit_hash(leaf_seed ^ 5) * 0.12);
+            let blade_base = petiole_start + radial * petiole_length;
+            leaves.push(TreeLeaf {
+                petiole_start,
+                center: blade_base + leaf_up * length * 0.5,
+                right,
+                up: leaf_up,
+                length,
+                width,
+                primary_group: shoot.primary_group,
+                secondary_group: shoot.secondary_group,
+                shoot_id: shoot_index as u16,
+                shade: 0.68 + unit_hash(leaf_seed ^ 6) * 0.24,
+                torsion: (unit_hash(leaf_seed ^ 7) - 0.5) * 0.28,
+            });
+        }
+    }
+    leaves
+}
+
 pub(in crate::presentation) fn oak_leaf_card_bounds(leaf: TreeLeaf) -> (Vec3, f32, f32) {
     let blade_tip = leaf.center + leaf.up * leaf.length * 0.5;
     let bottom = leaf.petiole_start.dot(leaf.up);
@@ -620,9 +853,20 @@ pub(in crate::presentation) fn oak_leaf_card_bounds(leaf: TreeLeaf) -> (Vec3, f3
     (center, leaf.width * 1.08, height)
 }
 
+fn leaf_shadow_selector(leaf: TreeLeaf) -> f32 {
+    let shoot_key = u64::from(leaf.primary_group)
+        | (u64::from(leaf.secondary_group) << 8)
+        | (u64::from(leaf.shoot_id) << 24);
+    unit_hash(splitmix64(shoot_key ^ 0x5a17_8c3d_2149_b6e0))
+}
+
 /// Replaces every cambered production leaf with one alpha-masked quad while
 /// retaining its biological attachment, orientation, scale, and wind UV.
 pub(in crate::presentation) fn procedural_oak_leaf_card_mesh(leaves: &[TreeLeaf]) -> Mesh {
+    procedural_woody_leaf_card_mesh(leaves)
+}
+
+pub(in crate::presentation) fn procedural_woody_leaf_card_mesh(leaves: &[TreeLeaf]) -> Mesh {
     let mut positions = Vec::with_capacity(leaves.len() * 4);
     let mut normals = Vec::with_capacity(leaves.len() * 4);
     let mut uvs = Vec::with_capacity(leaves.len() * 4);
@@ -653,7 +897,9 @@ pub(in crate::presentation) fn procedural_oak_leaf_card_mesh(leaves: &[TreeLeaf]
         // biological attachment and the blade tip at the distal end.
         uvs.extend_from_slice(&[[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]);
         let shade = (leaf.shade / 0.82).clamp(0.72, 1.18);
-        colors.extend_from_slice(&[[shade, shade, shade, 1.0]; 4]);
+        let ambient_visibility = ((leaf.shade - 0.52) / 0.44).clamp(0.32, 1.0);
+        let shadow_selector = leaf_shadow_selector(*leaf);
+        colors.extend_from_slice(&[[shade, shade, shadow_selector, ambient_visibility]; 4]);
         indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
     let mut mesh = Mesh::new(
@@ -672,6 +918,10 @@ pub(in crate::presentation) fn procedural_oak_leaf_card_mesh(leaves: &[TreeLeaf]
 /// torsion, and grazing-angle area while the scanned opacity texture owns its
 /// fine lobed silhouette. It transitions directly to the flat card.
 pub(in crate::presentation) fn procedural_oak_textured_leaf_mesh(leaves: &[TreeLeaf]) -> Mesh {
+    procedural_woody_cambered_leaf_mesh(leaves)
+}
+
+pub(in crate::presentation) fn procedural_woody_cambered_leaf_mesh(leaves: &[TreeLeaf]) -> Mesh {
     let mut positions = Vec::with_capacity(leaves.len() * 9);
     let mut normals = Vec::with_capacity(leaves.len() * 9);
     let mut uvs = Vec::with_capacity(leaves.len() * 9);
@@ -684,6 +934,8 @@ pub(in crate::presentation) fn procedural_oak_textured_leaf_mesh(leaves: &[TreeL
         let scaled_height = height * COVERAGE_SCALE;
         center += leaf.up * (scaled_height - height) * 0.5;
         let shade = (leaf.shade / 0.82).clamp(0.72, 1.18);
+        let ambient_visibility = ((leaf.shade - 0.52) / 0.44).clamp(0.32, 1.0);
+        let shadow_selector = leaf_shadow_selector(*leaf);
         let base = positions.len() as u32;
         let curl_sign = if leaf.torsion.is_sign_negative() {
             -1.0
@@ -721,7 +973,7 @@ pub(in crate::presentation) fn procedural_oak_textured_leaf_mesh(leaves: &[TreeL
                         .to_array(),
                 );
                 uvs.push([u, 1.0 - v]);
-                colors.push([shade, shade, shade, 1.0]);
+                colors.push([shade, shade, shadow_selector, ambient_visibility]);
             }
         }
         for row in 0..2_u32 {
@@ -762,7 +1014,7 @@ pub(in crate::presentation) fn procedural_oak_leaf_card_group_mesh(
         .filter(|leaf| leaf.primary_group == primary_group)
         .copied()
         .collect::<Vec<_>>();
-    procedural_oak_leaf_card_mesh(&group_leaves)
+    procedural_woody_leaf_card_mesh(&group_leaves)
 }
 
 pub(in crate::presentation) fn procedural_oak_textured_leaf_group_mesh(
@@ -774,7 +1026,7 @@ pub(in crate::presentation) fn procedural_oak_textured_leaf_group_mesh(
         .filter(|leaf| leaf.primary_group == primary_group)
         .copied()
         .collect::<Vec<_>>();
-    procedural_oak_textured_leaf_mesh(&group_leaves)
+    procedural_woody_cambered_leaf_mesh(&group_leaves)
 }
 
 /// Models the compact, scaled winter bud at every current-year shoot tip.
@@ -1097,6 +1349,46 @@ mod tests {
     }
 
     #[test]
+    fn woody_plant_parameters_preserve_oak_and_generate_bounded_multistem_hazel() {
+        let legacy_oak = procedural_tree_skeleton(42, 0.4);
+        let parameterized_oak = procedural_woody_plant_skeleton(42, 0.4, ENGLISH_OAK_PARAMETERS);
+        assert_eq!(legacy_oak.len(), parameterized_oak.len());
+        assert!(
+            legacy_oak
+                .iter()
+                .zip(&parameterized_oak)
+                .all(|(left, right)| {
+                    left.start == right.start
+                        && left.end == right.end
+                        && left.start_radius == right.start_radius
+                        && left.end_radius == right.end_radius
+                        && left.depth == right.depth
+                        && left.primary_group == right.primary_group
+                })
+        );
+
+        let hazel = procedural_woody_plant_skeleton(42, 0.0, COMMON_HAZEL_PARAMETERS);
+        let basal_stems = hazel
+            .iter()
+            .filter(|branch| branch.depth == 0 && branch.start.length_squared() < 0.0001)
+            .count();
+        let bounds = tree_crown_bounds(&hazel, |_| true);
+        assert_eq!(
+            basal_stems,
+            usize::from(COMMON_HAZEL_PARAMETERS.basal_stems)
+        );
+        assert!(bounds.vertical_span() > 1.8 && bounds.vertical_span() < 3.25);
+        assert!(bounds.horizontal_span() > 1.5 && bounds.horizontal_span() < 3.6);
+        let leaves = procedural_woody_plant_leaves(42, &hazel, 0.0, COMMON_HAZEL_PARAMETERS);
+        assert!(!leaves.is_empty());
+        assert!(leaves.iter().all(|leaf| {
+            (0.08..=0.125).contains(&leaf.length)
+                && leaf.width / leaf.length > 0.7
+                && leaf.width / leaf.length < 0.86
+        }));
+    }
+
+    #[test]
     fn production_oak_has_finite_cambered_leaf_geometry() {
         let branches = procedural_tree_skeleton(42, 0.0);
         let leaves = procedural_oak_leaves(42, &branches, 0.0);
@@ -1188,6 +1480,28 @@ mod tests {
         assert_eq!(
             mesh.indices().expect("textured leaves are indexed").len(),
             leaves.len() * 24
+        );
+    }
+
+    #[test]
+    fn leaf_shadow_transmission_is_stable_per_shoot_and_well_distributed() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let leaves = procedural_oak_leaves(42, &branches, 0.0);
+        let mut shoots = std::collections::BTreeMap::new();
+        for leaf in leaves {
+            let key = (leaf.primary_group, leaf.secondary_group, leaf.shoot_id);
+            let selector = leaf_shadow_selector(leaf);
+            let previous = shoots.entry(key).or_insert(selector);
+            assert_eq!(
+                *previous, selector,
+                "one shoot must not fragment its shadow"
+            );
+        }
+        let transmitting = shoots.values().filter(|selector| **selector < 0.42).count();
+        let fraction = transmitting as f32 / shoots.len() as f32;
+        assert!(
+            (0.37..=0.47).contains(&fraction),
+            "expected roughly 42% transmitting shoots, got {fraction:.3}"
         );
     }
 

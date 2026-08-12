@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1974)
+## Files (1983)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -81,6 +81,14 @@ development, or other wiki document before changing a subsystem.
 - `assets/tactical-scenes/sparse-woodland.json` — Repository support file.
 - `assets/tactical-scenes/steep-open-hillside.json` — Repository support file.
 - `assets/tactical-scenes/valley-distant-ridge.json` — Repository support file.
+- `assets/textures/shrubs/README.md` — Component overview and usage notes.
+- `assets/textures/shrubs/common_hazel_leaf_back_albedo.png` — Binary game or UI asset.
+- `assets/textures/shrubs/common_hazel_leaf_back_normal_dx.png` — Binary game or UI asset.
+- `assets/textures/shrubs/common_hazel_leaf_front_albedo.png` — Binary game or UI asset.
+- `assets/textures/shrubs/common_hazel_leaf_front_normal_dx.png` — Binary game or UI asset.
+- `assets/textures/shrubs/common_hazel_leaf_height.png` — Binary game or UI asset.
+- `assets/textures/shrubs/common_hazel_leaf_opacity.png` — Binary game or UI asset.
+- `assets/textures/shrubs/source/common_hazel_leaf_plate.png` — Binary game or UI asset.
 - `assets/textures/trees/oak_leaf_03_back_albedo.png` — Binary game or UI asset.
 - `assets/textures/trees/oak_leaf_03_back_normal_dx.png` — Binary game or UI asset.
 - `assets/textures/trees/oak_leaf_03_front_albedo.png` — Binary game or UI asset.
@@ -1870,6 +1878,7 @@ development, or other wiki document before changing a subsystem.
 - `flake.nix` — Nix environment configuration or lockfile.
 - `justfile` — Repository support file.
 - `rust-toolchain.toml` — Tooling or build configuration.
+- `scripts/build_hazel_leaf_textures.ps1` — Repository support file.
 - `scripts/build_locomotion_cycles.py` — Development or documentation automation script.
 - `scripts/build_wasm.py` — Development or documentation automation script.
 - `scripts/capture_tactical_scenes.py` — Development or documentation automation script.
