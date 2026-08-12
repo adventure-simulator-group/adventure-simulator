@@ -5,7 +5,7 @@ pub(in crate::presentation) use geometry::*;
 pub(in crate::presentation) use impostor::*;
 
 use super::super::*;
-use bevy::camera::primitives::Aabb;
+use bevy::camera::{primitives::Aabb, visibility::NoFrustumCulling};
 
 #[derive(Resource, Default)]
 pub(in crate::presentation) struct TreePresentationCache {
@@ -286,7 +286,7 @@ pub(crate) enum TreeLeafRepresentation {
 }
 
 #[derive(Component)]
-pub(in crate::presentation) struct TreeTrunkLod;
+pub(crate) struct TreeTrunkLod;
 
 #[derive(Resource, Clone, Copy, Default)]
 pub(crate) struct TreeLodRenderOverride {
@@ -302,12 +302,19 @@ pub(in crate::presentation) fn spawn_cached_tree(
 ) {
     commands.entity(entity).insert((
         Name::new("Presented mature English oak"),
-        TreeTrunkLod,
-        Mesh3d(cached.trunk_mesh.clone()),
-        MeshMaterial3d(cached.bark_material.clone()),
-        tree_trunk_visibility(),
+        Visibility::Inherited,
     ));
     commands.entity(entity).with_children(|parent| {
+        // Keep renderable trunk state below the obstacle root. Hiding the trunk
+        // at whole-tree LOD must not hide the camera-facing billboard sibling
+        // through inherited parent visibility.
+        parent.spawn((
+            Name::new("English oak trunk"),
+            TreeTrunkLod,
+            Mesh3d(cached.trunk_mesh.clone()),
+            MeshMaterial3d(cached.bark_material.clone()),
+            tree_trunk_visibility(),
+        ));
         for cluster in &cached.clusters {
             let cluster_marker = TreeLodCluster {
                 primary_group: cluster.primary_group,
@@ -400,6 +407,9 @@ pub(in crate::presentation) fn spawn_cached_tree(
         parent.spawn((
             Name::new(tree_lod_name(4, true)),
             TreeLod(4),
+            // The vertex shader rotates this far card toward the camera after
+            // CPU visibility has evaluated its razor-thin source-facing AABB.
+            NoFrustumCulling,
             NotShadowCaster,
             Mesh3d(cached.whole_tree_card_mesh.clone()),
             MeshMaterial3d(cached.card_materials[3].clone()),

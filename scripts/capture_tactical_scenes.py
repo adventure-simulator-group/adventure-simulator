@@ -33,8 +33,8 @@ SKY_VIEWS = ("sun", "sun-detail", "twilight", "moon", "stars")
 SKY_MINUTES = {"sun": 172 * 1440 + 12 * 60, "sun-detail": 172 * 1440 + 19 * 60,
                "twilight": 80 * 1440 + 18 * 60,
                "moon": 53_155, "stars": 637_860}
-EXPECTED_PIPELINE = "tactical_scene_native_capture_v5"
-EXPECTED_PROFILE_VERSION = 8
+EXPECTED_PIPELINE = "tactical_scene_native_capture_v6"
+EXPECTED_PROFILE_VERSION = 9
 EXPECTED_CAMERA_VERSION = 6
 EXPECTED_RESOLUTION = [1280, 720]
 EXPECTED_PRESENTATION_REQUEST = {
@@ -256,6 +256,19 @@ def validated_child_manifest(
         raise ValueError("child lighting readiness failed")
     if not all(capture.get("lighting_ready") for capture in manifest.get("captures", [])):
         raise ValueError("one or more requested views lacked stable lighting readbacks")
+    forced_lods = {
+        "tree-twig-lod": 1,
+        "tree-small-branch-lod": 2,
+        "tree-crown-lod": 3,
+        "tree-billboard-lod": 4,
+    }
+    for capture in manifest.get("captures", []):
+        expected_lod = forced_lods.get(capture.get("view"))
+        if expected_lod is not None and not (
+            capture.get("forced_tree_lod") == expected_lod
+            and capture.get("focused_tree_lod_queued") is True
+        ):
+            raise ValueError("forced tree LOD did not match the focused visible tree")
     if "forest-floor-debris-detail" in expected_views:
         debris = next(
             capture for capture in manifest["captures"]

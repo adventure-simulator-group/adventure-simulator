@@ -302,7 +302,12 @@ deterministic and parallel. Tree presentation cross-fades from branch tubes and 
 cards through twig, small-branch, and crown-branch impostors to a single
 camera-facing whole-tree billboard. Impostor bounds come from the actual
 descendant branch groups rather than an unrelated generic crown, preserving
-the generated tree's silhouette across levels. Those visual levels do not
+the generated tree's silhouette across levels. Renderable trunk geometry is a
+sibling of the aggregate levels beneath a non-rendering obstacle root, so
+disabling the trunk cannot hide its billboard through inherited visibility.
+The camera-facing far card bypasses only CPU frustum culling because its final
+orientation is produced in the vertex shader from stale source-card bounds;
+the normal projected-size visibility range still culls it by distance. Those visual levels do not
 change the server-owned trunk collider. The near-tree skeleton also grows a
 bounded five-to-ten-root visual flare from the same tree seed. Unequal angular
 gaps, reach, radius, and burial break up radial repetition; two or three broader
