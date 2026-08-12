@@ -17,10 +17,10 @@ use bevy::{
 use serde::Serialize;
 
 use crate::presentation::{
-    FoliageLayer, ProceduralRockVisual, TacticalPresentationPlugin, TacticalTreeLeafCardMaterial,
-    TerrainMaterialPresentation, TreeImpostorProvenance, TreeLeafRepresentation, TreeLod,
-    TreeLodCluster, TreeLodRenderOverride, VistaTerrain, WeatherParticle, oak_leaf_material,
-    oak_review_terminal_specimen, scene_ambient_light,
+    GroundScatterLayer, ProceduralRockVisual, TacticalPresentationPlugin,
+    TacticalTreeLeafCardMaterial, TerrainMaterialPresentation, TreeImpostorProvenance,
+    TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, VistaTerrain,
+    WeatherParticle, oak_leaf_material, oak_review_terminal_specimen, scene_ambient_light,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -59,6 +59,7 @@ struct CaptureState {
     terrain: TerrainSummary,
     expected_trees: usize,
     expected_rocks: usize,
+    expects_grass: bool,
     vista_lods_supplied: usize,
     vista_diameter_metres: f32,
     vista_peak_metres: f32,
@@ -401,6 +402,7 @@ struct FoliageSummary {
     understory_clumps: usize,
     dry_leaf_patches: usize,
     twig_patches: usize,
+    loose_stone_patches: usize,
 }
 
 #[derive(Serialize)]
@@ -457,9 +459,10 @@ struct ValidationSummary {
     terrain_material_present: bool,
     coarse_source_terrain_upsampled: bool,
     microrelief_present: bool,
-    grass_present: bool,
+    grass_present_when_expected: bool,
     forest_floor_scatter_present_when_trees: bool,
     understory_present_when_expected: bool,
+    loose_stone_scatter_present_when_expected: bool,
     vista_has_three_lods: bool,
     vista_reaches_fifty_kilometres: bool,
     vista_has_no_colliders: bool,
@@ -726,15 +729,15 @@ fn setup_scene(
                         Color::srgb(0.1, 1.0, 0.85),
                     )
                 }
-                GeneratedObstacle::Rock { x, z } => {
+                GeneratedObstacle::Rock { x, z, recipe } => {
                     expected_rocks += 1;
                     (
                         x,
                         z,
-                        SceneObstacle::Rock,
-                        Collider::sphere(ROCK_RADIUS_METRES),
-                        ROCK_RADIUS_METRES,
-                        meshes.add(Sphere::new(ROCK_RADIUS_METRES * 1.08)),
+                        SceneObstacle::Rock(recipe),
+                        Collider::sphere(recipe.collision_radius_metres()),
+                        recipe.collision_radius_metres(),
+                        meshes.add(Sphere::new(recipe.collision_radius_metres() * 1.08)),
                         Color::srgb(1.0, 0.08, 0.72),
                     )
                 }
@@ -751,6 +754,13 @@ fn setup_scene(
         }
         obstacle_position_sum += Vec3::new(x, y, z);
         obstacle_count += 1;
+        let yaw = match kind {
+            SceneObstacle::Rock(recipe) => {
+                (recipe.seed >> 40) as f32 / ((1_u32 << 24) - 1) as f32 * core::f32::consts::TAU
+            }
+            SceneObstacle::Tree => 0.0,
+        };
+        let transform = Transform::from_xyz(x, y, z).with_rotation(Quat::from_rotation_y(yaw));
         let obstacle_entity = commands
             .spawn((
                 Name::new("Captured tactical obstacle"),
@@ -758,7 +768,7 @@ fn setup_scene(
                 RigidBody::Static,
                 CollisionLayers::new(TACTICAL_TERRAIN_LAYER, LayerMask::ALL),
                 collider,
-                Transform::from_xyz(x, y, z),
+                transform,
             ))
             .id();
         if focuses_tree {
@@ -775,7 +785,7 @@ fn setup_scene(
                 ..default()
             })),
             Visibility::Hidden,
-            Transform::from_xyz(x, y, z),
+            transform,
         ));
     }
 
@@ -820,6 +830,7 @@ fn setup_scene(
     );
     let canopy_bps = environment.canopy_bps;
     let absolute_minute = environment.absolute_minute;
+    let expects_grass = ground.cover_count(GroundCover::TallGrass) > 0;
     let mut tree_leaf_focus = None;
     let mut tree_leaf_camera = None;
     let mut tree_review_entities = Vec::new();
@@ -967,6 +978,7 @@ fn setup_scene(
         terrain: terrain_summary,
         expected_trees,
         expected_rocks,
+        expects_grass,
         vista_lods_supplied: input.vista.lods.len(),
         vista_diameter_metres,
         vista_peak_metres,
@@ -1312,7 +1324,7 @@ fn capture_views(
         Without<Camera3d>,
     >,
     tree_bakes: Query<&TreeImpostorProvenance>,
-    foliage: Query<&FoliageLayer>,
+    foliage: Query<&GroundScatterLayer>,
     terrain_materials: Query<(), With<TerrainMaterialPresentation>>,
     meshes: Res<Assets<Mesh>>,
     mut scene_visibility: ParamSet<(
@@ -1657,7 +1669,7 @@ fn build_manifest(
     rock_visuals: &Query<&Mesh3d, With<ProceduralRockVisual>>,
     tree_lods: &Query<&TreeLod>,
     tree_bakes: &Query<&TreeImpostorProvenance>,
-    foliage: &Query<&FoliageLayer>,
+    foliage: &Query<&GroundScatterLayer>,
     terrain_materials: &Query<(), With<TerrainMaterialPresentation>>,
     meshes: &Assets<Mesh>,
     vistas: &Query<(&VistaTerrain, Has<Collider>)>,
@@ -1673,7 +1685,7 @@ fn build_manifest(
                 presented_trees += usize::from(presented);
                 collider_trees += usize::from(collidable);
             }
-            SceneObstacle::Rock => {
+            SceneObstacle::Rock(_) => {
                 presented_rocks += usize::from(presented);
                 collider_rocks += usize::from(collidable);
             }
@@ -1724,12 +1736,14 @@ fn build_manifest(
     let mut understory_clumps = 0;
     let mut dry_leaf_patches = 0;
     let mut twig_patches = 0;
+    let mut loose_stone_patches = 0;
     for layer in foliage {
         match layer {
-            FoliageLayer::Grass => grass_clumps += 1,
-            FoliageLayer::Understory => understory_clumps += 1,
-            FoliageLayer::DryLeaves => dry_leaf_patches += 1,
-            FoliageLayer::Twigs => twig_patches += 1,
+            GroundScatterLayer::Grass => grass_clumps += 1,
+            GroundScatterLayer::Understory => understory_clumps += 1,
+            GroundScatterLayer::DryLeaves => dry_leaf_patches += 1,
+            GroundScatterLayer::Twigs => twig_patches += 1,
+            GroundScatterLayer::LooseStone => loose_stone_patches += 1,
         }
     }
     let foliage_summary = FoliageSummary {
@@ -1737,6 +1751,7 @@ fn build_manifest(
         understory_clumps,
         dry_leaf_patches,
         twig_patches,
+        loose_stone_patches,
     };
     let tree_impostor_bakes = tree_bakes
         .iter()
@@ -1846,10 +1861,12 @@ fn build_manifest(
             || (state.terrain.spacing_metres <= 2.0
                 && state.terrain.generated_samples > state.terrain.source_samples),
         microrelief_present: state.repairs.microrelief_adjusted_samples > 0,
-        grass_present: grass_clumps > 0,
+        grass_present_when_expected: !state.expects_grass || grass_clumps > 0,
         forest_floor_scatter_present_when_trees: state.expected_trees == 0
             || (dry_leaf_patches > 0 && twig_patches > 0),
         understory_present_when_expected: !expects_understory || understory_clumps > 0,
+        loose_stone_scatter_present_when_expected: state.fixture != "steep-open-hillside"
+            || loose_stone_patches > 0,
         vista_has_three_lods: vista_summary.presented_lods.len() >= 3,
         vista_reaches_fifty_kilometres: vista_summary.diameter_metres >= 50_000.0,
         vista_has_no_colliders: vista_colliders == 0,
@@ -1900,9 +1917,10 @@ fn validation_passes(validation: &ValidationSummary) -> bool {
         && validation.terrain_material_present
         && validation.coarse_source_terrain_upsampled
         && validation.microrelief_present
-        && validation.grass_present
+        && validation.grass_present_when_expected
         && validation.forest_floor_scatter_present_when_trees
         && validation.understory_present_when_expected
+        && validation.loose_stone_scatter_present_when_expected
         && validation.vista_has_three_lods
         && validation.vista_reaches_fifty_kilometres
         && validation.vista_has_no_colliders

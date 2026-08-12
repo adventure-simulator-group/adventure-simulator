@@ -283,13 +283,18 @@ template key, imported-package or named-fixture provenance, geographic/time
 origin, complete strategic weather snapshot, dense playable samples, and
 progressively coarser presentation-only vista samples. The server validates the
 document before opening any listener, deterministically upsamples coarse source
-grids to at most two-metre spacing, adds bounded seeded microrelief, builds the
-collider and replicated playable mesh from those same row-major heights, and
-logs the SHA-256 scene digest and generation version. Gameplay-relevant generated trees and rocks are
-static server colliders with a compact replicated obstacle kind and transform;
-clients derive collider-bounded rock meshes and a seeded four-order tree
-skeleton from the same shared dimensions, without receiving or simulating the
-collider. The immutable world-data canopy coverage continuously controls tree
+grids to at most two-metre spacing, adds bounded seeded microrelief, builds its
+collider from those row-major heights, replicates the heightfield data, and logs
+the SHA-256 scene digest and generation version. Each client builds the playable
+render mesh from that replicated heightfield; the server never extracts or
+transmits render geometry. Gameplay-relevant generated trees and rocks are
+static server colliders with compact replicated recipes and transforms. A rock
+recipe contains a deterministic seed, broad archetype, lithology, dimensions,
+and conservative collision radius. Clients run bounded uniform-grid Surface
+Nets to derive each rock mesh, while the server creates only the recipe and
+sphere proxy. The same client-only mesher supplies shared non-colliding
+loose-stone variants. Trees likewise derive a seeded four-order skeleton on the
+client without receiving or simulating the collider. The immutable world-data canopy coverage continuously controls tree
 architecture without inspecting neighboring entities: low coverage produces a
 short clear bole and broad open-grown crown, while dense canopy produces a
 taller clear bole and narrower competitive crown, so tree generation remains
@@ -326,6 +331,15 @@ child. A tactical-only workflow may instead supply the identical format with
 Standalone tactical development defaults to the committed `dense-woodland`
 input when no path is supplied; the server has no alternate noise-terrain
 fallback.
+
+The Surface Nets implementation is deliberately private to the tactical client
+and is the first bounded volumetric-meshing primitive, not a cave system. Future
+overhang, cliff, or cave patches must replicate a compact deterministic field
+recipe rather than a canonical render mesh. Their heightfield collar, removed
+terrain triangles, server collision representation, ground-query dispatch, and
+traversability contract remain unresolved and are not represented by the
+current scene schema. In particular, adding those patches must not move mesh
+extraction into the dispatcher or tactical server.
 
 A running tactical client receives a private, server-generated 256-bit
 reconnect capability after enrollment. The client retains it in process across

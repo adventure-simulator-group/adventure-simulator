@@ -10,25 +10,24 @@ pub(in crate::presentation) struct PendingTreePresentation;
 pub(in crate::presentation) fn on_scene_obstacle_added(
     event: On<Add, SceneObstacle>,
     mut commands: Commands,
-    obstacles: Query<(&SceneObstacle, &Transform)>,
+    obstacles: Query<&SceneObstacle>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) -> Result {
-    let (obstacle, transform) = obstacles.get(event.entity)?;
-    let seed = obstacle_seed(transform.translation);
+    let obstacle = obstacles.get(event.entity)?;
     match *obstacle {
         SceneObstacle::Tree => {
             commands
                 .entity(event.entity)
                 .insert(PendingTreePresentation);
         }
-        SceneObstacle::Rock => {
+        SceneObstacle::Rock(recipe) => {
             commands.entity(event.entity).insert((
                 Name::new("Presented tactical rock"),
                 ProceduralRockVisual,
-                Mesh3d(meshes.add(procedural_rock_mesh(seed))),
+                Mesh3d(meshes.add(procedural_rock_mesh(recipe))),
                 MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color: Color::srgb_u8(104, 101, 94),
+                    base_color: rock::rock_color(recipe.lithology),
                     perceptual_roughness: 1.0,
                     ..default()
                 })),

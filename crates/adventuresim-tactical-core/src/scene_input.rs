@@ -16,7 +16,7 @@ use thiserror::Error;
 use crate::scene::{GroundCover, GroundSubstrate, GroundSurface, SceneGround, SceneTerrain};
 
 pub const TACTICAL_SCENE_SCHEMA_VERSION: u16 = 1;
-pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 4;
+pub const TACTICAL_SCENE_GENERATION_VERSION: u16 = 5;
 pub const MAX_SCENE_INPUT_BYTES: u64 = 32 * 1024 * 1024;
 pub const TREE_TRUNK_RADIUS_METRES: f32 = 0.35;
 pub const TREE_TRUNK_HEIGHT_METRES: f32 = 5.0;
@@ -136,21 +136,65 @@ pub struct SceneEnvironment {
     pub hilly_bps: u16,
 }
 
+/// Broad procedural silhouette family for a collider-bearing rock.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RockArchetype {
+    Rounded,
+    Angular,
+    Slab,
+}
+
+/// Compact material family for generated geological geometry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RockLithology {
+    Granite,
+    Limestone,
+    Sandstone,
+}
+
+/// Data-only recipe for a client-generated boulder mesh.
+///
+/// Dimensions describe the full local-space bounds in centimetres. The
+/// authoritative server uses only `collision_radius_cm` for a conservative
+/// sphere proxy; it never samples the field or extracts render geometry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RockRecipe {
+    pub seed: u64,
+    pub archetype: RockArchetype,
+    pub lithology: RockLithology,
+    pub dimensions_cm: [u16; 3],
+    pub collision_radius_cm: u16,
+}
+
+impl RockRecipe {
+    pub fn collision_radius_metres(self) -> f32 {
+        f32::from(self.collision_radius_cm) / 100.0
+    }
+
+    pub fn dimensions_metres(self) -> [f32; 3] {
+        self.dimensions_cm
+            .map(|dimension| f32::from(dimension) / 100.0)
+    }
+}
+
 /// Compact replicated identity for a server-authoritative static obstacle.
 /// Its Transform locates the collider center; presentation derives matching
-/// proxy geometry from these shared dimensions.
+/// proxy geometry from this recipe on each client.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Component, Serialize, Deserialize)]
 #[component(immutable)]
 #[serde(rename_all = "snake_case")]
 pub enum SceneObstacle {
     Tree,
-    Rock,
+    Rock(RockRecipe),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GeneratedObstacle {
     Tree { x: u16, z: u16 },
-    Rock { x: u16, z: u16 },
+    Rock { x: u16, z: u16, recipe: RockRecipe },
 }
 
 #[derive(Debug)]
@@ -309,11 +353,16 @@ impl TacticalSceneInput {
                 let z = (index / usize::from(self.playable.width)) as u16;
                 let coordinate = ((x as u64) << 32) ^ z as u64;
                 let tree_roll = splitmix64(self.seed ^ coordinate) % 10_000;
-                let rock_roll = splitmix64(self.seed ^ coordinate ^ 0x52cc_5f1b_d391_a739) % 10_000;
+                let rock_seed = splitmix64(self.seed ^ coordinate ^ 0x52cc_5f1b_d391_a739);
+                let rock_roll = rock_seed % 10_000;
                 if tree_roll < u64::from(sample.canopy_bps) / 12 {
                     Some(GeneratedObstacle::Tree { x, z })
                 } else if rock_roll < u64::from(sample.hilly_bps) / 20 && sample.water_bps < 5_000 {
-                    Some(GeneratedObstacle::Rock { x, z })
+                    Some(GeneratedObstacle::Rock {
+                        x,
+                        z,
+                        recipe: rock_recipe(rock_seed),
+                    })
                 } else {
                     None
                 }
@@ -322,7 +371,7 @@ impl TacticalSceneInput {
         let before = obstacles.len();
         obstacles.retain(|obstacle| {
             let (x, z) = match *obstacle {
-                GeneratedObstacle::Tree { x, z } | GeneratedObstacle::Rock { x, z } => (x, z),
+                GeneratedObstacle::Tree { x, z } | GeneratedObstacle::Rock { x, z, .. } => (x, z),
             };
             !is_reserved_playability_cell(
                 usize::from(x),
@@ -536,6 +585,36 @@ fn upsample_playable_grid(
 
 fn lerp(left: f32, right: f32, amount: f32) -> f32 {
     left + (right - left) * amount
+}
+
+fn rock_recipe(seed: u64) -> RockRecipe {
+    let archetype = match seed % 3 {
+        0 => RockArchetype::Rounded,
+        1 => RockArchetype::Angular,
+        _ => RockArchetype::Slab,
+    };
+    let lithology = match splitmix64(seed ^ 0x6c69_7468_6f6c_6f67) % 3 {
+        0 => RockLithology::Granite,
+        1 => RockLithology::Limestone,
+        _ => RockLithology::Sandstone,
+    };
+    let base_dimensions = match archetype {
+        RockArchetype::Rounded => [128_u16, 104, 120],
+        RockArchetype::Angular => [136, 112, 124],
+        RockArchetype::Slab => [142, 72, 132],
+    };
+    let dimensions_cm = core::array::from_fn(|axis| {
+        let hash = splitmix64(seed ^ (axis as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15));
+        let offset = (hash % 17) as i16 - 8;
+        base_dimensions[axis].saturating_add_signed(offset)
+    });
+    RockRecipe {
+        seed,
+        archetype,
+        lithology,
+        dimensions_cm,
+        collision_radius_cm: (ROCK_RADIUS_METRES * 100.0) as u16,
+    }
 }
 
 /// Adds sub-source-resolution detail before constructing the shared terrain.
@@ -975,12 +1054,29 @@ mod tests {
 
     #[test]
     fn obstacle_kind_has_a_stable_wire_round_trip() {
-        for obstacle in [SceneObstacle::Tree, SceneObstacle::Rock] {
+        let recipe = rock_recipe(42);
+        for obstacle in [SceneObstacle::Tree, SceneObstacle::Rock(recipe)] {
             let bytes = postcard::to_allocvec(&obstacle).unwrap();
             assert_eq!(
                 postcard::from_bytes::<SceneObstacle>(&bytes).unwrap(),
                 obstacle
             );
+        }
+    }
+
+    #[test]
+    fn generated_rock_recipes_are_deterministic_and_fit_the_collision_proxy() {
+        for seed in [0, 1, 42, u64::MAX] {
+            let recipe = rock_recipe(seed);
+            assert_eq!(recipe, rock_recipe(seed));
+            assert_eq!(recipe.seed, seed);
+            assert!(
+                recipe
+                    .dimensions_cm
+                    .iter()
+                    .all(|dimension| *dimension <= recipe.collision_radius_cm * 2)
+            );
+            assert_eq!(recipe.collision_radius_metres(), ROCK_RADIUS_METRES);
         }
     }
 
@@ -1027,7 +1123,7 @@ mod tests {
         }
         assert!(first.obstacles.iter().all(|obstacle| {
             let (x, z) = match *obstacle {
-                GeneratedObstacle::Tree { x, z } | GeneratedObstacle::Rock { x, z } => (x, z),
+                GeneratedObstacle::Tree { x, z } | GeneratedObstacle::Rock { x, z, .. } => (x, z),
             };
             !is_reserved_playability_cell(usize::from(x), usize::from(z), width, depth)
         }));

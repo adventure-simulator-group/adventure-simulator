@@ -29,6 +29,21 @@ not move animation or movement authority: `SkeletonState` and controller state
 remain server-owned, while authored pose evaluation, lighting, and the Bevy
 world-asset scene attachment are client presentation. Native and Wasm builds
 share those semantics through their existing explicit feature sets.
+
+## Client-generated geological geometry
+
+Collider-bearing rocks replicate compact recipes containing a seed, silhouette
+archetype, lithology, dimensions, and conservative collision radius. The
+tactical server creates only the bounded sphere collider and transform. The
+client samples each recipe on a small uniform grid and extracts its render
+surface with the private Surface Nets implementation in
+`src/presentation/volumetric.rs`; it rejects non-finite fields and tests the
+result for deterministic, outward, closed topology. Loose-stone ground cover
+reuses four shared client-generated variants without collision or foliage wind.
+
+This extractor is infrastructure for later bounded cliffs, overhangs, and cave
+patches, not an implemented cave system. Future scene authority must send a
+compact deterministic field recipe, never a server-generated render mesh.
 The animation-graph runtime is pinned to an immutable reviewed fork revision.
 Its editor is a native-only optional feature and its Avian support is a
 separate opt-in feature; neither editor nor physics code enters the browser
