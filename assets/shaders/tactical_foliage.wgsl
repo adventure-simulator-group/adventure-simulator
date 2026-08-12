@@ -42,11 +42,28 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         world_from_local,
         vec4<f32>(root_local, 1.0),
     ).xyz;
+    let spatial_noise = sin(root_world.x * 0.071 + root_world.z * 0.113)
+        * sin(root_world.x * 0.037 - root_world.z * 0.053);
+    var ground_coverage = 1.0;
     if foliage.shape.x > 0.5 {
         let mask_uv = root_world.xz * foliage.ground_mask_transform.xy
             + foliage.ground_mask_transform.zw;
-        let coverage = textureSampleLevel(ground_mask_texture, ground_mask_sampler, mask_uv, 0.0).r;
-        if blade_threshold > coverage {
+        ground_coverage = textureSampleLevel(
+            ground_mask_texture,
+            ground_mask_sampler,
+            mask_uv,
+            0.0,
+        ).r;
+        // Preserve the four-times-density close field, then open it into
+        // irregular meadow clumps as it approaches the original-density LOD.
+        // This uses the existing world-space wave and mask fetch, so topology,
+        // draw count, and texture-sample count stay unchanged.
+        let meadow_zone = smoothstep(-0.36, 0.52, spatial_noise);
+        let camera_distance = distance(root_world.xz, view.lod_view_world_position.xz);
+        let distance_opening = smoothstep(7.0, 24.0, camera_distance);
+        let clump_coverage = mix(1.0, mix(0.54, 1.0, meadow_zone), distance_opening);
+        let effective_coverage = ground_coverage * clump_coverage;
+        if blade_threshold > effective_coverage {
             blade_visibility = 0.0;
         }
         position = root_local + (position - root_local) * blade_visibility;
@@ -58,8 +75,6 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     let bend = clamp(vertex.uv.y, 0.0, 1.0);
     let wind_direction = normalize(foliage.wind.xy);
     let wind_cross = vec2<f32>(-wind_direction.y, wind_direction.x);
-    let spatial_noise = sin(root_world.x * 0.071 + root_world.z * 0.113)
-        * sin(root_world.x * 0.037 - root_world.z * 0.053);
     // World-space vigor breaks the repeated shared-mesh silhouette without
     // adding blades or per-instance materials. The range matches ordinary
     // mixed-age meadow growth rather than scaling whole macro patches.
@@ -69,7 +84,14 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     );
     // A dense near field needs a broad juvenile-to-mature height mix or it
     // becomes an opaque vertical curtain despite varied roots.
-    let blade_vigor = 0.42 + 0.62 * blade_variation;
+    let juvenile_vigor = 0.28 + 0.78 * blade_variation * blade_variation;
+    let mature_vigor = 0.48 + 0.58 * blade_variation;
+    let meadow_zone = smoothstep(-0.36, 0.52, spatial_noise);
+    // Short juvenile pockets expose ground between mature clumps. At an
+    // authoritative dirt/grass boundary, surviving blades also grow shorter
+    // rather than ending in a same-height density wall.
+    let edge_growth = mix(0.58, 1.0, smoothstep(0.08, 0.9, ground_coverage));
+    let blade_vigor = mix(juvenile_vigor, mature_vigor, meadow_zone) * edge_growth;
     let wave_position = dot(root_world.xz, wind_direction) * 0.22;
     let wind_time = globals.time * foliage.wind.w;
     let gust = 0.68 + 0.32 * sin(wind_time * 0.29 + spatial_noise * 3.7);

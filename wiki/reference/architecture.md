@@ -334,7 +334,14 @@ wander outward to mitigate square seams on near-flat and ordinary sloped
 terrain. This is a continuity mitigation rather than a guarantee across sharp
 terrain-normal discontinuities. Within the unchanged topology,
 deterministic mixed-age height, independent width, clumping, pigment, lean, and
-curvature variation avoids a repeated vertical-curtain silhouette. Beyond the geometric range, the
+curvature variation avoids a repeated vertical-curtain silhouette. A shared
+world-space meadow field keeps the full authored density within seven metres,
+then introduces short juvenile pockets and irregular occupancy before the
+18--26 metre cross-fade. The authoritative grass-side mask uses a broader
+nonlinear feather, and surviving boundary blades shorten with coverage, so
+dirt and leaf-litter transitions do not terminate as a same-height wall. This
+composition changes no mesh topology, entity, material, texture fetch, or draw
+count. Beyond the geometric range, the
 terrain material retains only the band-limited aggregate colour and normal
 response of the sward. Bevy's standard mesh path supplies WebGPU-compatible
 GPU preprocessing, culling, and indirect batches when the adapter supports

@@ -257,7 +257,7 @@ pub(super) fn organic_ground_pixels(ground: &SceneGround, seed: u64) -> (u32, u3
 pub(super) fn grass_cover_mask_image(ground: &SceneGround, seed: u64) -> Image {
     let (width, height, ground_pixels) = organic_ground_pixels(ground, seed);
     let mut mask = vec![0_u8; width as usize * height as usize];
-    let radius = GROUND_PRESENTATION_SAMPLES_PER_CELL * 3;
+    let radius = GROUND_PRESENTATION_SAMPLES_PER_CELL * 7 / 2;
     let width_usize = width as usize;
     let height_usize = height as usize;
     let mut distance = vec![radius + 1; width_usize * height_usize];
@@ -311,7 +311,9 @@ pub(super) fn grass_cover_mask_image(ground: &SceneGround, seed: u64) -> Image {
                 continue;
             }
             let density = ground_pixels[pixel + 2];
-            let feather = (distance[z * width_usize + x] as f32 / radius as f32).clamp(0.0, 1.0);
+            let feather = (distance[z * width_usize + x] as f32 / radius as f32)
+                .clamp(0.0, 1.0)
+                .powf(1.35);
             mask[z * width as usize + x] = (f32::from(density) * feather) as u8;
         }
     }
