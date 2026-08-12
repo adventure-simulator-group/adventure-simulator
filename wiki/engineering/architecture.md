@@ -366,7 +366,12 @@ the client builds seam-sharing LOD rings split into independently frustum-culled
 mesh chunks without inner-area overdraw, colliders, or shadows. Each finer
 ring geomorphs its outermost sample row onto the next coarser height surface,
 with a one-fine-cell inward blend; this removes cracks and T-junction wedges
-without adding skirts, overlap, or gameplay geometry. Synthetic
+without adding skirts, overlap, or gameplay geometry. Vista vertices reuse
+the ordinary ground palette in linear color space, preserving regional
+forest, wetland, cultivation, and water variation instead of assigning one
+average color per LOD; the same boundary interval morphs both height and
+reflectance. This adds one vertex attribute but no material, texture sample,
+draw call, collider, or replicated state per region. Synthetic
 review fixtures normalize each vista LOD to the playable terrain's origin
 height, preventing coarse one-sided rings from becoming an invisible ceiling
 above the player. Production-composition review cameras keep these vistas
