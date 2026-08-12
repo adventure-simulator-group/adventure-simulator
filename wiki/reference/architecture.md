@@ -311,7 +311,13 @@ seven-vertex subset at distance; rejected blades are absent from the far mesh
 rather than collapsed after vertex shading. The 3.2-metre patch spacing cuts
 grass render entities by roughly an order of magnitude while retaining the
 original internal blade spacing. Environment coverage selects stable blades
-inside that shared mesh instead of omitting whole macro patches. Beyond the geometric range, the
+inside that shared mesh instead of omitting whole macro patches. Macro patches
+remain unit-scale and nearly gridded, with boundary blade rows constrained to
+wander outward to mitigate square seams on near-flat and ordinary sloped
+terrain. This is a continuity mitigation rather than a guarantee across sharp
+terrain-normal discontinuities. Within the unchanged topology,
+deterministic mixed-age height, independent width, clumping, pigment, lean, and
+curvature variation avoids a repeated vertical-curtain silhouette. Beyond the geometric range, the
 terrain material retains only the band-limited aggregate colour and normal
 response of the sward. Bevy's standard mesh path supplies WebGPU-compatible
 GPU preprocessing, culling, and indirect batches when the adapter supports
