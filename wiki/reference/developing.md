@@ -789,7 +789,29 @@ just tactical-scene-capture dense-woodland
 just tactical-scene-capture heavy-rain-high-wind target/tactical-scene-captures/rain-review
 just tactical-scene-capture sparse-woodland target/tactical-scene-captures/daylight-review 12 340560
 just tactical-tree-canopy-series target/tactical-scene-captures/oak-canopy-review
+just tactical-tree-leaf-benchmark target/tactical-scene-captures/tree-leaf-benchmark 180
+just tactical-tree-leaf-comparison target/tactical-scene-captures/tree-leaf-comparison
 ```
+
+The leaf benchmark forces the dense-woodland fixture through the 8-triangle
+cambered PBR card and the 2-triangle flat PBR card at the same ground camera. It
+writes `leaf-benchmark.json` and a
+`comparison.md` table after per-mode warm-up. These are uncapped end-to-end
+frame durations rather than isolated GPU timestamps, so compare modes from the
+same run and machine.
+
+The leaf comparison recipe renders the cambered and flat PBR foliage from 0,
+30, 60, and 80 degree review azimuths under a locked
+daylight minute. Use the oblique plates and each run's
+`tree-recursive-lod.png` to check depth retention and mixed-sector transitions,
+not only the front silhouette.
+
+The 8-triangle cambered card is the close leaf representation and preserves
+useful foreshortening and depth when individual leaves are visible. It
+transitions directly to the 2-triangle flat card as that camber falls below a
+useful screen size. Both production modes use the same aligned CC0 front/back
+albedo, normal maps, and opacity mask, so their transition changes geometry
+without introducing a material pop.
 
 The native viewer writes standing-eye-height (1.65 m above the sampled local
 terrain), overhead, horizon, and collider-overlay PNGs alongside the exact

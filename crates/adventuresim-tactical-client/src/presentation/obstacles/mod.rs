@@ -45,10 +45,11 @@ pub(in crate::presentation) fn present_pending_trees(
     environments: Query<&SceneEnvironment>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut leaf_materials: ResMut<Assets<TacticalTreeLeafMaterial>>,
+    mut leaf_card_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
     mut tree_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut tree_cache: ResMut<TreePresentationCache>,
+    asset_server: Res<AssetServer>,
 ) {
     let Some(environment) = environments.iter().next() else {
         return;
@@ -71,9 +72,7 @@ pub(in crate::presentation) fn present_pending_trees(
                 perceptual_roughness: 0.95,
                 ..default()
             });
-            let leaf_material = leaf_materials.add(TacticalTreeLeafMaterial {
-                parameters: Vec4::new(0.74, 0.67, 0.035, 1.15),
-            });
+            let leaf_material = leaf_card_materials.add(oak_leaf_material(&asset_server));
             let bud_material = materials.add(StandardMaterial {
                 base_color: Color::srgb(0.36, 0.27, 0.1),
                 perceptual_roughness: 0.92,
@@ -103,10 +102,12 @@ pub(in crate::presentation) fn present_pending_trees(
                                 primary_group,
                             ))
                         }),
-                        leaf_mesh: meshes.add(procedural_oak_leaf_sector_mesh(
+                        cambered_leaf_mesh: meshes.add(procedural_oak_textured_leaf_group_mesh(
                             &leaves,
-                            usize::from(primary_group),
+                            primary_group,
                         )),
+                        leaf_card_mesh: meshes
+                            .add(procedural_oak_leaf_card_group_mesh(&leaves, primary_group)),
                         bud_mesh: meshes
                             .add(procedural_oak_bud_group_mesh(&branches, primary_group)),
                         card_meshes: core::array::from_fn(|index| {
@@ -153,7 +154,7 @@ fn canopy_competition(canopy_bps: u16) -> f32 {
 pub(crate) fn oak_review_terminal_specimen(
     root: Vec3,
     canopy_bps: u16,
-) -> (Mesh, Mesh, Mesh, Vec3, Vec3) {
+) -> (Mesh, Mesh, Mesh, Mesh, Vec3, Vec3) {
     let seed = obstacle_seed(root);
     let variant_seed = splitmix64(0x6f61_6b00 ^ (seed & 3));
     let branches = procedural_tree_skeleton(variant_seed, canopy_competition(canopy_bps));
@@ -225,7 +226,8 @@ pub(crate) fn oak_review_terminal_specimen(
     }
     (
         procedural_tree_branch_mesh(&[specimen_shoot], 3),
-        procedural_oak_leaf_mesh(&specimen_leaves),
+        procedural_oak_textured_leaf_mesh(&specimen_leaves),
+        procedural_oak_leaf_card_mesh(&specimen_leaves),
         procedural_oak_bud_mesh(&[specimen_shoot]),
         focus,
         review_direction,

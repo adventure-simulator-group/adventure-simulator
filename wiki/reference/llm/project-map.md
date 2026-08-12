@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1969)
+## Files (1974)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -68,7 +68,7 @@ development, or other wiki document before changing a subsystem.
 - `assets/shaders/tactical_stars.wgsl` — Repository support file.
 - `assets/shaders/tactical_terrain.wgsl` — Repository support file.
 - `assets/shaders/tactical_tree_impostor.wgsl` — Repository support file.
-- `assets/shaders/tactical_tree_leaf.wgsl` — Repository support file.
+- `assets/shaders/tactical_tree_leaf_card.wgsl` — Repository support file.
 - `assets/tactical-equipment-icons.png` — Binary game or UI asset.
 - `assets/tactical-scenes/cultivated-roadside.json` — Repository support file.
 - `assets/tactical-scenes/dense-woodland.json` — Repository support file.
@@ -81,6 +81,11 @@ development, or other wiki document before changing a subsystem.
 - `assets/tactical-scenes/sparse-woodland.json` — Repository support file.
 - `assets/tactical-scenes/steep-open-hillside.json` — Repository support file.
 - `assets/tactical-scenes/valley-distant-ridge.json` — Repository support file.
+- `assets/textures/trees/oak_leaf_03_back_albedo.png` — Binary game or UI asset.
+- `assets/textures/trees/oak_leaf_03_back_normal_dx.png` — Binary game or UI asset.
+- `assets/textures/trees/oak_leaf_03_front_albedo.png` — Binary game or UI asset.
+- `assets/textures/trees/oak_leaf_03_front_normal_dx.png` — Binary game or UI asset.
+- `assets/textures/trees/oak_leaf_03_opacity.png` — Binary game or UI asset.
 - `assets/world-data/ieg-religion-1544.csv` — Repository support file.
 - `assets_src/base.blend` — Repository support file.
 - `assets_src/base.blend1` — Repository support file.
