@@ -304,7 +304,12 @@ cards through twig, small-branch, and crown-branch impostors to a single
 camera-facing whole-tree billboard. Impostor bounds come from the actual
 descendant branch groups rather than an unrelated generic crown, preserving
 the generated tree's silhouette across levels. Those visual levels do not
-change the server-owned trunk collider.
+change the server-owned trunk collider. The near-tree skeleton also grows a
+bounded five-to-ten-root visual flare from the same tree seed. Unequal angular
+gaps, reach, radius, and burial break up radial repetition; two or three broader
+buttresses follow the main scaffold-load azimuths, and at most two roots add a
+short lateral fork. This presentation detail remains capped at 22 segments and
+does not expand the server's cylindrical trunk collider.
 Non-colliding grass and understory use automatically instanced shared meshes,
 layered shader wind, and root-to-tip shading. Grass cross-fades from an
 729-blade, fifteen-vertex macro patch to a stable 144-blade,
