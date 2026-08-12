@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1990)
+## Files (1995)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -83,6 +83,7 @@ development, or other wiki document before changing a subsystem.
 - `assets/tactical-scenes/sparse-woodland.json` — Repository support file.
 - `assets/tactical-scenes/steep-open-hillside.json` — Repository support file.
 - `assets/tactical-scenes/valley-distant-ridge.json` — Repository support file.
+- `assets/textures/moon/lroc_color_2k.jpg` — Repository support file.
 - `assets/textures/shrubs/README.md` — Component overview and usage notes.
 - `assets/textures/shrubs/common_hazel_leaf_back_albedo.png` — Binary game or UI asset.
 - `assets/textures/shrubs/common_hazel_leaf_back_normal_dx.png` — Binary game or UI asset.
@@ -1422,6 +1423,8 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-netcode/src/replication.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-netcode/src/server.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server-dispatcher/Cargo.toml` — Cargo package/workspace manifest.
+- `crates/adventuresim-tactical-server-dispatcher/src/bin/materialize-real-world-scene.rs` — Rust source module.
+- `crates/adventuresim-tactical-server-dispatcher/src/lib.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server-dispatcher/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server-dispatcher/src/scene_input.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/Cargo.toml` — Cargo package/workspace manifest.
@@ -1899,6 +1902,7 @@ development, or other wiki document before changing a subsystem.
 - `scripts/prepare_animation_motion.py` — Development or documentation automation script.
 - `scripts/prepare_rig_base.py` — Development or documentation automation script.
 - `scripts/quest_web_eval.mjs` — Repository support file.
+- `scripts/real_world_tactical.py` — Development or documentation automation script.
 - `scripts/test_init_forest_cover.py` — Development or documentation automation script.
 - `scripts/test_init_jung_pnv.py` — Development or documentation automation script.
 - `scripts/test_init_owda.py` — Development or documentation automation script.
@@ -1915,6 +1919,7 @@ development, or other wiki document before changing a subsystem.
 - `scripts/tests/test_just_tasks.py` — Development or documentation automation script.
 - `scripts/tests/test_prepare_animation_motion.py` — Development or documentation automation script.
 - `scripts/tests/test_prepare_rig_base.py` — Development or documentation automation script.
+- `scripts/tests/test_real_world_tactical.py` — Development or documentation automation script.
 - `scripts/tests/test_validate_environment_review_ledger.py` — Development or documentation automation script.
 - `scripts/update_project_map.py` — Development or documentation automation script.
 - `scripts/validate_environment_review_ledger.py` — Development or documentation automation script.
