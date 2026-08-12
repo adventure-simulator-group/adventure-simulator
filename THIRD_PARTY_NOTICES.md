@@ -138,6 +138,17 @@ generally are not subject to copyright in the United States. This use follows
 NASA's media guidelines, acknowledges NASA as the source, and does not imply
 NASA endorsement: <https://www.nasa.gov/nasa-brand-center/images-and-media/>.
 
+## Poly Haven Rock Surface
+
+The 1K diffuse, OpenGL normal, and AO/roughness/metal maps in
+`assets/textures/rocks/` are the JPEG channels from
+[Rock Surface](https://polyhaven.com/a/rock_surface) by Amal Kumar / Poly
+Haven. Poly Haven documents the scanned surface as two metres wide and
+dedicates the asset to the public domain under
+[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The files are
+redistributed without visual modification under their upstream names. Their
+SHA-256 checksums are recorded in `assets/textures/rocks/README.md`.
+
 ### HYDE 3.5
 
 Generated strategic map tiles and terrain packs include a cultivated-land

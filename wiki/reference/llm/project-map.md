@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1996)
+## Files (2000)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -85,6 +85,10 @@ development, or other wiki document before changing a subsystem.
 - `assets/tactical-scenes/steep-open-hillside.json` — Repository support file.
 - `assets/tactical-scenes/valley-distant-ridge.json` — Repository support file.
 - `assets/textures/moon/lroc_color_2k.jpg` — Repository support file.
+- `assets/textures/rocks/README.md` — Component overview and usage notes.
+- `assets/textures/rocks/rock_surface_arm_1k.jpg` — Repository support file.
+- `assets/textures/rocks/rock_surface_diff_1k.jpg` — Repository support file.
+- `assets/textures/rocks/rock_surface_nor_gl_1k.jpg` — Repository support file.
 - `assets/textures/shrubs/README.md` — Component overview and usage notes.
 - `assets/textures/shrubs/common_hazel_leaf_back_albedo.png` — Binary game or UI asset.
 - `assets/textures/shrubs/common_hazel_leaf_back_normal_dx.png` — Binary game or UI asset.

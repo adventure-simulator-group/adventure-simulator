@@ -79,11 +79,20 @@ pub(in crate::presentation) fn rock_color(lithology: RockLithology) -> Color {
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub(in crate::presentation) struct TacticalRockExtension {
-    /// Linear base reflectance and perceptual roughness.
-    #[uniform(100)]
+    #[texture(100)]
+    #[sampler(101)]
+    diffuse: Handle<Image>,
+    #[texture(102)]
+    #[sampler(103)]
+    normal_gl: Handle<Image>,
+    #[texture(104)]
+    #[sampler(105)]
+    arm: Handle<Image>,
+    /// Linear lithology multiplier and perceptual roughness bias.
+    #[uniform(106)]
     surface: Vec4,
-    /// Seed phase, macro scale, micro scale, and bounded normal strength.
-    #[uniform(100)]
+    /// Seed phase, tiles per metre, macro strength, and normal strength.
+    #[uniform(106)]
     geology: Vec4,
 }
 
@@ -100,26 +109,61 @@ impl MaterialExtension for TacticalRockExtension {
 pub(in crate::presentation) type TacticalRockMaterial =
     ExtendedMaterial<StandardMaterial, TacticalRockExtension>;
 
-pub(in crate::presentation) fn rock_material(recipe: RockRecipe) -> TacticalRockMaterial {
-    let color = rock_color(recipe.lithology).to_linear().to_f32_array();
-    let (roughness, macro_scale, micro_scale, normal_strength) = match recipe.lithology {
-        RockLithology::Granite => (0.82, 0.78, 7.4, 0.24),
-        RockLithology::Limestone => (0.88, 0.62, 5.8, 0.21),
-        RockLithology::Sandstone => (0.91, 0.51, 8.6, 0.18),
+pub(in crate::presentation) fn rock_material(
+    recipe: RockRecipe,
+    asset_server: &AssetServer,
+) -> TacticalRockMaterial {
+    let image = |path, is_srgb| {
+        asset_server
+            .load_builder()
+            .with_settings(move |settings: &mut bevy::image::ImageLoaderSettings| {
+                use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
+                settings.is_srgb = is_srgb;
+                settings.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+                    address_mode_u: ImageAddressMode::Repeat,
+                    address_mode_v: ImageAddressMode::Repeat,
+                    address_mode_w: ImageAddressMode::Repeat,
+                    anisotropy_clamp: 8,
+                    ..ImageSamplerDescriptor::linear()
+                });
+            })
+            .load(path)
+    };
+    rock_material_with_textures(
+        recipe,
+        image("textures/rocks/rock_surface_diff_1k.jpg", true),
+        image("textures/rocks/rock_surface_nor_gl_1k.jpg", false),
+        image("textures/rocks/rock_surface_arm_1k.jpg", false),
+    )
+}
+
+fn rock_material_with_textures(
+    recipe: RockRecipe,
+    diffuse: Handle<Image>,
+    normal_gl: Handle<Image>,
+    arm: Handle<Image>,
+) -> TacticalRockMaterial {
+    let (tint, roughness_bias, macro_strength, normal_strength) = match recipe.lithology {
+        RockLithology::Granite => (Vec3::new(0.78, 0.82, 0.87), 0.0, 0.08, 0.42),
+        RockLithology::Limestone => (Vec3::new(1.08, 1.05, 0.82), 0.06, 0.06, 0.36),
+        RockLithology::Sandstone => (Vec3::new(1.15, 0.77, 0.55), 0.09, 0.09, 0.32),
     };
     TacticalRockMaterial {
         base: StandardMaterial {
             base_color: Color::WHITE,
-            perceptual_roughness: roughness,
+            perceptual_roughness: 1.0,
             metallic: 0.0,
             ..default()
         },
         extension: TacticalRockExtension {
-            surface: Vec4::new(color[0], color[1], color[2], roughness),
+            diffuse,
+            normal_gl,
+            arm,
+            surface: tint.extend(roughness_bias),
             geology: Vec4::new(
                 unit_hash(recipe.seed) * core::f32::consts::TAU,
-                macro_scale,
-                micro_scale,
+                0.5,
+                macro_strength,
                 normal_strength,
             ),
         },
@@ -210,11 +254,17 @@ mod tests {
         ] {
             let mut recipe = recipe(42, RockArchetype::Angular);
             recipe.lithology = lithology;
-            let material = rock_material(recipe);
+            let material = rock_material_with_textures(
+                recipe,
+                Handle::default(),
+                Handle::default(),
+                Handle::default(),
+            );
             assert_eq!(material.base.base_color, Color::WHITE);
             assert_eq!(material.base.metallic, 0.0);
-            assert!((0.8..=0.95).contains(&material.base.perceptual_roughness));
-            assert!((0.0..=0.25).contains(&material.extension.geology.w));
+            assert_eq!(material.base.perceptual_roughness, 1.0);
+            assert!((0.0..=0.1).contains(&material.extension.surface.w));
+            assert!((0.3..=0.45).contains(&material.extension.geology.w));
             surfaces.insert(material.extension.surface.to_array().map(f32::to_bits));
         }
         assert_eq!(surfaces.len(), 3);
@@ -229,8 +279,10 @@ mod tests {
         assert!(shader.contains("pbr_input.world_normal = composed_normal"));
         assert!(shader.contains("pbr_input.N = composed_normal"));
         assert!(shader.contains("perceptual_roughness = clamp"));
-        assert!(shader.contains("geological_field(in.world_position.xyz"));
+        assert!(shader.contains("triplanar_weights"));
+        assert!(shader.contains("textureSample(rock_diffuse"));
+        assert!(shader.contains("textureSample(rock_normal_gl"));
+        assert!(shader.contains("textureSample(rock_arm"));
         assert!(!shader.contains("emissive"));
-        assert!(!shader.contains("textureSample"));
     }
 }
