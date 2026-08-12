@@ -90,6 +90,23 @@ pub(crate) fn scene_ambient_light(
     (color, brightness)
 }
 
+/// Bounded unresolved multi-bounce term retained alongside generated atmosphere
+/// IBL. The directional map owns first-bounce sky diffuse/specular response;
+/// this isotropic term preserves outdoor material readability without restoring
+/// the former full-strength duplicate sky approximation.
+pub(crate) fn scene_ibl_visibility_floor(
+    sun_altitude_degrees: f32,
+    moon_altitude_degrees: f32,
+    lunar_illumination: f32,
+) -> (Vec3, f32) {
+    let daylight = smoothstep(-8.0, 4.0, sun_altitude_degrees);
+    let moon = lunar_illumination * smoothstep(-2.0, 8.0, moon_altitude_degrees);
+    let color = Vec3::new(0.36, 0.48, 0.72).lerp(Vec3::ONE, daylight);
+    let night_floor = 0.6 + moon * 0.25;
+    let daylight_multibounce = 10_500.0 * daylight;
+    (color, night_floor * (1.0 - daylight) + daylight_multibounce)
+}
+
 fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
     let t = ((value - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -252,5 +269,15 @@ mod tests {
         assert!((daylight_ambient - 30_000.0).abs() < f32::EPSILON);
         assert!((scene_ambient_response(-25.0, -20.0, 0.0) - 0.05).abs() < f32::EPSILON);
         assert!((scene_ambient_response(30.0, -20.0, 0.0) - 0.28).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn atmosphere_ibl_floor_preserves_night_and_bounds_daylight_multibounce() {
+        let (_, day) = scene_ibl_visibility_floor(30.0, -20.0, 0.0);
+        let (_, moonless) = scene_ibl_visibility_floor(-25.0, 30.0, 0.0);
+        let (_, moonlit) = scene_ibl_visibility_floor(-25.0, 30.0, 1.0);
+        assert_eq!(day, 10_500.0);
+        assert_eq!(moonless, 0.6);
+        assert!((0.84..=0.85).contains(&moonlit));
     }
 }

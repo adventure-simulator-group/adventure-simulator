@@ -12,6 +12,17 @@ scattering, daylight colour, sunrise and sunset transitions, and a small
 atmosphere-generated environment light for terrain and objects. The tactical
 camera uses an explicit exposure curve keyed to solar altitude so the scene can
 move from daylight through twilight to moonlight without auto-exposure pumping.
+Once Bevy has allocated the filtered atmosphere environment map and a bounded
+four-frame handoff grace has elapsed, it becomes
+the sole daylight/twilight diffuse and specular sky source. The legacy
+isotropic daylight approximation is retained only while that map is unavailable
+or disabled. With IBL active, a bounded 35%-strength unresolved multi-bounce
+term preserves shaded outdoor material identity, while the moon-conditioned
+visibility floor remains at night. This avoids counting full hemispherical sky
+energy twice. Bevy does not expose render-world filter completion in the main
+world, so interactive presentation retains full fallback light during the
+grace; deterministic evidence additionally requires stable consecutive image
+readbacks before it reports lighting readiness.
 
 The Sun is Bevy's physical 0.533-degree angular `SunDisk` paired with the
 scene's directional light; it is not enlarged to manufacture a glare effect.
