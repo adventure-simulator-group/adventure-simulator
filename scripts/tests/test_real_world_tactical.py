@@ -18,7 +18,7 @@ class RealWorldTacticalTests(unittest.TestCase):
         self.assertEqual((args.latitude, args.longitude), (51.3397, -1.2345))
         self.assertEqual(args.absolute_minute, MODULE.DEFAULT_MINUTE)
 
-    def test_capture_uses_materialized_scene_and_four_composition_views(self):
+    def test_capture_uses_materialized_scene_and_five_composition_views(self):
         with tempfile.TemporaryDirectory() as directory:
             scene = Path(directory) / "scene.json"
             scene.write_text("{}", encoding="utf-8")
@@ -29,10 +29,13 @@ class RealWorldTacticalTests(unittest.TestCase):
                 self.assertEqual(MODULE.main(["capture", "51.3397", "10.705"]), 0)
             command = run.call_args.args[0]
             self.assertIn(str(scene), command)
-            self.assertEqual(command.count("--view"), 4)
+            self.assertEqual(command.count("--view"), 5)
             self.assertEqual(
                 [command[index + 1] for index, value in enumerate(command) if value == "--view"],
-                ["beauty-ground", "beauty-overhead", "horizon", "vista-lod-oblique"],
+                [
+                    "beauty-ground", "beauty-overhead", "horizon",
+                    "vista-lod-oblique", "vista-valley-oblique",
+                ],
             )
             self.assertEqual(run.call_args.kwargs["env"]["CAPTURE_SOURCE_IDENTITY"], "identity")
 
