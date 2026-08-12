@@ -1456,6 +1456,22 @@ mod tests {
     }
 
     #[test]
+    fn grass_composition_reuses_existing_mask_fetch_and_preserves_topology() {
+        let shader = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/shaders/tactical_foliage.wgsl"
+        ));
+        assert_eq!(shader.matches("textureSampleLevel(").count(), 1);
+        assert!(shader.contains("let effective_coverage = ground_coverage * clump_coverage"));
+        assert!(shader.contains("let edge_growth = mix(0.58, 1.0"));
+
+        let near = grass_patch_mesh(Color::WHITE, GrassMeshLod::Near, 1.0);
+        let far = grass_patch_mesh(Color::WHITE, GrassMeshLod::Far, 1.0);
+        assert_eq!(near.count_vertices(), 2_916 * 15);
+        assert_eq!(far.count_vertices(), 144 * 7);
+    }
+
+    #[test]
     fn ground_foliage_enables_continuous_lod_and_interaction() {
         let grass = foliage_material(0.3, true);
         let crown = foliage_material(0.3, false);
