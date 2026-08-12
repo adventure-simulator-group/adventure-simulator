@@ -401,6 +401,12 @@ colour, declines on steep faces, and fades from 42 to 96 metres before its
 detail becomes subpixel. It never displaces the authoritative heightfield and
 adds three bounded texture reads only within the presentation shader.
 
+Night exposure preserves the physical 0.25-lux full-moon directional light
+and a distinct dark moonless floor. A risen illuminated Moon lowers the shared
+camera EV100 from -0.5 toward -1.25, modeling visual adaptation without any
+per-asset emission or brightness multipliers; a below-horizon Moon leaves
+exposure unchanged.
+
 The Surface Nets implementation is deliberately private to the tactical client
 and is the first bounded volumetric-meshing primitive, not a cave system. Future
 overhang, cliff, or cave patches must replicate a compact deterministic field

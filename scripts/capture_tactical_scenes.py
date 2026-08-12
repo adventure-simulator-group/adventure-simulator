@@ -233,7 +233,7 @@ def validated_child_manifest(
             and observed.get("camera_environment_map_size") == [64, 64]
             and observed.get("camera_bloom") and observed.get("camera_ssao")
             and isinstance(observed.get("camera_exposure_ev100"), (int, float))
-            and -1.0 <= observed["camera_exposure_ev100"] <= 15.0
+            and -1.35 <= observed["camera_exposure_ev100"] <= 15.0
             and observed.get("camera_tonemapping") == "AcesFitted"
             and observed.get("ambient_brightness", 0) > 0):
         raise ValueError("child observed camera or ambient lighting state is incomplete")
