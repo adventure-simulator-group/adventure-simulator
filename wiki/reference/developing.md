@@ -803,6 +803,29 @@ just tactical-tree-lighting-benchmark target/tactical-scene-captures/tree-lighti
 just tactical-tree-leaf-comparison target/tactical-scene-captures/tree-leaf-comparison
 ```
 
+To review production terrain at an actual WGS84 coordinate, first build or
+install the final schema-6 terrain routing pack, then pass signed decimal
+latitude and longitude:
+
+```powershell
+just init-world-runtime
+just tactical-real-world-capture 51.7990 10.6170 target/tactical-real-world-captures/brocken
+just tactical-real-world-play 51.7990 10.6170
+```
+
+Both commands use `target/strategic-map/terrain-routing-v3.json` and its paired
+`.pack` by default; override the final two recipe arguments for another
+verified final pack. The materializer rejects coordinates outside that pack.
+It calls the same trusted dispatcher sampler as production, producing the
+one-metre 101-by-101 playable grid, environmental classifications, weather,
+and three peak-preserving vista LODs. The capture records the coordinate,
+terrain-package digest, and complete `SceneSource::ImportedPackage` scene in
+`input.json`; its four plates cover the ground composition, overhead playable
+area, horizon, and unobstructed playable-to-vista transition. `play` launches
+the ordinary supervised animation demo with the identical immutable scene
+document. Coordinates are deterministic inputs; these commands never query a
+live map service or silently synthesize missing terrain.
+
 The leaf benchmark forces the dense-woodland fixture through the 8-triangle
 cambered PBR card and the 2-triangle flat PBR card at the same ground camera. It
 writes `leaf-benchmark.json` and a

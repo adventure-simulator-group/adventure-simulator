@@ -4,8 +4,6 @@
 //! whenever a new request appears. The spawned server will then call
 //! create_tactical_server_for_request to register itself.
 
-mod scene_input;
-
 use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
@@ -17,6 +15,7 @@ use adventuresim_stdb_client::{
     DbConnection, TacticalServerRequestTableAccess, authorize_tactical_server_claim,
     revoke_tactical_server_claim, tactical_server_requestQueryTableAccess,
 };
+use adventuresim_tactical_server_dispatcher::scene_input;
 use adventuresim_terrain::{TerrainPack, TerrainPurpose};
 use clap::Parser;
 use sha2::{Digest, Sha256};

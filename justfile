@@ -309,6 +309,15 @@ tactical-play mode="animation" base_port="24920" graphics_preset="default" prese
 tactical-scene-capture fixture="dense-woodland" output="" settle_frames="12" absolute_minute="" profile="semantic":
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture {{ quote(fixture) }} --settle-frames {{ quote(settle_frames) }} --profile {{ quote(profile) }} {{ if output != "" { "--output " + quote(output) } else { "" } }} {{ if absolute_minute != "" { "--absolute-minute " + quote(absolute_minute) } else { "" } }}
 
+# Capture the production tactical scene sampled from the final real-world
+# terrain pack at signed WGS84 latitude/longitude decimal degrees.
+tactical-real-world-capture latitude longitude output="" absolute_minute="340320" settle_frames="12" terrain_manifest="target/strategic-map/terrain-routing-v3.json" terrain_pack="target/strategic-map/terrain-routing-v3.pack":
+    @{{ python_bin }} scripts/real_world_tactical.py capture {{ quote(latitude) }} {{ quote(longitude) }} --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --terrain-manifest {{ quote(terrain_manifest) }} --terrain-pack {{ quote(terrain_pack) }} {{ if output != "" { "--output " + quote(output) } else { "" } }}
+
+# Launch the animation demo on the same production coordinate-derived scene.
+tactical-real-world-play latitude longitude base_port="24920" absolute_minute="340320" terrain_manifest="target/strategic-map/terrain-routing-v3.json" terrain_pack="target/strategic-map/terrain-routing-v3.pack": preflight verify-db-client
+    @{{ python_bin }} scripts/real_world_tactical.py play {{ quote(latitude) }} {{ quote(longitude) }} --base-port {{ quote(base_port) }} --absolute-minute {{ quote(absolute_minute) }} --terrain-manifest {{ quote(terrain_manifest) }} --terrain-pack {{ quote(terrain_pack) }}
+
 # Compare cambered and flat PBR leaves in the same uncapped dense-forest scene.
 # Output must be a fresh directory.
 tactical-tree-leaf-benchmark output="target/tactical-scene-captures/tree-leaf-benchmark" frames="180":

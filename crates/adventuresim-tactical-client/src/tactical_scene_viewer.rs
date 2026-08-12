@@ -33,7 +33,7 @@ const VIEW_WIDTH: u32 = 1280;
 const VIEW_HEIGHT: u32 = 720;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
 const PROCEDURAL_OAK_LEAVES_PER_TREE: usize = 69_632;
-const CAPTURE_PROFILE_VERSION: u16 = 5;
+const CAPTURE_PROFILE_VERSION: u16 = 6;
 const CAMERA_VERSION: u16 = 5;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 
@@ -379,7 +379,7 @@ const CAPTURE_VIEWS: [CaptureView; 24] = [
     },
 ];
 
-const ENVIRONMENT_REVIEW_VIEWS: [CaptureView; 10] = [
+const ENVIRONMENT_REVIEW_VIEWS: [CaptureView; 11] = [
     CaptureView {
         slug: "warmup",
         label: "Render-pipeline warmup",
@@ -388,6 +388,11 @@ const ENVIRONMENT_REVIEW_VIEWS: [CaptureView; 10] = [
     CaptureView {
         slug: "beauty-ground",
         label: "Ground-level environment context",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "beauty-overhead",
+        label: "Overhead playable-area and terrain composition",
         overlay: false,
     },
     CaptureView {
@@ -908,7 +913,7 @@ mod capture_lighting_tests {
     #[test]
     fn environment_profile_has_deterministic_grazing_debris_target() {
         let views = selected_capture_views("environment-review", &[]).unwrap();
-        assert_eq!(views.len(), 10);
+        assert_eq!(views.len(), 11);
         assert!(
             views
                 .iter()
@@ -972,6 +977,12 @@ mod capture_lighting_tests {
         assert!(!lighting_samples_stable(&[42.0, f32::NAN]));
         assert!(lighting_samples_stable(&[100.0, 101.0]));
         assert!(!lighting_samples_stable(&[100.0, 110.0]));
+    }
+
+    #[test]
+    fn overhead_plate_uses_its_detail_sentinel_for_uniform_terrain() {
+        assert_eq!(minimum_foreground_bps("beauty-overhead"), 1);
+        assert_eq!(minimum_foreground_bps("beauty-ground"), 1_000);
     }
 }
 
@@ -2706,6 +2717,10 @@ fn foliage_detail_pixel_bps(data: Option<&[u8]>) -> u16 {
 fn minimum_foreground_bps(view: &str) -> u16 {
     match view {
         "horizon" => 50,
+        // A valid overhead plate can be almost entirely covered by one
+        // continuous terrain surface, including the top-left reference pixel.
+        // Its separate foliage-detail sentinel protects against a blank frame.
+        "beauty-overhead" => 1,
         "tree-root-detail" | "tree-branch-junction" | "rock-detail" => 350,
         "forest-floor-debris-detail" => 500,
         "tree-twig-lod"
