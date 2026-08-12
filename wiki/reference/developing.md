@@ -836,6 +836,14 @@ with dedicated, deterministically targeted tree-root, branch-junction, rock,
 terrain-grazing, and grass-seam close-ups. Pass repeatable `--view` arguments
 directly to `tactical-scene-viewer` for an exact ordered subset; unknown,
 duplicate, missing-target, missing-image, or extra-image requests fail closed.
+The profile also includes `forest-floor-debris-detail`, a deterministic
+39.6-degree vertical-FOV plate 0.36 metres above and 0.92 metres from the
+midpoint of the closest rendered leaf-patch/twig-patch pair within 0.55 metres.
+The manifest records both subject distances from that midpoint and validation
+fails closed unless each is at most 0.275 metres. Sparse woodland requests this plate
+in the named morning and grazing runs (and retains it in a full three-time
+matrix); validation requires both leaf and twig patches plus visible fine
+detail. This is the acceptance view for the 35-metre detailed-litter cutoff.
 
 The native viewer writes standing-eye-height (1.65 m above the sampled local
 terrain), overhead, horizon, and collider-overlay PNGs alongside the exact

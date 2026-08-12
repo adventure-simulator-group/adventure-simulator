@@ -33,8 +33,8 @@ const VIEW_WIDTH: u32 = 1280;
 const VIEW_HEIGHT: u32 = 720;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
 const PROCEDURAL_OAK_LEAVES_PER_TREE: usize = 69_632;
-const CAPTURE_PROFILE_VERSION: u16 = 3;
-const CAMERA_VERSION: u16 = 2;
+const CAPTURE_PROFILE_VERSION: u16 = 4;
+const CAMERA_VERSION: u16 = 3;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 
 #[derive(Resource)]
@@ -81,6 +81,9 @@ struct CaptureState {
     obstacle_focus: Vec3,
     tree_focus: Option<Vec3>,
     rock_focus: Option<Vec3>,
+    debris_focus: Option<Vec3>,
+    debris_leaf_distance_metres: Option<f32>,
+    debris_twig_distance_metres: Option<f32>,
     tree_leaf_focus: Option<Vec3>,
     tree_leaf_camera: Option<Vec3>,
     tree_focus_entity: Option<Entity>,
@@ -376,7 +379,7 @@ const CAPTURE_VIEWS: [CaptureView; 24] = [
     },
 ];
 
-const ENVIRONMENT_REVIEW_VIEWS: [CaptureView; 8] = [
+const ENVIRONMENT_REVIEW_VIEWS: [CaptureView; 9] = [
     CaptureView {
         slug: "warmup",
         label: "Render-pipeline warmup",
@@ -413,6 +416,11 @@ const ENVIRONMENT_REVIEW_VIEWS: [CaptureView; 8] = [
         overlay: false,
     },
     CaptureView {
+        slug: "forest-floor-debris-detail",
+        label: "Fallen oak leaves and twig geometry close-up",
+        overlay: false,
+    },
+    CaptureView {
         slug: "horizon",
         label: "Horizon, Sun, Moon, and atmosphere context",
         overlay: false,
@@ -432,6 +440,8 @@ struct CaptureRecord {
     detail_pixel_bps: u16,
     diagnostic_leaf_suppression: bool,
     diagnostic_grass_suppression: bool,
+    debris_leaf_distance_metres: Option<f32>,
+    debris_twig_distance_metres: Option<f32>,
     lighting_luminance_samples: Vec<f32>,
     lighting_luminance_delta: f32,
     lighting_ready: bool,
@@ -891,6 +901,32 @@ mod capture_lighting_tests {
     }
 
     #[test]
+    fn environment_profile_has_deterministic_grazing_debris_target() {
+        let views = selected_capture_views("environment-review", &[]).unwrap();
+        assert_eq!(views.len(), 9);
+        assert!(
+            views
+                .iter()
+                .any(|view| view.slug == "forest-floor-debris-detail")
+        );
+        let target = Vec3::new(4.0, 1.25, -2.0);
+        let (camera, observed_target, up) = debris_detail_camera(target, 37.0);
+        assert_eq!(observed_target, target);
+        assert_eq!(up, Vec3::Y);
+        assert!((camera.y - target.y - 0.36).abs() < 0.00001);
+        assert!((camera.xz().distance(target.xz()) - 0.92).abs() < 0.00001);
+        assert_eq!(capture_view_fov("forest-floor-debris-detail"), 39.6);
+
+        let leaves = [Vec3::new(4.0, 0.0, 3.0), Vec3::new(0.1, 0.0, 0.0)];
+        let twigs = [Vec3::new(4.2, 0.0, 3.0), Vec3::new(0.4, 0.0, 0.0)];
+        let pair = debris_capture_target(&leaves, &twigs, 0.55).unwrap();
+        assert_eq!(pair.focus, Vec3::new(4.1, 0.0, 3.0));
+        assert!((pair.leaf_distance_metres - 0.1).abs() < 0.00001);
+        assert!((pair.twig_distance_metres - 0.1).abs() < 0.00001);
+        assert_eq!(debris_capture_target(&[leaves[1]], &[twigs[0]], 0.55), None);
+    }
+
+    #[test]
     fn named_moonlit_minute_has_risen_illuminated_moon_and_dark_sky() {
         let sky = capture_celestial(359_940, 53_500_000, 10_000_000);
         assert!(sky.sun_altitude_degrees < -12.0);
@@ -1144,6 +1180,27 @@ fn setup_scene(
     let latitude_microdegrees = environment.latitude_microdegrees;
     let longitude_microdegrees = environment.longitude_microdegrees;
     let expects_grass = ground.cover_count(GroundCover::TallGrass) > 0;
+    let debris_focus = ground
+        .samples()
+        .iter()
+        .enumerate()
+        .filter(|(_, sample)| sample.cover == GroundCover::LeafLitter)
+        .map(|(index, _)| {
+            let x = index % ground.grid_width();
+            let z = index / ground.grid_width();
+            Vec2::new(
+                x as f32 * ground.grid_scale() - ground.width() * 0.5,
+                z as f32 * ground.grid_scale() - ground.depth() * 0.5,
+            )
+        })
+        .min_by(|left, right| left.length_squared().total_cmp(&right.length_squared()))
+        .map(|point| {
+            Vec3::new(
+                point.x,
+                terrain.height_at(point).unwrap_or_default() + 0.018,
+                point.y,
+            )
+        });
     let mut tree_leaf_focus = None;
     let mut tree_leaf_camera = None;
     let mut tree_review_entities = Vec::new();
@@ -1301,6 +1358,9 @@ fn setup_scene(
         obstacle_focus,
         tree_focus,
         rock_focus,
+        debris_focus,
+        debris_leaf_distance_metres: None,
+        debris_twig_distance_metres: None,
         tree_leaf_focus,
         tree_leaf_camera,
         tree_focus_entity,
@@ -1657,9 +1717,12 @@ fn capture_views(
         Query<(&VistaTerrain, Has<Collider>)>,
         Query<&mut Visibility, (With<VistaTerrain>, Without<CaptureOverlay>)>,
         ResMut<Assets<TacticalTreeLeafCardMaterial>>,
-        Query<Entity, With<MeshMaterial3d<TacticalTreeLeafCardMaterial>>>,
+        Query<
+            (Entity, Option<&GroundScatterLayer>),
+            With<MeshMaterial3d<TacticalTreeLeafCardMaterial>>,
+        >,
         Query<Entity, With<TreeLeafRepresentation>>,
-        Query<(Entity, &GroundScatterLayer)>,
+        Query<(Entity, &GroundScatterLayer, &GlobalTransform), Without<Camera3d>>,
         Query<(), With<WeatherParticle>>,
     )>,
 ) {
@@ -1678,11 +1741,19 @@ fn capture_views(
             _ => TREE_LIGHTING_MODES[3],
         };
         for (_, material) in scene_visibility.p2().iter_mut() {
-            material.surface_parameters.z = lighting_mode.ambient_occlusion_strength;
+            material.surface_parameters.z = if material.physical_parameters.z > 0.5 {
+                0.0
+            } else {
+                lighting_mode.ambient_occlusion_strength
+            };
         }
-        let leaf_entities = scene_visibility.p3().iter().collect::<Vec<_>>();
-        for entity in leaf_entities {
-            if lighting_mode.shadows_enabled {
+        let leaf_entities = scene_visibility
+            .p3()
+            .iter()
+            .map(|(entity, layer)| (entity, layer.copied()))
+            .collect::<Vec<_>>();
+        for (entity, layer) in leaf_entities {
+            if lighting_mode.shadows_enabled && layer != Some(GroundScatterLayer::DryLeaves) {
                 commands.entity(entity).remove::<NotShadowCaster>();
             } else {
                 commands.entity(entity).insert(NotShadowCaster);
@@ -1726,9 +1797,30 @@ fn capture_views(
         let ground_scatter_entities = scene_visibility
             .p5()
             .iter()
-            .map(|(entity, layer)| (entity, *layer))
+            .map(|(entity, layer, transform)| (entity, *layer, transform.translation()))
             .collect::<Vec<_>>();
-        for (entity, layer) in ground_scatter_entities {
+        if view.slug == "forest-floor-debris-detail" {
+            let leaves = ground_scatter_entities
+                .iter()
+                .filter(|(_, layer, _)| *layer == GroundScatterLayer::DryLeaves)
+                .map(|(_, _, translation)| *translation)
+                .collect::<Vec<_>>();
+            let twigs = ground_scatter_entities
+                .iter()
+                .filter(|(_, layer, _)| *layer == GroundScatterLayer::Twigs)
+                .map(|(_, _, translation)| *translation)
+                .collect::<Vec<_>>();
+            if let Some(target) = debris_capture_target(&leaves, &twigs, 0.55) {
+                state.debris_focus = Some(target.focus);
+                state.debris_leaf_distance_metres = Some(target.leaf_distance_metres);
+                state.debris_twig_distance_metres = Some(target.twig_distance_metres);
+            } else {
+                state.debris_focus = None;
+                state.debris_leaf_distance_metres = None;
+                state.debris_twig_distance_metres = None;
+            }
+        }
+        for (entity, layer, _) in ground_scatter_entities {
             if layer == GroundScatterLayer::Grass {
                 commands.entity(entity).insert(if suppress_grass {
                     Visibility::Hidden
@@ -1811,6 +1903,12 @@ fn capture_views(
                 detail_pixel_bps: 0,
                 diagnostic_leaf_suppression: suppress_leaves,
                 diagnostic_grass_suppression: suppress_grass,
+                debris_leaf_distance_metres: (view.slug == "forest-floor-debris-detail")
+                    .then_some(state.debris_leaf_distance_metres)
+                    .flatten(),
+                debris_twig_distance_metres: (view.slug == "forest-floor-debris-detail")
+                    .then_some(state.debris_twig_distance_metres)
+                    .flatten(),
                 lighting_luminance_samples: Vec::new(),
                 lighting_luminance_delta: f32::INFINITY,
                 lighting_ready: false,
@@ -1934,6 +2032,17 @@ fn capture_views(
                     manifest.captures.iter().all(|capture| {
                         capture.foreground_pixel_bps >= minimum_foreground_bps(&capture.view)
                     });
+                if manifest
+                    .requested_views
+                    .iter()
+                    .any(|view| view == "forest-floor-debris-detail")
+                {
+                    manifest.validation.requested_detail_targets_available &= manifest
+                        .captures
+                        .iter()
+                        .find(|capture| capture.view == "forest-floor-debris-detail")
+                        .is_some_and(|capture| capture.detail_pixel_bps >= 60);
+                }
                 // The flat fixture provides a stable image-space sentinel for
                 // the foliage material. Slopes, dark wetlands, and tree cover
                 // can legitimately hide the same fine overhead contrast.
@@ -2040,6 +2149,10 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
             let target = state.obstacle_focus - Vec3::Y * 1.30;
             (target + Vec3::new(-3.4, 1.25, 3.4), target, Vec3::Y)
         }
+        "forest-floor-debris-detail" => state.debris_focus.map_or(
+            (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
+            |target| debris_detail_camera(target, state.tree_review_azimuth_degrees),
+        ),
         "ground-cover" => state.tree_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |tree| {
@@ -2268,6 +2381,17 @@ fn build_manifest(
                     record.is_some_and(|capture| capture.diagnostic_grass_suppression)
                 }
                 "grass-seam-detail" => state.expects_grass && grass_clumps > 0,
+                "forest-floor-debris-detail" => {
+                    state.debris_focus.is_some()
+                        && state
+                            .debris_leaf_distance_metres
+                            .is_some_and(|distance| distance <= 0.275)
+                        && state
+                            .debris_twig_distance_metres
+                            .is_some_and(|distance| distance <= 0.275)
+                        && dry_leaf_patches > 0
+                        && twig_patches > 0
+                }
                 _ => true,
             }
         }),
@@ -2545,6 +2669,7 @@ fn minimum_foreground_bps(view: &str) -> u16 {
     match view {
         "horizon" => 50,
         "tree-root-detail" | "tree-branch-junction" | "rock-detail" => 350,
+        "forest-floor-debris-detail" => 500,
         "tree-twig-lod"
         | "tree-small-branch-lod"
         | "tree-crown-lod"
@@ -2572,6 +2697,7 @@ fn capture_view_fov(view: &str) -> f32 {
         "tree-textured-leaf-detail" | "tree-leaf-card-detail" => 30.0,
         "tree-root-detail" | "tree-branch-junction" | "rock-detail" => 38.0,
         "terrain-grazing-detail" | "grass-seam-detail" => 42.0,
+        "forest-floor-debris-detail" => 39.6,
         "tree-twig-lod" => 30.0,
         "tree-small-branch-lod" => 19.0,
         "tree-crown-lod" => 13.0,
@@ -2591,6 +2717,52 @@ fn tree_lod_camera(state: &CaptureState, distance: f32) -> (Vec3, Vec3, Vec3) {
                 Vec3::Y,
             )
         },
+    )
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct DebrisCaptureTarget {
+    focus: Vec3,
+    leaf_distance_metres: f32,
+    twig_distance_metres: f32,
+}
+
+fn debris_capture_target(
+    leaf_positions: &[Vec3],
+    twig_positions: &[Vec3],
+    maximum_pair_distance_metres: f32,
+) -> Option<DebrisCaptureTarget> {
+    let mut candidates = leaf_positions
+        .iter()
+        .flat_map(|leaf| twig_positions.iter().map(move |twig| (*leaf, *twig)))
+        .filter_map(|(leaf, twig)| {
+            let distance = leaf.xz().distance(twig.xz());
+            (distance <= maximum_pair_distance_metres).then_some((distance, leaf, twig))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        left.0
+            .total_cmp(&right.0)
+            .then_with(|| left.1.x.total_cmp(&right.1.x))
+            .then_with(|| left.1.z.total_cmp(&right.1.z))
+            .then_with(|| left.2.x.total_cmp(&right.2.x))
+            .then_with(|| left.2.z.total_cmp(&right.2.z))
+    });
+    let (_, leaf, twig) = candidates.first().copied()?;
+    let focus = leaf.lerp(twig, 0.5);
+    Some(DebrisCaptureTarget {
+        focus,
+        leaf_distance_metres: focus.xz().distance(leaf.xz()),
+        twig_distance_metres: focus.xz().distance(twig.xz()),
+    })
+}
+
+fn debris_detail_camera(target: Vec3, azimuth_degrees: f32) -> (Vec3, Vec3, Vec3) {
+    let azimuth = azimuth_degrees.to_radians();
+    (
+        target + Vec3::new(azimuth.sin() * 0.92, 0.36, azimuth.cos() * 0.92),
+        target,
+        Vec3::Y,
     )
 }
 

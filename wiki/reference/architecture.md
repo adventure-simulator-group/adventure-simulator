@@ -327,6 +327,22 @@ terrain material retains only the band-limited aggregate colour and normal
 response of the sward. Bevy's standard mesh path supplies WebGPU-compatible
 GPU preprocessing, culling, and indirect batches when the adapter supports
 them, with its normal fallback on more limited browser devices.
+Forest-floor scatter retains its authoritative leaf-litter placement, patch
+count, and shared-mesh instancing. Detailed litter now ends at 35 metres: the
+current visibility architecture cannot substitute a cheaper mesh without an
+extra entity/draw, and rendering alpha-tested cambered plates to 72 metres was
+not worth that overdraw. Each 24-leaf shared patch
+  uses deterministic nine-vertex cambered, gently tilted, curled oak plates;
+  every plate is seated by its lowest vertex slightly below the local patch
+  plane and has a bounded lift so it cannot become an upright card. The reused
+  oak maps are desaturated and multiplied by seeded tan/brown vertex pigment
+  for a dry-leaf albedo response rather than a lighting gain. These plates retain the
+leaf plates with the production oak opacity, front/back albedo, normal maps,
+and a dedicated dry PBR response with zero canopy AO, low transmission, higher
+roughness, and lower thickness; fallen-leaf wind is disabled. Each nine-twig shared
+patch uses tapered three-to-five-sided segments with at most two deterministic
+short forks. Litter entities remain `NotShadowCaster`, and the geometry change
+adds no entity, material slot, draw call, gameplay collider, or placement rule.
 The local player transform drives nearby blade bending on the client only; this
 cosmetic interaction is neither replicated nor included in collision or
 tactical authority. The immutable environment and weather snapshots control the procedural ground

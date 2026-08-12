@@ -23,6 +23,11 @@ pub(in crate::presentation) struct HazelPresentationCache {
     leaves: Option<Handle<TacticalTreeLeafCardMaterial>>,
 }
 
+#[derive(Resource, Default)]
+pub(in crate::presentation) struct GroundFoliagePresentationCache {
+    forest_floor_leaves: Option<Handle<TacticalTreeLeafCardMaterial>>,
+}
+
 pub(super) fn foliage_material(wind_scale: f32, ground_foliage: bool) -> TacticalFoliageMaterial {
     TacticalFoliageMaterial {
         wind: Vec4::new(0.74, 0.67, wind_scale, 1.35),
@@ -134,6 +139,7 @@ pub(super) fn spawn_ground_foliage(
     standard_materials: &mut Assets<StandardMaterial>,
     leaf_materials: &mut Assets<TacticalTreeLeafCardMaterial>,
     hazel_cache: &mut HazelPresentationCache,
+    ground_foliage_cache: &mut GroundFoliagePresentationCache,
     asset_server: &AssetServer,
     scene_id: &SceneId,
     terrain: &SceneTerrain,
@@ -194,7 +200,10 @@ pub(super) fn spawn_ground_foliage(
     let twig_meshes = (0..TWIG_MESH_VARIANTS)
         .map(|variant| meshes.add(twig_patch_mesh(variant)))
         .collect::<Vec<_>>();
-    let dry_leaf_material = materials.add(foliage_material(0.008, false));
+    let dry_leaf_material = ground_foliage_cache
+        .forest_floor_leaves
+        .get_or_insert_with(|| leaf_materials.add(forest_floor_leaf_material(asset_server)))
+        .clone();
     let twig_material = materials.add(foliage_material(0.004, false));
     let base_seed = stable_text_seed(&environment.scene_digest) ^ stable_text_seed(&scene_id.0);
     let half_x = terrain.width() * 0.5;
@@ -327,7 +336,7 @@ pub(super) fn spawn_ground_foliage(
             if unit_hash(hash) >= density * 0.92 {
                 continue;
             }
-            spawn_forest_floor_patch(
+            spawn_forest_floor_leaf_patch(
                 commands,
                 terrain,
                 ground,
@@ -430,6 +439,20 @@ pub(super) fn spawn_ground_foliage(
     }
 }
 
+fn forest_floor_leaf_material(asset_server: &AssetServer) -> TacticalTreeLeafCardMaterial {
+    let mut material = oak_leaf_material(asset_server);
+    // Fallen leaves reuse the oak surface maps/PBR response but do not inherit
+    // canopy wind displacement. NotShadowCaster on every litter entity keeps
+    // their dense alpha geometry out of the shadow pass.
+    material.parameters.z = 0.0;
+    material.surface_parameters.z = 0.0;
+    material.surface_parameters.w = 0.035;
+    material.physical_parameters.x = 0.96;
+    material.physical_parameters.y = 0.00035;
+    material.physical_parameters.z = 1.0;
+    material
+}
+
 fn loose_stone_recipe(variant: u64) -> RockRecipe {
     let archetype = match variant % 3 {
         0 => RockArchetype::Rounded,
@@ -467,6 +490,60 @@ fn spawn_forest_floor_patch(
     scale: f32,
     height_offset: f32,
 ) {
+    let Some(transform) =
+        forest_floor_patch_transform(terrain, ground, cell_origin, hash, scale, height_offset)
+    else {
+        return;
+    };
+    commands.spawn((
+        Name::new(name),
+        layer,
+        NotShadowCaster,
+        Mesh3d(mesh.clone()),
+        MeshMaterial3d(material.clone()),
+        VisibilityRange::abrupt(0.0, 35.0),
+        transform,
+    ));
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_forest_floor_leaf_patch(
+    commands: &mut Commands,
+    terrain: &SceneTerrain,
+    ground: &SceneGround,
+    cell_origin: Vec2,
+    hash: u64,
+    name: &'static str,
+    layer: GroundScatterLayer,
+    mesh: &Handle<Mesh>,
+    material: &Handle<TacticalTreeLeafCardMaterial>,
+    scale: f32,
+    height_offset: f32,
+) {
+    let Some(transform) =
+        forest_floor_patch_transform(terrain, ground, cell_origin, hash, scale, height_offset)
+    else {
+        return;
+    };
+    commands.spawn((
+        Name::new(name),
+        layer,
+        NotShadowCaster,
+        Mesh3d(mesh.clone()),
+        MeshMaterial3d(material.clone()),
+        VisibilityRange::abrupt(0.0, 35.0),
+        transform,
+    ));
+}
+
+fn forest_floor_patch_transform(
+    terrain: &SceneTerrain,
+    ground: &SceneGround,
+    cell_origin: Vec2,
+    hash: u64,
+    scale: f32,
+    height_offset: f32,
+) -> Option<Transform> {
     let jitter = ground.grid_scale() * 0.78;
     let position = cell_origin
         + Vec2::new(
@@ -477,22 +554,12 @@ fn spawn_forest_floor_patch(
         .ground_at(position)
         .is_none_or(|sample| sample.cover != GroundCover::LeafLitter)
     {
-        return;
+        return None;
     }
-    let Some(mut transform) = foliage_transform(terrain, position.x, position.y, hash) else {
-        return;
-    };
+    let mut transform = foliage_transform(terrain, position.x, position.y, hash)?;
     transform.translation.y += height_offset;
     transform.scale *= scale;
-    commands.spawn((
-        Name::new(name),
-        layer,
-        NotShadowCaster,
-        Mesh3d(mesh.clone()),
-        MeshMaterial3d(material.clone()),
-        VisibilityRange::abrupt(0.0, 72.0),
-        transform,
-    ));
+    Some(transform)
 }
 
 fn ground_allows_grass_patch(ground: &SceneGround, centre: Vec2) -> bool {
@@ -576,6 +643,7 @@ pub(super) fn present_ground_scatter(
     mut standard_materials: ResMut<Assets<StandardMaterial>>,
     mut leaf_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
     mut hazel_cache: ResMut<HazelPresentationCache>,
+    mut ground_foliage_cache: ResMut<GroundFoliagePresentationCache>,
     asset_server: Res<AssetServer>,
 ) {
     for (entity, scene_id, terrain, ground, environment) in &scenes {
@@ -586,6 +654,7 @@ pub(super) fn present_ground_scatter(
             &mut standard_materials,
             &mut leaf_materials,
             &mut hazel_cache,
+            &mut ground_foliage_cache,
             &asset_server,
             scene_id,
             terrain,
@@ -829,11 +898,11 @@ fn grass_ribbon_patch_mesh(
 fn dry_leaf_patch_mesh(variant: u64) -> Mesh {
     let mut data = GroundLitterMeshData::default();
     let leaf_colors = [
-        Color::srgb_u8(151, 82, 30),
-        Color::srgb_u8(184, 116, 38),
-        Color::srgb_u8(116, 67, 30),
-        Color::srgb_u8(201, 145, 54),
-        Color::srgb_u8(128, 91, 42),
+        Color::srgb_u8(174, 132, 78),
+        Color::srgb_u8(151, 111, 68),
+        Color::srgb_u8(190, 153, 96),
+        Color::srgb_u8(128, 96, 66),
+        Color::srgb_u8(165, 140, 99),
     ];
     for leaf in 0..24_u64 {
         let hash = splitmix64(leaf ^ variant.rotate_left(29) ^ 0x5ec4_57d2_bf90_1c37);
@@ -842,11 +911,12 @@ fn dry_leaf_patch_mesh(variant: u64) -> Mesh {
         let long =
             Vec2::new(angle.cos(), angle.sin()) * (0.065 + unit_hash(splitmix64(hash ^ 3)) * 0.045);
         let side = Vec2::new(-long.y, long.x) * (0.34 + unit_hash(splitmix64(hash ^ 4)) * 0.16);
-        data.append_diamond(
+        data.append_cambered_leaf(
             centre,
             long,
             side,
             0.003 + (leaf % 7) as f32 * 0.00045,
+            hash,
             leaf_colors[leaf as usize % leaf_colors.len()],
         );
     }
@@ -868,14 +938,47 @@ fn twig_patch_mesh(variant: u64) -> Mesh {
         let angle = unit_hash(splitmix64(hash ^ 2)) * core::f32::consts::TAU;
         let long =
             Vec2::new(angle.cos(), angle.sin()) * (0.14 + unit_hash(splitmix64(hash ^ 3)) * 0.13);
-        let side = Vec2::new(-long.y, long.x) * (0.045 + unit_hash(splitmix64(hash ^ 4)) * 0.025);
-        data.append_quad(
-            centre,
-            long,
-            side,
-            0.008 + (twig % 5) as f32 * 0.0008,
-            twig_colors[twig as usize % twig_colors.len()],
+        let start = Vec3::new(centre.x - long.x, 0.008, centre.y - long.y);
+        let end = Vec3::new(
+            centre.x + long.x,
+            0.011 + unit_hash(splitmix64(hash ^ 4)) * 0.018,
+            centre.y + long.y,
         );
+        let sides = 3 + (hash % 3) as u32;
+        let radius = 0.006 + unit_hash(splitmix64(hash ^ 5)) * 0.005;
+        let color = twig_colors[twig as usize % twig_colors.len()];
+        data.append_tapered_twig(
+            start,
+            end,
+            radius,
+            radius * 0.42,
+            sides,
+            true,
+            true,
+            centre,
+            color,
+        );
+        if twig < 2 && unit_hash(splitmix64(hash ^ 6)) > 0.46 {
+            let attach = start.lerp(end, 0.58);
+            let direction = (end - start).normalize();
+            let lateral = Vec3::new(-direction.z, 0.12, direction.x).normalize();
+            let fork_end = attach
+                + (direction * 0.38 + lateral * if hash & 1 == 0 { 0.62 } else { -0.62 })
+                    .normalize()
+                    * long.length()
+                    * 0.72;
+            data.append_tapered_twig(
+                attach,
+                fork_end,
+                radius * 0.55,
+                radius * 0.18,
+                sides,
+                false,
+                true,
+                centre,
+                color,
+            );
+        }
     }
     data.into_mesh()
 }
@@ -907,39 +1010,146 @@ struct GroundLitterMeshData {
 }
 
 impl GroundLitterMeshData {
-    fn append_quad(&mut self, centre: Vec2, long: Vec2, side: Vec2, height: f32, color: Color) {
+    fn append_cambered_leaf(
+        &mut self,
+        centre: Vec2,
+        long: Vec2,
+        side: Vec2,
+        height: f32,
+        seed: u64,
+        color: Color,
+    ) {
         let base = self.positions.len() as u32;
-        for point in [
-            centre - long - side,
-            centre + long - side,
-            centre + long + side,
-            centre - long + side,
-        ] {
-            self.positions.push([point.x, height, point.y]);
-            self.normals.push(Vec3::Y.to_array());
+        // Fallen leaves should curl without becoming little tents. Build the
+        // varied plate first, then seat its lowest vertex just below the local
+        // patch ground plane so every instance visibly makes contact.
+        let long_slope = (unit_hash(splitmix64(seed ^ 0x11)) - 0.5) * 0.12;
+        let side_slope = (unit_hash(splitmix64(seed ^ 0x12)) - 0.5) * 0.08;
+        let camber = 0.0035 + unit_hash(splitmix64(seed ^ 0x13)) * 0.0065;
+        let curl = (unit_hash(splitmix64(seed ^ 0x14)) - 0.5) * 0.004;
+        let burial = 0.0007 + height.min(0.006) * 0.15 + unit_hash(splitmix64(seed ^ 0x15)) * 0.001;
+        let long3 = Vec3::new(long.x, long_slope * long.length(), long.y);
+        let side3 = Vec3::new(side.x, side_slope * side.length(), side.y);
+        let centre3 = Vec3::new(centre.x, 0.0, centre.y);
+        let outline = [
+            (0.0, -1.0),
+            (0.82, -0.55),
+            (1.0, 0.0),
+            (0.74, 0.58),
+            (0.0, 1.0),
+            (-0.74, 0.58),
+            (-1.0, 0.0),
+            (-0.82, -0.55),
+        ];
+        let mut leaf_positions = Vec::with_capacity(9);
+        leaf_positions.push(centre3 + Vec3::Y * camber);
+        for (u, v) in outline {
+            let lift = camber * (1.0 - u * u) * (1.0 - v * v) + curl * v * v;
+            leaf_positions.push(centre3 + long3 * v + side3 * u + Vec3::Y * lift);
+        }
+        let minimum_y = leaf_positions
+            .iter()
+            .map(|point| point.y)
+            .fold(f32::INFINITY, f32::min);
+        for point in &mut leaf_positions {
+            point.y -= minimum_y + burial;
+        }
+        let mut leaf_normals = vec![Vec3::ZERO; 9];
+        for outline_index in 0..8_usize {
+            let left = 1 + outline_index;
+            let right = 1 + (outline_index + 1) % 8;
+            let face = (leaf_positions[right] - leaf_positions[0])
+                .cross(leaf_positions[left] - leaf_positions[0]);
+            leaf_normals[0] += face;
+            leaf_normals[left] += face;
+            leaf_normals[right] += face;
+            self.indices
+                .extend_from_slice(&[base, base + right as u32, base + left as u32]);
+        }
+        for (index, point) in leaf_positions.into_iter().enumerate() {
+            self.positions.push(point.to_array());
+            self.normals
+                .push(leaf_normals[index].normalize().to_array());
             self.roots.push(centre.to_array());
         }
+        self.uvs.push([0.5, 0.5]);
         self.uvs
-            .extend_from_slice(&[[0.0, 0.85], [1.0, 0.85], [1.0, 1.0], [0.0, 1.0]]);
+            .extend(outline.map(|(u, v)| [0.5 + u * 0.5, 0.5 + v * 0.5]));
         let color = color.to_linear().to_f32_array();
-        self.colors.extend_from_slice(&[color; 4]);
-        self.indices
-            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        self.colors.extend_from_slice(&[color; 9]);
     }
 
-    fn append_diamond(&mut self, centre: Vec2, long: Vec2, side: Vec2, height: f32, color: Color) {
+    #[allow(clippy::too_many_arguments)]
+    fn append_tapered_twig(
+        &mut self,
+        start: Vec3,
+        end: Vec3,
+        start_radius: f32,
+        end_radius: f32,
+        sides: u32,
+        cap_start: bool,
+        cap_end: bool,
+        root: Vec2,
+        color: Color,
+    ) {
         let base = self.positions.len() as u32;
-        for point in [centre - long, centre + side, centre + long, centre - side] {
-            self.positions.push([point.x, height, point.y]);
-            self.normals.push(Vec3::Y.to_array());
-            self.roots.push(centre.to_array());
+        let direction = (end - start).normalize();
+        let reference = if direction.y.abs() < 0.9 {
+            Vec3::Y
+        } else {
+            Vec3::X
+        };
+        let right = direction.cross(reference).normalize();
+        let forward = right.cross(direction).normalize();
+        let linear_color = color.to_linear().to_f32_array();
+        for (ring, (centre, radius)) in [(start, start_radius), (end, end_radius)]
+            .into_iter()
+            .enumerate()
+        {
+            for side_index in 0..sides {
+                let phase = side_index as f32 * core::f32::consts::TAU / sides as f32;
+                let normal = right * phase.cos() + forward * phase.sin();
+                self.positions.push((centre + normal * radius).to_array());
+                self.normals.push(normal.to_array());
+                self.uvs
+                    .push([side_index as f32 / sides as f32, ring as f32]);
+                self.roots.push(root.to_array());
+                self.colors.push(linear_color);
+            }
         }
-        self.uvs
-            .extend_from_slice(&[[0.5, 0.85], [1.0, 0.925], [0.5, 1.0], [0.0, 0.925]]);
-        let color = color.to_linear().to_f32_array();
-        self.colors.extend_from_slice(&[color; 4]);
-        self.indices
-            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        for side_index in 0..sides {
+            let next = (side_index + 1) % sides;
+            self.indices.extend_from_slice(&[
+                base + side_index,
+                base + sides + side_index,
+                base + sides + next,
+                base + side_index,
+                base + sides + next,
+                base + next,
+            ]);
+        }
+        for (at_start, centre, normal) in [(true, start, -direction), (false, end, direction)] {
+            if (at_start && !cap_start) || (!at_start && !cap_end) {
+                continue;
+            }
+            let cap = self.positions.len() as u32;
+            self.positions.push(centre.to_array());
+            self.normals.push(normal.to_array());
+            self.uvs.push([0.5, if at_start { 0.0 } else { 1.0 }]);
+            self.roots.push(root.to_array());
+            self.colors.push(linear_color);
+            let ring = if at_start { base } else { base + sides };
+            for side_index in 0..sides {
+                let next = (side_index + 1) % sides;
+                if at_start {
+                    self.indices
+                        .extend_from_slice(&[cap, ring + next, ring + side_index]);
+                } else {
+                    self.indices
+                        .extend_from_slice(&[cap, ring + side_index, ring + next]);
+                }
+            }
+        }
     }
 }
 
@@ -1256,10 +1466,12 @@ mod tests {
     }
 
     #[test]
-    fn proof_litter_uses_separate_dense_leaf_and_twig_meshes() {
+    fn forest_floor_meshes_are_deterministic_bounded_and_volumetric() {
         let leaves = dry_leaf_patch_mesh(0);
+        let repeated_leaves = dry_leaf_patch_mesh(0);
         let alternate_leaves = dry_leaf_patch_mesh(1);
         let twigs = twig_patch_mesh(0);
+        let repeated_twigs = twig_patch_mesh(0);
         let leaf_positions = leaves
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .and_then(VertexAttributeValues::as_float3)
@@ -1268,8 +1480,26 @@ mod tests {
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .and_then(VertexAttributeValues::as_float3)
             .unwrap();
-        assert_eq!(leaf_positions.len(), 24 * 4);
-        assert_eq!(twig_positions.len(), 9 * 4);
+        let leaf_normals = leaves
+            .attribute(Mesh::ATTRIBUTE_NORMAL)
+            .and_then(VertexAttributeValues::as_float3)
+            .unwrap();
+        let twig_normals = twigs
+            .attribute(Mesh::ATTRIBUTE_NORMAL)
+            .and_then(VertexAttributeValues::as_float3)
+            .unwrap();
+        assert_eq!(leaf_positions.len(), 24 * 9);
+        assert_eq!(leaves.indices().unwrap().len() / 3, 24 * 8);
+        assert!((72..=130).contains(&twig_positions.len()));
+        assert!((108..=210).contains(&(twigs.indices().unwrap().len() / 3)));
+        assert_eq!(
+            leaves.attribute(Mesh::ATTRIBUTE_POSITION),
+            repeated_leaves.attribute(Mesh::ATTRIBUTE_POSITION)
+        );
+        assert_eq!(
+            twigs.attribute(Mesh::ATTRIBUTE_POSITION),
+            repeated_twigs.attribute(Mesh::ATTRIBUTE_POSITION)
+        );
         assert_ne!(
             leaves.attribute(Mesh::ATTRIBUTE_POSITION),
             alternate_leaves.attribute(Mesh::ATTRIBUTE_POSITION)
@@ -1277,6 +1507,179 @@ mod tests {
         for mesh in [&leaves, &twigs] {
             assert!(mesh.attribute(Mesh::ATTRIBUTE_COLOR).is_some());
             assert!(mesh.attribute(Mesh::ATTRIBUTE_UV_1).is_some());
+        }
+        assert!(
+            leaf_normals
+                .iter()
+                .all(|normal| Vec3::from_array(*normal).is_normalized())
+        );
+        assert!(
+            twig_normals
+                .iter()
+                .all(|normal| Vec3::from_array(*normal).is_normalized())
+        );
+        assert!(
+            leaf_normals
+                .iter()
+                .any(|normal| Vec3::from_array(*normal).distance(Vec3::Y) > 0.03)
+        );
+        let leaf_spans = leaf_positions
+            .chunks_exact(9)
+            .map(|leaf| {
+                let minimum = leaf
+                    .iter()
+                    .map(|point| point[1])
+                    .fold(f32::INFINITY, f32::min);
+                let maximum = leaf
+                    .iter()
+                    .map(|point| point[1])
+                    .fold(f32::NEG_INFINITY, f32::max);
+                assert!(minimum <= -0.0006, "leaf must contact/bury: {minimum}");
+                assert!(maximum <= 0.025, "leaf lift must stay bounded: {maximum}");
+                maximum - minimum
+            })
+            .collect::<Vec<_>>();
+        assert!(leaf_spans.iter().all(|span| *span > 0.003));
+        assert!(
+            leaf_spans
+                .windows(2)
+                .any(|pair| (pair[0] - pair[1]).abs() > 0.001)
+        );
+        let Some(VertexAttributeValues::Float32x2(leaf_uvs)) =
+            leaves.attribute(Mesh::ATTRIBUTE_UV_0)
+        else {
+            panic!("fallen-leaf UVs must use Float32x2 storage");
+        };
+        assert!(leaf_uvs.contains(&[0.5, 0.0]));
+        assert!(leaf_uvs.contains(&[1.0, 0.5]));
+        assert!(leaf_uvs.contains(&[0.5, 1.0]));
+        assert!(leaf_uvs.contains(&[0.0, 0.5]));
+        assert!(!leaf_uvs.contains(&[0.0, 0.0]));
+        assert!(!leaf_uvs.contains(&[1.0, 1.0]));
+        let leaf_indices = leaves.indices().unwrap().iter().collect::<Vec<_>>();
+        for triangle in leaf_indices.chunks_exact(3) {
+            let a = Vec3::from_array(leaf_positions[triangle[0] as usize]);
+            let b = Vec3::from_array(leaf_positions[triangle[1] as usize]);
+            let c = Vec3::from_array(leaf_positions[triangle[2] as usize]);
+            let average_normal = (Vec3::from_array(leaf_normals[triangle[0] as usize])
+                + Vec3::from_array(leaf_normals[triangle[1] as usize])
+                + Vec3::from_array(leaf_normals[triangle[2] as usize]))
+            .normalize();
+            assert!((b - a).cross(c - a).dot(average_normal) > 0.0);
+        }
+        for positions in [leaf_positions, twig_positions] {
+            assert!(positions.iter().flatten().all(|value| value.is_finite()));
+        }
+        assert!(
+            leaf_positions
+                .iter()
+                .all(|point| point[0].abs() < 0.7 && point[2].abs() < 0.7)
+        );
+        assert!(
+            twig_positions
+                .iter()
+                .all(|point| point[0].abs() < 0.9 && point[2].abs() < 0.9)
+        );
+        let leaf_height_bounds = leaf_positions.iter().fold(
+            (f32::INFINITY, f32::NEG_INFINITY),
+            |(minimum, maximum), point| (minimum.min(point[1]), maximum.max(point[1])),
+        );
+        assert!(
+            leaf_height_bounds.0 >= -0.05 && leaf_height_bounds.1 <= 0.06,
+            "fallen leaf height bounds: {leaf_height_bounds:?}"
+        );
+        assert!(
+            twig_positions
+                .iter()
+                .all(|point| (-0.02..0.20).contains(&point[1]))
+        );
+    }
+
+    #[test]
+    fn forest_floor_leaves_reuse_oak_pbr_texture_and_surface_contract() {
+        let mut app = App::new();
+        app.add_plugins(TaskPoolPlugin::default());
+        app.add_plugins(AssetPlugin::default());
+        app.init_asset::<Image>();
+        let asset_server = app.world().resource::<AssetServer>();
+        let floor = forest_floor_leaf_material(asset_server);
+        let oak = oak_leaf_material(asset_server);
+        assert_eq!(floor.opacity, oak.opacity);
+        assert_eq!(floor.front_albedo, oak.front_albedo);
+        assert_eq!(floor.back_albedo, oak.back_albedo);
+        assert_eq!(floor.front_normal, oak.front_normal);
+        assert_eq!(floor.back_normal, oak.back_normal);
+        assert_eq!(floor.parameters.z, 0.0);
+        assert_eq!(floor.surface_parameters.z, 0.0);
+        assert!(floor.surface_parameters.w < oak.surface_parameters.w * 0.2);
+        assert!(floor.physical_parameters.x > oak.physical_parameters.x);
+        assert!(floor.physical_parameters.y < oak.physical_parameters.y);
+        assert_eq!(floor.physical_parameters.z, 1.0);
+        let shader = include_str!("../../../../assets/shaders/tactical_tree_leaf_card.wgsl");
+        assert!(shader.contains("dry_texture * mix(vec3<f32>(1.0), in.color.rgb, 0.72)"));
+        assert!(shader.contains("select(albedo * vec3<f32>(in.color.r), dry_pigment, dry_leaf)"));
+    }
+
+    #[test]
+    fn fallen_leaf_vertex_pigments_are_dry_warm_and_varied() {
+        let leaves = dry_leaf_patch_mesh(0);
+        let Some(VertexAttributeValues::Float32x4(colors)) =
+            leaves.attribute(Mesh::ATTRIBUTE_COLOR)
+        else {
+            panic!("fallen-leaf pigments must use Float32x4 storage");
+        };
+        assert!(colors.iter().all(|color| {
+            color[0] > color[1] && color[1] > color[2] && color[0] - color[2] < 0.5
+        }));
+        let pigments = colors
+            .chunks_exact(9)
+            .map(|leaf| leaf[0])
+            .collect::<Vec<_>>();
+        assert!(pigments.windows(2).any(|pair| pair[0] != pair[1]));
+    }
+
+    #[test]
+    fn twig_variants_have_exact_bounded_topology_and_only_fork_base_boundaries() {
+        for variant in 0..TWIG_MESH_VARIANTS {
+            let mesh = twig_patch_mesh(variant);
+            let mut expected_vertices = 0;
+            let mut expected_triangles = 0;
+            let mut expected_boundaries = 0;
+            for twig in 0..9_u64 {
+                let hash = splitmix64(twig ^ variant.rotate_left(31) ^ 0xa773_9fe2_410c_862d);
+                let sides = 3 + (hash % 3) as usize;
+                expected_vertices += sides * 2 + 2;
+                expected_triangles += sides * 4;
+                if twig < 2 && unit_hash(splitmix64(hash ^ 6)) > 0.46 {
+                    expected_vertices += sides * 2 + 1;
+                    expected_triangles += sides * 3;
+                    expected_boundaries += sides;
+                }
+            }
+            assert_eq!(mesh.count_vertices(), expected_vertices);
+            assert_eq!(mesh.indices().unwrap().len() / 3, expected_triangles);
+            let mut edges = std::collections::BTreeMap::new();
+            let indices = mesh.indices().unwrap().iter().collect::<Vec<_>>();
+            for triangle in indices.chunks_exact(3) {
+                for edge in [
+                    (triangle[0], triangle[1]),
+                    (triangle[1], triangle[2]),
+                    (triangle[2], triangle[0]),
+                ] {
+                    *edges
+                        .entry(if edge.0 < edge.1 {
+                            edge
+                        } else {
+                            (edge.1, edge.0)
+                        })
+                        .or_insert(0) += 1;
+                }
+            }
+            assert!(edges.values().all(|count| *count <= 2));
+            assert_eq!(
+                edges.values().filter(|count| **count == 1).count(),
+                expected_boundaries
+            );
         }
     }
 }

@@ -134,6 +134,7 @@ impl Plugin for TacticalPresentationPlugin {
         )
         .init_resource::<GrassInteractionState>()
         .init_resource::<HazelPresentationCache>()
+        .init_resource::<GroundFoliagePresentationCache>()
         .init_resource::<TreePresentationCache>()
         .init_resource::<TreeLodRenderOverride>()
         .add_systems(

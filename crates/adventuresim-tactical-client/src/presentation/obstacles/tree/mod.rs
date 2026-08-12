@@ -60,6 +60,9 @@ pub(crate) struct TacticalTreeLeafCardMaterial {
     /// diffuse transmission for the species' leaf thickness.
     #[uniform(10)]
     pub(crate) surface_parameters: Vec4,
+    /// Perceptual roughness, physical thickness in metres, and reserved.
+    #[uniform(10)]
+    pub(crate) physical_parameters: Vec4,
 }
 
 pub(crate) fn oak_leaf_material(asset_server: &AssetServer) -> TacticalTreeLeafCardMaterial {
@@ -126,6 +129,7 @@ fn leaf_material(
             canopy_ao,
             diffuse_transmission,
         ),
+        physical_parameters: Vec4::new(0.86, 0.001, 0.0, 0.0),
     }
 }
 
