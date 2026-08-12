@@ -13,13 +13,19 @@ atmosphere-generated environment light for terrain and objects. The tactical
 camera uses an explicit exposure curve keyed to solar altitude so the scene can
 move from daylight through twilight to moonlight without auto-exposure pumping.
 
-The Sun is Bevy's angular `SunDisk` paired with the scene's directional light.
+The Sun is Bevy's physical 0.533-degree angular `SunDisk` paired with the
+scene's directional light; it is not enlarged to manufacture a glare effect.
 A shared analytical ephemeris resolves its direction from time, season,
 latitude, and longitude. It intentionally favours stable, inexpensive outdoor
-lighting over high-precision astronomical coordinates. Direct illuminance
-fades in over the first eight degrees above the horizon and is zero whenever
-the Sun is below it, so the directional light can never shine upward through
-terrain or illuminate the back side of PBR materials at night.
+lighting over high-precision astronomical coordinates. With the atmosphere
+enabled, this light carries top-of-atmosphere solar energy throughout twilight;
+Bevy's atmosphere-enabled PBR evaluation applies planetary transmittance and
+visible-disc occlusion so below-horizon energy scatters into the sky without
+lighting the ground directly. The no-atmosphere fallback has no such planetary
+occlusion, so its direct illuminance fades in over the first eight degrees
+above the horizon and remains exactly zero below it. The deterministic exposure
+curve transitions continuously from nautical twilight to the moon-conditioned
+night target between -12 and -18 degrees solar altitude.
 
 The Moon uses the strategic layer's canonical lunar phase and illumination.
 Its shader draws the phase terminator across a constant-angular-size sphere,
@@ -60,6 +66,8 @@ Moon view uses a narrow verification field of view so the first-quarter
 terminator remains inspectable; gameplay retains the physically scaled disc.
 Together the views cover horizon colour, exposure, lunar phase, and
 resolution-independent star rendering. Native scene captures disable the
-atmosphere environment map for determinism, so their substitute ambient fill
-tracks the same Sun and Moon altitudes instead of remaining at its daylight
-brightness overnight and washing out every side of PBR materials.
+atmosphere environment map only when the selected graphics preset requests
+that fallback. The production-parity environment review records the observed
+environment map, exposure, and post-processing state, and its twilight gate
+requires a non-black, chromatically warm sky gradient rather than accepting a
+dark sky over a brighter verification plane.

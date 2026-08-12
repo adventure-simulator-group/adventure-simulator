@@ -15,6 +15,21 @@ pub(super) fn scene_sunlight_illuminance(
     lux::RAW_SUNLIGHT * transmission.clamp(0.25, 1.0) * altitude_transmission
 }
 
+/// Solar source energy presented to Bevy's atmosphere. Unlike direct fallback
+/// lighting, this must remain available while the Sun is below the horizon so
+/// the atmosphere can scatter civil and nautical twilight. Bevy's atmosphere
+/// transmittance and visible-disc calculation prevent this source from lighting
+/// ground surfaces from below the planet horizon.
+pub(super) fn scene_atmosphere_solar_illuminance(environment: &SceneEnvironment) -> f32 {
+    let intensity = f32::from(environment.weather.intensity_bps) / 10_000.0;
+    let transmission = match environment.weather.precipitation {
+        Precipitation::Clear => 1.0,
+        Precipitation::Rain => 0.62 - intensity * 0.27,
+        Precipitation::Snow => 0.72 - intensity * 0.22,
+    };
+    lux::RAW_SUNLIGHT * transmission.clamp(0.25, 1.0)
+}
+
 pub(super) fn scene_distance_fog(environment: &SceneEnvironment) -> DistanceFog {
     let intensity = f32::from(environment.weather.intensity_bps) / 10_000.0;
     let (start, end, color) = match environment.weather.precipitation {
@@ -192,6 +207,18 @@ mod tests {
         let daylight = scene_sunlight_illuminance(&clear, 8.0);
         assert!(0.0 < low && low < risen && risen < daylight);
         assert_eq!(daylight, lux::RAW_SUNLIGHT);
+    }
+
+    #[test]
+    fn atmosphere_retains_a_bounded_solar_source_through_twilight() {
+        let clear = environment(Precipitation::Clear, 0);
+        let rain = environment(Precipitation::Rain, 10_000);
+        assert_eq!(
+            scene_atmosphere_solar_illuminance(&clear),
+            lux::RAW_SUNLIGHT
+        );
+        assert!(scene_atmosphere_solar_illuminance(&rain) > 0.0);
+        assert!(scene_atmosphere_solar_illuminance(&rain) < lux::RAW_SUNLIGHT);
     }
 
     #[test]

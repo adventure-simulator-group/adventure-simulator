@@ -111,6 +111,12 @@ class CaptureTacticalScenesTests(unittest.TestCase):
     def test_moonlit_slot_is_distinct_verified_lunar_evidence(self):
         self.assertEqual(MODULE.NAMED_TIMES["moonlit"], 359_940)
 
+    def test_sky_manifest_requires_current_semantic_pipeline(self):
+        source = inspect.getsource(MODULE.validated_sky_manifest)
+        self.assertIn('"tactical_sky_native_capture_v3"', source)
+        self.assertIn('"upper_sky_luma_variance"', source)
+        self.assertIn('"solar_source_illuminance_lux"', source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -376,6 +376,15 @@ The local player transform drives nearby blade bending on the client only; this
 cosmetic interaction is neither replicated nor included in collision or
 tactical authority. The immutable environment and weather snapshots control the procedural ground
 material, precipitation particles, fog distance, wind drift, and sunlight.
+The Earth-atmosphere path keeps top-of-atmosphere solar source energy available
+after the Sun crosses the geometric horizon. Bevy's atmospheric transmittance
+and visible-disc calculation then suppress direct surface illumination while
+retaining directional civil and nautical twilight scattering. The
+no-atmosphere fallback retains an explicit zero-below-horizon direct-light
+curve because it has no planetary occlusion. Exposure transitions continuously
+from nautical twilight to the moon-conditioned night target between -12 and
+-18 degrees solar altitude; the physical 0.533-degree solar disc, ACES
+tonemapping, natural bloom, and bounded lookup-table atmosphere stay unchanged.
 Large vista grids are deliberately not ordinary replicated ECS components. The
 server sends each accepted client one immutable, ordered `SceneVistaBundle`;
 the client builds seam-sharing LOD rings split into independently frustum-culled
