@@ -26,6 +26,8 @@ use weather::*;
 // This facade is compiled independently by several binaries, so each binary
 // uses only the subset of the stable presentation interface that it needs.
 #[allow(unused_imports)]
+pub(crate) use environment::scene_ambient_light;
+#[allow(unused_imports)]
 pub(crate) use foliage::{FoliageLayer, GrassInteractor};
 #[allow(unused_imports)]
 pub(crate) use obstacles::oak_review_terminal_specimen;
@@ -117,8 +119,7 @@ impl Plugin for TacticalPresentationPlugin {
             max_vista_lods: self.max_vista_lods,
         })
         // The sky observer preserves this low, cool floor at night and restores
-        // Bevy's neutral brightness during daylight. A fixed white brightness
-        // of 80 is amplified by night exposure and makes vegetation look self-lit.
+        // physically scaled diffuse sky irradiance during daylight.
         .insert_resource(GlobalAmbientLight {
             color: Color::srgb(0.36, 0.48, 0.72),
             brightness: 0.6,

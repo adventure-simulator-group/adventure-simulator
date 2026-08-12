@@ -1,7 +1,13 @@
 #import bevy_pbr::{
-    forward_io::{Vertex, VertexOutput},
+    forward_io::{Vertex, VertexOutput, FragmentOutput},
     mesh_functions,
     mesh_view_bindings::{globals, view},
+    pbr_fragment::pbr_input_from_vertex_output,
+    pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
+    pbr_types::{
+        STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT,
+        STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT,
+    },
     view_transformations::position_world_to_clip,
 }
 
@@ -11,8 +17,6 @@ struct TacticalFoliageMaterial {
     interaction_motion: vec4<f32>,
     shading: vec4<f32>,
     shape: vec4<f32>,
-    celestial: vec4<f32>,
-    ambient: vec4<f32>,
 }
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(0)
@@ -188,7 +192,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 }
 
 @fragment
-fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
     let height_fraction = clamp(in.uv.y, 0.0, 1.0);
     let root_self_shadow = mix(
         foliage.shading.x,
@@ -199,13 +203,33 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let centre_rib = mix(0.84, 1.0, smoothstep(0.12, 0.72, centre_distance));
     let meadow_variation = 1.0 + foliage.shading.y
         * sin(in.world_position.x * 0.083 + sin(in.world_position.z * 0.057) * 2.3);
-    let light_direction = normalize(foliage.celestial.xyz);
-    let directional = 0.72 + 0.28 * max(dot(normalize(in.world_normal), light_direction), 0.0);
-    // Grass ribbons cannot use StandardMaterial's tangent-space PBR path, so
-    // approximate the same direct Lambert + ambient irradiance decomposition.
-    let direct_irradiance = directional * foliage.celestial.w;
-    let ambient_irradiance = foliage.ambient.rgb * foliage.ambient.w;
-    let irradiance = ambient_irradiance + vec3<f32>(direct_irradiance);
-    let color = in.color.rgb * root_self_shadow * centre_rib * meadow_variation * irradiance;
-    return vec4<f32>(color, 1.0);
+    var base_normal = select(-in.world_normal, in.world_normal, is_front);
+    // The vertex stage deliberately bends both sides of a blade normal toward
+    // the sky. Flipping the entire vector for the back face would point that
+    // bias underground and blacken half the ribbons. Preserve the opposing
+    // horizontal component while keeping both thin faces in the upper
+    // hemisphere, analogous to foliage normal smoothing.
+    base_normal.y = abs(base_normal.y);
+    base_normal = normalize(base_normal);
+    var pbr_input = pbr_input_from_vertex_output(in, is_front, true);
+    pbr_input.material.flags = STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT
+        | STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT;
+    pbr_input.material.base_color = vec4<f32>(
+        in.color.rgb * root_self_shadow * centre_rib * meadow_variation,
+        1.0,
+    );
+    pbr_input.material.perceptual_roughness = 0.86;
+    pbr_input.material.metallic = 0.0;
+    pbr_input.material.reflectance = vec3<f32>(0.16);
+    // Living blades are thin enough for broad diffuse transmission. This is
+    // evaluated by the same shadow-aware PBR path as other foliage.
+    pbr_input.material.diffuse_transmission = 0.36;
+    pbr_input.material.thickness = 0.001;
+    pbr_input.world_normal = base_normal;
+    pbr_input.N = base_normal;
+
+    var out: FragmentOutput;
+    out.color = apply_pbr_lighting(pbr_input);
+    out.color = main_pass_post_lighting_processing(pbr_input, out.color);
+    return out;
 }

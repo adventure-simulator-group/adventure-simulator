@@ -57,7 +57,7 @@ pub(super) fn scene_ambient_response(
     (0.05 + daylight * 0.23 + moon * 0.04).clamp(0.05, 0.28)
 }
 
-pub(super) fn scene_ambient_light(
+pub(crate) fn scene_ambient_light(
     sun_altitude_degrees: f32,
     moon_altitude_degrees: f32,
     lunar_illumination: f32,
@@ -66,7 +66,12 @@ pub(super) fn scene_ambient_light(
     let moon = lunar_illumination * smoothstep(-2.0, 8.0, moon_altitude_degrees);
     let night_color = Vec3::new(0.36, 0.48, 0.72);
     let color = night_color.lerp(Vec3::ONE, daylight);
-    let brightness = 0.6 + daylight * 79.4 + moon * 0.25;
+    // GlobalAmbientLight is our inexpensive approximation of hemispherical
+    // sky irradiance and unresolved multi-bounce light. Outdoor daylight has
+    // tens of thousands of lux of diffuse illumination even where direct sun
+    // is occluded; the former value of 80 was effectively black at EV100 15.
+    // Preserve the deliberately dim moonless-night floor independently.
+    let brightness = 0.6 + daylight * 29_999.4 + moon * 0.25;
     (color, brightness)
 }
 
@@ -217,7 +222,7 @@ mod tests {
         assert!((moonless_ambient - 0.6).abs() < f32::EPSILON);
         assert!(moonlit_ambient > moonless_ambient && moonlit_ambient <= 0.85);
         assert_eq!(day_color, Vec3::ONE);
-        assert!((daylight_ambient - 80.0).abs() < f32::EPSILON);
+        assert!((daylight_ambient - 30_000.0).abs() < f32::EPSILON);
         assert!((scene_ambient_response(-25.0, -20.0, 0.0) - 0.05).abs() < f32::EPSILON);
         assert!((scene_ambient_response(30.0, -20.0, 0.0) - 0.28).abs() < f32::EPSILON);
     }

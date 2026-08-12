@@ -56,19 +56,45 @@ pub(crate) struct TacticalTreeLeafCardMaterial {
     /// Wind direction XZ, strength, and CPU-synchronized phase time.
     #[uniform(10)]
     pub(crate) parameters: Vec4,
-    /// Opacity cutoff, tangent-space normal strength, canopy AO strength, reserved.
+    /// Opacity cutoff, tangent-space normal strength, canopy AO strength, and
+    /// diffuse transmission for the species' leaf thickness.
     #[uniform(10)]
     pub(crate) surface_parameters: Vec4,
 }
 
 pub(crate) fn oak_leaf_material(asset_server: &AssetServer) -> TacticalTreeLeafCardMaterial {
-    leaf_material(asset_server, "trees/oak_leaf_03", 0.28, 0.72, 0.62)
+    leaf_material(
+        asset_server,
+        "trees/oak_leaf_03",
+        0.28,
+        0.72,
+        canopy_ao_strength(ENGLISH_OAK_PARAMETERS.crown_radius_metres),
+        0.32,
+    )
 }
 
 pub(in crate::presentation) fn hazel_leaf_material(
     asset_server: &AssetServer,
 ) -> TacticalTreeLeafCardMaterial {
-    leaf_material(asset_server, "shrubs/common_hazel_leaf", 0.32, 0.68, 0.54)
+    leaf_material(
+        asset_server,
+        "shrubs/common_hazel_leaf",
+        0.32,
+        0.68,
+        canopy_ao_strength(COMMON_HAZEL_PARAMETERS.crown_radius_metres),
+        0.46,
+    )
+}
+
+/// Approximates unresolved canopy occlusion as transmission through foliage.
+///
+/// The prior species constants gave a three-metre-wide hazel almost the same
+/// occlusion as a twelve-metre-wide oak. Beer-Lambert transmission makes the
+/// effect depend on the representative path length through each crown while
+/// retaining the accepted mature-oak strength.
+fn canopy_ao_strength(crown_radius_metres: f32) -> f32 {
+    const FOLIAGE_EXTINCTION_PER_METRE: f32 = 0.16;
+    1.0 - (-FOLIAGE_EXTINCTION_PER_METRE * crown_radius_metres.max(0.0)).exp()
 }
 
 fn leaf_material(
@@ -77,6 +103,7 @@ fn leaf_material(
     alpha_cutoff: f32,
     normal_strength: f32,
     canopy_ao: f32,
+    diffuse_transmission: f32,
 ) -> TacticalTreeLeafCardMaterial {
     let linear_image = |path| {
         asset_server
@@ -93,7 +120,12 @@ fn leaf_material(
         front_normal: linear_image(format!("textures/{stem}_front_normal_dx.png")),
         back_normal: linear_image(format!("textures/{stem}_back_normal_dx.png")),
         parameters: Vec4::new(0.74, 0.67, 0.035, 0.0),
-        surface_parameters: Vec4::new(alpha_cutoff, normal_strength, canopy_ao, 0.0),
+        surface_parameters: Vec4::new(
+            alpha_cutoff,
+            normal_strength,
+            canopy_ao,
+            diffuse_transmission,
+        ),
     }
 }
 
@@ -432,3 +464,18 @@ pub(in crate::presentation) fn update_tree_projected_lod_ranges(
 
 const TREE_IMPOSTOR_SHADER: &str = "shaders/tactical_tree_impostor.wgsl";
 const TREE_LEAF_CARD_SHADER: &str = "shaders/tactical_tree_leaf_card.wgsl";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canopy_ao_tracks_crown_scale_without_changing_the_accepted_oak() {
+        let oak = canopy_ao_strength(ENGLISH_OAK_PARAMETERS.crown_radius_metres);
+        let hazel = canopy_ao_strength(COMMON_HAZEL_PARAMETERS.crown_radius_metres);
+
+        assert!((oak - 0.62).abs() < 0.01);
+        assert!((hazel - 0.22).abs() < 0.01);
+        assert!(hazel < oak * 0.4);
+    }
+}

@@ -3,6 +3,8 @@ use std::{fs, path::PathBuf};
 use adventuresim_core::weather::{Precipitation, WEATHER_RULES_VERSION, WeatherSnapshot};
 use adventuresim_tactical_core::prelude::*;
 
+const DEFAULT_TEST_MINUTE: u64 = 339_840 + 10 * 60;
+
 #[derive(Clone, Copy)]
 struct Fixture {
     name: &'static str,
@@ -349,7 +351,7 @@ const fn weather(
 ) -> WeatherSnapshot {
     WeatherSnapshot {
         rules_version: WEATHER_RULES_VERSION,
-        interval_start_minute: 339_840,
+        interval_start_minute: DEFAULT_TEST_MINUTE,
         cell_latitude: 214,
         cell_longitude: 40,
         temperature_deci_c,
