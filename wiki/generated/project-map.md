@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (2004)
+## Files (2008)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -101,6 +101,10 @@ development, or other wiki document before changing a subsystem.
 - `assets/textures/shrubs/common_hazel_leaf_height.png` — Binary game or UI asset.
 - `assets/textures/shrubs/common_hazel_leaf_opacity.png` — Binary game or UI asset.
 - `assets/textures/shrubs/source/common_hazel_leaf_plate.png` — Binary game or UI asset.
+- `assets/textures/trees/oak_bark/README.md` — Component overview and usage notes.
+- `assets/textures/trees/oak_bark/jolcham_oak_bark_01_arm_1k.jpg` — Repository support file.
+- `assets/textures/trees/oak_bark/jolcham_oak_bark_01_diff_1k.jpg` — Repository support file.
+- `assets/textures/trees/oak_bark/jolcham_oak_bark_01_nor_gl_1k.jpg` — Repository support file.
 - `assets/textures/trees/oak_leaf_03_back_albedo.png` — Binary game or UI asset.
 - `assets/textures/trees/oak_leaf_03_back_normal_dx.png` — Binary game or UI asset.
 - `assets/textures/trees/oak_leaf_03_front_albedo.png` — Binary game or UI asset.

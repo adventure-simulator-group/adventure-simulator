@@ -26,7 +26,7 @@ use crate::presentation::{
     GroundScatterLayer, ProceduralRockVisual, TacticalGraphicsSettings, TacticalPresentationPlugin,
     TacticalTreeLeafCardMaterial, TerrainMaterialPresentation, TreeImpostorProvenance,
     TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, VistaTerrain,
-    WeatherParticle, oak_leaf_material, oak_review_terminal_specimen,
+    WeatherParticle, oak_bark_material, oak_leaf_material, oak_review_terminal_specimen,
 };
 
 const VIEW_WIDTH: u32 = 1280;
@@ -1278,11 +1278,7 @@ fn setup_scene(
             local_focus,
             camera_direction,
         ) = oak_review_terminal_specimen(tree, canopy_bps);
-        let bark_material = materials.add(StandardMaterial {
-            base_color: Color::srgb(0.42, 0.38, 0.31),
-            perceptual_roughness: 0.95,
-            ..default()
-        });
+        let bark_material = materials.add(oak_bark_material(&asset_server));
         let leaf_material = leaf_card_materials.add(oak_leaf_material(&asset_server));
         let bud_material = materials.add(StandardMaterial {
             base_color: Color::srgb(0.36, 0.27, 0.1),

@@ -1049,44 +1049,6 @@ pub(in crate::presentation) fn tree_impostor_material(
     }
 }
 
-pub(in crate::presentation) fn procedural_oak_bark_image(seed: u64) -> Image {
-    const WIDTH: u32 = 128;
-    const HEIGHT: u32 = 128;
-    let mut pixels = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
-    for y in 0..HEIGHT {
-        for x in 0..WIDTH {
-            let u = x as f32 / WIDTH as f32;
-            let v = y as f32 / HEIGHT as f32;
-            let phase = unit_hash(seed ^ u64::from(x / 11)) * core::f32::consts::TAU;
-            let warp = (v * 5.0 + phase).sin() * 0.012 + (v * 13.0 - phase).sin() * 0.006;
-            let fissure = ((u + warp) * 13.0 * core::f32::consts::PI)
-                .sin()
-                .abs()
-                .powf(15.0);
-            let plate = ((u * 17.0 + v * 7.0) * core::f32::consts::PI).sin()
-                * ((u * 5.0 - v * 11.0) * core::f32::consts::PI).sin();
-            let value = (0.82 - fissure * 0.26 + plate * 0.025).clamp(0.42, 0.9);
-            pixels.extend_from_slice(&[
-                (145.0 * value) as u8,
-                (132.0 * value) as u8,
-                (110.0 * value) as u8,
-                255,
-            ]);
-        }
-    }
-    Image::new(
-        Extent3d {
-            width: WIDTH,
-            height: HEIGHT,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        pixels,
-        TextureFormat::Rgba8UnormSrgb,
-        RenderAssetUsages::RENDER_WORLD,
-    )
-}
-
 pub(in crate::presentation) fn tree_lod_visibility(lod: u8) -> VisibilityRange {
     tree_projected_lod_visibility(lod, 1.0, 3.5)
 }

@@ -717,6 +717,28 @@ fn branch_frame(direction: Vec3) -> (Vec3, Vec3) {
     (right, right.cross(direction).normalize())
 }
 
+/// Carries a cylindrical frame along a curved woody axis without the abrupt
+/// reference-axis changes produced by rebuilding each ring independently.
+fn transport_branch_frame(
+    previous_tangent: Vec3,
+    previous_right: Vec3,
+    tangent: Vec3,
+) -> (Vec3, Vec3) {
+    let rotated = if previous_tangent.dot(tangent) < -0.999 {
+        branch_frame(tangent).0
+    } else {
+        Quat::from_rotation_arc(previous_tangent, tangent) * previous_right
+    };
+    let mut right = (rotated - tangent * rotated.dot(tangent)).normalize_or_zero();
+    if right.length_squared() < 0.5 {
+        right = branch_frame(tangent).0;
+    }
+    if right.dot(previous_right) < 0.0 {
+        right = -right;
+    }
+    (right, right.cross(tangent).normalize())
+}
+
 #[allow(dead_code)]
 pub(in crate::presentation) fn legacy_procedural_tree_skeleton(
     seed: u64,
@@ -1382,6 +1404,8 @@ pub(in crate::presentation) fn procedural_tree_branch_mesh(
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
     mesh.insert_indices(Indices::U32(indices));
+    mesh.generate_tangents()
+        .expect("procedural woody axes have valid metric UVs and normals");
     mesh
 }
 
@@ -1410,6 +1434,9 @@ fn append_branch_curve_tube(
     uvs: &mut Vec<[f32; 2]>,
     indices: &mut Vec<u32>,
 ) {
+    const BARK_TEXTURE_WIDTH_METRES: f32 = 1.0;
+    const BARK_TEXTURE_HEIGHT_METRES: f32 = 2.0;
+
     let first = curve[0];
     let last = curve[curve.len() - 1];
     let first_direction = (first.end - first.start).normalize();
@@ -1444,22 +1471,42 @@ fn append_branch_curve_tube(
         };
         rings.push((branch.end, branch.end_radius, tangent));
     }
+    let ring_stride = sides + 1;
+    // A whole-number wrap keeps the duplicated cylindrical seam texel-exact.
+    // Choose it from the biological base circumference so scale is physical
+    // and stable along a tapering axis rather than resetting per segment.
+    let circumference_tiles = (core::f32::consts::TAU * first.start_radius
+        / BARK_TEXTURE_WIDTH_METRES)
+        .round()
+        .max(1.0);
     let base = positions.len() as u32;
+    let mut accumulated_distance = 0.0;
+    let (mut right, mut forward) = branch_frame(rings[0].2);
+    let mut previous_center = rings[0].0;
+    let mut previous_tangent = rings[0].2;
     for (ring, (center, radius, tangent)) in rings.iter().copied().enumerate() {
-        let (right, forward) = branch_frame(tangent);
-        for side in 0..sides {
+        if ring > 0 {
+            accumulated_distance += center.distance(previous_center);
+            (right, forward) = transport_branch_frame(previous_tangent, right, tangent);
+        }
+        for side in 0..=sides {
             let phase = side as f32 * core::f32::consts::TAU / sides as f32;
             let normal = right * phase.cos() + forward * phase.sin();
             positions.push((center + normal * radius).to_array());
             normals.push(normal.to_array());
-            uvs.push([side as f32 / sides as f32, ring as f32]);
+            uvs.push([
+                side as f32 / sides as f32 * circumference_tiles,
+                accumulated_distance / BARK_TEXTURE_HEIGHT_METRES,
+            ]);
         }
+        previous_center = center;
+        previous_tangent = tangent;
     }
     for ring in 0..rings.len() as u32 - 1 {
-        let from = base + ring * sides;
-        let to = from + sides;
+        let from = base + ring * ring_stride;
+        let to = from + ring_stride;
         for side in 0..sides {
-            let next = (side + 1) % sides;
+            let next = side + 1;
             indices.extend_from_slice(&[
                 from + side,
                 to + side,
@@ -1470,31 +1517,38 @@ fn append_branch_curve_tube(
             ]);
         }
     }
-    let end_ring = base + (rings.len() as u32 - 1) * sides;
+    let end_ring = base + (rings.len() as u32 - 1) * ring_stride;
     if last.is_limb_tip {
         // A pair of shrinking rings gives every terminal axis a rounded,
         // natural taper. Flat caps read as sawn-off limbs and become black
         // rectangular artifacts in the descendant renders.
         let shoulder = positions.len() as u32;
         let bud_length = last.end_radius;
-        let (right, forward) = branch_frame(last_direction);
-        for (ring, (distance, radius_scale)) in [(0.55, 0.58), (0.92, 0.12)].into_iter().enumerate()
-        {
+        let (right, forward) = transport_branch_frame(previous_tangent, right, last_direction);
+        let mut terminal_distance = accumulated_distance;
+        let mut terminal_center = last.end;
+        for (distance, radius_scale) in [(0.55, 0.58), (0.92, 0.12)] {
             let center = last.end + last_direction * bud_length * distance;
-            for side in 0..sides {
+            terminal_distance += center.distance(terminal_center);
+            let radius = last.end_radius * radius_scale;
+            for side in 0..=sides {
                 let phase = side as f32 * core::f32::consts::TAU / sides as f32;
                 let radial = right * phase.cos() + forward * phase.sin();
                 let normal = (radial * 0.75 + last_direction * 0.66).normalize();
-                positions.push((center + radial * last.end_radius * radius_scale).to_array());
+                positions.push((center + radial * radius).to_array());
                 normals.push(normal.to_array());
-                uvs.push([side as f32 / sides as f32, 1.0 + ring as f32 * 0.25]);
+                uvs.push([
+                    side as f32 / sides as f32 * circumference_tiles,
+                    terminal_distance / BARK_TEXTURE_HEIGHT_METRES,
+                ]);
             }
+            terminal_center = center;
         }
         for ring in 0..2_u32 {
             let from = if ring == 0 { end_ring } else { shoulder };
-            let to = shoulder + ring * sides;
+            let to = shoulder + ring * ring_stride;
             for side in 0..sides {
-                let next = (side + 1) % sides;
+                let next = side + 1;
                 indices.extend_from_slice(&[
                     from + side,
                     to + side,
@@ -1508,10 +1562,17 @@ fn append_branch_curve_tube(
         let tip = positions.len() as u32;
         positions.push((last.end + last_direction * bud_length).to_array());
         normals.push(last_direction.to_array());
-        uvs.push([0.5, 1.5]);
+        uvs.push([
+            0.0,
+            (accumulated_distance + bud_length) / BARK_TEXTURE_HEIGHT_METRES,
+        ]);
         for side in 0..sides {
-            let next = (side + 1) % sides;
-            indices.extend_from_slice(&[tip, shoulder + sides + side, shoulder + sides + next]);
+            let next = side + 1;
+            indices.extend_from_slice(&[
+                tip,
+                shoulder + ring_stride + side,
+                shoulder + ring_stride + next,
+            ]);
         }
     }
 }
@@ -1553,6 +1614,59 @@ pub(in crate::presentation) fn tree_crown_bounds(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transported_branch_frames_remain_orthonormal_across_reference_axis_boundary() {
+        let previous_tangent = Vec3::new(0.44, 0.895, 0.07).normalize();
+        let (previous_right, _) = branch_frame(previous_tangent);
+        let tangent = Vec3::new(0.41, 0.91, 0.06).normalize();
+        let (right, forward) = transport_branch_frame(previous_tangent, previous_right, tangent);
+
+        assert!(right.is_normalized() && forward.is_normalized());
+        assert!(right.dot(tangent).abs() < 1.0e-5);
+        assert!(forward.dot(tangent).abs() < 1.0e-5);
+        assert!(right.dot(previous_right) > 0.98);
+        assert!(right.cross(tangent).dot(forward) > 0.999);
+    }
+
+    #[test]
+    fn branch_mesh_has_metric_seam_safe_uvs_and_valid_tangents() {
+        let branches = procedural_tree_skeleton(42, 0.0);
+        let mesh = procedural_tree_branch_mesh(&branches, 0);
+        let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0)
+        else {
+            panic!("branch mesh has float UVs");
+        };
+        let Some(VertexAttributeValues::Float32x4(tangents)) =
+            mesh.attribute(Mesh::ATTRIBUTE_TANGENT)
+        else {
+            panic!("normal-mapped branch mesh has float tangents");
+        };
+        let positions = mesh
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .and_then(|attribute| attribute.as_float3())
+            .expect("branch mesh has float positions");
+
+        assert_eq!(uvs.len(), tangents.len());
+        assert!(uvs.iter().flatten().all(|component| component.is_finite()));
+        assert!(
+            tangents
+                .iter()
+                .flatten()
+                .all(|component| component.is_finite())
+        );
+        assert!(tangents.iter().all(|tangent| {
+            let length = Vec3::from_array([tangent[0], tangent[1], tangent[2]]).length();
+            (length - 1.0).abs() < 1.0e-3 && tangent[3].abs() == 1.0
+        }));
+        assert!(Vec3::from_array(positions[0]).distance(Vec3::from_array(positions[8])) < 1.0e-5);
+        assert_eq!(uvs[0][0], 0.0);
+        assert!(uvs[8][0] >= 1.0 && uvs[8][0].fract().abs() < f32::EPSILON);
+        assert!(
+            uvs.iter().map(|uv| uv[1]).fold(0.0_f32, f32::max) > 0.5,
+            "a two-metre-long axis must advance a full physical bark tile"
+        );
+    }
 
     #[test]
     fn procedural_tree_has_a_deterministic_four_order_branch_hierarchy() {

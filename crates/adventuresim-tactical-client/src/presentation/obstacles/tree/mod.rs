@@ -10,6 +10,7 @@ use bevy::camera::primitives::Aabb;
 #[derive(Resource, Default)]
 pub(in crate::presentation) struct TreePresentationCache {
     pub(super) variants: std::collections::HashMap<u64, CachedTreePresentation>,
+    pub(super) oak_bark_material: Option<Handle<StandardMaterial>>,
 }
 
 #[derive(Clone)]
@@ -74,6 +75,47 @@ pub(crate) fn oak_leaf_material(asset_server: &AssetServer) -> TacticalTreeLeafC
         canopy_ao_strength(ENGLISH_OAK_PARAMETERS.crown_radius_metres),
         0.32,
     )
+}
+
+pub(crate) fn oak_bark_material(asset_server: &AssetServer) -> StandardMaterial {
+    let image = |path, is_srgb| {
+        asset_server
+            .load_builder()
+            .with_settings(move |settings: &mut bevy::image::ImageLoaderSettings| {
+                use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
+                settings.is_srgb = is_srgb;
+                settings.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+                    address_mode_u: ImageAddressMode::Repeat,
+                    address_mode_v: ImageAddressMode::Repeat,
+                    address_mode_w: ImageAddressMode::Repeat,
+                    anisotropy_clamp: 8,
+                    ..ImageSamplerDescriptor::linear()
+                });
+            })
+            .load(path)
+    };
+    let arm = image(
+        "textures/trees/oak_bark/jolcham_oak_bark_01_arm_1k.jpg",
+        false,
+    );
+    StandardMaterial {
+        base_color: Color::WHITE,
+        base_color_texture: Some(image(
+            "textures/trees/oak_bark/jolcham_oak_bark_01_diff_1k.jpg",
+            true,
+        )),
+        normal_map_texture: Some(image(
+            "textures/trees/oak_bark/jolcham_oak_bark_01_nor_gl_1k.jpg",
+            false,
+        )),
+        metallic_roughness_texture: Some(arm.clone()),
+        occlusion_texture: Some(arm),
+        perceptual_roughness: 1.0,
+        metallic: 0.0,
+        // Poly Haven distributes this channel in OpenGL/right-handed form.
+        flip_normal_map_y: false,
+        ..default()
+    }
 }
 
 pub(in crate::presentation) fn hazel_leaf_material(
@@ -472,6 +514,23 @@ const TREE_LEAF_CARD_SHADER: &str = "shaders/tactical_tree_leaf_card.wgsl";
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oak_bark_material_uses_matched_dielectric_pbr_channels() {
+        let mut app = App::new();
+        app.add_plugins(AssetPlugin::default());
+        app.init_asset::<Image>();
+        let asset_server = app.world().resource::<AssetServer>();
+        let bark = oak_bark_material(asset_server);
+
+        assert_eq!(bark.base_color, Color::WHITE);
+        assert!(bark.base_color_texture.is_some());
+        assert!(bark.normal_map_texture.is_some());
+        assert_eq!(bark.metallic_roughness_texture, bark.occlusion_texture);
+        assert_eq!(bark.metallic, 0.0);
+        assert_eq!(bark.perceptual_roughness, 1.0);
+        assert!(!bark.flip_normal_map_y);
+    }
 
     #[test]
     fn canopy_ao_tracks_crown_scale_without_changing_the_accepted_oak() {

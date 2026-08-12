@@ -41,7 +41,7 @@ pub(crate) use obstacles::tree::impostor::TreeImpostorProvenance;
 #[allow(unused_imports)]
 pub(crate) use obstacles::tree::{
     TacticalTreeLeafCardMaterial, TreeLeafRepresentation, TreeLod, TreeLodCluster,
-    TreeLodRenderOverride, oak_leaf_material,
+    TreeLodRenderOverride, oak_bark_material, oak_leaf_material,
 };
 #[allow(unused_imports)]
 pub(crate) use sky::{TacticalMoon, TacticalMoonlight, TacticalStars, TacticalSunlight};

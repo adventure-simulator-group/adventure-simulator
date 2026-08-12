@@ -312,7 +312,12 @@ short lateral fork. This presentation detail remains capped at 22 segments and
 does not expand the server's cylindrical trunk collider. Oak and hazel branch
 recipes also cap each child base at 80% of its local parent-axis radius. The
 existing bounded basal ring therefore cannot become wider than its trunk or
-parent limb.
+parent limb. Near woody meshes share one scanned oak-bark albedo, OpenGL
+normal, roughness, and ambient-occlusion material. Their cylindrical UVs use
+the scan's documented one-by-two-metre scale, duplicate the wrap seam, and
+parallel-transport the tangent frame along each axis; physical feature scale
+therefore stays consistent across trunks, roots, and branches without a
+tree-specific lighting adjustment.
 Non-colliding grass and understory use automatically instanced shared meshes,
 layered shader wind, and root-to-tip shading. Grass cross-fades from a
 2,916-blade, fifteen-vertex near-field macro patch to a stable 144-blade,
