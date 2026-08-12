@@ -9,6 +9,7 @@ use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::SceneVistaBundle;
 use bevy::{
     camera::visibility::VisibilityRange,
+    light::NotShadowCaster,
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     window::PresentMode,
@@ -39,6 +40,7 @@ struct SceneSetupData {
     environment: SceneEnvironment,
     settle_frames: u32,
     leaf_benchmark_frames: Option<u32>,
+    tree_lighting_benchmark_frames: Option<u32>,
     tree_review_azimuth_degrees: f32,
 }
 
@@ -98,6 +100,7 @@ struct CaptureView {
 }
 
 const LEAF_BENCHMARK_WARMUP_FRAMES: u32 = 60;
+const TREE_LIGHTING_BENCHMARK_WARMUP_FRAMES: u32 = 90;
 
 #[derive(Resource)]
 struct LeafBenchmarkState {
@@ -148,7 +151,83 @@ const LEAF_BENCHMARK_MODES: [(TreeLeafRepresentation, &str, u8); 2] = [
     (TreeLeafRepresentation::AlphaCard, "Flat alpha card", 2),
 ];
 
-const CAPTURE_VIEWS: [CaptureView; 20] = [
+#[derive(Clone, Copy)]
+struct TreeLightingMode {
+    name: &'static str,
+    ambient_occlusion_strength: f32,
+    shadows_enabled: bool,
+}
+
+const TREE_LIGHTING_MODES: [TreeLightingMode; 4] = [
+    TreeLightingMode {
+        name: "Baseline",
+        ambient_occlusion_strength: 0.0,
+        shadows_enabled: false,
+    },
+    TreeLightingMode {
+        name: "Canopy AO",
+        ambient_occlusion_strength: 0.62,
+        shadows_enabled: false,
+    },
+    TreeLightingMode {
+        name: "Self shadows",
+        ambient_occlusion_strength: 0.0,
+        shadows_enabled: true,
+    },
+    TreeLightingMode {
+        name: "Canopy AO + self shadows",
+        ambient_occlusion_strength: 0.62,
+        shadows_enabled: true,
+    },
+];
+
+#[derive(Resource)]
+struct TreeLightingBenchmarkState {
+    sample_frames: u32,
+    mode: usize,
+    configured_mode: Option<usize>,
+    warmup_remaining: u32,
+    samples_ms: Vec<f64>,
+    results: Vec<TreeLightingBenchmarkResult>,
+}
+
+impl TreeLightingBenchmarkState {
+    fn new(sample_frames: u32) -> Self {
+        Self {
+            sample_frames,
+            mode: 0,
+            configured_mode: None,
+            warmup_remaining: TREE_LIGHTING_BENCHMARK_WARMUP_FRAMES * 2,
+            samples_ms: Vec::with_capacity(sample_frames as usize),
+            results: Vec::with_capacity(TREE_LIGHTING_MODES.len()),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct TreeLightingBenchmarkResult {
+    mode: &'static str,
+    ambient_occlusion: bool,
+    self_shadows: bool,
+    mean_ms: f64,
+    median_ms: f64,
+    p95_ms: f64,
+    mean_fps: f64,
+}
+
+#[derive(Serialize)]
+struct TreeLightingBenchmarkReport {
+    pipeline: &'static str,
+    fixture: String,
+    resolution: [u32; 2],
+    tree_count: usize,
+    warmup_frames_per_mode: u32,
+    sample_frames_per_mode: u32,
+    note: &'static str,
+    results: Vec<TreeLightingBenchmarkResult>,
+}
+
+const CAPTURE_VIEWS: [CaptureView; 24] = [
     CaptureView {
         slug: "warmup",
         label: "Render-pipeline warmup",
@@ -162,6 +241,26 @@ const CAPTURE_VIEWS: [CaptureView; 20] = [
     CaptureView {
         slug: "tree-detail",
         label: "Whole-tree individual-leaf LOD view",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-lighting-baseline",
+        label: "Tree lighting baseline without canopy AO or shadows",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-lighting-ao",
+        label: "Tree lighting with WebGPU-safe canopy ambient occlusion",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-lighting-shadows",
+        label: "Tree lighting with directional leaf self shadows",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-lighting-combined",
+        label: "Tree lighting with canopy AO and directional self shadows",
         overlay: false,
     },
     CaptureView {
@@ -401,6 +500,7 @@ pub(crate) fn run(
     canopy_bps: Option<u16>,
     absolute_minute: Option<u64>,
     leaf_benchmark_frames: Option<u32>,
+    tree_lighting_benchmark_frames: Option<u32>,
     tree_review_azimuth_degrees: f32,
 ) {
     let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -454,9 +554,11 @@ pub(crate) fn run(
         environment,
         settle_frames,
         leaf_benchmark_frames,
+        tree_lighting_benchmark_frames,
         tree_review_azimuth_degrees,
     };
-    let benchmarking = leaf_benchmark_frames.is_some();
+    let leaf_benchmarking = leaf_benchmark_frames.is_some();
+    let tree_lighting_benchmarking = tree_lighting_benchmark_frames.is_some();
     let mut app = App::new();
     app.add_plugins(
         DefaultPlugins
@@ -491,8 +593,10 @@ pub(crate) fn run(
     })
     .insert_resource(SceneSetup(Some(setup)))
     .add_systems(PostStartup, setup_scene);
-    if benchmarking {
+    if leaf_benchmarking {
         app.add_systems(Last, benchmark_leaf_representations);
+    } else if tree_lighting_benchmarking {
+        app.add_systems(Last, benchmark_tree_lighting);
     } else {
         app.add_systems(Last, capture_views);
     }
@@ -601,6 +705,7 @@ fn setup_scene(
         environment,
         settle_frames,
         leaf_benchmark_frames,
+        tree_lighting_benchmark_frames,
         tree_review_azimuth_degrees,
     } = setup;
     let GeneratedTacticalScene {
@@ -913,6 +1018,9 @@ fn setup_scene(
     if let Some(sample_frames) = leaf_benchmark_frames {
         commands.insert_resource(LeafBenchmarkState::new(sample_frames));
     }
+    if let Some(sample_frames) = tree_lighting_benchmark_frames {
+        commands.insert_resource(TreeLightingBenchmarkState::new(sample_frames));
+    }
 }
 
 fn vista_metrics(input: &TacticalSceneInput) -> (f32, f32, Vec3) {
@@ -1017,6 +1125,102 @@ fn benchmark_leaf_representations(
     exit.write(AppExit::Success);
 }
 
+fn apply_tree_lighting_mode(
+    mode: TreeLightingMode,
+    materials: &mut Assets<TacticalTreeLeafCardMaterial>,
+) {
+    for (_, material) in materials.iter_mut() {
+        material.surface_parameters.z = mode.ambient_occlusion_strength;
+    }
+}
+
+fn benchmark_tree_lighting(
+    mut state: Option<ResMut<TreeLightingBenchmarkState>>,
+    capture: Option<Res<CaptureState>>,
+    time: Res<Time<Real>>,
+    mut commands: Commands,
+    mut leaf_materials: ResMut<Assets<TacticalTreeLeafCardMaterial>>,
+    leaf_entities: Query<Entity, With<MeshMaterial3d<TacticalTreeLeafCardMaterial>>>,
+    mut tree_lod_override: ResMut<TreeLodRenderOverride>,
+    mut camera: Single<(&mut Transform, &mut GlobalTransform, &mut Projection), With<Camera3d>>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let (Some(state), Some(capture)) = (state.as_deref_mut(), capture.as_deref()) else {
+        return;
+    };
+    let Some(&mode) = TREE_LIGHTING_MODES.get(state.mode) else {
+        return;
+    };
+
+    if state.configured_mode != Some(state.mode) {
+        apply_tree_lighting_mode(mode, &mut leaf_materials);
+        for entity in &leaf_entities {
+            if mode.shadows_enabled {
+                commands.entity(entity).remove::<NotShadowCaster>();
+            } else {
+                commands.entity(entity).insert(NotShadowCaster);
+            }
+        }
+        state.configured_mode = Some(state.mode);
+    }
+    tree_lod_override.lod = Some(0);
+    tree_lod_override.leaf = Some(TreeLeafRepresentation::TexturedMesh);
+    tree_lod_override.projected_scale = None;
+    let transform = Transform::from_translation(capture.ground_eye_position)
+        .looking_at(capture.ground_eye_target, Vec3::Y);
+    *camera.0 = transform;
+    *camera.1 = GlobalTransform::from(transform);
+    if let Projection::Perspective(projection) = &mut *camera.2 {
+        projection.fov = 80.0_f32.to_radians();
+    }
+
+    if state.warmup_remaining > 0 {
+        state.warmup_remaining -= 1;
+        return;
+    }
+    state.samples_ms.push(time.delta_secs_f64() * 1_000.0);
+    if state.samples_ms.len() < state.sample_frames as usize {
+        return;
+    }
+
+    state.samples_ms.sort_by(f64::total_cmp);
+    let mean_ms = state.samples_ms.iter().sum::<f64>() / state.samples_ms.len() as f64;
+    let median_ms = percentile(&state.samples_ms, 0.50);
+    let p95_ms = percentile(&state.samples_ms, 0.95);
+    state.results.push(TreeLightingBenchmarkResult {
+        mode: mode.name,
+        ambient_occlusion: mode.ambient_occlusion_strength > 0.0,
+        self_shadows: mode.shadows_enabled,
+        mean_ms,
+        median_ms,
+        p95_ms,
+        mean_fps: 1_000.0 / mean_ms,
+    });
+    println!(
+        "TREE_LIGHTING_BENCHMARK mode={:?} mean_ms={mean_ms:.3} median_ms={median_ms:.3} p95_ms={p95_ms:.3}",
+        mode.name
+    );
+    state.mode += 1;
+    state.samples_ms.clear();
+    state.warmup_remaining = TREE_LIGHTING_BENCHMARK_WARMUP_FRAMES;
+    if state.mode < TREE_LIGHTING_MODES.len() {
+        return;
+    }
+
+    let report = TreeLightingBenchmarkReport {
+        pipeline: "tactical_scene_tree_lighting_benchmark_v1",
+        fixture: capture.fixture.clone(),
+        resolution: [VIEW_WIDTH, VIEW_HEIGHT],
+        tree_count: capture.expected_trees,
+        warmup_frames_per_mode: TREE_LIGHTING_BENCHMARK_WARMUP_FRAMES,
+        sample_frames_per_mode: state.sample_frames,
+        note: "End-to-end uncapped frame duration; not an isolated GPU timestamp. All modes use identical dense-forest geometry, camera, weather, wind, and forced LOD0 cambered leaves.",
+        results: core::mem::take(&mut state.results),
+    };
+    write_tree_lighting_benchmark(&capture.output, &report);
+    exit.write(AppExit::Success);
+}
+
 fn percentile(sorted: &[f64], percentile: f64) -> f64 {
     let index = ((sorted.len() - 1) as f64 * percentile).round() as usize;
     sorted[index]
@@ -1055,6 +1259,45 @@ fn write_leaf_benchmark(output: &Path, report: &LeafBenchmarkReport) {
     }
     markdown.push_str("\n_Frame time is end-to-end with vsync disabled, not an isolated GPU timestamp. Geometry, camera, weather, wind state, and all non-leaf work are held constant._\n");
     fs::write(output.join("comparison.md"), markdown).expect("benchmark table writes");
+}
+
+fn write_tree_lighting_benchmark(output: &Path, report: &TreeLightingBenchmarkReport) {
+    let json = serde_json::to_string_pretty(report).expect("benchmark report serializes");
+    fs::write(
+        output.join("tree-lighting-benchmark.json"),
+        format!("{json}\n"),
+    )
+    .expect("tree-lighting benchmark JSON writes");
+    let baseline = report.results.first().map_or(1.0, |result| result.mean_ms);
+    let mut markdown = format!(
+        "# Dense-forest tree-lighting benchmark\n\nFixture: `{}`; {} trees; {}x{}; {} measured frames per mode after {} warm-up frames. LOD0 cambered leaves are forced to expose the maximum leaf-shadow cost.\n\n| Mode | Canopy AO | Leaf self shadows | Mean ms | Median ms | P95 ms | Mean FPS | Cost vs baseline |\n|---|:---:|:---:|---:|---:|---:|---:|---:|\n",
+        report.fixture,
+        report.tree_count,
+        report.resolution[0],
+        report.resolution[1],
+        report.sample_frames_per_mode,
+        report.warmup_frames_per_mode,
+    );
+    for result in &report.results {
+        markdown.push_str(&format!(
+            "| {} | {} | {} | {:.3} | {:.3} | {:.3} | {:.1} | {:.2}x |\n",
+            result.mode,
+            if result.ambient_occlusion {
+                "yes"
+            } else {
+                "no"
+            },
+            if result.self_shadows { "yes" } else { "no" },
+            result.mean_ms,
+            result.median_ms,
+            result.p95_ms,
+            result.mean_fps,
+            result.mean_ms / baseline,
+        ));
+    }
+    markdown.push_str("\n_Frame time is end-to-end with vsync disabled, not an isolated GPU timestamp. Canopy AO is a WebGPU-safe per-vertex visibility term; self shadows use the directional shadow map._\n");
+    fs::write(output.join("tree-lighting-comparison.md"), markdown)
+        .expect("tree-lighting benchmark table writes");
 }
 
 fn capture_views(
@@ -1100,6 +1343,8 @@ fn capture_views(
     mut scene_visibility: ParamSet<(
         Query<(&VistaTerrain, Has<Collider>)>,
         Query<&mut Visibility, (With<VistaTerrain>, Without<CaptureOverlay>)>,
+        ResMut<Assets<TacticalTreeLeafCardMaterial>>,
+        Query<Entity, With<MeshMaterial3d<TacticalTreeLeafCardMaterial>>>,
     )>,
     particles: Query<(), With<WeatherParticle>>,
 ) {
@@ -1111,6 +1356,23 @@ fn capture_views(
     }
     let view = CAPTURE_VIEWS[state.view];
     if !state.view_started {
+        let lighting_mode = match view.slug {
+            "tree-lighting-baseline" => TREE_LIGHTING_MODES[0],
+            "tree-lighting-ao" => TREE_LIGHTING_MODES[1],
+            "tree-lighting-shadows" => TREE_LIGHTING_MODES[2],
+            _ => TREE_LIGHTING_MODES[3],
+        };
+        for (_, material) in scene_visibility.p2().iter_mut() {
+            material.surface_parameters.z = lighting_mode.ambient_occlusion_strength;
+        }
+        let leaf_entities = scene_visibility.p3().iter().collect::<Vec<_>>();
+        for entity in leaf_entities {
+            if lighting_mode.shadows_enabled {
+                commands.entity(entity).remove::<NotShadowCaster>();
+            } else {
+                commands.entity(entity).insert(NotShadowCaster);
+            }
+        }
         tree_lod_override.lod = match view.slug {
             "tree-textured-leaf-lod" | "tree-leaf-card-lod" => Some(0),
             "tree-twig-lod" => Some(1),
@@ -1336,6 +1598,10 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y)
         }
         "tree-detail"
+        | "tree-lighting-baseline"
+        | "tree-lighting-ao"
+        | "tree-lighting-shadows"
+        | "tree-lighting-combined"
         | "tree-silhouette"
         | "tree-textured-leaf-lod"
         | "tree-leaf-card-lod"
@@ -1577,6 +1843,10 @@ fn build_manifest(
         tree_detail_captured_when_expected: state.expected_trees == 0
             || [
                 "tree-detail",
+                "tree-lighting-baseline",
+                "tree-lighting-ao",
+                "tree-lighting-shadows",
+                "tree-lighting-combined",
                 "tree-recursive-lod",
                 "ground-cover",
                 "tree-textured-leaf-detail",
@@ -1741,6 +2011,10 @@ fn capture_view_fov(view: &str) -> f32 {
     match view {
         "horizon" => 15.0,
         "tree-detail"
+        | "tree-lighting-baseline"
+        | "tree-lighting-ao"
+        | "tree-lighting-shadows"
+        | "tree-lighting-combined"
         | "tree-silhouette"
         | "tree-textured-leaf-lod"
         | "tree-leaf-card-lod"

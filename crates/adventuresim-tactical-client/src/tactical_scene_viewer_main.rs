@@ -45,6 +45,10 @@ struct Args {
     #[arg(long, value_parser = clap::value_parser!(u32).range(30..))]
     leaf_benchmark_frames: Option<u32>,
 
+    /// Benchmark baseline, canopy AO, shadows, and combined tree lighting.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(30..), conflicts_with = "leaf_benchmark_frames")]
+    tree_lighting_benchmark_frames: Option<u32>,
+
     /// Azimuth around the review tree for locked leaf-LOD comparison views.
     #[arg(long, default_value_t = 45.0)]
     tree_review_azimuth_degrees: f32,
@@ -68,6 +72,7 @@ fn main() {
         args.canopy_bps,
         args.absolute_minute,
         args.leaf_benchmark_frames,
+        args.tree_lighting_benchmark_frames,
         args.tree_review_azimuth_degrees,
     );
 }
