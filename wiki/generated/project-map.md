@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1927)
+## Files (1928)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -1870,6 +1870,7 @@ development, or other wiki document before changing a subsystem.
 - `wiki/client/models.md` — Project documentation.
 - `wiki/client/slots.md` — Project documentation.
 - `wiki/contributing/item-authoring.md` — Project documentation.
+- `wiki/contributing/wiki-writing.md` — Project documentation.
 - `wiki/engineering/architecture.md` — Project documentation.
 - `wiki/engineering/developing.md` — Project documentation.
 - `wiki/engineering/implementation.md` — Project documentation.

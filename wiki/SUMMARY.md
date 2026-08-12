@@ -10,6 +10,7 @@
 
 # Contributing
 
+- [Wiki writing](contributing/wiki-writing.md)
 - [Development workflow](engineering/developing.md)
 - [Item definition authoring](contributing/item-authoring.md)
 - [Project map maintenance](engineering/project-map-maintenance.md)
