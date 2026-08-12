@@ -98,7 +98,10 @@ def main(argv: list[str] | None = None) -> int:
             "--scene-input", str(scene), "--profile", "environment-review",
             "--settle-frames", str(args.settle_frames), "--output", str(output),
         ]
-        for view in ("beauty-ground", "beauty-overhead", "horizon", "vista-lod-oblique"):
+        for view in (
+            "beauty-ground", "beauty-overhead", "horizon",
+            "vista-lod-oblique", "vista-valley-oblique",
+        ):
             command.extend(("--view", view))
         environment = {**os.environ, "CAPTURE_SOURCE_IDENTITY": source_identity()}
     else:

@@ -820,8 +820,10 @@ It calls the same trusted dispatcher sampler as production, producing the
 one-metre 101-by-101 playable grid, environmental classifications, weather,
 and three peak-preserving vista LODs. The capture records the coordinate,
 terrain-package digest, and complete `SceneSource::ImportedPackage` scene in
-`input.json`; its four plates cover the ground composition, overhead playable
-area, horizon, and unobstructed playable-to-vista transition. `play` launches
+`input.json`; its five plates cover the ground composition, overhead playable
+area, horizon, and unobstructed playable-to-highest and playable-to-lowest
+vista transitions. The manifest records minimum, maximum, and total regional
+relief so a summit capture cannot be mistaken for flat source data. `play` launches
 the ordinary supervised animation demo with the identical immutable scene
 document. Coordinates are deterministic inputs; these commands never query a
 live map service or silently synthesize missing terrain.

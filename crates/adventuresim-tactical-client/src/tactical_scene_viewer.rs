@@ -33,8 +33,8 @@ const VIEW_WIDTH: u32 = 1280;
 const VIEW_HEIGHT: u32 = 720;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
 const PROCEDURAL_OAK_LEAVES_PER_TREE: usize = 69_632;
-const CAPTURE_PROFILE_VERSION: u16 = 6;
-const CAMERA_VERSION: u16 = 5;
+const CAPTURE_PROFILE_VERSION: u16 = 7;
+const CAMERA_VERSION: u16 = 6;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 
 #[derive(Resource)]
@@ -76,8 +76,11 @@ struct CaptureState {
     expects_grass: bool,
     vista_lods_supplied: usize,
     vista_diameter_metres: f32,
+    vista_minimum_metres: f32,
     vista_peak_metres: f32,
+    vista_relief_metres: f32,
     peak_target: Vec3,
+    valley_target: Vec3,
     obstacle_focus: Vec3,
     tree_focus: Option<Vec3>,
     rock_focus: Option<Vec3>,
@@ -379,7 +382,7 @@ const CAPTURE_VIEWS: [CaptureView; 24] = [
     },
 ];
 
-const ENVIRONMENT_REVIEW_VIEWS: [CaptureView; 11] = [
+const ENVIRONMENT_REVIEW_VIEWS: [CaptureView; 12] = [
     CaptureView {
         slug: "warmup",
         label: "Render-pipeline warmup",
@@ -433,6 +436,11 @@ const ENVIRONMENT_REVIEW_VIEWS: [CaptureView; 11] = [
     CaptureView {
         slug: "vista-lod-oblique",
         label: "Playable edge and distant terrain LOD composition",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "vista-valley-oblique",
+        label: "Playable edge and lowest regional terrain composition",
         overlay: false,
     },
 ];
@@ -536,7 +544,9 @@ struct VistaSummary {
     presented_lods: Vec<u8>,
     presented_chunks: usize,
     diameter_metres: f32,
+    minimum_height_metres: f32,
     peak_height_metres: f32,
+    relief_metres: f32,
     collider_count: usize,
 }
 
@@ -913,7 +923,7 @@ mod capture_lighting_tests {
     #[test]
     fn environment_profile_has_deterministic_grazing_debris_target() {
         let views = selected_capture_views("environment-review", &[]).unwrap();
-        assert_eq!(views.len(), 11);
+        assert_eq!(views.len(), 12);
         assert!(
             views
                 .iter()
@@ -983,6 +993,20 @@ mod capture_lighting_tests {
     fn overhead_plate_uses_its_detail_sentinel_for_uniform_terrain() {
         assert_eq!(minimum_foreground_bps("beauty-overhead"), 1);
         assert_eq!(minimum_foreground_bps("beauty-ground"), 1_000);
+    }
+
+    #[test]
+    fn vista_metrics_report_both_extremes_and_total_relief() {
+        let input = TacticalSceneInput::load(
+            &Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../assets/tactical-scenes/valley-distant-ridge.json"),
+        )
+        .unwrap();
+        let (_, minimum, maximum, valley, peak) = vista_metrics(&input);
+        assert!(minimum < maximum);
+        assert_eq!(valley.y, minimum);
+        assert_eq!(peak.y, maximum);
+        assert!(maximum - minimum > 100.0);
     }
 }
 
@@ -1058,7 +1082,14 @@ fn setup_scene(
         minimum_height_metres: terrain.minimum_height(),
         maximum_height_metres: terrain.maximum_height(),
     };
-    let (vista_diameter_metres, vista_peak_metres, peak_target) = vista_metrics(&input);
+    let (
+        vista_diameter_metres,
+        vista_minimum_metres,
+        vista_peak_metres,
+        valley_target,
+        peak_target,
+    ) = vista_metrics(&input);
+    let vista_relief_metres = vista_peak_metres - vista_minimum_metres;
     let mut expected_trees = 0;
     let mut expected_rocks = 0;
     let mut obstacle_position_sum = Vec3::ZERO;
@@ -1369,8 +1400,11 @@ fn setup_scene(
         expects_grass,
         vista_lods_supplied: input.vista.lods.len(),
         vista_diameter_metres,
+        vista_minimum_metres,
         vista_peak_metres,
+        vista_relief_metres,
         peak_target,
+        valley_target,
         obstacle_focus,
         tree_focus,
         rock_focus,
@@ -1406,31 +1440,41 @@ fn setup_scene(
     }
 }
 
-fn vista_metrics(input: &TacticalSceneInput) -> (f32, f32, Vec3) {
+fn vista_metrics(input: &TacticalSceneInput) -> (f32, f32, f32, Vec3, Vec3) {
     let mut diameter = 0.0_f32;
+    let mut minimum = f32::INFINITY;
     let mut peak = f32::NEG_INFINITY;
+    let mut valley_target = Vec3::ZERO;
     let mut target = Vec3::ZERO;
     for lod in &input.vista.lods {
         diameter = diameter.max(f32::from(lod.width.saturating_sub(1)) * lod.spacing_metres);
         let center_x = f32::from(lod.width.saturating_sub(1)) * 0.5;
         let center_z = f32::from(lod.depth.saturating_sub(1)) * 0.5;
         for (index, height) in lod.heights_metres.iter().copied().enumerate() {
+            let x = (index % usize::from(lod.width)) as f32;
+            let z = (index / usize::from(lod.width)) as f32;
+            let position = Vec3::new(
+                (x - center_x) * lod.spacing_metres + lod.origin_east_metres as f32,
+                height,
+                (z - center_z) * lod.spacing_metres + lod.origin_north_metres as f32,
+            );
+            if height < minimum {
+                minimum = height;
+                valley_target = position;
+            }
             if height > peak {
-                let x = (index % usize::from(lod.width)) as f32;
-                let z = (index / usize::from(lod.width)) as f32;
                 peak = height;
-                target = Vec3::new(
-                    (x - center_x) * lod.spacing_metres + lod.origin_east_metres as f32,
-                    height,
-                    (z - center_z) * lod.spacing_metres + lod.origin_north_metres as f32,
-                );
+                target = position;
             }
         }
+    }
+    if !minimum.is_finite() {
+        minimum = 0.0;
     }
     if !peak.is_finite() {
         peak = 0.0;
     }
-    (diameter, peak, target)
+    (diameter, minimum, peak, valley_target, target)
 }
 
 fn benchmark_leaf_representations(
@@ -1910,7 +1954,12 @@ fn capture_views(
         for mut visibility in &mut scene_visibility.p1() {
             *visibility = if matches!(
                 view.slug,
-                "warmup" | "beauty-ground" | "beauty-overhead" | "horizon" | "vista-lod-oblique"
+                "warmup"
+                    | "beauty-ground"
+                    | "beauty-overhead"
+                    | "horizon"
+                    | "vista-lod-oblique"
+                    | "vista-valley-oblique"
             ) {
                 Visibility::Visible
             } else {
@@ -2241,6 +2290,18 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
                 + Vec3::Y * 2.0;
             (position, target, Vec3::Y)
         }
+        "vista-valley-oblique" => {
+            let direction = (state.valley_target.xz() - state.obstacle_focus.xz())
+                .try_normalize()
+                .unwrap_or(-Vec2::X);
+            let position = state.obstacle_focus
+                - Vec3::new(direction.x, 0.0, direction.y) * (half * 0.62)
+                + Vec3::Y * 8.0;
+            let target = state.obstacle_focus
+                + Vec3::new(direction.x, 0.0, direction.y) * (half * 5.0)
+                + Vec3::Y * 2.0;
+            (position, target, Vec3::Y)
+        }
         _ => unreachable!("capture view is fixed"),
     };
     (
@@ -2389,7 +2450,9 @@ fn build_manifest(
         presented_lods: presented_lods.into_iter().collect(),
         presented_chunks,
         diameter_metres: state.vista_diameter_metres,
+        minimum_height_metres: state.vista_minimum_metres,
         peak_height_metres: state.vista_peak_metres,
+        relief_metres: state.vista_relief_metres,
         collider_count: vista_colliders,
     };
     let expects_precipitation =
