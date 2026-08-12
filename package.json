@@ -1,0 +1,11 @@
+{
+  "name": "fabelgeist-repository-tooling",
+  "private": true,
+  "scripts": {
+    "format:wiki-tooling": "prettier --write .github/workflows/gh-pages.yml .prettierrc.json \"package*.json\"",
+    "check:wiki-tooling-format": "prettier --check .github/workflows/gh-pages.yml .prettierrc.json \"package*.json\""
+  },
+  "devDependencies": {
+    "prettier": "3.9.6"
+  }
+}
