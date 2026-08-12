@@ -159,6 +159,17 @@ domain under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
 The files are redistributed without visual modification; checksums are in the
 adjacent README.
 
+## Poly Haven Jolcham Oak Bark 01
+
+The 1K x 2K diffuse, OpenGL normal, and AO/roughness/metal maps in
+`assets/textures/trees/oak_bark/` are the JPEG channels from
+[Jolcham Oak Bark 01](https://polyhaven.com/a/jolcham_oak_bark_01) by Charlotte
+Baglioni / Poly Haven. Poly Haven documents the scan as one metre wide by two
+metres tall and dedicates it to the public domain under
+[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The files are
+redistributed without visual modification; checksums are in the adjacent
+README.
+
 ### HYDE 3.5
 
 Generated strategic map tiles and terrain packs include a cultivated-land

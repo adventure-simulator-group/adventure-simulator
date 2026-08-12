@@ -61,12 +61,10 @@ pub(in crate::presentation) fn present_pending_trees(
         } else {
             let branches = procedural_tree_skeleton(variant_seed, competition);
             let leaves = procedural_oak_leaves(variant_seed, &branches, competition);
-            let bark_texture = images.add(procedural_oak_bark_image(variant_seed));
-            let bark_material = materials.add(StandardMaterial {
-                base_color: Color::WHITE,
-                base_color_texture: Some(bark_texture),
-                perceptual_roughness: 0.95,
-                ..default()
+            let bark_material = tree_cache.oak_bark_material.clone().unwrap_or_else(|| {
+                let material = materials.add(oak_bark_material(&asset_server));
+                tree_cache.oak_bark_material = Some(material.clone());
+                material
             });
             let leaf_material = leaf_card_materials.add(oak_leaf_material(&asset_server));
             let bud_material = materials.add(StandardMaterial {
