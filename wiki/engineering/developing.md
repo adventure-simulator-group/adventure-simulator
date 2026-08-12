@@ -627,6 +627,12 @@ For normal native tactical development, use the supervised launcher:
 just tactical-play animation
 ```
 
+The native gameplay client resolves its default Bevy asset source to the
+repository's `assets/` directory, independent of the executable location under
+`target/`. It validates the required terrain, sky, foliage, tree, and leaf-card
+presentation assets before opening a window, so a misplaced asset root fails at
+startup instead of silently rendering fallback materials.
+
 For animation-graph authoring, launch the optional native editor from the
 repository root:
 

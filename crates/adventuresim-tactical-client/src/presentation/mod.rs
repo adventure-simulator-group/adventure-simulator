@@ -116,6 +116,14 @@ impl Plugin for TacticalPresentationPlugin {
             ssao_enabled: self.ssao_enabled,
             max_vista_lods: self.max_vista_lods,
         })
+        // The sky observer preserves this low, cool floor at night and restores
+        // Bevy's neutral brightness during daylight. A fixed white brightness
+        // of 80 is amplified by night exposure and makes vegetation look self-lit.
+        .insert_resource(GlobalAmbientLight {
+            color: Color::srgb(0.36, 0.48, 0.72),
+            brightness: 0.6,
+            ..default()
+        })
         .add_systems(
             Startup,
             (setup_tactical_presentation, setup_tactical_sky).chain(),
@@ -130,6 +138,7 @@ impl Plugin for TacticalPresentationPlugin {
                 advance_weather_particles,
                 update_grass_interaction,
                 update_tree_leaf_wind,
+                update_celestial_material_lighting,
                 present_ground_scatter,
                 (present_pending_trees, update_tree_projected_lod_ranges).chain(),
                 keep_celestial_visuals_centered,

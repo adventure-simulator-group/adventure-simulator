@@ -231,13 +231,6 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
     var out: FragmentOutput;
     out.color = apply_pbr_lighting(pbr_input);
-    // Thin leaves retain substantial green indirect/transmitted light even
-    // while their direct sun is occluded by another canopy layer.
-    out.color = vec4<f32>(
-        out.color.rgb
-            + pbr_input.material.base_color.rgb * vec3<f32>(0.16, 0.20, 0.10),
-        out.color.a,
-    );
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
     return out;
 }

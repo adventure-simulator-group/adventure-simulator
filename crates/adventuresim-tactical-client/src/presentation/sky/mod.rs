@@ -164,6 +164,7 @@ pub(super) fn on_environment_added(
         (With<TacticalMoonlight>, Without<TacticalSunlight>),
     >,
     camera: Single<&mut Exposure, With<Camera3d>>,
+    mut ambient: ResMut<GlobalAmbientLight>,
     moon: Query<&MeshMaterial3d<TacticalMoonMaterial>, With<TacticalMoon>>,
     stars: Query<&MeshMaterial3d<TacticalStarMaterial>, With<TacticalStars>>,
     mut moon_materials: ResMut<Assets<TacticalMoonMaterial>>,
@@ -197,7 +198,12 @@ pub(super) fn on_environment_added(
         && celestial.lunar_illumination > 0.15;
     *moon_transform = light_transform(moon_direction);
 
-    camera.into_inner().ev100 = scene_exposure_ev100(sun_altitude, celestial.lunar_illumination);
+    camera.into_inner().ev100 =
+        scene_exposure_ev100(sun_altitude, moon_altitude, celestial.lunar_illumination);
+    let (ambient_color, ambient_brightness) =
+        scene_ambient_light(sun_altitude, moon_altitude, celestial.lunar_illumination);
+    ambient.color = Color::srgb(ambient_color.x, ambient_color.y, ambient_color.z);
+    ambient.brightness = ambient_brightness;
 
     if let Ok(handle) = moon.single()
         && let Some(mut material) = moon_materials.get_mut(&handle.0)
@@ -242,7 +248,7 @@ fn light_transform(direction_to_light: Vec3) -> Transform {
     Transform::from_translation(direction_to_light * 1_000.0).looking_at(Vec3::ZERO, Vec3::Y)
 }
 
-fn to_bevy_direction(east_up_north: [f32; 3]) -> Vec3 {
+pub(super) fn to_bevy_direction(east_up_north: [f32; 3]) -> Vec3 {
     Vec3::new(east_up_north[0], east_up_north[1], -east_up_north[2]).normalize()
 }
 
@@ -255,7 +261,11 @@ fn sky_weather_transmission(environment: &SceneEnvironment) -> f32 {
     }
 }
 
-pub(super) fn scene_exposure_ev100(sun_altitude_degrees: f32, lunar_illumination: f32) -> f32 {
+pub(super) fn scene_exposure_ev100(
+    sun_altitude_degrees: f32,
+    moon_altitude_degrees: f32,
+    lunar_illumination: f32,
+) -> f32 {
     if sun_altitude_degrees >= 12.0 {
         15.0
     } else if sun_altitude_degrees >= 0.0 {
@@ -265,7 +275,10 @@ pub(super) fn scene_exposure_ev100(sun_altitude_degrees: f32, lunar_illumination
     } else if sun_altitude_degrees >= -12.0 {
         4.0 + (sun_altitude_degrees + 12.0) * (4.0 / 6.0)
     } else {
-        2.5 + lunar_illumination * 1.5
+        // Preserve genuinely dark, obstacle-obscuring moonless nights. A risen
+        // moon raises both scene illuminance and the adapted exposure target;
+        // a below-horizon moon does neither.
+        -0.5 + lunar_illumination * smoothstep(-2.0, 8.0, moon_altitude_degrees)
     }
 }
 
@@ -403,8 +416,12 @@ mod tests {
 
     #[test]
     fn exposure_adapts_between_day_and_night() {
-        assert_eq!(scene_exposure_ev100(30.0, 0.0), 15.0);
-        assert!(scene_exposure_ev100(-20.0, 1.0) > scene_exposure_ev100(-20.0, 0.0));
-        assert!(scene_exposure_ev100(-20.0, 1.0) < 5.0);
+        assert_eq!(scene_exposure_ev100(30.0, -20.0, 0.0), 15.0);
+        let moonless = scene_exposure_ev100(-20.0, 30.0, 0.0);
+        let moonlit = scene_exposure_ev100(-20.0, 30.0, 1.0);
+        let moon_below_horizon = scene_exposure_ev100(-20.0, -20.0, 1.0);
+        assert!(moonlit > moonless);
+        assert_eq!(moon_below_horizon, moonless);
+        assert!((-0.75..=0.75).contains(&moonlit));
     }
 }

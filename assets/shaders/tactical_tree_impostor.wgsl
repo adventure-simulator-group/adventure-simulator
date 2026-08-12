@@ -12,6 +12,8 @@ var baked_color_sampler: sampler;
 
 struct TacticalTreeImpostorMaterial {
     parameters: vec4<f32>,
+    lighting: vec4<f32>,
+    ambient: vec4<f32>,
 }
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(2)
@@ -92,8 +94,10 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     if baked.a < 0.2 {
         discard;
     }
-    let light_direction = normalize(vec3<f32>(0.35, 0.86, 0.25));
+    let light_direction = normalize(tree.lighting.xyz);
     let normal_light = dot(normalize(in.world_normal), light_direction);
-    let wrapped_light = 0.78 + 0.22 * clamp(normal_light * 0.5 + 0.5, 0.0, 1.0);
-    return vec4<f32>(baked.rgb * wrapped_light, baked.a);
+    let daylight = 0.78 + 0.22 * clamp(normal_light * 0.5 + 0.5, 0.0, 1.0);
+    let direct_irradiance = daylight * tree.lighting.w;
+    let ambient_irradiance = tree.ambient.rgb * tree.ambient.w;
+    return vec4<f32>(baked.rgb * (ambient_irradiance + vec3<f32>(direct_irradiance)), baked.a);
 }
