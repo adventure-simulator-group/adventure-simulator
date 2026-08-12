@@ -62,6 +62,22 @@ pub(crate) struct TacticalTreeLeafCardMaterial {
 }
 
 pub(crate) fn oak_leaf_material(asset_server: &AssetServer) -> TacticalTreeLeafCardMaterial {
+    leaf_material(asset_server, "trees/oak_leaf_03", 0.28, 0.72, 0.62)
+}
+
+pub(in crate::presentation) fn hazel_leaf_material(
+    asset_server: &AssetServer,
+) -> TacticalTreeLeafCardMaterial {
+    leaf_material(asset_server, "shrubs/common_hazel_leaf", 0.32, 0.68, 0.54)
+}
+
+fn leaf_material(
+    asset_server: &AssetServer,
+    stem: &str,
+    alpha_cutoff: f32,
+    normal_strength: f32,
+    canopy_ao: f32,
+) -> TacticalTreeLeafCardMaterial {
     let linear_image = |path| {
         asset_server
             .load_builder()
@@ -71,13 +87,13 @@ pub(crate) fn oak_leaf_material(asset_server: &AssetServer) -> TacticalTreeLeafC
             .load(path)
     };
     TacticalTreeLeafCardMaterial {
-        opacity: linear_image("textures/trees/oak_leaf_03_opacity.png"),
-        front_albedo: asset_server.load("textures/trees/oak_leaf_03_front_albedo.png"),
-        back_albedo: asset_server.load("textures/trees/oak_leaf_03_back_albedo.png"),
-        front_normal: linear_image("textures/trees/oak_leaf_03_front_normal_dx.png"),
-        back_normal: linear_image("textures/trees/oak_leaf_03_back_normal_dx.png"),
+        opacity: linear_image(format!("textures/{stem}_opacity.png")),
+        front_albedo: asset_server.load(format!("textures/{stem}_front_albedo.png")),
+        back_albedo: asset_server.load(format!("textures/{stem}_back_albedo.png")),
+        front_normal: linear_image(format!("textures/{stem}_front_normal_dx.png")),
+        back_normal: linear_image(format!("textures/{stem}_back_normal_dx.png")),
         parameters: Vec4::new(0.74, 0.67, 0.035, 0.0),
-        surface_parameters: Vec4::new(0.28, 0.72, 0.62, 0.0),
+        surface_parameters: Vec4::new(alpha_cutoff, normal_strength, canopy_ao, 0.0),
     }
 }
 
