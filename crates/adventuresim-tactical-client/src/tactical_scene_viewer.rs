@@ -34,8 +34,8 @@ const VIEW_WIDTH: u32 = 1280;
 const VIEW_HEIGHT: u32 = 720;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
 const PROCEDURAL_OAK_LEAVES_PER_TREE: usize = 69_632;
-const CAPTURE_PROFILE_VERSION: u16 = 9;
-const CAMERA_VERSION: u16 = 6;
+const CAPTURE_PROFILE_VERSION: u16 = 10;
+const CAMERA_VERSION: u16 = 7;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 
 #[derive(Resource)]
@@ -262,7 +262,7 @@ struct TreeLightingBenchmarkReport {
     results: Vec<TreeLightingBenchmarkResult>,
 }
 
-const CAPTURE_VIEWS: [CaptureView; 24] = [
+const CAPTURE_VIEWS: [CaptureView; 26] = [
     CaptureView {
         slug: "warmup",
         label: "Render-pipeline warmup",
@@ -366,6 +366,16 @@ const CAPTURE_VIEWS: [CaptureView; 24] = [
     CaptureView {
         slug: "tree-billboard-lod",
         label: "Whole-tree billboard LOD view",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-crown-transition-fixed",
+        label: "Fixed-camera crown LOD transition control",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "tree-billboard-transition-fixed",
+        label: "Fixed-camera billboard LOD transition control",
         overlay: false,
     },
     CaptureView {
@@ -946,12 +956,22 @@ mod capture_lighting_tests {
     }
 
     #[test]
-    fn semantic_profile_preserves_twenty_three_recorded_views() {
+    fn semantic_profile_records_lod_transition_controls() {
         let views = selected_capture_views("semantic", &[]).unwrap();
-        assert_eq!(views.len(), 24);
+        assert_eq!(views.len(), 26);
         assert_eq!(
             views.iter().filter(|view| view.slug != "warmup").count(),
-            23
+            25
+        );
+        assert!(
+            views
+                .iter()
+                .any(|view| view.slug == "tree-crown-transition-fixed")
+        );
+        assert!(
+            views
+                .iter()
+                .any(|view| view.slug == "tree-billboard-transition-fixed")
         );
     }
 
@@ -1883,6 +1903,8 @@ fn capture_views(
             "tree-small-branch-lod" => Some(2),
             "tree-crown-lod" => Some(3),
             "tree-billboard-lod" => Some(4),
+            "tree-crown-transition-fixed" => Some(3),
+            "tree-billboard-transition-fixed" => Some(4),
             _ => None,
         };
         tree_lod_override.leaf = match view.slug {
@@ -2341,6 +2363,9 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
         "tree-small-branch-lod" => tree_lod_camera(state, 48.0),
         "tree-crown-lod" => tree_lod_camera(state, 72.0),
         "tree-billboard-lod" => tree_lod_camera(state, 118.0),
+        "tree-crown-transition-fixed" | "tree-billboard-transition-fixed" => {
+            tree_lod_camera(state, 92.0)
+        }
         "beauty-overhead" => (
             state.obstacle_focus + Vec3::new(0.0, half * 2.15, half * 0.16),
             state.obstacle_focus,
@@ -2747,6 +2772,8 @@ fn forced_tree_lod_for_view(view: &str) -> Option<u8> {
         "tree-small-branch-lod" => Some(2),
         "tree-crown-lod" => Some(3),
         "tree-billboard-lod" => Some(4),
+        "tree-crown-transition-fixed" => Some(3),
+        "tree-billboard-transition-fixed" => Some(4),
         _ => None,
     }
 }
@@ -2858,6 +2885,8 @@ fn minimum_foreground_bps(view: &str) -> u16 {
         | "tree-small-branch-lod"
         | "tree-crown-lod"
         | "tree-billboard-lod"
+        | "tree-crown-transition-fixed"
+        | "tree-billboard-transition-fixed"
         | "tree-recursive-lod" => 200,
         _ => 1_000,
     }
@@ -2886,6 +2915,7 @@ fn capture_view_fov(view: &str) -> f32 {
         "tree-small-branch-lod" => 19.0,
         "tree-crown-lod" => 13.0,
         "tree-billboard-lod" => 8.0,
+        "tree-crown-transition-fixed" | "tree-billboard-transition-fixed" => 20.0,
         _ => 65.0,
     }
 }
