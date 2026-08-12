@@ -26,15 +26,15 @@ use crate::presentation::{
     AtmosphereIblAmbientHandoff, GroundScatterLayer, ProceduralRockVisual,
     TacticalGraphicsSettings, TacticalPresentationPlugin, TacticalTreeLeafCardMaterial,
     TerrainMaterialPresentation, TreeImpostorProvenance, TreeLeafRepresentation, TreeLod,
-    TreeLodCluster, TreeLodRenderOverride, VistaTerrain, WeatherParticle, oak_bark_material,
-    oak_leaf_material, oak_review_terminal_specimen,
+    TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod, VistaTerrain, WeatherParticle,
+    oak_bark_material, oak_leaf_material, oak_review_terminal_specimen,
 };
 
 const VIEW_WIDTH: u32 = 1280;
 const VIEW_HEIGHT: u32 = 720;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
 const PROCEDURAL_OAK_LEAVES_PER_TREE: usize = 69_632;
-const CAPTURE_PROFILE_VERSION: u16 = 8;
+const CAPTURE_PROFILE_VERSION: u16 = 9;
 const CAMERA_VERSION: u16 = 6;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 
@@ -114,10 +114,11 @@ struct CaptureState {
 struct CaptureOverlay;
 
 #[derive(SystemParam)]
-struct LightingObservationParams<'w> {
+struct LightingObservationParams<'w, 's> {
     settings: Res<'w, TacticalGraphicsSettings>,
     ambient: Res<'w, GlobalAmbientLight>,
     ambient_handoff: Res<'w, AtmosphereIblAmbientHandoff>,
+    tree_trunks: Query<'w, 's, (), With<TreeTrunkLod>>,
 }
 
 #[derive(Component)]
@@ -458,6 +459,8 @@ struct CaptureRecord {
     vertical_fov_degrees: f32,
     foreground_pixel_bps: u16,
     detail_pixel_bps: u16,
+    forced_tree_lod: Option<u8>,
+    focused_tree_lod_queued: Option<bool>,
     diagnostic_leaf_suppression: bool,
     diagnostic_grass_suppression: bool,
     debris_leaf_distance_metres: Option<f32>,
@@ -932,6 +935,15 @@ fn freeze_capture_clock(mut time: ResMut<Time<Virtual>>) {
 #[cfg(test)]
 mod capture_lighting_tests {
     use super::*;
+
+    #[test]
+    fn forced_tree_lod_views_map_exactly_and_fail_closed() {
+        assert_eq!(forced_tree_lod_for_view("tree-twig-lod"), Some(1));
+        assert_eq!(forced_tree_lod_for_view("tree-small-branch-lod"), Some(2));
+        assert_eq!(forced_tree_lod_for_view("tree-crown-lod"), Some(3));
+        assert_eq!(forced_tree_lod_for_view("tree-billboard-lod"), Some(4));
+        assert_eq!(forced_tree_lod_for_view("beauty-ground"), None);
+    }
 
     #[test]
     fn semantic_profile_preserves_twenty_three_recorded_views() {
@@ -1787,9 +1799,9 @@ fn capture_views(
             Without<VistaTerrain>,
         ),
     >,
-    obstacles: Query<(&SceneObstacle, Has<Mesh3d>, Has<Collider>)>,
+    obstacles: Query<(&SceneObstacle, Has<Collider>)>,
     rock_visuals: Query<&Mesh3d, With<ProceduralRockVisual>>,
-    tree_lods: Query<&TreeLod>,
+    tree_lods: Query<(&TreeLod, &ViewVisibility, Option<&ChildOf>)>,
     tree_lod_clusters: Query<
         (
             &TreeLod,
@@ -2024,6 +2036,8 @@ fn capture_views(
                 vertical_fov_degrees: capture_view_fov(view.slug),
                 foreground_pixel_bps: 0,
                 detail_pixel_bps: 0,
+                forced_tree_lod: tree_lod_override.lod,
+                focused_tree_lod_queued: None,
                 diagnostic_leaf_suppression: suppress_leaves,
                 diagnostic_grass_suppression: suppress_grass,
                 debris_leaf_distance_metres: (view.slug == "forest-floor-debris-detail")
@@ -2099,6 +2113,9 @@ fn capture_views(
     }
 
     if let Some(record) = state.captures.last_mut() {
+        record.focused_tree_lod_queued = record.forced_tree_lod.map(|forced_lod| {
+            focused_tree_lod_queued(state.tree_focus_entity, forced_lod, &tree_lods)
+        });
         record
             .lighting_luminance_samples
             .clone_from(&state.lighting_luminance_samples);
@@ -2129,6 +2146,7 @@ fn capture_views(
         build_manifest(
             state,
             &obstacles,
+            &lighting.tree_trunks,
             &rock_visuals,
             &tree_lods,
             &tree_bakes,
@@ -2197,6 +2215,21 @@ fn capture_views(
             }
         },
     );
+}
+
+fn focused_tree_lod_queued(
+    focused_tree: Option<Entity>,
+    forced_lod: u8,
+    tree_lods: &Query<(&TreeLod, &ViewVisibility, Option<&ChildOf>)>,
+) -> bool {
+    let Some(focused_tree) = focused_tree else {
+        return false;
+    };
+    tree_lods.iter().any(|(lod, view_visibility, parent)| {
+        lod.0 == forced_lod
+            && view_visibility.get()
+            && parent.is_some_and(|parent| parent.parent() == focused_tree)
+    })
 }
 
 fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
@@ -2351,9 +2384,10 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
 
 fn build_manifest(
     state: &CaptureState,
-    obstacles: &Query<(&SceneObstacle, Has<Mesh3d>, Has<Collider>)>,
+    obstacles: &Query<(&SceneObstacle, Has<Collider>)>,
+    tree_trunks: &Query<(), With<TreeTrunkLod>>,
     rock_visuals: &Query<&Mesh3d, With<ProceduralRockVisual>>,
-    tree_lods: &Query<&TreeLod>,
+    tree_lods: &Query<(&TreeLod, &ViewVisibility, Option<&ChildOf>)>,
     tree_bakes: &Query<&TreeImpostorProvenance>,
     foliage: &Query<&GroundScatterLayer>,
     terrain_materials: &Query<(), With<TerrainMaterialPresentation>>,
@@ -2362,18 +2396,16 @@ fn build_manifest(
     weather_particle_count: usize,
     presentation_features: PresentationFeatures,
 ) -> (CaptureManifest, bool) {
-    let mut presented_trees = 0;
-    let mut presented_rocks = 0;
+    let presented_trees = tree_trunks.iter().count();
+    let presented_rocks = rock_visuals.iter().count();
     let mut collider_trees = 0;
     let mut collider_rocks = 0;
-    for (kind, presented, collidable) in obstacles {
+    for (kind, collidable) in obstacles {
         match kind {
             SceneObstacle::Tree => {
-                presented_trees += usize::from(presented);
                 collider_trees += usize::from(collidable);
             }
             SceneObstacle::Rock(_) => {
-                presented_rocks += usize::from(presented);
                 collider_rocks += usize::from(collidable);
             }
         }
@@ -2394,7 +2426,7 @@ fn build_manifest(
         });
     let tree_lods_presented = tree_lods
         .iter()
-        .map(|lod| lod.0)
+        .map(|(lod, _, _)| lod.0)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -2557,32 +2589,19 @@ fn build_manifest(
         procedural_rocks_fit_colliders: rock_meshes_inside_colliders,
         trees_have_five_lods: state.expected_trees == 0
             || tree_lods_presented == vec![0, 1, 2, 3, 4],
-        tree_detail_captured_when_expected: state.profile != "semantic"
-            || state.expected_trees == 0
-            || [
-                "tree-detail",
-                "tree-lighting-baseline",
-                "tree-lighting-ao",
-                "tree-lighting-shadows",
-                "tree-lighting-combined",
-                "tree-recursive-lod",
-                "ground-cover",
-                "tree-textured-leaf-detail",
-                "tree-leaf-card-detail",
-                "tree-textured-leaf-lod",
-                "tree-leaf-card-lod",
-                "tree-leaf-transition-25",
-                "tree-leaf-transition-50",
-                "tree-leaf-transition-75",
-                "tree-twig-lod",
-                "tree-small-branch-lod",
-                "tree-crown-lod",
-                "tree-billboard-lod",
-            ]
-            .into_iter()
-            .all(|view| state.captures.iter().any(|capture| capture.view == view)),
+        tree_detail_captured_when_expected: state.expected_trees == 0
+            || state.captures.iter().all(|capture| {
+                forced_tree_lod_for_view(&capture.view).is_none_or(|expected| {
+                    capture.forced_tree_lod == Some(expected)
+                        && capture.focused_tree_lod_queued == Some(true)
+                })
+            }),
         recursive_tree_lod_observed: state.profile != "semantic"
             || state.expected_trees == 0
+            || !state
+                .requested_views
+                .iter()
+                .any(|view| view == "tree-recursive-lod")
             || (recursive_tree_lod.primary_cluster_count >= 2
                 && recursive_tree_lod.mixed_lods_observed),
         terrain_material_present: terrain_materials.iter().count() == 1,
@@ -2609,7 +2628,7 @@ fn build_manifest(
     let passed = validation.passed;
     (
         CaptureManifest {
-            pipeline: "tactical_scene_native_capture_v5",
+            pipeline: "tactical_scene_native_capture_v6",
             fixture: state.fixture.clone(),
             source_input: state.input_path.display().to_string(),
             scene_digest: state.digest.clone(),
@@ -2720,6 +2739,16 @@ fn diagnostic_suppression(view: &str) -> (bool, bool) {
         view == "tree-branch-junction",
         view == "terrain-grazing-detail",
     )
+}
+
+fn forced_tree_lod_for_view(view: &str) -> Option<u8> {
+    match view {
+        "tree-twig-lod" => Some(1),
+        "tree-small-branch-lod" => Some(2),
+        "tree-crown-lod" => Some(3),
+        "tree-billboard-lod" => Some(4),
+        _ => None,
+    }
 }
 
 fn foreground_pixel_bps(data: Option<&[u8]>) -> u16 {

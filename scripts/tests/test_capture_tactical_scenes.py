@@ -77,7 +77,12 @@ class CaptureTacticalScenesTests(unittest.TestCase):
                     "requested_matches_observed": True,
                 },
                 "requested_views": ["rock-detail"],
-                "captures": [{"view": "rock-detail", "lighting_ready": True}],
+                "captures": [{
+                    "view": "rock-detail",
+                    "lighting_ready": True,
+                    "forced_tree_lod": None,
+                    "focused_tree_lod_queued": None,
+                }],
                 "validation": {"passed": True, "lighting_readiness": True},
             }
             (root / "rock-detail.png").write_bytes(b"x" * 65)
@@ -126,6 +131,30 @@ class CaptureTacticalScenesTests(unittest.TestCase):
                     manifest_path, "steep-open-hillside", MODULE.NAMED_TIMES["grazing"],
                     ("rock-detail",), "source-id", "head",
                 )
+
+            forced = json.loads(json.dumps(manifest))
+            forced["captures"][0]["view"] = "tree-billboard-lod"
+            forced["requested_views"] = ["tree-billboard-lod"]
+            forced["captures"][0]["forced_tree_lod"] = 4
+            forced["captures"][0]["focused_tree_lod_queued"] = False
+            (root / "rock-detail.png").unlink()
+            (root / "tree-billboard-lod.png").write_bytes(b"x" * 65)
+            manifest_path.write_text(json.dumps(forced), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                MODULE.validated_child_manifest(
+                    manifest_path, "steep-open-hillside", MODULE.NAMED_TIMES["grazing"],
+                    ("tree-billboard-lod",), "source-id", "head",
+                )
+            for bad_lod in (None, 3):
+                broken = json.loads(json.dumps(forced))
+                broken["captures"][0]["forced_tree_lod"] = bad_lod
+                broken["captures"][0]["focused_tree_lod_queued"] = True
+                manifest_path.write_text(json.dumps(broken), encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    MODULE.validated_child_manifest(
+                        manifest_path, "steep-open-hillside", MODULE.NAMED_TIMES["grazing"],
+                        ("tree-billboard-lod",), "source-id", "head",
+                    )
 
     def test_png_gate_rejects_extra_or_truncated_images(self):
         with tempfile.TemporaryDirectory() as temporary:
