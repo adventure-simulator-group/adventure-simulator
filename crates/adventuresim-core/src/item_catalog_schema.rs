@@ -33,6 +33,9 @@ pub struct ItemDefinition {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EquipmentDefinition {
+    /// Authored tactical placeholder geometry. Exterior container volume is
+    /// deliberately not used to guess a shape.
+    pub physical: EquipmentPhysical,
     /// Tags used by parent attachment points to accept this item. An empty
     /// list is never inferred from ItemKind.
     #[serde(default)]
@@ -45,6 +48,22 @@ pub struct EquipmentDefinition {
     pub protection: Option<EquipmentProtection>,
     #[serde(default)]
     pub attachment_points: Vec<AttachmentPointDefinition>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EquipmentPhysical {
+    /// Full box dimensions in metres: local X width, local Y length, local Z thickness.
+    pub dimensions_m: [f32; 3],
+    /// Distance from a weapon socket/grip to the gameplay tip along local +Y.
+    /// Non-weapons author zero.
+    #[serde(default)]
+    pub grip_to_tip_m: f32,
+    /// Local attachment anchor relative to the ordinary box-centre origin.
+    /// Weapons attach this point to a hand socket; worn equipment attaches it
+    /// to the bone selected by its primary occupancy location.
+    #[serde(default)]
+    pub anchor_offset_m: [f32; 3],
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -238,6 +257,9 @@ pub enum ItemKind {
     },
     Weapon {
         slot: Slot,
+        /// Whether the weapon fits an authored sheath/holster or must remain
+        /// in a hand (or be dropped) when not otherwise carried.
+        carry: WeaponCarry,
         #[serde(default)]
         preferred_attack: MeleeAttackStyle,
         #[serde(default)]
@@ -255,6 +277,13 @@ pub enum ItemKind {
         skills: WeaponSkills,
     },
     Food,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WeaponCarry {
+    Sheathable,
+    HandOnly,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

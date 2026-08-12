@@ -17,6 +17,7 @@ animation-graph-physics = ["bevy_animation_graph/physics_avian", "dep:avian3d"]
 bevy.workspace = true
 bevy_flair.workspace = true
 bevy_egui.workspace = true
+bevy_mod_outline.workspace = true
 bevy_animation_graph.workspace = true
 avian3d = { workspace = true, optional = true }
 adventuresim-tactical-core = { workspace = true, features = ["meshgen"] }

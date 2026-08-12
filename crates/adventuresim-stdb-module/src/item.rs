@@ -470,6 +470,7 @@ fn project_definition(definition: &adventuresim_core::item_catalog::ItemDefiniti
         }
         K::Weapon {
             slot: authored_slot,
+            carry: _,
             preferred_attack,
             swing_precision,
             stab_precision,

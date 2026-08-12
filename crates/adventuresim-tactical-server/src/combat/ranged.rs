@@ -12,6 +12,7 @@ pub(super) fn resolve_ranged_attack(
     mut q_authorities: Query<&mut RangedAttackAuthority>,
     q_bestiary_categories: Query<&BestiaryCategories>,
     q_pending: Query<&PendingDefenderResponse>,
+    q_scene_items: Query<Entity, With<TacticalSceneItem>>,
     q_ammo: Query<(Entity, &ItemOf, &ItemProperties, &ItemQuantity)>,
     q_ids: Query<&CharacterId>,
     mut consequences: ResMut<TacticalConsequenceAccumulator>,
@@ -85,6 +86,7 @@ pub(super) fn resolve_ranged_attack(
     {
         let line_of_sight = authoritative_line_of_sight(
             &spatial,
+            &q_scene_items,
             validated.attacker(),
             target,
             validated.attacker_position(),

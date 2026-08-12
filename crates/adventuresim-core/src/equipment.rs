@@ -38,8 +38,8 @@ pub struct InputAddressMapping {
     /// One input may address several physical anchors (for example a belt
     /// spans four authored locations).
     pub locations: &'static [EquipmentLocation],
-    /// Repeated selection traverses these channels outside-to-inside, then
-    /// follows a selected item's child attachment points in authored order.
+    /// Repeated selection traverses attached descendants deepest-first in
+    /// authored point/capacity order, then their body-root item.
     pub channel_order: &'static [EquipmentChannel],
 }
 

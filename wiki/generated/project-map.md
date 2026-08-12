@@ -9,7 +9,7 @@ Build output, Git internals, dependency directories, and generated browser artif
 Start with `AGENTS.md`, then read the root README and the relevant architecture,
 development, or other wiki document before changing a subsystem.
 
-## Files (1924)
+## Files (1927)
 
 - `.cargo/config.toml` — Tooling or build configuration.
 - `.codex/hooks.json` — Repository support file.
@@ -61,6 +61,7 @@ development, or other wiki document before changing a subsystem.
 - `assets/animations/biped/unarmed/supine_transition.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/walk.glb` — Binary game or UI asset.
 - `assets/animations/biped/unarmed/walk_mirrored.glb` — Binary game or UI asset.
+- `assets/tactical-equipment-icons.png` — Binary game or UI asset.
 - `assets/world-data/ieg-religion-1544.csv` — Repository support file.
 - `assets_src/base.blend` — Repository support file.
 - `assets_src/base.blend1` — Repository support file.
@@ -1339,6 +1340,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-client/src/camera.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/debug.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/diagnostics.rs` — Rust source module for this component.
+- `crates/adventuresim-tactical-client/src/equipment.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/player.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-client/src/presentation.rs` — Rust source module for this component.
@@ -1379,6 +1381,7 @@ development, or other wiki document before changing a subsystem.
 - `crates/adventuresim-tactical-server/src/combat/melee.rs` — Rust source module.
 - `crates/adventuresim-tactical-server/src/combat/protocol.rs` — Rust source module.
 - `crates/adventuresim-tactical-server/src/combat/ranged.rs` — Rust source module.
+- `crates/adventuresim-tactical-server/src/equipment.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/main.rs` — Rust source module for this component.
 - `crates/adventuresim-tactical-server/src/mission/enrollment.rs` — Rust source module.
 - `crates/adventuresim-tactical-server/src/mission/mod.rs` — Rust source module.

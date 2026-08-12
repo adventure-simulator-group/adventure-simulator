@@ -5,8 +5,9 @@ use bevy_replicon::prelude::*;
 
 use crate::FIXED_TIMESTEP_HZ;
 use crate::message::{
-    DebugGameTimeScaleRequest, DefendRequest, JoinRequest, MeleeActionRequest, PlayerInputRequest,
-    RangedActionRequest, SuccessfulAttackResponse, TacticalOutcomeResponse,
+    DebugGameTimeScaleRequest, DefendRequest, EquipmentActionRequest, JoinRequest,
+    MeleeActionRequest, PlayerInputRequest, RangedActionRequest, ReconnectCapability,
+    SuccessfulAttackResponse, TacticalOutcomeResponse,
 };
 
 #[derive(Default)]
@@ -35,14 +36,20 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
             .replicate::<ArmorItem>()
             .replicate::<ItemQuantity>()
             .replicate::<ItemProperties>()
+            .replicate::<EquipmentTopology>()
+            .replicate::<EquipmentPhysical>()
+            .replicate::<EquipmentActionState>()
+            .replicate::<TacticalSceneItem>()
             .replicate::<EquipSlot>()
             .replicate::<ItemOf>()
             .replicate::<SceneId>()
             .replicate::<SceneTerrain>()
             .add_client_event::<JoinRequest>(Channel::Ordered)
+            .add_server_event::<ReconnectCapability>(Channel::Ordered)
             .add_client_event::<PlayerInputRequest>(Channel::Unreliable)
             .add_client_event::<DebugGameTimeScaleRequest>(Channel::Ordered)
             .add_client_event::<DefendRequest>(Channel::Unreliable)
+            .add_mapped_client_event::<EquipmentActionRequest>(Channel::Ordered)
             .add_mapped_client_event::<MeleeActionRequest>(Channel::Ordered)
             .add_mapped_client_event::<RangedActionRequest>(Channel::Ordered)
             .add_mapped_server_event::<SuccessfulAttackResponse>(Channel::Ordered)
@@ -51,7 +58,11 @@ impl Plugin for AdventureSimulatorReplicationPlugin {
         // Replicating physics components since those don't change and
         // it's useful for debugging. Can be gated behind a feature flag, but
         // that's error prone because of how client/server is built independently.
-        app.replicate_once_filtered::<Collider, Or<(With<Player>, With<Sensor>)>>()
-            .replicate_once_filtered::<RigidBody, With<Player>>();
+        app.replicate_once_filtered::<
+            Collider,
+            Or<(With<Player>, With<Sensor>, With<TacticalSceneItem>)>,
+        >()
+        .replicate_once_filtered::<RigidBody, Or<(With<Player>, With<TacticalSceneItem>)>>()
+        .replicate_once_filtered::<CollisionLayers, With<TacticalSceneItem>>();
     }
 }

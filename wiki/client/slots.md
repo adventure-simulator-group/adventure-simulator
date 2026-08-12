@@ -79,7 +79,7 @@ Many items may only occupy specific slots. When such an item is held in your han
 The screen normally gives no indicator for what is in your slots or your hands. However, holding down any grab button brings up a "map" of your slots with a few properties:
 * This map includes icons for each button and approximately corresponds to the keyboard/controller; the relative position of each slot should be based on the relative position of each button.
 * When holding an item, any slot it may be placed in is white, and all others are grayed out; if your hand is empty, slots with items in them are white, and empty ones are greyed out.
-* Each layer of item in a slot is visible in this interface. Layers for items that occupy multiple slots contiguously span all relevant slots.
+* Only the outermost occupied item in a slot is visible. Items that occupy multiple slots contiguously span all relevant slots.
 
 The strategic inventory uses a compact version of this map. An equipped row
 shows every applicable QWERTY key; lighter key text is nearer the surface and
@@ -97,6 +97,73 @@ navigation active; press Space to open the modal, then choose a slot key or
 press Escape to close it. An equipped item's current placement is highlighted
 and carries its item icon in either map. Clicking an equipped control still
 unequips it.
+
+## Tactical implementation
+
+In direct tactical control, holding LMB opens the right-hand egui map and
+holding MMB opens the left-hand map. RMB-held aim/attack takes precedence and
+prevents a new grab. If both grab buttons compete, the first active grab owns
+the interaction until release. Slot input is preview-only while held; one
+ordered request commits on release. Repeating a key walks that key's authored
+location alternatives and then deeper layers deterministically. WASD is never
+consumed by the map.
+
+An empty hand may draw an occupied reachable layer. A full hand may place into
+a compatible empty destination or atomically swap an occupied destination
+into the hand. The HUD dims invalid choices and flashes rejected input without
+sending a mutation. Releasing without a selection drops a held item; releasing
+an empty hand is a no-op unless auto-aim finds a reachable scene item. In that
+case the scene item is selected automatically and pickup commits on release; an
+explicit slot selection takes precedence. The opposite hand remains an explicit
+HUD choice.
+
+Ground pickup uses a soft auto-aim rather than a hard cursor cone. Among scene
+items within two metres of the character and with clear terrain line of sight,
+the client selects the item whose direction is closest to the camera centre;
+ties prefer the item closer to the character and then stable entity order. With
+no better candidate, an in-range item may therefore be selected even beside or
+behind the current view. The item that would be picked up on release has a white
+shader-rendered silhouette outline and its catalog icon appears beside the
+active-hand indicator.
+
+The tactical server re-resolves every selection against mapped ECS entities
+and validates control, action sequence/revision, expected source/destination,
+compatibility, every parent requirement, attachment tags/capacity, cycles,
+children, and pickup range/line of sight before applying a batch. Ordered DAG
+traversal exposes occupied children and empty authored attachment capacities;
+multi-parent placement reserves every required edge atomically. These
+changes exist only in the mission ECS snapshot and never replace the durable
+strategic equipment graph.
+
+Worn-item presentation follows the animated rig rather than fixed world-space
+offsets. Each character location resolves to a semantic bone: head and face to
+`head`, neck to `neck_02`, chest and back to `chest`, stomach to `stomach_02`,
+shoulders to their clavicles, arms to their upper-arm bones, hands to their hand
+bones, legs to their thigh bones, feet to their foot bones, belt and rear-pocket
+locations to `pelvis`, and side pockets to the corresponding thigh. The item
+placeholder root is a child of that bone. Items in an attachment chain, such as
+a sword in a sheath on a belt, resolve through their parents to the same body
+bone. A placeholder remains hidden until its owner's authored rig and target
+bone are available, preventing a flash at the world origin.
+
+Placeholder size and placement relative to that root are catalog data, not HUD
+or renderer constants. Every `content/items/*.yaml` equipment definition authors
+`physical.dimensions_m` and `physical.anchor_offset_m`; held weapons use the same
+anchor as their grip socket. Dropped-item colliders continue to use the identical
+authored box and anchor.
+
+The HUD renders only the outermost occupied item reachable through each slot.
+For example, a sheathed weapon is shown by itself; after it is drawn, the
+newly exposed sheath becomes the slot's visible and actionable item. Inner
+layers and empty attachment capacities are not shown.
+The tactical map is a transparent, bottom-anchored overlay so the reticle and
+the object under it remain unobstructed. Visible copy is limited to the slot
+keys and catalog Game Icons, with full item/action descriptions appearing only
+on hover. With an item in the active hand, compatible destinations are bright
+and incompatible destinations are dark and translucent. With an empty hand,
+occupied slots are bright while empty slots are dark and translucent.
+Contiguous mapped cells are connected into one visual span only when the
+currently visible item itself occupies multiple locations.
 
 ## Bags
 Your entire inventory won't necessarily fit into the slot system, which is fine. The slot system is intended not to replace "standard inventory management" altogether but to make a *significant subset* of your inventory more manageable, that being the subset of items that you need readily accessible. If you don't need a given item readily accessible, you can put it in a bag.
