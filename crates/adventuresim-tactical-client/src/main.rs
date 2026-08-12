@@ -254,6 +254,7 @@ fn validate_native_presentation_assets(asset_root: &std::path::Path) -> Result<(
         "shaders/tactical_tree_impostor.wgsl",
         "shaders/tactical_tree_leaf_card.wgsl",
         "tactical-equipment-icons.png",
+        "textures/moon/lroc_color_2k.jpg",
         "textures/shrubs/common_hazel_leaf_front_albedo.png",
         "textures/shrubs/common_hazel_leaf_opacity.png",
         "textures/trees/oak_leaf_03_front_albedo.png",

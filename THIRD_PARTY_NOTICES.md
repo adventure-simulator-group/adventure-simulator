@@ -118,6 +118,26 @@ Zgraggen / cgbookcase. The source texture is dedicated to the public domain
 under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The files
 are redistributed without visual modification and use project-local names.
 
+## NASA Scientific Visualization Studio CGI Moon Kit
+
+`assets/textures/moon/lroc_color_2k.jpg` is the unmodified 2048 x 1024 JPEG
+of the December 2025 equirectangular LROC colour mosaic from NASA's
+Scientific Visualization Studio CGI Moon Kit (item 4720), downloaded from:
+<https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_2k.jpg>.
+Its SHA-256 is
+`f7130a1822681fa7512d7dcfd40db8c10b9ba4f06777910348698260ed7a2170`.
+
+The map was assembled by Ernie Wright (USRA) from Lunar Reconnaissance
+Orbiter Camera WAC imagery and LOLA laser-altimeter albedo data. Credit:
+NASA's Scientific Visualization Studio; NASA/GSFC; Arizona State University.
+The source page describes it as a base-colour map centered on 0 degrees
+longitude: <https://svs.gsfc.nasa.gov/4720>.
+
+NASA states that its imagery and 3D-rendering media, including texture maps,
+generally are not subject to copyright in the United States. This use follows
+NASA's media guidelines, acknowledges NASA as the source, and does not imply
+NASA endorsement: <https://www.nasa.gov/nasa-brand-center/images-and-media/>.
+
 ### HYDE 3.5
 
 Generated strategic map tiles and terrain packs include a cultivated-land

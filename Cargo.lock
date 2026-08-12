@@ -5802,6 +5802,8 @@ dependencies = [
  "ravif",
  "rgb",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
