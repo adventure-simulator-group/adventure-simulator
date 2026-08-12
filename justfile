@@ -327,6 +327,10 @@ tactical-tree-leaf-comparison output="target/tactical-scene-captures/tree-leaf-c
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --tree-review-azimuth-degrees 60 --output {{ quote(output + "/angle-060") }}
     @cargo run -p adventuresim-tactical-client --bin tactical-scene-viewer -- --fixture sparse-woodland --absolute-minute {{ quote(absolute_minute) }} --settle-frames {{ quote(settle_frames) }} --tree-review-azimuth-degrees 80 --output {{ quote(output + "/angle-080") }}
 
+# Regenerate every aligned common-hazel PBR channel from one canonical plate.
+build-hazel-leaf-textures:
+    powershell -ExecutionPolicy Bypass -File scripts/build_hazel_leaf_textures.ps1
+
 # Render one identical generated woodland at five world-data canopy values so
 # tree architecture can be compared without changing its seed or neighbours.
 tactical-tree-canopy-series output="target/tactical-scene-captures/tree-canopy-series" settle_frames="6" absolute_minute="340560":

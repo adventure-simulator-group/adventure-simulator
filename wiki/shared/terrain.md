@@ -108,6 +108,14 @@ The geometric sward ends by 132 metres; beyond it, band-limited terrain colour
 and normal variation carries the far-field grass response without sub-pixel
 blade geometry. The locally controlled player's position and velocity flatten
 and push nearby grass as a presentation-only effect.
+
+Ordinary temperate understory shrubs use one shared procedural common-hazel
+(`Corylus avellana`) specimen rather than a unique mesh per scatter point. Its
+multi-stem architecture and alternate broad leaves come from the same
+parameterized woody-plant generator used for the English oak, with shrub-scale
+height, crown, stem-count, shoot, and leaf parameters. Cambered near leaves and
+flat alpha-card far leaves share one aligned albedo/opacity/normal material and
+the existing tree-leaf wind shader.
 Root self-shadow, broad colour variation, a darker centre rib, and softened
 upward normals keep the dense field readable without making individual cards
 look heavily lit. A procedural terrain material blends forest floor, dry
