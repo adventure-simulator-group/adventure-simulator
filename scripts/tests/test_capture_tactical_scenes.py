@@ -18,8 +18,8 @@ SPEC.loader.exec_module(MODULE)
 class CaptureTacticalScenesTests(unittest.TestCase):
     def test_default_matrix_is_compact_and_environment_only(self):
         matrix = MODULE.selected_matrix(None, None)
-        self.assertEqual(len(matrix), 9)
-        self.assertLessEqual(sum(len(case.views) for case, _, _ in matrix), 50)
+        self.assertEqual(len(matrix), 12)
+        self.assertLessEqual(sum(len(case.views) for case, _, _ in matrix), 54)
         self.assertNotIn("heavy-rain-high-wind", {case.fixture for case, _, _ in matrix})
         sparse = [(case, time_name) for case, time_name, _ in matrix if case.fixture == "sparse-woodland"]
         for expected_time in ("morning", "grazing"):

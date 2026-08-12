@@ -17,10 +17,13 @@ struct TacticalFoliageMaterial {
     interaction_motion: vec4<f32>,
     shading: vec4<f32>,
     shape: vec4<f32>,
+    ground_mask_transform: vec4<f32>,
 }
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(0)
 var<uniform> foliage: TacticalFoliageMaterial;
+@group(#{MATERIAL_BIND_GROUP}) @binding(1) var ground_mask_texture: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(2) var ground_mask_sampler: sampler;
 
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
@@ -29,6 +32,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     var position = vertex.position;
     var root_local = vec3<f32>(0.0, 0.0, 0.0);
     var blade_threshold = 0.0;
+    var blade_visibility = 1.0;
 #ifdef VERTEX_UVS_B
     root_local = vec3<f32>(vertex.uv_b.x, 0.0, vertex.uv_b.y);
     blade_threshold = vertex.color.a;
@@ -38,6 +42,15 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         world_from_local,
         vec4<f32>(root_local, 1.0),
     ).xyz;
+    if foliage.shape.x > 0.5 {
+        let mask_uv = root_world.xz * foliage.ground_mask_transform.xy
+            + foliage.ground_mask_transform.zw;
+        let coverage = textureSampleLevel(ground_mask_texture, ground_mask_sampler, mask_uv, 0.0).r;
+        if blade_threshold > coverage {
+            blade_visibility = 0.0;
+        }
+        position = root_local + (position - root_local) * blade_visibility;
+    }
     // Density is represented by genuinely smaller LOD meshes. The previous
     // distance threshold collapsed rejected blades here, after their vertex
     // invocations had already begun, so it did not save vertex work.
@@ -54,7 +67,9 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         blade_threshold * 1.73 + spatial_noise * 0.31
             + root_world.x * 0.013 - root_world.z * 0.017
     );
-    let blade_vigor = 0.82 + 0.22 * blade_variation;
+    // A dense near field needs a broad juvenile-to-mature height mix or it
+    // becomes an opaque vertical curtain despite varied roots.
+    let blade_vigor = 0.42 + 0.62 * blade_variation;
     let wave_position = dot(root_world.xz, wind_direction) * 0.22;
     let wind_time = globals.time * foliage.wind.w;
     let gust = 0.68 + 0.32 * sin(wind_time * 0.29 + spatial_noise * 3.7);
@@ -123,7 +138,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
             world_from_local,
             vec4<f32>(centre_local, 1.0),
         );
-        let curve_offset = total_curve * curve_profile;
+        let curve_offset = total_curve * curve_profile * blade_visibility;
 
         // Rotate a ribbon toward the camera only as it becomes edge-on. This
         // preserves each blade's authored facing while preventing it from
@@ -146,7 +161,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         let side_offset = visible_side * half_width * signed_side;
         world_position = vec4<f32>(
             centre_world.x + curve_offset.x + side_offset.x,
-            centre_world.y - interaction_droop * t * t,
+            centre_world.y - interaction_droop * t * t * blade_visibility,
             centre_world.z + curve_offset.y + side_offset.y,
             centre_world.w,
         );

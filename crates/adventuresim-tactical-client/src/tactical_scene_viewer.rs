@@ -33,8 +33,8 @@ const VIEW_WIDTH: u32 = 1280;
 const VIEW_HEIGHT: u32 = 720;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
 const PROCEDURAL_OAK_LEAVES_PER_TREE: usize = 69_632;
-const CAPTURE_PROFILE_VERSION: u16 = 4;
-const CAMERA_VERSION: u16 = 3;
+const CAPTURE_PROFILE_VERSION: u16 = 5;
+const CAMERA_VERSION: u16 = 5;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 
 #[derive(Resource)]
@@ -379,7 +379,7 @@ const CAPTURE_VIEWS: [CaptureView; 24] = [
     },
 ];
 
-const ENVIRONMENT_REVIEW_VIEWS: [CaptureView; 9] = [
+const ENVIRONMENT_REVIEW_VIEWS: [CaptureView; 10] = [
     CaptureView {
         slug: "warmup",
         label: "Render-pipeline warmup",
@@ -423,6 +423,11 @@ const ENVIRONMENT_REVIEW_VIEWS: [CaptureView; 9] = [
     CaptureView {
         slug: "horizon",
         label: "Horizon, Sun, Moon, and atmosphere context",
+        overlay: false,
+    },
+    CaptureView {
+        slug: "vista-lod-oblique",
+        label: "Playable edge and distant terrain LOD composition",
         overlay: false,
     },
 ];
@@ -903,7 +908,7 @@ mod capture_lighting_tests {
     #[test]
     fn environment_profile_has_deterministic_grazing_debris_target() {
         let views = selected_capture_views("environment-review", &[]).unwrap();
-        assert_eq!(views.len(), 9);
+        assert_eq!(views.len(), 10);
         assert!(
             views
                 .iter()
@@ -1721,9 +1726,24 @@ fn capture_views(
             (Entity, Option<&GroundScatterLayer>),
             With<MeshMaterial3d<TacticalTreeLeafCardMaterial>>,
         >,
-        Query<Entity, With<TreeLeafRepresentation>>,
+        Query<
+            Entity,
+            Or<(
+                With<TreeLeafRepresentation>,
+                With<MeshMaterial3d<TacticalTreeLeafCardMaterial>>,
+            )>,
+        >,
         Query<(Entity, &GroundScatterLayer, &GlobalTransform), Without<Camera3d>>,
         Query<(), With<WeatherParticle>>,
+        Query<
+            &mut Visibility,
+            (
+                With<SceneObstacle>,
+                Without<CaptureOverlay>,
+                Without<VistaTerrain>,
+                Without<TreeReviewBackdrop>,
+            ),
+        >,
     )>,
 ) {
     let Some(state) = state.as_deref_mut() else {
@@ -1821,13 +1841,22 @@ fn capture_views(
             }
         }
         for (entity, layer, _) in ground_scatter_entities {
-            if layer == GroundScatterLayer::Grass {
-                commands.entity(entity).insert(if suppress_grass {
+            let hide_for_view = (layer == GroundScatterLayer::Grass && suppress_grass)
+                || view.slug == "vista-lod-oblique";
+            if layer == GroundScatterLayer::Grass || view.slug == "vista-lod-oblique" {
+                commands.entity(entity).insert(if hide_for_view {
                     Visibility::Hidden
                 } else {
                     Visibility::Inherited
                 });
             }
+        }
+        for mut visibility in scene_visibility.p7().iter_mut() {
+            *visibility = if view.slug == "vista-lod-oblique" {
+                Visibility::Hidden
+            } else {
+                Visibility::Inherited
+            };
         }
         if let Some(entity) = state.tree_focus_entity {
             commands.entity(entity).insert(if specimen_view {
@@ -1868,7 +1897,10 @@ fn capture_views(
             };
         }
         for mut visibility in &mut scene_visibility.p1() {
-            *visibility = if view.slug == "horizon" {
+            *visibility = if matches!(
+                view.slug,
+                "warmup" | "beauty-ground" | "beauty-overhead" | "horizon" | "vista-lod-oblique"
+            ) {
                 Visibility::Visible
             } else {
                 Visibility::Hidden
@@ -2121,7 +2153,7 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
         "tree-branch-junction" => state.tree_focus.map_or(
             (state.ground_eye_position, state.ground_eye_target, Vec3::Y),
             |tree| {
-                let junction = tree + Vec3::Y * 2.1;
+                let junction = tree + Vec3::Y * 0.15;
                 let azimuth = state.tree_review_azimuth_degrees.to_radians();
                 (
                     junction + Vec3::new(azimuth.sin() * 3.2, 0.65, azimuth.cos() * 3.2),
@@ -2183,14 +2215,20 @@ fn camera_for_view(slug: &str, state: &CaptureState) -> (Transform, Vec3) {
             Vec3::Z,
         ),
         "horizon" => {
-            let horizontal = Vec2::new(state.peak_target.x, state.peak_target.z);
-            let lateral = horizontal
-                .try_normalize()
-                .map(|direction| Vec2::new(-direction.y, direction.x))
-                .unwrap_or(Vec2::Y)
-                * (horizontal.length() * 0.75).clamp(500.0, 5_000.0);
-            let position = state.obstacle_focus + Vec3::new(lateral.x, 6.5, lateral.y);
+            let position = state.ground_eye_position + Vec3::Y * 12.0;
             (position, state.peak_target, Vec3::Y)
+        }
+        "vista-lod-oblique" => {
+            let direction = (state.peak_target.xz() - state.obstacle_focus.xz())
+                .try_normalize()
+                .unwrap_or(Vec2::X);
+            let position = state.obstacle_focus
+                - Vec3::new(direction.x, 0.0, direction.y) * (half * 0.62)
+                + Vec3::Y * 8.0;
+            let target = state.obstacle_focus
+                + Vec3::new(direction.x, 0.0, direction.y) * (half * 5.0)
+                + Vec3::Y * 2.0;
+            (position, target, Vec3::Y)
         }
         _ => unreachable!("capture view is fixed"),
     };
