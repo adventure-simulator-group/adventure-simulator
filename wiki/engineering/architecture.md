@@ -384,6 +384,17 @@ Standalone tactical development defaults to the committed `dense-woodland`
 input when no path is supplied; the server has no alternate noise-terrain
 fallback.
 
+Collider-bearing rocks remain compact authoritative `RockRecipe` values. The
+client's bounded 18-cubed Surface Nets field now applies archetype-specific
+faceting, cleavage, chipping, and asymmetric ground-contact flattening while
+remaining inside the unchanged conservative spherical proxy. A shared
+lithology-parameterized dielectric material derives restrained albedo,
+roughness, cavity, and analytic normal variation from one object-space field;
+it adds no texture fetch, emissive response, collider detail, entity, or draw
+call. This is a silhouette/material foundation, not a substitute for a later
+aligned geological PBR texture set where close inspection requires mineral
+and fracture detail.
+
 The Surface Nets implementation is deliberately private to the tactical client
 and is the first bounded volumetric-meshing primitive, not a cave system. Future
 overhang, cliff, or cave patches must replicate a compact deterministic field

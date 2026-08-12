@@ -2,7 +2,7 @@ pub(super) mod rock;
 pub(super) mod tree;
 
 use super::*;
-use rock::procedural_rock_mesh;
+use rock::{TacticalRockMaterial, procedural_rock_mesh, rock_material};
 
 #[derive(Component)]
 pub(in crate::presentation) struct PendingTreePresentation;
@@ -12,7 +12,7 @@ pub(in crate::presentation) fn on_scene_obstacle_added(
     mut commands: Commands,
     obstacles: Query<&SceneObstacle>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut rock_materials: ResMut<Assets<TacticalRockMaterial>>,
 ) -> Result {
     let obstacle = obstacles.get(event.entity)?;
     match *obstacle {
@@ -26,11 +26,7 @@ pub(in crate::presentation) fn on_scene_obstacle_added(
                 Name::new("Presented tactical rock"),
                 ProceduralRockVisual,
                 Mesh3d(meshes.add(procedural_rock_mesh(recipe))),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color: rock::rock_color(recipe.lithology),
-                    perceptual_roughness: 1.0,
-                    ..default()
-                })),
+                MeshMaterial3d(rock_materials.add(rock_material(recipe))),
             ));
         }
     }
