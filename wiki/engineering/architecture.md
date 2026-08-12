@@ -322,7 +322,17 @@ normal, roughness, and ambient-occlusion material. Their cylindrical UVs use
 the scan's documented one-by-two-metre scale, duplicate the wrap seam, and
 parallel-transport the tangent frame along each axis; physical feature scale
 therefore stays consistent across trunks, roots, and branches without a
-tree-specific lighting adjustment.
+tree-specific lighting adjustment. Living leaf cards retain their scanned
+front/back albedo and normals while sharing a crown-size Beer--Lambert response
+for only the self-occlusion unresolved by explicit cards and screen-space AO.
+An empirically bounded 0.11-per-metre coefficient yields about 48% mature-oak
+and 16% hazel unresolved occlusion under the production atmosphere IBL. Oak
+diffuse transmission is 0.40 versus hazel's 0.46, preserving the smaller,
+thinner crown's greater transmission. The custom material explicitly enables
+Bevy's diffuse-transmission lighting path so this energy is added on the back
+side rather than merely removed from reflected diffuse. This does not change
+leaf topology, alpha coverage, entity count, draw count, exposure, or global
+lighting.
 Non-colliding grass and understory use automatically instanced shared meshes,
 layered shader wind, and root-to-tip shading. Grass cross-fades from a
 2,916-blade, fifteen-vertex near-field macro patch to a stable 144-blade,

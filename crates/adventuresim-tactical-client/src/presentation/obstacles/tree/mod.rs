@@ -66,6 +66,8 @@ pub(crate) struct TacticalTreeLeafCardMaterial {
     pub(crate) physical_parameters: Vec4,
 }
 
+const OAK_LEAF_DIFFUSE_TRANSMISSION: f32 = 0.40;
+
 pub(crate) fn oak_leaf_material(asset_server: &AssetServer) -> TacticalTreeLeafCardMaterial {
     leaf_material(
         asset_server,
@@ -73,7 +75,7 @@ pub(crate) fn oak_leaf_material(asset_server: &AssetServer) -> TacticalTreeLeafC
         0.28,
         0.72,
         canopy_ao_strength(ENGLISH_OAK_PARAMETERS.crown_radius_metres),
-        0.32,
+        OAK_LEAF_DIFFUSE_TRANSMISSION,
     )
 }
 
@@ -135,11 +137,15 @@ pub(in crate::presentation) fn hazel_leaf_material(
 ///
 /// The prior species constants gave a three-metre-wide hazel almost the same
 /// occlusion as a twelve-metre-wide oak. Beer-Lambert transmission makes the
-/// effect depend on the representative path length through each crown while
-/// retaining the accepted mature-oak strength.
+/// effect depend on the representative path length through each crown. The
+/// extinction is deliberately bounded below dense-forest values because the
+/// explicit leaf cards and screen-space AO already resolve part of the crown's
+/// self-occlusion.
 fn canopy_ao_strength(crown_radius_metres: f32) -> f32 {
-    const FOLIAGE_EXTINCTION_PER_METRE: f32 = 0.16;
-    1.0 - (-FOLIAGE_EXTINCTION_PER_METRE * crown_radius_metres.max(0.0)).exp()
+    // This is an empirical unresolved-path coefficient calibrated under the
+    // production atmosphere IBL, not a measured whole-leaf absorption value.
+    const UNRESOLVED_FOLIAGE_EXTINCTION_PER_METRE: f32 = 0.11;
+    1.0 - (-UNRESOLVED_FOLIAGE_EXTINCTION_PER_METRE * crown_radius_metres.max(0.0)).exp()
 }
 
 fn leaf_material(
@@ -221,7 +227,22 @@ impl Material for TacticalTreeLeafCardMaterial {
         _key: bevy::pbr::MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
         descriptor.primitive.cull_mode = None;
+        if let Some(fragment) = descriptor.fragment.as_mut() {
+            enable_leaf_transmission_shader_defs(&mut fragment.shader_defs);
+        }
         Ok(())
+    }
+}
+
+fn enable_leaf_transmission_shader_defs(shader_defs: &mut Vec<bevy::shader::ShaderDefVal>) {
+    for name in [
+        "STANDARD_MATERIAL_DIFFUSE_TRANSMISSION",
+        "STANDARD_MATERIAL_DIFFUSE_OR_SPECULAR_TRANSMISSION",
+    ] {
+        let shader_def = bevy::shader::ShaderDefVal::from(name);
+        if !shader_defs.contains(&shader_def) {
+            shader_defs.push(shader_def);
+        }
     }
 }
 
@@ -543,12 +564,51 @@ mod tests {
     }
 
     #[test]
-    fn canopy_ao_tracks_crown_scale_without_changing_the_accepted_oak() {
+    fn canopy_ao_tracks_crown_scale_without_double_counting_resolved_leaves() {
+        let clear = canopy_ao_strength(0.0);
         let oak = canopy_ao_strength(ENGLISH_OAK_PARAMETERS.crown_radius_metres);
         let hazel = canopy_ao_strength(COMMON_HAZEL_PARAMETERS.crown_radius_metres);
+        let deep_crown = canopy_ao_strength(12.0);
 
-        assert!((oak - 0.62).abs() < 0.01);
-        assert!((hazel - 0.22).abs() < 0.01);
-        assert!(hazel < oak * 0.4);
+        assert_eq!(clear, 0.0);
+        assert!((oak - 0.48).abs() < 0.01);
+        assert!((hazel - 0.16).abs() < 0.01);
+        assert!(hazel < oak * 0.35);
+        assert!(clear < hazel && hazel < oak && oak < deep_crown);
+        assert!((0.0..1.0).contains(&deep_crown));
+    }
+
+    #[test]
+    fn oak_leaf_optics_preserve_bounded_transmission_and_occlusion() {
+        let oak_occlusion = canopy_ao_strength(ENGLISH_OAK_PARAMETERS.crown_radius_metres);
+
+        assert!((oak_occlusion - 0.48).abs() < 0.01);
+        assert!((OAK_LEAF_DIFFUSE_TRANSMISSION - 0.40).abs() < f32::EPSILON);
+        assert!(OAK_LEAF_DIFFUSE_TRANSMISSION < 0.5);
+        assert!(oak_occlusion > OAK_LEAF_DIFFUSE_TRANSMISSION);
+
+        let darkest_authored_visibility = 1.0 + oak_occlusion * (0.32 - 1.0);
+        assert!((0.66..=0.68).contains(&darkest_authored_visibility));
+    }
+
+    #[test]
+    fn leaf_pipeline_enables_exact_diffuse_transmission_definitions() {
+        let mut shader_defs = vec![bevy::shader::ShaderDefVal::from("EXISTING")];
+        enable_leaf_transmission_shader_defs(&mut shader_defs);
+        enable_leaf_transmission_shader_defs(&mut shader_defs);
+
+        for expected in [
+            "STANDARD_MATERIAL_DIFFUSE_TRANSMISSION",
+            "STANDARD_MATERIAL_DIFFUSE_OR_SPECULAR_TRANSMISSION",
+        ] {
+            assert_eq!(
+                shader_defs
+                    .iter()
+                    .filter(|shader_def| **shader_def == bevy::shader::ShaderDefVal::from(expected))
+                    .count(),
+                1
+            );
+        }
+        assert_eq!(shader_defs.len(), 3);
     }
 }
