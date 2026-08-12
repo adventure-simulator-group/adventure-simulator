@@ -5,7 +5,7 @@ use bevy::{
     app::AppExit,
     asset::AssetPlugin,
     camera::Exposure,
-    light::AtmosphereEnvironmentMapLight,
+    light::{AtmosphereEnvironmentMapLight, SunDisk},
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     window::{PresentMode, WindowResolution},
@@ -67,6 +67,8 @@ struct SkyManifest {
     upper_sky_luma_variance: f32,
     horizon_sky_mean_luma: f32,
     horizon_sky_red_blue_delta: f32,
+    sun_disk_angular_diameter_degrees: f32,
+    diagnostic_magnification: bool,
     exposure_ev100: f32,
     solar_source_illuminance_lux: f32,
     atmosphere_enabled: bool,
@@ -142,6 +144,9 @@ pub(super) fn run(view: SkyView, output: PathBuf, settle_frames: u32) {
 fn setup_view(world: &mut World, view: SkyView) {
     let absolute_minute = match view {
         SkyView::Sun => 172 * MINUTES_PER_DAY + 12 * 60,
+        // Clear midsummer low Sun: demonstrates atmospheric extinction and
+        // aureole structure without changing the production solar model.
+        SkyView::SunDetail => 172 * MINUTES_PER_DAY + 19 * 60,
         SkyView::Twilight => 80 * MINUTES_PER_DAY + 18 * 60,
         // Canonical first-quarter Moon at 21:55 on day 36.
         SkyView::Moon => 53_155,
@@ -157,6 +162,7 @@ fn setup_view(world: &mut World, view: SkyView) {
     let moon = to_bevy_direction(celestial.moon);
     let view_direction = match view {
         SkyView::Sun => horizon_view(sun, 0.5),
+        SkyView::SunDetail => sun,
         SkyView::Twilight => horizon_view(sun, 0.03),
         SkyView::Moon => moon,
         SkyView::Stars => Vec3::new(0.15, 0.55, -0.82).normalize(),
@@ -168,10 +174,15 @@ fn setup_view(world: &mut World, view: SkyView) {
         .expect("one tactical camera");
     camera.0.translation = Vec3::new(0.0, 2.0, 8.0);
     camera.0.look_to(view_direction, Vec3::Y);
-    if matches!(view, SkyView::Moon)
+    if matches!(view, SkyView::Moon | SkyView::SunDetail)
         && let Projection::Perspective(perspective) = &mut *camera.2
     {
-        perspective.fov = 12.0_f32.to_radians();
+        perspective.fov = (if matches!(view, SkyView::Moon) {
+            12.0_f32
+        } else {
+            20.0_f32
+        })
+        .to_radians();
     }
     let fov = match &*camera.2 {
         Projection::Perspective(perspective) => perspective.fov.to_degrees(),
@@ -298,7 +309,9 @@ fn capture_view(
             let expected_dimensions =
                 captured.image.width() == VIEW_WIDTH && captured.image.height() == VIEW_HEIGHT;
             let subject_content = match state.view {
-                SkyView::Sun | SkyView::Moon => metrics.bright_pixel_count >= 16,
+                SkyView::Sun | SkyView::SunDetail | SkyView::Moon => {
+                    metrics.bright_pixel_count >= 16
+                }
                 SkyView::Twilight => twilight_subject_content(&metrics),
                 SkyView::Stars => metrics.bright_pixel_count >= 8,
             };
@@ -332,6 +345,8 @@ fn capture_view(
                 upper_sky_luma_variance: metrics.upper_sky_luma_variance,
                 horizon_sky_mean_luma: metrics.horizon_sky_mean_luma,
                 horizon_sky_red_blue_delta: metrics.horizon_sky_red_blue_delta,
+                sun_disk_angular_diameter_degrees: SunDisk::EARTH.angular_size.to_degrees(),
+                diagnostic_magnification: matches!(state.view, SkyView::SunDetail),
                 exposure_ev100,
                 solar_source_illuminance_lux,
                 atmosphere_enabled: true,
@@ -453,6 +468,7 @@ fn twilight_subject_content(metrics: &SkyMetrics) -> bool {
 fn sky_view_slug(view: SkyView) -> &'static str {
     match view {
         SkyView::Sun => "sun",
+        SkyView::SunDetail => "sun-detail",
         SkyView::Twilight => "twilight",
         SkyView::Moon => "moon",
         SkyView::Stars => "stars",

@@ -60,7 +60,10 @@ environment map.
 
 ## Verification
 
-Use `just tactical-sky-capture` with `sun`, `twilight`, `moon`, or `stars`.
+Use `just tactical-sky-capture` with `sun`, `sun-detail`, `twilight`, `moon`, or
+`stars`. `sun-detail` is a clearly labeled 20-degree-FOV diagnostic of the same
+unchanged production `SunDisk::EARTH` and natural bloom at low solar altitude;
+it must not be interpreted as gameplay-scale disc size.
 These deterministic native views run the production presentation plugin. The
 Moon view uses a narrow verification field of view so the first-quarter
 terminator remains inspectable; gameplay retains the physically scaled disc.

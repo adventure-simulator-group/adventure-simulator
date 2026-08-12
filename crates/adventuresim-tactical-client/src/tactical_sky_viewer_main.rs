@@ -17,6 +17,7 @@ use clap::{Parser, ValueEnum};
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum SkyView {
     Sun,
+    SunDetail,
     Twilight,
     Moon,
     Stars,
