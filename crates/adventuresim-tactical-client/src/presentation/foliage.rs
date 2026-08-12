@@ -8,6 +8,8 @@ const DRY_LEAF_PASSES_PER_SAMPLE: u64 = 3;
 const TWIG_PASSES_PER_SAMPLE: u64 = 2;
 const DRY_LEAF_MESH_VARIANTS: u64 = 4;
 const TWIG_MESH_VARIANTS: u64 = 3;
+const LOOSE_STONE_MESH_VARIANTS: u64 = 4;
+const LOOSE_STONE_PASSES_PER_SAMPLE: u64 = 3;
 
 #[derive(Resource, Default)]
 pub(in crate::presentation) struct HazelPresentationCache {
@@ -218,7 +220,7 @@ pub(super) fn spawn_ground_foliage(
             };
             commands.spawn((
                 Name::new("Tactical grass near ribbons"),
-                FoliageLayer::Grass,
+                GroundScatterLayer::Grass,
                 NotShadowCaster,
                 Mesh3d(grass_near_mesh.clone()),
                 MeshMaterial3d(grass_near_material.clone()),
@@ -261,7 +263,7 @@ pub(super) fn spawn_ground_foliage(
             };
             commands.spawn((
                 Name::new("Shared common hazel shrub wood"),
-                FoliageLayer::Understory,
+                GroundScatterLayer::Understory,
                 Mesh3d(hazel_cache.branches.as_ref().unwrap().clone()),
                 MeshMaterial3d(hazel_cache.bark.as_ref().unwrap().clone()),
                 VisibilityRange::abrupt(0.0, 92.0),
@@ -269,7 +271,7 @@ pub(super) fn spawn_ground_foliage(
             ));
             commands.spawn((
                 Name::new("Shared common hazel cambered leaves"),
-                FoliageLayer::Understory,
+                GroundScatterLayer::Understory,
                 TreeLeafRepresentation::TexturedMesh,
                 Mesh3d(hazel_cache.cambered_leaves.as_ref().unwrap().clone()),
                 MeshMaterial3d(hazel_cache.leaves.as_ref().unwrap().clone()),
@@ -282,7 +284,7 @@ pub(super) fn spawn_ground_foliage(
             ));
             commands.spawn((
                 Name::new("Shared common hazel alpha-card leaves"),
-                FoliageLayer::Understory,
+                GroundScatterLayer::Understory,
                 TreeLeafRepresentation::AlphaCard,
                 Mesh3d(hazel_cache.leaf_cards.as_ref().unwrap().clone()),
                 MeshMaterial3d(hazel_cache.leaves.as_ref().unwrap().clone()),
@@ -320,7 +322,7 @@ pub(super) fn spawn_ground_foliage(
                 cell_origin,
                 hash,
                 "Tactical dry-leaf patch",
-                FoliageLayer::DryLeaves,
+                GroundScatterLayer::DryLeaves,
                 &dry_leaf_meshes[(hash % dry_leaf_meshes.len() as u64) as usize],
                 &dry_leaf_material,
                 0.8,
@@ -340,13 +342,102 @@ pub(super) fn spawn_ground_foliage(
                 cell_origin,
                 hash,
                 "Tactical twig patch",
-                FoliageLayer::Twigs,
+                GroundScatterLayer::Twigs,
                 &twig_meshes[(hash % twig_meshes.len() as u64) as usize],
                 &twig_material,
                 0.72,
                 0.02,
             );
         }
+    }
+
+    let loose_stone_recipes = (0..LOOSE_STONE_MESH_VARIANTS)
+        .map(loose_stone_recipe)
+        .collect::<Vec<_>>();
+    let loose_stone_meshes = loose_stone_recipes
+        .iter()
+        .map(|recipe| meshes.add(procedural_rock_mesh(*recipe)))
+        .collect::<Vec<_>>();
+    let loose_stone_materials = loose_stone_recipes
+        .iter()
+        .map(|recipe| {
+            standard_materials.add(StandardMaterial {
+                base_color: rock_color(recipe.lithology),
+                perceptual_roughness: 1.0,
+                ..default()
+            })
+        })
+        .collect::<Vec<_>>();
+    for (index, sample) in ground.samples().iter().enumerate() {
+        if sample.cover != GroundCover::LooseStone {
+            continue;
+        }
+        let grid_x = index % ground.grid_width();
+        let grid_z = index / ground.grid_width();
+        let cell_origin = Vec2::new(
+            grid_x as f32 * ground.grid_scale() - ground.width() * 0.5,
+            grid_z as f32 * ground.grid_scale() - ground.depth() * 0.5,
+        );
+        let density = bps(sample.cover_density_bps);
+        for pass in 0..LOOSE_STONE_PASSES_PER_SAMPLE {
+            let hash =
+                splitmix64(base_seed ^ index as u64 ^ pass.rotate_left(17) ^ 0x7374_6f6e_655f_7363);
+            if unit_hash(hash) >= density {
+                continue;
+            }
+            let jitter = ground.grid_scale() * 0.72;
+            let position = cell_origin
+                + Vec2::new(
+                    unit_hash(splitmix64(hash ^ 0x672a_1f04)) - 0.5,
+                    unit_hash(splitmix64(hash ^ 0xeeb0_31cd)) - 0.5,
+                ) * jitter;
+            if ground
+                .ground_at(position)
+                .is_none_or(|surface| surface.cover != GroundCover::LooseStone)
+            {
+                continue;
+            }
+            let Some(mut transform) = foliage_transform(terrain, position.x, position.y, hash)
+            else {
+                continue;
+            };
+            let variant = (hash % LOOSE_STONE_MESH_VARIANTS) as usize;
+            let scale = 0.075 + unit_hash(splitmix64(hash ^ 0x51d2_9ec4)) * 0.085;
+            transform.scale *= scale;
+            transform.translation.y += scale * 0.46;
+            commands.spawn((
+                Name::new("Tactical loose-stone scatter"),
+                GroundScatterLayer::LooseStone,
+                NotShadowCaster,
+                Mesh3d(loose_stone_meshes[variant].clone()),
+                MeshMaterial3d(loose_stone_materials[variant].clone()),
+                VisibilityRange::abrupt(0.0, 58.0),
+                transform,
+            ));
+        }
+    }
+}
+
+fn loose_stone_recipe(variant: u64) -> RockRecipe {
+    let archetype = match variant % 3 {
+        0 => RockArchetype::Rounded,
+        1 => RockArchetype::Angular,
+        _ => RockArchetype::Slab,
+    };
+    RockRecipe {
+        seed: splitmix64(0x7065_6262_6c65_0000 ^ variant),
+        archetype,
+        lithology: match variant % 3 {
+            0 => RockLithology::Granite,
+            1 => RockLithology::Limestone,
+            _ => RockLithology::Sandstone,
+        },
+        dimensions_cm: match archetype {
+            RockArchetype::Rounded => [126, 96, 116],
+            RockArchetype::Angular => [132, 104, 120],
+            RockArchetype::Slab => [140, 66, 128],
+        },
+        collision_radius_cm: 75,
     }
 }
 
@@ -358,7 +449,7 @@ fn spawn_forest_floor_patch(
     cell_origin: Vec2,
     hash: u64,
     name: &'static str,
-    layer: FoliageLayer,
+    layer: GroundScatterLayer,
     mesh: &Handle<Mesh>,
     material: &Handle<TacticalFoliageMaterial>,
     scale: f32,
@@ -804,11 +895,12 @@ impl Material for TacticalFoliageMaterial {
 }
 
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum FoliageLayer {
+pub(crate) enum GroundScatterLayer {
     Grass,
     Understory,
     DryLeaves,
     Twigs,
+    LooseStone,
 }
 
 #[derive(Component)]

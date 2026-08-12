@@ -21,14 +21,17 @@ context. Tactical scene generation now has a shared versioned input boundary:
 production sampling and named synthetic fixtures provide the same playable
 heights, environmental coverage, immutable weather, and multi-LOD vista
 samples. Inputs coarser than two metres are deterministically bilinearly
-upsampled and receive bounded seeded microrelief before the tactical mesh and
-collider are built, so presentation, movement, and ground queries share one
-authoritative surface. The tactical server owns the playable collider; coarse vista
+upsampled and receive bounded seeded microrelief before the tactical server
+builds its collider and replicates the heightfield. Each client builds the
+render mesh from those same samples, so presentation, movement, and ground
+queries share one authoritative surface without sending mesh data. The tactical server owns the playable collider; coarse vista
 data is presentation-only and is not tactical tick state or SpacetimeDB state.
 Generated tree trunks and rocks are server-authoritative static movement
-obstacles. Their compact kind and transform are replicated so clients render a
-matching proxy instead of an invisible collider. Clients present deformed
-low-poly rock meshes constrained inside those colliders. Trees use a seeded
+obstacles. Trees replicate a compact kind and transform; rocks additionally
+replicate a seed, archetype, lithology, dimensions, and conservative collision
+radius. The server creates only static primitive colliders. Each client samples
+the recipe and extracts a low-poly Surface Nets mesh constrained inside the
+collider; no render mesh is generated or transmitted by the server. Trees use a seeded
 four-order branch skeleton and five smoothly cross-faded presentation levels:
 real tapered wood with individual veined leaf cards, leafed-twig impostors,
 small-branch impostors, crown-branch impostors, and finally one camera-facing
@@ -88,7 +91,16 @@ twigs with independent deterministic placement over the warmer forest-floor
 material. Open soil remains tall grass, wet ground selects reeds,
 and sufficiently hilly samples select loose stone; these profiles are mutually
 exclusive at a location even when one profile renders several compatible
-details.
+details. Loose-stone cells deterministically place non-colliding, separately
+shaded rock instances generated from four shared client-side volumetric meshes;
+they do not enter the foliage wind or player-bending shader.
+
+The bounded client Surface Nets extractor is reusable infrastructure for future
+sparse volumetric terrain patches, but this iteration does not define a cave,
+cliff, overhang, heightfield-collar, or traversability schema. Those patches
+must eventually replicate compact deterministic field recipes rather than
+meshes. Their server collision and ground-query contract must be designed
+without moving render-mesh extraction into the dispatcher or tactical server.
 
 Grass, shrubs, reeds, leaves, and twigs are deterministic shared-mesh foliage with no gameplay
 collider. Grass uses overlapping 3.2-metre shared macro patches containing 729 individually

@@ -11,16 +11,19 @@ mod procedural;
 mod sky;
 mod terrain;
 mod vista;
+mod volumetric;
 mod weather;
 
 use environment::*;
 use foliage::*;
+use obstacles::rock::{procedural_rock_mesh, rock_color};
 use obstacles::tree::*;
 use obstacles::{on_scene_obstacle_added, present_pending_trees};
 use procedural::*;
 use sky::*;
 use terrain::*;
 use vista::*;
+use volumetric::*;
 use weather::*;
 
 // This facade is compiled independently by several binaries, so each binary
@@ -28,7 +31,7 @@ use weather::*;
 #[allow(unused_imports)]
 pub(crate) use environment::scene_ambient_light;
 #[allow(unused_imports)]
-pub(crate) use foliage::{FoliageLayer, GrassInteractor};
+pub(crate) use foliage::{GrassInteractor, GroundScatterLayer};
 #[allow(unused_imports)]
 pub(crate) use obstacles::oak_review_terminal_specimen;
 #[allow(unused_imports)]
