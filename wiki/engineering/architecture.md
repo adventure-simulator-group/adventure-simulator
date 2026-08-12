@@ -10,7 +10,7 @@ Static item definitions cross the strategic boundary as a build-time embedded
 catalog. YAML is authoring input only; the flattened SpacetimeDB `Item` table
 is its deterministic persistence/client projection. Inventory ownership,
 custody, amount, and condition remain strategic state and are not definition
-content. See [Item definition authoring](item-authoring.md).
+content. See [Item definition authoring](../contributing/item-authoring.md).
 
 Fabelgeist separates persistent strategic play from transient
 real-time tactical play. The boundary is architectural, not merely a difference
@@ -379,7 +379,7 @@ falls back to melee behavior when ranged equipment or arrows are unavailable.
 
 Mission, hostile-group, battle, and outcome-source identities are separate.
 Tactical success never chooses a case objective, capture subject, contract
-state, or reward. See [Quest authority](quest-authority.md).
+state, or reward. See [Quest authority](../strategic/quest-authority.md).
 
 ## Authored content
 
@@ -392,7 +392,7 @@ display names remain presentation.
 Generated cases retain the catalog revision and deterministic context used to
 create them. Canonical truth, weights, hidden evidence thresholds, witness
 reliability, and generation traces remain private. See
-[Quest generation and investigation](quest-generation-and-investigation.md).
+[Quest generation and investigation](../strategic/quest-generation-and-investigation.md).
 
 ## World compilation
 
@@ -422,22 +422,22 @@ server-rendered. The terrain-routing pack is a native strategic planning input;
 its raster cells and A* search state are never persisted in SpacetimeDB.
 
 Source-specific contracts live in the World Data section of the wiki, beginning
-with [Source manifests](source-manifests.md),
-[World-data bundles](world-data-bundles.md), and
-[Viabundus](viabundus.md).
+with [Source manifests](world-data/source-manifests.md),
+[World-data bundles](world-data/world-data-bundles.md), and
+[Viabundus](world-data/viabundus.md).
 
 ## Detailed system references
 
 - [Development workflow](developing.md)
-- [Quest authority](quest-authority.md)
-- [Quest generation and investigation](quest-generation-and-investigation.md)
-- [Bestiary authority](bestiary.md)
-- [Dialogue architecture](dialogue.md)
-- [Measured inventory](measured-inventory.md)
-- [Physiology](physiology.md)
-- [Organizations](organizations.md)
+- [Quest authority](../strategic/quest-authority.md)
+- [Quest generation and investigation](../strategic/quest-generation-and-investigation.md)
+- [Bestiary authority](../shared/bestiary.md)
+- [Dialogue architecture](../strategic/dialogue.md)
+- [Measured inventory](../shared/measured-inventory.md)
+- [Physiology](../shared/physiology.md)
+- [Organizations](../strategic/organizations.md)
 - [Strategic simulation](strategic-simulation.md)
-- [Strategic route terrain](route-terrain.md)
+- [Strategic route terrain](world-data/route-terrain.md)
 
 ## Unified world actors
 

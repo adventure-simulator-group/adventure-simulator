@@ -48,5 +48,5 @@ The current local strategic surface uses a selected-character cookie and a
 trusted gateway identity. It must not be treated as a public multi-user account
 system until explicit player-to-character ownership is implemented.
 
-See [Architecture](reference/architecture.md) for the current transport,
+See [Architecture](architecture.md) for the current transport,
 credential, subscription, and tactical lifecycle boundaries.

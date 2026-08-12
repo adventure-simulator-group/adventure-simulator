@@ -1,7 +1,7 @@
 # Foraging
 
 Willow bark, comfrey, poppy, and sage feed the bounded
-[Herbalism](herbalism.md) loop. Their public Poor/Ordinary/Fine catalogue
+[Herbalism](../shared/herbalism.md) loop. Their public Poor/Ordinary/Fine catalogue
 identities preserve grade through stacking, trade, and transfer without hidden
 lot state.
 

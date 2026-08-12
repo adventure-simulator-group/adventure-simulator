@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate wiki/reference/llm/project-map.md from the repository file tree."""
+"""Generate wiki/generated/project-map.md from the repository file tree."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "wiki" / "reference" / "llm" / "project-map.md"
+OUTPUT = ROOT / "wiki" / "generated" / "project-map.md"
 EXCLUDED_PARTS = {
     ".git", "target", "node_modules", ".direnv", "book", "__pycache__", "downloads",
 }

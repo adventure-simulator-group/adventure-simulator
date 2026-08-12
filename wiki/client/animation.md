@@ -121,7 +121,7 @@ animation immediately in response to local input, then reconcile it with the
 server's accepted skeleton state. Bone transforms, terrain-adjusted foot
 positions, and secondary motion are presentation and are not authoritative.
 This follows the tactical trust boundary described in
-[Networking](../networking.md#tactical-experience).
+[Networking](../engineering/networking.md#tactical-experience).
 
 For remote characters, an action start tick and a gait/lead-foot anchor are
 enough to advance the animation locally. Individual bone transforms should not
@@ -1493,7 +1493,7 @@ remain the authority for presentation quality.
 ## Stylistic principles
 
 Animations should remain realistic in accordance with the
-[meta-level heuristics](../meta.md). Melee attacks should generally be inspired
+meta-level heuristics. Melee attacks should generally be inspired
 by historical European martial arts. Trained characters therefore use much
 less exaggerated anticipation than typical action-game or film choreography.
 Future animation packs may vary by skill or species: an untrained character

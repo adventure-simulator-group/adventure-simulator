@@ -70,8 +70,9 @@ dispatch to party inventory; leaving him or continuing the journey remains
 valid.
 
 Bootstrap reuses the durable puzzle state when invoked repeatedly. The redirect
-is read from the safe challenge projection rather than reconstructed by the HTTP adapter. See
-[Errantry and modular challenges](errantry-and-challenges.md).
+is read from the safe challenge projection rather than reconstructed by the
+HTTP adapter. See
+[Errantry and modular challenges](../strategic/errantry-and-challenges.md).
 
 ## Outbreak demo
 
@@ -128,7 +129,7 @@ administration paths.
 Item YAML uses the production build validator. Run `just content-check` for all
 compiled core catalogs plus dialogue, or `just content-check items` while iterating on
 `content/items/*.yaml`; see
-[Item definition authoring](item-authoring.md).
+[Item definition authoring](../contributing/item-authoring.md).
 
 Road/rest encounter YAML is also compiled and validated at build time. Run
 `cargo run -p adventuresim-core --bin content-check -- encounters` for its
@@ -144,7 +145,7 @@ Viabundus world with:
 python scripts/validate_organization_world.py --world path\to\compiled-world.json
 ```
 
-See [organizations.md](organizations.md) for the schema and authority boundary.
+See [organizations.md](../strategic/organizations.md) for the schema and authority boundary.
 
 ## Developer quest spawning
 
@@ -159,7 +160,7 @@ normal module build cannot author arbitrary quests.
 
 The editor, authorization limitation, generated authority, and discovery model
 are documented in
-[Quest generation and investigation](quest-generation-and-investigation.md).
+[Quest generation and investigation](../strategic/quest-generation-and-investigation.md).
 
 ## Quest content
 
@@ -171,7 +172,7 @@ cargo run -p adventuresim-core --bin questgen-check -- validate
 ```
 
 The complete authoring and validation contract is documented in
-[Quest generation and investigation](quest-generation-and-investigation.md).
+[Quest generation and investigation](../strategic/quest-generation-and-investigation.md).
 
 ## Simulation and quest evaluation
 
@@ -506,17 +507,17 @@ and source notices.
 Source preparation, verification, licensing, and canonical model details live
 in the World Data references:
 
-- [World-data bundles](world-data-bundles.md) and
-  [Source manifests](source-manifests.md) define release and identity rules.
-- [Viabundus](viabundus.md), [Elevation](elevation.md),
-  [Historical land use](historical-land-use.md), and
-  [Forest cover](forest-cover.md) cover the base geographic inputs.
-- [Potential vegetation](potential-vegetation.md),
-  [Tree species](tree-species.md), [Soil](soil.md),
-  [Geology](geology.md), [Religion](religion.md),
-  [Drought](drought.md), and [Hydrology](hydrology.md) cover enrichment stages.
-- [Strategic route terrain](route-terrain.md),
-  [Industries](industries.md), and [Canonical spatial grid](spatial-grid.md)
+- [World-data bundles](world-data/world-data-bundles.md) and
+  [Source manifests](world-data/source-manifests.md) define release and identity rules.
+- [Viabundus](world-data/viabundus.md), [Elevation](world-data/elevation.md),
+  [Historical land use](world-data/historical-land-use.md), and
+  [Forest cover](world-data/forest-cover.md) cover the base geographic inputs.
+- [Potential vegetation](world-data/potential-vegetation.md),
+  [Tree species](world-data/tree-species.md), [Soil](world-data/soil.md),
+  [Geology](world-data/geology.md), [Religion](world-data/religion.md),
+  [Drought](world-data/drought.md), and [Hydrology](world-data/hydrology.md) cover enrichment stages.
+- [Strategic route terrain](world-data/route-terrain.md),
+  [Industries](world-data/industries.md), and [Canonical spatial grid](world-data/spatial-grid.md)
   cover derived gameplay facts and shared build identity.
 
 ## Strategic UI
@@ -825,7 +826,7 @@ The strategic database initializes versioned private Physiology key material
 from authoritative runtime randomness. There is no build-time or environment
 fallback to configure. Pre-launch schema recreation creates a new population;
 causal infection and administration rows pin the versions needed for replay.
-See [`physiology.md`](physiology.md) for the privacy contract.
+See [`physiology.md`](../shared/physiology.md) for the privacy contract.
 ## Social panel demo
 
 Start the isolated strategic stack with the guarded visual fixtures:

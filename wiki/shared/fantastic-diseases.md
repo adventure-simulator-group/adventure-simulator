@@ -4,7 +4,7 @@ Generated outbreaks exercise these diseases as ordinary infection episodes.
 Environmental reservoirs and a threat vector can produce their clean
 traditional profiles, while investigation still requires evidence, chronology,
 source identification, and remediation. See
-[Outbreak investigations](outbreaks.md).
+[Outbreak investigations](../strategic/outbreaks.md).
 
 Fantastic diseases use the ordinary strategic health simulation. Their
 organisms and toxins are invented, but their transmission, time courses,

@@ -876,4 +876,4 @@ Generators must combine them with visible exposure timing, environment,
 Bestiary knowledge, and other clues; they must not select evidence by revealing
 a patient's hidden disease identity. These hooks anticipate corpse examination
 and outbreak quest work but do not implement either system. See
-[Fantastic diseases](fantastic-diseases.md).
+[Fantastic diseases](../shared/fantastic-diseases.md).

@@ -112,4 +112,4 @@ recent victim, an interred victim, and a party-slain enemy in the character's
 current settlement. Each body is produced by the same bounded strategic
 autoresolve and post-combat-body materialization used by gameplay. The fixture
 authors custody time, identity, and explicit family binding, but never wounds or
-findings. See [Development Workflow](developing.md#strategic-scenario-gallery).
+findings. See [Development Workflow](../engineering/developing.md#autopsy-demo).

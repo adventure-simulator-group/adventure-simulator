@@ -14,12 +14,8 @@ It does not store tactical positions, enemies, physics, attacks, temporary
 health, per-tick damage, or other live combat state. Those values exist only in
 the headless tactical server.
 
-See the repository [architecture reference](../../wiki/reference/architecture.md)
+See the repository [architecture reference](../../wiki/engineering/architecture.md)
 for the complete boundary.
-
-The current factoring, domain-typing, invalid-state, macro, and testing audit is
-recorded in the
-[strategic server code-quality review](../../wiki/reference/strategic-server-code-quality.md).
 
 ## Content and authority
 
@@ -27,8 +23,8 @@ Generated cases retain private catalog revision, deterministic context,
 canonical manifest, and replay information. Materialization creates the linked
 local problem, investigation graph, objectives, custody, sites, hostiles, and
 finales atomically. See
-[Quest generation and investigation](../../wiki/reference/quest-generation-and-investigation.md)
-and [Quest authority](../../wiki/reference/quest-authority.md).
+[Quest generation and investigation](../../wiki/strategic/quest-generation-and-investigation.md)
+and [Quest authority](../../wiki/strategic/quest-authority.md).
 
 Player-facing callers act through `strategic-web`, which owns the registered
 strategic-gateway identity. Browsers do not connect to this module directly.
@@ -71,4 +67,4 @@ just web-isolated-strategic module-dev 23100
 ```
 
 The full local workflow is documented in
-[Development workflow](../../wiki/reference/developing.md).
+[Development workflow](../../wiki/engineering/developing.md).
