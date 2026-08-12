@@ -31,10 +31,20 @@ NAMED_TIMES = {
 SKY_VIEWS = ("sun", "twilight", "moon", "stars")
 SKY_MINUTES = {"sun": 172 * 1440 + 12 * 60, "twilight": 80 * 1440 + 18 * 60,
                "moon": 53_155, "stars": 637_860}
-EXPECTED_PIPELINE = "tactical_scene_native_capture_v2"
-EXPECTED_PROFILE_VERSION = 1
+EXPECTED_PIPELINE = "tactical_scene_native_capture_v4"
+EXPECTED_PROFILE_VERSION = 3
 EXPECTED_CAMERA_VERSION = 2
 EXPECTED_RESOLUTION = [1280, 720]
+EXPECTED_PRESENTATION_REQUEST = {
+    "shadows": True,
+    "atmosphere": True,
+    "celestial": True,
+    "environment_light": True,
+    "environment_map_size": 64,
+    "bloom": True,
+    "ssao": True,
+    "max_vista_lods": 3,
+}
 SOURCE_PATHS = (
     "Cargo.lock",
     "Cargo.toml",
@@ -206,6 +216,26 @@ def validated_child_manifest(
     for field, expected in checks.items():
         if manifest.get(field) != expected:
             raise ValueError(f"child {field} differs: expected {expected!r}, got {manifest.get(field)!r}")
+    presentation = manifest.get("presentation_features", {})
+    if presentation.get("requested") != EXPECTED_PRESENTATION_REQUEST:
+        raise ValueError("child requested presentation features differ from production")
+    observed = presentation.get("observed", {})
+    if not presentation.get("requested_matches_observed"):
+        raise ValueError("child did not observe requested production presentation features")
+    if observed.get("settings") != EXPECTED_PRESENTATION_REQUEST:
+        raise ValueError("child observed graphics settings differ from production")
+    if not (observed.get("camera_environment_map")
+            and observed.get("camera_environment_map_size") == [64, 64]
+            and observed.get("camera_bloom") and observed.get("camera_ssao")
+            and isinstance(observed.get("camera_exposure_ev100"), (int, float))
+            and -1.0 <= observed["camera_exposure_ev100"] <= 15.0
+            and observed.get("camera_tonemapping") == "AcesFitted"
+            and observed.get("ambient_brightness", 0) > 0):
+        raise ValueError("child observed camera or ambient lighting state is incomplete")
+    if not manifest.get("validation", {}).get("lighting_readiness"):
+        raise ValueError("child lighting readiness failed")
+    if not all(capture.get("lighting_ready") for capture in manifest.get("captures", [])):
+        raise ValueError("one or more requested views lacked stable lighting readbacks")
     validated_png_set(path.parent, expected_views)
     if expected_minute == NAMED_TIMES["moonlit"]:
         celestial = manifest.get("celestial", {})
@@ -367,6 +397,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "water_iteration": False, "cloud_iteration": False, "cave_iteration": False,
         },
         "settle_frames": args.settle_frames,
+        "expected_presentation_features": EXPECTED_PRESENTATION_REQUEST,
         "source": identity,
         "named_times": NAMED_TIMES,
         "curated_environments": [asdict(case) for case in CURATED_ENVIRONMENTS],

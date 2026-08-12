@@ -10,8 +10,12 @@ use std::{
 use adventuresim_tactical_core::prelude::*;
 use adventuresim_tactical_netcode::prelude::SceneVistaBundle;
 use bevy::{
-    camera::visibility::VisibilityRange,
-    light::NotShadowCaster,
+    camera::{Exposure, visibility::VisibilityRange},
+    core_pipeline::tonemapping::Tonemapping,
+    ecs::system::SystemParam,
+    light::{AtmosphereEnvironmentMapLight, NotShadowCaster},
+    pbr::ScreenSpaceAmbientOcclusion,
+    post_process::bloom::Bloom,
     prelude::*,
     render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
     window::PresentMode,
@@ -19,17 +23,17 @@ use bevy::{
 use serde::Serialize;
 
 use crate::presentation::{
-    GroundScatterLayer, ProceduralRockVisual, TacticalPresentationPlugin,
+    GroundScatterLayer, ProceduralRockVisual, TacticalGraphicsSettings, TacticalPresentationPlugin,
     TacticalTreeLeafCardMaterial, TerrainMaterialPresentation, TreeImpostorProvenance,
     TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, VistaTerrain,
-    WeatherParticle, oak_leaf_material, oak_review_terminal_specimen, scene_ambient_light,
+    WeatherParticle, oak_leaf_material, oak_review_terminal_specimen,
 };
 
 const VIEW_WIDTH: u32 = 1280;
 const VIEW_HEIGHT: u32 = 720;
 const STANDING_EYE_HEIGHT_METRES: f32 = 1.65;
 const PROCEDURAL_OAK_LEAVES_PER_TREE: usize = 69_632;
-const CAPTURE_PROFILE_VERSION: u16 = 1;
+const CAPTURE_PROFILE_VERSION: u16 = 3;
 const CAMERA_VERSION: u16 = 2;
 const CAPTURE_CLOCK_PHASE_SECONDS: f32 = 2.0;
 
@@ -92,6 +96,7 @@ struct CaptureState {
     view: usize,
     view_started: bool,
     prime_readbacks: u8,
+    lighting_luminance_samples: Vec<f32>,
     settled: u32,
     in_flight: bool,
     captures: Vec<CaptureRecord>,
@@ -100,6 +105,12 @@ struct CaptureState {
 
 #[derive(Component)]
 struct CaptureOverlay;
+
+#[derive(SystemParam)]
+struct LightingObservationParams<'w> {
+    settings: Res<'w, TacticalGraphicsSettings>,
+    ambient: Res<'w, GlobalAmbientLight>,
+}
 
 #[derive(Component)]
 struct TreeReviewBackdrop;
@@ -421,6 +432,9 @@ struct CaptureRecord {
     detail_pixel_bps: u16,
     diagnostic_leaf_suppression: bool,
     diagnostic_grass_suppression: bool,
+    lighting_luminance_samples: Vec<f32>,
+    lighting_luminance_delta: f32,
+    lighting_ready: bool,
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -511,6 +525,8 @@ struct ValidationSummary {
     all_views_captured: bool,
     requested_views_captured_exactly_once: bool,
     requested_detail_targets_available: bool,
+    production_lighting_parity: bool,
+    lighting_readiness: bool,
     all_views_render_content: bool,
     foliage_detail_present: bool,
     all_obstacles_presented: bool,
@@ -580,18 +596,41 @@ struct CelestialProvenance {
     lunar_illumination: f32,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct PresentationFeatures {
-    atmosphere: bool,
-    celestial: bool,
-    environment_light: bool,
-    bloom: bool,
-    ssao: bool,
+    requested: PresentationFeatureState,
+    observed: ObservedPresentationFeatures,
+    requested_matches_observed: bool,
     weather_iteration_in_scope: bool,
     water_iteration_in_scope: bool,
     cloud_iteration_in_scope: bool,
     cave_iteration_in_scope: bool,
     characters_present: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+struct PresentationFeatureState {
+    shadows: bool,
+    atmosphere: bool,
+    celestial: bool,
+    environment_light: bool,
+    environment_map_size: u32,
+    bloom: bool,
+    ssao: bool,
+    max_vista_lods: usize,
+}
+
+#[derive(Clone, Serialize)]
+struct ObservedPresentationFeatures {
+    settings: PresentationFeatureState,
+    camera_environment_map: bool,
+    camera_environment_map_size: Option<[u32; 2]>,
+    camera_bloom: bool,
+    camera_ssao: bool,
+    camera_exposure_ev100: f32,
+    camera_tonemapping: String,
+    ambient_color: [f32; 4],
+    ambient_brightness: f32,
 }
 
 pub(crate) fn run(
@@ -638,7 +677,6 @@ pub(crate) fn run(
     if let Some(absolute_minute) = absolute_minute {
         environment.absolute_minute = absolute_minute;
     }
-    let (ambient_color, ambient_brightness) = capture_ambient_light(&environment);
     let output = output.map_or_else(
         || default_output(&repository_root, &fixture, &generated.digest),
         absolute_from_current,
@@ -692,21 +730,11 @@ pub(crate) fn run(
                 ..default()
             }),
     )
-    .add_plugins(TacticalPresentationPlugin {
-        // Use the same sun-driven atmosphere as gameplay. A fixed clear color
-        // made night captures display stars against a pale daytime-blue sky.
-        atmosphere_enabled: true,
-        environment_light_enabled: false,
-        bloom_enabled: false,
-        ssao_enabled: false,
-        ..default()
-    })
+    // Visual-review plates use the exact production presentation defaults.
+    // Diagnostics may hide named occluder layers, but never substitute a
+    // cheaper lighting or post-processing pipeline.
+    .add_plugins(capture_presentation_plugin())
     .insert_resource(ClearColor(Color::srgb_u8(158, 181, 195)))
-    .insert_resource(GlobalAmbientLight {
-        color: Color::srgb(ambient_color.x, ambient_color.y, ambient_color.z),
-        brightness: ambient_brightness,
-        ..default()
-    })
     .insert_resource(SceneSetup(Some(setup)))
     .add_systems(PostStartup, (setup_scene, freeze_capture_clock).chain());
     if leaf_benchmarking {
@@ -719,6 +747,87 @@ pub(crate) fn run(
     let exit = app.run();
     if exit != AppExit::Success {
         std::process::exit(1);
+    }
+}
+
+fn capture_presentation_plugin() -> TacticalPresentationPlugin {
+    TacticalPresentationPlugin::default()
+}
+
+fn feature_state(settings: &TacticalGraphicsSettings) -> PresentationFeatureState {
+    PresentationFeatureState {
+        shadows: settings.shadows_enabled,
+        atmosphere: settings.atmosphere_enabled,
+        celestial: settings.celestial_enabled,
+        environment_light: settings.environment_light_enabled,
+        environment_map_size: settings.environment_map_size,
+        bloom: settings.bloom_enabled,
+        ssao: settings.ssao_enabled,
+        max_vista_lods: settings.max_vista_lods,
+    }
+}
+
+fn requested_feature_state() -> PresentationFeatureState {
+    let requested = TacticalPresentationPlugin::default();
+    PresentationFeatureState {
+        shadows: requested.shadows_enabled,
+        atmosphere: requested.atmosphere_enabled,
+        celestial: requested.celestial_enabled,
+        environment_light: requested.environment_light_enabled,
+        environment_map_size: requested.environment_map_size,
+        bloom: requested.bloom_enabled,
+        ssao: requested.ssao_enabled,
+        max_vista_lods: requested.max_vista_lods,
+    }
+}
+
+fn observed_presentation_features(
+    settings: &TacticalGraphicsSettings,
+    environment_map: Option<&AtmosphereEnvironmentMapLight>,
+    bloom: Option<&Bloom>,
+    ssao: Option<&ScreenSpaceAmbientOcclusion>,
+    exposure: &Exposure,
+    tonemapping: &Tonemapping,
+    ambient: &GlobalAmbientLight,
+) -> PresentationFeatures {
+    let requested = requested_feature_state();
+    let observed_settings = feature_state(settings);
+    let environment_map_size = environment_map.map(|light| light.size.to_array());
+    let observed = ObservedPresentationFeatures {
+        settings: observed_settings,
+        camera_environment_map: environment_map.is_some(),
+        camera_environment_map_size: environment_map_size,
+        camera_bloom: bloom.is_some(),
+        camera_ssao: ssao.is_some(),
+        camera_exposure_ev100: exposure.ev100,
+        camera_tonemapping: format!("{tonemapping:?}"),
+        ambient_color: ambient.color.to_linear().to_f32_array(),
+        ambient_brightness: ambient.brightness,
+    };
+    let requested_matches_observed = observed_settings == requested
+        && observed.camera_environment_map == requested.environment_light
+        && observed.camera_environment_map_size
+            == requested
+                .environment_light
+                .then_some([requested.environment_map_size; 2])
+        && observed.camera_bloom == requested.bloom
+        && observed.camera_ssao == requested.ssao
+        // Production exposure is driven by the scene's solar/lunar state and
+        // may be between authored targets while the ECS observer settles.
+        && observed.camera_exposure_ev100.is_finite()
+        && (-1.0..=15.0).contains(&observed.camera_exposure_ev100)
+        && observed.camera_tonemapping.contains("AcesFitted")
+        && observed.ambient_brightness.is_finite()
+        && observed.ambient_brightness > 0.0;
+    PresentationFeatures {
+        requested,
+        observed,
+        requested_matches_observed,
+        weather_iteration_in_scope: false,
+        water_iteration_in_scope: false,
+        cloud_iteration_in_scope: false,
+        cave_iteration_in_scope: false,
+        characters_present: false,
     }
 }
 
@@ -756,27 +865,9 @@ fn freeze_capture_clock(mut time: ResMut<Time<Virtual>>) {
     time.pause();
 }
 
-fn capture_ambient_light(environment: &SceneEnvironment) -> (Vec3, f32) {
-    let celestial = celestial_directions(
-        environment.absolute_minute,
-        environment.latitude_microdegrees,
-        environment.longitude_microdegrees,
-    );
-    let sun_altitude = celestial.sun[1].asin().to_degrees();
-    let moon_altitude = celestial.moon[1].asin().to_degrees();
-    scene_ambient_light(sun_altitude, moon_altitude, celestial.lunar_illumination)
-}
-
 #[cfg(test)]
 mod capture_lighting_tests {
     use super::*;
-
-    #[test]
-    fn capture_fill_light_respects_sun_and_moon_horizons() {
-        assert_eq!(scene_ambient_light(-25.0, -24.0, 1.0).1, 0.6);
-        assert_eq!(scene_ambient_light(30.0, -25.0, 0.0).1, 30_000.0);
-        assert_eq!(scene_ambient_light(-25.0, 30.0, 1.0).1, 0.85);
-    }
 
     #[test]
     fn semantic_profile_preserves_twenty_three_recorded_views() {
@@ -818,6 +909,28 @@ mod capture_lighting_tests {
             (false, true)
         );
         assert_eq!(diagnostic_suppression("grass-seam-detail"), (false, false));
+    }
+
+    #[test]
+    fn requested_lighting_documents_every_production_default() {
+        let requested = requested_feature_state();
+        assert!(requested.shadows);
+        assert!(requested.atmosphere);
+        assert!(requested.celestial);
+        assert!(requested.environment_light);
+        assert_eq!(requested.environment_map_size, 64);
+        assert!(requested.bloom);
+        assert!(requested.ssao);
+        assert_eq!(requested.max_vista_lods, 3);
+    }
+
+    #[test]
+    fn lighting_readiness_requires_two_stable_finite_readbacks() {
+        assert!(!lighting_samples_stable(&[]));
+        assert!(!lighting_samples_stable(&[42.0]));
+        assert!(!lighting_samples_stable(&[42.0, f32::NAN]));
+        assert!(lighting_samples_stable(&[100.0, 101.0]));
+        assert!(!lighting_samples_stable(&[100.0, 110.0]));
     }
 }
 
@@ -1203,6 +1316,7 @@ fn setup_scene(
         view: 0,
         view_started: false,
         prime_readbacks: 0,
+        lighting_luminance_samples: Vec::new(),
         settled: 0,
         in_flight: false,
         captures: Vec::new(),
@@ -1503,9 +1617,15 @@ fn capture_views(
             &mut Transform,
             &mut GlobalTransform,
             &mut Projection,
+            Option<&AtmosphereEnvironmentMapLight>,
+            Option<&Bloom>,
+            Option<&ScreenSpaceAmbientOcclusion>,
+            &Exposure,
+            &Tonemapping,
         ),
         With<Camera3d>,
     >,
+    lighting: LightingObservationParams,
     mut overlays: Query<&mut Visibility, (With<CaptureOverlay>, Without<VistaTerrain>)>,
     mut tree_backdrops: Query<
         (&mut Visibility, &mut Transform),
@@ -1540,8 +1660,8 @@ fn capture_views(
         Query<Entity, With<MeshMaterial3d<TacticalTreeLeafCardMaterial>>>,
         Query<Entity, With<TreeLeafRepresentation>>,
         Query<(Entity, &GroundScatterLayer)>,
+        Query<(), With<WeatherParticle>>,
     )>,
-    particles: Query<(), With<WeatherParticle>>,
 ) {
     let Some(state) = state.as_deref_mut() else {
         return;
@@ -1691,6 +1811,9 @@ fn capture_views(
                 detail_pixel_bps: 0,
                 diagnostic_leaf_suppression: suppress_leaves,
                 diagnostic_grass_suppression: suppress_grass,
+                lighting_luminance_samples: Vec::new(),
+                lighting_luminance_delta: f32::INFINITY,
+                lighting_ready: false,
             });
         }
         return;
@@ -1725,12 +1848,15 @@ fn capture_views(
     // Bevy's asynchronous window readback can still contain the render world
     // from before a camera transition. Prime one disposable readback per view,
     // then capture again without changing any scene or camera state.
-    let required_prime_readbacks = if state.view == 0 { 2 } else { 1 };
+    let required_prime_readbacks = 2;
     if state.prime_readbacks < required_prime_readbacks {
         state.in_flight = true;
         commands.spawn(Screenshot::primary_window()).observe(
-            |_: On<ScreenshotCaptured>, mut state: ResMut<CaptureState>| {
+            |captured: On<ScreenshotCaptured>, mut state: ResMut<CaptureState>| {
                 state.prime_readbacks += 1;
+                state
+                    .lighting_luminance_samples
+                    .push(mean_luminance(captured.image.data.as_deref()));
                 state.settled = 0;
                 state.in_flight = false;
             },
@@ -1744,14 +1870,32 @@ fn capture_views(
                 state.view += 1;
                 state.view_started = false;
                 state.prime_readbacks = 0;
+                state.lighting_luminance_samples.clear();
                 state.in_flight = false;
             },
         );
         return;
     }
 
+    if let Some(record) = state.captures.last_mut() {
+        record
+            .lighting_luminance_samples
+            .clone_from(&state.lighting_luminance_samples);
+        record.lighting_luminance_delta = luminance_delta(&state.lighting_luminance_samples);
+        record.lighting_ready = lighting_samples_stable(&state.lighting_luminance_samples);
+    }
+    let observed_presentation = observed_presentation_features(
+        &lighting.settings,
+        camera.4,
+        camera.5,
+        camera.6,
+        camera.7,
+        camera.8,
+        &lighting.ambient,
+    );
     let path = state.output.join(format!("{}.png", view.slug));
     let final_view = state.view + 1 == state.views.len();
+    let weather_particle_count = scene_visibility.p6().iter().count();
     let mut final_data = final_view.then(|| {
         build_manifest(
             state,
@@ -1763,7 +1907,8 @@ fn capture_views(
             &terrain_materials,
             &meshes,
             &scene_visibility.p0(),
-            particles.iter().count(),
+            weather_particle_count,
+            observed_presentation,
         )
     });
     state.in_flight = true;
@@ -1781,6 +1926,7 @@ fn capture_views(
             state.view += 1;
             state.view_started = false;
             state.prime_readbacks = 0;
+            state.lighting_luminance_samples.clear();
             state.in_flight = false;
             if let Some((mut manifest, _)) = final_data.take() {
                 manifest.captures.clone_from(&state.captures);
@@ -1952,6 +2098,7 @@ fn build_manifest(
     meshes: &Assets<Mesh>,
     vistas: &Query<(&VistaTerrain, Has<Collider>)>,
     weather_particle_count: usize,
+    presentation_features: PresentationFeatures,
 ) -> (CaptureManifest, bool) {
     let mut presented_trees = 0;
     let mut presented_rocks = 0;
@@ -2124,6 +2271,8 @@ fn build_manifest(
                 _ => true,
             }
         }),
+        production_lighting_parity: presentation_features.requested_matches_observed,
+        lighting_readiness: state.captures.iter().all(|capture| capture.lighting_ready),
         all_views_render_content: false,
         foliage_detail_present: false,
         all_obstacles_presented: presented_trees == state.expected_trees
@@ -2185,7 +2334,7 @@ fn build_manifest(
     let passed = validation.passed;
     (
         CaptureManifest {
-            pipeline: "tactical_scene_native_capture_v2",
+            pipeline: "tactical_scene_native_capture_v4",
             fixture: state.fixture.clone(),
             source_input: state.input_path.display().to_string(),
             scene_digest: state.digest.clone(),
@@ -2212,18 +2361,7 @@ fn build_manifest(
                 state.latitude_microdegrees,
                 state.longitude_microdegrees,
             ),
-            presentation_features: PresentationFeatures {
-                atmosphere: true,
-                celestial: true,
-                environment_light: false,
-                bloom: false,
-                ssao: false,
-                weather_iteration_in_scope: false,
-                water_iteration_in_scope: false,
-                cloud_iteration_in_scope: false,
-                cave_iteration_in_scope: false,
-                characters_present: false,
-            },
+            presentation_features,
             weather: state.weather,
             repairs: state.repairs,
             terrain: state.terrain,
@@ -2244,6 +2382,8 @@ fn validation_passes(validation: &ValidationSummary) -> bool {
     validation.all_views_captured
         && validation.requested_views_captured_exactly_once
         && validation.requested_detail_targets_available
+        && validation.production_lighting_parity
+        && validation.lighting_readiness
         && validation.all_views_render_content
         && validation.foliage_detail_present
         && validation.all_obstacles_presented
@@ -2330,6 +2470,40 @@ fn foreground_pixel_bps(data: Option<&[u8]>) -> u16 {
         .and_then(|value| value.checked_div(pixels))
         .unwrap_or(0)
         .min(10_000) as u16
+}
+
+fn mean_luminance(data: Option<&[u8]>) -> f32 {
+    let Some(data) = data else {
+        return f32::NAN;
+    };
+    let pixels = data.as_chunks::<4>().0;
+    if pixels.is_empty() {
+        return f32::NAN;
+    }
+    let total = pixels
+        .iter()
+        .map(|pixel| {
+            f64::from(pixel[0]) * 0.2126
+                + f64::from(pixel[1]) * 0.7152
+                + f64::from(pixel[2]) * 0.0722
+        })
+        .sum::<f64>();
+    (total / pixels.len() as f64) as f32
+}
+
+fn luminance_delta(samples: &[f32]) -> f32 {
+    samples
+        .windows(2)
+        .map(|pair| (pair[1] - pair[0]).abs())
+        .fold(0.0, f32::max)
+}
+
+fn lighting_samples_stable(samples: &[f32]) -> bool {
+    if samples.len() < 2 || samples.iter().any(|sample| !sample.is_finite()) {
+        return false;
+    }
+    let mean = samples.iter().sum::<f32>() / samples.len() as f32;
+    luminance_delta(samples) <= (mean * 0.02).max(1.5)
 }
 
 fn foliage_detail_pixel_bps(data: Option<&[u8]>) -> u16 {
@@ -2437,11 +2611,15 @@ fn finish_capture(
         println!("TACTICAL_SCENE_CAPTURE_VALID={}", output.display());
         exit.write(AppExit::Success);
     } else {
-        fs::write(
-            output.join("failure.txt"),
-            "Tactical scene capture validation failed; inspect manifest.json and screenshots.\n",
-        )
-        .unwrap_or_else(|error| panic!("failed to write capture failure marker: {error}"));
+        let reason = if !manifest.validation.production_lighting_parity {
+            "Production lighting readiness failed: requested presentation components/settings were unavailable or mismatched.\n"
+        } else if !manifest.validation.lighting_readiness {
+            "Production lighting readiness failed: consecutive settled readbacks did not reach bounded luminance stability.\n"
+        } else {
+            "Tactical scene capture validation failed; inspect manifest.json and screenshots.\n"
+        };
+        fs::write(output.join("failure.txt"), reason)
+            .unwrap_or_else(|error| panic!("failed to write capture failure marker: {error}"));
         exit.write(AppExit::error());
     }
 }

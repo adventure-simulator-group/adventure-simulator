@@ -160,13 +160,13 @@ impl Plugin for TacticalPresentationPlugin {
 }
 
 #[derive(Resource, Debug, Clone, Copy)]
-struct TacticalGraphicsSettings {
-    shadows_enabled: bool,
-    atmosphere_enabled: bool,
-    celestial_enabled: bool,
-    environment_light_enabled: bool,
-    environment_map_size: u32,
-    bloom_enabled: bool,
-    ssao_enabled: bool,
-    max_vista_lods: usize,
+pub(crate) struct TacticalGraphicsSettings {
+    pub(crate) shadows_enabled: bool,
+    pub(crate) atmosphere_enabled: bool,
+    pub(crate) celestial_enabled: bool,
+    pub(crate) environment_light_enabled: bool,
+    pub(crate) environment_map_size: u32,
+    pub(crate) bloom_enabled: bool,
+    pub(crate) ssao_enabled: bool,
+    pub(crate) max_vista_lods: usize,
 }

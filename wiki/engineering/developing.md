@@ -876,6 +876,20 @@ effective world minute, renderer/executable/revision provenance when available,
 presentation feature flags, and its capture-clock strategy. The harness advances
 Bevy's virtual clock to a fixed two-second wind phase and pauses it before
 settling and GPU readbacks, so readback latency does not change foliage pose.
+Normal review plates use `TacticalPresentationPlugin::default()` exactly:
+shadows, atmosphere/celestials, 64-pixel atmosphere environment-map lighting,
+bloom, SSAO, and all three vista LODs are enabled just as in production. The
+manifest records every setting and a production-default-parity gate; the matrix
+runner rejects any child whose feature map differs from this contract.
+Parity is based on observed runtime state, not only requested configuration:
+the manifest records the actual `TacticalGraphicsSettings`, camera environment
+map and size, Bloom and SSAO components, exposure, tonemapping, and final global
+ambient color/brightness. The capture harness does not override ambient light;
+the production environment observer owns its final value.
+After the ordinary warmup, each view performs two consecutive disposable GPU
+readbacks and records their mean luminance. Their change must stay within the
+larger of 1.5 display-luma levels or two percent; unavailable, non-finite, or
+unstable samples fail the explicit lighting-readiness gate before review.
 Branch-junction and terrain-grazing diagnostics temporarily suppress production
 leaves and grass respectively, retaining production subject geometry/material
 and recording the suppression in the capture record.
@@ -897,8 +911,9 @@ gate, shader log, or Sun/twilight/Moon/stars evidence fails. Weather, water,
 clouds, caves, and characters are explicitly outside this review profile.
 Semantic gates complement rather than replace rendered-image inspection.
 The aggregate verifies fixture, named minute, pipeline/profile/camera versions,
-resolution, exact nonempty PNG sets, celestial conditions, and one consistent
-source identity. Identity includes Git HEAD, dirty state, and a SHA-256 of the
+requested and observed production presentation features, per-view lighting
+readiness, resolution, exact nonempty PNG sets,
+celestial conditions, and one consistent source identity. Identity includes Git HEAD, dirty state, and a SHA-256 of the
 relevant presentation Rust, shaders, textures, fixtures, and lockfiles.
 `--skip-build` works only when it matches a prior successful build stamp, which
 prevents stale binaries being mislabeled while allowing identified dirty runs.
