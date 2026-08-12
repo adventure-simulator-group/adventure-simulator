@@ -3,6 +3,31 @@ use super::super::super::*;
 pub(in crate::presentation) const TREE_PRIMARY_GROUP_COUNT: u8 = 7;
 pub(in crate::presentation) const TREE_SECONDARY_GROUP_STRIDE: u16 = 20;
 
+const OAK_ROOT_MIN_COUNT: usize = 5;
+const OAK_ROOT_MAX_COUNT: usize = 10;
+const OAK_ROOT_MAX_FORKS: usize = 2;
+const OAK_ROOT_MAX_SEGMENTS: usize = OAK_ROOT_MAX_COUNT * 2 + OAK_ROOT_MAX_FORKS;
+const OAK_ROOT_MIN_ANGULAR_GAP: f32 = 0.22;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct OakRootFork {
+    attach: f32,
+    angle_offset: f32,
+    reach: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct OakRootSpec {
+    angle: f32,
+    reach: f32,
+    base_radius: f32,
+    tip_radius: f32,
+    shoulder_lift: f32,
+    burial: f32,
+    dominant: bool,
+    fork: Option<OakRootFork>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::presentation) enum WoodyPlantForm {
     MatureOak,
@@ -66,6 +91,154 @@ pub(in crate::presentation) fn procedural_woody_plant_skeleton(
     }
 }
 
+fn oak_primary_scaffold_phase(crown_phase: f32, primary_index: u64, primary_seed: u64) -> f32 {
+    crown_phase + primary_index as f32 * 2.399_963_1 + (unit_hash(primary_seed) - 0.5) * 0.42
+}
+
+fn signed_angular_delta(from: f32, to: f32) -> f32 {
+    let mut delta = (to - from) % core::f32::consts::TAU;
+    if delta > core::f32::consts::PI {
+        delta -= core::f32::consts::TAU;
+    } else if delta < -core::f32::consts::PI {
+        delta += core::f32::consts::TAU;
+    }
+    delta
+}
+
+fn procedural_oak_root_specs(seed: u64, crown_phase: f32) -> Vec<OakRootSpec> {
+    let plan_seed = splitmix64(seed ^ 0x4f41_4b52_4f4f_5453);
+    let root_count = OAK_ROOT_MIN_COUNT
+        + (splitmix64(plan_seed ^ 0x01) as usize % (OAK_ROOT_MAX_COUNT - OAK_ROOT_MIN_COUNT + 1));
+    let dominant_count = 2 + (splitmix64(plan_seed ^ 0x02) as usize & 1);
+
+    // Allocate the full circle as unequal positive gaps. Normalizing the
+    // weights keeps complete coverage without returning to equal radial rays.
+    let gap_weights = (0..root_count)
+        .map(|index| 0.62 + unit_hash(splitmix64(plan_seed ^ 0x100 ^ index as u64)) * 0.82)
+        .collect::<Vec<_>>();
+    let gap_total = gap_weights.iter().sum::<f32>();
+    let rotation = crown_phase + unit_hash(plan_seed ^ 0x200) * 0.74;
+    let mut cursor = rotation;
+    let mut angles = Vec::with_capacity(root_count);
+    for gap in gap_weights {
+        angles.push(cursor);
+        cursor += gap / gap_total * core::f32::consts::TAU;
+    }
+
+    // Pull distinct nearby roots toward the heaviest scaffold axes. This is a
+    // restrained azimuthal bias, not a one-root-per-branch radial layout.
+    let mut dominant = vec![false; root_count];
+    for primary_index in 0..dominant_count as u64 {
+        let primary_seed = splitmix64(seed ^ primary_index.wrapping_mul(0x9e37_79b9));
+        let load_phase = oak_primary_scaffold_phase(crown_phase, primary_index, primary_seed);
+        let nearest = angles
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !dominant[*index])
+            .min_by(|(_, left), (_, right)| {
+                signed_angular_delta(**left, load_phase)
+                    .abs()
+                    .total_cmp(&signed_angular_delta(**right, load_phase).abs())
+            })
+            .map(|(index, _)| index)
+            .expect("an oak root plan always has more roots than dominant scaffolds");
+        let previous = if nearest == 0 {
+            angles[root_count - 1] - core::f32::consts::TAU
+        } else {
+            angles[nearest - 1]
+        };
+        let next = if nearest + 1 == root_count {
+            angles[0] + core::f32::consts::TAU
+        } else {
+            angles[nearest + 1]
+        };
+        let desired = angles[nearest] + signed_angular_delta(angles[nearest], load_phase) * 0.68;
+        angles[nearest] = desired.clamp(
+            previous + OAK_ROOT_MIN_ANGULAR_GAP,
+            next - OAK_ROOT_MIN_ANGULAR_GAP,
+        );
+        dominant[nearest] = true;
+    }
+
+    let mut fork_count = 0;
+    let mut roots = angles
+        .into_iter()
+        .enumerate()
+        .map(|(index, angle)| {
+            let root_seed = splitmix64(plan_seed ^ 0x300 ^ index as u64);
+            let is_dominant = dominant[index];
+            let reach = if is_dominant {
+                1.18 + unit_hash(root_seed ^ 0x01) * 0.3
+            } else {
+                0.82 + unit_hash(root_seed ^ 0x01) * 0.4
+            };
+            let base_radius = if is_dominant {
+                0.34 + unit_hash(root_seed ^ 0x02) * 0.08
+            } else {
+                0.25 + unit_hash(root_seed ^ 0x02) * 0.075
+            };
+            let fork = (fork_count < OAK_ROOT_MAX_FORKS && unit_hash(root_seed ^ 0x06) > 0.72)
+                .then(|| {
+                    fork_count += 1;
+                    OakRootFork {
+                        attach: 0.54 + unit_hash(root_seed ^ 0x07) * 0.17,
+                        angle_offset: if root_seed & 1 == 0 {
+                            0.5 + unit_hash(root_seed ^ 0x08) * 0.35
+                        } else {
+                            -0.5 - unit_hash(root_seed ^ 0x08) * 0.35
+                        },
+                        reach: 0.24 + unit_hash(root_seed ^ 0x09) * 0.23,
+                    }
+                });
+            OakRootSpec {
+                angle: angle.rem_euclid(core::f32::consts::TAU),
+                reach,
+                base_radius,
+                tip_radius: 0.04 + unit_hash(root_seed ^ 0x03) * 0.025,
+                shoulder_lift: 0.015 + unit_hash(root_seed ^ 0x04) * 0.045,
+                burial: 0.11 + unit_hash(root_seed ^ 0x05) * 0.09,
+                dominant: is_dominant,
+                fork,
+            }
+        })
+        .collect::<Vec<_>>();
+    roots.sort_by(|left, right| left.angle.total_cmp(&right.angle));
+    roots
+}
+
+fn oak_root_segment_count(roots: &[OakRootSpec]) -> usize {
+    roots.len() * 2 + roots.iter().filter(|root| root.fork.is_some()).count()
+}
+
+fn oak_root_points(trunk_base: Vec3, root: OakRootSpec) -> [Vec3; 3] {
+    let outward = Vec3::new(root.angle.cos(), 0.0, root.angle.sin());
+    let tangent = Vec3::new(-root.angle.sin(), 0.0, root.angle.cos());
+    let contact_radius = 0.48 + (root.base_radius - 0.25) * 0.35;
+    let contact =
+        trunk_base + outward * contact_radius + tangent * (root.shoulder_lift - 0.0375) * 1.4;
+    [
+        contact,
+        contact
+            + outward * (0.19 + root.reach * 0.18)
+            + tangent * (root.tip_radius - 0.0525) * 2.2
+            + Vec3::Y * root.shoulder_lift,
+        trunk_base + outward * root.reach - Vec3::Y * root.burial,
+    ]
+}
+
+fn oak_root_fork_points(parent: &[Vec3; 3], root: OakRootSpec, fork: OakRootFork) -> [Vec3; 2] {
+    let fork_start = sample_polyline(parent, fork.attach);
+    let parent_tangent = polyline_tangent(parent, fork.attach);
+    let horizontal = Vec3::new(parent_tangent.x, 0.0, parent_tangent.z).normalize();
+    let lateral = Vec3::new(-horizontal.z, 0.0, horizontal.x);
+    let fork_direction =
+        (horizontal * 0.76 + lateral * fork.angle_offset.signum() * 0.42).normalize();
+    [
+        fork_start,
+        fork_start + fork_direction * fork.reach - Vec3::Y * root.burial * 0.55,
+    ]
+}
+
 fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranchSegment> {
     let mut branches = Vec::new();
     let canopy_competition = canopy_competition.clamp(0.0, 1.0);
@@ -94,21 +267,35 @@ fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranch
         u16::MAX,
     );
 
-    // Buttress-like surface roots visually carry the weight of the low,
-    // spreading scaffold limbs without changing the authoritative collider.
-    for root_index in 0..8_u64 {
-        let root_seed = splitmix64(seed ^ 0xb077_0000 ^ root_index);
-        let phase = crown_phase
-            + root_index as f32 * core::f32::consts::TAU / 8.0
-            + (unit_hash(root_seed) - 0.5) * 0.22;
-        let outward = Vec3::new(phase.cos(), 0.0, phase.sin());
-        let start = trunk_points[0] + Vec3::Y * 0.09;
-        let points = [
-            start,
-            start + outward * 0.48 + Vec3::Y * 0.01,
-            start + outward * (0.92 + unit_hash(root_seed ^ 1) * 0.28) - Vec3::Y * 0.12,
-        ];
-        append_branch_curve(&mut branches, &points, 0.34, 0.045, 0, u8::MAX, u16::MAX);
+    // Unequal surface roots visually carry the weight of the low, spreading
+    // scaffold limbs without changing the authoritative collider. Their plan
+    // is presentation-only: a bounded irregular partition avoids a radial
+    // star, while the broadest buttresses share the major scaffold azimuths.
+    let root_specs = procedural_oak_root_specs(seed, crown_phase);
+    debug_assert!(oak_root_segment_count(&root_specs) <= OAK_ROOT_MAX_SEGMENTS);
+    for root in root_specs {
+        let points = oak_root_points(trunk_points[0] + Vec3::Y * 0.09, root);
+        append_branch_curve(
+            &mut branches,
+            &points,
+            root.base_radius,
+            root.tip_radius,
+            0,
+            u8::MAX,
+            u16::MAX,
+        );
+        if let Some(fork) = root.fork {
+            let fork_points = oak_root_fork_points(&points, root, fork);
+            append_branch_curve(
+                &mut branches,
+                &fork_points,
+                root.base_radius * 0.34,
+                root.tip_radius * 0.72,
+                0,
+                u8::MAX,
+                u16::MAX,
+            );
+        }
     }
 
     // Seven crown sectors fill a low, wide, irregular dome. Four are heavy,
@@ -124,9 +311,7 @@ fn procedural_oak_skeleton(seed: u64, canopy_competition: f32) -> Vec<TreeBranch
             (primary_index - 4) as f32
         };
         let primary_seed = splitmix64(seed ^ primary_index.wrapping_mul(0x9e37_79b9));
-        let phase = crown_phase
-            + primary_index as f32 * 2.399_963_1
-            + (unit_hash(primary_seed) - 0.5) * 0.42;
+        let phase = oak_primary_scaffold_phase(crown_phase, primary_index, primary_seed);
         let outward = Vec3::new(phase.cos(), 0.0, phase.sin());
         let tangent = Vec3::new(-phase.sin(), 0.0, phase.cos());
         let (isolated_attach, competitive_attach) = if dominant {
@@ -1338,6 +1523,8 @@ mod tests {
     #[test]
     fn procedural_tree_has_a_deterministic_four_order_branch_hierarchy() {
         let branches = procedural_tree_skeleton(42, 0.0);
+        let crown_phase = unit_hash(42 ^ 0x9182_64ac) * core::f32::consts::TAU;
+        let roots = procedural_oak_root_specs(42, crown_phase);
         let counts = (0..=3)
             .map(|depth| {
                 branches
@@ -1346,7 +1533,10 @@ mod tests {
                     .count()
             })
             .collect::<Vec<_>>();
-        assert_eq!(counts, vec![22, 70, 348, 8_704]);
+        assert_eq!(
+            counts,
+            vec![6 + oak_root_segment_count(&roots), 70, 348, 8_704]
+        );
         assert!(branches.iter().all(|branch| {
             branch.start.is_finite()
                 && branch.end.is_finite()
@@ -1357,6 +1547,134 @@ mod tests {
                 branch.start_radius > branch.end_radius && branch.end_radius > 0.0
             })
         );
+    }
+
+    #[test]
+    fn oak_root_plan_is_deterministic_bounded_and_irregular() {
+        for seed in 0..4_096 {
+            let crown_phase = unit_hash(seed ^ 0x9182_64ac) * core::f32::consts::TAU;
+            let roots = procedural_oak_root_specs(seed, crown_phase);
+            assert_eq!(roots, procedural_oak_root_specs(seed, crown_phase));
+            assert!((OAK_ROOT_MIN_COUNT..=OAK_ROOT_MAX_COUNT).contains(&roots.len()));
+            assert!(oak_root_segment_count(&roots) <= OAK_ROOT_MAX_SEGMENTS);
+            assert!(roots.iter().filter(|root| root.fork.is_some()).count() <= OAK_ROOT_MAX_FORKS);
+            assert!((2..=3).contains(&roots.iter().filter(|root| root.dominant).count()));
+            assert!(roots.iter().all(|root| {
+                (0.82..=1.48).contains(&root.reach)
+                    && (0.25..=0.42).contains(&root.base_radius)
+                    && (0.04..=0.065).contains(&root.tip_radius)
+                    && (0.11..=0.2).contains(&root.burial)
+            }));
+
+            let mut angles = roots
+                .iter()
+                .map(|root| root.angle.rem_euclid(core::f32::consts::TAU))
+                .collect::<Vec<_>>();
+            angles.sort_by(f32::total_cmp);
+            let gaps = (0..angles.len())
+                .map(|index| {
+                    let next = if index + 1 == angles.len() {
+                        angles[0] + core::f32::consts::TAU
+                    } else {
+                        angles[index + 1]
+                    };
+                    next - angles[index]
+                })
+                .collect::<Vec<_>>();
+            let smallest = gaps.iter().copied().fold(f32::INFINITY, f32::min);
+            let largest = gaps.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            assert!(
+                smallest >= OAK_ROOT_MIN_ANGULAR_GAP - 0.0001,
+                "seed {seed} has colliding root azimuths: {smallest}"
+            );
+            assert!(
+                largest - smallest > 0.08,
+                "seed {seed} has uniform root gaps"
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_buttresses_follow_major_scaffold_loads_and_vary_in_scale() {
+        for seed in [7, 42, 91, 4_096] {
+            let crown_phase = unit_hash(seed ^ 0x9182_64ac) * core::f32::consts::TAU;
+            let roots = procedural_oak_root_specs(seed, crown_phase);
+            let dominant = roots
+                .iter()
+                .filter(|root| root.dominant)
+                .collect::<Vec<_>>();
+            for primary_index in 0..dominant.len() as u64 {
+                let primary_seed = splitmix64(seed ^ primary_index.wrapping_mul(0x9e37_79b9));
+                let load_phase =
+                    oak_primary_scaffold_phase(crown_phase, primary_index, primary_seed);
+                assert!(
+                    dominant
+                        .iter()
+                        .any(|root| { signed_angular_delta(root.angle, load_phase).abs() < 0.48 })
+                );
+            }
+            assert!(dominant.iter().all(|root| root.reach >= 1.18));
+            assert!(dominant.iter().all(|root| root.base_radius >= 0.34));
+            let reach_span = roots.iter().map(|root| root.reach).fold(
+                (f32::INFINITY, f32::NEG_INFINITY),
+                |(minimum, maximum), value| (minimum.min(value), maximum.max(value)),
+            );
+            let radius_span = roots.iter().map(|root| root.base_radius).fold(
+                (f32::INFINITY, f32::NEG_INFINITY),
+                |(minimum, maximum), value| (minimum.min(value), maximum.max(value)),
+            );
+            assert!(reach_span.1 - reach_span.0 > 0.18);
+            assert!(radius_span.1 - radius_span.0 > 0.06);
+        }
+    }
+
+    #[test]
+    fn root_forks_attach_to_parent_curves_and_contacts_circle_the_trunk() {
+        let mut observed_forks = 0;
+        for seed in 0..256 {
+            let crown_phase = unit_hash(seed ^ 0x9182_64ac) * core::f32::consts::TAU;
+            let roots = procedural_oak_root_specs(seed, crown_phase);
+            let root_points = roots
+                .iter()
+                .map(|root| oak_root_points(Vec3::ZERO, *root))
+                .collect::<Vec<_>>();
+            for (root, points) in roots.iter().zip(&root_points) {
+                if let Some(fork) = root.fork {
+                    observed_forks += 1;
+                    let fork_points = oak_root_fork_points(points, *root, fork);
+                    assert!(points.windows(2).any(|segment| point_segment_distance(
+                        fork_points[0],
+                        segment[0],
+                        segment[1]
+                    ) < 0.00001));
+                }
+            }
+            for (index, points) in root_points.iter().enumerate() {
+                assert!(points[0].length() >= 0.47);
+                assert!(
+                    root_points[index + 1..]
+                        .iter()
+                        .all(|other| points[0].distance(other[0]) > 0.025)
+                );
+            }
+        }
+        assert!(observed_forks > 0);
+    }
+
+    #[test]
+    fn visual_root_geometry_can_extend_beyond_the_authoritative_trunk_proxy() {
+        let crown_phase = unit_hash(42 ^ 0x9182_64ac) * core::f32::consts::TAU;
+        let roots = procedural_oak_root_specs(42, crown_phase);
+        assert!(
+            roots
+                .iter()
+                .any(|root| root.reach > TREE_TRUNK_RADIUS_METRES)
+        );
+        // These constants are imported from tactical-core and are consumed by
+        // server/viewer obstacle spawning. Root specs contain only visual mesh
+        // dimensions and cannot replace that collider descriptor.
+        assert_eq!(TREE_TRUNK_RADIUS_METRES, 0.35);
+        assert_eq!(TREE_TRUNK_HEIGHT_METRES, 5.0);
     }
 
     #[test]
