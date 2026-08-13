@@ -36,6 +36,7 @@ SKY_MINUTES = {"sun": 172 * 1440 + 12 * 60, "sun-detail": 172 * 1440 + 19 * 60,
 EXPECTED_PIPELINE = "tactical_scene_native_capture_v6"
 EXPECTED_PROFILE_VERSION = 11
 EXPECTED_CAMERA_VERSION = 7
+EXPECTED_GENERATION_VERSION = 6
 EXPECTED_RESOLUTION = [1280, 720]
 EXPECTED_PRESENTATION_REQUEST = {
     "shadows": True,
@@ -216,6 +217,11 @@ def validated_child_manifest(
         "pipeline": EXPECTED_PIPELINE,
         "capture_profile_version": EXPECTED_PROFILE_VERSION,
         "camera_version": EXPECTED_CAMERA_VERSION,
+        "generation_version": EXPECTED_GENERATION_VERSION,
+        "scene_source": {
+            "kind": "synthetic_fixture",
+            "id": expected_fixture,
+        },
         "resolution": EXPECTED_RESOLUTION,
         "source_identity": expected_identity,
         "revision": expected_head,

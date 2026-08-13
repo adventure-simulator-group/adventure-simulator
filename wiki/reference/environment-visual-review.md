@@ -9,9 +9,9 @@ per-asset lighting compensation.
 ## Capture contract
 
 Run `just tactical-environment-review` into a fresh directory. The compact
-matrix deliberately crosses three representative environments with morning,
-grazing, and moonlit times, then adds one isolated plate each for the Sun,
-twilight, Moon, and stars. Each child manifest must pass semantic and exact-view
+matrix deliberately crosses four representative environments with morning,
+grazing, and moonlit times, then adds five isolated plates for the Sun, low-Sun
+detail, twilight, Moon, and stars. Each child manifest must pass semantic and exact-view
 gates, the aggregate `manifest.json` must have `passed: true`, and neither the
 aggregate nor any child may contain `failure.txt`. A missing, unreadable,
 misframed, or irrelevant plate is a coverage gap, not evidence of good quality.
@@ -35,7 +35,7 @@ the Sun below -12 degrees, Moon above 20 degrees, and lunar illumination above
 0.9. Sky children record canonical time, camera, dimensions, pixel-content
 metrics, revision, and source identity; black or subject-free plates fail.
 
-The ordinary `tactical-scene-capture` recipe remains the exhaustive 23-image
+The ordinary `tactical-scene-capture` recipe remains the exhaustive 28-image
 semantic profile. The compact profile is for repeated art review; it does not
 replace the exhaustive profile before publication.
 
@@ -101,6 +101,6 @@ is repaired; they are never silently closed.
 The canonical machine-readable fields and allowed values are defined by
 `assets/tactical-scenes/environment-review-ledger.schema.json`; copy
 `environment-review-ledger.template.json` for each review cycle.
-After JSON Schema validation, run `just tactical-environment-review-ledger`
-against the populated ledger. It verifies evidence and coverage state,
+Run `just tactical-environment-review-ledger` against the populated ledger. It
+validates the checked-in schema's required ledger shape before verifying evidence and coverage state,
 severity-2+ alternatives, exact benefit/cost arithmetic, and stop invariants.

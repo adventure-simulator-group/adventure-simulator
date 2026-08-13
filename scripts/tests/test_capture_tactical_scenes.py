@@ -49,6 +49,11 @@ class CaptureTacticalScenesTests(unittest.TestCase):
                 "capture_profile": "environment-review",
                 "capture_profile_version": MODULE.EXPECTED_PROFILE_VERSION,
                 "camera_version": MODULE.EXPECTED_CAMERA_VERSION,
+                "generation_version": MODULE.EXPECTED_GENERATION_VERSION,
+                "scene_source": {
+                    "kind": "synthetic_fixture",
+                    "id": "steep-open-hillside",
+                },
                 "resolution": MODULE.EXPECTED_RESOLUTION,
                 "source_identity": "source-id",
                 "revision": "head",
@@ -96,7 +101,9 @@ class CaptureTacticalScenesTests(unittest.TestCase):
             )
             for field, wrong in (("captures", []), ("fixture", "wrong"),
                                  ("absolute_minute", 0), ("source_identity", "stale"),
-                                 ("revision", "wrong"), ("camera_version", 99),
+                                  ("revision", "wrong"), ("camera_version", 99),
+                                  ("generation_version", 99),
+                                  ("scene_source", {"kind": "synthetic_fixture", "id": "wrong"}),
                                  ("resolution", [1, 1]),
                                  ("presentation_features", {"ssao": False})):
                 broken = dict(manifest)
