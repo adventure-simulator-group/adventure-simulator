@@ -111,29 +111,13 @@ pub(in crate::presentation) type TacticalRockMaterial =
 
 pub(in crate::presentation) fn rock_material(
     recipe: RockRecipe,
-    asset_server: &AssetServer,
+    assets: &ProceduralEnvironmentAssets,
 ) -> TacticalRockMaterial {
-    let image = |path, is_srgb| {
-        asset_server
-            .load_builder()
-            .with_settings(move |settings: &mut bevy::image::ImageLoaderSettings| {
-                use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
-                settings.is_srgb = is_srgb;
-                settings.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
-                    address_mode_u: ImageAddressMode::Repeat,
-                    address_mode_v: ImageAddressMode::Repeat,
-                    address_mode_w: ImageAddressMode::Repeat,
-                    anisotropy_clamp: 8,
-                    ..ImageSamplerDescriptor::linear()
-                });
-            })
-            .load(path)
-    };
     rock_material_with_textures(
         recipe,
-        image("textures/rocks/rock_surface_diff_1k.jpg", true),
-        image("textures/rocks/rock_surface_nor_gl_1k.jpg", false),
-        image("textures/rocks/rock_surface_arm_1k.jpg", false),
+        assets.rock.albedo.clone(),
+        assets.rock.normal_gl.clone(),
+        assets.rock.arm.clone(),
     )
 }
 

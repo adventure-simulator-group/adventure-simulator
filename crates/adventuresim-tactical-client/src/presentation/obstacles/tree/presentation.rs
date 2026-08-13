@@ -10,7 +10,9 @@ use super::{
     procedural_oak_textured_leaf_group_mesh, procedural_tree_branch_group_mesh,
     procedural_tree_branch_mesh, procedural_tree_skeleton,
 };
-use crate::presentation::{ActiveTacticalScene, SceneEnvironment, obstacle_seed, splitmix64};
+use crate::presentation::{
+    ActiveTacticalScene, ProceduralEnvironmentAssets, SceneEnvironment, obstacle_seed, splitmix64,
+};
 use bevy::{
     camera::{primitives::Aabb, visibility::NoFrustumCulling},
     light::NotShadowCaster,
@@ -328,7 +330,7 @@ pub(in crate::presentation) fn present_pending_trees(
     mut tree_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut tree_cache: ResMut<TreePresentationCache>,
-    asset_server: Res<AssetServer>,
+    procedural_assets: Res<ProceduralEnvironmentAssets>,
 ) {
     let Some(environment) = active
         .entity
@@ -348,11 +350,11 @@ pub(in crate::presentation) fn present_pending_trees(
             let branches = procedural_tree_skeleton(variant_seed, competition);
             let leaves = procedural_oak_leaves(variant_seed, &branches, competition);
             let bark_material = tree_cache.oak_bark_material.clone().unwrap_or_else(|| {
-                let material = materials.add(oak_bark_material(&asset_server));
+                let material = materials.add(oak_bark_material(&procedural_assets));
                 tree_cache.oak_bark_material = Some(material.clone());
                 material
             });
-            let leaf_material = leaf_card_materials.add(oak_leaf_material(&asset_server));
+            let leaf_material = leaf_card_materials.add(oak_leaf_material(&procedural_assets));
             let bud_material = materials.add(StandardMaterial {
                 base_color: Color::srgb(0.36, 0.27, 0.1),
                 perceptual_roughness: 0.92,

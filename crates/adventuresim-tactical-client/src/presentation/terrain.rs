@@ -97,7 +97,7 @@ pub(in crate::presentation) fn present_pending_terrain(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TacticalTerrainMaterial>>,
     mut images: ResMut<Assets<Image>>,
-    asset_server: Res<AssetServer>,
+    procedural_assets: Res<ProceduralEnvironmentAssets>,
 ) {
     for (entity, id, terrain, environment, ground) in &query {
         let legacy_environment;
@@ -111,14 +111,14 @@ pub(in crate::presentation) fn present_pending_terrain(
             presentations.iter().find(|(source, _)| source.0 == entity)
         {
             if let Some(mut material) = materials.get_mut(&handle.0) {
-                *material = terrain_material(environment, ground, &mut images, &asset_server);
+                *material = terrain_material(environment, ground, &mut images, &procedural_assets);
                 true
             } else {
                 false
             }
         } else {
             info!(?entity, "Spawning a scene {id:?}");
-            let material = terrain_material(environment, ground, &mut images, &asset_server);
+            let material = terrain_material(environment, ground, &mut images, &procedural_assets);
             commands.spawn((
                 Name::new(format!("{} terrain mesh", id.0)),
                 ScenePresentationOf(entity),
@@ -140,24 +140,8 @@ pub(in crate::presentation) fn terrain_material(
     environment: &SceneEnvironment,
     ground: Option<&SceneGround>,
     images: &mut Assets<Image>,
-    asset_server: &AssetServer,
+    assets: &ProceduralEnvironmentAssets,
 ) -> TacticalTerrainMaterial {
-    let image = |path, is_srgb| {
-        asset_server
-            .load_builder()
-            .with_settings(move |settings: &mut bevy::image::ImageLoaderSettings| {
-                use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
-                settings.is_srgb = is_srgb;
-                settings.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
-                    address_mode_u: ImageAddressMode::Repeat,
-                    address_mode_v: ImageAddressMode::Repeat,
-                    address_mode_w: ImageAddressMode::Repeat,
-                    anisotropy_clamp: 8,
-                    ..ImageSamplerDescriptor::linear()
-                });
-            })
-            .load(path)
-    };
     TacticalTerrainMaterial {
         base: StandardMaterial {
             base_color: Color::WHITE,
@@ -201,9 +185,9 @@ pub(in crate::presentation) fn terrain_material(
                 ground,
                 stable_text_seed(&environment.scene_digest),
             )),
-            dirt_diffuse: image("textures/ground/dirt_diff_1k.jpg", true),
-            dirt_normal_gl: image("textures/ground/dirt_nor_gl_1k.jpg", false),
-            dirt_arm: image("textures/ground/dirt_arm_1k.jpg", false),
+            dirt_diffuse: assets.soil.albedo.clone(),
+            dirt_normal_gl: assets.soil.normal_gl.clone(),
+            dirt_arm: assets.soil.arm.clone(),
         },
     }
 }
@@ -473,6 +457,10 @@ mod tests {
         app.init_asset::<Image>();
         app.init_asset::<Mesh>();
         app.init_asset::<TacticalTerrainMaterial>();
+        let procedural_assets = generate_procedural_environment_assets(
+            &mut app.world_mut().resource_mut::<Assets<Image>>(),
+        );
+        app.insert_resource(procedural_assets);
         app.add_observer(on_game_scene_added);
         app.add_observer(on_environment_added);
         app.add_observer(on_ground_added);

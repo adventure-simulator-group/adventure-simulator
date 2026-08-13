@@ -42,29 +42,11 @@ var dirt_arm: texture_2d<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(108)
 var dirt_arm_sampler: sampler;
 
-fn detail_noise(position: vec3<f32>, normal: vec3<f32>) -> f32 {
-    let weights = abs(normal) / max(dot(abs(normal), vec3<f32>(1.0)), 0.001);
-    let seed = terrain.variation.x * 31.0;
-    let yz = sin(position.y * 1.17 + position.z * 1.89 + seed)
-        * cos(position.y * 2.41 - position.z * 0.73 - seed * 0.31);
-    let xz = sin(position.x * 1.33 - position.z * 1.71 + seed * 1.37)
-        * cos(position.x * 2.03 + position.z * 0.91 + seed * 0.53);
-    let xy = sin(position.x * 1.61 + position.y * 1.09 - seed * 0.71)
-        * cos(position.x * 0.67 - position.y * 2.23 + seed * 0.83);
-    let fine = dot(vec3<f32>(yz, xz, xy), weights);
-    let broad = sin(position.x * 0.17 + position.z * 0.11 + seed)
-        * cos(position.z * 0.19 - position.x * 0.07 - seed);
-    // Keep high-frequency triplanar detail subordinate to the band-limited
-    // macro variation so distant/overhead views do not resolve into moire.
-    return fine * 0.12 + broad * 0.88;
-}
-
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
     var pbr_input = pbr_input_from_standard_material(in, is_front);
     let position = in.world_position.xyz;
     let normal = normalize(in.world_normal);
-    let detail = detail_noise(position, normal);
     let canopy = terrain.cover.x;
     let wetland = terrain.cover.y;
     let cultivation = terrain.cover.z;
@@ -75,24 +57,23 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let slope = smoothstep(0.16, 0.68, 1.0 - abs(normal.y));
     let ground_sample = textureSample(ground_map, ground_map_sampler, in.uv);
     let cover_kind = round(ground_sample.r * 255.0);
+    let substrate_kind = round(ground_sample.g * 255.0);
     let tall_grass = 1.0 - step(0.5, abs(cover_kind - 1.0));
     let leaf_litter = 1.0 - step(0.5, abs(cover_kind - 2.0));
 
+    // Molded-material albedo uses a small palette with hard region boundaries.
+    // Fine geology and soil structure remain in normal/AO channels below.
     var color = terrain.base_color.rgb;
-    let forest_floor = vec3<f32>(0.105, 0.175, 0.072) * (0.91 + detail * 0.09);
-    let mud = vec3<f32>(0.18, 0.16, 0.105) * (0.94 + detail * 0.06);
-    let tilled = vec3<f32>(0.33, 0.285, 0.105) * (0.92 + detail * 0.08);
-    let stone = vec3<f32>(0.31, 0.30, 0.275) * (0.9 + detail * 0.1);
-    let leaf_floor = vec3<f32>(0.255, 0.16, 0.065) * (0.9 + detail * 0.1);
-    color = mix(color, forest_floor, canopy * 0.74);
-    color = mix(color, mud, max(wetland, wetness) * 0.68);
-    color = mix(color, tilled, cultivation * 0.72);
-    color = mix(color, stone, slope * (0.48 + hilly * 0.42));
-    color = mix(color, leaf_floor, leaf_litter * 0.88);
-    color = mix(color, vec3<f32>(0.09, 0.18, 0.22), water * 0.78);
-    color *= 0.94 + detail * terrain.variation.y;
+    if canopy >= 0.5 { color = vec3<f32>(0.105, 0.175, 0.072); }
+    if cultivation >= 0.4 { color = vec3<f32>(0.33, 0.285, 0.105); }
+    if wetland >= 0.4 || substrate_kind == 3.0 { color = vec3<f32>(0.18, 0.16, 0.105); }
+    if substrate_kind == 1.0 || substrate_kind == 2.0 || slope >= 0.5 {
+        color = vec3<f32>(0.31, 0.30, 0.275);
+    }
+    if leaf_litter > 0.5 { color = vec3<f32>(0.255, 0.16, 0.065); }
+    if water >= 0.5 || substrate_kind == 5.0 { color = vec3<f32>(0.09, 0.18, 0.22); }
 
-    // The scan is authored at two metres and repeats in world space. Restrict
+    // The generated soil recipe repeats in world space. Restrict
     // it to upward-facing, near/mid-field fragments: vertical rock faces have
     // their own geological material and distant terrain needs stable macro
     // colour instead of subpixel texture reads.
@@ -107,9 +88,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let texture_distance_fade = 1.0 - smoothstep(42.0, 96.0, camera_distance);
     let soil_surface = (1.0 - water) * (1.0 - snow) * smoothstep(0.46, 0.82, normal.y);
     let dirt_amount = texture_distance_fade * soil_surface;
-    let dirt_luminance = dot(dirt_color, vec3<f32>(0.2126, 0.7152, 0.0722));
-    let neutral_dirt = dirt_color / max(dirt_luminance, 0.08);
-    color *= mix(vec3<f32>(1.0), neutral_dirt, dirt_amount * 0.48);
+    if substrate_kind == 0.0 && dirt_amount > 0.5 {
+        color = dirt_color;
+    }
 
     // Past the geometric LOD, represent the aggregate colour and normal
     // response of a sward directly on the terrain. Frequencies stay low enough
@@ -120,14 +101,11 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         * tall_grass
         * (1.0 - water)
         * (1.0 - slope * 0.72);
-    let sward_pattern = sin(position.x * 0.43 + position.z * 0.19 + terrain.variation.x * 17.0)
-        * cos(position.z * 0.37 - position.x * 0.13 - terrain.variation.x * 11.0);
-    let sward_color = color * vec3<f32>(0.82, 1.035, 0.72)
-        * (0.97 + sward_pattern * 0.035);
-    color = mix(color, sward_color, sward_amount * 0.44);
+    let sward_color = color * vec3<f32>(0.82, 1.035, 0.72);
+    color = select(color, sward_color, sward_amount >= 0.5);
 
-    let snow_mask = snow * smoothstep(0.3, 0.86, normal.y) * (0.91 + detail * 0.09);
-    color = mix(color, vec3<f32>(0.79, 0.84, 0.86), snow_mask);
+    let snow_mask = snow * smoothstep(0.3, 0.86, normal.y);
+    color = select(color, vec3<f32>(0.79, 0.84, 0.86), snow_mask >= 0.5);
 
     let micro = (terrain.variation.z + sward_amount * 0.012) * (1.0 - snow_mask);
     let procedural_normal = normalize(pbr_input.N + vec3<f32>(

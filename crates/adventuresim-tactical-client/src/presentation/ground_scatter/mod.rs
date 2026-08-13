@@ -3,9 +3,9 @@ use bevy::{
     ecs::change_detection::DetectChanges,
     pbr::Material,
     prelude::{
-        Asset, AssetServer, Assets, Color, Commands, Component, Entity, GlobalTransform, Handle,
-        Image, Mesh, Quat, Query, Reflect, Res, ResMut, Resource, StandardMaterial, Time,
-        Transform, Vec2, Vec3, Vec4, With, Without, default,
+        Asset, Assets, Color, Commands, Component, Entity, GlobalTransform, Handle, Image, Mesh,
+        Quat, Query, Reflect, Res, ResMut, Resource, StandardMaterial, Time, Transform, Vec2, Vec3,
+        Vec4, With, Without, default,
     },
     render::render_resource::{
         AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError,
@@ -20,8 +20,8 @@ use super::obstacles::tree::{
     procedural_woody_plant_leaves, procedural_woody_plant_skeleton,
 };
 use super::{
-    PresentedCelestialLighting, bps, grass_cover_mask_image, splitmix64, stable_text_seed,
-    unit_hash,
+    PresentedCelestialLighting, ProceduralEnvironmentAssets, bps, grass_cover_mask_image,
+    splitmix64, stable_text_seed, unit_hash,
 };
 
 // Ground-scatter orchestration and shared presentation contracts.
@@ -59,7 +59,7 @@ pub(super) fn foliage_material(wind_scale: f32, ground_foliage: bool) -> Tactica
         wind: Vec4::new(0.74, 0.67, wind_scale, 1.35),
         interaction: Vec4::ZERO,
         interaction_motion: Vec4::ZERO,
-        // Root brightness, meadow colour variation, normal up-bias, and
+        // Root occlusion, reserved palette variation, normal up-bias, and
         // whether nearby player movement affects this material.
         shading: if ground_foliage {
             Vec4::new(0.52, 0.13, 0.76, 1.0)
@@ -146,7 +146,7 @@ pub(super) fn spawn_ground_foliage(
     leaf_materials: &mut Assets<TacticalTreeLeafCardMaterial>,
     hazel_cache: &mut HazelPresentationCache,
     ground_foliage_cache: &mut GroundFoliagePresentationCache,
-    asset_server: &AssetServer,
+    procedural_assets: &ProceduralEnvironmentAssets,
     images: &mut Assets<Image>,
     scene_id: &SceneId,
     terrain: &SceneTerrain,
@@ -201,7 +201,7 @@ pub(super) fn spawn_ground_foliage(
         standard_materials,
         leaf_materials,
         hazel_cache,
-        asset_server,
+        procedural_assets,
     );
     let grass_wind_scale = 0.16 + bps(environment.weather.wind_speed_bps) * 0.36;
     let grass_mask = images.add(grass_cover_mask_image(
@@ -242,7 +242,7 @@ pub(super) fn spawn_ground_foliage(
         .clone();
     let dry_leaf_material = ground_foliage_cache
         .forest_floor_leaves
-        .get_or_insert_with(|| leaf_materials.add(forest_floor_leaf_material(asset_server)))
+        .get_or_insert_with(|| leaf_materials.add(forest_floor_leaf_material(procedural_assets)))
         .clone();
     let twig_material = ground_foliage_cache
         .twig_material
@@ -343,7 +343,7 @@ pub(super) fn present_ground_scatter(
     mut images: ResMut<Assets<Image>>,
     mut hazel_cache: ResMut<HazelPresentationCache>,
     mut ground_foliage_cache: ResMut<GroundFoliagePresentationCache>,
-    asset_server: Res<AssetServer>,
+    procedural_assets: Res<ProceduralEnvironmentAssets>,
 ) {
     for (entity, scene_id, terrain, ground, environment) in &scenes {
         spawn_ground_foliage(
@@ -354,7 +354,7 @@ pub(super) fn present_ground_scatter(
             &mut leaf_materials,
             &mut hazel_cache,
             &mut ground_foliage_cache,
-            &asset_server,
+            &procedural_assets,
             &mut images,
             scene_id,
             terrain,
@@ -370,7 +370,7 @@ fn ensure_hazel_presentation(
     materials: &mut Assets<StandardMaterial>,
     leaf_materials: &mut Assets<TacticalTreeLeafCardMaterial>,
     cache: &mut HazelPresentationCache,
-    asset_server: &AssetServer,
+    procedural_assets: &ProceduralEnvironmentAssets,
 ) {
     if cache.branches.is_some() {
         return;
@@ -389,7 +389,7 @@ fn ensure_hazel_presentation(
         perceptual_roughness: 0.96,
         ..default()
     }));
-    cache.leaves = Some(leaf_materials.add(hazel_leaf_material(asset_server)));
+    cache.leaves = Some(leaf_materials.add(hazel_leaf_material(procedural_assets)));
 }
 
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]

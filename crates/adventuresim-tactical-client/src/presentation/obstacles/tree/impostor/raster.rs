@@ -230,7 +230,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn baked_leaf_color_uses_scan_hue_and_authored_canopy_visibility() {
+    fn baked_leaf_color_uses_generated_palette_and_authored_canopy_visibility() {
         let exposed = baked_oak_leaf_color(Vec4::new(1.0, 1.0, 0.0, 1.0), 1.0);
         let alternate_shadow_selector = baked_oak_leaf_color(Vec4::new(1.0, 1.0, 1.0, 1.0), 1.0);
         let interior = baked_oak_leaf_color(Vec4::new(1.0, 1.0, 0.0, 0.32), 1.0);

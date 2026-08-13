@@ -15,7 +15,7 @@ pub(super) fn on_scene_vista_bundle(
     mut tree_materials: ResMut<Assets<TacticalTreeImpostorMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut vista_tree_cache: ResMut<VistaTreePresentationCache>,
-    asset_server: Res<AssetServer>,
+    procedural_assets: Res<ProceduralEnvironmentAssets>,
 ) {
     for entity in &existing {
         commands.entity(entity).despawn();
@@ -32,7 +32,7 @@ pub(super) fn on_scene_vista_bundle(
     let weather = playable_scene
         .map(|(_, environment)| environment.weather)
         .unwrap_or_else(clear_vista_weather);
-    let material = materials.add(vista_material(&asset_server, weather));
+    let material = materials.add(vista_material(&procedural_assets, weather));
     if playable_scene.is_none() {
         warn!(
             scene_digest = %bundle.scene_digest,
@@ -722,23 +722,10 @@ impl MaterialExtension for TacticalVistaExtension {
 pub(in crate::presentation) type TacticalVistaMaterial =
     ExtendedMaterial<StandardMaterial, TacticalVistaExtension>;
 
-fn vista_material(asset_server: &AssetServer, weather: WeatherSnapshot) -> TacticalVistaMaterial {
-    let image = |path, is_srgb| {
-        asset_server
-            .load_builder()
-            .with_settings(move |settings: &mut bevy::image::ImageLoaderSettings| {
-                use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
-                settings.is_srgb = is_srgb;
-                settings.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
-                    address_mode_u: ImageAddressMode::Repeat,
-                    address_mode_v: ImageAddressMode::Repeat,
-                    address_mode_w: ImageAddressMode::Repeat,
-                    anisotropy_clamp: 8,
-                    ..ImageSamplerDescriptor::linear()
-                });
-            })
-            .load(path)
-    };
+fn vista_material(
+    assets: &ProceduralEnvironmentAssets,
+    weather: WeatherSnapshot,
+) -> TacticalVistaMaterial {
     TacticalVistaMaterial {
         base: StandardMaterial {
             base_color: Color::WHITE,
@@ -747,7 +734,7 @@ fn vista_material(asset_server: &AssetServer, weather: WeatherSnapshot) -> Tacti
             ..default()
         },
         extension: TacticalVistaExtension {
-            rock_diffuse: image("textures/rocks/rock_surface_diff_1k.jpg", true),
+            rock_diffuse: assets.rock.albedo.clone(),
             weather: Vec4::new(
                 bps(weather.ground_moisture_bps),
                 bps(weather.snow_cover_bps),

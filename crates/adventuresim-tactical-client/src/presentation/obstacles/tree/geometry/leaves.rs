@@ -243,7 +243,7 @@ pub(in crate::presentation) fn procedural_woody_leaf_card_mesh(leaves: &[TreeLea
             (center - right + up).to_array(),
         ]);
         normals.extend_from_slice(&[normal.to_array(); 4]);
-        // Image-space V grows downward. Keep the scanned petiole at the
+        // Image-space V grows downward. Keep the generated petiole at the
         // biological attachment and the blade tip at the distal end.
         uvs.extend_from_slice(&[[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]);
         let shade = (leaf.shade / 0.82).clamp(0.72, 1.18);
@@ -265,7 +265,7 @@ pub(in crate::presentation) fn procedural_woody_leaf_card_mesh(leaves: &[TreeLea
 }
 
 /// The near leaf is a small cambered grid: the geometry retains fold, cupping,
-/// torsion, and grazing-angle area while the scanned opacity texture owns its
+/// torsion, and grazing-angle area while the generated opacity texture owns its
 /// fine lobed silhouette. It transitions directly to the flat card.
 pub(in crate::presentation) fn procedural_oak_textured_leaf_mesh(leaves: &[TreeLeaf]) -> Mesh {
     procedural_woody_cambered_leaf_mesh(leaves)

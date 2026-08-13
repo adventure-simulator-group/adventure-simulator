@@ -19,7 +19,7 @@ pub(crate) use lod::{
     TreeLeafRepresentation, TreeLod, TreeLodCluster, TreeLodRenderOverride, TreeTrunkLod,
 };
 pub(in crate::presentation) use materials::{
-    TacticalTreeImpostorMaterial, hazel_leaf_material, update_tree_leaf_wind,
+    TacticalTreeImpostorMaterial, hazel_leaf_material, leaf_material, update_tree_leaf_wind,
 };
 pub(crate) use materials::{TacticalTreeLeafCardMaterial, oak_bark_material, oak_leaf_material};
 pub(crate) use presentation::PresentedTree;

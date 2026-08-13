@@ -254,9 +254,6 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     );
     let centre_distance = abs(in.uv.x - 0.5) * 2.0;
     let centre_rib = mix(0.84, 1.0, smoothstep(0.12, 0.72, centre_distance));
-    let meadow_wave = sin(in.world_position.x * 0.083
-        + sin(in.world_position.z * 0.057) * 2.3);
-    let meadow_variation = 1.0 + 0.13 * meadow_wave;
     var base_normal = select(-in.world_normal, in.world_normal, is_front);
     // The vertex stage deliberately bends both sides of a blade normal toward
     // the sky. Flipping the entire vector for the back face would point that
@@ -269,7 +266,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     pbr_input.material.flags = STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT
         | STANDARD_MATERIAL_FLAGS_FOG_ENABLED_BIT;
     pbr_input.material.base_color = vec4<f32>(
-        in.color.rgb * root_self_shadow * centre_rib * meadow_variation,
+        in.color.rgb,
         1.0,
     );
     pbr_input.material.perceptual_roughness = 0.86;
@@ -281,6 +278,8 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     pbr_input.material.thickness = 0.001;
     pbr_input.world_normal = base_normal;
     pbr_input.N = base_normal;
+    pbr_input.diffuse_occlusion = vec3<f32>(root_self_shadow * centre_rib);
+    pbr_input.specular_occlusion = root_self_shadow * centre_rib;
 
     var out: FragmentOutput;
     out.color = apply_pbr_lighting(pbr_input);

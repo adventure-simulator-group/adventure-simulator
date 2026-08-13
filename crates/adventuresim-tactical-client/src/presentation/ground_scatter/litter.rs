@@ -6,14 +6,13 @@ use bevy::{
     light::NotShadowCaster,
     math::FloatExt,
     mesh::{Indices, PrimitiveTopology},
-    prelude::{
-        AssetServer, Color, Commands, Handle, Mesh, Mesh3d, MeshMaterial3d, Name, Transform, Vec2,
-        Vec3,
-    },
+    prelude::{Color, Commands, Handle, Mesh, Mesh3d, MeshMaterial3d, Name, Transform, Vec2, Vec3},
 };
 use std::collections::BTreeMap;
 
-use crate::presentation::{bps, oak_leaf_material, splitmix64, unit_hash};
+#[cfg(test)]
+use crate::presentation::generate_procedural_environment_assets;
+use crate::presentation::{ProceduralEnvironmentAssets, bps, leaf_material, splitmix64, unit_hash};
 
 use super::{
     GroundScatterLayer, TacticalFoliageMaterial, TacticalTreeLeafCardMaterial, foliage_transform,
@@ -157,9 +156,9 @@ fn append_litter_batch(
 pub(super) const DRY_LEAF_MESH_VARIANTS: u64 = 4;
 pub(super) const TWIG_MESH_VARIANTS: u64 = 3;
 pub(super) fn forest_floor_leaf_material(
-    asset_server: &AssetServer,
+    assets: &ProceduralEnvironmentAssets,
 ) -> TacticalTreeLeafCardMaterial {
-    let mut material = oak_leaf_material(asset_server);
+    let mut material = leaf_material(&assets.dry_oak_leaf, 0.28, 0.72, 0.0, 0.035);
     // Fallen leaves reuse the oak surface maps/PBR response but do not inherit
     // canopy wind displacement. NotShadowCaster on every litter entity keeps
     // their dense alpha geometry out of the shadow pass.
@@ -168,7 +167,6 @@ pub(super) fn forest_floor_leaf_material(
     material.surface_parameters.w = 0.035;
     material.physical_parameters.x = 0.96;
     material.physical_parameters.y = 0.00035;
-    material.physical_parameters.z = 1.0;
     material
 }
 
@@ -640,28 +638,29 @@ mod tests {
     }
 
     #[test]
-    fn forest_floor_leaves_reuse_oak_pbr_texture_and_surface_contract() {
+    fn forest_floor_leaves_use_dry_oak_palette_and_surface_contract() {
         let mut app = App::new();
         app.add_plugins(TaskPoolPlugin::default());
         app.add_plugins(AssetPlugin::default());
         app.init_asset::<Image>();
-        let asset_server = app.world().resource::<AssetServer>();
-        let floor = forest_floor_leaf_material(asset_server);
-        let oak = oak_leaf_material(asset_server);
-        assert_eq!(floor.opacity, oak.opacity);
-        assert_eq!(floor.front_albedo, oak.front_albedo);
-        assert_eq!(floor.back_albedo, oak.back_albedo);
-        assert_eq!(floor.front_normal, oak.front_normal);
-        assert_eq!(floor.back_normal, oak.back_normal);
+        let assets = generate_procedural_environment_assets(
+            &mut app
+                .world_mut()
+                .resource_mut::<bevy::prelude::Assets<Image>>(),
+        );
+        let floor = forest_floor_leaf_material(&assets);
+        let oak = oak_leaf_material(&assets);
+        assert_eq!(floor.opacity, assets.dry_oak_leaf.opacity);
+        assert_ne!(floor.front_albedo, oak.front_albedo);
+        assert_ne!(floor.back_albedo, oak.back_albedo);
+        assert_eq!(floor.arm, assets.dry_oak_leaf.arm);
         assert_eq!(floor.parameters.z, 0.0);
         assert_eq!(floor.surface_parameters.z, 0.0);
         assert!(floor.surface_parameters.w < oak.surface_parameters.w * 0.2);
-        assert!(floor.physical_parameters.x > oak.physical_parameters.x);
         assert!(floor.physical_parameters.y < oak.physical_parameters.y);
-        assert_eq!(floor.physical_parameters.z, 1.0);
         let shader = include_str!("../../../../../assets/shaders/tactical_tree_leaf_card.wgsl");
-        assert!(shader.contains("dry_texture * mix(vec3<f32>(1.0), in.color.rgb, 0.72)"));
-        assert!(shader.contains("select(albedo * vec3<f32>(in.color.r), dry_pigment, dry_leaf)"));
+        assert!(shader.contains("pbr_input.material.base_color = vec4<f32>(\n        albedo,"));
+        assert!(!shader.contains("spatial_hue"));
     }
 
     #[test]

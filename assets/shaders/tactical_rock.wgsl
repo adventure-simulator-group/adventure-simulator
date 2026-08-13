@@ -90,8 +90,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let sampled_color = triplanar_color(uvs, weights);
     let sampled_arm = triplanar_arm(uvs, weights);
     let composed_normal = triplanar_normal(uvs, weights, macro_normal);
-    let macro_variation = sin(dot(in.world_position.xyz, vec3<f32>(0.73, 1.09, -0.57)) + rock.geology.x);
-    let lithology = rock.surface.rgb * (1.0 + macro_variation * rock.geology.z);
+    let lithology = rock.surface.rgb;
 
     pbr_input.world_normal = composed_normal;
     pbr_input.N = composed_normal;
