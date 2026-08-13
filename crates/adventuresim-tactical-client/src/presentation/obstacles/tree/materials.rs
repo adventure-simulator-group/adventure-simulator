@@ -42,6 +42,12 @@ pub(crate) struct TacticalTreeLeafCardMaterial {
 }
 
 const OAK_LEAF_DIFFUSE_TRANSMISSION: f32 = 0.40;
+/// Representative alpha-weighted oak pigment for software-baked impostors.
+///
+/// The live material samples distinct front/back scans. The single-color
+/// impostor bake cannot retain those textures, so this bounded midpoint keeps
+/// its hue near the scan instead of using the former saturated lime surrogate.
+pub(super) const OAK_LEAF_IMPOSTOR_BASE_SRGB: [f32; 3] = [96.0, 113.0, 76.0];
 
 pub(crate) fn oak_leaf_material(asset_server: &AssetServer) -> TacticalTreeLeafCardMaterial {
     leaf_material(
@@ -116,7 +122,7 @@ pub(in crate::presentation) fn hazel_leaf_material(
 /// extinction is deliberately bounded below dense-forest values because the
 /// explicit leaf cards and screen-space AO already resolve part of the crown's
 /// self-occlusion.
-fn canopy_ao_strength(crown_radius_metres: f32) -> f32 {
+pub(super) fn canopy_ao_strength(crown_radius_metres: f32) -> f32 {
     // This is an empirical unresolved-path coefficient calibrated under the
     // production atmosphere IBL, not a measured whole-leaf absorption value.
     const UNRESOLVED_FOLIAGE_EXTINCTION_PER_METRE: f32 = 0.11;

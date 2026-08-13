@@ -118,6 +118,14 @@ fn main() {
         scene_digest: loaded_scene_input
             .digest()
             .expect("loaded scene input was validated"),
+        playable_half_extent_metres: Vec2::new(
+            f32::from(loaded_scene_input.playable.width.saturating_sub(1))
+                * loaded_scene_input.playable.spacing_metres
+                * 0.5,
+            f32::from(loaded_scene_input.playable.depth.saturating_sub(1))
+                * loaded_scene_input.playable.spacing_metres
+                * 0.5,
+        ),
         lods: loaded_scene_input.vista.lods.clone(),
     });
     let mut app = App::new();

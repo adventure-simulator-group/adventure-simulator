@@ -22,7 +22,7 @@ pub(super) fn on_scene_vista_bundle(
         metallic: 0.0,
         ..default()
     });
-    let mut inner_half_extent = 55.0;
+    let mut inner_half_extent = bundle.playable_half_extent_metres;
     for (index, lod) in visible_lods.iter().copied().enumerate() {
         let meshes_for_lod = vista_lod_meshes_with_morph(
             lod,
@@ -48,17 +48,21 @@ pub(super) fn on_scene_vista_bundle(
                 ),
             ));
         }
-        inner_half_extent = half_extent;
+        inner_half_extent = Vec2::new(
+            half_extent,
+            f32::from(lod.depth.saturating_sub(1)) * lod.spacing_metres * 0.5,
+        );
     }
 }
 
-pub(super) fn vista_lod_meshes(lod: &VistaLod, inner_half_extent: f32) -> Vec<Mesh> {
+#[cfg(test)]
+pub(super) fn vista_lod_meshes(lod: &VistaLod, inner_half_extent: Vec2) -> Vec<Mesh> {
     vista_lod_meshes_with_morph(lod, inner_half_extent, None)
 }
 
 fn vista_lod_meshes_with_morph(
     lod: &VistaLod,
-    inner_half_extent: f32,
+    inner_half_extent: Vec2,
     coarser_lod: Option<&VistaLod>,
 ) -> Vec<Mesh> {
     let width = usize::from(lod.width);
@@ -83,50 +87,50 @@ fn vista_lod_meshes_with_morph(
             let mut indices = Vec::new();
             for z in chunk_z..(chunk_z + VISTA_CHUNK_CELLS).min(depth - 1) {
                 for x in chunk_x..(chunk_x + VISTA_CHUNK_CELLS).min(width - 1) {
-                    let cell_x = (x as f32 + 0.5 - center_x) * lod.spacing_metres;
-                    let cell_z = (z as f32 + 0.5 - center_z) * lod.spacing_metres;
-                    // Exclude cells fully covered by the playable mesh or the
-                    // preceding finer ring. Testing the outer cell edge keeps
-                    // one boundary cell without filling the inner hole.
-                    if cell_x.abs().max(cell_z.abs()) + lod.spacing_metres * 0.5
-                        <= inner_half_extent
-                    {
-                        continue;
-                    }
-                    let vertex = |vx: usize, vz: usize| {
-                        let world = Vec2::new(
-                            (vx as f32 - center_x) * lod.spacing_metres
-                                + lod.origin_east_metres as f32,
-                            (vz as f32 - center_z) * lod.spacing_metres
-                                + lod.origin_north_metres as f32,
-                        );
-                        let height = presented_height(lod, vx, vz, world, coarser_lod);
-                        (
-                            [
-                                (vx as f32 - center_x) * lod.spacing_metres,
-                                height,
-                                (vz as f32 - center_z) * lod.spacing_metres,
-                            ],
-                            presented_color(lod, vx, vz, world, coarser_lod),
+                    let cell_min = Vec2::new(
+                        (x as f32 - center_x) * lod.spacing_metres,
+                        (z as f32 - center_z) * lod.spacing_metres,
+                    );
+                    let cell_max = cell_min + Vec2::splat(lod.spacing_metres);
+                    for [minimum_x, maximum_x, minimum_z, maximum_z] in
+                        cell_rectangles_outside_inner_rectangle(
+                            cell_min,
+                            cell_max,
+                            inner_half_extent,
                         )
-                    };
-                    let base = positions.len() as u32;
-                    let vertices = [
-                        vertex(x, z),
-                        vertex(x + 1, z),
-                        vertex(x + 1, z + 1),
-                        vertex(x, z + 1),
-                    ];
-                    positions.extend(vertices.map(|vertex| vertex.0));
-                    colors.extend(vertices.map(|vertex| vertex.1));
-                    indices.extend_from_slice(&[
-                        base,
-                        base + 2,
-                        base + 1,
-                        base,
-                        base + 3,
-                        base + 2,
-                    ]);
+                    {
+                        let vertex = |local: Vec2| {
+                            let world = local
+                                + Vec2::new(
+                                    lod.origin_east_metres as f32,
+                                    lod.origin_north_metres as f32,
+                                );
+                            let height = presented_height_at(lod, world, coarser_lod)
+                                .expect("clipped vista vertex remains inside its source LOD");
+                            (
+                                [local.x, height, local.y],
+                                presented_color_at(lod, world, coarser_lod)
+                                    .expect("clipped vista color remains inside its source LOD"),
+                            )
+                        };
+                        let base = positions.len() as u32;
+                        let vertices = [
+                            vertex(Vec2::new(minimum_x, minimum_z)),
+                            vertex(Vec2::new(maximum_x, minimum_z)),
+                            vertex(Vec2::new(maximum_x, maximum_z)),
+                            vertex(Vec2::new(minimum_x, maximum_z)),
+                        ];
+                        positions.extend(vertices.map(|vertex| vertex.0));
+                        colors.extend(vertices.map(|vertex| vertex.1));
+                        indices.extend_from_slice(&[
+                            base,
+                            base + 2,
+                            base + 1,
+                            base,
+                            base + 3,
+                            base + 2,
+                        ]);
+                    }
                 }
             }
             if positions.is_empty() {
@@ -145,6 +149,69 @@ fn vista_lod_meshes_with_morph(
     meshes
 }
 
+fn cell_rectangles_outside_inner_rectangle(
+    minimum: Vec2,
+    maximum: Vec2,
+    inner_half_extent: Vec2,
+) -> Vec<[f32; 4]> {
+    if inner_half_extent.x <= 0.0
+        || inner_half_extent.y <= 0.0
+        || maximum.x <= -inner_half_extent.x
+        || minimum.x >= inner_half_extent.x
+        || maximum.y <= -inner_half_extent.y
+        || minimum.y >= inner_half_extent.y
+    {
+        return vec![[minimum.x, maximum.x, minimum.y, maximum.y]];
+    }
+    if minimum.x >= -inner_half_extent.x
+        && maximum.x <= inner_half_extent.x
+        && minimum.y >= -inner_half_extent.y
+        && maximum.y <= inner_half_extent.y
+    {
+        return Vec::new();
+    }
+
+    let mut rectangles = Vec::with_capacity(4);
+    if minimum.x < -inner_half_extent.x {
+        rectangles.push([
+            minimum.x,
+            maximum.x.min(-inner_half_extent.x),
+            minimum.y,
+            maximum.y,
+        ]);
+    }
+    if maximum.x > inner_half_extent.x {
+        rectangles.push([
+            minimum.x.max(inner_half_extent.x),
+            maximum.x,
+            minimum.y,
+            maximum.y,
+        ]);
+    }
+    let middle_minimum_x = minimum.x.max(-inner_half_extent.x);
+    let middle_maximum_x = maximum.x.min(inner_half_extent.x);
+    if middle_minimum_x < middle_maximum_x {
+        if minimum.y < -inner_half_extent.y {
+            rectangles.push([
+                middle_minimum_x,
+                middle_maximum_x,
+                minimum.y,
+                maximum.y.min(-inner_half_extent.y),
+            ]);
+        }
+        if maximum.y > inner_half_extent.y {
+            rectangles.push([
+                middle_minimum_x,
+                middle_maximum_x,
+                minimum.y.max(inner_half_extent.y),
+                maximum.y,
+            ]);
+        }
+    }
+    rectangles
+}
+
+#[cfg(test)]
 fn presented_height(
     lod: &VistaLod,
     x: usize,
@@ -164,14 +231,35 @@ fn presented_height(
     let radius = (world - center).abs().max_element();
     let weight =
         ((radius - (half_extent - lod.spacing_metres)) / lod.spacing_metres).clamp(0.0, 1.0);
-    if weight <= 0.0 {
-        return own;
-    }
     sample_vista_height(coarser, world)
         .map(|height| own.lerp(height, weight))
         .unwrap_or(own)
 }
 
+fn presented_height_at(lod: &VistaLod, world: Vec2, coarser_lod: Option<&VistaLod>) -> Option<f32> {
+    let own = sample_vista_height(lod, world)?;
+    let Some(coarser) = coarser_lod else {
+        return Some(own);
+    };
+    let center = Vec2::new(
+        lod.origin_east_metres as f32,
+        lod.origin_north_metres as f32,
+    );
+    let half_extent = f32::from(lod.width.saturating_sub(1)) * lod.spacing_metres * 0.5;
+    let radius = (world - center).abs().max_element();
+    let weight =
+        ((radius - (half_extent - lod.spacing_metres)) / lod.spacing_metres).clamp(0.0, 1.0);
+    if weight <= 0.0 {
+        return Some(own);
+    }
+    Some(
+        sample_vista_height(coarser, world)
+            .map(|height| own.lerp(height, weight))
+            .unwrap_or(own),
+    )
+}
+
+#[cfg(test)]
 fn presented_color(
     lod: &VistaLod,
     x: usize,
@@ -195,6 +283,31 @@ fn presented_color(
         .map(|color| own.lerp(color, weight))
         .unwrap_or(own)
         .to_array()
+}
+
+fn presented_color_at(
+    lod: &VistaLod,
+    world: Vec2,
+    coarser_lod: Option<&VistaLod>,
+) -> Option<[f32; 4]> {
+    let own = sample_vista_color(lod, world)?;
+    let Some(coarser) = coarser_lod else {
+        return Some(own.to_array());
+    };
+    let center = Vec2::new(
+        lod.origin_east_metres as f32,
+        lod.origin_north_metres as f32,
+    );
+    let half_extent = f32::from(lod.width.saturating_sub(1)) * lod.spacing_metres * 0.5;
+    let radius = (world - center).abs().max_element();
+    let weight =
+        ((radius - (half_extent - lod.spacing_metres)) / lod.spacing_metres).clamp(0.0, 1.0);
+    Some(
+        sample_vista_color(coarser, world)
+            .map(|color| own.lerp(color, weight))
+            .unwrap_or(own)
+            .to_array(),
+    )
 }
 
 fn sample_vista_height(lod: &VistaLod, world: Vec2) -> Option<f32> {
@@ -301,13 +414,13 @@ mod tests {
                 .join("../../assets/tactical-scenes/valley-distant-ridge.json"),
         )
         .unwrap();
-        let mut inner = 55.0;
+        let mut inner = Vec2::splat(55.0);
         for (index, lod) in input.vista.lods.iter().enumerate() {
             let meshes = vista_lod_meshes(lod, inner);
             assert!(!meshes.is_empty());
             assert!(meshes.iter().all(|mesh| mesh.count_vertices() > 0));
             assert!(meshes.iter().all(|mesh| {
-                mesh.count_vertices() <= VISTA_CHUNK_CELLS * VISTA_CHUNK_CELLS * 4
+                mesh.count_vertices() <= VISTA_CHUNK_CELLS * VISTA_CHUNK_CELLS * 4 * 4
             }));
             if index > 0 {
                 assert!(
@@ -315,8 +428,61 @@ mod tests {
                     "regional LODs must be independently culled"
                 );
             }
-            inner = f32::from(lod.width - 1) * lod.spacing_metres * 0.5;
+            inner = Vec2::new(
+                f32::from(lod.width - 1) * lod.spacing_metres * 0.5,
+                f32::from(lod.depth - 1) * lod.spacing_metres * 0.5,
+            );
         }
+    }
+
+    #[test]
+    fn coarse_vista_cells_are_clipped_to_the_playable_hole() {
+        let lod = VistaLod {
+            level: 0,
+            spacing_metres: 250.0,
+            width: 9,
+            depth: 9,
+            origin_east_metres: 0.0,
+            origin_north_metres: 0.0,
+            heights_metres: vec![8.0; 81],
+            environment: vec![EnvironmentalSample::default(); 81],
+        };
+        let inner_half_extent = Vec2::new(55.0, 42.0);
+        let meshes = vista_lod_meshes(&lod, inner_half_extent);
+        let mut touches_boundary = false;
+        for mesh in meshes {
+            let Some(VertexAttributeValues::Float32x3(positions)) =
+                mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+            else {
+                panic!("vista mesh must expose Float32x3 positions");
+            };
+            for quad in positions.chunks_exact(4) {
+                let outside = quad
+                    .iter()
+                    .all(|position| position[0] <= -inner_half_extent.x)
+                    || quad
+                        .iter()
+                        .all(|position| position[0] >= inner_half_extent.x)
+                    || quad
+                        .iter()
+                        .all(|position| position[2] <= -inner_half_extent.y)
+                    || quad
+                        .iter()
+                        .all(|position| position[2] >= inner_half_extent.y);
+                assert!(
+                    outside,
+                    "vista quad overlaps the playable terrain: {quad:?}"
+                );
+                touches_boundary |= quad.iter().any(|position| {
+                    (position[0].abs() - inner_half_extent.x).abs() < 0.001
+                        || (position[2].abs() - inner_half_extent.y).abs() < 0.001
+                });
+            }
+        }
+        assert!(
+            touches_boundary,
+            "coarse cells must be split at the exact playable boundary"
+        );
     }
 
     #[test]
@@ -388,7 +554,7 @@ mod tests {
             environment: vec![open; 9],
         };
         assert!(
-            vista_lod_meshes(&lod, 0.0)
+            vista_lod_meshes(&lod, Vec2::ZERO)
                 .iter()
                 .all(|mesh| mesh.attribute(Mesh::ATTRIBUTE_COLOR).is_some())
         );
