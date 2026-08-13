@@ -105,53 +105,60 @@ fn vista_lod_meshes_with_morph(
                         (z as f32 - center_z) * lod.spacing_metres,
                     );
                     let cell_max = cell_min + Vec2::splat(lod.spacing_metres);
-                    for [minimum_x, maximum_x, minimum_z, maximum_z] in
-                        cell_rectangles_outside_inner_rectangle(
-                            cell_min,
-                            cell_max,
-                            inner_half_extent,
-                        )
-                    {
-                        let vertex = |local: Vec2| {
-                            let world = local
-                                + Vec2::new(
-                                    lod.origin_east_metres as f32,
-                                    lod.origin_north_metres as f32,
-                                );
-                            let vista_height = presented_height_at(lod, world, coarser_lod)
-                                .expect("clipped vista vertex remains inside its source LOD");
-                            let height = playable_terrain.map_or(vista_height, |terrain| {
-                                stitch_vista_height_to_playable_edge(
-                                    terrain,
-                                    local,
-                                    inner_half_extent,
-                                    lod.spacing_metres,
-                                    vista_height,
-                                )
-                            });
-                            (
-                                [local.x, height, local.y],
-                                presented_color_at(lod, world, coarser_lod)
-                                    .expect("clipped vista color remains inside its source LOD"),
+                    for rectangle in cell_rectangles_outside_inner_rectangle(
+                        cell_min,
+                        cell_max,
+                        inner_half_extent,
+                    ) {
+                        for [minimum_x, maximum_x, minimum_z, maximum_z] in
+                            subdivide_playable_boundary_rectangle(
+                                rectangle,
+                                inner_half_extent,
+                                playable_terrain,
                             )
-                        };
-                        let base = positions.len() as u32;
-                        let vertices = [
-                            vertex(Vec2::new(minimum_x, minimum_z)),
-                            vertex(Vec2::new(maximum_x, minimum_z)),
-                            vertex(Vec2::new(maximum_x, maximum_z)),
-                            vertex(Vec2::new(minimum_x, maximum_z)),
-                        ];
-                        positions.extend(vertices.map(|vertex| vertex.0));
-                        colors.extend(vertices.map(|vertex| vertex.1));
-                        indices.extend_from_slice(&[
-                            base,
-                            base + 2,
-                            base + 1,
-                            base,
-                            base + 3,
-                            base + 2,
-                        ]);
+                        {
+                            let vertex = |local: Vec2| {
+                                let world = local
+                                    + Vec2::new(
+                                        lod.origin_east_metres as f32,
+                                        lod.origin_north_metres as f32,
+                                    );
+                                let vista_height = presented_height_at(lod, world, coarser_lod)
+                                    .expect("clipped vista vertex remains inside its source LOD");
+                                let height = playable_terrain.map_or(vista_height, |terrain| {
+                                    stitch_vista_height_to_playable_edge(
+                                        terrain,
+                                        local,
+                                        inner_half_extent,
+                                        lod.spacing_metres,
+                                        vista_height,
+                                    )
+                                });
+                                (
+                                    [local.x, height, local.y],
+                                    presented_color_at(lod, world, coarser_lod).expect(
+                                        "clipped vista color remains inside its source LOD",
+                                    ),
+                                )
+                            };
+                            let base = positions.len() as u32;
+                            let vertices = [
+                                vertex(Vec2::new(minimum_x, minimum_z)),
+                                vertex(Vec2::new(maximum_x, minimum_z)),
+                                vertex(Vec2::new(maximum_x, maximum_z)),
+                                vertex(Vec2::new(minimum_x, maximum_z)),
+                            ];
+                            positions.extend(vertices.map(|vertex| vertex.0));
+                            colors.extend(vertices.map(|vertex| vertex.1));
+                            indices.extend_from_slice(&[
+                                base,
+                                base + 2,
+                                base + 1,
+                                base,
+                                base + 3,
+                                base + 2,
+                            ]);
+                        }
                     }
                 }
             }
@@ -169,6 +176,76 @@ fn vista_lod_meshes_with_morph(
         }
     }
     meshes
+}
+
+fn subdivide_playable_boundary_rectangle(
+    rectangle: [f32; 4],
+    playable_half_extent: Vec2,
+    terrain: Option<&SceneTerrain>,
+) -> Vec<[f32; 4]> {
+    let Some(terrain) = terrain else {
+        return vec![rectangle];
+    };
+    let [minimum_x, maximum_x, minimum_z, maximum_z] = rectangle;
+    let epsilon = terrain.grid_scale() * 0.01;
+    if (minimum_x - playable_half_extent.x).abs() <= epsilon
+        || (maximum_x + playable_half_extent.x).abs() <= epsilon
+    {
+        return split_rectangle_axis(
+            rectangle,
+            1,
+            terrain.depth() * -0.5,
+            terrain.grid_scale(),
+            terrain.grid_depth(),
+        );
+    }
+    if (minimum_z - playable_half_extent.y).abs() <= epsilon
+        || (maximum_z + playable_half_extent.y).abs() <= epsilon
+    {
+        return split_rectangle_axis(
+            rectangle,
+            0,
+            terrain.width() * -0.5,
+            terrain.grid_scale(),
+            terrain.grid_width(),
+        );
+    }
+    vec![rectangle]
+}
+
+fn split_rectangle_axis(
+    rectangle: [f32; 4],
+    axis: usize,
+    terrain_minimum: f32,
+    spacing: f32,
+    sample_count: usize,
+) -> Vec<[f32; 4]> {
+    let (minimum, maximum) = if axis == 0 {
+        (rectangle[0], rectangle[1])
+    } else {
+        (rectangle[2], rectangle[3])
+    };
+    let mut boundaries = vec![minimum, maximum];
+    boundaries.extend((0..sample_count).filter_map(|index| {
+        let coordinate = terrain_minimum + index as f32 * spacing;
+        (coordinate > minimum && coordinate < maximum).then_some(coordinate)
+    }));
+    boundaries.sort_by(f32::total_cmp);
+    boundaries.dedup_by(|left, right| (*left - *right).abs() < spacing * 0.001);
+    boundaries
+        .windows(2)
+        .map(|interval| {
+            let mut split = rectangle;
+            if axis == 0 {
+                split[0] = interval[0];
+                split[1] = interval[1];
+            } else {
+                split[2] = interval[0];
+                split[3] = interval[1];
+            }
+            split
+        })
+        .collect()
 }
 
 fn stitch_vista_height_to_playable_edge(
@@ -566,6 +643,51 @@ mod tests {
             ),
             112.0
         );
+    }
+
+    #[test]
+    fn first_vista_ring_reuses_every_playable_boundary_sample() {
+        let heights = (0..5)
+            .flat_map(|z| (0..5).map(move |_| z as f32 * 7.0))
+            .collect::<Vec<_>>();
+        let terrain = SceneTerrain::from_heightmap(5, 5, 25.0, heights).unwrap();
+        let lod = VistaLod {
+            level: 0,
+            spacing_metres: 250.0,
+            width: 3,
+            depth: 3,
+            origin_east_metres: 0.0,
+            origin_north_metres: 0.0,
+            heights_metres: vec![100.0; 9],
+            environment: vec![EnvironmentalSample::default(); 9],
+        };
+        let half_extent = Vec2::splat(50.0);
+        let meshes = vista_lod_meshes_with_morph(&lod, half_extent, None, Some(&terrain));
+        let mut east_edge = Vec::new();
+        for mesh in meshes {
+            let Some(VertexAttributeValues::Float32x3(positions)) =
+                mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+            else {
+                panic!("vista mesh must expose Float32x3 positions");
+            };
+            east_edge.extend(
+                positions
+                    .iter()
+                    .copied()
+                    .filter(|position| (position[0] - half_extent.x).abs() < 0.001),
+            );
+        }
+
+        for sample in 0..terrain.grid_depth() {
+            let z = -half_extent.y + sample as f32 * terrain.grid_scale();
+            let expected_height = terrain.height_at(Vec2::new(half_extent.x, z)).unwrap();
+            assert!(
+                east_edge.iter().any(|position| {
+                    (position[2] - z).abs() < 0.001 && (position[1] - expected_height).abs() < 0.001
+                }),
+                "vista edge omitted playable boundary sample z={z}, height={expected_height}"
+            );
+        }
     }
 
     #[test]
