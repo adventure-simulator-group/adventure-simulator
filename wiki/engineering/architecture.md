@@ -308,7 +308,14 @@ sibling of the aggregate levels beneath a non-rendering obstacle root, so
 disabling the trunk cannot hide its billboard through inherited visibility.
 The camera-facing far card bypasses only CPU frustum culling because its final
 orientation is produced in the vertex shader from stale source-card bounds;
-the normal projected-size visibility range still culls it by distance. Those visual levels do not
+the normal projected-size visibility range still culls it by distance. The
+eight-view whole-tree atlas selects tiles by each bake card's outward normal,
+not its orthographic right-axis angle. A bounded bake-only exposure and card
+width calibration keep the single-card crown close to the preceding aggregate
+crown without adding runtime texture samples, geometry, or draws. The custom
+impostor fragment path executes Bevy's visibility-range dither, so the existing
+overlapping projected-distance margins cross-fade rather than swapping the two
+representations abruptly. Those visual levels do not
 change the server-owned trunk collider. The near-tree skeleton also grows a
 bounded five-to-ten-root visual flare from the same tree seed. Unequal angular
 gaps, reach, radius, and burial break up radial repetition; two or three broader

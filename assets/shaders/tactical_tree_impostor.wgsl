@@ -2,6 +2,7 @@
     forward_io::{Vertex, VertexOutput},
     mesh_functions,
     mesh_view_bindings::{globals, view},
+    pbr_functions,
     view_transformations::position_world_to_clip,
 }
 
@@ -75,11 +76,17 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+#ifdef VISIBILITY_RANGE_DITHER
+    pbr_functions::visibility_range_dither(in.position, in.visibility_range_dither);
+#endif
     var uv = in.uv;
     if i32(round(tree.parameters.x)) == 4 {
         let direction = normalize(view.world_position.xz - in.world_position.xz + vec2<f32>(0.0001, 0.0));
         let angle = atan2(direction.y, direction.x);
-        let wrapped = fract(angle / 6.2831853 + 1.0);
+        // Bake-card right axes produce view normals one quarter turn behind
+        // their authored angle. Select by that normal convention rather than
+        // sampling the orthographic view from the opposite crown quadrant.
+        let wrapped = fract(angle / 6.2831853 + 1.0 - 0.25);
         let view_index = u32(round(wrapped * 8.0)) % 8u;
         // The whole-tree atlas is laid out in three columns. Select the
         // nearest of eight real orthographic source renders.
