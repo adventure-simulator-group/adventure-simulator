@@ -70,6 +70,7 @@ struct CaptureState {
     longitude_microdegrees: i32,
     canopy_bps: u16,
     generation_version: u16,
+    scene_source: SceneSource,
     weather: WeatherSnapshot,
     repairs: RepairSummary,
     terrain: TerrainSummary,
@@ -622,6 +623,7 @@ struct CaptureManifest {
     absolute_minute: u64,
     canopy_bps: u16,
     generation_version: u16,
+    scene_source: SceneSource,
     capture_profile: String,
     capture_profile_version: u16,
     camera_version: u16,
@@ -933,7 +935,7 @@ fn selected_capture_views(profile: &str, requested: &[String]) -> Result<Vec<Cap
     if requested.is_empty() {
         return Ok(profile_views.to_vec());
     }
-    let mut selected = vec![ENVIRONMENT_REVIEW_VIEWS[0]];
+    let mut selected = vec![profile_views[0]];
     let mut seen = BTreeSet::new();
     for slug in requested {
         if slug == "warmup" {
@@ -942,9 +944,8 @@ fn selected_capture_views(profile: &str, requested: &[String]) -> Result<Vec<Cap
         if !seen.insert(slug.as_str()) {
             return Err(format!("duplicate requested view {slug}"));
         }
-        let view = CAPTURE_VIEWS
+        let view = profile_views
             .iter()
-            .chain(ENVIRONMENT_REVIEW_VIEWS.iter())
             .find(|view| view.slug == slug)
             .copied()
             .ok_or_else(|| format!("unknown requested view {slug}"))?;
@@ -1019,6 +1020,20 @@ mod capture_lighting_tests {
             vec!["warmup", "rock-detail", "grass-seam-detail"]
         );
         assert!(selected_capture_views("environment-review", &["not-a-view".into()]).is_err());
+        assert!(
+            selected_capture_views("environment-review", &["tree-lighting-ao".into()]).is_err()
+        );
+        assert!(selected_capture_views("semantic", &["rock-detail".into()]).is_err());
+    }
+
+    #[test]
+    fn capture_profiles_have_one_implicit_leading_warmup() {
+        for profile in ["semantic", "environment-review"] {
+            let views = selected_capture_views(profile, &[]).unwrap();
+            assert_eq!(views.first().map(|view| view.slug), Some("warmup"));
+            assert_eq!(views.iter().filter(|view| view.slug == "warmup").count(), 1);
+            assert!(selected_capture_views(profile, &["warmup".into()]).is_err());
+        }
     }
 
     #[test]
@@ -1483,6 +1498,7 @@ fn setup_scene(
         longitude_microdegrees,
         canopy_bps,
         generation_version: input.generation_version,
+        scene_source: input.source,
         weather: input.weather,
         repairs: RepairSummary {
             upsampled_height_samples: repairs.upsampled_height_samples,
@@ -2704,6 +2720,7 @@ fn build_manifest(
             absolute_minute: state.absolute_minute,
             canopy_bps: state.canopy_bps,
             generation_version: state.generation_version,
+            scene_source: state.scene_source.clone(),
             capture_profile: state.profile.clone(),
             capture_profile_version: CAPTURE_PROFILE_VERSION,
             camera_version: CAMERA_VERSION,
